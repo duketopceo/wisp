@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+"""dim-overlay — fullscreen semi-transparent dim via wlr-layer-shell.
+
+Chosen because gtk-layer-shell is installed on this laptop and PyGObject is
+available; eww is not. Exits on any key/click or when killed by dimd.
+"""
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("GtkLayerShell", "0.1")
+from gi.repository import Gtk, GtkLayerShell
+
+
+def on_key(_w, ev):
+    Gtk.main_quit()
+    return True
+
+
+def build():
+    win = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
+    win.set_app_paintable(True)
+    win.set_visual(win.get_screen().get_rgba_visual())
+    GtkLayerShell.init_for_window(win)
+    GtkLayerShell.set_layer(win, GtkLayerShell.Layer.OVERLAY)
+    GtkLayerShell.set_anchor(win, GtkLayerShell.Edge.TOP, True)
+    GtkLayerShell.set_anchor(win, GtkLayerShell.Edge.BOTTOM, True)
+    GtkLayerShell.set_anchor(win, GtkLayerShell.Edge.LEFT, True)
+    GtkLayerShell.set_anchor(win, GtkLayerShell.Edge.RIGHT, True)
+    GtkLayerShell.set_exclusive_zone(win, -1)
+    win.set_opacity(0.4)
+    css = Gtk.CssProvider()
+    css.load_from_data(b"window { background-color: black; }")
+    win.get_style_context().add_provider(css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+    win.connect("key-press-event", on_key)
+    win.connect("button-press-event", lambda *_: Gtk.main_quit() or True)
+    win.show_all()
+    return win
+
+
+if __name__ == "__main__":
+    build()
+    Gtk.main()

@@ -1,0 +1,263 @@
+#!/usr/bin/env python3
+"""dimd — dim-agent daemon: hotkey-triggered voice -> Jev -> Hyprland action.
+
+Flow: Hyprland bind spawns `dimd trigger` (push-to-talk). dimd shows the dim
+overlay, records 5s of mic audio via pw-record, transcribes with whisper.cpp,
+asks Jev (OpenRouter decisions endpoint) for app/action/risk, and — only if
+risk <= threshold and action == launch — runs `hyprctl dispatch exec`.
+"""
+import json
+import os
+import pathlib
+import shutil
+import subprocess
+import sys
+import urllib.request
+
+HOME = pathlib.Path.home()
+CFG_DIR = HOME / ".config" / "dim-agent"
+CFG_FILE = CFG_DIR / "config.toml"
+ENV_FILE = CFG_DIR / ".env"
+WHISPER_HOME = HOME / "src" / "whisper.cpp"
+WHISPER_BIN = WHISPER_HOME / "build" / "bin" / "whisper-cli"
+WHISPER_MODEL = WHISPER_HOME / "models" / "ggml-base.en.bin"
+
+DEFAULT_CONFIG = """\
+[hotkey]
+# Right Alt + Space = push-to-talk. Super+Space is reserved for input-method
+# switching on this machine. Hyprland modmask token + key.
+mod = "ALT_R"
+key = "Space"
+
+[audio]
+seconds = 5
+
+[agent]
+risk_threshold = 1
+model = "~typesafe/jev-latest"
+
+[apps]
+browser = "chromium"
+terminal = "kitty"
+files = "nautilus"
+vscode = "code"
+music = "spotify"
+settings = "gnome-control-center"
+browser_new_tab = "chromium"
+"""
+
+JEV_ENDPOINT = "https://openrouter.ai/api/alpha/decisions"
+
+JEV_QUESTIONS = {
+    "app": {
+        "type": "choice",
+        "criteria": {
+            "browser": None, "terminal": None, "files": None, "vscode": None,
+            "music": None, "settings": None, "browser_new_tab": None,
+        },
+    },
+    "action": {
+        "type": "choice",
+        "criteria": {"launch": None, "close": None, "type_text": None, "run_shell": None},
+    },
+    "risk": {
+        "type": "score",
+        "instructions": "0 read-only launch, 2 mutating",
+        "criteria": ["read-only", "navigational", "mutating"],
+    },
+}
+
+
+def load_config() -> dict:
+    """Parse a flat [section] key = "value" TOML subset without deps."""
+    cfg = {}
+    if CFG_FILE.exists():
+        section = None
+        for raw in CFG_FILE.read_text().splitlines():
+            line = raw.split("#", 1)[0].strip()
+            if not line:
+                continue
+            if line.startswith("["):
+                section = line.strip("[]")
+                cfg[section] = {}
+            elif "=" in line and section:
+                k, v = (p.strip() for p in line.split("=", 1))
+                cfg[section][k] = v.strip('"')
+    else:
+        CFG_DIR.mkdir(parents=True, exist_ok=True)
+        CFG_FILE.write_text(DEFAULT_CONFIG)
+        cfg = {
+            "hotkey": {"mod": "ALT_R", "key": "Space"},
+            "audio": {"seconds": "5"},
+            "agent": {"risk_threshold": "1", "model": "~typesafe/jev-latest"},
+            "apps": {
+                "browser": "chromium", "terminal": "kitty", "files": "nautilus",
+                "vscode": "code", "music": "spotify",
+                "settings": "gnome-control-center", "browser_new_tab": "chromium",
+            },
+        }
+    return cfg
+
+
+def load_api_key() -> str:
+    if ENV_FILE.exists():
+        for line in ENV_FILE.read_text().splitlines():
+            if line.startswith("OPENROUTER_API_KEY="):
+                return line.split("=", 1)[1].strip()
+    key = os.environ.get("OPENROUTER_API_KEY", "")
+    if not key:
+        raise RuntimeError(f"No OPENROUTER_API_KEY in {ENV_FILE} or environment")
+    return key
+
+
+def hypr_env() -> dict:
+    """Hyprland tooling needs its instance signature when run from a daemon."""
+    env = dict(os.environ)
+    if not env.get("HYPRLAND_INSTANCE_SIGNATURE"):
+        rd = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+        hypr = pathlib.Path(rd) / "hypr"
+        if hypr.is_dir():
+            env["HYPRLAND_INSTANCE_SIGNATURE"] = sorted(hypr.iterdir())[0].name
+    return env
+
+
+def notify(msg: str) -> None:
+    subprocess.run(["notify-send", "dim-agent", msg], env=hypr_env())
+
+
+def record(seconds: int) -> pathlib.Path:
+    out = CFG_DIR / "utterance.wav"
+    rec = shutil.which("pw-record") or shutil.which("arecord")
+    if rec is None:
+        raise RuntimeError("no pw-record or arecord found")
+    if rec.endswith("pw-record"):
+        cmd = [rec, "--rate", "16000", "--channels", "1", "--format", "s16",
+               "--duration", str(seconds), str(out)]
+    else:
+        cmd = [rec, "-D", "default", "-r", "16000", "-c", "1", "-f", "S16_LE",
+               "-d", str(seconds), str(out)]
+    subprocess.run(cmd, check=True, timeout=seconds + 10, env=hypr_env())
+    return out
+
+
+def transcribe(wav: pathlib.Path) -> str:
+    if not (WHISPER_BIN.exists() and WHISPER_MODEL.exists()):
+        raise RuntimeError(f"whisper.cpp missing: {WHISPER_BIN} / {WHISPER_MODEL}")
+    r = subprocess.run(
+        [str(WHISPER_BIN), "-m", str(WHISPER_MODEL), "-nt", "-f", str(wav)],
+        capture_output=True, text=True, timeout=120)
+    return " ".join(r.stdout.split())
+
+
+def ask_jev(transcript: str, model: str) -> dict:
+    payload = {
+        "model": model,
+        "input": transcript,
+        "questions": JEV_QUESTIONS,
+    }
+    req = urllib.request.Request(
+        JEV_ENDPOINT,
+        data=json.dumps(payload).encode(),
+        headers={
+            "Authorization": f"Bearer {load_api_key()}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/duketopceo/dim-agent",
+            "X-Title": "dim-agent",
+        },
+        method="POST")
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read())
+
+
+def execute(decision: dict, cfg: dict, transcript: str) -> str:
+    apps = cfg.get("apps", {})
+    threshold = int(cfg.get("agent", {}).get("risk_threshold", "1"))
+    action = decision.get("action")
+    app = decision.get("app")
+    risk = decision.get("risk")
+    # risk may come back as a score number or as a criteria label
+    if isinstance(risk, dict):
+        raw = risk.get("score", risk.get("value", 2))
+    else:
+        raw = risk
+    try:
+        risk_n = int(raw)
+    except (TypeError, ValueError):
+        risk_n = {"read-only": 0, "navigational": 1, "mutating": 2}.get(str(raw), 2)
+
+    if risk_n > threshold:
+        return f"BLOCKED (risk={risk_n} > {threshold}): {transcript!r}"
+    if action != "launch":
+        return f"SKIP (action={action!r} not implemented in v0.1)"
+    binname = apps.get(app)
+    if not binname:
+        return f"SKIP (unknown app {app!r})"
+    subprocess.run(["hyprctl", "dispatch", "exec", binname], check=True,
+                   capture_output=True, env=hypr_env())
+    return f"LAUNCHED {app} -> {binname}"
+
+
+def install_bind(cfg: dict) -> None:
+    """Idempotently add the push-to-talk bind to hyprland.conf."""
+    conf = HOME / ".config" / "hypr" / "hyprland.conf"
+    mod = cfg.get("hotkey", {}).get("mod", "ALT_R")
+    key = cfg.get("hotkey", {}).get("key", "Space")
+    bind = f"bind = {mod}, {key}, exec, {HOME}/.local/bin/dim-agent-trigger"
+    text = conf.read_text() if conf.exists() else ""
+    if "dim-agent-trigger" in text:
+        print(f"bind already present: {bind}")
+        return
+    with conf.open("a") as f:
+        f.write(f"\n# dim-agent push-to-talk\n{bind}\n")
+    print(f"added bind: {bind}")
+    subprocess.run(["hyprctl", "reload"], env=hypr_env(), capture_output=True)
+
+
+def run_once(cfg: dict) -> int:
+    overlay = None
+    try:
+        ov = shutil.which("dim-overlay")
+        if ov:
+            overlay = subprocess.Popen([ov], env=hypr_env(),
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+    try:
+        secs = int(cfg.get("audio", {}).get("seconds", "5"))
+        wav = record(secs)
+        text = transcribe(wav)
+        print(f"transcript: {text!r}")
+        if not text:
+            notify("heard nothing")
+            return 0
+        decision_resp = ask_jev(text, cfg.get("agent", {}).get("model", "~typesafe/jev-latest"))
+        print(f"jev: {json.dumps(decision_resp)[:400]}")
+        # decisions endpoint shape: try common keys for the answers
+        answers = decision_resp.get("answers") or decision_resp.get("decisions") or decision_resp
+        result = execute(answers, cfg, text)
+        print(f"result: {result}")
+        notify(result)
+        return 0
+    except Exception as e:
+        notify(f"error: {e}")
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    finally:
+        if overlay:
+            overlay.terminate()
+
+
+def main() -> int:
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "run"
+    cfg = load_config()
+    if cmd == "install":
+        install_bind(cfg)
+        return 0
+    if cmd == "trigger":
+        return run_once(cfg)
+    print("usage: dimd [install|trigger]")
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

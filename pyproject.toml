@@ -1,0 +1,9 @@
+[project]
+name = "dim-agent"
+version = "0.2.0"
+description = "Jev-powered voice computer-use agent for Omarchy (Hyprland)"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+dimd = "dimd:main"
