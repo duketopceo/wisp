@@ -27,8 +27,8 @@ HOME = pathlib.Path.home()
 CFG_DIR = HOME / ".config" / "dim-agent"
 CFG_FILE = CFG_DIR / "config.toml"
 ENV_FILE = CFG_DIR / ".env"
-REPO_DIR = HOME / "GitHub" / "duketopceo" / "dim-agent"
-CORRECTIONS = REPO_DIR / "data" / "corrections.jsonl"
+DATA_DIR = pathlib.Path(os.environ.get("XDG_DATA_HOME", HOME / ".local" / "share")) / "dim-agent"
+CORRECTIONS = DATA_DIR / "corrections.jsonl"
 RUN_DIR = pathlib.Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "dim-agent"
 LEVEL_FILE = RUN_DIR / "level"
 WHISPER_HOME = HOME / "src" / "whisper.cpp"
@@ -38,8 +38,10 @@ OVERLAY_BIN = HOME / ".local" / "opt" / "dim-agent" / "dim-overlay"
 
 DEFAULT_CONFIG = """\
 [hotkey]
-# Right Alt + Space = push-to-talk (Super+Space is reserved for input-method
-# switching). Hyprland modmask token + key, remappable here.
+# Right Option (Alt_R) + Space = push-to-talk. ALT_R is a keysym, not a
+# modmask token: the bind is a multi-key bind, so it fires on right alt
+# only and leaves left alt free (e.g. Alt_L+Space dictation). A generic
+# "ALT + SPACE" bind elsewhere will still collide — scope those to Alt_L.
 mod = "ALT_R"
 key = "Space"
 
@@ -133,7 +135,7 @@ def _default_cfg_dict():
             "confidence_instant": "0.95", "confidence_ambiguous": "0.8",
         },
         "apps": {
-            "browser": "chromium", "terminal": "kitty", "files": "nautilus",
+            "browser": "chromium", "terminal": "ghostty", "files": "nautilus",
             "vscode": "code", "music": "spotify",
             "settings": "gnome-control-center", "browser_new_tab": "chromium",
         },
@@ -344,19 +346,50 @@ def run_once(cfg: dict) -> int:
             overlay.terminate()
 
 
+def install_files() -> None:
+    """Copy dimd + dim-overlay to ~/.local/opt/dim-agent and write the
+    ~/.local/bin/dim-agent-trigger shim the Hyprland bind executes."""
+    src = pathlib.Path(__file__).resolve().parent
+    opt = HOME / ".local" / "opt" / "dim-agent"
+    opt.mkdir(parents=True, exist_ok=True)
+    for name in ("dimd", "dim-overlay"):
+        target = opt / name
+        shutil.copy2(src / name, target)
+        target.chmod(0o755)
+        print(f"installed {target}")
+    trigger = HOME / ".local" / "bin" / "dim-agent-trigger"
+    trigger.parent.mkdir(parents=True, exist_ok=True)
+    trigger.write_text(f"#!/bin/sh\nexec python3 {opt}/dimd trigger\n")
+    trigger.chmod(0o755)
+    print(f"installed {trigger}")
+
+
 def install_bind(cfg: dict) -> None:
-    """Idempotently add the push-to-talk bind to hyprland.conf."""
-    conf = HOME / ".config" / "hypr" / "hyprland.conf"
+    """Idempotently add the push-to-talk bind to ~/.config/hypr/bindings.lua.
+
+    Omarchy configures Hyprland in Lua; hyprland.conf is not sourced, so a
+    `bind =` line there is dead. Legacy installs wrote one — strip it.
+    """
     mod = cfg.get("hotkey", {}).get("mod", "ALT_R")
     key = cfg.get("hotkey", {}).get("key", "Space")
-    bind = f"bind = {mod}, {key}, exec, {HOME}/.local/bin/dim-agent-trigger"
-    text = conf.read_text() if conf.exists() else ""
+    trigger = f"{HOME}/.local/bin/dim-agent-trigger"
+    bind = f'o.bind("{mod} + {key.upper()}", "Dim push-to-talk", {{ launch = "{trigger}" }})'
+
+    conf = HOME / ".config" / "hypr" / "hyprland.conf"
+    if conf.exists() and "dim-agent-trigger" in conf.read_text():
+        lines = [l for l in conf.read_text().splitlines()
+                 if "dim-agent-trigger" not in l and l.strip() != "# Dim push-to-talk"]
+        conf.write_text("\n".join(lines) + "\n")
+        print("removed dead bind from hyprland.conf (not sourced under Lua config)")
+
+    bindings = HOME / ".config" / "hypr" / "bindings.lua"
+    text = bindings.read_text() if bindings.exists() else ""
     if "dim-agent-trigger" in text:
-        print(f"bind already present: {bind}")
+        print(f"bind already present in {bindings}")
         return
-    with conf.open("a") as f:
-        f.write(f"\n# Dim push-to-talk\n{bind}\n")
-    print(f"added bind: {bind}")
+    with bindings.open("a") as f:
+        f.write(f"\n-- Dim push-to-talk\n{bind}\n")
+    print(f"added bind to {bindings}: {bind}")
     subprocess.run(["hyprctl", "reload"], env=hypr_env(), capture_output=True)
 
 
@@ -364,6 +397,7 @@ def main() -> int:
     cmd = sys.argv[1] if len(sys.argv) > 1 else "run"
     cfg = load_config()
     if cmd == "install":
+        install_files()
         install_bind(cfg)
         return 0
     if cmd == "trigger":

@@ -26,5 +26,7 @@ print(json.dumps(json.loads(urllib.request.urlopen(req, timeout=30).read()), ind
 EOF
 
 # 4. hyprctl launch (guarded: only because we expect launch+low risk)
+# Same path dimd uses: Hyprland 0.56 Lua dispatcher (dispatch exec hits the
+# hyprwm/Hyprland#16224 Lua parse bug).
 export HYPRLAND_INSTANCE_SIGNATURE=$(ls $XDG_RUNTIME_DIR/hypr | head -1)
-hyprctl dispatch exec kitty && echo "LAUNCH OK"
+hyprctl eval 'hl.dsp.exec_cmd("ghostty")' && echo "LAUNCH OK"

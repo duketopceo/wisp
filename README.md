@@ -16,7 +16,8 @@ Push-to-talk → PipeWire mic capture → whisper.cpp transcription → Jev deci
 - **Confidence-gated UI**: Jev confidence ≥ 0.95 executes instantly; < 0.8
   shows the ambiguous choices as clickable buttons in the overlay.
 - **Decision log + corrections lane**: every decision is appended to
-  `data/corrections.jsonl`; `scripts/propose_criteria.py` (manual, weekly,
+  `~/.local/share/dim-agent/corrections.jsonl` (XDG data dir);
+  `scripts/propose_criteria.py` (manual, weekly,
   NOT cron-scheduled yet) clusters corrections into proposed new choice
   criteria. Review the proposal, then edit `JEV_QUESTIONS` in `dimd`.
 
@@ -47,15 +48,21 @@ Push-to-talk → PipeWire mic capture → whisper.cpp transcription → Jev deci
 
 ## Hotkey
 
-**Right Alt + Space** is push-to-talk (default). Super+Space is reserved for input-method switching on this machine. Remap in `~/.config/dim-agent/config.toml`:
+**Right Option (Alt_R) + Space** is push-to-talk (default). Super+Space is reserved for input-method switching on this machine. Remap in `~/.config/dim-agent/config.toml`:
 
 ```toml
 [hotkey]
-mod = "ALT_R"   # Hyprland modmask token
+mod = "ALT_R"   # keysym — parsed as a multi-key bind, not a modmask
 key = "Space"
 ```
 
-The installer writes the matching `bind = ALT_R, Space, exec, ~/.local/bin/dim-agent-trigger` line into `~/.config/hypr/hyprland.conf` (idempotent — skips if `dim-agent` bind already present). Check for conflicts first: `hyprctl binds | grep -A3 ALT_R`.
+`dimd install` copies `dimd` + `dim-overlay` to `~/.local/opt/dim-agent/`, writes the `~/.local/bin/dim-agent-trigger` shim, and appends a Lua bind to `~/.config/hypr/bindings.lua` (idempotent):
+
+```lua
+o.bind("Alt_R + SPACE", "Dim push-to-talk", { launch = "~/.local/bin/dim-agent-trigger" })
+```
+
+Omarchy configures Hyprland in **Lua** — `hyprland.conf` is not sourced, and `dimd install` strips any legacy `bind =` line it wrote there. Because `Alt_R` resolves to a keysym, the bind is a multi-key chord: it fires on the *right* Option only. Note that a generic `ALT + SPACE` bind elsewhere still matches either alt — scope such binds to `Alt_L` (this machine keeps `Alt_L + Space` for voxtype dictation). Check conflicts first: `omarchy menu keybindings --print | grep SPACE`.
 
 ## Overlay choice (documented decision)
 

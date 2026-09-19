@@ -3,15 +3,17 @@
 clusters user corrections into proposed new choice criteria.
 
 Usage: python3 scripts/propose_criteria.py [path/to/corrections.jsonl]
+Default path: $XDG_DATA_HOME/dim-agent/corrections.jsonl (~/.local/share/dim-agent/).
 Output: a human-readable proposal report on stdout. NOT scheduled by cron yet
 (documented workflow: run manually, review, then edit JEV_QUESTIONS in dimd).
 """
 import json
+import os
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-default_path = Path(__file__).resolve().parent.parent / "data" / "corrections.jsonl"
+default_path = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "dim-agent" / "corrections.jsonl"
 
 
 def load(path: Path):
