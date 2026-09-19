@@ -8,22 +8,28 @@ Push-to-talk → PipeWire mic capture → whisper.cpp transcription → Jev deci
 
 ## Features
 
+<<<<<<< HEAD
 - **v0.1 vertical slice**: Right Alt + Space → 5s mic capture → whisper.cpp →
   Jev (`openrouter.ai/api/alpha/decisions`, model `typesafe/jev-1.13`) →
+=======
+- **v0.1 vertical slice**: Super + D → 5s mic capture → whisper.cpp →
+  Jev (`openrouter.ai/api/alpha/decisions`, model `~typesafe/jev-latest`) →
+>>>>>>> origin/master
   guarded launch (`hyprctl dispatch exec`) + notify-send.
 - **Breathing darkness**: overlay opacity modulates with live mic amplitude
   during capture; silence restores full brightness.
 - **Confidence-gated UI**: Jev confidence ≥ 0.95 executes instantly; < 0.8
   shows the ambiguous choices as clickable buttons in the overlay.
 - **Decision log + corrections lane**: every decision is appended to
-  `data/corrections.jsonl`; `scripts/propose_criteria.py` (manual, weekly,
+  `~/.local/share/dim-agent/corrections.jsonl` (XDG data dir);
+  `scripts/propose_criteria.py` (manual, weekly,
   NOT cron-scheduled yet) clusters corrections into proposed new choice
   criteria. Review the proposal, then edit `JEV_QUESTIONS` in `dimd`.
 
 ## Architecture
 
 ```
-[Right Alt + Space] ──bind──▶ dimd ──▶ pw-record 5s mic wav
+[Super + D] ──bind──▶ dimd ──▶ pw-record 5s mic wav
                                         │
                                         ▼
                                  whisper.cpp (ggml-base.en)
@@ -47,15 +53,21 @@ Push-to-talk → PipeWire mic capture → whisper.cpp transcription → Jev deci
 
 ## Hotkey
 
-**Right Alt + Space** is push-to-talk (default). Super+Space is reserved for input-method switching on this machine. Remap in `~/.config/dim-agent/config.toml`:
+**Super + D** is push-to-talk (default). Remap in `~/.config/dim-agent/config.toml`:
 
 ```toml
 [hotkey]
-mod = "ALT_R"   # Hyprland modmask token
-key = "Space"
+mod = "SUPER"   # modmask token; a keysym like ALT_R makes a side-specific multi-key bind
+key = "D"
 ```
 
-The installer writes the matching `bind = ALT_R, Space, exec, ~/.local/bin/dim-agent-trigger` line into `~/.config/hypr/hyprland.conf` (idempotent — skips if `dim-agent` bind already present). Check for conflicts first: `hyprctl binds | grep -A3 ALT_R`.
+`dimd install` copies `dimd` + `dim-overlay` to `~/.local/opt/dim-agent/`, writes the `~/.local/bin/dim-agent-trigger` shim, and appends a Lua bind to `~/.config/hypr/bindings.lua` (idempotent):
+
+```lua
+o.bind("SUPER + D", "Dim push-to-talk", { launch = "~/.local/bin/dim-agent-trigger" })
+```
+
+Omarchy configures Hyprland in **Lua** — `hyprland.conf` is not sourced, and `dimd install` strips any legacy `bind =` line it wrote there. `mod` is normally a modmask token (`SUPER`/`ALT`/`SHIFT`/`CTRL`); a keysym like `ALT_R` instead produces a side-specific multi-key chord (e.g. right-Option-only). Check conflicts first: `omarchy menu keybindings --print`.
 
 ## Overlay choice (documented decision)
 
