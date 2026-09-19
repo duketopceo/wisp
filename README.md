@@ -8,7 +8,7 @@ Push-to-talk → PipeWire mic capture → whisper.cpp transcription → Jev deci
 
 ## Features
 
-- **v0.1 vertical slice**: Right Alt + Space → 5s mic capture → whisper.cpp →
+- **v0.1 vertical slice**: Super + D → 5s mic capture → whisper.cpp →
   Jev (`openrouter.ai/api/alpha/decisions`, model `~typesafe/jev-latest`) →
   guarded launch (`hyprctl dispatch exec`) + notify-send.
 - **Breathing darkness**: overlay opacity modulates with live mic amplitude
@@ -24,7 +24,7 @@ Push-to-talk → PipeWire mic capture → whisper.cpp transcription → Jev deci
 ## Architecture
 
 ```
-[Right Alt + Space] ──bind──▶ dimd ──▶ pw-record 5s mic wav
+[Super + D] ──bind──▶ dimd ──▶ pw-record 5s mic wav
                                         │
                                         ▼
                                  whisper.cpp (ggml-base.en)
@@ -48,21 +48,21 @@ Push-to-talk → PipeWire mic capture → whisper.cpp transcription → Jev deci
 
 ## Hotkey
 
-**Right Option (Alt_R) + Space** is push-to-talk (default). Super+Space is reserved for input-method switching on this machine. Remap in `~/.config/dim-agent/config.toml`:
+**Super + D** is push-to-talk (default). Remap in `~/.config/dim-agent/config.toml`:
 
 ```toml
 [hotkey]
-mod = "ALT_R"   # keysym — parsed as a multi-key bind, not a modmask
-key = "Space"
+mod = "SUPER"   # modmask token; a keysym like ALT_R makes a side-specific multi-key bind
+key = "D"
 ```
 
 `dimd install` copies `dimd` + `dim-overlay` to `~/.local/opt/dim-agent/`, writes the `~/.local/bin/dim-agent-trigger` shim, and appends a Lua bind to `~/.config/hypr/bindings.lua` (idempotent):
 
 ```lua
-o.bind("Alt_R + SPACE", "Dim push-to-talk", { launch = "~/.local/bin/dim-agent-trigger" })
+o.bind("SUPER + D", "Dim push-to-talk", { launch = "~/.local/bin/dim-agent-trigger" })
 ```
 
-Omarchy configures Hyprland in **Lua** — `hyprland.conf` is not sourced, and `dimd install` strips any legacy `bind =` line it wrote there. Because `Alt_R` resolves to a keysym, the bind is a multi-key chord: it fires on the *right* Option only. Note that a generic `ALT + SPACE` bind elsewhere still matches either alt — scope such binds to `Alt_L` (this machine keeps `Alt_L + Space` for voxtype dictation). Check conflicts first: `omarchy menu keybindings --print | grep SPACE`.
+Omarchy configures Hyprland in **Lua** — `hyprland.conf` is not sourced, and `dimd install` strips any legacy `bind =` line it wrote there. `mod` is normally a modmask token (`SUPER`/`ALT`/`SHIFT`/`CTRL`); a keysym like `ALT_R` instead produces a side-specific multi-key chord (e.g. right-Option-only). Check conflicts first: `omarchy menu keybindings --print`.
 
 ## Overlay choice (documented decision)
 

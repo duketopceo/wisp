@@ -38,12 +38,10 @@ OVERLAY_BIN = HOME / ".local" / "opt" / "dim-agent" / "dim-overlay"
 
 DEFAULT_CONFIG = """\
 [hotkey]
-# Right Option (Alt_R) + Space = push-to-talk. ALT_R is a keysym, not a
-# modmask token: the bind is a multi-key bind, so it fires on right alt
-# only and leaves left alt free (e.g. Alt_L+Space dictation). A generic
-# "ALT + SPACE" bind elsewhere will still collide — scope those to Alt_L.
-mod = "ALT_R"
-key = "Space"
+# Super + D = push-to-talk. mod is a Hyprland modmask token (SUPER, ALT,
+# SHIFT, CTRL) or a keysym like ALT_R (multi-key bind, side-specific).
+mod = "SUPER"
+key = "D"
 
 [audio]
 seconds = 5
@@ -128,7 +126,7 @@ def load_config() -> dict:
 
 def _default_cfg_dict():
     return {
-        "hotkey": {"mod": "ALT_R", "key": "Space"},
+        "hotkey": {"mod": "SUPER", "key": "D"},
         "audio": {"seconds": "5"},
         "agent": {
             "model": "~typesafe/jev-latest", "risk_threshold": "1.5",
@@ -370,8 +368,8 @@ def install_bind(cfg: dict) -> None:
     Omarchy configures Hyprland in Lua; hyprland.conf is not sourced, so a
     `bind =` line there is dead. Legacy installs wrote one — strip it.
     """
-    mod = cfg.get("hotkey", {}).get("mod", "ALT_R")
-    key = cfg.get("hotkey", {}).get("key", "Space")
+    mod = cfg.get("hotkey", {}).get("mod", "SUPER")
+    key = cfg.get("hotkey", {}).get("key", "D")
     trigger = f"{HOME}/.local/bin/dim-agent-trigger"
     bind = f'o.bind("{mod} + {key.upper()}", "Dim push-to-talk", {{ launch = "{trigger}" }})'
 
