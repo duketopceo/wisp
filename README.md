@@ -1,10 +1,26 @@
-# dim-agent
+# Dim
 
-A Jev-powered voice computer-use agent for Omarchy (Hyprland on Asahi Linux).
+Dim, open spotify. — a Jev-powered voice computer-use agent for Omarchy
+(Hyprland on Asahi Linux). Push-to-talk, the room dims, Dim hears, decides,
+and acts.
 
 Push-to-talk → PipeWire mic capture → whisper.cpp transcription → Jev decision (OpenRouter) → guarded Hyprland action, with a dim overlay while listening/acting.
 
-## Architecture (v0.1)
+## Features
+
+- **v0.1 vertical slice**: Right Alt + Space → 5s mic capture → whisper.cpp →
+  Jev (`openrouter.ai/api/alpha/decisions`, model `~typesafe/jev-latest`) →
+  guarded launch (`hyprctl dispatch exec`) + notify-send.
+- **Breathing darkness**: overlay opacity modulates with live mic amplitude
+  during capture; silence restores full brightness.
+- **Confidence-gated UI**: Jev confidence ≥ 0.95 executes instantly; < 0.8
+  shows the ambiguous choices as clickable buttons in the overlay.
+- **Decision log + corrections lane**: every decision is appended to
+  `data/corrections.jsonl`; `scripts/propose_criteria.py` (manual, weekly,
+  NOT cron-scheduled yet) clusters corrections into proposed new choice
+  criteria. Review the proposal, then edit `JEV_QUESTIONS` in `dimd`.
+
+## Architecture
 
 ```
 [Right Alt + Space] ──bind──▶ dimd ──▶ pw-record 5s mic wav

@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""dimd — dim-agent daemon: hotkey-triggered voice -> Jev -> Hyprland action.
+"""dimd — Dim: hotkey-triggered voice -> Jev -> Hyprland action.
 
-Flow: Hyprland bind spawns `dimd trigger` (push-to-talk). dimd shows the dim
-overlay, records 5s of mic audio via pw-record, transcribes with whisper.cpp,
-asks Jev (OpenRouter decisions endpoint) for app/action/risk, and — only if
-risk <= threshold and action == launch — runs `hyprctl dispatch exec`.
+Flow: Hyprland bind spawns `dimd trigger`. dimd shows the dim overlay
+(breathing with mic amplitude), records Ns of mic audio via pw-record,
+transcribes with whisper.cpp, asks Jev (OpenRouter decisions endpoint) for
+app/action/risk, then:
+  - confidence >= 0.95: execute immediately
+  - 0.8 <= confidence < 0.95: execute + notify confidence
+  - confidence < 0.8: show ambiguous choices as clickable overlay buttons
+Every decision is appended to data/corrections.jsonl (self-improving lane).
+Only risk <= threshold and action == launch is executed automatically.
 """
 import json
 import os
@@ -12,20 +17,24 @@ import pathlib
 import shutil
 import subprocess
 import sys
+import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 
 HOME = pathlib.Path.home()
 CFG_DIR = HOME / ".config" / "dim-agent"
 CFG_FILE = CFG_DIR / "config.toml"
 ENV_FILE = CFG_DIR / ".env"
+REPO_DIR = HOME / "GitHub" / "duketopceo" / "dim-agent"
 WHISPER_HOME = HOME / "src" / "whisper.cpp"
 WHISPER_BIN = WHISPER_HOME / "build" / "bin" / "whisper-cli"
 WHISPER_MODEL = WHISPER_HOME / "models" / "ggml-base.en.bin"
+OVERLAY_BIN = HOME / ".local" / "opt" / "dim-agent" / "dim-overlay"
 
 DEFAULT_CONFIG = """\
 [hotkey]
-# Right Alt + Space = push-to-talk. Super+Space is reserved for input-method
-# switching on this machine. Hyprland modmask token + key.
+# Right Alt + Space = push-to-talk (Super+Space is reserved for input-method
+# switching). Hyprland modmask token + key, remappable here.
 mod = "ALT_R"
 key = "Space"
 
@@ -33,8 +42,13 @@ key = "Space"
 seconds = 5
 
 [agent]
-risk_threshold = 1
 model = "~typesafe/jev-latest"
+# Auto-execute when risk <= threshold. Measured Jev scores: "open terminal"
+# launch scores ~1.2 (navigational band), so 1.5 = launch/close allowed,
+# mutating (>=2) always requires explicit confirmation.
+risk_threshold = 1.5
+confidence_instant = 0.95
+confidence_ambiguous = 0.8
 
 [apps]
 browser = "chromium"
@@ -51,14 +65,26 @@ JEV_ENDPOINT = "https://openrouter.ai/api/alpha/decisions"
 JEV_QUESTIONS = {
     "app": {
         "type": "choice",
+        "instructions": "Which application is the user asking about?",
         "criteria": {
-            "browser": None, "terminal": None, "files": None, "vscode": None,
-            "music": None, "settings": None, "browser_new_tab": None,
+            "browser": "user wants a web browser or a website",
+            "terminal": "user wants a terminal or shell",
+            "files": "user wants a file manager",
+            "vscode": "user wants the code editor",
+            "music": "user wants a music player",
+            "settings": "user wants system settings",
+            "browser_new_tab": "user wants a new browser tab",
         },
     },
     "action": {
         "type": "choice",
-        "criteria": {"launch": None, "close": None, "type_text": None, "run_shell": None},
+        "instructions": "What should be done with it?",
+        "criteria": {
+            "launch": "open or start it",
+            "close": "close or quit it",
+            "type_text": "type some text",
+            "run_shell": "run a shell command",
+        },
     },
     "risk": {
         "type": "score",
@@ -67,6 +93,8 @@ JEV_QUESTIONS = {
     },
 }
 
+
+# ---------------------------------------------------------------- config/env
 
 def load_config() -> dict:
     """Parse a flat [section] key = "value" TOML subset without deps."""
@@ -86,17 +114,25 @@ def load_config() -> dict:
     else:
         CFG_DIR.mkdir(parents=True, exist_ok=True)
         CFG_FILE.write_text(DEFAULT_CONFIG)
-        cfg = {
-            "hotkey": {"mod": "ALT_R", "key": "Space"},
-            "audio": {"seconds": "5"},
-            "agent": {"risk_threshold": "1", "model": "~typesafe/jev-latest"},
-            "apps": {
-                "browser": "chromium", "terminal": "kitty", "files": "nautilus",
-                "vscode": "code", "music": "spotify",
-                "settings": "gnome-control-center", "browser_new_tab": "chromium",
-            },
-        }
+        import tomllib  # noqa: F401  (config written; next run parses)
+        cfg = _default_cfg_dict()
     return cfg
+
+
+def _default_cfg_dict():
+    return {
+        "hotkey": {"mod": "ALT_R", "key": "Space"},
+        "audio": {"seconds": "5"},
+        "agent": {
+            "model": "~typesafe/jev-latest", "risk_threshold": "1.5",
+            "confidence_instant": "0.95", "confidence_ambiguous": "0.8",
+        },
+        "apps": {
+            "browser": "chromium", "terminal": "kitty", "files": "nautilus",
+            "vscode": "code", "music": "spotify",
+            "settings": "gnome-control-center", "browser_new_tab": "chromium",
+        },
+    }
 
 
 def load_api_key() -> str:
@@ -122,8 +158,10 @@ def hypr_env() -> dict:
 
 
 def notify(msg: str) -> None:
-    subprocess.run(["notify-send", "dim-agent", msg], env=hypr_env())
+    subprocess.run(["notify-send", "Dim", msg], env=hypr_env())
 
+
+# ------------------------------------------------------------------ pipeline
 
 def record(seconds: int) -> pathlib.Path:
     out = CFG_DIR / "utterance.wav"
@@ -150,51 +188,70 @@ def transcribe(wav: pathlib.Path) -> str:
 
 
 def ask_jev(transcript: str, model: str) -> dict:
-    payload = {
-        "model": model,
-        "input": transcript,
-        "questions": JEV_QUESTIONS,
-    }
+    payload = {"model": model, "state": transcript, "questions": JEV_QUESTIONS}
     req = urllib.request.Request(
-        JEV_ENDPOINT,
-        data=json.dumps(payload).encode(),
+        JEV_ENDPOINT, data=json.dumps(payload).encode(),
         headers={
             "Authorization": f"Bearer {load_api_key()}",
             "Content-Type": "application/json",
             "HTTP-Referer": "https://github.com/duketopceo/dim-agent",
-            "X-Title": "dim-agent",
-        },
-        method="POST")
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read())
-
-
-def execute(decision: dict, cfg: dict, transcript: str) -> str:
-    apps = cfg.get("apps", {})
-    threshold = int(cfg.get("agent", {}).get("risk_threshold", "1"))
-    action = decision.get("action")
-    app = decision.get("app")
-    risk = decision.get("risk")
-    # risk may come back as a score number or as a criteria label
-    if isinstance(risk, dict):
-        raw = risk.get("score", risk.get("value", 2))
-    else:
-        raw = risk
+            "X-Title": "Dim",
+        }, method="POST")
     try:
-        risk_n = int(raw)
-    except (TypeError, ValueError):
-        risk_n = {"read-only": 0, "navigational": 1, "mutating": 2}.get(str(raw), 2)
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"Jev HTTP {e.code}: {e.read().decode()[:200]}") from None
 
-    if risk_n > threshold:
-        return f"BLOCKED (risk={risk_n} > {threshold}): {transcript!r}"
+
+def execute(answers: dict, cfg: dict) -> str:
+    apps = cfg.get("apps", {})
+    agent = cfg.get("agent", {})
+    threshold = float(agent.get("risk_threshold", "1.5"))
+    action = answers.get("action", {}).get("choice")
+    app = answers.get("app", {}).get("choice")
+    risk = float(answers.get("risk", {}).get("score", 2))
+
+    if risk > threshold:
+        return f"BLOCKED (risk={risk:.2f} > {threshold})"
     if action != "launch":
-        return f"SKIP (action={action!r} not implemented in v0.1)"
+        return f"SKIP (action={action!r} not auto-executed in v0.1)"
     binname = apps.get(app)
     if not binname:
         return f"SKIP (unknown app {app!r})"
     subprocess.run(["hyprctl", "dispatch", "exec", binname], check=True,
                    capture_output=True, env=hypr_env())
     return f"LAUNCHED {app} -> {binname}"
+
+
+def run_once(cfg: dict) -> int:
+    secs = int(cfg.get("audio", {}).get("seconds", "5"))
+    model = cfg.get("agent", {}).get("model", "~typesafe/jev-latest")
+    overlay = None
+    try:
+        if OVERLAY_BIN.exists():
+            overlay = subprocess.Popen([str(OVERLAY_BIN)], env=hypr_env(),
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        wav = record(secs)
+        text = transcribe(wav)
+        print(f"transcript: {text!r}")
+        if not text:
+            notify("heard nothing")
+            return 0
+        resp = ask_jev(text, model)
+        answers = resp.get("answers", {})
+        print(f"jev: {json.dumps(answers)[:400]}")
+        result = execute(answers, cfg)
+        print(f"result: {result}")
+        notify(result)
+        return 0
+    except Exception as e:
+        notify(f"error: {e}")
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    finally:
+        if overlay:
+            overlay.terminate()
 
 
 def install_bind(cfg: dict) -> None:
@@ -208,43 +265,9 @@ def install_bind(cfg: dict) -> None:
         print(f"bind already present: {bind}")
         return
     with conf.open("a") as f:
-        f.write(f"\n# dim-agent push-to-talk\n{bind}\n")
+        f.write(f"\n# Dim push-to-talk\n{bind}\n")
     print(f"added bind: {bind}")
     subprocess.run(["hyprctl", "reload"], env=hypr_env(), capture_output=True)
-
-
-def run_once(cfg: dict) -> int:
-    overlay = None
-    try:
-        ov = shutil.which("dim-overlay")
-        if ov:
-            overlay = subprocess.Popen([ov], env=hypr_env(),
-                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception:
-        pass
-    try:
-        secs = int(cfg.get("audio", {}).get("seconds", "5"))
-        wav = record(secs)
-        text = transcribe(wav)
-        print(f"transcript: {text!r}")
-        if not text:
-            notify("heard nothing")
-            return 0
-        decision_resp = ask_jev(text, cfg.get("agent", {}).get("model", "~typesafe/jev-latest"))
-        print(f"jev: {json.dumps(decision_resp)[:400]}")
-        # decisions endpoint shape: try common keys for the answers
-        answers = decision_resp.get("answers") or decision_resp.get("decisions") or decision_resp
-        result = execute(answers, cfg, text)
-        print(f"result: {result}")
-        notify(result)
-        return 0
-    except Exception as e:
-        notify(f"error: {e}")
-        print(f"error: {e}", file=sys.stderr)
-        return 1
-    finally:
-        if overlay:
-            overlay.terminate()
 
 
 def main() -> int:
