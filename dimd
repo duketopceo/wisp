@@ -178,7 +178,7 @@ def record(seconds: int) -> pathlib.Path:
         raise RuntimeError("no pw-record or arecord found")
     if rec.endswith("pw-record"):
         cmd = [rec, "--rate", "16000", "--channels", "1", "--format", "s16",
-               "--duration", str(seconds), str(out)]
+               "--sample-count", str(16000 * seconds), str(out)]
     else:
         cmd = [rec, "-D", "default", "-r", "16000", "-c", "1", "-f", "S16_LE",
                "-d", str(seconds), str(out)]
