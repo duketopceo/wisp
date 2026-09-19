@@ -9,7 +9,7 @@ Push-to-talk → PipeWire mic capture → whisper.cpp transcription → Jev deci
 ## Features
 
 - **v0.1 vertical slice**: Right Alt + Space → 5s mic capture → whisper.cpp →
-  Jev (`openrouter.ai/api/alpha/decisions`, model `~typesafe/jev-latest`) →
+  Jev (`openrouter.ai/api/alpha/decisions`, model `typesafe/jev-1.13`) →
   guarded launch (`hyprctl dispatch exec`) + notify-send.
 - **Breathing darkness**: overlay opacity modulates with live mic amplitude
   during capture; silence restores full brightness.
@@ -30,7 +30,7 @@ Push-to-talk → PipeWire mic capture → whisper.cpp transcription → Jev deci
                                         │
                                         ▼
                           POST openrouter.ai/api/alpha/decisions
-                          model: ~typesafe/jev-latest
+                          model: typesafe/jev-1.13
                           questions: app / action / risk
                                         │
                               risk ≤ 1 and action == launch
