@@ -20,6 +20,11 @@ Push-to-talk → PipeWire mic capture → whisper.cpp transcription → Jev deci
   during capture; silence restores full brightness.
 - **Confidence-gated UI**: Jev confidence ≥ 0.95 executes instantly; < 0.8
   shows the ambiguous choices as clickable buttons in the overlay.
+- **Local Jev harness**: `dimd harness` (or `scripts/build_harness.py`) mines
+  the local dayflow activity DB for the apps you actually use + project
+  vocabulary, resolves each to a real launch command, and writes
+  `~/.config/dim-agent/harness.json`. dimd rebuilds Jev's app catalog and
+  decision context from it at trigger time. Local-only, never committed.
 - **Decision log + corrections lane**: every decision is appended to
   `~/.local/share/dim-agent/corrections.jsonl` (XDG data dir);
   `scripts/propose_criteria.py` (manual, weekly,

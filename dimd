@@ -67,6 +67,8 @@ browser_new_tab = "chromium"
 
 JEV_ENDPOINT = "https://openrouter.ai/api/alpha/decisions"
 
+HARNESS_FILE = CFG_DIR / "harness.json"
+
 JEV_QUESTIONS = {
     "app": {
         "type": "choice",
@@ -151,6 +153,28 @@ def load_api_key() -> str:
     return key
 
 
+def load_harness() -> dict | None:
+    """Local personalization built by scripts/build_harness.py from dayflow
+    activity data. Never committed — lives in ~/.config/dim-agent/."""
+    try:
+        return json.loads(HARNESS_FILE.read_text())
+    except Exception:
+        return None
+
+
+def build_questions(harness: dict | None) -> dict:
+    """Jev questions with the app catalog rebuilt from the local harness."""
+    if not harness or not harness.get("apps"):
+        return JEV_QUESTIONS
+    q = json.loads(json.dumps(JEV_QUESTIONS))
+    q["app"]["criteria"] = {
+        name: f"{a.get('cues', name)}"
+        + (f" (frequently used: {a['seen']}x)" if a.get("seen", 0) >= 5 else "")
+        for name, a in harness["apps"].items()
+    }
+    return q
+
+
 def hypr_env() -> dict:
     """Hyprland tooling needs its instance signature when run from a daemon."""
     env = dict(os.environ)
@@ -182,7 +206,11 @@ def record(seconds: int) -> pathlib.Path:
     else:
         cmd = [rec, "-D", "default", "-r", "16000", "-c", "1", "-f", "S16_LE",
                "-d", str(seconds), str(out)]
-    subprocess.run(cmd, check=True, timeout=seconds + 10, env=hypr_env())
+    # pw-record exits 1 on clean --sample-count shutdown (pipewire 1.6.x);
+    # trust the output file, not the exit code.
+    subprocess.run(cmd, timeout=seconds + 10, env=hypr_env())
+    if not (out.exists() and out.stat().st_size > 44):
+        raise RuntimeError(f"recording produced no audio: {out}")
     time.sleep(0.3)
     LEVEL_FILE.write_text("0.0")  # silence restores full brightness
     return out
@@ -228,8 +256,10 @@ def transcribe(wav: pathlib.Path) -> str:
     return " ".join(r.stdout.split())
 
 
-def ask_jev(transcript: str, model: str) -> dict:
-    payload = {"model": model, "state": transcript, "questions": JEV_QUESTIONS}
+def ask_jev(transcript: str, model: str, questions: dict,
+            context: str = "") -> dict:
+    state = f"{context}\n\nThe user said: \"{transcript}\"" if context else transcript
+    payload = {"model": model, "state": state, "questions": questions}
     req = urllib.request.Request(
         JEV_ENDPOINT, data=json.dumps(payload).encode(),
         headers={
@@ -245,8 +275,11 @@ def ask_jev(transcript: str, model: str) -> dict:
         raise RuntimeError(f"Jev HTTP {e.code}: {e.read().decode()[:200]}") from None
 
 
-def execute(answers: dict, cfg: dict) -> str:
-    apps = cfg.get("apps", {})
+def execute(answers: dict, cfg: dict, harness: dict | None = None) -> str:
+    apps = dict(cfg.get("apps", {}))
+    if harness:
+        apps.update({n: a["launch"] for n, a in harness.get("apps", {}).items()
+                     if a.get("launch")})
     agent = cfg.get("agent", {})
     threshold = float(agent.get("risk_threshold", "1.5"))
     action = answers.get("action", {}).get("choice")
@@ -260,6 +293,9 @@ def execute(answers: dict, cfg: dict) -> str:
     binname = apps.get(app)
     if not binname:
         return f"SKIP (unknown app {app!r})"
+    binary = binname.split()[0]
+    if not (shutil.which(binary) or (HOME / ".local" / "bin" / binary).exists()):
+        return f"SKIP ({app} -> {binary!r} not installed)"
     # Hyprland 0.56: hyprctl dispatch exec <cmd> hits a Lua parse bug
     # (hyprwm/Hyprland#16224); the working path is the Lua dispatcher.
     r = subprocess.run(["hyprctl", "eval", f'hl.dsp.exec_cmd("{binname}")'],
@@ -317,16 +353,31 @@ def run_once(cfg: dict) -> int:
         wav = record(secs)
         text = transcribe(wav)
         print(f"transcript: {text!r}")
-        if not text:
+        if not text or "[BLANK" in text:
             notify("heard nothing")
             return 0
-        resp = ask_jev(text, model)
+        harness = load_harness()
+        resp = ask_jev(text, model, build_questions(harness),
+                       context=(harness or {}).get("context", ""))
         answers = resp.get("answers", {})
         print(f"jev: {json.dumps(answers)[:400]}")
         corrected = ambiguous_choice(answers, cfg)
+        app_a, act_a = answers.get("app", {}), answers.get("action", {})
+        low_conf = min(app_a.get("confidence", 1), act_a.get("confidence", 1)) < \
+            float(cfg.get("agent", {}).get("confidence_ambiguous", "0.8"))
+        if low_conf and not corrected:
+            result = "CANCELLED (low confidence, no pick made)"
+            print(f"result: {result}")
+            notify(result)
+            log_decision({
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "transcript": text, "answers": answers, "result": result,
+                "corrected": False,
+            })
+            return 0
         if corrected:
             answers = corrected
-        result = execute(answers, cfg)
+        result = execute(answers, cfg, harness)
         print(f"result: {result}")
         notify(result)
         log_decision({
@@ -351,15 +402,28 @@ def install_files() -> None:
     opt = HOME / ".local" / "opt" / "dim-agent"
     opt.mkdir(parents=True, exist_ok=True)
     for name in ("dimd", "dim-overlay"):
+        if not (src / name).exists():
+            continue
         target = opt / name
         shutil.copy2(src / name, target)
         target.chmod(0o755)
         print(f"installed {target}")
+    builder = src / "scripts" / "build_harness.py"
+    if builder.exists():
+        shutil.copy2(builder, opt / "build_harness.py")
+        print(f"installed {opt}/build_harness.py")
     trigger = HOME / ".local" / "bin" / "dim-agent-trigger"
     trigger.parent.mkdir(parents=True, exist_ok=True)
     trigger.write_text(f"#!/bin/sh\nexec python3 {opt}/dimd trigger\n")
     trigger.chmod(0o755)
     print(f"installed {trigger}")
+
+
+def rebuild_harness() -> int:
+    builder = OVERLAY_BIN.parent / "build_harness.py"
+    if not builder.exists():
+        builder = pathlib.Path(__file__).resolve().parent / "scripts" / "build_harness.py"
+    return subprocess.run([sys.executable, str(builder)]).returncode
 
 
 def install_bind(cfg: dict) -> None:
@@ -400,7 +464,9 @@ def main() -> int:
         return 0
     if cmd == "trigger":
         return run_once(cfg)
-    print("usage: dimd [install|trigger]")
+    if cmd == "harness":
+        return rebuild_harness()
+    print("usage: dimd [install|trigger|harness]")
     return 2
 
 
