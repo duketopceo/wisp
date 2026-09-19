@@ -57,7 +57,7 @@ confidence_ambiguous = 0.8
 
 [apps]
 browser = "chromium"
-terminal = "kitty"
+terminal = "ghostty"
 files = "nautilus"
 vscode = "code"
 music = "spotify"
@@ -260,8 +260,13 @@ def execute(answers: dict, cfg: dict) -> str:
     binname = apps.get(app)
     if not binname:
         return f"SKIP (unknown app {app!r})"
-    subprocess.run(["hyprctl", "dispatch", "exec", binname], check=True,
-                   capture_output=True, env=hypr_env())
+    # Hyprland 0.56: hyprctl dispatch exec <cmd> hits a Lua parse bug
+    # (hyprwm/Hyprland#16224); the working path is the Lua dispatcher.
+    r = subprocess.run(["hyprctl", "eval", f'hl.dsp.exec_cmd("{binname}")'],
+                       capture_output=True, text=True, env=hypr_env())
+    if r.returncode != 0 or "ok" not in r.stdout:
+        subprocess.run(["hyprctl", "dispatch", "exec", binname],
+                       capture_output=True, env=hypr_env())
     return f"LAUNCHED {app} -> {binname}"
 
 
