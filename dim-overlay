@@ -1,42 +1,109 @@
 #!/usr/bin/env python3
-"""dim-overlay — fullscreen semi-transparent dim via wlr-layer-shell.
+"""dim-overlay — Dim's fullscreen overlay (wlr-layer-shell via gtk-layer-shell).
 
-Chosen because gtk-layer-shell is installed on this laptop and PyGObject is
-available; eww is not. Exits on any key/click or when killed by dimd.
+Modes:
+  dim-overlay              breathing darkness: opacity follows live mic
+                           amplitude published to $XDG_RUNTIME_DIR/dim-agent/level
+                           (silence -> transparent/bright, speech -> dark).
+  dim-overlay --buttons app:terminal app:browser ... action:launch
+                           confidence-gated UI: shows ambiguous choices as
+                           clickable buttons; prints the picked label (e.g.
+                           "app:terminal") to stdout; prints nothing on cancel.
+
+Choice rationale: gtk-layer-shell is installed (extra/gtk-layer-shell) and
+python-gobject is present; eww is not. Native layer-shell beats the chromium
+kiosk fallback. Exits on Esc / click on empty space / kill.
 """
+import os
+import pathlib
+import sys
+
 import gi
 
 gi.require_version("Gtk", "3.0")
 gi.require_version("GtkLayerShell", "0.1")
-from gi.repository import Gtk, GtkLayerShell
+from gi.repository import Gdk, GLib, Gtk, GtkLayerShell
+
+LEVEL_FILE = pathlib.Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "dim-agent" / "level"
+
+CSS = b"""
+window { background-color: black; }
+button { background: rgba(30,30,30,0.9); color: white; font-size: 18px;
+         border-radius: 12px; padding: 12px 24px; }
+button:hover { background: rgba(70,70,70,0.95); }
+label { color: white; font-size: 20px; }
+"""
 
 
-def on_key(_w, ev):
-    Gtk.main_quit()
-    return True
-
-
-def build():
-    win = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
-    win.set_app_paintable(True)
-    win.set_visual(win.get_screen().get_rgba_visual())
+def fullscreen_layer(win):
     GtkLayerShell.init_for_window(win)
     GtkLayerShell.set_layer(win, GtkLayerShell.Layer.OVERLAY)
-    GtkLayerShell.set_anchor(win, GtkLayerShell.Edge.TOP, True)
-    GtkLayerShell.set_anchor(win, GtkLayerShell.Edge.BOTTOM, True)
-    GtkLayerShell.set_anchor(win, GtkLayerShell.Edge.LEFT, True)
-    GtkLayerShell.set_anchor(win, GtkLayerShell.Edge.RIGHT, True)
+    for edge in (GtkLayerShell.Edge.TOP, GtkLayerShell.Edge.BOTTOM,
+                 GtkLayerShell.Edge.LEFT, GtkLayerShell.Edge.RIGHT):
+        GtkLayerShell.set_anchor(win, edge, True)
     GtkLayerShell.set_exclusive_zone(win, -1)
-    win.set_opacity(0.4)
+
+
+def apply_style(win):
     css = Gtk.CssProvider()
-    css.load_from_data(b"window { background-color: black; }")
-    win.get_style_context().add_provider(css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
-    win.connect("key-press-event", on_key)
+    css.load_from_data(CSS)
+    Gtk.StyleContext.add_provider_for_screen(
+        Gdk.Screen.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+
+def breathing_mode():
+    win = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
+    win.set_app_paintable(True)
+    fullscreen_layer(win)
+    win.set_opacity(0.0)
+
+    def tick():
+        try:
+            level = float(LEVEL_FILE.read_text().strip())
+        except Exception:
+            level = 0.0
+        win.set_opacity(min(0.5, 0.5 * level))
+        return True
+
+    GLib.timeout_add(100, tick)
+    win.connect("key-press-event", lambda *_: Gtk.main_quit() or True)
     win.connect("button-press-event", lambda *_: Gtk.main_quit() or True)
     win.show_all()
-    return win
+    Gtk.main()
+
+
+def buttons_mode(labels):
+    win = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
+    fullscreen_layer(win)
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+    box.set_halign(Gtk.Align.CENTER)
+    box.set_valign(Gtk.Align.CENTER)
+    box.add(Gtk.Label(label="Dim — did I hear you right?"))
+    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+    for lab in labels:
+        btn = Gtk.Button(label=lab.replace("_", " ").replace(":", ": ", 1))
+
+        def on_click(_b, l=lab):
+            sys.stdout.write(l + "\n")
+            sys.stdout.flush()
+            Gtk.main_quit()
+
+        btn.connect("clicked", on_click)
+        row.add(btn)
+    box.add(row)
+    win.add(box)
+    win.connect("key-press-event", lambda *_: Gtk.main_quit() or True)
+    win.show_all()
+    Gtk.main()
 
 
 if __name__ == "__main__":
-    build()
-    Gtk.main()
+    args = sys.argv[1:]
+    try:
+        apply_style(Gtk.Window())
+    except Exception:
+        pass
+    if args and args[0] == "--buttons":
+        buttons_mode(args[1:])
+    else:
+        breathing_mode()

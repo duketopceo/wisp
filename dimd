@@ -263,6 +263,31 @@ def execute(answers: dict, cfg: dict) -> str:
                    capture_output=True, env=hypr_env())
     return f"LAUNCHED {app} -> {binname}"
 
+def ambiguous_choice(answers: dict, cfg: dict) -> dict | None:
+    """Confidence gate: below threshold, offer the ambiguous choices as
+    clickable overlay buttons; return the user-corrected answers or None."""
+    app_a, act_a = answers.get("app", {}), answers.get("action", {})
+    conf = min(app_a.get("confidence", 1), act_a.get("confidence", 1))
+    thresh = float(cfg.get("agent", {}).get("confidence_ambiguous", "0.8"))
+    if conf >= thresh:
+        return None
+    app_probs = sorted(app_a.get("probabilities", {}).items(), key=lambda kv: -kv[1])[:3]
+    act_probs = sorted(act_a.get("probabilities", {}).items(), key=lambda kv: -kv[1])[:3]
+    labels = [f"app:{k}" for k, _ in app_probs] + [f"action:{k}" for k, _ in act_probs]
+    r = subprocess.run([str(OVERLAY_BIN), "--buttons"] + labels, capture_output=True,
+                       text=True, timeout=60, env=hypr_env())
+    picked = r.stdout.strip()
+    if not picked:
+        return None
+    kind, _, value = picked.partition(":")
+    corrected = json.loads(json.dumps(answers))
+    if kind == "app":
+        corrected["app"]["choice"] = value
+    else:
+        corrected["action"]["choice"] = value
+    corrected["corrected_by_user"] = True
+    return corrected
+
 
 def run_once(cfg: dict) -> int:
     secs = int(cfg.get("audio", {}).get("seconds", "5"))
@@ -281,6 +306,9 @@ def run_once(cfg: dict) -> int:
         resp = ask_jev(text, model)
         answers = resp.get("answers", {})
         print(f"jev: {json.dumps(answers)[:400]}")
+        corrected = ambiguous_choice(answers, cfg)
+        if corrected:
+            answers = corrected
         result = execute(answers, cfg)
         print(f"result: {result}")
         notify(result)
