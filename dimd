@@ -47,7 +47,7 @@ key = "D"
 seconds = 5
 
 [agent]
-model = "~typesafe/jev-latest"
+model = "typesafe/jev-1.13"
 # Auto-execute when risk <= threshold. Measured Jev scores: "open terminal"
 # launch scores ~1.2 (navigational band), so 1.5 = launch/close allowed,
 # mutating (>=2) always requires explicit confirmation.
@@ -129,7 +129,7 @@ def _default_cfg_dict():
         "hotkey": {"mod": "SUPER", "key": "D"},
         "audio": {"seconds": "5"},
         "agent": {
-            "model": "~typesafe/jev-latest", "risk_threshold": "1.5",
+            "model": "typesafe/jev-1.13", "risk_threshold": "1.5",
             "confidence_instant": "0.95", "confidence_ambiguous": "0.8",
         },
         "apps": {
