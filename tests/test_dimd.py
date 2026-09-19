@@ -64,9 +64,16 @@ class TestExecute(unittest.TestCase):
         out = dimd.execute(self.answers(app="emacs"), self.cfg)
         self.assertIn("unknown app", out)
 
+    def test_skips_missing_binary(self):
+        with mock.patch.object(dimd.shutil, "which", return_value=None), \
+             mock.patch.object(dimd.pathlib.Path, "exists", return_value=False):
+            out = dimd.execute(self.answers(), self.cfg)
+        self.assertIn("not installed", out)
+
     def test_launch_uses_lua_dispatcher(self):
         ok = mock.Mock(returncode=0, stdout="ok")
-        with mock.patch.object(dimd.subprocess, "run", return_value=ok) as run:
+        with mock.patch.object(dimd.shutil, "which", return_value="/usr/bin/ghostty"), \
+             mock.patch.object(dimd.subprocess, "run", return_value=ok) as run:
             out = dimd.execute(self.answers(), self.cfg)
         self.assertIn("LAUNCHED", out)
         cmd = run.call_args[0][0]
@@ -75,7 +82,8 @@ class TestExecute(unittest.TestCase):
 
     def test_launch_falls_back_to_dispatch(self):
         fail = mock.Mock(returncode=1, stdout="err")
-        with mock.patch.object(dimd.subprocess, "run", return_value=fail) as run:
+        with mock.patch.object(dimd.shutil, "which", return_value="/usr/bin/ghostty"), \
+             mock.patch.object(dimd.subprocess, "run", return_value=fail) as run:
             out = dimd.execute(self.answers(), self.cfg)
         self.assertIn("LAUNCHED", out)
         self.assertEqual(run.call_args_list[-1][0][0],
