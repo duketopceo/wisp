@@ -32,9 +32,11 @@ class SFTData(Dataset):
                 rec["messages"], tokenize=True, add_generation_prompt=False
             )
             ids = enc["input_ids"] if isinstance(enc, dict) else enc
+            if hasattr(ids, "ids"):  # tokenizers.Encoding
+                ids = list(ids.ids)
             if ids and isinstance(ids[0], list):
                 ids = ids[0]
-            ids = ids[:max_len]
+            ids = [int(t) for t in ids[:max_len]]
             self.rows.append(ids)
 
     def __len__(self):
