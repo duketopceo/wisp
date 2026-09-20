@@ -23,20 +23,26 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 MODEL = "Qwen/Qwen3-0.6B"
 
 
+def _to_ids(x):
+    """Recursively unwrap whatever apply_chat_template returns into list[int]."""
+    if hasattr(x, "ids"):  # tokenizers.Encoding
+        return list(x.ids)
+    if isinstance(x, dict) and "input_ids" in x:
+        return _to_ids(x["input_ids"])
+    if isinstance(x, (list, tuple)) and x and not isinstance(x[0], int):
+        return _to_ids(x[0])
+    return [int(t) for t in x]
+
+
 class SFTData(Dataset):
-    def __init__(self, path: str, tok, max_len: int = 512):
+    def __init__(self, path, tok, max_len=512):
         self.rows = []
         for line in Path(path).read_text().splitlines():
             rec = json.loads(line)
             enc = tok.apply_chat_template(
                 rec["messages"], tokenize=True, add_generation_prompt=False
             )
-            ids = enc["input_ids"] if isinstance(enc, dict) else enc
-            if hasattr(ids, "ids"):  # tokenizers.Encoding
-                ids = list(ids.ids)
-            if ids and isinstance(ids[0], list):
-                ids = ids[0]
-            ids = [int(t) for t in ids[:max_len]]
+            ids = _to_ids(enc)[:max_len]
             self.rows.append(ids)
 
     def __len__(self):
