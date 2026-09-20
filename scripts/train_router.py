@@ -114,8 +114,8 @@ def main():
                 sched.step()
                 opt.zero_grad()
                 step += 1
-                if step % 50 == 0:
-                    avg = running / (50 * args.accum)
+                if step % 10 == 0 or step >= args.iters:
+                    avg = running / (step % 10 if step % 10 else 10) / args.accum
                     vram = torch.cuda.memory_allocated() / 1e9
                     sps = step / (time.time() - t0)
                     print(f"step {step}/{args.iters} loss {avg:.4f} vram {vram:.1f}GB {sps:.1f} steps/s", flush=True)
