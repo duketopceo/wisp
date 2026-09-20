@@ -28,9 +28,13 @@ class SFTData(Dataset):
         self.rows = []
         for line in Path(path).read_text().splitlines():
             rec = json.loads(line)
-            ids = tok.apply_chat_template(
-                rec["messages"], tokenize=True, add_generation_prompt=False, max_length=max_len, truncation=True
+            enc = tok.apply_chat_template(
+                rec["messages"], tokenize=True, add_generation_prompt=False
             )
+            ids = enc["input_ids"] if isinstance(enc, dict) else enc
+            if ids and isinstance(ids[0], list):
+                ids = ids[0]
+            ids = ids[:max_len]
             self.rows.append(ids)
 
     def __len__(self):
