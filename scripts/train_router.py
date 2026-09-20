@@ -14,10 +14,12 @@ import argparse
 import json
 import math
 import random
+import time
 from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader, Dataset
+from torch.utils.tensorboard import SummaryWriter
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 MODEL = "Qwen/Qwen3-0.6B"
@@ -94,7 +96,11 @@ def main():
 
     out = Path(args.out)
     out.mkdir(exist_ok=True)
+    run_name = time.strftime("run-%Y%m%d-%H%M%S")
+    tb = SummaryWriter(log_dir=f"runs/{run_name}")
+    print(f"tensorboard: runs/{run_name}", flush=True)
     step, running = 0, 0.0
+    t0 = time.time()
     done = False
     while not done:
         for input_ids, labels, mask in dl:
@@ -109,7 +115,14 @@ def main():
                 opt.zero_grad()
                 step += 1
                 if step % 50 == 0:
-                    print(f"step {step}/{args.iters} loss {running / (50 * args.accum):.4f}", flush=True)
+                    avg = running / (50 * args.accum)
+                    vram = torch.cuda.memory_allocated() / 1e9
+                    sps = step / (time.time() - t0)
+                    print(f"step {step}/{args.iters} loss {avg:.4f} vram {vram:.1f}GB {sps:.1f} steps/s", flush=True)
+                    tb.add_scalar("train/loss", avg, step)
+                    tb.add_scalar("train/lr", sched.get_last_lr()[0], step)
+                    tb.add_scalar("train/vram_gb", vram, step)
+                    tb.add_scalar("train/steps_per_sec", sps, step)
                     running = 0.0
                 if step % args.save_every == 0 or step >= args.iters:
                     model.save_pretrained(out / f"step-{step}")
