@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.duketopceo.dim",
+  "name": "Dim",
+  "version": "0.2.0",
+  "author": "duketopceo",
+  "license": "MIT",
+  "description": "Voice assistant: Super+D listens, Jev decides, agents spawn — state surfaced from the dimd daemon.",
+  "kinds": [
+    "service",
+    "bar-widget",
+    "overlay"
+  ],
+  "activation": "on-demand",
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "DimService.qml",
+    "barWidget": "BarWidget.qml",
+    "overlay": "Companion.qml"
+  },
+  "barWidget": {
+    "displayName": "Dim",
+    "description": "Voice assistant status and controls",
+    "category": "Productivity",
+    "allowMultiple": false,
+    "defaultSection": "center"
+  }
+}

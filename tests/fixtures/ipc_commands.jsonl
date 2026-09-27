@@ -1,0 +1,11 @@
+{"cmd": "status"}
+{"cmd": "listen"}
+{"cmd": "choice", "pick": "yes"}
+{"cmd": "task_status", "name": "research-x"}
+{"cmd": "task_cancel", "name": "research-x"}
+{"cmd": "stop"}
+{"cmd": "bogus"}
+{"cmd": "config"}
+{"cmd": "config", "set": {"agent.answer_model": "x"}}
+{"cmd": "learn"}
+{"cmd": "harness"}

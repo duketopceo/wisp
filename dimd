@@ -1,429 +1,181 @@
 #!/usr/bin/env python3
-"""dimd — Dim: hotkey-triggered voice -> Jev -> Hyprland action.
+"""dimd — Dim: resident voice assistant daemon for Omarchy.
 
-Flow: Hyprland bind spawns `dimd trigger`. dimd shows the dim overlay
-(breathing with mic amplitude), records Ns of mic audio via pw-record,
-transcribes with whisper.cpp, asks Jev (OpenRouter decisions endpoint) for
-app/action/risk, then:
-  - confidence >= 0.95: execute immediately
-  - 0.8 <= confidence < 0.95: execute + notify confidence
-  - confidence < 0.8: show ambiguous choices as clickable overlay buttons
-Every decision is appended to data/corrections.jsonl (self-improving lane).
-Only risk <= threshold and action == launch is executed automatically.
+`dimd daemon` runs the IPC server (systemd user service). `dimd trigger`
+is the push-to-talk client the Hyprland bind executes — it sends `listen`
+to the running daemon, or runs the pipeline inline when no daemon is up.
+Other subcommands: status, stop, install, harness.
 """
-import json
-import os
 import pathlib
 import shutil
 import subprocess
 import sys
 import threading
-import time
-import urllib.error
-import urllib.request
-from datetime import datetime, timezone
 
-HOME = pathlib.Path.home()
-CFG_DIR = HOME / ".config" / "dim-agent"
-CFG_FILE = CFG_DIR / "config.toml"
-ENV_FILE = CFG_DIR / ".env"
-DATA_DIR = pathlib.Path(os.environ.get("XDG_DATA_HOME", HOME / ".local" / "share")) / "dim-agent"
-CORRECTIONS = DATA_DIR / "corrections.jsonl"
-RUN_DIR = pathlib.Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "dim-agent"
-LEVEL_FILE = RUN_DIR / "level"
-WHISPER_HOME = HOME / "src" / "whisper.cpp"
-WHISPER_BIN = WHISPER_HOME / "build" / "bin" / "whisper-cli"
-WHISPER_MODEL = WHISPER_HOME / "models" / "ggml-base.en.bin"
-OVERLAY_BIN = HOME / ".local" / "opt" / "dim-agent" / "dim-overlay"
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-DEFAULT_CONFIG = """\
-[hotkey]
-# Super + D = push-to-talk. mod is a Hyprland modmask token (SUPER, ALT,
-# SHIFT, CTRL) or a keysym like ALT_R (multi-key bind, side-specific).
-mod = "SUPER"
-key = "D"
-
-[audio]
-seconds = 5
-
-[agent]
-model = "typesafe/jev-1.13"
-# Auto-execute when risk <= threshold. Measured Jev scores: "open terminal"
-# launch scores ~1.2 (navigational band), so 1.5 = launch/close allowed,
-# mutating (>=2) always requires explicit confirmation.
-risk_threshold = 1.5
-confidence_instant = 0.95
-confidence_ambiguous = 0.8
-
-[apps]
-browser = "chromium"
-terminal = "ghostty"
-files = "nautilus"
-vscode = "code"
-music = "spotify"
-settings = "gnome-control-center"
-browser_new_tab = "chromium"
-"""
-
-JEV_ENDPOINT = "https://openrouter.ai/api/alpha/decisions"
-
-HARNESS_FILE = CFG_DIR / "harness.json"
-
-JEV_QUESTIONS = {
-    "app": {
-        "type": "choice",
-        "instructions": "Which application is the user asking about?",
-        "criteria": {
-            "browser": "user wants a web browser or a website",
-            "terminal": "user wants a terminal or shell",
-            "files": "user wants a file manager",
-            "vscode": "user wants the code editor",
-            "music": "user wants a music player",
-            "settings": "user wants system settings",
-            "browser_new_tab": "user wants a new browser tab",
-        },
-    },
-    "action": {
-        "type": "choice",
-        "instructions": "What should be done with it?",
-        "criteria": {
-            "launch": "open or start it",
-            "close": "close or quit it",
-            "type_text": "type some text",
-            "run_shell": "run a shell command",
-        },
-    },
-    "risk": {
-        "type": "score",
-        "instructions": "0 read-only launch, 2 mutating",
-        "criteria": ["read-only", "navigational", "mutating"],
-    },
-}
+from dim import config, ipc, pipeline, state as state_mod  # noqa: E402
 
 
-# ---------------------------------------------------------------- config/env
+def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
+    def handle(cmd: dict) -> dict:
+        c = cmd.get("cmd")
+        if c == "status":
+            from dim import agents
+            st.tasks = agents.tasks()
+            st.transition(st.status)
+            return {"ok": True, "state": st.snapshot()}
+        if c == "listen":
+            if ctl["busy"].is_set():
+                return {"ok": False, "error": "busy"}
+            ctl["busy"].set()
+            threading.Thread(target=_run_listen, args=(st, cfg, ctl),
+                             daemon=True).start()
+            return {"ok": True}
+        if c == "choice":
+            ctl["choice_pick"] = cmd.get("pick", "")
+            ctl["choice_event"].set()
+            return {"ok": True}
+        if c == "task_status":
+            from dim import agents
+            return {"ok": True, "result": agents.status(cmd.get("name", ""))}
+        if c == "task_cancel":
+            from dim import agents
+            return {"ok": True, "result": agents.cancel(cmd.get("name", ""))}
+        if c == "learn":
+            from dim import learn
+            p = learn.weekly(7)
+            return {"ok": True,
+                    "result": p if p else "nothing to propose"}
+        if c == "harness":
+            try:
+                rc = rebuild_harness()
+                return {"ok": rc == 0,
+                        "result": "harness rebuilt" if rc == 0
+                                  else f"builder exited {rc}"}
+            except Exception as e:
+                return {"ok": False, "error": str(e)}
+        if c == "config":
+            set_fields = cmd.get("set") or {}
+            for k, v in set_fields.items():
+                section, _, key = k.partition(".")
+                if not section or not key:
+                    return {"ok": False, "error": "config keys must be section.key"}
+                try:
+                    config.set_config(section, key, str(v))
+                except ValueError as e:
+                    return {"ok": False, "error": str(e)}
+            if set_fields:  # live-reload
+                cfg.clear()
+                cfg.update(config.load_config())
+            return {"ok": True, "config": cfg}
+        if c == "stop":
+            ctl["stop"].set()
+            return {"ok": True}
+        return {"ok": False, "error": f"unknown cmd {c!r}"}
+    return handle
 
-def load_config() -> dict:
-    """Parse a flat [section] key = "value" TOML subset without deps."""
-    cfg = {}
-    if CFG_FILE.exists():
-        section = None
-        for raw in CFG_FILE.read_text().splitlines():
-            line = raw.split("#", 1)[0].strip()
-            if not line:
-                continue
-            if line.startswith("["):
-                section = line.strip("[]")
-                cfg[section] = {}
-            elif "=" in line and section:
-                k, v = (p.strip() for p in line.split("=", 1))
-                cfg[section][k] = v.strip('"')
-    else:
-        CFG_DIR.mkdir(parents=True, exist_ok=True)
-        CFG_FILE.write_text(DEFAULT_CONFIG)
-        import tomllib  # noqa: F401  (config written; next run parses)
-        cfg = _default_cfg_dict()
-    return cfg
 
-
-def _default_cfg_dict():
-    return {
-        "hotkey": {"mod": "SUPER", "key": "D"},
-        "audio": {"seconds": "5"},
-        "agent": {
-            "model": "typesafe/jev-1.13", "risk_threshold": "1.5",
-            "confidence_instant": "0.95", "confidence_ambiguous": "0.8",
-        },
-        "apps": {
-            "browser": "chromium", "terminal": "ghostty", "files": "nautilus",
-            "vscode": "code", "music": "spotify",
-            "settings": "gnome-control-center", "browser_new_tab": "chromium",
-        },
-    }
-
-
-def load_api_key() -> str:
-    if ENV_FILE.exists():
-        for line in ENV_FILE.read_text().splitlines():
-            if line.startswith("OPENROUTER_API_KEY="):
-                return line.split("=", 1)[1].strip()
-    key = os.environ.get("OPENROUTER_API_KEY", "")
-    if not key:
-        raise RuntimeError(f"No OPENROUTER_API_KEY in {ENV_FILE} or environment")
-    return key
-
-
-def load_harness() -> dict | None:
-    """Local personalization built by scripts/build_harness.py from dayflow
-    activity data. Never committed — lives in ~/.config/dim-agent/."""
-    try:
-        return json.loads(HARNESS_FILE.read_text())
-    except Exception:
+def _wait_for_choice(ctl: dict):
+    def wait(timeout: float):
+        ctl["choice_event"].clear()
+        ctl["choice_pick"] = ""
+        if ctl["choice_event"].wait(timeout):
+            return ctl["choice_pick"] or None
         return None
+    return wait
 
 
-def build_questions(harness: dict | None) -> dict:
-    """Jev questions with the app catalog rebuilt from the local harness."""
-    if not harness or not harness.get("apps"):
-        return JEV_QUESTIONS
-    q = json.loads(json.dumps(JEV_QUESTIONS))
-    q["app"]["criteria"] = {
-        name: f"{a.get('cues', name)}"
-        + (f" (frequently used: {a['seen']}x)" if a.get("seen", 0) >= 5 else "")
-        for name, a in harness["apps"].items()
-    }
-    return q
-
-
-def hypr_env() -> dict:
-    """Hyprland tooling needs its instance signature when run from a daemon."""
-    env = dict(os.environ)
-    if not env.get("HYPRLAND_INSTANCE_SIGNATURE"):
-        rd = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
-        hypr = pathlib.Path(rd) / "hypr"
-        if hypr.is_dir():
-            env["HYPRLAND_INSTANCE_SIGNATURE"] = sorted(hypr.iterdir())[0].name
-    return env
-
-
-def notify(msg: str) -> None:
-    subprocess.run(["notify-send", "Dim", msg], env=hypr_env())
-
-
-# ------------------------------------------------------------------ pipeline
-
-def record(seconds: int) -> pathlib.Path:
-    out = CFG_DIR / "utterance.wav"
-    RUN_DIR.mkdir(parents=True, exist_ok=True)
-    sampler = threading.Thread(target=_amplitude_sampler, args=(seconds,), daemon=True)
-    sampler.start()
-    rec = shutil.which("pw-record") or shutil.which("arecord")
-    if rec is None:
-        raise RuntimeError("no pw-record or arecord found")
-    if rec.endswith("pw-record"):
-        cmd = [rec, "--rate", "16000", "--channels", "1", "--format", "s16",
-               "--sample-count", str(16000 * seconds), str(out)]
-    else:
-        cmd = [rec, "-D", "default", "-r", "16000", "-c", "1", "-f", "S16_LE",
-               "-d", str(seconds), str(out)]
-    # pw-record exits 1 on clean --sample-count shutdown (pipewire 1.6.x);
-    # trust the output file, not the exit code.
-    subprocess.run(cmd, timeout=seconds + 10, env=hypr_env())
-    if not (out.exists() and out.stat().st_size > 44):
-        raise RuntimeError(f"recording produced no audio: {out}")
-    time.sleep(0.3)
-    LEVEL_FILE.write_text("0.0")  # silence restores full brightness
-    return out
-
-
-def _amplitude_sampler(seconds: int) -> None:
-    """Breathing darkness: sample mic RMS, publish to level file for overlay.
-
-    Silence -> 0.0 (overlay fully transparent, screen bright); loud -> 1.0
-    (overlay dark). Uses arecord as a passive second reader on the default
-    source; failure is non-fatal (overlay just stays static).
-    """
-    arec = shutil.which("arecord")
-    if not arec:
-        return
+def _run_listen(st: state_mod.State, cfg: dict, ctl: dict) -> None:
     try:
-        proc = subprocess.Popen(
-            [arec, "-D", "default", "-f", "U8", "-r", "200", "-c", "1", "-d", str(seconds)],
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=hypr_env())
-        while True:
-            chunk = proc.stdout.read(200)  # ~1s of U8@200Hz... read in sub-chunks
-            if not chunk:
-                break
-            step = 20  # ~100ms windows
-            for i in range(0, len(chunk) - step, step):
-                w = chunk[i:i + step]
-                rms = sum(abs(b - 128) for b in w) / (len(w) * 128)
-                LEVEL_FILE.write_text(f"{min(1.0, rms * 6):.3f}")
-        proc.wait(timeout=5)
-    except Exception:
-        try:
-            LEVEL_FILE.write_text("0.0")
-        except Exception:
-            pass
-
-
-def transcribe(wav: pathlib.Path) -> str:
-    if not (WHISPER_BIN.exists() and WHISPER_MODEL.exists()):
-        raise RuntimeError(f"whisper.cpp missing: {WHISPER_BIN} / {WHISPER_MODEL}")
-    r = subprocess.run(
-        [str(WHISPER_BIN), "-m", str(WHISPER_MODEL), "-nt", "-f", str(wav)],
-        capture_output=True, text=True, timeout=120)
-    return " ".join(r.stdout.split())
-
-
-def ask_jev(transcript: str, model: str, questions: dict,
-            context: str = "") -> dict:
-    state = f"{context}\n\nThe user said: \"{transcript}\"" if context else transcript
-    payload = {"model": model, "state": state, "questions": questions}
-    req = urllib.request.Request(
-        JEV_ENDPOINT, data=json.dumps(payload).encode(),
-        headers={
-            "Authorization": f"Bearer {load_api_key()}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/duketopceo/dim-agent",
-            "X-Title": "Dim",
-        }, method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read())
-    except urllib.error.HTTPError as e:
-        raise RuntimeError(f"Jev HTTP {e.code}: {e.read().decode()[:200]}") from None
-
-
-def execute(answers: dict, cfg: dict, harness: dict | None = None) -> str:
-    apps = dict(cfg.get("apps", {}))
-    if harness:
-        apps.update({n: a["launch"] for n, a in harness.get("apps", {}).items()
-                     if a.get("launch")})
-    agent = cfg.get("agent", {})
-    threshold = float(agent.get("risk_threshold", "1.5"))
-    action = answers.get("action", {}).get("choice")
-    app = answers.get("app", {}).get("choice")
-    risk = float(answers.get("risk", {}).get("score", 2))
-
-    if risk > threshold:
-        return f"BLOCKED (risk={risk:.2f} > {threshold})"
-    if action != "launch":
-        return f"SKIP (action={action!r} not auto-executed in v0.1)"
-    binname = apps.get(app)
-    if not binname:
-        return f"SKIP (unknown app {app!r})"
-    binary = binname.split()[0]
-    if not (shutil.which(binary) or (HOME / ".local" / "bin" / binary).exists()):
-        return f"SKIP ({app} -> {binary!r} not installed)"
-    # Hyprland 0.56: hyprctl dispatch exec <cmd> hits a Lua parse bug
-    # (hyprwm/Hyprland#16224); the working path is the Lua dispatcher.
-    r = subprocess.run(["hyprctl", "eval", f'hl.dsp.exec_cmd("{binname}")'],
-                       capture_output=True, text=True, env=hypr_env())
-    if r.returncode != 0 or "ok" not in r.stdout:
-        subprocess.run(["hyprctl", "dispatch", "exec", binname],
-                       capture_output=True, env=hypr_env())
-    return f"LAUNCHED {app} -> {binname}"
-
-
-def log_decision(record_dict: dict) -> None:
-    try:
-        CORRECTIONS.parent.mkdir(parents=True, exist_ok=True)
-        with CORRECTIONS.open("a") as f:
-            f.write(json.dumps(record_dict) + "\n")
-    except Exception:
-        pass
-
-
-def ambiguous_choice(answers: dict, cfg: dict) -> dict | None:
-    """Confidence gate: below threshold, offer the ambiguous choices as
-    clickable overlay buttons; return the user-corrected answers or None."""
-    app_a, act_a = answers.get("app", {}), answers.get("action", {})
-    conf = min(app_a.get("confidence", 1), act_a.get("confidence", 1))
-    thresh = float(cfg.get("agent", {}).get("confidence_ambiguous", "0.8"))
-    if conf >= thresh:
-        return None
-    app_probs = sorted(app_a.get("probabilities", {}).items(), key=lambda kv: -kv[1])[:3]
-    act_probs = sorted(act_a.get("probabilities", {}).items(), key=lambda kv: -kv[1])[:3]
-    labels = [f"app:{k}" for k, _ in app_probs] + [f"action:{k}" for k, _ in act_probs]
-    overlay_args = ["--buttons"] + labels
-    r = subprocess.run([str(OVERLAY_BIN)] + overlay_args, capture_output=True,
-                       text=True, timeout=60, env=hypr_env())
-    picked = r.stdout.strip()
-    if not picked:
-        return None
-    kind, _, value = picked.partition(":")
-    corrected = json.loads(json.dumps(answers))
-    if kind == "app":
-        corrected["app"]["choice"] = value
-    else:
-        corrected["action"]["choice"] = value
-    corrected["corrected_by_user"] = True
-    return corrected
-
-
-def run_once(cfg: dict) -> int:
-    secs = int(cfg.get("audio", {}).get("seconds", "5"))
-    model = cfg.get("agent", {}).get("model", "~typesafe/jev-latest")
-    overlay = None
-    try:
-        if OVERLAY_BIN.exists():
-            overlay = subprocess.Popen([str(OVERLAY_BIN)], env=hypr_env(),
-                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        wav = record(secs)
-        text = transcribe(wav)
-        print(f"transcript: {text!r}")
-        if not text or "[BLANK" in text:
-            notify("heard nothing")
-            return 0
-        harness = load_harness()
-        resp = ask_jev(text, model, build_questions(harness),
-                       context=(harness or {}).get("context", ""))
-        answers = resp.get("answers", {})
-        print(f"jev: {json.dumps(answers)[:400]}")
-        corrected = ambiguous_choice(answers, cfg)
-        app_a, act_a = answers.get("app", {}), answers.get("action", {})
-        low_conf = min(app_a.get("confidence", 1), act_a.get("confidence", 1)) < \
-            float(cfg.get("agent", {}).get("confidence_ambiguous", "0.8"))
-        if low_conf and not corrected:
-            result = "CANCELLED (low confidence, no pick made)"
-            print(f"result: {result}")
-            notify(result)
-            log_decision({
-                "ts": datetime.now(timezone.utc).isoformat(),
-                "transcript": text, "answers": answers, "result": result,
-                "corrected": False,
-            })
-            return 0
-        if corrected:
-            answers = corrected
-        result = execute(answers, cfg, harness)
-        print(f"result: {result}")
-        notify(result)
-        log_decision({
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "transcript": text, "answers": answers, "result": result,
-            "corrected": bool(answers.get("corrected_by_user")),
-        })
-        return 0
-    except Exception as e:
-        notify(f"error: {e}")
-        print(f"error: {e}", file=sys.stderr)
-        return 1
+        pipeline.run_listen(cfg, st, wait_for_choice=_wait_for_choice(ctl))
     finally:
-        if overlay:
-            overlay.terminate()
+        ctl["busy"].clear()
+
+
+def run_daemon(cfg: dict) -> int:
+    from dim import skills
+    skills.register_tools()  # skill_<name> entries from skills/*/SKILL.md
+    st = state_mod.State()
+    ctl = {"stop": threading.Event(), "busy": threading.Event(),
+           "choice_event": threading.Event(), "choice_pick": ""}
+    server = ipc.Daemon(_handler(st, cfg, ctl))
+    server.start()
+    print(f"dimd listening on {config.SOCK_FILE}")
+    try:
+        ctl["stop"].wait()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.stop()
+        st.transition("idle")
+    return 0
+
+
+def cmd_trigger(cfg: dict) -> int:
+    try:
+        resp = ipc.send({"cmd": "listen"})
+        if resp.get("ok"):
+            return 0
+        print(f"dimd: {resp.get('error')}", file=sys.stderr)
+        return 1
+    except (ConnectionError, OSError):
+        # No daemon: run the pipeline inline so the bind still works
+        # before the systemd unit is installed/enabled.
+        st = state_mod.State()
+        return pipeline.run_listen(cfg, st)
 
 
 def install_files() -> None:
-    """Copy dimd + dim-overlay to ~/.local/opt/dim-agent and write the
-    ~/.local/bin/dim-agent-trigger shim the Hyprland bind executes."""
+    """Copy runtime files to ~/.local/opt/dim-agent, write the trigger shim
+    and the systemd user unit, and install the shell plugin directory."""
     src = pathlib.Path(__file__).resolve().parent
-    opt = HOME / ".local" / "opt" / "dim-agent"
+    opt = config.HOME / ".local" / "opt" / "dim-agent"
     opt.mkdir(parents=True, exist_ok=True)
-    for name in ("dimd", "dim-overlay"):
-        if not (src / name).exists():
-            continue
+    pkg = src / "dim"
+    if pkg.is_dir():
+        shutil.copytree(pkg, opt / "dim", dirs_exist_ok=True)
+        print(f"installed {opt}/dim")
+    for name in ("dimd",):
         target = opt / name
         shutil.copy2(src / name, target)
         target.chmod(0o755)
         print(f"installed {target}")
-    builder = src / "scripts" / "build_harness.py"
-    if builder.exists():
-        shutil.copy2(builder, opt / "build_harness.py")
-        print(f"installed {opt}/build_harness.py")
-    trigger = HOME / ".local" / "bin" / "dim-agent-trigger"
+    for extra in ("scripts/build_harness.py",):
+        f = src / extra
+        if f.exists():
+            shutil.copy2(f, opt / f.name)
+            print(f"installed {opt}/{f.name}")
+    plugin_src = src / "shell-plugin"
+    plugin_dst = (config.HOME / ".config" / "omarchy" / "plugins"
+                  / "io.github.duketopceo.dim")
+    if plugin_src.is_dir():
+        shutil.copytree(plugin_src, plugin_dst, dirs_exist_ok=True)
+        print(f"installed {plugin_dst}")
+    trigger = config.HOME / ".local" / "bin" / "dim-agent-trigger"
     trigger.parent.mkdir(parents=True, exist_ok=True)
     trigger.write_text(f"#!/bin/sh\nexec python3 {opt}/dimd trigger\n")
     trigger.chmod(0o755)
     print(f"installed {trigger}")
+    unit_dir = config.HOME / ".config" / "systemd" / "user"
+    unit_dir.mkdir(parents=True, exist_ok=True)
+    unit = unit_dir / "dimd.service"
+    unit.write_text(f"""\
+[Unit]
+Description=Dim voice assistant daemon
+After=graphical-session.target
 
+[Service]
+ExecStart={sys.executable} {opt}/dimd daemon
+Restart=on-failure
+RestartSec=2
 
-def rebuild_harness() -> int:
-    builder = OVERLAY_BIN.parent / "build_harness.py"
-    if not builder.exists():
-        builder = pathlib.Path(__file__).resolve().parent / "scripts" / "build_harness.py"
-    return subprocess.run([sys.executable, str(builder)]).returncode
+[Install]
+WantedBy=default.target
+""")
+    print(f"installed {unit}")
+    subprocess.run(["systemctl", "--user", "daemon-reload"],
+                   capture_output=True)
 
 
 def install_bind(cfg: dict) -> None:
@@ -434,17 +186,19 @@ def install_bind(cfg: dict) -> None:
     """
     mod = cfg.get("hotkey", {}).get("mod", "SUPER")
     key = cfg.get("hotkey", {}).get("key", "D")
-    trigger = f"{HOME}/.local/bin/dim-agent-trigger"
-    bind = f'o.bind("{mod} + {key.upper()}", "Dim push-to-talk", {{ launch = "{trigger}" }})'
+    trigger = f"{config.HOME}/.local/bin/dim-agent-trigger"
+    bind = (f'o.bind("{mod} + {key.upper()}", "Dim push-to-talk", '
+            f'{{ launch = "{trigger}" }})')
 
-    conf = HOME / ".config" / "hypr" / "hyprland.conf"
+    conf = config.HOME / ".config" / "hypr" / "hyprland.conf"
     if conf.exists() and "dim-agent-trigger" in conf.read_text():
         lines = [l for l in conf.read_text().splitlines()
-                 if "dim-agent-trigger" not in l and l.strip() != "# Dim push-to-talk"]
+                 if "dim-agent-trigger" not in l
+                 and l.strip() != "# Dim push-to-talk"]
         conf.write_text("\n".join(lines) + "\n")
-        print("removed dead bind from hyprland.conf (not sourced under Lua config)")
+        print("removed dead bind from hyprland.conf (not sourced under Lua)")
 
-    bindings = HOME / ".config" / "hypr" / "bindings.lua"
+    bindings = config.HOME / ".config" / "hypr" / "bindings.lua"
     text = bindings.read_text() if bindings.exists() else ""
     if "dim-agent-trigger" in text:
         print(f"bind already present in {bindings}")
@@ -452,21 +206,91 @@ def install_bind(cfg: dict) -> None:
     with bindings.open("a") as f:
         f.write(f"\n-- Dim push-to-talk\n{bind}\n")
     print(f"added bind to {bindings}: {bind}")
-    subprocess.run(["hyprctl", "reload"], env=hypr_env(), capture_output=True)
+    subprocess.run(["hyprctl", "reload"], env=pipeline.hypr_env(),
+                   capture_output=True)
+
+
+def rebuild_harness() -> int:
+    builder = config.HOME / ".local" / "opt" / "dim-agent" / "build_harness.py"
+    if not builder.exists():
+        builder = (pathlib.Path(__file__).resolve().parent
+                   / "scripts" / "build_harness.py")
+    return subprocess.run([sys.executable, str(builder)]).returncode
 
 
 def main() -> int:
-    cmd = sys.argv[1] if len(sys.argv) > 1 else "run"
-    cfg = load_config()
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "status"
+    cfg = config.load_config()
+    if cmd == "daemon":
+        return run_daemon(cfg)
     if cmd == "install":
         install_files()
         install_bind(cfg)
         return 0
     if cmd == "trigger":
-        return run_once(cfg)
+        return cmd_trigger(cfg)
+    if cmd == "status":
+        try:
+            import json
+            print(json.dumps(ipc.send({"cmd": "status"}), indent=2))
+            return 0
+        except (ConnectionError, OSError) as e:
+            print(f"dimd unreachable: {e}", file=sys.stderr)
+            return 1
+    if cmd == "stop":
+        try:
+            ipc.send({"cmd": "stop"})
+            return 0
+        except (ConnectionError, OSError) as e:
+            print(f"dimd unreachable: {e}", file=sys.stderr)
+            return 1
+    if cmd == "choice":
+        try:
+            ipc.send({"cmd": "choice", "pick": sys.argv[2] if len(sys.argv) > 2 else ""})
+            return 0
+        except (ConnectionError, OSError) as e:
+            print(f"dimd unreachable: {e}", file=sys.stderr)
+            return 1
+    if cmd == "learn":
+        from dim import learn
+        out = learn.weekly()
+        print(out if out else "no corrections this week — nothing to propose")
+        return 0
+    if cmd == "config":
+        # dimd config                      -> print config
+        # dimd config set section.key val  -> write + live reload via IPC
+        sub = sys.argv[2] if len(sys.argv) > 2 else ""
+        if sub == "set" and len(sys.argv) > 4:
+            k, v = sys.argv[3], sys.argv[4]
+            section, _, key = k.partition(".")
+            if not section or not key:
+                print("usage: dimd config set section.key value",
+                      file=sys.stderr)
+                return 2
+            try:
+                resp = ipc.send({"cmd": "config", "set": {k: v}})
+                if not resp.get("ok"):
+                    print(f"error: {resp.get('error')}", file=sys.stderr)
+                    return 1
+            except (ConnectionError, OSError):
+                try:
+                    config.set_config(section, key, v)  # daemon down
+                except ValueError as e:
+                    print(f"error: {e}", file=sys.stderr)
+                    return 1
+            print(f"{k} = {v}")
+            return 0
+        import json
+        try:
+            print(json.dumps(ipc.send({"cmd": "config"})["config"],
+                             indent=2))
+        except (ConnectionError, OSError):
+            print(json.dumps(config.load_config(), indent=2))
+        return 0
     if cmd == "harness":
         return rebuild_harness()
-    print("usage: dimd [install|trigger|harness]")
+    print("usage: dimd [daemon|install|trigger|status|stop|choice"
+          "|task_status|task_cancel|learn|harness|config [set k v]]")
     return 2
 
 

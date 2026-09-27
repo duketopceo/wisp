@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""Headless unit tests for dimd's pure decision logic.
-
-Loads dimd (extensionless script) via importlib; monkeypatches filesystem
-constants so no real config, overlay, or hyprctl is touched.
-"""
-import importlib.machinery
-import importlib.util
+"""Headless unit tests for the dim package's pure decision logic."""
 import json
 import pathlib
 import sys
@@ -13,11 +7,9 @@ import tempfile
 import unittest
 from unittest import mock
 
-DIMD = pathlib.Path(__file__).resolve().parent.parent / "dimd"
-_loader = importlib.machinery.SourceFileLoader("dimd", str(DIMD))
-spec = importlib.util.spec_from_loader("dimd", _loader)
-dimd = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(dimd)
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+
+from dim import config, pipeline  # noqa: E402
 
 
 class TestLoadConfig(unittest.TestCase):
@@ -27,19 +19,21 @@ class TestLoadConfig(unittest.TestCase):
             cfg_file.write_text(
                 '[audio]\nseconds = 7\n\n[agent]\nmodel = "m"\n'
                 'risk_threshold = "1.5" # trailing comment\n')
-            with mock.patch.object(dimd, "CFG_FILE", cfg_file):
-                cfg = dimd.load_config()
+            with mock.patch.object(config, "CFG_FILE", cfg_file):
+                cfg = config.load_config()
         self.assertEqual(cfg["audio"]["seconds"], "7")
         self.assertEqual(cfg["agent"]["risk_threshold"], "1.5")
 
     def test_writes_default_when_missing(self):
         with tempfile.TemporaryDirectory() as td:
             cfg_file = pathlib.Path(td) / "config.toml"
-            with mock.patch.object(dimd, "CFG_FILE", cfg_file), \
-                 mock.patch.object(dimd, "CFG_DIR", pathlib.Path(td)):
-                cfg = dimd.load_config()
+            with mock.patch.object(config, "CFG_FILE", cfg_file), \
+                 mock.patch.object(config, "CFG_DIR", pathlib.Path(td)):
+                cfg = config.load_config()
             self.assertTrue(cfg_file.exists())
             self.assertEqual(cfg["apps"]["terminal"], "ghostty")
+            self.assertEqual(cfg["audio"]["whisper_model"],
+                             "ggml-small.en.bin")
 
 
 class TestExecute(unittest.TestCase):
@@ -53,28 +47,53 @@ class TestExecute(unittest.TestCase):
                 "risk": {"score": risk}}
 
     def test_blocks_high_risk(self):
-        out = dimd.execute(self.answers(risk=2.0), self.cfg)
+        out = pipeline.execute(self.answers(action="type_text", risk=2.0),
+                               self.cfg)
         self.assertTrue(out.startswith("BLOCKED"))
 
+    def test_launch_route_not_risk_gated(self):
+        # "open discord" scored risk 1.6 live — launches are never blocked
+        from dim import tools
+        with mock.patch.object(tools, "run", return_value="LAUNCHED"):
+            out = pipeline.execute(
+                self.answers(action="launch", app="browser", risk=2.5),
+                self.cfg)
+        self.assertEqual(out, "LAUNCHED")
+
     def test_skips_non_launch(self):
-        out = dimd.execute(self.answers(action="close"), self.cfg)
+        out = pipeline.execute(self.answers(action="bogus"), self.cfg)
         self.assertTrue(out.startswith("SKIP"))
 
+    def test_close_dispatches_tool(self):
+        from dim import tools
+        with mock.patch.object(tools, "run", return_value="CLOSED") as r:
+            out = pipeline.execute(self.answers(action="close"), self.cfg)
+        self.assertEqual(out, "CLOSED")
+        r.assert_called_once()
+
+    def test_answer_route_never_executes(self):
+        out = pipeline.execute(self.answers(action="answer", app="none"),
+                               self.cfg)
+        self.assertEqual(out, "ANSWERED")
+
     def test_skips_unknown_app(self):
-        out = dimd.execute(self.answers(app="emacs"), self.cfg)
+        out = pipeline.execute(self.answers(app="emacs"), self.cfg)
         self.assertIn("unknown app", out)
 
     def test_skips_missing_binary(self):
-        with mock.patch.object(dimd.shutil, "which", return_value=None), \
-             mock.patch.object(dimd.pathlib.Path, "exists", return_value=False):
-            out = dimd.execute(self.answers(), self.cfg)
+        with mock.patch.object(pipeline.shutil, "which", return_value=None), \
+             mock.patch.object(pipeline.pathlib.Path, "exists",
+                               return_value=False):
+            out = pipeline.execute(self.answers(), self.cfg)
         self.assertIn("not installed", out)
 
     def test_launch_uses_lua_dispatcher(self):
         ok = mock.Mock(returncode=0, stdout="ok")
-        with mock.patch.object(dimd.shutil, "which", return_value="/usr/bin/ghostty"), \
-             mock.patch.object(dimd.subprocess, "run", return_value=ok) as run:
-            out = dimd.execute(self.answers(), self.cfg)
+        with mock.patch.object(pipeline.shutil, "which",
+                               return_value="/usr/bin/ghostty"), \
+             mock.patch.object(pipeline.subprocess, "run",
+                               return_value=ok) as run:
+            out = pipeline.execute(self.answers(), self.cfg)
         self.assertIn("LAUNCHED", out)
         cmd = run.call_args[0][0]
         self.assertEqual(cmd[:2], ["hyprctl", "eval"])
@@ -82,49 +101,64 @@ class TestExecute(unittest.TestCase):
 
     def test_launch_falls_back_to_dispatch(self):
         fail = mock.Mock(returncode=1, stdout="err")
-        with mock.patch.object(dimd.shutil, "which", return_value="/usr/bin/ghostty"), \
-             mock.patch.object(dimd.subprocess, "run", return_value=fail) as run:
-            out = dimd.execute(self.answers(), self.cfg)
+        with mock.patch.object(pipeline.shutil, "which",
+                               return_value="/usr/bin/ghostty"), \
+             mock.patch.object(pipeline.subprocess, "run",
+                               return_value=fail) as run:
+            out = pipeline.execute(self.answers(), self.cfg)
         self.assertIn("LAUNCHED", out)
         self.assertEqual(run.call_args_list[-1][0][0],
                          ["hyprctl", "dispatch", "exec", "ghostty"])
 
 
-class TestAmbiguousChoice(unittest.TestCase):
+class TestConfidenceGate(unittest.TestCase):
+    """Gate is on app/target confidence only — low action confidence must
+    not kill a correct launch (the 'retro-large' regression)."""
+
     def cfg(self, thresh="0.8"):
         return {"agent": {"confidence_ambiguous": thresh}}
 
-    def answers(self, conf):
-        return {"app": {"choice": "terminal", "confidence": conf,
-                        "probabilities": {"terminal": conf, "browser": 1 - conf}},
-                "action": {"choice": "launch", "confidence": conf,
-                           "probabilities": {"launch": conf}}}
+    def answers(self, app_conf, act_conf):
+        return {"app": {"choice": "retroarch", "confidence": app_conf,
+                        "probabilities": {"retroarch": app_conf}},
+                "action": {"choice": "launch", "confidence": act_conf,
+                           "probabilities": {"launch": act_conf}}}
 
-    def test_high_confidence_passes_through(self):
-        self.assertIsNone(dimd.ambiguous_choice(self.answers(0.9), self.cfg()))
+    def test_high_app_low_action_not_low_confidence(self):
+        self.assertFalse(
+            pipeline.is_low_confidence(self.answers(0.9, 0.49), self.cfg()))
 
-    def test_low_confidence_offers_buttons(self):
-        picked = mock.Mock(returncode=0, stdout="app:browser\n")
-        with mock.patch.object(dimd.subprocess, "run", return_value=picked) as run:
-            out = dimd.ambiguous_choice(self.answers(0.5), self.cfg())
+    def test_low_app_is_low_confidence(self):
+        self.assertTrue(
+            pipeline.is_low_confidence(self.answers(0.4, 0.9), self.cfg()))
+
+
+class TestChoiceFlow(unittest.TestCase):
+    def answers(self):
+        return {"app": {"choice": "terminal", "confidence": 0.5,
+                        "probabilities": {"terminal": 0.5, "browser": 0.3}},
+                "action": {"choice": "launch", "confidence": 0.5,
+                           "probabilities": {"launch": 0.5}}}
+
+    def test_choices_list_top_candidates(self):
+        labels = pipeline.ambiguous_choices(self.answers(), {})
+        self.assertIn("app:terminal", labels)
+        self.assertIn("app:browser", labels)
+        self.assertIn("action:launch", labels)
+
+    def test_apply_choice_corrects_answers(self):
+        out = pipeline.apply_choice(self.answers(), "app:browser")
         self.assertEqual(out["app"]["choice"], "browser")
         self.assertTrue(out["corrected_by_user"])
-        self.assertEqual(run.call_args[0][0][1], "--buttons")
-
-    def test_cancel_returns_none(self):
-        picked = mock.Mock(returncode=0, stdout="")
-        with mock.patch.object(dimd.subprocess, "run", return_value=picked):
-            self.assertIsNone(
-                dimd.ambiguous_choice(self.answers(0.5), self.cfg()))
-
 
 class TestLogDecision(unittest.TestCase):
     def test_appends_jsonl(self):
         with tempfile.TemporaryDirectory() as td:
-            target = pathlib.Path(td) / "corrections.jsonl"
-            with mock.patch.object(dimd, "CORRECTIONS", target):
-                dimd.log_decision({"ts": "t1", "result": "LAUNCHED"})
-                dimd.log_decision({"ts": "t2", "result": "BLOCKED"})
+            target = pathlib.Path(td) / "decisions.jsonl"
+            pipeline.log_decision({"ts": "t1", "result": "LAUNCHED"},
+                                  log_file=target)
+            pipeline.log_decision({"ts": "t2", "result": "BLOCKED"},
+                                  log_file=target)
             rows = [json.loads(l) for l in target.read_text().splitlines()]
         self.assertEqual([r["result"] for r in rows], ["LAUNCHED", "BLOCKED"])
 

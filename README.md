@@ -1,104 +1,134 @@
 # Dim
 
-Dim, open spotify. — a Jev-powered voice computer-use agent for Omarchy
-(Hyprland on Asahi Linux). Push-to-talk, the room dims, Dim hears, decides,
-and acts.
+**Dim, open spotify.** — a resident voice assistant for Omarchy
+(Hyprland). Press `Super+D`, speak, and Dim hears, decides, and acts:
+launch an app, run a desktop tool, spawn a coding agent, or just answer.
 
-Push-to-talk → PipeWire mic capture → whisper.cpp transcription → Jev decision (OpenRouter) → guarded Hyprland action, with a dim overlay while listening/acting.
+Push-to-talk → PipeWire mic capture → whisper.cpp → Jev routing
+(OpenRouter) → risk-tiered toolbelt / `ori opencode` agents → widgets in
+your Omarchy bar.
 
 ## Features
 
-<<<<<<< HEAD
-- **v0.1 vertical slice**: Right Alt + Space → 5s mic capture → whisper.cpp →
-  Jev (`openrouter.ai/api/alpha/decisions`, model `typesafe/jev-1.13`) →
-=======
-- **v0.1 vertical slice**: Super + D → 5s mic capture → whisper.cpp →
-  Jev (`openrouter.ai/api/alpha/decisions`, model `~typesafe/jev-latest`) →
->>>>>>> origin/master
-  guarded launch (`hyprctl dispatch exec`) + notify-send.
-- **Breathing darkness**: overlay opacity modulates with live mic amplitude
-  during capture; silence restores full brightness.
-- **Confidence-gated UI**: Jev confidence ≥ 0.95 executes instantly; < 0.8
-  shows the ambiguous choices as clickable buttons in the overlay.
-- **Local Jev harness**: `dimd harness` (or `scripts/build_harness.py`) mines
-  the local dayflow activity DB for the apps you actually use + project
-  vocabulary, resolves each to a real launch command, and writes
-  `~/.config/dim-agent/harness.json`. dimd rebuilds Jev's app catalog and
-  decision context from it at trigger time. Local-only, never committed.
-- **Decision log + corrections lane**: every decision is appended to
-  `~/.local/share/dim-agent/corrections.jsonl` (XDG data dir);
-  `scripts/propose_criteria.py` (manual, weekly,
-  NOT cron-scheduled yet) clusters corrections into proposed new choice
-  criteria. Review the proposal, then edit `JEV_QUESTIONS` in `dimd`.
+- **Resident daemon**: `dimd` runs as a systemd user service holding
+  session, choice, and agent state on a unix socket. `Super+D` sends
+  `listen`; the daemon owns the whole pipeline.
+- **Jev routing**: each utterance is classified as `launch`, `tool`,
+  `agent`, `answer`, or `clarify` — questions get text answers, not
+  forced actions. The confidence gate keys on the *target* (app/tool)
+  so a hesitant action score never cancels a correct launch.
+- **Real answers**: the `answer` route calls an OpenRouter chat model
+  (`answer_model`, vision-capable) — with a `grim` screenshot attached
+  when Jev flags `needs_screen`, so "what's this error?" works. Set
+  `screenshots = false` to keep images local.
+- **Session memory**: turns persist to `session.jsonl` and the last N
+  (`session_turns`, default 8) feed Jev + the answer model — "repeat
+  that" and "yes, do it" follow-ups work across restarts.
+- **Toolbelt**: launch/focus/close apps, workspace switch, notify,
+  screenshot (`grim`), type text (`wtype`), guarded shell, file search —
+  each with a risk tier (`safe` runs, `mutating` confirms, `shell`
+  always confirms + denylist).
+- **Autonomous agents**: "Dim, agent — fix the tests in dim-agent"
+  spawns a named `ori opencode run` task (all OpenRouter) you can
+  check on or cancel later.
+- **Omarchy shell plugin** (`io.github.duketopceo.dim`): center bar icon,
+  breathing-dim listening overlay, choice buttons, transcript/answer
+  panel, agent status — all rendered from the daemon's `state.json`.
+- **Week-by-week learning**: every clarify pick is logged; `dimd learn`
+  stages a weekly proposal of criteria improvements you approve into
+  `criteria_overrides.json`. Human-gated, never auto-applied.
+- **Generic install**: works on a fresh Omarchy box — app catalog comes
+  from `.desktop` files + `$PATH`. Optional adapters (dayflow activity
+  mining, omaseal) layer on top when present; nothing personal is
+  required or committed.
+- **Text-first, optional voice**: answers render as widgets; set
+  `voice.enabled = true` for `espeak`/`espeak-ng` spoken replies.
 
 ## Architecture
 
 ```
-[Super + D] ──bind──▶ dimd ──▶ pw-record 5s mic wav
-                                        │
-                                        ▼
-                                 whisper.cpp (ggml-base.en)
-                                        │
-                                        ▼
-                          POST openrouter.ai/api/alpha/decisions
-                          model: typesafe/jev-1.13
-                          questions: app / action / risk
-                                        │
-                              risk ≤ 1 and action == launch
-                                        ▼
-                       hyprctl dispatch exec <app> + notify-send
+[Super+D] ──bind──▶ dim-agent-trigger ──ipc──▶ dimd (systemd user service)
+                                                    │
+        ┌───────────────────────────────────────────┤
+        ▼                                           ▼
+  pw-record 5s wav → whisper.cpp (ggml-small.en)   state.json ◀── poll
+        │                                           (widgets)
+        ▼
+  Jev decisions (typesafe/jev-1.13)
+  route: launch | tool | agent | answer | clarify
+        │
+   ┌────┼─────────┬───────────┐
+   ▼    ▼         ▼           ▼
+ launch toolbelt  agent    answer
+        │      ori opencode  │
+        ▼      run (named    ▼
+  hyprctl /    persistent)  text widget
+  grim / wtype  tasks.jsonl  (+ espeak)
 ```
 
-## Layout
+## Install
 
-- `dimd` — daemon: watches for the hotkey trigger (spawned by the Hyprland bind), records, transcribes, decides, acts.
-- `dim-overlay` — fullscreen dim overlay (see Overlay below).
-- `config.toml` — user config (hotkey, apps, risk threshold), at `~/.config/dim-agent/config.toml`.
-- `dim-agent.service`-free: v0.1 is bind-spawned, no systemd unit yet.
-
-## Hotkey
-
-**Super + D** is push-to-talk (default). Remap in `~/.config/dim-agent/config.toml`:
-
-```toml
-[hotkey]
-mod = "SUPER"   # modmask token; a keysym like ALT_R makes a side-specific multi-key bind
-key = "D"
+```sh
+git clone https://github.com/duketopceo/dim-agent
+cd dim-agent
+python3 dimd install     # files + shell plugin + systemd unit + Super+D bind
+systemctl --user enable --now dimd
 ```
 
-`dimd install` copies `dimd` + `dim-overlay` to `~/.local/opt/dim-agent/`, writes the `~/.local/bin/dim-agent-trigger` shim, and appends a Lua bind to `~/.config/hypr/bindings.lua` (idempotent):
+Prereqs: `pw-record` (or `arecord`), whisper.cpp at
+`~/src/whisper.cpp` with `models/ggml-small.en.bin`, `hyprctl`,
+`notify-send`. Optional: `grim`, `wtype`, `espeak-ng`, `ori`
+(for agent spawning).
 
-```lua
-o.bind("SUPER + D", "Dim push-to-talk", { launch = "~/.local/bin/dim-agent-trigger" })
+Secrets: `~/.config/dim-agent/.env` with `OPENROUTER_API_KEY=...` — or
+`omaseal`-managed env. Never committed.
+
+Config: `~/.config/dim-agent/config.toml` — hotkey, audio seconds,
+whisper model, Jev model pin, risk/confidence thresholds, `voice.enabled`,
+app→command map.
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `dimd daemon` | run the IPC daemon (systemd ExecStart) |
+| `dimd trigger` | push-to-talk client (what the bind runs) |
+| `dimd status` | dump daemon state.json |
+| `dimd stop` | stop the daemon |
+| `dimd choice <pick>` | answer a pending clarify prompt |
+| `dimd learn` | stage this week's criteria proposal |
+| `dimd harness` | rebuild `harness.json` from dayflow (optional) |
+| `dimd install` | install files, plugin, unit, bind |
+
+## Data files (local, never committed)
+
+- `~/.local/share/dim-agent/session.jsonl` — persistent conversation turns
+- `~/.local/share/dim-agent/decisions.jsonl` — every decision + result
+- `~/.local/share/dim-agent/corrections.jsonl` — your clarify picks
+- `~/.local/share/dim-agent/tasks.jsonl` + `tasks/<id>.log` — agent registry
+- `~/.local/share/dim-agent/proposals/YYYY-WW.md` — weekly learning proposals
+- `~/.config/dim-agent/harness.json` — mined app catalog (dayflow adapter)
+- `~/.config/dim-agent/criteria_overrides.json` — approved learning edits
+- `$XDG_RUNTIME_DIR/dim-agent/state.json` — live widget state
+- `$XDG_RUNTIME_DIR/dim-agent/dimd.sock` — IPC socket
+
+## Development
+
+```sh
+python3 -m unittest discover -s tests -v   # 65 headless tests
+python3 -m py_compile dimd dim/*.py dim/tools/*.py
 ```
 
-Omarchy configures Hyprland in **Lua** — `hyprland.conf` is not sourced, and `dimd install` strips any legacy `bind =` line it wrote there. `mod` is normally a modmask token (`SUPER`/`ALT`/`SHIFT`/`CTRL`); a keysym like `ALT_R` instead produces a side-specific multi-key chord (e.g. right-Option-only). Check conflicts first: `omarchy menu keybindings --print`.
+Layout: `dimd` (entry + install), `dim/` (config, ipc, state, pipeline,
+jev routing, learn, agents, tools/), `shell-plugin/` (quickshell plugin
+for the Omarchy bar), `scripts/` (harness + criteria helpers),
+`docs/` (brainstorm + plan for the assistant architecture).
 
-## Overlay choice (documented decision)
+## Safety
 
-`eww` is not installed and pulls a GTK3 build chain; `gtk-layer-shell` IS installed (`extra/gtk-layer-shell 0.10.1-1`) along with `python-gobject`. Simplest working path: a tiny **PyGObject + gtk-layer-shell fullscreen overlay** — a native wlr-layer-shell client, no chromium kiosk hack, ~40 lines. Fallback if layer-shell fails: chromium kiosk at 40% opacity (not implemented).
-
-## Dependencies (laptop, Arch)
-
-- hyprctl, wpctl/pipewire, `pw-record` (pipewire-audio)
-- whisper.cpp built at `~/src/whisper.cpp` (model: `ggml-base.en.bin`)
-- python3.11+ (3.11.16 installed; system 3.14), `python-gobject`, `gtk-layer-shell`
-- espeak-ng (testing), ffmpeg, `notify-send` (libnotify)
-
-## Env
-
-`~/.config/dim-agent/.env` (chmod 600):
-```
-OPENROUTER_API_KEY=sk-or-...
-```
-Never committed.
-
-## Testing without a human voice
-
-`tests/stage_test.sh`: espeak-ng "open terminal" → wav → whisper.cpp → transcript → Jev call → hyprctl launch. See `SLICE_TEST_RESULTS.md` for outputs.
-
-## Status
-
-- v0.1: vertical slice (voice → Jev → launch, guarded) ✔
-- v0.2: dim overlay (gtk-layer-shell) ✔
-- next: type_text / run_shell actions with explicit confirmation, streaming partials
+- Mutating tools (`close`, `type_text`, `task_cancel`) and all `shell`
+  calls require confirmation — nothing fires silently.
+- Shell commands pass a denylist before the confirmation prompt.
+- Risk scores above `risk_threshold` block before any route executes.
+- Learning proposals are staged files you approve; Jev criteria never
+  mutate themselves.
