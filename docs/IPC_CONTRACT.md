@@ -19,11 +19,11 @@ future tray apps). Shells MUST only depend on this document.
 | cmd | extra fields | reply | effect |
 |---|---|---|---|
 | `status` | — | `{ok, state}` | `state` = full state.json snapshot |
-| `listen` | — | `{ok}` or `{ok:false,error:"busy"}` | starts a listen cycle async |
+| `listen` | — | `{ok}` or `{ok:false,error:"busy"}` | starts a listen cycle async; kills in-flight TTS (barge-in) |
 | `choice` | `pick: string` | `{ok}` | resolves a pending choice/confirm |
 | `task_status` | `name: string` | `{ok, result: string}` | named-agent status |
 | `task_cancel` | `name: string` | `{ok, result: string}` | cancel named agent |
-| `stop` | — | `{ok}` | daemon exits, socket removed |
+| `stop` | — | `{ok}` | daemon exits, socket removed; kills in-flight TTS |
 | `config` | `set: {"section.key": "val"}` (optional) | `{ok, config}` | read config; with `set`, writes config.toml preserving comments/order and live-reloads |
 | `learn` | — | `{ok, result}` | weekly learning proposals (human-gated) |
 | `harness` | — | `{ok, result}` | regenerate the app harness catalog |

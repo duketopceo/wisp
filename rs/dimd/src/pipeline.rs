@@ -579,9 +579,7 @@ pub fn run_listen(cfg: &Cfg, st: &Arc<State>, ctl: &ChoiceCtl,
             st.transition("done", &[("result", json!(result.clone())),
                                     ("answer", json!(reply.clone())),
                                     ("points", json!(pts))]);
-            if cfg.voice_out {
-                speak(&reply);
-            }
+            crate::speech::speak(&reply, cfg);
             session::append_turn(&text, &route, &reply, &result);
             recall::index_turn(&text, &reply, &result);
             timing.insert("act_ms".into(), json!(t0.elapsed().as_millis()));
@@ -623,11 +621,7 @@ pub fn run_listen(cfg: &Cfg, st: &Arc<State>, ctl: &ChoiceCtl,
     }
 }
 
-fn speak(msg: &str) {
-    let bin = if tools::which("espeak-ng") { "espeak-ng" }
-        else if tools::which("espeak") { "espeak" } else { return };
-    Command::new(bin).arg(msg).spawn().ok();
-}
+
 
 fn active_window_text() -> String {
     let out = Command::new("hyprctl").args(["activewindow", "-j"])

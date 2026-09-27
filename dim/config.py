@@ -55,6 +55,9 @@ confidence_ambiguous = 0.8
 [voice]
 # spoken replies via espeak/espeak-ng when true; missing binary = silent no-op
 enabled = false
+# custom TTS command (e.g. piper); `{text}` is replaced with the message,
+# otherwise the message is appended as the last arg. Empty = espeak default.
+cmd = ""
 
 [apps]
 browser = "chromium"

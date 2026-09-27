@@ -15,6 +15,7 @@ pub struct Cfg {
     pub screenshots: bool,
     pub session_turns: usize,
     pub voice_out: bool,
+    pub voice_cmd: String,
     pub whisper_bin: PathBuf,
     pub whisper_model: PathBuf,
     pub router: String, // jev | chat | off
@@ -99,6 +100,9 @@ pub fn load() -> Cfg {
         // [voice].enabled — TTS replies (Python: cfg["voice"]["enabled"])
         voice_out: truthy(get(&f.voice, "enabled"))
             .unwrap_or(false),
+        // [voice].cmd — custom TTS argv (whitespace-split, `{text}`
+        // placeholder; empty = espeak default)
+        voice_cmd: s(get(&f.voice, "cmd"), ""),
         whisper_bin: home.join("src/whisper.cpp/build/bin/whisper-cli"),
         // audio.whisper_model is a filename under the whisper models
         // dir (Python: whisper_model() joins WHISPER_HOME/models)

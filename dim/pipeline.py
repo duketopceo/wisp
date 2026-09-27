@@ -19,7 +19,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
-from . import config
+from . import config, speech
 
 JEV_QUESTIONS = {
     "route": {
@@ -106,15 +106,6 @@ def hypr_env() -> dict:
 
 def notify(msg: str) -> None:
     subprocess.run(["notify-send", "Dim", msg], env=hypr_env())
-
-
-def speak(msg: str, cfg: dict) -> None:
-    if cfg.get("voice", {}).get("enabled", "false") != "true":
-        return
-    bin_ = shutil.which("espeak-ng") or shutil.which("espeak")
-    if bin_:
-        subprocess.Popen([bin_, msg], stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL)
 
 
 def record(seconds: int, state=None) -> pathlib.Path:
@@ -532,7 +523,7 @@ def run_listen(cfg: dict, state, wait_for_choice=None) -> int:
                     pts = _points.to_logical(raw, _points.monitors())
             state.transition("done", result=result, answer=reply,
                              points=pts)
-            speak(reply, cfg)
+            speech.speak(reply, cfg)
         else:
             state.transition("done", result=result)
         session.append_turn(text, route=answers.get("route", {})

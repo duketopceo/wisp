@@ -12,6 +12,7 @@ mod points;
 mod recall;
 mod session;
 mod skills;
+mod speech;
 mod state;
 mod tools;
 mod util;
@@ -176,6 +177,7 @@ fn daemon() -> i32 {
                 if busy_h.swap(true, Ordering::SeqCst) {
                     return json!({"ok": false, "error": "busy"});
                 }
+                speech::stop();
                 let st2 = st_h.clone();
                 let cfg2 = cfg_h.clone();
                 let ctl2 = ctl_h.clone();
@@ -230,6 +232,7 @@ fn daemon() -> i32 {
                        "config": flat_config(&cfg_h2.lock().unwrap().raw)})
             }
             "stop" => {
+                speech::stop();
                 running_h.store(false, Ordering::SeqCst);
                 json!({"ok": true})
             }

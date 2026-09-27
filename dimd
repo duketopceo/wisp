@@ -14,7 +14,7 @@ import threading
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-from dim import config, ipc, pipeline, state as state_mod  # noqa: E402
+from dim import config, ipc, pipeline, speech, state as state_mod  # noqa: E402
 
 
 def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
@@ -28,6 +28,7 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
         if c == "listen":
             if ctl["busy"].is_set():
                 return {"ok": False, "error": "busy"}
+            speech.stop()
             ctl["busy"].set()
             threading.Thread(target=_run_listen, args=(st, cfg, ctl),
                              daemon=True).start()
@@ -70,6 +71,7 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
                 cfg.update(config.load_config())
             return {"ok": True, "config": cfg}
         if c == "stop":
+            speech.stop()
             ctl["stop"].set()
             return {"ok": True}
         return {"ok": False, "error": f"unknown cmd {c!r}"}
