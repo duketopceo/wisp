@@ -29,14 +29,15 @@ routing → guarded actions. Python reference daemon + Rust parity core
 | `speech.py` | TTS replies with barge-in — tracks espeak/`[voice].cmd` child pid, killed on `listen`/`stop` |
 | `trace.py` | dev trace — `trace.jsonl` event stream (turn id, stage, kind, ms, data); `dimd trace` CLI |
 | `learn.py` | corrections → weekly human-gated criteria proposals |
-| `agents.py` | `ori opencode` background task registry (spawn/status/cancel, `tasks.jsonl`) |
+| `brain.py` | pluggable answer providers — `[brain] default = "name:model"` + `[brain.<name>]` tables (kind openai_compat\|ollama, base_url, key_env, vision, tools); router `jev`\|`chat`\|`off` |
+| `agents.py` | background task registry (spawn/status/cancel, `tasks.jsonl`); `[brain] agent_runtime` = opencode\|codex\|claude\|devin, PATH-probed |
 | `tools/` | toolbelt: `__init__.py` registry + tiers + `tool_schemas()`; `desktop.py`/`system.py`/`adapters.py` shell-outs |
 | `util.py` | shared slug/text helpers used by agents + skills |
 
 ## Rust modules (`rs/dimd/src/`)
 
 Mirror of `dim/`: `main.rs` (IPC dispatch), `ipc.rs`, `state.rs`,
-`config.rs`, `brain.rs` (Jev + chat clients), `pipeline.rs`,
+`config.rs`, `brain.rs` (Jev + pluggable provider clients), `pipeline.rs`,
 `tools.rs`, `agents.rs`, `session.rs`, `learn.rs`, `harness.rs`,
 `memory.rs`, `recall.rs` (rusqlite FTS5), `skills.rs`, `util.rs`
 (shared helpers incl. `run_timeout`). `tests/parity.rs` replays

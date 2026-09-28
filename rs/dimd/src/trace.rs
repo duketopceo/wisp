@@ -94,8 +94,12 @@ pub fn emit(turn: &str, step: &str, kind: &str,
     use std::io::Write;
     if let Ok(mut f) = std::fs::OpenOptions::new()
         .create(true).append(true).open(&path) {
-        writeln!(f, "{}", serde_json::to_string(&ev)
-            .unwrap_or_default()).ok();
+        // one write_all — writeln! emits the line and '\n' as separate
+        // pieces, which interleaves under concurrent emitters and
+        // corrupts the JSONL (parity: Python does a single write)
+        let line = format!("{}\n", serde_json::to_string(&ev)
+            .unwrap_or_default());
+        f.write_all(line.as_bytes()).ok();
     }
 }
 
@@ -128,8 +132,20 @@ mod tests {
         let t = new_turn();
         emit(&t, "listen_start", "lifecycle",
              json!({"seconds": 5}), Some(12));
-        let evs = read(50, &t, "lifecycle");
-        assert_eq!(evs.len(), 1);
+        // the live daemon appends to the same trace.jsonl — read-after-
+        // write can briefly miss under concurrent writers; retry a beat
+        let mut evs = vec![];
+        for _ in 0..20 {
+            evs = read(50, &t, "lifecycle");
+            if !evs.is_empty() { break; }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(evs.len(), 1, "turn {t} missing from {:?} — tail: {}",
+                   trace_file(),
+                   std::fs::read_to_string(trace_file())
+                       .unwrap_or_default()
+                       .lines().rev().take(5).collect::<Vec<_>>()
+                       .join("\n"));
         let ev = &evs[0];
         for k in ["ts", "turn", "step", "kind", "ms", "data"] {
             assert!(ev.get(k).is_some(), "missing key {k}");

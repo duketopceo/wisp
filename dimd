@@ -68,7 +68,7 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
         if c == "config":
             set_fields = cmd.get("set") or {}
             for k, v in set_fields.items():
-                section, _, key = k.partition(".")
+                section, _, key = k.rpartition(".")
                 if not section or not key:
                     return {"ok": False, "error": "config keys must be section.key"}
                 try:
@@ -273,7 +273,7 @@ def main() -> int:
         sub = sys.argv[2] if len(sys.argv) > 2 else ""
         if sub == "set" and len(sys.argv) > 4:
             k, v = sys.argv[3], sys.argv[4]
-            section, _, key = k.partition(".")
+            section, _, key = k.rpartition(".")
             if not section or not key:
                 print("usage: dimd config set section.key value",
                       file=sys.stderr)

@@ -1,7 +1,7 @@
 ---
 plan: dim-u6-brain-providers
 created: 2026-09-27
-status: ready
+status: implemented (Python+Rust parity; ollama gate passed vs real-socket stub)
 origin: docs/plans/2026-09-26-001-feat-dim-companion-crossplatform-plan.md#U6
 issue: https://github.com/duketopceo/dim-agent/issues/13
 wave: 3

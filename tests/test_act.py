@@ -9,10 +9,11 @@ from dim import act, session, tools  # noqa: E402
 
 
 def _msg(content=None, calls=None):
+    # _post returns the provider message object (U6 provider seam)
     msg = {"role": "assistant", "content": content}
     if calls:
         msg["tool_calls"] = calls
-    return {"choices": [{"message": msg}]}
+    return msg
 
 
 def _call(name, arg=""):

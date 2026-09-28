@@ -442,6 +442,8 @@ FloatingWindow {
               ["agent.answer_model", "answer model"],
               ["agent.model", "jev model"],
               ["brain.router", "router (jev|chat|off)"],
+              ["brain.default", "answer brain (name:model)"],
+              ["brain.agent_runtime", "agent runtime (opencode|codex|claude|devin)"],
               ["voice.enabled", "voice_out (true|false)"],
               ["voice.cmd", "tts cmd override (empty=espeak)"],
               ["stt.provider", "stt (local|openai)"],

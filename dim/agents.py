@@ -68,8 +68,6 @@ def _find(name: str, tasks_file=config.TASKS_FILE) -> dict | None:
 
 def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
           log_dir=config.TASK_LOGS, cwd: str | None = None) -> str:
-    if not shutil.which("ori"):
-        return "SKIP (ori not installed)"
     task = task.strip()
     if not task:
         return "SKIP (empty agent task)"
@@ -82,10 +80,10 @@ def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
     log_dir.mkdir(parents=True, exist_ok=True)
     log = log_dir / f"{name}.log"
     model = cfg.get("agents", {}).get("model", "")
-    cmd = ["ori", "opencode"]
-    if model:
-        cmd += ["--model", model]
-    cmd += ["run", task]
+    cmd = _runtime_cmd(cfg, task, model)
+    if cmd is None:
+        rt = cfg.get("brain", {}).get("agent_runtime", "opencode")
+        return f"SKIP (agent runtime {rt!r} not on PATH)"
     try:
         with log.open("ab") as lf:
             proc = subprocess.Popen(
@@ -94,13 +92,41 @@ def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
                 cwd=cwd or str(config.HOME),
                 start_new_session=True)
     except OSError as e:
-        return f"SKIP (ori spawn failed: {e})"
+        return f"SKIP (agent spawn failed: {e})"
     _log_line({
         "id": name, "name": name, "task": task, "pid": proc.pid,
         "cmd": " ".join(cmd), "status": "running",
         "ts": datetime.now(timezone.utc).isoformat(),
     }, tasks_file)
     return f"SPAWNED {name} (pid {proc.pid})"
+
+
+_RUNTIMES = {  # [brain] agent_runtime → argv template, {task}/{model}
+    "opencode": ["ori", "opencode", "run", "{task}"],
+    "codex": ["codex", "exec", "{task}"],
+    "claude": ["claude", "-p", "{task}"],
+    "devin": ["devin", "run", "{task}"],
+}
+_RUNTIME_BINS = {"opencode": "ori", "codex": "codex",
+                 "claude": "claude", "devin": "devin"}
+
+
+def _runtime_cmd(cfg: dict, task: str, model: str) -> list | None:
+    """argv for the configured agent runtime, or None when its binary
+    isn't on PATH (U6: probe → explicit error, not a silent failure)."""
+    import shutil
+    rt = cfg.get("brain", {}).get("agent_runtime", "opencode")
+    template = _RUNTIMES.get(rt, _RUNTIMES["opencode"])
+    if not shutil.which(_RUNTIME_BINS.get(rt, "ori")):
+        return None
+    cmd = [a.format(task=task, model=model) for a in template]
+    if model and rt == "opencode":
+        cmd[2:2] = ["--model", model]  # before 'run'
+    elif model and rt == "codex":
+        cmd += ["-m", model]
+    elif model and rt == "claude":
+        cmd += ["--model", model]
+    return cmd
 
 
 def cancel(name: str, tasks_file=config.TASKS_FILE) -> str:

@@ -76,6 +76,42 @@ base_url = "https://openrouter.ai/api/v1"
 model = "openai/text-embedding-3-small"
 key_env = "OPENROUTER_API_KEY"
 
+[brain]
+# router: "jev" (typed decisions), "chat" (transcript+screen straight
+# to the answer brain), or "off" (always clarify via choices)
+router = "jev"
+# answer provider as "name:model" — named sections below or any
+# [brain.<name>] table you add (kind: openai_compat | ollama)
+default = "openrouter:meta-llama/llama-4-maverick"
+# background agent runtime: opencode | codex | claude | devin
+agent_runtime = "opencode"
+
+# Built-in provider sections — override or add [brain.<name>] tables.
+[brain.openrouter]
+kind = "openai_compat"
+base_url = "https://openrouter.ai/api/v1"
+key_env = "OPENROUTER_API_KEY"
+vision = "true"
+tools = "true"
+
+[brain.ollama]
+kind = "ollama"          # native /api/chat
+base_url = "http://localhost:11434"
+vision = "false"
+tools = "false"
+
+[brain.lmstudio]
+kind = "openai_compat"
+base_url = "http://localhost:1234/v1"
+vision = "false"
+tools = "false"
+
+[brain.mlx]
+kind = "openai_compat"   # mlx-lm server, probed on /v1/models
+base_url = "http://localhost:8080/v1"
+vision = "false"
+tools = "false"
+
 [debug]
 # full-fidelity event stream to ~/.local/share/dim-agent/trace.jsonl —
 # every stage of every turn (record/stt/decision/tools/brain/tts/ipc)
@@ -112,6 +148,10 @@ def _default_cfg_dict() -> dict:
             "confidence_instant": "0.95", "confidence_ambiguous": "0.8",
         },
         "voice": {"enabled": "false"},
+        "brain": {
+            "router": "jev", "agent_runtime": "opencode",
+            "default": "openrouter:meta-llama/llama-4-maverick",
+        },
         "apps": {
             "browser": "chromium", "terminal": "ghostty", "files": "nautilus",
             "vscode": "code", "music": "spotify",
@@ -192,9 +232,12 @@ def set_config(section: str, key: str, value: str) -> None:
     if any(c in value for c in '"\\#\n'):
         raise ValueError("config values may not contain \" \\ # or newline")
     import re as _re
-    for part in (section, key):
-        if not _re.fullmatch(r"[A-Za-z0-9_-]+", part or ""):
-            raise ValueError("config section/key must match [A-Za-z0-9_-]+")
+    # section may be nested ("brain.ollama"); key stays a bare name
+    for part, pat in ((section, r"[A-Za-z0-9_.-]+"),
+                      (key, r"[A-Za-z0-9_-]+")):
+        if not _re.fullmatch(pat, part or ""):
+            raise ValueError("config section/key must match "
+                             "[A-Za-z0-9_.-]+ / [A-Za-z0-9_-]+")
     CFG_DIR.mkdir(parents=True, exist_ok=True)
     if not CFG_FILE.exists():
         CFG_FILE.write_text(DEFAULT_CONFIG)

@@ -81,7 +81,7 @@ fn main() {
                     }
                 } else {
                     let (sec, key) =
-                        k.split_once('.').unwrap_or(("", ""));
+                        k.rsplit_once('.').unwrap_or(("", ""));
                     if let Err(e) = config::set_config(sec, key, v) {
                         eprintln!("error: {e}");
                         std::process::exit(1);
@@ -244,7 +244,9 @@ fn dispatch(cmd: Value, st_h: &Arc<state::State>,
             "config" => {
                 if let Some(set) = cmd.get("set").and_then(|v| v.as_object()) {
                     for (k, v) in set {
-                        let (sec, key) = k.split_once('.').unwrap_or(("", ""));
+                        // last-dot split — brain.ollama.base_url →
+                        // section "brain.ollama", key "base_url"
+                        let (sec, key) = k.rsplit_once('.').unwrap_or(("", ""));
                         if sec.is_empty() || key.is_empty() {
                             return json!({"ok": false,
                                 "error": "config keys must be section.key"});

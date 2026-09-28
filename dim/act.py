@@ -26,17 +26,12 @@ SYSTEM = ("You are Dim's hands on a Linux desktop (Hyprland). Complete "
           "skipped, do not retry it; work around or report the block.")
 
 
-def _post(payload: dict) -> dict:
-    req = urllib.request.Request(
-        config.CHAT_ENDPOINT, data=json.dumps(payload).encode(),
-        headers={
-            "Authorization": f"Bearer {config.load_api_key()}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/duketopceo/dim-agent",
-            "X-Title": "Dim",
-        }, method="POST")
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        return json.loads(resp.read())
+def _post(messages: list, cfg: dict) -> dict:
+    """Chat call through the configured brain provider with toolbelt
+    schemas (U6). Returns the provider message object."""
+    from . import brain
+    return brain.chat(messages, cfg,
+                      tools=tools.tool_schemas(), timeout=60)["raw"]
 
 
 def _gate(name: str, arg: str, cfg: dict, confirm) -> str | None:
@@ -60,17 +55,18 @@ def run_act_loop(task: str, cfg: dict, state=None,
     """Drive the chat model through the toolbelt until it finishes or a
     bound trips. `confirm(prompt)->bool` asks the user (choice widget /
     IPC) when wired; without it mutating calls skip."""
-    model = cfg.get("agent", {}).get("answer_model",
-                                    "meta-llama/llama-4-maverick")
+    from . import brain
+    if not brain.supports_tools(cfg):
+        p = brain.provider(cfg)
+        return (f"SKIP (brain provider '{p['name']}' does not support "
+                f"tools — set [brain.{p['name']}] tools=true or pick a "
+                f"capable provider)")
     messages = [{"role": "system", "content": SYSTEM},
                 {"role": "user", "content": task}]
     steps, errors = [], 0
 
     while len(steps) < MAX_STEPS:
-        data = _post({"model": model, "messages": messages,
-                      "tools": tools.tool_schemas(), "tool_choice": "auto",
-                      "max_tokens": 400})
-        msg = (data.get("choices") or [{}])[0].get("message", {})
+        msg = _post(messages, cfg)
         calls = msg.get("tool_calls") or []
         if not calls:
             text = (msg.get("content") or "").strip()

@@ -47,14 +47,49 @@ fn alive(pid: i64) -> bool {
     PathBuf::from(format!("/proc/{pid}")).exists()
 }
 
-pub fn spawn(task: &str) -> String {
-    if !crate::tools::which("ori") {
-        return "SKIP (ori not installed)".into();
+fn runtime_name(cfg: &crate::config::Cfg) -> String {
+    cfg.raw.get("brain").and_then(|b| b.get("agent_runtime"))
+        .and_then(|v| v.as_str()).unwrap_or("opencode").to_string()
+}
+
+/// argv for the configured agent runtime, or None when its binary
+/// isn't on PATH (U6: probe → explicit error, not a silent failure).
+/// Parity with dim/agents.py::_runtime_cmd.
+fn runtime_cmd(cfg: &crate::config::Cfg, task: &str, model: &str)
+        -> Option<(String, Vec<String>)> {
+    let rt = runtime_name(cfg);
+    let (bin, mut argv): (&str, Vec<String>) = match rt.as_str() {
+        "opencode" => ("ori", vec!["opencode".into(), "run".into(),
+                                   task.into()]),
+        "codex" => ("codex", vec!["exec".into(), task.into()]),
+        "claude" => ("claude", vec!["-p".into(), task.into()]),
+        "devin" => ("devin", vec!["run".into(), task.into()]),
+        _ => ("ori", vec!["opencode".into(), "run".into(),
+                          task.into()]),
+    };
+    if !crate::tools::which(bin) {
+        return None;
     }
+    if !model.is_empty() && rt == "opencode" {
+        // parity: --model goes after 'opencode', before 'run'
+        argv.splice(1..1, ["--model".into(), model.into()]);
+    }
+    Some((bin.to_string(), argv))
+}
+
+pub fn spawn(task: &str, cfg: &crate::config::Cfg) -> String {
     let task = task.trim();
     if task.is_empty() {
         return "SKIP (empty agent task)".into();
     }
+    let model = cfg.raw.get("agents")
+        .and_then(|a| a.get("model"))
+        .and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let (bin, argv) = match runtime_cmd(cfg, task, &model) {
+        Some(t) => t,
+        None => return format!("SKIP (agent runtime '{}' not on PATH)",
+                               runtime_name(cfg)),
+    };
     let mut name = slug(task);
     let existing: Vec<String> = records().iter()
         .filter_map(|r| r.get("name").and_then(|v| v.as_str()).map(String::from))
@@ -70,8 +105,9 @@ pub fn spawn(task: &str) -> String {
         Ok(f) => f,
         Err(e) => return format!("SKIP (log open failed: {e})"),
     };
-    let child = Command::new("ori")
-        .args(["opencode", "run", task])
+    let cmd_str = format!("{} {}", bin, argv.join(" "));
+    let child = Command::new(&bin)
+        .args(&argv)
         .stdout(lf.try_clone().unwrap())
         .stderr(lf)
         .stdin(std::process::Stdio::null())
@@ -79,11 +115,11 @@ pub fn spawn(task: &str) -> String {
     match child {
         Ok(c) => {
             log_line(&json!({"id": name, "name": name, "task": task,
-                             "pid": c.id(), "cmd": format!("ori opencode run {task}"),
+                             "pid": c.id(), "cmd": cmd_str,
                              "status": "running"}));
             format!("SPAWNED {name} (pid {})", c.id())
         }
-        Err(e) => format!("SKIP (ori spawn failed: {e})"),
+        Err(e) => format!("SKIP (agent spawn failed: {e})"),
     }
 }
 

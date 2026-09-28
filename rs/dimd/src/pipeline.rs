@@ -395,28 +395,20 @@ fn act_loop(task: &str, cfg: &Cfg, st: &State, ctl: &ChoiceCtl) -> String {
     let mut steps: Vec<(String, String, String)> = vec![];
     let mut errors = 0u32;
 
+    // U6: act needs a tool-capable brain — explicit SKIP otherwise
+    if !brain::supports_tools(cfg) {
+        let p = brain::provider(cfg);
+        return format!("SKIP (brain provider '{}' does not support \
+                       tools — set [brain.{}] tools=true or pick a \
+                       capable provider)", p.name, p.name);
+    }
+
     while steps.len() < MAX_STEPS {
-        // rebuild request each round from message log
-        let key = match crate::config::api_key() {
-            Ok(k) => k,
-            Err(e) => return format!("ABORTED (no key: {e})"),
+        let msg = match brain::chat_messages(
+            json!(messages), cfg, Some(tools::tool_schemas())) {
+            Ok(m) => m,
+            Err(e) => return format!("ABORTED ({e})"),
         };
-        let body = json!({"model": cfg.answer_model, "messages": messages,
-                          "tools": tools::tool_schemas(),
-                          "tool_choice": "auto", "max_tokens": 400});
-        let resp = ureq::post(brain::CHAT_URL)
-            .set("Authorization", &format!("Bearer {key}"))
-            .timeout(std::time::Duration::from_secs(60))
-            .send_json(&body);
-        let data: Value = match resp {
-            Ok(r) => match r.into_json() {
-                Ok(v) => v,
-                Err(e) => return format!("ABORTED (bad json: {e})"),
-            },
-            Err(e) => return format!("ABORTED (http: {e})"),
-        };
-        let msg = data.get("choices").and_then(|c| c.get(0))
-            .and_then(|c| c.get("message")).cloned().unwrap_or(json!({}));
         let calls = msg.get("tool_calls").and_then(|t| t.as_array())
             .cloned().unwrap_or_default();
         if calls.is_empty() {
@@ -630,7 +622,7 @@ pub fn run_listen(cfg: &Cfg, st: &Arc<State>, ctl: &ChoiceCtl,
             format!("BLOCKED (risk={risk:.2} > {})", cfg.risk_threshold)
         } else if route == "agent" {
             crate::agents::spawn(
-                if !text.is_empty() { &text } else { &app })
+                if !text.is_empty() { &text } else { &app }, cfg)
         } else if route == "act" {
             act_loop(&text, cfg, st, ctl)
         } else if route == "dictation" {

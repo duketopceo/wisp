@@ -206,7 +206,7 @@ fn run_inner(name: &str, arg: &str, cfg: &Cfg) -> String {
             }
         }
         "search_files" => search_files(arg),
-        "agent_spawn" => crate::agents::spawn(arg),
+        "agent_spawn" => crate::agents::spawn(arg, cfg),
         "task_status" => crate::agents::status(arg),
         "task_cancel" => crate::agents::cancel(arg),
         "memory" => crate::memory::run(arg),

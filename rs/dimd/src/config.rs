@@ -162,13 +162,14 @@ pub fn set_config(section: &str, key: &str, value: &str)
     if value.chars().any(|c| matches!(c, '"' | '\\' | '#' | '\n')) {
         return Err("config values may not contain \" \\ # or newline".into());
     }
-    for part in [section, key] {
-        if part.is_empty()
-            || !part.chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-        {
-            return Err("config section/key must match [A-Za-z0-9_-]+".into());
-        }
+    // section may be nested ("brain.ollama"); key stays a bare name
+    let ok = |s: &str, dots: bool| !s.is_empty()
+        && s.chars().all(|c| c.is_ascii_alphanumeric()
+                         || c == '_' || c == '-'
+                         || (dots && c == '.'));
+    if !ok(section, true) || !ok(key, false) {
+        return Err("config section/key must match \
+                   [A-Za-z0-9_.-]+ / [A-Za-z0-9_-]+".into());
     }
     let path = cfg_dir().join("config.toml");
     std::fs::create_dir_all(cfg_dir()).ok();

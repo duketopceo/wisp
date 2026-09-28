@@ -283,10 +283,12 @@ def ask_jev(transcript: str, model: str, questions: dict,
 
 def ask_chat(transcript: str, cfg: dict, session_text: str = "",
              image_b64: str | None = None) -> str:
-    """Real answer via an OpenRouter chat model. Jev routes; this answers.
-    image_b64 attaches a screenshot for screen-aware replies."""
-    model = cfg.get("agent", {}).get("answer_model",
-                                    "openai/gpt-4.1-mini")
+    """Real answer via the configured brain provider ([brain] default).
+    image_b64 attaches a screenshot — dropped when the provider lacks
+    vision support (U6 capability gating)."""
+    from . import brain
+    if image_b64 and not brain.supports_vision(cfg):
+        image_b64 = None  # provider can't see it — don't attach
     system = ("You are Dim, a terse desktop voice assistant on Linux. "
               "Answer in one or two short sentences, plain speech, no "
               "markdown.")
@@ -315,19 +317,7 @@ def ask_chat(transcript: str, cfg: dict, session_text: str = "",
         messages.append({"role": "system",
                          "content": f"Recent conversation:\n{session_text}"})
     messages.append({"role": "user", "content": user_content})
-    payload = {"model": model, "messages": messages, "max_tokens": 300}
-    req = urllib.request.Request(
-        config.CHAT_ENDPOINT, data=json.dumps(payload).encode(),
-        headers={
-            "Authorization": f"Bearer {config.load_api_key()}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/duketopceo/dim-agent",
-            "X-Title": "Dim",
-        }, method="POST")
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        data = json.loads(resp.read())
-    return (data.get("choices") or [{}])[0].get("message", {}) \
-        .get("content", "").strip()
+    return brain.chat(messages, cfg, timeout=30)["content"].strip()
 
 
 def capture_screen() -> pathlib.Path | None:
@@ -548,7 +538,17 @@ def run_listen(cfg: dict, state, wait_for_choice=None) -> int:
         block = memory.context_block(text)
         if block:
             context += f"\n{block}"
-        resp = ask_jev(text, model, build_questions(harness), context=context)
+        # router: jev (default) | chat (transcript straight to answer
+        # brain) | off (always clarify via choices) — Rust parity
+        router = cfg.get("brain", {}).get("router", "jev")
+        if router == "chat":
+            resp = {"answers": {"route": {"choice": "answer"},
+                                "needs_screen": {"noul": 1.0}}}
+        elif router == "off":
+            resp = {"answers": {"route": {"choice": "clarify"}}}
+        else:
+            resp = ask_jev(text, model, build_questions(harness),
+                           context=context)
         timing["jev_ms"] = round((time.monotonic() - t0) * 1000
                                  - timing["record_ms"] - timing["stt_ms"])
         answers = resp.get("answers", {})
