@@ -27,6 +27,7 @@ routing → guarded actions. Python reference daemon + Rust parity core
 | `recall.py` | `recall.db` sqlite FTS5 store — `recall` tool, write-through on turns/corrections |
 | `skills.py` | `skills/*/SKILL.md` self-authored skills — `skill_manage`/`skill_view` tools, `skill_<name>` toolbelt registration |
 | `speech.py` | TTS replies with barge-in — tracks espeak/`[voice].cmd` child pid, killed on `listen`/`stop` |
+| `trace.py` | dev trace — `trace.jsonl` event stream (turn id, stage, kind, ms, data); `dimd trace` CLI |
 | `learn.py` | corrections → weekly human-gated criteria proposals |
 | `agents.py` | `ori opencode` background task registry (spawn/status/cancel, `tasks.jsonl`) |
 | `tools/` | toolbelt: `__init__.py` registry + tiers + `tool_schemas()`; `desktop.py`/`system.py`/`adapters.py` shell-outs |

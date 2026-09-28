@@ -494,6 +494,10 @@ pub fn run_listen(cfg: &Cfg, st: &Arc<State>, ctl: &ChoiceCtl,
                   running: Arc<AtomicBool>) -> i32 {
     let t0 = Instant::now();
     let mut timing = serde_json::Map::new();
+    let turn = crate::trace::new_turn();
+    crate::trace::emit(&turn, "listen_start", "lifecycle",
+        json!({"seconds": cfg.audio_seconds, "model": cfg.model}),
+        None);
     let result: Result<String, String> = (|| {
         st.transition("listening", &[
             ("transcript", json!("")), ("result", json!("")),
@@ -501,11 +505,19 @@ pub fn run_listen(cfg: &Cfg, st: &Arc<State>, ctl: &ChoiceCtl,
             ("points", json!([])), ("error", json!(""))]);
         let wav = record(cfg, st)?;
         timing.insert("record_ms".into(), json!(t0.elapsed().as_millis()));
+        crate::trace::emit(&turn, "record", "stt",
+            json!({"wav": wav.display().to_string(),
+                   "bytes": std::fs::metadata(&wav)
+                       .map(|m| m.len()).unwrap_or(0)}),
+            Some(t0.elapsed().as_millis() as i64));
         st.transition("transcribing", &[]);
         let text = transcribe(&wav, cfg)?;
         timing.insert("stt_ms".into(),
                       json!(t0.elapsed().as_millis()
                             - timing["record_ms"].as_u64().unwrap_or(0) as u128));
+        crate::trace::emit(&turn, "transcribe", "stt",
+            json!({"provider": cfg.stt_provider, "text": text}),
+            Some(t0.elapsed().as_millis() as i64));
         st.transition("deciding", &[("transcript", json!(text.clone()))]);
         if text.is_empty() || text.contains("[BLANK") {
             st.transition("done", &[("result", json!("heard nothing"))]);
@@ -536,6 +548,10 @@ pub fn run_listen(cfg: &Cfg, st: &Arc<State>, ctl: &ChoiceCtl,
                       json!(t0.elapsed().as_millis()
                             - timing["record_ms"].as_u64().unwrap_or(0) as u128
                             - timing["stt_ms"].as_u64().unwrap_or(0) as u128));
+        crate::trace::emit(&turn, "decision", "thought",
+            json!({"model": cfg.model, "router": cfg.router,
+                   "answers": answers}),
+            Some(t0.elapsed().as_millis() as i64));
 
         // low-confidence → choice prompt (parity: labels are
         // app:X / action:Y from each question's probabilities)
@@ -651,21 +667,31 @@ pub fn run_listen(cfg: &Cfg, st: &Arc<State>, ctl: &ChoiceCtl,
             let needs = route == "answer"
                 || answers.pointer("/needs_screen/noul")
                     .and_then(|v| v.as_f64()).unwrap_or(0.0) >= 0.7;
+            let bt = Instant::now();
             let (reply, result) = match ask_chat(&text, cfg,
                                                &session_text, needs) {
                 Ok(r) => (r, "ANSWERED".to_string()),
                 Err(e) => (canned_reply(&text),
                            format!("ANSWER_FAILED ({e})")),
             };
+            crate::trace::emit(&turn, "brain_call", "brain",
+                json!({"endpoint": "chat/completions",
+                       "model": cfg.answer_model, "reply": reply}),
+                Some(bt.elapsed().as_millis() as i64));
             let (reply, pts) = crate::points::extract(&reply);
             let pts = if pts.is_empty() {
                 pts
             } else {
                 crate::points::to_logical(&pts, &crate::points::monitors())
             };
+            if !pts.is_empty() {
+                crate::trace::emit(&turn, "points", "act",
+                                   json!({"points": pts}), None);
+            }
             st.transition("speaking", &[("result", json!(result.clone())),
                                     ("answer", json!(reply.clone())),
                                     ("points", json!(pts))]);
+            let tt = Instant::now();
             let st2 = st.clone();
             let spoken = crate::speech::speak(&reply, cfg,
                 Some(Box::new(move || {
@@ -673,9 +699,14 @@ pub fn run_listen(cfg: &Cfg, st: &Arc<State>, ctl: &ChoiceCtl,
                         st2.transition("done", &[]);
                     }
                 })));
+            crate::trace::emit(&turn, "speak", "tts",
+                json!({"cmd": cfg.voice_cmd, "spawned": spoken}),
+                Some(tt.elapsed().as_millis() as i64));
             if !spoken {
                 st.transition("done", &[]);
             }
+            crate::trace::emit(&turn, "dispatch", "act",
+                json!({"route": route, "result": result}), None);
             session::append_turn(&text, &route, &reply, &result);
             recall::index_turn(&text, &reply, &result);
             timing.insert("act_ms".into(), json!(t0.elapsed().as_millis()));
@@ -691,6 +722,8 @@ pub fn run_listen(cfg: &Cfg, st: &Arc<State>, ctl: &ChoiceCtl,
         } else {
             format!("SKIP (route={route:?} action={action:?} unhandled)")
         };
+        crate::trace::emit(&turn, "dispatch", "act",
+            json!({"route": route, "result": res}), None);
         session::append_turn(&text, &route, "", &res);
         recall::index_turn(&text, "", &res);
         st.transition("done", &[("result", json!(res.clone()))]);
@@ -707,6 +740,8 @@ pub fn run_listen(cfg: &Cfg, st: &Arc<State>, ctl: &ChoiceCtl,
             0
         }
         Err(e) => {
+            crate::trace::emit(&turn, "error", "error",
+                               json!({"error": e}), None);
             st.transition("error", &[("error", json!(e.clone()))]);
             log_decision(&json!({"ts": crate::state::now_iso(),
                 "result": format!("ERROR ({e})"),

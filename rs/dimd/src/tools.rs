@@ -159,6 +159,17 @@ fn resolve_apps(cfg: &Cfg) -> HashMap<String, String> {
 /// Execute a tool. Gating happens upstream (act gate / pipeline); this
 /// is the bare executor, same result strings as Python.
 pub fn run(name: &str, arg: &str, cfg: &Cfg) -> String {
+    let t0 = std::time::Instant::now();
+    crate::trace::emit(&crate::trace::current(), "tool_call", "tool",
+        serde_json::json!({"name": name, "args": arg}), None);
+    let out = run_inner(name, arg, cfg);
+    crate::trace::emit(&crate::trace::current(), "tool_result", "tool",
+        serde_json::json!({"name": name, "result": out}),
+        Some(t0.elapsed().as_millis() as i64));
+    out
+}
+
+fn run_inner(name: &str, arg: &str, cfg: &Cfg) -> String {
     match name {
         "launch" => launch(arg, cfg),
         "focus" => focus(arg),

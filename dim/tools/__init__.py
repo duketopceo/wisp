@@ -94,6 +94,20 @@ def risk_of(name: str) -> str:
 def run(name: str, arg: str, cfg: dict, harness: dict | None = None) -> str:
     """Execute a tool by name. Confirm-gating happens in the pipeline
     before run() is called — this is the bare executor."""
+    import time as _time
+    from .. import trace as _trace
+    _t = _time.monotonic()
+    _trace.emit(_trace.current(), "tool_call", "tool",
+                {"name": name, "args": arg})
+    _out = _run_inner(name, arg, cfg, harness)
+    _trace.emit(_trace.current(), "tool_result", "tool",
+                {"name": name, "result": _out},
+                round((_time.monotonic() - _t) * 1000))
+    return _out
+
+
+def _run_inner(name: str, arg: str, cfg: dict,
+               harness: dict | None = None) -> str:
     from .. import agents
     if name == "agent_spawn":
         return agents.spawn(arg, cfg)

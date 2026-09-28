@@ -78,6 +78,12 @@ spoken answer and publishes the normalized list.
 - `tasks.jsonl` — agent registry; `tasks/<id>.log` per-agent output.
 - `MEMORY.md`, `USER.md` — curated bounded memory (frozen snapshot).
 - `skills/*/SKILL.md` — self-authored skills (progressive disclosure).
+- `trace.jsonl` — full-fidelity dev trace (`[debug] trace`, default on):
+  one event per line `{ts, turn, step, kind, ms, data}` covering
+  listen_start/record/transcribe/decision/dispatch/tool_call/
+  tool_result/brain_call/answer/speak/points/ipc/error. `dimd trace`
+  `--tail N --turn <id> --kind <k>` on both cores. Rotates at 10 MB;
+  never logs secrets.
 - `recall.db` — sqlite-vec/FTS5 long-term recall.
 
 ## Versioning

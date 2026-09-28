@@ -20,6 +20,15 @@ from dim import config, ipc, pipeline, speech, state as state_mod  # noqa: E402
 def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
     def handle(cmd: dict) -> dict:
         c = cmd.get("cmd")
+        _t0 = __import__("time").monotonic()
+        from dim import trace as _trace
+        out = _dispatch(c, cmd)
+        _trace.emit("sys", "ipc", "ipc",
+                    {"cmd": c, "ok": out.get("ok")},
+                    round((__import__("time").monotonic() - _t0) * 1000))
+        return out
+
+    def _dispatch(c: str, cmd: dict) -> dict:
         if c == "status":
             from dim import agents
             st.tasks = agents.tasks()
@@ -291,8 +300,11 @@ def main() -> int:
         return 0
     if cmd == "harness":
         return rebuild_harness()
+    if cmd == "trace":
+        from dim import trace
+        return trace.main(sys.argv[2:])
     print("usage: dimd [daemon|install|trigger|status|stop|choice"
-          "|task_status|task_cancel|learn|harness|config [set k v]]")
+          "|task_status|task_cancel|learn|harness|trace|config [set k v]]")
     return 2
 
 

@@ -507,15 +507,26 @@ def run_listen(cfg: dict, state, wait_for_choice=None) -> int:
     model = cfg.get("agent", {}).get("model", "typesafe/jev-1.13")
     t0 = time.monotonic()
     timing = {}
+    from . import trace as _trace
+    turn = _trace.new_turn()
+    _trace.emit(turn, "listen_start", "lifecycle",
+                {"seconds": secs, "model": model})
     try:
         state.transition("listening", transcript="", result="", answer="",
                          choices=[], points=[], error="")
         wav = record(secs, state)
         timing["record_ms"] = round((time.monotonic() - t0) * 1000)
+        _trace.emit(turn, "record", "stt",
+                    {"wav": str(wav),
+                     "bytes": wav.stat().st_size if wav.exists() else 0},
+                    timing["record_ms"])
         state.transition("transcribing")
         text = transcribe(wav, cfg)
         timing["stt_ms"] = round((time.monotonic() - t0) * 1000
                                  - timing["record_ms"])
+        _trace.emit(turn, "transcribe", "stt",
+                    {"provider": cfg.get("stt", {}).get("provider", "local"),
+                     "text": text}, timing["stt_ms"])
         state.transition("deciding", transcript=text)
         if not text or "[BLANK" in text:
             state.transition("done", result="heard nothing")
@@ -541,6 +552,10 @@ def run_listen(cfg: dict, state, wait_for_choice=None) -> int:
         timing["jev_ms"] = round((time.monotonic() - t0) * 1000
                                  - timing["record_ms"] - timing["stt_ms"])
         answers = resp.get("answers", {})
+        _trace.emit(turn, "decision", "thought",
+                    {"model": model, "answers": answers,
+                     "latency_ms": resp.get("latency_ms")},
+                    timing["jev_ms"])
         low_conf = is_low_confidence(answers, cfg)
         corrected = None
         if low_conf:
@@ -579,12 +594,22 @@ def run_listen(cfg: dict, state, wait_for_choice=None) -> int:
                 return bool(pick) and "yes" in pick
         result = execute(answers, cfg, harness, detail=text,
                          state=state, confirm=confirm)
+        _trace.emit(turn, "dispatch", "act",
+                    {"route": answers.get("route", {}).get("choice"),
+                     "result": result})
         reply = ""
         if result == "ANSWERED":
             pts = []
             try:
+                _t = time.monotonic()
                 reply = ask_chat(text, cfg, session_text,
                                  image_b64=screen_b64(cfg, answers))
+                _trace.emit(turn, "brain_call", "brain",
+                            {"endpoint": "chat/completions",
+                             "model": cfg.get("agent", {})
+                             .get("answer_model", ""),
+                             "reply": reply},
+                            round((time.monotonic() - _t) * 1000))
             except Exception as e:
                 result = f"ANSWER_FAILED ({e})"
                 reply = answer_text(text)
@@ -593,9 +618,16 @@ def run_listen(cfg: dict, state, wait_for_choice=None) -> int:
                 reply, raw = _points.extract(reply)
                 if raw:
                     pts = _points.to_logical(raw, _points.monitors())
+            if pts:
+                _trace.emit(turn, "points", "act", {"points": pts})
             state.transition("speaking", result=result, answer=reply,
                              points=pts)
+            _t = time.monotonic()
             proc = speech.speak(reply, cfg)
+            _trace.emit(turn, "speak", "tts",
+                        {"cmd": cfg.get("voice", {}).get("cmd", ""),
+                         "spawned": proc is not None},
+                        round((time.monotonic() - _t) * 1000))
             if proc is not None:
                 speech.on_exit(proc, _end_speaking(state))
             else:
@@ -617,6 +649,7 @@ def run_listen(cfg: dict, state, wait_for_choice=None) -> int:
                       "corrected": bool(answers.get("corrected_by_user"))})
         return 0
     except Exception as e:
+        _trace.emit(turn, "error", "error", {"error": str(e)})
         state.transition("error", error=str(e))
         log_decision({"ts": datetime.now(timezone.utc).isoformat(),
                       "result": f"ERROR ({e})", "timing_ms": timing})

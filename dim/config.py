@@ -76,6 +76,12 @@ base_url = "https://openrouter.ai/api/v1"
 model = "openai/text-embedding-3-small"
 key_env = "OPENROUTER_API_KEY"
 
+[debug]
+# full-fidelity event stream to ~/.local/share/dim-agent/trace.jsonl —
+# every stage of every turn (record/stt/decision/tools/brain/tts/ipc)
+# with ms timings, for replay-by-us-and-Jev debugging. Never logs keys.
+trace = true
+
 [voice]
 # spoken replies via espeak/espeak-ng when true; missing binary = silent no-op
 enabled = false

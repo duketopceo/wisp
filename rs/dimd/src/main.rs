@@ -15,6 +15,7 @@ mod skills;
 mod speech;
 mod state;
 mod tools;
+mod trace;
 mod util;
 
 use serde_json::{json, Value};
@@ -104,8 +105,10 @@ fn main() {
                 0
             }
         }
+        "trace" => trace::main(
+            &std::env::args().skip(2).collect::<Vec<_>>()),
         _ => {
-            eprintln!("usage: dimd [daemon|trigger|status|stop|choice|task_status|task_cancel|learn|harness|config [set k v]]");
+            eprintln!("usage: dimd [daemon|trigger|status|stop|choice|task_status|task_cancel|learn|harness|trace|config [set k v]]");
             2
         }
     };
@@ -165,6 +168,32 @@ fn daemon() -> i32 {
     let cfg_h = cfg_h2.clone();
 
     let handler = Arc::new(move |cmd: Value| -> Value {
+        let t0 = std::time::Instant::now();
+        let c_name = cmd.get("cmd").and_then(|c| c.as_str())
+            .unwrap_or("").to_string();
+        let out = dispatch(cmd, &st_h, &busy_h, &running_h, &ctl_h,
+                           &cfg_h, &cfg_h2);
+        trace::emit("sys", "ipc", "ipc",
+            json!({"cmd": c_name,
+                   "ok": out.get("ok").and_then(|v| v.as_bool())
+                       .unwrap_or(false)}),
+            Some(t0.elapsed().as_millis() as i64));
+        out
+    });
+
+    println!("dimd-rs listening on {}", config::sock_file().display());
+    if let Err(e) = ipc::serve(config::sock_file(), handler, running.clone()) {
+        eprintln!("serve error: {e}");
+        return 1;
+    }
+    0
+}
+
+fn dispatch(cmd: Value, st_h: &Arc<state::State>,
+            busy_h: &Arc<AtomicBool>, running_h: &Arc<AtomicBool>,
+            ctl_h: &Arc<pipeline::ChoiceCtl>,
+            cfg_h: &Arc<std::sync::Mutex<config::Cfg>>,
+            cfg_h2: &Arc<std::sync::Mutex<config::Cfg>>) -> Value {
         match cmd.get("cmd").and_then(|c| c.as_str()).unwrap_or("") {
             "status" => {
                 // refresh tasks + republish state.json — Python dimd
@@ -238,14 +267,6 @@ fn daemon() -> i32 {
             }
             c => json!({"ok": false, "error": format!("unknown cmd '{c}'")}),
         }
-    });
-
-    println!("dimd-rs listening on {}", config::sock_file().display());
-    if let Err(e) = ipc::serve(config::sock_file(), handler, running.clone()) {
-        eprintln!("serve error: {e}");
-        return 1;
-    }
-    0
 }
 
 /// Flatten the parsed TOML config into section -> {key: string} — the
