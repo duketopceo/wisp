@@ -60,5 +60,84 @@ class RecallTest(unittest.TestCase):
         self.assertEqual(recall.search("turn", path=self.db), [])
 
 
+class RecallVecTest(unittest.TestCase):
+    """Vector layer: RRF merge, provider=none parity, failure fallback."""
+
+    def setUp(self):
+        import unittest.mock as mock
+        self.db = pathlib.Path(tempfile.mkdtemp()) / "recall.db"
+        try:
+            import sqlite_vec  # noqa: F401
+        except ImportError:
+            self.skipTest("sqlite-vec not installed")
+        self.cfg = {"provider": "openai",
+                    "base_url": "http://unused",
+                    "model": "fake-emb"}
+        recall._vec_failed = False
+        self._p = mock.patch.object(
+            recall.config, "load_config",
+            return_value={"recall": self.cfg})
+        self._p.start()
+        self.addCleanup(self._p.stop)
+        self.addCleanup(lambda: setattr(recall, "_vec_failed", False))
+
+    def _embed_side(self, texts, cfg):
+        # 2-cluster fake embedding: texts sharing vocab → [1,0], else [0,1]
+        vocab = {"restart", "audio", "daemon", "pipewire", "reboot"}
+        return [[1.0, 0.0] if vocab & set(t.lower().split())
+                else [0.0, 1.0] for t in texts]
+
+    def test_vec_hit_outranks_on_paraphrase(self):
+        import unittest.mock as mock
+        with mock.patch.object(recall, "_embed", self._embed_side), \
+                mock.patch.object(recall, "_queue_embed",
+                                  recall._embed_and_store):
+            recall.add("turn", "user: reboot audio daemon",
+                       path=self.db)
+            recall.add("turn", "user: unrelated groceries list",
+                       path=self.db)
+            # paraphrase query — no lexical overlap with the hit
+            hits = recall.search("restart pipewire", path=self.db)
+        self.assertTrue(hits)
+        self.assertIn("audio daemon", hits[0]["body"])
+
+    def test_provider_none_identical_to_fts(self):
+        self._p.stop()  # real config → provider=none
+        recall.index_turn("kernel module rebuild", "ok", path=self.db)
+        recall.index_turn("brew coffee", "ok", path=self.db)
+        hits = recall.search("kernel", path=self.db)
+        self.assertEqual(len(hits), 1)
+        self.assertIn("kernel", hits[0]["body"])
+
+    def test_embed_failure_still_returns_fts(self):
+        import unittest.mock as mock
+        def boom(texts, cfg):
+            raise RuntimeError("api down")
+        with mock.patch.object(recall, "_embed", boom):
+            recall.index_turn("systemd unit failed", "ok", path=self.db)
+            hits = recall.search("systemd", path=self.db)
+        self.assertTrue(hits)
+        self.assertIn("systemd", hits[0]["body"])
+
+    def test_dims_mismatch_recreates_vec_table(self):
+        import unittest.mock as mock, sqlite3
+        def emb3(texts, cfg):
+            return [[1.0, 0.0, 0.0] for _ in texts]
+        def emb2(texts, cfg):
+            return [[1.0, 0.0] for _ in texts]
+        with mock.patch.object(recall, "_embed", emb3):
+            recall._embed_and_store(1, "first", self.cfg, self.db)
+        with mock.patch.object(recall, "_embed", emb2):
+            recall._embed_and_store(2, "second", self.cfg, self.db)
+        db = sqlite3.connect(str(self.db))
+        try:
+            dims = db.execute(
+                "SELECT value FROM recall_meta WHERE key='dims'"
+            ).fetchone()[0]
+        finally:
+            db.close()
+        self.assertEqual(dims, "2")
+
+
 if __name__ == "__main__":
     unittest.main()

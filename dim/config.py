@@ -67,6 +67,15 @@ key_env = "GROQ_API_KEY"
 # `prompt` param on the openai provider (huge accuracy win on names)
 prompt = ""
 
+[recall]
+# semantic recall via embeddings: "none" = FTS5 only (zero keys needed).
+# provider = "openai" uses any OpenAI-compatible /embeddings endpoint —
+# OpenRouter default below; model dims are auto-detected on first write.
+provider = "none"
+base_url = "https://openrouter.ai/api/v1"
+model = "openai/text-embedding-3-small"
+key_env = "OPENROUTER_API_KEY"
+
 [voice]
 # spoken replies via espeak/espeak-ng when true; missing binary = silent no-op
 enabled = false

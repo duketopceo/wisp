@@ -449,6 +449,8 @@ FloatingWindow {
               ["stt.model", "stt model"],
               ["stt.key_env", "stt api key env var"],
               ["stt.prompt", "stt vocab priming (names/jargon)"],
+              ["recall.provider", "recall embeds (none|openai)"],
+              ["recall.model", "recall embed model"],
               ["audio.seconds", "record seconds"],
               ["agent.risk_threshold", "risk threshold"],
               ["agent.allow_shell", "allow_shell (true|false)"],

@@ -12,3 +12,4 @@ toml = "0.8"
 ureq = { version = "2", features = ["json"] }
 base64 = "0.22"
 rusqlite = { version = "0.32", features = ["bundled"] }
+sqlite-vec = "0.1.9"

@@ -27,6 +27,12 @@ pub struct Cfg {
     pub stt_model: String,
     pub stt_key_env: String,
     pub stt_prompt: String, // whisper `prompt` vocab-priming field
+    // [recall] embeddings — "none" = FTS5-only; any other provider hits
+    // an OpenAI-compatible /embeddings endpoint (OpenRouter default)
+    pub recall_provider: String,
+    pub recall_base_url: String,
+    pub recall_model: String,
+    pub recall_key_env: String,
     pub raw: toml::Value,
 }
 
@@ -37,6 +43,7 @@ struct FileCfg {
     voice: Option<HashMap<String, toml::Value>>,
     brain: Option<HashMap<String, toml::Value>>,
     stt: Option<HashMap<String, toml::Value>>,
+    recall: Option<HashMap<String, toml::Value>>,
 }
 
 pub fn cfg_dir() -> PathBuf {
@@ -118,6 +125,13 @@ pub fn load() -> Cfg {
         stt_model: s(get(&f.stt, "model"), "whisper-large-v3-turbo"),
         stt_key_env: s(get(&f.stt, "key_env"), "GROQ_API_KEY"),
         stt_prompt: s(get(&f.stt, "prompt"), ""),
+        recall_provider: s(get(&f.recall, "provider"), "none"),
+        recall_base_url: s(get(&f.recall, "base_url"),
+                           "https://openrouter.ai/api/v1"),
+        recall_model: s(get(&f.recall, "model"),
+                        "openai/text-embedding-3-small"),
+        recall_key_env: s(get(&f.recall, "key_env"),
+                          "OPENROUTER_API_KEY"),
         whisper_bin: home.join("src/whisper.cpp/build/bin/whisper-cli"),
         // audio.whisper_model is a filename under the whisper models
         // dir (Python: whisper_model() joins WHISPER_HOME/models)
