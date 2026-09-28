@@ -2,6 +2,7 @@
 import json
 import os
 import pathlib
+import subprocess
 
 HOME = pathlib.Path.home()
 CFG_DIR = HOME / ".config" / "dim-agent"
@@ -51,6 +52,20 @@ screenshots = true
 risk_threshold = 1.5
 confidence_instant = 0.95
 confidence_ambiguous = 0.8
+
+[stt]
+# Speech-to-text backend. "local" = whisper.cpp (default, offline).
+# "openai" = any OpenAI-compatible /audio/transcriptions endpoint —
+# Groq (base_url https://api.groq.com/openai/v1, model
+# whisper-large-v3-turbo), OpenAI, vLLM, Together, DeepInfra.
+provider = "local"
+base_url = "https://api.groq.com/openai/v1"
+model = "whisper-large-v3-turbo"
+# name of the env var / .env key holding the API key
+key_env = "GROQ_API_KEY"
+# vocabulary priming — project names, jargon; passed as whisper's
+# `prompt` param on the openai provider (huge accuracy win on names)
+prompt = ""
 
 [voice]
 # spoken replies via espeak/espeak-ng when true; missing binary = silent no-op
@@ -117,12 +132,29 @@ def whisper_model(cfg: dict) -> pathlib.Path:
     return WHISPER_HOME / "models" / name
 
 
-def load_api_key() -> str:
+def load_env_key(name: str) -> str:
+    """Resolve a secret: omaseal:// ref, .env file, then environment."""
+    if name.startswith("omaseal://"):
+        ref = name[len("omaseal://"):].split("/", 1)
+        if len(ref) == 2:
+            try:
+                r = subprocess.run(
+                    ["omaseal", "get", ref[0], ref[1]],
+                    capture_output=True, text=True, timeout=10)
+                if r.returncode == 0:
+                    return r.stdout.strip()
+            except (OSError, subprocess.SubprocessError):
+                pass
+        return ""
     if ENV_FILE.exists():
         for line in ENV_FILE.read_text().splitlines():
-            if line.startswith("OPENROUTER_API_KEY="):
+            if line.startswith(f"{name}="):
                 return line.split("=", 1)[1].strip()
-    key = os.environ.get("OPENROUTER_API_KEY", "")
+    return os.environ.get(name, "")
+
+
+def load_api_key() -> str:
+    key = load_env_key("OPENROUTER_API_KEY")
     if not key:
         raise RuntimeError(f"No OPENROUTER_API_KEY in {ENV_FILE} or environment")
     return key

@@ -64,6 +64,22 @@ class SpeechTests(unittest.TestCase):
             time.sleep(0.05)
         self.assertEqual(out.read_text().strip(), "hello world")
 
+    def test_on_exit_fires_and_clears(self):
+        import threading
+        done = threading.Event()
+        script = pathlib.Path(self.dir.name) / "fast.sh"
+        script.write_text("#!/bin/sh\nexit 0\n")
+        script.chmod(script.stat().st_mode | stat.S_IXUSR)
+        proc = speech.speak("hi", self.cfg(str(script)))
+        self.assertIsNotNone(proc)
+        speech.on_exit(proc, done.set)
+        self.assertTrue(done.wait(timeout=5))
+        for _ in range(50):
+            if _proc() is None:
+                break
+            time.sleep(0.05)
+        self.assertIsNone(_proc())
+
     def test_no_binary_no_crash(self):
         # empty cmd + possibly missing espeak -> silent no-op
         speech.speak("hi", self.cfg("/nonexistent-bin-xyz"))

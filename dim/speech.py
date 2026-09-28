@@ -33,21 +33,36 @@ def _argv(msg: str, cfg: dict) -> list[str] | None:
     return [bin_, msg] if bin_ else None
 
 
-def speak(msg: str, cfg: dict) -> None:
+def speak(msg: str, cfg: dict) -> subprocess.Popen | None:
+    """Spawn the TTS command; returns the proc (None if voice off or no
+    binary). Caller registers on_exit to observe natural completion."""
     global _PROC
     if not msg or cfg.get("voice", {}).get("enabled", "false") != "true":
-        return
+        return None
     argv = _argv(msg, cfg)
     if argv is None:
-        return
+        return None
     try:
         proc = subprocess.Popen(argv, stdout=subprocess.DEVNULL,
                                 stderr=subprocess.DEVNULL)
     except OSError:
-        return
+        return None
     with _LOCK:
         old, _PROC = _PROC, proc
     _kill(old)
+    return proc
+
+
+def on_exit(proc: subprocess.Popen, cb) -> None:
+    """Call cb() when proc exits; also clears the tracked pid."""
+    def _watch():
+        global _PROC
+        proc.wait()
+        with _LOCK:
+            if _PROC is proc:
+                _PROC = None
+        cb()
+    threading.Thread(target=_watch, daemon=True).start()
 
 
 def _kill(proc: subprocess.Popen | None) -> None:

@@ -1,6 +1,7 @@
 //! Config: ~/.config/dim-agent/config.toml + .env secrets.
 //! Parity with dim/config.py — same paths, same keys, same defaults.
 use serde::Deserialize;
+use std::process::Command;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -19,6 +20,13 @@ pub struct Cfg {
     pub whisper_bin: PathBuf,
     pub whisper_model: PathBuf,
     pub router: String, // jev | chat | off
+    // [stt] — "local" (whisper.cpp) or "openai" (OpenAI-compatible
+    // /audio/transcriptions: Groq, OpenAI, vLLM, ...)
+    pub stt_provider: String,
+    pub stt_base_url: String,
+    pub stt_model: String,
+    pub stt_key_env: String,
+    pub stt_prompt: String, // whisper `prompt` vocab-priming field
     pub raw: toml::Value,
 }
 
@@ -28,6 +36,7 @@ struct FileCfg {
     agent: Option<HashMap<String, toml::Value>>,
     voice: Option<HashMap<String, toml::Value>>,
     brain: Option<HashMap<String, toml::Value>>,
+    stt: Option<HashMap<String, toml::Value>>,
 }
 
 pub fn cfg_dir() -> PathBuf {
@@ -103,6 +112,12 @@ pub fn load() -> Cfg {
         // [voice].cmd — custom TTS argv (whitespace-split, `{text}`
         // placeholder; empty = espeak default)
         voice_cmd: s(get(&f.voice, "cmd"), ""),
+        stt_provider: s(get(&f.stt, "provider"), "local"),
+        stt_base_url: s(get(&f.stt, "base_url"),
+                        "https://api.groq.com/openai/v1"),
+        stt_model: s(get(&f.stt, "model"), "whisper-large-v3-turbo"),
+        stt_key_env: s(get(&f.stt, "key_env"), "GROQ_API_KEY"),
+        stt_prompt: s(get(&f.stt, "prompt"), ""),
         whisper_bin: home.join("src/whisper.cpp/build/bin/whisper-cli"),
         // audio.whisper_model is a filename under the whisper models
         // dir (Python: whisper_model() joins WHISPER_HOME/models)
@@ -188,15 +203,31 @@ pub fn set_config(section: &str, key: &str, value: &str)
     std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
 }
 
-pub fn api_key() -> Result<String, String> {
-    // .env file then process env — same order as Python
+/// Resolve a secret: .env file first, then process environment
+/// (parity with Python load_env_key).
+pub fn env_key(name: &str) -> Option<String> {
+    if let Some(ref_) = name.strip_prefix("omaseal://") {
+        let (svc, acct) = ref_.split_once('/')?;
+        return Command::new("omaseal")
+            .args(["get", svc, acct])
+            .output().ok()
+            .filter(|o| o.status.success())
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+    }
     let env_file = cfg_dir().join(".env");
     if let Ok(text) = std::fs::read_to_string(&env_file) {
+        let prefix = format!("{name}=");
         for line in text.lines() {
-            if let Some(v) = line.strip_prefix("OPENROUTER_API_KEY=") {
-                return Ok(v.trim().trim_matches('"').to_string());
+            if let Some(v) = line.strip_prefix(&prefix) {
+                return Some(v.trim().trim_matches('"').to_string());
             }
         }
     }
-    std::env::var("OPENROUTER_API_KEY").map_err(|_| "no OPENROUTER_API_KEY".into())
+    std::env::var(name).ok().filter(|v| !v.is_empty())
+}
+
+pub fn api_key() -> Result<String, String> {
+    env_key("OPENROUTER_API_KEY").ok_or_else(|| "no OPENROUTER_API_KEY".into())
 }

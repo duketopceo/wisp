@@ -10,6 +10,7 @@ import base64
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -39,6 +40,10 @@ JEV_QUESTIONS = {
             "act": "a multi-step desktop task — do several things, or "
                    "imperative instructions like 'open X and go to "
                    "workspace 2' or 'type this into the window'",
+            "dictation": "the user wants to dictate — type the words "
+                         "they speak into the focused app — 'dictate', "
+                         "'type this', 'take dictation', 'write this "
+                         "down'",
             "answer": "the user is asking a question or chatting — "
                       "respond in text, no desktop action",
             "clarify": "the request is too ambiguous to act on",
@@ -171,6 +176,8 @@ def _amplitude_sampler(seconds: int, state=None) -> None:
 
 
 def transcribe(wav: pathlib.Path, cfg: dict) -> str:
+    if cfg.get("stt", {}).get("provider", "local") == "openai":
+        return _transcribe_openai(wav, cfg["stt"])
     model = config.whisper_model(cfg)
     if not (config.WHISPER_BIN.exists() and model.exists()):
         raise RuntimeError(f"whisper.cpp missing: {config.WHISPER_BIN} / {model}")
@@ -178,6 +185,45 @@ def transcribe(wav: pathlib.Path, cfg: dict) -> str:
         [str(config.WHISPER_BIN), "-m", str(model), "-nt", "-f", str(wav)],
         capture_output=True, text=True, timeout=120)
     return " ".join(r.stdout.split())
+
+
+def _transcribe_openai(wav: pathlib.Path, stt: dict) -> str:
+    """OpenAI-compatible /audio/transcriptions — Groq, OpenAI, vLLM,
+    Together, DeepInfra. Key comes from .env/env via stt.key_env."""
+    key = config.load_env_key(stt.get("key_env", "GROQ_API_KEY"))
+    if not key:
+        raise RuntimeError(
+            f"no {stt.get('key_env', 'GROQ_API_KEY')} in .env or environment")
+    base = stt.get("base_url", "https://api.groq.com/openai/v1") \
+        .rstrip("/")
+    boundary = f"----dim{int(time.monotonic() * 1000)}"
+    audio = wav.read_bytes()
+    body = b"\r\n".join([
+        f"--{boundary}".encode(),
+        b'Content-Disposition: form-data; name="model"',
+        b"",
+        stt.get("model", "whisper-large-v3-turbo").encode(),
+        f"--{boundary}".encode(),
+        b'Content-Disposition: form-data; name="prompt"',
+        b"",
+        stt.get("prompt", "").encode(),
+        f"--{boundary}".encode(),
+        b'Content-Disposition: form-data; name="file"; '
+        b'filename="utterance.wav"',
+        b"Content-Type: audio/wav",
+        b"",
+        audio,
+        f"--{boundary}--".encode(),
+        b"",
+    ])
+    req = urllib.request.Request(
+        f"{base}/audio/transcriptions", data=body,
+        headers={"Authorization": f"Bearer {key}",
+                 "User-Agent": "dim-agent/1.0",
+                 "Content-Type": f"multipart/form-data; boundary={boundary}"})
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        return " ".join(
+            json.loads(resp.read()).get("text", "").split())
 
 
 def build_questions(harness: dict | None) -> dict:
@@ -327,6 +373,25 @@ def is_low_confidence(answers: dict, cfg: dict) -> bool:
     return app_conf < thresh
 
 
+_DICTATE_PREFIX = re.compile(
+    r"^\s*(please\s+)?(dictate|dictation|take dictation|type this|"
+    r"type|write this down|write down)[:,.\s—-]+",
+    re.IGNORECASE)
+
+
+def dictation_text(text: str) -> str:
+    """Strip a leading dictate command prefix; keep the rest verbatim."""
+    return _DICTATE_PREFIX.sub("", text, count=1).strip() or text
+
+
+def _end_speaking(state):
+    """Flip speaking → done when TTS exits (only if nothing moved on)."""
+    def cb():
+        if state.status == "speaking":
+            state.transition("done")
+    return cb
+
+
 def execute(answers: dict, cfg: dict, harness: dict | None = None,
             detail: str = "", state=None, confirm=None) -> str:
     """Route-aware dispatch. Falls back to the legacy action-based path
@@ -343,7 +408,10 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
     # Risk gate applies to mutating work — a plain app launch or a text
     # answer is never blocked on risk (Jev's score band for launches
     # straddles the navigational/mutating line: "open discord" ~1.6).
-    gated = route not in ("launch", "answer") and action not in ("launch", "answer")
+    # dictation is self-confirming — the transcript is the user's own
+    # instruction, so it skips the risk gate like launch/answer
+    gated = route not in ("launch", "answer", "dictation") and \
+        action not in ("launch", "answer")
     if gated and risk > threshold:
         return f"BLOCKED (risk={risk:.2f} > {threshold})"
 
@@ -353,6 +421,10 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
         from . import act
         return act.run_act_loop(detail, cfg, state=state,
                                 harness=harness, confirm=confirm)
+    if route == "dictation":
+        # type the spoken words; a leading dictate keyword is a command
+        # prefix, not content — strip it
+        return tools.run("type_text", dictation_text(detail), cfg)
     if route == "learn":
         from . import act
         prompt = ("Author a reusable skill for this request using the "
@@ -521,9 +593,13 @@ def run_listen(cfg: dict, state, wait_for_choice=None) -> int:
                 reply, raw = _points.extract(reply)
                 if raw:
                     pts = _points.to_logical(raw, _points.monitors())
-            state.transition("done", result=result, answer=reply,
+            state.transition("speaking", result=result, answer=reply,
                              points=pts)
-            speech.speak(reply, cfg)
+            proc = speech.speak(reply, cfg)
+            if proc is not None:
+                speech.on_exit(proc, _end_speaking(state))
+            else:
+                state.transition("done")
         else:
             state.transition("done", result=result)
         session.append_turn(text, route=answers.get("route", {})

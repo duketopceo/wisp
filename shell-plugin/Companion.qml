@@ -50,6 +50,7 @@ Item {
     if (root.status === "listening") return "#7aa2f7";
     if (["transcribing", "deciding"].indexOf(root.status) >= 0) return "#bb9af7";
     if (["acting", "awaiting_choice"].indexOf(root.status) >= 0) return "#9ece6a";
+    if (root.status === "speaking") return "#e0af68";
     if (root.status === "offline") return "#565f89";
     return "#3b4261";
   }
@@ -173,15 +174,38 @@ Item {
     opacity: 0.9
 
     SequentialAnimation on scale {
-      running: root.status === "listening"
+      running: root.status === "listening" || root.status === "speaking"
       loops: Animation.Infinite
       NumberAnimation { to: 1.15; duration: 700; easing.type: Easing.InOutSine }
       NumberAnimation { to: 1.0; duration: 700; easing.type: Easing.InOutSine }
     }
 
+    // mic waveform while listening — bars ride state.json `level`
+    Row {
+      visible: root.status === "listening"
+      anchors.centerIn: parent
+      spacing: 3
+      Repeater {
+        model: 5
+        Rectangle {
+          width: 3
+          radius: 1.5
+          color: "#c0caf5"
+          anchors.verticalCenter: parent.verticalCenter
+          // level is 0..~0.3 RMS; stagger so bars wave, not mirror
+          height: 4 + Math.min(20, root.level * 90) *
+                (1.0 - 0.5 * Math.abs(index - 2) / 2)
+          Behavior on height {
+            NumberAnimation { duration: 80 }
+          }
+        }
+      }
+    }
+
     Text {
       anchors.centerIn: parent
-      text: "◉"
+      visible: root.status !== "listening"
+      text: root.status === "speaking" ? "♪" : "◉"
       font.pixelSize: 18
       color: "#c0caf5"
     }

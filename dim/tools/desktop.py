@@ -38,23 +38,37 @@ def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
     return f"LAUNCHED {app} -> {binname}"
 
 
+def _dsp(lua: str, *fallback: str) -> subprocess.CompletedProcess:
+    """Run a Hyprland Lua dispatcher (hl.dsp.*); `hyprctl dispatch`
+    itself is broken by a Lua parse bug on 0.56+ (hyprwm/Hyprland#16224),
+    so the dispatcher table must go through eval + hl.dispatch."""
+    r = subprocess.run(["hyprctl", "eval", f"hl.dispatch({lua})"],
+                       capture_output=True, text=True, env=hypr_env())
+    if r.returncode == 0 and "ok" in (r.stdout if isinstance(r.stdout, str) else ""):
+        return r
+    if fallback:
+        return subprocess.run(["hyprctl", "dispatch", *fallback],
+                              capture_output=True, text=True,
+                              env=hypr_env())
+    return r
+
+
 def focus(classname: str) -> str:
-    r = subprocess.run(
-        ["hyprctl", "dispatch", "focuswindow", f"class:^{classname}"],
-        capture_output=True, text=True, env=hypr_env())
+    r = _dsp(f'hl.dsp.focus({{window="class:^{classname}"}})',
+             "focuswindow", f"class:^{classname}")
     if r.returncode == 0 and "ok" in r.stdout:
         return f"FOCUSED {classname}"
     return f"SKIP (no window matching class {classname!r})"
 
 
 def close(classname: str) -> str:
-    target = f"class:^{classname}" if classname else ""
-    if not target:
-        r = subprocess.run(["hyprctl", "dispatch", "killactive"],
-                           capture_output=True, text=True, env=hypr_env())
+    if classname:
+        lua = f'hl.dsp.window.close({{window="class:^{classname}"}})'
+        fb = ("closewindow", f"class:^{classname}")
     else:
-        r = subprocess.run(["hyprctl", "dispatch", "closewindow", target],
-                           capture_output=True, text=True, env=hypr_env())
+        lua = "hl.dsp.window.close()"
+        fb = ("killactive",)
+    r = _dsp(lua, *fb)
     if r.returncode == 0 and "ok" in r.stdout:
         return f"CLOSED {classname or 'active window'}"
     return f"SKIP (nothing closed for {classname!r})"
@@ -65,8 +79,7 @@ def workspace(n: str) -> str:
         num = int(str(n).strip())
     except ValueError:
         return f"SKIP (workspace {n!r} not a number)"
-    subprocess.run(["hyprctl", "dispatch", "workspace", str(num)],
-                   capture_output=True, env=hypr_env())
+    _dsp(f'hl.dsp.focus({{workspace={num}}})', "workspace", str(num))
     return f"WORKSPACE {num}"
 
 

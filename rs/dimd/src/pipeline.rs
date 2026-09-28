@@ -49,6 +49,7 @@ pub fn build_questions(cfg: &Cfg) -> Value {
                 "agent": "spawn a background agent for a coding, research, or multi-step task — phrases like 'agent', 'have an agent', 'spawn', 'delegate'",
                 "learn": "the user wants Dim to learn or remember how to do something — 'learn X', 'remember this', 'add a skill for'",
                 "act": "a multi-step desktop task — do several things, or imperative instructions like 'open X and go to workspace 2' or 'type this into the window'",
+                "dictation": "the user wants to dictate — type the words they speak into the focused app — 'dictate', 'type this', 'take dictation', 'write this down'",
                 "answer": "the user is asking a question or chatting — respond in text, no desktop action",
                 "clarify": "the request is too ambiguous to act on",
             }},
@@ -196,7 +197,60 @@ fn record(cfg: &Cfg, st: &Arc<State>) -> Result<std::path::PathBuf, String> {
     }
 }
 
+/// OpenAI-compatible /audio/transcriptions — Groq, OpenAI, vLLM, etc.
+/// Key comes from .env/env via stt.key_env (parity with
+/// _transcribe_openai).
+fn transcribe_openai(wav: &std::path::Path, cfg: &Cfg)
+                     -> Result<String, String> {
+    let key = crate::config::env_key(&cfg.stt_key_env)
+        .ok_or_else(|| format!("no {} in .env or environment",
+                               cfg.stt_key_env))?;
+    let boundary = format!("----dim{}", std::process::id());
+    let audio = std::fs::read(wav).map_err(|e| e.to_string())?;
+    let mut body: Vec<u8> = Vec::new();
+    let push = |b: &mut Vec<u8>, s: &str| {
+        b.extend_from_slice(s.as_bytes());
+        b.extend_from_slice(b"\r\n");
+    };
+    push(&mut body, &format!("--{boundary}"));
+    push(&mut body,
+         "Content-Disposition: form-data; name=\"model\"");
+    push(&mut body, "");
+    push(&mut body, &cfg.stt_model);
+    push(&mut body, &format!("--{boundary}"));
+    push(&mut body, "Content-Disposition: form-data; name=\"prompt\"");
+    push(&mut body, "");
+    push(&mut body, &cfg.stt_prompt);
+    push(&mut body, &format!("--{boundary}"));
+    push(&mut body, "Content-Disposition: form-data; name=\"file\"; \
+                     filename=\"utterance.wav\"");
+    push(&mut body, "Content-Type: audio/wav");
+    push(&mut body, "");
+    body.extend_from_slice(&audio);
+    body.extend_from_slice(b"\r\n");
+    push(&mut body, &format!("--{boundary}--"));
+    push(&mut body, "");
+    let url = format!("{}/audio/transcriptions",
+                      cfg.stt_base_url.trim_end_matches('/'));
+    let resp = ureq::post(&url)
+        .set("User-Agent", "dim-agent/1.0") // edge blocks default UAs
+        .set("Authorization", &format!("Bearer {key}"))
+        .set("Content-Type",
+             &format!("multipart/form-data; boundary={boundary}"))
+        .timeout(std::time::Duration::from_secs(60))
+        .send_bytes(&body)
+        .map_err(|e| e.to_string())?;
+    let v: Value = serde_json::from_str(
+        &resp.into_string().map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    Ok(v.get("text").and_then(|t| t.as_str()).unwrap_or("")
+        .split_whitespace().collect::<Vec<_>>().join(" "))
+}
+
 fn transcribe(wav: &std::path::Path, cfg: &Cfg) -> Result<String, String> {
+    if cfg.stt_provider == "openai" {
+        return transcribe_openai(wav, cfg);
+    }
     if !cfg.whisper_bin.exists() || !cfg.whisper_model.exists() {
         return Err(format!("whisper.cpp missing: {} / {}",
                            cfg.whisper_bin.display(),
@@ -254,6 +308,32 @@ fn is_low_confidence(answers: &Value, cfg: &Cfg) -> bool {
         .and_then(|v| v.as_f64())
         .map(|s| s < cfg.confidence_ambiguous)
         .unwrap_or(false)
+}
+
+/// Strip a leading dictate command prefix; keep the rest verbatim.
+/// Parity with dim/pipeline.py::dictation_text — the prefix must be
+/// followed by a separator, so "typesetter" is not "type"+"setter".
+fn dictation_text(text: &str) -> String {
+    const PREFIXES: &[&str] = &[
+        "take dictation", "dictation", "dictate", "type this",
+        "write this down", "write down", "type",
+    ];
+    let sep = |c: char| matches!(c, ':' | ',' | '.' | '—' | '-' | ' ');
+    let low0 = text.trim().to_lowercase();
+    let low = low0.strip_prefix("please ").unwrap_or(&low0);
+    for p in PREFIXES {
+        let Some(rest) = low.strip_prefix(p) else { continue };
+        if !rest.is_empty() && !sep(rest.chars().next().unwrap()) {
+            continue;
+        }
+        let rest = rest.trim_start_matches(sep);
+        return if rest.is_empty() {
+            text.to_string()
+        } else {
+            rest.to_string()
+        };
+    }
+    text.trim().to_string()
 }
 
 /// Canned reply when the answer model fails — parity with
@@ -525,7 +605,9 @@ pub fn run_listen(cfg: &Cfg, st: &Arc<State>, ctl: &ChoiceCtl,
             .and_then(|v| v.as_str()).unwrap_or("").to_string();
         let risk = answers.pointer("/risk/score")
             .and_then(|v| v.as_f64()).unwrap_or(2.0);
-        let gated = !matches!(route.as_str(), "launch" | "answer")
+        // dictation is self-confirming — the transcript is the user's
+        // own instruction, so it skips the risk gate like launch/answer
+        let gated = !matches!(route.as_str(), "launch" | "answer" | "dictation")
             && !matches!(action.as_str(), "launch" | "answer");
 
         let res = if gated && risk > cfg.risk_threshold {
@@ -535,6 +617,11 @@ pub fn run_listen(cfg: &Cfg, st: &Arc<State>, ctl: &ChoiceCtl,
                 if !text.is_empty() { &text } else { &app })
         } else if route == "act" {
             act_loop(&text, cfg, st, ctl)
+        } else if route == "dictation" {
+            // type the spoken words; a leading dictate keyword is a
+            // command prefix, not content — strip it (mutating tier →
+            // the gated risk check above already applied)
+            tools::run("type_text", &dictation_text(&text), cfg)
         } else if route == "learn" {
             act_loop(&format!(
                 "Author a reusable skill for this request using the \
@@ -576,10 +663,19 @@ pub fn run_listen(cfg: &Cfg, st: &Arc<State>, ctl: &ChoiceCtl,
             } else {
                 crate::points::to_logical(&pts, &crate::points::monitors())
             };
-            st.transition("done", &[("result", json!(result.clone())),
+            st.transition("speaking", &[("result", json!(result.clone())),
                                     ("answer", json!(reply.clone())),
                                     ("points", json!(pts))]);
-            crate::speech::speak(&reply, cfg);
+            let st2 = st.clone();
+            let spoken = crate::speech::speak(&reply, cfg,
+                Some(Box::new(move || {
+                    if st2.status() == "speaking" {
+                        st2.transition("done", &[]);
+                    }
+                })));
+            if !spoken {
+                st.transition("done", &[]);
+            }
             session::append_turn(&text, &route, &reply, &result);
             recall::index_turn(&text, &reply, &result);
             timing.insert("act_ms".into(), json!(t0.elapsed().as_millis()));
@@ -632,4 +728,27 @@ fn active_window_text() -> String {
             w.get("class").and_then(|v| v.as_str()).unwrap_or(""),
             w.get("title").and_then(|v| v.as_str()).unwrap_or("")))
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod dictation_tests {
+    use super::dictation_text;
+
+    #[test]
+    fn strips_prefix_and_boundary() {
+        let cases: &[(&str, &str)] = &[
+            ("dictate hello", "hello"),
+            ("Dictate: buy milk", "buy milk"),
+            ("please type this, ok", "ok"),
+            ("take dictation meeting notes", "meeting notes"),
+            ("write this down - the thing", "the thing"),
+            ("typesetter is an app", "typesetter is an app"),
+            ("dictated", "dictated"),
+            ("dictate", "dictate"),
+            ("hello world", "hello world"),
+        ];
+        for (raw, want) in cases {
+            assert_eq!(&dictation_text(raw), want, "{raw}");
+        }
+    }
 }

@@ -232,9 +232,22 @@ fn launch(app: &str, cfg: &Cfg) -> String {
     format!("LAUNCHED {app} -> {binname}")
 }
 
+/// Run a Hyprland Lua dispatcher (hl.dsp.*) via eval; `hyprctl
+/// dispatch` is broken by a Lua parse bug on 0.56+ (hyprwm/Hyprland
+/// #16224). Falls back to the legacy dispatch args when eval fails.
+fn dsp(lua: &str, fallback: &[&str]) -> std::io::Result<std::process::Output> {
+    let r = hypr_cmd(&["eval", &format!("hl.dispatch({lua})")]).output();
+    match r {
+        Ok(o) if String::from_utf8_lossy(&o.stdout).contains("ok") =>
+            Ok(o),
+        _ => hypr_cmd(fallback).output(),
+    }
+}
+
 fn focus(classname: &str) -> String {
-    let r = hypr_cmd(&["dispatch", "focuswindow", &format!("class:^{classname}")])
-        .output();
+    let r = dsp(
+        &format!("hl.dsp.focus({{window=\"class:^{classname}\"}})"),
+        &["focuswindow", &format!("class:^{classname}")]);
     match r {
         Ok(o) if String::from_utf8_lossy(&o.stdout).contains("ok") =>
             format!("FOCUSED {classname}"),
@@ -243,25 +256,19 @@ fn focus(classname: &str) -> String {
 }
 
 fn close(classname: &str) -> String {
-    let args: Vec<&str> = if classname.is_empty() {
-        vec!["dispatch", "killactive"]
-    } else {
-        vec!["dispatch", "closewindow", classname]
-    };
     let target = if classname.is_empty() {
         "active window".to_string()
     } else {
         classname.to_string()
     };
-    let args: Vec<String> = if classname.is_empty() {
-        args.iter().map(|s| s.to_string()).collect()
+    let (lua, fb): (String, Vec<String>) = if classname.is_empty() {
+        ("hl.dsp.window.close()".into(), vec!["killactive".into()])
     } else {
-        vec!["dispatch".into(), "closewindow".into(),
-             format!("class:^{classname}")]
+        (format!("hl.dsp.window.close({{window=\"class:^{classname}\"}})"),
+         vec!["closewindow".into(), format!("class:^{classname}")])
     };
-    let r = hypr_cmd(
-        &args.iter().map(|s| s.as_str()).collect::<Vec<_>>())
-        .output();
+    let fbr: Vec<&str> = fb.iter().map(|s| s.as_str()).collect();
+    let r = dsp(&lua, &fbr);
     match r {
         Ok(o) if String::from_utf8_lossy(&o.stdout).contains("ok") =>
             format!("CLOSED {target}"),
@@ -272,8 +279,8 @@ fn close(classname: &str) -> String {
 fn workspace(n: &str) -> String {
     match n.trim().parse::<i64>() {
         Ok(num) => {
-            hypr_cmd(&["dispatch", "workspace", &num.to_string()])
-                .output().ok();
+            dsp(&format!("hl.dsp.focus({{workspace={num}}})"),
+                &["workspace", &num.to_string()]).ok();
             format!("WORKSPACE {num}")
         }
         Err(_) => format!("SKIP (workspace {n:?} not a number)"),
