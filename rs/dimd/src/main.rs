@@ -8,6 +8,7 @@ mod ipc;
 mod learn;
 mod memory;
 mod pipeline;
+mod platform;
 mod points;
 mod recall;
 mod session;

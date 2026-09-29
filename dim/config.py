@@ -5,13 +5,18 @@ import pathlib
 import subprocess
 
 HOME = pathlib.Path.home()
-CFG_DIR = HOME / ".config" / "dim-agent"
+def _platform_dirs():
+    from . import platform as _p
+    return _p.dirs()
+
+CFG_DIR, DATA_DIR_P, RUN_DIR_P = _platform_dirs()
 CFG_FILE = CFG_DIR / "config.toml"
 ENV_FILE = CFG_DIR / ".env"
-DATA_DIR = pathlib.Path(os.environ.get("XDG_DATA_HOME", HOME / ".local" / "share")) / "dim-agent"
+DATA_DIR = pathlib.Path(os.environ.get("XDG_DATA_HOME", DATA_DIR_P))
 CORRECTIONS = DATA_DIR / "corrections.jsonl"
 DECISIONS = DATA_DIR / "decisions.jsonl"
-RUN_DIR = pathlib.Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "dim-agent"
+_xdg_rt = os.environ.get("XDG_RUNTIME_DIR")
+RUN_DIR = (pathlib.Path(_xdg_rt) / "dim-agent") if _xdg_rt else RUN_DIR_P
 LEVEL_FILE = RUN_DIR / "level"
 STATE_FILE = RUN_DIR / "state.json"
 SOCK_FILE = RUN_DIR / "dimd.sock"

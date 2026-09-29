@@ -99,18 +99,10 @@ pub fn extract(text: &str) -> (String, Vec<Value>) {
     (clean.trim().to_string(), points)
 }
 
-/// hyprctl monitors -j → Vec of {x,y,width,height,scale}.
+/// Monitor rects {x,y,width,height,scale} via the platform adapter
+/// (hyprctl on Linux, system_profiler on macOS).
 pub fn monitors() -> Vec<Value> {
-    let Ok(Some(out)) = crate::util::run_timeout(
-        Command::new("hyprctl").args(["monitors", "-j"]), 5)
-    else {
-        return Vec::new();
-    };
-    if !out.status.success() {
-        return Vec::new();
-    }
-    serde_json::from_str(&String::from_utf8_lossy(&out.stdout))
-        .unwrap_or_default()
+    crate::platform::monitors()
 }
 
 /// Screenshot pixels → Hyprland logical coords. grim composites each

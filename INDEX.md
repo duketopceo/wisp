@@ -59,4 +59,6 @@ Mirror of `dim/`: `main.rs` (IPC dispatch), `ipc.rs`, `state.rs`,
 recall.db, MEMORY.md, USER.md, skills/, proposals/ ·
 `$XDG_RUNTIME_DIR/dim-agent/` state.json + dimd.sock ·
 daemon: `systemctl --user dimd` (runs `~/.local/opt/dim-agent/dimd`);
-`~/.local/bin/dimd` symlinks there.
+`~/.local/bin/dimd` symlinks there.| `dim/platform.py` | OS adapter seam — per-OS command tables (record/screenshot/type/TTS/notify/wm), runtime dirs, deps hints; `DIMD_OS` override |
+| `rs/dimd/src/platform.rs` | Rust mirror of the platform seam; `*_for(Os,…)` testable variants |
+| `docs/MACOS.md` | macOS adapter: paths, command map, permission caveats, hotkey + shell decision |

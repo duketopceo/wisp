@@ -47,16 +47,13 @@ struct FileCfg {
 }
 
 pub fn cfg_dir() -> PathBuf {
-    dirs_home().join(".config/dim-agent")
+    crate::platform::dirs(&dirs_home()).0
 }
 pub fn data_dir() -> PathBuf {
-    dirs_home().join(".local/share/dim-agent")
+    crate::platform::dirs(&dirs_home()).1
 }
 pub fn runtime_dir() -> PathBuf {
-    std::env::var("XDG_RUNTIME_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/tmp"))
-        .join("dim-agent")
+    crate::platform::dirs(&dirs_home()).2
 }
 pub fn sock_file() -> PathBuf {
     runtime_dir().join("dimd.sock")

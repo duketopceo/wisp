@@ -82,18 +82,10 @@ def _add(points: list, x, y, label) -> None:
 
 
 def monitors() -> list[dict]:
-    """hyprctl monitors -j → [{x, y, width, height, scale}] (physical px
-    width/height, logical x/y, fractional scale). Empty on failure."""
-    if not shutil.which("hyprctl"):
-        return []
-    from .pipeline import hypr_env  # lazy: keeps module free of pipeline
-    try:
-        r = subprocess.run(["hyprctl", "monitors", "-j"],
-                           capture_output=True, text=True, timeout=5,
-                           env=hypr_env())
-        return json.loads(r.stdout) if r.returncode == 0 else []
-    except Exception:
-        return []
+    """[{x, y, width, height, scale}] via the platform adapter —
+    hyprctl on Linux, system_profiler on macOS. Empty on failure."""
+    from . import platform
+    return platform.monitors()
 
 
 def to_logical(points_px: list[dict], mons: list[dict]) -> list[dict]:

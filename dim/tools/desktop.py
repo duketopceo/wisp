@@ -16,13 +16,8 @@ def _resolve_apps(cfg: dict, harness: dict | None) -> dict:
 
 
 def _exec_detached(binname: str) -> None:
-    # Hyprland 0.56: hyprctl dispatch exec <cmd> hits a Lua parse bug
-    # (hyprwm/Hyprland#16224); the working path is the Lua dispatcher.
-    r = subprocess.run(["hyprctl", "eval", f'hl.dsp.exec_cmd("{binname}")'],
-                       capture_output=True, text=True, env=hypr_env())
-    if r.returncode != 0 or "ok" not in r.stdout:
-        subprocess.run(["hyprctl", "dispatch", "exec", binname],
-                       capture_output=True, env=hypr_env())
+    from .. import platform
+    platform._try(platform.launch_exec_cmds(binname))
 
 
 def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
@@ -38,48 +33,35 @@ def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
     return f"LAUNCHED {app} -> {binname}"
 
 
-def _dsp(lua: str, *fallback: str) -> subprocess.CompletedProcess:
-    """Run a Hyprland Lua dispatcher (hl.dsp.*); `hyprctl dispatch`
-    itself is broken by a Lua parse bug on 0.56+ (hyprwm/Hyprland#16224),
-    so the dispatcher table must go through eval + hl.dispatch."""
-    r = subprocess.run(["hyprctl", "eval", f"hl.dispatch({lua})"],
-                       capture_output=True, text=True, env=hypr_env())
-    if r.returncode == 0 and "ok" in (r.stdout if isinstance(r.stdout, str) else ""):
-        return r
-    if fallback:
-        return subprocess.run(["hyprctl", "dispatch", *fallback],
-                              capture_output=True, text=True,
-                              env=hypr_env())
-    return r
-
-
 def focus(classname: str) -> str:
-    r = _dsp(f'hl.dsp.focus({{window="class:^{classname}"}})',
-             "focuswindow", f"class:^{classname}")
-    if r.returncode == 0 and "ok" in r.stdout:
+    from .. import platform
+    cmds = platform.focus_cmds(classname)
+    if not cmds:
+        return (f"SKIP (focus unsupported — "
+                f"{platform.missing_deps_hint()})")
+    if platform._try(cmds):
         return f"FOCUSED {classname}"
     return f"SKIP (no window matching class {classname!r})"
 
 
 def close(classname: str) -> str:
-    if classname:
-        lua = f'hl.dsp.window.close({{window="class:^{classname}"}})'
-        fb = ("closewindow", f"class:^{classname}")
-    else:
-        lua = "hl.dsp.window.close()"
-        fb = ("killactive",)
-    r = _dsp(lua, *fb)
-    if r.returncode == 0 and "ok" in r.stdout:
+    from .. import platform
+    if platform._try(platform.close_cmds(classname)):
         return f"CLOSED {classname or 'active window'}"
     return f"SKIP (nothing closed for {classname!r})"
 
 
 def workspace(n: str) -> str:
+    from .. import platform
     try:
         num = int(str(n).strip())
     except ValueError:
         return f"SKIP (workspace {n!r} not a number)"
-    _dsp(f'hl.dsp.focus({{workspace={num}}})', "workspace", str(num))
+    cmds = platform.workspace_cmds(num)
+    if not cmds:
+        return (f"SKIP (workspace {num} unsupported — "
+                f"{platform.missing_deps_hint()})")
+    platform._try(cmds)
     return f"WORKSPACE {num}"
 
 

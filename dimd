@@ -207,6 +207,12 @@ def install_bind(cfg: dict) -> None:
     Omarchy configures Hyprland in Lua; hyprland.conf is not sourced, so a
     `bind =` line there is dead. Legacy installs wrote one — strip it.
     """
+    from dim import platform
+    if not platform.supports_hotkey_install():
+        print("hotkey install is Linux/Hyprland-only — on macOS bind "
+              "push-to-talk via SKHD/Raycast/a shortcut app: "
+              "`dimd listen` (see docs/MACOS.md)")
+        return
     mod = cfg.get("hotkey", {}).get("mod", "SUPER")
     key = cfg.get("hotkey", {}).get("key", "D")
     trigger = f"{config.HOME}/.local/bin/dim-agent-trigger"

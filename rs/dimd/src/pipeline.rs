@@ -122,19 +122,21 @@ fn app_criteria(_cfg: &Cfg) -> Value {
 }
 
 fn notify(msg: &str) {
-    Command::new("notify-send").args(["Dim", msg]).spawn().ok();
+    if let Some(mut c) = crate::platform::notify_cmd("Dim", msg) {
+        c.spawn().ok();
+    }
 }
 
-/// Breathing darkness: sample mic RMS via arecord, publish `level` for
-/// the overlay — parity with dim/pipeline.py::_amplitude_sampler.
+/// Breathing darkness: sample mic RMS via the platform sampler,
+/// publish `level` for the overlay — parity with
+/// dim/pipeline.py::_amplitude_sampler.
 fn amplitude_sampler(seconds: u64, st: Arc<State>) {
-    if !tools::which("arecord") {
-        return;
-    }
     use std::io::Read;
-    let mut proc = match Command::new("arecord")
-        .args(["-D", "default", "-f", "U8", "-r", "200", "-c", "1",
-               "-d", &seconds.to_string()])
+    let Some(mut cmd) = crate::platform::sampler_cmd(seconds as i64)
+    else {
+        return;
+    };
+    let mut proc = match cmd
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .spawn()
@@ -167,25 +169,11 @@ fn record(cfg: &Cfg, st: &Arc<State>) -> Result<std::path::PathBuf, String> {
     let secs = cfg.audio_seconds;
     let sampler_st = st.clone();
     std::thread::spawn(move || amplitude_sampler(secs as u64, sampler_st));
-    let rec = if tools::which("pw-record") {
-        crate::util::run_timeout(
-            Command::new("pw-record")
-                .args(["--rate", "16000", "--channels", "1",
-                       "--format", "s16",
-                       "--sample-count",
-                       &format!("{}", 16000 * secs)])
-                .arg(&out),
-            secs as u64 + 10)  // Python: timeout=seconds+10
-    } else if tools::which("arecord") {
-        crate::util::run_timeout(
-            Command::new("arecord")
-                .args(["-D", "default", "-r", "16000", "-c", "1",
-                       "-f", "S16_LE", "-d", &secs.to_string()])
-                .arg(&out),
-            secs as u64 + 10)
-    } else {
-        return Err("no pw-record or arecord found".into());
+    let Some(mut cmd) = crate::platform::record_cmd(&out, secs.into()) else {
+        return Err(format!("no recorder found — {}",
+            crate::platform::missing_deps_hint()));
     };
+    let rec = crate::util::run_timeout(&mut cmd, secs as u64 + 10);
     // pw-record exits 1 on clean --sample-count shutdown (pipewire
     // 1.6.x) — trust the output file, not the exit code (Python parity)
     let _ = rec;
@@ -283,14 +271,11 @@ fn log_decision(rec: &Value) {
 
 
 fn capture_screen_b64() -> Option<String> {
-    if !tools::which("grim") {
-        return None;
-    }
     let dir = crate::config::runtime_dir();
     std::fs::create_dir_all(&dir).ok();
     let f = dir.join("screen.png");
-    let ok = crate::util::run_timeout(
-        Command::new("grim").arg(&f), 10)
+    let mut cmd = crate::platform::screenshot_cmd(&f)?;
+    let ok = crate::util::run_timeout(&mut cmd, 10)
         .map(|o| o.map(|x| x.status.success()).unwrap_or(false))
         .unwrap_or(false);
     if !ok {

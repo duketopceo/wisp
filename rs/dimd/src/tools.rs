@@ -101,20 +101,18 @@ pub fn tool_schemas() -> Value {
     json!(arr)
 }
 
-fn hypr_cmd(args: &[&str]) -> Command {
-    let mut c = Command::new("hyprctl");
-    c.args(args);
-    if std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_err() {
-        let rd = std::env::var("XDG_RUNTIME_DIR")
-            .unwrap_or_else(|_| "/tmp".into());
-        let hypr = PathBuf::from(rd).join("hypr");
-        if let Ok(mut it) = std::fs::read_dir(&hypr) {
-            if let Some(Ok(e)) = it.next() {
-                c.env("HYPRLAND_INSTANCE_SIGNATURE", e.file_name());
+/// Try each command in order; `Some` = first output satisfying the
+/// platform's wm verdict (`platform::wm_ok`). Runs every command —
+/// later entries are fallbacks (hyprctl eval → legacy dispatch).
+fn try_cmds(cmds: &mut [Command]) -> Option<std::process::Output> {
+    for c in cmds {
+        if let Ok(o) = c.output() {
+            if crate::platform::wm_ok(&o) {
+                return Some(o);
             }
         }
     }
-    c
+    None
 }
 
 pub fn which(bin: &str) -> bool {
@@ -176,7 +174,9 @@ fn run_inner(name: &str, arg: &str, cfg: &Cfg) -> String {
         "close" => close(arg),
         "workspace" => workspace(arg),
         "notify" => {
-            Command::new("notify-send").args(["Dim", arg]).spawn().ok();
+            if let Some(mut c) = crate::platform::notify_cmd("Dim", arg) {
+                c.spawn().ok();
+            }
             "NOTIFIED".into()
         }
         "screenshot" => screenshot(),
@@ -184,12 +184,13 @@ fn run_inner(name: &str, arg: &str, cfg: &Cfg) -> String {
             if arg.is_empty() {
                 return "SKIP (nothing to type)".into();
             }
-            if !which("wtype") {
-                return "SKIP (wtype not installed)".into();
-            }
-            let ok = Command::new("wtype").args(["--", arg])
-                .output().map(|o| o.status.success()).unwrap_or(false);
-            if ok { "TYPED".into() } else { "SKIP (wtype failed)".into() }
+            let Some(mut c) = crate::platform::type_text_cmd(arg) else {
+                return format!("SKIP (no typer — {})",
+                    crate::platform::missing_deps_hint());
+            };
+            let ok = c.output().map(|o| o.status.success())
+                .unwrap_or(false);
+            if ok { "TYPED".into() } else { "SKIP (typer failed)".into() }
         }
         "shell" => {
             if arg.is_empty() {
@@ -232,37 +233,25 @@ fn launch(app: &str, cfg: &Cfg) -> String {
     if !which(binary) && !local.exists() {
         return format!("SKIP ({app} -> {binary:?} not installed)");
     }
-    // Hyprland 0.56 Lua dispatcher path (dispatch exec parse bug)
-    let r = hypr_cmd(&["eval", &format!("hl.dsp.exec_cmd(\"{binname}\")")])
-        .output();
-    let ok = r.map(|o| String::from_utf8_lossy(&o.stdout).contains("ok"))
-        .unwrap_or(false);
-    if !ok {
-        hypr_cmd(&["dispatch", "exec", binname]).output().ok();
+    // platform launcher (Hyprland eval+dispatch on Linux, direct
+    // spawn on macOS) — verdict via wm_ok
+    let mut cmds = crate::platform::launch_exec_cmds(&binname);
+    if try_cmds(&mut cmds).is_none() {
+        return format!("SKIP (launch {binname} failed — {})",
+            crate::platform::missing_deps_hint());
     }
     format!("LAUNCHED {app} -> {binname}")
 }
 
-/// Run a Hyprland Lua dispatcher (hl.dsp.*) via eval; `hyprctl
-/// dispatch` is broken by a Lua parse bug on 0.56+ (hyprwm/Hyprland
-/// #16224). Falls back to the legacy dispatch args when eval fails.
-fn dsp(lua: &str, fallback: &[&str]) -> std::io::Result<std::process::Output> {
-    let r = hypr_cmd(&["eval", &format!("hl.dispatch({lua})")]).output();
-    match r {
-        Ok(o) if String::from_utf8_lossy(&o.stdout).contains("ok") =>
-            Ok(o),
-        _ => hypr_cmd(fallback).output(),
-    }
-}
-
 fn focus(classname: &str) -> String {
-    let r = dsp(
-        &format!("hl.dsp.focus({{window=\"class:^{classname}\"}})"),
-        &["focuswindow", &format!("class:^{classname}")]);
-    match r {
-        Ok(o) if String::from_utf8_lossy(&o.stdout).contains("ok") =>
-            format!("FOCUSED {classname}"),
-        _ => format!("SKIP (no window matching class {classname:?})"),
+    let mut cmds = crate::platform::focus_cmds(classname);
+    if cmds.is_empty() {
+        return format!("SKIP (focus unsupported — {})",
+            crate::platform::missing_deps_hint());
+    }
+    match try_cmds(&mut cmds) {
+        Some(_) => format!("FOCUSED {classname}"),
+        None => format!("SKIP (no window matching class {classname:?})"),
     }
 }
 
@@ -272,26 +261,22 @@ fn close(classname: &str) -> String {
     } else {
         classname.to_string()
     };
-    let (lua, fb): (String, Vec<String>) = if classname.is_empty() {
-        ("hl.dsp.window.close()".into(), vec!["killactive".into()])
-    } else {
-        (format!("hl.dsp.window.close({{window=\"class:^{classname}\"}})"),
-         vec!["closewindow".into(), format!("class:^{classname}")])
-    };
-    let fbr: Vec<&str> = fb.iter().map(|s| s.as_str()).collect();
-    let r = dsp(&lua, &fbr);
-    match r {
-        Ok(o) if String::from_utf8_lossy(&o.stdout).contains("ok") =>
-            format!("CLOSED {target}"),
-        _ => format!("SKIP (nothing closed for {classname:?})"),
+    let mut cmds = crate::platform::close_cmds(classname);
+    match try_cmds(&mut cmds) {
+        Some(_) => format!("CLOSED {target}"),
+        None => format!("SKIP (nothing closed for {classname:?})"),
     }
 }
 
 fn workspace(n: &str) -> String {
     match n.trim().parse::<i64>() {
         Ok(num) => {
-            dsp(&format!("hl.dsp.focus({{workspace={num}}})"),
-                &["workspace", &num.to_string()]).ok();
+            let mut cmds = crate::platform::workspace_cmds(num);
+            if cmds.is_empty() {
+                return format!("SKIP (workspace {num} unsupported — {})",
+                    crate::platform::missing_deps_hint());
+            }
+            try_cmds(&mut cmds);
             format!("WORKSPACE {num}")
         }
         Err(_) => format!("SKIP (workspace {n:?} not a number)"),
@@ -299,20 +284,20 @@ fn workspace(n: &str) -> String {
 }
 
 fn screenshot() -> String {
-    if !which("grim") {
-        return "SKIP (grim not installed)".into();
-    }
     let dir = crate::config::data_dir().join("shots");
     std::fs::create_dir_all(&dir).ok();
     let f = dir.join(format!("shot-{}.png",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()));
-    let ok = Command::new("grim").arg(&f).output()
-        .map(|o| o.status.success()).unwrap_or(false);
+    let Some(mut c) = crate::platform::screenshot_cmd(&f) else {
+        return format!("SKIP (no screenshot tool — {})",
+            crate::platform::missing_deps_hint());
+    };
+    let ok = c.output().map(|o| o.status.success()).unwrap_or(false);
     if ok && f.exists() {
         format!("SHOT {}", f.display())
     } else {
-        "SKIP (grim failed)".into()
+        "SKIP (screenshot failed)".into()
     }
 }
 

@@ -17,22 +17,26 @@ def screenshot(_: str = "") -> str:
     out.mkdir(parents=True, exist_ok=True)
     from datetime import datetime
     f = out / f"shot-{datetime.now().strftime('%Y%m%d-%H%M%S')}.png"
-    if not shutil.which("grim"):
-        return "SKIP (grim not installed)"
-    r = subprocess.run(["grim", str(f)], capture_output=True, env=hypr_env())
+    from .. import platform
+    cmd = platform.screenshot_cmd(f)
+    if not cmd:
+        return (f"SKIP (no screenshot tool — "
+                f"{platform.missing_deps_hint()})")
+    r = subprocess.run(cmd, capture_output=True, env=hypr_env())
     if r.returncode == 0 and f.exists():
         return f"SHOT {f}"
-    return "SKIP (grim failed)"
+    return "SKIP (screenshot failed)"
 
 
 def type_text(text: str) -> str:
     if not text:
         return "SKIP (nothing to type)"
-    if not shutil.which("wtype"):
-        return "SKIP (wtype not installed)"
-    r = subprocess.run(["wtype", "--", text], capture_output=True,
-                       env=hypr_env())
-    return "TYPED" if r.returncode == 0 else "SKIP (wtype failed)"
+    from .. import platform
+    cmd = platform.type_text_cmd(text)
+    if not cmd:
+        return (f"SKIP (no typer — {platform.missing_deps_hint()})")
+    r = subprocess.run(cmd, capture_output=True, env=hypr_env())
+    return "TYPED" if r.returncode == 0 else "SKIP (typer failed)"
 
 
 def shell(cmd: str) -> str:

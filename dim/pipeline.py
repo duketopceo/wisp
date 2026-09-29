@@ -110,7 +110,10 @@ def hypr_env() -> dict:
 
 
 def notify(msg: str) -> None:
-    subprocess.run(["notify-send", "Dim", msg], env=hypr_env())
+    from . import platform
+    cmd = platform.notify_cmd("Dim", msg)
+    if cmd:
+        subprocess.run(cmd, env=hypr_env())
 
 
 def record(seconds: int, state=None) -> pathlib.Path:
@@ -119,15 +122,11 @@ def record(seconds: int, state=None) -> pathlib.Path:
     sampler = threading.Thread(target=_amplitude_sampler,
                                args=(seconds, state), daemon=True)
     sampler.start()
-    rec = shutil.which("pw-record") or shutil.which("arecord")
-    if rec is None:
-        raise RuntimeError("no pw-record or arecord found")
-    if rec.endswith("pw-record"):
-        cmd = [rec, "--rate", "16000", "--channels", "1", "--format", "s16",
-               "--sample-count", str(16000 * seconds), str(out)]
-    else:
-        cmd = [rec, "-D", "default", "-r", "16000", "-c", "1", "-f", "S16_LE",
-               "-d", str(seconds), str(out)]
+    from . import platform
+    cmd = platform.record_cmd(out, seconds)
+    if cmd is None:
+        raise RuntimeError(
+            f"no recorder found — {platform.missing_deps_hint()}")
     # pw-record exits 1 on clean --sample-count shutdown (pipewire 1.6.x);
     # trust the output file, not the exit code.
     subprocess.run(cmd, timeout=seconds + 10, env=hypr_env())
@@ -143,7 +142,8 @@ def record(seconds: int, state=None) -> pathlib.Path:
 
 def _amplitude_sampler(seconds: int, state=None) -> None:
     """Breathing darkness: sample mic RMS, publish level for the overlay."""
-    arec = shutil.which("arecord")
+    from . import platform
+    arec = platform.sampler_cmd(seconds)
     if not arec:
         return
 
@@ -155,8 +155,7 @@ def _amplitude_sampler(seconds: int, state=None) -> None:
 
     try:
         proc = subprocess.Popen(
-            [arec, "-D", "default", "-f", "U8", "-r", "200", "-c", "1",
-             "-d", str(seconds)],
+            arec,
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=hypr_env())
         while True:
             chunk = proc.stdout.read(200)
@@ -321,14 +320,16 @@ def ask_chat(transcript: str, cfg: dict, session_text: str = "",
 
 
 def capture_screen() -> pathlib.Path | None:
-    """grim composites ALL outputs to RUN_DIR/screen.png. None on fail."""
-    grim = shutil.which("grim")
-    if not grim:
-        return None
+    """Platform screenshot → RUN_DIR/screen.png. None on fail/denied
+    (macOS Screen Recording perm denial = empty PNG → caller skips)."""
+    from . import platform
     out = config.RUN_DIR / "screen.png"
+    cmd = platform.screenshot_cmd(out)
+    if not cmd:
+        return None
     try:
         config.RUN_DIR.mkdir(parents=True, exist_ok=True)
-        r = subprocess.run([grim, str(out)], capture_output=True,
+        r = subprocess.run(cmd, capture_output=True,
                            timeout=10, env=hypr_env())
         return out if r.returncode == 0 and out.exists() else None
     except Exception:

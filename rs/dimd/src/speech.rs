@@ -29,13 +29,7 @@ fn argv(msg: &str, cmd: &str) -> Option<(String, Vec<String>)> {
         let prog = parts.remove(0);
         return Some((prog, parts));
     }
-    let bin = if tools::which("espeak-ng") {
-        "espeak-ng"
-    } else if tools::which("espeak") {
-        "espeak"
-    } else {
-        return None;
-    };
+    let bin = crate::platform::tts_binary()?;
     Some((bin.to_string(), vec![msg.to_string()]))
 }
 

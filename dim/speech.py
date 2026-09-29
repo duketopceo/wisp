@@ -29,7 +29,8 @@ def _argv(msg: str, cfg: dict) -> list[str] | None:
         else:
             parts.append(msg)
         return parts
-    bin_ = shutil.which("espeak-ng") or shutil.which("espeak")
+    from . import platform
+    bin_ = platform.tts_binary()
     return [bin_, msg] if bin_ else None
 
 
