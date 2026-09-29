@@ -12,7 +12,8 @@ def _platform_dirs():
 CFG_DIR, DATA_DIR_P, RUN_DIR_P = _platform_dirs()
 CFG_FILE = CFG_DIR / "config.toml"
 ENV_FILE = CFG_DIR / ".env"
-DATA_DIR = pathlib.Path(os.environ.get("XDG_DATA_HOME", DATA_DIR_P))
+DATA_DIR = pathlib.Path(
+    os.environ.get("XDG_DATA_HOME", DATA_DIR_P.parent)) / "dim-agent"
 CORRECTIONS = DATA_DIR / "corrections.jsonl"
 DECISIONS = DATA_DIR / "decisions.jsonl"
 _xdg_rt = os.environ.get("XDG_RUNTIME_DIR")

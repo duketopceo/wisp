@@ -125,6 +125,50 @@ class TestPlatform(unittest.TestCase):
                 self.assertIn("powershell",
                               platform.missing_deps_hint())
 
+    def test_desktop_matrix(self):
+        """Adapter selection per linux desktop — PATH fully faked."""
+        cases = [
+            ("hyprland", "grim", "wtype"),
+            ("gnome", "gnome-screenshot", "ydotool"),
+            ("kde", "spectacle", "ydotool"),
+            ("x11", "maim", "xdotool"),
+        ]
+        for dt, shot, typer in cases:
+            with _with_os("linux"),                     mock.patch.dict(os.environ,
+                                    {"DIMD_DESKTOP": dt}),                     mock.patch.object(platform, "_which",
+                                      return_value=True):
+                self.assertEqual(
+                    platform.screenshot_cmd(Path("/t/s.png"))[0], shot)
+                self.assertEqual(
+                    platform.type_text_cmd("hi")[0], typer)
+            self.assertEqual(
+                platform.current() == "linux", True)
+
+    def test_desktop_fallback_order(self):
+        """Hyprland missing grim → falls through to next screenshotter."""
+        def which(b):
+            return b != "grim"
+        with _with_os("linux"),                 mock.patch.dict(os.environ,
+                                {"DIMD_DESKTOP": "hyprland"}),                 mock.patch.object(platform, "_which", which):
+            self.assertEqual(
+                platform.screenshot_cmd(Path("/t/s.png"))[0],
+                "gnome-screenshot")
+
+    def test_kde_wm_and_gnome_degrade(self):
+        with _with_os("linux"),                 mock.patch.dict(os.environ,
+                                {"DIMD_DESKTOP": "kde"}),                 mock.patch.object(platform, "_which",
+                                  return_value=True):
+            self.assertEqual(
+                platform.workspace_cmds(2)[0][0], "qdbus")
+            self.assertEqual(
+                platform.launch_exec_cmds("foot")[0][0], "setsid")
+        with _with_os("linux"),                 mock.patch.dict(os.environ,
+                                {"DIMD_DESKTOP": "gnome"}),                 mock.patch.object(platform, "_which",
+                                  return_value=True):
+            self.assertEqual(platform.focus_cmds("x"), [])
+            self.assertEqual(platform.workspace_cmds(1), [])
+            self.assertFalse(platform.supports_hotkey_install())
+
     def test_sendkeys_escape(self):
         self.assertEqual(platform._sendkeys_escape("a+b{c}"),
                          "a{+}b{{}c{}}")

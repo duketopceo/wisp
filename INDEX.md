@@ -62,4 +62,4 @@ daemon: `systemctl --user dimd` (runs `~/.local/opt/dim-agent/dimd`);
 `~/.local/bin/dimd` symlinks there.| `dim/platform.py` | OS adapter seam — per-OS command tables (record/screenshot/type/TTS/notify/wm), runtime dirs, deps hints; `DIMD_OS` override |
 | `rs/dimd/src/platform.rs` | Rust mirror of the platform seam; `*_for(Os,…)` testable variants |
 | `docs/MACOS.md` | macOS adapter: paths, command map, permission caveats, hotkey + shell decision || `docs/WINDOWS.md` | Windows adapter: TCP transport, command map, schtasks install, residuals |
-| `tests/test_ipc_tcp.py` | TCP transport roundtrip (Windows path proven on Linux) |
+| `tests/test_ipc_tcp.py` | TCP transport roundtrip (Windows path proven on Linux) || `docs/LINUX.md` | Generic-Linux adapter: desktop detection + per-desktop command matrix |

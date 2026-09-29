@@ -34,6 +34,28 @@ def _which(b: str) -> bool:
     return shutil.which(b) is not None
 
 
+def desktop() -> str:
+    """Linux compositor: 'hyprland'|'gnome'|'kde'|'x11'|'unknown'.
+    `DIMD_DESKTOP` env override mirrors the Rust core (tests,
+    forced fallbacks). Meaningless off-Linux → returns 'unknown'."""
+    if current() != "linux":
+        return "unknown"
+    d = os.environ.get("DIMD_DESKTOP", "")
+    if d in ("hyprland", "gnome", "kde", "x11"):
+        return d
+    if os.environ.get("HYPRLAND_INSTANCE_SIGNATURE") or _which("hyprctl"):
+        return "hyprland"
+    cur = os.environ.get("XDG_CURRENT_DESKTOP", "").lower()
+    if "gnome" in cur:
+        return "gnome"
+    if "kde" in cur or "plasma" in cur:
+        return "kde"
+    if os.environ.get("DISPLAY") and not os.environ.get(
+            "WAYLAND_DISPLAY"):
+        return "x11"
+    return "unknown"
+
+
 def _ps(script: str) -> list:
     return ["powershell", "-NoProfile", "-NonInteractive",
             "-Command", script]
@@ -128,7 +150,22 @@ def sampler_cmd(seconds: float) -> list | None:
 def screenshot_cmd(out: Path) -> list | None:
     o = current()
     if o == "linux":
-        return ["grim", str(out)] if _which("grim") else None
+        dt = desktop()
+        order = {
+            "hyprland": ["grim", "gnome-screenshot", "spectacle",
+                         "maim"],
+            "gnome": ["gnome-screenshot", "spectacle", "grim", "maim"],
+            "kde": ["spectacle", "grim", "gnome-screenshot", "maim"],
+            "x11": ["maim", "grim"],
+        }.get(dt, ["grim", "gnome-screenshot", "spectacle", "maim"])
+        for b in order:
+            if _which(b):
+                if b == "gnome-screenshot":
+                    return [b, "-f", str(out)]
+                if b == "spectacle":
+                    return [b, "-b", "-n", "-o", str(out)]
+                return [b, str(out)]
+        return None
     if o == "macos":
         return (["screencapture", "-x", str(out)]
                 if _which("screencapture") else None)
@@ -157,7 +194,17 @@ def _osa_keystroke(text: str) -> list:
 def type_text_cmd(text: str) -> list | None:
     o = current()
     if o == "linux":
-        return ["wtype", "--", text] if _which("wtype") else None
+        order = {"hyprland": ["wtype", "ydotool"],
+                 "x11": ["xdotool"],
+                 }.get(desktop(), ["ydotool", "wtype", "xdotool"])
+        for b in order:
+            if _which(b):
+                if b == "wtype":
+                    return [b, "--", text]
+                if b == "ydotool":
+                    return [b, "type", "--", text]
+                return [b, "type", "--clearmodifiers", "--", text]
+        return None
     if o == "macos":
         return _osa_keystroke(text) if _which("osascript") else None
     if o == "windows":
@@ -269,8 +316,21 @@ def _try(cmds: list[list], timeout: int = 8) -> bool:
 def focus_cmds(cls: str) -> list[list]:
     o = current()
     if o == "linux":
-        return [_eval(f'hl.dsp.focus({{window="class:^{cls}"}})'),
-                _hypr("focuswindow", f"class:^{cls}")]
+        dt = desktop()
+        if dt in ("hyprland", "unknown"):
+            return [_eval(f'hl.dsp.focus({{window="class:^{cls}"}})'),
+                    _hypr("focuswindow", f"class:^{cls}")]
+        if dt == "kde":
+            if _which("kdotool"):
+                return [["sh", "-c",
+                         f"kdotool search --name '{cls}' "
+                         "windowactivate %@"]]
+            if _which("wmctrl"):
+                return [["wmctrl", "-a", cls]]
+            return []
+        if dt == "x11":
+            return [["wmctrl", "-a", cls]] if _which("wmctrl") else []
+        return []  # gnome wayland: no wm api
     if o == "macos":
         return [["open", "-a", cls]]
     if o == "windows":
@@ -284,11 +344,21 @@ def focus_cmds(cls: str) -> list[list]:
 def close_cmds(cls: str) -> list[list]:
     o = current()
     if o == "linux":
-        if not cls:
-            return [_eval("hl.dsp.window.close()"),
-                    _hypr("killactive")]
-        return [_eval(f'hl.dsp.window.close({{window="class:^{cls}"}})'),
+        dt = desktop()
+        if dt in ("hyprland", "unknown"):
+            if not cls:
+                return [_eval("hl.dsp.window.close()"),
+                        _hypr("killactive")]
+            return [_eval(
+                f'hl.dsp.window.close({{window="class:^{cls}"}})'),
                 _hypr("closewindow", f"class:^{cls}")]
+        if dt in ("kde", "x11"):
+            if not cls:
+                return ([["xdotool", "getactivewindow", "windowclose"]]
+                        if _which("xdotool") else [])
+            return ([["wmctrl", "-c", cls]]
+                    if _which("wmctrl") else [])
+        return []  # gnome wayland
     if o == "macos":
         return [["osascript", "-e",
                  'tell application "System Events" to keystroke "w" '
@@ -308,8 +378,18 @@ def close_cmds(cls: str) -> list[list]:
 def workspace_cmds(n: int) -> list[list]:
     o = current()
     if o == "linux":
-        return [_eval(f"hl.dsp.focus({{workspace={n}}})"),
-                _hypr("workspace", str(n))]
+        dt = desktop()
+        if dt in ("hyprland", "unknown"):
+            return [_eval(f"hl.dsp.focus({{workspace={n}}})"),
+                    _hypr("workspace", str(n))]
+        if dt == "kde":
+            return ([["qdbus", "org.kde.KWin", "/KWin",
+                      "setCurrentDesktop", str(n)]]
+                    if _which("qdbus") else [])
+        if dt == "x11":
+            return ([["wmctrl", "-s", str(n - 1)]]  # 0-based
+                    if _which("wmctrl") else [])
+        return []  # gnome wayland: no api
     if o == "macos":
         codes = [18, 19, 20, 21, 23, 22, 26, 28, 25]  # 1..=9 key codes
         if 1 <= n <= 9:
@@ -323,8 +403,10 @@ def workspace_cmds(n: int) -> list[list]:
 def launch_exec_cmds(cmdline: str) -> list[list]:
     o = current()
     if o == "linux":
-        return [_eval(f'hl.dsp.exec_cmd("{cmdline}")'),
-                _hypr("dispatch", "exec", cmdline)]
+        if desktop() in ("hyprland", "unknown"):
+            return [_eval(f'hl.dsp.exec_cmd("{cmdline}")'),
+                    _hypr("dispatch", "exec", cmdline)]
+        return [["setsid", "sh", "-c", cmdline]]  # detached spawn
     if o == "macos":
         return [["sh", "-c", cmdline]]
     if o == "windows":
@@ -336,14 +418,46 @@ def monitors() -> list[dict]:
     """[{x,y,width,height,scale}] logical rects for point mapping."""
     o = current()
     if o == "linux":
-        try:
-            p = subprocess.run(["hyprctl", "monitors", "-j"],
-                               capture_output=True, text=True,
-                               timeout=5, env=_env())
-            import json
-            return json.loads(p.stdout) if p.returncode == 0 else []
-        except Exception:
-            return []
+        dt = desktop()
+        if dt in ("hyprland", "unknown"):
+            try:
+                p = subprocess.run(["hyprctl", "monitors", "-j"],
+                                   capture_output=True, text=True,
+                                   timeout=5, env=_env())
+                import json
+                return (json.loads(p.stdout)
+                        if p.returncode == 0 else [])
+            except Exception:
+                return []
+        if dt in ("kde", "x11"):
+            # xrandr `NAME connected ... WxH+X+Y` (scale assumed 1)
+            if not _which("xrandr"):
+                return []
+            try:
+                p = subprocess.run(["xrandr", "--query"],
+                                   capture_output=True, text=True,
+                                   timeout=5)
+                mons = []
+                for line in p.stdout.splitlines():
+                    if " connected" not in line:
+                        continue
+                    for tok in line.split():
+                        if "x" in tok and "+" in tok:
+                            wh, _, xy = tok.partition("+")
+                            w, _, h = wh.partition("x")
+                            x, _, y = xy.partition("+")
+                            try:
+                                mons.append({
+                                    "x": int(x), "y": int(y),
+                                    "width": int(w),
+                                    "height": int(h), "scale": 1})
+                            except ValueError:
+                                pass
+                            break
+                return mons
+            except Exception:
+                return []
+        return []  # gnome wayland: no cheap CLI
     if o == "macos":
         # system_profiler: physical px; scale 2 inferred for Retina —
         # approximation (AX/NSScreen is the precise path; residual).
@@ -390,13 +504,16 @@ def monitors() -> list[dict]:
 
 
 def supports_hotkey_install() -> bool:
-    """Only Linux writes a Hyprland bind in `dimd install` — macOS
-    hotkeys are a SKHD/native concern (see docs/MACOS.md)."""
-    return current() == "linux"
+    """Only Hyprland writes a bind in `dimd install` — GNOME/KDE use
+    the XDG GlobalShortcuts portal (tray app, U10); macOS is SKHD."""
+    return current() == "linux" and desktop() == "hyprland"
 
 
 def missing_deps_hint() -> str:
-    return {"linux": "need grim/wtype/pw-record/espeak + Hyprland",
+    return {"linux": "need pw-record/arecord + espeak; wm ops need Hyprland "
+                     "(hyprctl), KDE (kdotool/qdbus/wmctrl) or X11 "
+                     "(wmctrl/xdotool); typing: wtype or ydotool; "
+                     "shots: grim/gnome-screenshot/spectacle/maim",
             "macos": "need screencapture/osascript/afrecord; grant "
                      "Screen Recording + Accessibility in System "
                      "Settings",

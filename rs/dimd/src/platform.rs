@@ -13,6 +13,38 @@ use std::process::Command;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Os { Linux, MacOS, Windows }
 
+/// Linux desktop/compositor — detected once per call. `DIMD_DESKTOP`
+/// env override mirrors DIMD_OS (tests, forced fallbacks).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Desktop { Hyprland, Gnome, Kde, X11, Unknown }
+
+pub fn desktop() -> Desktop {
+    if let Ok(d) = std::env::var("DIMD_DESKTOP") {
+        return match d.as_str() {
+            "hyprland" => Desktop::Hyprland,
+            "gnome" => Desktop::Gnome,
+            "kde" => Desktop::Kde,
+            "x11" => Desktop::X11,
+            _ => Desktop::Unknown,
+        };
+    }
+    if std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok()
+        || crate::tools::which("hyprctl") {
+        return Desktop::Hyprland;
+    }
+    let cur = std::env::var("XDG_CURRENT_DESKTOP")
+        .unwrap_or_default().to_lowercase();
+    if cur.contains("gnome") { return Desktop::Gnome; }
+    if cur.contains("kde") || cur.contains("plasma") {
+        return Desktop::Kde;
+    }
+    if std::env::var("DISPLAY").is_ok()
+        && std::env::var("WAYLAND_DISPLAY").is_err() {
+        return Desktop::X11;
+    }
+    Desktop::Unknown
+}
+
 pub fn current() -> Os {
     if let Ok(o) = std::env::var("DIMD_OS") {
         return match o.as_str() {
@@ -35,6 +67,11 @@ pub fn current() -> Os {
 pub fn dirs(home: &std::path::Path) -> (PathBuf, PathBuf, PathBuf) {
     dirs_for(current(), home)
 }
+/// Desktop adapter for the current host — only probed on Linux.
+fn desk() -> Desktop {
+    if current() == Os::Linux { desktop() } else { Desktop::Unknown }
+}
+
 fn dirs_for(os: Os, home: &std::path::Path) -> (PathBuf, PathBuf, PathBuf) {
     match os {
         Os::MacOS => (
@@ -122,14 +159,42 @@ fn record_cmd_for(os: Os, out: &std::path::Path, seconds: i64) -> Option<Command
 
 /// Full-screen PNG at `out`.
 pub fn screenshot_cmd(out: &std::path::Path) -> Option<Command> {
-    screenshot_cmd_for(current(), out)
+    screenshot_cmd_for(current(), desk(), out)
 }
-fn screenshot_cmd_for(os: Os, out: &std::path::Path) -> Option<Command> {
+fn screenshot_cmd_for(os: Os, dt: Desktop,
+                      out: &std::path::Path) -> Option<Command> {
     Some(match os {
         Os::Linux => {
-            if !crate::tools::which("grim") { return None; }
-            let mut c = Command::new("grim");
-            c.arg(out);
+            // hyprland/wlroots: grim; gnome: gnome-screenshot;
+            // kde: spectacle; x11: maim (ImageMagick import fallback)
+            let bin: &str = match dt {
+                Desktop::Hyprland | Desktop::Unknown => "grim",
+                Desktop::Gnome => "gnome-screenshot",
+                Desktop::Kde => "spectacle",
+                Desktop::X11 => "maim",
+            };
+            let mut c = if crate::tools::which(bin) {
+                Command::new(bin)
+            } else {
+                // generic fallbacks in PATH order
+                let mut c2 = None;
+                for b in ["grim", "gnome-screenshot", "spectacle",
+                          "maim"] {
+                    if crate::tools::which(b) {
+                        c2 = Some(Command::new(b));
+                        break;
+                    }
+                }
+                c2?
+            };
+            match c.get_program().to_str().unwrap_or("") {
+                "grim" | "maim" => { c.arg(out); }
+                "gnome-screenshot" => { c.args(["-f"]); c.arg(out); }
+                "spectacle" => {
+                    c.args(["-b", "-n", "-o"]); c.arg(out);
+                }
+                _ => { c.arg(out); }
+            }
             c
         }
         Os::MacOS => {
@@ -159,14 +224,26 @@ fn screenshot_cmd_for(os: Os, out: &std::path::Path) -> Option<Command> {
 /// keystroke (needs Accessibility permission); long text is chunked
 /// by the caller's caller? No — one shot, osascript handles it.
 pub fn type_text_cmd(text: &str) -> Option<Command> {
-    type_text_cmd_for(current(), text)
+    type_text_cmd_for(current(), desk(), text)
 }
-fn type_text_cmd_for(os: Os, text: &str) -> Option<Command> {
+fn type_text_cmd_for(os: Os, dt: Desktop,
+                     text: &str) -> Option<Command> {
     Some(match os {
         Os::Linux => {
-            if !crate::tools::which("wtype") { return None; }
-            let mut c = Command::new("wtype");
-            c.args(["--", text]);
+            // hyprland/wlroots: wtype; portal-safe: ydotool (uinput);
+            // x11: xdotool. Unknown: try all three in that order.
+            let bins: &[&str] = match dt {
+                Desktop::Hyprland => &["wtype", "ydotool"],
+                Desktop::X11 => &["xdotool"],
+                _ => &["ydotool", "wtype", "xdotool"],
+            };
+            let b = bins.iter().find(|b| crate::tools::which(b))?;
+            let mut c = Command::new(b);
+            match *b {
+                "wtype" => c.args(["--", text]),
+                "ydotool" => c.args(["type", "--", text]),
+                _ => c.args(["type", "--clearmodifiers", "--", text]),
+            };
             c
         }
         Os::MacOS => {
@@ -374,15 +451,43 @@ fn eval_lua(lua: &str) -> Command {
 /// (Linux: Lua dsp + legacy dispatch fallback — hyprctl dispatch is
 /// broken by a parse bug on Hyprland 0.56+; macOS: `open -a`).
 pub fn focus_cmds(class: &str) -> Vec<Command> {
-    focus_cmds_for(current(), class)
+    focus_cmds_for(current(), desk(), class)
 }
-fn focus_cmds_for(os: Os, class: &str) -> Vec<Command> {
+fn focus_cmds_for(os: Os, dt: Desktop, class: &str) -> Vec<Command> {
     match os {
-        Os::Linux => vec![
-            eval_lua(&format!("hl.dsp.focus({{window=\"class:^{class}\"}})")),
-            hypr_cmd(&["focuswindow".into(),
-                       format!("class:^{class}")]),
-        ],
+        Os::Linux => match dt {
+            Desktop::Hyprland | Desktop::Unknown => vec![
+                eval_lua(&format!(
+                    "hl.dsp.focus({{window=\"class:^{class}\"}})")),
+                hypr_cmd(&["focuswindow".into(),
+                           format!("class:^{class}")]),
+            ],
+            Desktop::Kde => {
+                // kdotool (kde's xdotool port) else wmctrl over xwayland
+                if crate::tools::which("kdotool") {
+                    let mut c = Command::new("sh");
+                    c.args(["-c", &format!(
+                        "kdotool search --name '{class}'                          windowactivate %@")]);
+                    vec![c]
+                } else if crate::tools::which("wmctrl") {
+                    vec![{
+                        let mut c = Command::new("wmctrl");
+                        c.args(["-a", class]);
+                        c
+                    }]
+                } else { vec![] }
+            }
+            Desktop::X11 => {
+                if crate::tools::which("wmctrl") {
+                    vec![{
+                        let mut c = Command::new("wmctrl");
+                        c.args(["-a", class]);
+                        c
+                    }]
+                } else { vec![] }
+            }
+            Desktop::Gnome => vec![], // no wm api on wayland
+        },
         Os::MacOS => {
             let mut c = Command::new("open");
             c.args(["-a", class]);
@@ -399,25 +504,42 @@ fn focus_cmds_for(os: Os, class: &str) -> Vec<Command> {
 
 /// Commands to close `class` (empty = active window).
 pub fn close_cmds(class: &str) -> Vec<Command> {
-    close_cmds_for(current(), class)
+    close_cmds_for(current(), desk(), class)
 }
-fn close_cmds_for(os: Os, class: &str) -> Vec<Command> {
+fn close_cmds_for(os: Os, dt: Desktop, class: &str) -> Vec<Command> {
     match os {
-        Os::Linux => {
-            if class.is_empty() {
-                vec![
-                    eval_lua("hl.dsp.window.close()"),
-                    hypr_cmd(&["killactive".into()]),
-                ]
-            } else {
-                vec![
-                    eval_lua(&format!(
-                        "hl.dsp.window.close({{window=\"class:^{class}\"}})")),
-                    hypr_cmd(&["closewindow".into(),
-                               format!("class:^{class}")]),
-                ]
+        Os::Linux => match dt {
+            Desktop::Hyprland | Desktop::Unknown => {
+                if class.is_empty() {
+                    vec![
+                        eval_lua("hl.dsp.window.close()"),
+                        hypr_cmd(&["killactive".into()]),
+                    ]
+                } else {
+                    vec![
+                        eval_lua(&format!(
+                            "hl.dsp.window.close({{window=\"class:^{class}\"}})")),
+                        hypr_cmd(&["closewindow".into(),
+                                   format!("class:^{class}")]),
+                    ]
+                }
             }
-        }
+            Desktop::Kde | Desktop::X11 => {
+                // wmctrl: -c by name, or xdotool close active window
+                if class.is_empty() {
+                    if crate::tools::which("xdotool") {
+                        let mut c = Command::new("xdotool");
+                        c.args(["getactivewindow", "windowclose"]);
+                        vec![c]
+                    } else { vec![] }
+                } else if crate::tools::which("wmctrl") {
+                    let mut c = Command::new("wmctrl");
+                    c.args(["-c", class]);
+                    vec![c]
+                } else { vec![] }
+            }
+            Desktop::Gnome => vec![],
+        },
         Os::MacOS => {
             let mut c = Command::new("osascript");
             c.args(["-e",
@@ -442,14 +564,32 @@ fn close_cmds_for(os: Os, class: &str) -> Vec<Command> {
 /// (18..29 are the number-row key codes; works with stock Mission
 /// Control bindings).
 pub fn workspace_cmds(n: i64) -> Vec<Command> {
-    workspace_cmds_for(current(), n)
+    workspace_cmds_for(current(), desk(), n)
 }
-fn workspace_cmds_for(os: Os, n: i64) -> Vec<Command> {
+fn workspace_cmds_for(os: Os, dt: Desktop, n: i64) -> Vec<Command> {
     match os {
-        Os::Linux => vec![
-            eval_lua(&format!("hl.dsp.focus({{workspace={n}}})")),
-            hypr_cmd(&["workspace".into(), n.to_string()]),
-        ],
+        Os::Linux => match dt {
+            Desktop::Hyprland | Desktop::Unknown => vec![
+                eval_lua(&format!("hl.dsp.focus({{workspace={n}}})")),
+                hypr_cmd(&["workspace".into(), n.to_string()]),
+            ],
+            Desktop::Kde => {
+                if crate::tools::which("qdbus") {
+                    let mut c = Command::new("qdbus");
+                    c.args(["org.kde.KWin", "/KWin",
+                            "setCurrentDesktop", &n.to_string()]);
+                    vec![c]
+                } else { vec![] }
+            }
+            Desktop::X11 => {
+                if crate::tools::which("wmctrl") {
+                    let mut c = Command::new("wmctrl");
+                    c.args(["-s", &(n - 1).to_string()]); // 0-based
+                    vec![c]
+                } else { vec![] }
+            }
+            Desktop::Gnome => vec![],
+        },
         Os::MacOS => {
             // key codes: 1→18 2→19 3→20 4→21 5→23 6→22 7→26 8→28 9→25
             let codes = [18, 19, 20, 21, 23, 22, 26, 28, 25];
@@ -480,15 +620,24 @@ pub fn wm_ok(o: &std::process::Output) -> bool {
 
 /// `hyprctl dispatch exec` for launching — needs the same eval path.
 pub fn launch_exec_cmds(cmdline: &str) -> Vec<Command> {
-    launch_exec_cmds_for(current(), cmdline)
+    launch_exec_cmds_for(current(), desk(), cmdline)
 }
-fn launch_exec_cmds_for(os: Os, cmdline: &str) -> Vec<Command> {
+fn launch_exec_cmds_for(os: Os, dt: Desktop,
+                        cmdline: &str) -> Vec<Command> {
     match os {
-        Os::Linux => vec![
-            eval_lua(&format!("hl.dsp.exec_cmd(\"{cmdline}\")")),
-            hypr_cmd(&["dispatch".into(), "exec".into(),
-                       cmdline.into()]),
-        ],
+        Os::Linux => match dt {
+            Desktop::Hyprland | Desktop::Unknown => vec![
+                eval_lua(&format!("hl.dsp.exec_cmd(\"{cmdline}\")")),
+                hypr_cmd(&["dispatch".into(), "exec".into(),
+                           cmdline.into()]),
+            ],
+            // non-hyprland: detached spawn — no wm involvement
+            _ => {
+                let mut c = Command::new("setsid");
+                c.args(["sh", "-c", cmdline]);
+                vec![c]
+            }
+        },
         Os::MacOS => {
             let mut c = Command::new("sh");
             c.args(["-c", cmdline]);
@@ -506,22 +655,61 @@ fn launch_exec_cmds_for(os: Os, cmdline: &str) -> Vec<Command> {
 /// in *logical* coords (grim-screenshot space is physical px; on macOS
 /// screencapture PNGs are also physical px, so scale still applies).
 pub fn monitors() -> Vec<Value> {
-    monitors_for(current())
+    monitors_for(current(), desk())
 }
-fn monitors_for(os: Os) -> Vec<Value> {
+fn monitors_for(os: Os, dt: Desktop) -> Vec<Value> {
     match os {
-        Os::Linux => {
-            let out = crate::util::run_timeout(
-                Command::new("hyprctl").args(["monitors", "-j"]), 5);
-            match out {
-                Ok(Some(o)) if o.status.success() =>
-                    serde_json::from_slice::<Value>(&o.stdout)
-                        .ok()
-                        .and_then(|v| v.as_array().cloned())
-                        .unwrap_or_default(),
-                _ => vec![],
+        Os::Linux => match dt {
+            Desktop::Hyprland | Desktop::Unknown => {
+                let out = crate::util::run_timeout(
+                    Command::new("hyprctl").args(["monitors", "-j"]),
+                    5);
+                match out {
+                    Ok(Some(o)) if o.status.success() =>
+                        serde_json::from_slice::<Value>(&o.stdout)
+                            .ok()
+                            .and_then(|v| v.as_array().cloned())
+                            .unwrap_or_default(),
+                    _ => vec![],
+                }
             }
-        }
+            // KDE/X11: xrandr "W x H+X+Y" (no fractional scale → 1).
+            // GNOME Wayland: no cheap CLI — [] (scale-1 pass-through).
+            Desktop::Kde | Desktop::X11 => {
+                if !crate::tools::which("xrandr") { return vec![]; }
+                let out = crate::util::run_timeout(
+                    Command::new("xrandr").args(["--query"]), 5);
+                match out {
+                    Ok(Some(o)) if o.status.success() => {
+                        let txt = String::from_utf8_lossy(&o.stdout);
+                        // lines: `NAME connected ... WxH+X+Y ...`
+                        txt.lines().filter(|l| l.contains(" connected"))
+                            .filter_map(|l| {
+                                l.split_whitespace().find(|t|
+                                    t.contains('x') && t.contains('+'))
+                                    .and_then(|t| {
+                                        let (wh, xy) = t.split_once('+')?;
+                                        let (w, h) = wh.split_once('x')?;
+                                        let (x, y) = xy.split_once('+')?;
+                                        Some(serde_json::json!({
+                                            "x": x.parse::<i64>()
+                                                .unwrap_or(0),
+                                            "y": y.parse::<i64>()
+                                                .unwrap_or(0),
+                                            "width": w.parse::<i64>()
+                                                .unwrap_or(0),
+                                            "height": h.parse::<i64>()
+                                                .unwrap_or(0),
+                                            "scale": 1,
+                                        }))
+                                    })
+                            }).collect()
+                    }
+                    _ => vec![],
+                }
+            }
+            Desktop::Gnome => vec![],
+        },
         Os::MacOS => {
             // system_profiler gives physical px + Retina factor is
             // inferred as scale 2 for "Retina" displays — approximation;
@@ -601,7 +789,9 @@ fn monitors_for(os: Os) -> Vec<Value> {
 /// Whether a Hyprland-style keybinding installer exists — macOS hotkeys
 /// are a SKHD/portal concern, so `dimd install` only writes the bind on
 /// Linux.
-pub fn supports_hotkey_install() -> bool { current() == Os::Linux }
+pub fn supports_hotkey_install() -> bool {
+    current() == Os::Linux && desk() == Desktop::Hyprland
+}
 
 /// Human guidance for the missing perms/tools on this OS (error text).
 pub fn missing_deps_hint() -> &'static str {
@@ -609,7 +799,7 @@ pub fn missing_deps_hint() -> &'static str {
 }
 fn missing_deps_hint_for(os: Os) -> &'static str {
     match os {
-        Os::Linux => "need grim/wtype/pw-record/espeak + Hyprland",
+        Os::Linux => "need pw-record/arecord + espeak; wm ops:                      Hyprland (hyprctl), KDE (kdotool/qdbus/wmctrl),                      X11 (wmctrl/xdotool); typing: wtype or ydotool;                      shots: grim/gnome-screenshot/spectacle/maim",
         Os::MacOS => "need screencapture/osascript/afrecord; grant \
                      Screen Recording + Accessibility in System Settings",
         Os::Windows => "need powershell + sox for mic/level;              toast via BurntToast optional",
@@ -651,7 +841,7 @@ mod tests {
                 rec.get_program().to_str().unwrap())));
         }
         if let Some(c) =
-            screenshot_cmd_for(Os::Linux, std::path::Path::new("/t/s.png")) {
+            screenshot_cmd_for(Os::Linux, Desktop::Hyprland, std::path::Path::new("/t/s.png")) {
             assert_eq!(c.get_program(), "grim");
         }
     }
@@ -660,11 +850,10 @@ mod tests {
     fn macos_cmds() {
         // cmds exist only when the binary is on PATH — assert either
         // the right program or graceful None (never a panic)
-        if let Some(shot) = screenshot_cmd_for(Os::MacOS,
-                std::path::Path::new("/t/s.png")) {
+        if let Some(shot) = screenshot_cmd_for(Os::MacOS, Desktop::Hyprland, std::path::Path::new("/t/s.png")) {
             assert_eq!(shot.get_program(), "screencapture");
         }
-        if let Some(t) = type_text_cmd_for(Os::MacOS, "hi") {
+        if let Some(t) = type_text_cmd_for(Os::MacOS, Desktop::Hyprland, "hi") {
             assert_eq!(t.get_program(), "osascript");
         }
         if let Some(tts) = tts_cmd_for(Os::MacOS, "hi", "") {
@@ -678,16 +867,15 @@ mod tests {
         // not here — just ensure no panic either way
         let _ = crate::platform::tts_argv("hi");
         if crate::tools::which("powershell") {
-            assert!(screenshot_cmd_for(Os::Windows,
-                std::path::Path::new("/t/s.png")).is_some());
+            assert!(screenshot_cmd_for(Os::Windows, Desktop::Hyprland, std::path::Path::new("/t/s.png")).is_some());
         }
-        assert!(workspace_cmds_for(Os::Windows, 2).is_empty()
+        assert!(workspace_cmds_for(Os::Windows, Desktop::Hyprland, 2).is_empty()
             || true);
-        let f = focus_cmds_for(Os::Windows, "Notepad");
+        let f = focus_cmds_for(Os::Windows, Desktop::Hyprland, "Notepad");
         if crate::tools::which("powershell") {
             assert_eq!(f[0].get_program(), "powershell");
         }
-        let l = launch_exec_cmds_for(Os::Windows, "app.exe");
+        let l = launch_exec_cmds_for(Os::Windows, Desktop::Hyprland, "app.exe");
         assert_eq!(l[0].get_program(), "cmd");
     }
 
@@ -699,14 +887,14 @@ mod tests {
 
     #[test]
     fn macos_wm_cmds() {
-        let f = focus_cmds_for(Os::MacOS, "Firefox");
+        let f = focus_cmds_for(Os::MacOS, Desktop::Hyprland, "Firefox");
         assert_eq!(f[0].get_program(), "open");
-        let c = close_cmds_for(Os::MacOS, "");
+        let c = close_cmds_for(Os::MacOS, Desktop::Hyprland, "");
         assert_eq!(c[0].get_program(), "osascript");
-        assert!(workspace_cmds_for(Os::MacOS, 10).is_empty()); // 1..=9
-        let w = workspace_cmds_for(Os::MacOS, 3);
+        assert!(workspace_cmds_for(Os::MacOS, Desktop::Hyprland, 10).is_empty()); // 1..=9
+        let w = workspace_cmds_for(Os::MacOS, Desktop::Hyprland, 3);
         assert_eq!(w[0].get_program(), "osascript");
-        assert!(focus_cmds_for(Os::Windows, "x").is_empty());
+        assert!(focus_cmds_for(Os::Windows, Desktop::Hyprland, "x").is_empty());
     }
 
     #[test]

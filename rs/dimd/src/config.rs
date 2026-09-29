@@ -50,6 +50,12 @@ pub fn cfg_dir() -> PathBuf {
     crate::platform::dirs(&dirs_home()).0
 }
 pub fn data_dir() -> PathBuf {
+    // XDG_DATA_HOME is a *parent* dir — the app dir is appended
+    // (parity with dim/config.py; the platform default already ends
+    // in dim-agent)
+    if let Ok(x) = std::env::var("XDG_DATA_HOME") {
+        return PathBuf::from(x).join("dim-agent");
+    }
     crate::platform::dirs(&dirs_home()).1
 }
 pub fn runtime_dir() -> PathBuf {
