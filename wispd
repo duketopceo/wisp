@@ -203,11 +203,16 @@ StartupNotify=false
     print(f"installed {trigger}")
     from wisp import platform as _plat
     if _plat.current() == "windows":
-        # Task Scheduler: run wispd daemon at logon (U8)
-        exe = opt / "wispd.exe"
+        # Task Scheduler: run wispd daemon at logon (U8). The shipped
+        # launcher is the extensionless Python script, so materialize a
+        # .cmd wrapper that schtasks can execute directly.
+        cmd = opt / "wispd.cmd"
+        cmd.write_text(
+            f'@echo off\r\n"{sys.executable}" "{opt / "wispd"}" %*\r\n')
+        print(f"installed {cmd}")
         subprocess.run(
             ["schtasks", "/create", "/tn", "Wisp", "/sc", "onlogon",
-             "/tr", f'"{exe} daemon"', "/f"],
+             "/tr", f'"{cmd}" daemon', "/f"],
             capture_output=True)
         print("registered Task Scheduler task Wisp (logon)")
         return
