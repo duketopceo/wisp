@@ -13,7 +13,7 @@ routing → guarded actions. Python reference daemon + Rust parity core
 | `shell-plugin/` | Omarchy quickshell plugin (bar widget + companion orb overlay) |
 | `shells/debug/shell.qml` | Management/debug app (`qs -c dim-debug`, launcher entry "Wisp") |
 
-## Core modules (`dim/`)
+## Core modules (`wisp/`)
 
 | File | Role |
 |---|---|
@@ -36,7 +36,7 @@ routing → guarded actions. Python reference daemon + Rust parity core
 
 ## Rust modules (`rs/wispd/src/`)
 
-Mirror of `dim/`: `main.rs` (IPC dispatch), `ipc.rs`, `state.rs`,
+Mirror of `wisp/`: `main.rs` (IPC dispatch), `ipc.rs`, `state.rs`,
 `config.rs`, `brain.rs` (Jev + pluggable provider clients), `pipeline.rs`,
 `tools.rs`, `agents.rs`, `session.rs`, `learn.rs`, `harness.rs`,
 `memory.rs`, `recall.rs` (rusqlite FTS5), `skills.rs`, `util.rs`
@@ -48,6 +48,8 @@ Mirror of `dim/`: `main.rs` (IPC dispatch), `ipc.rs`, `state.rs`,
 | Path | What |
 |---|---|
 | `docs/IPC_CONTRACT.md` | **frozen** socket + `state.json` + data-file contract — both cores implement it |
+| `docs/INSTALL.md` | install guide: release bundles, `wispd install` layout, secrets, per-OS notes |
+| `docs/CONFIG.md` | config.toml reference — every key, grouped, with env overrides |
 | `docs/plans/` | implementation plans (latest: cross-platform companion); `docs/plans/units/` holds per-unit plans linked from GitHub issues |
 | `docs/HANDOFF.md` | verification checklist + residuals |
 | `tests/` | Python unittest suite (run: `python -m unittest discover -s tests`); `rs/wispd` has `cargo test` + `tests/parity.rs` |
@@ -59,7 +61,15 @@ Mirror of `dim/`: `main.rs` (IPC dispatch), `ipc.rs`, `state.rs`,
 recall.db, MEMORY.md, USER.md, skills/, proposals/ ·
 `$XDG_RUNTIME_DIR/wisp/` state.json + wispd.sock ·
 daemon: `systemctl --user wispd` (runs `~/.local/opt/wisp/wispd`);
-`~/.local/bin/wispd` symlinks there.| `dim/platform.py` | OS adapter seam — per-OS command tables (record/screenshot/type/TTS/notify/wm), runtime dirs, deps hints; `WISP_OS` override |
+`~/.local/bin/wispd` symlinks there.
+
+## Platform adapters
+
+| Path | What |
+|---|---|
+| `wisp/platform.py` | OS adapter seam — per-OS command tables (record/screenshot/type/TTS/notify/wm), runtime dirs, deps hints; `WISP_OS` override |
 | `rs/wispd/src/platform.rs` | Rust mirror of the platform seam; `*_for(Os,…)` testable variants |
-| `docs/MACOS.md` | macOS adapter: paths, command map, permission caveats, hotkey + shell decision || `docs/WINDOWS.md` | Windows adapter: TCP transport, command map, schtasks install, residuals |
-| `tests/test_ipc_tcp.py` | TCP transport roundtrip (Windows path proven on Linux) || `docs/LINUX.md` | Generic-Linux adapter: desktop detection + per-desktop command matrix |
+| `docs/MACOS.md` | macOS adapter: paths, command map, permission caveats, hotkey + shell decision |
+| `docs/WINDOWS.md` | Windows adapter: TCP transport, command map, schtasks install, residuals |
+| `tests/test_ipc_tcp.py` | TCP transport roundtrip (Windows path proven on Linux) |
+| `docs/LINUX.md` | Generic-Linux adapter: desktop detection + per-desktop command matrix |

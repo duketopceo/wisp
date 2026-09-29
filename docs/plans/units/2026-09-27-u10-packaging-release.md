@@ -1,7 +1,7 @@
 ---
 plan: dim-u10-packaging-release
 created: 2026-09-27
-status: ready
+status: in-progress
 origin: docs/plans/2026-09-26-001-feat-dim-companion-crossplatform-plan.md#U10
 issue: https://github.com/duketopceo/wisp/issues/17
 wave: 5
