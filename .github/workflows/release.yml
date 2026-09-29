@@ -5,7 +5,7 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -20,6 +20,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -40,13 +42,15 @@ jobs:
         if: matrix.ext == 'tar.gz'
         run: |
           stage="wisp-${{ matrix.name }}"
-          mkdir -p "$stage/bin" "$stage/wisp" "$stage/shells" "$stage/shell-plugin"
+          mkdir -p "$stage/bin" "$stage/wisp" "$stage/shells" "$stage/shell-plugin" "$stage/scripts" "$stage/docs"
           cp "rs/wispd/target/${{ matrix.target }}/release/wispd" "$stage/bin/wispd-rs"
-          cp wispd "$stage/bin/wispd"
+          cp wispd "$stage/wispd"
           cp -r wisp "$stage/"
           cp -r shells "$stage/"
           cp -r shell-plugin "$stage/"
-          cp LICENSE README.md docs/INSTALL.md docs/CONFIG.md "$stage/" 2>/dev/null || true
+          cp -r docs/. "$stage/docs/"
+          cp scripts/fetch_whisper.sh "$stage/scripts/"
+          cp LICENSE README.md "$stage/"
           tar czf "wisp-${{ matrix.name }}.tar.gz" "$stage"
 
       - name: Stage bundle (windows)
@@ -54,10 +58,12 @@ jobs:
         shell: pwsh
         run: |
           $stage = "wisp-${{ matrix.name }}"
-          New-Item -ItemType Directory -Force "$stage/bin", "$stage/wisp", "$stage/shells", "$stage/shell-plugin" | Out-Null
+          New-Item -ItemType Directory -Force "$stage/bin", "$stage/wisp", "$stage/shells", "$stage/shell-plugin", "$stage/scripts", "$stage/docs" | Out-Null
           Copy-Item "rs/wispd/target/${{ matrix.target }}/release/wispd.exe" "$stage/bin/wispd-rs.exe"
-          Copy-Item wispd "$stage/bin/wispd"
+          Copy-Item wispd "$stage/wispd"
           Copy-Item -Recurse wisp, shells, shell-plugin "$stage/"
+          Copy-Item -Recurse docs/* "$stage/docs/"
+          Copy-Item scripts/fetch_whisper.sh "$stage/scripts/"
           Copy-Item LICENSE, README.md "$stage/"
           Compress-Archive "$stage" "wisp-${{ matrix.name }}.zip"
 
@@ -69,6 +75,8 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:

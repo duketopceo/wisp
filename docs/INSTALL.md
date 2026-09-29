@@ -8,7 +8,7 @@ app.
 
 ```sh
 tar xzf wisp-linux-aarch64.tar.gz && cd wisp-linux-aarch64
-python3 bin/wispd install        # core files + service + plugin + menu entry
+python3 wispd install          # launcher sits at archive root, next to wisp/        # core files + service + plugin + menu entry
 ```
 
 `wispd install` is idempotent. It lays down:

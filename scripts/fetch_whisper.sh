@@ -24,12 +24,20 @@ if [ ! -x "$BIN" ]; then
     cmake --build "$WHISPER_HOME/build" -j --target whisper-cli
 fi
 
-if [ ! -f "$WHISPER_HOME/models/$WHISPER_MODEL" ]; then
+MODEL_FILE="$WHISPER_HOME/models/$WHISPER_MODEL"
+# A truncated fetch can leave a partial file that both this check and the
+# upstream downloader would treat as installed — every real ggml model is
+# >100MB, so anything under 1MB is debris. Remove it before deciding.
+if [ -f "$MODEL_FILE" ] && [ "$(wc -c < "$MODEL_FILE")" -lt 1048576 ]; then
+    rm -f "$MODEL_FILE"
+fi
+if [ ! -f "$MODEL_FILE" ]; then
     case "$WHISPER_MODEL" in
         ggml-*.bin) model="${WHISPER_MODEL#ggml-}"; model="${model%.bin}" ;;
         *) model="$WHISPER_MODEL" ;;
     esac
     sh "$WHISPER_HOME/models/download-ggml-model.sh" "$model"
+    [ -s "$MODEL_FILE" ] || { echo "model download failed" >&2; exit 1; }
 fi
 
-echo "ready: $BIN -m $WHISPER_HOME/models/$WHISPER_MODEL"
+echo "ready: $BIN -m $MODEL_FILE"
