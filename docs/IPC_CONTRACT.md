@@ -23,15 +23,18 @@ future tray apps). Shells MUST only depend on this document.
 | `choice` | `pick: string` | `{ok}` | resolves a pending choice/confirm |
 | `task_status` | `name: string` | `{ok, result: string}` | named-agent status |
 | `task_cancel` | `name: string` | `{ok, result: string}` | cancel named agent |
+| `agent` | `task: string` | `{ok, result: string}` | spawn a background task via `[brain] agent_runtime`; `result` is `SPAWNED …`/`SKIP …` |
+| `memory` | `arg` or `target`+`body` | `{ok, result: string}` | `arg` = tool grammar `target|op|old|new`; `target`+`body` = whole-doc `write` (GUI editor path — pipes/newlines safe) |
 | `stop` | — | `{ok}` | daemon exits, socket removed; kills in-flight TTS |
 | `config` | `set: {"section.key": "val"}` (optional) | `{ok, config}` | read config; with `set`, writes config.toml preserving comments/order and live-reloads |
 | `learn` | — | `{ok, result}` | weekly learning proposals (human-gated) |
 | `harness` | — | `{ok, result}` | regenerate the app harness catalog |
 | unknown/malformed | — | `{ok:false, error}` | — |
 
-`config` keys are `section.key` (e.g. `agent.answer_model`); the daemon
-returns `{ok:false}` if any key lacks a section. Shells may offer a
-settings page on top of this command.
+`config` keys are `section.key` (e.g. `agent.answer_model`); split is on
+the **last** dot, so nested sections work — `brain.ollama.base_url` →
+`[brain.ollama] base_url`. The daemon returns `{ok:false}` if any key
+lacks a section. Shells may offer a settings page on top of this command.
 
 ## state.json (atomically rewritten, tmp+rename)
 

@@ -7,6 +7,7 @@ start reconciles dead pids.
 """
 import json
 import os
+import pathlib
 import shutil
 import signal
 import subprocess
@@ -34,6 +35,16 @@ def _records(tasks_file=config.TASKS_FILE) -> list:
 
 
 def _alive(pid: int) -> bool:
+    """True only for a live process — a zombie (unreaped child) counts
+    as dead so status doesn't report 'running' forever."""
+    if pid <= 0:  # kill(-1,0) probes our own process group — never ok
+        return False
+    try:
+        stat = pathlib.Path(f"/proc/{pid}/stat").read_text()
+        if stat.rsplit(")", 1)[-1].split()[0] == "Z":
+            return False
+    except OSError:
+        pass
     try:
         os.kill(pid, 0)
         return True
@@ -43,6 +54,7 @@ def _alive(pid: int) -> bool:
 
 def status(name: str, tasks_file=config.TASKS_FILE,
            log_dir=config.TASK_LOGS) -> str:
+    _reap()
     rec = _find(name, tasks_file)
     if not rec:
         return f"SKIP (no task {name!r})"
@@ -93,12 +105,25 @@ def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
                 start_new_session=True)
     except OSError as e:
         return f"SKIP (agent spawn failed: {e})"
+    _PROCS.append(proc)  # keep the handle so _reap can collect zombies
     _log_line({
         "id": name, "name": name, "task": task, "pid": proc.pid,
         "cmd": " ".join(cmd), "status": "running",
         "ts": datetime.now(timezone.utc).isoformat(),
     }, tasks_file)
     return f"SPAWNED {name} (pid {proc.pid})"
+
+
+# Daemon-spawned children — held so exited ones can be reaped (Popen
+# objects keep the zombie until wait/poll is called on them).
+_PROCS: list = []
+
+
+def _reap() -> None:
+    """Collect exited agent children — otherwise they sit as zombies
+    under the daemon until restart."""
+    for p in _PROCS:
+        p.poll()
 
 
 _RUNTIMES = {  # [brain] agent_runtime → argv template, {task}/{model}
@@ -130,6 +155,7 @@ def _runtime_cmd(cfg: dict, task: str, model: str) -> list | None:
 
 
 def cancel(name: str, tasks_file=config.TASKS_FILE) -> str:
+    _reap()
     rec = _find(name, tasks_file)
     if not rec:
         return f"SKIP (no task {name!r})"
@@ -150,6 +176,7 @@ def cancel(name: str, tasks_file=config.TASKS_FILE) -> str:
 
 def tasks(tasks_file=config.TASKS_FILE) -> dict:
     """name -> {status, tail-free summary} for state.json publication."""
+    _reap()
     out = {}
     for rec in _records(tasks_file):
         running = _alive(rec.get("pid", -1))

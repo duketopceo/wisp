@@ -52,6 +52,18 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
         if c == "task_cancel":
             from dim import agents
             return {"ok": True, "result": agents.cancel(cmd.get("name", ""))}
+        if c == "agent":
+            from dim import agents
+            return {"ok": True,
+                    "result": agents.spawn(cmd.get("task", ""), cfg)}
+        if c == "memory":
+            from dim import memory
+            if "body" in cmd:  # GUI whole-doc write — pipes/newlines safe
+                return {"ok": True, "result": memory.edit(
+                    cmd.get("target", "memory"), "write",
+                    "", cmd.get("body", ""))}
+            return {"ok": True,
+                    "result": memory.run(cmd.get("arg", ""))}
         if c == "learn":
             from dim import learn
             p = learn.weekly(7)
@@ -300,11 +312,49 @@ def main() -> int:
         return 0
     if cmd == "harness":
         return rebuild_harness()
+    if cmd in ("task_status", "task_cancel"):
+        try:
+            r = ipc.send({"cmd": cmd, "name": sys.argv[2]
+                          if len(sys.argv) > 2 else ""})
+            print(r.get("result") or r.get("error", "failed"))
+            return 0 if r.get("ok") else 1
+        except (ConnectionError, OSError) as e:
+            print(f"dimd unreachable: {e}", file=sys.stderr)
+            return 1
+    if cmd == "memory-write":
+        # GUI editor path — `dimd memory-write <target> <base64>`
+        # (argv can't carry raw newlines; body decodes server-side)
+        import base64
+        try:
+            body = base64.b64decode(sys.argv[3]).decode()
+            r = ipc.send({"cmd": "memory", "target": sys.argv[2],
+                          "body": body})
+            print(r.get("result") or r.get("error", "failed"))
+            return 0 if r.get("ok") else 1
+        except (IndexError, ValueError) as e:
+            print(f"usage: dimd memory-write memory|user <b64> ({e})",
+                  file=sys.stderr)
+            return 2
+        except (ConnectionError, OSError) as e:
+            print(f"dimd unreachable: {e}", file=sys.stderr)
+            return 1
+    if cmd in ("agent", "memory"):
+        # GUI hooks — `dimd agent <task>` spawns a background runtime
+        # task, `dimd memory 'target|op|old|new'` edits MEMORY/USER.md
+        field = "task" if cmd == "agent" else "arg"
+        try:
+            r = ipc.send({"cmd": cmd, field: " ".join(sys.argv[2:])})
+            print(r.get("result") or r.get("error", "failed"))
+            return 0 if r.get("ok") else 1
+        except (ConnectionError, OSError) as e:
+            print(f"dimd unreachable: {e}", file=sys.stderr)
+            return 1
     if cmd == "trace":
         from dim import trace
         return trace.main(sys.argv[2:])
     print("usage: dimd [daemon|install|trigger|status|stop|choice"
-          "|task_status|task_cancel|learn|harness|trace|config [set k v]]")
+          "|agent|memory|task_status|task_cancel|learn|harness|trace"
+          "|config [set k v]]")
     return 2
 
 

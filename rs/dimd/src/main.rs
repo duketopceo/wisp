@@ -41,6 +41,29 @@ fn main() {
             let n = std::env::args().nth(2).unwrap_or_default();
             client(&json!({"cmd": "task_cancel", "name": n}), false)
         }
+        "agent" => {
+            // GUI hook — `dimd agent <task>` spawns a background
+            // runtime task via the configured brain.agent_runtime
+            let t = std::env::args().skip(2).collect::<Vec<_>>().join(" ");
+            client(&json!({"cmd": "agent", "task": t}), false)
+        }
+        "memory" => {
+            // `dimd memory 'target|op|old|new'` — MEMORY/USER.md edit
+            let a = std::env::args().skip(2).collect::<Vec<_>>().join(" ");
+            client(&json!({"cmd": "memory", "arg": a}), false)
+        }
+        "memory-write" => {
+            // GUI editor path — `dimd memory-write <target> <base64>`
+            let t = std::env::args().nth(2).unwrap_or_default();
+            let b64 = std::env::args().nth(3).unwrap_or_default();
+            use base64::Engine;
+            let body = base64::engine::general_purpose::STANDARD
+                .decode(&b64).ok()
+                .and_then(|b| String::from_utf8(b).ok())
+                .unwrap_or_default();
+            client(&json!({"cmd": "memory", "target": t,
+                           "body": body}), false)
+        }
         "learn" => {
             let p = learn::weekly(7);
             if p.is_empty() { println!("nothing to propose"); }
@@ -108,7 +131,7 @@ fn main() {
         "trace" => trace::main(
             &std::env::args().skip(2).collect::<Vec<_>>()),
         _ => {
-            eprintln!("usage: dimd [daemon|trigger|status|stop|choice|task_status|task_cancel|learn|harness|trace|config [set k v]]");
+            eprintln!("usage: dimd [daemon|trigger|status|stop|choice|agent|memory|memory-write|task_status|task_cancel|learn|harness|trace|config [set k v]]");
             2
         }
     };
@@ -231,6 +254,27 @@ fn dispatch(cmd: Value, st_h: &Arc<state::State>,
             "task_cancel" => {
                 let n = cmd.get("name").and_then(|v| v.as_str()).unwrap_or("");
                 json!({"ok": true, "result": agents::cancel(n)})
+            }
+            "agent" => {
+                let t = cmd.get("task").and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let cfg_guard = cfg_h.lock().unwrap().clone();
+                json!({"ok": true,
+                       "result": agents::spawn(t, &cfg_guard)})
+            }
+            "memory" => {
+                // "body" = GUI whole-doc write (pipes/newlines safe);
+                // "arg" = tool grammar 'target|op|old|new'
+                if let Some(b) = cmd.get("body").and_then(|v| v.as_str()) {
+                    let t = cmd.get("target").and_then(|v| v.as_str())
+                        .unwrap_or("memory");
+                    json!({"ok": true,
+                           "result": memory::edit(t, "write", "", b)})
+                } else {
+                    let a = cmd.get("arg").and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    json!({"ok": true, "result": memory::run(a)})
+                }
             }
             "learn" => {
                 let p = learn::weekly(7);

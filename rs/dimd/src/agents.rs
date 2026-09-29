@@ -43,7 +43,26 @@ fn find(name: &str) -> Option<Value> {
     })
 }
 
+/// Daemon-spawned children kept so exited ones can be reaped — a
+/// dropped Child never wait()s, leaving zombies under the daemon.
+static PROCS: std::sync::Mutex<Vec<std::process::Child>> =
+    std::sync::Mutex::new(Vec::new());
+
+fn reap() {
+    let mut g = PROCS.lock().unwrap();
+    for c in g.iter_mut() {
+        let _ = c.try_wait();
+    }
+}
+
 fn alive(pid: i64) -> bool {
+    // zombies count as dead — otherwise status reports 'running' forever
+    if let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+        if stat.rsplit(')').next().and_then(|s| s.split_whitespace().next())
+            == Some("Z") {
+            return false;
+        }
+    }
     PathBuf::from(format!("/proc/{pid}")).exists()
 }
 
@@ -114,16 +133,19 @@ pub fn spawn(task: &str, cfg: &crate::config::Cfg) -> String {
         .spawn();
     match child {
         Ok(c) => {
+            let pid = c.id();
+            PROCS.lock().unwrap().push(c); // reapable via try_wait
             log_line(&json!({"id": name, "name": name, "task": task,
-                             "pid": c.id(), "cmd": cmd_str,
+                             "pid": pid, "cmd": cmd_str,
                              "status": "running"}));
-            format!("SPAWNED {name} (pid {})", c.id())
+            format!("SPAWNED {name} (pid {pid})")
         }
         Err(e) => format!("SKIP (agent spawn failed: {e})"),
     }
 }
 
 pub fn status(name: &str) -> String {
+    reap();
     let Some(rec) = find(name) else {
         return format!("SKIP (no task {name:?})");
     };
@@ -143,6 +165,7 @@ pub fn status(name: &str) -> String {
 }
 
 pub fn cancel(name: &str) -> String {
+    reap();
     let Some(rec) = find(name) else {
         return format!("SKIP (no task {name:?})");
     };
@@ -162,6 +185,7 @@ fn libc_kill(pid: i32) {
 }
 
 pub fn tasks() -> Value {
+    reap();
     let mut out = serde_json::Map::new();
     for rec in records() {
         let pid = rec.get("pid").and_then(|v| v.as_i64()).unwrap_or(-1);

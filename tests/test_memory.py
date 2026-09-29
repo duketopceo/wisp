@@ -53,6 +53,20 @@ class MemoryTest(unittest.TestCase):
         self.assertIn("FAIL", memory.run(f"memory|add|{big}"))
         self.assertNotIn(big, self.mf.read_text() if self.mf.exists() else "")
 
+    def test_write_replaces_body_keeps_head(self):
+        memory.run("memory|add|old fact")
+        # GUI path — body arg carries the full post-header text
+        out = memory.edit("memory", "write", "", "- a\n- b\n")
+        self.assertTrue(out.startswith("OK"))
+        text = self.mf.read_text()
+        self.assertIn("- a\n- b", text)
+        self.assertNotIn("old fact", text)
+        self.assertTrue(text.lstrip().startswith("#"))
+
+    def test_write_bounded(self):
+        big = "x" * (memory.MEMORY_BUDGET + 100)
+        self.assertIn("FAIL", memory.edit("memory", "write", "", big))
+
     def test_snapshot_empty_when_no_content(self):
         self.assertEqual(memory.snapshot(), "")
 

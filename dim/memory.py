@@ -41,6 +41,7 @@ def edit(target: str, op: str, old: str = "", new: str = "") -> str:
     add:    append `- new` bullet
     replace: rewrite the bullet containing substring `old` to `- new`
     remove: drop the bullet containing substring `old`
+    write:  replace the whole body (GUI editor; `new` is the full text)
     """
     if target not in ("memory", "user"):
         return f"FAIL (target must be 'memory' or 'user', got {target!r})"
@@ -49,6 +50,12 @@ def edit(target: str, op: str, old: str = "", new: str = "") -> str:
     budget = MEMORY_BUDGET if target == "memory" else USER_BUDGET
     text = _load(path, head)
     lines = text.splitlines()
+    if op == "write":
+        body = new or old
+        lines = head.splitlines() + ([""] + body.splitlines()
+                                    if body.strip() else [])
+        err = _save(path, "\n".join(lines).rstrip() + "\n", budget)
+        return f"FAIL ({err})" if err else f"OK ({target} write)"
     if op == "add":
         new = new or old  # tool form 'memory|add|fact' lands in old
         if not new:

@@ -24,6 +24,15 @@ pub fn edit(target: &str, op: &str, old: &str, new: &str) -> String {
     let text = std::fs::read_to_string(&path).unwrap_or_else(|_| head.into());
     let mut lines: Vec<String> = text.lines().map(String::from).collect();
     match op {
+        "write" => {
+            // GUI whole-doc write — body replaces everything after head
+            let body = if new.is_empty() { old } else { new };
+            lines = head.lines().map(String::from).collect();
+            if !body.trim().is_empty() {
+                lines.push(String::new());
+                lines.extend(body.lines().map(String::from));
+            }
+        }
         "add" => {
             let fact = if new.is_empty() { old } else { new };
             if fact.is_empty() {
@@ -59,7 +68,8 @@ pub fn edit(target: &str, op: &str, old: &str, new: &str) -> String {
                     .map(|(_, l)| l).collect();
             }
         }
-        _ => return format!("FAIL (op must be add|replace|remove, got {op:?})"),
+        _ => return format!("FAIL (op must be add|replace|remove|write, \
+                            got {op:?})"),
     }
     let out = lines.join("\n").trim_end().to_string() + "\n";
     if out.len() > budget {
