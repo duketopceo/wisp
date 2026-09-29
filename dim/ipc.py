@@ -1,16 +1,24 @@
-"""Newline-delimited JSON over a unix socket: daemon server + client.
+"""Newline-delimited JSON IPC: daemon server + client.
 
 The daemon accepts one JSON object per connection and replies with one
 JSON object. Commands: listen, status, choice, stop, task_status,
 task_cancel. Widgets and the trigger shim are plain clients.
+
+Transport per OS (mirrors rs/dimd/src/ipc.rs):
+  linux/macos → AF_UNIX socket at SOCK_FILE
+  windows     → 127.0.0.1 TCP; the ephemeral port is written to
+                SOCK_FILE (a plain file) for client discovery. Same
+                protocol — fixture replay is identical.
 """
 import json
 import socket
 import threading
 
 from . import config
+from . import platform as _plat
 
 _TIMEOUT = 10
+_TCP = _plat.current() == "windows"
 
 
 class Daemon:
@@ -27,10 +35,17 @@ class Daemon:
         self._sock_file.parent.mkdir(parents=True, exist_ok=True)
         if self._sock_file.exists():
             self._sock_file.unlink()
-        srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        srv.bind(str(self._sock_file))
-        srv.listen(8)
-        srv.settimeout(0.5)
+        if _TCP:
+            srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            srv.bind(("127.0.0.1", 0))
+            srv.listen(8)
+            srv.settimeout(0.5)
+            self._sock_file.write_text(str(srv.getsockname()[1]))
+        else:
+            srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            srv.bind(str(self._sock_file))
+            srv.listen(8)
+            srv.settimeout(0.5)
         self._server = srv
         self._running = True
         self._thread = threading.Thread(target=self._accept_loop, daemon=True)
@@ -90,10 +105,21 @@ def send(cmd: dict, sock_file=config.SOCK_FILE, timeout: float = _TIMEOUT) -> di
     """Send one command to the daemon; returns its reply dict.
 
     Raises ConnectionError when the socket is absent/refused."""
-    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    s.settimeout(timeout)
+    if _TCP:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(timeout)
+        try:
+            port = int(sock_file.read_text().strip())
+            s.connect(("127.0.0.1", port))
+        except Exception:
+            s.close()
+            raise ConnectionError("no daemon (port file absent)")
+    else:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(timeout)
     try:
-        s.connect(str(sock_file))
+        if not _TCP:
+            s.connect(str(sock_file))
         s.sendall(json.dumps(cmd).encode() + b"\n")
         data = b""
         while not data.endswith(b"\n"):

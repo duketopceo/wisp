@@ -34,6 +34,21 @@ def _which(b: str) -> bool:
     return shutil.which(b) is not None
 
 
+def _ps(script: str) -> list:
+    return ["powershell", "-NoProfile", "-NonInteractive",
+            "-Command", script]
+
+
+def _sendkeys_escape(t: str) -> str:
+    out = []
+    for ch in t:
+        if ch in "{}+^%~()[]":
+            out.append("{" + ch + "}")
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
 # ── runtime dirs ────────────────────────────────────────────────────
 
 def dirs() -> tuple[Path, Path, Path]:
@@ -79,7 +94,12 @@ def record_cmd(out: Path, seconds: float) -> list | None:
             return ["sox", "-d", "-r", "16000", "-c", "1", str(out),
                     "trim", "0", str(seconds)]
         return None
-    return None  # windows: U8
+    if o == "windows":
+        if _which("sox"):
+            return ["sox", "-t", "waveaudio", "-d", "-r", "16000",
+                    "-c", "1", str(out), "trim", "0", str(seconds)]
+        return None
+    return None
 
 
 def sampler_cmd(seconds: float) -> list | None:
@@ -96,6 +116,12 @@ def sampler_cmd(seconds: float) -> list | None:
             return ["sox", "-d", "-t", "u8", "-r", "200", "-c", "1",
                     "-", "trim", "0", str(seconds)]
         return None
+    if o == "windows":
+        if _which("sox"):
+            return ["sox", "-t", "waveaudio", "-d", "-t", "u8",
+                    "-r", "200", "-c", "1", "-",
+                    "trim", "0", str(seconds)]
+        return None
     return None
 
 
@@ -106,6 +132,19 @@ def screenshot_cmd(out: Path) -> list | None:
     if o == "macos":
         return (["screencapture", "-x", str(out)]
                 if _which("screencapture") else None)
+    if o == "windows":
+        if _which("powershell"):
+            return _ps(
+                "Add-Type -AssemblyName System.Windows.Forms,"
+                "System.Drawing; $b=[System.Windows.Forms."
+                "SystemInformation]::VirtualScreen; "
+                "$bmp=New-Object System.Drawing.Bitmap $b.Width,"
+                "$b.Height; $g=[System.Drawing.Graphics]::FromImage"
+                "($bmp); $g.CopyFromScreen($b.Left,$b.Top,0,0,"
+                "$bmp.Size); $bmp.Save('{out}'); $g.Dispose(); "
+                "$bmp.Dispose()".format(out=str(out).replace(
+                    "'", "''")))
+        return None
     return None
 
 
@@ -121,6 +160,13 @@ def type_text_cmd(text: str) -> list | None:
         return ["wtype", "--", text] if _which("wtype") else None
     if o == "macos":
         return _osa_keystroke(text) if _which("osascript") else None
+    if o == "windows":
+        if _which("powershell"):
+            return _ps(
+                "Add-Type -AssemblyName System.Windows.Forms; "
+                "[System.Windows.Forms.SendKeys]::SendWait("
+                f'"{_sendkeys_escape(text)}")')
+        return None
     return None
 
 
@@ -136,6 +182,21 @@ def tts_binary() -> str | None:
     return None
 
 
+def tts_argv(msg: str) -> list | None:
+    """Builtin TTS argv for `msg` — used when voice.cmd is empty.
+    Windows speaks via PowerShell SAPI."""
+    if current() == "windows":
+        if not _which("powershell"):
+            return None
+        esc = msg.replace("'", "''")
+        return _ps(
+            "Add-Type -AssemblyName System.Speech; "
+            "(New-Object System.Speech.Synthesis.SpeechSynthesizer)"
+            f".Speak('{esc}')")
+    b = tts_binary()
+    return [b, msg] if b else None
+
+
 def notify_cmd(title: str, body: str) -> list | None:
     o = current()
     if o == "linux":
@@ -145,6 +206,14 @@ def notify_cmd(title: str, body: str) -> list | None:
         return ["osascript", "-e",
                 f'display notification "{esc(body)}" with title '
                 f'"{esc(title)}"']
+    if o == "windows":
+        if not _which("powershell"):
+            return None
+        e = lambda s: s.replace("'", "''")
+        return _ps(
+            "if (Get-Module -ListAvailable BurntToast) { "
+            f"New-BurntToastNotification -Text '{e(title)}',"
+            f"'{e(body)}' }} else {{ msg * '{e(title)}: {e(body)}' }}")
     return None
 
 
@@ -204,6 +273,11 @@ def focus_cmds(cls: str) -> list[list]:
                 _hypr("focuswindow", f"class:^{cls}")]
     if o == "macos":
         return [["open", "-a", cls]]
+    if o == "windows":
+        if _which("powershell"):
+            return [_ps("(New-Object -ComObject WScript.Shell)"
+                        f".AppActivate('{cls}') | Out-Null")]
+        return []
     return []
 
 
@@ -219,6 +293,15 @@ def close_cmds(cls: str) -> list[list]:
         return [["osascript", "-e",
                  'tell application "System Events" to keystroke "w" '
                  'using command down']]
+    if o == "windows":
+        if not _which("powershell"):
+            return []
+        if not cls:
+            return [_ps("(New-Object -ComObject WScript.Shell)"
+                        ".SendKeys('%{F4}')")]
+        return [_ps(f"Get-Process -Name '{cls}' -ErrorAction "
+                    "SilentlyContinue | ForEach-Object { "
+                    "$_.CloseMainWindow() | Out-Null }")]
     return []
 
 
@@ -244,6 +327,8 @@ def launch_exec_cmds(cmdline: str) -> list[list]:
                 _hypr("dispatch", "exec", cmdline)]
     if o == "macos":
         return [["sh", "-c", cmdline]]
+    if o == "windows":
+        return [["cmd", "/c", "start", "", "/b", cmdline]]
     return []
 
 
@@ -284,6 +369,23 @@ def monitors() -> list[dict]:
                              "height": h, "scale": scale})
                 x_off += int(w / scale)
         return mons
+    if o == "windows":
+        if not _which("powershell"):
+            return []
+        try:
+            import json
+            p = subprocess.run(_ps(
+                "Add-Type -AssemblyName System.Windows.Forms; "
+                "[System.Windows.Forms.Screen]::AllScreens | "
+                "ForEach-Object { [PSCustomObject]@{ x=$_.Bounds.X; "
+                "y=$_.Bounds.Y; width=$_.Bounds.Width; "
+                "height=$_.Bounds.Height; scale=1 } } | "
+                "ConvertTo-Json -Compress"),
+                capture_output=True, text=True, timeout=8)
+            v = json.loads(p.stdout) if p.returncode == 0 else []
+        except Exception:
+            return []
+        return v if isinstance(v, list) else [v]  # single screen = obj
     return []
 
 
@@ -298,4 +400,4 @@ def missing_deps_hint() -> str:
             "macos": "need screencapture/osascript/afrecord; grant "
                      "Screen Recording + Accessibility in System "
                      "Settings",
-            "windows": "windows adapter lands in U8"}[current()]
+            "windows": "need powershell + sox (sox --waveaudio for mic); Accessibility n/a — toast via BurntToast optional"}[current()]

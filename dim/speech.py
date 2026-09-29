@@ -30,8 +30,7 @@ def _argv(msg: str, cfg: dict) -> list[str] | None:
             parts.append(msg)
         return parts
     from . import platform
-    bin_ = platform.tts_binary()
-    return [bin_, msg] if bin_ else None
+    return platform.tts_argv(msg)
 
 
 def speak(msg: str, cfg: dict) -> subprocess.Popen | None:

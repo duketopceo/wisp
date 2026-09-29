@@ -1,7 +1,7 @@
 ---
 plan: dim-u8-windows-adapter
 created: 2026-09-27
-status: ready
+status: implemented
 origin: docs/plans/2026-09-26-001-feat-dim-companion-crossplatform-plan.md#U8
 issue: https://github.com/duketopceo/dim-agent/issues/15
 wave: 4

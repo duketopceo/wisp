@@ -180,6 +180,31 @@ def install_files() -> None:
     trigger.write_text(f"#!/bin/sh\nexec python3 {opt}/dimd trigger\n")
     trigger.chmod(0o755)
     print(f"installed {trigger}")
+    from dim import platform as _plat
+    if _plat.current() == "windows":
+        # Task Scheduler: run dimd daemon at logon (U8)
+        exe = opt / "dimd.exe"
+        subprocess.run(
+            ["schtasks", "/create", "/tn", "DimAgent", "/sc", "onlogon",
+             "/tr", f'"{exe} daemon"', "/f"],
+            capture_output=True)
+        print("registered Task Scheduler task DimAgent (logon)")
+        return
+    if _plat.current() == "macos":
+        # launchd agent plist (U7)
+        plist_dir = config.HOME / "Library" / "LaunchAgents"
+        plist_dir.mkdir(parents=True, exist_ok=True)
+        plist = plist_dir / "ai.dim.dimd.plist"
+        plist.write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>Label</key><string>ai.dim.dimd</string>
+<key>ProgramArguments</key><array>
+<string>{sys.executable}</string>
+<string>{opt}/dimd</string><string>daemon</string></array>
+<key>RunAtLoad</key><true/>
+<key>KeepAlive</key><true/></dict></plist>""")
+        print(f"installed {plist} (launchctl load to activate)")
+        return
     unit_dir = config.HOME / ".config" / "systemd" / "user"
     unit_dir.mkdir(parents=True, exist_ok=True)
     unit = unit_dir / "dimd.service"

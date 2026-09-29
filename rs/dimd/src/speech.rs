@@ -29,8 +29,7 @@ fn argv(msg: &str, cmd: &str) -> Option<(String, Vec<String>)> {
         let prog = parts.remove(0);
         return Some((prog, parts));
     }
-    let bin = crate::platform::tts_binary()?;
-    Some((bin.to_string(), vec![msg.to_string()]))
+    crate::platform::tts_argv(msg)
 }
 
 fn speak_cmd(msg: &str, cmd: &str,

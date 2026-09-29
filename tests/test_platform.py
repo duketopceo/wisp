@@ -87,12 +87,47 @@ class TestPlatform(unittest.TestCase):
                 self.assertIsNone(platform.tts_binary())
                 self.assertIsNone(platform.sampler_cmd(5))
 
-    def test_windows_stub(self):
+    def test_windows_cmds(self):
         with _with_os("windows"):
-            self.assertIsNone(
-                platform.record_cmd(Path("/t/u.wav"), 5))
-            self.assertEqual(platform.focus_cmds("x"), [])
-            self.assertIn("U8", platform.missing_deps_hint())
+            with mock.patch.object(platform, "_which",
+                                   return_value=True):
+                self.assertEqual(
+                    platform.record_cmd(Path("/t/u.wav"), 5)[0],
+                    "sox")
+                self.assertEqual(
+                    platform.screenshot_cmd(Path("/t/s.png"))[0],
+                    "powershell")
+                self.assertEqual(
+                    platform.type_text_cmd("hi")[0], "powershell")
+                self.assertEqual(
+                    platform.tts_argv("hi")[0], "powershell")
+                self.assertEqual(
+                    platform.notify_cmd("a", "b")[0], "powershell")
+                self.assertEqual(
+                    platform.focus_cmds("Notepad")[0][0],
+                    "powershell")
+                self.assertEqual(
+                    platform.close_cmds("")[0][0], "powershell")
+                self.assertEqual(
+                    platform.launch_exec_cmds("app.exe")[0],
+                    ["cmd", "/c", "start", "", "/b", "app.exe"])
+                # virtual desktops unsupported via shell — graceful []
+                self.assertEqual(platform.workspace_cmds(2), [])
+
+    def test_windows_missing_tools(self):
+        with _with_os("windows"):
+            with mock.patch.object(platform, "_which",
+                                   return_value=False):
+                self.assertIsNone(
+                    platform.record_cmd(Path("/t/u.wav"), 5))
+                self.assertIsNone(platform.tts_argv("hi"))
+                self.assertEqual(platform.focus_cmds("x"), [])
+                self.assertIn("powershell",
+                              platform.missing_deps_hint())
+
+    def test_sendkeys_escape(self):
+        self.assertEqual(platform._sendkeys_escape("a+b{c}"),
+                         "a{+}b{{}c{}}")
 
     def test_wm_ok_verdict(self):
         p = mock.Mock()
@@ -107,6 +142,9 @@ class TestPlatform(unittest.TestCase):
         p.returncode = 0
         with _with_os("macos"):
             self.assertTrue(platform.wm_ok(p))
+        p.returncode = 1
+        with _with_os("windows"):
+            self.assertFalse(platform.wm_ok(p))
 
     def test_osascript_escaping(self):
         with _with_os("macos"):

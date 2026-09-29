@@ -6,9 +6,12 @@ future tray apps). Shells MUST only depend on this document.
 
 ## Transport
 
-- Linux/macOS: unix domain socket at
+- Linux: unix domain socket at
   `$XDG_RUNTIME_DIR/dim-agent/dimd.sock` (fallback `/tmp/dim-agent/`).
-- Windows (future): named pipe `\\.\pipe\dim-agent`, same framing.
+- macOS: unix domain socket at `$TMPDIR/dim-agent/dimd.sock`.
+- Windows: TCP loopback — daemon binds `127.0.0.1:<ephemeral>` and
+  writes the port to `%TEMP%\dim-agent\dimd.sock` as a plain text
+  file; clients read the port then connect. Identical framing.
 - Framing: one JSON object per connection, newline-terminated request
   and newline-terminated reply. Request: `{"cmd": <string>, ...}`.
 - Reply envelope: `{"ok": bool, ...}`; on failure `ok=false` plus

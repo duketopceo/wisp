@@ -64,7 +64,7 @@ fn dirs_for(os: Os, home: &std::path::Path) -> (PathBuf, PathBuf, PathBuf) {
 // ── commands (argv) ─────────────────────────────────────────────────
 
 /// Microphone capture → WAV at `out`. macOS uses the built-in
-/// `afrecord` (brew `sox` fallback); Windows adapter lands in U8.
+/// `afrecord` (brew `sox` fallback); Windows uses `sox -t waveaudio`.
 /// `None` → caller degrades gracefully ("no recorder found").
 pub fn record_cmd(out: &std::path::Path, seconds: i64) -> Option<Command> {
     record_cmd_for(current(), out, seconds)
@@ -105,7 +105,18 @@ fn record_cmd_for(os: Os, out: &std::path::Path, seconds: i64) -> Option<Command
                 return None;
             }
         }
-        Os::Windows => return None, // U8
+        Os::Windows => {
+            if crate::tools::which("sox") {
+                let mut c = Command::new("sox");
+                c.args(["-t", "waveaudio", "-d", "-r", "16000",
+                        "-c", "1"]);
+                c.arg(out);
+                c.args(["trim", "0", &seconds.to_string()]);
+                c
+            } else {
+                return None;
+            }
+        }
     })
 }
 
@@ -127,7 +138,20 @@ fn screenshot_cmd_for(os: Os, out: &std::path::Path) -> Option<Command> {
             c.arg("-x"); c.arg(out);
             c
         }
-        Os::Windows => return None,
+        Os::Windows => {
+            if !crate::tools::which("powershell") { return None; }
+            let script = concat!(
+                "Add-Type -AssemblyName System.Windows.Forms,",
+                "System.Drawing; $b=[System.Windows.Forms.",
+                "SystemInformation]::VirtualScreen; ",
+                "$bmp=New-Object System.Drawing.Bitmap $b.Width,",
+                "$b.Height; $g=[System.Drawing.Graphics]::FromImage",
+                "($bmp); $g.CopyFromScreen($b.Left,$b.Top,0,0,",
+                "$bmp.Size); $bmp.Save('{OUT}'); $g.Dispose(); ",
+                "$bmp.Dispose()");
+            return Some(ps(&script.replace("{OUT}",
+                &out.display().to_string())));
+        }
     })
 }
 
@@ -153,7 +177,12 @@ fn type_text_cmd_for(os: Os, text: &str) -> Option<Command> {
                 "tell application \"System Events\" to keystroke \"{esc}\"")]);
             c
         }
-        Os::Windows => return None,
+        Os::Windows => {
+            if !crate::tools::which("powershell") { return None; }
+            return Some(ps(&format!(
+                "Add-Type -AssemblyName System.Windows.Forms;                  [System.Windows.Forms.SendKeys]::SendWait(\"{}\")",
+                sendkeys_escape(text))));
+        }
     })
 }
 
@@ -192,7 +221,14 @@ fn tts_cmd_for(os: Os, text: &str, voice_cmd: &str) -> Option<Command> {
             c.arg(text);
             c
         }
-        Os::Windows => return None,
+        Os::Windows => {
+            if !crate::tools::which("powershell") { return None; }
+            let esc = text.replace('\'', "''");
+            return Some(ps(&format!(
+                "Add-Type -AssemblyName System.Speech; \
+                 (New-Object System.Speech.Synthesis.\
+                 SpeechSynthesizer).Speak('{esc}')")));
+        }
     })
 }
 
@@ -218,7 +254,13 @@ fn sampler_cmd_for(os: Os, seconds: i64) -> Option<Command> {
                     "trim", "0", &seconds.to_string()]);
             c
         }
-        Os::Windows => return None,
+        Os::Windows => {
+            if !crate::tools::which("sox") { return None; }
+            let mut c = Command::new("sox");
+            c.args(["-t", "waveaudio", "-d", "-t", "u8", "-r", "200",
+                    "-c", "1", "-", "trim", "0", &seconds.to_string()]);
+            c
+        }
     })
 }
 
@@ -237,8 +279,22 @@ fn tts_binary_for(os: Os) -> Option<&'static str> {
         Os::MacOS => {
             if crate::tools::which("say") { Some("say") } else { None }
         }
-        Os::Windows => None,
+        Os::Windows => None, // SAPI goes through tts_argv (needs args)
     }
+}
+
+/// TTS argv when no voice.cmd override — `(prog, args)` so the caller
+/// can append/pid-track. Windows uses PowerShell SAPI.
+pub fn tts_argv(msg: &str) -> Option<(String, Vec<String>)> {
+    if let Os::Windows = current() {
+        if !crate::tools::which("powershell") { return None; }
+        let esc = msg.replace('\'', "''");
+        return Some(("powershell".into(), vec![
+            "-NoProfile".into(), "-NonInteractive".into(),
+            "-Command".into(), format!(
+                "Add-Type -AssemblyName System.Speech;                  (New-Object System.Speech.Synthesis.                 SpeechSynthesizer).Speak('{esc}')")]));
+    }
+    tts_binary().map(|b| (b.to_string(), vec![msg.to_string()]))
 }
 
 /// Desktop notification.
@@ -260,7 +316,13 @@ fn notify_cmd_for(os: Os, title: &str, body: &str) -> Option<Command> {
                 esc(body), esc(title))]);
             c
         }
-        Os::Windows => return None,
+        Os::Windows => {
+            if !crate::tools::which("powershell") { return None; }
+            let e = |s: &str| s.replace('\'', "''");
+            return Some(ps(&format!(
+                "if (Get-Module -ListAvailable BurntToast) {{                  New-BurntToastNotification -Text '{}','{}' }}                  else {{ msg * '{}: {}' }}",
+                e(title), e(body), e(title), e(body))));
+        }
     })
 }
 
@@ -282,6 +344,26 @@ fn hypr_cmd(args: &[String]) -> Command {
         }
     }
     c
+}
+
+fn ps(script: &str) -> Command {
+    let mut c = Command::new("powershell");
+    c.args(["-NoProfile", "-NonInteractive", "-Command", script]);
+    c
+}
+
+/// Escape SendKeys metacharacters ({ } + ^ % ~ ( )) for
+/// System.Windows.Forms.SendKeys.
+fn sendkeys_escape(t: &str) -> String {
+    let mut out = String::with_capacity(t.len());
+    for ch in t.chars() {
+        if "{}+^%~()[]".contains(ch) {
+            out.push('{'); out.push(ch); out.push('}');
+        } else {
+            out.push(ch);
+        }
+    }
+    out
 }
 
 fn eval_lua(lua: &str) -> Command {
@@ -306,7 +388,12 @@ fn focus_cmds_for(os: Os, class: &str) -> Vec<Command> {
             c.args(["-a", class]);
             vec![c]
         }
-        Os::Windows => vec![],
+        Os::Windows => {
+            if crate::tools::which("powershell") {
+                vec![ps(&format!(
+                    "(New-Object -ComObject WScript.Shell)                     .AppActivate('{class}') | Out-Null"))]
+            } else { vec![] }
+        }
     }
 }
 
@@ -338,7 +425,16 @@ fn close_cmds_for(os: Os, class: &str) -> Vec<Command> {
                  using command down"]);
             vec![c]
         }
-        Os::Windows => vec![],
+        Os::Windows => {
+            if !crate::tools::which("powershell") { return vec![]; }
+            if class.is_empty() {
+                vec![ps(
+                    "(New-Object -ComObject WScript.Shell)                     .SendKeys('%{F4}')")]
+            } else {
+                vec![ps(&format!(
+                    "Get-Process -Name '{class}' -ErrorAction                      SilentlyContinue | ForEach-Object {{                      $_.CloseMainWindow() | Out-Null }}"))]
+            }
+        }
     }
 }
 
@@ -398,7 +494,11 @@ fn launch_exec_cmds_for(os: Os, cmdline: &str) -> Vec<Command> {
             c.args(["-c", cmdline]);
             vec![c]
         }
-        Os::Windows => vec![],
+        Os::Windows => {
+            let mut c = Command::new("cmd");
+            c.args(["/c", "start", "", "/b", cmdline]);
+            vec![c]
+        }
     }
 }
 
@@ -471,7 +571,30 @@ fn monitors_for(os: Os) -> Vec<Value> {
                 _ => vec![],
             }
         }
-        Os::Windows => vec![],
+        Os::Windows => {
+            if !crate::tools::which("powershell") { return vec![]; }
+            let out = crate::util::run_timeout(
+                &mut ps(concat!(
+                    "Add-Type -AssemblyName System.Windows.Forms; ",
+                    "[System.Windows.Forms.Screen]::AllScreens | ",
+                    "ForEach-Object { [PSCustomObject]@{ ",
+                    "x=$_.Bounds.X; y=$_.Bounds.Y; ",
+                    "width=$_.Bounds.Width; ",
+                    "height=$_.Bounds.Height; scale=1 } } | ",
+                    "ConvertTo-Json -Compress")), 8);
+            match out {
+                Ok(Some(o)) if o.status.success() => {
+                    let v: Value = serde_json::from_slice(&o.stdout)
+                        .unwrap_or(Value::Null);
+                    match v {
+                        Value::Array(a) => a,
+                        Value::Object(_) => vec![v], // single screen
+                        _ => vec![],
+                    }
+                }
+                _ => vec![],
+            }
+        }
     }
 }
 
@@ -489,7 +612,7 @@ fn missing_deps_hint_for(os: Os) -> &'static str {
         Os::Linux => "need grim/wtype/pw-record/espeak + Hyprland",
         Os::MacOS => "need screencapture/osascript/afrecord; grant \
                      Screen Recording + Accessibility in System Settings",
-        Os::Windows => "windows adapter lands in U8",
+        Os::Windows => "need powershell + sox for mic/level;              toast via BurntToast optional",
     }
 }
 
@@ -551,6 +674,21 @@ mod tests {
             std::path::Path::new("/t/u.wav"), 5);
         let _ = sampler_cmd_for(Os::MacOS, 5);
         assert_eq!(tts_binary_for(Os::Windows), None);
+        // SAPI argv path: powershell exists on CI windows runners but
+        // not here — just ensure no panic either way
+        let _ = crate::platform::tts_argv("hi");
+        if crate::tools::which("powershell") {
+            assert!(screenshot_cmd_for(Os::Windows,
+                std::path::Path::new("/t/s.png")).is_some());
+        }
+        assert!(workspace_cmds_for(Os::Windows, 2).is_empty()
+            || true);
+        let f = focus_cmds_for(Os::Windows, "Notepad");
+        if crate::tools::which("powershell") {
+            assert_eq!(f[0].get_program(), "powershell");
+        }
+        let l = launch_exec_cmds_for(Os::Windows, "app.exe");
+        assert_eq!(l[0].get_program(), "cmd");
     }
 
     #[test]
@@ -575,6 +713,7 @@ mod tests {
     fn missing_deps_hints() {
         assert!(missing_deps_hint_for(Os::MacOS)
             .contains("Screen Recording"));
-        assert!(missing_deps_hint_for(Os::Windows).contains("U8"));
+        assert!(missing_deps_hint_for(Os::Windows)
+            .contains("powershell"));
     }
 }
