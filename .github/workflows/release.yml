@@ -58,7 +58,7 @@ jobs:
         shell: pwsh
         run: |
           $stage = "wisp-${{ matrix.name }}"
-          New-Item -ItemType Directory -Force "$stage/bin", "$stage/wisp", "$stage/shells", "$stage/shell-plugin", "$stage/scripts", "$stage/docs" | Out-Null
+          New-Item -ItemType Directory -Force "$stage/bin", "$stage/scripts", "$stage/docs" | Out-Null
           Copy-Item "rs/wispd/target/${{ matrix.target }}/release/wispd.exe" "$stage/bin/wispd-rs.exe"
           Copy-Item wispd "$stage/wispd"
           Copy-Item -Recurse wisp, shells, shell-plugin "$stage/"
