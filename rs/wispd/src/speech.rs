@@ -78,7 +78,7 @@ pub fn stop() {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use std::sync::mpsc;

@@ -116,16 +116,32 @@ fn try_cmds(cmds: &mut [Command]) -> Option<std::process::Output> {
 }
 
 pub fn which(bin: &str) -> bool {
+    let sep = if cfg!(windows) { ';' } else { ':' };
+    let candidates: Vec<String> = if cfg!(windows) {
+        // Executables on Windows are extension-carrying; PATHEXT order.
+        vec![format!("{bin}.exe"), format!("{bin}.cmd"),
+             format!("{bin}.bat"), format!("{bin}.ps1"), bin.to_string()]
+    } else {
+        vec![bin.to_string()]
+    };
     if let Ok(path) = std::env::var("PATH") {
-        return path
-            .split(':')
-            .any(|d| {
-                use std::os::unix::fs::PermissionsExt;
-                let p = PathBuf::from(d).join(bin);
-                p.is_file() && p.metadata()
-                    .map(|m| m.permissions().mode() & 0o111 != 0)
-                    .unwrap_or(false)
-            });
+        return path.split(sep).any(|d| {
+            candidates.iter().any(|name| {
+                let p = PathBuf::from(d).join(name);
+                if !p.is_file() {
+                    return false;
+                }
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    return p.metadata()
+                        .map(|m| m.permissions().mode() & 0o111 != 0)
+                        .unwrap_or(false);
+                }
+                #[cfg(not(unix))]
+                true
+            })
+        });
     }
     false
 }
