@@ -212,7 +212,7 @@ StartupNotify=false
         print(f"installed {cmd}")
         subprocess.run(
             ["schtasks", "/create", "/tn", "Wisp", "/sc", "onlogon",
-             "/tr", f'"{cmd} daemon"', "/f"],
+             "/tr", f'"{cmd}" daemon', "/f"],
             capture_output=True)
         print("registered Task Scheduler task Wisp (logon)")
         return
