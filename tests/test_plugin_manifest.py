@@ -18,7 +18,7 @@ class TestManifest(unittest.TestCase):
             self.assertIn(k, self.m)
 
     def test_id_namespaced(self):
-        self.assertEqual(self.m["id"], "io.github.duketopceo.dim")
+        self.assertEqual(self.m["id"], "io.github.duketopceo.wisp")
 
     def test_kinds_have_entry_points(self):
         ep = self.m["entryPoints"]

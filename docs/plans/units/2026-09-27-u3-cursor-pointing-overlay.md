@@ -3,7 +3,7 @@ plan: dim-u3-cursor-pointing-overlay
 created: 2026-09-27
 status: ready
 origin: docs/plans/2026-09-26-001-feat-dim-companion-crossplatform-plan.md#U3
-issue: https://github.com/duketopceo/dim-agent/issues/7
+issue: https://github.com/duketopceo/wisp/issues/7
 wave: 2
 ---
 
@@ -11,7 +11,7 @@ wave: 2
 
 ## Scope
 
-Dim answers "where do I click" by *showing*, not telling. Parse
+Wisp answers "where do I click" by *showing*, not telling. Parse
 `[POINT:x,y:label]` / `[POINTS:[...]]` tags from model output and render
 an animated pointer on a layer-shell overlay.
 
@@ -47,5 +47,5 @@ an animated pointer on a layer-shell overlay.
 
 ## Done when
 
-"Dim, where do I click to mute" produces a visible pointer at the right
+"Wisp, where do I click to mute" produces a visible pointer at the right
 control on <host>.

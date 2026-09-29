@@ -1,0 +1,14 @@
+/home/<user>/Documents/github/personal/dim-agent/rs/dimd/target/debug/deps/serde-2709fffcd4ae4b7b.d: /home/<user>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/lib.rs /home/<user>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/integer128.rs /home/<user>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/mod.rs /home/<user>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/de.rs /home/<user>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/ser.rs /home/<user>/Documents/github/personal/dim-agent/rs/dimd/target/debug/build/serde-044a8b6748b4d949/out/private.rs
+
+/home/<user>/Documents/github/personal/dim-agent/rs/dimd/target/debug/deps/libserde-2709fffcd4ae4b7b.rlib: /home/<user>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/lib.rs /home/<user>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/integer128.rs /home/<user>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/mod.rs /home/<user>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/de.rs /home/<user>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/ser.rs /home/<user>/Documents/github/personal/dim-agent/rs/dimd/target/debug/build/serde-044a8b6748b4d949/out/private.rs
+
+/home/<user>/Documents/github/personal/dim-agent/rs/dimd/target/debug/deps/libserde-2709fffcd4ae4b7b.rmeta: /home/<user>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/lib.rs /home/<user>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/integer128.rs /home/<user>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/mod.rs /home/<user>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/de.rs /home/<user>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/ser.rs /home/<user>/Documents/github/personal/dim-agent/rs/dimd/target/debug/build/serde-044a8b6748b4d949/out/private.rs
+
+/home/<user>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/lib.rs:
+/home/<user>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/integer128.rs:
+/home/<user>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/mod.rs:
+/home/<user>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/de.rs:
+/home/<user>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/ser.rs:
+/home/<user>/Documents/github/personal/dim-agent/rs/dimd/target/debug/build/serde-044a8b6748b4d949/out/private.rs:
+
+# env-dep:OUT_DIR=/home/<user>/Documents/github/personal/dim-agent/rs/dimd/target/debug/build/serde-044a8b6748b4d949/out

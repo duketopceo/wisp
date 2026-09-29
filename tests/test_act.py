@@ -1,11 +1,11 @@
-"""Tests for dim/act.py — the bounded tool-call loop."""
+"""Tests for wisp/act.py — the bounded tool-call loop."""
 import json
 import sys
 import unittest
 from unittest import mock
 
 sys.path.insert(0, ".")
-from dim import act, session, tools  # noqa: E402
+from wisp import act, session, tools  # noqa: E402
 
 
 def _msg(content=None, calls=None):
@@ -133,7 +133,7 @@ if __name__ == "__main__":
 
 class Timing(unittest.TestCase):
     def test_decisions_log_carries_stage_timings(self):
-        from dim import pipeline
+        from wisp import pipeline
         logged = {}
         cfg = {"audio": {"seconds": "0"}, "agent": {},
                "jev": {"risk_threshold": "10"}}
@@ -157,11 +157,11 @@ class Timing(unittest.TestCase):
              mock.patch.object(pipeline, "build_questions",
                                return_value={}), \
              mock.patch.object(pipeline, "notify"), \
-             mock.patch.object(sys.modules["dim.session"],
+             mock.patch.object(sys.modules["wisp.session"],
                                "append_turn"), \
-             mock.patch.object(sys.modules["dim.session"], "tail",
+             mock.patch.object(sys.modules["wisp.session"], "tail",
                                return_value=[]), \
-             mock.patch.object(sys.modules["dim.session"], "as_text",
+             mock.patch.object(sys.modules["wisp.session"], "as_text",
                                return_value=""), \
              mock.patch.object(pipeline, "log_decision",
                                side_effect=lambda r: logged.update(r)):

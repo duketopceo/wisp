@@ -3,7 +3,7 @@ plan: dim-u4-spoken-answers
 created: 2026-09-27
 status: ready
 origin: docs/plans/2026-09-26-001-feat-dim-companion-crossplatform-plan.md#U4
-issue: https://github.com/duketopceo/dim-agent/issues/8
+issue: https://github.com/duketopceo/wisp/issues/8
 wave: 2
 ---
 

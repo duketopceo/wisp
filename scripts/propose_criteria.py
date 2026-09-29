@@ -3,9 +3,9 @@
 clusters user corrections into proposed new choice criteria.
 
 Usage: python3 scripts/propose_criteria.py [path/to/corrections.jsonl]
-Default path: $XDG_DATA_HOME/dim-agent/corrections.jsonl (~/.local/share/dim-agent/).
+Default path: $XDG_DATA_HOME/wisp/corrections.jsonl (~/.local/share/wisp/).
 Output: a human-readable proposal report on stdout. NOT scheduled by cron yet
-(documented workflow: run manually, review, then edit JEV_QUESTIONS in dimd).
+(documented workflow: run manually, review, then edit JEV_QUESTIONS in wispd).
 """
 import json
 import os
@@ -13,7 +13,7 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-default_path = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "dim-agent" / "corrections.jsonl"
+default_path = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "wisp" / "corrections.jsonl"
 
 
 def load(path: Path):
@@ -54,7 +54,7 @@ def main() -> int:
         for other, n in others.most_common(2):
             if n >= 2:
                 print(f"  - app '{picked}' vs '{other}' confused {n}x — "
-                      f"add a distinguishing criterion description in dimd JEV_QUESTIONS")
+                      f"add a distinguishing criterion description in wispd JEV_QUESTIONS")
     if not confusion:
         print("  (no repeated confusion clusters — nothing to propose)")
     return 0

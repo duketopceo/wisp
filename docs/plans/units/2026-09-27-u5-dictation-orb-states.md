@@ -3,7 +3,7 @@ plan: dim-u5-dictation-orb-states
 created: 2026-09-27
 status: ready
 origin: docs/plans/2026-09-26-001-feat-dim-companion-crossplatform-plan.md#U5
-issue: https://github.com/duketopceo/dim-agent/issues/9
+issue: https://github.com/duketopceo/wisp/issues/9
 wave: 2
 ---
 

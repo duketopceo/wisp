@@ -5,7 +5,7 @@ import pathlib
 import unittest
 import unittest.mock as mock
 
-from dim import brain, agents
+from wisp import brain, agents
 
 
 class ProviderTest(unittest.TestCase):
@@ -137,7 +137,7 @@ class RuntimeProbeTest(unittest.TestCase):
 
     def test_config_set_nested_brain_section(self):
         import tempfile
-        from dim import config
+        from wisp import config
         with tempfile.TemporaryDirectory() as td:
             f = pathlib.Path(td) / "config.toml"
             f.write_text("[brain]\ndefault = \"openrouter:x\"\n")

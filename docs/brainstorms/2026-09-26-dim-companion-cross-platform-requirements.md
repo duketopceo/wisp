@@ -1,4 +1,4 @@
-# Dim — Cross-Platform AI Companion (Hey Clicky clone) — Requirements
+# Wisp — Cross-Platform AI Companion (Hey Clicky clone) — Requirements
 
 Date: 2026-09-26 · Status: settled for planning
 Origin: user direction — "build for big: Linux, macOS, Windows; open source;
@@ -8,7 +8,7 @@ powered however the user wants."
 
 ## What we're building
 
-Dim becomes a **cross-platform, open-source AI desktop companion** — the
+Wisp becomes a **cross-platform, open-source AI desktop companion** — the
 Hey Clicky interaction model (persistent orb, push-to-talk, screen-aware
 spoken/visual guidance, background agents) — with a **provider-agnostic
 brain layer** so the user powers it however they want: OpenRouter (default),
@@ -34,7 +34,7 @@ plugin, already live.
 - **Agent mode**: "agent" keyword or route → background agent task
   (ori opencode / codex / claude / devin — pluggable, user-configured).
 - **Dictation**: transcript can be typed into the focused app via
-  `type_text` (voxtype stays separate on `Alt+Space`; Dim hotkey is
+  `type_text` (voxtype stays separate on `Alt+Space`; Wisp hotkey is
   `Super+D` — configurable per OS).
 - **Session memory**: persistent turns, follow-ups across restarts.
 - **Learning loop**: weekly human-gated corrections → routing criteria.
@@ -68,7 +68,7 @@ non-goal: users bring their own keys or run local).
 │  macOS menu-bar app · Windows tray ·             │
 │  Linux GNOME/other (AppIndicator/webview)        │
 ├──────────────────────────────────────────────────┤
-│ dimd — portable core daemon (Rust)               │
+│ wispd — portable core daemon (Rust)               │
 │  IPC (unix socket / named pipe) · state.json     │
 │  session.jsonl · decisions.jsonl · corrections   │
 │  brain layer (pluggable providers)               │
@@ -84,7 +84,7 @@ non-goal: users bring their own keys or run local).
 └──────────────────────────────────────────────────┘
 ```
 
-**Sequencing rationale**: the existing Python `dimd` is the reference
+**Sequencing rationale**: the existing Python `wispd` is the reference
 implementation (83 tests). A new Rust crate (`rs/` or `core/`, same repo)
 implements the **same socket + `state.json` contract** until parity, then
 becomes default. The quickshell plugin never knows which core serves it.
@@ -127,7 +127,7 @@ external provider for users who want it):
 - **Self-authored skills** — `skills/*/SKILL.md` in the data dir +
   a `skill_manage` tool (create/edit/patch/delete/write_file) +
   `skill_view` for progressive disclosure. Successful approaches become
-  reusable skills; a `learn` route/command lets the user point Dim at
+  reusable skills; a `learn` route/command lets the user point Wisp at
   material ("learn how Omarchy plugin packaging works") and the agent
   authors the skill. Skills may register new toolbelt entries.
 - Session turns (`session.jsonl`) stay the short-term layer; memory is
@@ -136,7 +136,7 @@ external provider for users who want it):
 ## Explicit non-goals (for now)
 
 - No cloud proxy / hosted service — users bring keys or run local models.
-- No wake word ("Hey Dim") — push-to-talk only for v1.
+- No wake word ("Hey Wisp") — push-to-talk only for v1.
 - No telemetry/analytics.
 - Pixel-level computer-use clicking beyond `type_text`/hotkeys —
   cursor *pointing* yes, cursor *clicking* deferred (biggest risk surface).

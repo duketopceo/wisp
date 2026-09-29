@@ -9,7 +9,7 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from dim import agents, pipeline, tools  # noqa: E402
+from wisp import agents, pipeline, tools  # noqa: E402
 
 
 class TestRegistry(unittest.TestCase):
@@ -139,7 +139,7 @@ class TestAgents(unittest.TestCase):
                                    return_value="/usr/bin/ori"), \
                  mock.patch.object(agents.subprocess, "Popen",
                                    return_value=proc):
-                out = agents.spawn("fix the tests in dim-agent", {},
+                out = agents.spawn("fix the tests in wisp", {},
                                    tasks_file=tf, log_dir=ld)
             self.assertIn("SPAWNED", out)
             rec = json.loads(tf.read_text().splitlines()[0])

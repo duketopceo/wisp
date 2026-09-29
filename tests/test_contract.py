@@ -1,7 +1,7 @@
-"""Contract tests: the IPC + state.json surface every dimd must satisfy.
+"""Contract tests: the IPC + state.json surface every wispd must satisfy.
 
 These run against the live Python daemon internals today and become the
-parity oracle for dimd-rs (same fixtures, same expected shapes).
+parity oracle for wispd-rs (same fixtures, same expected shapes).
 """
 import json
 import pathlib
@@ -9,7 +9,7 @@ import sys
 import unittest
 
 sys.path.insert(0, ".")
-from dim import ipc, state  # noqa: E402
+from wisp import ipc, state  # noqa: E402
 
 FIXTURES = pathlib.Path("tests/fixtures/ipc_commands.jsonl")
 
@@ -28,7 +28,7 @@ class CommandSurface(unittest.TestCase):
 
     def test_reply_envelope_shape(self):
         # every handler path returns ok-bool; unknown cmd returns error
-        st = state.State(state_file=pathlib.Path("/tmp/dim-ct-state.json"))
+        st = state.State(state_file=pathlib.Path("/tmp/wisp-ct-state.json"))
         calls = []
 
         def handler(cmd):
@@ -55,7 +55,7 @@ class StateFileShape(unittest.TestCase):
                 "awaiting_choice", "acting", "speaking", "done", "error"}
 
     def test_snapshot_has_contract_keys(self):
-        f = pathlib.Path("/tmp/dim-ct-state2.json")
+        f = pathlib.Path("/tmp/wisp-ct-state2.json")
         f.unlink(missing_ok=True)
         st = state.State(state_file=f)
         s = st.snapshot()
@@ -66,7 +66,7 @@ class StateFileShape(unittest.TestCase):
         assert isinstance(s["level"], (int, float))
 
     def test_transition_writes_file(self):
-        f = pathlib.Path("/tmp/dim-ct-state3.json")
+        f = pathlib.Path("/tmp/wisp-ct-state3.json")
         f.unlink(missing_ok=True)
         st = state.State(state_file=f)
         st.transition("listening", transcript="hi")

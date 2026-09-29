@@ -5,7 +5,7 @@ import tempfile
 import unittest
 import unittest.mock as mock
 
-from dim import trace
+from wisp import trace
 
 SCHEMA_KEYS = {"ts", "turn", "step", "kind", "ms", "data"}
 

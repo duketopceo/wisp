@@ -5,11 +5,11 @@ status: ready
 origin: docs/brainstorms/2026-09-26-dim-companion-cross-platform-requirements.md
 ---
 
-# Dim — Cross-Platform Companion (Hey Clicky clone, BYO-brain)
+# Wisp — Cross-Platform Companion (Hey Clicky clone, BYO-brain)
 
 ## Problem frame
 
-Dim is a working Omarchy voice assistant (Python `dimd` daemon, Jev
+Wisp is a working Omarchy voice assistant (Python `wispd` daemon, Jev
 routing, toolbelt, act loop, quickshell plugin, 83 tests). Target: a
 cross-platform, open-source desktop companion — the Hey Clicky interaction
 model — where the user powers it however they want (OpenRouter default,
@@ -19,7 +19,7 @@ quickshell plugin. Then macOS + Windows + generic Linux shells.
 
 ## Key decisions (settled)
 
-- **Rust core via parity port** (`rs/dimd/` crate). Python `dim/` stays
+- **Rust core via parity port** (`rs/wispd/` crate). Python `dim/` stays
   the reference implementation until the Rust daemon reaches contract
   parity; the IPC + `state.json` contract is the boundary, so the
   plugin never cares which serves it. Rationale: consumer packaging
@@ -58,7 +58,7 @@ quickshell plugin. Then macOS + Windows + generic Linux shells.
   live Python daemon's actual output.
 
 **U2: `rs/` workspace + Linux parity core**
-- New `dimd-rs` binary: tokio unix-socket server (same path), same
+- New `wispd-rs` binary: tokio unix-socket server (same path), same
   commands (`listen`, `status`, `choice`, `stop`, `task_status`,
   `task_cancel`), same atomic `state.json` writes, same
   `config.toml`/`.env` layout (toml crate), same `decisions.jsonl` /
@@ -72,7 +72,7 @@ quickshell plugin. Then macOS + Windows + generic Linux shells.
 - Port `act` loop: same bounds (8 steps / 2 consecutive errors).
 - Test: `rs/tests/` parity suite driven by U1 fixtures; run existing
   Python suite unchanged against Python (regression oracle).
-- Gate: `dimd-rs` serves `listen→done` on <host> against real
+- Gate: `wispd-rs` serves `listen→done` on <host> against real
   whisper/Jev/OpenRouter, plugin unchanged.
 
 ### Wave 2 — Clicky UX on the proven shell
@@ -115,7 +115,7 @@ quickshell plugin. Then macOS + Windows + generic Linux shells.
   enforcement, frozen-snapshot injection into `ask_chat` calls.
 
 **U5c: sqlite-vec recall store**
-- `~/.local/share/dim-agent/recall.db`: turns + corrections + distilled
+- `~/.local/share/wisp/recall.db`: turns + corrections + distilled
   notes embedded via a configurable embedding model (OpenRouter
   embeddings default; `none` = lexical FTS5 fallback so recall works
   fully offline without any key).
@@ -125,11 +125,11 @@ quickshell plugin. Then macOS + Windows + generic Linux shells.
   lexical fallback when no embedding provider configured.
 
 **U5d: Self-authored skills**
-- `~/.local/share/dim-agent/skills/*/SKILL.md` + `skill_manage` tool
+- `~/.local/share/wisp/skills/*/SKILL.md` + `skill_manage` tool
   (create/edit/patch/delete/write_file/remove_file — Hermes semantics)
   + `skill_view` for progressive disclosure (index in system context,
   bodies loaded on demand).
-- `learn` route/command: "Dim, learn X" → agent gathers material with
+- `learn` route/command: "Wisp, learn X" → agent gathers material with
   existing tools and authors a conforming SKILL.md; re-running on the
   same topic folds into the existing skill.
 - Skills may declare toolbelt additions (name/description/script) that
@@ -184,7 +184,7 @@ quickshell plugin. Then macOS + Windows + generic Linux shells.
 **U10: Packaging + release**
 - `cargo-dist` or `cargo-packager`: `.pkg` (mac, signed+notarized),
   `.msi`/winget (win), `.deb`/AUR + AppImage (linux).
-- `dimd install` per-OS service registration (launchd/systemd/Task
+- `wispd install` per-OS service registration (launchd/systemd/Task
   Scheduler).
 - Docs: install, config reference, brain provider table, security model.
 - Version `1.0.0` tag; Python reference moves to `legacy/` or stays

@@ -3,11 +3,11 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 
-// Companion — the Clicky-style orb for io.github.duketopceo.dim.
-// A small floating orb anchored bottom-right that breathes while Dim
+// Companion — the Clicky-style orb for io.github.duketopceo.wisp.
+// A small floating orb anchored bottom-right that breathes while Wisp
 // works; clicking expands a card with transcript, answer, and choice
-// buttons. Bound to $XDG_RUNTIME_DIR/dim-agent/state.json like
-// DimService, so it works whether or not the bar widget is placed.
+// buttons. Bound to $XDG_RUNTIME_DIR/wisp/state.json like
+// WispService, so it works whether or not the bar widget is placed.
 Item {
   id: root
 
@@ -29,7 +29,7 @@ Item {
   readonly property string stateFile: {
     var rd = Quickshell.env("XDG_RUNTIME_DIR");
     if (!rd || rd.length === 0) rd = "/tmp";
-    return rd + "/dim-agent/state.json";
+    return rd + "/wisp/state.json";
   }
 
   function open(payload) { root.opened = true; }
@@ -41,7 +41,7 @@ Item {
   }
 
   function sendChoice(pick) {
-    choiceProc.command = ["dimd", "choice", pick];
+    choiceProc.command = ["wispd", "choice", pick];
     choiceProc.running = true;
   }
 
@@ -91,7 +91,7 @@ Item {
 
   Process {
     id: choiceProc
-    command: ["dimd", "choice", ""]
+    command: ["wispd", "choice", ""]
   }
 
   // Point markers — logical coords straight from state.json (already
@@ -264,7 +264,7 @@ Item {
           anchors.verticalCenter: parent.verticalCenter
         }
         Text {
-          text: "Dim — " + root.status
+          text: "Wisp — " + root.status
           color: "#c0caf5"
           font.pixelSize: 13
           font.bold: true

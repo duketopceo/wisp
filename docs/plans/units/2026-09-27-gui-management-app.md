@@ -3,15 +3,15 @@ plan: dim-gui-management-app
 created: 2026-09-27
 status: ready
 origin: shells/debug/shell.qml evolution + review residuals
-issue: https://github.com/duketopceo/dim-agent/issues/18
+issue: https://github.com/duketopceo/wisp/issues/18
 wave: 2
 ---
 
-# Dim management GUI — depth pass
+# Wisp management GUI — depth pass
 
 ## Scope
 
-The Quickshell app ("Dim" in the launcher) is the real management
+The Quickshell app ("Wisp" in the launcher) is the real management
 surface. Landed: status, logs w/ per-stage timing bars, session,
 corrections, tasks, editable settings, memory/skills views, daemon
 lifecycle controls. This unit adds the "graphs and visuals" layer.
@@ -50,5 +50,5 @@ lifecycle controls. This unit adds the "graphs and visuals" layer.
 
 ## Done when
 
-Opening "Dim" shows trend graphs, editable memory, skill management,
+Opening "Wisp" shows trend graphs, editable memory, skill management,
 and task spawning without touching the CLI.

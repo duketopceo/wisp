@@ -3,7 +3,7 @@ plan: dim-u5e-debug-trace
 created: 2026-09-28
 status: ready
 origin: user request 2026-09-28 — "log everything, action, thought, tool call"
-issue: https://github.com/duketopceo/dim-agent/issues/23
+issue: https://github.com/duketopceo/wisp/issues/23
 wave: 3 (dogfooding enabler — lands before U6)
 ---
 
@@ -11,7 +11,7 @@ wave: 3 (dogfooding enabler — lands before U6)
 
 ## Why
 
-Dim is about to be used daily (dogfood). Every stage of a turn — record,
+Wisp is about to be used daily (dogfood). Every stage of a turn — record,
 STT, Jev decision, route dispatch, tool call, brain call, TTS — can
 misfire, and today the only evidence is the final `result` string and
 `decisions.jsonl` (Jev I/O only). To let us *and Jev* parse real
@@ -22,7 +22,7 @@ stream per turn.
 
 One append-only JSONL event stream, both cores, identical schema.
 
-- File: `~/.local/state/dim-agent/trace.jsonl` (data_dir — beside
+- File: `~/.local/state/wisp/trace.jsonl` (data_dir — beside
   recall.db, decisions.jsonl). Rotated at ~10 MB to `trace.1.jsonl`.
 - Event: `{"ts": iso, "turn": "<id>", "step": "<name>",
   "kind": "<category>", "ms": <int|null>, "data": {...}}`
@@ -40,18 +40,18 @@ One append-only JSONL event stream, both cores, identical schema.
   `trace_max_mb = 10`; `trace_data_bytes = 8192` truncation.
 - **Never logged**: Authorization headers, resolved key values
   (`load_env_key` output), `.env` contents. Only key *names*.
-- `dimd trace` subcommand: `--tail N` (default 50), `--turn <id>`,
+- `wispd trace` subcommand: `--tail N` (default 50), `--turn <id>`,
   `--kind <k>` — pretty-prints events; exits 0 on empty.
 - Both cores emit identical schema; a parity fixture asserts field sets.
 
 ## Steps
 
-1. `dim/trace.py`: `emit(turn, step, kind, data=None, ms=None)`,
+1. `wisp/trace.py`: `emit(turn, step, kind, data=None, ms=None)`,
    `new_turn()`, `enabled(cfg)` cached, rotation check on open.
-2. `rs/dimd/src/trace.rs`: same API + `OnceLock` enabled flag.
+2. `rs/wispd/src/trace.rs`: same API + `OnceLock` enabled flag.
 3. Instrument `pipeline.rs`/`.py` at each stage boundary listed above;
-   `main.rs`/`dimd` emit `ipc` per command (outside turn → "sys").
-4. `dimd trace`/`dimd-rs trace` subcommand with filters.
+   `main.rs`/`wispd` emit `ipc` per command (outside turn → "sys").
+4. `wispd trace`/`wispd-rs trace` subcommand with filters.
 5. GUI: none here — Logs tab in #18 reads the file.
 
 ## Tests
@@ -62,7 +62,7 @@ One append-only JSONL event stream, both cores, identical schema.
 - Rotation at max_mb; truncation at data_bytes.
 - A full mocked `listen` turn produces the ordered step chain
   listen_start → record → transcribe → decision → dispatch → …
-- `dimd trace --tail` output parses as JSONL.
+- `wispd trace --tail` output parses as JSONL.
 
 ## Risks
 
@@ -73,6 +73,6 @@ One append-only JSONL event stream, both cores, identical schema.
 
 ## Done when
 
-Running `dimd trace --turn <id>` after a live listen prints the full
-ordered stage list with ms timings, and `dimd trace --tail` works on
+Running `wispd trace --turn <id>` after a live listen prints the full
+ordered stage list with ms timings, and `wispd trace --tail` works on
 both daemons.

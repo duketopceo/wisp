@@ -17,7 +17,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Compile-check scripts
-        run: python -m py_compile dimd dim/*.py dim/tools/*.py scripts/propose_criteria.py tests/*.py
+        run: python -m py_compile wispd wisp/*.py wisp/tools/*.py scripts/propose_criteria.py tests/*.py
       - name: Test deps
         run: pip install sqlite-vec
       - name: Unit tests
@@ -30,9 +30,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: rs/dimd
+          workspaces: rs/wispd
       - name: Rust build + tests
-        working-directory: rs/dimd
+        working-directory: rs/wispd
         run: |
           cargo build --locked
           cargo test

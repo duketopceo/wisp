@@ -1,16 +1,16 @@
 # Windows adapter (U8)
 
-`dimd` / `dimd-rs` on Windows: same command surface, same
+`wispd` / `wispd-rs` on Windows: same command surface, same
 config/state/trace formats. Every OS shell-out routes through
-`dim/platform.py` / `rs/dimd/src/platform.rs`.
+`dim/platform.py` / `rs/wispd/src/platform.rs`.
 
 ## Transport
 
 Windows can't use the unix socket: both cores switch to **TCP
 loopback** — the daemon binds `127.0.0.1:<ephemeral>` and writes the
-port to the `dimd.sock` path as a plain text file. Clients read the
+port to the `wispd.sock` path as a plain text file. Clients read the
 file, connect, and speak the identical newline-JSON protocol, so
-fixture replay and `dimd` CLI work unchanged. (The plan's named-pipe
+fixture replay and `wispd` CLI work unchanged. (The plan's named-pipe
 option was superseded: AF_UNIX-in-std lacks on Rust Windows, and a
 named-pipe dependency adds total code for no contract change.)
 
@@ -18,9 +18,9 @@ named-pipe dependency adds total code for no contract change.)
 
 | What | Windows |
 |---|---|
-| config | `%APPDATA%\dim-agent\` |
-| data | `%LOCALAPPDATA%\dim-agent\` |
-| socket/state (port file) | `%TEMP%\dim-agent\` |
+| config | `%APPDATA%\wisp\` |
+| data | `%LOCALAPPDATA%\wisp\` |
+| socket/state (port file) | `%TEMP%\wisp\` |
 
 ## Command map
 
@@ -48,8 +48,8 @@ Missing tools degrade to `SKIP (… — hint)`; nothing panics.
 
 ## Service / hotkey
 
-`dimd install` registers `schtasks /tn DimAgent /sc onlogon` instead of
-the systemd unit. Push-to-talk hotkey: bind `dimd listen` via
+`wispd install` registers `schtasks /tn DimAgent /sc onlogon` instead of
+the systemd unit. Push-to-talk hotkey: bind `wispd listen` via
 PowerToys Keyboard Manager, AutoHotkey, or `global-hotkey` in the tray
 app (U10 packaging).
 
@@ -61,6 +61,7 @@ stage.
 
 ## Known residuals
 
-- Workspace/virtual-desktop switching is a documented SKIP
-- Monitor scale assumed 1 (DPI awareness needs `windows-rs`, U10)
-- Defender/AV signing friction: U10
+- Workspace/virtual-desktop switching: coming soon — needs the
+  IVirtualDesktopManager COM API; today it's an explicit SKIP
+- Monitor scale assumed 1 (DPI-aware monitors): coming soon (U10)
+- Defender/AV signing friction: coming soon (U10 packaging)

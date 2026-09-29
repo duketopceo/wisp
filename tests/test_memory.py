@@ -5,7 +5,7 @@ import unittest
 import pathlib
 from unittest import mock
 
-from dim import memory
+from wisp import memory
 
 
 class MemoryTest(unittest.TestCase):

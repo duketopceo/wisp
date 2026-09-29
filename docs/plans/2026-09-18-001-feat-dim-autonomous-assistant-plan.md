@@ -1,16 +1,16 @@
 ---
-title: "feat: Dim autonomous voice assistant for Omarchy"
+title: "feat: Wisp autonomous voice assistant for Omarchy"
 type: feat
 date: 2026-09-18
 origin: docs/brainstorms/2026-09-18-dim-autonomous-assistant-requirements.md
 depth: deep
 ---
 
-# feat: Dim autonomous voice assistant for Omarchy
+# feat: Wisp autonomous voice assistant for Omarchy
 
 ## Summary
 
-Evolve `dim-agent` from a spawn-per-trigger app launcher into a resident voice assistant: `dimd` becomes a systemd user daemon holding session/task/agent state behind a unix-socket IPC; Jev routes utterances to a risk-tiered toolbelt, `ori opencode` agent spawns, or conversational answers; the UI becomes an Omarchy shell plugin (`io.github.duketopceo.dim`) providing a center bar icon, listening overlay, choice/transcript widgets, and agent progress; a weekly corrections loop stages Jev criteria improvements for review. Generic and public-ready — dayflow, Rowboat, and personal config are optional plugins, never dependencies.
+Evolve `wisp` from a spawn-per-trigger app launcher into a resident voice assistant: `wispd` becomes a systemd user daemon holding session/task/agent state behind a unix-socket IPC; Jev routes utterances to a risk-tiered toolbelt, `ori opencode` agent spawns, or conversational answers; the UI becomes an Omarchy shell plugin (`io.github.duketopceo.wisp`) providing a center bar icon, listening overlay, choice/transcript widgets, and agent progress; a weekly corrections loop stages Jev criteria improvements for review. Generic and public-ready — dayflow, Rowboat, and personal config are optional plugins, never dependencies.
 
 ## Problem Frame
 
@@ -36,13 +36,13 @@ Real-world testing showed the current slice fails as an assistant: `pw-record` q
 | Decision | Choice | Rationale |
 |---|---|---|
 | Widget toolkit | **Omarchy shell plugin (quickshell)** | Omarchy 4.0's shell has a plugin system with `service`/`bar-widget`/`overlay`/`panel` kinds and `omarchy-shell <target> <method>` IPC; user already runs third-party plugins (`io.github.duketopceo.dayflow` etc.). Replaces GTK `dim-overlay` rather than maintaining two UI stacks. (see origin: R5, open question resolved) |
-| Daemon IPC | **Unix socket at `$XDG_RUNTIME_DIR/dim-agent/dimd.sock`, newline-delimited JSON** | Simple, inspectable (`socat`/tests can drive it), no deps. The shell plugin calls `omarchy-shell`-style polling of daemon state files rather than holding the socket. |
-| Daemon↔shell-plugin bridge | **Daemon writes `$XDG_RUNTIME_DIR/dim-agent/state.json`; plugin polls it + `omarchy-shell` target for push** | Quickshell plugins can't hold arbitrary sockets cleanly; a small state file + poll keeps the plugin dumb. |
+| Daemon IPC | **Unix socket at `$XDG_RUNTIME_DIR/wisp/wispd.sock`, newline-delimited JSON** | Simple, inspectable (`socat`/tests can drive it), no deps. The shell plugin calls `omarchy-shell`-style polling of daemon state files rather than holding the socket. |
+| Daemon↔shell-plugin bridge | **Daemon writes `$XDG_RUNTIME_DIR/wisp/state.json`; plugin polls it + `omarchy-shell` target for push** | Quickshell plugins can't hold arbitrary sockets cleanly; a small state file + poll keeps the plugin dumb. |
 | Code-agent path | **`ori opencode` headless (`--prompt`), spawned as detached process with captured stdout** | All OpenRouter, one auth path; headless output is parseable into task status. Interactive TUI deferred. |
-| Agent registry | **Named tasks in `~/.local/share/dim-agent/tasks.jsonl` + per-task log files** | Append-only, survives daemon restart, voice-queryable ("what's my agent doing"). |
+| Agent registry | **Named tasks in `~/.local/share/wisp/tasks.jsonl` + per-task log files** | Append-only, survives daemon restart, voice-queryable ("what's my agent doing"). |
 | Confidence model | **Gate on target/app confidence; `launch` whitelisted action** | Fixes the "retro-large" cancellation: action confidence no longer kills high-confidence launches. Clarify-widget replaces silent low-confidence execution. |
 | Corrections | **Human-gated weekly staging** | Weekly pass proposes Jev criteria edits into a review file; user approves via widget/CLI. Auto-applying risks compounding a bad week. |
-| Package layout | **`dim/` Python package; `dimd` stays the entry script** | Daemon needs modules (ipc, tools, agents, jev); flat single-file won't scale. Tests import the package, not the extensionless script. |
+| Package layout | **`dim/` Python package; `wispd` stays the entry script** | Daemon needs modules (ipc, tools, agents, jev); flat single-file won't scale. Tests import the package, not the extensionless script. |
 | Whisper model | **Bump default to `ggml-small.en.bin`** | Fixes transcript quality ("retroarch"→"retro-large"); ~2-3x cost is fine on M1. Config-overridable. |
 
 ---
@@ -52,11 +52,11 @@ Real-world testing showed the current slice fails as an assistant: `pw-record` q
 ```mermaid
 flowchart LR
     subgraph Trigger
-        K[Super+D bind] --> T[dim-agent-trigger]
+        K[Super+D bind] --> T[wisp-trigger]
     end
     T -- "ipc: listen" --> D
 
-    subgraph dimd["dimd daemon (systemd user)"]
+    subgraph wispd["wispd daemon (systemd user)"]
         D[IPC server\nunix socket] --> S[Session state]
         D --> P[Pipeline:\nrecord → whisper → jev]
         P --> J{Jev router}
@@ -91,7 +91,7 @@ flowchart LR
 ```
 dim/
   __init__.py
-  config.py          # TOML config + defaults (moved from dimd)
+  config.py          # TOML config + defaults (moved from wispd)
   ipc.py             # unix-socket server + client helpers
   state.py           # session/task/agent state, state.json writer
   jev.py             # decisions API client, schema, confidence policy
@@ -103,15 +103,15 @@ dim/
     adapters.py      # optional plugins: dayflow, omaseal, harness catalog
   pipeline.py        # record → transcribe → route → act
   learn.py           # corrections auto-record + weekly staging
-dimd                 # thin entry: daemon main + CLI subcommands
-shell-plugin/        # ships as io.github.duketopceo.dim
+wispd                 # thin entry: daemon main + CLI subcommands
+shell-plugin/        # ships as io.github.duketopceo.wisp
   manifest.json
   BarWidget.qml      # center bar icon
-  DimService.qml     # polls state.json, exposes IPC target
+  WispService.qml     # polls state.json, exposes IPC target
   ListeningOverlay.qml
   ChoiceWidget.qml
   AgentPanel.qml
-systemd/dimd.service # user unit
+systemd/wispd.service # user unit
 ```
 
 `dim-overlay` (GTK) is removed once the plugin lands; `scripts/build_harness.py` and `scripts/propose_criteria.py` stay as-is (harness feeds adapters, learner supersedes propose script over time).
@@ -122,15 +122,15 @@ systemd/dimd.service # user unit
 
 ### U1. Resident daemon + IPC
 
-**Goal:** `dimd` runs as a persistent systemd user service; the existing trigger becomes an IPC client, not a process spawner.
+**Goal:** `wispd` runs as a persistent systemd user service; the existing trigger becomes an IPC client, not a process spawner.
 
 **Requirements:** R1, R5 (daemon state is what widgets render)
 
-**Files:** `dim/ipc.py`, `dim/state.py`, `dimd` (rewritten to daemon main + `trigger`/`status`/`stop` subcommands), `systemd/dimd.service`, `tests/test_ipc.py`, `tests/test_state.py`
+**Files:** `dim/ipc.py`, `dim/state.py`, `wispd` (rewritten to daemon main + `trigger`/`status`/`stop` subcommands), `systemd/wispd.service`, `tests/test_ipc.py`, `tests/test_state.py`
 
-**Approach:** Socket at `$XDG_RUNTIME_DIR/dim-agent/dimd.sock`, newline-JSON messages (`{"cmd":"listen"}`, `{"cmd":"choice","id":..,"pick":..}`, `{"cmd":"status"}`). Daemon owns the listen pipeline; `state.py` serializes session/task/agent state to `state.json` on every transition. Trigger shim sends `listen` and exits. Systemd unit: `Restart=on-failure`, `After=graphical-session.target`.
+**Approach:** Socket at `$XDG_RUNTIME_DIR/wisp/wispd.sock`, newline-JSON messages (`{"cmd":"listen"}`, `{"cmd":"choice","id":..,"pick":..}`, `{"cmd":"status"}`). Daemon owns the listen pipeline; `state.py` serializes session/task/agent state to `state.json` on every transition. Trigger shim sends `listen` and exits. Systemd unit: `Restart=on-failure`, `After=graphical-session.target`.
 
-**Patterns to follow:** existing `dimd` config/env loading; XDG path conventions already in the repo.
+**Patterns to follow:** existing `wispd` config/env loading; XDG path conventions already in the repo.
 
 **Test scenarios:**
 - Happy: `status` command on a running daemon returns JSON state with daemon pid and idle session
@@ -139,7 +139,7 @@ systemd/dimd.service # user unit
 - Edge: malformed JSON line on socket → error response, connection closed, daemon survives
 - Integration: state transitions (idle→listening→deciding→done) each rewrite `state.json` atomically
 
-**Verification:** `systemctl --user start dimd` runs persistently; `dimd trigger` and `dimd status` work against the socket; daemon survives trigger client exit.
+**Verification:** `systemctl --user start wispd` runs persistently; `wispd trigger` and `wispd status` work against the socket; daemon survives trigger client exit.
 
 ### U2. Jev routing v2 + confidence redesign + context
 
@@ -149,7 +149,7 @@ systemd/dimd.service # user unit
 
 **Dependencies:** U1
 
-**Files:** `dim/jev.py`, `dim/pipeline.py`, `dim/config.py` (model pin `typesafe/jev-1.13`, whisper `small.en` default, espeak flag), `tests/test_jev.py`, `tests/test_pipeline.py`
+**Files:** `dim/jev.py`, `wisp/pipeline.py`, `dim/config.py` (model pin `typesafe/jev-1.13`, whisper `small.en` default, espeak flag), `tests/test_jev.py`, `tests/test_pipeline.py`
 
 **Approach:** Extend the decisions request schema: questions gain `route` (launch/tool/agent/answer/clarify) and per-route criteria; app criteria still come from the harness catalog when present. Execution policy: `launch` executes when app confidence ≥ threshold regardless of action confidence; other routes gate on their own confidence; below threshold → `clarify` state with choices (not silent execute, not dead cancel). Context: `hyprctl activewindow -j` + workspace always; `grim` screenshot only when Jev requests `needs_screen` or route is `agent`/`tool:screen`. Whisper default `ggml-small.en.bin` with config override.
 
@@ -171,7 +171,7 @@ systemd/dimd.service # user unit
 
 **Dependencies:** U1 (execution lives in daemon), U2 (Jev routes to tools)
 
-**Files:** `dim/tools/__init__.py`, `dim/tools/desktop.py`, `dim/tools/system.py`, `tests/test_tools.py`
+**Files:** `wisp/tools/__init__.py`, `wisp/tools/desktop.py`, `wisp/tools/system.py`, `tests/test_tools.py`
 
 **Approach:** Registry maps tool name → callable + metadata (`risk: safe|mutating|shell`). `safe` executes inline; `mutating` (window ops, typing, close) requires choice-widget confirm unless user enabled elevated mode in config; `shell` requires explicit per-call confirm. Initial tools: launch/focus/close app, workspace switch, notify, screenshot-to-file, `wtype` text, guarded shell (denylist + confirm), agent lifecycle (delegates to U6's manager), optional adapters (dayflow query, omaseal resolve — loaded only if present).
 
@@ -186,15 +186,15 @@ systemd/dimd.service # user unit
 
 ### U4. Omarchy shell plugin scaffold
 
-**Goal:** `io.github.duketopceo.dim` plugin ships in `shell-plugin/`: manifest, center bar icon, service that renders daemon state, listening overlay replacing GTK `dim-overlay`.
+**Goal:** `io.github.duketopceo.wisp` plugin ships in `shell-plugin/`: manifest, center bar icon, service that renders daemon state, listening overlay replacing GTK `dim-overlay`.
 
 **Requirements:** R5 (icon, listening/status widgets), R1 (visualizes daemon state)
 
 **Dependencies:** U1 (state.json contract)
 
-**Files:** `shell-plugin/manifest.json`, `shell-plugin/BarWidget.qml`, `shell-plugin/DimService.qml`, `shell-plugin/ListeningOverlay.qml`, `shell-plugin/StateStore.qml`, `tests/test_plugin_manifest.py`, `dim-overlay` (deleted), `dimd` install path updated
+**Files:** `shell-plugin/manifest.json`, `shell-plugin/BarWidget.qml`, `shell-plugin/WispService.qml`, `shell-plugin/ListeningOverlay.qml`, `shell-plugin/StateStore.qml`, `tests/test_plugin_manifest.py`, `dim-overlay` (deleted), `wispd` install path updated
 
-**Approach:** Follow the installed-plugin convention (`~/.config/omarchy/plugins/<id>/` with `manifest.json` declaring `kinds:["service","bar-widget","overlay"]`). `DimService`/`StateStore` polls `state.json` (~250ms while active, idle otherwise) and exposes plugin state to bar icon + overlay. Bar icon shows Dim state (idle/listening/thinking/agent-running) at bar center via plugin config. `ListeningOverlay` reproduces the breathing-dim effect driven by a `level` field the daemon publishes. `dimd install` copies the plugin into `~/.config/omarchy/plugins/` and removes the GTK overlay.
+**Approach:** Follow the installed-plugin convention (`~/.config/omarchy/plugins/<id>/` with `manifest.json` declaring `kinds:["service","bar-widget","overlay"]`). `WispService`/`StateStore` polls `state.json` (~250ms while active, idle otherwise) and exposes plugin state to bar icon + overlay. Bar icon shows Wisp state (idle/listening/thinking/agent-running) at bar center via plugin config. `ListeningOverlay` reproduces the breathing-dim effect driven by a `level` field the daemon publishes. `wispd install` copies the plugin into `~/.config/omarchy/plugins/` and removes the GTK overlay.
 
 **Patterns to follow:** `io.github.duketopceo.dayflow` plugin layout (manifest + BarWidget + service structure); `/usr/share/omarchy/shell/Ui/BarWidget.qml` primitives.
 
@@ -202,7 +202,7 @@ systemd/dimd.service # user unit
 - Happy: manifest validates against installed-plugin schema (kinds, id, version fields present)
 - Happy: state file showing `listening` + amplitude → service state reflects it (QML logic kept thin/testable via extracted JS if possible; otherwise manual verify)
 - Edge: missing/stale `state.json` → plugin shows idle/offline icon, no crash
-- Integration: install places plugin in plugin dir; `omarchy-shell shell listPlugins` shows `io.github.duketopceo.dim`
+- Integration: install places plugin in plugin dir; `omarchy-shell shell listPlugins` shows `io.github.duketopceo.wisp`
 
 **Verification:** plugin appears in `listPlugins`, icon renders center-bar, `Super+D` drives the overlay through listen→result without GTK overlay.
 
@@ -229,15 +229,15 @@ systemd/dimd.service # user unit
 
 ### U6. Agent spawning via ori opencode
 
-**Goal:** `"Dim, agent — <task>"` spawns a named, persistent `ori opencode` headless task; status/progress visible in `AgentPanel`; voice query and cancel supported.
+**Goal:** `"Wisp, agent — <task>"` spawns a named, persistent `ori opencode` headless task; status/progress visible in `AgentPanel`; voice query and cancel supported.
 
 **Requirements:** R4
 
 **Dependencies:** U1, U2 (`agent` route), U3 (agent tools), U4 (panel)
 
-**Files:** `dim/tools/agents.py`, `dim/agents.py` (manager), `shell-plugin/AgentPanel.qml`, `tests/test_agents.py`
+**Files:** `wisp/tools/agents.py`, `wisp/agents.py` (manager), `shell-plugin/AgentPanel.qml`, `tests/test_agents.py`
 
-**Approach:** Agent manager spawns `ori opencode --prompt "<task>"` (exact CLI flags verified at implementation time against `ori opencode --help`) as a detached child with cwd = current project or `~/`; writes `tasks.jsonl` record (id, name, prompt, pid, started, status) and tees output to `~/.local/share/dim-agent/tasks/<id>.log`. Status derived from liveness + log tail (last non-empty line → `state.json` task summary). `{"cmd":"task_status","name":..}` and `{"cmd":"task_cancel","name":..}` on IPC. Panel lists active/recent tasks with status lines.
+**Approach:** Agent manager spawns `ori opencode --prompt "<task>"` (exact CLI flags verified at implementation time against `ori opencode --help`) as a detached child with cwd = current project or `~/`; writes `tasks.jsonl` record (id, name, prompt, pid, started, status) and tees output to `~/.local/share/wisp/tasks/<id>.log`. Status derived from liveness + log tail (last non-empty line → `state.json` task summary). `{"cmd":"task_status","name":..}` and `{"cmd":"task_cancel","name":..}` on IPC. Panel lists active/recent tasks with status lines.
 
 **Test scenarios:**
 - Happy: `agent` route with task text → registry record created, process spawned (mocked `subprocess`), status readable
@@ -257,9 +257,9 @@ systemd/dimd.service # user unit
 
 **Dependencies:** U5 (picks recorded via IPC), U2 (criteria it proposes against)
 
-**Files:** `dim/learn.py`, `scripts/propose_criteria.py` (folded in or superseded), `systemd/dimd-learn.timer`, `tests/test_learn.py`
+**Files:** `wisp/learn.py`, `scripts/propose_criteria.py` (folded in or superseded), `systemd/wispd-learn.timer`, `tests/test_learn.py`
 
-**Approach:** Every `choice` IPC appends `{heard, chose, rejected, ts}` to `corrections.jsonl`. Weekly (systemd timer or `dimd learn`): aggregate week's corrections + low-confidence decisions → produce `~/.local/share/dim-agent/proposals/YYYY-WW.md` with suggested criteria edits + before/after accuracy replay on logged decisions. User reviews (`dimd learn --review`) and approves; approved edits merge into local criteria overrides (not repo files).
+**Approach:** Every `choice` IPC appends `{heard, chose, rejected, ts}` to `corrections.jsonl`. Weekly (systemd timer or `wispd learn`): aggregate week's corrections + low-confidence decisions → produce `~/.local/share/wisp/proposals/YYYY-WW.md` with suggested criteria edits + before/after accuracy replay on logged decisions. User reviews (`wispd learn --review`) and approves; approved edits merge into local criteria overrides (not repo files).
 
 **Test scenarios:**
 - Happy: 3 corrections logged → proposal file lists each with suggested criteria text
@@ -278,13 +278,13 @@ systemd/dimd.service # user unit
 
 **Dependencies:** U1–U7
 
-**Files:** `dimd` (install subcommand), `dim/tools/adapters.py`, `scripts/build_harness.py` (generic fallback: scan `$PATH`/`~/.local/bin` + desktop files when no dayflow db), `README.md`, `tests/test_dimd.py` (updated for package layout), `.github/workflows/test.yml` (unchanged runner, updated test imports)
+**Files:** `wispd` (install subcommand), `wisp/tools/adapters.py`, `scripts/build_harness.py` (generic fallback: scan `$PATH`/`~/.local/bin` + desktop files when no dayflow db), `README.md`, `tests/test_dimd.py` (updated for package layout), `.github/workflows/test.yml` (unchanged runner, updated test imports)
 
 **Approach:** Adapter interface: `context()` → optional enrichment dict; `apps()` → catalog. `dayflow` adapter loads only if `~/.local/share/dayflow/dayflow.db` exists; generic adapter mines `.desktop` files + PATH binaries. Install: copies package + plugin, writes systemd unit, adds `SUPER+D` Lua bind (existing mechanism), runs `systemctl --user daemon-reload`. README: architecture diagram, install, hotkey, plugin enable, config reference, dayflow/omaseal as optional.
 
 **Test scenarios:**
 - Happy: generic adapter produces non-empty app catalog on a host with no dayflow db
-- Happy: `dimd install` on a clean prefix creates unit, plugin dir, bind, config — idempotent on re-run
+- Happy: `wispd install` on a clean prefix creates unit, plugin dir, bind, config — idempotent on re-run
 - Edge: dayflow db present → dayflow adapter preferred; absent → generic, no error
 - Regression: all existing 12 tests still pass under the package layout (import path updates only)
 
@@ -312,7 +312,7 @@ systemd/dimd.service # user unit
 
 | Risk | Mitigation |
 |---|---|
-| Quickshell plugin API details differ from assumptions (IPC direction, polling vs push) | U4 spike first within the unit; `DimService` keeps daemon contract in `state.json` so plugin stays replaceable |
+| Quickshell plugin API details differ from assumptions (IPC direction, polling vs push) | U4 spike first within the unit; `WispService` keeps daemon contract in `state.json` so plugin stays replaceable |
 | `ori opencode` headless output not parseable for progress | Verify flags at U6 start; degrade to pid-liveness + log tail (status without rich progress) rather than blocking the unit |
 | Resident daemon leak/hang across days | `Restart=on-failure`, bounded session history, state.json atomic writes |
 | Wayland typing (`wtype`) unreliable in some clients | Keep `wtype` behind `mutating` confirm; not load-bearing for core flows |
@@ -332,4 +332,4 @@ Dependencies: `ori` CLI (installed), quickshell + omarchy shell (installed), whi
 - Omarchy shell plugin system: `omarchy-shell shell listPlugins`, installed examples under `~/.config/omarchy/plugins/` (dayflow, omaseal, numbat), primitives in `/usr/share/omarchy/shell/Ui/`
 - `ori` CLI: `ori code`/`ori opencode`/`ori eval` subcommands confirmed installed (`~/.local/bin/ori`)
 - Hey Clicky product research (cursor-side buddy, screen awareness, voice spawn "Clicky agent") — informed daemon + spawn + widget requirements
-- Logged failure cases driving confidence redesign: `~/.local/share/dim-agent/decisions.jsonl` ("retro-large", "what can I say?")
+- Logged failure cases driving confidence redesign: `~/.local/share/wisp/decisions.jsonl` ("retro-large", "what can I say?")

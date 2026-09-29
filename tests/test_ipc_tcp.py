@@ -4,14 +4,14 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import dim.ipc as ipc
+import wisp.ipc as ipc
 
 
 class TestTcpTransport(unittest.TestCase):
     def test_tcp_roundtrip(self, *args):
         import tempfile, os
         with tempfile.TemporaryDirectory() as td:
-            sock = Path(td) / "dimd.sock"
+            sock = Path(td) / "wispd.sock"
             with mock.patch.object(ipc, "_TCP", True):
                 d = ipc.Daemon(lambda c: {"ok": True,
                                           "echo": c.get("cmd")},

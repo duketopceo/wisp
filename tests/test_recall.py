@@ -4,7 +4,7 @@ import tempfile
 import unittest
 import pathlib
 
-from dim import recall
+from wisp import recall
 
 
 class RecallTest(unittest.TestCase):

@@ -4,7 +4,7 @@ import tempfile
 import time
 import unittest
 
-from dim import speech
+from wisp import speech
 
 
 def _proc():

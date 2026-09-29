@@ -1,16 +1,16 @@
-# Dim IPC + State Contract v1
+# Wisp IPC + State Contract v1
 
-The stable boundary between `dimd` (any implementation — Python
-reference or `dimd-rs`) and UI shells (Omarchy quickshell plugin,
+The stable boundary between `wispd` (any implementation — Python
+reference or `wispd-rs`) and UI shells (Omarchy quickshell plugin,
 future tray apps). Shells MUST only depend on this document.
 
 ## Transport
 
 - Linux: unix domain socket at
-  `$XDG_RUNTIME_DIR/dim-agent/dimd.sock` (fallback `/tmp/dim-agent/`).
-- macOS: unix domain socket at `$TMPDIR/dim-agent/dimd.sock`.
+  `$XDG_RUNTIME_DIR/wisp/wispd.sock` (fallback `/tmp/wisp/`).
+- macOS: unix domain socket at `$TMPDIR/wisp/wispd.sock`.
 - Windows: TCP loopback — daemon binds `127.0.0.1:<ephemeral>` and
-  writes the port to `%TEMP%\dim-agent\dimd.sock` as a plain text
+  writes the port to `%TEMP%\wisp\wispd.sock` as a plain text
   file; clients read the port then connect. Identical framing.
 - Framing: one JSON object per connection, newline-terminated request
   and newline-terminated reply. Request: `{"cmd": <string>, ...}`.
@@ -87,7 +87,7 @@ spoken answer and publishes the normalized list.
 - `trace.jsonl` — full-fidelity dev trace (`[debug] trace`, default on):
   one event per line `{ts, turn, step, kind, ms, data}` covering
   listen_start/record/transcribe/decision/dispatch/tool_call/
-  tool_result/brain_call/answer/speak/points/ipc/error. `dimd trace`
+  tool_result/brain_call/answer/speak/points/ipc/error. `wispd trace`
   `--tail N --turn <id> --kind <k>` on both cores. Rotates at 10 MB;
   never logs secrets.
 - `recall.db` — sqlite-vec/FTS5 long-term recall.

@@ -1,16 +1,16 @@
 ---
-title: "feat: Dim v1.0 roadmap — real answers, context, memory, release"
+title: "feat: Wisp v1.0 roadmap — real answers, context, memory, release"
 created: 2026-09-20
 type: feat
 origin: docs/brainstorms/2026-09-18-dim-autonomous-assistant-requirements.md
 supersedes-partially: docs/plans/2026-09-18-001-feat-dim-autonomous-assistant-plan.md
 ---
 
-# feat: Dim v1.0 roadmap
+# feat: Wisp v1.0 roadmap
 
 ## Summary
 
-Dim v0.2 ships a working skeleton: resident daemon, Jev routing, toolbelt,
+Wisp v0.2 ships a working skeleton: resident daemon, Jev routing, toolbelt,
 `ori opencode` agents, Quickshell plugin, weekly learning loop. This plan
 carries the repo to a **v1.0 release**: every user-facing path produces real
 output (no canned text), Jev sees tiered screen context, sessions persist
@@ -27,7 +27,7 @@ OpenRouter chat model — Jev routes, the chat model answers.
 
 Today three seams produce fake or missing output:
 
-1. `answer` route returns canned strings (`dim/pipeline.py::answer_text`) —
+1. `answer` route returns canned strings (`wisp/pipeline.py::answer_text`) —
    "what's this error?" gets a shrug.
 2. Jev's `state` is transcript + active-window title only — no screen
    awareness despite `screenshot` existing as a tool.
@@ -82,7 +82,7 @@ opencode` TUI spawn mode, rich TTS beyond espeak.
   resolves to `answer`, `grim` captures the focused output and the PNG is
   sent to the answer model as a base64 `image_url` part. Screenshot is
   never sent to Jev.
-- **KTD-4 — Session log at `~/.local/share/dim-agent/session.jsonl`.**
+- **KTD-4 — Session log at `~/.local/share/wisp/session.jsonl`.**
   Each completed turn appends `{ts, transcript, route, reply, result}`.
   The last N turns (default 8, `[agent] session_turns`) are prepended to
   both the Jev `state` and the answer-model messages, so "do it" and
@@ -98,7 +98,7 @@ opencode` TUI spawn mode, rich TTS beyond espeak.
 ## High-Level Technical Design
 
 ```
-Super+D → dimd listen → record → whisper ──► Jev (state: transcript +
+Super+D → wispd listen → record → whisper ──► Jev (state: transcript +
                                               session tail + window text)
                                                 │        │ needs_screen≥0.7
                      ┌──────────┬───────────────┼────────┤
@@ -115,7 +115,7 @@ Super+D → dimd listen → record → whisper ──► Jev (state: transcript 
 ```
 
 Session memory is append-only JSONL; reads take the tail. Screenshot files
-are transient (`$XDG_RUNTIME_DIR/dim-agent/screen.png`), deleted after the
+are transient (`$XDG_RUNTIME_DIR/wisp/screen.png`), deleted after the
 answer call.
 
 ---
@@ -127,11 +127,11 @@ answer call.
 **Goal:** `answer` route generates a real reply instead of canned text.
 **Requirements:** R1
 **Dependencies:** none
-**Files:** `dim/pipeline.py` (new `ask_chat()`, rework `run_once` answer
+**Files:** `wisp/pipeline.py` (new `ask_chat()`, rework `run_once` answer
 branch, drop `answer_text`), `dim/config.py` (`answer_model` default),
 `tests/test_pipeline.py`
 **Approach:** stdlib `urllib` POST to chat completions, mirroring
-`ask_jev`'s auth/headers. Messages: system line ("You are Dim, a terse
+`ask_jev`'s auth/headers. Messages: system line ("You are Wisp, a terse
 desktop assistant…"), session tail as prior turns, transcript as user
 message. Timeout 30s; failure falls back to the canned text and result
 `ANSWER_FAILED`.
@@ -142,7 +142,7 @@ message. Timeout 30s; failure falls back to the canned text and result
 - Error: HTTP 500 / timeout → `ANSWER_FAILED`, canned fallback used,
   no exception propagates.
 - Edge: empty choices array in response → fallback text.
-**Verification:** `dimd trigger` on "what can I say" produces a real
+**Verification:** `wispd trigger` on "what can I say" produces a real
 reply in `state.json`'s `answer` field and the bar widget shows it.
 
 ### U2. Persistent session memory
@@ -150,8 +150,8 @@ reply in `state.json`'s `answer` field and the bar widget shows it.
 **Goal:** turns persist to `session.jsonl` and feed follow-up context.
 **Requirements:** R3
 **Dependencies:** U1 (answer consumes the same session tail)
-**Files:** `dim/session.py` (new: `append_turn`, `tail`), `dim/config.py`
-(`SESSION` path, `session_turns` default), `dim/pipeline.py`
+**Files:** `wisp/session.py` (new: `append_turn`, `tail`), `dim/config.py`
+(`SESSION` path, `session_turns` default), `wisp/pipeline.py`
 (read tail into Jev `state` + chat messages; append on `done`),
 `tests/test_session.py`
 **Approach:** append-only JSONL mirroring `decisions.jsonl` conventions;
@@ -172,13 +172,13 @@ references the prior transcript.
 when needed.
 **Requirements:** R2
 **Dependencies:** U1
-**Files:** `dim/pipeline.py` (`needs_screen` noul question, grim capture
+**Files:** `wisp/pipeline.py` (`needs_screen` noul question, grim capture
 helper, image part in `ask_chat`), `dim/config.py` (`screenshot` toggle),
 `tests/test_pipeline.py`
 **Approach:** add `"needs_screen": {"type": "noul", "instructions": "Does
 fulfilling this request require seeing the screen contents?"}` to
 `JEV_QUESTIONS`. Capture via `grim -o <focused>` into `$XDG_RUNTIME_DIR/
-dim-agent/screen.png`; attach as `image_url` only when
+wisp/screen.png`; attach as `image_url` only when
 `noul ≥ 0.7 OR route == answer AND config allows`. Delete the PNG after
 the call.
 **Test scenarios:**
@@ -195,9 +195,9 @@ produces a reply referencing the dialog text.
 **Goal:** Quickshell plugin is the sole UI; delete `dim-overlay`.
 **Requirements:** R5, partial R4
 **Dependencies:** U1–U3 landed and one manual `Super+D` smoke passed
-**Files:** `dim-overlay` (delete), `dimd` (drop `OVERLAY_BIN` install +
+**Files:** `dim-overlay` (delete), `wispd` (drop `OVERLAY_BIN` install +
 `_gtk_choice` fallback), `dim/config.py` (drop `OVERLAY_BIN`),
-`dim/pipeline.py` (drop GTK overlay spawn/terminate),
+`wisp/pipeline.py` (drop GTK overlay spawn/terminate),
 `tests/stage_test.sh`, `README.md`, `.github/workflows/test.yml`
 (compile list)
 **Approach:** choice interaction goes exclusively through daemon IPC
@@ -208,7 +208,7 @@ cancel with a notify instead of GTK buttons.
   `dim-overlay` binary present.
 - Edge: `wait_for_choice` returns None at timeout → CANCELLED, no GTK
   spawn attempted.
-- Regression: `dimd install` succeeds with no `dim-overlay` source file.
+- Regression: `wispd install` succeeds with no `dim-overlay` source file.
 **Verification:** grep finds no `dim-overlay`/`OVERLAY_BIN` references;
 plugin still shows overlay during a live trigger.
 

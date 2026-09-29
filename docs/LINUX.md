@@ -1,14 +1,14 @@
 # Generic Linux adapter (U9)
 
-Omarchy/Hyprland is the primary target; this adapter makes `dimd`
+Omarchy/Hyprland is the primary target; this adapter makes `wispd`
 work on GNOME 48+, KDE/Plasma 5.27+, and X11 sessions through the same
-platform seam (`dim/platform.py`, `rs/dimd/src/platform.rs`).
+platform seam (`dim/platform.py`, `rs/wispd/src/platform.rs`).
 
 ## Detection
 
 `desktop()` probes, in order:
 
-1. `DIMD_DESKTOP` env override (`hyprland|gnome|kde|x11`) — tests and
+1. `WISP_DESKTOP` env override (`hyprland|gnome|kde|x11`) — tests and
    forced fallbacks
 2. `HYPRLAND_INSTANCE_SIGNATURE` / `hyprctl` on PATH → `hyprland`
 3. `XDG_CURRENT_DESKTOP` contains `gnome`/`kde`/`plasma`
@@ -38,8 +38,8 @@ mixed setups still work. Missing tools → `SKIP (… — hint)`.
   management — focus/close/workspace SKIP cleanly there. This is a
   platform restriction, not a bug; it's why Omarchy is the primary
   target.
-- **Hotkey**: `dimd install` writes Hyprland binds only. On GNOME the
+- **Hotkey**: `wispd install` writes Hyprland binds only. On GNOME the
   XDG GlobalShortcuts portal flow is owned by the tray app (U10); on
-  KDE/X11 bind `dimd listen` in System Settings / xbindkeys.
+  KDE/X11 bind `wispd listen` in System Settings / xbindkeys.
 - `ydotool` needs the `ydotoold` service (uinput access) — install
   via your distro package.

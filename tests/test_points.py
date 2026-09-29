@@ -1,9 +1,9 @@
-"""Tests for dim/points.py — tag extraction + screenshot→logical mapping."""
+"""Tests for wisp/points.py — tag extraction + screenshot→logical mapping."""
 import sys
 import unittest
 
 sys.path.insert(0, ".")
-from dim import points  # noqa: E402
+from wisp import points  # noqa: E402
 
 
 class Extract(unittest.TestCase):

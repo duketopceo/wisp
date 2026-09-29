@@ -1,11 +1,11 @@
 ---
-title: "feat: Dim v0.1 usable — latency, Clicky presence, guarded computer-use loop"
+title: "feat: Wisp v0.1 usable — latency, Clicky presence, guarded computer-use loop"
 created: 2026-09-20
 type: feat
 origin: docs/plans/2026-09-20-001-feat-dim-v1-roadmap-plan.md
 ---
 
-# feat: Dim v0.1 usable
+# feat: Wisp v0.1 usable
 
 ## Summary
 
@@ -13,7 +13,7 @@ Current build is "borderline unusable" (user report): slow-feeling
 pipeline, weak actions, no visible presence. This plan delivers a
 **usable v0.1**: a fast open-weights answer/action model alongside Jev,
 a persistent Clicky-style companion widget, and a bounded guarded
-computer-use loop so Dim can actually *do* multi-step desktop tasks —
+computer-use loop so Wisp can actually *do* multi-step desktop tasks —
 with the existing risk-tier system as guardrails.
 
 Model split (user directive): **Jev routes; an open-source OpenRouter
@@ -28,7 +28,7 @@ Three concrete failure surfaces, all confirmed this session:
    nothing acknowledges the trigger until seconds later.
 2. **Weak actions** — Jev can only classify; anything beyond "open X"
    degrades to transcript-as-detail hacks or cancels.
-3. **No presence** — a bar icon and transient overlay; no sense Dim is
+3. **No presence** — a bar icon and transient overlay; no sense Wisp is
    alive, listening, thinking, or working between triggers.
 
 ## Requirements
@@ -78,7 +78,7 @@ control, TUI watch-mode for agents, per-app voice macros.
 - **KTD-4 — Companion = quickshell overlay kind.** Same plugin, new
   `Companion.qml`: small floating window anchored bottom-right of the
   focused monitor, renders daemon `state.json` (already polled by
-  `DimService`). Click toggles an expanded card reusing BarWidget rows.
+  `WispService`). Click toggles an expanded card reusing BarWidget rows.
 - **KTD-5 — Latency: acknowledge first, work second.** `state.transition(
   "listening")` already fires pre-record; extend to publishing partial
   stages (`transcribing`, `deciding`, `acting`) to the companion and cut
@@ -110,7 +110,7 @@ Super+D ─▶ listening (orb breathes) ─▶ whisper ─▶ Jev route
 **Goal:** sub-second-feeling responses; instant trigger feedback.
 **Requirements:** R1, R2
 **Files:** `dim/config.py` (answer_model default → `meta-llama/llama-4-maverick`),
-`dim/pipeline.py` (state transitions already staged; ensure `listening`
+`wisp/pipeline.py` (state transitions already staged; ensure `listening`
 publishes before `record()` opens the mic — it does; add `thinking`
 state around ask_jev/ask_chat), `dim/state.py` (no change expected),
 `tests/test_session.py`, `README.md`
@@ -134,7 +134,7 @@ visible per turn.
 **Approach:** quickshell `PanelWindow` overlay, bottom-right anchor,
 ~48px orb. States map from `state.status`: idle dim ring, listening
 breathing fill (uses `level`), thinking spinner, acting pulse, done
-flash, error red. `DimService` already polls `state.json` — reuse.
+flash, error red. `WispService` already polls `state.json` — reuse.
 Click toggles expanded card (transcript/answer/choices, reusing the
 BarWidget content block).
 **Test scenarios:**
@@ -150,8 +150,8 @@ orb breathes; done state flashes.
 this into the focused window") run through the toolbelt under the model's
 control, bounded and gated.
 **Requirements:** R4, R5
-**Files:** `dim/pipeline.py` (`act` route → `run_act_loop`), new
-`dim/act.py` (loop, tool schema builder, step log), `dim/tools/__init__.py`
+**Files:** `wisp/pipeline.py` (`act` route → `run_act_loop`), new
+`dim/act.py` (loop, tool schema builder, step log), `wisp/tools/__init__.py`
 (`tool_schemas()` — OpenAI tools format from REGISTRY),
 `tests/test_act.py`
 **Approach:** Jev gains an `act` criterion ("multi-step or imperative
@@ -179,7 +179,7 @@ steps, logged in decisions.jsonl.
 **Goal:** failures are visible, not silent — error state reaches the orb
 and bar.
 **Requirements:** R3 (presence), supports R6
-**Files:** `dim/pipeline.py` (error state already exists — ensure
+**Files:** `wisp/pipeline.py` (error state already exists — ensure
 `error` field populates state.json on every failure path),
 `shell-plugin/Companion.qml` (error style), `dim/ipc.py` if needed
 **Approach:** verify every `except` in `run_listen` sets

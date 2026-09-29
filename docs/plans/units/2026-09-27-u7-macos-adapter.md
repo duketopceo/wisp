@@ -3,7 +3,7 @@ plan: dim-u7-macos-adapter
 created: 2026-09-27
 status: implemented
 origin: docs/plans/2026-09-26-001-feat-dim-companion-crossplatform-plan.md#U7
-issue: https://github.com/duketopceo/dim-agent/issues/14
+issue: https://github.com/duketopceo/wisp/issues/14
 wave: 4
 ---
 
@@ -11,7 +11,7 @@ wave: 4
 
 ## Scope
 
-`dimd-rs` runs on macOS: same socket contract (unix socket — macOS has
+`wispd-rs` runs on macOS: same socket contract (unix socket — macOS has
 them), adapters swapped for native crates/APIs.
 
 ## Steps
@@ -21,7 +21,7 @@ them), adapters swapped for native crates/APIs.
    (Carbon/portal-equivalent), `tray-icon` menu-bar item; window ops via
    AppleScript/AX calls where needed.
 2. **Runtime dirs**: macOS paths — `~/Library/Application
-   Support/dim-agent/`, socket in `$TMPDIR`; keep config file format
+   Support/wisp/`, socket in `$TMPDIR`; keep config file format
    identical.
 3. **Shell spike**: thin native (`tray-icon` + minimal panel) vs Tauri
    v2 webview orb — pick by smallest total code; both consume the

@@ -3,7 +3,7 @@ plan: dim-u9-generic-linux
 created: 2026-09-27
 status: implemented
 origin: docs/plans/2026-09-26-001-feat-dim-companion-crossplatform-plan.md#U9
-issue: https://github.com/duketopceo/dim-agent/issues/16
+issue: https://github.com/duketopceo/wisp/issues/16
 wave: 4
 ---
 
@@ -12,7 +12,7 @@ wave: 4
 ## Scope
 
 Everything is Hyprland-specific today (`hyprctl`, `grim`, `wtype`). This
-adapter makes `dimd-rs` work on GNOME 48+ / KDE 5.27+ Wayland and X11
+adapter makes `wispd-rs` work on GNOME 48+ / KDE 5.27+ Wayland and X11
 where practical.
 
 ## Steps

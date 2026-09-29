@@ -5,13 +5,13 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
-// Bar panel for io.github.duketopceo.dim — polls the daemon's state.json
-// directly (tiny file; the service kind also watches it). Shows Dim's
+// Bar panel for io.github.duketopceo.wisp — polls the daemon's state.json
+// directly (tiny file; the service kind also watches it). Shows Wisp's
 // status, last transcript/result, pending choices, and running agents.
 Panel {
   id: root
-  moduleName: "io.github.duketopceo.dim"
-  ipcTarget: "io.github.duketopceo.dim"
+  moduleName: "io.github.duketopceo.wisp"
+  ipcTarget: "io.github.duketopceo.wisp"
 
   property string status: "offline"
   property string transcript: ""
@@ -35,11 +35,11 @@ Panel {
   readonly property string stateFile: {
     var rd = Quickshell.env("XDG_RUNTIME_DIR");
     if (!rd || rd.length === 0) rd = "/tmp";
-    return rd + "/dim-agent/state.json";
+    return rd + "/wisp/state.json";
   }
 
   function sendChoice(pick) {
-    choiceProc.command = ["dimd", "choice", pick];
+    choiceProc.command = ["wispd", "choice", pick];
     choiceProc.running = true;
   }
 
@@ -72,7 +72,7 @@ Panel {
 
   Process {
     id: choiceProc
-    command: ["dimd", "choice", ""]
+    command: ["wispd", "choice", ""]
   }
 
   ColumnLayout {
@@ -81,7 +81,7 @@ Panel {
     spacing: Style.spacing.md
 
     Text {
-      text: "Dim — " + root.status
+      text: "Wisp — " + root.status
       color: root.stateColor
       font.family: root.fontFamily
       font.pixelSize: Style.font.title

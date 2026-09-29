@@ -1,0 +1,1 @@
+rd_("b()dunitjsqlite_vecA`sqlite3_vec_init")

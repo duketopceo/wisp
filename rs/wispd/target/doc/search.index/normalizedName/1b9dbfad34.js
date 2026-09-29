@@ -1,0 +1,1 @@
+rd_("b()dunitisqlitevecnsqlite3vecinit")

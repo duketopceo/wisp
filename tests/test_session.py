@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from dim import pipeline, session
+from wisp import pipeline, session
 
 
 class TestSession(unittest.TestCase):
@@ -36,7 +36,7 @@ class TestSession(unittest.TestCase):
                  {"transcript": "what did I do", "reply": "opened discord"}]
         txt = session.as_text(turns)
         self.assertIn("user: open discord", txt)
-        self.assertIn("dim: opened discord", txt)
+        self.assertIn("wisp: opened discord", txt)
 
 
 class TestAskChat(unittest.TestCase):

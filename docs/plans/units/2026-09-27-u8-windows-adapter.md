@@ -3,7 +3,7 @@ plan: dim-u8-windows-adapter
 created: 2026-09-27
 status: implemented
 origin: docs/plans/2026-09-26-001-feat-dim-companion-crossplatform-plan.md#U8
-issue: https://github.com/duketopceo/dim-agent/issues/15
+issue: https://github.com/duketopceo/wisp/issues/15
 wave: 4
 ---
 
@@ -11,7 +11,7 @@ wave: 4
 
 ## Scope
 
-`dimd-rs` on Windows: same command surface over a named pipe, native
+`wispd-rs` on Windows: same command surface over a named pipe, native
 adapters.
 
 ## Steps
@@ -23,10 +23,10 @@ adapters.
 2. **Adapters**: `enigo` (input), `xcap` WindowsGraphicsCapture,
    `cpal`, SAPI TTS, `global-hotkey`, `tray-icon` notification-area
    item; window ops via `windows-rs` (SetForegroundWindow etc.).
-3. **Runtime dirs**: `%APPDATA%/dim-agent`, `%LOCALAPPDATA%/dim-agent`;
+3. **Runtime dirs**: `%APPDATA%/wisp`, `%LOCALAPPDATA%/wisp`;
    same config format.
 4. **Shell**: same spike decision as U7 — share whatever wins.
-5. **Service**: Task Scheduler registration inside `dimd install`
+5. **Service**: Task Scheduler registration inside `wispd install`
    (U10 delivers the installer; the registration path is written here).
 
 ## Tests

@@ -1,15 +1,15 @@
-"""Platform seam tests — adapters exercised via DIMD_OS override.
+"""Platform seam tests — adapters exercised via WISP_OS override.
 No subprocess is spawned; we assert argv shape + graceful None."""
 import os
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from dim import platform
+from wisp import platform
 
 
 def _with_os(os_name):
-    return mock.patch.dict(os.environ, {"DIMD_OS": os_name})
+    return mock.patch.dict(os.environ, {"WISP_OS": os_name})
 
 
 class TestPlatform(unittest.TestCase):
@@ -22,18 +22,18 @@ class TestPlatform(unittest.TestCase):
     def test_macos_dirs(self):
         with _with_os("macos"):
             cfg, data, rt = platform.dirs()
-            self.assertIn("Application Support/dim-agent", str(cfg))
-            self.assertIn("Application Support/dim-agent", str(data))
-            self.assertTrue(str(rt).endswith("dim-agent"))
+            self.assertIn("Application Support/wisp", str(cfg))
+            self.assertIn("Application Support/wisp", str(data))
+            self.assertTrue(str(rt).endswith("wisp"))
 
     def test_linux_dirs_unchanged(self):
         with _with_os("linux"), \
                 mock.patch.dict(os.environ, {},
                                 clear=False):
             cfg, data, rt = platform.dirs()
-            self.assertTrue(str(cfg).endswith(".config/dim-agent"))
+            self.assertTrue(str(cfg).endswith(".config/wisp"))
             self.assertTrue(str(data).endswith(
-                ".local/share/dim-agent"))
+                ".local/share/wisp"))
 
     def test_linux_cmds(self):
         with _with_os("macos"), _with_os("linux"):
@@ -135,7 +135,7 @@ class TestPlatform(unittest.TestCase):
         ]
         for dt, shot, typer in cases:
             with _with_os("linux"),                     mock.patch.dict(os.environ,
-                                    {"DIMD_DESKTOP": dt}),                     mock.patch.object(platform, "_which",
+                                    {"WISP_DESKTOP": dt}),                     mock.patch.object(platform, "_which",
                                       return_value=True):
                 self.assertEqual(
                     platform.screenshot_cmd(Path("/t/s.png"))[0], shot)
@@ -149,21 +149,21 @@ class TestPlatform(unittest.TestCase):
         def which(b):
             return b != "grim"
         with _with_os("linux"),                 mock.patch.dict(os.environ,
-                                {"DIMD_DESKTOP": "hyprland"}),                 mock.patch.object(platform, "_which", which):
+                                {"WISP_DESKTOP": "hyprland"}),                 mock.patch.object(platform, "_which", which):
             self.assertEqual(
                 platform.screenshot_cmd(Path("/t/s.png"))[0],
                 "gnome-screenshot")
 
     def test_kde_wm_and_gnome_degrade(self):
         with _with_os("linux"),                 mock.patch.dict(os.environ,
-                                {"DIMD_DESKTOP": "kde"}),                 mock.patch.object(platform, "_which",
+                                {"WISP_DESKTOP": "kde"}),                 mock.patch.object(platform, "_which",
                                   return_value=True):
             self.assertEqual(
                 platform.workspace_cmds(2)[0][0], "qdbus")
             self.assertEqual(
                 platform.launch_exec_cmds("foot")[0][0], "setsid")
         with _with_os("linux"),                 mock.patch.dict(os.environ,
-                                {"DIMD_DESKTOP": "gnome"}),                 mock.patch.object(platform, "_which",
+                                {"WISP_DESKTOP": "gnome"}),                 mock.patch.object(platform, "_which",
                                   return_value=True):
             self.assertEqual(platform.focus_cmds("x"), [])
             self.assertEqual(platform.workspace_cmds(1), [])

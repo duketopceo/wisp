@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from dim import learn  # noqa: E402
+from wisp import learn  # noqa: E402
 
 
 def corr(picked="app:retroarch", heard="let's play retro-large",

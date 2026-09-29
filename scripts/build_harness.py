@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Build dim-agent's local Jev harness from dayflow activity data.
+"""Build wisp's local Jev harness from dayflow activity data.
 
 Mines ~/.local/share/dayflow/dayflow.db for the apps and projects the user
 actually uses, resolves each to a launch command (PATH binary, ~/.local/bin
 shim, or omarchy-launch-webapp for web apps), and writes
 
-    ~/.config/dim-agent/harness.json
+    ~/.config/wisp/harness.json
 
 Local-only personalization — never committed to the repo. Re-run anytime
-(`dimd harness` calls this too). dimd merges it over its built-in defaults.
+(`wispd harness` calls this too). wispd merges it over its built-in defaults.
 """
 import json
 import re
@@ -21,7 +21,7 @@ from pathlib import Path
 
 HOME = Path.home()
 DAYFLOW_DB = HOME / ".local" / "share" / "dayflow" / "dayflow.db"
-OUT = HOME / ".config" / "dim-agent" / "harness.json"
+OUT = HOME / ".config" / "wisp" / "harness.json"
 BINDINGS = HOME / ".config" / "hypr" / "bindings.lua"
 
 # Canonical app name -> launch command. Web apps ride omarchy-launch-webapp.

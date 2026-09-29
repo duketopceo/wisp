@@ -5,7 +5,7 @@ import unittest
 import pathlib
 from unittest import mock
 
-from dim import skills, tools
+from wisp import skills, tools
 
 
 class SkillsTest(unittest.TestCase):

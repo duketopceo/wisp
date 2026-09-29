@@ -9,11 +9,11 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from dim import ipc, state  # noqa: E402
+from wisp import ipc, state  # noqa: E402
 
 
 def make_server(td, handler=None):
-    sock = pathlib.Path(td) / "dimd.sock"
+    sock = pathlib.Path(td) / "wispd.sock"
     srv = ipc.Daemon(handler or (lambda cmd: {"ok": True, "echo": cmd}),
                      sock_file=sock)
     srv.start()
@@ -61,14 +61,14 @@ class TestIpc(unittest.TestCase):
 
     def test_dead_socket_raises(self):
         with tempfile.TemporaryDirectory() as td:
-            sock = pathlib.Path(td) / "dimd.sock"
+            sock = pathlib.Path(td) / "wispd.sock"
             with self.assertRaises((ConnectionError, OSError)):
                 ipc.send({"cmd": "status"}, sock_file=sock, timeout=2)
 
     def test_alive_false_when_no_daemon(self):
         with tempfile.TemporaryDirectory() as td:
             self.assertFalse(
-                ipc.alive(sock_file=pathlib.Path(td) / "dimd.sock"))
+                ipc.alive(sock_file=pathlib.Path(td) / "wispd.sock"))
 
 
 class TestState(unittest.TestCase):
