@@ -242,16 +242,23 @@ fn launch(app: &str, cfg: &Cfg) -> String {
     let Some(binname) = apps.get(app) else {
         return format!("SKIP (unknown app {app:?})");
     };
+    let mut binname = binname.as_str();
     let binary = binname.split_whitespace().next().unwrap_or("");
     let local = crate::config::data_dir()
         .join("../../bin")
         .join(binary);
     if !which(binary) && !local.exists() {
-        return format!("SKIP ({app} -> {binary:?} not installed)");
+        // terminal: fall back to the desktop's configured default
+        // (xdg-terminal-exec) — e.g. ghostty isn't packaged on Asahi
+        if app == "terminal" && which("xdg-terminal-exec") {
+            binname = "xdg-terminal-exec";
+        } else {
+            return format!("SKIP ({app} -> {binary:?} not installed)");
+        }
     }
     // platform launcher (Hyprland eval+dispatch on Linux, direct
     // spawn on macOS) — verdict via wm_ok
-    let mut cmds = crate::platform::launch_exec_cmds(&binname);
+    let mut cmds = crate::platform::launch_exec_cmds(binname);
     if try_cmds(&mut cmds).is_none() {
         return format!("SKIP (launch {binname} failed — {})",
             crate::platform::missing_deps_hint());

@@ -28,7 +28,12 @@ def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
     binary = binname.split()[0]
     if not (shutil.which(binary)
             or (config.HOME / ".local" / "bin" / binary).exists()):
-        return f"SKIP ({app} -> {binary!r} not installed)"
+        # terminal: fall back to the desktop's configured default
+        # (xdg-terminal-exec) — e.g. ghostty isn't packaged on Asahi
+        if app == "terminal" and shutil.which("xdg-terminal-exec"):
+            binname = binary = "xdg-terminal-exec"
+        else:
+            return f"SKIP ({app} -> {binary!r} not installed)"
     _exec_detached(binname)
     return f"LAUNCHED {app} -> {binname}"
 
