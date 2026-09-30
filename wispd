@@ -6,11 +6,14 @@ is the push-to-talk client the Hyprland bind executes — it sends `listen`
 to the running daemon, or runs the pipeline inline when no daemon is up.
 Other subcommands: status, stop, install, harness.
 """
+import datetime
 import pathlib
 import shutil
+import signal
 import subprocess
 import sys
 import threading
+import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
@@ -21,6 +24,21 @@ _DAEMON_ST = None
 _DAEMON_CFG = None
 _DAEMON_CTL = None
 
+_POLL_CMDS = {"task_status", "status"}  # widget pollers — keep out of trace
+
+
+def dlog(msg: str) -> None:
+    """Human-readable daemon log: ~/.local/share/wisp/wispd.log + journal."""
+    line = (f"{datetime.datetime.now():%H:%M:%S}."
+            f"{datetime.datetime.now().microsecond // 1000:03d} {msg}")
+    try:
+        config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+        with open(config.DATA_DIR / "wispd.log", "a") as f:
+            f.write(line + "\n")
+    except OSError:
+        pass
+    print(line, flush=True)
+
 
 def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
     def handle(cmd: dict) -> dict:
@@ -28,9 +46,12 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
         _t0 = __import__("time").monotonic()
         from wisp import trace as _trace
         out = _dispatch(c, cmd)
-        _trace.emit("sys", "ipc", "ipc",
-                    {"cmd": c, "ok": out.get("ok")},
-                    round((__import__("time").monotonic() - _t0) * 1000))
+        dlog(f"ipc {c} phase={cmd.get('phase', '-')} ok={out.get('ok')}"
+             + (f" err={out.get('error')}" if not out.get("ok") else ""))
+        if c not in _POLL_CMDS:
+            _trace.emit("sys", "ipc", "ipc",
+                        {"cmd": c, "ok": out.get("ok")},
+                        round((__import__("time").monotonic() - _t0) * 1000))
         return out
 
     def _dispatch(c: str, cmd: dict) -> dict:
@@ -47,9 +68,24 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
                 if phase == "stop" and ctl["rec"] is None:
                     return {"ok": True, "stopped": True}
                 if ctl["rec"] is not None:
-                    # second press: stop capture, run the pipeline
+                    # second press / release: stop capture, run the pipeline
                     rec = ctl["rec"]
                     ctl["rec"] = None
+                    held = time.monotonic() - rec.get("t0", 0)
+                    if held < 0.4:
+                        # phantom release or key-repeat bounce — too short to
+                        # mean anything; kill the recorder and settle quietly
+                        try:
+                            rec["proc"].send_signal(signal.SIGINT)
+                            rec["proc"].wait(timeout=2)
+                        except Exception:
+                            rec["proc"].kill()
+                        rec["sampler_stop"].set()
+                        st.transition("done", result="", transcript="")
+                        dlog(f"listen: {held * 1000:.0f}ms capture "
+                             "ignored (phantom)")
+                        return {"ok": True, "stopped": True,
+                                "ignored": True}
                     if ctl["busy"].is_set():
                         return {"ok": False, "error": "busy"}
                     try:
@@ -172,6 +208,14 @@ def _run_listen(st: state_mod.State, cfg: dict, ctl: dict,
         pipeline.run_listen(cfg, st,
                             wait_for_choice=_wait_for_choice(ctl),
                             wav=wav)
+        dlog(f"turn done: status={st.status} "
+             f"transcript={st.transcript!r} result={st.result!r}")
+    except Exception as e:
+        dlog(f"turn error: {e}")
+        try:
+            st.transition("error", error=str(e))
+        except Exception:
+            pass
     finally:
         ctl["busy"].clear()
 
@@ -187,7 +231,8 @@ def run_daemon(cfg: dict) -> int:
     _DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL = st, cfg, ctl
     server = ipc.Daemon(_handler(st, cfg, ctl))
     server.start()
-    print(f"wispd listening on {config.SOCK_FILE}")
+    dlog(f"wispd up — socket {config.SOCK_FILE} "
+         f"log {config.DATA_DIR / 'wispd.log'}")
     try:
         ctl["stop"].wait()
     except KeyboardInterrupt:

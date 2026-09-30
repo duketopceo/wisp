@@ -75,9 +75,13 @@ class State:
 
     def _write_locked(self) -> None:
         try:
+            blob = json.dumps(self.snapshot_unlocked())
+            if blob == getattr(self, "_last_blob", None):
+                return  # unchanged — skip the write so watchers don't churn
+            self._last_blob = blob
             self._file.parent.mkdir(parents=True, exist_ok=True)
             tmp = self._file.with_suffix(".tmp")
-            tmp.write_text(json.dumps(self.snapshot_unlocked()))
+            tmp.write_text(blob)
             os.replace(tmp, self._file)
         except OSError:
             pass

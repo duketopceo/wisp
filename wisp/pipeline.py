@@ -151,7 +151,7 @@ def record_start(state=None) -> dict:
     proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL, env=hypr_env())
     return {"proc": proc, "out": out, "sampler_stop": stop_ev,
-            "sampler": sampler}
+            "sampler": sampler, "t0": time.monotonic()}
 
 
 def record_stop(rec: dict, state=None) -> pathlib.Path:
