@@ -12,8 +12,8 @@ import Quickshell.Io
 FloatingWindow {
   id: win
   title: "Wisp"
-  minimumSize: Qt.size(900, 660)
-  color: "#1a1b26"
+  minimumSize: Qt.size(900, 640)
+  color: "#16161e"
 
   readonly property string rtDir: {
     var rd = Quickshell.env("XDG_RUNTIME_DIR");
@@ -64,7 +64,7 @@ FloatingWindow {
     onLoaded: {
       var out = [];
       var lines = decisionsView.text().split("\n");
-      for (var i = lines.length - 1; i >= 0 && out.length < 20; i--) {
+      for (var i = lines.length - 1; i >= 0 && out.length < 30; i--) {
         var l = lines[i].trim();
         if (!l) continue;
         try { out.unshift(JSON.parse(l)) } catch (e) {}
@@ -119,22 +119,23 @@ FloatingWindow {
   Timer { interval: 3000; running: win.tab === 3; repeat: true
           onTriggered: tasksProc.running = true }
 
-  // ── palette ────────────────────────────────────────────────────
-  // Tokyo-Night-ish, matched to the Omarchy bar. Text contrast is
-  // deliberate: fg for content, sub for secondary, faint only for
-  // hints — never for body text.
+  // ── design tokens ──────────────────────────────────────────────
+  // Tokyo Night, flattened: fewer boxes, hairline separators, mono
+  // for labels + data, sans for prose.
 
-  readonly property color bg: "#1a1b26"
-  readonly property color card: "#23243380"
-  readonly property color cardSolid: "#232433"
-  readonly property color border: "#2f334d"
+  readonly property color bg: "#16161e"
+  readonly property color raised: "#1f202e"
+  readonly property color hairline: "#2a2c3f"
   readonly property color fg: "#e0e4f0"
-  readonly property color sub: "#a9b1d6"
-  readonly property color faint: "#6a6f92"
+  readonly property color sub: "#9aa5ce"
+  readonly property color faint: "#565f89"
   readonly property color accent: "#7aa2f7"
   readonly property color ok: "#9ece6a"
   readonly property color warn: "#e0af68"
   readonly property color err: "#f7768e"
+
+  readonly property string mono: "JetBrainsMono NF"
+  readonly property string serif: "iA Writer Mono S"
 
   function statusColor(s) {
     if (s === "listening") return accent;
@@ -145,58 +146,47 @@ FloatingWindow {
     return faint;
   }
   function statusBlurb(s) {
-    if (s === "listening")
-      return "Listening — recording you right now";
+    if (s === "listening") return "Recording — release the key to send";
     if (s === "transcribing") return "Turning your speech into text";
     if (s === "deciding") return "Thinking — picking what to do";
-    if (s === "acting") return "Running a tool or agent on your desktop";
+    if (s === "acting") return "Running a tool or agent";
     if (s === "awaiting_choice") return "Waiting for you to pick an option";
-    if (s === "speaking") return "Speaking the answer out loud";
-    if (s === "done") return "Idle — last turn just finished";
+    if (s === "speaking") return "Speaking the answer";
+    if (s === "done") return "Done — last turn just finished";
     if (s === "idle")
-      return "Idle — press " +
+      return "Idle — hold " +
           ((win.cfgObj.hotkey||{}).mod||"SUPER") + "+" +
           ((win.cfgObj.hotkey||{}).key||"D") + " to talk";
-    if (s === "error") return "Something failed — check Activity";
-    if (s === "offline")
-      return "Daemon isn't running — hit Restart below";
+    if (s === "error") return "Something failed — see Activity";
+    if (s === "offline") return "Daemon not running — restart it below";
     return s || "offline";
   }
 
-  // reusable card
-  component Card: Rectangle {
-    property alias contentCol: inner
-    default property alias kids: inner.data
-    color: cardSolid; radius: 10
-    border.color: border; border.width: 1
-    implicitHeight: inner.implicitHeight + 24
-    Column {
-      id: inner
-      anchors { left: parent.left; right: parent.right
-                top: parent.top; margins: 12 }
-      spacing: 8
-    }
+  // small mono section label
+  component Sect: Text {
+    property string label: ""
+    text: label
+    color: faint; font.pixelSize: 10; font.family: mono
+    font.letterSpacing: 1.4
   }
 
-  component Ghost: Rectangle {   // secondary button
-    property string label: ""
-    signal clicked()
-    implicitWidth: lbl.implicitWidth + 28; implicitHeight: 32
-    radius: 8; color: ma.containsMouse ? "#2f334d" : "transparent"
-    border.color: border
-    Text { id: lbl; anchors.centerIn: parent; text: parent.label
-           color: sub; font.pixelSize: 12 }
-    MouseArea { id: ma; anchors.fill: parent; hoverEnabled: true
-                onClicked: parent.clicked() }
+  component Hairline: Rectangle {
+    width: parent.width; height: 1; color: hairline
   }
 
-  component Solid: Rectangle {   // primary button
+  component Btn: Rectangle {
     property string label: ""
+    property bool primary: false
     signal clicked()
-    implicitWidth: lbl.implicitWidth + 28; implicitHeight: 32
-    radius: 8; color: ma.containsMouse ? "#8fb0ff" : accent
+    implicitWidth: lbl.implicitWidth + 26; implicitHeight: 30
+    radius: 6
+    color: primary ? (ma.containsMouse ? "#8fb0ff" : accent)
+                   : (ma.containsMouse ? "#262839" : "transparent")
+    border.color: primary ? "transparent" : hairline
     Text { id: lbl; anchors.centerIn: parent; text: parent.label
-           color: "#1a1b26"; font.pixelSize: 12; font.bold: true }
+           color: parent.primary ? "#16161e" : sub
+           font.pixelSize: 12
+           font.bold: parent.primary }
     MouseArea { id: ma; anchors.fill: parent; hoverEnabled: true
                 onClicked: parent.clicked() }
   }
@@ -206,32 +196,58 @@ FloatingWindow {
     spacing: 0
 
     // ── sidebar ──
-    Rectangle {
+    Item {
       Layout.fillHeight: true
-      width: 160
-      color: "#14151e"
+      width: 148
       Column {
         anchors { left: parent.left; right: parent.right; top: parent.top
-                  margins: 14 }
-        spacing: 4
-        Text { text: "Wisp"; color: fg; font.pixelSize: 18
-               font.bold: true; bottomPadding: 10 }
+                  margins: 18 }
+        spacing: 2
+        Row {
+          spacing: 8
+          bottomPadding: 18
+          Rectangle {
+            width: 8; height: 8; radius: 4
+            anchors.verticalCenter: parent.verticalCenter
+            color: win.statusColor(win.stateObj.status || "offline")
+            SequentialAnimation on opacity {
+              running: ["listening","transcribing","deciding",
+                        "acting"].indexOf(win.stateObj.status || "") >= 0
+              loops: Animation.Infinite
+              NumberAnimation { to: 0.3; duration: 800 }
+              NumberAnimation { to: 1.0; duration: 800 }
+            }
+          }
+          Text { text: "Wisp"; color: fg; font.pixelSize: 15
+                 font.family: serif; font.bold: true }
+        }
         Repeater {
           model: ["Home", "Activity", "Memory", "Agents", "Settings"]
-          Rectangle {
-            width: parent.width; height: 36; radius: 8
-            color: win.tab === index ? "#2a2e45" : "transparent"
-            Text { anchors { verticalCenter: parent.verticalCenter
-                             left: parent.left; leftMargin: 12 }
-                   text: modelData
-                   color: win.tab === index ? fg : sub
-                   font.pixelSize: 13 }
+          Item {
+            width: parent.width; height: 30
+            Rectangle {
+              visible: win.tab === index
+              anchors.left: parent.left
+              anchors.verticalCenter: parent.verticalCenter
+              width: 2; height: 16; color: accent
+            }
+            Text {
+              anchors { verticalCenter: parent.verticalCenter
+                        left: parent.left; leftMargin: 12 }
+              text: modelData
+              color: win.tab === index ? fg : faint
+              font.pixelSize: 13
+              Behavior on color { ColorAnimation { duration: 120 } }
+            }
             MouseArea { anchors.fill: parent
+                        hoverEnabled: true
                         onClicked: win.tab = index }
           }
         }
       }
     }
+
+    Rectangle { Layout.fillHeight: true; width: 1; color: hairline }
 
     // ── content ──
     StackLayout {
@@ -240,251 +256,220 @@ FloatingWindow {
       currentIndex: win.tab
 
       // ════ HOME ════
-      Item {
+      Flickable {
+        contentWidth: width
+        contentHeight: homeCol.implicitHeight + 48
+        clip: true; boundsBehavior: Flickable.StopAtBounds
         Column {
-          anchors { fill: parent; margins: 24 }
-          spacing: 20
+          id: homeCol
+          x: 32; y: 32
+          width: parent.parent.width - 64
+          spacing: 18
 
-          // hero status
-          Row {
-            spacing: 18
-            Rectangle {
-              width: 52; height: 52; radius: 26
-              color: win.statusColor(win.stateObj.status || "offline")
-              Rectangle {
-                visible: win.stateObj.status === "listening"
-                anchors.centerIn: parent
-                width: 52; height: 52; radius: 26
-                color: "transparent"
-                border.color: accent; border.width: 3
-                opacity: 0.3 + (win.stateObj.level || 0) * 0.7
-                Behavior on opacity { NumberAnimation { duration: 120 } }
-              }
-            }
-            Column {
-              anchors.verticalCenter: parent.verticalCenter
-              spacing: 2
-              Text { text: win.stateObj.status || "offline"
-                     color: fg; font.pixelSize: 24; font.bold: true }
-              Text { text: win.statusBlurb(win.stateObj.status || "offline")
-                     color: sub; font.pixelSize: 13 }
-            }
+          // status — the hero, plain type
+          Text {
+            text: win.stateObj.status || "offline"
+            color: win.statusColor(win.stateObj.status || "offline")
+            font.pixelSize: 34; font.family: mono; font.bold: true
+            font.letterSpacing: -0.5
+          }
+          Text {
+            text: win.statusBlurb(win.stateObj.status || "offline")
+            color: sub; font.pixelSize: 13
           }
 
-          Card {
-            width: parent.width
-            Column {
-              spacing: 10
-              Text { text: "LAST THING IT HEARD"; color: faint
-                     font.pixelSize: 10; font.letterSpacing: 1 }
-              Text {
-                text: win.stateObj.transcript || "—"
-                color: fg; font.pixelSize: 15
-                width: parent.width; wrapMode: Text.WordWrap }
-              Rectangle { width: parent.width; height: 1; color: border }
-              Text { text: "WHAT IT DID / SAID"; color: faint
-                     font.pixelSize: 10; font.letterSpacing: 1 }
-              Text {
-                text: win.stateObj.answer || win.stateObj.result || "—"
-                color: sub; font.pixelSize: 14
-                width: parent.width; wrapMode: Text.WordWrap }
-              Text {
-                visible: (win.stateObj.error || "").length > 0
-                text: "Error: " + (win.stateObj.error || "")
-                color: err; font.pixelSize: 12
-                width: parent.width; wrapMode: Text.WordWrap }
-            }
+          Hairline {}
+
+          Sect { label: "LAST TURN" }
+          Text {
+            visible: (win.stateObj.transcript || "").length > 0
+            text: "“" + (win.stateObj.transcript || "") + "”"
+            color: fg; font.pixelSize: 16; font.family: serif
+            width: parent.width; wrapMode: Text.WordWrap
+          }
+          Text {
+            visible: (win.stateObj.answer || win.stateObj.result
+                      || "").length > 0
+            text: win.stateObj.answer || win.stateObj.result || ""
+            color: sub; font.pixelSize: 14
+            width: parent.width; wrapMode: Text.WordWrap
+            lineHeight: 1.35
+          }
+          Text {
+            visible: (win.stateObj.error || "").length > 0
+            text: "error — " + (win.stateObj.error || "")
+            color: err; font.pixelSize: 12; font.family: mono
+            width: parent.width; wrapMode: Text.WordWrap
           }
 
           Row {
-            spacing: 10
-            Solid { label: "Talk to it"
-                    onClicked: win.wispd(["trigger"]) }
-            Ghost { label: "Restart daemon"
-                    onClicked: win.svc(["restart"]) }
-            Ghost { label: "Stop daemon"
-                    onClicked: win.svc(["stop"]) }
+            spacing: 8; topPadding: 6
+            Btn { label: "Talk"; primary: true
+                  onClicked: win.wispd(["trigger"]) }
+            Btn { label: "Restart daemon"
+                  onClicked: win.svc(["restart"]) }
+            Btn { label: "Stop"
+                  onClicked: win.svc(["stop"]) }
           }
 
           Text {
+            topPadding: 8
             width: parent.width
             wrapMode: Text.WordWrap
-            color: faint; font.pixelSize: 12; lineHeight: 1.4
-            text: "This window is the control room, not the assistant. " +
-                  "Wisp lives as the orb in your bar and answers on " +
-                  "SUPER+D anywhere. Close this — it keeps running."
+            color: faint; font.pixelSize: 11; lineHeight: 1.4
+            text: "This is the control room, not the assistant. Wisp " +
+                  "lives as the orb bottom-right and on SUPER+D. " +
+                  "Closing this window keeps it running."
           }
         }
       }
 
       // ════ ACTIVITY ════
-      Item {
-        Flickable {
-          anchors { fill: parent }
-          contentWidth: width
-          contentHeight: actCol.implicitHeight + 32
-          clip: true
-          boundsBehavior: Flickable.StopAtBounds
+      Flickable {
+        contentWidth: width
+        contentHeight: actCol.implicitHeight + 48
+        clip: true; boundsBehavior: Flickable.StopAtBounds
+        Column {
+          id: actCol
+          x: 32; y: 28
+          width: parent.parent.width - 64
+          spacing: 0
+
+          Row {
+            bottomPadding: 14
+            spacing: 12
+            Sect { label: "TURN LOG"; anchors.verticalCenter:
+                   parent.verticalCenter }
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              text: "what it heard, decided, did — per stage timings"
+              color: faint; font.pixelSize: 11 }
+          }
+
+          Repeater {
+            model: win.decisions
+            Column {
+              width: actCol.width
+              Rectangle { width: parent.width; height: 1
+                          color: hairline }
+              Item { width: 1; height: 10 }
+              Row {
+                width: parent.width; spacing: 12
+                Text {
+                  text: (modelData.ts || "").slice(11, 19)
+                  color: faint; font.pixelSize: 11; font.family: mono
+                  anchors.verticalCenter: parent.verticalCenter }
+                Text {
+                  text: ((modelData.answers || {}).route || {})
+                        .choice || "?"
+                  color: accent; font.pixelSize: 11; font.family: mono
+                  anchors.verticalCenter: parent.verticalCenter }
+                Text {
+                  property int tms:
+                      ((modelData.timing_ms || {}).act_ms || 0)
+                  visible: tms > 0
+                  text: tms + "ms"
+                  color: faint; font.pixelSize: 10; font.family: mono
+                  anchors.verticalCenter: parent.verticalCenter }
+              }
+              Text {
+                visible: (modelData.transcript || "").length > 0
+                text: "you   " + (modelData.transcript || "")
+                color: fg; font.pixelSize: 13
+                width: parent.width; wrapMode: Text.WordWrap }
+              Text {
+                visible: (modelData.reply || modelData.result
+                          || "").length > 0
+                text: "wisp  " + (modelData.reply ||
+                                  modelData.result || "")
+                color: sub; font.pixelSize: 13
+                width: parent.width; wrapMode: Text.WordWrap }
+              Item { width: 1; height: 10 }
+            }
+          }
+
+          Text {
+            visible: win.decisions.length === 0
+            topPadding: 8
+            text: "Nothing yet — hold SUPER+D and talk."
+            color: faint; font.pixelSize: 13 }
 
           Column {
-            id: actCol
-            x: 20; y: 16
-            width: parent.parent.width - 40
-            spacing: 12
-
-            Text {
-              width: parent.width; wrapMode: Text.WordWrap
-              color: sub; font.pixelSize: 12; lineHeight: 1.4
-              text: "Every turn, replayed: what it heard, what it " +
-                    "decided, how long each stage took. When Wisp does " +
-                    "something weird, this is the evidence."
-            }
-
+            visible: win.corrections.length > 0
+            width: parent.width; spacing: 4; topPadding: 16
+            Sect { label: "LEARNED CORRECTIONS" }
             Repeater {
-              model: win.decisions
-              Card {
-                width: actCol.width
-                Column {
-                  spacing: 8
-                  Row {
-                    spacing: 10
-                    Text { text: modelData.turn || ""
-                           color: accent; font.pixelSize: 12
-                           font.bold: true }
-                    Text { text: modelData.route || "?"
-                           color: faint; font.pixelSize: 11 }
-                    Text {
-                      visible: (modelData.ms_total || 0) > 0
-                      text: (modelData.ms_total || 0) + " ms"
-                      color: faint; font.pixelSize: 11 }
-                  }
-                  Text {
-                    visible: (modelData.transcript || "").length > 0
-                    text: "you:  " + (modelData.transcript || "")
-                    color: fg; font.pixelSize: 13
-                    width: parent.width; wrapMode: Text.WordWrap }
-                  Text {
-                    visible: (modelData.reply || modelData.result
-                              || "").length > 0
-                    text: "wisp: " + (modelData.reply ||
-                                      modelData.result || "")
-                    color: sub; font.pixelSize: 13
-                    width: parent.width; wrapMode: Text.WordWrap }
-                  Flow {
-                    width: parent.width; spacing: 6
-                    Repeater {
-                      model: modelData.stages || []
-                      Rectangle {
-                        width: stTxt.implicitWidth + 12; height: 18
-                        radius: 4; color: "#1a1b26"
-                        Text { id: stTxt; anchors.centerIn: parent
-                               text: modelData[0] + " " +
-                                     (modelData[1]||0) + "ms"
-                               color: faint; font.pixelSize: 10 }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-
-            Text {
-              visible: win.decisions.length === 0
-              text: "Nothing yet — press SUPER+D and talk."
-              color: faint; font.pixelSize: 13 }
-
-            Column {
-              visible: win.corrections.length > 0
-              width: parent.width; spacing: 6
-              Text {
-                text: "LEARNED CORRECTIONS"
-                color: faint; font.pixelSize: 10
-                font.letterSpacing: 1 }
-              Text {
-                text: "Things you told it to do differently:"
-                color: sub; font.pixelSize: 12 }
-              Repeater {
-                model: win.corrections
-                Text { text: "• " + modelData
-                       color: sub
-                       font.pixelSize: 11
-                       width: parent.width; elide: Text.ElideRight }
-              }
+              model: win.corrections
+              Text { text: modelData
+                     color: sub; font.pixelSize: 11; font.family: mono
+                     width: parent.width; elide: Text.ElideRight }
             }
           }
         }
       }
 
       // ════ MEMORY ════
-      Item {
-        Flickable {
-          anchors { fill: parent }
-          contentWidth: width
-          contentHeight: memCol.implicitHeight + 32
-          clip: true
-          boundsBehavior: Flickable.StopAtBounds
+      Flickable {
+        contentWidth: width
+        contentHeight: memCol.implicitHeight + 48
+        clip: true; boundsBehavior: Flickable.StopAtBounds
+        Column {
+          id: memCol
+          x: 32; y: 28
+          width: parent.parent.width - 64
+          spacing: 14
 
-          Column {
-            id: memCol
-            x: 20; y: 16
-            width: parent.parent.width - 40
-            spacing: 14
-
+          Row {
+            spacing: 12; bottomPadding: 4
+            Sect { label: "MEMORY"; anchors.verticalCenter:
+                   parent.verticalCenter }
             Text {
-              width: parent.width; wrapMode: Text.WordWrap
-              color: sub; font.pixelSize: 12; lineHeight: 1.4
-              text: "Wisp reads these at the start of every turn — its " +
-                    "long-term memory. MEMORY.md is facts it learned; " +
-                    "USER.md is how you want it to behave. Save applies " +
-                    "next turn."
-            }
+              anchors.verticalCenter: parent.verticalCenter
+              text: "read at the start of every turn"
+              color: faint; font.pixelSize: 11 }
+          }
 
-            Repeater {
-              model: [["memory", "MEMORY.md", "facts it learned about you",
-                       memoryView],
-                      ["user",   "USER.md",   "how it should behave",
-                       userView]]
-              Card {
-                width: memCol.width
-                property var src: modelData[3]
-                property string tgt: modelData[0]
+          Repeater {
+            model: [["memory", "MEMORY.md", "facts it learned",
+                     memoryView],
+                    ["user",   "USER.md",   "how it should behave",
+                     userView]]
+            Column {
+              width: memCol.width; spacing: 8
+              Row {
+                width: parent.width; spacing: 10
                 Column {
-                  spacing: 8
-                  Row {
-                    width: parent.width; spacing: 10
-                    Column {
-                      width: parent.width - 90; spacing: 2
-                      Text { text: modelData[1]; color: fg
-                             font.pixelSize: 13; font.bold: true }
-                      Text { text: modelData[2]; color: faint
-                             font.pixelSize: 11 }
-                    }
-                    Solid {
-                      label: "Save"
-                      onClicked: {
-                        writeProc.command =
-                            ["wispd", "memory-write", modelData[0],
-                             Qt.btoa(edit.text)];
-                        writeProc.running = true;
-                      }
-                    }
+                  width: parent.width - 80; spacing: 1
+                  Text { text: modelData[1]; color: fg
+                         font.pixelSize: 12; font.family: mono;
+                         font.bold: true }
+                  Text { text: modelData[2]; color: faint
+                         font.pixelSize: 11 }
+                }
+                Btn {
+                  label: "Save"
+                  onClicked: {
+                    writeProc.command =
+                        ["wispd", "memory-write", modelData[0],
+                         Qt.btoa(edit.text)];
+                    writeProc.running = true;
                   }
-                  Rectangle {
-                    width: parent.width; height: 160; radius: 6
-                    color: "#14151e"; border.color: border
-                    Flickable {
-                      anchors { fill: parent; margins: 8 }
-                      contentWidth: width; contentHeight: edit.height
-                      clip: true
-                      TextEdit {
-                        id: edit
-                        width: parent.width
-                        color: sub; font.pixelSize: 12
-                        font.family: "monospace"
-                        wrapMode: TextEdit.Wrap
-                        text: modelData[3].text()
-                      }
-                    }
+                }
+              }
+              Rectangle {
+                width: parent.width; height: 180; radius: 6
+                color: raised; border.color: hairline
+                Flickable {
+                  anchors { fill: parent; margins: 10 }
+                  contentWidth: width; contentHeight: edit.height
+                  clip: true
+                  TextEdit {
+                    id: edit
+                    width: parent.width
+                    color: sub; font.pixelSize: 12
+                    font.family: mono
+                    wrapMode: TextEdit.Wrap
+                    text: modelData[3].text()
                   }
                 }
               }
@@ -496,25 +481,27 @@ FloatingWindow {
       // ════ AGENTS ════
       Item {
         Column {
-          anchors { fill: parent; margins: 20 }
-          spacing: 14
+          anchors { fill: parent; margins: 32 }
+          spacing: 16
 
-          Text {
-            width: parent.width; wrapMode: Text.WordWrap
-            color: sub; font.pixelSize: 12; lineHeight: 1.4
-            text: "Background tasks Wisp runs for you — coding agents " +
-                  "like opencode, codex, claude (pick which in Settings " +
-                  "→ Brain). They keep working while you do other things."
+          Row {
+            spacing: 12
+            Sect { label: "BACKGROUND AGENTS"; anchors.verticalCenter:
+                   parent.verticalCenter }
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              text: "long-running tasks — they work while you do"
+              color: faint; font.pixelSize: 11 }
           }
 
           Row {
-            width: parent.width; spacing: 10
+            width: parent.width; spacing: 8
             Rectangle {
-              width: parent.width - 90; height: 34; radius: 8
-              color: cardSolid; border.color: border
+              width: parent.width - 84; height: 34; radius: 6
+              color: raised; border.color: hairline
               TextInput {
                 id: taskInput
-                anchors { fill: parent; margins: 8 }
+                anchors { fill: parent; margins: 9 }
                 color: fg; font.pixelSize: 13; clip: true
                 Text {
                   anchors { left: parent.left; right: parent.right
@@ -524,8 +511,8 @@ FloatingWindow {
                   color: faint; font.pixelSize: 13 }
               }
             }
-            Solid {
-              label: "Spawn"
+            Btn {
+              label: "Spawn"; primary: true
               onClicked: {
                 if (taskInput.text.trim().length === 0) return;
                 win.wispd(["agent", taskInput.text.trim()]);
@@ -543,16 +530,19 @@ FloatingWindow {
             boundsBehavior: Flickable.StopAtBounds
             Column {
               id: taskCol
-              width: parent.width; spacing: 8
+              width: parent.width; spacing: 0
               Repeater {
                 model: Object.keys(win.tasks)
-                Card {
+                Column {
                   width: taskCol.width
                   property var t: win.tasks[modelData] || {}
+                  Rectangle { width: parent.width; height: 1
+                              color: hairline }
                   Row {
                     width: parent.width; spacing: 12
+                    topPadding: 10; bottomPadding: 10
                     Rectangle {
-                      width: 10; height: 10; radius: 5
+                      width: 8; height: 8; radius: 4
                       anchors.verticalCenter: parent.verticalCenter
                       color: parent.parent.t.status === "running"
                              ? ok
@@ -560,20 +550,24 @@ FloatingWindow {
                              ? err : faint
                     }
                     Column {
-                      width: parent.width - 100; spacing: 2
+                      width: parent.width - 120; spacing: 1
                       anchors.verticalCenter: parent.verticalCenter
-                      Text { text: modelData; color: fg; font.pixelSize: 12
-                             width: parent.width; elide: Text.ElideRight }
                       Text {
-                        text: (parent.parent.t.status || "?") +
-                              " — " + (parent.parent.t.task || "")
+                        text: modelData
+                        color: fg; font.pixelSize: 12
+                        font.family: mono
+                        elide: Text.ElideMiddle
+                        width: parent.width }
+                      Text {
+                        text: parent.parent.t.status + " · " +
+                              (parent.parent.t.task || "")
                         color: faint; font.pixelSize: 11
-                        width: parent.width; elide: Text.ElideRight }
+                        elide: Text.ElideRight
+                        width: parent.width }
                     }
-                    Ghost {
+                    Btn {
                       visible: parent.parent.t.status === "running"
                       label: "Cancel"
-                      anchors.verticalCenter: parent.verticalCenter
                       onClicked: win.wispd(["task_cancel", modelData])
                     }
                   }
@@ -581,7 +575,8 @@ FloatingWindow {
               }
               Text {
                 visible: Object.keys(win.tasks).length === 0
-                text: "No tasks yet."
+                topPadding: 8
+                text: "No agents running. Say \"agent, …\" or spawn one."
                 color: faint; font.pixelSize: 13 }
             }
           }
@@ -589,126 +584,132 @@ FloatingWindow {
       }
 
       // ════ SETTINGS ════
-      Item {
-        Flickable {
-          anchors { fill: parent }
-          contentWidth: width
-          contentHeight: setCol.implicitHeight + 32
-          clip: true
-          boundsBehavior: Flickable.StopAtBounds
+      Flickable {
+        contentWidth: width
+        contentHeight: setCol.implicitHeight + 48
+        clip: true; boundsBehavior: Flickable.StopAtBounds
+        Column {
+          id: setCol
+          x: 32; y: 28
+          width: parent.parent.width - 64
+          spacing: 16
 
-          Column {
-            id: setCol
-            x: 20; y: 16
-            width: parent.parent.width - 40
-            spacing: 18
-
+          Row {
+            spacing: 12; bottomPadding: 2
+            Sect { label: "SETTINGS"; anchors.verticalCenter:
+                   parent.verticalCenter }
             Text {
-              width: parent.width; wrapMode: Text.WordWrap
-              color: sub; font.pixelSize: 12; lineHeight: 1.4
-              text: "config.toml, grouped. Edits apply live — no " +
-                    "restart. Blank means default."
-            }
+              anchors.verticalCenter: parent.verticalCenter
+              text: "config.toml — changes apply next turn"
+              color: faint; font.pixelSize: 11 }
+          }
 
-            Repeater {
-              model: [
-                ["Talking to it",
-                 "The hotkey and how long it records after you press.",
-                 [["hotkey.mod","modifier key","SUPER / ALT / CTRL"],
-                  ["hotkey.key","push-to-talk key","D → SUPER+D"],
-                  ["audio.seconds","recording length","seconds of mic"],
-                  ["voice.enabled","speak answers","true/false — TTS replies"],
-                  ["voice.cmd","TTS command","empty = espeak"]]],
-                ["Hearing",
-                 "Speech-to-text. 'local' = whisper.cpp on this machine " +
-                 "(free, private); an API provider is faster but sends " +
-                 "audio out.",
-                 [["stt.provider","STT provider","local | openai"],
-                  ["stt.base_url","STT endpoint","groq/openai/vllm URL"],
-                  ["stt.model","STT model","whisper-large-v3-turbo"],
-                  ["stt.key_env","API key env var","env var holding the key"],
-                  ["stt.prompt","vocab priming","names/jargon to recognize"]]],
-                ["Brain",
-                 "Who thinks. Router picks what to do with a request: " +
-                 "jev = decision API, chat = straight to the answer " +
-                 "brain, off = ask clarifying.",
-                 [["brain.router","router","jev | chat | off"],
-                  ["brain.default","answer brain","provider:model"],
-                  ["agent.model","jev model","typesafe/jev-1.13"],
-                  ["agent.answer_model","answer model","llama-4-maverick"],
-                  ["brain.agent_runtime","agent runtime",
-                   "opencode | codex | claude | devin"]]],
-                ["Agents & actions",
-                 "What Wisp may do on your desktop. Risk threshold: " +
-                 "lower = it asks you before doing more.",
-                 [["agent.risk_threshold","risk threshold","lower = more asks"],
-                  ["agent.allow_shell","allow shell","true/false"],
-                  ["agent.screenshots","screenshots","may see your screen"],
-                  ["agents.model","agent model","model for runtimes"]]],
-                ["Memory & recall",
-                 "Semantic recall embeds past turns so 'the thing with " +
-                 "the printer' finds old context. 'none' = keyword " +
-                 "search only, zero keys needed.",
-                 [["recall.provider","recall embeds","none | openai"],
-                  ["recall.base_url","embed endpoint","openrouter URL"],
-                  ["recall.model","embed model","text-embedding-3-small"],
-                  ["agent.session_turns","session memory","turns kept"]]],
-                ["Debugging",
-                 "Full-fidelity trace of every turn — action, decision, " +
-                 "tool call, timings — for replay and fixing. Never " +
-                 "logs keys.",
-                 [["debug.trace","dev trace","true/false"]]]
-              ]
-
-              Column {
-                width: setCol.width; spacing: 8
-                property var sec: modelData
-
-                Text { text: modelData[0]; color: fg
-                       font.pixelSize: 15; font.bold: true }
-                Text { text: modelData[1]; color: sub
-                       font.pixelSize: 12; lineHeight: 1.35
-                       width: setCol.width; wrapMode: Text.WordWrap }
-
+          Repeater {
+            model: [
+              ["Talking to it",
+               "hotkey.mod / hotkey.key — the hold-to-talk chord. " +
+               "audio.seconds — max record length, a safety cap not " +
+               "the limit (release the key to stop).",
+               [["hotkey.mod","hotkey mod"],
+                ["hotkey.key","hotkey key"],
+                ["audio.seconds","max record secs"]]],
+              ["Hearing",
+               "stt.provider — local = whisper.cpp offline; openai = " +
+               "any /audio/transcriptions endpoint (Groq, OpenAI…) — " +
+               "audio leaves the machine. stt.prompt primes jargon.",
+               [["stt.provider","provider"],
+                ["stt.base_url","base_url"],
+                ["stt.model","model"],
+                ["stt.prompt","vocab prompt"]]],
+              ["Brain",
+               "brain.router — jev routes via typed decisions; chat " +
+               "sends transcript straight to the answer model; off " +
+               "always asks. brain.default — provider:model for " +
+               "answers. agent_runtime — opencode/codex/claude/devin.",
+               [["brain.router","router"],
+                ["brain.default","answer provider"],
+                ["brain.agent_runtime","agent runtime"],
+                ["agent.model","jev model"],
+                ["agent.answer_model","answer model"],
+                ["agent.screenshots","screenshots"]]],
+              ["Actions & safety",
+               "risk_threshold — auto-run when Jev's risk score is at " +
+               "or below it; higher scores ask first. allow_shell " +
+               "lets the act loop run shell commands (denylisted " +
+               "patterns still refuse).",
+               [["agent.risk_threshold","risk threshold"],
+                ["agent.allow_shell","allow shell"],
+                ["agent.confidence_instant","instant conf"],
+                ["agent.confidence_ambiguous","ambiguous conf"]]],
+              ["Memory & recall",
+               "recall.provider — none = FTS5 keyword search only " +
+               "(zero keys); openai = semantic embeddings via any " +
+               "OpenAI-compatible endpoint.",
+               [["recall.provider","provider"],
+                ["recall.model","embed model"],
+                ["recall.base_url","base_url"],
+                ["agent.session_turns","context turns"]]],
+              ["Debugging & voice",
+               "debug.trace — full per-turn event log to " +
+               "trace.jsonl. voice.enabled — spoken replies via " +
+               "espeak; voice.cmd for a custom TTS like piper.",
+               [["debug.trace","trace"],
+                ["voice.enabled","voice"],
+                ["voice.cmd","tts cmd"]]]
+            ]
+            Column {
+              width: setCol.width; spacing: 6
+              Rectangle { width: parent.width; height: 1
+                          color: hairline }
+              Item { width: 1; height: 4 }
+              Text { text: modelData[0]; color: fg
+                     font.pixelSize: 13; font.bold: true }
+              Text {
+                text: modelData[1]
+                color: faint; font.pixelSize: 11; lineHeight: 1.35
+                width: parent.width; wrapMode: Text.WordWrap }
+              Grid {
+                columns: 2
+                columnSpacing: 24; rowSpacing: 4
+                width: parent.width
                 Repeater {
-                  model: parent.sec[2]
-                  Rectangle {
-                    width: setCol.width; height: 46; radius: 8
-                    color: cardSolid; border.color: border
-                    Row {
-                      anchors { fill: parent; margins: 10 }
-                      spacing: 12
-                      Column {
-                        width: setCol.width - 320; spacing: 1
-                        anchors.verticalCenter: parent.verticalCenter
-                        Text { text: modelData[1]; color: fg
-                               font.pixelSize: 12 }
-                        Text { text: modelData[2]; color: faint
-                               font.pixelSize: 10 }
-                      }
-                      Rectangle {
-                        width: 200; height: 28; radius: 6
-                        color: "#14151e"; border.color: border
-                        anchors.verticalCenter: parent.verticalCenter
-                        TextInput {
-                          id: sinput
-                          anchors { fill: parent; margins: 6 }
-                          color: fg; font.pixelSize: 12; clip: true
-                          text: {
-                            var parts = modelData[0].split(".");
-                            var sec = win.cfgObj[parts[0]] || {};
-                            var v = sec[parts.slice(1).join(".")];
-                            if (v === undefined && parts.length > 2)
-                              v = (sec[parts[1]] || {})[parts[2]];
-                            v === undefined ? "" : String(v);
-                          }
+                  model: modelData[2]
+                  Row {
+                    spacing: 8
+                    width: (setCol.width - 24) / 2
+                    property string k: modelData[0]
+                    Text {
+                      text: modelData[1]
+                      color: sub; font.pixelSize: 11
+                      anchors.verticalCenter: parent.verticalCenter
+                      width: 130 }
+                    Rectangle {
+                      width: parent.width - 138; height: 24; radius: 4
+                      color: hov.hovered || valEdit.activeFocus
+                             ? raised : "transparent"
+                      border.color: valEdit.activeFocus ? accent
+                                                        : hairline
+                      HoverHandler { id: hov }
+                      TextInput {
+                        id: valEdit
+                        anchors { fill: parent; leftMargin: 7
+                                  rightMargin: 7 }
+                        verticalAlignment: TextInput.AlignVCenter
+                        clip: true
+                        selectByMouse: true
+                        color: fg; font.pixelSize: 11; font.family: mono
+                        text: {
+                          var parts = parent.parent.k.split(".");
+                          var v = win.cfgObj;
+                          for (var i = 0; i < parts.length && v; i++)
+                            v = v[parts[i]];
+                          return (v === undefined || v === null)
+                                 ? "" : String(v);
                         }
-                      }
-                      Ghost {
-                        label: "Set"
-                        anchors.verticalCenter: parent.verticalCenter
-                        onClicked: win.wispd(["config", "set",
-                                             modelData[0], sinput.text])
+                        onEditingFinished: {
+                          win.wispd(["config", "set",
+                                     parent.parent.k, text]);
+                        }
                       }
                     }
                   }
