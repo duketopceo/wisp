@@ -78,11 +78,52 @@ def _find(name: str, tasks_file=config.TASKS_FILE) -> dict | None:
     return None
 
 
+def _running(tasks_file=config.TASKS_FILE) -> list:
+    return [r for r in _records(tasks_file) if _alive(r.get("pid", -1))]
+
+
+def _reap_expired(cfg: dict, tasks_file=config.TASKS_FILE) -> list:
+    """Kill running tasks past [agent] task_timeout_s — the runaway
+    guardrail. Returns names of reaped tasks."""
+    timeout = int(cfg.get("agent", {}).get("task_timeout_s", "1800"))
+    if timeout <= 0:
+        return []
+    now = datetime.now(timezone.utc)
+    reaped = []
+    for rec in _running(tasks_file):
+        try:
+            age = (now - datetime.fromisoformat(
+                rec.get("ts", ""))).total_seconds()
+        except (ValueError, TypeError):
+            continue
+        if age <= timeout:
+            continue
+        pid = rec.get("pid", -1)
+        try:
+            os.killpg(pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+        _log_line({"id": rec["id"], "name": rec["name"],
+                   "status": "timed_out",
+                   "ts": now.isoformat()}, tasks_file)
+        reaped.append(rec["name"])
+    return reaped
+
+
 def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
           log_dir=config.TASK_LOGS, cwd: str | None = None) -> str:
     task = task.strip()
     if not task:
         return "SKIP (empty agent task)"
+    _reap()
+    _reap_expired(cfg, tasks_file)
+    cap = int(cfg.get("agent", {}).get("max_concurrent", "3"))
+    if len(_running(tasks_file)) >= cap:
+        return (f"SKIP (agent limit: {cap} already running — "
+                "cancel one or raise [agent] max_concurrent)")
     name = _slug(task)
     base, i = name, 2
     existing = {r.get("name") for r in _records(tasks_file)}
@@ -94,8 +135,12 @@ def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
     model = cfg.get("agents", {}).get("model", "")
     cmd = _runtime_cmd(cfg, task, model)
     if cmd is None:
-        rt = cfg.get("brain", {}).get("agent_runtime", "opencode")
-        return f"SKIP (agent runtime {rt!r} not on PATH)"
+        rt = cfg.get("brain", {}).get("agent_runtime", "auto")
+        if rt == "auto":
+            return ("SKIP (agent runtime 'auto' not on PATH — tried "
+                    + "/".join(_AUTO_ORDER) + "; detected: none)")
+        return (f"SKIP (agent runtime {rt!r} not on PATH — detected: "
+                + (", ".join(detect_runtimes()) or "none") + ")")
     try:
         with log.open("ab") as lf:
             proc = subprocess.Popen(
@@ -134,13 +179,33 @@ _RUNTIMES = {  # [brain] agent_runtime → argv template, {task}/{model}
 }
 _RUNTIME_BINS = {"opencode": "ori", "codex": "codex",
                  "claude": "claude", "devin": "devin"}
+# `agent_runtime = "auto"` probes PATH in this order — opencode first.
+_AUTO_ORDER = ["opencode", "codex", "claude", "devin"]
+
+
+def detect_runtimes() -> dict:
+    """runtime → resolved binary path for everything on PATH."""
+    return {rt: shutil.which(b)
+            for rt, b in _RUNTIME_BINS.items() if shutil.which(b)}
+
+
+def resolve_runtime(cfg: dict) -> str:
+    """Configured runtime, or the first detected one when 'auto'."""
+    rt = cfg.get("brain", {}).get("agent_runtime", "auto")
+    if rt != "auto":
+        return rt
+    for cand in _AUTO_ORDER:
+        if shutil.which(_RUNTIME_BINS[cand]):
+            return cand
+    return ""
 
 
 def _runtime_cmd(cfg: dict, task: str, model: str) -> list | None:
     """argv for the configured agent runtime, or None when its binary
     isn't on PATH (U6: probe → explicit error, not a silent failure)."""
-    import shutil
-    rt = cfg.get("brain", {}).get("agent_runtime", "opencode")
+    rt = resolve_runtime(cfg)
+    if not rt:
+        return None
     template = _RUNTIMES.get(rt, _RUNTIMES["opencode"])
     if not shutil.which(_RUNTIME_BINS.get(rt, "ori")):
         return None
@@ -172,6 +237,12 @@ def cancel(name: str, tasks_file=config.TASKS_FILE) -> str:
     _log_line({"id": rec["id"], "name": rec["name"], "status": "cancelled",
                "ts": datetime.now(timezone.utc).isoformat()}, tasks_file)
     return f"CANCELLED {name}"
+
+
+def reap(cfg: dict) -> None:
+    """Public watchdog for daemon call sites: zombies + timeouts."""
+    _reap()
+    _reap_expired(cfg)
 
 
 def tasks(tasks_file=config.TASKS_FILE) -> dict:

@@ -29,7 +29,7 @@ BarWidget {
   readonly property color stateColor: status === "listening" ? accent
     : status === "transcribing" || status === "deciding"
       || status === "acting" ? Color.tertiary || accent
-    : status === "awaiting_choice" ? urgent
+    : status === "awaiting_choice" || status === "suggestion" ? urgent
     : status === "error" ? urgent
     : status === "offline" ? dim
     : fg
@@ -109,7 +109,8 @@ BarWidget {
     bar: root.bar
     text: "✦"
     foreground: root.stateColor
-    active: root.status === "listening" || root.status === "awaiting_choice"
+    active: ["listening", "awaiting_choice", "suggestion",
+             "acting", "deciding"].indexOf(root.status) >= 0
     tooltipText: {
       var tip = "Wisp — " + root.status
       if (root.transcript) tip += " · heard: " + root.transcript.slice(0, 60)

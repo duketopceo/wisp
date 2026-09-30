@@ -36,7 +36,7 @@ Panel {
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
   readonly property color stateColor: status === "listening" ? accent
-    : status === "awaiting_choice" ? urgent
+    : status === "awaiting_choice" || status === "suggestion" ? urgent
     : status === "error" || status === "offline" ? dim
     : fg
 
@@ -126,7 +126,7 @@ Panel {
         Repeater {
           model: wisp.choices
           delegate: Button {
-            text: modelData
+            text: String(modelData).replace(/^suggestion:/, "")
             onClicked: {
               if (wisp.hostWidget) wisp.hostWidget.sendChoice(modelData)
               wisp.close()

@@ -57,6 +57,7 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
     def _dispatch(c: str, cmd: dict) -> dict:
         if c == "status":
             from wisp import agents
+            agents.reap(cfg)  # zombie + timeout watchdog on each poll
             st.tasks = agents.tasks()
             st.transition(st.status)
             return {"ok": True, "state": st.snapshot()}
@@ -116,9 +117,34 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
                                  args=(ctl, secs), daemon=True).start()
                 return {"ok": True, "recording": True}
         if c == "choice":
-            ctl["choice_pick"] = cmd.get("pick", "")
+            pick = cmd.get("pick", "")
+            if pick.startswith("suggestion:"):
+                # suggestion card answer — resolve locally, don't wake a
+                # turn's clarify waiter
+                from wisp import suggest
+                out = suggest.resolve_pick(pick, cfg, state=st,
+                                           log=dlog)
+                if out.startswith("RUN "):
+                    # approved: run the routine through the act loop,
+                    # fully gated; guard the busy flag like a listen turn
+                    if ctl["busy"].is_set():
+                        return {"ok": False, "error": "busy"}
+                    ctl["busy"].set()
+                    threading.Thread(
+                        target=_run_suggestion,
+                        args=(st, cfg, ctl, out[4:]),
+                        daemon=True).start()
+                    return {"ok": True, "result": "automating"}
+                st.transition("done", result=out, choices=[],
+                              suggestion=None)
+                return {"ok": True, "result": out}
+            ctl["choice_pick"] = pick
             ctl["choice_event"].set()
             return {"ok": True}
+        if c == "suggestions":
+            from wisp import suggest
+            return {"ok": True,
+                    "suggestions": suggest.pending()}
         if c == "task_status":
             from wisp import agents
             return {"ok": True, "result": agents.status(cmd.get("name", ""))}
@@ -226,10 +252,30 @@ def _run_listen(st: state_mod.State, cfg: dict, ctl: dict,
         ctl["busy"].clear()
 
 
+def _run_suggestion(st, cfg, ctl, routine: str) -> None:
+    """Approved suggestion → bounded act loop (all gates apply)."""
+    from wisp import act
+    try:
+        st.transition("acting", transcript="", choices=[],
+                      suggestion=None, steps=[],
+                      result="automating suggestion")
+        out = act.run_act_loop(routine, cfg, state=st,
+                               confirm=None)  # no re-confirm loop;
+        # mutating steps skip rather than hang on a card
+        st.transition("done", result=out)
+        dlog(f"suggestion run done: {out!r}")
+    except Exception as e:
+        dlog(f"suggestion run error: {e}")
+        st.transition("error", error=str(e))
+    finally:
+        ctl["busy"].clear()
+
+
 def run_daemon(cfg: dict) -> int:
     global _DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL
     from wisp import skills
     skills.register_tools()  # skill_<name> entries from skills/*/SKILL.md
+    skills.seed()          # bundled dayflow-bridge/self-checkup skills
     st = state_mod.State()
     ctl = {"stop": threading.Event(), "busy": threading.Event(),
            "choice_event": threading.Event(), "choice_pick": "",
@@ -239,6 +285,20 @@ def run_daemon(cfg: dict) -> int:
     server.start()
     dlog(f"wispd up — socket {config.SOCK_FILE} "
          f"log {config.DATA_DIR / 'wispd.log'}")
+    # sense + suggest threads — opt-in via [sense] enabled; each loop is
+    # single-flight and self-contained, so nothing can run away
+    from wisp import sense, suggest
+    if sense.enabled(cfg):
+        threading.Thread(target=sense.run,
+                         args=(cfg, ctl["stop"]),
+                         kwargs={"log": dlog}, daemon=True).start()
+        threading.Thread(target=suggest.run,
+                         args=(cfg, ctl["stop"]),
+                         kwargs={"state": st, "log": dlog},
+                         daemon=True).start()
+        dlog("sense: enabled "
+             f"(tick={cfg.get('sense', {}).get('interval_s', '300')}s, "
+             f"mine={cfg.get('sense', {}).get('mine_every_s', '2700')}s)")
     try:
         ctl["stop"].wait()
     except KeyboardInterrupt:
@@ -413,6 +473,68 @@ def install_bind(cfg: dict) -> None:
                    capture_output=True)
 
 
+def _doctor(cfg: dict) -> int:
+    """Scan everything wispd depends on — the harness/runtime probe."""
+    import shutil as _sh
+    from wisp import agents, brain, sense, skills
+    ok = True
+
+    def row(name, val, good=True):
+        nonlocal ok
+        ok = ok and good
+        print(f"  {'ok ' if good else 'MISS'} {name:<22} {val}")
+
+    print("agent runtimes:")
+    found = agents.detect_runtimes()
+    chosen = agents.resolve_runtime(cfg)
+    for rt in ("opencode", "codex", "claude", "devin"):
+        mark = " (selected)" if rt == chosen else ""
+        if rt in found:
+            row(rt, found[rt] + mark)
+        else:
+            # a missing runtime only fails doctor when it's the
+            # explicitly configured one — auto falls back
+            row(rt, f"not on PATH{mark}",
+                good=(rt != chosen or not mark))
+    if cfg.get("brain", {}).get("agent_runtime", "auto") == "auto" \
+            and not chosen:
+        print("  !! agent_runtime=auto but nothing detected")
+        ok = False
+
+    print("stt / audio:")
+    wm = config.whisper_model(cfg)
+    row("whisper model", wm.name, good=wm.exists())
+    stt = cfg.get("stt", {}).get("provider", "local")
+    row("stt provider", stt)
+    for b in ("pw-record", "wtype", "grim"):
+        row(b, _sh.which(b) or "", good=bool(_sh.which(b)))
+
+    print("brain / router:")
+    p = brain.provider(cfg)
+    row("answer provider", f"{p['name']}:{p['model']}")
+    row("vision", p.get("vision"))
+    row("tools", p.get("tools"))
+    key = config.load_env_key(p.get("key_env", "")) \
+        if p.get("key_env") else "n/a"
+    row("api key", "set" if key == "set" or (key and key != "n/a")
+        else key or "MISSING", good=bool(key))
+
+    print("integrations:")
+    row("dayflow", _sh.which("dayflow") or "not installed",
+        good=bool(_sh.which("dayflow")))
+    row("hyprctl", _sh.which("hyprctl") or "",
+        good=bool(_sh.which("hyprctl")))
+    row("sense enabled", cfg.get("sense", {}).get("enabled", "false"))
+
+    print("data:")
+    row("skills", str(len(skills.index())) + " installed")
+    for f in ("decisions.jsonl", "labels.jsonl", "activity.jsonl"):
+        fp = config.DATA_DIR / f
+        row(f, f"{fp.stat().st_size // 1024}KB" if fp.exists()
+            else "absent", good=True)
+    return 0 if ok else 1
+
+
 def rebuild_harness() -> int:
     builder = config.HOME / ".local" / "opt" / "wisp" / "build_harness.py"
     if not builder.exists():
@@ -551,8 +673,39 @@ def main() -> int:
     if cmd == "trace":
         from wisp import trace
         return trace.main(sys.argv[2:])
+    if cmd == "doctor":
+        return _doctor(cfg)
+    if cmd == "tui":
+        from wisp import tui
+        return tui.main()
+    if cmd == "skills":
+        from wisp import skills
+        sub = sys.argv[2] if len(sys.argv) > 2 else ""
+        if sub == "import":
+            preview = "--list" in sys.argv
+            srcs = [a for a in sys.argv[3:] if not a.startswith("--")]
+            if not srcs:
+                print("usage: wispd skills import [--list] <dir>",
+                      file=sys.stderr)
+                return 2
+            print(skills.import_dir(srcs[0], preview=preview))
+            return 0
+        for s in skills.index():
+            print(f"{s['name']}: {s['description']}")
+        return 0
+    if cmd == "suggestions":
+        try:
+            r = ipc.send({"cmd": "suggestions"})
+            for s in r.get("suggestions", []):
+                print(f"[{s.get('status','?')}] {s.get('title','')} "
+                      f"— {s.get('evidence','')}")
+            return 0
+        except (ConnectionError, OSError) as e:
+            print(f"wispd unreachable: {e}", file=sys.stderr)
+            return 1
     print("usage: wispd [daemon|install|trigger|status|stop|choice"
           "|agent|memory|task_status|task_cancel|learn|label|harness|trace"
+          "|doctor|tui|skills [import [--list] dir]|suggestions"
           "|config [set k v]]")
     return 2
 

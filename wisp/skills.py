@@ -192,6 +192,71 @@ def run_tool(name: str, arg: str) -> str | None:
         return "FAIL (skill script timed out)"
 
 
+SEED_DIR = None  # set lazily — resolves to wisp/skills_seed in the tree
+
+
+def _seed_dir():
+    import pathlib
+    return pathlib.Path(__file__).resolve().parent / "skills_seed"
+
+
+def seed() -> None:
+    """Install bundled skills (skills_seed/*/) into SKILLS_DIR when the
+    skill doesn't already exist — idempotent, never overwrites user
+    edits. Provenance is a comment line in the SKILL.md itself."""
+    src = _seed_dir()
+    if not src.is_dir():
+        return
+    for d in sorted(src.iterdir()):
+        f = d / "SKILL.md"
+        if not f.is_file():
+            continue
+        dst = SKILLS_DIR / d.name
+        if (dst / "SKILL.md").exists():
+            continue
+        try:
+            shutil.copytree(d, dst)
+        except OSError:
+            pass
+
+
+def import_dir(src: str, preview: bool = False) -> str:
+    """`wispd skills import <dir>` — copy */SKILL.md trees (e.g. a
+    luke-agents _LUKE checkout) into SKILLS_DIR. Skips names that
+    already exist; never symlinks (a snapshot, not a live mount)."""
+    import pathlib
+    base = pathlib.Path(src).expanduser()
+    if not base.is_dir():
+        return f"FAIL (no dir {src!r})"
+    found = [d for d in sorted(base.iterdir())
+             if (d / "SKILL.md").is_file()]
+    if not found:
+        return f"FAIL (no */SKILL.md under {src!r})"
+    if preview:
+        return "would import: " + ", ".join(d.name for d in found)
+    imported, skipped = [], []
+    for d in found:
+        dst = SKILLS_DIR / _slug(d.name)
+        if (dst / "SKILL.md").exists():
+            skipped.append(d.name)
+            continue
+        try:
+            shutil.copytree(d, dst)
+            # provenance line at the top of the body
+            f = dst / "SKILL.md"
+            body = f.read_text()
+            f.write_text(body.rstrip("\n") +
+                         f"\n\n<!-- imported from {src} "
+                         f"({d.name}) -->\n")
+            imported.append(d.name)
+        except OSError:
+            skipped.append(d.name)
+    return (f"OK (imported {len(imported)}"
+            + (f": {', '.join(imported)}" if imported else "")
+            + (f"; skipped existing: {', '.join(skipped)}"
+               if skipped else "") + ")")
+
+
 def register_tools() -> None:
     """Register `skill_<name>` toolbelt entries so they appear in
     tool_schemas()/describe(). risk_of()/run() also resolve them

@@ -42,6 +42,7 @@ Item {
     case "transcribing": return "hearing";
     case "deciding": return "thinking";
     case "acting": return "working";
+    case "suggestion": return "an idea";
     case "awaiting_choice": return "needs you";
     case "speaking": return "speaking";
     case "error": return "error";
@@ -76,6 +77,7 @@ Item {
     if (root.status === "listening") return "#7aa2f7";
     if (["transcribing", "deciding"].indexOf(root.status) >= 0) return "#bb9af7";
     if (["acting", "awaiting_choice"].indexOf(root.status) >= 0) return "#9ece6a";
+    if (root.status === "suggestion") return "#e0af68";
     if (root.status === "speaking") return "#e0af68";
     if (root.status === "offline") return "#565f89";
     return "#3b4261";
@@ -112,7 +114,8 @@ Item {
         // Surfacing: the card pops while Wisp works (status + step log),
         // on an answer, a question, or an error — then auto-collapses.
         // Clicking the orb pins it open; auto-hide resumes on done.
-        if (root.busy || newStatus === "awaiting_choice") {
+        if (root.busy || newStatus === "awaiting_choice"
+            || newStatus === "suggestion") {
           root.expanded = true;
           root.userPinned = false;
           autoHide.stop();
@@ -514,7 +517,7 @@ Item {
                 Text {
                   id: choiceLabel
                   anchors.centerIn: parent
-                  text: modelData
+                  text: String(modelData).replace(/^suggestion:/, "")
                   color: "#c0caf5"
                   font.pixelSize: 11
                   elide: Text.ElideRight

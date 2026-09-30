@@ -58,6 +58,24 @@ screenshots = true
 risk_threshold = 1.5
 confidence_instant = 0.95
 confidence_ambiguous = 0.8
+# runaway guards: max simultaneous agent tasks + per-task lifetime
+max_concurrent = 3
+task_timeout_s = 1800
+
+[sense]
+# Passive activity sense + proactive suggestions. Off by default —
+# opt in. Sources are local: hyprctl window deltas + dayflow journal.
+enabled = false
+interval_s = 300
+window_h = 3
+# pull `dayflow today --json` block tail every Nth tick
+dayflow = true
+dayflow_every = 4
+# mining cadence + spend cap; model is any "provider:model" the brain
+# supports — e.g. ollama:gemma3:27b for zero-marginal-cost local mining
+mine_every_s = 2700
+max_calls_per_day = 48
+model = "openrouter:google/gemini-2.5-flash"
 
 [stt]
 # Speech-to-text backend. "local" = whisper.cpp (default, offline).
@@ -89,8 +107,9 @@ router = "jev"
 # answer provider as "name:model" — named sections below or any
 # [brain.<name>] table you add (kind: openai_compat | ollama)
 default = "openrouter:meta-llama/llama-4-maverick"
-# background agent runtime: opencode | codex | claude | devin
-agent_runtime = "opencode"
+# background agent runtime: "auto" (probe PATH, opencode first) or an
+# explicit opencode | codex | claude | devin
+agent_runtime = "auto"
 
 # Built-in provider sections — override or add [brain.<name>] tables.
 [brain.openrouter]
@@ -155,7 +174,7 @@ def _default_cfg_dict() -> dict:
         },
         "voice": {"enabled": "false"},
         "brain": {
-            "router": "jev", "agent_runtime": "opencode",
+            "router": "jev", "agent_runtime": "auto",
             "default": "openrouter:meta-llama/llama-4-maverick",
         },
         "apps": {

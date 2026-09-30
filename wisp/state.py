@@ -32,6 +32,7 @@ class State:
         self.choices = []
         self.points = []
         self.steps = []
+        self.suggestion = None
         self.pending = None
         self.level = 0.0
         self.tasks = {}
@@ -50,6 +51,7 @@ class State:
                 "choices": list(self.choices),
                 "points": list(self.points),
                 "steps": list(self.steps),
+                "suggestion": self.suggestion,
                 "level": self.level,
                 "tasks": dict(self.tasks),
                 "error": self.error,
@@ -97,6 +99,8 @@ class State:
             "result": self.result,
             "choices": list(self.choices),
             "points": list(self.points),
+            "steps": list(self.steps),
+            "suggestion": self.suggestion,
             "level": self.level,
             "tasks": dict(self.tasks),
             "error": self.error,

@@ -26,6 +26,7 @@ FloatingWindow {
   property var stateObj: ({})
   property var decisions: []
   property var corrections: []
+  property var suggestions: []
   property var cfgObj: ({})
   property var tasks: ({})
   property int tab: 0
@@ -82,6 +83,35 @@ FloatingWindow {
       var lines = corrView.text().split("\n")
           .filter(function(l) { return l.trim() });
       win.corrections = lines.slice(-6).reverse();
+    }
+  }
+
+  FileView {
+    id: suggView
+    path: win.dataDir + "/suggestions.jsonl"
+    watchChanges: true
+    onFileChanged: reload()
+    onLoaded: {
+      // latest record per key wins — the file appends status updates
+      var latest = {};
+      var lines = suggView.text().split("\n");
+      for (var i = 0; i < lines.length; i++) {
+        var l = lines[i].trim();
+        if (!l) continue;
+        try {
+          var r = JSON.parse(l);
+          if (r.key) {
+            var prev = latest[r.key] || {};
+            for (var k in r) prev[k] = r[k];
+            latest[r.key] = prev;
+          }
+        } catch (e) {}
+      }
+      var out = [];
+      for (var key in latest) {
+        if (latest[key].status === "new") out.push(latest[key]);
+      }
+      win.suggestions = out.reverse();  // newest first
     }
   }
 
@@ -334,6 +364,41 @@ FloatingWindow {
           x: 32; y: 28
           width: parent.parent.width - 64
           spacing: 0
+
+          Column {
+            visible: win.suggestions.length > 0
+            width: parent.width; spacing: 4
+            bottomPadding: 14
+            Sect { label: "SUGGESTIONS" }
+            Repeater {
+              model: win.suggestions
+              Column {
+                width: actCol.width; spacing: 2
+                Text {
+                  text: "✦ " + (modelData.title || "")
+                  color: warn; font.pixelSize: 13; font.bold: true
+                  width: parent.width; elide: Text.ElideRight }
+                Text {
+                  visible: (modelData.evidence || "").length > 0
+                  text: modelData.evidence || ""
+                  color: sub; font.pixelSize: 11
+                  width: parent.width; elide: Text.ElideRight }
+                Row {
+                  spacing: 8; topPadding: 2
+                  Btn { label: "automate"
+                        onClicked: win.wispd(["choice",
+                          "suggestion:automate:" + modelData.key]) }
+                  Btn { label: "not now"
+                        onClicked: win.wispd(["choice",
+                          "suggestion:not now:" + modelData.key]) }
+                  Btn { label: "never"
+                        onClicked: win.wispd(["choice",
+                          "suggestion:never:" + modelData.key]) }
+                }
+              }
+            }
+            Hairline {}
+          }
 
           Row {
             bottomPadding: 14
