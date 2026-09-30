@@ -7,3 +7,8 @@ dist/
 *.egg-info/
 .venv/
 rs/dimd/target/
+
+# build artifacts + local indexes
+rs/wispd/target/
+.codebase-memory/
+__pycache__/
