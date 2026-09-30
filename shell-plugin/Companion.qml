@@ -463,7 +463,7 @@ Item {
                 width: parent.width
                 text: "› " + modelData
                 color: "#565f89"
-                font.pixelSize: 10.5
+                font.pixelSize: 10
                 font.family: "monospace"
                 elide: Text.ElideRight
               }
