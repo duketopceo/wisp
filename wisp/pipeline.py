@@ -280,18 +280,17 @@ def build_questions(harness: dict | None) -> dict:
     q = json.loads(json.dumps(JEV_QUESTIONS))
     q["tool"]["criteria"] = tools.describe()
     from . import learn
-    if not harness or not harness.get("apps"):
-        q["app"]["criteria"] = learn.apply_overrides(q["app"]["criteria"])
-        return q
-    criteria = {
-        name: f"{a.get('cues', name)}"
-        + (f" (frequently used: {a['seen']}x)" if a.get("seen", 0) >= 5 else "")
-        for name, a in harness["apps"].items()
-    }
-    criteria["none"] = JEV_QUESTIONS["app"]["criteria"]["none"]
-    q["app"]["criteria"] = criteria
-    from . import learn
-    q["app"]["criteria"] = learn.apply_overrides(q["app"]["criteria"])
+    # harness apps augment the defaults (terminal/files/...), never
+    # replace them — otherwise "open the terminal" has no candidate
+    criteria = dict(q["app"]["criteria"])
+    if harness and harness.get("apps"):
+        criteria.update({
+            name: f"{a.get('cues', name)}"
+            + (f" (frequently used: {a['seen']}x)"
+               if a.get("seen", 0) >= 5 else "")
+            for name, a in harness["apps"].items()
+        })
+    q["app"]["criteria"] = learn.apply_overrides(criteria)
     return q
 
 
@@ -484,10 +483,12 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
         if tier == "safe" or risk <= threshold:
             return tools.run(tool_name, detail, cfg, harness)
         return f"BLOCKED (tool {tool_name!r} needs confirmation)"
+    if route == "launch" or action == "launch":
+        if not app or app == "none":
+            return "SKIP (launch route but no app identified)"
+        return tools.run("launch", app, cfg, harness)
     if route == "answer" or action == "answer" or app == "none":
         return "ANSWERED"
-    if route == "launch" or action == "launch":
-        return tools.run("launch", app, cfg, harness)
     if action in tools.REGISTRY:
         return tools.run(action, detail, cfg, harness)
     return f"SKIP (route={route!r} action={action!r} unhandled)"

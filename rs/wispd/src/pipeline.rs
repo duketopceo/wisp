@@ -81,15 +81,27 @@ fn app_criteria(_cfg: &Cfg) -> Value {
     // when present (with frequency hints), else the static map
     const NONE: &str = "no application — the user is asking a question, \
                         chatting, or the request is unclear";
+    // harness apps augment the defaults (terminal/files/...), never
+    // replace them — otherwise "open the terminal" has no candidate
     let mut c = serde_json::Map::new();
+    for (k, d) in [
+        ("none", NONE),
+        ("browser", "user wants a web browser or a website"),
+        ("terminal", "user wants a terminal or shell"),
+        ("files", "user wants a file manager"),
+        ("vscode", "user wants the code editor"),
+        ("music", "user wants a music player"),
+        ("settings", "user wants system settings"),
+        ("browser_new_tab", "user wants a new browser tab"),
+    ] {
+        c.insert(k.into(), json!(d));
+    }
     let h = crate::config::data_dir().join("harness.json");
-    let mut used_harness = false;
     if let Ok(v) = std::fs::read_to_string(&h)
         .and_then(|t| serde_json::from_str::<Value>(&t)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e)))
     {
         if let Some(apps) = v.get("apps").and_then(|a| a.as_object()) {
-            used_harness = true;
             for (k, a) in apps {
                 let mut s = a.get("cues").and_then(|x| x.as_str())
                     .unwrap_or(k).to_string();
@@ -100,22 +112,6 @@ fn app_criteria(_cfg: &Cfg) -> Value {
                 c.insert(k.clone(), json!(s));
             }
         }
-    }
-    if !used_harness {
-        for (k, d) in [
-            ("none", NONE),
-            ("browser", "user wants a web browser or a website"),
-            ("terminal", "user wants a terminal or shell"),
-            ("files", "user wants a file manager"),
-            ("vscode", "user wants the code editor"),
-            ("music", "user wants a music player"),
-            ("settings", "user wants system settings"),
-            ("browser_new_tab", "user wants a new browser tab"),
-        ] {
-            c.insert(k.into(), json!(d));
-        }
-    } else {
-        c.insert("none".into(), json!(NONE));
     }
     learn::apply_overrides(&mut c);
     json!(c)
@@ -726,6 +722,14 @@ pub fn run_listen(cfg: &Cfg, st: &Arc<State>, ctl: &ChoiceCtl,
             } else {
                 format!("BLOCKED (tool {name:?} needs confirmation)")
             }
+        } else if route == "launch" || action == "launch" {
+            // ahead of the app=="none" answer catch-all — a confident
+            // launch with no named app must not be silently answered
+            if app.is_empty() || app == "none" {
+                "SKIP (launch route but no app identified)".into()
+            } else {
+                tools::run("launch", &app, cfg)
+            }
         } else if route == "answer" || action == "answer" || app == "none" {
             // screen_b64 parity: screenshot when needs>=0.7 or the
             // answer route fired
@@ -780,8 +784,6 @@ pub fn run_listen(cfg: &Cfg, st: &Arc<State>, ctl: &ChoiceCtl,
                 "timing_ms": timing, "corrected": corrected}));
             notify(&result);
             return Ok(result);
-        } else if route == "launch" || action == "launch" {
-            tools::run("launch", &app, cfg)
         } else if tools::get(&action).is_some() {
             tools::run(&action, &text, cfg)
         } else {
