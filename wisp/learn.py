@@ -14,6 +14,62 @@ from . import config
 
 OVERRIDES_FILE = config.CFG_DIR / "criteria_overrides.json"
 PROPOSALS_DIR = config.DATA_DIR / "proposals"
+LABELS_FILE = config.DATA_DIR / "labels.jsonl"
+
+
+def label_last(label: str, note: str = "") -> str:
+    """Tag the most recent decisions.jsonl turn correct/incorrect —
+    the soak's intent-match metric reads labels.jsonl keyed by `ref`."""
+    label = {"ok": "correct", "good": "correct",
+             "bad": "incorrect"}.get(label, label)
+    if label not in ("correct", "incorrect"):
+        return "SKIP (label must be correct|incorrect)"
+    try:
+        last = ""
+        with config.DECISIONS.open() as f:
+            for line in f:
+                if line.strip():
+                    last = line
+        if not last:
+            return "nothing to label"
+        ref = json.loads(last).get("ts", "")
+    except OSError:
+        return "nothing to label"
+    rec = {"ts": datetime.now(timezone.utc).isoformat(),
+           "ref": ref, "label": label, "note": note}
+    try:
+        LABELS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with LABELS_FILE.open("a") as f:
+            f.write(json.dumps(rec) + "\n")
+    except OSError as e:
+        return f"ERROR ({e})"
+    return f"labeled {label}: {ref}"
+
+
+def soak_stats() -> str:
+    """Per-route intent-match from labels.jsonl joined to
+    decisions.jsonl on ts — the v1.0 soak metric (≥85% per route)."""
+    decs = {d.get("ts"): d for d in _read_jsonl(config.DECISIONS)}
+    by_ref = {}
+    for lab in _read_jsonl(LABELS_FILE):
+        if lab.get("ref"):
+            by_ref[lab["ref"]] = lab.get("label", "")
+    per_route = {}
+    for ref, lab in by_ref.items():
+        route = ((decs.get(ref) or {}).get("answers", {})
+                 .get("route", {}) or {}).get("choice", "?")
+        ok, tot = per_route.get(route, (0, 0))
+        per_route[route] = (ok + (lab == "correct"), tot + 1)
+    if not per_route:
+        return "no labels yet — use `wispd label correct|incorrect`"
+    lines, (ok_all, tot_all) = [], (0, 0)
+    for route, (ok, tot) in sorted(per_route.items()):
+        lines.append(f"  {route:<10} {ok}/{tot} correct "
+                     f"({100 * ok / tot:.0f}%)")
+        ok_all, tot_all = ok_all + ok, tot_all + tot
+    lines.append(f"  {'total':<10} {ok_all}/{tot_all} "
+                 f"({100 * ok_all / tot_all:.0f}%) — gate: 85%")
+    return "soak intent-match:\n" + "\n".join(lines)
 
 
 def load_overrides(path=OVERRIDES_FILE) -> dict:

@@ -151,6 +151,11 @@ Item {
     command: ["wispd", "choice", ""]
   }
 
+  Process {
+    id: labelProc
+    command: ["wispd", "label", "correct"]
+  }
+
   // ── point markers ────────────────────────────────────────────────
   // Fullscreen click-through overlay: logical coords straight from
   // state.json (normalized by the daemon). Visual guidance only —
@@ -525,6 +530,32 @@ Item {
 
           Row {
             spacing: 10
+            Text {
+              text: "✓"
+              color: "#9ece6a"
+              font.pixelSize: 12
+              font.bold: true
+              MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                  labelProc.command = ["wispd", "label", "correct"];
+                  labelProc.running = true;
+                }
+              }
+            }
+            Text {
+              text: "✗"
+              color: "#e05555"
+              font.pixelSize: 12
+              font.bold: true
+              MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                  labelProc.command = ["wispd", "label", "incorrect"];
+                  labelProc.running = true;
+                }
+              }
+            }
             Text {
               text: "collapse"
               color: "#7aa2f7"

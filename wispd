@@ -137,6 +137,11 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
                     "", cmd.get("body", ""))}
             return {"ok": True,
                     "result": memory.run(cmd.get("arg", ""))}
+        if c == "label":
+            from wisp import learn
+            return {"ok": True,
+                    "result": learn.label_last(cmd.get("label", ""),
+                                               cmd.get("note", ""))}
         if c == "learn":
             from wisp import learn
             p = learn.weekly(7)
@@ -449,6 +454,25 @@ def main() -> int:
         except (ConnectionError, OSError) as e:
             print(f"wispd unreachable: {e}", file=sys.stderr)
             return 1
+    if cmd == "label":
+        # wispd label correct|incorrect [note] — soak intent-match;
+        # bare `wispd label` prints the per-route report
+        if len(sys.argv) < 3:
+            from wisp import learn
+            print(learn.soak_stats())
+            return 0
+        label = sys.argv[2]
+        note = " ".join(sys.argv[3:])
+        try:
+            r = ipc.send({"cmd": "label", "label": label, "note": note})
+            print(r.get("result") or r.get("error", "failed"))
+            return 0 if r.get("ok") else 1
+        except (ConnectionError, OSError):
+            from wisp import learn
+            out = learn.label_last(label, note)
+            print(out)
+            return 0 if not out.startswith(("SKIP", "ERROR",
+                                            "nothing")) else 1
     if cmd == "learn":
         from wisp import learn
         out = learn.weekly()
@@ -528,7 +552,7 @@ def main() -> int:
         from wisp import trace
         return trace.main(sys.argv[2:])
     print("usage: wispd [daemon|install|trigger|status|stop|choice"
-          "|agent|memory|task_status|task_cancel|learn|harness|trace"
+          "|agent|memory|task_status|task_cancel|learn|label|harness|trace"
           "|config [set k v]]")
     return 2
 

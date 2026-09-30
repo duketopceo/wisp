@@ -9,6 +9,12 @@ fn overrides_file() -> PathBuf {
 fn corrections_file() -> PathBuf {
     crate::config::data_dir().join("corrections.jsonl")
 }
+fn decisions_file() -> PathBuf {
+    crate::config::data_dir().join("decisions.jsonl")
+}
+fn labels_file() -> PathBuf {
+    crate::config::data_dir().join("labels.jsonl")
+}
 fn proposals_dir() -> PathBuf {
     crate::config::data_dir().join("proposals")
 }
@@ -24,6 +30,84 @@ fn read_jsonl(path: &PathBuf) -> Vec<Value> {
         .filter(|l| !l.trim().is_empty())
         .filter_map(|l| serde_json::from_str(l).ok())
         .collect()
+}
+
+/// Tag the most recent decisions.jsonl turn correct/incorrect —
+/// the soak's intent-match metric (parity: wisp/learn.py label_last).
+pub fn label_last(label: &str, note: &str) -> String {
+    let label = match label {
+        "ok" | "good" => "correct",
+        "bad" => "incorrect",
+        other => other,
+    };
+    if label != "correct" && label != "incorrect" {
+        return "SKIP (label must be correct|incorrect)".into();
+    }
+    let ref_ts = read_jsonl(&decisions_file()).last()
+        .and_then(|d| d.get("ts").and_then(|t| t.as_str())
+            .map(String::from));
+    let Some(ref_ts) = ref_ts else {
+        return "nothing to label".into();
+    };
+    let f = labels_file();
+    if let Some(p) = f.parent() {
+        std::fs::create_dir_all(p).ok();
+    }
+    match std::fs::OpenOptions::new().append(true).create(true).open(&f) {
+        Ok(mut fh) => {
+            use std::io::Write;
+            let _ = writeln!(fh, "{}", json!({
+                "ts": crate::state::now_iso(),
+                "ref": ref_ts, "label": label, "note": note}));
+            format!("labeled {label}: {ref_ts}")
+        }
+        Err(e) => format!("ERROR ({e})"),
+    }
+}
+
+/// Per-route intent-match report — labels joined to decisions on ts.
+pub fn soak_stats() -> String {
+    let decs: std::collections::HashMap<String, Value> =
+        read_jsonl(&decisions_file()).into_iter()
+            .filter_map(|d| d.get("ts").and_then(|t| t.as_str())
+                .map(|t| (t.to_string(), d.clone())))
+            .collect();
+    let mut by_ref: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    for l in read_jsonl(&labels_file()) {
+        if let (Some(r), Some(lb)) = (
+            l.get("ref").and_then(|v| v.as_str()),
+            l.get("label").and_then(|v| v.as_str()))
+        {
+            by_ref.insert(r.to_string(), lb.to_string());
+        }
+    }
+    let mut per_route: std::collections::BTreeMap<String, (u32, u32)> =
+        std::collections::BTreeMap::new();
+    for (r, lb) in &by_ref {
+        let route = decs.get(r)
+            .and_then(|d| d.pointer("/answers/route/choice"))
+            .and_then(|v| v.as_str()).unwrap_or("?").to_string();
+        let e = per_route.entry(route).or_insert((0, 0));
+        e.0 += (lb == "correct") as u32;
+        e.1 += 1;
+    }
+    if per_route.is_empty() {
+        return "no labels yet — use `wispd label correct|incorrect`"
+            .into();
+    }
+    let mut out = String::from("soak intent-match:\n");
+    let (mut ok_all, mut tot_all) = (0u32, 0u32);
+    for (route, (ok, tot)) in &per_route {
+        out += &format!("  {route:<10} {ok}/{tot} correct ({:.0}%)\n",
+                        100.0 * *ok as f64 / *tot as f64);
+        ok_all += ok;
+        tot_all += tot;
+    }
+    out += &format!("  {:<10} {}/{} ({:.0}%) — gate: 85%",
+                    "total", ok_all, tot_all,
+                    100.0 * ok_all as f64 / tot_all as f64);
+    out
 }
 
 pub fn record_correction(transcript: &str, picked: &str, answers: &Value) {

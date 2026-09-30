@@ -165,6 +165,7 @@ pub struct RecHandle {
     pub child: std::process::Child,
     pub out: std::path::PathBuf,
     pub sampler_stop: Arc<AtomicBool>,
+    pub t0: std::time::Instant,
 }
 
 pub fn record_start(st: &Arc<State>) -> Result<RecHandle, String> {
@@ -189,7 +190,8 @@ pub fn record_start(st: &Arc<State>) -> Result<RecHandle, String> {
         .stderr(std::process::Stdio::null())
         .spawn()
         .map_err(|e| e.to_string())?;
-    Ok(RecHandle { child, out, sampler_stop })
+    Ok(RecHandle { child, out, sampler_stop,
+                   t0: std::time::Instant::now() })
 }
 
 /// SIGINT the recorder so the WAV header finalizes (taskkill fallback

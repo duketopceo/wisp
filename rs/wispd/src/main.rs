@@ -68,6 +68,34 @@ fn main() {
             client(&json!({"cmd": "memory", "target": t,
                            "body": body}), false)
         }
+        "label" => {
+            // bare `label` prints the soak report; otherwise tag the
+            // last turn via IPC (daemon down → write directly)
+            let label = std::env::args().nth(2).unwrap_or_default();
+            if label.is_empty() {
+                println!("{}", learn::soak_stats());
+                0
+            } else {
+            let note = std::env::args().skip(3)
+                .collect::<Vec<_>>().join(" ");
+            let code = match ipc::send(&crate::config::sock_file(),
+                &json!({"cmd": "label", "label": label, "note": note}))
+            {
+                Ok(r) => {
+                    println!("{}", r.get("result")
+                        .and_then(|v| v.as_str()).unwrap_or("?"));
+                    if r.get("ok").and_then(|v| v.as_bool())
+                        .unwrap_or(false) { 0 } else { 1 }
+                }
+                Err(_) => {
+                    let out = learn::label_last(&label, &note);
+                    println!("{out}");
+                    if out.starts_with("labeled") { 0 } else { 1 }
+                }
+            };
+            code
+            }
+        }
         "learn" => {
             let p = learn::weekly(7);
             if p.is_empty() { println!("nothing to propose"); }
@@ -247,6 +275,17 @@ fn dispatch(cmd: Value, st_h: &Arc<state::State>,
                 }
                 if let Some(mut rec) = guard.take() {
                     drop(guard);
+                    if rec.t0.elapsed() < std::time::Duration::from_millis(400) {
+                        // phantom release / key-repeat bounce — kill the
+                        // recorder quietly instead of a doomed pipeline
+                        rec.sampler_stop.store(true, Ordering::SeqCst);
+                        let _ = rec.child.kill();
+                        let _ = rec.child.wait();
+                        st_h.transition("done", &[("result", json!("")),
+                            ("transcript", json!(""))]);
+                        return json!({"ok": true, "stopped": true,
+                                      "ignored": true});
+                    }
                     if busy_h.swap(true, Ordering::SeqCst) {
                         return json!({"ok": false, "error": "busy"});
                     }
@@ -279,7 +318,8 @@ fn dispatch(cmd: Value, st_h: &Arc<state::State>,
                 st_h.transition("listening", &[
                     ("transcript", json!("")), ("result", json!("")),
                     ("answer", json!("")), ("choices", json!([])),
-                    ("points", json!([])), ("error", json!(""))]);
+                    ("points", json!([])), ("steps", json!([])),
+                    ("error", json!(""))]);
                 match pipeline::record_start(st_h) {
                     Err(e) => {
                         busy_h.store(false, Ordering::SeqCst);
@@ -362,6 +402,11 @@ fn dispatch(cmd: Value, st_h: &Arc<state::State>,
                         .unwrap_or("");
                     json!({"ok": true, "result": memory::run(a)})
                 }
+            }
+            "label" => {
+                json!({"ok": true, "result": learn::label_last(
+                    cmd.get("label").and_then(|v| v.as_str()).unwrap_or(""),
+                    cmd.get("note").and_then(|v| v.as_str()).unwrap_or(""))})
             }
             "learn" => {
                 let p = learn::weekly(7);
