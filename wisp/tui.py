@@ -9,7 +9,6 @@ pending suggestions, and the last few decisions. Keys:
 """
 import curses
 import json
-import time
 
 from . import ipc, suggest
 

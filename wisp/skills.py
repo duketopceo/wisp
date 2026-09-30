@@ -192,9 +192,6 @@ def run_tool(name: str, arg: str) -> str | None:
         return "FAIL (skill script timed out)"
 
 
-SEED_DIR = None  # set lazily — resolves to wisp/skills_seed in the tree
-
-
 def _seed_dir():
     import pathlib
     return pathlib.Path(__file__).resolve().parent / "skills_seed"

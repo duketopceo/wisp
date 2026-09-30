@@ -476,7 +476,7 @@ def install_bind(cfg: dict) -> None:
 def _doctor(cfg: dict) -> int:
     """Scan everything wispd depends on — the harness/runtime probe."""
     import shutil as _sh
-    from wisp import agents, brain, sense, skills
+    from wisp import agents, brain, skills
     ok = True
 
     def row(name, val, good=True):
