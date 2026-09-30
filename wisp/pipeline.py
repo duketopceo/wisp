@@ -100,13 +100,18 @@ JEV_QUESTIONS = {
 
 
 def hypr_env() -> dict:
-    """Hyprland tooling needs its instance signature when run from a daemon."""
+    """Session env for spawned tools when run from a (systemd) daemon —
+    fills in HIS and the Wayland socket wtype/grim need."""
     env = dict(os.environ)
+    rd = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
     if not env.get("HYPRLAND_INSTANCE_SIGNATURE"):
-        rd = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
         hypr = pathlib.Path(rd) / "hypr"
         if hypr.is_dir():
             env["HYPRLAND_INSTANCE_SIGNATURE"] = sorted(hypr.iterdir())[0].name
+    if not env.get("WAYLAND_DISPLAY"):
+        for s in sorted(pathlib.Path(rd).glob("wayland-*")):
+            env["WAYLAND_DISPLAY"] = s.name
+            break
     return env
 
 
@@ -440,9 +445,14 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
     # answer is never blocked on risk (Jev's score band for launches
     # straddles the navigational/mutating line: "open discord" ~1.6).
     # dictation is self-confirming — the transcript is the user's own
-    # instruction, so it skips the risk gate like launch/answer
+    # instruction, so it skips the risk gate like launch/answer. Same for
+    # a safe-tier tool pick even when the route guess was off.
+    tool_choice = answers.get("tool", {}).get("choice", "")
     gated = route not in ("launch", "answer", "dictation") and \
         action not in ("launch", "answer")
+    if gated and (tool_choice in ("launch", "answer")
+                  or tools.risk_of(tool_choice) == "safe"):
+        gated = False
     if gated and risk > threshold:
         return f"BLOCKED (risk={risk:.2f} > {threshold})"
 
@@ -467,6 +477,11 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
                                 harness=harness, confirm=confirm)
     if route == "tool":
         tool_name = answers.get("tool", {}).get("choice", "")
+        if tool_name == "launch":
+            # launch takes the resolved app name, not the transcript
+            if not app or app == "none":
+                return "SKIP (launch but no app identified)"
+            return tools.run("launch", app, cfg, harness)
         tier = tools.risk_of(tool_name)
         if tier == "shell":
             if cfg.get("agent", {}).get("allow_shell", "false") != "true":
@@ -520,6 +535,56 @@ def ambiguous_choices(answers: dict, cfg: dict) -> list:
                        key=lambda kv: -kv[1])[:3]
     return [f"app:{k}" for k, _ in app_probs] \
         + [f"action:{k}" for k, _ in act_probs]
+
+
+_OPEN_VERB = re.compile(
+    r"(?:open|launch|start|close|quit|focus|switch to|run|bring up|"
+    r"pull up|show me)\s+(?:the\s+)?(?:app\s+)?([\w .+~/-]+)",
+    re.IGNORECASE)
+
+
+def fuzzy_app(text: str, answers: dict) -> str:
+    """Pull an app name out of 'open discord' when Jev picks none.
+    Matches against the probability keys Jev was choosing among —
+    normalized ('day flow' matches 'dayflow'), substring then difflib."""
+    m = _OPEN_VERB.search(text)
+    if not m:
+        return ""
+    want = re.sub(r"[\s._-]+", "", m.group(1).strip().rstrip(".")).lower()
+    if not want:
+        return ""
+    keys = [k for k in answers.get("app", {}).get("probabilities", {})
+            if k != "none"]
+    norm = {re.sub(r"[\s._-]+", "", k).lower(): k for k in keys}
+    if want in norm:
+        return norm[want]
+    for nk, k in norm.items():  # "discord canary" -> discord
+        if nk in want or want in nk:
+            return k
+    import difflib
+    close = difflib.get_close_matches(want, list(norm), n=1, cutoff=0.6)
+    return norm[close[0]] if close else ""
+
+
+_BENIGN_ACTIONS = ("launch", "answer")
+
+
+def auto_pick(answers: dict) -> str:
+    """Timeout fallback for clarify prompts: pick Jev's own top candidate
+    — but only along the safe axis. App picks resolve which app; action
+    picks are only auto-taken when they're launch/answer, never
+    run_shell/type_text. Anything else stays cancelled."""
+    probs = answers.get("app", {}).get("probabilities", {})
+    acts = answers.get("action", {}).get("probabilities", {})
+    top_act = max(acts.items(), key=lambda kv: kv[1])[0] if acts else ""
+    top_app = max(probs.items(), key=lambda kv: kv[1])[0] if probs else ""
+    if top_act in _BENIGN_ACTIONS and top_app and top_app != "none":
+        return f"app:{top_app}"
+    if top_act in _BENIGN_ACTIONS:
+        return f"action:{top_act}"
+    if top_app and top_app != "none":
+        return f"app:{top_app}"
+    return ""
 
 
 def apply_choice(answers: dict, picked: str) -> dict:
@@ -608,13 +673,19 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
                     {"model": model, "answers": answers,
                      "latency_ms": resp.get("latency_ms")},
                     timing["jev_ms"])
+        # transcript rescue: "open discord" with app=none shouldn't
+        # clarify-prompt — the app name is right there in the words
+        if answers.get("app", {}).get("choice", "none") in ("none", "", None):
+            fa = fuzzy_app(text, answers)
+            if fa:
+                answers.setdefault("app", {})["choice"] = fa
         low_conf = is_low_confidence(answers, cfg)
         corrected = None
         if low_conf:
             labels = ambiguous_choices(answers, cfg)
             if wait_for_choice:
                 state.transition("awaiting_choice", choices=labels)
-                picked = wait_for_choice(60)
+                picked = wait_for_choice(60) or auto_pick(answers)
                 state.transition("acting", choices=[])
                 if picked:
                     corrected = apply_choice(answers, picked)

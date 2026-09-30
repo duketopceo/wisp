@@ -262,6 +262,20 @@ fn type_text_cmd_for(os: Os, dt: Desktop,
                 "ydotool" => c.args(["type", "--", text]),
                 _ => c.args(["type", "--clearmodifiers", "--", text]),
             };
+            // systemd-launch daemons have an empty Environment — wtype
+            // silently fails without the Wayland socket name
+            if *b == "wtype" && std::env::var("WAYLAND_DISPLAY").is_err() {
+                let rd = std::env::var("XDG_RUNTIME_DIR")
+                    .unwrap_or_else(|_| "/tmp".into());
+                if let Ok(mut it) = std::fs::read_dir(&rd) {
+                    if let Some(name) = it.find_map(|e| e.ok()
+                        .map(|e| e.file_name().to_string_lossy().into_owned())
+                        .filter(|n| n.starts_with("wayland-")))
+                    {
+                        c.env("WAYLAND_DISPLAY", name);
+                    }
+                }
+            }
             c
         }
         Os::MacOS => {

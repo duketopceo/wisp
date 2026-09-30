@@ -359,6 +359,78 @@ fn capture_screen_b64() -> Option<String> {
         &base64::engine::general_purpose::STANDARD, bytes)))
 }
 
+fn fuzzy_app(text: &str, answers: &Value) -> String {
+    // Pull an app name out of "open discord" when Jev picks none —
+    // normalized substring match against the app candidates.
+    let lower = text.to_lowercase();
+    let verbs = ["switch to", "bring up", "pull up", "show me", "open",
+                 "launch", "start", "close", "quit", "focus", "run"];
+    let norm_of = |s: &str| -> String {
+        s.chars()
+            .filter(|c| c.is_alphanumeric() || *c == '+')
+            .collect::<String>()
+            .to_lowercase()
+    };
+    for verb in verbs {
+        let mut at = 0;
+        while let Some(i) = lower[at..].find(verb).map(|j| at + j) {
+            at = i + verb.len();
+            if i > 0 && !lower[..i].ends_with(' ') { continue; }
+            let mut rest = lower[at..].trim_start();
+            for filler in ["the ", "app "] {
+                if let Some(r) = rest.strip_prefix(filler) { rest = r; }
+            }
+            let want = norm_of(rest.trim_end_matches(['.', '!', '?', ',']));
+            if want.is_empty() { continue; }
+            if let Some(probs) = answers.pointer("/app/probabilities")
+                .and_then(|p| p.as_object())
+            {
+                let cands: Vec<(String, String)> = probs.keys()
+                    .filter(|k| k.as_str() != "none")
+                    .map(|k| (norm_of(k), k.clone()))
+                    .collect();
+                for (nk, k) in &cands {
+                    if *nk == want { return k.clone(); }
+                }
+                for (nk, k) in &cands {
+                    if nk.contains(&want) || want.contains(nk.as_str()) {
+                        return k.clone();
+                    }
+                }
+            }
+        }
+    }
+    String::new()
+}
+
+fn auto_pick(answers: &Value) -> Option<String> {
+    // Timeout fallback for clarify prompts: take Jev's top candidate
+    // along the safe axis only — app picks resolve which app; action
+    // picks auto-taken only for launch/answer, never run_shell.
+    let top = |q: &str| -> Option<String> {
+        answers.pointer(&format!("/{q}/probabilities"))
+            .and_then(|p| p.as_object())
+            .and_then(|m| m.iter()
+                .max_by(|a, b| a.1.as_f64().unwrap_or(0.0)
+                    .partial_cmp(&b.1.as_f64().unwrap_or(0.0))
+                    .unwrap_or(std::cmp::Ordering::Equal))
+                .map(|(k, _)| k.clone()))
+    };
+    let ta = top("action").unwrap_or_default();
+    let tp = top("app").unwrap_or_default();
+    let benign = matches!(ta.as_str(), "launch" | "answer");
+    if benign && !tp.is_empty() && tp != "none" {
+        return Some(format!("app:{tp}"));
+    }
+    if benign {
+        return Some(format!("action:{ta}"));
+    }
+    if !tp.is_empty() && tp != "none" {
+        return Some(format!("app:{tp}"));
+    }
+    None
+}
+
 fn is_low_confidence(answers: &Value, cfg: &Cfg) -> bool {
     // parity: Python gates on the app question's own confidence field
     answers.get("app").and_then(|a| a.get("confidence"))
@@ -611,9 +683,20 @@ pub fn run_listen(cfg: &Cfg, st: &Arc<State>, ctl: &ChoiceCtl,
                    "answers": answers}),
             Some(t0.elapsed().as_millis() as i64));
 
+        // transcript rescue: "open discord" with app=none shouldn't
+        // clarify-prompt — the app name is right there in the words
+        let mut answers = answers;
+        if answers.pointer("/app/choice")
+            .and_then(|v| v.as_str())
+            .map(|c| c == "none" || c.is_empty()).unwrap_or(true)
+        {
+            let fa = fuzzy_app(&text, &answers);
+            if !fa.is_empty() {
+                answers["app"]["choice"] = json!(fa);
+            }
+        }
         // low-confidence → choice prompt (parity: labels are
         // app:X / action:Y from each question's probabilities)
-        let mut answers = answers;
         let low_conf = is_low_confidence(&answers, cfg);
         let mut corrected = false;
         if low_conf {
@@ -638,7 +721,7 @@ pub fn run_listen(cfg: &Cfg, st: &Arc<State>, ctl: &ChoiceCtl,
             if !labels.is_empty() {
                 st.transition("awaiting_choice",
                               &[("choices", json!(labels))]);
-                let pick = ctl.wait(30);
+                let pick = ctl.wait(30).or_else(|| auto_pick(&answers));
                 st.transition("acting", &[("choices", json!([]))]);
                 if let Some(pick) = pick {
                     // apply_choice: rewrite the app or action choice
@@ -681,8 +764,14 @@ pub fn run_listen(cfg: &Cfg, st: &Arc<State>, ctl: &ChoiceCtl,
             .and_then(|v| v.as_f64()).unwrap_or(2.0);
         // dictation is self-confirming — the transcript is the user's
         // own instruction, so it skips the risk gate like launch/answer
-        let gated = !matches!(route.as_str(), "launch" | "answer" | "dictation")
+        let tool_choice = answers.pointer("/tool/choice")
+            .and_then(|v| v.as_str()).unwrap_or("");
+        let mut gated = !matches!(route.as_str(), "launch" | "answer" | "dictation")
             && !matches!(action.as_str(), "launch" | "answer");
+        if gated && (matches!(tool_choice, "launch" | "answer")
+                     || tools::risk_of(tool_choice) == "safe") {
+            gated = false;
+        }
 
         let res = if gated && risk > cfg.risk_threshold {
             format!("BLOCKED (risk={risk:.2} > {})", cfg.risk_threshold)
@@ -708,6 +797,14 @@ pub fn run_listen(cfg: &Cfg, st: &Arc<State>, ctl: &ChoiceCtl,
             let name = answers.pointer("/tool/choice")
                 .and_then(|v| v.as_str()).unwrap_or("");
             let tier = tools::risk_of(name);
+            if name == "launch" {
+                // launch takes the resolved app name, not the transcript
+                if app.is_empty() || app == "none" {
+                    return Ok("SKIP (launch but no app identified)"
+                        .to_string());
+                }
+                return Ok(tools::run("launch", &app, cfg));
+            }
             if tier == "shell" && !cfg.allow_shell {
                 "BLOCKED (shell tool needs allow_shell=true in config)".into()
             } else if tier == "shell" {
