@@ -40,7 +40,12 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
             st.transition(st.status)
             return {"ok": True, "state": st.snapshot()}
         if c == "listen":
+            phase = cmd.get("phase", "")  # hold-to-talk: start|stop; empty = toggle
             with ctl["rec_lock"]:
+                if phase == "start" and ctl["rec"] is not None:
+                    return {"ok": True, "recording": True}
+                if phase == "stop" and ctl["rec"] is None:
+                    return {"ok": True, "stopped": True}
                 if ctl["rec"] is not None:
                     # second press: stop capture, run the pipeline
                     rec = ctl["rec"]
@@ -193,9 +198,9 @@ def run_daemon(cfg: dict) -> int:
     return 0
 
 
-def cmd_trigger(cfg: dict) -> int:
+def cmd_trigger(cfg: dict, phase: str = "") -> int:
     try:
-        resp = ipc.send({"cmd": "listen"})
+        resp = ipc.send({"cmd": "listen", "phase": phase})
         if resp.get("ok"):
             return 0
         print(f"wispd: {resp.get('error')}", file=sys.stderr)
@@ -256,7 +261,7 @@ StartupNotify=false
         print(f"installed {plugin_dst}")
     trigger = config.HOME / ".local" / "bin" / "wisp-trigger"
     trigger.parent.mkdir(parents=True, exist_ok=True)
-    trigger.write_text(f"#!/bin/sh\nexec python3 {opt}/wispd trigger\n")
+    trigger.write_text(f'#!/bin/sh\nexec python3 {opt}/wispd trigger "$@"\n')
     trigger.chmod(0o755)
     print(f"installed {trigger}")
     from wisp import platform as _plat
@@ -325,8 +330,10 @@ def install_bind(cfg: dict) -> None:
     mod = cfg.get("hotkey", {}).get("mod", "SUPER")
     key = cfg.get("hotkey", {}).get("key", "D")
     trigger = f"{config.HOME}/.local/bin/wisp-trigger"
-    bind = (f'o.bind("{mod} + {key.upper()}", "Wisp push-to-talk", '
-            f'{{ launch = "{trigger}" }})')
+    bind = (f'o.bind("{mod} + {key.upper()}", "Wisp push-to-talk (hold)", '
+            f'{{ launch = "{trigger} start" }})\n'
+            f'o.bind("{mod} + {key.upper()}", "Wisp push-to-talk (release)", '
+            f'{{ launch = "{trigger} stop" }}, {{ release = true }})')
 
     conf = config.HOME / ".config" / "hypr" / "hyprland.conf"
     if conf.exists() and "wisp-trigger" in conf.read_text():
@@ -338,9 +345,16 @@ def install_bind(cfg: dict) -> None:
 
     bindings = config.HOME / ".config" / "hypr" / "bindings.lua"
     text = bindings.read_text() if bindings.exists() else ""
-    if "wisp-trigger" in text:
+    old = [l for l in text.splitlines() if "wisp-trigger" in l]
+    if (len(old) >= 2
+            and all("start" in l or "release" in l for l in old)):
         print(f"bind already present in {bindings}")
         return
+    if old:  # stale toggle-style bind — replace with press/release pair
+        text = "\n".join(l for l in text.splitlines()
+                         if "wisp-trigger" not in l
+                         and l.strip() != "-- Wisp push-to-talk")
+        bindings.write_text(text.rstrip("\n") + "\n")
     with bindings.open("a") as f:
         f.write(f"\n-- Wisp push-to-talk\n{bind}\n")
     print(f"added bind to {bindings}: {bind}")
@@ -366,7 +380,7 @@ def main() -> int:
         install_bind(cfg)
         return 0
     if cmd == "trigger":
-        return cmd_trigger(cfg)
+        return cmd_trigger(cfg, sys.argv[2] if len(sys.argv) > 2 else "")
     if cmd == "status":
         try:
             import json

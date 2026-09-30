@@ -27,7 +27,10 @@ fn main() {
     let cmd = std::env::args().nth(1).unwrap_or_default();
     let code = match cmd.as_str() {
         "daemon" => daemon(),
-        "trigger" => client(&json!({"cmd": "listen"}), true),
+        "trigger" => {
+            let phase = std::env::args().nth(2).unwrap_or_default();
+            client(&json!({"cmd": "listen", "phase": phase}), true)
+        }
         "status" => client(&json!({"cmd": "status"}), false),
         "stop" => client(&json!({"cmd": "stop"}), false),
         "choice" => {
@@ -230,10 +233,18 @@ fn dispatch(cmd: Value, st_h: &Arc<state::State>,
                 json!({"ok": true, "state": st_h.snapshot()})
             }
             "listen" => {
-                // push-to-talk toggle: first press starts an unbounded
-                // capture, second press stops it and runs the pipeline;
+                // push-to-talk: phase "start"/"stop" from the
+                // press/release binds; empty phase = toggle (compat).
                 // [audio] seconds is the watchdog safety cap.
+                let phase =
+                    cmd.get("phase").and_then(|v| v.as_str()).unwrap_or("");
                 let mut guard = rec_h.lock().unwrap();
+                if phase == "start" && guard.is_some() {
+                    return json!({"ok": true, "recording": true});
+                }
+                if phase == "stop" && guard.is_none() {
+                    return json!({"ok": true, "stopped": true});
+                }
                 if let Some(mut rec) = guard.take() {
                     drop(guard);
                     if busy_h.swap(true, Ordering::SeqCst) {
