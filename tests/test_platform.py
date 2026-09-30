@@ -87,6 +87,26 @@ class TestPlatform(unittest.TestCase):
                 self.assertIsNone(platform.tts_binary())
                 self.assertIsNone(platform.sampler_cmd(5))
 
+    def test_toggle_cmds_omit_duration(self):
+        # seconds=None → open-ended capture for mic toggle; the
+        # recorder must carry NO duration flag (stopped by SIGINT).
+        with _with_os("linux"):
+            with mock.patch.object(platform, "_which",
+                                   return_value=True):
+                rec = platform.record_cmd(Path("/t/u.wav"), None)
+                self.assertEqual(rec[0], "pw-record")
+                self.assertNotIn("--sample-count", rec)
+                rec2 = platform.record_cmd(Path("/t/u.wav"), 30)
+                self.assertIn("--sample-count", rec2)
+        with _with_os("macos"):
+            with mock.patch.object(platform, "_which",
+                                   return_value=True):
+                rec = platform.record_cmd(Path("/t/u.wav"), None)
+                self.assertEqual(rec[0], "afrecord")
+                self.assertNotIn("-d", rec)
+                smp = platform.sampler_cmd(None)
+                self.assertNotIn("trim", smp)
+
     def test_windows_cmds(self):
         with _with_os("windows"):
             with mock.patch.object(platform, "_which",

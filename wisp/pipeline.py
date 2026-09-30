@@ -12,6 +12,7 @@ import os
 import pathlib
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -117,30 +118,69 @@ def notify(msg: str) -> None:
 
 
 def record(seconds: int, state=None) -> pathlib.Path:
+    """Bounded capture for standalone `wispd listen` (no daemon to
+    toggle-stop). The daemon uses record_start/record_stop instead."""
+    rec = record_start(state)
+    try:
+        rec["proc"].wait(timeout=seconds)
+        return _record_finish(rec, state)
+    except subprocess.TimeoutExpired:
+        return record_stop(rec, state)
+
+
+def record_start(state=None) -> dict:
+    """Toggle capture: spawn the recorder unbounded + the level sampler.
+    Returns a handle for record_stop()."""
     out = config.CFG_DIR / "utterance.wav"
     config.RUN_DIR.mkdir(parents=True, exist_ok=True)
-    sampler = threading.Thread(target=_amplitude_sampler,
-                               args=(seconds, state), daemon=True)
-    sampler.start()
+    out.unlink(missing_ok=True)
     from . import platform
-    cmd = platform.record_cmd(out, seconds)
+    cmd = platform.record_cmd(out, None)
     if cmd is None:
         raise RuntimeError(
             f"no recorder found — {platform.missing_deps_hint()}")
-    # pw-record exits 1 on clean --sample-count shutdown (pipewire 1.6.x);
-    # trust the output file, not the exit code.
-    subprocess.run(cmd, timeout=seconds + 10, env=hypr_env())
-    if not (out.exists() and out.stat().st_size > 44):
-        raise RuntimeError(f"recording produced no audio: {out}")
+    stop_ev = threading.Event()
+    sampler = threading.Thread(target=_amplitude_sampler,
+                               args=(None, state, stop_ev), daemon=True)
+    sampler.start()
+    proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL, env=hypr_env())
+    return {"proc": proc, "out": out, "sampler_stop": stop_ev,
+            "sampler": sampler}
+
+
+def record_stop(rec: dict, state=None) -> pathlib.Path:
+    """SIGINT the recorder (finalizes the WAV header), then validate."""
+    proc = rec["proc"]
+    if proc.poll() is None:
+        try:
+            proc.send_signal(signal.SIGINT)
+            proc.wait(timeout=3)
+        except (subprocess.TimeoutExpired, ProcessLookupError):
+            proc.kill()
+            proc.wait(timeout=3)
+    rec["sampler_stop"].set()
+    return _record_finish(rec, state, settled=True)
+
+
+def _record_finish(rec: dict, state=None, settled: bool = False
+                   ) -> pathlib.Path:
+    out = rec["out"]
+    if not settled:
+        # bounded path: proc already exited or timed out
+        rec["sampler_stop"].set()
     time.sleep(0.3)
     if state:
         state.set_level(0.0)
     else:
         config.LEVEL_FILE.write_text("0.0")
+    if not (out.exists() and out.stat().st_size > 44):
+        raise RuntimeError(f"recording produced no audio: {out}")
     return out
 
 
-def _amplitude_sampler(seconds: int, state=None) -> None:
+def _amplitude_sampler(seconds: int | None, state=None,
+                       stop_ev=None) -> None:
     """Breathing darkness: sample mic RMS, publish level for the overlay."""
     from . import platform
     arec = platform.sampler_cmd(seconds)
@@ -153,11 +193,14 @@ def _amplitude_sampler(seconds: int, state=None) -> None:
         else:
             config.LEVEL_FILE.write_text(f"{v:.3f}")
 
+    proc = None
     try:
         proc = subprocess.Popen(
             arec,
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=hypr_env())
         while True:
+            if stop_ev is not None and stop_ev.is_set():
+                break
             chunk = proc.stdout.read(200)
             if not chunk:
                 break
@@ -166,12 +209,17 @@ def _amplitude_sampler(seconds: int, state=None) -> None:
                 w = chunk[i:i + step]
                 rms = sum(abs(b - 128) for b in w) / (len(w) * 128)
                 publish(min(1.0, rms * 6))
+        if proc.poll() is None:
+            proc.kill()
         proc.wait(timeout=5)
     except Exception:
         try:
             publish(0.0)
         except Exception:
             pass
+    finally:
+        if proc is not None and proc.poll() is None:
+            proc.kill()
 
 
 def transcribe(wav: pathlib.Path, cfg: dict) -> str:
@@ -480,14 +528,17 @@ def apply_choice(answers: dict, picked: str) -> dict:
     return corrected
 
 
-def run_listen(cfg: dict, state, wait_for_choice=None) -> int:
+def run_listen(cfg: dict, state, wait_for_choice=None,
+               wav: pathlib.Path | None = None) -> int:
     """One push-to-talk cycle inside the daemon.
 
-    `wait_for_choice(timeout)` -> picked label or None; injected by the
-    daemon so ambiguous turns resolve via IPC/widget clicks. With no
-    chooser wired, low-confidence turns cancel rather than guess.
+    `wav` set → toggle mode: the daemon already captured audio between
+    two presses, so skip recording. `wait_for_choice(timeout)` -> picked
+    label or None; injected by the daemon so ambiguous turns resolve via
+    IPC/widget clicks. With no chooser wired, low-confidence turns cancel
+    rather than guess.
     """
-    secs = int(cfg.get("audio", {}).get("seconds", "5"))
+    secs = int(cfg.get("audio", {}).get("seconds", "60"))
     model = cfg.get("agent", {}).get("model", "typesafe/jev-1.13")
     t0 = time.monotonic()
     timing = {}
@@ -496,9 +547,10 @@ def run_listen(cfg: dict, state, wait_for_choice=None) -> int:
     _trace.emit(turn, "listen_start", "lifecycle",
                 {"seconds": secs, "model": model})
     try:
-        state.transition("listening", transcript="", result="", answer="",
-                         choices=[], points=[], error="")
-        wav = record(secs, state)
+        if wav is None:
+            state.transition("listening", transcript="", result="",
+                             answer="", choices=[], points=[], error="")
+            wav = record(secs, state)
         timing["record_ms"] = round((time.monotonic() - t0) * 1000)
         _trace.emit(turn, "record", "stt",
                     {"wav": str(wav),

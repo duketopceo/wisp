@@ -39,7 +39,7 @@ mod = "SUPER"
 key = "D"
 
 [audio]
-seconds = 5
+seconds = 60
 # whisper.cpp model filename under ~/src/whisper.cpp/models/
 whisper_model = "ggml-small.en.bin"
 
@@ -145,7 +145,7 @@ browser_new_tab = "chromium"
 def _default_cfg_dict() -> dict:
     return {
         "hotkey": {"mod": "SUPER", "key": "D"},
-        "audio": {"seconds": "5", "whisper_model": "ggml-small.en.bin"},
+        "audio": {"seconds": "60", "whisper_model": "ggml-small.en.bin"},
         "agent": {
             "model": "typesafe/jev-1.13",
             "answer_model": "meta-llama/llama-4-maverick",

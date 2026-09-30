@@ -130,9 +130,9 @@ fn notify(msg: &str) {
 /// Breathing darkness: sample mic RMS via the platform sampler,
 /// publish `level` for the overlay — parity with
 /// wisp/pipeline.py::_amplitude_sampler.
-fn amplitude_sampler(seconds: u64, st: Arc<State>) {
+fn amplitude_sampler(st: Arc<State>, stop: Arc<AtomicBool>) {
     use std::io::Read;
-    let Some(mut cmd) = crate::platform::sampler_cmd(seconds as i64)
+    let Some(mut cmd) = crate::platform::sampler_cmd(None)
     else {
         return;
     };
@@ -146,43 +146,119 @@ fn amplitude_sampler(seconds: u64, st: Arc<State>) {
     };
     let Some(mut out) = proc.stdout.take() else { return };
     let mut chunk = [0u8; 200];
-    while let Ok(n) = out.read(&mut chunk) {
-        if n == 0 {
-            break;
-        }
-        for w in chunk[..n.saturating_sub(19)].chunks(20) {
-            let rms: f64 = w.iter()
-                .map(|b| (*b as i32 - 128).unsigned_abs() as f64)
-                .sum::<f64>() / (w.len() * 128) as f64;
-            st.set_level((rms * 6.0).min(1.0));
+    while !stop.load(Ordering::SeqCst) {
+        match out.read(&mut chunk) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => {
+                for w in chunk[..n.saturating_sub(19)].chunks(20) {
+                    let rms: f64 = w.iter()
+                        .map(|b| (*b as i32 - 128).unsigned_abs() as f64)
+                        .sum::<f64>() / (w.len() * 128) as f64;
+                    st.set_level((rms * 6.0).min(1.0));
+                }
+            }
         }
     }
+    let _ = proc.kill();
     let _ = proc.wait();
 }
 
-fn record(cfg: &Cfg, st: &Arc<State>) -> Result<std::path::PathBuf, String> {
+/// A live toggle capture — the recorder runs unbounded until
+/// `record_stop` (second press or the [audio] seconds watchdog).
+pub struct RecHandle {
+    pub child: std::process::Child,
+    pub out: std::path::PathBuf,
+    pub sampler_stop: Arc<AtomicBool>,
+}
+
+pub fn record_start(st: &Arc<State>) -> Result<RecHandle, String> {
     // keep wav under the user-only config dir — /tmp is
     // shared/predictable (Python uses CFG_DIR too)
     let dir = crate::config::cfg_dir();
     std::fs::create_dir_all(&dir).ok();
     let out = dir.join("utterance.wav");
-    let secs = cfg.audio_seconds;
-    let sampler_st = st.clone();
-    std::thread::spawn(move || amplitude_sampler(secs as u64, sampler_st));
-    let Some(mut cmd) = crate::platform::record_cmd(&out, secs.into()) else {
+    let _ = std::fs::remove_file(&out);
+    let Some(mut cmd) = crate::platform::record_cmd(&out, None) else {
         return Err(format!("no recorder found — {}",
             crate::platform::missing_deps_hint()));
     };
-    let rec = crate::util::run_timeout(&mut cmd, secs as u64 + 10);
-    // pw-record exits 1 on clean --sample-count shutdown (pipewire
-    // 1.6.x) — trust the output file, not the exit code (Python parity)
-    let _ = rec;
+    let sampler_stop = Arc::new(AtomicBool::new(false));
+    {
+        let s = st.clone();
+        let stop = sampler_stop.clone();
+        std::thread::spawn(move || amplitude_sampler(s, stop));
+    }
+    let child = cmd
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(RecHandle { child, out, sampler_stop })
+}
+
+/// SIGINT the recorder so the WAV header finalizes (taskkill fallback
+/// on Windows — sox can't flush a header on forced kill there; the wav
+/// body is still usable by whisper).
+pub fn record_stop(rec: &mut RecHandle, st: &Arc<State>)
+                   -> Result<std::path::PathBuf, String> {
+    if rec.child.try_wait().ok().flatten().is_none() {
+        #[cfg(unix)]
+        {
+            let _ = std::process::Command::new("kill")
+                .args(["-INT", &rec.child.id().to_string()])
+                .status();
+            let deadline = std::time::Instant::now()
+                + std::time::Duration::from_secs(3);
+            while rec.child.try_wait().ok().flatten().is_none()
+                && std::time::Instant::now() < deadline
+            {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            if rec.child.try_wait().ok().flatten().is_none() {
+                let _ = rec.child.kill();
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = std::process::Command::new("taskkill")
+                .args(["/PID", &rec.child.id().to_string(), "/T"])
+                .status();
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            if rec.child.try_wait().ok().flatten().is_none() {
+                let _ = rec.child.kill();
+            }
+        }
+        let _ = rec.child.wait();
+    }
+    rec.sampler_stop.store(true, Ordering::SeqCst);
+    record_finish(&rec.out, st)
+}
+
+fn record_finish(out: &std::path::Path, st: &Arc<State>)
+                 -> Result<std::path::PathBuf, String> {
     std::thread::sleep(std::time::Duration::from_millis(300));
     st.set_level(0.0);
-    let ok = std::fs::metadata(&out).map(|m| m.len() > 44).unwrap_or(false);
-    if ok { Ok(out) } else {
+    let ok = std::fs::metadata(out).map(|m| m.len() > 44)
+        .unwrap_or(false);
+    if ok { Ok(out.to_path_buf()) } else {
         Err(format!("recording produced no audio: {}", out.display()))
     }
+}
+
+/// Bounded capture for standalone `wispd listen` — no daemon to
+/// toggle-stop, so it self-caps at [audio] seconds (Python parity).
+fn record(cfg: &Cfg, st: &Arc<State>) -> Result<std::path::PathBuf, String> {
+    let mut rec = record_start(st)?;
+    let deadline = std::time::Instant::now()
+        + std::time::Duration::from_secs(cfg.audio_seconds as u64);
+    while std::time::Instant::now() < deadline {
+        if rec.child.try_wait().ok().flatten().is_some() {
+            rec.sampler_stop.store(true, Ordering::SeqCst);
+            return record_finish(&rec.out, st);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    record_stop(&mut rec, st)
 }
 
 /// OpenAI-compatible /audio/transcriptions — Groq, OpenAI, vLLM, etc.
@@ -467,8 +543,12 @@ fn tail(steps: &[(String, String, String)]) -> String {
 
 /// Full listen cycle — contract states: listening→transcribing→deciding
 /// →(awaiting_choice)→acting→done|error.
+/// `wav` set → toggle mode: the daemon already captured between two
+/// presses (state "listening" was published at first press), so skip
+/// recording. `None` → bounded standalone capture.
 pub fn run_listen(cfg: &Cfg, st: &Arc<State>, ctl: &ChoiceCtl,
-                  running: Arc<AtomicBool>) -> i32 {
+                  running: Arc<AtomicBool>,
+                  wav: Option<std::path::PathBuf>) -> i32 {
     let t0 = Instant::now();
     let mut timing = serde_json::Map::new();
     let turn = crate::trace::new_turn();
@@ -476,11 +556,16 @@ pub fn run_listen(cfg: &Cfg, st: &Arc<State>, ctl: &ChoiceCtl,
         json!({"seconds": cfg.audio_seconds, "model": cfg.model}),
         None);
     let result: Result<String, String> = (|| {
-        st.transition("listening", &[
-            ("transcript", json!("")), ("result", json!("")),
-            ("answer", json!("")), ("choices", json!([])),
-            ("points", json!([])), ("error", json!(""))]);
-        let wav = record(cfg, st)?;
+        let wav = match wav {
+            Some(w) => w,
+            None => {
+                st.transition("listening", &[
+                    ("transcript", json!("")), ("result", json!("")),
+                    ("answer", json!("")), ("choices", json!([])),
+                    ("points", json!([])), ("error", json!(""))]);
+                record(cfg, st)?
+            }
+        };
         timing.insert("record_ms".into(), json!(t0.elapsed().as_millis()));
         crate::trace::emit(&turn, "record", "stt",
             json!({"wav": wav.display().to_string(),

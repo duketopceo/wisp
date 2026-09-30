@@ -16,6 +16,11 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from wisp import config, ipc, pipeline, speech, state as state_mod  # noqa: E402
 
+# daemon-scoped handles the rec watchdog needs (set in run_daemon)
+_DAEMON_ST = None
+_DAEMON_CFG = None
+_DAEMON_CTL = None
+
 
 def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
     def handle(cmd: dict) -> dict:
@@ -35,13 +40,39 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
             st.transition(st.status)
             return {"ok": True, "state": st.snapshot()}
         if c == "listen":
-            if ctl["busy"].is_set():
-                return {"ok": False, "error": "busy"}
-            speech.stop()
-            ctl["busy"].set()
-            threading.Thread(target=_run_listen, args=(st, cfg, ctl),
-                             daemon=True).start()
-            return {"ok": True}
+            with ctl["rec_lock"]:
+                if ctl["rec"] is not None:
+                    # second press: stop capture, run the pipeline
+                    rec = ctl["rec"]
+                    ctl["rec"] = None
+                    if ctl["busy"].is_set():
+                        return {"ok": False, "error": "busy"}
+                    try:
+                        wav = pipeline.record_stop(rec, st)
+                    except RuntimeError as e:
+                        st.transition("error", error=str(e))
+                        return {"ok": False, "error": str(e)}
+                    ctl["busy"].set()
+                    threading.Thread(
+                        target=_run_listen, args=(st, cfg, ctl, wav),
+                        daemon=True).start()
+                    return {"ok": True, "stopped": True}
+                if ctl["busy"].is_set():
+                    return {"ok": False, "error": "busy"}
+                # first press: start open-ended capture; [audio] seconds
+                # is the safety cap, not the length.
+                speech.stop()
+                st.transition("listening", transcript="", result="",
+                              answer="", choices=[], points=[], error="")
+                try:
+                    ctl["rec"] = pipeline.record_start(st)
+                except RuntimeError as e:
+                    st.transition("error", error=str(e))
+                    return {"ok": False, "error": str(e)}
+                secs = int(cfg.get("audio", {}).get("seconds", "60"))
+                threading.Thread(target=_rec_watchdog,
+                                 args=(ctl, secs), daemon=True).start()
+                return {"ok": True, "recording": True}
         if c == "choice":
             ctl["choice_pick"] = cmd.get("pick", "")
             ctl["choice_event"].set()
@@ -109,19 +140,46 @@ def _wait_for_choice(ctl: dict):
     return wait
 
 
-def _run_listen(st: state_mod.State, cfg: dict, ctl: dict) -> None:
+def _rec_watchdog(ctl: dict, secs: int) -> None:
+    """Safety cap: auto-stop an open capture after [audio] seconds."""
+    ctl["stop"].wait(secs)
+    with ctl["rec_lock"]:
+        rec = ctl["rec"]
+        if rec is None:
+            return
+        ctl["rec"] = None
+    # mimic a second press: finish capture, hand wav to the pipeline —
+    # state/cfg fetched at call time via the closure the daemon holds
     try:
-        pipeline.run_listen(cfg, st, wait_for_choice=_wait_for_choice(ctl))
+        wav = pipeline.record_stop(rec, _DAEMON_ST)
+        _DAEMON_CTL["busy"].set()
+        threading.Thread(
+            target=_run_listen,
+            args=(_DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL, wav),
+            daemon=True).start()
+    except RuntimeError as e:
+        _DAEMON_ST.transition("error", error=str(e))
+
+
+def _run_listen(st: state_mod.State, cfg: dict, ctl: dict,
+                wav=None) -> None:
+    try:
+        pipeline.run_listen(cfg, st,
+                            wait_for_choice=_wait_for_choice(ctl),
+                            wav=wav)
     finally:
         ctl["busy"].clear()
 
 
 def run_daemon(cfg: dict) -> int:
+    global _DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL
     from wisp import skills
     skills.register_tools()  # skill_<name> entries from skills/*/SKILL.md
     st = state_mod.State()
     ctl = {"stop": threading.Event(), "busy": threading.Event(),
-           "choice_event": threading.Event(), "choice_pick": ""}
+           "choice_event": threading.Event(), "choice_pick": "",
+           "rec": None, "rec_lock": threading.Lock()}
+    _DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL = st, cfg, ctl
     server = ipc.Daemon(_handler(st, cfg, ctl))
     server.start()
     print(f"wispd listening on {config.SOCK_FILE}")

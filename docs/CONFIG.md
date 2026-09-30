@@ -14,7 +14,7 @@ restart) or the Settings tab in the GUI. Every key has a default.
 
 | key | default | meaning |
 |-----|---------|---------|
-| `seconds` | `5` | mic capture length per press |
+| `seconds` | `60` | max capture per toggle press — SUPER+D starts, SUPER+D again stops; this is only the safety ceiling |
 | `whisper_model` | `"ggml-small.en.bin"` | ggml model file name |
 
 ## [stt] — speech-to-text

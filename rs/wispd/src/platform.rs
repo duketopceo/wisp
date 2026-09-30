@@ -103,23 +103,34 @@ fn dirs_for(os: Os, home: &std::path::Path) -> (PathBuf, PathBuf, PathBuf) {
 /// Microphone capture → WAV at `out`. macOS uses the built-in
 /// `afrecord` (brew `sox` fallback); Windows uses `sox -t waveaudio`.
 /// `None` → caller degrades gracefully ("no recorder found").
-pub fn record_cmd(out: &std::path::Path, seconds: i64) -> Option<Command> {
+pub fn record_cmd(out: &std::path::Path, seconds: Option<i64>)
+                  -> Option<Command> {
     record_cmd_for(current(), out, seconds)
 }
-fn record_cmd_for(os: Os, out: &std::path::Path, seconds: i64) -> Option<Command> {
+/// seconds: Some(n) → self-terminating capture; None → open-ended
+/// toggle capture (caller stops via SIGINT — recorders finalize the
+/// WAV header on it).
+fn record_cmd_for(os: Os, out: &std::path::Path,
+                  seconds: Option<i64>) -> Option<Command> {
     Some(match os {
         Os::Linux => {
             if crate::tools::which("pw-record") {
                 let mut c = Command::new("pw-record");
                 c.args(["--rate", "16000", "--channels", "1",
-                        "--format", "s16", "--sample-count",
-                        &format!("{}", 16000 * seconds)]);
+                        "--format", "s16"]);
+                if let Some(s) = seconds {
+                    c.args(["--sample-count",
+                            &format!("{}", 16000 * s)]);
+                }
                 c.arg(out);
                 c
             } else if crate::tools::which("arecord") {
                 let mut c = Command::new("arecord");
                 c.args(["-D", "default", "-r", "16000", "-c", "1",
-                        "-f", "S16_LE", "-d", &seconds.to_string()]);
+                        "-f", "S16_LE"]);
+                if let Some(s) = seconds {
+                    c.args(["-d", &s.to_string()]);
+                }
                 c.arg(out);
                 c
             } else {
@@ -129,14 +140,19 @@ fn record_cmd_for(os: Os, out: &std::path::Path, seconds: i64) -> Option<Command
         Os::MacOS => {
             if crate::tools::which("afrecord") {
                 let mut c = Command::new("afrecord");
-                c.args(["-f", "WAVE", "-d", &seconds.to_string()]);
+                c.args(["-f", "WAVE"]);
+                if let Some(s) = seconds {
+                    c.args(["-d", &s.to_string()]);
+                }
                 c.arg(out);
                 c
             } else if crate::tools::which("sox") {
                 let mut c = Command::new("sox");
                 c.args(["-d", "-r", "16000", "-c", "1"]);
                 c.arg(out);
-                c.args(["trim", "0", &seconds.to_string()]);
+                if let Some(s) = seconds {
+                    c.args(["trim", "0", &s.to_string()]);
+                }
                 c
             } else {
                 return None;
@@ -148,7 +164,9 @@ fn record_cmd_for(os: Os, out: &std::path::Path, seconds: i64) -> Option<Command
                 c.args(["-t", "waveaudio", "-d", "-r", "16000",
                         "-c", "1"]);
                 c.arg(out);
-                c.args(["trim", "0", &seconds.to_string()]);
+                if let Some(s) = seconds {
+                    c.args(["trim", "0", &s.to_string()]);
+                }
                 c
             } else {
                 return None;
@@ -310,30 +328,37 @@ fn tts_cmd_for(os: Os, text: &str, voice_cmd: &str) -> Option<Command> {
 /// Live mic level sampler — emits unsigned-8 PCM (200 Hz, mono) on
 /// stdout for `amplitude_sampler`. macOS: sox only (afrecord can't
 /// stream raw); `None` → level stays 0 (graceful degradation).
-pub fn sampler_cmd(seconds: i64) -> Option<Command> {
+pub fn sampler_cmd(seconds: Option<i64>) -> Option<Command> {
     sampler_cmd_for(current(), seconds)
 }
-fn sampler_cmd_for(os: Os, seconds: i64) -> Option<Command> {
+fn sampler_cmd_for(os: Os, seconds: Option<i64>) -> Option<Command> {
     Some(match os {
         Os::Linux => {
             if !crate::tools::which("arecord") { return None; }
             let mut c = Command::new("arecord");
-            c.args(["-D", "default", "-f", "U8", "-r", "200", "-c", "1",
-                    "-d", &seconds.to_string()]);
+            c.args(["-D", "default", "-f", "U8", "-r", "200", "-c", "1"]);
+            if let Some(s) = seconds {
+                c.args(["-d", &s.to_string()]);
+            }
             c
         }
         Os::MacOS => {
             if !crate::tools::which("sox") { return None; }
             let mut c = Command::new("sox");
-            c.args(["-d", "-t", "u8", "-r", "200", "-c", "1", "-",
-                    "trim", "0", &seconds.to_string()]);
+            c.args(["-d", "-t", "u8", "-r", "200", "-c", "1", "-"]);
+            if let Some(s) = seconds {
+                c.args(["trim", "0", &s.to_string()]);
+            }
             c
         }
         Os::Windows => {
             if !crate::tools::which("sox") { return None; }
             let mut c = Command::new("sox");
             c.args(["-t", "waveaudio", "-d", "-t", "u8", "-r", "200",
-                    "-c", "1", "-", "trim", "0", &seconds.to_string()]);
+                    "-c", "1", "-"]);
+            if let Some(s) = seconds {
+                c.args(["trim", "0", &s.to_string()]);
+            }
             c
         }
     })
@@ -827,7 +852,7 @@ mod tests {
         // Binaries may be absent (CI runner): assert program when
         // present, never panic on None.
         if let Some(rec) = record_cmd_for(Os::Linux,
-                std::path::Path::new("/t/u.wav"), 5) {
+                std::path::Path::new("/t/u.wav"), Some(5)) {
             assert!(["pw-record", "arecord"].contains(&(
                 rec.get_program().to_str().unwrap())));
         }
@@ -851,8 +876,8 @@ mod tests {
             assert_eq!(tts.get_program(), "say");
         }
         let _ = record_cmd_for(Os::MacOS,
-            std::path::Path::new("/t/u.wav"), 5);
-        let _ = sampler_cmd_for(Os::MacOS, 5);
+            std::path::Path::new("/t/u.wav"), Some(5));
+        let _ = sampler_cmd_for(Os::MacOS, Some(5));
         assert_eq!(tts_binary_for(Os::Windows), None);
         // SAPI argv path: powershell exists on CI windows runners but
         // not here — just ensure no panic either way

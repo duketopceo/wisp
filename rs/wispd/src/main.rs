@@ -154,7 +154,7 @@ fn client(cmd: &Value, spawn_if_down: bool) -> i32 {
             event: std::sync::Condvar::new(),
         };
         let running = Arc::new(AtomicBool::new(true));
-        return pipeline::run_listen(&cfg, &st, &ctl, running);
+        return pipeline::run_listen(&cfg, &st, &ctl, running, None);
     }
     match ipc::send(&sock, cmd) {
         Ok(resp) => {
@@ -188,6 +188,8 @@ fn daemon() -> i32 {
     let running_h = running.clone();
     let busy_h = busy.clone();
     let ctl_h = ctl.clone();
+    let rec_h = Arc::new(std::sync::Mutex::new(
+        None::<pipeline::RecHandle>));
     let cfg_h2 = Arc::new(std::sync::Mutex::new(cfg));
     let cfg_h = cfg_h2.clone();
 
@@ -196,7 +198,7 @@ fn daemon() -> i32 {
         let c_name = cmd.get("cmd").and_then(|c| c.as_str())
             .unwrap_or("").to_string();
         let out = dispatch(cmd, &st_h, &busy_h, &running_h, &ctl_h,
-                           &cfg_h, &cfg_h2);
+                           &rec_h, &cfg_h, &cfg_h2);
         trace::emit("sys", "ipc", "ipc",
             json!({"cmd": c_name,
                    "ok": out.get("ok").and_then(|v| v.as_bool())
@@ -216,6 +218,7 @@ fn daemon() -> i32 {
 fn dispatch(cmd: Value, st_h: &Arc<state::State>,
             busy_h: &Arc<AtomicBool>, running_h: &Arc<AtomicBool>,
             ctl_h: &Arc<pipeline::ChoiceCtl>,
+            rec_h: &Arc<std::sync::Mutex<Option<pipeline::RecHandle>>>,
             cfg_h: &Arc<std::sync::Mutex<config::Cfg>>,
             cfg_h2: &Arc<std::sync::Mutex<config::Cfg>>) -> Value {
         match cmd.get("cmd").and_then(|c| c.as_str()).unwrap_or("") {
@@ -227,21 +230,93 @@ fn dispatch(cmd: Value, st_h: &Arc<state::State>,
                 json!({"ok": true, "state": st_h.snapshot()})
             }
             "listen" => {
+                // push-to-talk toggle: first press starts an unbounded
+                // capture, second press stops it and runs the pipeline;
+                // [audio] seconds is the watchdog safety cap.
+                let mut guard = rec_h.lock().unwrap();
+                if let Some(mut rec) = guard.take() {
+                    drop(guard);
+                    if busy_h.swap(true, Ordering::SeqCst) {
+                        return json!({"ok": false, "error": "busy"});
+                    }
+                    let wav = match pipeline::record_stop(&mut rec, st_h) {
+                        Ok(w) => w,
+                        Err(e) => {
+                            busy_h.store(false, Ordering::SeqCst);
+                            st_h.transition("error",
+                                &[("error", json!(e.clone()))]);
+                            return json!({"ok": false, "error": e});
+                        }
+                    };
+                    let st2 = st_h.clone();
+                    let cfg2 = cfg_h.clone();
+                    let ctl2 = ctl_h.clone();
+                    let running2 = running_h.clone();
+                    let busy2 = busy_h.clone();
+                    std::thread::spawn(move || {
+                        let cfg_guard = cfg2.lock().unwrap().clone();
+                        pipeline::run_listen(&cfg_guard, &st2, &ctl2,
+                                             running2, Some(wav));
+                        busy2.store(false, Ordering::SeqCst);
+                    });
+                    return json!({"ok": true, "stopped": true});
+                }
                 if busy_h.swap(true, Ordering::SeqCst) {
                     return json!({"ok": false, "error": "busy"});
                 }
                 speech::stop();
-                let st2 = st_h.clone();
-                let cfg2 = cfg_h.clone();
-                let ctl2 = ctl_h.clone();
-                let running2 = running_h.clone();
-                let busy2 = busy_h.clone();
+                st_h.transition("listening", &[
+                    ("transcript", json!("")), ("result", json!("")),
+                    ("answer", json!("")), ("choices", json!([])),
+                    ("points", json!([])), ("error", json!(""))]);
+                match pipeline::record_start(st_h) {
+                    Err(e) => {
+                        busy_h.store(false, Ordering::SeqCst);
+                        st_h.transition("error",
+                            &[("error", json!(e.clone()))]);
+                        return json!({"ok": false, "error": e});
+                    }
+                    Ok(rec) => *guard = Some(rec),
+                }
+                busy_h.store(false, Ordering::SeqCst);
+                // watchdog: auto-stop at the cap so a forgotten press
+                // can't record forever
+                let secs = cfg_h.lock().unwrap().audio_seconds;
+                let rec_w = rec_h.clone();
+                let st_w = st_h.clone();
+                let busy_w = busy_h.clone();
+                let ctl_w = ctl_h.clone();
+                let running_w = running_h.clone();
+                let cfg_w = cfg_h.clone();
                 std::thread::spawn(move || {
-                    let cfg_guard = cfg2.lock().unwrap().clone();
-                    pipeline::run_listen(&cfg_guard, &st2, &ctl2, running2);
-                    busy2.store(false, Ordering::SeqCst);
+                    let deadline = std::time::Instant::now()
+                        + std::time::Duration::from_secs(secs as u64);
+                    while std::time::Instant::now() < deadline
+                        && running_w.load(Ordering::SeqCst)
+                    {
+                        std::thread::sleep(
+                            std::time::Duration::from_millis(200));
+                    }
+                    let rec = rec_w.lock().unwrap().take();
+                    if let Some(mut rec) = rec {
+                        match pipeline::record_stop(&mut rec, &st_w) {
+                            Ok(wav) => {
+                                if busy_w.swap(true, Ordering::SeqCst) {
+                                    return;
+                                }
+                                let cfg_guard =
+                                    cfg_w.lock().unwrap().clone();
+                                pipeline::run_listen(
+                                    &cfg_guard, &st_w, &ctl_w,
+                                    running_w.clone(), Some(wav));
+                                busy_w.store(false, Ordering::SeqCst);
+                            }
+                            Err(e) => st_w.transition(
+                                "error", &[("error", json!(e))]),
+                        }
+                    }
                 });
-                json!({"ok": true})
+                json!({"ok": true, "recording": true})
             }
             "choice" => {
                 let pick = cmd.get("pick").and_then(|v| v.as_str()).unwrap_or("");

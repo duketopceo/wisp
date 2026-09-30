@@ -95,55 +95,76 @@ def dirs() -> tuple[Path, Path, Path]:
 
 # ── commands (argv) ─────────────────────────────────────────────────
 
-def record_cmd(out: Path, seconds: float) -> list | None:
-    """Mic capture → WAV at `out`. macOS: afrecord (brew sox
-    fallback); None → caller reports 'no recorder found'."""
+def record_cmd(out: Path, seconds: float | None) -> list | None:
+    """Mic capture → WAV at `out`. seconds=None → open-ended toggle
+    capture (caller stops with SIGINT); with a value it self-terminates
+    after that many seconds. macOS: afrecord (brew sox fallback); None →
+    caller reports 'no recorder found'."""
     o = current()
     if o == "linux":
         if _which("pw-record"):
-            return ["pw-record", "--rate", "16000", "--channels", "1",
-                    "--format", "s16", "--sample-count",
-                    str(int(16000 * seconds)), str(out)]
+            cmd = ["pw-record", "--rate", "16000", "--channels", "1",
+                   "--format", "s16"]
+            if seconds:
+                cmd += ["--sample-count", str(int(16000 * seconds))]
+            return cmd + [str(out)]
         if _which("arecord"):
-            return ["arecord", "-D", "default", "-r", "16000",
-                    "-c", "1", "-f", "S16_LE", "-d", str(seconds),
-                    str(out)]
+            cmd = ["arecord", "-D", "default", "-r", "16000",
+                   "-c", "1", "-f", "S16_LE"]
+            if seconds:
+                cmd += ["-d", str(seconds)]
+            return cmd + [str(out)]
         return None
     if o == "macos":
         if _which("afrecord"):
-            return ["afrecord", "-f", "WAVE", "-d", str(seconds),
-                    str(out)]
+            cmd = ["afrecord", "-f", "WAVE"]
+            if seconds:
+                cmd += ["-d", str(seconds)]
+            return cmd + [str(out)]
         if _which("sox"):
-            return ["sox", "-d", "-r", "16000", "-c", "1", str(out),
-                    "trim", "0", str(seconds)]
+            cmd = ["sox", "-d", "-r", "16000", "-c", "1", str(out)]
+            if seconds:
+                cmd += ["trim", "0", str(seconds)]
+            return cmd
         return None
     if o == "windows":
         if _which("sox"):
-            return ["sox", "-t", "waveaudio", "-d", "-r", "16000",
-                    "-c", "1", str(out), "trim", "0", str(seconds)]
+            cmd = ["sox", "-t", "waveaudio", "-d", "-r", "16000",
+                   "-c", "1", str(out)]
+            if seconds:
+                cmd += ["trim", "0", str(seconds)]
+            return cmd
         return None
     return None
 
 
-def sampler_cmd(seconds: float) -> list | None:
+def sampler_cmd(seconds: float | None) -> list | None:
     """Live mic level: unsigned-8 PCM (200 Hz mono) on stdout.
+    seconds=None → unbounded (toggle mode; caller kills the proc).
     macOS: sox only; None → level stays 0."""
     o = current()
     if o == "linux":
         if _which("arecord"):
-            return ["arecord", "-D", "default", "-f", "U8", "-r", "200",
-                    "-c", "1", "-d", str(seconds)]
+            cmd = ["arecord", "-D", "default", "-f", "U8", "-r", "200",
+                   "-c", "1"]
+            if seconds:
+                cmd += ["-d", str(seconds)]
+            return cmd
         return None
     if o == "macos":
         if _which("sox"):
-            return ["sox", "-d", "-t", "u8", "-r", "200", "-c", "1",
-                    "-", "trim", "0", str(seconds)]
+            cmd = ["sox", "-d", "-t", "u8", "-r", "200", "-c", "1", "-"]
+            if seconds:
+                cmd += ["trim", "0", str(seconds)]
+            return cmd
         return None
     if o == "windows":
         if _which("sox"):
-            return ["sox", "-t", "waveaudio", "-d", "-t", "u8",
-                    "-r", "200", "-c", "1", "-",
-                    "trim", "0", str(seconds)]
+            cmd = ["sox", "-t", "waveaudio", "-d", "-t", "u8",
+                   "-r", "200", "-c", "1", "-"]
+            if seconds:
+                cmd += ["trim", "0", str(seconds)]
+            return cmd
         return None
     return None
 

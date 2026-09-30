@@ -156,7 +156,7 @@ pub fn load() -> Cfg {
 
 /// Same starter config as Python's DEFAULT_CONFIG — seeded before a
 /// `config set` so a fresh file carries every documented key.
-const DEFAULT_CONFIG: &str = "[hotkey]\nmod = \"SUPER\"\nkey = \"D\"\n\n[audio]\nseconds = 5\n# whisper.cpp model filename under ~/src/whisper.cpp/models/\nwhisper_model = \"ggml-small.en.bin\"\n\n[agent]\nmodel = \"typesafe/jev-1.13\"\nanswer_model = \"meta-llama/llama-4-maverick\"\nsession_turns = 8\nscreenshots = true\nrisk_threshold = 1.5\nconfidence_instant = 0.95\nconfidence_ambiguous = 0.8\n\n[voice]\nenabled = false\n\n[apps]\nbrowser = \"chromium\"\nterminal = \"ghostty\"\nfiles = \"nautilus\"\nvscode = \"code\"\nmusic = \"spotify\"\nsettings = \"gnome-control-center\"\nbrowser_new_tab = \"chromium\"\n";
+const DEFAULT_CONFIG: &str = "[hotkey]\nmod = \"SUPER\"\nkey = \"D\"\n\n[audio]\nseconds = 60\n# whisper.cpp model filename under ~/src/whisper.cpp/models/\nwhisper_model = \"ggml-small.en.bin\"\n\n[agent]\nmodel = \"typesafe/jev-1.13\"\nanswer_model = \"meta-llama/llama-4-maverick\"\nsession_turns = 8\nscreenshots = true\nrisk_threshold = 1.5\nconfidence_instant = 0.95\nconfidence_ambiguous = 0.8\n\n[voice]\nenabled = false\n\n[apps]\nbrowser = \"chromium\"\nterminal = \"ghostty\"\nfiles = \"nautilus\"\nvscode = \"code\"\nmusic = \"spotify\"\nsettings = \"gnome-control-center\"\nbrowser_new_tab = \"chromium\"\n";
 
 /// Update one `section.key` in config.toml preserving comments/order.
 /// Appends the key under its section (or a new section) when absent.
