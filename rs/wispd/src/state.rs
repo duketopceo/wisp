@@ -6,6 +6,7 @@ use std::sync::Mutex;
 pub struct State {
     file: PathBuf,
     inner: Mutex<Map<String, Value>>,
+    last_blob: Mutex<String>,
     pub started_at: String,
 }
 
@@ -14,6 +15,7 @@ impl State {
         let st = State {
             file,
             inner: Mutex::new(Map::new()),
+            last_blob: Mutex::new(String::new()),
             started_at: now(),
         };
         st.transition("idle", &[]);
@@ -31,12 +33,13 @@ impl State {
         }
         g.entry("choices").or_insert(json!([]));
         g.entry("points").or_insert(json!([]));
+        g.entry("steps").or_insert(json!([]));
         g.entry("level").or_insert(json!(0.0));
         g.entry("tasks").or_insert(json!({}));
         g.insert("started_at".into(), json!(self.started_at));
         let snap = g.clone();
         drop(g);
-        write_atomic(&self.file, &snap);
+        self.write_if_changed(&snap);
     }
 
     /// Publish mic level without a status change (breathing overlay).
@@ -46,7 +49,18 @@ impl State {
             g.insert("level".into(), json!(level));
             g.clone()
         };
-        write_atomic(&self.file, &snap);
+        self.write_if_changed(&snap);
+    }
+
+    fn write_if_changed(&self, snap: &Map<String, Value>) {
+        let blob = serde_json::to_string(snap).unwrap_or_default();
+        let mut last = self.last_blob.lock().unwrap();
+        if *last == blob {
+            return; // unchanged — poll churn shouldn't retrigger watchers
+        }
+        *last = blob;
+        drop(last);
+        write_atomic(&self.file, snap);
     }
 
     pub fn snapshot(&self) -> Value {

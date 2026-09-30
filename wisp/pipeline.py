@@ -28,7 +28,10 @@ JEV_QUESTIONS = {
         "type": "choice",
         "instructions": "What kind of request is this?",
         "criteria": {
-            "launch": "open, start, or close an application",
+            "launch": "open, start, or close an application and "
+                      "nothing else — if the request also says what to "
+                      "do inside it (a page, a click, 'and then'), "
+                      "that is 'act' instead",
             "tool": "a desktop/system action — window ops, workspace "
                     "switch, type text, screenshot, notify, run a command, "
                     "find files",
@@ -38,9 +41,10 @@ JEV_QUESTIONS = {
             "learn": "the user wants Wisp to learn or remember how to do "
                      "something — 'learn X', 'remember this', 'add a "
                      "skill for'",
-            "act": "a multi-step desktop task — do several things, or "
-                   "imperative instructions like 'open X and go to "
-                   "workspace 2' or 'type this into the window'",
+            "act": "a multi-step or in-app desktop task — do something "
+                   "on screen or inside an app: 'open X on the Y page', "
+                   "'go to', 'find', 'click', 'and then', any sequence "
+                   "of actions — computer use",
             "dictation": "the user wants to dictate — type the words "
                          "they speak into the focused app — 'dictate', "
                          "'type this', 'take dictation', 'write this "
@@ -569,6 +573,20 @@ def fuzzy_app(text: str, answers: dict) -> str:
 _BENIGN_ACTIONS = ("launch", "answer")
 
 
+_COMPLEX_LAUNCH = re.compile(r"\b(on|in|to|at|for|into|and)\s+\S", re.I)
+_LAUNCH_VERBS = ("open", "launch", "start", "go to", "pull up",
+                 "bring up", "switch to")
+
+
+def complex_launch(text: str) -> bool:
+    """'open discord' → False (plain launch); 'open X on the Y page'
+    or 'open A and B' → True (multi-step, belongs in act)."""
+    lower = text.lower()
+    if not any(v in lower for v in _LAUNCH_VERBS):
+        return False
+    return bool(_COMPLEX_LAUNCH.search(lower))
+
+
 def auto_pick(answers: dict) -> str:
     """Timeout fallback for clarify prompts: pick Jev's own top candidate
     — but only along the safe axis. App picks resolve which app; action
@@ -679,6 +697,12 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
             fa = fuzzy_app(text, answers)
             if fa:
                 answers.setdefault("app", {})["choice"] = fa
+        # complex-launch rescue: "open X" is launch, but "open X on the
+        # Y page / and Z" is computer use — Jev over-picks launch on the
+        # 'open' keyword and silently drops the rest of the request
+        if answers.get("route", {}).get("choice") == "launch" \
+                and complex_launch(text):
+            answers["route"]["choice"] = "act"
         low_conf = is_low_confidence(answers, cfg)
         corrected = None
         if low_conf:

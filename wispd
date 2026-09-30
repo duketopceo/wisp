@@ -104,7 +104,8 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
                 # is the safety cap, not the length.
                 speech.stop()
                 st.transition("listening", transcript="", result="",
-                              answer="", choices=[], points=[], error="")
+                              answer="", choices=[], points=[], error="",
+                              steps=[])
                 try:
                     ctl["rec"] = pipeline.record_start(st)
                 except RuntimeError as e:

@@ -44,11 +44,11 @@ pub fn build_questions(cfg: &Cfg) -> Value {
         "route": {"type": "choice",
             "instructions": "What kind of request is this?",
             "criteria": {
-                "launch": "open, start, or close an application",
+                "launch": "open, start, or close an application and nothing else — if the request also says what to do inside it (a page, a click, 'and then'), that is 'act' instead",
                 "tool": "a desktop/system action — window ops, workspace switch, type text, screenshot, notify, run a command, find files",
                 "agent": "spawn a background agent for a coding, research, or multi-step task — phrases like 'agent', 'have an agent', 'spawn', 'delegate'",
                 "learn": "the user wants Wisp to learn or remember how to do something — 'learn X', 'remember this', 'add a skill for'",
-                "act": "a multi-step desktop task — do several things, or imperative instructions like 'open X and go to workspace 2' or 'type this into the window'",
+                "act": "a multi-step or in-app desktop task — do something on screen or inside an app: 'open X on the Y page', 'go to', 'find', 'click', 'and then', any sequence of actions — computer use",
                 "dictation": "the user wants to dictate — type the words they speak into the focused app — 'dictate', 'type this', 'take dictation', 'write this down'",
                 "answer": "the user is asking a question or chatting — respond in text, no desktop action",
                 "clarify": "the request is too ambiguous to act on",
@@ -403,6 +403,19 @@ fn fuzzy_app(text: &str, answers: &Value) -> String {
     String::new()
 }
 
+fn complex_launch(text: &str) -> bool {
+    // 'open discord' → false; 'open X on/in/and Y' → true (act route)
+    let lower = text.to_lowercase();
+    let verbs = ["open", "launch", "start", "go to", "pull up",
+                 "bring up", "switch to"];
+    if !verbs.iter().any(|v| lower.contains(v)) { return false; }
+    [" on ", " in ", " to ", " at ", " for ", " into ", " and "]
+        .iter().any(|p| {
+            lower.split(p).nth(1).map(|t| !t.trim().is_empty())
+                .unwrap_or(false)
+        })
+}
+
 fn auto_pick(answers: &Value) -> Option<String> {
     // Timeout fallback for clarify prompts: take Jev's top candidate
     // along the safe axis only — app picks resolve which app; action
@@ -579,8 +592,16 @@ fn act_loop(task: &str, cfg: &Cfg, st: &State, ctl: &ChoiceCtl) -> String {
                 tools::run(&name, &arg, cfg)
             };
             steps.push((name.clone(), arg.clone(), result.clone()));
-            st.transition("acting", &[(
-                "result", json!(format!("act step {}: {name}", steps.len())))]);
+            let recent: Vec<String> = steps.iter().rev().take(4).rev()
+                .map(|(n, a, r)| format!(
+                    "{n} {} → {}",
+                    a.chars().take(40).collect::<String>(),
+                    r.chars().take(60).collect::<String>()))
+                .collect();
+            st.transition("acting", &[
+                ("result", json!(format!("act step {}: {name}",
+                                         steps.len()))),
+                ("steps", json!(recent))]);
             if result.starts_with("ERROR") || result.starts_with("SKIP")
                 || result.starts_with("REFUS") {
                 errors += 1;
@@ -694,6 +715,13 @@ pub fn run_listen(cfg: &Cfg, st: &Arc<State>, ctl: &ChoiceCtl,
             if !fa.is_empty() {
                 answers["app"]["choice"] = json!(fa);
             }
+        }
+        // complex-launch rescue: 'open X on the Y page' is computer
+        // use, not a bare launch — Jev over-picks on the 'open' keyword
+        if answers.pointer("/route/choice").and_then(|v| v.as_str())
+            == Some("launch") && complex_launch(&text)
+        {
+            answers["route"]["choice"] = json!("act");
         }
         // low-confidence → choice prompt (parity: labels are
         // app:X / action:Y from each question's probabilities)

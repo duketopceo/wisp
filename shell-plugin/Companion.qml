@@ -30,6 +30,24 @@ Item {
   property string error: ""
   property string lastAnswer: ""
   property bool userPinned: false
+  property var steps: []
+
+  readonly property bool busy:
+    ["listening", "transcribing", "deciding", "acting"]
+      .indexOf(status) >= 0
+
+  function statusWord() {
+    switch (root.status) {
+    case "listening": return "listening";
+    case "transcribing": return "hearing";
+    case "deciding": return "thinking";
+    case "acting": return "working";
+    case "awaiting_choice": return "needs you";
+    case "speaking": return "speaking";
+    case "error": return "error";
+    default: return root.status;
+    }
+  }
 
   readonly property string stateFile: {
     var rd = Quickshell.env("XDG_RUNTIME_DIR");
@@ -87,16 +105,22 @@ Item {
         }
         root.level = s.level || 0.0;
         root.error = newError;
-        // Clicky-style surfacing: the card pops itself when there's
-        // something to show — an answer, a question (choices), or an
-        // error — then auto-collapses. Clicking the orb still forces
-        // it open; `userPinned` suppresses the auto-hide.
-        if (newChoices.length > 0 ||
-            (newAnswer.length > 0 && newAnswer !== root.lastAnswer) ||
-            newError.length > 0) {
-          root.lastAnswer = newAnswer;
+        root.steps = s.steps || [];
+        // Surfacing: the card pops while Wisp works (status + step log),
+        // on an answer, a question, or an error — then auto-collapses.
+        // Clicking the orb pins it open; auto-hide resumes on done.
+        if (root.busy || newStatus === "awaiting_choice") {
           root.expanded = true;
           root.userPinned = false;
+          autoHide.stop();
+        } else {
+          if (newChoices.length > 0 ||
+              (newAnswer.length > 0 && newAnswer !== root.lastAnswer) ||
+              newError.length > 0) {
+            root.lastAnswer = newAnswer;
+            root.expanded = true;
+            root.userPinned = false;
+          }
           autoHide.restart();
         }
       } catch (e) { root.status = "offline"; }
@@ -216,6 +240,68 @@ Item {
     Item {
       anchors.fill: parent
 
+      // Jupiter rings — two arcs orbit the orb while Wisp works
+      Item {
+        id: rings
+        visible: root.busy && !root.expanded
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.margins: 24
+        width: 44; height: 44
+
+        Rectangle {
+          anchors.centerIn: parent
+          width: 58; height: 58; radius: 29
+          color: "transparent"
+          border.color: "#7aa2f7"
+          border.width: 1
+          opacity: 0.35
+        }
+
+        Canvas {
+          id: ringA
+          anchors.fill: parent
+          onPaint: {
+            var ctx = getContext("2d");
+            ctx.reset();
+            ctx.strokeStyle = "#7aa2f7";
+            ctx.lineWidth = 2.5;
+            ctx.lineCap = "round";
+            ctx.beginPath();
+            ctx.arc(width / 2, height / 2, 29, 0, Math.PI * 0.85);
+            ctx.stroke();
+          }
+          onVisibleChanged: requestPaint()
+          RotationAnimator on rotation {
+            running: root.busy
+            from: 0; to: 360; duration: 1100
+            loops: Animation.Infinite
+          }
+        }
+
+        Canvas {
+          id: ringB
+          anchors.fill: parent
+          onPaint: {
+            var ctx = getContext("2d");
+            ctx.reset();
+            ctx.strokeStyle = "#bb9af7";
+            ctx.lineWidth = 2;
+            ctx.lineCap = "round";
+            ctx.beginPath();
+            ctx.arc(width / 2, height / 2, 22, Math.PI * 0.4,
+                    Math.PI * 1.1);
+            ctx.stroke();
+          }
+          onVisibleChanged: requestPaint()
+          RotationAnimator on rotation {
+            running: root.busy
+            from: 360; to: 0; duration: 1600
+            loops: Animation.Infinite
+          }
+        }
+      }
+
       // Orb
       Rectangle {
         id: orb
@@ -230,7 +316,7 @@ Item {
         opacity: 0.9
 
         SequentialAnimation on scale {
-          running: root.status === "listening" || root.status === "speaking"
+          running: root.busy || root.status === "speaking"
           loops: Animation.Infinite
           NumberAnimation { to: 1.15; duration: 700; easing.type: Easing.InOutSine }
           NumberAnimation { to: 1.0; duration: 700; easing.type: Easing.InOutSine }
@@ -313,13 +399,38 @@ Item {
 
           Row {
             spacing: 8
-            Rectangle {
-              width: 10; height: 10; radius: 5
-              color: root.orbColor
+            Item {
+              width: 12; height: 12
               anchors.verticalCenter: parent.verticalCenter
+              Canvas {
+                anchors.fill: parent
+                visible: root.busy
+                onPaint: {
+                  var ctx = getContext("2d");
+                  ctx.reset();
+                  ctx.strokeStyle = "#7aa2f7";
+                  ctx.lineWidth = 2;
+                  ctx.lineCap = "round";
+                  ctx.beginPath();
+                  ctx.arc(6, 6, 4.5, 0, Math.PI * 1.4);
+                  ctx.stroke();
+                }
+                onVisibleChanged: requestPaint()
+                RotationAnimator on rotation {
+                  running: root.busy
+                  from: 0; to: 360; duration: 800
+                  loops: Animation.Infinite
+                }
+              }
+              Rectangle {
+                visible: !root.busy
+                anchors.centerIn: parent
+                width: 10; height: 10; radius: 5
+                color: root.orbColor
+              }
             }
             Text {
-              text: "Wisp — " + root.status
+              text: "Wisp — " + root.statusWord()
               color: "#c0caf5"
               font.pixelSize: 13
               font.bold: true
@@ -334,6 +445,24 @@ Item {
             color: "#9aa5ce"
             font.pixelSize: 12
             font.italic: true
+          }
+
+          // live act-loop step log — "screenshot → ok" style, last 4
+          Column {
+            visible: root.steps.length > 0
+            width: parent.width
+            spacing: 2
+            Repeater {
+              model: root.steps
+              Text {
+                width: parent.width
+                text: "› " + modelData
+                color: "#565f89"
+                font.pixelSize: 10.5
+                font.family: "monospace"
+                elide: Text.ElideRight
+              }
+            }
           }
 
           Text {

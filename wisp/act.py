@@ -106,9 +106,12 @@ def _publish(state, task: str, steps: list) -> None:
     if state is None:
         return
     try:
+        recent = [f"{s['tool']} {s['arg'][:40]} → {s['result'][:60]}"
+                  for s in steps[-4:]]
         state.transition("acting",
                          result=f"act step {len(steps)}: "
-                                f"{steps[-1]['tool']}" if steps else "act")
+                                f"{steps[-1]['tool']}" if steps else "act",
+                         steps=recent)
     except Exception:
         pass
 
