@@ -28,6 +28,8 @@ Item {
   property bool pointsVisible: false
   property real level: 0.0
   property string error: ""
+  property string lastAnswer: ""
+  property bool userPinned: false
 
   readonly property string stateFile: {
     var rd = Quickshell.env("XDG_RUNTIME_DIR");
@@ -67,11 +69,15 @@ Item {
     onLoaded: {
       try {
         var s = JSON.parse(stateView.text());
-        root.status = s.status || "idle";
+        var newStatus = s.status || "idle";
+        var newAnswer = s.answer || "";
+        var newChoices = s.choices || [];
+        var newError = s.error || "";
+        root.status = newStatus;
         root.transcript = s.transcript || "";
-        root.answer = s.answer || "";
+        root.answer = newAnswer;
         root.result = s.result || "";
-        root.choices = s.choices || [];
+        root.choices = newChoices;
         var pts = s.points || [];
         if (pts.length > 0 &&
             JSON.stringify(pts) !== JSON.stringify(root.points)) {
@@ -80,9 +86,27 @@ Item {
           pointsTimer.restart();
         }
         root.level = s.level || 0.0;
-        root.error = s.error || "";
+        root.error = newError;
+        // Clicky-style surfacing: the card pops itself when there's
+        // something to show — an answer, a question (choices), or an
+        // error — then auto-collapses. Clicking the orb still forces
+        // it open; `userPinned` suppresses the auto-hide.
+        if (newChoices.length > 0 ||
+            (newAnswer.length > 0 && newAnswer !== root.lastAnswer) ||
+            newError.length > 0) {
+          root.lastAnswer = newAnswer;
+          root.expanded = true;
+          root.userPinned = false;
+          autoHide.restart();
+        }
       } catch (e) { root.status = "offline"; }
     }
+  }
+
+  Timer {
+    id: autoHide
+    interval: 15000
+    onTriggered: if (!root.userPinned) root.expanded = false
   }
 
   Timer {
@@ -260,7 +284,11 @@ Item {
 
         MouseArea {
           anchors.fill: parent
-          onClicked: root.expanded = true
+          onClicked: {
+            root.expanded = true;
+            root.userPinned = true;
+            autoHide.stop();
+          }
         }
       }
 
