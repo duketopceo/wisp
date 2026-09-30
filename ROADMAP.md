@@ -27,22 +27,28 @@ Definition of done — all required, no substitutes:
    agent / answer) over ≥ 50 labeled runs per route.
 3. **Failure budget:** no more than 1 in 20 triggers ends in silence, a wrong
    action, or a daemon crash.
-4. **Fresh-box install ≤ 10 minutes** on a clean Omarchy VM, following only
+4. **Visible surface, always:** ✦ status glyph live in the Omarchy bar,
+   companion orb on screen while listening, `Wisp` in the app menu, and
+   the management GUI openable from both — verified after a fresh login,
+   not just when launched by hand.
+5. **Fresh-box install ≤ 10 minutes** on a clean Omarchy VM, following only
    `docs/INSTALL.md`.
-5. **Learning loop exercised twice:** `wispd learn` proposal → human
+6. **Learning loop exercised twice:** `wispd learn` proposal → human
    approval → measurable clarify-rate drop after each cycle.
-6. Tag `v1.0.0` with release notes; marketplace verify request for the
+7. Tag `v1.0.0` with release notes; marketplace verify request for the
    Omarchy plugin listing.
 
-Order of work: merge #31 → add run-labeling to trace (small: `wispd label`
-or a panel button) → use Wisp daily for two weeks and label every run → fix
-the top failure mode each week (expect STT accuracy and Jev routing
-confidence first) → re-measure.
+Order of work: visibility first (landed: real `BarWidget` + `Panel.qml`
+popup replacing the wrong-shaped `Panel` root — widget rendered nothing
+before) → add run-labeling to trace (small: `wispd label` or a panel
+button) → use Wisp daily for two weeks and label every run → fix the top
+failure mode each week (expect STT accuracy and Jev routing confidence
+first) → re-measure.
 
 ## v1.x — depth
 
-- Wake word ("Wisp", openWakeWord) alongside `Super+D`; VAD to replace the
-  fixed 5-second capture window.
+- Wake word ("Wisp", openWakeWord) alongside `Super+D`; VAD endpointing
+  on top of the toggle capture (landed) so silence auto-stops the mic.
 - Whisper upgrade path: `faster-whisper` small → medium on GPU boxes;
   multi-language STT.
 - Promote the optional adapters to first-class: dayflow activity mining as

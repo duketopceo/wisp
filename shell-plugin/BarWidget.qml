@@ -5,13 +5,12 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
-// Bar panel for io.github.duketopceo.wisp — polls the daemon's state.json
-// directly (tiny file; the service kind also watches it). Shows Wisp's
-// status, last transcript/result, pending choices, and running agents.
-Panel {
+// Bar button for io.github.duketopceo.wisp — a small status glyph in the
+// bar (colored by daemon state). Left-click opens the popup Panel with
+// transcript/answer/choices; right-click toggles a recording.
+BarWidget {
   id: root
   moduleName: "io.github.duketopceo.wisp"
-  ipcTarget: "io.github.duketopceo.wisp"
 
   property string status: "offline"
   property string transcript: ""
@@ -28,8 +27,11 @@ Panel {
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
   readonly property color stateColor: status === "listening" ? accent
+    : status === "transcribing" || status === "deciding"
+      || status === "acting" ? Color.tertiary || accent
     : status === "awaiting_choice" ? urgent
-    : status === "error" || status === "offline" ? dim
+    : status === "error" ? urgent
+    : status === "offline" ? dim
     : fg
 
   readonly property string stateFile: {
@@ -38,29 +40,34 @@ Panel {
     return rd + "/wisp/state.json";
   }
 
-  function sendChoice(pick) {
-    choiceProc.command = ["wispd", "choice", pick];
-    choiceProc.running = true;
+  readonly property bool opened: panelLoader.item
+    ? panelLoader.item.opened === true
+    : false
+
+  function open() { if (panelLoader.item) panelLoader.item.open() }
+  function close() { if (panelLoader.item) panelLoader.item.close() }
+  function toggle() { if (panelLoader.item) panelLoader.item.toggle() }
+
+  function injectPanel() {
+    if (!panelLoader.item) return
+    panelLoader.item.bar = root.bar
+    panelLoader.item.anchorItem = button
+    panelLoader.item.hostWidget = root
   }
+
+  visible: true
+  implicitWidth: button.implicitWidth
+  implicitHeight: button.implicitHeight
+
+  onBarChanged: injectPanel()
 
   FileView {
     id: stateView
     path: root.stateFile
     watchChanges: true
     onFileChanged: reload()
+    onLoaded: root.applyState(text)
     onLoadFailed: root.status = "offline"
-    onLoaded: {
-      try {
-        var s = JSON.parse(stateView.text());
-        root.status = s.status || "idle";
-        root.transcript = s.transcript || "";
-        root.answer = s.answer || "";
-        root.result = s.result || "";
-        root.choices = s.choices || [];
-        root.tasks = s.tasks || {};
-        root.error = s.error || "";
-      } catch (e) { root.status = "offline"; }
-    }
   }
 
   Timer {
@@ -70,81 +77,67 @@ Panel {
     onTriggered: stateView.reload()
   }
 
+  function applyState(raw) {
+    try {
+      var s = JSON.parse(raw)
+      root.status = s.status || "idle"
+      root.transcript = s.transcript || ""
+      root.answer = s.answer || ""
+      root.result = s.result || ""
+      root.choices = s.choices || []
+      root.tasks = s.tasks || {}
+      root.error = s.error || ""
+    } catch (e) {
+      root.status = "offline"
+    }
+  }
+
+  Loader {
+    id: panelLoader
+    active: true
+    source: Qt.resolvedUrl("Panel.qml")
+    visible: false
+    onLoaded: {
+      root.injectPanel()
+      Qt.callLater(root.injectPanel)
+    }
+  }
+
+  WidgetButton {
+    id: button
+    anchors.fill: parent
+    bar: root.bar
+    text: "✦"
+    foreground: root.stateColor
+    active: root.status === "listening" || root.status === "awaiting_choice"
+    tooltipText: {
+      var tip = "Wisp — " + root.status
+      if (root.transcript) tip += " · heard: " + root.transcript.slice(0, 60)
+      if (root.result) tip += " — " + root.result.slice(0, 60)
+      tip += "\nclick: details · right-click: record/stop"
+      return tip
+    }
+    onPressed: function(buttonCode) {
+      if (buttonCode === Qt.LeftButton) {
+        root.toggle()
+      } else if (buttonCode === Qt.RightButton) {
+        talkProc.running = true
+      }
+    }
+  }
+
+  Process {
+    id: talkProc
+    command: ["wispd", "trigger"]
+  }
+
   Process {
     id: choiceProc
     command: ["wispd", "choice", ""]
   }
 
-  ColumnLayout {
-    anchors.fill: parent
-    anchors.margins: Style.spacing.panelPadding
-    spacing: Style.spacing.md
-
-    Text {
-      text: "Wisp — " + root.status
-      color: root.stateColor
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.title
-      font.bold: true
-    }
-
-    Text {
-      visible: root.transcript.length > 0
-      text: "heard: " + root.transcript
-      color: root.fg
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.body
-      wrapMode: Text.WordWrap
-      Layout.fillWidth: true
-    }
-
-    Text {
-      visible: root.answer.length > 0
-      text: root.answer
-      color: root.accent
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.body
-      wrapMode: Text.WordWrap
-      Layout.fillWidth: true
-    }
-
-    Text {
-      visible: root.result.length > 0
-      text: root.result
-      color: root.dim
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.bodySmall
-      wrapMode: Text.WordWrap
-      Layout.fillWidth: true
-    }
-
-    Flow {
-      visible: root.choices.length > 0
-      Layout.fillWidth: true
-      spacing: Style.spacing.sm
-
-      Repeater {
-        model: root.choices
-        delegate: Button {
-          text: modelData
-          onClicked: root.sendChoice(modelData)
-        }
-      }
-    }
-
-    Text {
-      visible: Object.keys(root.tasks).length > 0
-      text: {
-        var lines = [];
-        for (var k in root.tasks)
-          lines.push(k + " [" + root.tasks[k].status + "]");
-        return "agents: " + lines.join("  ");
-      }
-      color: root.dim
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.bodySmall
-      wrapMode: Text.WordWrap
-      Layout.fillWidth: true
-    }
+  function sendChoice(pick) {
+    choiceProc.command = ["wispd", "choice", pick]
+    choiceProc.running = true
   }
 }
