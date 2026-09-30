@@ -55,12 +55,15 @@ Item {
     return rd + "/wisp/state.json";
   }
 
+  // The orb is persistent — the shell host calls close()/hide() on
+  // overlays for reasons that aren't ours (plugins rescan, panel
+  // sweep), so close() only collapses the card. `opened` is accepted
+  // for the plugin contract but nothing reads it to hide the orb.
   function open(payload) { root.opened = true; }
-  function close() { root.opened = false; }
-  function toggle() { root.opened ? root.close() : root.open(""); }
+  function close() { root.expanded = false; }
+  function toggle() { root.expanded = !root.expanded; }
   function dismiss() {
     root.expanded = false;
-    root.close();
   }
 
   function sendChoice(pick) {
@@ -231,7 +234,7 @@ Item {
   // Small window hugging bottom-right; grows when the card expands.
   PanelWindow {
     id: orbWin
-    visible: root.opened
+    visible: true  // persistent — host close() collapses the card only
     color: "transparent"
     anchors { right: true; bottom: true }
     exclusionMode: ExclusionMode.Ignore
@@ -563,15 +566,6 @@ Item {
               MouseArea {
                 anchors.fill: parent
                 onClicked: root.expanded = false
-              }
-            }
-            Text {
-              text: "hide orb"
-              color: "#565f89"
-              font.pixelSize: 11
-              MouseArea {
-                anchors.fill: parent
-                onClicked: root.close()
               }
             }
             Text {
