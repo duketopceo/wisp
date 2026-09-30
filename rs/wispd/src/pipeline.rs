@@ -712,10 +712,13 @@ pub fn run_listen(cfg: &Cfg, st: &Arc<State>, ctl: &ChoiceCtl,
             let name = answers.pointer("/tool/choice")
                 .and_then(|v| v.as_str()).unwrap_or("");
             let tier = tools::risk_of(name);
-            if tier == "shell" && tools::denied(&text) {
-                "REFUSED (denylisted command)".into()
-            } else if tier == "shell" && !cfg.allow_shell {
+            if tier == "shell" && !cfg.allow_shell {
                 "BLOCKED (shell tool needs allow_shell=true in config)".into()
+            } else if tier == "shell" {
+                // Jev returns no free-text args — `text` is the raw
+                // transcript; executing it verbatim runs the sentence
+                // as a command. The act loop composes a real argv.
+                act_loop(&text, cfg, st, ctl)
             } else if tier == "mutating" && risk > cfg.risk_threshold {
                 format!("BLOCKED (tool {name:?} needs confirmation)")
             } else if tier == "safe" || risk <= cfg.risk_threshold {

@@ -94,22 +94,21 @@ class TestRouteDispatch(unittest.TestCase):
             {"agent": {"risk_threshold": "1.5"}}, detail="ls -la")
         self.assertIn("allow_shell", out)
 
-    def test_shell_tool_denylist_refused(self):
-        out = pipeline.execute(
-            self.answers("tool", tool="shell"),
-            {"agent": {"risk_threshold": "1.5", "allow_shell": "true"}},
-            detail="rm -rf /")
-        self.assertTrue(out.startswith("REFUSED"))
-
-    def test_shell_tool_runs_when_allowed(self):
-        with mock.patch.object(tools.system.subprocess, "run") as r:
-            r.return_value = mock.Mock(returncode=0, stdout="ok",
-                                       stderr="")
+    def test_shell_tool_goes_through_act_loop(self):
+        # Jev can't produce free-text args — verbatim transcript as a
+        # shell command is the "sh -c <your sentence>" bug. Shell via
+        # the tool route defers to the act loop, which composes a real
+        # argv (and applies the denylist on the composed command).
+        with mock.patch("wisp.act.run_act_loop",
+                        return_value="ACTED x") as a:
             out = pipeline.execute(
                 self.answers("tool", tool="shell"),
                 {"agent": {"risk_threshold": "1.5",
-                           "allow_shell": "true"}}, detail="ls")
-        self.assertIn("SHELL", out)
+                           "allow_shell": "true"}},
+                detail="rm -rf /")
+        self.assertEqual(out, "ACTED x")
+        a.assert_called_once_with("rm -rf /", mock.ANY, state=None,
+                                  harness=None, confirm=None)
 
     def test_risk_blocks_before_route(self):
         out = pipeline.execute(

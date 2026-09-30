@@ -470,10 +470,15 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
         tool_name = answers.get("tool", {}).get("choice", "")
         tier = tools.risk_of(tool_name)
         if tier == "shell":
-            if tools.denied(detail):
-                return "REFUSED (denylisted command)"
             if cfg.get("agent", {}).get("allow_shell", "false") != "true":
                 return "BLOCKED (shell tool needs allow_shell=true in config)"
+            # Jev returns no free-text args — `detail` is the raw
+            # transcript, and executing it verbatim turns every
+            # misroute into `sh -c "<your sentence>"`. The act loop's
+            # model composes a real argv from the request instead.
+            from . import act
+            return act.run_act_loop(detail, cfg, state=state,
+                                    harness=harness, confirm=confirm)
         if tier == "mutating" and risk > threshold:
             return f"BLOCKED (tool {tool_name!r} needs confirmation)"
         if tier == "safe" or risk <= threshold:
