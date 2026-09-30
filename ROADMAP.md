@@ -1,7 +1,20 @@
 # Wisp Roadmap
 
-State: **v0.x — feature-complete on paper, unproven in fact.**
-Last updated: 2026-09-29.
+State: **v0.9 released — soak in progress.**
+Last updated: 2026-09-30.
+
+Progress on the v1.0 gates:
+
+- ✅ U10 merged (PR #31); release CI verified — `v0.9.0` published all
+  five platform archives; linux-aarch64 artifact runs the live daemon.
+- ✅ Visible surface: bar glyph, companion orb, app menu, GUI — verified.
+- ✅ Run labeling landed: `wispd label correct|incorrect` + orb ✓/✗ →
+  `labels.jsonl`; `wispd label` prints the per-route intent-match report.
+- 🔄 Soak: label every run; fix top failure mode weekly; re-measure.
+- ⬜ Fresh-box install ≤10 min on a clean Omarchy VM.
+- ⬜ Learning loop exercised twice (`wispd learn` → approve → clarify
+  rate drops).
+- ⬜ Tag `v1.0.0` once the soak gates pass.
 
 ## Where it is
 
