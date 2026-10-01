@@ -63,6 +63,12 @@ class State:
     def transition(self, status: str, **fields) -> None:
         with self._lock:
             self.status = status
+            # the ghost cursor only lives while acting — any exit
+            # (done/error/speaking/listening) clears it so it can't
+            # park stale on screen
+            if status not in ("acting", "awaiting_choice") \
+                    and "guide" not in fields:
+                self.guide = None
             for k, v in fields.items():
                 if hasattr(self, k):
                     setattr(self, k, v)

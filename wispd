@@ -263,7 +263,7 @@ def _run_suggestion(st, cfg, ctl, routine: str) -> None:
         out = act.run_act_loop(routine, cfg, state=st,
                                confirm=None)  # no re-confirm loop;
         # mutating steps skip rather than hang on a card
-        st.transition("done", result=out)
+        st.transition("done", result=out, guide=None)
         dlog(f"suggestion run done: {out!r}")
     except Exception as e:
         dlog(f"suggestion run error: {e}")
