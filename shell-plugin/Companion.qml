@@ -35,6 +35,22 @@ Item {
   property real cursorX: -1     // real pointer, polled while busy
   property real cursorY: -1
 
+  // theme tokens — dark defaults inline so the orb renders before
+  // theme.json exists; ~/.local/share/wisp/theme.json overrides live
+  property var theme: ({
+    "canvas": "#1a1b26", "surface": "#283457", "hairline": "#3b4261",
+    "ink": "#c0caf5", "muted": "#9aa5ce", "faint": "#565f89",
+    "accent": "#7aa2f7", "accentAlt": "#bb9af7", "guide": "#7dcfff",
+    "ok": "#9ece6a", "warn": "#e0af68", "err": "#e05555"
+  })
+
+  readonly property string themeFile: {
+    var dh = Quickshell.env("XDG_DATA_HOME");
+    if (!dh || dh.length === 0)
+      dh = Quickshell.env("HOME") + "/.local/share";
+    return dh + "/wisp/theme.json";
+  }
+
   readonly property bool busy:
     ["listening", "transcribing", "deciding", "acting"]
       .indexOf(status) >= 0
@@ -93,14 +109,14 @@ Item {
   }
 
   readonly property color orbColor: {
-    if (root.status === "error" || root.error.length > 0) return "#e05555";
-    if (root.status === "listening") return "#7aa2f7";
-    if (["transcribing", "deciding"].indexOf(root.status) >= 0) return "#bb9af7";
-    if (["acting", "awaiting_choice"].indexOf(root.status) >= 0) return "#9ece6a";
-    if (root.status === "suggestion") return "#e0af68";
-    if (root.status === "speaking") return "#e0af68";
-    if (root.status === "offline") return "#565f89";
-    return "#3b4261";
+    if (root.status === "error" || root.error.length > 0) return theme.err;
+    if (root.status === "listening") return theme.accent;
+    if (["transcribing", "deciding"].indexOf(root.status) >= 0) return theme.accentAlt;
+    if (["acting", "awaiting_choice"].indexOf(root.status) >= 0) return theme.ok;
+    if (root.status === "suggestion") return theme.warn;
+    if (root.status === "speaking") return theme.warn;
+    if (root.status === "offline") return theme.faint;
+    return theme.hairline;
   }
 
   FileView {
@@ -151,6 +167,19 @@ Item {
           autoHide.restart();
         }
       } catch (e) { root.status = "offline"; }
+    }
+  }
+
+  FileView {
+    id: themeView
+    path: root.themeFile
+    watchChanges: true
+    onFileChanged: reload()
+    onLoaded: {
+      try {
+        var t = JSON.parse(themeView.text());
+        if (t && t.tokens) root.theme = t.tokens;
+      } catch (e) {}
     }
   }
 
@@ -233,7 +262,7 @@ Item {
         x: -22; y: -22
         width: 44; height: 44; radius: 22
         color: "transparent"
-        border.color: "#7dcfff"
+        border.color: theme.guide
         border.width: 2
         // brightens while the ghost is parked — "your turn" handoff cue
         opacity: root.guide !== null ? 1.0 : 0.7
@@ -241,7 +270,7 @@ Item {
       Rectangle {
         x: -3; y: -3
         width: 6; height: 6; radius: 3
-        color: "#7dcfff"
+        color: theme.guide
         opacity: root.guide !== null ? 1.0 : 0.7
       }
     }
@@ -269,9 +298,9 @@ Item {
           ctx.moveTo(2, 1); ctx.lineTo(2, 19); ctx.lineTo(6.5, 14.5);
           ctx.lineTo(10, 21.5); ctx.lineTo(13, 20); ctx.lineTo(9.5, 13);
           ctx.lineTo(16, 13); ctx.closePath();
-          ctx.fillStyle = "#7dcfff";
+          ctx.fillStyle = theme.guide;
           ctx.fill();
-          ctx.strokeStyle = "#1a1b26";
+          ctx.strokeStyle = theme.canvas;
           ctx.lineWidth = 2;
           ctx.stroke();
         }
@@ -288,14 +317,14 @@ Item {
         x: 16; y: -14
         width: glbl.implicitWidth + 14
         height: 24; radius: 6
-        color: "#1a1b26"
-        border.color: "#7dcfff"
+        color: theme.canvas
+        border.color: theme.guide
         Text {
           id: glbl
           anchors.centerIn: parent
           text: (root.guide && root.guide.mode === "guide"
                  ? "click: " : "") + (root.guide ? root.guide.label : "")
-          color: "#7dcfff"
+          color: theme.guide
           font.pixelSize: 11
           font.bold: true
         }
@@ -318,7 +347,7 @@ Item {
             x: -14; y: -14
             width: 28; height: 28; radius: 14
             color: "transparent"
-            border.color: "#7aa2f7"
+            border.color: theme.accent
             border.width: 3
 
             SequentialAnimation on scale {
@@ -331,7 +360,7 @@ Item {
             Text {
               anchors.centerIn: parent
               text: index + 1
-              color: "#7aa2f7"
+              color: theme.accent
               font.pixelSize: 12
               font.bold: true
             }
@@ -343,13 +372,13 @@ Item {
             width: lbl.implicitWidth + 14
             height: 24
             radius: 6
-            color: "#1a1b26"
-            border.color: "#3b4261"
+            color: theme.canvas
+            border.color: theme.hairline
             Text {
               id: lbl
               anchors.centerIn: parent
               text: modelData.label || ""
-              color: "#c0caf5"
+              color: theme.ink
               font.pixelSize: 11
             }
           }
@@ -389,7 +418,7 @@ Item {
           anchors.centerIn: parent
           width: 58; height: 58; radius: 29
           color: "transparent"
-          border.color: "#7aa2f7"
+          border.color: theme.accent
           border.width: 1
           opacity: 0.35
         }
@@ -400,7 +429,7 @@ Item {
           onPaint: {
             var ctx = getContext("2d");
             ctx.reset();
-            ctx.strokeStyle = "#7aa2f7";
+            ctx.strokeStyle = theme.accent;
             ctx.lineWidth = 2.5;
             ctx.lineCap = "round";
             ctx.beginPath();
@@ -421,7 +450,7 @@ Item {
           onPaint: {
             var ctx = getContext("2d");
             ctx.reset();
-            ctx.strokeStyle = "#bb9af7";
+            ctx.strokeStyle = theme.accentAlt;
             ctx.lineWidth = 2;
             ctx.lineCap = "round";
             ctx.beginPath();
@@ -468,7 +497,7 @@ Item {
             Rectangle {
               width: 3
               radius: 1.5
-              color: "#c0caf5"
+              color: theme.ink
               anchors.verticalCenter: parent.verticalCenter
               // level is 0..~0.3 RMS; stagger so bars wave, not mirror
               height: 4 + Math.min(20, root.level * 90) *
@@ -485,7 +514,7 @@ Item {
           visible: root.status !== "listening"
           text: root.status === "speaking" ? "♪" : "◉"
           font.pixelSize: 18
-          color: "#c0caf5"
+          color: theme.ink
         }
 
         // pointer badge: dots when guidance markers are on screen
@@ -494,11 +523,11 @@ Item {
           anchors.top: parent.top
           anchors.right: parent.right
           width: 14; height: 14; radius: 7
-          color: "#7aa2f7"
+          color: theme.accent
           Text {
             anchors.centerIn: parent
             text: root.points.length
-            color: "#1a1b26"
+            color: theme.canvas
             font.pixelSize: 9
             font.bold: true
           }
@@ -523,8 +552,8 @@ Item {
         width: 340
         height: cardCol.implicitHeight + 28
         radius: 12
-        color: "#1a1b26"
-        border.color: "#3b4261"
+        color: theme.canvas
+        border.color: theme.hairline
         border.width: 1
 
         Column {
@@ -544,7 +573,7 @@ Item {
                 onPaint: {
                   var ctx = getContext("2d");
                   ctx.reset();
-                  ctx.strokeStyle = "#7aa2f7";
+                  ctx.strokeStyle = theme.accent;
                   ctx.lineWidth = 2;
                   ctx.lineCap = "round";
                   ctx.beginPath();
@@ -567,7 +596,7 @@ Item {
             }
             Text {
               text: "Wisp — " + root.statusWord()
-              color: "#c0caf5"
+              color: theme.ink
               font.pixelSize: 13
               font.bold: true
             }
@@ -578,7 +607,7 @@ Item {
             width: parent.width
             wrapMode: Text.Wrap
             text: "“" + root.transcript + "”"
-            color: "#9aa5ce"
+            color: theme.muted
             font.pixelSize: 12
             font.italic: true
           }
@@ -593,7 +622,7 @@ Item {
               Text {
                 width: parent.width
                 text: "› " + modelData
-                color: "#565f89"
+                color: theme.faint
                 font.pixelSize: 10
                 font.family: "monospace"
                 elide: Text.ElideRight
@@ -606,7 +635,7 @@ Item {
             width: parent.width
             wrapMode: Text.Wrap
             text: root.answer
-            color: "#c0caf5"
+            color: theme.ink
             font.pixelSize: 13
           }
 
@@ -615,7 +644,7 @@ Item {
             width: parent.width
             wrapMode: Text.Wrap
             text: root.result
-            color: "#9aa5ce"
+            color: theme.muted
             font.pixelSize: 12
           }
 
@@ -624,7 +653,7 @@ Item {
             width: parent.width
             wrapMode: Text.Wrap
             text: root.error
-            color: "#e05555"
+            color: theme.err
             font.pixelSize: 12
           }
 
@@ -638,12 +667,12 @@ Item {
                 height: 28
                 width: Math.min(160, choiceLabel.implicitWidth + 18)
                 radius: 6
-                color: "#283457"
+                color: theme.surface
                 Text {
                   id: choiceLabel
                   anchors.centerIn: parent
                   text: root.pickLabel(String(modelData))
-                  color: "#c0caf5"
+                  color: theme.ink
                   font.pixelSize: 11
                   elide: Text.ElideRight
                   width: 140
@@ -663,7 +692,7 @@ Item {
             spacing: 10
             Text {
               text: "✓"
-              color: "#9ece6a"
+              color: theme.ok
               font.pixelSize: 12
               font.bold: true
               MouseArea {
@@ -676,7 +705,7 @@ Item {
             }
             Text {
               text: "✗"
-              color: "#e05555"
+              color: theme.err
               font.pixelSize: 12
               font.bold: true
               MouseArea {
@@ -689,7 +718,7 @@ Item {
             }
             Text {
               text: "collapse"
-              color: "#7aa2f7"
+              color: theme.accent
               font.pixelSize: 11
               MouseArea {
                 anchors.fill: parent
@@ -698,7 +727,7 @@ Item {
             }
             Text {
               text: "Super+D to talk"
-              color: "#565f89"
+              color: theme.faint
               font.pixelSize: 11
             }
           }

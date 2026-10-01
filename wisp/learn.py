@@ -72,6 +72,106 @@ def soak_stats() -> str:
     return "soak intent-match:\n" + "\n".join(lines)
 
 
+_CUES = ("no", "nope", "wrong", "that's wrong", "didn't work",
+         "didnt work", "actually", "instead", "not that", "try again")
+
+
+def _last_decision(decisions_file=config.DECISIONS) -> dict | None:
+    recs = _read_jsonl(decisions_file)
+    return recs[-1] if recs else None
+
+
+def _last_label(labels_file=LABELS_FILE) -> dict | None:
+    recs = _read_jsonl(labels_file)
+    return recs[-1] if recs else None
+
+
+def correction_context(text: str, cfg: dict) -> dict | None:
+    """Detect a correction turn: the user labeling the last run bad and
+    speaking again, or opening with a cue phrase ('no', 'didn't work',
+    'instead'...). Returns {prior_task, prior_route, prior_result} to
+    inject, or None."""
+    if cfg.get("dev", {}).get("refine", "true") != "true":
+        return None
+    dec = _last_decision()
+    if not dec:
+        return None
+    lab = _last_label()
+    labeled_bad = bool(lab) and lab.get("label") == "incorrect" \
+        and lab.get("ref") == dec.get("ts")
+    low = (text or "").lower().strip()
+    cued = any(low == c or low[:len(c) + 1].rstrip(" ,.:;!-") == c
+               for c in _CUES) and len(low) > 3
+    if not (labeled_bad or cued):
+        return None
+    return {
+        "prior_task": dec.get("transcript", ""),
+        "prior_route": (dec.get("answers", {}).get("route", {})
+                        or {}).get("choice", "?"),
+        "prior_result": dec.get("result", ""),
+        "prior_ref": dec.get("ts", ""),
+        "via": "label" if labeled_bad else "cue",
+    }
+
+
+def record_retry(prior_ref: str, result: str) -> None:
+    """Join a correction turn's outcome back to the failed run — the
+    fails report reads 'corrected-by-retry' as fixed or unfixed."""
+    if not prior_ref:
+        return
+    rec = {"ts": datetime.now(timezone.utc).isoformat(),
+           "ref": prior_ref, "label": "corrected-by-retry",
+           "note": result[:120]}
+    try:
+        LABELS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with LABELS_FILE.open("a") as f:
+            f.write(json.dumps(rec) + "\n")
+    except OSError:
+        pass
+
+
+def fails(n: int = 10, decisions_file=config.DECISIONS,
+          labels_file=LABELS_FILE) -> str:
+    """Recent failures and whether a correction retry fixed them."""
+    decs = _read_jsonl(decisions_file)
+    labs = _read_jsonl(labels_file)
+    marked_bad, retries = set(), {}
+    for l in labs:
+        ref = l.get("ref")
+        if not ref:
+            continue
+        if l.get("label") == "incorrect":
+            marked_bad.add(ref)
+        elif l.get("label") == "corrected-by-retry":
+            retries[ref] = l
+        elif l.get("label") == "correct":
+            marked_bad.discard(ref)
+    rows = []
+    for d in reversed(decs):
+        res = d.get("result", "")
+        ref = d.get("ts", "")
+        bad = ref in marked_bad or res.startswith(
+            ("ABORTED", "BLOCKED", "ERROR", "CANCELLED"))
+        if not bad:
+            continue
+        retry = retries.get(ref)
+        if retry:
+            note = retry.get("note", "")
+            status = ("unfixed" if note.startswith(
+                ("ABORTED", "BLOCKED", "ERROR", "CANCELLED", "SKIP"))
+                else "fixed")
+        else:
+            status = "no retry"
+        rows.append(f"  {ref[11:19]} {status:<9} "
+                    f"{(d.get('transcript') or '')[:36]!r:<40} "
+                    f"{res[:40]}")
+        if len(rows) >= n:
+            break
+    if not rows:
+        return "no failures logged"
+    return "fails (recent first):\n" + "\n".join(rows)
+
+
 def load_overrides(path=OVERRIDES_FILE) -> dict:
     try:
         return json.loads(path.read_text())

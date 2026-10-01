@@ -274,9 +274,10 @@ def _run_suggestion(st, cfg, ctl, routine: str) -> None:
 
 def run_daemon(cfg: dict) -> int:
     global _DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL
-    from wisp import skills
+    from wisp import skills, theme
     skills.register_tools()  # skill_<name> entries from skills/*/SKILL.md
     skills.seed()          # bundled dayflow-bridge/self-checkup skills
+    theme.emit(cfg)        # theme.json for the QML surfaces
     st = state_mod.State()
     ctl = {"stop": threading.Event(), "busy": threading.Event(),
            "choice_event": threading.Event(), "choice_pick": "",
@@ -713,6 +714,26 @@ def main() -> int:
         except (ConnectionError, OSError) as e:
             print(f"wispd unreachable: {e}", file=sys.stderr)
             return 1
+    if cmd == "theme":
+        from wisp import theme
+        name = sys.argv[2] if len(sys.argv) > 2 else ""
+        if name:
+            if name not in theme.THEMES:
+                print(f"unknown theme {name!r} — "
+                      f"{', '.join(sorted(theme.THEMES))}",
+                      file=sys.stderr)
+                return 2
+            config.set_config("ui", "theme", name)
+            cfg = config.load_config()
+            print(f"theme = {theme.emit(cfg)}")
+        else:
+            theme.emit(cfg)
+            print(theme.current(cfg))
+        return 0
+    if cmd == "fails":
+        from wisp import learn
+        print(learn.fails())
+        return 0
     if cmd == "recipes":
         from wisp import trajectories
         from wisp import skills as _sk
@@ -735,7 +756,7 @@ def main() -> int:
     print("usage: wispd [daemon|install|trigger|status|stop|choice"
           "|agent|memory|task_status|task_cancel|learn|label|harness|trace"
           "|doctor|tui|skills [import [--list] dir]|suggestions"
-          "|recipes [approve name]|config [set k v]]")
+          "|recipes [approve name]|fails|theme [name]|config [set k v]]")
     return 2
 
 

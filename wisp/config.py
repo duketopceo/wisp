@@ -96,6 +96,16 @@ max_inject = 3
 # coding-agent runtime overrides ([agent] is the Jev router section)
 act_max_steps = 12
 
+[dev]
+# refinement loop: a labeled-bad turn or a correction cue ("no",
+# "didn't work", "instead") makes the next utterance retry with the
+# failed attempt as context; pairs are measured via wispd fails.
+refine = true
+
+[ui]
+# orb/overlay theme: dark | light (wispd theme <name> swaps live)
+theme = "dark"
+
 [stt]
 # Speech-to-text backend. "local" = whisper.cpp (default, offline).
 # "openai" = any OpenAI-compatible /audio/transcriptions endpoint —
@@ -195,6 +205,8 @@ def _default_cfg_dict() -> dict:
         "pointer": {"mode": "guide", "backend": "auto"},
         "traj": {"enabled": "true", "max_inject": "3"},
         "agents": {"act_max_steps": "12"},
+        "dev": {"refine": "true"},
+        "ui": {"theme": "dark"},
         "brain": {
             "router": "jev", "agent_runtime": "auto",
             "default": "openrouter:meta-llama/llama-4-maverick",

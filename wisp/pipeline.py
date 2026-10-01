@@ -468,8 +468,10 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
                                 harness=harness, confirm=confirm)
     if route == "dictation":
         # type the spoken words; a leading dictate keyword is a command
-        # prefix, not content — strip it
-        return tools.run("type_text", dictation_text(detail), cfg)
+        # prefix, not content — strip it. A correction prefix
+        # ('[previous attempt: ...]') is metadata, never dictated.
+        body = re.sub(r"^\[previous attempt:[^\]]*\]\s*", "", detail)
+        return tools.run("type_text", dictation_text(body), cfg)
     if route == "learn":
         from . import act
         prompt = ("Author a reusable skill for this request using the "
@@ -673,6 +675,23 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
         block = memory.context_block(text)
         if block:
             context += f"\n{block}"
+        # refinement loop: a labeled-bad last turn or a correction cue
+        # ("no", "didn't work", "instead") turns this utterance into a
+        # retry — the failed attempt rides along as context for Jev and
+        # the act loop
+        from . import learn as _learn
+        corr = _learn.correction_context(text, cfg)
+        detail = text
+        if corr:
+            context += ("\nCorrection: the previous attempt "
+                        f"('{corr['prior_task']}' → {corr['prior_route']}) "
+                        f"failed: {corr['prior_result']}. The user is "
+                        "correcting it — re-route, don't repeat.")
+            detail = (f"[previous attempt: {corr['prior_task']!r} → "
+                      f"{corr['prior_route']} failed "
+                      f"({corr['prior_result'][:80]})] {text}")
+            _trace.emit(turn, "correction", "thought",
+                        {"via": corr["via"], "prior": corr["prior_task"]})
         # router: jev (default) | chat (transcript straight to answer
         # brain) | off (always clarify via choices) — Rust parity
         router = cfg.get("brain", {}).get("router", "jev")
@@ -739,11 +758,13 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
                 pick = wait_for_choice(30)
                 state.transition("acting", choices=[])
                 return bool(pick) and "yes" in pick
-        result = execute(answers, cfg, harness, detail=text,
+        result = execute(answers, cfg, harness, detail=detail,
                          state=state, confirm=confirm)
         _trace.emit(turn, "dispatch", "act",
                     {"route": answers.get("route", {}).get("choice"),
                      "result": result})
+        if corr:
+            _learn.record_retry(corr["prior_ref"], result)
         reply = ""
         if result == "ANSWERED":
             pts = []
