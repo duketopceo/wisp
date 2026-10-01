@@ -60,6 +60,10 @@ def edit(target: str, op: str, old: str = "", new: str = "") -> str:
         new = new or old  # tool form 'memory|add|fact' lands in old
         if not new:
             return "FAIL (add needs new=)"
+        core = new.lstrip("- ").strip().lower()
+        if any(l.strip().startswith("-") and core
+               and core in l.lower() for l in lines):
+            return f"OK ({target} add — already known)"
         bullet = new if new.lstrip().startswith("-") else f"- {new}"
         lines.append(bullet)
     elif op in ("replace", "remove"):
@@ -76,6 +80,68 @@ def edit(target: str, op: str, old: str = "", new: str = "") -> str:
         return f"FAIL (op must be add|replace|remove, got {op!r})"
     err = _save(path, "\n".join(lines).rstrip() + "\n", budget)
     return f"FAIL ({err})" if err else f"OK ({target} {op})"
+
+
+_SYNC_BEGIN = "## luke-agents"
+_SYNC_END = "## /luke-agents"
+
+_CONSTITUTION_FACTS = [
+    "user is Luke Kimball (Khan) — github duketopceo, machine <host> (M1 Max, Asahi Linux ARM, Hyprland)",
+    "luke-agents repo (~/Documents/github/personal/luke-agents) is the canonical agent constitution — AGENTS.md is the king file, QUICK_START.md is the fast digest",
+    "voice: precise, concise, no fluff; tables over paragraphs; no emojis; disagree with weak ideas",
+    "never use the words scrape/scraping/crawl — say collect/extract/fetch",
+    "never use Reddit as a source",
+    "eval/model spend bills the orchestral OpenRouter key, never default",
+    "hyprland config is Lua; machine-specific files are stash-canonical under ~/.local/share/machine/<user>/ — sync-watch reverts ~/.config/hypr/",
+    "never edit /usr/share/omarchy — package-owned; user config under ~/.config/",
+    "package installs: omarchy pkg add or yay, never raw makepkg",
+    "personal knowledge brain: Kurultai personal lane (Ulaanbaatar); agent identity = codename@instance_id",
+]
+
+
+def sync_constitution(repo: str | None = None) -> str:
+    """Refresh the managed ## luke-agents block in MEMORY.md from the
+    constitution repo, and dedupe the whole file. Idempotent — safe on
+    every daemon start."""
+    import pathlib
+    base = pathlib.Path(repo).expanduser() if repo else \
+        pathlib.Path.home() / "Documents/github/personal/luke-agents"
+    if not (base / "AGENTS.md").exists():
+        return f"FAIL (no luke-agents repo at {base})"
+    facts = list(_CONSTITUTION_FACTS)
+    qs = base / "QUICK_START.md"
+    if qs.exists():
+        facts.append(
+            "full digest on demand: luke-agents QUICK_START.md "
+            "(or the `luke-agents` skill index)")
+    body_lines = ([f"- {f}" for f in facts])
+    block = [_SYNC_BEGIN, *body_lines, _SYNC_END]
+
+    lines = _load(MEMORY_FILE, _MEMORY_HEAD).splitlines()
+    # drop existing managed block
+    out, skip = [], False
+    for l in lines:
+        if l.strip() == _SYNC_BEGIN:
+            skip = True
+        if not skip:
+            out.append(l)
+        if l.strip() == _SYNC_END:
+            skip = False
+    # dedupe bullets (keep first occurrence, case-insensitive)
+    seen, deduped = set(), []
+    for l in out:
+        key = l.strip().lstrip("- ").strip().lower()
+        if l.strip().startswith("-") and key in seen:
+            continue
+        if l.strip().startswith("-"):
+            seen.add(key)
+        deduped.append(l)
+    out = deduped + [""] + block
+    err = _save(MEMORY_FILE, "\n".join(out).rstrip() + "\n",
+                MEMORY_BUDGET)
+    if err:
+        return f"FAIL ({err})"
+    return f"OK (constitution synced — {len(facts)} facts, deduped)"
 
 
 def run(arg: str) -> str:
@@ -107,7 +173,7 @@ def context_block(transcript: str = "") -> str:
     snap = snapshot()
     if snap:
         parts.append(snap)
-    sidx = skills.index_text()
+    sidx = skills.index_text(transcript)
     if sidx:
         parts.append(f"[skills]\n{sidx}")
     if transcript:

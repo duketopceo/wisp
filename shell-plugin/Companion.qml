@@ -103,9 +103,52 @@ Item {
     return val;
   }
 
+  // daemon binary — absolute: the layer-shell process env is not
+  // guaranteed to carry ~/.local/bin on PATH
+  readonly property string wispd: Quickshell.env("HOME") + "/.local/bin/wispd"
+
   function sendChoice(pick) {
-    choiceProc.command = ["wispd", "choice", pick];
+    choiceProc.command = [root.wispd, "choice", pick];
     choiceProc.running = true;
+  }
+
+  // Shared button — padded hit area, hover/press feedback, pointer
+  // cursor. `flat` renders text-only (still clickable).
+  component WispButton: Rectangle {
+    id: wb
+    property string label: ""
+    property color textColor: theme.ink
+    property bool flat: false
+    signal clicked()
+    implicitHeight: 28
+    implicitWidth: wbText.implicitWidth + 20
+    radius: 6
+    color: flat ? "transparent"
+        : ma.pressed ? theme.hairline
+        : ma.containsMouse ? theme.guide
+        : theme.surface
+    border.color: flat ? "transparent" : theme.hairline
+    border.width: 1
+    scale: ma.pressed ? 0.96 : 1.0
+    Behavior on scale { NumberAnimation { duration: 60 } }
+    Behavior on color { ColorAnimation { duration: 90 } }
+    Text {
+      id: wbText
+      anchors.centerIn: parent
+      text: wb.label
+      color: ma.containsMouse && !wb.flat ? theme.canvas : wb.textColor
+      font.pixelSize: 11
+      font.bold: wb.flat ? false : ma.containsMouse
+      elide: Text.ElideRight
+      maximumLineCount: 1
+    }
+    MouseArea {
+      id: ma
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: wb.clicked()
+    }
   }
 
   readonly property color orbColor: {
@@ -204,12 +247,12 @@ Item {
 
   Process {
     id: choiceProc
-    command: ["wispd", "choice", ""]
+    command: [root.wispd, "choice", ""]
   }
 
   Process {
     id: labelProc
-    command: ["wispd", "label", "correct"]
+    command: [root.wispd, "label", "correct"]
   }
 
   // Real-cursor ring: poll hyprctl cursorpos while Wisp works (~11 Hz).
@@ -663,72 +706,45 @@ Item {
             visible: root.choices.length > 0
             Repeater {
               model: root.choices
-              Rectangle {
-                height: 28
-                width: Math.min(160, choiceLabel.implicitWidth + 18)
-                radius: 6
-                color: theme.surface
-                Text {
-                  id: choiceLabel
-                  anchors.centerIn: parent
-                  text: root.pickLabel(String(modelData))
-                  color: theme.ink
-                  font.pixelSize: 11
-                  elide: Text.ElideRight
-                  width: 140
-                }
-                MouseArea {
-                  anchors.fill: parent
-                  onClicked: {
-                    root.sendChoice(modelData);
-                    root.expanded = false;
-                  }
+              WispButton {
+                label: root.pickLabel(String(modelData))
+                onClicked: {
+                  root.sendChoice(modelData);
+                  root.expanded = false;
                 }
               }
             }
           }
 
           Row {
-            spacing: 10
-            Text {
-              text: "✓"
-              color: theme.ok
-              font.pixelSize: 12
-              font.bold: true
-              MouseArea {
-                anchors.fill: parent
-                onClicked: {
-                  labelProc.command = ["wispd", "label", "correct"];
-                  labelProc.running = true;
-                }
+            spacing: 6
+            WispButton {
+              label: "✓ good"
+              textColor: theme.ok
+              onClicked: {
+                labelProc.command = [root.wispd, "label", "correct"];
+                labelProc.running = true;
               }
             }
-            Text {
-              text: "✗"
-              color: theme.err
-              font.pixelSize: 12
-              font.bold: true
-              MouseArea {
-                anchors.fill: parent
-                onClicked: {
-                  labelProc.command = ["wispd", "label", "incorrect"];
-                  labelProc.running = true;
-                }
+            WispButton {
+              label: "✗ wrong"
+              textColor: theme.err
+              onClicked: {
+                labelProc.command = [root.wispd, "label", "incorrect"];
+                labelProc.running = true;
               }
             }
-            Text {
-              text: "collapse"
-              color: theme.accent
-              font.pixelSize: 11
-              MouseArea {
-                anchors.fill: parent
-                onClicked: root.expanded = false
-              }
+            WispButton {
+              label: "collapse"
+              textColor: theme.muted
+              flat: true
+              onClicked: root.expanded = false
             }
             Text {
               text: "Super+D to talk"
               color: theme.faint
               font.pixelSize: 11
+              anchors.verticalCenter: parent.verticalCenter
             }
           }
         }

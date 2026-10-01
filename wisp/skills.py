@@ -53,8 +53,11 @@ def _frontmatter(text: str) -> dict:
     return meta
 
 
+INDEX_BUDGET = 2400  # chars — skill list stays a hint, not a wall
+
+
 def index() -> list:
-    """[{'name','description'}] for every skill — the injected index."""
+    """[{'name','description','tool'}] for every skill — the injected index."""
     out = []
     if not SKILLS_DIR.is_dir():
         return out
@@ -67,14 +70,39 @@ def index() -> list:
         except OSError:
             continue
         out.append({"name": meta.get("name", d.name),
-                    "description": meta.get("description", "")})
+                    "description": meta.get("description", ""),
+                    "tool": bool(meta.get("tool"))})
     return out
 
 
-def index_text() -> str:
-    """One-line-per-skill block for system-context injection."""
-    return "\n".join(f"- {s['name']}: {s['description']}"
-                     for s in index() if s["description"])
+def index_text(transcript: str = "") -> str:
+    """One-line-per-skill block for system-context injection. Executable
+    (tool:) skills always list; doc skills rank by keyword overlap with
+    the transcript; capped at INDEX_BUDGET chars so a big library doesn't
+    drown the prompt — the skill_view tool reads full bodies on demand."""
+    sks = index()
+    words = {w.strip(".,!?;:'\"()[]").lower() for w in transcript.split()}
+    words.discard("")
+    def score(s):
+        hay = (s["name"] + " " + s["description"]).lower()
+        return sum(2 if w in s["name"].lower() else 1
+                   for w in words if len(w) > 3 and w in hay)
+    tool_skills = [s for s in sks if s["tool"]]
+    doc_skills = sorted((s for s in sks if not s["tool"]),
+                        key=lambda s: -score(s))
+    lines, used = [], 0
+    for s in tool_skills + doc_skills:
+        if not s["description"]:
+            continue
+        line = f"- {s['name']}: {s['description']}"
+        if used + len(line) > INDEX_BUDGET:
+            break
+        lines.append(line)
+        used += len(line)
+    if len(lines) < sum(1 for s in sks if s["description"]):
+        lines.append(f"- … {len(sks) - len(lines)} more "
+                     "(skill_view / `wispd skills` for the full list)")
+    return "\n".join(lines)
 
 
 def view(name: str) -> str:

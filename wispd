@@ -274,10 +274,11 @@ def _run_suggestion(st, cfg, ctl, routine: str) -> None:
 
 def run_daemon(cfg: dict) -> int:
     global _DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL
-    from wisp import skills, theme
+    from wisp import skills, theme, memory as _memory
     skills.register_tools()  # skill_<name> entries from skills/*/SKILL.md
     skills.seed()          # bundled dayflow-bridge/self-checkup skills
     theme.emit(cfg)        # theme.json for the QML surfaces
+    dlog(_memory.sync_constitution())  # luke-agents -> MEMORY.md block
     st = state_mod.State()
     ctl = {"stop": threading.Event(), "busy": threading.Event(),
            "choice_event": threading.Event(), "choice_pick": "",
@@ -734,6 +735,15 @@ def main() -> int:
         from wisp import learn
         print(learn.fails())
         return 0
+    if cmd == "sync":
+        # refresh MEMORY.md constitution block + import luke-agents
+        # _LUKE skills (snapshot, never symlink)
+        from wisp import memory as _m, skills as _sk
+        print(_m.sync_constitution(sys.argv[2] if len(sys.argv) > 2
+                                   else None))
+        print(_sk.import_dir(
+            "~/Documents/github/personal/luke-agents/_LUKE"))
+        return 0
     if cmd == "recipes":
         from wisp import trajectories
         from wisp import skills as _sk
@@ -756,7 +766,8 @@ def main() -> int:
     print("usage: wispd [daemon|install|trigger|status|stop|choice"
           "|agent|memory|task_status|task_cancel|learn|label|harness|trace"
           "|doctor|tui|skills [import [--list] dir]|suggestions"
-          "|recipes [approve name]|fails|theme [name]|config [set k v]]")
+          "|recipes [approve name]|fails|theme [name]|sync [repo]"
+          "|config [set k v]]")
     return 2
 
 
