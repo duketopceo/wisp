@@ -18,7 +18,13 @@ BarWidget {
   property string result: ""
   property var choices: []
   property var tasks: ({})
+  property var steps: []
+  property var suggestion: null
+  property var focus: ({})
   property string error: ""
+
+  readonly property bool busy: ["listening", "transcribing",
+    "deciding", "acting"].indexOf(status) >= 0
 
   readonly property color fg: bar ? bar.foreground : Color.foreground
   readonly property color dim: Qt.darker(fg, 1.5)
@@ -86,6 +92,9 @@ BarWidget {
       root.result = s.result || ""
       root.choices = s.choices || []
       root.tasks = s.tasks || {}
+      root.steps = s.steps || []
+      root.suggestion = s.suggestion || null
+      root.focus = s.focus || {}
       root.error = s.error || ""
     } catch (e) {
       root.status = "offline"
@@ -113,8 +122,12 @@ BarWidget {
              "acting", "deciding"].indexOf(root.status) >= 0
     tooltipText: {
       var tip = "Wisp — " + root.status
+      if (root.focus.app) tip += " · " + root.focus.app
       if (root.transcript) tip += " · heard: " + root.transcript.slice(0, 60)
-      if (root.result) tip += " — " + root.result.slice(0, 60)
+      if (root.steps.length)
+        tip += "\nstep " + root.steps.length + ": " +
+               String(root.steps[root.steps.length - 1]).slice(0, 70)
+      else if (root.result) tip += " — " + root.result.slice(0, 60)
       tip += "\nclick: details · right-click: record/stop"
       return tip
     }
@@ -127,18 +140,51 @@ BarWidget {
     }
   }
 
+  // busy strip — slides under the glyph while the daemon is working
+  Rectangle {
+    anchors.bottom: button.bottom
+    anchors.bottomMargin: -2
+    anchors.horizontalCenter: button.horizontalCenter
+    width: root.busy ? button.width * 0.7 : 0
+    height: 2
+    radius: 1
+    color: root.stateColor
+    opacity: root.busy ? 1 : 0
+    Behavior on width { NumberAnimation { duration: 180 } }
+    Behavior on opacity { NumberAnimation { duration: 180 } }
+  }
+
+  // suggestion/attention badge dot — pending suggestion or choice
+  Rectangle {
+    visible: root.suggestion !== null
+      || root.status === "awaiting_choice"
+      || root.status === "suggestion"
+    anchors.top: button.top
+    anchors.right: button.right
+    width: 6
+    height: 6
+    radius: 3
+    color: root.urgent
+    SequentialAnimation on opacity {
+      running: parent.visible
+      loops: Animation.Infinite
+      NumberAnimation { to: 0.35; duration: 700 }
+      NumberAnimation { to: 1.0; duration: 700 }
+    }
+  }
+
   Process {
     id: talkProc
-    command: ["wispd", "trigger"]
+    command: [Quickshell.env("HOME") + "/.local/bin/wispd", "trigger"]
   }
 
   Process {
     id: choiceProc
-    command: ["wispd", "choice", ""]
+    command: [Quickshell.env("HOME") + "/.local/bin/wispd", "choice", ""]
   }
 
   function sendChoice(pick) {
-    choiceProc.command = ["wispd", "choice", pick]
+    choiceProc.command = [Quickshell.env("HOME") + "/.local/bin/wispd", "choice", pick]
     choiceProc.running = true
   }
 }

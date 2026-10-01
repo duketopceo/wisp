@@ -14,10 +14,12 @@ A skill may declare `tool: <file>` — the file is executed as
 arbitrary; a skill can declare `tier: safe` only for genuinely read-only
 work).
 """
+import json
 import re
 import shlex
 import shutil
 import subprocess
+from pathlib import Path
 
 from . import config, util
 
@@ -54,6 +56,16 @@ def _frontmatter(text: str) -> dict:
 
 
 INDEX_BUDGET = 2400  # chars — skill list stays a hint, not a wall
+
+
+def write_index_json() -> Path:
+    """Snapshot index() → skills.json for the shell panel's FileView."""
+    out = SKILLS_DIR.parent / "skills.json"
+    try:
+        out.write_text(json.dumps(index()))
+    except OSError:
+        pass
+    return out
 
 
 def index() -> list:

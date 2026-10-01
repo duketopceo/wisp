@@ -82,6 +82,28 @@ def _draw(win, state: dict, suggestions: list, decisions: list,
     if not tasks:
         put("  (none)")
     row += 1
+    put("telemetry (24h)", curses.A_UNDERLINE)
+    try:
+        from . import telemetry as _tele
+        for line in _tele.text(24).splitlines()[0:4]:
+            put(f"  {line.strip()[:w-4]}")
+    except Exception:
+        pass
+    row += 1
+    put("skills", curses.A_UNDERLINE)
+    try:
+        from . import skills as _sk
+        idx = _sk.index()
+        put(f"  {len(idx)} installed "
+            f"(luke-agents + seeds + learned)")
+        for s in idx[:6]:
+            put(f"    {'⚙' if s.get('tool') else '·'} "
+                f"{s['name'][:w-10]}")
+        if len(idx) > 6:
+            put(f"    … {len(idx) - 6} more — `wispd skills`")
+    except Exception:
+        put("  (unavailable)")
+    row += 1
     put("recent decisions", curses.A_UNDERLINE)
     for d in decisions:
         tr = (d.get("transcript") or "")[:40]

@@ -34,6 +34,7 @@ class State:
         self.steps = []
         self.suggestion = None
         self.guide = None  # {x, y, label, seq, mode} — ghost cursor target
+        self.focus = {}  # {app, title} — focused window at turn start
         self.pending = None
         self.level = 0.0
         self.tasks = {}
@@ -54,6 +55,7 @@ class State:
                 "steps": list(self.steps),
                 "suggestion": self.suggestion,
                 "guide": self.guide,
+                "focus": dict(self.focus),
                 "level": self.level,
                 "tasks": dict(self.tasks),
                 "error": self.error,
@@ -110,6 +112,7 @@ class State:
             "steps": list(self.steps),
             "suggestion": self.suggestion,
             "guide": self.guide,
+            "focus": dict(self.focus),
             "level": self.level,
             "tasks": dict(self.tasks),
             "error": self.error,

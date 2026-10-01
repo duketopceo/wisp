@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.duketopceo.wisp",
   "name": "Wisp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": "duketopceo",
   "license": "MIT",
   "description": "Voice assistant: Super+D listens, Jev decides, agents spawn — state surfaced from the wispd daemon.",

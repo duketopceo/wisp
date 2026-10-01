@@ -70,7 +70,14 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 f"tools — set [brain.{p['name']}] tools=true or pick a "
                 f"capable provider)")
     system = SYSTEM
-    from . import trajectories
+    from . import trajectories, context as _ctx, action_stats as _ast
+    focus = _ctx.snapshot(cfg)
+    if focus:
+        system += "\n\n" + focus
+        app_key = _ctx.focused_app()
+        stats_blk = _ast.block_for(app_key)
+        if stats_blk:
+            system += "\n" + stats_blk
     prior = trajectories.context_for(task, cfg=cfg)
     if prior:
         system += "\n\n" + prior

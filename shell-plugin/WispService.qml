@@ -29,7 +29,7 @@ Item {
   }
 
   function sendChoice(pick) {
-    choiceProc.command = ["wispd", "choice", pick];
+    choiceProc.command = [Quickshell.env("HOME") + "/.local/bin/wispd", "choice", pick];
     choiceProc.running = true;
   }
 
@@ -71,6 +71,6 @@ Item {
 
   Process {
     id: choiceProc
-    command: ["wispd", "choice", ""]
+    command: [Quickshell.env("HOME") + "/.local/bin/wispd", "choice", ""]
   }
 }

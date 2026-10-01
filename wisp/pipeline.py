@@ -346,6 +346,10 @@ def ask_chat(transcript: str, cfg: dict, session_text: str = "",
     system = ("You are Wisp, a terse desktop voice assistant on Linux. "
               "Answer in one or two short sentences, plain speech, no "
               "markdown.")
+    from . import context as _ctx
+    focus = _ctx.snapshot(cfg)
+    if focus:
+        system += f"\n{focus} — resolve pronouns like 'this'/'it' against the focused app."
     if image_b64:
         system += (
             " A screenshot of the user's screen is attached. Describe "
@@ -669,6 +673,10 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
         harness = {"apps": adapters.best_catalog(),
                    "context": adapters.context()}
         win = active_window()
+        if state:
+            state.transition("deciding", transcript=text,
+                             focus={"app": win.get("class", ""),
+                                    "title": win.get("title", "")[:120]})
         context = harness.get("context", "")
         if win.get("title"):
             context += f"\nActive window: {win['class']} — {win['title']}"

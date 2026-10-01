@@ -277,6 +277,7 @@ def run_daemon(cfg: dict) -> int:
     from wisp import skills, theme, memory as _memory
     skills.register_tools()  # skill_<name> entries from skills/*/SKILL.md
     skills.seed()          # bundled dayflow-bridge/self-checkup skills
+    skills.write_index_json()  # panel reads this without spawning IPC
     theme.emit(cfg)        # theme.json for the QML surfaces
     dlog(_memory.sync_constitution())  # luke-agents -> MEMORY.md block
     st = state_mod.State()
@@ -735,6 +736,12 @@ def main() -> int:
         from wisp import learn
         print(learn.fails())
         return 0
+    if cmd == "tele":
+        # wispd tele [hours] — local digest over decisions/trace
+        from wisp import telemetry
+        hours = int(sys.argv[2]) if len(sys.argv) > 2 else 24
+        print(telemetry.text(hours))
+        return 0
     if cmd == "eval":
         # wispd eval route [limit] — replay logged decisions through
         # candidate routers (eval spend: orchestral key per org rule)
@@ -753,6 +760,7 @@ def main() -> int:
                                    else None))
         print(_sk.import_dir(
             "~/Documents/github/personal/luke-agents/_LUKE"))
+        _sk.write_index_json()
         return 0
     if cmd == "recipes":
         from wisp import trajectories
