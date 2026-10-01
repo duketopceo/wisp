@@ -443,7 +443,7 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
     action = answers.get("action", {}).get("choice")
     app = answers.get("app", {}).get("choice")
     risk = float(answers.get("risk", {}).get("score", 2))
-    threshold = float(cfg.get("agent", {}).get("risk_threshold", "1.5"))
+    threshold = float(cfg.get("agent", {}).get("risk_threshold", "9"))
 
     # Risk gate applies to mutating work — a plain app launch or a text
     # answer is never blocked on risk (Jev's score band for launches

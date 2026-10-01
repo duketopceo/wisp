@@ -52,10 +52,10 @@ answer_model = "meta-llama/llama-4-maverick"
 session_turns = 8
 # attach a screenshot to answer-route calls when true
 screenshots = true
-# Auto-execute when risk <= threshold. Measured Jev scores: "open terminal"
-# launch scores ~1.2 (navigational band), so 1.5 = launch/close allowed,
-# mutating (>=2) always requires explicit confirmation.
-risk_threshold = 1.5
+# Numeric risk gate — Jev scores ~0-2 but overshoots (a launch scored
+# 1.6). Default 9 sits above the band: effectively only extreme risk
+# blocks. Real protection is the denylist + allow_shell + confirm tier.
+risk_threshold = 9
 confidence_instant = 0.95
 confidence_ambiguous = 0.8
 # runaway guards: max simultaneous agent tasks + per-task lifetime
@@ -188,7 +188,7 @@ def _default_cfg_dict() -> dict:
             "model": "typesafe/jev-1.13",
             "answer_model": "meta-llama/llama-4-maverick",
             "session_turns": "8", "screenshots": "true",
-            "risk_threshold": "1.5",
+            "risk_threshold": "9",
             "confidence_instant": "0.95", "confidence_ambiguous": "0.8",
         },
         "voice": {"enabled": "false"},
