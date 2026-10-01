@@ -51,7 +51,11 @@ FloatingWindow {
     watchChanges: true
     onFileChanged: reload()
     onLoaded: {
-      try { win.stateObj = JSON.parse(stateView.text()) } catch (e) {}
+      try {
+        var s = JSON.parse(stateView.text());
+        win.stateObj = s;
+        win.tasks = s.tasks || {};  // state publishes task liveness
+      } catch (e) {}
     }
   }
   Timer { interval: 400; running: true; repeat: true
@@ -127,27 +131,15 @@ FloatingWindow {
       }
     }
   }
-  Process {
-    id: tasksProc
-    command: ["wispd", "task_status"]
-    stdout: StdioCollector {
-      onStreamFinished: {
-        try { win.tasks = JSON.parse(this.text).tasks || {} }
-        catch (e) {}
-      }
-    }
-  }
   Process { id: cmdProc; command: ["wispd"]
-            onExited: { cfgProc.running = true; tasksProc.running = true } }
+            onExited: { cfgProc.running = true } }
   Process { id: svcProc
             command: ["systemctl", "--user", "status", "wispd"] }
   Process { id: writeProc; command: ["wispd"] }
 
   Component.onCompleted: {
-    cfgProc.running = true; tasksProc.running = true;
+    cfgProc.running = true;
   }
-  Timer { interval: 3000; running: win.tab === 3; repeat: true
-          onTriggered: tasksProc.running = true }
 
   // ── design tokens ──────────────────────────────────────────────
   // Tokyo Night, flattened: fewer boxes, hairline separators, mono

@@ -235,6 +235,49 @@ class TestAgentGuards(unittest.TestCase):
                                log_dir=pathlib.Path(td) / "logs")
             self.assertIn("agent limit", out)
 
+    def test_model_flag_position(self):
+        # --model lands after 'run': ori opencode run --model X <task>
+        cfg = {"brain": {"agent_runtime": "opencode"},
+               "agents": {"model": "m/x"}}
+        with mock.patch.object(agents.shutil, "which",
+                               return_value="/usr/bin/ori"):
+            cmd = agents._runtime_cmd(cfg, "do it", "m/x")
+        self.assertEqual(cmd[:4], ["ori", "opencode", "run",
+                                   "--model"])
+
+    def test_pstart_pins_pid_identity(self):
+        import os
+        pid = os.getpid()
+        real = agents._pstart(pid)
+        self.assertTrue(real)
+        self.assertTrue(agents._alive(pid, real))
+        self.assertFalse(agents._alive(pid, "999999999"))  # reused pid
+
+    def test_automate_after_snooze_finds_routine(self):
+        # status-only mark lines must not hide the routine
+        self.sug.write_text(
+            json.dumps({"key": "k1", "title": "t",
+                        "routine": "open discord", "status": "new"})
+            + "\n"
+            + json.dumps({"key": "k1", "status": "snoozed"}) + "\n")
+        st = mock.Mock()
+        st.suggestion = {}
+        out = suggest.resolve_pick("suggestion:automate:k1",
+                                   {"sense": {}}, state=st)
+        self.assertIn("open discord", out)
+
+
+class TestSkillTiers(unittest.TestCase):
+    def test_tool_skill_cannot_self_declare_safe(self):
+        from wisp import skills
+        meta = {"tool": "s.sh", "tier": "safe"}
+        with mock.patch.object(skills, "_skill_meta",
+                               return_value=meta):
+            self.assertEqual(skills.tier_of("skill_x"), "mutating")
+        self.assertEqual(skills.tier_of("skill_missing"), "shell")
+
+
+class TestAgentGuards(unittest.TestCase):
     def test_timeout_reaps_old_task(self):
         with tempfile.TemporaryDirectory() as td:
             tf = pathlib.Path(td) / "tasks.jsonl"

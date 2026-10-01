@@ -85,7 +85,7 @@ def tick(cfg: dict, seen: dict | None = None,
     if w:
         rec["window"] = w
     if sense.get("dayflow", "true") == "true":
-        n = int(sense.get("dayflow_every", "4"))
+        n = max(1, int(sense.get("dayflow_every", "4") or 4))
         seen = seen if seen is not None else {}
         i = seen.get("ticks", 0) + 1
         seen["ticks"] = i

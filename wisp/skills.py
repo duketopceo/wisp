@@ -164,10 +164,16 @@ def _skill_meta(name: str) -> dict | None:
 
 def tier_of(name: str) -> str:
     """Risk tier for a skill_<name> tool — `tier:` frontmatter, shell by
-    default (the script is arbitrary code)."""
+    default (the script is arbitrary code). A `tool:` script can never
+    self-declare `safe`: it runs bash, so its floor is `mutating` —
+    anything less would bypass allow_shell and the denylist."""
     meta = _skill_meta(name) or {}
     tier = meta.get("tier", "shell")
-    return tier if tier in ("safe", "mutating", "shell") else "shell"
+    if tier not in ("safe", "mutating", "shell"):
+        tier = "shell"
+    if meta.get("tool") and tier == "safe":
+        tier = "mutating"
+    return tier
 
 
 def run_tool(name: str, arg: str) -> str | None:
@@ -183,6 +189,9 @@ def run_tool(name: str, arg: str) -> str | None:
     bash = shutil.which("bash")
     if not bash:
         return "SKIP (no bash)"
+    from . import tools as _tools
+    if _tools.denied(arg):
+        return "REFUSED (denylisted command)"
     try:
         r = subprocess.run([bash, str(sp)] + shlex.split(arg),
                            capture_output=True, text=True, timeout=60)

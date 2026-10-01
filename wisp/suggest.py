@@ -148,10 +148,11 @@ def mine(cfg: dict, state=None, log=None) -> list:
     log = log or (lambda m: None)
     window = sense.read_window(
         hours=float(cfg.get("sense", {}).get("window_h", "3")))
-    if not _worth_mining(window, cfg, log):
-        return []
-    if not _budget_ok(cfg):
+    if not _budget_ok(cfg):  # budget covers the Jev gate too — it's a
+        # paid call, so it must come before _worth_mining
         log("suggest: daily call budget exhausted")
+        return []
+    if not _worth_mining(window, cfg, log):
         return []
     from . import brain
     body = "\n".join(json.dumps(r) for r in window[-200:])
@@ -226,17 +227,20 @@ def resolve_pick(pick: str, cfg: dict, state=None, log=None) -> str:
 
 
 def _find_suggestion(key: str) -> dict | None:
+    """Latest merged record for a key — later lines may be status-only
+    marks ({key,status,ts}) so merge like pending() does."""
+    merged = None
     try:
-        for line in reversed(SUGGESTIONS_FILE.read_text().splitlines()):
+        for line in SUGGESTIONS_FILE.read_text().splitlines():
             try:
                 rec = json.loads(line)
             except json.JSONDecodeError:
                 continue
             if rec.get("key") == key:
-                return rec
+                merged = {**(merged or {}), **rec}
     except OSError:
         pass
-    return None
+    return merged
 
 
 def _mark(key: str, status: str) -> None:
@@ -275,7 +279,8 @@ def run(cfg: dict, stop: threading.Event, state=None, log=None) -> None:
     while not stop.wait(max(300, every)):
         if state is not None and getattr(state, "status", "") \
                 in ("listening", "transcribing", "deciding",
-                    "acting", "awaiting_choice", "speaking"):
+                    "acting", "awaiting_choice", "speaking",
+                    "suggestion"):  # don't overwrite a card being read
             continue  # don't pop a card mid-turn
         try:
             new = mine(cfg, state=state, log=log)

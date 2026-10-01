@@ -135,8 +135,9 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
                         args=(st, cfg, ctl, out[4:]),
                         daemon=True).start()
                     return {"ok": True, "result": "automating"}
-                st.transition("done", result=out, choices=[],
-                              suggestion=None)
+                if not ctl["busy"].is_set():
+                    st.transition("done", result=out, choices=[],
+                                  suggestion=None)
                 return {"ok": True, "result": out}
             ctl["choice_pick"] = pick
             ctl["choice_event"].set()

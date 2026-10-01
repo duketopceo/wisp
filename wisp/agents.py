@@ -34,14 +34,29 @@ def _records(tasks_file=config.TASKS_FILE) -> list:
         return []
 
 
-def _alive(pid: int) -> bool:
+def _pstart(pid: int) -> str:
+    """Process start-time (stat field 22) — pins identity against PID
+    reuse: a recycled pid fails this check before we signal anything."""
+    try:
+        stat = pathlib.Path(f"/proc/{pid}/stat").read_text()
+        return stat.rsplit(")", 1)[-1].split()[19]
+    except (OSError, IndexError):
+        return ""
+
+
+def _alive(pid: int, pstart: str = "") -> bool:
     """True only for a live process — a zombie (unreaped child) counts
-    as dead so status doesn't report 'running' forever."""
+    as dead so status doesn't report 'running' forever. When the task
+    record carries pstart, a mismatched start-time means the pid was
+    reused by an unrelated process — treat as dead."""
     if pid <= 0:  # kill(-1,0) probes our own process group — never ok
         return False
     try:
         stat = pathlib.Path(f"/proc/{pid}/stat").read_text()
-        if stat.rsplit(")", 1)[-1].split()[0] == "Z":
+        tail = stat.rsplit(")", 1)[-1].split()
+        if tail[0] == "Z":
+            return False
+        if pstart and tail[19] != pstart:
             return False
     except OSError:
         pass
@@ -58,7 +73,7 @@ def status(name: str, tasks_file=config.TASKS_FILE,
     rec = _find(name, tasks_file)
     if not rec:
         return f"SKIP (no task {name!r})"
-    running = _alive(rec.get("pid", -1))
+    running = _alive(rec.get("pid", -1), rec.get("pstart", ""))
     log = log_dir / f"{rec['id']}.log"
     tail = ""
     if log.exists():
@@ -79,7 +94,8 @@ def _find(name: str, tasks_file=config.TASKS_FILE) -> dict | None:
 
 
 def _running(tasks_file=config.TASKS_FILE) -> list:
-    return [r for r in _records(tasks_file) if _alive(r.get("pid", -1))]
+    return [r for r in _records(tasks_file)
+            if _alive(r.get("pid", -1), r.get("pstart", ""))]
 
 
 def _reap_expired(cfg: dict, tasks_file=config.TASKS_FILE) -> list:
@@ -106,8 +122,7 @@ def _reap_expired(cfg: dict, tasks_file=config.TASKS_FILE) -> list:
                 os.kill(pid, signal.SIGTERM)
             except ProcessLookupError:
                 pass
-        _log_line({"id": rec["id"], "name": rec["name"],
-                   "status": "timed_out",
+        _log_line({"id": rec["id"], "name": rec["name"], "status": "timed_out",
                    "ts": now.isoformat()}, tasks_file)
         reaped.append(rec["name"])
     return reaped
@@ -132,6 +147,8 @@ def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
         i += 1
     log_dir.mkdir(parents=True, exist_ok=True)
     log = log_dir / f"{name}.log"
+    # [agents] model — distinct from [agent] model (that's the Jev
+    # router); empty unless the user sets an agent-model override
     model = cfg.get("agents", {}).get("model", "")
     cmd = _runtime_cmd(cfg, task, model)
     if cmd is None:
@@ -153,6 +170,7 @@ def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
     _PROCS.append(proc)  # keep the handle so _reap can collect zombies
     _log_line({
         "id": name, "name": name, "task": task, "pid": proc.pid,
+        "pstart": _pstart(proc.pid),
         "cmd": " ".join(cmd), "status": "running",
         "ts": datetime.now(timezone.utc).isoformat(),
     }, tasks_file)
@@ -211,7 +229,7 @@ def _runtime_cmd(cfg: dict, task: str, model: str) -> list | None:
         return None
     cmd = [a.format(task=task, model=model) for a in template]
     if model and rt == "opencode":
-        cmd[2:2] = ["--model", model]  # before 'run'
+        cmd[3:3] = ["--model", model]  # after 'run'
     elif model and rt == "codex":
         cmd += ["-m", model]
     elif model and rt == "claude":
@@ -225,7 +243,7 @@ def cancel(name: str, tasks_file=config.TASKS_FILE) -> str:
     if not rec:
         return f"SKIP (no task {name!r})"
     pid = rec.get("pid", -1)
-    if not _alive(pid):
+    if not _alive(pid, rec.get("pstart", "")):
         return f"SKIP ({name} not running)"
     try:
         os.killpg(pid, signal.SIGTERM)
@@ -250,7 +268,7 @@ def tasks(tasks_file=config.TASKS_FILE) -> dict:
     _reap()
     out = {}
     for rec in _records(tasks_file):
-        running = _alive(rec.get("pid", -1))
+        running = _alive(rec.get("pid", -1), rec.get("pstart", ""))
         out[rec["name"]] = {
             "status": "running" if running else rec.get("status", "exited"),
             "task": rec.get("task", ""),
