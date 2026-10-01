@@ -11,22 +11,36 @@ Progress on the v1.0 gates:
 - ✅ Run labeling landed: `wispd label correct|incorrect` + orb ✓/✗ →
   `labels.jsonl`; `wispd label` prints the per-route intent-match report.
 - 🔄 Soak: label every run; fix top failure mode weekly; re-measure.
+  Current: 0/1 labeled (0%) — gate needs ≥50 labeled runs per route.
 - ⬜ Fresh-box install ≤10 min on a clean Omarchy VM.
 - ⬜ Learning loop exercised twice (`wispd learn` → approve → clarify
   rate drops).
 - ⬜ Tag `v1.0.0` once the soak gates pass.
 
+Shipped beyond the v1.0 gates (post-roadmap work, live on master):
+
+- ✅ Proactive companion (2026-09-30): sense collector reads dayflow +
+  hyprctl window deltas into `activity.jsonl`; Jev-gated suggestion
+  miner → orb "an idea" cards (automate / not now / never, approval-only);
+  `agent_runtime=auto` probing + `wispd doctor`; seeded `dayflow-bridge`
+  + `self-checkup` skills; GUI Activity tab; `wispd tui`; task caps,
+  timeout reaper, PID-reuse pinning, daily model-call budget.
+- 📋 Planned (2026-09-30): guide cursor (ring + peel-off ghost),
+  `click` pointer tool with guide-mode fallback, vision-fed act loop,
+  episodic trajectory memory → human-gated recipe skills —
+  `docs/plans/2026-09-30-002-feat-wisp-guide-cursor-recipes-plan.md`.
+
 ## Where it is
 
 - Pipeline shipped: `Super+D` → PipeWire capture → whisper.cpp (`ggml-small.en`) → Jev routing (`launch | tool | agent | answer | clarify`) → risk-tiered toolbelt / `ori opencode` agents → Omarchy bar widgets.
 - Units U1–U9 merged: resident daemon, spoken answers (U4), dictation + orb states (U5), semantic recall via sqlite-vec + RRF (U5c), dev trace `trace.jsonl` (U5e), pluggable brain providers — OpenRouter / openai-compat / Ollama / MLX (U6), macOS adapter (U7), Windows adapter (U8), generic-Linux adapter (U9).
-- U10 (release CI, install/config docs, whisper bootstrap) is open in #31, mergeable.
+- U10 merged (PR #31); release CI verified end-to-end.
 - Session memory, weekly human-gated learning loop (`wispd learn`), and answer-route with optional screenshot context all work in code.
 
-**The honest gap:** no verified end-to-end run exists. Real-world use so far has
-been sporadic, and the assistant rarely completes its loop. Reliability is
-unknown because it has never been measured. v1.0 exists to fix exactly this —
-it is a verification milestone, not a feature milestone.
+**The honest gap:** verified pieces now exist (release binary runs the
+daemon, sense collector is recording, labeling is wired), but labeled
+volume is 1 run. Reliability is still unmeasured — v1.0 remains a
+verification milestone, not a feature milestone.
 
 ## v1.0 — "it actually works on my machine"
 
