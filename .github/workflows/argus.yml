@@ -1,0 +1,73 @@
+name: argus-reviewer PR review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    # Review-only lane (index/run off): wisp is a Python daemon with no
+    # web app to replay. Advisory while it calibrates.
+    if: >-
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) &&
+      (github.event.action != 'labeled' || github.event.label.name == 'argus-probe')
+    runs-on: [self-hosted, linux, x64, wisp]
+    timeout-minutes: 15
+    continue-on-error: true   # advisory until it proves non-flaky
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+      checks: write
+      statuses: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Clear trusted CLI path
+        shell: bash
+        run: rm -rf -- trusted-argus
+      - name: Prepare trusted Argus CLI
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: duketopceo/Argus
+          ref: 119cacdce427046d1300da7b1eb386bcc4ed52a5
+          path: trusted-argus
+          persist-credentials: false
+      - name: Install trusted CLI dependencies
+        id: trusted-cli
+        shell: bash
+        env:
+          TRUSTED_ARGUS_DIR: ${{ github.workspace }}/trusted-argus
+        run: |
+          npm --prefix "$TRUSTED_ARGUS_DIR" ci --ignore-scripts --no-audit --no-fund
+          printf 'cli=%s %s\n' "$(command -v node)" "$TRUSTED_ARGUS_DIR/dist/cli.js" >> "$GITHUB_OUTPUT"
+
+      - name: Run published Argus action
+        id: review
+        uses: duketopceo/Argus/action@119cacdce427046d1300da7b1eb386bcc4ed52a5
+        with:
+          openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
+          cli: ${{ steps.trusted-cli.outputs.cli }}
+          index: 'false'
+          run: 'false'
+          working-directory: .
+          code-model: google/gemini-2.5-flash-lite
+
+      - name: Upload Argus review report artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: argus-reviewer-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: argus-reviewer-report/
+          if-no-files-found: ignore
