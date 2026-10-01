@@ -20,12 +20,41 @@ class SttPromptTest(unittest.TestCase):
             calls["argv"] = argv
             class R: stdout = "hello omarchy"
             return R()
-        with mock.patch.object(pipeline.config, "WHISPER_BIN",
+        import tempfile as _tf
+        from wisp import vocab as _v
+        with mock.patch.object(_v, "CACHE",
+                               pathlib.Path(_tf.mkdtemp()) / "v.txt"), \
+             mock.patch.object(pipeline.config, "WHISPER_BIN",
                                pathlib.Path("/bin/true")), \
              mock.patch.object(pipeline.config, "whisper_model",
                                lambda c: pathlib.Path("/bin/true")), \
              mock.patch.object(pipeline.subprocess, "run", fake_run):
             out = pipeline.transcribe(wav, cfg)
         self.assertIn("--prompt", calls["argv"])
-        self.assertIn("Omarchy, Wisp", calls["argv"])
+        pi = calls["argv"].index("--prompt")
+        self.assertIn("Omarchy", calls["argv"][pi + 1])
         self.assertEqual(out, "hello omarchy")
+
+
+class VocabTest(unittest.TestCase):
+    def test_collect_merges_sources(self):
+        import tempfile
+        from unittest import mock
+        from wisp import vocab
+        d = pathlib.Path(tempfile.mkdtemp())
+        (d / "harness.json").write_text(
+            '{"apps": {"retroarch": {}, "discord": {}}}')
+        with mock.patch.object(vocab, "HARNESS",
+                               d / "harness.json"), \
+             mock.patch.object(vocab, "ACTIVITY", d / "none"):
+            terms = vocab.collect({"stt": {"prompt": "Omarchy, Jev"}})
+        low = [t.lower() for t in terms]
+        self.assertIn("retroarch", low)
+        self.assertIn("omarchy", low)
+        self.assertIn("jev", low)
+
+    def test_static_when_disabled(self):
+        from wisp import vocab
+        out = vocab.build({"stt": {"prompt": "static",
+                                   "vocab_dynamic": "false"}})
+        self.assertEqual(out, "static")

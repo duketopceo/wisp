@@ -233,22 +233,25 @@ def _amplitude_sampler(seconds: int | None, state=None,
 
 def transcribe(wav: pathlib.Path, cfg: dict) -> str:
     if cfg.get("stt", {}).get("provider", "local") == "openai":
-        return _transcribe_openai(wav, cfg["stt"])
+        return _transcribe_openai(wav, cfg["stt"], cfg)
     model = config.whisper_model(cfg)
     if not (config.WHISPER_BIN.exists() and model.exists()):
         raise RuntimeError(f"whisper.cpp missing: {config.WHISPER_BIN} / {model}")
     argv = [str(config.WHISPER_BIN), "-m", str(model), "-nt",
             "-f", str(wav)]
-    prompt = cfg.get("stt", {}).get("prompt", "")
+    from . import vocab
+    prompt = vocab.build(cfg)
     if prompt:
         argv += ["--prompt", prompt]
     r = subprocess.run(argv, capture_output=True, text=True, timeout=120)
     return " ".join(r.stdout.split())
 
 
-def _transcribe_openai(wav: pathlib.Path, stt: dict) -> str:
+def _transcribe_openai(wav: pathlib.Path, stt: dict,
+                       cfg: dict | None = None) -> str:
     """OpenAI-compatible /audio/transcriptions — Groq, OpenAI, vLLM,
     Together, DeepInfra. Key comes from .env/env via stt.key_env."""
+    from . import vocab
     key = config.load_env_key(stt.get("key_env", "GROQ_API_KEY"))
     if not key:
         raise RuntimeError(
@@ -265,7 +268,7 @@ def _transcribe_openai(wav: pathlib.Path, stt: dict) -> str:
         f"--{boundary}".encode(),
         b'Content-Disposition: form-data; name="prompt"',
         b"",
-        stt.get("prompt", "").encode(),
+        vocab.build(cfg or {"stt": stt}).encode(),
         f"--{boundary}".encode(),
         b'Content-Disposition: form-data; name="file"; '
         b'filename="utterance.wav"',
