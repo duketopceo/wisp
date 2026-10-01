@@ -237,9 +237,12 @@ def transcribe(wav: pathlib.Path, cfg: dict) -> str:
     model = config.whisper_model(cfg)
     if not (config.WHISPER_BIN.exists() and model.exists()):
         raise RuntimeError(f"whisper.cpp missing: {config.WHISPER_BIN} / {model}")
-    r = subprocess.run(
-        [str(config.WHISPER_BIN), "-m", str(model), "-nt", "-f", str(wav)],
-        capture_output=True, text=True, timeout=120)
+    argv = [str(config.WHISPER_BIN), "-m", str(model), "-nt",
+            "-f", str(wav)]
+    prompt = cfg.get("stt", {}).get("prompt", "")
+    if prompt:
+        argv += ["--prompt", prompt]
+    r = subprocess.run(argv, capture_output=True, text=True, timeout=120)
     return " ".join(r.stdout.split())
 
 

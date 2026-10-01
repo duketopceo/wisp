@@ -116,9 +116,9 @@ base_url = "https://api.groq.com/openai/v1"
 model = "whisper-large-v3-turbo"
 # name of the env var / .env key holding the API key
 key_env = "GROQ_API_KEY"
-# vocabulary priming — project names, jargon; passed as whisper's
+# vocabulary priming — project names, jargon; whisper.cpp --prompt /
 # `prompt` param on the openai provider (huge accuracy win on names)
-prompt = ""
+prompt = "Wisp, wispd, Omarchy, Hyprland, Jev, OpenRouter, dayflow, omaseal, omarchy plugins, RetroArch, Steam, Discord, VS Code, Kubernetes, k8s, Tailscale, Waybar, Quickshell"
 
 [recall]
 # semantic recall via embeddings: "none" = FTS5 only (zero keys needed).
