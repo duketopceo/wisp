@@ -602,3 +602,40 @@ def active_window() -> dict:
         except Exception:
             return {}
     return {}
+
+
+def pointer_backend(cfg: dict | None = None) -> str | None:
+    """Pointer injector: 'ydotool' | 'wlrctl' | None.
+
+    [pointer] backend = "ydotool"|"wlrctl"|"none"|"auto" (default).
+    auto probes PATH on Linux; macOS/Windows injection isn't built —
+    returns None so callers degrade to guide mode.
+    """
+    want = (cfg or {}).get("pointer", {}).get("backend", "auto")
+    if want in ("ydotool", "wlrctl"):
+        return want if _which(want) else None
+    if want == "none" or current() != "linux":
+        return None
+    for b in ("ydotool", "wlrctl"):
+        if _which(b):
+            return b
+    return None
+
+
+def pointer_cmds(x: int, y: int, backend: str,
+                 click: bool = True) -> list:
+    """Argv list moving the pointer to logical (x,y) and optionally
+    clicking. Logical = Hyprland compositor coords, which both ydotool
+    and wlrctl take directly."""
+    if backend == "ydotool":
+        cmds = [["ydotool", "mousemove", "--absolute",
+                 "-x", str(x), "-y", str(y)]]
+        if click:
+            cmds.append(["ydotool", "click", "0xC0"])
+        return cmds
+    if backend == "wlrctl":
+        cmds = [["wlrctl", "pointer", "move", str(x), str(y)]]
+        if click:
+            cmds.append(["wlrctl", "pointer", "click", "left"])
+        return cmds
+    return []

@@ -52,6 +52,10 @@ def _draw(win, state: dict, suggestions: list, decisions: list,
         put("  daemon unreachable — run `wispd daemon`", curses.A_REVERSE)
     else:
         put(f"  status: {state.get('status', '?')}", curses.A_BOLD)
+        if state.get("guide"):
+            g = state["guide"]
+            put(f"  ghost:  {g.get('mode','guide')} @"
+                f"({g.get('x')},{g.get('y')}) {g.get('label','')[:w-20]}")
         if state.get("transcript"):
             put(f"  heard:  {state['transcript'][:w-10]}")
         if state.get("suggestion"):

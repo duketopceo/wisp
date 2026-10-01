@@ -33,6 +33,7 @@ class State:
         self.points = []
         self.steps = []
         self.suggestion = None
+        self.guide = None  # {x, y, label, seq, mode} — ghost cursor target
         self.pending = None
         self.level = 0.0
         self.tasks = {}
@@ -52,6 +53,7 @@ class State:
                 "points": list(self.points),
                 "steps": list(self.steps),
                 "suggestion": self.suggestion,
+                "guide": self.guide,
                 "level": self.level,
                 "tasks": dict(self.tasks),
                 "error": self.error,
@@ -101,6 +103,7 @@ class State:
             "points": list(self.points),
             "steps": list(self.steps),
             "suggestion": self.suggestion,
+            "guide": self.guide,
             "level": self.level,
             "tasks": dict(self.tasks),
             "error": self.error,

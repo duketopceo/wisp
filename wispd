@@ -106,7 +106,7 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
                 speech.stop()
                 st.transition("listening", transcript="", result="",
                               answer="", choices=[], points=[], error="",
-                              steps=[])
+                              steps=[], guide=None)
                 try:
                     ctl["rec"] = pipeline.record_start(st)
                 except RuntimeError as e:
@@ -137,7 +137,7 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
                     return {"ok": True, "result": "automating"}
                 if not ctl["busy"].is_set():
                     st.transition("done", result=out, choices=[],
-                                  suggestion=None)
+                                  suggestion=None, guide=None)
                 return {"ok": True, "result": out}
             ctl["choice_pick"] = pick
             ctl["choice_event"].set()
@@ -520,9 +520,18 @@ def _doctor(cfg: dict) -> int:
     row("api key", "set" if key == "set" or (key and key != "n/a")
         else key or "MISSING", good=bool(key))
 
+    print("pointer:")
+    from wisp import platform as _plat
+    pb = _plat.pointer_backend(cfg)
+    mode = cfg.get("pointer", {}).get("mode", "guide")
+    row("pointer backend", pb or "none — guide mode only")
+    row("pointer mode", mode)
+
     print("integrations:")
     row("dayflow", _sh.which("dayflow") or "not installed",
         good=bool(_sh.which("dayflow")))
+    row("codegraph (CBM)", _sh.which("codebase-memory-mcp")
+        or "not installed")
     row("hyprctl", _sh.which("hyprctl") or "",
         good=bool(_sh.which("hyprctl")))
     row("sense enabled", cfg.get("sense", {}).get("enabled", "false"))
@@ -704,10 +713,29 @@ def main() -> int:
         except (ConnectionError, OSError) as e:
             print(f"wispd unreachable: {e}", file=sys.stderr)
             return 1
+    if cmd == "recipes":
+        from wisp import trajectories
+        from wisp import skills as _sk
+        sub = sys.argv[2] if len(sys.argv) > 2 else ""
+        if sub == "approve":
+            name = sys.argv[3] if len(sys.argv) > 3 else ""
+            src = config.DATA_DIR / "proposals" / f"{name}.md"
+            if not name.startswith("recipe-") or not src.exists():
+                print("usage: wispd recipes approve <recipe-name>",
+                      file=sys.stderr)
+                return 2
+            dest = _sk.SKILLS_DIR / name
+            dest.mkdir(parents=True, exist_ok=True)
+            (dest / "SKILL.md").write_text(src.read_text())
+            print(f"installed {name}")
+            return 0
+        for p in trajectories.propose_recipes():
+            print(f"drafted {p}")
+        return 0
     print("usage: wispd [daemon|install|trigger|status|stop|choice"
           "|agent|memory|task_status|task_cancel|learn|label|harness|trace"
           "|doctor|tui|skills [import [--list] dir]|suggestions"
-          "|config [set k v]]")
+          "|recipes [approve name]|config [set k v]]")
     return 2
 
 

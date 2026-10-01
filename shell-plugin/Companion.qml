@@ -31,6 +31,9 @@ Item {
   property string lastAnswer: ""
   property bool userPinned: false
   property var steps: []
+  property var guide: null      // {x,y,label,seq,mode} — ghost cursor target
+  property real cursorX: -1     // real pointer, polled while busy
+  property real cursorY: -1
 
   readonly property bool busy:
     ["listening", "transcribing", "deciding", "acting"]
@@ -111,6 +114,7 @@ Item {
         root.level = s.level || 0.0;
         root.error = newError;
         root.steps = s.steps || [];
+        root.guide = s.guide || null;
         // Surfacing: the card pops while Wisp works (status + step log),
         // on an answer, a question, or an error — then auto-collapses.
         // Clicking the orb pins it open; auto-hide resumes on done.
@@ -162,13 +166,37 @@ Item {
     command: ["wispd", "label", "correct"]
   }
 
+  // Real-cursor ring: poll hyprctl cursorpos while Wisp works (~11 Hz).
+  // Cheap socket query; only runs during busy states — no always-on
+  // tail-following.
+  Timer {
+    id: cursorPoll
+    interval: 90
+    running: root.busy
+    repeat: true
+    onTriggered: cursorProc.running = true
+  }
+
+  Process {
+    id: cursorProc
+    command: ["hyprctl", "cursorpos"]
+    stdout: SplitParser {
+      onRead: function (data) {
+        var m = /(-?\d+)[, ]+(-?\d+)/.exec(data);
+        if (m) { root.cursorX = +m[1]; root.cursorY = +m[2]; }
+      }
+    }
+  }
+
   // ── point markers ────────────────────────────────────────────────
   // Fullscreen click-through overlay: logical coords straight from
   // state.json (normalized by the daemon). Visual guidance only —
   // empty input mask so it never eats clicks. Auto-hides after 8s.
   PanelWindow {
     id: pointsWin
-    visible: root.pointsVisible && root.points.length > 0
+    visible: (root.pointsVisible && root.points.length > 0)
+             || root.guide !== null
+             || (root.busy && root.cursorX >= 0)
     color: "transparent"
     anchors { left: true; right: true; top: true; bottom: true }
     exclusionMode: ExclusionMode.Ignore
@@ -176,6 +204,86 @@ Item {
     WlrLayershell.namespace: "wisp-points"
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+
+    // Ring locked to the user's real cursor while Wisp works — crisp
+    // border, no chase animation, only during busy states.
+    Item {
+      id: ring
+      visible: root.busy && root.cursorX >= 0
+      x: root.cursorX; y: root.cursorY
+      width: 0; height: 0
+      Rectangle {
+        x: -22; y: -22
+        width: 44; height: 44; radius: 22
+        color: "transparent"
+        border.color: "#7dcfff"
+        border.width: 2
+        // brightens while the ghost is parked — "your turn" handoff cue
+        opacity: root.guide !== null ? 1.0 : 0.7
+      }
+      Rectangle {
+        x: -3; y: -3
+        width: 6; height: 6; radius: 3
+        color: "#7dcfff"
+        opacity: root.guide !== null ? 1.0 : 0.7
+      }
+    }
+
+    // Ghost cursor: peels off the ring to each target point the act
+    // loop picks. In guide mode it parks there ("your turn" handoff —
+    // ring brightens); in drive mode it shows where the click landed.
+    Item {
+      id: ghost
+      visible: root.guide !== null
+      x: root.guide !== null ? root.guide.x : 0
+      y: root.guide !== null ? root.guide.y : 0
+      width: 0; height: 0
+      Behavior on x { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+      Behavior on y { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+
+      Canvas {
+        id: ghostArrow
+        x: -4; y: -4
+        width: 22; height: 26
+        onPaint: {
+          var ctx = getContext("2d");
+          ctx.reset();
+          ctx.beginPath();
+          ctx.moveTo(2, 1); ctx.lineTo(2, 19); ctx.lineTo(6.5, 14.5);
+          ctx.lineTo(10, 21.5); ctx.lineTo(13, 20); ctx.lineTo(9.5, 13);
+          ctx.lineTo(16, 13); ctx.closePath();
+          ctx.fillStyle = "#7dcfff";
+          ctx.fill();
+          ctx.strokeStyle = "#1a1b26";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+        SequentialAnimation on scale {
+          running: ghost.visible
+          loops: Animation.Infinite
+          NumberAnimation { to: 1.12; duration: 500; easing.type: Easing.InOutSine }
+          NumberAnimation { to: 1.0; duration: 500; easing.type: Easing.InOutSine }
+        }
+      }
+
+      Rectangle {
+        visible: root.guide !== null && (root.guide.label || "").length > 0
+        x: 16; y: -14
+        width: glbl.implicitWidth + 14
+        height: 24; radius: 6
+        color: "#1a1b26"
+        border.color: "#7dcfff"
+        Text {
+          id: glbl
+          anchors.centerIn: parent
+          text: (root.guide && root.guide.mode === "guide"
+                 ? "click: " : "") + (root.guide ? root.guide.label : "")
+          color: "#7dcfff"
+          font.pixelSize: 11
+          font.bold: true
+        }
+      }
+    }
 
     Item {
       id: ptsHost

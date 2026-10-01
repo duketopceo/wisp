@@ -77,6 +77,25 @@ mine_every_s = 2700
 max_calls_per_day = 48
 model = "openrouter:google/gemini-2.5-flash"
 
+[pointer]
+# guide = Wisp points with the ghost cursor, you click (safe default).
+# drive = inject real clicks via the detected backend.
+# auto  = drive when a backend exists, guide otherwise.
+mode = "guide"
+# auto | ydotool | wlrctl | none — auto probes PATH (ydotool needs
+# ydotoold + /dev/uinput; wlrctl needs wlroots virtual-pointer).
+backend = "auto"
+
+[traj]
+# episodic memory for the act loop: every run is recorded and similar
+# prior runs (paths + wrong branches) are injected as context.
+enabled = true
+max_inject = 3
+
+[agents]
+# coding-agent runtime overrides ([agent] is the Jev router section)
+act_max_steps = 12
+
 [stt]
 # Speech-to-text backend. "local" = whisper.cpp (default, offline).
 # "openai" = any OpenAI-compatible /audio/transcriptions endpoint —
@@ -173,6 +192,9 @@ def _default_cfg_dict() -> dict:
             "confidence_instant": "0.95", "confidence_ambiguous": "0.8",
         },
         "voice": {"enabled": "false"},
+        "pointer": {"mode": "guide", "backend": "auto"},
+        "traj": {"enabled": "true", "max_inject": "3"},
+        "agents": {"act_max_steps": "12"},
         "brain": {
             "router": "jev", "agent_runtime": "auto",
             "default": "openrouter:meta-llama/llama-4-maverick",

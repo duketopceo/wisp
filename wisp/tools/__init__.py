@@ -23,6 +23,15 @@ REGISTRY = {
     "notify": (system.notify_tool, "safe", "send a desktop notification"),
     "screenshot": (system.screenshot, "safe", "capture the screen to a file"),
     "type_text": (system.type_text, "mutating", "type text into the focused window"),
+    "click": (system.click, "mutating",
+              "click at 'x,y' (screenshot pixels) or 'x,y@logical' — "
+              "in guide mode points the ghost cursor for the user"),
+    "move": (system.move, "mutating",
+             "move the pointer to 'x,y' or 'x,y@logical'"),
+    "codegraph": (system.codegraph, "safe",
+                  "query a repo's code-graph index (CBM): "
+                  "'<tool> <json-args>' e.g. 'search_graph "
+                  "{\"project\":\"wisp\",\"query\":\"State\"}'"),
     "shell": (system.shell, "shell", "run a shell command"),
     "search_files": (system.search_files, "safe", "find files by name under ~"),
     "agent_spawn": (None, "safe", "spawn a named ori opencode agent"),  # wired in wisp.agents
@@ -138,6 +147,8 @@ def _run_inner(name: str, arg: str, cfg: dict,
     fn = entry[0]
     if fn is desktop.launch:
         return fn(arg, cfg, harness)
+    if fn in (system.click, system.move):
+        return fn(arg, cfg)
     return fn(arg)
 
 
