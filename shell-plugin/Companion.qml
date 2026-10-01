@@ -70,6 +70,23 @@ Item {
     root.expanded = false;
   }
 
+  // "app:discord" → "discord", "action:run_shell" → "run a command" —
+  // chips are for humans, not protocol frames.
+  function pickLabel(pick) {
+    var p = pick.replace(/^suggestion:/, "");
+    var i = p.indexOf(":");
+    if (i < 0) return p;
+    var kind = p.slice(0, i), val = p.slice(i + 1);
+    if (kind === "app") return val === "none" ? "none of these" : val;
+    if (kind === "action") {
+      var verbs = {"launch": "open it", "run_shell": "run a command",
+                   "answer": "just answer", "act": "do it for me",
+                   "agent": "send to agent", "dictation": "dictate it"};
+      return verbs[val] || val.replace(/_/g, " ");
+    }
+    return val;
+  }
+
   function sendChoice(pick) {
     choiceProc.command = ["wispd", "choice", pick];
     choiceProc.running = true;
@@ -625,7 +642,7 @@ Item {
                 Text {
                   id: choiceLabel
                   anchors.centerIn: parent
-                  text: String(modelData).replace(/^suggestion:/, "")
+                  text: root.pickLabel(String(modelData))
                   color: "#c0caf5"
                   font.pixelSize: 11
                   elide: Text.ElideRight
