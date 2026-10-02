@@ -25,38 +25,17 @@ URL = f"http://127.0.0.1:{PORT}/index.html"
 OUT = (pathlib.Path.home() / ".local" / "share" / "wisp"
        / "clicklab.jsonl")
 
-# (instruction, JS check — body of a function where `s` is
-# window.__score; must `return` a bool)
-TASKS = [
-    ("click the button labeled ALPHA",
-     "return s.counts['btn-alpha'] >= 1"),
-    ("click dot 3",
-     "return s.counts['dot-3'] >= 1"),
-    ("click the green triangle",
-     "return s.counts['shape-green-triangle'] >= 1"),
-    ("click the button labeled DELTA",
-     "return s.counts['btn-delta'] >= 1"),
-    ("click dot 7",
-     "return s.counts['dot-7'] >= 1"),
-    ("click the red circle",
-     "return s.counts['shape-red-circle'] >= 1"),
-    ("click the second checkbox",
-     "return s.counts['chk-2'] >= 1"),
-    ("click the button labeled FOXTROT",
-     "return s.counts['btn-foxtrot'] >= 1"),
-    ("type 'hello wisp' into the text field",
-     "return (s.typed['textin']||'').includes('hello wisp')"),
-    ("scroll the list to the bottom",
-     "return s.scroll_top > 400"),
-    ("click the blue square",
-     "return s.counts['shape-blue-square'] >= 1"),
-    ("click dot 5",
-     "return s.counts['dot-5'] >= 1"),
-    ("select 'gamma' in the dropdown",
-     "return s.events.some(e => e.id==='sel' && e.value==='gamma')"),
-    ("type 'testing typing' into the big text area",
-     "return (s.typed['textbox']||'').includes('testing typing')"),
-]
+SUITES_FILE = pathlib.Path(__file__).parent / "suites.json"
+
+
+def load_suite(name: str) -> list:
+    """(instruction, JS check) pairs — check body runs with `s` bound
+    to window.__score and must return a bool."""
+    suites = json.loads(SUITES_FILE.read_text())
+    if name not in suites:
+        raise SystemExit(f"unknown suite '{name}' "
+                         f"(have: {', '.join(suites)})")
+    return [tuple(t) for t in suites[name]]
 
 
 def serve():
@@ -75,9 +54,12 @@ def bos(tool: str, args: dict) -> str:
     return mcpclient.call(f"browseros {tool} {json.dumps(args)}", {})
 
 
-def open_lab() -> int:
-    """Open clicklab in a new BrowserOS tab; return its page id."""
-    out = bos("tabs", {"action": "new", "url": URL})
+def open_lab(seed: int = 0) -> int:
+    """Open clicklab in a new BrowserOS tab; return its page id.
+    `seed` reshuffles the page layout (dots/buttons/shapes) so the
+    agent can't memorize positions across runs."""
+    url = URL + (f"?seed={seed}" if seed else "")
+    out = bos("tabs", {"action": "new", "url": url})
     m = re.search(r"page (\d+)", out)
     if m:
         time.sleep(2)
@@ -155,12 +137,56 @@ def calibrate_dom_origin(page: int, cfg: dict):
     print(f"[clicklab] dom origin: ({ox},{oy})")
 
 
-def main():
-    from wisp import act, config
+def _flag(name: str, default: str = "") -> str:
+    """--name value CLI flag."""
+    return sys.argv[sys.argv.index(name) + 1] if name in sys.argv \
+        else default
+
+
+def replay(match: str):
+    """Re-run a banked step sequence deterministically — no model —
+    and re-check the ground truth. Proves a graduated recipe still
+    works on a fresh layout seed."""
+    from wisp import config, tools, train
+    seed = int(_flag("--seed", "0"))
+    bank = train.load_bank()
+    hits = [e for e in bank.values()
+            if match.lower() in (e.get("task") or "").lower()]
+    if not hits:
+        raise SystemExit(f"no bank entry matching '{match}'")
     serve()
-    print(f"[clicklab] serving on {URL}")
+    page = open_lab(seed)
+    print(f"[clicklab] replay page {page} seed={seed}")
+    cfg = config.load_config()
+    cfg.setdefault("screen", {})["dom_page"] = page
+    cfg["screen"]["dom_origin"] = [0, 0]
+    for e in hits:
+        bos("evaluate", {"page": page, "code":
+                         "window.__score={events:[],counts:{},"
+                         "scroll_top:0,typed:{},lastClick:null};"
+                         "return 'r'"})
+        print(f"\n== {e['task']}  (status={e['status']})")
+        for s in e.get("steps") or []:
+            r = tools.run(s["tool"], s.get("arg", ""), cfg)
+            print(f"   {s['tool']} {s.get('arg','')[:40]} → {r[:60]}")
+        if e.get("check"):
+            ok = check(page, e["check"])
+            print(f"   → {'PASS' if ok else 'FAIL'} "
+                  f"(re-verified on seed={seed})")
+
+
+def main():
+    from wisp import act, config, judge, train
+    if "--replay" in sys.argv:
+        replay(_flag("--replay"))
+        return
+    suite_name = _flag("--suite", "core")
+    seed = int(_flag("--seed", "0"))
+    serve()
+    print(f"[clicklab] serving on {URL} suite={suite_name}"
+          + (f" seed={seed}" if seed else ""))
     try:
-        page = open_lab()
+        page = open_lab(seed)
     except RuntimeError as e:
         print(f"[clicklab] {e}")
         sys.exit(2)
@@ -198,14 +224,17 @@ def main():
         else:
             print("[clicklab] WARN: probe failed — page reachable?")
     else:
-        cfg["screen"]["output"] = \
-            sys.argv[sys.argv.index("--output") + 1] \
-            if "--output" in sys.argv else ""
-    repeat = int(sys.argv[sys.argv.index("--repeat") + 1]) \
-        if "--repeat" in sys.argv else 1
-    n = int(sys.argv[sys.argv.index("--tasks") + 1]) \
-        if "--tasks" in sys.argv else len(TASKS)
-    tasks = (TASKS * repeat)[:n * repeat]
+        cfg["screen"]["output"] = _flag("--output")
+    repeat = int(_flag("--repeat", "1"))
+    suite = load_suite(suite_name)
+    only = _flag("--only")
+    if only:
+        suite = [t for t in suite if only.lower() in t[0].lower()]
+        if not suite:
+            raise SystemExit(f"no task in '{suite_name}' "
+                             f"matching '{only}'")
+    n = int(_flag("--tasks", str(len(suite))))
+    tasks = (suite * repeat)[:n * repeat]
     brain = cfg.get("brain", {}).get("default", "openrouter")
     print(f"[clicklab] {len(tasks)} tasks, brain={brain}")
 
@@ -223,15 +252,30 @@ def main():
                          "document.activeElement.blur();return 'r'"})
         focus_browseros()
         t0 = time.time()
+        run_steps: list = []
         verdict = act.run_act_loop(task, cfg,
-                                   confirm=lambda p: True)
+                                   confirm=lambda p: True,
+                                   steps_out=run_steps)
         ms = int((time.time() - t0) * 1000)
         ok = check(page, expr)
-        rec = {"i": i, "task": task, "verdict": verdict,
-               "verified": ok, "ms": ms, "ts": time.time()}
+        # Jev judges what the scoreboard can't: efficiency, waste kind,
+        # and whether the agent's claimed outcome is real. Ground truth
+        # still wins on success — the judge reconciles, not overrides.
+        j = judge.verdict(task, run_steps, verdict, cfg,
+                          verified=ok) if "--no-judge" not in sys.argv \
+            else {"success": ok, "efficiency": None, "waste": "none"}
+        rec = {"i": i, "task": task, "suite": suite_name,
+               "check": expr, "verdict": verdict,
+               "verified": ok, "judge": j, "surface": "browser-dom",
+               "steps": run_steps[:24], "ms": ms, "ts": time.time()}
         results.append(rec)
+        entry = train.update_bank(rec)
+        if entry.get("changed"):
+            print(f"    [bank] {entry['status'].upper()}: "
+                  f"{entry['task'][:60]}")
         print(f"[{i}/{len(tasks)}] {'PASS' if ok else 'FAIL'} "
-              f"({ms}ms) {task}\n    {verdict[:140]}",
+              f"({ms}ms) {task}\n    {verdict[:140]}\n    "
+              f"{judge.describe(j)}",
               flush=True)
         time.sleep(0.5)
 

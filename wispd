@@ -656,6 +656,20 @@ def main() -> int:
             print(out)
             return 0 if not out.startswith(("SKIP", "ERROR",
                                             "nothing")) else 1
+    if cmd == "train":
+        # wispd train stats|history|bank|replay — arena telemetry
+        from wisp import train
+        sub = sys.argv[2] if len(sys.argv) > 2 else "stats"
+        if sub == "history":
+            print(train.history_text())
+        elif sub == "bank":
+            print(train.bank_text())
+        elif sub == "rebuild":
+            bank = train.replay_all()
+            print(f"rebuilt skill bank — {len(bank)} patterns")
+        else:
+            print(train.stats_text())
+        return 0
     if cmd == "learn":
         from wisp import learn
         out = learn.weekly()

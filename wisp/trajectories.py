@@ -30,10 +30,12 @@ def _tokens(text: str) -> set:
 
 
 def record(task: str, app: str, steps: list, outcome: str,
-           ref: str = "") -> None:
-    """Append one act-run trajectory. Rotates FILE at MAX_BYTES."""
+           ref: str = "", surface: str = "") -> None:
+    """Append one act-run trajectory. Rotates FILE at MAX_BYTES.
+    `surface` tags the interaction substrate (browser-dom, desktop) so
+    per-surface training stats and skills stay separate."""
     rec = {"ts": datetime.now(timezone.utc).isoformat(),
-           "task": task, "app": app,
+           "task": task, "app": app, "surface": surface,
            "steps": [{"tool": s.get("tool"), "arg": s.get("arg", "")[:80],
                       "result": s.get("result", "")[:80]}
                      for s in steps],

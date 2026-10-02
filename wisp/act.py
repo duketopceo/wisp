@@ -91,10 +91,12 @@ def _gate(name: str, arg: str, cfg: dict, confirm,
 def run_act_loop(task: str, cfg: dict, state=None,
                  harness: dict | None = None, confirm=None,
                  initial_image: str | None = None,
-                 interrupted=None) -> str:
+                 interrupted=None,
+                 steps_out: list | None = None) -> str:
     """Drive the chat model through the toolbelt until it finishes or a
     bound trips. `confirm(prompt)->bool` asks the user (choice widget /
-    IPC) when wired; without it mutating calls skip."""
+    IPC) when wired; without it mutating calls skip. `steps_out`, if a
+    list, receives the run's step records for judging/replay."""
     from . import brain
     if not brain.supports_tools(cfg):
         p = brain.provider(cfg)
@@ -113,6 +115,10 @@ def run_act_loop(task: str, cfg: dict, state=None,
     prior = trajectories.context_for(task, cfg=cfg)
     if prior:
         system += "\n\n" + prior
+    from . import train as _train
+    hint = _train.hint_for(task, _surface(cfg))
+    if hint:
+        system += "\n\n" + hint
     from . import goals as _goals
     goal_txt = _goals.context_text()
     user_msg = (goal_txt + "\n\n" + task) if goal_txt else task
@@ -151,7 +157,10 @@ def run_act_loop(task: str, cfg: dict, state=None,
                                           f"{initial_image}"}}]
     messages = [{"role": "system", "content": system},
                 {"role": "user", "content": user_msg}]
-    steps, errors = [], 0
+    steps = steps_out if steps_out is not None else []
+    if steps_out is not None:
+        steps_out.clear()
+    errors = 0
     max_steps = int(cfg.get("agents", {}).get("act_max_steps",
                                              str(MAX_STEPS)))
     # trigger-time image counts as the current observation; a mutating
@@ -175,7 +184,8 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 return "ASK_USER " + text[9:].strip()
             _goals.close("done")
             out = f"ACTED ({len(steps)} steps): {text or 'done'}"
-            trajectories.record(task, _app(harness), steps, out)
+            trajectories.record(task, _app(harness), steps, out,
+                               surface=_surface(cfg))
             return out
         messages.append(msg)
         for call in calls:
@@ -227,13 +237,15 @@ def run_act_loop(task: str, cfg: dict, state=None,
             if errors > MAX_ERRORS:
                 _goals.record_steps(steps)
                 out = f"ABORTED (repeated failures): {_last(steps)}"
-                trajectories.record(task, _app(harness), steps, out)
+                trajectories.record(task, _app(harness), steps, out,
+                               surface=_surface(cfg))
                 return out
             if len(steps) >= max_steps:
                 break
     out = f"ABORTED (max {max_steps} steps): {_last(steps)}"
     _goals.record_steps(steps)
-    trajectories.record(task, _app(harness), steps, out)
+    trajectories.record(task, _app(harness), steps, out,
+                               surface=_surface(cfg))
     return out
 
 
@@ -262,6 +274,16 @@ def _app(harness: dict | None) -> str:
         return platform.active_window().get("class", "")
     except Exception:
         return ""
+
+
+def _surface(cfg: dict | None) -> str:
+    """Interaction substrate tag — keeps browser-DOM and real-desktop
+    training data in separate buckets."""
+    if (cfg or {}).get("screen", {}).get("dom_page"):
+        return "browser-dom"
+    if (cfg or {}).get("pointer", {}).get("mode") == "guide":
+        return "desktop-guide"
+    return "desktop"
 
 
 _GUIDE_RE = re.compile(r"(?:GUIDE|MOVE-GUIDE|CLICKED|MOVED)\((-?\d+),"

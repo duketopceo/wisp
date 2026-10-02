@@ -108,10 +108,31 @@ function render() {
   readout.textContent = 'events: ' + window.__score.events.length +
     '\n' + ev;
 }
-// dots — fixed positions so "dot N" is unambiguous
+// seeded PRNG — ?seed=N reshuffles the layout so the agent can't
+// memorize positions across runs (same seed → same layout)
+const SEED = +(new URLSearchParams(location.search).get('seed') || 0);
+function rng() {
+  SEED_STATE = (SEED_STATE * 1664525 + 1013904223) >>> 0;
+  return SEED_STATE / 4294967296;
+}
+let SEED_STATE = (SEED || 1) >>> 0;
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+// dots — seeded positions so "dot N" is unambiguous per layout
 const field = document.getElementById('dotfield');
-const pos = [[20,20],[140,60],[260,15],[60,120],[200,140],[320,100],
-             [90,170],[380,30]];
+let pos = [[20,20],[140,60],[260,15],[60,120],[200,140],[320,100],
+           [90,170],[380,30]];
+if (SEED) {
+  shuffle(pos);
+  // jitter each dot inside the field — breaks pixel-memorization
+  pos = pos.map(p => [Math.max(0, p[0] + Math.floor(rng()*48) - 24),
+                      Math.max(0, p[1] + Math.floor(rng()*36) - 18)]);
+}
 pos.forEach((p, i) => {
   const d = document.createElement('div');
   d.className = 'dot'; d.id = 'dot-' + (i+1);
@@ -122,6 +143,22 @@ pos.forEach((p, i) => {
 });
 document.querySelectorAll('.shape').forEach(s =>
   s.addEventListener('click', () => hit(s.id, 'click')));
+if (SEED) {
+  // shuffle button order and svg shape order — same ids, new spots
+  const bz = document.querySelectorAll('button');
+  const btns = shuffle([...bz]);
+  btns.forEach(b => b.parentNode.appendChild(b));
+  const svg = document.querySelector('svg');
+  const shapes = shuffle([...svg.querySelectorAll('.shape')]);
+  shapes.forEach((s, i) => {
+    const x = 10 + i * 100;
+    if (s.tagName === 'circle') { s.setAttribute('cx', x + 35); }
+    else if (s.tagName === 'rect') { s.setAttribute('x', x); }
+    else { // triangle — translate the polygon
+      s.setAttribute('transform', `translate(${x - 200}, 0)`);
+    }
+  });
+}
 document.querySelectorAll('button').forEach(b =>
   b.onclick = () => hit(b.id, 'click'));
 document.querySelectorAll('input[type=checkbox]').forEach(c =>
