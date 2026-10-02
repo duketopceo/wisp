@@ -51,6 +51,23 @@ class Register(unittest.TestCase):
         self.assertEqual(data["mcpServers"]["google-calendar"]["service"],
                          "google calendar")
 
+    def test_list_connectors_json_marks_registered(self):
+        import tempfile, pathlib
+        with tempfile.TemporaryDirectory() as td:
+            p = pathlib.Path(td) / "mcp.json"
+            p.write_text(json.dumps({"mcpServers": {
+                "github": {"via": "strata", "service": "github"}}}))
+            with mock.patch.object(mcpauth, "WISP_MCP", p):
+                rows = mcpauth.list_connectors_json({})
+        gh = next(r for r in rows if r["name"] == "GitHub")
+        self.assertTrue(gh["connected"])
+        slack = next(r for r in rows if r["name"] == "Slack")
+        self.assertFalse(slack["connected"])
+        # names unique + sorted
+        names = [r["name"] for r in rows]
+        self.assertEqual(len(names), len(set(names)))
+        self.assertEqual(names, sorted(names, key=str.lower))
+
 
 class StrataRoute(unittest.TestCase):
     def test_strata_dispatch_to_execute_action(self):

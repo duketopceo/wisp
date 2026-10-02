@@ -60,8 +60,83 @@ Panel {
 
   readonly property string dataDir: Quickshell.env("HOME")
     + "/.local/share/wisp"
+  readonly property string wispdBin: Quickshell.env("HOME")
+    + "/.local/bin/wispd"
   property int tab: 0
-  readonly property var tabNames: ["Now", "Agents", "Activity", "Tele", "Skills"]
+  readonly property var tabNames: ["Now", "Agents", "Activity", "Tele", "Skills", "Context", "Connect"]
+
+  // --- U5/U6/U7 surfaces ---
+  property var sessionTurns: []
+  property var inventory: null
+  property var connectors: []
+  property string contextText: ""
+  property bool connectBusy: false
+
+  FileView {
+    id: sessionView
+    path: wisp.dataDir + "/session.jsonl"
+    watchChanges: true
+    onFileChanged: reload()
+    onLoaded: {
+      var lines = text.split("\n").filter(function(l){ return l.trim() !== "" })
+      var out = []
+      for (var i = Math.max(0, lines.length - 5); i < lines.length; i++) {
+        try {
+          var t = JSON.parse(lines[i])
+          out.push({text: (t.transcript || "").slice(0, 42),
+                    route: t.route || "",
+                    ts: (t.ts || "").slice(11, 19)})
+        } catch (e) {}
+      }
+      wisp.sessionTurns = out.reverse()
+    }
+  }
+
+  FileView {
+    id: invView
+    path: wisp.dataDir + "/inventory.json"
+    watchChanges: true
+    onFileChanged: reload()
+    onLoaded: {
+      try { wisp.inventory = JSON.parse(text) }
+      catch (e) { wisp.inventory = null }
+    }
+  }
+
+  Process {
+    id: ctxProc
+    command: [wisp.wispdBin, "context"]
+    stdout: StdioCollector {}
+    onExited: wisp.contextText = stdout.text || ""
+  }
+
+  Process {
+    id: connListProc
+    command: [wisp.wispdBin,
+              "connect", "--list", "--json"]
+    stdout: StdioCollector {}
+    onExited: {
+      try { wisp.connectors = JSON.parse(stdout.text) }
+      catch (e) { wisp.connectors = [] }
+    }
+  }
+
+  Process {
+    id: connRunProc
+    command: [wisp.wispdBin, "connect", ""]
+    onExited: {
+      wisp.connectBusy = false
+      connListProc.running = false
+      connListProc.running = true   // refresh status after a connect
+    }
+  }
+
+  function runConnect(alias) {
+    if (wisp.connectBusy) return
+    wisp.connectBusy = true
+    connRunProc.command = [wisp.wispdBin, "connect", alias]
+    connRunProc.running = true
+  }
 
   // --- local ledgers ---
   property var decisions: []
@@ -133,18 +208,17 @@ Panel {
 
   Process {
     id: labelProc
-    command: [Quickshell.env("HOME") + "/.local/bin/wispd", "label", ""]
+    command: [wisp.wispdBin, "label", ""]
   }
 
   function sendLabel(which) {
-    labelProc.command = [Quickshell.env("HOME")
-      + "/.local/bin/wispd", "label", which]
+    labelProc.command = [wisp.wispdBin, "label", which]
     labelProc.running = true
   }
 
   Process {
     id: interruptProc
-    command: [Quickshell.env("HOME") + "/.local/bin/wispd", "interrupt"]
+    command: [wisp.wispdBin, "interrupt"]
   }
 
   function sendInterrupt() {
@@ -453,6 +527,32 @@ Panel {
             }
           }
         }
+        // session strip — last 5 turns, newest first; read-only
+        // context for "what did wisp just do"
+        Column {
+          visible: wisp.sessionTurns.length > 0
+          width: parent.width
+          spacing: 3
+          Text {
+            text: "recent"
+            color: wisp.dim
+            font.family: wisp.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            opacity: 0.8
+          }
+          Repeater {
+            model: wisp.sessionTurns
+            delegate: Text {
+              width: parent.width
+              text: modelData.ts + "  " + modelData.route
+                + "  " + modelData.text
+              color: wisp.dim
+              font.family: wisp.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              elide: Text.ElideRight
+            }
+          }
+        }
       }
 
       // ---- Agents ----
@@ -590,6 +690,128 @@ Panel {
           font.family: wisp.fontFamily
           font.pixelSize: Style.font.bodySmall
           opacity: 0.7
+        }
+      }
+
+      // ---- Context ---- what Wisp sees: focus, workspaces, inventory
+      Column {
+        visible: wisp.tab === 5
+        width: parent.width - parent.padding * 2
+        spacing: Style.space(6)
+        onVisibleChanged: {
+          if (visible && !ctxProc.running) ctxProc.running = true
+        }
+        Text {
+          text: "what wisp sees"
+          color: wisp.fg
+          font.family: wisp.fontFamily
+          font.pixelSize: Style.font.body
+          font.bold: true
+        }
+        Text {
+          visible: wisp.focus.app
+          text: "focused: " + wisp.focus.app
+              + (wisp.focus.title ? " — " + wisp.focus.title : "")
+          color: wisp.accent
+          font.family: wisp.fontFamily
+          font.pixelSize: Style.font.bodySmall
+          wrapMode: Text.WordWrap
+          width: parent.width
+        }
+        Text {
+          text: wisp.contextText || "(fetching — wispd context)"
+          color: wisp.dim
+          font.family: "monospace"
+          font.pixelSize: Style.font.bodySmall
+          wrapMode: Text.Wrap
+          width: parent.width
+        }
+        Text {
+          visible: wisp.inventory !== null
+          text: {
+            if (!wisp.inventory) return ""
+            var i = wisp.inventory
+            var mcp = i.mcp ? Object.keys(i.mcp).length : 0
+            return "inventory: " + (i.apps ? i.apps.length : 0) + " apps · "
+              + (i.cli_tools ? i.cli_tools.length : 0) + " cli tools · "
+              + mcp + " mcp servers · "
+              + (i.skills ? i.skills.length : 0) + " skills"
+          }
+          color: wisp.dim
+          font.family: wisp.fontFamily
+          font.pixelSize: Style.font.bodySmall
+          wrapMode: Text.WordWrap
+          width: parent.width
+        }
+        Text {
+          visible: wisp.inventory === null
+          text: "no inventory — run `wispd inventory`"
+          color: wisp.urgent
+          font.family: wisp.fontFamily
+          font.pixelSize: Style.font.bodySmall
+        }
+      }
+
+      // ---- Connect ---- OAuth connectors via the Strata gateway
+      Column {
+        visible: wisp.tab === 6
+        width: parent.width - parent.padding * 2
+        spacing: 4
+        onVisibleChanged: {
+          if (visible && !connListProc.running) connListProc.running = true
+        }
+        Text {
+          text: "connectors (" + wisp.connectors.length + ")"
+              + (wisp.connectBusy ? " — authorizing…" : "")
+          color: wisp.fg
+          font.family: wisp.fontFamily
+          font.pixelSize: Style.font.body
+          font.bold: true
+        }
+        Repeater {
+          model: wisp.connectors
+          delegate: Row {
+            width: parent.width
+            spacing: 8
+            Rectangle {
+              width: 7; height: 7; radius: 4
+              anchors.verticalCenter: parent.verticalCenter
+              color: modelData.connected ? wisp.accent : wisp.dim
+            }
+            Text {
+              text: modelData.name
+              color: wisp.fg
+              font.family: wisp.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              width: parent.width - 130
+              elide: Text.ElideRight
+            }
+            Text {
+              visible: !modelData.connected
+              text: "connect"
+              color: connHov.containsMouse && !wisp.connectBusy
+                     ? wisp.accent : wisp.dim
+              font.family: wisp.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              font.underline: connHov.containsMouse
+              MouseArea {
+                id: connHov
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: wisp.runConnect(modelData.alias)
+              }
+            }
+          }
+        }
+        Text {
+          visible: wisp.connectors.length === 0
+          text: "catalog empty — needs BrowserOS running + `wispd inventory`"
+          color: wisp.dim
+          font.family: wisp.fontFamily
+          font.pixelSize: Style.font.bodySmall
+          wrapMode: Text.WordWrap
+          width: parent.width
         }
       }
 

@@ -201,6 +201,12 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
             speech.stop()
             ctl["interrupt"].set()
             return {"ok": True}
+        if c == "context":
+            from wisp import context as _ctx
+            try:
+                return {"ok": True, "result": _ctx.snapshot(cfg)}
+            except Exception as e:
+                return {"ok": False, "error": str(e)}
         if c == "stop":
             speech.stop()
             ctl["stop"].set()
@@ -704,10 +710,22 @@ def main() -> int:
         from wisp import mcpauth
         name = sys.argv[2] if len(sys.argv) > 2 else ""
         if not name or name == "--list":
+            if "--json" in sys.argv:
+                import json as _j
+                print(_j.dumps(mcpauth.list_connectors_json(cfg)))
+                return 0
             print(mcpauth.list_connectors(cfg))
             return 0
         print(mcpauth.connect(name, cfg))
         return 0
+    if cmd == "context":
+        try:
+            r = ipc.send({"cmd": "context"})
+            print(r.get("result") or r.get("error", "failed"))
+            return 0 if r.get("ok") else 1
+        except (ConnectionError, OSError) as e:
+            print(f"wispd unreachable: {e}", file=sys.stderr)
+            return 1
     if cmd in ("task_status", "task_cancel"):
         try:
             r = ipc.send({"cmd": cmd, "name": sys.argv[2]

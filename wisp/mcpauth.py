@@ -67,6 +67,27 @@ def list_connectors(cfg: dict) -> str:
     return mcpclient._call_http(url, "connector_mcp_servers", {})
 
 
+def list_connectors_json(cfg: dict) -> list:
+    """Machine-readable catalog for the panel: every known service with
+    a registered flag from ~/.config/wisp/mcp.json (cheap — the gateway
+    status call is per-service and slow, so the UI merges these)."""
+    if not _ALIASES:
+        _build_aliases()
+    try:
+        data = json.loads(WISP_MCP.read_text())
+        registered = {v.get("service", "")
+                      for v in data.get("mcpServers", {}).values()}
+    except (OSError, ValueError):
+        registered = set()
+    seen = {}
+    for key, (label, strata) in _ALIASES.items():
+        if label not in seen:
+            seen[label] = {"name": label, "strata": strata,
+                           "connected": strata in registered,
+                           "alias": key}
+    return sorted(seen.values(), key=lambda r: r["name"].lower())
+
+
 def status(name: str, cfg: dict) -> dict:
     """{'connected': bool, 'auth_url': str|None, 'raw': str}"""
     canon = _canonical(name)
