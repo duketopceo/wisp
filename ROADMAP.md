@@ -32,6 +32,14 @@ Shipped beyond the v1.0 gates (post-roadmap work, live on master):
   it brew's `sox` was invisible), and CI running on `macos-latest`
   alongside `ubuntu-latest` so a Linux-only assumption fails the build.
   `docs/MACOS.md` records what is verified and what is not.
+- ✅ Shadow decider (2026-10-02): `[jev] shadow = "pplx"` has a second
+  decision model (Perplexity `pplx-decider-v1-27b`) answer the same
+  questions on every routed turn, in a background thread, logging both
+  answers to `shadow.jsonl` under the same trace turn id that
+  `decisions.jsonl` carries. The primary still decides and the turn never
+  waits on the shadow. This is the missing half of the accuracy gate: two
+  models can now be scored against human labels instead of against each
+  other.
 - ✅ Conversational agent pass (2026-10-02, PRs #37–#52): Clicky-style
   Talk/Agent split with the screenshot captured at trigger; goal memory
   (`wisp/goals.py`, 10-min TTL) so multi-utterance sequences are one

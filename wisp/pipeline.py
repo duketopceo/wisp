@@ -309,8 +309,8 @@ def active_window() -> dict:
 
 
 def ask_jev(transcript: str, model: str, questions: dict,
-            context: str = "") -> dict:
-    state_txt = f"{context}\n\nThe user said: \"{transcript}\"" \
+            context: str = "", cfg: dict | None = None) -> dict:
+    state_txt = f"{context}\n\n" + f'The user said: "{transcript}"' \
         if context else f'The user said: "{transcript}"'
     payload = {"model": model, "state": state_txt, "questions": questions}
     req = urllib.request.Request(
@@ -323,10 +323,115 @@ def ask_jev(transcript: str, model: str, questions: dict,
         }, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read())
+            out = json.loads(resp.read())
     except urllib.error.HTTPError as e:
         raise RuntimeError(f"Jev HTTP {e.code}: {e.read().decode()[:200]}") \
             from None
+    _shadow_decision(transcript, state_txt, questions, cfg, out, model)
+    return out
+
+
+def _shadow_decision(transcript: str, state_txt: str, questions: dict,
+                     cfg: dict | None, primary: dict, model: str) -> None:
+    """Answer the same questions with a second decider, in the background.
+
+    Fire-and-forget on purpose: a turn must never wait on a shadow, and a
+    shadow failing must never look like a turn failing. Its only output is
+    an appended comparison record in shadow.jsonl, which exists so the two
+    models can be scored against human labels instead of against each
+    other.
+
+    The trace turn id is stamped here rather than in the worker: trace ids
+    live in a thread-local, and the worker runs on its own daemon thread
+    where that local is unset. `log_decision` writes the same id, which is
+    the only reliable way to pair a shadow record with the decision a
+    human later labels — joining on transcript+timestamp mis-pairs a
+    repeated utterance.
+    """
+    name = str(((cfg or {}).get("jev") or {}).get("shadow") or "").strip()
+    spec = config.SHADOW_PROVIDERS.get(name)
+    if not spec:
+        return
+    key = config.load_env_key(spec["key_env"])
+    if not key:
+        return                      # no key -> nothing to compare against
+    from . import trace as _trace
+    threading.Thread(
+        target=_shadow_worker,
+        args=(name, spec, key, transcript, state_txt, questions, primary,
+              model, _trace.current()), daemon=True).start()
+
+
+def _shadow_worker(name: str, spec: dict, key: str, transcript: str,
+                   state_txt: str, questions: dict, primary: dict,
+                   primary_model: str, turn: str) -> None:
+    try:
+        body = json.dumps({"model": spec["model"], "state": state_txt,
+                           "questions": questions}).encode()
+        req = urllib.request.Request(
+            spec["endpoint"], data=body,
+            headers={"Authorization": f"Bearer {key}",
+                     "Content-Type": "application/json",
+                     "User-Agent": "wisp/1.0"}, method="POST")
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            shadow = json.loads(resp.read())
+    except Exception:                                   # noqa: BLE001
+        return                      # best-effort by definition
+
+    rec = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "turn": turn,
+        "transcript": transcript,
+        "primary": {"provider": "jev", "model": primary_model,
+                    "answers": (primary or {}).get("answers", {})},
+        "shadow": {"provider": name, "model": spec["model"],
+                   "answers": (shadow or {}).get("answers", {}),
+                   "input_tokens":
+                       ((shadow or {}).get("usage") or {}).get("input_tokens")},
+        "agree": _shadow_agree(primary, shadow),
+    }
+    try:
+        config.SHADOW.parent.mkdir(parents=True, exist_ok=True)
+        with config.SHADOW.open("a") as f:
+            f.write(json.dumps(rec, separators=(",", ":")) + "\n")
+    except OSError:
+        pass
+
+
+def _shadow_agree(primary: dict, shadow: dict) -> dict:
+    """Per-question agreement between two deciders.
+
+    choice compares the picked option. noul is a probability, not a label,
+    so it agrees when the two land within 0.2 — the same call at any sane
+    threshold. score compares the rounded expected level, since 1.78 and
+    1.82 are the same answer.
+    """
+    out = {}
+    pa = (primary or {}).get("answers") or {}
+    sa = (shadow or {}).get("answers") or {}
+    for name in sorted(set(pa) | set(sa)):
+        p, s = pa.get(name) or {}, sa.get(name) or {}
+        # A question one side never answered is unmeasured, not a
+        # disagreement — conflating the two would score an omission as a
+        # wrong route and quietly deflate the agreement rate.
+        if "choice" in p and "choice" in s:
+            pv, sv = p.get("choice"), s.get("choice")
+        elif "noul" in p and "noul" in s:
+            pv, sv = p.get("noul"), s.get("noul")
+        elif "score" in p and "score" in s:
+            try:
+                out[name] = round(float(p["score"])) == round(float(s["score"]))
+            except (TypeError, ValueError):
+                out[name] = None
+            continue
+        else:
+            out[name] = None
+            continue
+        if isinstance(pv, float) and isinstance(sv, float):
+            out[name] = abs(pv - sv) <= 0.2
+        else:
+            out[name] = pv == sv
+    return out
 
 
 def ask_chat(transcript: str, cfg: dict, session_text: str = "",
@@ -751,7 +856,7 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
             resp = {"answers": {"route": {"choice": "clarify"}}}
         else:
             resp = ask_jev(text, model, build_questions(harness),
-                           context=context)
+                           context=context, cfg=cfg)
         timing["jev_ms"] = round((time.monotonic() - t0) * 1000
                                  - timing["record_ms"] - timing["stt_ms"])
         answers = resp.get("answers", {})
@@ -838,6 +943,7 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
                                 result=result)
             notify(result)
             log_decision({"ts": datetime.now(timezone.utc).isoformat(),
+                          "turn": turn,
                           "transcript": text, "answers": answers,
                           "result": result, "timing_ms": timing,
                           "corrected": False})
@@ -909,6 +1015,7 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
         notify(result)
         timing["act_ms"] = round((time.monotonic() - t0) * 1000)
         log_decision({"ts": datetime.now(timezone.utc).isoformat(),
+                      "turn": turn,
                       "transcript": text, "answers": answers, "result": result,
                       "timing_ms": timing,
                       "corrected": bool(answers.get("corrected_by_user"))})
