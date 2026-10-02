@@ -247,6 +247,15 @@ def transcribe(wav: pathlib.Path, cfg: dict) -> str:
     return " ".join(r.stdout.split())
 
 
+def _cap_prompt(prompt: str, limit: int = 896) -> str:
+    """Groq rejects /audio/transcriptions prompts over 896 chars —
+    trim at the last term boundary so vocab terms aren't clipped
+    mid-word."""
+    if len(prompt) <= limit:
+        return prompt
+    return prompt[:limit].rsplit(",", 1)[0]
+
+
 def _transcribe_openai(wav: pathlib.Path, stt: dict,
                        cfg: dict | None = None) -> str:
     """OpenAI-compatible /audio/transcriptions — Groq, OpenAI, vLLM,
@@ -268,7 +277,7 @@ def _transcribe_openai(wav: pathlib.Path, stt: dict,
         f"--{boundary}".encode(),
         b'Content-Disposition: form-data; name="prompt"',
         b"",
-        vocab.build(cfg or {"stt": stt}).encode(),
+        _cap_prompt(vocab.build(cfg or {"stt": stt})).encode(),
         f"--{boundary}".encode(),
         b'Content-Disposition: form-data; name="file"; '
         b'filename="utterance.wav"',

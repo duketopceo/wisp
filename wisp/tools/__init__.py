@@ -31,7 +31,9 @@ REGISTRY = {
     "mcp_call": (mcpclient.call, "mutating",
                  "call a tool on a configured MCP server — "
                  "'<server> <tool> <json-args>' e.g. 'browseros tabs "
-                 "{\"action\":\"list\"}'. Server names/URLs are in "
+                 "{\"action\":\"list\"}'. For strata-registered OAuth "
+                 "services (wispd connect) the tool token is "
+                 "'<category>/<action>'. Server names/URLs are in "
                  "inventory.json and the [env] context line"),
     "codegraph": (system.codegraph, "safe",
                   "query a repo's code-graph index (CBM): "

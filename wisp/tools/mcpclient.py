@@ -160,6 +160,32 @@ def call(arg: str, cfg: dict) -> str:
     if not spec:
         return (f"SKIP (mcp server {server!r} not in inventory — "
                 "run wispd inventory to rescan)")
+    if spec.get("via") == "strata":
+        # wisp-registered OAuth connector — calls go through the
+        # browseros Strata gateway's execute_action. The tool token is
+        # '<category>/<action>' (both required by the gateway); the
+        # args object maps body/query/path keys onto the gateway's
+        # *_params string fields.
+        cat, _, action_name = tool.partition("/")
+        action_name = action_name or cat
+        try:
+            from .. import inventory
+            burl = ((inventory.load().get("mcp") or {})
+                    .get("browseros") or {}).get("url")
+        except Exception:
+            burl = None
+        if not burl:
+            return "SKIP (browseros MCP not found for strata route)"
+        payload = {"server_name": spec.get("service", server),
+                   "category_name": cat,
+                   "action_name": action_name,
+                   "body_schema": json.dumps(args.get("body") or args),
+                   "query_params": json.dumps(args.get("query", {})),
+                   "path_params": json.dumps(args.get("path", {}))}
+        try:
+            return _call_http(burl, "execute_action", payload)
+        except Exception as e:
+            return f"MCP_FAIL (strata {server}: {type(e).__name__}: {e})"
     try:
         if spec.get("url") or spec.get("type") == "http":
             url = spec.get("url")

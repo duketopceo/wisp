@@ -90,7 +90,8 @@ def _omarchy() -> dict:
     return {"plugins": plugins, "bindings": binds}
 
 
-_MCP_JSON = (".cursor/mcp.json", ".claude.json",
+_MCP_JSON = (".config/wisp/mcp.json",  # wisp-connected services win
+             ".cursor/mcp.json", ".claude.json",
              ".config/devin/mcp_config.json",
              ".config/opencode/opencode.json")
 

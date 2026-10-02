@@ -679,6 +679,17 @@ def main() -> int:
         print(f"  skills:      {len(inv.get('skills', []))}")
         print(f"  file: {_inv.FILE}")
         return 0
+    if cmd == "connect":
+        # wispd connect <service> — OAuth onboarding for the Strata
+        # connector suite via the local browseros gateway. '--list'
+        # dumps the connector catalog + status.
+        from wisp import mcpauth
+        name = sys.argv[2] if len(sys.argv) > 2 else ""
+        if not name or name == "--list":
+            print(mcpauth.list_connectors(cfg))
+            return 0
+        print(mcpauth.connect(name, cfg))
+        return 0
     if cmd in ("task_status", "task_cancel"):
         try:
             r = ipc.send({"cmd": cmd, "name": sys.argv[2]
