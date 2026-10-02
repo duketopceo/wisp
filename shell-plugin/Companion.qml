@@ -32,6 +32,8 @@ Item {
   property bool userPinned: false
   property var steps: []
   property var guide: null      // {x,y,label,seq,mode} — ghost cursor target
+  property bool bubbleVisible: false
+  property string goal: ""
   property real cursorX: -1     // real pointer, polled while busy
   property real cursorY: -1
 
@@ -175,6 +177,12 @@ Item {
         var newAnswer = s.answer || "";
         var newChoices = s.choices || [];
         var newError = s.error || "";
+        // speech bubble at the cursor — Clicky-style: the answer lives
+        // where your eyes already are, not in a corner card
+        if (newAnswer.length > 0 && newAnswer !== root.lastAnswer) {
+          root.bubbleVisible = true;
+          bubbleTimer.restart();
+        }
         root.status = newStatus;
         root.transcript = s.transcript || "";
         root.answer = newAnswer;
@@ -191,6 +199,7 @@ Item {
         root.error = newError;
         root.steps = s.steps || [];
         root.guide = s.guide || null;
+        root.goal = s.goal || "";
         // Surfacing: the card pops while Wisp works (status + step log),
         // on an answer, a question, or an error — then auto-collapses.
         // Clicking the orb pins it open; auto-hide resumes on done.
@@ -259,9 +268,15 @@ Item {
   // Cheap socket query; only runs during busy states — no always-on
   // tail-following.
   Timer {
+    id: bubbleTimer
+    interval: 9000
+    onTriggered: root.bubbleVisible = false
+  }
+
+  Timer {
     id: cursorPoll
     interval: 90
-    running: root.busy
+    running: root.busy || root.bubbleVisible
     repeat: true
     onTriggered: cursorProc.running = true
   }
@@ -285,6 +300,7 @@ Item {
     id: pointsWin
     visible: (root.pointsVisible && root.points.length > 0)
              || root.guide !== null
+             || root.bubbleVisible
              || (root.busy && root.cursorX >= 0)
     color: "transparent"
     anchors { left: true; right: true; top: true; bottom: true }
@@ -315,6 +331,44 @@ Item {
         width: 6; height: 6; radius: 3
         color: theme.guide
         opacity: root.guide !== null ? 1.0 : 0.7
+      }
+    }
+
+    // Speech bubble at the cursor — the Clicky pattern: the reply
+    // appears where the user is already looking, then fades. Glass
+    // card, max ~420px, clamps inside the screen.
+    Item {
+      id: bubble
+      visible: root.bubbleVisible && root.answer.length > 0
+      property int bx: Math.max(16, Math.min(parent.width - 440,
+                                           root.cursorX + 24))
+      property int by: Math.max(16, Math.min(parent.height - 160,
+                                             root.cursorY - 40))
+      x: bx; y: by
+      width: 0; height: 0
+      opacity: visible ? 1 : 0
+      Behavior on opacity { NumberAnimation { duration: 180 } }
+
+      Rectangle {
+        width: Math.min(420, btxt.implicitWidth + 28)
+        height: Math.min(150, btxt.implicitHeight + 24)
+        radius: 12
+        color: Qt.rgba(theme.canvas.r, theme.canvas.g,
+                       theme.canvas.b, 0.88)
+        border.color: theme.hairline
+        border.width: 1
+
+        Text {
+          id: btxt
+          x: 14; y: 12
+          width: 392
+          wrapMode: Text.WordWrap
+          text: root.answer
+          color: theme.ink
+          font.pixelSize: 13
+          maximumLineCount: 7
+          elide: Text.ElideRight
+        }
       }
     }
 
@@ -643,6 +697,16 @@ Item {
               font.pixelSize: 13
               font.bold: true
             }
+          }
+
+          Text {
+            visible: root.goal.length > 0
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "goal: " + root.goal
+            color: theme.guide
+            font.pixelSize: 11
+            font.bold: true
           }
 
           Text {

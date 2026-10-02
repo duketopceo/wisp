@@ -32,6 +32,18 @@ Panel {
   readonly property var suggestion: hostWidget ? hostWidget.suggestion : null
   readonly property var focus: hostWidget ? hostWidget.focus : ({})
   readonly property string goal: hostWidget ? hostWidget.goal : ""
+  // Talk / Act / Agent badge — derived from the last result prefix,
+  // human words not route names
+  readonly property string mode: {
+    var r = result || "";
+    if (r.indexOf("ACTED") === 0) return "agent";
+    if (r.indexOf("ASK_USER") === 0) return "asking";
+    if (r.indexOf("ANSWERED") === 0 || status === "speaking")
+      return "talk";
+    if (r.indexOf("BLOCKED") === 0) return "blocked";
+    if (busy) return "thinking";
+    return "";
+  }
   readonly property string error: hostWidget ? hostWidget.error : ""
   readonly property bool busy: hostWidget ? hostWidget.busy : false
 
@@ -167,6 +179,24 @@ Panel {
           font.family: wisp.fontFamily
           font.pixelSize: Style.font.title
           font.bold: true
+        }
+        Rectangle {
+          visible: wisp.mode.length > 0
+          height: modeLabel.implicitHeight + 6
+          width: modeLabel.implicitWidth + 12
+          radius: 4
+          color: wisp.mode === "agent" ? wisp.urgent
+               : wisp.mode === "act" ? wisp.accent
+               : Qt.rgba(wisp.fg.r, wisp.fg.g, wisp.fg.b, 0.10)
+          Text {
+            id: modeLabel
+            anchors.centerIn: parent
+            text: wisp.mode
+            color: wisp.mode === "talk" ? wisp.dim : "#fff"
+            font.family: wisp.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            font.bold: true
+          }
         }
       }
 
