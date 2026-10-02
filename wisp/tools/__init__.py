@@ -7,7 +7,7 @@ Tiers:
   shell    — arbitrary command; always needs per-call confirmation and
              is subject to the denylist
 """
-from . import desktop, system
+from . import desktop, mcpclient, system
 
 RISK = {"safe": 0, "mutating": 1, "shell": 2}
 
@@ -28,6 +28,11 @@ REGISTRY = {
               "in guide mode points the ghost cursor for the user"),
     "move": (system.move, "mutating",
              "move the pointer to 'x,y' or 'x,y@logical'"),
+    "mcp_call": (mcpclient.call, "mutating",
+                 "call a tool on a configured MCP server — "
+                 "'<server> <tool> <json-args>' e.g. 'browseros tabs "
+                 "{\"action\":\"list\"}'. Server names/URLs are in "
+                 "inventory.json and the [env] context line"),
     "codegraph": (system.codegraph, "safe",
                   "query a repo's code-graph index (CBM): "
                   "'<tool> <json-args>' e.g. 'search_graph "
@@ -148,6 +153,8 @@ def _run_inner(name: str, arg: str, cfg: dict,
     if fn is desktop.launch:
         return fn(arg, cfg, harness)
     if fn in (system.click, system.move):
+        return fn(arg, cfg)
+    if fn is mcpclient.call:
         return fn(arg, cfg)
     return fn(arg)
 
