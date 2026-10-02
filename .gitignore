@@ -12,3 +12,4 @@ rs/dimd/target/
 rs/wispd/target/
 .codebase-memory/
 __pycache__/
+uv.lock

@@ -351,6 +351,14 @@ def install_files() -> None:
     and the systemd user unit, and install the shell plugin directory."""
     src = pathlib.Path(__file__).resolve().parent
     opt = config.HOME / ".local" / "opt" / "wisp"
+    if src == opt:
+        # invoked via the ~/.local/bin symlink → __file__ resolves to
+        # the installed copy; copytree would self-copy and silently
+        # stay stale. Point the user at the real checkout instead.
+        print("wispd install must run from the source checkout "
+              "(python3 wispd install) — this wispd IS the installed "
+              "copy; nothing updated")
+        return
     opt.mkdir(parents=True, exist_ok=True)
     pkg = src / "wisp"
     if pkg.is_dir():

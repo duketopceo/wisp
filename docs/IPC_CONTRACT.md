@@ -29,7 +29,14 @@ future tray apps). Shells MUST only depend on this document.
 | `agent` | `task: string` | `{ok, result: string}` | spawn a background task via `[brain] agent_runtime`; `result` is `SPAWNED …`/`SKIP …` |
 | `memory` | `arg` or `target`+`body` | `{ok, result: string}` | `arg` = tool grammar `target|op|old|new`; `target`+`body` = whole-doc `write` (GUI editor path — pipes/newlines safe) |
 | `stop` | — | `{ok}` | daemon exits, socket removed; kills in-flight TTS |
+| `interrupt` | — | `{ok}` | cancels the in-flight turn only — daemon stays up |
 | `config` | `set: {"section.key": "val"}` (optional) | `{ok, config}` | read config; with `set`, writes config.toml preserving comments/order and live-reloads |
+| `label` | `label: correct\|incorrect` | `{ok, result}` | tag the most recent decision (soak intent-match + trajectory join) |
+| `context` | — | `{ok, result}` | focused app, `[windows]` workspace map, inventory counts |
+| `inventory` | — | `{ok, result}` | rescan local terrain → `inventory.json` |
+| `connect` | `service` or `list` | `{ok, result, json?}` | OAuth connector flow via BrowserOS Strata; `list` returns the catalog (add `--json` for machine-readable) |
+| `recipes` | `approve <name>` optional | `{ok, result}` | list draft recipe-* proposals; `approve` installs as a skill |
+| `tele` / `fails` | — | `{ok, result}` | decision telemetry / recent failures |
 | `learn` | — | `{ok, result}` | weekly learning proposals (human-gated) |
 | `harness` | — | `{ok, result}` | regenerate the app harness catalog |
 | unknown/malformed | — | `{ok:false, error}` | — |
@@ -49,6 +56,10 @@ lacks a section. Shells may offer a settings page on top of this command.
   "result": "string",
   "choices": ["string"],
   "points": [{"x": 0, "y": 0, "label": "string", "step": 1}],
+  "steps": ["tool arg → result", "…"],
+  "guide": {"x": 0, "y": 0, "label": "string", "mode": "guide|drive", "seq": 1},
+  "focus": {"app": "string", "title": "string"},
+  "goal": {"text": "string", "status": "open|done|failed"},
   "level": 0.0,
   "tasks": {"name": "running|done|failed|cancelled"},
   "error": "string",
@@ -82,6 +93,13 @@ spoken answer and publishes the normalized list.
 - `session.jsonl` — turns for follow-up context.
 - `corrections.jsonl` — user picks on ambiguous turns.
 - `tasks.jsonl` — agent registry; `tasks/<id>.log` per-agent output.
+- `labels.jsonl` — human labels (`correct`/`incorrect`) keyed to the
+  decision ts; joined to trajectories via the decision's transcript.
+- `trajectories.jsonl` — episodic act-loop memory (task, app, steps,
+  outcome); feeds `context_for()` and `propose_recipes()`.
+- `goals.json` — open/closed goal state for cross-utterance continuity.
+- `inventory.json` — scanned local terrain (apps, cli_tools, mcp
+  servers, omarchy plugins/binds, dayflow, skills); 24h TTL.
 - `MEMORY.md`, `USER.md` — curated bounded memory (frozen snapshot).
 - `skills/*/SKILL.md` — self-authored skills (progressive disclosure).
 - `trace.jsonl` — full-fidelity dev trace (`[debug] trace`, default on):

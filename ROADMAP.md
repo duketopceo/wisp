@@ -1,7 +1,7 @@
 # Wisp Roadmap
 
-State: **v0.9 released — soak in progress.**
-Last updated: 2026-09-30.
+State: **v0.9 released — conversational-agent pass shipped, soak in progress.**
+Last updated: 2026-10-02.
 
 Progress on the v1.0 gates:
 
@@ -32,14 +32,31 @@ Shipped beyond the v1.0 gates (post-roadmap work, live on master):
   it brew's `sox` was invisible), and CI running on `macos-latest`
   alongside `ubuntu-latest` so a Linux-only assumption fails the build.
   `docs/MACOS.md` records what is verified and what is not.
+- ✅ Conversational agent pass (2026-10-02, PRs #37–#52): Clicky-style
+  Talk/Agent split with the screenshot captured at trigger; goal memory
+  (`wisp/goals.py`, 10-min TTL) so multi-utterance sequences are one
+  task; `ASK_USER:` voice backchannel; confirm-once per (tool, app);
+  cursor-adjacent answer bubble + bottom-center listening pill +
+  streaming deltas + `wispd interrupt`; Panel v2 (Now/Agents/Activity/
+  Tele/Skills/Context/Connect tabs, session strip); `wispd context` +
+  `wispd inventory` local-terrain passthrough (apps, CLIs, MCP servers,
+  omarchy plugins/binds, dayflow); `mcp_call` tool (streamable-HTTP +
+  stdio JSON-RPC); `wispd connect` OAuth via the BrowserOS Strata
+  gateway (~45 services); Jev slimmed to route/app/risk/tool;
+  recipe graduation — user-labeled multi-step wins draft `recipe-*`
+  skill proposals (human-gated via `wispd recipes approve`); soak-gate
+  fixes — deterministic re-observe before pointer actions, BrowserOS
+  preferred for `browser` when its MCP server is live, natural-language
+  workspace args. Plans: `docs/plans/2026-10-02-00{1,2,3}-*`.
 - 📋 Planned (2026-09-30): guide cursor (ring + peel-off ghost),
   `click` pointer tool with guide-mode fallback, vision-fed act loop,
-  episodic trajectory memory → human-gated recipe skills —
+  episodic trajectory memory → human-gated recipe skills — **shipped**
+  (guide cursor + `click`, vision act loop, trajectories → recipes);
   `docs/plans/2026-09-30-002-feat-wisp-guide-cursor-recipes-plan.md`.
 
 ## Where it is
 
-- Pipeline shipped: `Super+D` → PipeWire capture → whisper.cpp (`ggml-small.en`) → Jev routing (`launch | tool | agent | answer | clarify`) → risk-tiered toolbelt / `ori opencode` agents → Omarchy bar widgets.
+- Pipeline shipped: `Super+D` → PipeWire capture → whisper.cpp (`ggml-small.en`) → Jev routing (`launch | tool | agent | act | dictate | answer | clarify`) → Talk answers w/ `[POINT]` cursor / guarded act loop / agent runtimes (opencode/codex/claude/devin) / `mcp_call` → companion orb, cursor bubble, pill, and panel.
 - Units U1–U9 merged: resident daemon, spoken answers (U4), dictation + orb states (U5), semantic recall via sqlite-vec + RRF (U5c), dev trace `trace.jsonl` (U5e), pluggable brain providers — OpenRouter / openai-compat / Ollama / MLX (U6), macOS adapter (U7), Windows adapter (U8), generic-Linux adapter (U9).
 - U10 merged (PR #31); release CI verified end-to-end.
 - Session memory, weekly human-gated learning loop (`wispd learn`), and answer-route with optional screenshot context all work in code.

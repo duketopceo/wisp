@@ -40,6 +40,9 @@ restart) or the Settings tab in the GUI. Every key has a default.
 | `confidence_ambiguous` | `0.8` | ask-choice cutoff |
 | `allow_shell` | `false` | allow free-form shell tool |
 | `denylist` | built-in | commands never run |
+| `goal_ttl_s` | `600` | seconds an open goal accepts follow-up utterances |
+| `browseros_first` | `true` | `launch("browser")` prefers BrowserOS when its MCP server (:9200) is live |
+| `password_manager` | `""` | `1password` lets the agent click quick-unlock/passkey prompts (never types a master password); `off`/empty disables |
 
 ## [brain] — pluggable answer brains
 
@@ -66,6 +69,13 @@ Built-ins: `openrouter`, `ollama`, `lmstudio`, `mlx`.
 |-----|---------|
 | `model` | model passed to the spawned runtime |
 | `recall` | number of recall notes injected into context |
+| `act_max_steps` | `12` | tool-call bound for the act loop |
+
+## [mcp]
+
+| key | default | meaning |
+|-----|---------|---------|
+| `enabled` | `true` | expose the `mcp_call` tool; servers are discovered by `wispd inventory` and `~/.config/wisp/mcp.json` (OAuth'd via `wispd connect`) |
 
 ## [recall] — semantic memory
 
