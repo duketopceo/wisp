@@ -32,6 +32,7 @@ Panel {
   readonly property var suggestion: hostWidget ? hostWidget.suggestion : null
   readonly property var focus: hostWidget ? hostWidget.focus : ({})
   readonly property string error: hostWidget ? hostWidget.error : ""
+  readonly property bool busy: hostWidget ? hostWidget.busy : false
 
   readonly property color fg: bar ? bar.foreground : Color.foreground
   readonly property color dim: Qt.darker(fg, 1.5)
@@ -115,6 +116,17 @@ Panel {
 
   function parseSkills(raw) {
     try { wisp.skills = JSON.parse(raw) } catch (e) { wisp.skills = [] }
+  }
+
+  Process {
+    id: labelProc
+    command: [Quickshell.env("HOME") + "/.local/bin/wispd", "label", ""]
+  }
+
+  function sendLabel(which) {
+    labelProc.command = [Quickshell.env("HOME")
+      + "/.local/bin/wispd", "label", which]
+    labelProc.running = true
   }
 
   KeyboardPanel {
@@ -276,6 +288,65 @@ Panel {
                 if (wisp.hostWidget) wisp.hostWidget.sendChoice(modelData)
                 wisp.close()
               }
+            }
+          }
+        }
+        // soak labels — ✓/✗ on the last finished turn feeds
+        // corrections.jsonl + trajectory memory. Only shown when there
+        // is a completed result to judge.
+        Row {
+          visible: !wisp.busy
+            && (wisp.result.length > 0 || wisp.transcript.length > 0)
+          spacing: Style.space(6)
+          Text {
+            text: "was that right?"
+            color: wisp.dim
+            font.family: wisp.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            anchors.verticalCenter: parent.verticalCenter
+          }
+          Rectangle {
+            width: okTxt.implicitWidth + 16
+            height: okTxt.implicitHeight + 8
+            radius: 6
+            color: Qt.rgba(wisp.accent.r, wisp.accent.g, wisp.accent.b,
+                           okHov.containsMouse ? 0.35 : 0.15)
+            Text {
+              id: okTxt
+              anchors.centerIn: parent
+              text: "✓ yes"
+              color: wisp.fg
+              font.family: wisp.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+            MouseArea {
+              id: okHov
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: wisp.sendLabel("correct")
+            }
+          }
+          Rectangle {
+            width: noTxt.implicitWidth + 16
+            height: noTxt.implicitHeight + 8
+            radius: 6
+            color: Qt.rgba(wisp.urgent.r, wisp.urgent.g, wisp.urgent.b,
+                           noHov.containsMouse ? 0.35 : 0.15)
+            Text {
+              id: noTxt
+              anchors.centerIn: parent
+              text: "✗ no"
+              color: wisp.fg
+              font.family: wisp.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+            MouseArea {
+              id: noHov
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: wisp.sendLabel("incorrect")
             }
           }
         }
