@@ -489,6 +489,138 @@ Item {
     }
   }
 
+  // ── listening pill ───────────────────────────────────────────────
+  // Spotlight-style bottom-center pill shown while a turn is in
+  // flight (listening → transcribing → deciding → acting → choice).
+  // Click-through shell; the choice chips are the only live pixels.
+  // (WispOverlay.qml was never instantiated — the manifest's overlay
+  // entry point is this file, so the pill lives here.)
+  readonly property bool pillActive:
+    ["listening", "transcribing", "deciding", "acting",
+     "awaiting_choice"].indexOf(status) >= 0
+
+  PanelWindow {
+    id: pillWin
+    visible: root.pillActive
+    color: "transparent"
+    anchors { left: true; right: true; bottom: true }
+    implicitHeight: pill.implicitHeight + 120
+    exclusionMode: ExclusionMode.Ignore
+    // input region = the pill only — clicks pass through everywhere
+    // else, chips stay clickable
+    mask: Region { item: pill }
+    WlrLayershell.namespace: "wisp-pill"
+    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+
+    Rectangle {
+      id: pill
+      anchors {
+        bottom: parent.bottom
+        bottomMargin: 96
+        horizontalCenter: parent.horizontalCenter
+      }
+      width: Math.min(pillWin.width * 0.6, pillCol.implicitWidth + 36)
+      height: pillCol.implicitHeight + 22
+      radius: height / 2
+      color: Qt.rgba(theme.canvas.r, theme.canvas.g, theme.canvas.b,
+                     0.92)
+      border.color: Qt.rgba(theme.accent.r, theme.accent.g,
+                            theme.accent.b, 0.35 + root.level * 0.4)
+      border.width: 1
+      opacity: pillWin.visible ? 1 : 0
+      scale: pillWin.visible ? 1 : 0.96
+      Behavior on opacity { NumberAnimation { duration: 140 } }
+      Behavior on scale { NumberAnimation { duration: 140
+                                            easing.type: Easing.OutCubic } }
+
+      Column {
+        id: pillCol
+        anchors.centerIn: parent
+        spacing: 8
+
+        Row {
+          anchors.horizontalCenter: parent.horizontalCenter
+          spacing: 10
+
+          // mic arc — three bars driven by level
+          Row {
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 2
+            height: 14
+            Repeater {
+              model: 3
+              Rectangle {
+                anchors.bottom: parent.bottom
+                width: 3; radius: 1.5
+                height: 4 + root.level * (8 + index * 4)
+                color: theme.accent
+                Behavior on height { NumberAnimation { duration: 80 } }
+              }
+            }
+          }
+
+          Text {
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.status === "awaiting_choice"
+                  ? "which one?" : root.statusWord()
+            color: theme.accent
+            font.pixelSize: 13
+            font.bold: true
+          }
+
+          Text {
+            visible: root.transcript.length > 0
+            anchors.verticalCenter: parent.verticalCenter
+            text: {
+              var t = root.transcript;
+              return t.length > 80 ? "…" + t.slice(-78) : t;
+            }
+            color: theme.ink
+            font.pixelSize: 13
+            elide: Text.ElideLeft
+            width: Math.min(implicitWidth, 420)
+          }
+        }
+
+        Row {
+          visible: root.choices.length > 0
+          anchors.horizontalCenter: parent.horizontalCenter
+          spacing: 6
+          Repeater {
+            model: root.choices
+            delegate: Rectangle {
+              width: chipLbl.implicitWidth + 16
+              height: chipLbl.implicitHeight + 8
+              radius: height / 2
+              color: chipMa.containsMouse
+                     ? Qt.rgba(theme.accent.r, theme.accent.g,
+                               theme.accent.b, 0.3)
+                     : Qt.rgba(theme.ink.r, theme.ink.g,
+                               theme.ink.b, 0.10)
+              border.color: Qt.rgba(theme.accent.r, theme.accent.g,
+                                    theme.accent.b, 0.5)
+              Text {
+                id: chipLbl
+                anchors.centerIn: parent
+                text: modelData
+                color: theme.ink
+                font.pixelSize: 12
+              }
+              MouseArea {
+                id: chipMa
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.sendChoice(modelData)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
   // ── orb + expanded card ──────────────────────────────────────────
   // Small window hugging bottom-right; grows when the card expands.
   PanelWindow {

@@ -386,6 +386,9 @@ StartupNotify=false
                   / "io.github.duketopceo.wisp")
     if plugin_src.is_dir():
         shutil.copytree(plugin_src, plugin_dst, dirs_exist_ok=True)
+        # an old installer copied the directory itself — sweep the
+        # stale nested copy so there's exactly one QML source of truth
+        shutil.rmtree(plugin_dst / "shell-plugin", ignore_errors=True)
         print(f"installed {plugin_dst}")
     trigger = config.HOME / ".local" / "bin" / "wisp-trigger"
     trigger.parent.mkdir(parents=True, exist_ok=True)
