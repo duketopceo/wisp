@@ -670,6 +670,8 @@ def main() -> int:
         print(f"inventory.json — {inv.get('generated', '?')}")
         print(f"  apps:        {len(inv.get('apps', []))}")
         print(f"  cli_tools:   {len(inv.get('cli_tools', {}))}")
+        print(f"  mcp servers: {len(inv.get('mcp', {}))} "
+              f"({', '.join(list(inv.get('mcp', {}))[:8])}…)")
         print(f"  omarchy:     {len(o.get('plugins', []))} plugins, "
               f"{len(o.get('bindings', []))} bindings")
         print(f"  dayflow:     {len(df.get('top_apps', []))} top apps, "

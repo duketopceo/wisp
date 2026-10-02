@@ -90,6 +90,60 @@ def _omarchy() -> dict:
     return {"plugins": plugins, "bindings": binds}
 
 
+_MCP_JSON = (".cursor/mcp.json", ".claude.json",
+             ".config/devin/mcp_config.json",
+             ".config/opencode/opencode.json")
+
+
+def _mcp_servers() -> dict:
+    """Configured MCP servers across agent harnesses — name →
+    {url|command, via}. The act loop can't speak MCP natively yet, but
+    knowing 'browseros'/'dayflow'/'omaseal' exist lets it pick the CLI
+    or HTTP endpoint instead of inventing one."""
+    home = pathlib.Path.home()
+    out = {}
+    for rel in _MCP_JSON:
+        f = home / rel
+        if not f.is_file():
+            continue
+        try:
+            d = json.loads(f.read_text())
+        except (OSError, ValueError):
+            continue
+        servers = d.get("mcpServers") or d.get("mcp") or {}
+        if not isinstance(servers, dict):
+            continue
+        for name, spec in servers.items():
+            if not isinstance(spec, dict) or name in out:
+                continue
+            entry = {"via": rel}
+            if spec.get("url"):
+                entry["url"] = spec["url"]
+            if spec.get("command"):
+                entry["command"] = spec["command"]
+            if spec.get("type"):
+                entry["type"] = spec["type"]
+            out[name] = entry
+    codex = home / ".codex/config.toml"
+    if codex.is_file():
+        cur = None
+        try:
+            for line in codex.read_text().splitlines():
+                m = re.match(r"\[mcp_servers\.([\w-]+)\]", line.strip())
+                if m:
+                    cur = m.group(1)
+                    out.setdefault(cur, {"via": ".codex/config.toml"})
+                elif cur and "=" in line and line.strip() \
+                        .startswith(("command", "url")):
+                    k, v = line.split("=", 1)
+                    out[cur][k.strip()] = v.strip().strip('"')
+                elif line.strip().startswith("["):
+                    cur = None
+        except OSError:
+            pass
+    return dict(sorted(out.items()))
+
+
 def _dayflow() -> dict:
     if not DAYFLOW_DB.exists():
         return {}
@@ -143,6 +197,7 @@ def scan(cfg: dict | None = None) -> dict:
     except (OSError, ValueError):
         inv["apps"] = []
     inv["cli_tools"] = _cli_tools()
+    inv["mcp"] = _mcp_servers()
     inv["omarchy"] = _omarchy()
     inv["dayflow"] = _dayflow()
     inv["skills"] = [s.get("name", "") for s in skills.index()]
@@ -185,6 +240,10 @@ def summary(cfg: dict | None = None) -> str:
         parts.append("cli=" + ",".join(names)
                      + (f"+{len(cli) - len(names)}"
                         if len(cli) > len(names) else ""))
+    mcp = list((inv.get("mcp") or {}).keys())
+    if mcp:
+        parts.append("mcp=" + ",".join(mcp[:10])
+                     + (f"+{len(mcp) - 10}" if len(mcp) > 10 else ""))
     plugs = (inv.get("omarchy") or {}).get("plugins", [])
     if plugs:
         parts.append("omarchy_plugins=" + ",".join(
