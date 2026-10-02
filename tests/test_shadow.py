@@ -160,6 +160,7 @@ class ShadowTest(unittest.TestCase):
                                return_value={"answers":
                                              {"route": {"choice": "answer"}}}), \
              mock.patch.object(pipeline, "ask_chat", return_value="hello"), \
+             mock.patch.object(pipeline, "notify"), \
              mock.patch.object(pipeline, "log_decision",
                                side_effect=lambda r: logged.update(r)), \
              mock.patch.object(sys.modules["wisp.session"],
@@ -201,7 +202,8 @@ class ShadowTest(unittest.TestCase):
              mock.patch.object(pipeline, "record",
                                return_value=pathlib.Path("/tmp/x.wav")), \
              mock.patch.object(pipeline, "transcribe", return_value="hi"), \
-             mock.patch.object(pipeline, "ask_chat", return_value="hello"):
+             mock.patch.object(pipeline, "ask_chat", return_value="hello"), \
+             mock.patch.object(pipeline, "notify"):
             st = mock.Mock()
             st.state = {}
             st.transition = lambda s, **kw: st.state.update(status=s, **kw)
