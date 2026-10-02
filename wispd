@@ -280,6 +280,11 @@ def run_daemon(cfg: dict) -> int:
     skills.write_index_json()  # panel reads this without spawning IPC
     theme.emit(cfg)        # theme.json for the QML surfaces
     dlog(_memory.sync_constitution())  # luke-agents -> MEMORY.md block
+    from wisp import inventory as _inv
+    if not _inv.fresh():
+        inv = _inv.scan(cfg)
+        dlog(f"inventory: {len(inv.get('apps', []))} apps, "
+             f"{len(inv.get('cli_tools', {}))} cli tools")
     st = state_mod.State()
     ctl = {"stop": threading.Event(), "busy": threading.Event(),
            "choice_event": threading.Event(), "choice_pick": "",
@@ -657,6 +662,21 @@ def main() -> int:
         return 0
     if cmd == "harness":
         return rebuild_harness()
+    if cmd == "inventory":
+        from wisp import inventory as _inv
+        inv = _inv.scan(cfg)
+        o = inv.get("omarchy", {})
+        df = inv.get("dayflow", {})
+        print(f"inventory.json — {inv.get('generated', '?')}")
+        print(f"  apps:        {len(inv.get('apps', []))}")
+        print(f"  cli_tools:   {len(inv.get('cli_tools', {}))}")
+        print(f"  omarchy:     {len(o.get('plugins', []))} plugins, "
+              f"{len(o.get('bindings', []))} bindings")
+        print(f"  dayflow:     {len(df.get('top_apps', []))} top apps, "
+              f"{len(df.get('project_terms', []))} project terms")
+        print(f"  skills:      {len(inv.get('skills', []))}")
+        print(f"  file: {_inv.FILE}")
+        return 0
     if cmd in ("task_status", "task_cancel"):
         try:
             r = ipc.send({"cmd": cmd, "name": sys.argv[2]

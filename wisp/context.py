@@ -90,6 +90,11 @@ def snapshot(cfg: dict) -> str:
     wins = windows_map() if mode == "full" else ""
     if wins:
         out = (out + "\n" + wins).strip() or wins
+    if mode == "full":
+        from . import inventory as _inv
+        env = _inv.summary(cfg)
+        if env:
+            out += "\n" + env
     pm = cfg.get("agent", {}).get("password_manager", "")
     if pm == "1password":
         out += ("\n[prefs] password_manager=1password — a 1Password "

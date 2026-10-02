@@ -81,3 +81,20 @@ class WindowsInSnapshot(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class InventorySummary(unittest.TestCase):
+    def test_summary_shape(self):
+        inv = {"apps": ["firefox", "godot"],
+               "cli_tools": {t: "/x" for t in
+                             ["git", "gh", "herdr", "zz_tool"]},
+               "omarchy": {"plugins": ["io.x.wisp"], "bindings": []},
+               "dayflow": {"top_apps": ["firefox"]}}
+        from wisp import inventory
+        with mock.patch.object(inventory, "load", return_value=inv):
+            out = inventory.summary({})
+        self.assertIn("apps(2)", out)
+        self.assertIn("cli=", out)
+        self.assertIn("git", out)
+        self.assertIn("omarchy_plugins=wisp", out)
+        self.assertIn("most_used=firefox", out)
