@@ -139,6 +139,73 @@ class Loop(unittest.TestCase):
             r = act.run_act_loop("open something", self.cfg)
         assert r.startswith("ACTED")
 
+    def test_reobserve_before_click_after_mutation(self):
+        # soak fix: a screen-changing step invalidates the last
+        # screenshot — the loop must re-shoot before the next click,
+        # not click stale pixels
+        calls = []
+        def fake_run(name, arg, cfg, harness=None):
+            calls.append(name)
+            return "SHOT /tmp/shot.png" if name == "screenshot" \
+                else "ok"
+        replies = [_msg(calls=[_call("launch", "x")]),
+                   _msg(calls=[_call("click", "100,200")]),
+                   _msg(content="done")]
+        cfg = {"agent": {}, "brain.openrouter": {"vision": "true"}}
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch("wisp.brain.provider",
+                        return_value={"name": "openrouter",
+                                      "vision": "true",
+                                      "tools": "true"}), \
+             mock.patch.object(act, "_attach_image"), \
+             mock.patch.object(tools, "run", side_effect=fake_run):
+            r = act.run_act_loop("click the thing", cfg,
+                             confirm=lambda pr: True)
+        assert r.startswith("ACTED")
+        # screenshot must sit between the mutation and the click
+        assert calls == ["launch", "screenshot", "click"]
+
+    def test_no_reobserve_when_screen_fresh(self):
+        # trigger-time image is still valid → first click goes straight
+        calls = []
+        def fake_run(name, arg, cfg, harness=None):
+            calls.append(name)
+            return "ok"
+        replies = [_msg(calls=[_call("click", "10,20")]),
+                   _msg(content="done")]
+        cfg = {"agent": {}, "brain.openrouter": {"vision": "true"}}
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch("wisp.brain.provider",
+                        return_value={"name": "openrouter",
+                                      "vision": "true",
+                                      "tools": "true"}), \
+             mock.patch.object(tools, "run", side_effect=fake_run):
+            r = act.run_act_loop("click", cfg, initial_image="aGk=",
+                             confirm=lambda pr: True)
+        assert r.startswith("ACTED")
+        assert calls == ["click"]
+
+    def test_no_blind_click_without_any_image(self):
+        # no trigger image + vision → even the first click re-observes
+        calls = []
+        def fake_run(name, arg, cfg, harness=None):
+            calls.append(name)
+            return "SHOT /tmp/s.png" if name == "screenshot" else "ok"
+        replies = [_msg(calls=[_call("click", "10,20")]),
+                   _msg(content="done")]
+        cfg = {"agent": {}}
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch("wisp.brain.provider",
+                        return_value={"name": "openrouter",
+                                      "vision": "true",
+                                      "tools": "true"}), \
+             mock.patch.object(act, "_attach_image"), \
+             mock.patch.object(tools, "run", side_effect=fake_run):
+            r = act.run_act_loop("click", cfg,
+                                 confirm=lambda pr: True)
+        assert r.startswith("ACTED")
+        assert calls == ["screenshot", "click"]
+
     def test_ask_user_returns_backchannel(self):
         with mock.patch.object(act, "_post",
                                return_value=_msg(

@@ -43,6 +43,51 @@ class TestToolExec(unittest.TestCase):
     def test_workspace_rejects_non_number(self):
         self.assertIn("SKIP", tools.run("workspace", "abc", {}))
 
+    def test_workspace_parses_natural_language(self):
+        # soak fix: "workspace 4" / "ws4" must extract the digit
+        ok = mock.Mock(returncode=0)
+        with mock.patch.object(tools.desktop.subprocess, "run",
+                               return_value=ok):
+            for arg in ("workspace 4", "ws4", "go to 4"):
+                self.assertEqual(tools.run("workspace", arg, {}),
+                                 "WORKSPACE 4")
+
+    def test_browser_prefers_browseros_when_live(self):
+        # soak fix: 'browser' means the signed-in BrowserOS when its
+        # MCP server is up — chromium is the fallback, not the default
+        cfg = {"apps": {"browser": "chromium"}, "agent": {}}
+        with mock.patch.object(tools.desktop.shutil, "which",
+                               return_value="/x/browseros"), \
+             mock.patch.object(tools.desktop, "_browseros_live",
+                               return_value=True), \
+             mock.patch.object(tools.desktop, "_exec_detached") as ex:
+            out = tools.desktop.launch("browser", cfg)
+        self.assertIn("browseros", out)
+        ex.assert_called_once_with("browseros")
+
+    def test_browser_falls_back_to_chromium(self):
+        cfg = {"apps": {"browser": "chromium"}, "agent": {}}
+        with mock.patch.object(tools.desktop.shutil, "which",
+                               return_value="/x/browseros"), \
+             mock.patch.object(tools.desktop, "_browseros_live",
+                               return_value=False), \
+             mock.patch.object(tools.desktop, "_exec_detached") as ex:
+            out = tools.desktop.launch("browser", cfg)
+        self.assertIn("chromium", out)
+        ex.assert_called_once_with("chromium")
+
+    def test_browseros_first_opt_out(self):
+        cfg = {"apps": {"browser": "chromium"},
+               "agent": {"browseros_first": "false"}}
+        with mock.patch.object(tools.desktop.shutil, "which",
+                               return_value="/x/browseros"), \
+             mock.patch.object(tools.desktop, "_browseros_live",
+                               return_value=True), \
+             mock.patch.object(tools.desktop, "_exec_detached") as ex:
+            out = tools.desktop.launch("browser", cfg)
+        self.assertIn("chromium", out)
+        ex.assert_called_once_with("chromium")
+
     def test_notify_runs(self):
         with mock.patch.object(tools.system, "notify") as n:
             self.assertEqual(tools.run("notify", "hi", {}), "NOTIFIED")

@@ -21,12 +21,19 @@ from . import config, tools
 MAX_STEPS = 8  # default; [agents] act_max_steps overrides
 MAX_ERRORS = 2
 MAX_IMAGES = 3  # cap retained screenshots in the message window
+# tools whose success may change what's on screen → re-observe before
+# the next pointer step
+_SCREEN_CHANGING = {"click", "move", "type_text", "key", "launch",
+                    "focus", "close", "workspace", "shell"}
 
 SYSTEM = ("You are Wisp's hands on a Linux desktop (Hyprland). Complete "
           "the user's task using the provided tools — keep steps minimal "
           "and prefer safe tools. Take a screenshot first when the task "
           "needs on-screen targets; click/move take 'x,y' in that "
-          "screenshot's pixels. A GUIDE result means the ghost cursor "
+          "screenshot's pixels. Never click twice off the same screenshot "
+          "— after anything that changes the screen (click, key, type, "
+          "launch, focus, workspace, shell), re-screenshot before the "
+          "next pointer action. A GUIDE result means the ghost cursor "
           "is parked there for the user to click — treat it as done, "
           "not an error, and continue or finish. When done, reply with "
           "one short sentence describing the outcome. If a tool is "
@@ -117,6 +124,10 @@ def run_act_loop(task: str, cfg: dict, state=None,
                                              str(MAX_STEPS)))
     p = brain.provider(cfg)
     vision = p.get("vision", "false") == "true"
+    # trigger-time image counts as the current observation; a mutating
+    # step flips this and forces a fresh screenshot before the next
+    # click/move
+    screen_dirty = not initial_image
 
     while len(steps) < max_steps:
         if interrupted and interrupted():
@@ -146,12 +157,30 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 pass
             refused = _gate(name, arg, cfg, confirm, state=state)
             if refused is None:
+                # soak fix: re-observe — a mutating step invalidates the
+                # screen the last coordinates came from, so take a fresh
+                # screenshot before any pointer call. Deterministic —
+                # doesn't rely on the model remembering to look.
+                if name in ("click", "move") and vision and screen_dirty:
+                    shot = tools.run("screenshot", "", cfg, harness)
+                    steps.append({"tool": "screenshot",
+                                  "arg": "(auto re-observe)",
+                                  "result": shot})
+                    _publish(state, task, steps)
+                    if shot.startswith("SHOT "):
+                        _attach_image(messages, shot[5:].strip())
+                    screen_dirty = False
                 try:
                     result = tools.run(name, arg, cfg, harness)
                 except Exception as e:
                     result = f"ERROR ({e})"
             else:
                 result = refused
+            if name == "screenshot" and result.startswith("SHOT "):
+                screen_dirty = False
+            elif name in _SCREEN_CHANGING and not result.startswith(
+                    ("ERROR", "SKIP", "REFUS")):
+                screen_dirty = True
             steps.append({"tool": name, "arg": arg, "result": result})
             _publish(state, task, steps)
             _publish_guide(state, name, arg, result)

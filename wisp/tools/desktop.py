@@ -1,5 +1,6 @@
 """Desktop tools: app launch/focus/close and Hyprland workspace ops."""
 import json
+import re
 import shutil
 import subprocess
 
@@ -35,8 +36,27 @@ def _on_path(binary: str) -> bool:
                 or (config.HOME / ".local" / "bin" / binary).exists())
 
 
+def _browseros_live() -> bool:
+    """BrowserOS MCP server reachable → the signed-in agent browser is
+    running, so 'browser' should mean it rather than a cold chromium."""
+    import socket
+    try:
+        with socket.create_connection(("127.0.0.1", 9200), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
 def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
     apps = _resolve_apps(cfg, harness)
+    # soak fix: "browser" prefers BrowserOS (live logins) when its MCP
+    # server is up — opt out with [agent] browseros_first = "false"
+    if app in ("browser", "browser_new_tab") \
+            and cfg.get("agent", {}).get("browseros_first",
+                                         "true") == "true" \
+            and shutil.which("browseros") and _browseros_live():
+        _exec_detached("browseros")
+        return "LAUNCHED browser -> browseros"
     binname = apps.get(app)
     if not binname:
         return f"SKIP (unknown app {app!r})"
@@ -72,10 +92,11 @@ def close(classname: str) -> str:
 
 def workspace(n: str) -> str:
     from .. import platform
-    try:
-        num = int(str(n).strip())
-    except ValueError:
-        return f"SKIP (workspace {n!r} not a number)"
+    # natural-language args: "workspace 4", "ws4", "go to 4" all mean 4
+    m = re.search(r"\d+", str(n))
+    if not m:
+        return f"SKIP (workspace {n!r} has no number)"
+    num = int(m.group())
     cmds = platform.workspace_cmds(num)
     if not cmds:
         return (f"SKIP (workspace {num} unsupported — "
