@@ -31,7 +31,12 @@ SYSTEM = ("You are Wisp's hands on a Linux desktop (Hyprland). Complete "
           "not an error, and continue or finish. When done, reply with "
           "one short sentence describing the outcome. If a tool is "
           "refused or skipped, do not retry it; work around or report "
-          "the block.")
+          "the block. If the task cannot proceed without information "
+          "only the user has (a choice between real options, missing "
+          "credentials), reply 'ASK_USER: <one short question>' — do "
+          "not guess or stall. The screen image attached to the first "
+          "message shows the desktop at trigger time — use it to find "
+          "the app and targets instead of asking which app is meant.")
 
 
 def _post(messages: list, cfg: dict) -> dict:
@@ -42,7 +47,8 @@ def _post(messages: list, cfg: dict) -> dict:
                       tools=tools.tool_schemas(), timeout=60)["raw"]
 
 
-def _gate(name: str, arg: str, cfg: dict, confirm) -> str | None:
+def _gate(name: str, arg: str, cfg: dict, confirm,
+          state=None) -> str | None:
     """Returns a refusal string when the call is blocked, else None."""
     tier = tools.risk_of(name)
     if tier == "shell":
@@ -51,15 +57,28 @@ def _gate(name: str, arg: str, cfg: dict, confirm) -> str | None:
         if cfg.get("agent", {}).get("allow_shell", "false") != "true":
             return "SKIPPED (shell disabled — set allow_shell=true)"
     if tier in ("mutating", "shell"):
+        # confirm-once: a yes for (tool, focused-app) holds for the
+        # session — one "yes" shouldn't gate every step of one goal
+        key = None
+        confirmed = getattr(state, "confirmed", None)
+        if state is not None and isinstance(confirmed, set):
+            focus = getattr(state, "focus", None)
+            app = focus.get("app", "") if isinstance(focus, dict) else ""
+            key = (name, app)
+            if key in confirmed:
+                return None
         if confirm is None:
             return f"SKIPPED ({name} needs user confirmation)"
         if not confirm(f"run {name}: {arg or '(no arg)'}?"):
             return f"SKIPPED ({name} declined by user)"
+        if key is not None:
+            state.confirmed.add(key)
     return None
 
 
 def run_act_loop(task: str, cfg: dict, state=None,
-                 harness: dict | None = None, confirm=None) -> str:
+                 harness: dict | None = None, confirm=None,
+                 initial_image: str | None = None) -> str:
     """Drive the chat model through the toolbelt until it finishes or a
     bound trips. `confirm(prompt)->bool` asks the user (choice widget /
     IPC) when wired; without it mutating calls skip."""
@@ -81,8 +100,17 @@ def run_act_loop(task: str, cfg: dict, state=None,
     prior = trajectories.context_for(task, cfg=cfg)
     if prior:
         system += "\n\n" + prior
+    from . import goals as _goals
+    goal_txt = _goals.context_text()
+    user_msg = (goal_txt + "\n\n" + task) if goal_txt else task
+    if initial_image:
+        # screen at trigger — the model sees the app, no "what app" ask
+        user_msg = [{"type": "text", "text": user_msg},
+                    {"type": "image_url",
+                     "image_url": {"url": f"data:image/png;base64,"
+                                          f"{initial_image}"}}]
     messages = [{"role": "system", "content": system},
-                {"role": "user", "content": task}]
+                {"role": "user", "content": user_msg}]
     steps, errors = [], 0
     max_steps = int(cfg.get("agents", {}).get("act_max_steps",
                                              str(MAX_STEPS)))
@@ -95,6 +123,12 @@ def run_act_loop(task: str, cfg: dict, state=None,
         if not calls:
             text = (msg.get("content") or "").strip()
             _publish(state, task, steps)
+            _goals.record_steps(steps)
+            if text.upper().startswith("ASK_USER:"):
+                # conversational backchannel — speak the question, keep
+                # the goal open for the next utterance
+                return "ASK_USER " + text[9:].strip()
+            _goals.close("done")
             out = f"ACTED ({len(steps)} steps): {text or 'done'}"
             trajectories.record(task, _app(harness), steps, out)
             return out
@@ -106,7 +140,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 arg = json.loads(fn.get("arguments") or "{}").get("arg", "")
             except json.JSONDecodeError:
                 pass
-            refused = _gate(name, arg, cfg, confirm)
+            refused = _gate(name, arg, cfg, confirm, state=state)
             if refused is None:
                 try:
                     result = tools.run(name, arg, cfg, harness)
@@ -128,12 +162,14 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     and result.startswith("SHOT "):
                 _attach_image(messages, result[5:].strip())
             if errors > MAX_ERRORS:
+                _goals.record_steps(steps)
                 out = f"ABORTED (repeated failures): {_last(steps)}"
                 trajectories.record(task, _app(harness), steps, out)
                 return out
             if len(steps) >= max_steps:
                 break
     out = f"ABORTED (max {max_steps} steps): {_last(steps)}"
+    _goals.record_steps(steps)
     trajectories.record(task, _app(harness), steps, out)
     return out
 

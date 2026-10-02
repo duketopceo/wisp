@@ -15,6 +15,17 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _goal_snapshot():
+    """Live goal for state.json — lazily imported (goals has no state
+    dependency, safe). None most of the time."""
+    try:
+        from . import goals
+        g = goals.snapshot()
+        return g["text"][:160] if g else None
+    except Exception:
+        return None
+
+
 class State:
     """Mutable daemon state with atomic state.json publication.
 
@@ -35,6 +46,7 @@ class State:
         self.suggestion = None
         self.guide = None  # {x, y, label, seq, mode} — ghost cursor target
         self.focus = {}  # {app, title} — focused window at turn start
+        self.confirmed = set()  # (tool, app) approved this session
         self.pending = None
         self.level = 0.0
         self.tasks = {}
@@ -56,6 +68,7 @@ class State:
                 "suggestion": self.suggestion,
                 "guide": self.guide,
                 "focus": dict(self.focus),
+                "goal": _goal_snapshot(),
                 "level": self.level,
                 "tasks": dict(self.tasks),
                 "error": self.error,
@@ -113,6 +126,7 @@ class State:
             "suggestion": self.suggestion,
             "guide": self.guide,
             "focus": dict(self.focus),
+            "goal": _goal_snapshot(),
             "level": self.level,
             "tasks": dict(self.tasks),
             "error": self.error,

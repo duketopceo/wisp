@@ -31,6 +31,7 @@ Panel {
   readonly property var steps: hostWidget ? hostWidget.steps : []
   readonly property var suggestion: hostWidget ? hostWidget.suggestion : null
   readonly property var focus: hostWidget ? hostWidget.focus : ({})
+  readonly property string goal: hostWidget ? hostWidget.goal : ""
   readonly property string error: hostWidget ? hostWidget.error : ""
   readonly property bool busy: hostWidget ? hostWidget.busy : false
 
@@ -212,6 +213,15 @@ Panel {
           color: wisp.dim
           font.family: wisp.fontFamily
           font.pixelSize: Style.font.bodySmall
+          wrapMode: Text.WordWrap
+          width: parent.width
+        }
+        Text {
+          visible: wisp.goal.length > 0
+          text: "working on: " + wisp.goal
+          color: wisp.accent
+          font.family: wisp.fontFamily
+          font.pixelSize: Style.font.body
           wrapMode: Text.WordWrap
           width: parent.width
         }

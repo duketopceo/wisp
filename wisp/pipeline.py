@@ -443,11 +443,14 @@ def _end_speaking(state):
 
 
 def execute(answers: dict, cfg: dict, harness: dict | None = None,
-            detail: str = "", state=None, confirm=None) -> str:
+            detail: str = "", state=None, confirm=None,
+            initial_image: str | None = None) -> str:
     """Route-aware dispatch. Falls back to the legacy action-based path
     when Jev's response lacks the route question. Jev only answers typed
     questions (noul/choice/score) — free-text args come from the
-    transcript via `detail`."""
+    transcript via `detail`. `initial_image` is the trigger-time
+    screenshot (b64) handed to the act loop so the model sees the app
+    instead of asking which one."""
     from . import agents, tools
     route = answers.get("route", {}).get("choice")
     action = answers.get("action", {}).get("choice")
@@ -475,7 +478,8 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
     if route == "act":
         from . import act
         return act.run_act_loop(detail, cfg, state=state,
-                                harness=harness, confirm=confirm)
+                                harness=harness, confirm=confirm,
+                                initial_image=initial_image)
     if route == "dictation":
         # type the spoken words; a leading dictate keyword is a command
         # prefix, not content — strip it. A correction prefix
@@ -490,7 +494,8 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
                   "in with edit; otherwise create it. Keep the SKILL.md "
                   "body concise and procedural. Request: " + detail)
         return act.run_act_loop(prompt, cfg, state=state,
-                                harness=harness, confirm=confirm)
+                                harness=harness, confirm=confirm,
+                                initial_image=initial_image)
     if route == "tool":
         tool_name = answers.get("tool", {}).get("choice", "")
         if tool_name == "launch":
@@ -508,7 +513,8 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
             # model composes a real argv from the request instead.
             from . import act
             return act.run_act_loop(detail, cfg, state=state,
-                                    harness=harness, confirm=confirm)
+                                    harness=harness, confirm=confirm,
+                                    initial_image=initial_image)
         if tier == "mutating" and risk > threshold:
             return f"BLOCKED (tool {tool_name!r} needs confirmation)"
         if tier == "safe" or risk <= threshold:
@@ -680,6 +686,28 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
         context = harness.get("context", "")
         if win.get("title"):
             context += f"\nActive window: {win['class']} — {win['title']}"
+        # screen-first: capture once at trigger; act loop + answer share
+        # it. Clicky does the same — the model sees the app instead of
+        # asking which one.
+        shot_png = None
+        shot_b64 = None
+        if cfg.get("agent", {}).get("screenshots", "true") == "true":
+            shot_png = capture_screen()
+            if shot_png:
+                try:
+                    shot_b64 = base64.b64encode(
+                        shot_png.read_bytes()).decode()
+                finally:
+                    shot_png.unlink(missing_ok=True)
+            _trace.emit(turn, "screen_capture", "act",
+                        {"captured": bool(shot_b64)})
+        # goal memory — continuations ("it's open, just hit cmd-t") join
+        # the open goal instead of starting a fresh act
+        from . import goals as _goals
+        goal, joined = _goals.join_or_new(text, win.get("class", ""), cfg)
+        context += "\n" + _goals.context_text()
+        _trace.emit(turn, "goal", "thought",
+                    {"joined": joined, "goal": goal["text"][:160]})
         from . import session
         n_turns = int(cfg.get("agent", {}).get("session_turns", "8"))
         session_text = session.as_text(session.tail(n_turns))
@@ -709,7 +737,14 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
         # router: jev (default) | chat (transcript straight to answer
         # brain) | off (always clarify via choices) — Rust parity
         router = cfg.get("brain", {}).get("router", "jev")
-        if router == "chat":
+        agent_m = re.match(r"^\s*wisp\s+agent[:,.\s-]+(.*)$", text,
+                           re.IGNORECASE)
+        if agent_m and agent_m.group(1).strip():
+            # explicit agent mode — skip Jev, straight to the
+            # computer-use loop with the trigger screenshot
+            detail = agent_m.group(1).strip()
+            resp = {"answers": {"route": {"choice": "act"}}}
+        elif router == "chat":
             resp = {"answers": {"route": {"choice": "answer"},
                                 "needs_screen": {"noul": 1.0}}}
         elif router == "off":
@@ -736,7 +771,11 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
         if answers.get("route", {}).get("choice") == "launch" \
                 and complex_launch(text):
             answers["route"]["choice"] = "act"
-        low_conf = is_low_confidence(answers, cfg)
+        # clarify only gates routes that truly need a named target —
+        # launch has no other way to resolve the app. act/agent resolve
+        # the target from the screen + goal instead of asking.
+        needs_app = answers.get("route", {}).get("choice") == "launch"
+        low_conf = needs_app and is_low_confidence(answers, cfg)
         corrected = None
         if low_conf:
             labels = ambiguous_choices(answers, cfg)
@@ -772,20 +811,43 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
                 pick = wait_for_choice(30)
                 state.transition("acting", choices=[])
                 return bool(pick) and "yes" in pick
+        from . import brain as _brain
+        act_img = shot_b64 if shot_b64 and \
+            _brain.supports_vision(cfg) else None
         result = execute(answers, cfg, harness, detail=detail,
-                         state=state, confirm=confirm)
+                         state=state, confirm=confirm,
+                         initial_image=act_img)
         _trace.emit(turn, "dispatch", "act",
                     {"route": answers.get("route", {}).get("choice"),
                      "result": result})
         if corr:
             _learn.record_retry(corr["prior_ref"], result)
         reply = ""
+        if result.startswith("ASK_USER "):
+            # spoken backchannel — ask aloud, keep the goal open; the
+            # next utterance resumes it (goal ttl covers the pause)
+            q = result[9:].strip()
+            _trace.emit(turn, "ask_user", "speak", {"question": q})
+            state.transition("speaking", result=result, answer=q)
+            proc = speech.speak(q, cfg)
+            if proc is not None:
+                speech.on_exit(proc, _end_speaking(state))
+            else:
+                state.transition("done", result=result)
+            session.append_turn(text, route="act", reply=q,
+                                result=result)
+            notify(result)
+            log_decision({"ts": datetime.now(timezone.utc).isoformat(),
+                          "transcript": text, "answers": answers,
+                          "result": result, "timing_ms": timing,
+                          "corrected": False})
+            return 0
         if result == "ANSWERED":
             pts = []
             try:
                 _t = time.monotonic()
                 reply = ask_chat(text, cfg, session_text,
-                                 image_b64=screen_b64(cfg, answers))
+                                 image_b64=shot_b64)
                 _trace.emit(turn, "brain_call", "brain",
                             {"endpoint": "chat/completions",
                              "model": cfg.get("agent", {})

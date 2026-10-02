@@ -21,6 +21,7 @@ BarWidget {
   property var steps: []
   property var suggestion: null
   property var focus: ({})
+  property string goal: ""
   property string error: ""
 
   readonly property bool busy: ["listening", "transcribing",
@@ -95,6 +96,7 @@ BarWidget {
       root.steps = s.steps || []
       root.suggestion = s.suggestion || null
       root.focus = s.focus || {}
+      root.goal = s.goal || ""
       root.error = s.error || ""
     } catch (e) {
       root.status = "offline"

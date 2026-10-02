@@ -118,6 +118,75 @@ class Loop(unittest.TestCase):
             r = act.run_act_loop("open something", self.cfg)
         assert r.startswith("ACTED")
 
+    def test_ask_user_returns_backchannel(self):
+        with mock.patch.object(act, "_post",
+                               return_value=_msg(
+                                   content="ASK_USER: which account?")):
+            r = act.run_act_loop("check it", self.cfg)
+        assert r == "ASK_USER which account?"
+
+    def test_confirm_once_per_tool_and_app(self):
+        # one yes covers the rest of the (tool, app) session
+        from wisp.state import State
+        st = mock.Mock()
+        st.focus = {"app": "firefox"}
+        st.confirmed = set()
+        prompts = []
+        cfg = {"agent": {}}
+
+        def confirm(p):
+            prompts.append(p)
+            return True
+
+        replies = [_msg(calls=[_call("type_text", "a")]),
+                   _msg(calls=[_call("type_text", "b")]),
+                   _msg(content="typed")]
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run", return_value="ok"):
+            r = act.run_act_loop("type stuff", cfg, state=st,
+                                 confirm=confirm)
+        assert r.startswith("ACTED")
+        assert len(prompts) == 1  # second call hit the confirm cache
+
+    def test_confirm_once_scoped_to_app(self):
+        st = mock.Mock()
+        st.focus = {"app": "firefox"}
+        st.confirmed = set()
+        cfg = {"agent": {}}
+        n = [0]
+
+        def confirm(p):
+            n[0] += 1
+            return True
+
+        # different focus app → fresh confirm
+        replies = [_msg(calls=[_call("type_text", "a")]),
+                   _msg(content="ok")]
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run", return_value="ok"):
+            act.run_act_loop("t", cfg, state=st, confirm=confirm)
+        st.focus = {"app": "godot"}
+        st.confirmed = set()  # new session
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run", return_value="ok"):
+            act.run_act_loop("t", cfg, state=st, confirm=confirm)
+        assert n[0] == 2
+
+    def test_initial_image_attached_to_first_message(self):
+        captured = []
+
+        def post(messages, cfg):
+            captured.append(messages[-1])
+            return _msg(content="seen")
+
+        with mock.patch.object(act, "_post", side_effect=post):
+            r = act.run_act_loop("what's here", self.cfg,
+                                 initial_image="QUJD")
+        assert r.startswith("ACTED")
+        first = captured[0]
+        assert isinstance(first["content"], list)
+        assert first["content"][1]["image_url"]["url"].endswith("QUJD")
+
     def test_acting_state_published(self):
         st = mock.Mock()
         replies = [_msg(calls=[_call("launch", "x")]), _msg(content="ok")]
