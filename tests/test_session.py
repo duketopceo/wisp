@@ -89,29 +89,18 @@ class TestAskChat(unittest.TestCase):
 
 class TestScreenB64(unittest.TestCase):
     def answers(self, noul=0.0, route="launch"):
-        return {"needs_screen": {"noul": noul},
-                "route": {"choice": route}}
+        # needs_screen question removed — route alone decides now
+        return {"route": {"choice": route}}
 
     def test_disabled_in_config(self):
         cfg = {"agent": {"screenshots": "false"}}
         self.assertIsNone(pipeline.screen_b64(cfg, self.answers(noul=1.0)))
 
-    def test_low_noul_no_capture(self):
+    def test_non_answer_route_no_capture(self):
         with mock.patch.object(pipeline, "capture_screen") as c:
-            out = pipeline.screen_b64({"agent": {}}, self.answers(noul=0.2))
+            out = pipeline.screen_b64({"agent": {}}, self.answers())
         self.assertIsNone(out)
         c.assert_not_called()
-
-    def test_high_noul_captures(self):
-        with tempfile.TemporaryDirectory() as td:
-            png = pathlib.Path(td) / "s.png"
-            png.write_bytes(b"fakepng")
-            with mock.patch.object(pipeline, "capture_screen",
-                                   return_value=png):
-                out = pipeline.screen_b64({"agent": {}},
-                                          self.answers(noul=0.9))
-        self.assertEqual(base64.b64decode(out), b"fakepng")
-        self.assertFalse(png.exists())  # cleaned up
 
     def test_answer_route_captures(self):
         with tempfile.TemporaryDirectory() as td:

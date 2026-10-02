@@ -71,18 +71,6 @@ JEV_QUESTIONS = {
             "browser_new_tab": "user wants a new browser tab",
         },
     },
-    "action": {
-        "type": "choice",
-        "instructions": "What should be done?",
-        "criteria": {
-            "launch": "open or start it",
-            "close": "close or quit it",
-            "type_text": "type some text",
-            "run_shell": "run a shell command",
-            "answer": "respond to the user in text — questions, chat, "
-                      "or anything that is not a desktop action",
-        },
-    },
     "risk": {
         "type": "score",
         "instructions": "0 read-only launch, 2 mutating",
@@ -93,12 +81,6 @@ JEV_QUESTIONS = {
         "instructions": "Which tool should run? Only relevant when the "
                         "route is 'tool'.",
         "criteria": {},  # filled from the registry in build_questions
-    },
-    "needs_screen": {
-        "type": "noul",
-        "instructions": "Does fulfilling this request require seeing what "
-                        "is on the screen — reading an error, describing a "
-                        "window, referencing visible content?",
     },
 }
 
@@ -408,13 +390,12 @@ def capture_screen() -> pathlib.Path | None:
 
 
 def screen_b64(cfg: dict, answers: dict) -> str | None:
-    """Attach a screenshot when Jev flags needs_screen or the answer route
-    fires — unless screenshots are disabled in config."""
+    """Attach a screenshot on the answer route — the act loop already
+    gets the trigger-time capture via initial_image. Skipped when
+    screenshots are disabled in config."""
     if cfg.get("agent", {}).get("screenshots", "true") != "true":
         return None
-    needs = answers.get("needs_screen", {}).get("noul", 0)
-    route = answers.get("route", {}).get("choice")
-    if needs < 0.7 and route != "answer":
+    if answers.get("route", {}).get("choice") != "answer":
         return None
     png = capture_screen()
     if not png:
@@ -645,7 +626,7 @@ def apply_choice(answers: dict, picked: str) -> dict:
     if kind == "app":
         corrected["app"]["choice"] = value
     else:
-        corrected["action"]["choice"] = value
+        corrected.setdefault("action", {})["choice"] = value
     corrected["corrected_by_user"] = True
     return corrected
 
@@ -761,8 +742,7 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
             detail = agent_m.group(1).strip()
             resp = {"answers": {"route": {"choice": "act"}}}
         elif router == "chat":
-            resp = {"answers": {"route": {"choice": "answer"},
-                                "needs_screen": {"noul": 1.0}}}
+            resp = {"answers": {"route": {"choice": "answer"}}}
         elif router == "off":
             resp = {"answers": {"route": {"choice": "clarify"}}}
         else:
