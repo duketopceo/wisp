@@ -63,10 +63,12 @@ def _gate(name: str, arg: str, cfg: dict, confirm,
           state=None) -> str | None:
     """Returns a refusal string when the call is blocked, else None."""
     tier = tools.risk_of(name)
-    if tier == "shell":
+    if tier == "shell" or name in tools.TEXT_INPUT:
         if tools.denied(arg):
             return "REFUSED (denylisted command)"
-        if cfg.get("agent", {}).get("allow_shell", "false") != "true":
+        if tier == "shell" and \
+                cfg.get("agent", {}).get("allow_shell",
+                                         "false") != "true":
             return "SKIPPED (shell disabled — set allow_shell=true)"
     if tier in ("mutating", "shell"):
         # confirm-once: a yes for (tool, focused-app) holds for the

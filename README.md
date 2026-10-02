@@ -153,6 +153,7 @@ app→command map.
 | `wispd recipes approve <n>` | install a recipe as a skill |
 | `wispd learn` | stage this week's criteria proposal |
 | `wispd train stats\|history\|bank\|rebuild` | training arena — per-surface stats, run feed, skill bank |
+| `wispd tasks` | background agents — status + live log tail |
 | `wispd harness` | rebuild `harness.json` from dayflow (optional) |
 | `wispd install` | install files, plugin, unit, bind |
 

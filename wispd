@@ -58,8 +58,19 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
         if c == "status":
             from wisp import agents
             agents.reap(cfg)  # zombie + timeout watchdog on each poll
-            st.tasks = agents.tasks()
+            cur = agents.tasks()
+            # long-running agent completion: notify once on the
+            # running → done transition
+            done = agents.finished(getattr(st, "_prev_tasks", {}), cur)
+            st._prev_tasks = cur
+            st.tasks = cur
             st.transition(st.status)
+            for t in done:
+                tail = (t.get("tail") or "")[:80]
+                from wisp.tools import system as _sys
+                _sys.notify_tool(
+                    f"wisp agent '{t['name']}' {t['status']}"
+                    + (f" — {tail}" if tail else ""))
             return {"ok": True, "state": st.snapshot()}
         if c == "listen":
             phase = cmd.get("phase", "")  # hold-to-talk: start|stop; empty = toggle
@@ -656,6 +667,19 @@ def main() -> int:
             print(out)
             return 0 if not out.startswith(("SKIP", "ERROR",
                                             "nothing")) else 1
+    if cmd == "tasks":
+        # wispd tasks — background agents: status + last log line
+        from wisp import agents
+        ts = agents.tasks()
+        if not ts:
+            print("no agents on record")
+            return 0
+        for name, t in sorted(ts.items(),
+                              key=lambda kv: kv[1].get("ts", "")):
+            tail = t.get("tail") or ""
+            print(f"{t['status']:<10} {name:<24} {t.get('task','')[:50]}"
+                  + (f"\n{'':<36}↳ {tail[:90]}" if tail else ""))
+        return 0
     if cmd == "train":
         # wispd train stats|history|bank|replay — arena telemetry
         from wisp import train

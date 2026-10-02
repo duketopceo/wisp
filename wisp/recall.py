@@ -96,11 +96,13 @@ def _embed(texts: list, cfg: dict) -> list:
     key = config.load_env_key(cfg.get("key_env", "OPENROUTER_API_KEY"))
     model = cfg.get("model", "openai/text-embedding-3-small")
     body = json.dumps({"model": model, "input": texts}).encode()
+    from . import brain as _brain
     req = urllib.request.Request(
         f"{base}/embeddings", data=body,
         headers={"Authorization": f"Bearer {key}",
                  "Content-Type": "application/json",
-                 "User-Agent": "wisp/1.0"})
+                 "User-Agent": "wisp/1.0",
+                 **_brain.app_headers(base)})
     with urllib.request.urlopen(req, timeout=30) as r:
         data = json.loads(r.read())
     return [d["embedding"] for d in data["data"]]

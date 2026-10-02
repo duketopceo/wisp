@@ -269,11 +269,14 @@ def _transcribe_openai(wav: pathlib.Path, stt: dict,
         f"--{boundary}--".encode(),
         b"",
     ])
+    from . import brain as _brain
     req = urllib.request.Request(
         f"{base}/audio/transcriptions", data=body,
         headers={"Authorization": f"Bearer {key}",
                  "User-Agent": "wisp/1.0",
-                 "Content-Type": f"multipart/form-data; boundary={boundary}"})
+                 **_brain.app_headers(base),
+                 "Content-Type":
+                 f"multipart/form-data; boundary={boundary}"})
     with urllib.request.urlopen(req, timeout=60) as resp:
         return " ".join(
             json.loads(resp.read()).get("text", "").split())
@@ -461,7 +464,8 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
     gated = route not in ("launch", "answer", "dictation") and \
         action not in ("launch", "answer")
     if gated and (tool_choice in ("launch", "answer")
-                  or tools.risk_of(tool_choice) == "safe"):
+                  or tools.risk_of(tool_choice)
+                  in ("safe", "interactive")):
         gated = False
     if gated and risk > threshold:
         return f"BLOCKED (risk={risk:.2f} > {threshold})"

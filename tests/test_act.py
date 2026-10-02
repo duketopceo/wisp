@@ -54,14 +54,26 @@ class Gate(unittest.TestCase):
         out = act._gate("shell", "rm -rf /", cfg, lambda p: True)
         assert out and "REFUSED" in out
 
+    def test_interactive_runs_without_confirm(self):
+        # clicks/typing execute — the agent acts, it doesn't ask
+        assert act._gate("click", "10,10", {"agent": {}}, None) is None
+        assert act._gate("type_text", "hi", {"agent": {}}, None) is None
+        assert act._gate("scroll", "down", {"agent": {}}, None) is None
+        assert act._gate("key", "enter", {"agent": {}}, None) is None
+
+    def test_interactive_denylist_still_applies(self):
+        # prompt-free tier must not type destruction into a terminal
+        out = act._gate("type_text", "rm -rf /", {"agent": {}}, None)
+        assert out and "REFUSED" in out
+
     def test_mutating_skips_without_confirm(self):
-        out = act._gate("type_text", "hi", {"agent": {}}, None)
+        out = act._gate("close", "", {"agent": {}}, None)
         assert out and "SKIPPED" in out
 
     def test_mutating_runs_when_confirmed(self):
         cfg = {"agent": {}}
-        assert act._gate("type_text", "hi", cfg, lambda p: True) is None
-        out = act._gate("type_text", "hi", cfg, lambda p: False)
+        assert act._gate("close", "", cfg, lambda p: True) is None
+        out = act._gate("close", "", cfg, lambda p: False)
         assert out and "declined" in out
 
 
@@ -236,12 +248,12 @@ class Loop(unittest.TestCase):
             prompts.append(p)
             return True
 
-        replies = [_msg(calls=[_call("type_text", "a")]),
-                   _msg(calls=[_call("type_text", "b")]),
-                   _msg(content="typed")]
+        replies = [_msg(calls=[_call("close", "w1")]),
+                   _msg(calls=[_call("close", "w2")]),
+                   _msg(content="closed")]
         with mock.patch.object(act, "_post", side_effect=replies), \
              mock.patch.object(tools, "run", return_value="ok"):
-            r = act.run_act_loop("type stuff", cfg, state=st,
+            r = act.run_act_loop("close stuff", cfg, state=st,
                                  confirm=confirm)
         assert r.startswith("ACTED")
         assert len(prompts) == 1  # second call hit the confirm cache
@@ -258,7 +270,7 @@ class Loop(unittest.TestCase):
             return True
 
         # different focus app → fresh confirm
-        replies = [_msg(calls=[_call("type_text", "a")]),
+        replies = [_msg(calls=[_call("close", "w1")]),
                    _msg(content="ok")]
         with mock.patch.object(act, "_post", side_effect=replies), \
              mock.patch.object(tools, "run", return_value="ok"):

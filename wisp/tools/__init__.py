@@ -1,36 +1,45 @@
 """Toolbelt: named tools Jev can route to, each with a risk tier.
 
 Tiers:
-  safe     — read-only/launch; executes immediately
-  mutating — changes desktop state (window ops, typing, close); needs a
-             confirmation unless the user enabled elevated mode
-  shell    — arbitrary command; always needs per-call confirmation and
-             is subject to the denylist
+  safe        — read-only/launch; executes immediately
+  interactive — reversible desktop I/O (click, type, scroll, key,
+                workspace); executes without prompting — the agent must
+                act, not ask. The denylist still applies to text-bearing
+                args so `type_text "rm -rf ~"` can't slip through.
+  mutating    — irreversible-ish state changes (close, cancel, memory,
+                skill edits, MCP calls); confirm-once per (tool, app)
+  shell       — arbitrary command; always needs per-call confirmation
+                and is subject to the denylist
 """
 from . import desktop, mcpclient, system
 
-RISK = {"safe": 0, "mutating": 1, "shell": 2}
+RISK = {"safe": 0, "interactive": 1, "mutating": 2, "shell": 3}
 
 # hard refusals — checked before any confirmation prompt
 SHELL_DENYLIST = ("rm -rf /", "rm -rf ~", "rm -rf $HOME", "mkfs",
                   "dd if=", ":(){ ", "shutdown", "reboot")
 
+# interactive tools whose arg carries user-bound text/keystrokes —
+# denylist applies so a prompt-free tier can't type destruction into a
+# terminal
+TEXT_INPUT = {"type_text", "key"}
+
 REGISTRY = {
     "launch": (desktop.launch, "safe", "open an application"),
     "focus": (desktop.focus, "safe", "focus a window by class"),
     "close": (desktop.close, "mutating", "close the active/matching window"),
-    "workspace": (desktop.workspace, "mutating", "switch Hyprland workspace"),
+    "workspace": (desktop.workspace, "interactive", "switch Hyprland workspace"),
     "notify": (system.notify_tool, "safe", "send a desktop notification"),
     "screenshot": (system.screenshot, "safe", "capture the screen to a file"),
-    "type_text": (system.type_text, "mutating", "type text into the focused window"),
-    "click": (system.click, "mutating",
+    "type_text": (system.type_text, "interactive", "type text into the focused window"),
+    "click": (system.click, "interactive",
               "click at 'x,y' (screenshot pixels) or 'x,y@logical' — "
               "in guide mode points the ghost cursor for the user"),
-    "move": (system.move, "mutating",
+    "move": (system.move, "interactive",
              "move the pointer to 'x,y' or 'x,y@logical'"),
-    "scroll": (system.scroll, "mutating",
+    "scroll": (system.scroll, "interactive",
                "scroll the view — 'down'/'up'/'down 400'/'bottom'"),
-    "key": (system.key, "mutating",
+    "key": (system.key, "interactive",
             "press a named key — 'enter', 'tab', 'esc', 'down', "
             "'pageup', 'pagedown', 'backspace', arrows"),
     "mcp_call": (mcpclient.call, "mutating",
