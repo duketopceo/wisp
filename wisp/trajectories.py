@@ -58,12 +58,36 @@ def _read_all(path=None) -> list:
 
 
 def _labels() -> dict:
-    """ref ts → 'correct'|'incorrect' (last label wins per ref)."""
+    """lookup keys → 'correct'|'incorrect' (last label wins per ref).
+
+    Labels key on the *decision* ts; trajectories have their own ts,
+    so the ts join never matches in production. Bridge: resolve each
+    label's ref → its decisions.jsonl transcript, and also emit
+    'task:<transcript>' keys — an act turn's trajectory `task` is the
+    same text."""
     from . import learn
     out = {}
-    for lab in learn._read_jsonl(learn.LABELS_FILE):
-        if lab.get("ref"):
-            out[lab["ref"]] = lab.get("label", "")
+    labs = [l for l in learn._read_jsonl(learn.LABELS_FILE)
+            if l.get("ref")]
+    if not labs:
+        return out
+    # ref ts → transcript, from decisions.jsonl
+    from . import config as _c
+    transcripts = {}
+    try:
+        for line in _c.DECISIONS.read_text().splitlines():
+            if not line.strip():
+                continue
+            d = json.loads(line)
+            if d.get("ts") and d.get("transcript"):
+                transcripts[d["ts"]] = d["transcript"]
+    except (OSError, ValueError):
+        pass
+    for lab in labs:
+        ref = lab["ref"]
+        out[ref] = lab.get("label", "")
+        if ref in transcripts:
+            out["task:" + transcripts[ref]] = lab.get("label", "")
     return out
 
 
@@ -85,7 +109,8 @@ def similar(task: str, app: str = "", k: int = 3,
         r = dict(r)
         out = r.get("outcome", "")
         r["failed"] = out.startswith(("ABORTED", "SKIP", "ERROR"))
-        lab = labs.get(r.get("ts")) or labs.get(r.get("ref") or "", "")
+        lab = (labs.get(r.get("ts")) or labs.get(r.get("ref") or "")
+               or labs.get("task:" + r.get("task", ""), ""))
         r["corrected"] = lab == "incorrect"
         scored.append((score, r))
     scored.sort(key=lambda s: -s[0])
@@ -135,11 +160,14 @@ def propose_recipes(out_dir=None) -> list:
     recs = _read_all()
     labs = _labels()
     drafted = []
+    def _lab(rec):
+        return (labs.get(rec.get("ts")) or labs.get(rec.get("ref") or "")
+                or labs.get("task:" + rec.get("task", ""), ""))
+
     for i, r in enumerate(recs):
         if r.get("outcome", "").startswith(("ABORTED", "SKIP", "ERROR")):
             continue
-        if labs.get(r.get("ts"), labs.get(r.get("ref", ""),
-                       "")) == "incorrect":
+        if _lab(r) == "incorrect":
             continue  # user says it failed even if it reported ACTED
         key = _task_key(r)
         prior_bad = [p for p in recs[:i]
@@ -147,8 +175,12 @@ def propose_recipes(out_dir=None) -> list:
                      and _related(_task_key(p)[1], key[1])
                      and (p.get("outcome", "").startswith(
                           ("ABORTED", "SKIP", "ERROR"))
-                          or labs.get(p.get("ts")) == "incorrect")]
-        if not prior_bad:
+                          or _lab(p) == "incorrect")]
+        # graduation: a labeled-correct multi-step success drafts even
+        # with no prior failures — the user confirmed the workflow
+        verified = (_lab(r) == "correct"
+                    and len(r.get("steps", [])) >= 3)
+        if not prior_bad and not verified:
             continue
         slug = re.sub(r"[^a-z0-9]+", "-",
                       (r.get("app") or "task") + "-" +
@@ -168,8 +200,10 @@ def propose_recipes(out_dir=None) -> list:
             f"provenance: distilled-from {r.get('ts','')} app="
             f"{r.get('app','?')} priors={len(prior_bad)}\n"
             f"---\n\n# Recipe: {r.get('task','')}\n\n"
-            f"Verified sequence (after {len(prior_bad)} failed "
-            f"attempt(s)):\n\n{steps}\n\n## Wrong branches to avoid\n\n"
-            f"{bad}\n")
+            + (f"Verified sequence (after {len(prior_bad)} failed "
+               f"attempt(s)):\n\n{steps}\n\n## Wrong branches to avoid\n\n"
+               f"{bad}\n" if prior_bad else
+               "Verified sequence (user-labeled correct):\n\n"
+               f"{steps}\n"))
         drafted.append(str(path))
     return drafted
