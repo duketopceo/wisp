@@ -38,6 +38,22 @@ class TestSession(unittest.TestCase):
         self.assertIn("user: open discord", txt)
         self.assertIn("wisp: opened discord", txt)
 
+    def test_as_text_spoken_friendly(self):
+        # act-loop noise must read like conversation, not internals —
+        # 'ACTED (3 steps): opened it' → 'opened it'; failures admit
+        turns = [{"transcript": "open it",
+                  "result": "ACTED (3 steps): opened it"},
+                 {"transcript": "click gdx",
+                  "result": "SKIP (click needs user confirmation)"},
+                 {"transcript": "which account",
+                  "result": "ASK_USER which account?"}]
+        txt = session.as_text(turns)
+        self.assertIn("wisp: opened it", txt)
+        self.assertIn("wisp: couldn't do that", txt)
+        self.assertIn("wisp: asked: which account?", txt)
+        self.assertNotIn("ACTED", txt)
+        self.assertNotIn("SKIP", txt)
+
 
 class TestAskChat(unittest.TestCase):
     def _resp(self, content="real reply"):
