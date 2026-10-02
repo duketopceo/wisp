@@ -20,14 +20,28 @@ def _exec_detached(binname: str) -> None:
     platform._try(platform.launch_exec_cmds(binname))
 
 
+def _on_path(binary: str) -> bool:
+    """Is this command's first token launchable?
+
+    Linux values are bare binaries, so a PATH probe is the right test.
+    macOS values are `open -a "<Name>"` and `open` is on PATH, so the
+    same probe works. Windows values are cmdlines handed to
+    `cmd /c start`, where the target is resolved by the shell rather
+    than PATH — probing would reject every one of them."""
+    from .. import platform
+    if platform.current() == "windows":
+        return True
+    return bool(shutil.which(binary)
+                or (config.HOME / ".local" / "bin" / binary).exists())
+
+
 def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
     apps = _resolve_apps(cfg, harness)
     binname = apps.get(app)
     if not binname:
         return f"SKIP (unknown app {app!r})"
     binary = binname.split()[0]
-    if not (shutil.which(binary)
-            or (config.HOME / ".local" / "bin" / binary).exists()):
+    if not _on_path(binary):
         # terminal: fall back to the desktop's configured default
         # (xdg-terminal-exec) — e.g. ghostty isn't packaged on Asahi
         if app == "terminal" and shutil.which("xdg-terminal-exec"):
@@ -71,6 +85,12 @@ def workspace(n: str) -> str:
 
 
 def clients() -> list:
+    """Open windows, as Hyprland reports them. Hyprland-only: no other
+    platform has an equivalent enumerator here, so return [] instead of
+    raising FileNotFoundError on a host without hyprctl."""
+    from .. import platform
+    if platform.current() != "linux":
+        return []
     r = subprocess.run(["hyprctl", "clients", "-j"],
                        capture_output=True, text=True, env=hypr_env())
     try:

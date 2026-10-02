@@ -179,15 +179,59 @@ enabled = false
 # otherwise the message is appended as the last arg. Empty = espeak default.
 cmd = ""
 
-[apps]
-browser = "chromium"
-terminal = "ghostty"
-files = "nautilus"
-vscode = "code"
-music = "spotify"
-settings = "gnome-control-center"
-browser_new_tab = "chromium"
 """
+
+
+# Per-OS default app map. These are the names Jev resolves "open the
+# terminal" against, so a Linux name on macOS turns every such request
+# into a SKIP. The live catalog (tools/adapters.py) supplies the rest.
+_DEFAULT_APPS = {
+    "linux": {
+        "browser": "chromium", "terminal": "ghostty", "files": "nautilus",
+        "vscode": "code", "music": "spotify",
+        "settings": "gnome-control-center", "browser_new_tab": "chromium",
+    },
+    "macos": {
+        # macOS values are launch *commands*, not bare names: desktop
+        # .launch() probes which(value.split()[0]), and `Terminal` is not
+        # on PATH while `open` is. The app name is single-quoted because
+        # load_config() strips surrounding double quotes from TOML values
+        # and would eat an inner closing quote.
+        "browser": "open -a 'Safari'",
+        "terminal": "open -a 'Terminal'",
+        "files": "open -a 'Finder'",
+        "vscode": "open -a 'Cursor'",
+        "music": "open -a 'Spotify'",
+        "settings": "open -a 'System Settings'",
+        "browser_new_tab": "open -a 'Safari'",
+    },
+    "windows": {
+        # cmdline for platform.launch_exec_cmds, which wraps these in
+        # `cmd /c start "" /b <cmdline>`.
+        "browser": "msedge", "terminal": "wt", "files": "explorer",
+        "vscode": "code", "music": "spotify",
+        "settings": "ms-settings:", "browser_new_tab": "msedge",
+    },
+}
+
+
+def _host_os() -> str:
+    """Host OS name; 'linux' when the platform seam is unavailable."""
+    try:
+        from . import platform
+        return platform.current()
+    except Exception:
+        return "linux"
+
+
+def _default_apps() -> dict:
+    return dict(_DEFAULT_APPS.get(_host_os(), _DEFAULT_APPS["linux"]))
+
+
+def _apps_toml() -> str:
+    """The [apps] block rendered for this host."""
+    return "[apps]\n" + "".join(
+        f'{k} = "{v}"\n' for k, v in _default_apps().items())
 
 
 def _default_cfg_dict() -> dict:
@@ -211,11 +255,7 @@ def _default_cfg_dict() -> dict:
             "router": "jev", "agent_runtime": "auto",
             "default": "openrouter:meta-llama/llama-4-maverick",
         },
-        "apps": {
-            "browser": "chromium", "terminal": "ghostty", "files": "nautilus",
-            "vscode": "code", "music": "spotify",
-            "settings": "gnome-control-center", "browser_new_tab": "chromium",
-        },
+        "apps": _default_apps(),
     }
 
 
@@ -236,7 +276,7 @@ def load_config() -> dict:
                 cfg[section][k] = v.strip('"')
     else:
         CFG_DIR.mkdir(parents=True, exist_ok=True)
-        CFG_FILE.write_text(DEFAULT_CONFIG)
+        CFG_FILE.write_text(DEFAULT_CONFIG + _apps_toml())
         cfg = _default_cfg_dict()
     return cfg
 
@@ -302,7 +342,7 @@ def set_config(section: str, key: str, value: str) -> None:
                              "[A-Za-z0-9_.-]+ / [A-Za-z0-9_-]+")
     CFG_DIR.mkdir(parents=True, exist_ok=True)
     if not CFG_FILE.exists():
-        CFG_FILE.write_text(DEFAULT_CONFIG)
+        CFG_FILE.write_text(DEFAULT_CONFIG + _apps_toml())
     lines = CFG_FILE.read_text().splitlines()
     cur_section = None
     section_start = section_end = None

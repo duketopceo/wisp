@@ -25,6 +25,13 @@ Shipped beyond the v1.0 gates (post-roadmap work, live on master):
   `agent_runtime=auto` probing + `wispd doctor`; seeded `dayflow-bridge`
   + `self-checkup` skills; GUI Activity tab; `wispd tui`; task caps,
   timeout reaper, PID-reuse pinning, daily model-call budget.
+- ✅ Dual-OS (2026-10-01): macOS is now a supported second platform with
+  Linux still primary — host-independent suite, `/Applications` app
+  catalog (118 apps), per-OS `[apps]` defaults in **both** the Python and
+  Rust config layers, a launchd agent that carries a real `PATH` (without
+  it brew's `sox` was invisible), and CI running on `macos-latest`
+  alongside `ubuntu-latest` so a Linux-only assumption fails the build.
+  `docs/MACOS.md` records what is verified and what is not.
 - 📋 Planned (2026-09-30): guide cursor (ring + peel-off ghost),
   `click` pointer tool with guide-mode fallback, vision-fed act loop,
   episodic trajectory memory → human-gated recipe skills —
@@ -87,6 +94,9 @@ first) → re-measure.
 ## v2.0 — the resident OS assistant
 
 - macOS and Windows adapters at v1.0-parity with the Linux surface.
+  macOS is now CI-verified and installable from source
+  (`docs/MACOS.md`); the remaining gap is the menu-bar surface and a
+  signed/notarized bundle.
 - Multi-profile (household) support.
 - Local-first everything: STT, routing (Ollama), and answers offline by
   default; cloud models as opt-in accelerators.

@@ -156,7 +156,72 @@ pub fn load() -> Cfg {
 
 /// Same starter config as Python's DEFAULT_CONFIG — seeded before a
 /// `config set` so a fresh file carries every documented key.
-const DEFAULT_CONFIG: &str = "[hotkey]\nmod = \"SUPER\"\nkey = \"D\"\n\n[audio]\nseconds = 60\n# whisper.cpp model filename under ~/src/whisper.cpp/models/\nwhisper_model = \"ggml-small.en.bin\"\n\n[agent]\nmodel = \"typesafe/jev-1.13\"\nanswer_model = \"meta-llama/llama-4-maverick\"\nsession_turns = 8\nscreenshots = true\nrisk_threshold = 1.5\nconfidence_instant = 0.95\nconfidence_ambiguous = 0.8\n\n[voice]\nenabled = false\n\n[apps]\nbrowser = \"chromium\"\nterminal = \"ghostty\"\nfiles = \"nautilus\"\nvscode = \"code\"\nmusic = \"spotify\"\nsettings = \"gnome-control-center\"\nbrowser_new_tab = \"chromium\"\n";
+const DEFAULT_CONFIG: &str = "[hotkey]\nmod = \"SUPER\"\nkey = \"D\"\n\n[audio]\nseconds = 60\n# whisper.cpp model filename under ~/src/whisper.cpp/models/\nwhisper_model = \"ggml-small.en.bin\"\n\n[agent]\nmodel = \"typesafe/jev-1.13\"\nanswer_model = \"meta-llama/llama-4-maverick\"\nsession_turns = 8\nscreenshots = true\nrisk_threshold = 1.5\nconfidence_instant = 0.95\nconfidence_ambiguous = 0.8\n\n[voice]\nenabled = false\n";
+
+/// Per-OS `[apps]` defaults, appended to DEFAULT_CONFIG at write time.
+///
+/// A Linux app name on macOS turns every launch into a SKIP, so the block
+/// is rendered for the host instead of frozen into the const. macOS values
+/// are launch *commands*, not bare names: the launcher probes
+/// `which(value.split()[0])` and no app bundle is on PATH while `open` is.
+/// The bundle name is single-quoted because `set_config` rejects a `"`.
+pub fn default_apps() -> Vec<(&'static str, &'static str)> {
+    default_apps_for(crate::platform::current())
+}
+
+/// Testable form — mirrors the `*_for(os, ...)` convention in
+/// platform.rs, so tests never mutate the process-global WISP_OS.
+pub fn default_apps_for(os: crate::platform::Os)
+        -> Vec<(&'static str, &'static str)> {
+    use crate::platform::Os;
+    match os {
+        Os::MacOS => vec![
+            ("browser", "open -a 'Safari'"),
+            ("terminal", "open -a 'Terminal'"),
+            ("files", "open -a 'Finder'"),
+            ("vscode", "open -a 'Cursor'"),
+            ("music", "open -a 'Spotify'"),
+            ("settings", "open -a 'System Settings'"),
+            ("browser_new_tab", "open -a 'Safari'"),
+        ],
+        Os::Windows => vec![
+            ("browser", "msedge"),
+            ("terminal", "wt"),
+            ("files", "explorer"),
+            ("vscode", "code"),
+            ("music", "spotify"),
+            ("settings", "ms-settings:"),
+            ("browser_new_tab", "msedge"),
+        ],
+        Os::Linux => vec![
+            ("browser", "chromium"),
+            ("terminal", "ghostty"),
+            ("files", "nautilus"),
+            ("vscode", "code"),
+            ("music", "spotify"),
+            ("settings", "gnome-control-center"),
+            ("browser_new_tab", "chromium"),
+        ],
+    }
+}
+
+fn apps_toml_for(os: crate::platform::Os) -> String {
+    let mut s = String::from("\n[apps]\n");
+    for (k, v) in default_apps_for(os) {
+        s.push_str(&format!("{k} = \"{v}\"\n"));
+    }
+    s
+}
+
+/// The starter config a fresh box gets — DEFAULT_CONFIG plus the host's
+/// own `[apps]` block.
+pub fn default_config_text() -> String {
+    default_config_text_for(crate::platform::current())
+}
+
+pub fn default_config_text_for(os: crate::platform::Os) -> String {
+    format!("{DEFAULT_CONFIG}{}", apps_toml_for(os))
+}
 
 /// Update one `section.key` in config.toml preserving comments/order.
 /// Appends the key under its section (or a new section) when absent.
@@ -177,7 +242,7 @@ pub fn set_config(section: &str, key: &str, value: &str)
     let path = cfg_dir().join("config.toml");
     std::fs::create_dir_all(cfg_dir()).ok();
     if !path.exists() {
-        std::fs::write(&path, DEFAULT_CONFIG).ok();
+        std::fs::write(&path, default_config_text()).ok();
     }
     let mut lines: Vec<String> = std::fs::read_to_string(&path)
         .unwrap_or_default()
@@ -253,4 +318,64 @@ pub fn env_key(name: &str) -> Option<String> {
 
 pub fn api_key() -> Result<String, String> {
     env_key("OPENROUTER_API_KEY").ok_or_else(|| "no OPENROUTER_API_KEY".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform::Os;
+
+    // Exercised through the *_for(os) variants — no env mutation, so
+    // these never race the parallel contract test (see platform.rs).
+
+    #[test]
+    fn apps_defaults_are_per_os() {
+        let mac = default_apps_for(Os::MacOS);
+        assert_eq!(mac.len(), 7);
+        assert_eq!(mac[1], ("terminal", "open -a 'Terminal'"));
+        assert!(mac.iter().all(|(_, v)| v.starts_with("open -a ")),
+                "macOS values must be launch commands, not bare names");
+
+        let lin = default_apps_for(Os::Linux);
+        assert_eq!(lin[1], ("terminal", "ghostty"));
+        assert!(lin.iter().any(|(_, v)| *v == "nautilus"));
+
+        let win = default_apps_for(Os::Windows);
+        assert_eq!(win[2], ("files", "explorer"));
+    }
+
+    #[test]
+    fn apps_block_renders_for_the_host() {
+        let mac = default_config_text_for(Os::MacOS);
+        assert!(mac.contains("[apps]"));
+        assert!(mac.contains("terminal = \"open -a 'Terminal'\""));
+        assert!(!mac.contains("ghostty"), "Linux names leaked onto macOS");
+        // the shared head is untouched
+        assert!(mac.contains("mod = \"SUPER\""));
+        assert!(mac.contains("enabled = false"));
+    }
+
+    #[test]
+    fn linux_config_keeps_every_documented_key() {
+        // The v1.0 soak runs on Linux; this default must not drift.
+        let lin = default_config_text_for(Os::Linux);
+        for k in ["browser", "terminal", "files", "vscode", "music",
+                  "settings", "browser_new_tab"] {
+            assert!(lin.contains(&format!("{k} = ")), "missing {k}");
+        }
+        assert!(lin.contains("terminal = \"ghostty\""));
+        assert!(lin.contains("settings = \"gnome-control-center\""));
+    }
+
+    #[test]
+    fn rendered_values_pass_set_config_validation() {
+        // set_config rejects a value holding " \ # or newline — the
+        // macOS map is single-quoted so it stays writable.
+        for os in [Os::Linux, Os::MacOS, Os::Windows] {
+            for (k, v) in default_apps_for(os) {
+                assert!(!v.contains('"'), "{k} on {os:?} would be rejected");
+                assert!(!v.contains('#') && !v.contains('\n'), "{k} on {os:?}");
+            }
+        }
+    }
 }

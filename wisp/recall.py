@@ -38,10 +38,40 @@ def _db(path=None) -> sqlite3.Connection:
         import sqlite_vec
         db.enable_load_extension(True)
         sqlite_vec.load(db)
-    except (ImportError, sqlite3.Error):
+    except (ImportError, sqlite3.Error, AttributeError):
         pass  # FTS5-only fallback — vector ops degrade to no-ops
+        # (AttributeError: GitHub/CI python builds without sqlite
+        #  extension loading lack enable_load_extension entirely)
     db.executescript(_SCHEMA)
     return db
+
+
+def vec_available() -> bool:
+    """True only when sqlite-vec can actually be *loaded*.
+
+    Importing the module is not enough: some Python builds (GitHub's
+    macos-latest setup-python among them) ship a sqlite3 compiled without
+    loadable-extension support, so `enable_load_extension` is absent and
+    every vector call silently degrades to FTS-only. Callers that assert
+    vector behaviour must probe this rather than trust the import.
+    """
+    try:
+        import sqlite_vec  # noqa: F401
+    except ImportError:
+        return False
+    db = None
+    try:
+        db = sqlite3.connect(":memory:")
+        if not hasattr(db, "enable_load_extension"):
+            return False
+        db.enable_load_extension(True)
+        sqlite_vec.load(db)
+        return True
+    except (sqlite3.Error, AttributeError, OSError):
+        return False
+    finally:
+        if db is not None:
+            db.close()
 
 
 def _vec_provider(path=None) -> dict | None:

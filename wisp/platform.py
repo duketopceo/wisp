@@ -536,8 +536,9 @@ def missing_deps_hint() -> str:
                      "(hyprctl), KDE (kdotool/qdbus/wmctrl) or X11 "
                      "(wmctrl/xdotool); typing: wtype or ydotool; "
                      "shots: grim/gnome-screenshot/spectacle/maim",
-            "macos": "need screencapture/osascript/afrecord; grant "
-                     "Screen Recording + Accessibility in System "
+            "macos": "need screencapture/osascript + sox for mic (brew "
+                     "install sox — there is no afrecord on macOS); "
+                     "grant Screen Recording + Accessibility in System "
                      "Settings",
             "windows": "need powershell + sox (sox --waveaudio for mic); Accessibility n/a — toast via BurntToast optional"}[current()]
 

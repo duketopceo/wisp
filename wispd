@@ -376,7 +376,7 @@ StartupNotify=false
         print(f"installed {plugin_dst}")
     trigger = config.HOME / ".local" / "bin" / "wisp-trigger"
     trigger.parent.mkdir(parents=True, exist_ok=True)
-    trigger.write_text(f'#!/bin/sh\nexec python3 {opt}/wispd trigger "$@"\n')
+    trigger.write_text(f'#!/bin/sh\nexec {sys.executable} {opt}/wispd trigger "$@"\n')
     trigger.chmod(0o755)
     print(f"installed {trigger}")
     from wisp import platform as _plat
@@ -399,12 +399,23 @@ StartupNotify=false
         plist_dir = config.HOME / "Library" / "LaunchAgents"
         plist_dir.mkdir(parents=True, exist_ok=True)
         plist = plist_dir / "ai.wisp.wispd.plist"
+        # launchd hands the job a minimal PATH, so brew-installed tools
+        # (sox for mic capture) and a local whisper.cpp build are
+        # invisible unless we say otherwise — the daemon then reports
+        # "no recorder found" on a machine where sox is plainly installed.
+        path = ":".join([
+            str(pathlib.Path(sys.executable).parent),
+            "/opt/homebrew/bin", "/usr/local/bin",
+            "/usr/bin", "/bin", "/usr/sbin", "/sbin",
+        ])
         plist.write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0"><dict>
 <key>Label</key><string>ai.wisp.wispd</string>
 <key>ProgramArguments</key><array>
 <string>{sys.executable}</string>
 <string>{opt}/wispd</string><string>daemon</string></array>
+<key>EnvironmentVariables</key><dict>
+<key>PATH</key><string>{path}</string></dict>
 <key>RunAtLoad</key><true/>
 <key>KeepAlive</key><true/></dict></plist>""")
         print(f"installed {plist} (launchctl load to activate)")

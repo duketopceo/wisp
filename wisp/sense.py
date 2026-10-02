@@ -16,7 +16,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from . import config, pipeline
+from . import config, pipeline, platform
 
 ACTIVITY_FILE = config.DATA_DIR / "activity.jsonl"
 _MAX_BYTES = 2 * 1024 * 1024
@@ -42,13 +42,12 @@ def _append(rec: dict, path=ACTIVITY_FILE) -> None:
         pass
 
 
-def _window(env: dict) -> dict:
+def _window() -> dict:
+    """Focused window via the platform seam — hyprctl on Linux, System
+    Events on macOS, Win32 on Windows. Shelling hyprctl directly here
+    meant macOS recorded nothing, silently, forever."""
     try:
-        r = subprocess.run(["hyprctl", "activewindow", "-j"],
-                           capture_output=True, text=True, timeout=5,
-                           env=env)
-        w = json.loads(r.stdout or "{}")
-        return {"app": w.get("class", ""), "title": w.get("title", "")}
+        return platform.active_window()
     except Exception:
         return {}
 
@@ -80,8 +79,8 @@ def tick(cfg: dict, seen: dict | None = None,
     sense = cfg.get("sense", {})
     env = pipeline.hypr_env()
     now = datetime.now(timezone.utc).isoformat()
-    rec = {"ts": now}
-    w = _window(env)
+    rec: dict = {"ts": now}
+    w = _window()
     if w:
         rec["window"] = w
     if sense.get("dayflow", "true") == "true":

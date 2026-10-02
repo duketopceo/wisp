@@ -27,9 +27,16 @@ impl Daemon {
     fn start() -> Self {
         let tmp = std::env::temp_dir()
             .join(format!("wispd-parity-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
         let sock = tmp.join("wisp/wispd.sock");
+        // The runtime dir is XDG_RUNTIME_DIR on Linux but TMPDIR/TEMP on
+        // macOS/Windows, so override all three or the socket lands
+        // outside the sandbox the test is looking in.
         let child = bin().arg("daemon")
-            .env("HOME", &tmp).env("XDG_RUNTIME_DIR", &tmp)
+            .env("HOME", &tmp)
+            .env("XDG_RUNTIME_DIR", &tmp)
+            .env("TMPDIR", &tmp)
+            .env("TEMP", &tmp)
             .spawn().unwrap();
         let d = Daemon(child, sock);
         // wait for the socket

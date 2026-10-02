@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Pipeline unit tests."""
 import pathlib
+import shutil
 import sys
 import unittest
 
@@ -22,12 +23,14 @@ class SttPromptTest(unittest.TestCase):
             return R()
         import tempfile as _tf
         from wisp import vocab as _v
+        # /bin/true is Linux-only; resolve a real binary so the
+        # existence check in transcribe() passes on any host.
+        _true = pathlib.Path(shutil.which("true") or "/usr/bin/true")
         with mock.patch.object(_v, "CACHE",
                                pathlib.Path(_tf.mkdtemp()) / "v.txt"), \
-             mock.patch.object(pipeline.config, "WHISPER_BIN",
-                               pathlib.Path("/bin/true")), \
+             mock.patch.object(pipeline.config, "WHISPER_BIN", _true), \
              mock.patch.object(pipeline.config, "whisper_model",
-                               lambda c: pathlib.Path("/bin/true")), \
+                               lambda c: _true), \
              mock.patch.object(pipeline.subprocess, "run", fake_run):
             out = pipeline.transcribe(wav, cfg)
         self.assertIn("--prompt", calls["argv"])

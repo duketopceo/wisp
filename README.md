@@ -8,6 +8,15 @@ Push-to-talk → PipeWire mic capture → whisper.cpp → Jev routing
 (OpenRouter) → risk-tiered toolbelt / `ori opencode` agents → widgets in
 your Omarchy bar.
 
+## Platforms
+
+**Linux (Omarchy/Hyprland) is the primary platform** — the packaged
+surface, the shell plugin, and the v1.0 verification target. **macOS is
+supported**: `wispd-rs` runs the same pipeline through the platform
+layer, with a launchd agent and an `/Applications` app catalog (see
+`docs/MACOS.md`). Windows is scaffolded, not supported. CI runs the
+suite on `ubuntu-latest` and `macos-latest`.
+
 ## Features
 
 - **Resident daemon**: `wispd` runs as a systemd user service holding
@@ -115,7 +124,7 @@ app→command map.
 ## Development
 
 ```sh
-python3 -m unittest discover -s tests -v   # 65 headless tests
+python3 -m unittest discover -s tests -v   # 253 tests, host-independent
 python3 -m py_compile wispd wisp/*.py wisp/tools/*.py
 ```
 

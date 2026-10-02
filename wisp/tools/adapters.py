@@ -17,10 +17,33 @@ DESKTOP_DIRS = [
     config.HOME / ".local" / "share" / "applications",
 ]
 
+# macOS ships no .desktop entries; the equivalent catalog is the .app
+# bundles on disk, launched through LaunchServices.
+MAC_APP_DIRS = [
+    pathlib.Path("/Applications"),
+    pathlib.Path("/System/Applications"),
+    pathlib.Path("/System/Applications/Utilities"),
+    config.HOME / "Applications",
+]
+
+# Bundles that live outside the standard app dirs.
+_MAC_EXTRA_APPS = {
+    "Finder": pathlib.Path("/System/Library/CoreServices/Finder.app"),
+}
+
 # skip noise: settings panels, helpers, and system plumbing
 _SKIP_PREFIXES = ("org.gnome.Settings", "org.kde.", "avahi", "bvi",
                   "cmake", "cups", "gcr-", "gnome-", "java-", "krb5",
                   "nm-", "octopi", "org.freedesktop", "qv4l2", "xdg-")
+
+
+def _os() -> str:
+    """Host OS name, or 'linux' when the seam is unavailable."""
+    try:
+        from .. import platform
+        return platform.current()
+    except Exception:
+        return "linux"
 
 
 def dayflow_harness() -> dict | None:
@@ -30,8 +53,38 @@ def dayflow_harness() -> dict | None:
 
 
 def generic_catalog() -> dict:
-    """Adapter B: always-on fallback — .desktop files + PATH binaries.
+    """Adapter B: always-on fallback — the host's installed apps.
     Produces the same {name: {launch, cues}} shape the harness writes."""
+    if _os() == "macos":
+        return _mac_catalog()
+    return _linux_catalog()
+
+
+def _mac_catalog() -> dict:
+    """macOS: .app bundles -> `open -a "<Name>"`.
+
+    The launch string keeps `open` as its first token so the existing
+    desktop.launch() guard (`which(binname.split()[0])`) passes and the
+    argv still routes through platform.launch_exec_cmds()."""
+    apps = {}
+    for d in MAC_APP_DIRS:
+        if not d.is_dir():
+            continue
+        for f in d.glob("*.app"):
+            name = f.stem
+            if name.startswith(".") or name in apps:
+                continue
+            apps[name] = {"launch": f"open -a '{name}'",
+                          "cues": f"the {name} application"}
+    for name, path in _MAC_EXTRA_APPS.items():
+        if path.exists() and name not in apps:
+            apps[name] = {"launch": f"open -a '{name}'",
+                          "cues": f"the {name} application"}
+    return apps
+
+
+def _linux_catalog() -> dict:
+    """Linux: .desktop entries + PATH binaries the user launches by name."""
     apps = {}
     for d in DESKTOP_DIRS:
         if not d.is_dir():

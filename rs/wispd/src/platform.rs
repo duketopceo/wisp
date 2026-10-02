@@ -830,7 +830,8 @@ pub fn missing_deps_hint() -> &'static str {
 fn missing_deps_hint_for(os: Os) -> &'static str {
     match os {
         Os::Linux => "need pw-record/arecord + espeak; wm ops:                      Hyprland (hyprctl), KDE (kdotool/qdbus/wmctrl),                      X11 (wmctrl/xdotool); typing: wtype or ydotool;                      shots: grim/gnome-screenshot/spectacle/maim",
-        Os::MacOS => "need screencapture/osascript/afrecord; grant \
+        Os::MacOS => "need screencapture/osascript + sox for mic (brew \
+                     install sox — there is no afrecord on macOS); grant \
                      Screen Recording + Accessibility in System Settings",
         Os::Windows => "need powershell + sox for mic/level;              toast via BurntToast optional",
     }
@@ -924,7 +925,10 @@ mod tests {
         assert!(workspace_cmds_for(Os::MacOS, Desktop::Hyprland, 10).is_empty()); // 1..=9
         let w = workspace_cmds_for(Os::MacOS, Desktop::Hyprland, 3);
         assert_eq!(w[0].get_program(), "osascript");
-        assert!(focus_cmds_for(Os::Windows, Desktop::Hyprland, "x").is_empty());
+        // Windows never gets hyprctl/wm tools; powershell may or may not
+        // exist on the host, so assert intent not emptiness.
+        assert!(focus_cmds_for(Os::Windows, Desktop::Hyprland, "x")
+            .iter().all(|c| c.get_program() != "hyprctl"));
     }
 
     #[test]

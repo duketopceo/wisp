@@ -86,8 +86,17 @@ class PointerTest(unittest.TestCase):
         self.assertIn("FAIL", out)
 
     def test_codegraph_bad_json(self):
-        out = system.codegraph("search_graph not-json")
+        # Pin the binary as present. Without this the guard returns SKIP
+        # on any host lacking codebase-memory-mcp (every CI runner), so
+        # the test passed only on a developer box that had it.
+        with mock.patch.object(system.shutil, "which",
+                               return_value="/usr/local/bin/" + system._CBM_BIN):
+            out = system.codegraph("search_graph not-json")
         self.assertIn("FAIL", out)
+
+    def test_codegraph_skips_without_the_binary(self):
+        with mock.patch.object(system.shutil, "which", return_value=None):
+            self.assertIn("SKIP", system.codegraph("search_graph {}"))
 
 
 if __name__ == "__main__":

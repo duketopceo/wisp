@@ -301,5 +301,23 @@ class TestAgentGuards(unittest.TestCase):
             self.assertIn("timed_out", tf.read_text())
 
 
+class TestWindowSeam(unittest.TestCase):
+    """The collector must read the focused window through the platform
+    seam. It used to shell hyprctl directly, so macOS recorded no window
+    at all — silently, forever."""
+
+    def test_routes_through_platform(self):
+        with mock.patch("wisp.platform.active_window",
+                        return_value={"class": "Safari", "title": "Docs"}) as m:
+            self.assertEqual(sense._window(),
+                             {"class": "Safari", "title": "Docs"})
+        m.assert_called_once()
+
+    def test_swallows_backend_errors(self):
+        with mock.patch("wisp.platform.active_window",
+                        side_effect=RuntimeError("no backend")):
+            self.assertEqual(sense._window(), {})
+
+
 if __name__ == "__main__":
     unittest.main()

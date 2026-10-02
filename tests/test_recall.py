@@ -66,10 +66,12 @@ class RecallVecTest(unittest.TestCase):
     def setUp(self):
         import unittest.mock as mock
         self.db = pathlib.Path(tempfile.mkdtemp()) / "recall.db"
-        try:
-            import sqlite_vec  # noqa: F401
-        except ImportError:
-            self.skipTest("sqlite-vec not installed")
+        # Probe loadability, not just importability: on a Python whose
+        # sqlite3 lacks loadable extensions the import succeeds while
+        # every vector op degrades to FTS-only, so these assertions would
+        # fail rather than skip.
+        if not recall.vec_available():
+            self.skipTest("sqlite-vec not loadable in this interpreter")
         self.cfg = {"provider": "openai",
                     "base_url": "http://unused",
                     "model": "fake-emb"}

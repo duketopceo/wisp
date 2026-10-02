@@ -7,10 +7,18 @@ on:
 
 jobs:
   unit:
-    runs-on: ubuntu-latest
+    # Linux is the primary platform and the v1.0 soak target; macOS is a
+    # supported host (ROADMAP v2.0). CI runs both, because four
+    # Linux-assuming tests rotted in unnoticed while this was ubuntu-only.
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         python-version: ["3.11", "3.13"]
+        include:
+          - os: macos-latest
+            python-version: "3.13"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -24,7 +32,11 @@ jobs:
         run: python -m unittest discover -s tests -v
 
   rust:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

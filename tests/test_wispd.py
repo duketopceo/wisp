@@ -13,6 +13,11 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from wisp import config, pipeline  # noqa: E402
 
 
+def _with_os(os_name):
+    """Pin the platform seam so adapter assertions are host-independent."""
+    return mock.patch.dict(os.environ, {"WISP_OS": os_name})
+
+
 class TestLoadConfig(unittest.TestCase):
     def test_parses_toml_subset(self):
         with tempfile.TemporaryDirectory() as td:
@@ -28,13 +33,26 @@ class TestLoadConfig(unittest.TestCase):
     def test_writes_default_when_missing(self):
         with tempfile.TemporaryDirectory() as td:
             cfg_file = pathlib.Path(td) / "config.toml"
-            with mock.patch.object(config, "CFG_FILE", cfg_file), \
+            # [apps] defaults are host-specific — pin the seam so the
+            # assertion means the same thing on every dev machine.
+            with _with_os("linux"), \
+                 mock.patch.object(config, "CFG_FILE", cfg_file), \
                  mock.patch.object(config, "CFG_DIR", pathlib.Path(td)):
                 cfg = config.load_config()
             self.assertTrue(cfg_file.exists())
             self.assertEqual(cfg["apps"]["terminal"], "ghostty")
             self.assertEqual(cfg["audio"]["whisper_model"],
                              "ggml-small.en.bin")
+
+    def test_default_config_written_for_host(self):
+        with tempfile.TemporaryDirectory() as td:
+            cfg_file = pathlib.Path(td) / "config.toml"
+            with _with_os("macos"), \
+                 mock.patch.object(config, "CFG_FILE", cfg_file), \
+                 mock.patch.object(config, "CFG_DIR", pathlib.Path(td)):
+                cfg = config.load_config()
+            self.assertEqual(cfg["apps"]["terminal"], "open -a 'Terminal'")
+            self.assertIn('[apps]', cfg_file.read_text())
 
 
 class TestExecute(unittest.TestCase):
@@ -128,7 +146,8 @@ class TestExecute(unittest.TestCase):
 
     def test_launch_uses_lua_dispatcher(self):
         ok = mock.Mock(returncode=0, stdout="ok")
-        with mock.patch.object(pipeline.shutil, "which",
+        with _with_os("linux"), \
+             mock.patch.object(pipeline.shutil, "which",
                                return_value="/usr/bin/ghostty"), \
              mock.patch.object(pipeline.subprocess, "run",
                                return_value=ok) as run:
@@ -140,7 +159,8 @@ class TestExecute(unittest.TestCase):
 
     def test_launch_falls_back_to_dispatch(self):
         fail = mock.Mock(returncode=1, stdout="err")
-        with mock.patch.object(pipeline.shutil, "which",
+        with _with_os("linux"), \
+             mock.patch.object(pipeline.shutil, "which",
                                return_value="/usr/bin/ghostty"), \
              mock.patch.object(pipeline.subprocess, "run",
                                return_value=fail) as run:
