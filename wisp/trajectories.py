@@ -165,6 +165,8 @@ def propose_recipes(out_dir=None) -> list:
         path.write_text(
             f"---\nname: {name}\ndescription: verified workflow for "
             f"'{r.get('task','')}' on {r.get('app','?')}\ntier: safe\n"
+            f"provenance: distilled-from {r.get('ts','')} app="
+            f"{r.get('app','?')} priors={len(prior_bad)}\n"
             f"---\n\n# Recipe: {r.get('task','')}\n\n"
             f"Verified sequence (after {len(prior_bad)} failed "
             f"attempt(s)):\n\n{steps}\n\n## Wrong branches to avoid\n\n"

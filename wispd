@@ -775,7 +775,13 @@ def main() -> int:
                 return 2
             dest = _sk.SKILLS_DIR / name
             dest.mkdir(parents=True, exist_ok=True)
-            (dest / "SKILL.md").write_text(src.read_text())
+            from datetime import datetime, timezone
+            body = src.read_text()
+            body += ("\n<!-- approved by wispd recipes approve "
+                     f"{datetime.now(timezone.utc).isoformat()} "
+                     "— human-gated install -->\n")
+            (dest / "SKILL.md").write_text(body)
+            _sk.write_index_json()
             print(f"installed {name}")
             return 0
         for p in trajectories.propose_recipes():

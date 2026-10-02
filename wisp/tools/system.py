@@ -140,14 +140,14 @@ def codegraph(arg: str) -> str:
     if len(parts) < 2 or parts[0] not in _CODEGRAPH_TOOLS:
         return ("FAIL (usage: codegraph '<tool> <json-args>' — tools: "
                 + ", ".join(sorted(_CODEGRAPH_TOOLS)) + ")")
-    if shutil.which(_CBM_BIN) is None:
-        return ("SKIP (codebase-memory-mcp not installed — "
-                "no code-graph index available)")
     import json as _json
     try:
         _json.loads(parts[1])
     except _json.JSONDecodeError:
         return "FAIL (args must be a JSON object, e.g. {\"project\":..})"
+    if shutil.which(_CBM_BIN) is None:
+        return ("SKIP (codebase-memory-mcp not installed — "
+                "no code-graph index available)")
     try:
         r = subprocess.run(
             [_CBM_BIN, "cli", "--quiet", "--json", parts[0], parts[1]],
