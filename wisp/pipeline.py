@@ -874,7 +874,11 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
                 from . import points as _points
                 reply, raw = _points.extract(reply)
                 if raw:
-                    pts = _points.to_logical(raw, _points.monitors())
+                    _mons = _points.monitors()
+                    if _points.img_space_is_logical():
+                        pts = _points.canvas_to_logical(raw, _mons)
+                    else:
+                        pts = _points.to_logical(raw, _mons)
             if pts:
                 _trace.emit(turn, "points", "act", {"points": pts})
             state.transition("speaking", result=result, answer=reply,

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>wisp clicklab</title>
+<style>
+  body { background:#1a1b26; color:#c0caf5; font-family:system-ui;
+         margin:0; padding:16px; }
+  h1 { font-size:18px; margin:0 0 12px; }
+  .zone { border:1px solid #3b4261; border-radius:8px; padding:10px;
+          margin-bottom:12px; }
+  .zone h2 { font-size:12px; color:#9aa5ce; margin:0 0 8px;
+             text-transform:uppercase; }
+  .dot { position:absolute; width:36px; height:36px; border-radius:50%;
+         background:#7aa2f7; color:#1a1b26; font-weight:700;
+         display:flex; align-items:center; justify-content:center;
+         cursor:pointer; font-size:16px; }
+  .dot:hover { background:#bb9af7; }
+  #dotfield { position:relative; height:220px; }
+  .shape { cursor:pointer; margin-right:24px; }
+  button { background:#283457; color:#c0caf5; border:1px solid #3b4261;
+           border-radius:6px; padding:10px 18px; margin:4px;
+           font-size:14px; cursor:pointer; }
+  button:hover { background:#3b4261; }
+  #scroller { height:140px; overflow-y:scroll; background:#12121c;
+              border-radius:6px; padding:8px; }
+  #scroller div { padding:4px; border-bottom:1px solid #283457;
+                  font-size:12px; }
+  input, textarea, select { background:#12121c; color:#c0caf5;
+           border:1px solid #3b4261; border-radius:6px; padding:8px;
+           font-size:14px; margin:4px; width:320px; }
+  #readout { position:fixed; top:8px; right:8px; background:#12121c;
+             border:1px solid #7aa2f7; border-radius:8px; padding:10px;
+             font-family:monospace; font-size:11px; max-width:300px;
+             max-height:60vh; overflow:hidden; white-space:pre-wrap; }
+  .row { display:flex; gap:24px; flex-wrap:wrap; }
+  .col { flex:1; min-width:340px; }
+</style>
+</head>
+<body>
+<h1>wisp clicklab — agent pointer proving ground</h1>
+<div id="readout">waiting…</div>
+<div class="row">
+<div class="col">
+<div class="zone"><h2>numbered dots</h2>
+  <div id="dotfield"></div>
+</div>
+<div class="zone"><h2>shapes</h2>
+  <svg width="320" height="90">
+    <circle class="shape" id="shape-red-circle" cx="45" cy="45" r="35"
+            fill="#e05555"/>
+    <rect class="shape" id="shape-blue-square" x="110" y="10"
+          width="70" height="70" fill="#7aa2f7"/>
+    <polygon class="shape" id="shape-green-triangle"
+             points="240,10 280,80 200,80" fill="#9ece6a"/>
+  </svg>
+</div>
+<div class="zone"><h2>labeled buttons</h2>
+  <button id="btn-alpha">ALPHA</button>
+  <button id="btn-bravo">BRAVO</button>
+  <button id="btn-charlie">CHARLIE</button>
+  <button id="btn-delta">DELTA</button>
+  <button id="btn-echo">ECHO</button>
+  <button id="btn-foxtrot">FOXTROT</button>
+</div>
+<div class="zone"><h2>checkboxes + dropdown</h2>
+  <label><input type="checkbox" id="chk-1" style="width:auto"> first checkbox</label><br>
+  <label><input type="checkbox" id="chk-2" style="width:auto"> second checkbox</label><br>
+  <label><input type="checkbox" id="chk-3" style="width:auto"> third checkbox</label><br>
+  <select id="sel">
+    <option value="">pick one…</option>
+    <option value="alpha">alpha</option>
+    <option value="beta">beta</option>
+    <option value="gamma">gamma</option>
+  </select>
+</div>
+</div>
+<div class="col">
+<div class="zone"><h2>scroll the list</h2>
+  <div id="scroller"></div>
+</div>
+<div class="zone"><h2>text field</h2>
+  <input id="textin" placeholder="type into me">
+  <textarea id="textbox" rows="3" placeholder="or into me"></textarea>
+</div>
+</div>
+</div>
+<script>
+window.__score = {events: [], counts: {}, scroll_top: 0, typed: {},
+                  lastClick: null};
+// raw click echo — used to calibrate viewport-CSS → screen-logical coords
+document.addEventListener('click', e => {
+  window.__score.lastClick = {x: e.clientX, y: e.clientY,
+                              t: Date.now()};
+}, true);
+const readout = document.getElementById('readout');
+function hit(id, kind, extra) {
+  const e = {id, kind, t: Date.now(), ...(extra||{})};
+  window.__score.events.push(e);
+  window.__score.counts[id] = (window.__score.counts[id]||0) + 1;
+  document.title = 'wisp clicklab · ' + window.__score.events.length;
+  render();
+}
+function render() {
+  const ev = window.__score.events.slice(-12).map(e =>
+    e.id + (e.kind==='scroll' ? ' @'+e.top : '') +
+           (e.kind==='type' ? ' ="'+e.value+'"' : '')).join('\n');
+  readout.textContent = 'events: ' + window.__score.events.length +
+    '\n' + ev;
+}
+// dots — fixed positions so "dot N" is unambiguous
+const field = document.getElementById('dotfield');
+const pos = [[20,20],[140,60],[260,15],[60,120],[200,140],[320,100],
+             [90,170],[380,30]];
+pos.forEach((p, i) => {
+  const d = document.createElement('div');
+  d.className = 'dot'; d.id = 'dot-' + (i+1);
+  d.textContent = i+1;
+  d.style.left = p[0]+'px'; d.style.top = p[1]+'px';
+  d.onclick = () => hit(d.id, 'click');
+  field.appendChild(d);
+});
+document.querySelectorAll('.shape').forEach(s =>
+  s.addEventListener('click', () => hit(s.id, 'click')));
+document.querySelectorAll('button').forEach(b =>
+  b.onclick = () => hit(b.id, 'click'));
+document.querySelectorAll('input[type=checkbox]').forEach(c =>
+  c.onchange = () => hit(c.id, 'check', {checked: c.checked}));
+document.getElementById('sel').onchange = e =>
+  hit('sel', 'select', {value: e.target.value});
+const sc = document.getElementById('scroller');
+for (let i=1; i<=80; i++) {
+  const d = document.createElement('div');
+  d.textContent = 'list row ' + i + (i===80 ? ' — THE BOTTOM' : '');
+  sc.appendChild(d);
+}
+sc.onscroll = () => {
+  window.__score.scroll_top = sc.scrollTop;
+  hit('scroller', 'scroll', {top: sc.scrollTop});
+};
+const tin = document.getElementById('textin');
+tin.addEventListener('input', () => {
+  window.__score.typed['textin'] = tin.value;
+  if (tin.value.length >= 3) hit('textin', 'type', {value: tin.value});
+});
+const tbx = document.getElementById('textbox');
+tbx.addEventListener('input', () => {
+  window.__score.typed['textbox'] = tbx.value;
+  if (tbx.value.length >= 3) hit('textbox', 'type', {value: tbx.value});
+});
+render();
+</script>
+</body>
+</html>

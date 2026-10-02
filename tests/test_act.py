@@ -81,7 +81,8 @@ class Loop(unittest.TestCase):
         with mock.patch.object(act, "_post", side_effect=replies), \
              mock.patch.object(tools, "run",
                                return_value="LAUNCHED discord") as run:
-            r = act.run_act_loop("open discord", self.cfg)
+            r = act.run_act_loop("open discord", self.cfg,
+                             initial_image="aGk=")
         run.assert_called_once()
         assert r.startswith("ACTED (1 steps)")
 
@@ -125,7 +126,8 @@ class Loop(unittest.TestCase):
         cfg = {"agent": {"allow_shell": "true"}}
         with mock.patch.object(act, "_post", side_effect=replies), \
              mock.patch.object(tools, "run") as run:
-            r = act.run_act_loop("delete everything", cfg)
+            r = act.run_act_loop("delete everything", cfg,
+                             initial_image="aGk=")
         run.assert_not_called()
         assert "REFUSED" in json.dumps(
             [c.get("function") for c in []] or [{"x": "y"}]) or r
@@ -144,9 +146,12 @@ class Loop(unittest.TestCase):
         # screenshot — the loop must re-shoot before the next click,
         # not click stale pixels
         calls = []
+        import tempfile, pathlib
+        shot = pathlib.Path(tempfile.mktemp(suffix=".png"))
+        shot.write_bytes(b"\x89PNG\r\n\x1a\nfake")
         def fake_run(name, arg, cfg, harness=None):
             calls.append(name)
-            return "SHOT /tmp/shot.png" if name == "screenshot" \
+            return f"SHOT {shot}" if name == "screenshot" \
                 else "ok"
         replies = [_msg(calls=[_call("launch", "x")]),
                    _msg(calls=[_call("click", "100,200")]),
@@ -163,7 +168,8 @@ class Loop(unittest.TestCase):
                              confirm=lambda pr: True)
         assert r.startswith("ACTED")
         # screenshot must sit between the mutation and the click
-        assert calls == ["launch", "screenshot", "click"]
+        # startup observe + post-mutation re-observe
+        assert calls == ["screenshot", "launch", "screenshot", "click"]
 
     def test_no_reobserve_when_screen_fresh(self):
         # trigger-time image is still valid → first click goes straight
@@ -186,11 +192,15 @@ class Loop(unittest.TestCase):
         assert calls == ["click"]
 
     def test_no_blind_click_without_any_image(self):
-        # no trigger image + vision → even the first click re-observes
+        # no trigger image + vision → the loop observes before the
+        # first model call, not just before the first click
+        import tempfile, pathlib
+        shot = pathlib.Path(tempfile.mktemp(suffix=".png"))
+        shot.write_bytes(b"\x89PNG\r\n\x1a\nfake")
         calls = []
         def fake_run(name, arg, cfg, harness=None):
             calls.append(name)
-            return "SHOT /tmp/s.png" if name == "screenshot" else "ok"
+            return f"SHOT {shot}" if name == "screenshot" else "ok"
         replies = [_msg(calls=[_call("click", "10,20")]),
                    _msg(content="done")]
         cfg = {"agent": {}}

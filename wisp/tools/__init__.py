@@ -28,6 +28,11 @@ REGISTRY = {
               "in guide mode points the ghost cursor for the user"),
     "move": (system.move, "mutating",
              "move the pointer to 'x,y' or 'x,y@logical'"),
+    "scroll": (system.scroll, "mutating",
+               "scroll the view — 'down'/'up'/'down 400'/'bottom'"),
+    "key": (system.key, "mutating",
+            "press a named key — 'enter', 'tab', 'esc', 'down', "
+            "'pageup', 'pagedown', 'backspace', arrows"),
     "mcp_call": (mcpclient.call, "mutating",
                  "call a tool on a configured MCP server — "
                  "'<server> <tool> <json-args>' e.g. 'browseros tabs "
@@ -154,7 +159,8 @@ def _run_inner(name: str, arg: str, cfg: dict,
     fn = entry[0]
     if fn is desktop.launch:
         return fn(arg, cfg, harness)
-    if fn in (system.click, system.move):
+    if fn in (system.click, system.move, system.screenshot,
+              system.scroll, system.key, system.type_text):
         return fn(arg, cfg)
     if fn is mcpclient.call:
         return fn(arg, cfg)
