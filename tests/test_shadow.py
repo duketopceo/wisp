@@ -179,7 +179,11 @@ class ShadowTest(unittest.TestCase):
 
     def test_ask_jev_returns_the_primary_untouched(self):
         primary = {"answers": {"route": {"choice": "answer"}}}
-        with mock.patch.object(pipeline.urllib.request, "urlopen",
+        # Pin the key too. Without this the test only passed on a host
+        # that happens to have OPENROUTER_API_KEY set, and raised on a
+        # clean runner instead of exercising the shadow at all.
+        with mock.patch.object(config, "load_api_key", return_value="k"), \
+             mock.patch.object(pipeline.urllib.request, "urlopen",
                                return_value=_resp(primary)), \
              mock.patch.object(pipeline, "_shadow_decision") as sd:
             out = pipeline.ask_jev("hi", "m", {},
