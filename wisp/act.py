@@ -78,7 +78,8 @@ def _gate(name: str, arg: str, cfg: dict, confirm,
 
 def run_act_loop(task: str, cfg: dict, state=None,
                  harness: dict | None = None, confirm=None,
-                 initial_image: str | None = None) -> str:
+                 initial_image: str | None = None,
+                 interrupted=None) -> str:
     """Drive the chat model through the toolbelt until it finishes or a
     bound trips. `confirm(prompt)->bool` asks the user (choice widget /
     IPC) when wired; without it mutating calls skip."""
@@ -118,6 +119,9 @@ def run_act_loop(task: str, cfg: dict, state=None,
     vision = p.get("vision", "false") == "true"
 
     while len(steps) < max_steps:
+        if interrupted and interrupted():
+            _goals.record_steps(steps)
+            return "INTERRUPTED (user)"
         msg = _post(messages, cfg)
         calls = msg.get("tool_calls") or []
         if not calls:

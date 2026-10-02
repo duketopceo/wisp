@@ -153,5 +153,47 @@ class RuntimeProbeTest(unittest.TestCase):
             assert 'base_url = "http://gpu:11434"' in text
 
 
+class TestChatStream(unittest.TestCase):
+    def _sse(self, chunks):
+        lines = []
+        for c in chunks:
+            lines.append("data: " + json.dumps(
+                {"choices": [{"delta": {"content": c}}]}))
+        lines.append("data: [DONE]")
+        body = ("\n".join(lines) + "\n").encode()
+
+        class Resp:
+            def __enter__(self): return iter(body.splitlines(keepends=True))
+            def __exit__(self, *a): return False
+        return Resp()
+
+    def test_openai_compat_streams_deltas(self):
+        from wisp import brain
+        cfg = {"brain": {"default": "openai_compat:m"},
+               "brain.openai_compat":
+               {"base_url": "http://x.test/v1"}}
+        got = []
+        with mock.patch("urllib.request.urlopen",
+                        return_value=self._sse(["Hel", "lo ", "world"])):
+            out = brain.chat_stream([{"role": "user", "content": "hi"}],
+                                    cfg, on_delta=got.append)
+        self.assertEqual(out["content"], "Hello world")
+        self.assertEqual(got, ["Hel", "Hello ", "Hello world"])
+
+    def test_ollama_falls_back_single_delta(self):
+        from wisp import brain
+        cfg = {"brain": {"default": "ollama:m"}}
+        got = []
+        with mock.patch.object(brain, "_probe"), \
+             mock.patch.object(brain, "chat",
+                               return_value={"content": "one-shot",
+                                             "raw": {}}) as ch:
+            out = brain.chat_stream([{"role": "user", "content": "hi"}],
+                                    cfg, on_delta=got.append)
+        ch.assert_called_once()
+        self.assertEqual(out["content"], "one-shot")
+        self.assertEqual(got, ["one-shot"])
+
+
 if __name__ == "__main__":
     unittest.main()

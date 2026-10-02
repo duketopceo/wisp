@@ -85,6 +85,27 @@ class Loop(unittest.TestCase):
         run.assert_called_once()
         assert r.startswith("ACTED (1 steps)")
 
+    def test_interrupt_stops_loop(self):
+        replies = [_msg(calls=[_call("launch", "x")])] * 20
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run", return_value="ok"):
+            r = act.run_act_loop("loop", self.cfg,
+                                 interrupted=lambda: True)
+        assert r == "INTERRUPTED (user)"
+
+    def test_interrupt_between_steps(self):
+        flag = {"stop": False}
+        def should_stop():
+            return flag["stop"]
+        def stop_after_one(name, arg, cfg, harness=None):
+            flag["stop"] = True
+            return "ok"
+        replies = [_msg(calls=[_call("launch", "x")])] * 5
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run", side_effect=stop_after_one):
+            r = act.run_act_loop("loop", self.cfg, interrupted=should_stop)
+        assert r == "INTERRUPTED (user)"
+
     def test_aborts_at_max_steps(self):
         replies = [_msg(calls=[_call("launch", "x")])] * 20
         with mock.patch.object(act, "_post", side_effect=replies), \

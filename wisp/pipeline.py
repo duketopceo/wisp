@@ -345,7 +345,7 @@ def ask_jev(transcript: str, model: str, questions: dict,
 
 
 def ask_chat(transcript: str, cfg: dict, session_text: str = "",
-             image_b64: str | None = None) -> str:
+             image_b64: str | None = None, on_delta=None) -> str:
     """Real answer via the configured brain provider ([brain] default).
     image_b64 attaches a screenshot — dropped when the provider lacks
     vision support (U6 capability gating)."""
@@ -384,6 +384,9 @@ def ask_chat(transcript: str, cfg: dict, session_text: str = "",
         messages.append({"role": "system",
                          "content": f"Recent conversation:\n{session_text}"})
     messages.append({"role": "user", "content": user_content})
+    if on_delta is not None:
+        return brain.chat_stream(messages, cfg, on_delta=on_delta,
+                                 timeout=30)["content"].strip()
     return brain.chat(messages, cfg, timeout=30)["content"].strip()
 
 
@@ -453,7 +456,7 @@ def _end_speaking(state):
 
 def execute(answers: dict, cfg: dict, harness: dict | None = None,
             detail: str = "", state=None, confirm=None,
-            initial_image: str | None = None) -> str:
+            initial_image: str | None = None, interrupted=None) -> str:
     """Route-aware dispatch. Falls back to the legacy action-based path
     when Jev's response lacks the route question. Jev only answers typed
     questions (noul/choice/score) — free-text args come from the
@@ -488,7 +491,8 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
         from . import act
         return act.run_act_loop(detail, cfg, state=state,
                                 harness=harness, confirm=confirm,
-                                initial_image=initial_image)
+                                initial_image=initial_image,
+                                interrupted=interrupted)
     if route == "dictation":
         # type the spoken words; a leading dictate keyword is a command
         # prefix, not content — strip it. A correction prefix
@@ -504,7 +508,8 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
                   "body concise and procedural. Request: " + detail)
         return act.run_act_loop(prompt, cfg, state=state,
                                 harness=harness, confirm=confirm,
-                                initial_image=initial_image)
+                                initial_image=initial_image,
+                                interrupted=interrupted)
     if route == "tool":
         tool_name = answers.get("tool", {}).get("choice", "")
         if tool_name == "launch":
@@ -523,7 +528,8 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
             from . import act
             return act.run_act_loop(detail, cfg, state=state,
                                     harness=harness, confirm=confirm,
-                                    initial_image=initial_image)
+                                    initial_image=initial_image,
+                                    interrupted=interrupted)
         if tier == "mutating" and risk > threshold:
             return f"BLOCKED (tool {tool_name!r} needs confirmation)"
         if tier == "safe" or risk <= threshold:
@@ -645,7 +651,8 @@ def apply_choice(answers: dict, picked: str) -> dict:
 
 
 def run_listen(cfg: dict, state, wait_for_choice=None,
-               wav: pathlib.Path | None = None) -> int:
+               wav: pathlib.Path | None = None,
+               interrupted=None) -> int:
     """One push-to-talk cycle inside the daemon.
 
     `wav` set → toggle mode: the daemon already captured audio between
@@ -825,7 +832,7 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
             _brain.supports_vision(cfg) else None
         result = execute(answers, cfg, harness, detail=detail,
                          state=state, confirm=confirm,
-                         initial_image=act_img)
+                         initial_image=act_img, interrupted=interrupted)
         _trace.emit(turn, "dispatch", "act",
                     {"route": answers.get("route", {}).get("choice"),
                      "result": result})
@@ -853,10 +860,27 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
             return 0
         if result == "ANSWERED":
             pts = []
+            _last_push = [0.0]
+
+            def _delta(acc):
+                # stream the answer into state.json as it arrives — the
+                # cursor bubble renders it live. Throttled; incomplete
+                # trailing [POINT…/markdown-ish brackets hidden so the
+                # bubble never flashes raw tags.
+                if state is None:
+                    return
+                now = time.monotonic()
+                if now - _last_push[0] < 0.12:
+                    return
+                _last_push[0] = now
+                partial = re.sub(r"\[[A-Za-z]*:?[^\]]*$", "", acc)
+                state.transition("speaking", answer=partial)
+
             try:
                 _t = time.monotonic()
                 reply = ask_chat(text, cfg, session_text,
-                                 image_b64=shot_b64)
+                                 image_b64=shot_b64,
+                                 on_delta=_delta if state else None)
                 _trace.emit(turn, "brain_call", "brain",
                             {"endpoint": "chat/completions",
                              "model": cfg.get("agent", {})

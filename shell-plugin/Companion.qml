@@ -264,6 +264,11 @@ Item {
     command: [root.wispd, "label", "correct"]
   }
 
+  Process {
+    id: interruptProc
+    command: [root.wispd, "interrupt"]
+  }
+
   // Real-cursor ring: poll hyprctl cursorpos while Wisp works (~11 Hz).
   // Cheap socket query; only runs during busy states — no always-on
   // tail-following.
@@ -729,10 +734,30 @@ Item {
               Text {
                 width: parent.width
                 text: "› " + modelData
-                color: theme.faint
+                color: index === root.steps.length - 1
+                       ? theme.ink : theme.faint
                 font.pixelSize: 10
                 font.family: "monospace"
                 elide: Text.ElideRight
+              }
+            }
+          }
+
+          // cancel the in-flight turn — interrupt, not daemon stop
+          Text {
+            visible: root.busy
+            text: "■ stop"
+            color: stopMa.containsMouse ? theme.err : theme.muted
+            font.pixelSize: 11
+            font.bold: true
+            MouseArea {
+              id: stopMa
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: {
+                interruptProc.running = false
+                interruptProc.running = true
               }
             }
           }

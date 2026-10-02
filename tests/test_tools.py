@@ -109,7 +109,7 @@ class TestRouteDispatch(unittest.TestCase):
         self.assertEqual(out, "ACTED x")
         a.assert_called_once_with("rm -rf /", mock.ANY, state=None,
                                   harness=None, confirm=None,
-                                  initial_image=None)
+                                  initial_image=None, interrupted=None)
 
     def test_risk_blocks_before_route(self):
         out = pipeline.execute(

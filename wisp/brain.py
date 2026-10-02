@@ -145,3 +145,62 @@ def chat(messages: list, cfg: dict, tools: list | None = None,
                  headers, body, timeout)
     msg = (resp.get("choices") or [{}])[0].get("message", {})
     return {"content": msg.get("content", ""), "raw": msg}
+
+
+def chat_stream(messages: list, cfg: dict, on_delta=None,
+                timeout: int = 60) -> dict:
+    """Streaming variant of chat() for OpenAI-compatible providers
+    (openrouter, openai_compat, mlx — all share the SSE wire shape).
+    `on_delta(accumulated_text)` fires per chunk. Ollama has no SSE
+    support here — falls back to one-shot chat() and emits a single
+    delta so callers stay provider-agnostic."""
+    p = provider(cfg)
+    if not p["base_url"]:
+        raise RuntimeError(
+            f"brain provider '{p['name']}' needs brain.{p['name']}."
+            "base_url")
+    _probe(p)
+    if p["kind"] == "ollama":
+        out = chat(messages, cfg, timeout=timeout)
+        if on_delta:
+            on_delta(out["content"])
+        return out
+    key = config.load_env_key(p.get("key_env", "")) \
+        if p.get("key_env") else ""
+    headers = {}
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    if p["name"] == "openrouter":
+        headers["HTTP-Referer"] = \
+            "https://github.com/duketopceo/wisp"
+        headers["X-Title"] = "Wisp"
+    body = {"model": p["model"], "messages": messages,
+            "max_tokens": 600, "stream": True}
+    req = urllib.request.Request(
+        f"{p['base_url'].rstrip('/')}/chat/completions",
+        data=json.dumps(body).encode(),
+        headers={"User-Agent": UA, "Content-Type": "application/json",
+                 **headers}, method="POST")
+    acc = ""
+    msg = {}
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        for raw in r:
+            line = raw.decode("utf-8", "replace").strip()
+            if not line.startswith("data:"):
+                continue
+            payload = line[5:].strip()
+            if payload == "[DONE]":
+                break
+            try:
+                chunk = json.loads(payload)
+            except json.JSONDecodeError:
+                continue
+            choice = (chunk.get("choices") or [{}])[0]
+            piece = (choice.get("delta") or {}).get("content") or ""
+            if piece:
+                acc += piece
+                if on_delta:
+                    on_delta(acc)
+            if choice.get("message"):
+                msg = choice["message"]
+    return {"content": acc, "raw": msg or {"content": acc}}

@@ -142,6 +142,16 @@ Panel {
     labelProc.running = true
   }
 
+  Process {
+    id: interruptProc
+    command: [Quickshell.env("HOME") + "/.local/bin/wispd", "interrupt"]
+  }
+
+  function sendInterrupt() {
+    interruptProc.running = false
+    interruptProc.running = true
+  }
+
   KeyboardPanel {
     id: panel
     anchorItem: wisp.anchorItem
@@ -273,24 +283,77 @@ Panel {
           wrapMode: Text.WordWrap
           width: parent.width
         }
+        // step timeline — numbered, newest emphasized
         Column {
           visible: wisp.steps.length > 0
           width: parent.width
           spacing: 2
           Repeater {
             model: wisp.steps
-            delegate: Text {
-              text: "· " + modelData
-              color: wisp.dim
-              font.family: wisp.fontFamily
-              font.pixelSize: Style.font.bodySmall
-              wrapMode: Text.WordWrap
+            delegate: Row {
               width: parent.width
+              spacing: 6
+              Text {
+                text: String(index + 1)
+                color: index === wisp.steps.length - 1
+                       ? wisp.accent : wisp.dim
+                font.family: wisp.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                font.bold: index === wisp.steps.length - 1
+              }
+              Text {
+                text: String(modelData)
+                color: index === wisp.steps.length - 1
+                       ? wisp.fg : wisp.dim
+                font.family: wisp.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                wrapMode: Text.WordWrap
+                width: parent.width - 20
+              }
             }
+          }
+        }
+        // wisp asks — ASK_USER backchannel gets its own row, not a
+        // plain result line
+        Text {
+          visible: wisp.result.indexOf("ASK_USER") === 0
+          text: "wisp asks: " + wisp.result.slice(9).trim()
+          color: wisp.urgent
+          font.family: wisp.fontFamily
+          font.pixelSize: Style.font.body
+          font.bold: true
+          wrapMode: Text.WordWrap
+          width: parent.width
+        }
+        // stop control while a turn is in flight — interrupt cancels
+        // the act loop without killing the daemon
+        Rectangle {
+          visible: wisp.busy
+          height: stopTxt.implicitHeight + 8
+          width: stopTxt.implicitWidth + 18
+          radius: 6
+          color: Qt.rgba(wisp.urgent.r, wisp.urgent.g, wisp.urgent.b,
+                         stopHov.containsMouse ? 0.45 : 0.2)
+          Text {
+            id: stopTxt
+            anchors.centerIn: parent
+            text: "■ stop"
+            color: "#fff"
+            font.family: wisp.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            font.bold: true
+          }
+          MouseArea {
+            id: stopHov
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: wisp.sendInterrupt()
           }
         }
         Text {
           visible: wisp.result.length > 0
+              && wisp.result.indexOf("ASK_USER") !== 0
           text: wisp.result
           color: wisp.dim
           font.family: wisp.fontFamily

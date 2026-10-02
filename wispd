@@ -196,6 +196,11 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
                 cfg.clear()
                 cfg.update(config.load_config())
             return {"ok": True, "config": cfg}
+        if c == "interrupt":
+            # cancel the in-flight turn only — daemon keeps running
+            speech.stop()
+            ctl["interrupt"].set()
+            return {"ok": True}
         if c == "stop":
             speech.stop()
             ctl["stop"].set()
@@ -238,8 +243,10 @@ def _rec_watchdog(ctl: dict, secs: int) -> None:
 def _run_listen(st: state_mod.State, cfg: dict, ctl: dict,
                 wav=None) -> None:
     try:
+        ctl["interrupt"].clear()
         pipeline.run_listen(cfg, st,
                             wait_for_choice=_wait_for_choice(ctl),
+                            interrupted=ctl["interrupt"].is_set,
                             wav=wav)
         dlog(f"turn done: status={st.status} "
              f"transcript={st.transcript!r} result={st.result!r}")
@@ -287,6 +294,7 @@ def run_daemon(cfg: dict) -> int:
              f"{len(inv.get('cli_tools', {}))} cli tools")
     st = state_mod.State()
     ctl = {"stop": threading.Event(), "busy": threading.Event(),
+           "interrupt": threading.Event(),
            "choice_event": threading.Event(), "choice_pick": "",
            "rec": None, "rec_lock": threading.Lock()}
     _DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL = st, cfg, ctl
@@ -587,6 +595,13 @@ def main() -> int:
         try:
             import json
             print(json.dumps(ipc.send({"cmd": "status"}), indent=2))
+            return 0
+        except (ConnectionError, OSError) as e:
+            print(f"wispd unreachable: {e}", file=sys.stderr)
+            return 1
+    if cmd == "interrupt":
+        try:
+            ipc.send({"cmd": "interrupt"})
             return 0
         except (ConnectionError, OSError) as e:
             print(f"wispd unreachable: {e}", file=sys.stderr)
