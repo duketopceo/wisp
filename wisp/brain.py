@@ -75,6 +75,13 @@ def supports_tools(cfg: dict) -> bool:
     return provider(cfg).get("tools", "false") == "true"
 
 
+def action_text(cfg: dict) -> bool:
+    """Provider speaks literal action text (UI-TARS: 'Action:
+    click(x,y)') instead of OpenAI tool_calls — the act loop parses
+    replies into the same dispatch."""
+    return provider(cfg).get("action_text", "false") == "true"
+
+
 def _probe(p: dict) -> None:
     """Local providers get a fast reachability check so failures are
     explicit (per U6: health probe) instead of silent OpenRouter-shaped
