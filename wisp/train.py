@@ -43,9 +43,12 @@ def save_bank(bank: dict, path=None) -> None:
 
 
 def _key(rec: dict) -> str:
-    return "|".join([rec.get("surface") or "unknown",
-                     (rec.get("app") or "").lower() or "_",
-                     (rec.get("task") or "").strip().lower()])
+    parts = [rec.get("surface") or "unknown",
+             (rec.get("app") or "").lower() or "_",
+             (rec.get("task") or "").strip().lower()]
+    if rec.get("model"):
+        parts.append(str(rec["model"]))
+    return "|".join(parts)
 
 
 def _run_ok(rec: dict) -> bool:
@@ -88,6 +91,7 @@ def _fold(e: dict | None, rec: dict) -> dict:
     e = e or {"key": _key(rec), "task": rec.get("task"),
               "surface": rec.get("surface"),
               "app": rec.get("app") or "",
+              "model": rec.get("model") or "",
               "streak": 0, "streak_eff": [], "runs": 0,
               "eff_sum": 0.0,
               "status": "candidate", "steps": [], "history": []}
@@ -131,6 +135,7 @@ def stats() -> dict:
     waste histogram + bank status counts."""
     recs = _load_jsonl(RESULTS)
     surfaces: dict = {}
+    models: dict = {}
     waste = {}
     for r in recs:
         surf = r.get("surface") or "unknown"
@@ -145,11 +150,23 @@ def stats() -> dict:
         w = (r.get("judge") or {}).get("waste")
         if w and w != "none":
             waste[w] = waste.get(w, 0) + 1
+        mdl = r.get("model")
+        if mdl:
+            mb = models.setdefault(mdl, {"runs": 0, "verified": 0,
+                                         "ms_sum": 0})
+            mb["runs"] += 1
+            mb["verified"] += bool(r.get("verified"))
+            mb["ms_sum"] += r.get("ms") or 0
     bank = load_bank()
     bank_status = {}
     for e in bank.values():
         bank_status[e["status"]] = bank_status.get(e["status"], 0) + 1
-    return {"runs": len(recs), "surfaces": {
+    return {"runs": len(recs),
+            "models": {k: {"runs": v["runs"], "pass": v["verified"],
+                           "avg_ms": round(v["ms_sum"] / v["runs"])
+                           if v["runs"] else None}
+                       for k, v in models.items()},
+            "surfaces": {
                 k: {"runs": v["runs"], "pass": v["verified"],
                     "efficiency": round(v["eff_sum"] / v["eff_n"], 3)
                     if v["eff_n"] else None}
@@ -189,11 +206,15 @@ def history_text(limit: int = 30) -> str:
     return "\n".join(lines) or "no runs yet"
 
 
-def hint_for(task: str, surface: str, app: str = "") -> str:
+def hint_for(task: str, surface: str, app: str = "",
+             model: str = "") -> str:
     """Proven-sequence hint for the act system prompt — only graduated
-    patterns on this surface. Returns '' when nothing applies."""
+    patterns on this surface. Prefers the model-keyed entry when
+    `model` is set, falls back to unkeyed. Returns '' when nothing
+    applies."""
     bank = load_bank()
     t = (task or "").strip().lower()
+    best = None
     for e in bank.values():
         if e.get("status") != "graduated":
             continue
@@ -201,13 +222,21 @@ def hint_for(task: str, surface: str, app: str = "") -> str:
             continue
         if surface and e.get("surface") != surface:
             continue
-        steps = " → ".join(f"{s['tool']}({s.get('arg','')})"
-                           for s in e.get("steps") or [])
-        if steps:
-            return (f"[proven sequence — graduated {e['streak']}-run "
-                    f"streak] {steps}\n(verify each result; re-aim if "
-                    f"the layout moved)")
-    return ""
+        keyed = bool(model) and e.get("model") == model
+        if model and e.get("model") and not keyed:
+            continue  # another model's pattern — don't contaminate
+        if best is None or (keyed and not best[0]):
+            best = (keyed, e)
+    if not best:
+        return ""
+    e = best[1]
+    steps = " → ".join(f"{s['tool']}({s.get('arg','')})"
+                       for s in e.get("steps") or [])
+    if not steps:
+        return ""
+    return (f"[proven sequence — graduated {e['streak']}-run "
+            f"streak] {steps}\n(verify each result; re-aim if "
+            f"the layout moved)")
 
 
 def bank_text() -> str:

@@ -119,7 +119,8 @@ def run_act_loop(task: str, cfg: dict, state=None,
     if prior:
         system += "\n\n" + prior
     from . import train as _train
-    hint = _train.hint_for(task, _surface(cfg))
+    hint = _train.hint_for(task, _surface(cfg),
+                           model=brain.provider(cfg).get("model", ""))
     if hint:
         system += "\n\n" + hint
     from . import goals as _goals

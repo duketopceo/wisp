@@ -112,6 +112,31 @@ suite on `ubuntu-latest` and `macos-latest`.
   (MCP servers, OAuth via Strata)
 ```
 
+## Local models (optional)
+
+Wisp can run entirely on local OpenAI-compatible servers — useful for
+training volume at zero marginal cost. Any `llama.cpp`/`llama-server`,
+Ollama, or LM Studio endpoint works as a `[brain.<name>]` provider;
+commented presets ship in `~/.config/wisp/config.toml`:
+
+| Provider | Endpoint | Role | Flags |
+|---|---|---|---|
+| `[brain.llama_local]` | `:8080` (llama-server, GPU) | answer/act brain | `vision=true tools=true` |
+| `[brain.uitars]` | `:8081` (UI-TARS-7B, GPU) | GUI grounding actor | `action_text=true` — emits `Action: click(x,y)` text instead of tool_calls; the act loop parses it through the same toolbelt and denylist |
+| jev-shim | `:8931` | decisions router | `WISP_JEV_ENDPOINT` env var overrides the decisions URL |
+
+Compare actors head-to-head on the same suite + seed:
+
+```sh
+python3 scripts/clicklab/run.py --dom --suite core \
+    --models "openrouter:google/gemini-3.1-flash-lite,uitars:ui-tars-7b"
+```
+
+Runs are tagged per model — `wispd train stats` and the arena page
+group pass-rate and latency by actor, and the skill bank keys
+graduated sequences per model so hints don't cross-contaminate.
+Local endpoints that are down are skipped, not failed.
+
 ## Install
 
 ```sh

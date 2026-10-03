@@ -64,6 +64,7 @@
   <h1><b>wisp</b> training arena</h1>
   <span id="clock" class="dim">—</span>
   <div class="sels" id="surfsel"></div>
+  <div class="sels" id="mdlsel"></div>
 </header>
 <div class="grid">
   <div class="card">
@@ -77,7 +78,7 @@
   <div class="card">
     <h2>Live run feed <span class="dim">(click a row for steps)</span></h2>
     <table><thead><tr>
-      <th></th><th>task</th><th>surface</th><th>judge</th>
+      <th></th><th>task</th><th>surface</th><th>model</th><th>judge</th>
       <th style="text-align:right">ms</th>
     </tr></thead><tbody id="feed"></tbody></table>
   </div>
@@ -87,7 +88,7 @@
   </div>
 </div>
 <script>
-let SURF = '';
+let SURF = '', MODEL = '';
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -125,7 +126,15 @@ async function refresh() {
       `<span class="${SURF===s?'on':''}"
              onclick="SURF='${esc(s)}';refresh()">${esc(s)}</span>`
     ).join('');
-  const runs = feed.filter(r => !SURF || r.surface === SURF);
+  const mdls = Object.keys(stats.models || {});
+  $('mdlsel').innerHTML = mdls.length ?
+    `<span class="${MODEL===''?'on':''}" onclick="MODEL='';refresh()">all models</span>`
+    + mdls.map(m =>
+      `<span class="${MODEL===m?'on':''}"
+             onclick="MODEL='${esc(m)}';refresh()">${esc(m)}</span>`
+    ).join('') : '';
+  const runs = feed.filter(r => (!SURF || r.surface === SURF)
+                             && (!MODEL || r.model === MODEL));
   // stats card
   $('stats').innerHTML =
     `<div class="stat"><span>total runs</span><b>${stats.runs}</b></div>`
@@ -134,6 +143,11 @@ async function refresh() {
        <b><span class="${v.pass===v.runs?'ok':v.pass?'':'bad'}">
        ${v.pass}/${v.runs}</span>${v.efficiency!=null?
        ' · eff '+v.efficiency:''}</b></div>`).join('')
+    + Object.entries(stats.models || {}).map(([k, v]) =>
+      `<div class="stat"><span>model ${esc(k)}</span>
+       <b><span class="${v.pass===v.runs?'ok':v.pass?'':'bad'}">
+       ${v.pass}/${v.runs}</span>${v.avg_ms!=null?
+       ' · '+v.avg_ms+'ms':''}</b></div>`).join('')
     + `<div class="stat"><span>bank</span><b class="dim">${
        Object.entries(stats.bank||{}).map(([k,v])=>`${k}:${v}`)
              .join(' ')||'—'}</b></div>`;
@@ -170,6 +184,7 @@ async function refresh() {
       <td>${chip(r.verified)}</td>
       <td>${esc(r.task)}<div class="steps">${esc(steps)}</div></td>
       <td class="dim">${esc(r.surface||'')}</td>
+      <td class="dim">${esc(r.model||'')}</td>
       <td>${jchip(g.success)} ${effbar(g.efficiency)}
           ${g.waste && g.waste!=='none' ?
             `<span class="pill warn">${esc(g.waste)}</span>` : ''}</td>

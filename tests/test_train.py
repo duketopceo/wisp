@@ -97,3 +97,50 @@ class TrainTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ModelMatrix(unittest.TestCase):
+    def setUp(self):
+        self.dir = pathlib.Path(tempfile.mkdtemp())
+        self.bank = self.dir / "skillbank.json"
+        self.results = self.dir / "clicklab.jsonl"
+        mock.patch.object(train, "BANK_FILE", self.bank).start()
+        mock.patch.object(train, "RESULTS", self.results).start()
+        self.addCleanup(mock.patch.stopall)
+
+    def test_model_keyed_entries_do_not_collide(self):
+        r = _rec()
+        r["model"] = "gemini"
+        for _ in range(train.GRAD_STREAK):
+            train.update_bank(dict(r))
+        for _ in range(train.GRAD_STREAK):
+            e = train.update_bank(_rec())  # unkeyed run
+        bank = train.load_bank(self.bank)
+        self.assertEqual(len(bank), 2)
+        self.assertTrue(any("gemini" in k for k in bank))
+
+    def test_stats_groups_by_model(self):
+        r = _rec()
+        r["model"] = "uitars"
+        import json as _j
+        with self.results.open("a") as f:
+            f.write(_j.dumps(r) + "\n")
+            f.write(_j.dumps(_rec()) + "\n")
+        s = train.stats()
+        models = s.get("models", {})
+        self.assertIn("uitars", models)
+        self.assertEqual(models["uitars"]["runs"], 1)
+
+    def test_hint_for_prefers_model_keyed(self):
+        r = _rec()
+        r["model"] = "fast"
+        r2 = _rec()
+        r2["steps"] = [{"tool": "click", "arg": "9,9",
+                        "result": "CLICKED"}]
+        for _ in range(train.GRAD_STREAK):
+            train.update_bank(dict(r))     # model-keyed, step arg 1,2
+            train.update_bank(dict(r2))    # unkeyed, step arg 9,9
+        h = train.hint_for("click alpha", "browser-dom", model="fast")
+        self.assertIn("1,2", h)
+        h2 = train.hint_for("click alpha", "browser-dom", model="other")
+        self.assertIn("9,9", h2)  # falls back to unkeyed
