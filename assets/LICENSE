@@ -1,0 +1,8 @@
+Wisp assets (icons, bar glyphs, mark, wordmark and their SVG sources under
+assets/) are original work made for this project, drawn by hand as SVG
+path data. No stock packs, icon fonts, emoji or AI image generation.
+
+Dedicated to the public domain under CC0 1.0 Universal:
+https://creativecommons.org/publicdomain/zero/1.0/
+The code that builds them (scripts/assets/) is MIT, as is the rest of the
+repository (see ../LICENSE).
