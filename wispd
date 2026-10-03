@@ -845,6 +845,25 @@ def main() -> int:
     if cmd == "theme":
         from wisp import theme
         name = sys.argv[2] if len(sys.argv) > 2 else ""
+        if name in ("--check", "--css"):
+            # wispd theme --check [THEME_DIR]      contrast audit, exit 1 on fail
+            # wispd theme --css [THEME_DIR] [OUT]  theme.css (OUT '-' = stdout)
+            rest = sys.argv[3:]
+            res = theme.load(rest[0] if rest else None, cfg)
+            if name == "--css":
+                out = rest[1] if len(rest) > 1 else None
+                if out == "-":
+                    sys.stdout.write(theme.css(res))
+                else:
+                    print(theme.write_css(res, out))
+                return 0
+            rows = theme.check(res)
+            print(f"source {res['source']}, mode {res['mode']}")
+            for r in rows:
+                mark = "ok  " if r["ok"] else "FAIL"
+                print(f"{mark} {r['pair']:<18} {r['fg']} on {r['bg']}  "
+                      f"{r['ratio']:>5.2f} (min {r['min']})")
+            return 0 if all(r["ok"] for r in rows) else 1
         if name:
             if name not in theme.THEMES:
                 print(f"unknown theme {name!r} — "
@@ -916,7 +935,7 @@ def main() -> int:
     print("usage: wispd [daemon|install|trigger|status|stop|choice"
           "|agent|memory|task_status|task_cancel|learn|label|harness|trace"
           "|doctor|tui|skills [import [--list] dir]|suggestions"
-          "|recipes [approve name]|fails|theme [name]|sync [repo]"
+          "|recipes [approve name]|fails|theme [name|--check|--css]|sync [repo]"
           "|eval route [n]"
           "|config [set k v]]")
     return 2

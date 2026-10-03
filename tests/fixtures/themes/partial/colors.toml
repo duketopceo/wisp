@@ -1,0 +1,8 @@
+# Synthetic minimal fixture: only the keys Omarchy's Color singleton needs.
+# No orange, yellow, green, selection, lighter_background or mode, so every
+# optional-key fallback in DESIGN-v2 5.1 is exercised.
+background = "#202020"
+foreground = "#d0d0d0"
+accent = "#5fafd7"
+muted = "#606060"
+red = "#d75f5f"
