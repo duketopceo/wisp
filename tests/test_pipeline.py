@@ -88,8 +88,8 @@ class TurnSpansTest(unittest.TestCase):
                                 "confidence": {"score": 0.9},
                                 "app": {"choice": ""}}}
         cfg = {"audio": {"seconds": "0"}, "agent": {}}
-        sess = sys.modules.get("wisp.session")
         from wisp import session as sess  # noqa: F811
+        from wisp import memory as mem  # noqa: F811
         with mock.patch.object(trace, "TRACE_FILE", tf), \
              mock.patch.object(pipeline, "record",
                                return_value=d / "x.wav"), \
@@ -102,6 +102,7 @@ class TurnSpansTest(unittest.TestCase):
              mock.patch.object(pipeline, "active_window", return_value={}), \
              mock.patch.object(pipeline, "notify"), \
              mock.patch.object(pipeline.speech, "speak", return_value=None), \
+             mock.patch.object(mem, "context_block", return_value=""), \
              mock.patch.object(sess, "append_turn"), \
              mock.patch.object(sess, "tail", return_value=[]), \
              mock.patch.object(sess, "as_text", return_value=""), \
