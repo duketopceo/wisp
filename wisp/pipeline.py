@@ -637,40 +637,45 @@ def apply_choice(answers: dict, picked: str) -> dict:
 
 def run_listen(cfg: dict, state, wait_for_choice=None,
                wav: pathlib.Path | None = None,
-               interrupted=None) -> int:
+               interrupted=None, spans=None) -> int:
     """One push-to-talk cycle inside the daemon.
 
     `wav` set → toggle mode: the daemon already captured audio between
     two presses, so skip recording. `wait_for_choice(timeout)` -> picked
     label or None; injected by the daemon so ambiguous turns resolve via
     IPC/widget clicks. With no chooser wired, low-confidence turns cancel
-    rather than guess.
+    rather than guess. `spans` (trace.Spans) carries the press/release
+    timestamps from the daemon; absent, spans start at this call.
     """
     secs = int(cfg.get("audio", {}).get("seconds", "60"))
     model = cfg.get("agent", {}).get("model", "typesafe/jev-1.13")
-    t0 = time.monotonic()
-    timing = {}
     from . import trace as _trace
+    sp = spans or _trace.Spans()
     turn = _trace.new_turn()
+    sp.bind(turn)
     _trace.emit(turn, "listen_start", "lifecycle",
                 {"seconds": secs, "model": model})
     try:
         if wav is None:
             state.transition("listening", transcript="", result="",
                              answer="", choices=[], points=[], error="")
+            sp.record("press", sp.t0)
+            rec_start = sp.now()
             wav = record(secs, state)
-        timing["record_ms"] = round((time.monotonic() - t0) * 1000)
+            sp.record("record", rec_start)
+            sp.set_release()
+        rec_ms = sp.ms.get("record", 0)
         _trace.emit(turn, "record", "stt",
                     {"wav": str(wav),
                      "bytes": wav.stat().st_size if wav.exists() else 0},
-                    timing["record_ms"])
+                    rec_ms)
         state.transition("transcribing")
+        sp.record("release", sp.rel0)
         text = transcribe(wav, cfg)
-        timing["stt_ms"] = round((time.monotonic() - t0) * 1000
-                                 - timing["record_ms"])
+        sp.record("stt", sp.rel0)
         _trace.emit(turn, "transcribe", "stt",
                     {"provider": cfg.get("stt", {}).get("provider", "local"),
-                     "text": text}, timing["stt_ms"])
+                     "text": text}, sp.ms["stt"])
         state.transition("deciding", transcript=text)
         if not text or "[BLANK" in text:
             state.transition("done", result="heard nothing")
@@ -679,7 +684,8 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
         from .tools import adapters
         harness = {"apps": adapters.best_catalog(),
                    "context": adapters.context()}
-        win = active_window()
+        with sp.timed("hyprctl"):
+            win = active_window()
         if state:
             state.transition("deciding", transcript=text,
                              focus={"app": win.get("class", ""),
@@ -693,7 +699,8 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
         shot_png = None
         shot_b64 = None
         if cfg.get("agent", {}).get("screenshots", "true") == "true":
-            shot_png = capture_screen()
+            with sp.timed("screenshot"):
+                shot_png = capture_screen()
             if shot_png:
                 try:
                     shot_b64 = base64.b64encode(
@@ -705,7 +712,9 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
         # goal memory — continuations ("it's open, just hit cmd-t") join
         # the open goal instead of starting a fresh act
         from . import goals as _goals
-        goal, joined = _goals.join_or_new(text, win.get("class", ""), cfg)
+        with sp.timed("goal"):
+            goal, joined = _goals.join_or_new(text, win.get("class", ""),
+                                              cfg)
         context += "\n" + _goals.context_text()
         _trace.emit(turn, "goal", "thought",
                     {"joined": joined, "goal": goal["text"][:160]})
@@ -715,7 +724,8 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
         if session_text:
             context += f"\nRecent conversation:\n{session_text}"
         from . import memory
-        block = memory.context_block(text)
+        with sp.timed("memory"):
+            block = memory.context_block(text)
         if block:
             context += f"\n{block}"
         # refinement loop: a labeled-bad last turn or a correction cue
@@ -737,6 +747,8 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
                         {"via": corr["via"], "prior": corr["prior_task"]})
         # router: jev (default) | chat (transcript straight to answer
         # brain) | off (always clarify via choices) — Rust parity
+        sp.record("context", sp.mark_ns("stt"))
+        route_start = sp.now()
         router = cfg.get("brain", {}).get("router", "jev")
         agent_m = re.match(r"^\s*wisp\s+agent[:,.\s-]+(.*)$", text,
                            re.IGNORECASE)
@@ -752,13 +764,14 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
         else:
             resp = ask_jev(text, model, build_questions(harness),
                            context=context)
-        timing["jev_ms"] = round((time.monotonic() - t0) * 1000
-                                 - timing["record_ms"] - timing["stt_ms"])
+        sp.record("route", route_start)
+        sp.arm("first_token", sp.mark_ns("route"))
+        sp.arm("first_step", sp.mark_ns("route"))
         answers = resp.get("answers", {})
         _trace.emit(turn, "decision", "thought",
                     {"model": model, "answers": answers,
                      "latency_ms": resp.get("latency_ms")},
-                    timing["jev_ms"])
+                    sp.ms["context"] + sp.ms["route"])
         # transcript rescue: "open discord" with app=none shouldn't
         # clarify-prompt — the app name is right there in the words
         if answers.get("app", {}).get("choice", "none") in ("none", "", None):
@@ -837,9 +850,11 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
             session.append_turn(text, route="act", reply=q,
                                 result=result)
             notify(result)
+            sp.record("done", sp.rel0)
             log_decision({"ts": datetime.now(timezone.utc).isoformat(),
                           "transcript": text, "answers": answers,
-                          "result": result, "timing_ms": timing,
+                          "result": result,
+                          "timing_ms": sp.legacy_timing(),
                           "corrected": False})
             return 0
         if result == "ANSWERED":
@@ -851,6 +866,7 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
                 # cursor bubble renders it live. Throttled; incomplete
                 # trailing [POINT…/markdown-ish brackets hidden so the
                 # bubble never flashes raw tags.
+                sp.fire("first_token")
                 if state is None:
                     return
                 now = time.monotonic()
@@ -865,6 +881,7 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
                 reply = ask_chat(text, cfg, session_text,
                                  image_b64=shot_b64,
                                  on_delta=_delta if state else None)
+                sp.fire("first_token")  # non-streaming brains
                 _trace.emit(turn, "brain_call", "brain",
                             {"endpoint": "chat/completions",
                              "model": cfg.get("agent", {})
@@ -888,7 +905,9 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
             state.transition("speaking", result=result, answer=reply,
                              points=pts)
             _t = time.monotonic()
+            tts_start = sp.now()
             proc = speech.speak(reply, cfg)
+            sp.record("tts_start", tts_start)
             _trace.emit(turn, "speak", "tts",
                         {"cmd": cfg.get("voice", {}).get("cmd", ""),
                          "spawned": proc is not None},
@@ -907,20 +926,22 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
         except Exception:
             pass
         notify(result)
-        timing["act_ms"] = round((time.monotonic() - t0) * 1000)
+        sp.record("done", sp.rel0)
         log_decision({"ts": datetime.now(timezone.utc).isoformat(),
                       "transcript": text, "answers": answers, "result": result,
-                      "timing_ms": timing,
+                      "timing_ms": sp.legacy_timing(),
                       "corrected": bool(answers.get("corrected_by_user"))})
         return 0
     except Exception as e:
         _trace.emit(turn, "error", "error", {"error": str(e)})
         state.transition("error", error=str(e))
         log_decision({"ts": datetime.now(timezone.utc).isoformat(),
-                      "result": f"ERROR ({e})", "timing_ms": timing})
+                      "result": f"ERROR ({e})",
+                      "timing_ms": sp.legacy_timing()})
         notify(f"error: {e}")
         print(f"error: {e}", file=sys.stderr)
         return 1
     finally:
+        sp.close()
         if state:
             state.set_level(0.0)
