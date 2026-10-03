@@ -18,6 +18,16 @@ import urllib.error
 from . import config
 
 UA = "wisp/1.0"
+APP_URL = "https://github.com/duketopceo/wisp"
+APP_TITLE = "Wisp"
+
+
+def app_headers(url: str) -> dict:
+    """OpenRouter attribution headers — every call to openrouter.ai
+    must carry the app name (HTTP-Referer + X-Title) so usage/limits
+    report correctly."""
+    return {"HTTP-Referer": APP_URL, "X-Title": APP_TITLE} \
+        if "openrouter.ai" in (url or "") else {}
 
 _BUILTINS = {
     "openrouter": {"kind": "openai_compat",
@@ -63,6 +73,13 @@ def supports_vision(cfg: dict) -> bool:
 
 def supports_tools(cfg: dict) -> bool:
     return provider(cfg).get("tools", "false") == "true"
+
+
+def action_text(cfg: dict) -> bool:
+    """Provider speaks literal action text (UI-TARS: 'Action:
+    click(x,y)') instead of OpenAI tool_calls — the act loop parses
+    replies into the same dispatch."""
+    return provider(cfg).get("action_text", "false") == "true"
 
 
 def _probe(p: dict) -> None:
@@ -132,10 +149,7 @@ def chat(messages: list, cfg: dict, tools: list | None = None,
     headers = {}
     if key:
         headers["Authorization"] = f"Bearer {key}"
-    if p["name"] == "openrouter":
-        headers["HTTP-Referer"] = \
-            "https://github.com/duketopceo/wisp"
-        headers["X-Title"] = "Wisp"
+    headers.update(app_headers(p["base_url"]))
     body = {"model": p["model"], "messages": messages,
             "max_tokens": 600}
     if tools and supports_tools(cfg):
@@ -170,10 +184,7 @@ def chat_stream(messages: list, cfg: dict, on_delta=None,
     headers = {}
     if key:
         headers["Authorization"] = f"Bearer {key}"
-    if p["name"] == "openrouter":
-        headers["HTTP-Referer"] = \
-            "https://github.com/duketopceo/wisp"
-        headers["X-Title"] = "Wisp"
+    headers.update(app_headers(p["base_url"]))
     body = {"model": p["model"], "messages": messages,
             "max_tokens": 600, "stream": True}
     req = urllib.request.Request(

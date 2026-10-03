@@ -14,11 +14,25 @@ AUTO = {"pointer": {"mode": "auto", "backend": "auto"}}
 class PointerTest(unittest.TestCase):
 
     def test_parse_xy_screenshot(self):
+        # legacy path: raw physical px (no magick to normalize)
         with mock.patch("wisp.points.monitors",
                         return_value=[{"x": 0, "y": 0, "width": 1000,
-                                       "height": 500, "scale": 2}]):
+                                       "height": 500, "scale": 2}]), \
+             mock.patch("wisp.points.img_space_is_logical",
+                        return_value=False):
             # 200,100 px on a 2x monitor = 100,50 logical
             self.assertEqual(system._parse_xy("200,100"), (100, 50))
+
+    def test_parse_xy_normalized(self):
+        # normalized shot: image px == logical coords 1:1
+        from wisp import points as _p
+        _p.SHOT_ORIGIN = (0, 0)
+        with mock.patch("wisp.points.monitors",
+                        return_value=[{"x": 0, "y": 0, "width": 1000,
+                                       "height": 500, "scale": 2}]), \
+             mock.patch("wisp.points.img_space_is_logical",
+                        return_value=True):
+            self.assertEqual(system._parse_xy("200,100"), (200, 100))
 
     def test_parse_xy_logical(self):
         self.assertEqual(system._parse_xy("123,456@logical"), (123, 456))

@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>wisp — training arena</title>
+<style>
+  :root { --bg:#11121a; --panel:#1a1b26; --line:#2a2c44;
+          --tx:#c0caf5; --dim:#7a82b4; --ok:#9ece6a; --bad:#e05555;
+          --warn:#e0af68; --acc:#7aa2f7; --vio:#bb9af7; }
+  * { box-sizing:border-box; }
+  body { background:var(--bg); color:var(--tx); font:13px/1.45 system-ui;
+         margin:0; padding:14px 18px; }
+  header { display:flex; align-items:baseline; gap:14px;
+           border-bottom:1px solid var(--line); padding-bottom:10px; }
+  h1 { font-size:16px; margin:0; letter-spacing:.04em; }
+  h1 b { color:var(--vio); }
+  #clock { color:var(--dim); font-size:11px; }
+  .grid { display:grid; grid-template-columns:300px 1fr 320px; gap:12px;
+          margin-top:12px; height:calc(100vh - 70px); }
+  .card { background:var(--panel); border:1px solid var(--line);
+          border-radius:10px; padding:10px 12px; overflow:auto; }
+  .card h2 { font-size:11px; text-transform:uppercase; color:var(--dim);
+             margin:0 0 8px; letter-spacing:.08em; }
+  .stat { display:flex; justify-content:space-between; padding:3px 0;
+          border-bottom:1px dashed #23253a; }
+  .stat b { font-family:monospace; }
+  .ok { color:var(--ok); } .bad { color:var(--bad); }
+  .warn { color:var(--warn); } .dim { color:var(--dim); }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  td, th { padding:3px 6px; text-align:left; vertical-align:top;
+           border-bottom:1px solid #20223a; }
+  th { color:var(--dim); font-weight:600; font-size:10px;
+       text-transform:uppercase; position:sticky; top:0;
+       background:var(--panel); }
+  .chip { display:inline-block; padding:0 7px; border-radius:9px;
+          font-size:10px; font-weight:700; }
+  .chip.ok { background:#1d2b16; color:var(--ok); }
+  .chip.bad { background:#33161b; color:var(--bad); }
+  .chip.cand { background:#22263f; color:var(--acc); }
+  .chip.dem { background:#2b2216; color:var(--warn); }
+  .pill { color:var(--dim); font-family:monospace; font-size:10px; }
+  .bar { height:8px; background:var(--acc); border-radius:4px;
+         display:inline-block; vertical-align:middle; }
+  #trend { width:100%; height:70px; }
+  .bankrow { padding:5px 0; border-bottom:1px dashed #23253a; }
+  .bankrow .t { font-size:11px; }
+  .feedrow { cursor:pointer; }
+  .feedrow .steps { display:none; font-family:monospace;
+                    font-size:10px; color:var(--dim); padding:4px 0
+                    4px 12px; white-space:pre-wrap; }
+  .feedrow.open .steps { display:block; }
+  .wastebar { display:flex; align-items:center; gap:8px;
+              margin:2px 0; }
+  .wastebar .n { width:120px; font-size:11px; }
+  .sels { display:flex; gap:6px; margin-left:auto; }
+  .sels span { cursor:pointer; padding:1px 8px; border-radius:8px;
+               border:1px solid var(--line); font-size:11px;
+               color:var(--dim); }
+  .sels span.on { color:var(--tx); border-color:var(--acc); }
+</style>
+</head>
+<body>
+<header>
+  <h1><b>wisp</b> training arena</h1>
+  <span id="clock" class="dim">—</span>
+  <div class="sels" id="surfsel"></div>
+  <div class="sels" id="mdlsel"></div>
+</header>
+<div class="grid">
+  <div class="card">
+    <h2>Surface stats</h2>
+    <div id="stats">…</div>
+    <h2 style="margin-top:14px">Waste breakdown</h2>
+    <div id="waste" class="dim">—</div>
+    <h2 style="margin-top:14px">Efficiency trend</h2>
+    <canvas id="trend"></canvas>
+  </div>
+  <div class="card">
+    <h2>Live run feed <span class="dim">(click a row for steps)</span></h2>
+    <table><thead><tr>
+      <th></th><th>task</th><th>surface</th><th>model</th><th>judge</th>
+      <th style="text-align:right">ms</th>
+    </tr></thead><tbody id="feed"></tbody></table>
+  </div>
+  <div class="card">
+    <h2>Skill bank <span class="dim">auto-graduation ≥3 streak · eff≥0.9</span></h2>
+    <div id="bank" class="dim">—</div>
+  </div>
+</div>
+<script>
+let SURF = '', MODEL = '';
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+async function j(u) { return (await fetch(u)).json(); }
+
+function chip(ok) {
+  return ok === true  ? '<span class="chip ok">PASS</span>'
+       : ok === false ? '<span class="chip bad">FAIL</span>'
+       : '<span class="chip">—</span>';
+}
+function jchip(s) {
+  return s === true  ? '<span class="chip ok">yes</span>'
+       : s === false ? '<span class="chip bad">no</span>'
+       : s === null || s === undefined ? '<span class="pill">?</span>'
+       : '<span class="chip cand">partial</span>';
+}
+function effbar(e) {
+  if (e == null) return '<span class="pill">—</span>';
+  const w = Math.round(e * 56);
+  const c = e >= .9 ? 'var(--ok)' : e >= .6 ? 'var(--warn)'
+                                        : 'var(--bad)';
+  return `<span class="bar" style="width:${w}px;background:${c}">
+          </span> <span class="pill">${e.toFixed(2)}</span>`;
+}
+
+async function refresh() {
+  const [stats, feed, bank] = await Promise.all(
+    [j('/api/stats'), j('/api/feed'), j('/api/bank')]);
+  // surface filter chips
+  const surfs = Object.keys(stats.surfaces || {});
+  $('surfsel').innerHTML =
+    `<span class="${SURF===''?'on':''}" onclick="SURF='';refresh()">all</span>`
+    + surfs.map(s =>
+      `<span class="${SURF===s?'on':''}"
+             onclick="SURF='${esc(s)}';refresh()">${esc(s)}</span>`
+    ).join('');
+  const mdls = Object.keys(stats.models || {});
+  $('mdlsel').innerHTML = mdls.length ?
+    `<span class="${MODEL===''?'on':''}" onclick="MODEL='';refresh()">all models</span>`
+    + mdls.map(m =>
+      `<span class="${MODEL===m?'on':''}"
+             onclick="MODEL='${esc(m)}';refresh()">${esc(m)}</span>`
+    ).join('') : '';
+  const runs = feed.filter(r => (!SURF || r.surface === SURF)
+                             && (!MODEL || r.model === MODEL));
+  // stats card
+  $('stats').innerHTML =
+    `<div class="stat"><span>total runs</span><b>${stats.runs}</b></div>`
+    + Object.entries(stats.surfaces || {}).map(([k, v]) =>
+      `<div class="stat"><span>${esc(k)}</span>
+       <b><span class="${v.pass===v.runs?'ok':v.pass?'':'bad'}">
+       ${v.pass}/${v.runs}</span>${v.efficiency!=null?
+       ' · eff '+v.efficiency:''}</b></div>`).join('')
+    + Object.entries(stats.models || {}).map(([k, v]) =>
+      `<div class="stat"><span>model ${esc(k)}</span>
+       <b><span class="${v.pass===v.runs?'ok':v.pass?'':'bad'}">
+       ${v.pass}/${v.runs}</span>${v.avg_ms!=null?
+       ' · '+v.avg_ms+'ms':''}</b></div>`).join('')
+    + `<div class="stat"><span>bank</span><b class="dim">${
+       Object.entries(stats.bank||{}).map(([k,v])=>`${k}:${v}`)
+             .join(' ')||'—'}</b></div>`;
+  // waste histogram
+  const wmax = Math.max(1, ...Object.values(stats.waste || {}));
+  $('waste').innerHTML = Object.entries(stats.waste || {})
+    .sort((a,b)=>b[1]-a[1]).map(([k,v]) =>
+      `<div class="wastebar"><span class="n">${esc(k)}</span>
+       <span class="bar" style="width:${Math.round(v/wmax*120)}px;
+             background:var(--warn)"></span>
+       <span class="pill">${v}</span></div>`).join('') || '—';
+  // efficiency sparkline
+  const cv = $('trend'), cx = cv.getContext('2d');
+  cv.width = cv.clientWidth * 2; cv.height = 140;
+  const effs = runs.map(r => (r.judge||{}).efficiency)
+                   .filter(e => e != null);
+  cx.clearRect(0, 0, cv.width, cv.height);
+  if (effs.length > 1) {
+    cx.strokeStyle = '#7aa2f7'; cx.lineWidth = 2;
+    cx.beginPath();
+    effs.forEach((e, i) => {
+      const x = i / (effs.length - 1) * (cv.width - 8) + 4;
+      const y = cv.height - 8 - e * (cv.height - 16);
+      i ? cx.lineTo(x, y) : cx.moveTo(x, y);
+    });
+    cx.stroke();
+  }
+  // feed — newest first
+  $('feed').innerHTML = runs.slice().reverse().map((r, i) => {
+    const g = r.judge || {};
+    const steps = (r.steps || []).map(s =>
+      `${esc(s.tool)} ${esc(s.arg)} → ${esc(s.result)}`).join('\n');
+    return `<tr class="feedrow" onclick="this.classList.toggle('open')">
+      <td>${chip(r.verified)}</td>
+      <td>${esc(r.task)}<div class="steps">${esc(steps)}</div></td>
+      <td class="dim">${esc(r.surface||'')}</td>
+      <td class="dim">${esc(r.model||'')}</td>
+      <td>${jchip(g.success)} ${effbar(g.efficiency)}
+          ${g.waste && g.waste!=='none' ?
+            `<span class="pill warn">${esc(g.waste)}</span>` : ''}</td>
+      <td class="pill" style="text-align:right">${r.ms||''}</td>
+    </tr>`;
+  }).join('');
+  // bank
+  const ord = {graduated: 0, candidate: 1, demoted: 2};
+  $('bank').innerHTML = bank.slice().sort(
+    (a,b) => (ord[a.status]??9) - (ord[b.status]??9)
+             || b.streak - a.streak).map(e => {
+    const c = e.status==='graduated' ? 'ok'
+            : e.status==='demoted' ? 'dem' : 'cand';
+    const em = e.runs ? (e.eff_sum/e.runs) : 0;
+    return `<div class="bankrow">
+      <span class="chip ${c}">${esc(e.status)}</span>
+      <span class="pill">streak ${e.streak} · eff ${em.toFixed(2)} ·
+            ${esc(e.surface||'')}</span>
+      <div class="t">${esc(e.task)}</div></div>`;
+  }).join('') || 'empty — run the lab';
+  $('clock').textContent = new Date().toLocaleTimeString();
+}
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

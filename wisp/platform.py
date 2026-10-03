@@ -169,7 +169,7 @@ def sampler_cmd(seconds: float | None) -> list | None:
     return None
 
 
-def screenshot_cmd(out: Path) -> list | None:
+def screenshot_cmd(out: Path, output: str | None = None) -> list | None:
     o = current()
     if o == "linux":
         dt = desktop()
@@ -186,7 +186,13 @@ def screenshot_cmd(out: Path) -> list | None:
                     return [b, "-f", str(out)]
                 if b == "spectacle":
                     return [b, "-b", "-n", "-o", str(out)]
-                return [b, str(out)]
+                cmd = [b, str(out)]
+                # grim captures every output; `-o` limits to one —
+                # needed for headless/virtual outputs and panels whose
+                # screencopy stalls when powered off (lid closed).
+                if output and b == "grim":
+                    cmd = [b, "-o", output, str(out)]
+                return cmd
         return None
     if o == "macos":
         return (["screencapture", "-x", str(out)]
@@ -606,17 +612,25 @@ def active_window() -> dict:
 
 
 def pointer_backend(cfg: dict | None = None) -> str | None:
-    """Pointer injector: 'ydotool' | 'wlrctl' | None.
+    """Pointer injector: 'hyprcursor' | 'ydotool' | 'wlrctl' | None.
 
-    [pointer] backend = "ydotool"|"wlrctl"|"none"|"auto" (default).
-    auto probes PATH on Linux; macOS/Windows injection isn't built —
+    [pointer] backend = "hyprcursor"|"ydotool"|"wlrctl"|"none"|"auto"
+    (default). hyprcursor positions via Hyprland's own dispatcher —
+    exact logical coords, immune to the uinput-scale mismatch ydotool's
+    absolute move shows on scaled outputs — and clicks via ydotool.
+    auto prefers it on Hyprland; macOS/Windows injection isn't built —
     returns None so callers degrade to guide mode.
     """
     want = (cfg or {}).get("pointer", {}).get("backend", "auto")
+    if want == "hyprcursor":
+        return want if _which("hyprctl") and _which("ydotool") \
+            else None
     if want in ("ydotool", "wlrctl"):
         return want if _which(want) else None
     if want == "none" or current() != "linux":
         return None
+    if _which("hyprctl") and _which("ydotool"):
+        return "hyprcursor"
     for b in ("ydotool", "wlrctl"):
         if _which(b):
             return b
@@ -626,8 +640,13 @@ def pointer_backend(cfg: dict | None = None) -> str | None:
 def pointer_cmds(x: int, y: int, backend: str,
                  click: bool = True) -> list:
     """Argv list moving the pointer to logical (x,y) and optionally
-    clicking. Logical = Hyprland compositor coords, which both ydotool
-    and wlrctl take directly."""
+    clicking. Logical = Hyprland compositor coords."""
+    if backend == "hyprcursor":
+        cmds = [["hyprctl", "dispatch",
+                 f"hl.dsp.cursor.move({{x={x},y={y}}})"]]
+        if click:
+            cmds.append(["ydotool", "click", "0xC0"])
+        return cmds
     if backend == "ydotool":
         cmds = [["ydotool", "mousemove", "--absolute",
                  "-x", str(x), "-y", str(y)]]

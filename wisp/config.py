@@ -28,7 +28,8 @@ HARNESS_FILE = CFG_DIR / "harness.json"
 WHISPER_HOME = HOME / "src" / "whisper.cpp"
 WHISPER_BIN = WHISPER_HOME / "build" / "bin" / "whisper-cli"
 
-JEV_ENDPOINT = "https://openrouter.ai/api/alpha/decisions"
+JEV_ENDPOINT = os.environ.get(
+    "WISP_JEV_ENDPOINT", "https://openrouter.ai/api/alpha/decisions")
 CHAT_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 
 DEFAULT_CONFIG = """\
@@ -165,6 +166,25 @@ kind = "openai_compat"   # mlx-lm server, probed on /v1/models
 base_url = "http://localhost:8080/v1"
 vision = "false"
 tools = "false"
+
+# Local GPU models via llama.cpp Vulkan servers (uncomment to use).
+# `wispd` reads these like any other brain provider; the clicklab
+# matrix takes them as `--models llama_local:ornith,uitars:ui-tars`.
+# [brain.llama_local]
+# kind = "openai_compat"   # Ornith-35B + mmproj on llama-server :8080
+# base_url = "http://127.0.0.1:8080/v1"
+# vision = "true"
+# tools = "true"
+#
+# [brain.uitars]
+# kind = "openai_compat"   # UI-TARS-7B on llama-server :8081 — emits
+# base_url = "http://127.0.0.1:8081/v1"   # 'Action: click(x,y)' text
+# vision = "true"                          # instead of tool_calls
+# tools = "false"
+# action_text = "true"
+#
+# Jev can also run locally: point WISP_JEV_ENDPOINT at a jev-shim
+# (e.g. http://127.0.0.1:8931/decisions → llama-jev qwen3-4b :8091).
 
 [debug]
 # full-fidelity event stream to ~/.local/share/wisp/trace.jsonl —
