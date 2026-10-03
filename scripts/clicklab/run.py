@@ -191,12 +191,14 @@ def main():
         print(f"[clicklab] {e}")
         sys.exit(2)
     print(f"[clicklab] page id {page}")
-    focus_browseros()
-    time.sleep(1)
+    dom = "--dom" in sys.argv
+    if not dom:
+        focus_browseros()
+        time.sleep(1)
 
     cfg = config.load_config()
     cfg.setdefault("screen", {})
-    if "--dom" in sys.argv:
+    if dom:
         # DOM-schematic mode: screenshots are synthesized from element
         # rects — works with the panel powered off (lid closed)
         cfg["screen"]["dom_page"] = page
@@ -250,7 +252,8 @@ def main():
                          "document.getElementById('scroller')"
                          ".scrollTop=0;"
                          "document.activeElement.blur();return 'r'"})
-        focus_browseros()
+        if not dom:
+            focus_browseros()
         t0 = time.time()
         run_steps: list = []
         verdict = act.run_act_loop(task, cfg,

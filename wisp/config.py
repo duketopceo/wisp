@@ -28,7 +28,8 @@ HARNESS_FILE = CFG_DIR / "harness.json"
 WHISPER_HOME = HOME / "src" / "whisper.cpp"
 WHISPER_BIN = WHISPER_HOME / "build" / "bin" / "whisper-cli"
 
-JEV_ENDPOINT = "https://openrouter.ai/api/alpha/decisions"
+JEV_ENDPOINT = os.environ.get(
+    "WISP_JEV_ENDPOINT", "https://openrouter.ai/api/alpha/decisions")
 CHAT_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 
 DEFAULT_CONFIG = """\
