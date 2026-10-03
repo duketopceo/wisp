@@ -1,0 +1,105 @@
+"""Shared UI copy (DESIGN-v2 5.9): one source for every surface.
+
+Status words and tones, result-prefix translations and choice labels live
+here. scripts/assets/gen_copy.py writes the same tables into
+shell-plugin/lib/copy.js for the QML surfaces; tests/test_copy.py fails if
+that file is stale. Rules are data (regex + template) so the JS side only
+interprets them and cannot drift.
+
+Copy rules: lowercase status words, human verbs, no protocol strings, no
+em-dashes. Raw result text is kept as `detail` for a details disclosure.
+"""
+import re
+
+# Tone names are Wisp token names (wisp/theme.py TOKENS) except "muted",
+# which maps to inkMuted. `fail` is error only; `needsYou` is waiting on
+# the user only.
+TONES = ("ember", "needsYou", "fail", "ok", "muted")
+
+# status -> (word, tone)
+STATUS = {
+    "idle": ("ready", "muted"),
+    "listening": ("listening", "ember"),
+    "transcribing": ("hearing you", "ember"),
+    "deciding": ("thinking", "ember"),
+    "acting": ("working", "ember"),
+    "speaking": ("speaking", "ember"),
+    "awaiting_choice": ("your call", "needsYou"),
+    "suggestion": ("idea", "ember"),
+    "done": ("done", "ok"),
+    "error": ("that failed", "fail"),
+    "offline": ("offline", "muted"),
+}
+UNKNOWN_STATUS = "offline"
+
+# (pattern, text, state). Pattern is matched at the start of the result;
+# "{1}" in text is the first group, cleaned of dashes. state is a creature
+# state name or None. First match wins; no match passes the text through.
+RESULT_RULES = (
+    (r"^ASK_USER:?\s+(.*)$", "{1}", None),
+    (r"^BLOCKED \(tool .* needs confirmation\)", "blocked: needs your ok",
+     None),
+    (r"^BLOCKED \(risk=", "blocked: too risky to do on my own", None),
+    (r"^BLOCKED \(shell tool", "blocked: shell commands are off", None),
+    (r"^BLOCKED \((.*)\)$", "blocked: {1}", None),
+    (r"^BLOCKED", "blocked", None),
+    (r"^SKIP(PED)? \(launch( route)? but no app identified\)",
+     "didn't catch which app", "didnt_understand"),
+    (r"^SKIP(PED)? \(unknown app", "didn't recognize that app",
+     "didnt_understand"),
+    (r"^SKIP(PED)? \((nothing to type|empty command|empty agent task"
+     r"|empty pattern)\)", "didn't catch what to do", "didnt_understand"),
+    (r"^SKIP(PED)? \(.* declined by user\)", "skipped, you said no", None),
+    (r"^SKIP(PED)? \(.* needs user confirmation\)", "needs your ok", None),
+    (r"^SKIP(PED)? \(shell disabled", "shell commands are off", None),
+    (r"^SKIP(PED)?\b", "couldn't do that", None),
+    (r"^(ERROR|FAIL|FAILED|REFUSED)\b", "that failed", None),
+    (r"^(ABORTED|CANCELLED)\b", "stopped", None),
+)
+
+# choice pick "action:<verb>" -> label
+ACTION_VERBS = {
+    "launch": "open it", "run_shell": "run a command",
+    "answer": "just answer", "act": "do it for me",
+    "agent": "send to agent", "dictation": "dictate it",
+}
+
+_DASH = re.compile(r"\s*[—–]\s*")
+
+
+def _undash(s: str) -> str:
+    return _DASH.sub(": ", s).strip()
+
+
+def status_word(status: str) -> str:
+    return STATUS.get(status, STATUS[UNKNOWN_STATUS])[0]
+
+
+def status_tone(status: str) -> str:
+    return STATUS.get(status, STATUS[UNKNOWN_STATUS])[1]
+
+
+def translate_result(raw: str) -> dict:
+    """Result text -> {text, state, detail}. detail is the raw string when
+    it was translated (for a details disclosure), else ""."""
+    raw = raw or ""
+    for pattern, text, state in RESULT_RULES:
+        m = re.match(pattern, raw)
+        if m:
+            if "{1}" in text:
+                text = text.replace("{1}", _undash(m.group(1) or ""))
+            return {"text": text, "state": state, "detail": raw}
+    return {"text": raw, "state": None, "detail": ""}
+
+
+def pick_label(pick: str) -> str:
+    """Humanize a choice pick string for a chip label."""
+    p = re.sub(r"^suggestion:", "", pick or "")
+    kind, sep, val = p.partition(":")
+    if not sep:
+        return _undash(p)
+    if kind == "app":
+        return "none of these" if val == "none" else val
+    if kind == "action":
+        return ACTION_VERBS.get(val) or val.replace("_", " ")
+    return _undash(val)
