@@ -365,6 +365,16 @@ def _run_suggestion(st, cfg, ctl, routine: str) -> None:
 _HEALTH = None  # health.HealthRegistry while the daemon runs (U7)
 
 
+def _hypr_health() -> dict:
+    """Registry hook for the Hyprland socket (U5). Re-probes, since
+    hypr.health() only reports the last remembered state."""
+    from wisp import hypr, platform
+    if not platform.uses_hypr():
+        return {"ok": True, "code": None, "skipped": True}
+    hypr.probe()
+    return hypr.health()
+
+
 def run_daemon(cfg: dict) -> int:
     global _DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL, _HEALTH
     from wisp import skills, theme, memory as _memory
@@ -388,6 +398,7 @@ def run_daemon(cfg: dict) -> int:
     if cfg.get("health", {}).get("enabled", "true") == "true":
         from wisp import brain as _brain, health as _health
         _HEALTH = _health.HealthRegistry(cfg, bus=st)
+        _HEALTH.register("hypr", _hypr_health)
         _brain.HEALTH = _HEALTH
         _HEALTH.start()
     server = ipc.Daemon(_handler(st, cfg, ctl))

@@ -407,6 +407,42 @@ def _parse_xy(arg: str):
     return pts[0]["x"], pts[0]["y"]
 
 
+def _run_cmds(cmds: list) -> bool:
+    for c in cmds:
+        try:
+            r = _cancel.run(c, capture_output=True, env=hypr_env(),
+                            timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            return False
+        if r.returncode != 0:
+            return False
+    return True
+
+
+def _drive(x: int, y: int, backend: str, do_click: bool) -> bool:
+    """Pointer precedence: cua (when it is the live backend) always
+    wins, so the user's real cursor is never touched; otherwise a
+    move-only goes over the Hyprland socket eval (no fork); everything
+    else runs the backend's argv (hyprcursor+ydotool / ydotool / wlrctl).
+    """
+    from .. import platform
+    if backend != "cua" and not do_click and platform.uses_hypr() \
+            and hypr.run_lua(hypr.cursor_move(x, y)):
+        return True
+    return _run_cmds(platform.pointer_cmds(x, y, backend, click=do_click))
+
+
+def _move_fallback(x: int, y: int, cfg: dict | None) -> bool:
+    """cua move failed: hypr eval (if on Hyprland), then the next
+    backend in auto order (hyprcursor -> ydotool -> wlrctl)."""
+    from .. import platform
+    if platform.uses_hypr() and hypr.run_lua(hypr.cursor_move(x, y)):
+        return True
+    nxt = platform.pointer_backend(cfg, exclude=("cua",))
+    return bool(nxt) and _run_cmds(
+        platform.pointer_cmds(x, y, nxt, click=False))
+
+
 def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
     """click/move shared core. Returns 'GUIDE(x,y) label' when the
     pointer is user-driven (mode=guide or no backend) — the act loop
@@ -449,15 +485,14 @@ def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
     mode = (cfg or {}).get("pointer", {}).get("mode", "guide")
     if mode == "drive" and backend:
         verb = "click" if do_click else "move"
-        if not do_click and platform.uses_hypr() \
-                and hypr.run_lua(hypr.cursor_move(x, y)):
-            return f"MOVED({x},{y})"  # socket eval, no process fork
-        cmds = platform.pointer_cmds(x, y, backend, click=do_click)
-        for c in cmds:
-            r = _cancel.run(c, capture_output=True, env=hypr_env(),
-                               timeout=10)
-            if r.returncode != 0:
-                return f"SKIP ({verb} failed via {backend})"
+        ok = _drive(x, y, backend, do_click)
+        if not ok and backend == "cua" and not do_click:
+            # move is idempotent: fall through the rest of the chain.
+            # A failed cua click is NOT retried elsewhere (double-click
+            # risk); the act loop re-observes instead.
+            ok = _move_fallback(x, y, cfg)
+        if not ok:
+            return f"SKIP ({verb} failed via {backend})"
         return f"{'CLICKED' if do_click else 'MOVED'}({x},{y})"
     # guide mode — ghost cursor carries the intent, the user clicks
     verb = "GUIDE" if do_click else "MOVE-GUIDE"

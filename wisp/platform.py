@@ -604,7 +604,8 @@ def _cua_live() -> bool:
         os.path.expanduser("~/.cache/cua-driver/cua-driver.sock"))
 
 
-def pointer_backend(cfg: dict | None = None) -> str | None:
+def pointer_backend(cfg: dict | None = None,
+                    exclude: tuple = ()) -> str | None:
     """Pointer injector: 'cua' | 'hyprcursor' | 'ydotool' | 'wlrctl'
     | None.
 
@@ -619,6 +620,16 @@ def pointer_backend(cfg: dict | None = None) -> str | None:
     returns None so callers degrade to guide mode.
     """
     want = (cfg or {}).get("pointer", {}).get("backend", "auto")
+    if exclude:
+        # fallback lookup: first usable backend outside `exclude`,
+        # in auto order, ignoring an explicit [pointer] backend pin
+        if current() != "linux":
+            return None
+        if "hyprcursor" not in exclude and _which("hyprctl") \
+                and _which("ydotool"):
+            return "hyprcursor"
+        return next((b for b in ("ydotool", "wlrctl")
+                     if b not in exclude and _which(b)), None)
     if want == "cua":
         return "cua" if _cua_live() else None
     if want == "hyprcursor":
