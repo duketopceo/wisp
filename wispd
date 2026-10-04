@@ -392,6 +392,8 @@ def run_daemon(cfg: dict) -> int:
         from wisp import brain as _brain, health as _health
         _HEALTH = _health.HealthRegistry(cfg, bus=st)
         _HEALTH.register("hypr", _hypr_health)
+        from wisp import probes_cua as _pc
+        _pc.register(_HEALTH, cfg)
         _brain.HEALTH = _HEALTH
         _HEALTH.start()
     server = ipc.Daemon(_handler(st, cfg, ctl), bus=st)
