@@ -1,0 +1,1 @@
+{"status": "acting", "transcript": "rename the project folder", "answer": "", "result": "", "choices": [], "points": [], "steps": ["focus Files -> ok", "click rename"], "level": 0.0, "turn_id": "t-stale", "seq": 11, "contract_version": 1, "_fixture": {"stale": true}}
