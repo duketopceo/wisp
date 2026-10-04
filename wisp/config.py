@@ -122,6 +122,22 @@ kill_switch = "false"
 confirm = "tier"
 audit = "true"
 
+[ground]
+# UI grounding adapter (wisp/grounding.py, W13): click/move target name ->
+# screen point. Chain order; a11y = cua get_window_state tree (when the
+# driver is up), uitars = local llama-server (loopback only, screenshots
+# never leave the box), jev = the Decision-Agent patch fallback.
+providers = "a11y,uitars,jev"
+# candidates below this are re-observed once, then refused (never clicked)
+min_confidence = "0.5"
+# shared budget for the fast providers (P7: act first step 1.2 s)
+budget_ms = "1200"
+# the slow vision fallback gets its own timeout
+fallback_timeout_ms = "5000"
+# uitars_url = "http://127.0.0.1:8081"   # default: [health] uitars or this
+# uitars_coords = "px"                    # px | rel1000
+# a11y_frame = "global"                   # global | window (element frames)
+
 [traj]
 # episodic memory for the act loop: every run is recorded and similar
 # prior runs (paths + wrong branches) are injected as context.
