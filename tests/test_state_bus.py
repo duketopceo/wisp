@@ -120,12 +120,15 @@ class CoalesceTest(BusCase):
         bus = self.make(rate_hz=12)
         t = bus.begin_turn()
         w0 = bus.write_count
+        t0 = time.monotonic()
         for i in range(100):
             bus.publish(t, level=(i + 1) / 100)
             time.sleep(0.01)
+        elapsed = time.monotonic() - t0   # >= 1 s; longer on a loaded box
         time.sleep(0.25)
-        self.assertLessEqual(bus.write_count - w0, 13)
-        self.assertGreaterEqual(bus.write_count - w0, 5)
+        writes = bus.write_count - w0
+        self.assertLessEqual(writes, int(12 * elapsed) + 1)   # 13 at 1.0 s
+        self.assertGreaterEqual(writes, 5)
         self.assertAlmostEqual(self.disk()["level"], 1.0)
 
     def test_noncoalesced_publish_flushes_pending_level(self):
