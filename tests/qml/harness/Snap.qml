@@ -53,7 +53,9 @@ Window {
     svc.tokens = c.tokens;
     svc.themeMode = c.theme;
     svc.load(c.snapshot, c.mods);
-    var comp = Qt.createComponent("../../../shell-plugin/components/" + c.component + ".qml");
+    // a scene may name a harness-only composition (relative to this file)
+    var comp = Qt.createComponent(c.source ? c.source
+      : "../../../shell-plugin/components/" + c.component + ".qml");
     if (comp.status !== Component.Ready) {
       fail(c.id + " " + comp.errorString());
       return null;

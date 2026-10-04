@@ -26,7 +26,9 @@ Item {
 
   readonly property var tk: service ? service.tokens : ({})
   readonly property string motionMode: motion !== "" ? motion : (service ? service.motionMode : "off")
-  readonly property var target: service ? service.cuaTarget : null
+  // the host may feed a guide-derived target when no cua.target is live
+  property var target: service ? service.cuaTarget : null
+  property real refreshHz: 60
 
   property bool arrived: true
   property real progress: 1
@@ -157,6 +159,7 @@ Item {
       size: M.size.creaturePill
       forceState: root.cstate === "returning" ? "idle" : "acting"
       motion: root.motionMode
+      refreshHz: root.refreshHz
     }
 
     Rectangle {
