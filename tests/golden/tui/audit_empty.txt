@@ -1,0 +1,3 @@
+audit
+  one row per guarded cua call. Typed text is never stored.
+  no guarded calls yet

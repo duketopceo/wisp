@@ -1294,5 +1294,609 @@
     ]
    }
   }
+ },
+ "HealthView": {
+  "mode": "variant",
+  "pad": 10,
+  "width": 560,
+  "scale2": true,
+  "variants": {
+   "all_ok": {
+    "_state": "idle",
+    "_fixture": {
+     "patch": {
+      "health": {
+       "jev": {
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z",
+        "latency_ms": 12,
+        "code": null
+       },
+       "brain_ollama": {
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z",
+        "latency_ms": 41,
+        "code": null
+       },
+       "stt": {
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z",
+        "latency_ms": 9,
+        "code": null
+       },
+       "cua": {
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z",
+        "latency_ms": 3,
+        "code": null
+       },
+       "spend": {
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z",
+        "latency_ms": 0,
+        "code": null
+       }
+      },
+      "spend": {
+       "today_usd": 0.42,
+       "cap_usd": 2.0,
+       "month_usd": 6.1,
+       "monthly_cap_usd": 20.0,
+       "blocked": false
+      }
+     }
+    },
+    "cua": {
+     "state": "running",
+     "fix": null,
+     "kill": false,
+     "dry_run": false,
+     "version": "0.4.2",
+     "live": true,
+     "mode": "guide"
+    },
+    "spendModels": [
+     {
+      "model": "openrouter/llama-4-maverick",
+      "calls": 14,
+      "usd": 0.31
+     },
+     {
+      "model": "openrouter/gemini-2.5-flash",
+      "calls": 9,
+      "usd": 0.11
+     }
+    ]
+   },
+   "endpoint_down": {
+    "_state": "idle",
+    "_fixture": {
+     "patch": {
+      "health": {
+       "jev": {
+        "ok": false,
+        "since": "2026-10-04T08:00:00Z",
+        "latency_ms": null,
+        "code": "jev_down"
+       },
+       "brain_ollama": {
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z",
+        "latency_ms": 41,
+        "code": null
+       },
+       "stt": {
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z",
+        "latency_ms": 9,
+        "code": null
+       },
+       "cua": {
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z",
+        "latency_ms": 3,
+        "code": null
+       },
+       "spend": {
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z",
+        "latency_ms": 0,
+        "code": null
+       }
+      },
+      "spend": {
+       "today_usd": 0.42,
+       "cap_usd": 2.0,
+       "month_usd": 6.1,
+       "monthly_cap_usd": 20.0,
+       "blocked": false
+      }
+     }
+    },
+    "cua": {
+     "state": "running",
+     "fix": null,
+     "kill": false,
+     "dry_run": false,
+     "version": "0.4.2",
+     "live": true,
+     "mode": "guide"
+    },
+    "spendModels": [
+     {
+      "model": "openrouter/llama-4-maverick",
+      "calls": 14,
+      "usd": 0.31
+     },
+     {
+      "model": "openrouter/gemini-2.5-flash",
+      "calls": 9,
+      "usd": 0.11
+     }
+    ]
+   },
+   "cua_down": {
+    "_state": "idle",
+    "_fixture": {
+     "patch": {
+      "health": {
+       "jev": {
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z",
+        "latency_ms": 12,
+        "code": null
+       },
+       "brain_ollama": {
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z",
+        "latency_ms": 41,
+        "code": null
+       },
+       "stt": {
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z",
+        "latency_ms": 9,
+        "code": null
+       },
+       "cua": {
+        "ok": false,
+        "since": "2026-10-04T08:00:00Z",
+        "latency_ms": null,
+        "code": "cua_down"
+       },
+       "spend": {
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z",
+        "latency_ms": 0,
+        "code": null
+       }
+      },
+      "spend": {
+       "today_usd": 0.42,
+       "cap_usd": 2.0,
+       "month_usd": 6.1,
+       "monthly_cap_usd": 20.0,
+       "blocked": false
+      }
+     }
+    },
+    "cua": {
+     "state": "installed_not_running",
+     "fix": "systemctl --user start cua-driver.service",
+     "kill": false,
+     "dry_run": false,
+     "version": "0.4.2",
+     "live": false,
+     "mode": "guide"
+    },
+    "spendModels": [
+     {
+      "model": "openrouter/llama-4-maverick",
+      "calls": 14,
+      "usd": 0.31
+     },
+     {
+      "model": "openrouter/gemini-2.5-flash",
+      "calls": 9,
+      "usd": 0.11
+     }
+    ]
+   },
+   "budget_blocked": {
+    "_state": "idle",
+    "_fixture": {
+     "patch": {
+      "health": {
+       "jev": {
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z",
+        "latency_ms": 12,
+        "code": null
+       },
+       "brain_ollama": {
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z",
+        "latency_ms": 41,
+        "code": null
+       },
+       "stt": {
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z",
+        "latency_ms": 9,
+        "code": null
+       },
+       "cua": {
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z",
+        "latency_ms": 3,
+        "code": null
+       },
+       "spend": {
+        "ok": false,
+        "since": "2026-10-04T08:00:00Z",
+        "latency_ms": null,
+        "code": "budget_exceeded"
+       }
+      },
+      "spend": {
+       "today_usd": 2.0,
+       "cap_usd": 2.0,
+       "month_usd": 6.1,
+       "monthly_cap_usd": 20.0,
+       "blocked": true
+      }
+     }
+    },
+    "cua": {
+     "state": "running",
+     "fix": null,
+     "kill": false,
+     "dry_run": false,
+     "version": "0.4.2",
+     "live": true,
+     "mode": "guide"
+    },
+    "spendModels": [
+     {
+      "model": "openrouter/llama-4-maverick",
+      "calls": 14,
+      "usd": 0.31
+     },
+     {
+      "model": "openrouter/gemini-2.5-flash",
+      "calls": 9,
+      "usd": 0.11
+     }
+    ]
+   },
+   "stale": {
+    "_state": "idle",
+    "_fixture": {
+     "patch": {
+      "health": {
+       "jev": {
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z",
+        "latency_ms": 12,
+        "code": null
+       },
+       "brain_ollama": {
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z",
+        "latency_ms": 41,
+        "code": null
+       },
+       "stt": {
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z",
+        "latency_ms": 9,
+        "code": null
+       },
+       "cua": {
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z",
+        "latency_ms": 3,
+        "code": null
+       },
+       "spend": {
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z",
+        "latency_ms": 0,
+        "code": null
+       }
+      },
+      "spend": {
+       "today_usd": 0.42,
+       "cap_usd": 2.0,
+       "month_usd": 6.1,
+       "monthly_cap_usd": 20.0,
+       "blocked": false
+      }
+     },
+     "stale": true
+    },
+    "cua": {
+     "state": "running",
+     "fix": null,
+     "kill": false,
+     "dry_run": false,
+     "version": "0.4.2",
+     "live": true,
+     "mode": "guide"
+    },
+    "spendModels": [
+     {
+      "model": "openrouter/llama-4-maverick",
+      "calls": 14,
+      "usd": 0.31
+     },
+     {
+      "model": "openrouter/gemini-2.5-flash",
+      "calls": 9,
+      "usd": 0.11
+     }
+    ]
+   },
+   "offline": {
+    "_state": "idle",
+    "_fixture": {
+     "patch": {
+      "health": {},
+      "spend": {}
+     },
+     "offline": true
+    },
+    "cua": null,
+    "spendModels": []
+   }
+  }
+ },
+ "SpendView": {
+  "mode": "variant",
+  "pad": 10,
+  "width": 560,
+  "scale2": true,
+  "variants": {
+   "ok": {
+    "_state": "idle",
+    "_fixture": {
+     "patch": {
+      "spend": {
+       "today_usd": 0.42,
+       "cap_usd": 2.0,
+       "month_usd": 6.1,
+       "monthly_cap_usd": 20.0,
+       "blocked": false
+      }
+     }
+    },
+    "models": [
+     {
+      "model": "openrouter/llama-4-maverick",
+      "calls": 14,
+      "in": 9120,
+      "out": 2210,
+      "usd": 0.31
+     },
+     {
+      "model": "openrouter/gemini-2.5-flash",
+      "calls": 9,
+      "in": 4300,
+      "out": 1100,
+      "usd": 0.11
+     }
+    ]
+   },
+   "blocked": {
+    "_state": "idle",
+    "_fixture": {
+     "patch": {
+      "spend": {
+       "today_usd": 2.0,
+       "cap_usd": 2.0,
+       "month_usd": 6.1,
+       "monthly_cap_usd": 20.0,
+       "blocked": true
+      }
+     }
+    },
+    "models": [
+     {
+      "model": "openrouter/llama-4-maverick",
+      "calls": 14,
+      "in": 9120,
+      "out": 2210,
+      "usd": 0.31
+     },
+     {
+      "model": "openrouter/gemini-2.5-flash",
+      "calls": 9,
+      "in": 4300,
+      "out": 1100,
+      "usd": 0.11
+     }
+    ]
+   },
+   "no_cap": {
+    "_state": "idle",
+    "_fixture": {
+     "patch": {
+      "spend": {
+       "today_usd": 0.0,
+       "cap_usd": null,
+       "month_usd": 0.0,
+       "monthly_cap_usd": null,
+       "blocked": false
+      }
+     }
+    },
+    "models": []
+   },
+   "stale": {
+    "_state": "idle",
+    "_fixture": {
+     "patch": {
+      "spend": {
+       "today_usd": 0.42,
+       "cap_usd": 2.0,
+       "month_usd": 6.1,
+       "monthly_cap_usd": 20.0,
+       "blocked": false
+      }
+     },
+     "stale": true
+    },
+    "models": [
+     {
+      "model": "openrouter/llama-4-maverick",
+      "calls": 14,
+      "in": 9120,
+      "out": 2210,
+      "usd": 0.31
+     },
+     {
+      "model": "openrouter/gemini-2.5-flash",
+      "calls": 9,
+      "in": 4300,
+      "out": 1100,
+      "usd": 0.11
+     }
+    ]
+   },
+   "offline": {
+    "_state": "idle",
+    "_fixture": {
+     "patch": {
+      "health": {},
+      "spend": {}
+     },
+     "offline": true
+    },
+    "models": []
+   }
+  }
+ },
+ "AuditView": {
+  "mode": "variant",
+  "pad": 10,
+  "width": 560,
+  "scale2": true,
+  "variants": {
+   "rows": {
+    "_state": "idle",
+    "log": "{\"ts\":1759579200,\"turn\":\"t-1\",\"tool\":\"click\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":212,\"x\":640,\"y\":380}\n{\"ts\":1759579204,\"turn\":\"t-1\",\"tool\":\"type_text\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":95,\"len\":12,\"sha\":\"3fa9c01be2d4\"}\n{\"ts\":1759579209,\"turn\":\"t-1\",\"tool\":\"key\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":41,\"key\":\"ctrl+l\"}\n{\"ts\":1759579215,\"turn\":\"t-1\",\"tool\":\"click\",\"app\":\"1password\",\"decision\":\"deny\",\"dry_run\":false,\"result\":\"REFUSED\",\"ms\":3,\"x\":10,\"y\":10}\n{\"ts\":1759579221,\"turn\":\"t-1\",\"tool\":\"scroll\",\"app\":\"thunar\",\"decision\":\"dry_run\",\"dry_run\":true,\"result\":\"DRYRUN\",\"ms\":1,\"x\":300,\"y\":400}\n{\"ts\":1759579230,\"turn\":\"t-1\",\"tool\":\"click\",\"app\":\"ghostty\",\"decision\":\"cancelled\",\"dry_run\":false,\"result\":\"CANCELLED\",\"ms\":18,\"x\":50,\"y\":60}"
+   },
+   "empty": {
+    "_state": "idle",
+    "log": ""
+   },
+   "offline": {
+    "_state": "idle",
+    "_fixture": {
+     "offline": true
+    },
+    "log": "{\"ts\":1759579200,\"turn\":\"t-1\",\"tool\":\"click\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":212,\"x\":640,\"y\":380}\n{\"ts\":1759579204,\"turn\":\"t-1\",\"tool\":\"type_text\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":95,\"len\":12,\"sha\":\"3fa9c01be2d4\"}\n{\"ts\":1759579209,\"turn\":\"t-1\",\"tool\":\"key\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":41,\"key\":\"ctrl+l\"}\n{\"ts\":1759579215,\"turn\":\"t-1\",\"tool\":\"click\",\"app\":\"1password\",\"decision\":\"deny\",\"dry_run\":false,\"result\":\"REFUSED\",\"ms\":3,\"x\":10,\"y\":10}\n{\"ts\":1759579221,\"turn\":\"t-1\",\"tool\":\"scroll\",\"app\":\"thunar\",\"decision\":\"dry_run\",\"dry_run\":true,\"result\":\"DRYRUN\",\"ms\":1,\"x\":300,\"y\":400}\n{\"ts\":1759579230,\"turn\":\"t-1\",\"tool\":\"click\",\"app\":\"ghostty\",\"decision\":\"cancelled\",\"dry_run\":false,\"result\":\"CANCELLED\",\"ms\":18,\"x\":50,\"y\":60}"
+   }
+  }
+ },
+ "BindsView": {
+  "mode": "variant",
+  "pad": 10,
+  "width": 560,
+  "scale2": true,
+  "variants": {
+   "global": {
+    "_state": "idle",
+    "binds": {
+     "hotkey": {
+      "mod": "SUPER",
+      "key": "D",
+      "chord": "SUPER+D"
+     },
+     "hyprland": true,
+     "binds": [
+      {
+       "key": "D",
+       "modmask": 64,
+       "arg": "wispd trigger",
+       "submap": ""
+      },
+      {
+       "key": "D",
+       "modmask": 65,
+       "arg": "wispd interrupt",
+       "submap": ""
+      }
+     ]
+    }
+   },
+   "submap": {
+    "_state": "idle",
+    "binds": {
+     "hotkey": {
+      "mod": "SUPER",
+      "key": "D",
+      "chord": "SUPER+D"
+     },
+     "hyprland": true,
+     "binds": [
+      {
+       "key": "D",
+       "modmask": 64,
+       "arg": "wispd trigger",
+       "submap": ""
+      },
+      {
+       "key": "D",
+       "modmask": 65,
+       "arg": "wispd interrupt",
+       "submap": ""
+      },
+      {
+       "key": "Escape",
+       "modmask": 0,
+       "arg": "wispd interrupt",
+       "submap": "wisp"
+      },
+      {
+       "key": "Return",
+       "modmask": 0,
+       "arg": "wispd choice yes",
+       "submap": "wisp"
+      },
+      {
+       "key": "1",
+       "modmask": 0,
+       "arg": "wispd choice 1",
+       "submap": "wisp"
+      }
+     ]
+    }
+   },
+   "no_hyprland": {
+    "_state": "idle",
+    "binds": {
+     "hotkey": {
+      "mod": "SUPER",
+      "key": "D",
+      "chord": "SUPER+D"
+     },
+     "hyprland": false,
+     "binds": []
+    }
+   },
+   "none_registered": {
+    "_state": "idle",
+    "binds": {
+     "hotkey": {
+      "mod": "SUPER",
+      "key": "D",
+      "chord": "SUPER+D"
+     },
+     "hyprland": true,
+     "binds": []
+    }
+   }
+  }
  }
 }

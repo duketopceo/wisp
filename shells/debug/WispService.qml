@@ -1,0 +1,1 @@
+../../shell-plugin/WispService.qml

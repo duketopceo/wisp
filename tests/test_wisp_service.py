@@ -110,6 +110,14 @@ class TestSingleReader(unittest.TestCase):
                 self.fail(f"{p.name} dropped to {n}: lower RATCHET")
 
 
+    def test_management_app_ratchet_is_zero(self):
+        # W26: the management app reads state only through the service
+        app = (ROOT / "shells" / "debug" / "shell.qml").read_text()
+        code = re.sub(r"(?m)^\s*//.*$", "", app)
+        self.assertEqual(len(re.findall(r"state\.json|stateFile", code)), 0)
+        self.assertIn("WispService", code)
+
+
 class TestManifest(unittest.TestCase):
     def test_service_entry_point_is_this_file(self):
         import json

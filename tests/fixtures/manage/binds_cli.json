@@ -1,0 +1,34 @@
+{
+ "hotkey": {
+  "mod": "SUPER",
+  "key": "D",
+  "chord": "SUPER+D"
+ },
+ "hyprland": true,
+ "binds": [
+  {
+   "key": "D",
+   "modmask": 64,
+   "arg": "wispd trigger",
+   "submap": ""
+  },
+  {
+   "key": "D",
+   "modmask": 65,
+   "arg": "wispd interrupt",
+   "submap": ""
+  },
+  {
+   "key": "Escape",
+   "modmask": 0,
+   "arg": "wispd interrupt",
+   "submap": "wisp"
+  },
+  {
+   "key": "1",
+   "modmask": 0,
+   "arg": "wispd choice 1",
+   "submap": "wisp"
+  }
+ ]
+}
