@@ -21,7 +21,7 @@ PLUGIN = ROOT / "shell-plugin"
 COMP = PLUGIN / "components"
 FIXTURE_SERVICE = ROOT / "tests" / "qml" / "harness" / "FixtureService.qml"
 
-EXPECTED = ["Answer", "AgentRow", "Beacon", "Bubble", "Chip", "Console",
+EXPECTED = ["Answer", "AgentRow", "BarActions", "BarMark", "Beacon", "Bubble", "Chip", "Console",
             "Corner", "Creature", "EmptyState", "GhostCursor", "Icon",
             "Mark", "PanelTab", "Pill", "StatusLine", "StepRow",
             "StopControl", "Transcript"]
@@ -75,7 +75,7 @@ class TestComponentSet(unittest.TestCase):
         import json
         scenes = json.loads(
             (ROOT / "tests/qml/harness/scenes.json").read_text())
-        self.assertEqual(set(EXPECTED) - {"Icon"} - set(scenes), set())
+        self.assertEqual(set(EXPECTED) - {"Icon", "BarActions"} - set(scenes), set())
 
     def test_metrics_lib_has_no_colors(self):
         src = code(PLUGIN / "lib" / "metrics.js")
