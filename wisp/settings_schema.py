@@ -127,6 +127,8 @@ FIELDS = (
        choices=("jev", "chat", "off")),
     _f("brain.allow_paid", "bool", "false",
        "Let the fallback chain use paid models"),
+    _f("keys.submap", "bool", "true",
+       "Esc stops, Enter confirms, number keys choose while a turn runs"),
     _f("stt.provider", "choice", "local",
        "Speech to text: local whisper.cpp or an API",
        choices=("local", "openai")),

@@ -105,6 +105,11 @@ mode = "guide"
 # is used alone: if it is unavailable wisp guides instead.
 backend = "auto"
 
+[keys]
+# Keyboard submap while a turn acts or waits (wisp/keys.py): Esc stops,
+# Enter confirms, number keys choose. "false" leaves the keyboard alone.
+submap = "true"
+
 [cua]
 # cua-driver client (wisp/cua.py). Per-call timeout; a click that times
 # out is reported as failed and never retried on another backend.

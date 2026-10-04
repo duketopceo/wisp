@@ -5,7 +5,7 @@
 // regenerate. lib/settings.js builds on this table.
 
 // every key the daemon validates, in schema order
-var KEYS = ["budget.daily_usd", "budget.monthly_usd", "pointer.mode", "pointer.backend", "cua.dry_run", "cua.kill_switch", "cua.confirm", "cua.max_clicks_per_min", "cua.max_per_turn", "cua.timeout_ms", "audio.seconds", "agent.screenshots", "ui.theme", "brain.router", "brain.allow_paid", "stt.provider"]
+var KEYS = ["budget.daily_usd", "budget.monthly_usd", "pointer.mode", "pointer.backend", "cua.dry_run", "cua.kill_switch", "cua.confirm", "cua.max_clicks_per_min", "cua.max_per_turn", "cua.timeout_ms", "audio.seconds", "agent.screenshots", "ui.theme", "brain.router", "brain.allow_paid", "keys.submap", "stt.provider"]
 
 // keys the Panel edits: kind usd, int, bool or choice
 var FIELDS = [

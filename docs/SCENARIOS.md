@@ -40,7 +40,8 @@ table to list every fixture.
 | `cua_dry_run` | dry-run | [cua] dry_run on: the click is reported as DRYRUN and nothing is sent to cua-driver. |
 | `cua_kill_switch` | kill switch | [cua] kill_switch on: every injected click is refused before dispatch; cua-driver sees nothing. |
 | `cua_rate_limited` | rate limit hit | Per-turn click cap of 1: the first click goes through, the second is refused and never reaches cua-driver. |
-| `jev_down` | Jev down | Jev answers 503 on every call. The turn ends in error with error_code jev_down, a human-safe error string and the raw text in error_detail (U7). No fallback router until U8. |
+| `jev_down` | Jev down | Jev answers 503 on every call. The heuristic router takes over (W11): a bare launch of a catalog app still launches and the turn ends done, never in error. The error-path copy for a genuine outage lives in `brain_down`. |
+| `jev_slow` | Jev slow | Jev replies after 2 s, past the 400 ms deadline: the heuristic routes the turn, the late reply is discarded and the brain streams the answer (W11). |
 | `notify_error_toast` | notify paths | Brain down with the notify fake installed: the error turn raises an error toast. |
 | `notify_outside_quiet` | notify paths | Control for notify_quiet_hours: same 22:00-07:00 window, fixed clock 12:00 is outside it, so the toast is sent. |
 | `notify_quiet_hours` | notify paths | Same turn inside [notify] quiet hours (22:00-07:00, fixed clock 23:30 via notify_now): the toast is suppressed, nothing reaches notify-send. |

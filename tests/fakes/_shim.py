@@ -232,6 +232,9 @@ def _parse_gv(text: str):
         while i < len(t) and t[i] != q:
             if t[i] == "\\" and i + 1 < len(t):
                 i += 1
+                out.append({"n": "\n", "r": "\r"}.get(t[i], t[i]))
+                i += 1
+                continue
             out.append(t[i])
             i += 1
         return "".join(out)

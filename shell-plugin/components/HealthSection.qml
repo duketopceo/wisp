@@ -83,8 +83,12 @@ Column {
   Heading { text: root.service.ui("ui.settings.health") }
 
   Text {
-    visible: root.service.notice !== ""
-    text: root.service.notice
+    // W25 moved "out of date" off service.notice (a stale turn reads
+    // reconnecting in the status line); settings views still say it.
+    readonly property string line: root.service.notice !== "" ? root.service.notice
+      : root.service.stale ? Copy.string("state.stale") : ""
+    visible: line !== ""
+    text: line
     color: root.tk.needsYou
     font.family: root.service.fontFamily
     font.pixelSize: M.font.label

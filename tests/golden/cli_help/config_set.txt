@@ -45,6 +45,8 @@ Settings (value, default, range):
                           default jev; jev, chat, off
   brain.allow_paid        Let the fallback chain use paid models
                           default false; true or false
+  keys.submap             Esc stops, Enter confirms, number keys choose while a turn runs
+                          default true; true or false
   stt.provider            Speech to text: local whisper.cpp or an API
                           default local; local, openai
 
