@@ -254,6 +254,12 @@ class TurnState:
     def push_history(self, turn: dict, keep: int = 20) -> None:
         self._bus.state.push_history(turn, keep)
 
+    def emit_event(self, event: str, **data) -> None:
+        """Named one-off event (e.g. `cua.target`), dropped once a newer
+        turn has begun, like this turn's other writes."""
+        if self._bus.current_turn() == self.turn_id:
+            self._bus.emit_event(event, **data)
+
     def snapshot(self) -> dict:
         return self._bus.snapshot()
 
