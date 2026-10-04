@@ -38,7 +38,7 @@ Learning:
   learn        Weekly corrections and failure log
   skills       Installed skills
   recipes      Recipes drafted from past runs
-  eval         Replay logged decisions through candidate routers
+  eval         Route agreement and candidate-router replay
 
 Settings:
   config       Show or change config.toml (live, no restart)

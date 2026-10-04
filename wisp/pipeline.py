@@ -1026,6 +1026,7 @@ def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
         # brain) | off (always clarify via choices) — Rust parity
         sp.record("context", sp.mark_ns("stt"))
         route_start = sp.now()
+        route_meta = None
         router = cfg.get("brain", {}).get("router", "jev")
         agent_m = re.match(r"^\s*wisp\s+agent[:,.\s-]+(.*)$", text,
                            re.IGNORECASE)
@@ -1039,8 +1040,10 @@ def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
         elif router == "off":
             resp = {"answers": {"route": {"choice": "clarify"}}}
         else:
-            resp = ask_jev(text, model, build_questions(harness),
-                           context=context, cfg=cfg)
+            from . import route as _route
+            resp, route_meta = _route.decide(
+                text, model, build_questions(harness), context, cfg,
+                harness.get("apps"), spans=sp)
         token.check()
         sp.record("route", route_start)
         sp.arm("first_token", sp.mark_ns("route"))
@@ -1048,7 +1051,10 @@ def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
         answers = resp.get("answers", {})
         _trace.emit(turn, "decision", "thought",
                     {"model": model, "answers": answers,
-                     "latency_ms": resp.get("latency_ms")},
+                     "latency_ms": resp.get("latency_ms"),
+                     **({"route_source": route_meta["source"],
+                         "jev_status": route_meta["jev_status"]}
+                        if route_meta else {})},
                     sp.ms["context"] + sp.ms["route"])
         # transcript rescue: "open discord" with app=none shouldn't
         # clarify-prompt — the app name is right there in the words
@@ -1062,6 +1068,9 @@ def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
         if answers.get("route", {}).get("choice") == "launch" \
                 and complex_launch(text):
             answers["route"]["choice"] = "act"
+        if route_meta:
+            _route.log_ab(route_meta, text, turn,
+                          answers.get("route", {}).get("choice"))
         # clarify only gates routes that truly need a named target —
         # launch has no other way to resolve the app. act/agent resolve
         # the target from the screen + goal instead of asking.

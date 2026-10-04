@@ -24,7 +24,7 @@ from harness import fakes, runner  # noqa: E402
 from wisp import errors_codes  # noqa: E402
 
 FIXTURES = ROOT / "tests" / "fixtures" / "turns"
-FIXTURE_NAMES = ["ask", "act", "choose", "jev_down", "brain_down", "brain_fallback",
+FIXTURE_NAMES = ["ask", "act", "choose", "jev_down", "jev_slow", "brain_down", "brain_fallback",
                  "cancel_mid_stream", "stale_choice"]
 
 
@@ -294,13 +294,36 @@ class TurnReplayTest(unittest.TestCase):
         self.assertEqual(len({e["prompt_id"] for e in offered}), 1)
         self.assertEqual(res.final["prompt_id"], "")
 
-    def test_jev_down_ends_in_typed_error(self):
+    def test_jev_down_falls_back_to_heuristic_launch(self):
         res = runner.run_turn(FIXTURES / "jev_down.json")
-        self.assertEqual(res.statuses[-1], "error")
-        self.assertEqual(res.final["error_code"], "jev_down")
-        self.assertEqual(res.final["error"], errors_codes.human("jev_down"))
-        self.assertIn("Jev HTTP 503", res.final["error_detail"])
-        self.assertNotIn("503", res.final["error"])
+        self.assertEqual(res.statuses[-1], "done")
+        self.assertEqual(res.final["error_code"], "")
+        self.assertEqual(res.launch_calls, ["firefox"])
+        dec = res.trace_events("decision")[0]
+        self.assertEqual(dec["route_source"], "heuristic")
+        self.assertEqual(dec["jev_status"], "error")
+        self.assertEqual(runner.check_expectations(res), [])
+
+    def test_route_spans_recorded_with_jev_down(self):
+        res = runner.run_turn(FIXTURES / "jev_down.json")
+        names = {e["step"] for e in res.trace if e.get("kind") == "span"}
+        self.assertTrue({"route", "route_heuristic", "route_jev"} <= names)
+        self.assertLess(res.trace_events("route")[0]["ms"], 200)
+
+    def test_jev_deadline_expiry_routes_by_heuristic(self):
+        res = runner.run_turn(FIXTURES / "jev_slow.json")
+        self.assertEqual(runner.check_expectations(res), [])
+        self.assertEqual(res.final["answer"], "It is half past three.")
+        route = res.trace_events("route")[0]["ms"]
+        self.assertTrue(380 <= route < 900, route)
+        jev = [e for e in res.trace if e.get("step") == "route_jev"][0]
+        self.assertEqual(jev["data"]["status"], "timeout")
+
+    def test_ab_record_written_for_the_turn(self):
+        res = runner.run_turn(FIXTURES / "jev_slow.json")
+        dec = res.trace_events("decision")[0]
+        self.assertEqual(dec["route_source"], "heuristic")
+        self.assertEqual(dec["jev_status"], "timeout")
 
     def test_brain_down_without_fallback_is_typed_error(self):
         res = runner.run_turn(FIXTURES / "brain_down.json")

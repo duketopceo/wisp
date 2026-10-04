@@ -1,12 +1,15 @@
-usage: wispd eval route [-h] [--json] [--quiet] [--no-color] [limit]
+usage: wispd eval route [-h] [--replay] [--json] [--quiet] [--no-color]
+                        [limit]
 
-Replay logged decisions through candidate routers
+Jev vs heuristic route agreement and latency
 
 positional arguments:
-  limit        decisions to replay (default all)
+  limit        turns to read (default all)
 
 options:
   -h, --help   show this help message and exit
+  --replay     replay logged decisions through candidate models on OpenRouter
+               (paid, orchestral key)
 
 global options:
   --json       machine-readable output (one JSON object)
@@ -14,4 +17,6 @@ global options:
   --no-color   plain output (also NO_COLOR, or not a tty)
 
 Examples:
-  wispd eval route 100
+  wispd eval route
+  wispd eval route 100 --json
+  wispd eval route --replay 50

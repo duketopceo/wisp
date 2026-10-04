@@ -341,6 +341,7 @@ def run_turn(fixture, timeout: float = 60.0) -> TurnResult:
             "real_hypr": "hypr" in fx.get("fakes", {}),
             "urls": urls,
             "config": fx.get("config", {}),
+            "catalog": fx.get("catalog"),
             "chooser": fx.get("chooser"),
             "interrupt_after_ms": fx.get("interrupt_after_ms"),
             "result": str(tmp / "result.json"),
