@@ -151,7 +151,8 @@ def cua_disable(ctx, a):
 def notify_test(ctx, a):
     body = "This is a test notification from wispd."
     try:
-        from .. import notify as _n
+        import importlib
+        _n = importlib.import_module("wisp.notify")
         send = getattr(_n, "send", None)
     except ImportError:
         send = None
