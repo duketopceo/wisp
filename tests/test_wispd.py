@@ -145,29 +145,32 @@ class TestExecute(unittest.TestCase):
             self.assertEqual(pipeline.dictation_text(raw), want, raw)
 
     def test_launch_uses_lua_dispatcher(self):
-        ok = mock.Mock(returncode=0, stdout="ok")
+        from wisp import hypr
         with _with_os("linux"), \
+             mock.patch.dict(os.environ, {"WISP_DESKTOP": "hyprland"}), \
              mock.patch.object(pipeline.shutil, "which",
                                return_value="/usr/bin/ghostty"), \
-             mock.patch.object(pipeline.subprocess, "run",
-                               return_value=ok) as run:
+             mock.patch.object(hypr, "available", return_value=True), \
+             mock.patch.object(hypr, "run_lua",
+                               return_value=True) as ev, \
+             mock.patch.object(pipeline.subprocess, "run") as run:
             out = pipeline.execute(self.answers(), self.cfg)
         self.assertIn("LAUNCHED", out)
-        cmd = run.call_args[0][0]
-        self.assertEqual(cmd[:2], ["hyprctl", "eval"])
-        self.assertIn('hl.dsp.exec_cmd("ghostty")', cmd[2])
+        lua = ev.call_args[0][0]
+        self.assertIn('hl.dsp.exec_cmd("ghostty")', lua)
+        run.assert_not_called()  # socket eval, never hyprctl
 
-    def test_launch_falls_back_to_dispatch(self):
-        fail = mock.Mock(returncode=1, stdout="err")
+    def test_launch_fails_fast_when_hypr_down(self):
+        from wisp import hypr
         with _with_os("linux"), \
+             mock.patch.dict(os.environ, {"WISP_DESKTOP": "hyprland"}), \
              mock.patch.object(pipeline.shutil, "which",
                                return_value="/usr/bin/ghostty"), \
-             mock.patch.object(pipeline.subprocess, "run",
-                               return_value=fail) as run:
+             mock.patch.object(hypr, "available", return_value=False), \
+             mock.patch.object(pipeline.subprocess, "run") as run:
             out = pipeline.execute(self.answers(), self.cfg)
-        self.assertIn("LAUNCHED", out)
-        self.assertEqual(run.call_args_list[-1][0][0],
-                         ["hyprctl", "dispatch", "exec", "ghostty"])
+        self.assertIn("tool_failed", out)
+        run.assert_not_called()
 
 
 class TestConfidenceGate(unittest.TestCase):
