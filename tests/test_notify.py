@@ -67,7 +67,10 @@ class TestServer(unittest.TestCase):
     def test_absent_server_falls_back_to_notify_send(self):
         n, bus, _ = mk(FakeBus(absent=True))
         self.assertIsNone(n.server())
-        self.assertEqual(n.send("hello"), "sent")
+        # the fallback argv comes from platform.notify_cmd, which keys
+        # off the host OS, not the Notifier's os_name: pin it
+        with mock.patch.dict(os.environ, {"WISP_OS": "linux"}):
+            self.assertEqual(n.send("hello"), "sent")
         self.assertEqual(bus.calls[-1][0], "notify-send")
         self.assertIn("hello", bus.calls[-1])
 

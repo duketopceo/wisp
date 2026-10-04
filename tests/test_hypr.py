@@ -185,7 +185,10 @@ class TestTransport(unittest.TestCase):
     def test_large_chunked_reply_reassembled(self):
         big = json.dumps([{"i": i, "pad": "x" * 50} for i in range(2000)])
         with FakeHypr(lambda r: big) as f:
-            got = hypr.query("clients")
+            # reassembly, not latency, is under test: the fake paces
+            # ~40 chunks with sleeps, which a loaded macOS runner can
+            # stretch past the default 300 ms deadline
+            got = hypr.query("clients", timeout=5)
         self.assertEqual(len(got), 2000)
 
     def test_eval_framing(self):
