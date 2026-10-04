@@ -377,7 +377,7 @@ def load_config() -> dict:
     cfg = {}
     if CFG_FILE.exists():
         section = None
-        for raw in CFG_FILE.read_text().splitlines():
+        for raw in CFG_FILE.read_text(encoding="utf-8", errors="replace").splitlines():
             line = raw.split("#", 1)[0].strip()
             if not line:
                 continue
@@ -389,7 +389,7 @@ def load_config() -> dict:
                 cfg[section][k] = v.strip('"')
     else:
         CFG_DIR.mkdir(parents=True, exist_ok=True)
-        CFG_FILE.write_text(DEFAULT_CONFIG + _apps_toml())
+        CFG_FILE.write_text(DEFAULT_CONFIG + _apps_toml(), encoding="utf-8")
         cfg = _default_cfg_dict()
     return cfg
 

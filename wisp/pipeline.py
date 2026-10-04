@@ -91,7 +91,8 @@ def hypr_env() -> dict:
     """Session env for spawned tools when run from a (systemd) daemon —
     fills in HIS and the Wayland socket wtype/grim need."""
     env = dict(os.environ)
-    rd = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+    uid = os.getuid() if hasattr(os, "getuid") else 1000
+    rd = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{uid}")
     if not env.get("HYPRLAND_INSTANCE_SIGNATURE"):
         hypr = pathlib.Path(rd) / "hypr"
         if hypr.is_dir():
@@ -245,7 +246,18 @@ def _amplitude_sampler(seconds: int | None, state=None,
 
 
 def transcribe(wav: pathlib.Path, cfg: dict) -> str:
-    if cfg.get("stt", {}).get("provider", "local") == "openai":
+    provider = cfg.get("stt", {}).get("provider", "local")
+    if provider == "wordink":
+        try:
+            import wordink
+            return wordink.transcribe(str(wav))
+        except ImportError:
+            raise RuntimeError(
+                "stt provider 'wordink' requested but the wordink "
+                "module is not installed")
+        except Exception:
+            pass
+    if provider == "openai":
         return _transcribe_openai(wav, cfg["stt"], cfg)
     model = config.whisper_model(cfg)
     if not (config.WHISPER_BIN.exists() and model.exists()):
@@ -672,7 +684,15 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
         # prefix, not content — strip it. A correction prefix
         # ('[previous attempt: ...]') is metadata, never dictated.
         body = re.sub(r"^\[previous attempt:[^\]]*\]\s*", "", detail)
-        return tools.run("type_text", dictation_text(body), cfg)
+        text_to_paste = dictation_text(body)
+        try:
+            import wordink
+            inserter = wordink.TextInserter()
+            if inserter.insert_text(text_to_paste):
+                return f"DICTATED: {text_to_paste}"
+        except Exception:
+            pass
+        return tools.run("type_text", text_to_paste, cfg)
     if route == "learn":
         from . import act
         prompt = ("Author a reusable skill for this request using the "

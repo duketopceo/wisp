@@ -407,6 +407,68 @@ def _parse_xy(arg: str):
     return pts[0]["x"], pts[0]["y"]
 
 
+def _resolve_target_xy(arg: str, cfg: dict | None = None):
+    """Resolve 'x,y', 'x,y@logical', or natural language element via decision grounding."""
+    xy = _parse_xy(arg)
+    if xy is not None:
+        return xy
+    # Attempt decision-agent visual grounding
+    try:
+        from .. import pipeline, grounding
+        shot = pipeline.capture_screen()
+        if shot and shot.exists():
+            try:
+                import base64
+                b64 = base64.b64encode(shot.read_bytes()).decode()
+                hint = "menu bar" if any(w in (arg or "").lower() for w in ("menu", "bar", "top", "panel")) else ""
+                res = grounding.ground_element(b64, target_description=arg, region_hint=hint, cfg=cfg)
+                if res:
+                    from .. import points
+                    pts = points.to_logical([{"x": res[0], "y": res[1]}], points.monitors())
+                    return pts[0]["x"], pts[0]["y"]
+            finally:
+                shot.unlink(missing_ok=True)
+    except Exception:
+        pass
+    return None
+
+
+def _run_cmds(cmds: list) -> bool:
+    for c in cmds:
+        try:
+            r = _cancel.run(c, capture_output=True, env=hypr_env(),
+                            timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            return False
+        if r.returncode != 0:
+            return False
+    return True
+
+
+def _drive(x: int, y: int, backend: str, do_click: bool) -> bool:
+    """Pointer precedence: cua (when it is the live backend) always
+    wins, so the user's real cursor is never touched; otherwise a
+    move-only goes over the Hyprland socket eval (no fork); everything
+    else runs the backend's argv (hyprcursor+ydotool / ydotool / wlrctl).
+    """
+    from .. import platform
+    if backend != "cua" and not do_click and platform.uses_hypr() \
+            and hypr.run_lua(hypr.cursor_move(x, y)):
+        return True
+    return _run_cmds(platform.pointer_cmds(x, y, backend, click=do_click))
+
+
+def _move_fallback(x: int, y: int, cfg: dict | None) -> bool:
+    """cua move failed: hypr eval (if on Hyprland), then the next
+    backend in auto order (hyprcursor -> ydotool -> wlrctl)."""
+    from .. import platform
+    if platform.uses_hypr() and hypr.run_lua(hypr.cursor_move(x, y)):
+        return True
+    nxt = platform.pointer_backend(cfg, exclude=("cua",))
+    return bool(nxt) and _run_cmds(
+        platform.pointer_cmds(x, y, nxt, click=False))
+
+
 def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
     """click/move shared core. Returns 'GUIDE(x,y) label' when the
     pointer is user-driven (mode=guide or no backend) — the act loop
@@ -440,9 +502,9 @@ def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
         hm = _re.search(r"hit:(\S+)", out)
         return (f"CLICKED {hm.group(1)}" if hm
                 else f"SKIP ({out[:60]})")
-    xy = _parse_xy(arg)
+    xy = _resolve_target_xy(arg, cfg)
     if xy is None:
-        return "FAIL (arg must be 'x,y' or 'x,y@logical')"
+        return f"FAIL (could not resolve coordinates or ground target {arg!r})"
     x, y = xy
     from .. import platform
     backend = platform.pointer_backend(cfg)
@@ -471,6 +533,14 @@ def click(arg: str, cfg: dict | None = None) -> str:
 
 def move(arg: str, cfg: dict | None = None) -> str:
     return _pointer(arg, cfg, False)
+
+
+def ground(arg: str, cfg: dict | None = None) -> str:
+    """Locate on-screen element center using decision-agent grounding."""
+    xy = _resolve_target_xy(arg, cfg)
+    if xy is None:
+        return f"FAIL (could not ground target {arg!r})"
+    return f"GROUNDED({xy[0]},{xy[1]})"
 
 
 _CODEGRAPH_TOOLS = frozenset({

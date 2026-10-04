@@ -35,9 +35,14 @@ class TestIpc(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             srv, sock = make_server(td)
             try:
-                s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                if ipc._TCP:
+                    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    port = int(sock.read_text().strip())
+                    s.connect(("127.0.0.1", port))
+                else:
+                    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                    s.connect(str(sock))
                 s.settimeout(5)
-                s.connect(str(sock))
                 s.sendall(b"not json\n")
                 data = s.recv(65536)
                 s.close()

@@ -291,7 +291,7 @@ class TestAgentGuards(unittest.TestCase):
             real_kill = os.kill
             # _alive probes with signal 0 — keep it working; only the
             # SIGTERM in _reap_expired is intercepted
-            with mock.patch.object(agents.os, "killpg"), \
+            with mock.patch.object(agents.os, "killpg", create=True), \
                  mock.patch.object(
                      agents.os, "kill",
                      side_effect=lambda p, s: real_kill(p, s)
