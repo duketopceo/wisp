@@ -1,0 +1,1 @@
+{"status": "done", "transcript": "delete the downloads folder", "answer": "", "result": "BLOCKED (risk=0.90 > 0.5)", "choices": [], "points": [], "steps": ["run_shell rm -r Downloads -> BLOCKED (risk=0.90 > 0.5)"], "level": 0.0, "turn_id": "t-block", "seq": 13, "contract_version": 1}

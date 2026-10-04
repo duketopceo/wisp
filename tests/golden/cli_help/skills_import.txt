@@ -1,0 +1,19 @@
+usage: wispd skills import [-h] [--list] [--json] [--quiet] [--no-color] dir
+
+Import skills from a directory
+
+positional arguments:
+  dir          directory of skills to import
+
+options:
+  -h, --help   show this help message and exit
+  --list       preview only; install nothing
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd skills import --list ~/skills
+  wispd skills import ~/skills

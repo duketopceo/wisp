@@ -1,0 +1,17 @@
+usage: wispd eval route [-h] [--json] [--quiet] [--no-color] [limit]
+
+Replay logged decisions through candidate routers
+
+positional arguments:
+  limit        decisions to replay (default all)
+
+options:
+  -h, --help   show this help message and exit
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd eval route 100

@@ -1,0 +1,17 @@
+usage: wispd review approve [-h] [--json] [--quiet] [--no-color] [n]
+
+Approve a proposal into the skill bank
+
+positional arguments:
+  n            proposal number from `review list`
+
+options:
+  -h, --help   show this help message and exit
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd review approve 3

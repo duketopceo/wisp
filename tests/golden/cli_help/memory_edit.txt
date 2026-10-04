@@ -1,0 +1,17 @@
+usage: wispd memory edit [-h] [--json] [--quiet] [--no-color] [arg ...]
+
+Edit MEMORY or USER notes: target|op|old|new
+
+positional arguments:
+  arg          target|op|old|new
+
+options:
+  -h, --help   show this help message and exit
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd memory edit 'memory|add||prefers dark mode'

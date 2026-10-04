@@ -1,0 +1,21 @@
+usage: wispd trace show [-h] [--tail N] [--turn ID] [--kind KIND] [--latency]
+                        [--since AGE] [--json] [--quiet] [--no-color]
+
+Print the turn trace, or a latency summary
+
+options:
+  -h, --help   show this help message and exit
+  --tail N     events to show (default 50)
+  --turn ID    only this turn
+  --kind KIND  only this event kind
+  --latency    p50/p90 per budget path instead of events
+  --since AGE  window for --latency (24h, 90m, 2d)
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd trace show --tail 20
+  wispd trace show --latency --since 6h
