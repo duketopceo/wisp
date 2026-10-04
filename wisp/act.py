@@ -16,7 +16,7 @@ import re
 import urllib.error
 import urllib.request
 
-from . import cancel, config, cua_safety, tools
+from . import cancel, config, cua_safety, grounding, tools
 
 MAX_STEPS = 8  # default; [agents] act_max_steps overrides
 MAX_ERRORS = 2
@@ -260,15 +260,25 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     if shot.startswith("SHOT "):
                         _attach_image(messages, shot[5:].strip(), cfg)
                     screen_dirty = False
+                tgt = None
                 try:
-                    # W9: kill/deny/rate/dry-run/audit around dispatch
-                    result = guard.run(
-                        name, arg,
-                        lambda: tools.run(name, arg, cfg, harness))
+                    # W13: resolve the point BEFORE the guard so the
+                    # audit records x,y (not just len) for name targets
+                    tool_arg, tgt, result = _aim(name, arg, cfg, guard,
+                                                 state)
+                    if result is None:
+                        # W9: kill/deny/rate/dry-run/audit around dispatch
+                        result = guard.run(
+                            name, tool_arg,
+                            lambda: tools.run(name, tool_arg, cfg,
+                                              harness))
+                    _aimed_done(state, name, tgt, result)
                 except cancel.Cancelled:
+                    grounding.emit_target(state, None)
                     _goals.record_steps(steps)
                     return "INTERRUPTED (user)"
                 except Exception as e:
+                    grounding.emit_target(state, None)
                     result = f"ERROR ({e})"
             else:
                 result = refused
@@ -307,6 +317,73 @@ def run_act_loop(task: str, cfg: dict, state=None,
     trajectories.record(task, _app(harness), steps, out,
                                surface=_surface(cfg))
     return out
+
+
+def _aim(name: str, arg: str, cfg: dict, guard, state):
+    """Resolve a click/move target to compositor-global coords and emit
+    the W21 `cua.target` aim. Returns (tool_arg, Target|None, refusal).
+    A name target is grounded (UI-TARS / a11y / vision fallback, one
+    re-observe on low confidence, then refused); explicit coordinates
+    pass through unchanged. DOM mode and non-pointer tools are untouched,
+    and a call the guard would refuse anyway never ships a screenshot to
+    a model."""
+    if name not in ("click", "move") or \
+            (cfg or {}).get("screen", {}).get("dom_page"):
+        return arg, None, None
+    from .tools import system as _sys
+    if _XY_ARG.match(arg or ""):
+        # explicit coordinates: no grounding; only convert for the ghost
+        # cursor when something is listening
+        if state is None or not callable(getattr(state, "emit_event",
+                                                 None)):
+            return arg, None, None
+        xy = _sys._parse_xy(arg)
+        if xy is None:
+            return arg, None, None
+        tgt = grounding.Target(xy[0], xy[1], "global", 1.0, "model",
+                               label="")
+        _announce(state, tgt)
+        return arg, tgt, None
+    if guard.preflight(name):
+        return arg, None, None       # guard.run refuses + audits it
+    try:
+        tgt = grounding.ground_target(arg, cfg)
+    except grounding.GroundRefused as e:
+        grounding.emit_target(state, None)
+        return arg, None, (f"REFUSED (could not ground {arg[:60]!r}: "
+                           f"{e.reason or e.code})")
+    _announce(state, tgt, label=arg[:40])
+    return f"{tgt.x},{tgt.y}@logical", tgt, None
+
+
+_XY_ARG = re.compile(r"^\s*-?\d+\s*,\s*-?\d+\s*(@logical)?\s*$")
+
+
+def _announce(state, tgt, label: str = "") -> None:
+    if state is None or not callable(getattr(state, "emit_event", None)):
+        return
+    win = ""
+    try:
+        from . import platform
+        w = platform.active_window() or {}
+        win = w.get("title") or w.get("class") or ""
+    except Exception:
+        pass
+    grounding.emit_target(state, "aim", tgt, window=win, label=label)
+
+
+def _aimed_done(state, name: str, tgt, result: str) -> None:
+    """After a pointer step: a landed click is `click` (ripple) then
+    `done`; a guide handoff / move leaves the aim parked; anything else
+    (failed, refused, dry-run) clears. Emitted after the result so a
+    failed or denied click never shows a ripple."""
+    if tgt is None or name not in ("click", "move"):
+        return
+    if name == "click" and result.startswith("CLICKED"):
+        grounding.emit_target(state, "click", tgt)
+        grounding.emit_target(state, "done", tgt)
+    elif not result.startswith(("GUIDE", "MOVED", "MOVE-GUIDE")):
+        grounding.emit_target(state, None)
 
 
 def _publish(state, task: str, steps: list) -> None:
