@@ -35,5 +35,6 @@
     "error_detail_contains": "openai_compat",
     "brain_calls": 1
   },
-  "name": "brain_down"
+  "name": "brain_down",
+  "scenario": "brain down"
 }

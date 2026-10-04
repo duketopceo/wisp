@@ -200,6 +200,14 @@ class TestEvents(unittest.TestCase):
         self.assertEqual(h["code"], "jev_down")
         self.assertEqual(r["view"]["seq"], 5)  # events never bump seq
 
+    def test_spend_field_is_carried_into_the_view(self):
+        spend = {"today_usd": 0.5, "cap_usd": 2.0, "month_usd": 3.0,
+                 "monthly_cap_usd": 20.0, "blocked": False}
+        r = run([["snap", snap(spend=spend), 1000]])
+        self.assertEqual(r["view"]["spend"], spend)
+        r = run([["snap", snap(), 1000]])
+        self.assertEqual(r["view"]["spend"], {})
+
     def test_overflow_requests_resync(self):
         r = run(self.base + [["event", {"type": "event", "name": "overflow"}, 2]])
         self.assertTrue(r["resync"])
@@ -437,6 +445,64 @@ class TestCuaTarget(unittest.TestCase):
     def test_message_path(self):
         r = run([self.acting(), ["msg", json.dumps(self.EV), 2]])
         self.assertEqual(r["view"]["cuaTarget"]["label"], "night light")
+
+
+CARD = {"prompt_id": "p7", "prompt": "run close: w1?", "timeout_s": 120}
+
+
+@unittest.skipUnless(jsnode.NODE, "node not installed")
+class TestConfirmCard(unittest.TestCase):
+    """W25: additive `confirm` object and the UI-side prompt id guard."""
+
+    def pending(self, **kw):
+        return run([["snap", snap(status="awaiting_choice", seq=2,
+                                  choices=["run close: w1? \u2014 yes", "no"],
+                                  prompt_id="p7", confirm=CARD, **kw), 1]])["view"]
+
+    def test_confirm_defaults_to_null(self):
+        self.assertIsNone(js("S.initial()")["confirm"])
+        v = run([["snap", snap(status="idle"), 1]])["view"]
+        self.assertIsNone(v["confirm"])
+
+    def test_confirm_maps_and_clamps(self):
+        c = self.pending()["confirm"]
+        self.assertEqual(c, {"promptId": "p7", "prompt": "run close: w1?",
+                             "timeoutS": 120})
+
+    def test_malformed_confirm_is_dropped(self):
+        for bad in ("yes", 3, [], {"prompt": "x"}, {"prompt_id": ""}):
+            v = run([["snap", snap(status="awaiting_choice", seq=2,
+                                   confirm=bad), 1]])["view"]
+            self.assertIsNone(v["confirm"], repr(bad))
+
+    def test_diff_clears_the_card(self):
+        diff = {"type": "state", "seq": 3,
+                "diff": {"status": "acting", "confirm": None,
+                         "choices": [], "prompt_id": "", "seq": 3}}
+        r = run([["snap", snap(status="awaiting_choice", seq=2,
+                               choices=["a", "no"], prompt_id="p7",
+                               confirm=CARD), 1], ["event", diff, 2]])
+        self.assertIsNone(r["view"]["confirm"])
+
+    def test_accept_choice_matches_prompt_id_and_option(self):
+        v = self.pending()
+        f = lambda pick, pid: js(
+            "S.acceptChoice(%s, %s, %s)" % (json.dumps(v), json.dumps(pick),
+                                            json.dumps(pid)))
+        self.assertTrue(f("no", "p7"))
+        self.assertTrue(f("run close: w1? \u2014 yes", "p7"))
+
+    def test_accept_choice_ignores_mismatch_stale_and_unknown(self):
+        v = self.pending()
+        f = lambda pick, pid: js(
+            "S.acceptChoice(%s, %s, %s)" % (json.dumps(v), json.dumps(pick),
+                                            json.dumps(pid)))
+        self.assertFalse(f("no", "p6"))          # another prompt's id
+        self.assertFalse(f("no", ""))            # no id at all
+        self.assertFalse(f("maybe", "p7"))       # not offered
+        idle = run([["snap", snap(status="acting", seq=3), 2]])["view"]
+        self.assertFalse(js("S.acceptChoice(%s, 'no', 'p7')"
+                            % json.dumps(idle)))  # nothing pending now
 
 
 if __name__ == "__main__":

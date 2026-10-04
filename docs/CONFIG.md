@@ -10,6 +10,39 @@ restart) or the Settings tab in the GUI. Every key has a default.
 | `mod` | `"SUPER"` | modifier for push-to-talk |
 | `key` | `"D"` | key for push-to-talk (SUPER+D) |
 
+## [keys] — keyboard submap (Linux/Hyprland)
+
+| key | default | meaning |
+|-----|---------|---------|
+| `submap` | `"true"` | register the Wisp keyboard submap while a turn acts or waits |
+
+While a turn is `acting` or `awaiting_choice`, `wispd` registers and enters
+a Hyprland submap named `wisp` and leaves it on every other status:
+
+| state | keys |
+|-------|------|
+| `acting`, or waiting with no options | `Esc` stops the turn |
+| `awaiting_choice`, n options | `Esc` stops, `Enter` picks option 1 (the "yes" of a confirm), `1`..`min(n,9)` pick that option |
+
+The keys are modifier-free but exist only inside the submap, so they never
+shadow a global bind or typing outside those states. Pointer backends do not
+take focus, so `Esc` stays reachable while cua acts. Design notes:
+
+- Registered at runtime through the bind registry in `wisp/hypr.py`
+  (`hyprctl eval` / the request socket), never by editing `bindings.lua` or
+  anything under `/usr/share/omarchy`. Nothing is written to `~/.config/hypr`.
+- Every bind's description starts with `wisp:`. If a submap named `wisp`
+  already holds binds without that prefix, Wisp reports the conflict in
+  `wispd.log` and runs voice/mouse only; it never overwrites them.
+- The daemon leaves the submap on idle, on shutdown, and at startup (clears
+  what a crash left). The `Esc` bind itself also leaves the submap, so a dead
+  daemon cannot strand the keyboard in it.
+- `Esc` runs `wisp/fastkey.py --sock <wispd.sock> interrupt`: the same IPC
+  `interrupt` command as `wispd interrupt`, without importing the daemon
+  (cold `wispd interrupt` is about 120 ms; `fastkey.py` about 20 ms).
+- The agent's own `key` tool steps run outside the submap so a scripted
+  `Esc` cannot stop its own turn.
+
 ## [audio]
 
 | key | default | meaning |
@@ -27,6 +60,15 @@ restart) or the Settings tab in the GUI. Every key has a default.
 | `key_env` | `GROQ_API_KEY` | env var / `.env` key name holding the key |
 | `prompt` | `""` | vocab priming (names, jargon) |
 
+## [jev] — routing deadline and shadow decider
+
+| key | default | meaning |
+|-----|---------|---------|
+| `deadline_ms` | `400` | Jev gets this long to route; past it, on an error, or on a malformed reply the heuristic router decides and the turn goes on |
+| `shadow` | `""` | second decider logged to `shadow.jsonl` (`pplx`); never changes what Wisp does |
+
+Every routed turn appends Jev vs heuristic vs final route to `route_ab.jsonl`; read it with `wispd eval route`.
+
 ## [agent] — routing + action policy
 
 | key | default | meaning |
@@ -35,6 +77,7 @@ restart) or the Settings tab in the GUI. Every key has a default.
 | `answer_model` | `meta-llama/llama-4-maverick` | model that writes answers (used when `brain.default` unset) |
 | `session_turns` | `8` | turns of chat history kept in context |
 | `screenshots` | `true` | allow screen capture for context |
+| `confirm_timeout` | `120` | seconds a confirm card waits before it resolves as deny (clamped 5 to 600) |
 | `risk_threshold` | `1.5` | action risk score allowed before confirmation; lower = asks more |
 | `confidence_instant` | `0.95` | auto-accept cutoff |
 | `confidence_ambiguous` | `0.8` | ask-choice cutoff |
@@ -51,7 +94,7 @@ restart) or the Settings tab in the GUI. Every key has a default.
 | `router` | `"jev"` | `jev` (decision API) / `chat` (straight to answer brain) / `off` (clarify) |
 | `default` | `"openrouter:<answer_model>"` | `name:model` selecting a `[brain.<name>]` provider |
 | `fallback` | `""` | comma-separated `name:model` chain tried after `default` (e.g. `"mlx:ornith, ollama:ornith"`) |
-| `allow_paid` | `false` | allow paid fallback entries (OpenRouter, or `paid = "true"` on the section); the U10 daily cap hook (`brain.budget_ok`) also applies |
+| `allow_paid` | `false` | allow paid fallback entries (OpenRouter, or `paid = "true"` on the section); the U10 cap hook (`brain.budget_ok`, see `[budget]`) also applies; at a cap fallbacks are skipped, the primary runs unless `[budget] gate_primary` |
 | `first_token_s` | `3` | a streaming entry must emit a token within this many seconds or the chain moves on; all entries failing ends the turn `brain_down` |
 | `agent_runtime` | `"opencode"` | spawned-agent runtime: `opencode`/`codex`/`claude`/`devin` |
 
@@ -70,6 +113,34 @@ instead of falling back.
 | `vision` / `tools` | capability flags — gates screenshots and tool schemas |
 
 Built-ins: `openrouter`, `ollama`, `lmstudio`, `mlx`.
+
+## [budget] — spend caps (W14, reconciled with 7ec4236)
+
+| key | default | meaning |
+|-----|---------|---------|
+| `daily_usd` | unset = `8.00` | daily cap on paid spend; blank = no cap; `0` blocks all gated paid calls. If unset, the deprecated `[brain] daily_cap_usd` is honoured as an alias (a one-time deprecation hint is logged); `[budget] daily_usd` wins when both are set |
+| `monthly_usd` | `"160.00"` | same, per calendar month (20 days x the daily default, so it is never stricter than the daily cap) |
+| `gate_primary` | `"false"` | `false`: at/over a cap only paid FALLBACK entries are skipped and the primary still runs (so the agent lives). `true`: every paid entry, primary included, is refused at the cap |
+
+Policy table:
+
+| situation | paid fallback | paid primary |
+|-----------|---------------|--------------|
+| under every cap | runs | runs |
+| at/over a cap | skipped | runs (`gate_primary = "true"`: skipped) |
+| ledger unreadable | skipped | runs (`gate_primary = "true"`: skipped) |
+
+Local models are recorded (tokens, cost 0) but never gated. Rows live in
+`~/.local/share/wisp/usage.jsonl`, the single ledger (`brain` makes one
+`ledger.note()` per call and requests OpenRouter `usage.include`). Cost is
+the OpenRouter-reported `usage.cost` when present, else a built-in price
+table; an unlisted paid model is priced high so it cannot look free.
+Rows from the old `~/.local/share/wisp/spend.jsonl` writer
+(`{ts, model, cost, prompt_tokens, completion_tokens}`) are still read
+and counted as paid openrouter rows (source `spend.jsonl`); nothing
+writes that file any more. The clicklab lab records per-task `cost_usd`
+and tokens from the same ledger and aborts at the daily cap. Inspect
+with `wispd spend`.
 
 ## [health] — endpoint probes (U7)
 
@@ -161,6 +232,30 @@ dry_run, result (first word only), ms`, plus `x`/`y` for coordinate
 targets, `key` for named keys and chords, and `len` + `sha` (12 hex of a
 per-process salted hash) for typed text. Typed text, target names,
 screenshots and result text are never written.
+
+## Latency budgets (W2)
+
+Data, not config: `wisp/budgets.json` (p50 ceiling per path; the verdict
+also needs p90 <= 1.5x). Not revised yet from live traces.
+
+| id | path | p50 ms |
+|---|---|---|
+| P1 / P2 | press / release feedback | 25 / 25 |
+| P3 | transcript (key up -> text); warm whisper floor 1300 | 600 |
+| P4 | route (context + route) | 200 |
+| P5 | first answer token | 500 |
+| P6 | TTS start | 150 |
+| P7 | act first step (UI-TARS grounding) | 1200 |
+| P8 | agent ack | 300 |
+| P9 | stop (request -> idle) | 150 |
+| P10 | offline error | 1000 |
+| E2E | answer, key up -> first token | 1400 |
+
+Resources: wispd under 250 MB RSS and 3% idle CPU; cua-driver
+`MemoryMax=512M`; Companion under 5% CPU at 120 Hz idle.
+`wispd latency` reports real turns; `--budgets` prints this table,
+`--baseline` the committed fake-backed baseline
+(`docs/baselines/latency-harness.json`), `--harness` re-measures it.
 
 ## [debug]
 

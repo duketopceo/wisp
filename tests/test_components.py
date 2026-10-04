@@ -21,10 +21,13 @@ PLUGIN = ROOT / "shell-plugin"
 COMP = PLUGIN / "components"
 FIXTURE_SERVICE = ROOT / "tests" / "qml" / "harness" / "FixtureService.qml"
 
-EXPECTED = ["Answer", "AgentRow", "BarActions", "BarMark", "Beacon", "Bubble", "Chip", "Console",
-            "Corner", "Creature", "EmptyState", "GhostCursor", "Icon",
-            "Mark", "PanelTab", "Pill", "StatusLine", "StepRow",
-            "StopControl", "Transcript"]
+EXPECTED = ["Answer", "AgentRow", "AgentsTab", "BarActions", "BarMark", "Beacon", "Bubble", "Chip", "Console",
+            "Corner", "CornerLayer", "Creature", "EmptyState", "FirstRunCard", "GhostCursor",
+            "HealthSection", "Icon", "Mark", "MemoryTab", "NowTab", "OverlayLayer",
+            "PanelTab", "Pill", "SettingsTab", "StatusLine", "StepRow",
+            "StopControl", "Transcript",
+            # management app views (W26)
+            "AuditView", "BindsView", "HealthView", "SpendView"]
 
 FORBIDDEN = [
     (r"\bimport\s+Quickshell", "Quickshell import"),
@@ -75,7 +78,11 @@ class TestComponentSet(unittest.TestCase):
         import json
         scenes = json.loads(
             (ROOT / "tests/qml/harness/scenes.json").read_text())
-        self.assertEqual(set(EXPECTED) - {"Icon", "BarActions"} - set(scenes), set())
+        # the two layers are snapshotted together by the Companion scene;
+        # BarActions is non-visual
+        layers = {"Icon", "BarActions", "CornerLayer", "OverlayLayer"}
+        self.assertEqual(set(EXPECTED) - layers - set(scenes), set())
+        self.assertIn("Companion", scenes)
 
     def test_metrics_lib_has_no_colors(self):
         src = code(PLUGIN / "lib" / "metrics.js")
@@ -172,9 +179,51 @@ class TestServiceSurface(unittest.TestCase):
                     "level", "tasks", "error", "errorCode", "health",
                     "offline", "stale", "tokens", "motionMode", "fontFamily",
                     "statusWord", "statusTone", "resultView", "notice",
-                    "busy", "ui", "pickLabel", "errorMessage", "errorHint"}
+                    "busy", "ui", "pickLabel", "errorMessage", "errorHint", "spend"}
         self.assertEqual(mirrored - real, set())
         self.assertEqual(mirrored - fix, set())
+
+
+class TestPanelW22(unittest.TestCase):
+    """W22: Panel is four tabs, no timers, no literal copy; Settings writes
+    only through the service (wispd config set)."""
+
+    PANEL = PLUGIN / "Panel.qml"
+
+    def test_four_tabs(self):
+        src = code(self.PANEL)
+        self.assertIn('["now", "agents", "memory", "settings"]', src)
+
+    def test_no_timer_or_polling(self):
+        src = code(self.PANEL)
+        self.assertNotRegex(src, r"\bTimer\s*\{")
+        self.assertNotRegex(src, r"setInterval|repeat:\s*true")
+
+    def test_panel_reads_state_only_through_the_service(self):
+        src = code(self.PANEL)
+        self.assertNotIn("state.json", src)
+        self.assertNotIn("hostWidget.status", src)
+        self.assertIn("hostWidget.service", src)
+
+    def test_settings_write_through_service_config_set(self):
+        self.assertIn("configSet", code(self.PANEL))
+        svc = code(PLUGIN / "WispService.qml")
+        self.assertIn("Settings.setCommand", svc)
+        self.assertNotRegex(code(COMP / "SettingsTab.qml"),
+                            r"config\.toml|\"config\", \"set\"")
+
+    def test_settings_keys_exist_in_default_config(self):
+        import sys
+        sys.path.insert(0, str(ROOT))
+        from wisp import config
+        import re as _re
+        js = (PLUGIN / "lib" / "settings_schema.js").read_text()
+        keys = _re.findall(r'"key": "([a-z_]+\.[a-z_]+)"', js)
+        self.assertGreaterEqual(len(keys), 8)
+        for k in keys:
+            sec, _, name = k.partition(".")
+            self.assertRegex(config.DEFAULT_CONFIG,
+                             r"(?m)^(?:# )?%s\s*=" % _re.escape(name), k)
 
 
 class TestPureLibs(unittest.TestCase):
@@ -243,6 +292,17 @@ class TestPureLibs(unittest.TestCase):
     def test_pill_radius_square_theme(self):
         self.assertEqual(self.call("M.pillRadius(30, 0)", M="metrics"), 0)
         self.assertEqual(self.call("M.pillRadius(30, 8)", M="metrics"), 15)
+
+
+class TestPillTable(unittest.TestCase):
+    def test_every_state_fixture_is_in_the_pill_table(self):
+        src = (ROOT / "tests/qml/lib/tst_pill.qml").read_text()
+        listed = set(re.findall(r'\["(\w+)", "[^"]+", "\w+"\]', src))
+        fixtures = {p.stem for p in
+                    (ROOT / "tests/fixtures/states").glob("*.json")}
+        self.assertEqual(fixtures - listed, set(),
+                         "add the fixture to tst_pill.qml table()")
+        self.assertEqual(listed - fixtures, set())
 
 
 QMLLINT = shutil.which("qmllint") or (

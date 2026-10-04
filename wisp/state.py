@@ -55,6 +55,7 @@ class State:
         self.result = ""
         self.choices = []
         self.prompt_id = ""    # id of the offered choices/confirm (U9)
+        self.confirm = None    # {prompt_id, prompt, timeout_s} while a confirm waits (W25)
         self.points = []
         self.steps = []
         self.suggestion = None
@@ -69,6 +70,7 @@ class State:
         self.error_code = ""    # closed set, wisp/errors_codes.py (U7)
         self.error_detail = ""  # raw text, local only
         self.health = {}        # {endpoint: {ok, since, latency_ms, code}}
+        self.spend = {}         # {today_usd, cap_usd, ...} from ledger.py
         self.started_at = _now()
         self.heartbeat_at = None
         self.meta = {"seq": 0, "updated_at": self.started_at,
@@ -142,6 +144,7 @@ class State:
             "result": self.result,
             "choices": list(self.choices),
             "prompt_id": self.prompt_id,
+            "confirm": dict(self.confirm) if self.confirm else None,
             "points": list(self.points),
             "steps": list(self.steps),
             "suggestion": self.suggestion,
@@ -154,6 +157,7 @@ class State:
             "error_code": self.error_code,
             "error_detail": self.error_detail,
             "health": {k: dict(v) for k, v in self.health.items()},
+            "spend": dict(self.spend),
             "started_at": self.started_at,
             "heartbeat_at": self.heartbeat_at,
             **self.meta,
@@ -253,6 +257,12 @@ class TurnState:
 
     def push_history(self, turn: dict, keep: int = 20) -> None:
         self._bus.state.push_history(turn, keep)
+
+    def emit_event(self, event: str, **data) -> None:
+        """Named one-off event (e.g. `cua.target`), dropped once a newer
+        turn has begun, like this turn's other writes."""
+        if self._bus.current_turn() == self.turn_id:
+            self._bus.emit_event(event, **data)
 
     def snapshot(self) -> dict:
         return self._bus.snapshot()

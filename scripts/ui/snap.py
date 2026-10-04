@@ -70,8 +70,18 @@ TOLERANCE = {
     "StatusLine": Tolerance(10, 0.010),
     "AgentRow": Tolerance(10, 0.010),
     "EmptyState": Tolerance(10, 0.012),
+    "NowTab": Tolerance(10, 0.012),
+    "AgentsTab": Tolerance(10, 0.012),
+    "MemoryTab": Tolerance(10, 0.012),
+    "SettingsTab": Tolerance(10, 0.012),
+    "HealthSection": Tolerance(10, 0.012),
+    "HealthView": Tolerance(10, 0.012),
+    "SpendView": Tolerance(10, 0.012),
+    "AuditView": Tolerance(10, 0.012),
+    "BindsView": Tolerance(10, 0.012),
     "Creature": Tolerance(12, 0.008),
     "Corner": Tolerance(12, 0.008),
+    "Companion": Tolerance(12, 0.006),
 }
 
 
@@ -143,6 +153,7 @@ def cases(only=None):
                         "width": scene.get("width"),
                         "pad": scene.get("pad", 10),
                         "on": scene.get("on", "canvas"),
+                        "source": scene.get("source"),
                     })
     if only:
         out = [c for c in out if only in c["id"]]
@@ -262,6 +273,7 @@ class Report:
     failures: list = field(default_factory=list)
     missing: list = field(default_factory=list)
     orphans: list = field(default_factory=list)
+    kept: object = None
 
     @property
     def ok(self):
@@ -293,11 +305,27 @@ def compare_dir(out_dir, only=None):
 
 
 def check(out_dir=None, only=None, runner=None):
-    """Render and compare. Failing renders are kept in out_dir."""
-    if out_dir is None:
+    """Render and compare. With no `out_dir` the renders go to a private
+    temp directory that is removed afterwards when everything matched; a
+    failing run keeps it (the path is printed by main) so the PNGs can be
+    looked at."""
+    made = out_dir is None
+    if made:
         out_dir = pathlib.Path(tempfile.mkdtemp(prefix="wisp-snap-"))
-    render(out_dir, only=only, runner=runner)
-    return compare_dir(out_dir, only=only)
+    try:
+        render(out_dir, only=only, runner=runner)
+        rep = compare_dir(out_dir, only=only)
+    except BaseException:
+        if made:
+            shutil.rmtree(out_dir, ignore_errors=True)
+        raise
+    rep.kept = None
+    if made:
+        if rep.ok:
+            shutil.rmtree(out_dir, ignore_errors=True)
+        else:
+            rep.kept = out_dir
+    return rep
 
 
 def update(only=None, runner=None):
@@ -406,6 +434,8 @@ def main(argv=None, runner="auto"):
         print(f"MISSING {m}")
     for o in rep.orphans:
         print(f"ORPHAN  {o}")
+    if rep.kept:
+        print(f"snap: failing renders kept in {rep.kept}")
     print(f"snap: {rep.total} compared, {len(rep.failures)} differ, "
           f"{len(rep.missing)} missing, {len(rep.orphans)} orphans")
     return EXIT_OK if rep.ok else EXIT_DIFF

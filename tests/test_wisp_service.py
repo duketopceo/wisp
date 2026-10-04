@@ -94,7 +94,7 @@ class TestSingleReader(unittest.TestCase):
     still carrying their own reader are counted so the number can only go
     down; W21 to W23 delete them."""
 
-    RATCHET = {"BarWidget.qml": 0, "Companion.qml": 1}
+    RATCHET = {"BarWidget.qml": 0}
 
     def test_service_is_a_reader(self):
         self.assertRegex(SRC, r"FileView\s*\{[^}]*state\.json|stateFile")
@@ -108,6 +108,14 @@ class TestSingleReader(unittest.TestCase):
             self.assertLessEqual(n, ceiling, p.name)
             if n < ceiling:
                 self.fail(f"{p.name} dropped to {n}: lower RATCHET")
+
+
+    def test_management_app_ratchet_is_zero(self):
+        # W26: the management app reads state only through the service
+        app = (ROOT / "shells" / "debug" / "shell.qml").read_text()
+        code = re.sub(r"(?m)^\s*//.*$", "", app)
+        self.assertEqual(len(re.findall(r"state\.json|stateFile", code)), 0)
+        self.assertIn("WispService", code)
 
 
 class TestManifest(unittest.TestCase):

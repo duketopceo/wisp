@@ -26,6 +26,7 @@ Item {
   property string result: ""
   property var choices: []
   property string promptId: ""
+  property var confirm: null
   property var points: []
   property var steps: []
   property var suggestion: null
@@ -38,6 +39,7 @@ Item {
   property string error: ""
   property string errorCode: ""
   property var health: ({})
+  property var spend: ({})
   property string turnId: ""
   property bool offline: true
   property bool stale: false
@@ -46,17 +48,19 @@ Item {
 
   readonly property string statusWord: Copy.statusWord(status)
   readonly property string statusTone: Copy.statusTone(status)
+  readonly property var wordView: Copy.wordView(status, result, errorCode, stale)
   readonly property var resultView: Copy.translateResult(result)
   readonly property string errorMessage: errorCode !== "" ? Copy.errorMessage(errorCode) : ""
   readonly property string errorHint: errorCode !== "" ? Copy.errorHint(errorCode) : ""
   readonly property string notice: offline ? Copy.string("state.offline")
-    : stale ? Copy.string("state.stale")
     : contractNewer ? Copy.string("state.newer") : ""
   readonly property string motionMode: Motion.resolveMode(motionConfig, animationsEnabled)
 
   // the bar actions call these; the harness never talks to a daemon
   function trigger() {}
   function interrupt() {}
+  function startDaemon() {}
+  function sendChoice(pick, pid) { return false; }
 
   function ui(key) { return Copy.string(key); }
   function pickLabel(pick) { return Copy.pickLabel(pick); }
@@ -64,6 +68,13 @@ Item {
   // snapshot: raw state.json object; mods: {offline, stale}
   function load(snapshot, mods) {
     var v = Reader.initial();
+    if (mods && mods.patch) {
+      // a variant overrides raw snapshot fields (health, spend, tasks)
+      var merged = {};
+      for (var sk in snapshot) merged[sk] = snapshot[sk];
+      for (var pk in mods.patch) merged[pk] = mods.patch[pk];
+      snapshot = merged;
+    }
     if (mods && mods.offline) {
       v = Reader.markOffline(v, 0);
     } else {
@@ -80,6 +91,7 @@ Item {
     root.result = v.result;
     root.choices = v.choices;
     root.promptId = v.promptId;
+    root.confirm = v.confirm;
     root.points = v.points;
     root.steps = v.steps;
     root.suggestion = v.suggestion;
@@ -92,6 +104,7 @@ Item {
     root.error = v.error;
     root.errorCode = v.errorCode;
     root.health = v.health;
+    root.spend = v.spend;
     root.turnId = v.turnId;
     root.offline = v.offline;
     root.contractNewer = v.contractNewer;

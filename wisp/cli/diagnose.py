@@ -30,6 +30,13 @@ def doctor_sections(cfg: dict, cua_probe=None) -> list:
     row = section("daemon")
     row("wispd", "running" if ipc.alive() else "not running")
 
+    from .. import svc
+    svc_rows = svc.doctor_rows() if _plat.current() == "linux" else []
+    if svc_rows:
+        row = section("services")
+        for r in svc_rows:
+            row(r["name"], r["value"], r["ok"])
+
     row = section("agent runtimes")
     found = agents.detect_runtimes()
     chosen = agents.resolve_runtime(cfg)
@@ -84,6 +91,11 @@ def doctor_sections(cfg: dict, cua_probe=None) -> list:
     row("hyprctl", shutil.which("hyprctl") or "not on PATH",
         bool(shutil.which("hyprctl")))
     row("sense enabled", cfg.get("sense", {}).get("enabled", "false"))
+
+    row = section("reporting")
+    from .. import report as _report
+    on, depth = _report.status(cfg)
+    row("error reporting", f"on, {depth} queued" if on else "off")
 
     row = section("data")
     row("skills", str(len(skills.index())) + " installed")
@@ -222,17 +234,32 @@ def health_start(ctx, a):
 
 # -- latency --------------------------------------------------------------
 
-def _since_args(p):
+def _latency_args(p):
     p.add_argument("--since", default="24h", metavar="AGE",
                    help="window: 24h, 90m, 2d (default 24h)")
+    p.add_argument("--budgets", action="store_true",
+                   help="print the budget table instead of a report")
+    p.add_argument("--baseline", action="store_true",
+                   help="show the committed harness baseline (fakes)")
+    p.add_argument("--harness", action="store_true",
+                   help="measure now from the replay harness (fakes, "
+                        "needs a repo checkout)")
 
 
 @command("latency", "p50 and p90 per budget path from recent turns",
-         ["wispd latency", "wispd latency --since 6h --json"],
+         ["wispd latency", "wispd latency --since 6h --json",
+          "wispd latency --budgets", "wispd latency --harness"],
          {"since_h": "float", "turns": "int", "rows": "list"},
-         args=_since_args)
+         args=_latency_args)
 def latency(ctx, a):
     from .. import telemetry
+    if a.budgets:
+        t = telemetry.load_budgets()
+        return ctx.emit({"paths": t["paths"], "resources": t["resources"],
+                         "p90_factor": t["p90_factor"]},
+                        telemetry.budgets_text())
+    if a.baseline or a.harness:
+        return _latency_harness(ctx, a)
     hours = telemetry.parse_since(a.since)
     rep = telemetry.latency_report(hours)
     data = {"since_h": hours, "turns": rep["turns"], "rows": rep["rows"]}
@@ -252,44 +279,81 @@ def latency(ctx, a):
     return ctx.emit(data, text)
 
 
+def _latency_harness(ctx, a):
+    """Harness numbers: the committed baseline, or a fresh fake run."""
+    from .. import telemetry
+    if a.harness:
+        import pathlib
+        import sys
+        root = pathlib.Path(__file__).resolve().parent.parent.parent
+        if not (root / "tests" / "harness").is_dir():
+            raise CliError("E_NOT_FOUND", "the replay harness needs a "
+                           "repo checkout (tests/harness is missing).",
+                           "wispd latency --baseline")
+        sys.path.insert(0, str(root / "tests"))
+        from harness import latency as hl
+        series = hl.measure(3)
+        doc = {"fakes_only": True, "paths": hl.summarize(series),
+               "regressions": hl.check(series)}
+    else:
+        doc = telemetry.load_baseline()
+        if not doc:
+            raise CliError("E_NOT_FOUND", "no committed harness baseline.",
+                           "python scripts/latency_baseline.py --record")
+    rows = [[pid, r["label"], r["n"], r["p50"], r["p90"],
+             r["budget_p50_ms"]] for pid, r in doc["paths"].items()]
+    text = ("latency from the replay harness (fake models, ms)\n"
+            + ctx.table(["id", "path", "n", "p50", "p90", "budget"], rows))
+    for b in doc.get("regressions", []):
+        text += f"\nREGRESSION: {b}"
+    return ctx.emit(doc, text)
+
+
 # -- spend ----------------------------------------------------------------
 
-@command("spend", "Paid model spend today and the daily cap",
+@command("spend", "Model usage today and the daily and monthly caps",
          ["wispd spend", "wispd spend --json"],
-         {"today_usd": "float", "calls_today": "int",
-          "cap_usd": "float|null", "paid_allowed": "bool",
-          "source": "str"})
+         {"today_usd": "float", "month_usd": "float",
+          "calls_today": "int", "cap_usd": "float|null",
+          "monthly_cap_usd": "float|null", "blocked": "bool",
+          "paid_allowed": "bool", "models": "list", "source": "str"})
 def spend(ctx, a):
-    # TODO(W14): read the real usage ledger and cap once it lands; until
-    # then this reads DATA_DIR/usage.jsonl rows {ts, usd, model, paid}.
-    ledger = config.DATA_DIR / "usage.jsonl"
-    today = datetime.date.today().isoformat()
-    total, calls, source = 0.0, 0, "none"
+    from .. import ledger
+    target = ledger.path()
     try:
-        lines = ledger.read_text().splitlines()
-        source = ledger.name
-    except OSError:
-        lines = []
-    for ln in lines:
-        try:
-            r = json.loads(ln)
-        except ValueError:
-            continue
-        if isinstance(r, dict) and str(r.get("ts", ""))[:10] == today:
-            total += float(r.get("usd") or 0)
-            calls += 1
-    try:
-        cap = float(ctx.cfg.get("budget", {}).get("daily_usd", ""))
-    except ValueError:
-        cap = None
+        st = ledger.status(ctx.cfg)
+    except OSError as e:
+        raise CliError("E_FAILED", f"Cannot read the usage ledger: {e}.",
+                       "Check the permissions on " + str(target))
+    source = target.name if target.exists() else "none"
     paid = ctx.cfg.get("brain", {}).get("allow_paid", "false") == "true"
-    data = {"today_usd": round(total, 4), "calls_today": calls,
-            "cap_usd": cap, "paid_allowed": paid, "source": source}
-    text = ctx.table(["", ""], [
-        ["spent today", f"${total:.4f} over {calls} calls"],
-        ["daily cap", "none set" if cap is None else f"${cap:.2f}"],
-        ["paid fallback", "allowed" if paid else "off (local only)"],
-        ["ledger", source]], header=False)
+    models = [{"model": k, **v} for k, v in sorted(
+        st["by_model"].items(), key=lambda kv: -kv[1]["usd"])]
+    data = {"today_usd": round(st["today_usd"], 4),
+            "month_usd": round(st["month_usd"], 4),
+            "calls_today": st["calls_today"], "cap_usd": st["cap_usd"],
+            "monthly_cap_usd": st["monthly_cap_usd"],
+            "blocked": st["blocked"], "paid_allowed": paid,
+            "models": models, "source": source}
+
+    def cap(v):
+        return "none set" if v is None else f"${v:.2f}"
+    rows = [["spent today", f"${st['today_usd']:.4f} over "
+             f"{st['calls_today']} calls"],
+            ["daily cap", cap(st["cap_usd"])],
+            ["spent this month", f"${st['month_usd']:.4f}"],
+            ["monthly cap", cap(st["monthly_cap_usd"])],
+            ["paid fallback",
+             "BLOCKED: " + st["reason"].replace("_", " ")
+             if st["blocked"] else "allowed" if paid
+             else "off (local only)"],
+            ["ledger", source]]
+    text = ctx.table(["", ""], rows, header=False)
+    if models:
+        text += "\n" + ctx.table(
+            ["model today", "calls", "tokens", "usd"],
+            [[m["model"], str(m["calls"]), f"{m['in']}/{m['out']}",
+              f"${m['usd']:.4f}"] for m in models])
     return ctx.emit(data, text)
 
 
@@ -311,7 +375,8 @@ def binds(ctx, a):
                 if "wisp" in blob:
                     found.append({"key": b.get("key", ""),
                                   "modmask": b.get("modmask", 0),
-                                  "arg": b.get("arg", "")})
+                                  "arg": b.get("arg", ""),
+                                  "submap": b.get("submap", "") or ""})
     except Exception:  # the socket is best effort here
         up = False
     data = {"hotkey": {"mod": mod, "key": key, "chord": f"{mod}+{key}"},
@@ -326,37 +391,88 @@ def binds(ctx, a):
 
 # -- onboard --------------------------------------------------------------
 
-@command("onboard", "Check first-run setup and say what to do next",
-         ["wispd onboard", "wispd onboard --json"],
-         {"ready": "bool", "steps": "list"})
+def _onboard_args(p):
+    p.add_argument("--status", action="store_true",
+                   help="print the checklist and exit 0 (the Panel card "
+                   "reads this)")
+    p.add_argument("--step", metavar="ID",
+                   help="run one step: mic, models, cua, notifications, "
+                   "keybinding")
+    p.add_argument("--yes", action="store_true",
+                   help="with --step notifications: send the test now")
+    p.add_argument("--undo", metavar="ID", help="forget one recorded step")
+    p.add_argument("--finish", action="store_true",
+                   help="mark setup finished (hides the Panel card)")
+    p.add_argument("--reset", action="store_true",
+                   help="forget all progress")
+    p.add_argument("--interactive", action="store_true",
+                   help="walk the steps even without a terminal")
+
+
+def _onboard_rows(ctx, st):
+    mark = {"done": "ok", "todo": "TODO", "na": "n/a"}
+    rows = [[mark[s["state"]], s["name"],
+             s["detail"] if s["state"] != "todo" or not s["try"]
+             else s["detail"] + ". Try: " + s["try"]]
+            for s in st["steps"]]
+    tones = [[{"done": "ok", "todo": "warn", "na": "muted"}[s["state"]],
+              None, "muted"] for s in st["steps"]]
+    return ctx.table(["", "", ""], rows, tones, header=False)
+
+
+@command("onboard", "Walk through first-run setup (every step skippable)",
+         ["wispd onboard", "wispd onboard --status --json",
+          "wispd onboard --step notifications --yes",
+          "wispd onboard --undo mic"],
+         {"ready": "bool", "finished": "bool", "done_count": "int",
+          "total": "int", "steps": "list"},
+         args=_onboard_args)
 def onboard(ctx, a):
-    # TODO(W28): the interactive first-run flow lives there; this is the
-    # non-interactive readiness checklist it will build on.
-    from .. import ipc
-    cfg = ctx.cfg
-    wm = config.whisper_model(cfg)
-    snap = _snapshot(ctx)
-    down = sorted(n for n, h in snap.items() if not h["ok"])
-    steps = [
-        ("config file", config.CFG_FILE.exists(), "wispd config show"),
-        ("speech model", wm.exists(), "scripts/fetch_whisper.sh"),
-        ("recorder (pw-record)", bool(shutil.which("pw-record")),
-         "omarchy pkg add pipewire"),
-        ("model endpoints", not down, "wispd health start"),
-        ("daemon running", ipc.alive(), "wispd daemon install"),
-    ]
-    out = [{"name": n, "ok": bool(ok), "try": hint}
-           for n, ok, hint in steps]
-    data = {"ready": all(s["ok"] for s in out), "steps": out}
-    rows = [["ok" if s["ok"] else "TODO", s["name"],
-             "" if s["ok"] else "Try: " + s["try"]] for s in out]
-    tones = [["ok" if s["ok"] else "warn", None, "muted"] for s in out]
-    text = ctx.table(["", "", ""], rows, tones, header=False)
-    if data["ready"]:
-        return ctx.emit(data, text)
+    import sys
+    from .. import onboard as ob
+    progress, probes = ob.Progress(), ob.Probes()
+    # a fresh machine has no config.toml, and ctx.cfg would write one;
+    # onboarding reads the defaults instead and writes nothing
+    cfg = ctx.cfg if config.CFG_FILE.exists() \
+        else config._default_cfg_dict()
+    ctx._cfg = cfg   # so table() cannot load (and write) the real file
+    ids = [s.id for s in ob.STEPS]
+    for name in (a.step, a.undo):
+        if name and name not in ids:
+            raise CliError("E_USAGE", f"Unknown step {name!r}. Choose "
+                           f"{', '.join(ids)}.", "wispd onboard --help")
+    if a.reset:
+        progress.reset()
+        return ctx.emit({"reset": True}, "progress cleared")
+    if a.undo:
+        r = ob.undo(a.undo, progress)
+        return ctx.emit(r, f"{a.undo}: " + ("undone" if r["undone"]
+                                            else "nothing to undo"))
+    if a.finish:
+        progress.finish()
+        return ctx.emit({"finished": True}, "setup marked finished")
+    if a.step:
+        r = ob.run_step(a.step, cfg, probes, progress, confirm=a.yes)
+        if r["done"]:
+            return ctx.emit(r, f"{a.step}: {r['detail']}")
+        hint = r["fix"] or "wispd onboard"
+        if a.step == "notifications" and not a.yes \
+                and r["state"] == "todo" and r["detail"].startswith("ready"):
+            hint = "wispd onboard --step notifications --yes"
+        raise CliError("E_NOT_READY", f"{r['name']}: {r['detail']}.", hint,
+                       data=r)
+    if a.interactive or (sys.stdin.isatty() and sys.stdout.isatty()
+                         and not ctx.json and not a.status):
+        res = ob.walk(cfg, probes, progress, input, print)
+        return ctx.emit(res, "setup finished" if res["finished"]
+                        else "progress saved, run wispd onboard to resume")
+    st = ob.status(cfg, probes, progress)
+    text = _onboard_rows(ctx, st)
+    if st["ready"] or a.status:
+        return ctx.emit(st, text)
     if not ctx.json and not ctx.flags.quiet:
         print(text)
-    n = sum(1 for s in out if not s["ok"])
-    raise CliError("E_NOT_READY", f"{n} setup step"
-                   f"{'s' if n != 1 else ''} still to do.",
-                   next(s["try"] for s in out if not s["ok"]), data=data)
+    todo = [s for s in st["steps"] if not s["optional"] and not s["ok"]]
+    raise CliError("E_NOT_READY", f"{len(todo)} setup step"
+                   f"{'s' if len(todo) != 1 else ''} still to do.",
+                   todo[0]["try"] or "wispd onboard", data=st)

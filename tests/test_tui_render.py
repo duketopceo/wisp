@@ -128,10 +128,13 @@ class TestManagementApp(unittest.TestCase):
     def test_old_background_is_gone(self):
         self.assertNotIn("16161e", self.qml.lower())
 
-    def test_reads_tokens_and_follows_theme_name(self):
-        self.assertIn("tokens.js", self.qml)
-        self.assertIn("theme.name", self.qml)
-        self.assertIn("colors.toml", self.qml)
+    def test_tokens_come_from_the_service_and_follow_theme_name(self):
+        # W26: the app reads tokens through WispService (lib/tokens.js over
+        # colors.toml); the Commons shim watches theme.name for the swap.
+        self.assertIn("readonly property var tk: svc.tokens", self.qml)
+        shim = (SHELL.parent / "Commons" / "Color.qml").read_text()
+        self.assertIn("theme.name", shim)
+        self.assertIn("currentThemePath", shim)
 
     def test_no_em_dash_or_symbol_icons(self):
         self.assertNotIn("—", self.qml)
@@ -158,6 +161,15 @@ class TestManagementApp(unittest.TestCase):
                 self.assertTrue(f.is_file() and not f.is_symlink(), f)
                 self.assertEqual(f.read_bytes(),
                                  (ROOT / "shell-plugin/lib" / name).read_bytes())
+            # W26: the service, its libs and the view components ride along
+            # as real files (the repo links them to shell-plugin/)
+            for rel in ("WispService.qml", "lib/state.js", "lib/manage.js",
+                        "components/HealthSection.qml",
+                        "components/SpendView.qml", "Commons/qmldir"):
+                f = app / rel
+                self.assertTrue(f.is_file() and not f.is_symlink(), f)
+            self.assertEqual((app / "lib/state.js").read_bytes(),
+                             (ROOT / "shell-plugin/lib/state.js").read_bytes())
 
 
 if __name__ == "__main__":

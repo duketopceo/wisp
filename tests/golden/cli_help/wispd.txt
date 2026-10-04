@@ -16,9 +16,9 @@ Diagnose:
   doctor       Check every dependency wisp needs
   health       Local model endpoint health
   latency      p50 and p90 per budget path from recent turns
-  spend        Paid model spend today and the daily cap
+  spend        Model usage today and the daily and monthly caps
   binds        Show the push-to-talk hotkey and its Hyprland binds
-  onboard      Check first-run setup and say what to do next
+  onboard      Walk through first-run setup (every step skippable)
   trace        Turn trace and daily digest
 
 Pointer and notifications:
@@ -38,7 +38,8 @@ Learning:
   learn        Weekly corrections and failure log
   skills       Installed skills
   recipes      Recipes drafted from past runs
-  eval         Replay logged decisions through candidate routers
+  eval         Route agreement and candidate-router replay
+  batch        Offline OpenRouter batch jobs (cheap models, capped)
 
 Settings:
   config       Show or change config.toml (live, no restart)

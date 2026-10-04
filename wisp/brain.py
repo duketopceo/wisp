@@ -14,7 +14,10 @@ brain — that's the router, not the answer provider.
 Fallback chain (backend U7): `[brain] fallback = "name:model, ..."`
 lists entries tried in order after `default`. A paid entry (OpenRouter,
 or `paid = "true"` on its section) is skipped unless
-`[brain] allow_paid = "true"` and `budget_ok()` (U10 hook). Each call
+`[brain] allow_paid = "true"` and `budget_ok()` (U10). Once a `[budget]`
+cap is reached paid FALLBACK entries are refused; the PRIMARY entry
+still runs (so the agent lives) unless `[budget] gate_primary = "true"`.
+Local entries always keep working. Each call
 gets ONE fast retry on connection refused/reset only (never a timeout —
 that would double the wait); streaming entries must produce a first
 token within `[brain] first_token_s` (default 3) or the chain moves on.
@@ -23,12 +26,11 @@ falling back (a second answer would be spliced onto the first). When
 every entry fails the turn ends `brain_down`.
 """
 import json
-import pathlib
 import time
 import urllib.request
 import urllib.error
 
-from . import cancel, config, errors_codes
+from . import cancel, config, errors_codes, ledger
 
 # set by the daemon: a health.HealthRegistry; entries it knows are down
 # are skipped without a connection attempt
@@ -100,78 +102,13 @@ def chain(cfg: dict) -> list:
     return out
 
 
-_SPEND_LOG = pathlib.Path.home() / ".local/share/wisp/spend.jsonl"
-_USAGE = {"cost": 0.0, "prompt_tokens": 0, "completion_tokens": 0,
-          "calls": 0}
-
-
-def reset_usage() -> None:
-    for k in _USAGE:
-        _USAGE[k] = 0
-
-
-def usage_totals() -> dict:
-    return dict(_USAGE)
-
-
-def _track_usage(resp: dict, model: str = "") -> None:
-    u = resp.get("usage") or {}
-    cost = u.get("cost")
-    _USAGE["calls"] += 1
-    _USAGE["prompt_tokens"] += int(u.get("prompt_tokens") or 0)
-    _USAGE["completion_tokens"] += int(u.get("completion_tokens") or 0)
-    if cost is None:
-        return
-    _USAGE["cost"] += float(cost)
-    try:
-        _SPEND_LOG.parent.mkdir(parents=True, exist_ok=True)
-        with open(_SPEND_LOG, "a") as f:
-            f.write(json.dumps({"ts": time.time(), "model": model,
-                                "cost": float(cost),
-                                "prompt_tokens": u.get("prompt_tokens"),
-                                "completion_tokens":
-                                    u.get("completion_tokens")}) + "\n")
-    except OSError:
-        pass
-
-
-def spend_today() -> float:
-    """Sum of today's recorded spend (USD) across all callers in this
-    process + earlier runs — the local ledger behind budget_ok()."""
-    day = time.strftime("%Y-%m-%d")
-    total = 0.0
-    try:
-        with open(_SPEND_LOG) as f:
-            for line in f:
-                try:
-                    r = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if time.strftime("%Y-%m-%d",
-                                 time.localtime(r.get("ts", 0))) == day:
-                    total += float(r.get("cost") or 0)
-    except OSError:
-        pass
-    return total
-
-
-def budget_ok() -> bool:
-    """False once today's recorded spend passes [brain] daily_cap_usd
-    (default $8). Applies to paid fallback entries; the primary model
-    is always allowed so the agent never dies outright."""
-    try:
-        cap = float(cfg_default_cap())
-    except (TypeError, ValueError):
-        cap = 8.0
-    return spend_today() < cap
-
-
-def cfg_default_cap():
-    try:
-        return config.load_config().get("brain", {}) \
-            .get("daily_cap_usd", 8.0)
-    except Exception:
-        return 8.0
+def budget_ok(cfg: dict | None = None, primary: bool = False) -> bool:
+    """U10 hook: may a paid entry run? Paid FALLBACK entries are refused
+    once a cap (daily or monthly, `[budget]`; `[brain] daily_cap_usd` is
+    an alias) is reached or the ledger cannot be read. The PRIMARY
+    entry still runs unless `[budget] gate_primary = "true"`."""
+    return ledger.paid_allowed(cfg if cfg is not None else {},
+                               primary=primary)
 
 
 def supports_vision(cfg: dict) -> bool:
@@ -244,16 +181,17 @@ def _chat_one(p: dict, messages: list, tools, timeout) -> dict:
             body["tools"] = tools
         resp = _post(f"{base}/api/chat", {}, body, timeout)
         msg = resp.get("message", {})
-        return {"content": msg.get("content", ""), "raw": msg}
+        return {"content": msg.get("content", ""), "raw": msg,
+                "usage": ledger.usage_of(resp)}
     body = {"model": p["model"], "messages": messages, "max_tokens": 600,
-            "usage": {"include": True}}
+            "usage": {"include": True}}  # OpenRouter: report usage.cost
     if tools and _tools_ok(p):
         body["tools"] = tools
         body["tool_choice"] = "auto"
     resp = _post(f"{base}/chat/completions", _headers(p), body, timeout)
-    _track_usage(resp, p["model"])
     msg = (resp.get("choices") or [{}])[0].get("message", {})
-    return {"content": msg.get("content", ""), "raw": msg}
+    return {"content": msg.get("content", ""), "raw": msg,
+            "usage": ledger.usage_of(resp)}
 
 
 def _relax(r, timeout) -> None:
@@ -276,6 +214,7 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
     else:
         body = {"model": p["model"], "messages": messages,
                 "max_tokens": 600, "stream": True,
+                "stream_options": {"include_usage": True},
                 "usage": {"include": True}}
         url, headers = f"{base}/chat/completions", _headers(p)
     req = urllib.request.Request(
@@ -283,7 +222,7 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
         headers={"User-Agent": UA, "Content-Type": "application/json",
                  **headers}, method="POST")
     t0 = time.monotonic()
-    acc, msg, usage = "", {}, None
+    acc, msg, usage = "", {}, {}
     try:
         with cancel.urlopen(req, timeout=first_token_s) as r:
             for raw in r:
@@ -299,6 +238,8 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
                     piece = (chunk.get("message") or {}).get("content") \
                         or ""
                     done = bool(chunk.get("done"))
+                    if done:
+                        usage = ledger.usage_of(chunk)
                 else:
                     if not line.startswith("data:"):
                         continue
@@ -309,7 +250,8 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
                         chunk = json.loads(payload)
                     except json.JSONDecodeError:
                         continue
-                    usage = chunk.get("usage") or usage
+                    if chunk.get("usage"):
+                        usage = ledger.usage_of(chunk)
                     choice = (chunk.get("choices") or [{}])[0]
                     piece = (choice.get("delta") or {}).get("content") \
                         or ""
@@ -336,9 +278,12 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
             err.committed = True
             raise err from e
         raise
-    if usage and not ollama:
-        _track_usage({"usage": usage}, p["model"])
-    return {"content": acc, "raw": msg or {"content": acc}}
+    if not usage:  # provider sent none: estimate (~4 chars a token)
+        usage = {"in": sum(len(str(m.get("content", "")))
+                           for m in messages) // 4,
+                 "out": len(acc) // 4, "cost": None}
+    return {"content": acc, "raw": msg or {"content": acc},
+            "usage": usage}
 
 
 def _describe(p: dict, e: Exception) -> str:
@@ -369,12 +314,19 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
     allow_paid = cfg.get("brain", {}).get("allow_paid", "false") == "true"
     failures: list = []
     first_failed = None
+    capped = errored = False
     for i, p in enumerate(chain(cfg)):
         cancel.check()  # a cancelled turn never moves to the next brain
         if not p["base_url"]:
             failures.append(f"brain provider '{p['name']}' needs "
                             f"brain.{p['name']}.base_url")
-        elif i and p["paid"] and not (allow_paid and budget_ok()):
+        elif p["paid"] and not budget_ok(cfg, primary=not i):
+            # a cap (or an unreadable ledger) stops paid FALLBACK calls
+            # before the request; the primary runs unless gate_primary
+            # is set; local entries are untouched
+            capped = True
+            failures.append(f"{p['name']}: spend cap reached, skipped")
+        elif i and p["paid"] and not allow_paid:
             failures.append(f"{p['name']}: paid entry skipped")
             continue
         elif i and tools and not _tools_ok(p):
@@ -390,6 +342,7 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
                 if getattr(e, "committed", False) \
                         or isinstance(e, cancel.Cancelled):
                     raise
+                errored = True
                 failures.append(_describe(p, e))
                 if HEALTH is not None:
                     HEALTH.report_failure(f"brain_{p['name']}",
@@ -397,6 +350,8 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
             else:
                 res["provider"] = p["name"]
                 res["fallback_from"] = first_failed
+                ledger.note(p["name"], p["model"], p["paid"],
+                            res.get("usage") or {})
                 if first_failed:
                     trace.emit(trace.current(), "brain_fallback", "brain",
                                {"fallback_from": first_failed,
@@ -405,6 +360,9 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
                 return res
         if first_failed is None:
             first_failed = p["name"]
+    if capped and not errored:
+        raise errors_codes.WispError("budget_exceeded",
+                                     "; ".join(failures))
     raise errors_codes.WispError("brain_down", "; ".join(failures))
 
 

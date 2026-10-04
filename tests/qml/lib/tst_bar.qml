@@ -13,6 +13,9 @@ TestCase {
     id: mock
     property int talks: 0
     property int stops: 0
+    property bool offline: false
+    property int starts: 0
+    function startDaemon() { starts += 1 }
     function trigger() { talks += 1 }
     function interrupt() { stops += 1 }
   }
@@ -20,11 +23,17 @@ TestCase {
   SignalSpy { id: panelSpy; target: actions; signalName: "panelRequested" }
   BarActions { id: actions; service: mock }
 
-  function init() { mock.talks = 0; mock.stops = 0; panelSpy.clear() }
+  function init() { mock.talks = 0; mock.stops = 0; mock.starts = 0; mock.offline = false; panelSpy.clear() }
+
+  function test_left_click_starts_the_daemon_while_offline() {
+    mock.offline = true
+    compare(actions.press(Qt.LeftButton), "start")
+    compare(mock.starts, 1); compare(mock.talks, 0)
+  }
 
   function ui(k) {
     var t = { "ui.bar.ok": "ok", "ui.bar.down": "down", "ui.more": "more",
-      "ui.bar.spend": "spent today", "ui.bar.hint": "hint" }
+      "ui.bar.spend": "spent today", "ui.bar.hint": "hint", "ui.bar.hint.offline": "hint" }
     return t[k]
   }
 

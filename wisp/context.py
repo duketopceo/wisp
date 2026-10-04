@@ -5,6 +5,8 @@ loop (and answer route) so "this" / "fix it" resolve against the real
 screen instead of a void. [act] context = full|minimal|off.
 """
 import json
+import threading
+import time
 
 from . import config, platform, skills
 
@@ -106,3 +108,77 @@ def snapshot(cfg: dict) -> str:
         out += (f"\n[prefs] password_manager={pm} — do NOT interact "
                 "with password-manager prompts; ASK_USER instead.")
     return out
+
+
+SPECULATIVE_TTL_S = 5.0
+
+
+class Speculative:
+    """Context gathered at key press, while the user is still talking
+    (W4). Each gatherer runs on its own thread so the screenshot and the
+    window map overlap each other and the recording; `take()` hands a
+    result to the turn once, and only if it is younger than the TTL.
+    `cancel()` (interrupt, phantom release, no audio) discards everything,
+    including results that land afterwards. A gatherer that raises is a
+    miss: the pipeline falls back to gathering inline."""
+
+    def __init__(self, gatherers: dict, ttl: float = SPECULATIVE_TTL_S,
+                 clock=time.monotonic):
+        self._gatherers = dict(gatherers)
+        self._ttl = ttl
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._done = {n: threading.Event() for n in self._gatherers}
+        self._res = {}
+        self._cancelled = False
+
+    @property
+    def names(self) -> list:
+        return list(self._gatherers)
+
+    @property
+    def cancelled(self) -> bool:
+        return self._cancelled
+
+    def start(self) -> "Speculative":
+        for name, fn in self._gatherers.items():
+            threading.Thread(target=self._run, args=(name, fn),
+                             daemon=True, name=f"wisp-spec-{name}").start()
+        return self
+
+    def _run(self, name, fn) -> None:
+        try:
+            val = fn()
+        except Exception:
+            val = None
+        with self._lock:
+            if not self._cancelled and val is not None:
+                self._res[name] = (val, self._clock())
+        self._done[name].set()
+
+    def take(self, name: str, wait: float = 0.0, consume: bool = True):
+        """The gathered value, or None (missing, failed, stale, cancelled
+        or still running past `wait` seconds)."""
+        ev = self._done.get(name)
+        if ev is None:
+            return None
+        if wait and not ev.is_set():
+            ev.wait(wait)
+        with self._lock:
+            if self._cancelled:
+                return None
+            got = self._res.get(name)
+            if got is None:
+                return None
+            val, at = got
+            if self._clock() - at > self._ttl:
+                del self._res[name]
+                return None
+            if consume:
+                del self._res[name]
+            return val
+
+    def cancel(self) -> None:
+        with self._lock:
+            self._cancelled = True
+            self._res.clear()

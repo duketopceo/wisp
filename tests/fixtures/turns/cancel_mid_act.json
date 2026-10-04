@@ -58,7 +58,9 @@
     }
   },
   "expect": {
-    "result_prefix": "INTERRUPTED"
+    "result_prefix": "INTERRUPTED",
+    "stop_within_ms": 150
   },
-  "interrupt_after_ms": 600
+  "interrupt_after_ms": 600,
+  "scenario": "cancel mid-act"
 }

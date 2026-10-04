@@ -56,6 +56,12 @@ def main(spec_path: str) -> int:
             # actions, spoken, stale); the stub accepts and ignores them
             pipeline.notify = lambda msg, *a, **k: \
                 out["notifications"].append(msg)
+        if spec.get("notify_now"):
+            # fixed wall clock for the quiet-hours check ("YYYY-MM-DDTHH:MM")
+            from datetime import datetime as _dt
+            from wisp import notify as _notify
+            _fixed = _dt.fromisoformat(spec["notify_now"])
+            _notify._default._now = lambda: _fixed
         if not spec.get("real_hypr"):
             pipeline.active_window = lambda: {}
 
@@ -65,6 +71,10 @@ def main(spec_path: str) -> int:
             shutil.copyfile(spec["wav"], dst)
             return dst
         pipeline.record = fake_record
+
+        if spec.get("catalog"):
+            from wisp.tools import adapters
+            adapters.best_catalog = lambda: spec["catalog"]
 
         def fake_launch(arg):
             out["launch_calls"].append(arg)

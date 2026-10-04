@@ -57,6 +57,7 @@ lacks a section. Shells may offer a settings page on top of this command.
   "result": "string",
   "choices": ["string"],
   "prompt_id": "string — id of the offered choices/confirm; \"\" when none",
+  "confirm": "null, or {prompt_id, prompt, timeout_s} while a confirm card waits (additive, W25)",
   "points": [{"x": 0, "y": 0, "label": "string", "step": 1}],
   "steps": ["tool arg → result", "…"],
   "guide": {"x": 0, "y": 0, "label": "string", "mode": "guide|drive", "seq": 1},
@@ -68,6 +69,7 @@ lacks a section. Shells may offer a settings page on top of this command.
   "error_code": "closed set, see below; \"\" when no error",
   "error_detail": "string — raw failure text, local only",
   "health": {"<endpoint>": {"ok": true, "since": "ISO-8601", "latency_ms": 12, "code": null}},
+  "spend": {"today_usd": 0.0, "cap_usd": 8.0, "month_usd": 0.0, "monthly_cap_usd": 160.0, "blocked": false},
   "started_at": "ISO-8601",
   "turn_id": "string — turn that produced this write",
   "seq": 0,
@@ -100,6 +102,17 @@ transition, each with a stream event
 Absent or `{}` on older cores and while probing is disabled. Remote
 endpoints are never probed and never listed.
 
+Spend (additive; W14): `spend` is `{today_usd, cap_usd|null, month_usd,
+monthly_cap_usd|null, blocked}` from the usage ledger (`wisp/ledger.py`),
+republished after every recorded model call and on each health tick (so
+the local-midnight rollover reaches shells without a call). `cap_usd` is
+the daily cap, null when unset; `blocked` is true while a cap is reached
+(or the ledger is unreadable): paid FALLBACK calls are refused, and the
+primary too only when `[budget] gate_primary = "true"` (local models
+always run). A `spend` health
+row goes down with code `budget_exceeded` in the same state. `{}` on
+older cores.
+
 Prompt ids (additive; U9): every `awaiting_choice` publishes `choices`
 together with a `prompt_id`, and clears both when the prompt resolves.
 `choice` may carry `prompt_id` and/or `index` (1-based into `choices`;
@@ -124,6 +137,14 @@ to `status: idle` with `error_code: "cancelled"` (`error` empty);
 new turn (`listening`) clears `error_code`. Speech now starts per
 completed sentence while the answer streams (state still goes
 `speaking` → `done` when the last sentence ends).
+
+Confirm card (additive; W25): while a confirm waits the core also
+publishes `confirm = {prompt_id, prompt, timeout_s}` (`null` otherwise,
+cleared with `choices`). `confirm.prompt_id` equals `prompt_id`; the
+card's replies use it, and a reply with any other id is `stale_prompt`.
+No reply within `timeout_s` (`[agent] confirm_timeout`, default 120,
+clamped 5 to 600) resolves as deny: the daemon owns the deadline, the
+step result is `SKIPPED (<tool> confirmation timed out)`.
 
 Confirmation gate: when a mutating/shell action needs approval, the
 core transitions to `awaiting_choice` with `choices` = e.g.
@@ -198,7 +219,11 @@ target; the target is dropped when the status leaves those, when
 `turn_id` changes, and when the daemon goes offline. No target means the
 ghost cursor renders nothing. The emitter sends at most one `aim` per
 action, then `click`, then `done`; it need not repeat unchanged targets.
-Until W13 emits it, fixtures drive it (`tests/qml/harness/scenes.json`).
+W13 (`wisp/act.py` via `wisp/grounding.py`) emits it for every act-loop
+click/move: `aim` once the point is resolved, then `click` and `done`
+when the click landed; a failed, refused or dry-run click sends the
+clear. A guide-mode click or a move leaves the `aim` parked. Fixtures
+also drive it (`tests/qml/harness/scenes.json`).
 
 Topic filtering happens in the daemon: unrequested events are never
 queued for that client. Ordering is the bus's write order, identical for

@@ -1,0 +1,42 @@
+{
+  "description": "Answer turn with the notify fake installed: one success toast reaches notify-send.",
+  "audio": "ask.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "what time is it"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "content": "It is half past three.",
+          "chunk_delay_ms": 0
+        }
+      ]
+    }
+  },
+  "expect": {
+    "answer": "It is half past three.",
+    "notify_bodies": [
+      "ANSWERED"
+    ]
+  },
+  "name": "notify_success_toast",
+  "scenario": "notify paths",
+  "fakes": {
+    "notify": {}
+  }
+}

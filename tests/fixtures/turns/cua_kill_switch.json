@@ -1,0 +1,61 @@
+{
+  "description": "[cua] kill_switch on: every injected click is refused before dispatch; cua-driver sees nothing.",
+  "audio": "act.wav",
+  "name": "cua_kill_switch",
+  "config": {
+    "pointer": {
+      "mode": "drive",
+      "backend": "auto"
+    },
+    "cua": {
+      "kill_switch": "true"
+    }
+  },
+  "fakes": {
+    "cua": {},
+    "hypr": {},
+    "notify": {}
+  },
+  "endpoints": {
+    "whisper": {
+      "transcript": "wisp agent click the save button"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "tool_calls": [
+            {
+              "name": "click",
+              "arg": "10,20@logical"
+            }
+          ]
+        },
+        {
+          "content": "Clicked save."
+        }
+      ]
+    }
+  },
+  "expect": {
+    "cua_calls": [],
+    "steps_contain": [
+      "REFUSED (cua kill switch is on)"
+    ],
+    "result_prefix": "ACTED"
+  },
+  "scenario": "kill switch"
+}

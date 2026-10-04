@@ -1,1001 +1,203 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
+import Quickshell.Hyprland
 import qs.Commons
+import "components"
+import "lib/cursor.js" as Cursor
+import "lib/companion.js" as Companion
 
-// Companion — the Clicky-style orb for io.github.duketopceo.wisp.
-// A small floating orb anchored bottom-right that breathes while Wisp
-// works; clicking expands a card with transcript, answer, and choice
-// buttons. Two layer-shell windows: a fullscreen click-through surface
-// for [POINT] markers, and a small corner window for the orb itself.
-// Bound to $XDG_RUNTIME_DIR/wisp/state.json like WispService, so it
-// works whether or not the bar widget is placed.
+// Companion host for io.github.duketopceo.wisp (Ember U11 to U13).
+// Window plumbing only: every visual is a component in components/, every
+// piece of state comes from WispService (never state.json directly).
+//   Top window     wisp-companion: corner creature + console, hidden when
+//                  the focused workspace has a fullscreen window.
+//   Overlay window wisp-points: pill, answer bubble, ghost cursor, beacons
+//                  (a waiting Wisp stays visible over fullscreen).
+// Both windows are full-output, click-through (empty input region) except
+// the interactive items: creature, console, pill, bubble.
 Item {
   id: root
 
   property var shell: null
   property var manifest: null
-  property bool opened: true   // orb is persistent; expanded card toggles
-  property bool expanded: false
+  // handed over by the shell when the plugin pairs an overlay with a service
+  property var service: null
 
-  property string status: "offline"
-  property string transcript: ""
-  property string answer: ""
-  property string result: ""
-  property var choices: []
-  property var points: []
-  property bool pointsVisible: false
-  property real level: 0.0
-  property string error: ""
-  property string lastAnswer: ""
-  property bool userPinned: false
-  property int expandedAt: 0  // Date.now() when the card last opened
-  property var steps: []
-  property var guide: null      // {x,y,label,seq,mode} — ghost cursor target
-  property bool bubbleVisible: false
-  property string goal: ""
-  property real cursorX: -1     // real pointer, polled while busy
-  property real cursorY: -1
+  readonly property var svc: service ? service
+    : (shell && manifest ? shell.serviceFor(manifest.id) : null)
 
-  // theme tokens — dark defaults inline so the orb renders before
-  // theme.json exists; ~/.local/share/wisp/theme.json overrides live
-  property var theme: ({
-    "canvas": "#1a1b26", "surface": "#283457", "hairline": "#3b4261",
-    "ink": "#c0caf5", "muted": "#9aa5ce", "faint": "#565f89",
-    "accent": "#7aa2f7", "accentAlt": "#bb9af7", "guide": "#7dcfff",
-    "ok": "#9ece6a", "warn": "#e0af68", "err": "#e05555"
-  })
+  // user hid the corner creature until the next Super+D or bar click
+  property bool hidden: false
+  property bool userOpen: false
+  // the safety net fired: a stuck daemon status must not pin the console
+  property bool capped: false
+  property bool bubbleDismissed: false
+  property bool labeled: false
+  // real pointer in layer coordinates, read once when an answer arrives
+  property var pointer: null
+  property int pointerRequest: 0
+  // width the open console takes (0 when closed), for bubble placement
+  property real consoleExtent: 0
 
-  readonly property string themeFile: {
-    var dh = Quickshell.env("XDG_DATA_HOME");
-    if (!dh || dh.length === 0)
-      dh = Quickshell.env("HOME") + "/.local/share";
-    return dh + "/wisp/theme.json";
+  // event-driven (Hyprland workspace state), no polling
+  readonly property bool fullscreen: Hyprland.focusedWorkspace
+    ? Hyprland.focusedWorkspace.hasFullscreen : false
+
+  // refresh rate of the output a window sits on (QScreen has it, the
+  // shell's screen object does not); the creature quantizes its clock to it
+  function refreshOf(shellScreen) {
+    var list = Application.screens;
+    for (var i = 0; shellScreen && i < list.length; i++)
+      if (list[i].name === shellScreen.name) return list[i].refreshRate;
+    return 60;
   }
 
-  readonly property bool busy:
-    ["listening", "transcribing", "deciding", "acting"]
-      .indexOf(status) >= 0
+  // plugin contract: the shell calls these for reasons that are not ours
+  // (rescan, panel sweep), so open() only reveals and close() only collapses
+  function open(payload) { root.hidden = false; }
+  function close() { root.userOpen = false; }
+  function toggle() { root.userOpen = Companion.userToggle(root.userOpen); root.capped = false; }
+  function dismiss() { root.userOpen = false; }
 
-  function statusWord() {
-    switch (root.status) {
-    case "listening": return "listening";
-    case "transcribing": return "hearing";
-    case "deciding": return "thinking";
-    case "acting": return "working";
-    case "suggestion": return "an idea";
-    case "awaiting_choice": return "needs you";
-    case "speaking": return "speaking";
-    case "error": return "error";
-    default: return root.status;
+  Connections {
+    target: root.svc
+    function onStatusChanged() {
+      root.capped = false;
+      if (root.svc.status === "listening") root.hidden = false;
+    }
+    function onTurnChanged() {
+      root.bubbleDismissed = false;
+      root.labeled = false;
+    }
+    function onConfirmChanged() {
+      if (root.svc.confirm === null) return;
+      root.bubbleDismissed = false;
+      root.pointer = null;
+      root.pointerRequest += 1;
+    }
+    function onAnswerChanged() {
+      if (root.svc.answer === "") return;
+      root.bubbleDismissed = false;
+      root.pointer = null;
+      root.pointerRequest += 1;
     }
   }
 
-  readonly property string stateFile: {
-    var rd = Quickshell.env("XDG_RUNTIME_DIR");
-    if (!rd || rd.length === 0) rd = "/tmp";
-    return rd + "/wisp/state.json";
-  }
+  // ── top window: corner creature and console ─────────────────────
+  LazyLoader {
+    active: root.svc !== null
 
-  // The orb is persistent — the shell host calls close()/hide() on
-  // overlays for reasons that aren't ours (plugins rescan, panel
-  // sweep), so close() only collapses the card. `opened` is accepted
-  // for the plugin contract but nothing reads it to hide the orb.
-  function open(payload) { root.opened = true; }
-  function close() { root.expanded = false; }
-  function toggle() { root.expanded = !root.expanded; }
-  function dismiss() {
-    root.expanded = false;
-  }
+    PanelWindow {
+      id: topWin
+      visible: top.shown
+      color: "transparent"
+      anchors { left: true; right: true; top: true; bottom: true }
+      exclusionMode: ExclusionMode.Ignore
+      // input only where interactive: the creature's bounds and the console
+      mask: Region {
+        Region { item: top.cornerShown ? top.corner : null }
+        Region { item: top.consoleShown ? top.consoleCard : null }
+      }
+      WlrLayershell.namespace: "wisp-companion"
+      WlrLayershell.layer: WlrLayer.Top
+      WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
-  // "app:discord" → "discord", "action:run_shell" → "run a command" —
-  // chips are for humans, not protocol frames.
-  function pickLabel(pick) {
-    var p = pick.replace(/^suggestion:/, "");
-    var i = p.indexOf(":");
-    if (i < 0) return p;
-    var kind = p.slice(0, i), val = p.slice(i + 1);
-    if (kind === "app") return val === "none" ? "none of these" : val;
-    if (kind === "action") {
-      var verbs = {"launch": "open it", "run_shell": "run a command",
-                   "answer": "just answer", "act": "do it for me",
-                   "agent": "send to agent", "dictation": "dictate it"};
-      return verbs[val] || val.replace(/_/g, " ");
-    }
-    return val;
-  }
+      // Safety net (plan KTD8): the console never hangs open. One the user
+      // opened compresses after 180 s, one the daemon opened (a choice) or
+      // a busy one after 120 s. One-shot, runs only while the console shows.
+      Timer {
+        id: capTimer
+        interval: root.userOpen ? 180000 : 120000
+        running: top.consoleShown
+        onTriggered: { root.userOpen = false; root.capped = true; }
+      }
+      Connections {
+        target: root.svc
+        function onStatusChanged() { if (capTimer.running) capTimer.restart(); }
+      }
 
-  // daemon binary — absolute: the layer-shell process env is not
-  // guaranteed to carry ~/.local/bin on PATH
-  readonly property string wispd: Quickshell.env("HOME") + "/.local/bin/wispd"
-
-  function sendChoice(pick) {
-    choiceProc.command = [root.wispd, "choice", pick];
-    choiceProc.running = true;
-  }
-
-  // Shared button — padded hit area, hover/press feedback, pointer
-  // cursor. `flat` renders text-only (still clickable).
-  component WispButton: Rectangle {
-    id: wb
-    property string label: ""
-    property color textColor: theme.ink
-    property bool flat: false
-    signal clicked()
-    implicitHeight: 28
-    implicitWidth: wbText.implicitWidth + 20
-    radius: 6
-    color: flat ? "transparent"
-        : ma.pressed ? theme.hairline
-        : ma.containsMouse ? theme.guide
-        : theme.surface
-    border.color: flat ? "transparent" : theme.hairline
-    border.width: 1
-    scale: ma.pressed ? 0.96 : 1.0
-    Behavior on scale { NumberAnimation { duration: 60 } }
-    Behavior on color { ColorAnimation { duration: 90 } }
-    Text {
-      id: wbText
-      anchors.centerIn: parent
-      text: wb.label
-      color: ma.containsMouse && !wb.flat ? theme.canvas : wb.textColor
-      font.pixelSize: 11
-      font.bold: wb.flat ? false : ma.containsMouse
-      elide: Text.ElideRight
-      maximumLineCount: 1
-    }
-    MouseArea {
-      id: ma
-      anchors.fill: parent
-      hoverEnabled: true
-      cursorShape: Qt.PointingHandCursor
-      onClicked: wb.clicked()
-    }
-  }
-
-  readonly property color orbColor: {
-    if (root.status === "error" || root.error.length > 0) return theme.err;
-    if (root.status === "listening") return theme.accent;
-    if (["transcribing", "deciding"].indexOf(root.status) >= 0) return theme.accentAlt;
-    if (["acting", "awaiting_choice"].indexOf(root.status) >= 0) return theme.ok;
-    if (root.status === "suggestion") return theme.warn;
-    if (root.status === "speaking") return theme.warn;
-    if (root.status === "offline") return theme.faint;
-    return theme.hairline;
-  }
-
-  FileView {
-    id: stateView
-    path: root.stateFile
-    watchChanges: true
-    onFileChanged: reload()
-    onLoadFailed: root.status = "offline"
-    onLoaded: {
-      try {
-        var s = JSON.parse(stateView.text());
-        var newStatus = s.status || "idle";
-        var newAnswer = s.answer || "";
-        var newChoices = s.choices || [];
-        var newError = s.error || "";
-        // speech bubble at the cursor — Clicky-style: the answer lives
-        // where your eyes already are, not in a corner card
-        if (newAnswer.length > 0 && newAnswer !== root.lastAnswer) {
-          root.bubbleVisible = true;
-          bubbleTimer.restart();
-        }
-        root.status = newStatus;
-        root.transcript = s.transcript || "";
-        root.answer = newAnswer;
-        root.result = s.result || "";
-        root.choices = newChoices;
-        var pts = s.points || [];
-        if (pts.length > 0 &&
-            JSON.stringify(pts) !== JSON.stringify(root.points)) {
-          root.points = pts;
-          root.pointsVisible = true;
-          pointsTimer.restart();
-        }
-        root.level = s.level || 0.0;
-        root.error = newError;
-        root.steps = s.steps || [];
-        root.guide = s.guide || null;
-        root.goal = s.goal || "";
-        // Surfacing: the card pops while Wisp works (status + step log),
-        // on an answer, a question, or an error — then auto-collapses.
-        // Clicking the orb pins it open; auto-hide resumes on done.
-        if (root.busy || newStatus === "awaiting_choice"
-            || newStatus === "suggestion") {
-          if (!root.expanded) root.expandedAt = Date.now();
-          root.expanded = true;
-          root.userPinned = false;
-          autoHide.stop();
-        } else {
-          if (newChoices.length > 0 ||
-              (newAnswer.length > 0 && newAnswer !== root.lastAnswer) ||
-              newError.length > 0) {
-            root.lastAnswer = newAnswer;
-            if (!root.expanded) root.expandedAt = Date.now();
-            root.expanded = true;
-            root.userPinned = false;
-          }
-          autoHide.restart();
-        }
-      } catch (e) { root.status = "offline"; }
-    }
-  }
-
-  FileView {
-    id: themeView
-    path: root.themeFile
-    watchChanges: true
-    onFileChanged: reload()
-    onLoaded: {
-      try {
-        var t = JSON.parse(themeView.text());
-        if (t && t.tokens) root.theme = t.tokens;
-      } catch (e) {}
-    }
-  }
-
-  Timer {
-    id: autoHide
-    interval: 15000
-    onTriggered: if (!root.userPinned) root.expanded = false
-  }
-
-  // Compress watchdog — the card must never hang open. Busy states
-  // (listening/acting/awaiting_choice) get 120s before forced
-  // collapse: a stuck daemon status can't pin the UI forever. A
-  // user-pinned card gets 180s idle before it compresses too — a pin
-  // is a peek, not a window.
-  Timer {
-    id: compressWatch
-    interval: 2000
-    repeat: true
-    running: root.expanded
-    onTriggered: {
-      if (!root.expanded || root.expandedAt === 0) return;
-      var age = Date.now() - root.expandedAt;
-      var cap = root.userPinned ? 180000 : 120000;
-      if (!root.busy && root.status !== "awaiting_choice"
-          && !root.userPinned) return;  // autoHide owns idle collapse
-      if (age > cap) {
-        root.userPinned = false;
-        root.expanded = false;
+      CornerLayer {
+        id: top
+        anchors.fill: parent
+        service: root.svc
+        hidden: root.hidden
+        fullscreen: root.fullscreen
+        capped: root.capped
+        userOpen: root.userOpen
+        gap: Style.gapsOut
+        refreshHz: root.refreshOf(topWin.screen)
+        onConsoleExtentChanged: root.consoleExtent = consoleExtent
+        onCornerClicked: root.toggle()
+        onTalk: root.svc.trigger()
+        onHide: { root.hidden = true; root.userOpen = false; }
+        onStopClicked: root.svc.interrupt()
       }
     }
   }
 
-  Timer {
-    interval: 500
-    running: true
-    repeat: true
-    onTriggered: stateView.reload()
-  }
+  // ── overlay window: pill, bubble, ghost cursor, beacons ─────────
+  LazyLoader {
+    active: root.svc !== null
 
-  Timer {
-    id: pointsTimer
-    interval: 8000
-    onTriggered: root.pointsVisible = false
-  }
-
-  Process {
-    id: choiceProc
-    command: [root.wispd, "choice", ""]
-  }
-
-  Process {
-    id: labelProc
-    command: [root.wispd, "label", "correct"]
-  }
-
-  Process {
-    id: interruptProc
-    command: [root.wispd, "interrupt"]
-  }
-
-  // Real-cursor ring: poll hyprctl cursorpos while Wisp works (~11 Hz).
-  // Cheap socket query; only runs during busy states — no always-on
-  // tail-following.
-  Timer {
-    id: bubbleTimer
-    interval: 9000
-    onTriggered: root.bubbleVisible = false
-  }
-
-  Timer {
-    id: cursorPoll
-    interval: 90
-    running: root.busy || root.bubbleVisible
-    repeat: true
-    onTriggered: cursorProc.running = true
-  }
-
-  Process {
-    id: cursorProc
-    command: ["hyprctl", "cursorpos"]
-    stdout: SplitParser {
-      onRead: function (data) {
-        var m = /(-?\d+)[, ]+(-?\d+)/.exec(data);
-        if (m) { root.cursorX = +m[1]; root.cursorY = +m[2]; }
+    PanelWindow {
+      id: win
+      visible: layer.shown
+      color: "transparent"
+      anchors { left: true; right: true; top: true; bottom: true }
+      exclusionMode: ExclusionMode.Ignore
+      mask: Region {
+        Region { item: layer.pillShown ? layer.pill : null }
+        Region { item: layer.bubbleShown ? layer.bubbleHost : null }
       }
-    }
-  }
+      WlrLayershell.namespace: "wisp-points"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
-  // ── point markers ────────────────────────────────────────────────
-  // Fullscreen click-through overlay: logical coords straight from
-  // state.json (normalized by the daemon). Visual guidance only —
-  // empty input mask so it never eats clicks. Auto-hides after 8s.
-  PanelWindow {
-    id: pointsWin
-    visible: (root.pointsVisible && root.points.length > 0)
-             || root.guide !== null
-             || root.bubbleVisible
-             || (root.busy && root.cursorX >= 0)
-    color: "transparent"
-    anchors { left: true; right: true; top: true; bottom: true }
-    exclusionMode: ExclusionMode.Ignore
-    mask: Region {}
-    WlrLayershell.namespace: "wisp-points"
-    WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-
-    // Ring locked to the user's real cursor while Wisp works — crisp
-    // border, no chase animation, only during busy states.
-    Item {
-      id: ring
-      visible: root.busy && root.cursorX >= 0
-      x: root.cursorX; y: root.cursorY
-      width: 0; height: 0
-      Rectangle {
-        x: -22; y: -22
-        width: 44; height: 44; radius: 22
-        color: "transparent"
-        border.color: theme.guide
-        border.width: 2
-        // brightens while the ghost is parked — "your turn" handoff cue
-        opacity: root.guide !== null ? 1.0 : 0.7
-      }
-      Rectangle {
-        x: -3; y: -3
-        width: 6; height: 6; radius: 3
-        color: theme.guide
-        opacity: root.guide !== null ? 1.0 : 0.7
-      }
-    }
-
-    // Speech bubble at the cursor — the Clicky pattern: the reply
-    // appears where the user is already looking, then fades. Glass
-    // card, max ~420px, clamps inside the screen.
-    Item {
-      id: bubble
-      visible: root.bubbleVisible && root.answer.length > 0
-      property int bx: Math.max(16, Math.min(parent.width - 440,
-                                           root.cursorX + 24))
-      property int by: Math.max(16, Math.min(parent.height - 160,
-                                             root.cursorY - 40))
-      x: bx; y: by
-      width: 0; height: 0
-      opacity: visible ? 1 : 0
-      Behavior on opacity { NumberAnimation { duration: 180 } }
-
-      Rectangle {
-        width: Math.min(420, btxt.implicitWidth + 28)
-        height: Math.min(150, btxt.implicitHeight + 24)
-        radius: 12
-        color: Qt.rgba(theme.canvas.r, theme.canvas.g,
-                       theme.canvas.b, 0.88)
-        border.color: theme.hairline
-        border.width: 1
-
-        Text {
-          id: btxt
-          x: 14; y: 12
-          width: 392
-          wrapMode: Text.WordWrap
-          text: root.answer
-          color: theme.ink
-          font.pixelSize: 13
-          maximumLineCount: 7
-          elide: Text.ElideRight
-        }
-      }
-    }
-
-    // Ghost cursor: peels off the ring to each target point the act
-    // loop picks. In guide mode it parks there ("your turn" handoff —
-    // ring brightens); in drive mode it shows where the click landed.
-    Item {
-      id: ghost
-      visible: root.guide !== null
-      x: root.guide !== null ? root.guide.x : 0
-      y: root.guide !== null ? root.guide.y : 0
-      width: 0; height: 0
-      Behavior on x { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-      Behavior on y { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-
-      Canvas {
-        id: ghostArrow
-        x: -4; y: -4
-        width: 22; height: 26
-        onPaint: {
-          var ctx = getContext("2d");
-          ctx.reset();
-          ctx.beginPath();
-          ctx.moveTo(2, 1); ctx.lineTo(2, 19); ctx.lineTo(6.5, 14.5);
-          ctx.lineTo(10, 21.5); ctx.lineTo(13, 20); ctx.lineTo(9.5, 13);
-          ctx.lineTo(16, 13); ctx.closePath();
-          ctx.fillStyle = theme.guide;
-          ctx.fill();
-          ctx.strokeStyle = theme.canvas;
-          ctx.lineWidth = 2;
-          ctx.stroke();
-        }
-        SequentialAnimation on scale {
-          running: ghost.visible
-          loops: Animation.Infinite
-          NumberAnimation { to: 1.12; duration: 500; easing.type: Easing.InOutSine }
-          NumberAnimation { to: 1.0; duration: 500; easing.type: Easing.InOutSine }
-        }
-      }
-
-      Rectangle {
-        visible: root.guide !== null && (root.guide.label || "").length > 0
-        x: 16; y: -14
-        width: glbl.implicitWidth + 14
-        height: 24; radius: 6
-        color: theme.canvas
-        border.color: theme.guide
-        Text {
-          id: glbl
-          anchors.centerIn: parent
-          text: (root.guide && root.guide.mode === "guide"
-                 ? "click: " : "") + (root.guide ? root.guide.label : "")
-          color: theme.guide
-          font.pixelSize: 11
-          font.bold: true
-        }
-      }
-    }
-
-    Item {
-      id: ptsHost
-      anchors.fill: parent
-
-      Repeater {
-        model: root.points
-        delegate: Item {
-          // clamp inside the surface so edge/overshoot coords stay visible
-          x: Math.max(16, Math.min(ptsHost.width - 16, modelData.x))
-          y: Math.max(16, Math.min(ptsHost.height - 16, modelData.y))
-          width: 0; height: 0
-
-          Rectangle {
-            x: -14; y: -14
-            width: 28; height: 28; radius: 14
-            color: "transparent"
-            border.color: theme.accent
-            border.width: 3
-
-            SequentialAnimation on scale {
-              running: true
-              loops: Animation.Infinite
-              NumberAnimation { to: 1.2; duration: 600; easing.type: Easing.InOutSine }
-              NumberAnimation { to: 1.0; duration: 600; easing.type: Easing.InOutSine }
-            }
-
-            Text {
-              anchors.centerIn: parent
-              text: index + 1
-              color: theme.accent
-              font.pixelSize: 12
-              font.bold: true
-            }
-          }
-
-          Rectangle {
-            visible: (modelData.label || "").length > 0
-            x: 20; y: -12
-            width: lbl.implicitWidth + 14
-            height: 24
-            radius: 6
-            color: theme.canvas
-            border.color: theme.hairline
-            Text {
-              id: lbl
-              anchors.centerIn: parent
-              text: modelData.label || ""
-              color: theme.ink
-              font.pixelSize: 11
-            }
+      // One read of the real pointer per answer, no loop: the bubble opens
+      // where the user is already looking and stays there.
+      Process {
+        id: cursorProc
+        command: ["hyprctl", "cursorpos"]
+        running: false
+        stdout: SplitParser {
+          onRead: function (data) {
+            var m = /(-?\d+)[, ]+(-?\d+)/.exec(data);
+            if (m) root.pointer = { x: +m[1] - win.screen.x, y: +m[2] - win.screen.y };
           }
         }
       }
-    }
-  }
-
-  // ── listening pill ───────────────────────────────────────────────
-  // Spotlight-style bottom-center pill shown while a turn is in
-  // flight (listening → transcribing → deciding → acting → choice).
-  // Click-through shell; the choice chips are the only live pixels.
-  // (WispOverlay.qml was never instantiated — the manifest's overlay
-  // entry point is this file, so the pill lives here.)
-  readonly property bool pillActive:
-    ["listening", "transcribing", "deciding", "acting",
-     "awaiting_choice"].indexOf(status) >= 0
-
-  PanelWindow {
-    id: pillWin
-    visible: root.pillActive
-    color: "transparent"
-    anchors { left: true; right: true; bottom: true }
-    implicitHeight: pill.implicitHeight + 120
-    exclusionMode: ExclusionMode.Ignore
-    // input region = the pill only — clicks pass through everywhere
-    // else, chips stay clickable
-    mask: Region { item: pill }
-    WlrLayershell.namespace: "wisp-pill"
-    WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-
-    Rectangle {
-      id: pill
-      anchors {
-        bottom: parent.bottom
-        bottomMargin: 96
-        horizontalCenter: parent.horizontalCenter
-      }
-      width: Math.min(pillWin.width * 0.6, pillCol.implicitWidth + 36)
-      height: pillCol.implicitHeight + 22
-      radius: height / 2
-      color: Qt.rgba(theme.canvas.r, theme.canvas.g, theme.canvas.b,
-                     0.92)
-      border.color: Qt.rgba(theme.accent.r, theme.accent.g,
-                            theme.accent.b, 0.35 + root.level * 0.4)
-      border.width: 1
-      opacity: pillWin.visible ? 1 : 0
-      scale: pillWin.visible ? 1 : 0.96
-      Behavior on opacity { NumberAnimation { duration: 140 } }
-      Behavior on scale { NumberAnimation { duration: 140
-                                            easing.type: Easing.OutCubic } }
-
-      Column {
-        id: pillCol
-        anchors.centerIn: parent
-        spacing: 8
-
-        Row {
-          anchors.horizontalCenter: parent.horizontalCenter
-          spacing: 10
-
-          // mic arc — three bars driven by level
-          Row {
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: 2
-            height: 14
-            Repeater {
-              model: 3
-              Rectangle {
-                anchors.bottom: parent.bottom
-                width: 3; radius: 1.5
-                height: 4 + root.level * (8 + index * 4)
-                color: theme.accent
-                Behavior on height { NumberAnimation { duration: 80 } }
-              }
-            }
-          }
-
-          Text {
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.status === "awaiting_choice"
-                  ? "which one?" : root.statusWord()
-            color: theme.accent
-            font.pixelSize: 13
-            font.bold: true
-          }
-
-          Text {
-            visible: root.transcript.length > 0
-            anchors.verticalCenter: parent.verticalCenter
-            text: {
-              var t = root.transcript;
-              return t.length > 80 ? "…" + t.slice(-78) : t;
-            }
-            color: theme.ink
-            font.pixelSize: 13
-            elide: Text.ElideLeft
-            width: Math.min(implicitWidth, 420)
-          }
-        }
-
-        Row {
-          visible: root.choices.length > 0
-          anchors.horizontalCenter: parent.horizontalCenter
-          spacing: 6
-          Repeater {
-            model: root.choices
-            delegate: Rectangle {
-              width: chipLbl.implicitWidth + 16
-              height: chipLbl.implicitHeight + 8
-              radius: height / 2
-              color: chipMa.containsMouse
-                     ? Qt.rgba(theme.accent.r, theme.accent.g,
-                               theme.accent.b, 0.3)
-                     : Qt.rgba(theme.ink.r, theme.ink.g,
-                               theme.ink.b, 0.10)
-              border.color: Qt.rgba(theme.accent.r, theme.accent.g,
-                                    theme.accent.b, 0.5)
-              Text {
-                id: chipLbl
-                anchors.centerIn: parent
-                text: modelData
-                color: theme.ink
-                font.pixelSize: 12
-              }
-              MouseArea {
-                id: chipMa
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.sendChoice(modelData)
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  // ── orb + expanded card ──────────────────────────────────────────
-  // Small window hugging bottom-right; grows when the card expands.
-  PanelWindow {
-    id: orbWin
-    visible: true  // persistent — host close() collapses the card only
-    color: "transparent"
-    anchors { right: true; bottom: true }
-    exclusionMode: ExclusionMode.Ignore
-    implicitWidth: root.expanded ? 388 : 92
-    implicitHeight: root.expanded
-      ? cardCol.implicitHeight + 52 : 92
-    WlrLayershell.namespace: "wisp-companion"
-    WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-
-    Item {
-      anchors.fill: parent
-
-      // Jupiter rings — two arcs orbit the orb while Wisp works
-      Item {
-        id: rings
-        visible: root.busy && !root.expanded
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        anchors.margins: 24
-        width: 44; height: 44
-
-        Rectangle {
-          anchors.centerIn: parent
-          width: 58; height: 58; radius: 29
-          color: "transparent"
-          border.color: theme.accent
-          border.width: 1
-          opacity: 0.35
-        }
-
-        Canvas {
-          id: ringA
-          anchors.fill: parent
-          onPaint: {
-            var ctx = getContext("2d");
-            ctx.reset();
-            ctx.strokeStyle = theme.accent;
-            ctx.lineWidth = 2.5;
-            ctx.lineCap = "round";
-            ctx.beginPath();
-            ctx.arc(width / 2, height / 2, 29, 0, Math.PI * 0.85);
-            ctx.stroke();
-          }
-          onVisibleChanged: requestPaint()
-          RotationAnimator on rotation {
-            running: root.busy
-            from: 0; to: 360; duration: 1100
-            loops: Animation.Infinite
-          }
-        }
-
-        Canvas {
-          id: ringB
-          anchors.fill: parent
-          onPaint: {
-            var ctx = getContext("2d");
-            ctx.reset();
-            ctx.strokeStyle = theme.accentAlt;
-            ctx.lineWidth = 2;
-            ctx.lineCap = "round";
-            ctx.beginPath();
-            ctx.arc(width / 2, height / 2, 22, Math.PI * 0.4,
-                    Math.PI * 1.1);
-            ctx.stroke();
-          }
-          onVisibleChanged: requestPaint()
-          RotationAnimator on rotation {
-            running: root.busy
-            from: 360; to: 0; duration: 1600
-            loops: Animation.Infinite
-          }
-        }
+      Connections {
+        target: root
+        function onPointerRequestChanged() { cursorProc.running = true; }
       }
 
-      // Orb
-      Rectangle {
-        id: orb
-        visible: !root.expanded
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        anchors.margins: 24
-        width: 44
-        height: 44
-        radius: 22
-        color: root.orbColor
-        opacity: 0.9
-
-        SequentialAnimation on scale {
-          running: root.busy || root.status === "speaking"
-          loops: Animation.Infinite
-          NumberAnimation { to: 1.15; duration: 700; easing.type: Easing.InOutSine }
-          NumberAnimation { to: 1.0; duration: 700; easing.type: Easing.InOutSine }
-        }
-
-        // mic waveform while listening — bars ride state.json `level`
-        Row {
-          visible: root.status === "listening"
-          anchors.centerIn: parent
-          spacing: 3
-          Repeater {
-            model: 5
-            Rectangle {
-              width: 3
-              radius: 1.5
-              color: theme.ink
-              anchors.verticalCenter: parent.verticalCenter
-              // level is 0..~0.3 RMS; stagger so bars wave, not mirror
-              height: 4 + Math.min(20, root.level * 90) *
-                    (1.0 - 0.5 * Math.abs(index - 2) / 2)
-              Behavior on height {
-                NumberAnimation { duration: 80 }
-              }
-            }
-          }
-        }
-
-        Text {
-          anchors.centerIn: parent
-          visible: root.status !== "listening"
-          text: root.status === "speaking" ? "♪" : "◉"
-          font.pixelSize: 18
-          color: theme.ink
-        }
-
-        // pointer badge: dots when guidance markers are on screen
-        Rectangle {
-          visible: root.pointsVisible
-          anchors.top: parent.top
-          anchors.right: parent.right
-          width: 14; height: 14; radius: 7
-          color: theme.accent
-          Text {
-            anchors.centerIn: parent
-            text: root.points.length
-            color: theme.canvas
-            font.pixelSize: 9
-            font.bold: true
-          }
-        }
-
-        MouseArea {
-          anchors.fill: parent
-          onClicked: {
-            root.expanded = true;
-            root.expandedAt = Date.now();
-            root.userPinned = true;
-            autoHide.stop();
-          }
-        }
+      // Bubble dwell: 9 s plus 40 ms per word, paused while hovered. A
+      // confirm card ignores it: the daemon's own deadline ends the card.
+      Timer {
+        interval: Cursor.dwellMs(root.svc.answer)
+        running: layer.bubbleShown && !layer.bubbleHovered && root.svc.confirm === null
+        onTriggered: root.bubbleDismissed = true
       }
 
-      // Expanded card
-      Rectangle {
-        visible: root.expanded
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        anchors.margins: 24
-        width: 340
-        height: cardCol.implicitHeight + 28
-        radius: 12
-        color: theme.canvas
-        border.color: theme.hairline
-        border.width: 1
-
-        Column {
-          id: cardCol
-          anchors.fill: parent
-          anchors.margins: 14
-          spacing: 8
-
-          Row {
-            spacing: 8
-            Item {
-              width: 12; height: 12
-              anchors.verticalCenter: parent.verticalCenter
-              Canvas {
-                anchors.fill: parent
-                visible: root.busy
-                onPaint: {
-                  var ctx = getContext("2d");
-                  ctx.reset();
-                  ctx.strokeStyle = theme.accent;
-                  ctx.lineWidth = 2;
-                  ctx.lineCap = "round";
-                  ctx.beginPath();
-                  ctx.arc(6, 6, 4.5, 0, Math.PI * 1.4);
-                  ctx.stroke();
-                }
-                onVisibleChanged: requestPaint()
-                RotationAnimator on rotation {
-                  running: root.busy
-                  from: 0; to: 360; duration: 800
-                  loops: Animation.Infinite
-                }
-              }
-              Rectangle {
-                visible: !root.busy
-                anchors.centerIn: parent
-                width: 10; height: 10; radius: 5
-                color: root.orbColor
-              }
-            }
-            Text {
-              text: "Wisp — " + root.statusWord()
-              color: theme.ink
-              font.pixelSize: 13
-              font.bold: true
-            }
-          }
-
-          Text {
-            visible: root.goal.length > 0
-            width: parent.width
-            wrapMode: Text.Wrap
-            text: "goal: " + root.goal
-            color: theme.guide
-            font.pixelSize: 11
-            font.bold: true
-          }
-
-          Text {
-            visible: root.transcript.length > 0
-            width: parent.width
-            wrapMode: Text.Wrap
-            text: "“" + root.transcript + "”"
-            color: theme.muted
-            font.pixelSize: 12
-            font.italic: true
-          }
-
-          // live act-loop step log — "screenshot → ok" style, last 4
-          Column {
-            visible: root.steps.length > 0
-            width: parent.width
-            spacing: 2
-            Repeater {
-              model: root.steps
-              Text {
-                width: parent.width
-                text: "› " + modelData
-                color: index === root.steps.length - 1
-                       ? theme.ink : theme.faint
-                font.pixelSize: 10
-                font.family: "monospace"
-                elide: Text.ElideRight
-              }
-            }
-          }
-
-          // cancel the in-flight turn — interrupt, not daemon stop
-          Text {
-            visible: root.busy
-            text: "■ stop"
-            color: stopMa.containsMouse ? theme.err : theme.muted
-            font.pixelSize: 11
-            font.bold: true
-            MouseArea {
-              id: stopMa
-              anchors.fill: parent
-              hoverEnabled: true
-              cursorShape: Qt.PointingHandCursor
-              onClicked: {
-                interruptProc.running = false
-                interruptProc.running = true
-              }
-            }
-          }
-
-          Text {
-            visible: root.answer.length > 0
-            width: parent.width
-            wrapMode: Text.Wrap
-            text: root.answer
-            color: theme.ink
-            font.pixelSize: 13
-          }
-
-          Text {
-            visible: root.answer.length === 0 && root.result.length > 0
-            width: parent.width
-            wrapMode: Text.Wrap
-            text: root.result
-            color: theme.muted
-            font.pixelSize: 12
-          }
-
-          Text {
-            visible: root.error.length > 0
-            width: parent.width
-            wrapMode: Text.Wrap
-            text: root.error
-            color: theme.err
-            font.pixelSize: 12
-          }
-
-          Flow {
-            width: parent.width
-            spacing: 6
-            visible: root.choices.length > 0
-            Repeater {
-              model: root.choices
-              WispButton {
-                label: root.pickLabel(String(modelData))
-                onClicked: {
-                  root.sendChoice(modelData);
-                  root.expanded = false;
-                }
-              }
-            }
-          }
-
-          Row {
-            spacing: 6
-            WispButton {
-              label: "✓ good"
-              textColor: theme.ok
-              onClicked: {
-                labelProc.command = [root.wispd, "label", "correct"];
-                labelProc.running = true;
-              }
-            }
-            WispButton {
-              label: "✗ wrong"
-              textColor: theme.err
-              onClicked: {
-                labelProc.command = [root.wispd, "label", "incorrect"];
-                labelProc.running = true;
-              }
-            }
-            WispButton {
-              label: "collapse"
-              textColor: theme.muted
-              flat: true
-              onClicked: root.expanded = false
-            }
-            Text {
-              text: "Super+D to talk"
-              color: theme.faint
-              font.pixelSize: 11
-              anchors.verticalCenter: parent.verticalCenter
-            }
-          }
-        }
+      OverlayLayer {
+        id: layer
+        anchors.fill: parent
+        service: root.svc
+        pointer: root.pointer
+        originX: win.screen.x
+        originY: win.screen.y
+        gap: Style.gapsOut
+        refreshHz: root.refreshOf(win.screen)
+        consoleExtent: root.consoleExtent
+        bubbleDismissed: root.bubbleDismissed
+        labeled: root.labeled
+        onChoose: function (pick, index) { root.svc.sendChoice(pick, root.svc.promptId); }
+        onConfirmChosen: function (pick, promptId) { root.svc.sendChoice(pick, promptId); }
+        onMoreClicked: { root.userOpen = true; root.capped = false; }
+        onVerdict: function (verdict) { root.labeled = true; root.svc.label(verdict); }
       }
     }
   }

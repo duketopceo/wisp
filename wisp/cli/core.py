@@ -31,27 +31,46 @@ def _install_args(p):
     p.add_argument("--cua", action="store_true",
                    help="also install the pinned cua-driver "
                         "(scripts/cua/install.sh)")
+    p.add_argument("--units", action="store_true",
+                   help="only install the systemd unit templates "
+                        "(scripts/units), backing up changed ones")
     p.add_argument("--dry-run", action="store_true",
-                   help="with --cua: print the plan, change nothing")
+                   help="print the plan, change nothing "
+                        "(also with --cua or --units)")
 
 
 @command("daemon install",
          "Install runtime files, the systemd unit and the hotkey bind",
-         ["wispd daemon install", "wispd install --cua --dry-run"],
-         {"installed": "bool", "cua": "any"}, args=_install_args)
+         ["wispd daemon install", "wispd install --dry-run",
+          "wispd install --units --dry-run"],
+         {"installed": "bool", "cua": "any", "units": "any"},
+         args=_install_args)
 def daemon_install(ctx, a):
-    if a.dry_run and not a.cua:
-        raise CliError("E_USAGE", "--dry-run needs --cua.",
-                       "wispd install --cua --dry-run")
     if a.cua:
         return _install_cua(ctx, a)
+    if a.units:
+        return _install_units(ctx, a)
 
     def go():
-        ctx.host.install_files()
-        ctx.host.install_bind(ctx.cfg)
+        ctx.host.install_files(dry_run=a.dry_run)
+        if not a.dry_run:
+            ctx.host.install_bind(ctx.cfg)
         return 0
     rc, text = _host_call(ctx, go)
-    return ctx.emit({"installed": rc == 0, "cua": None})
+    return ctx.emit({"installed": rc == 0 and not a.dry_run, "cua": None})
+
+
+def _install_units(ctx, a):
+    """Only the systemd units: back up changed ones, daemon-reload,
+    never enable/start/restart. --dry-run writes nothing."""
+    from .. import config as _cfgmod, svc
+    acts = svc.install_units(_cfgmod.HOME, dry_run=a.dry_run)
+    text = svc.describe(acts, a.dry_run)
+    if not a.dry_run:
+        text += ("\nunits installed, not restarted; apply with "
+                 "systemctl --user restart <unit>")
+    return ctx.emit({"installed": not a.dry_run, "cua": None,
+                     "units": acts}, text)
 
 
 def _install_cua(ctx, a):

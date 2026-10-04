@@ -22,6 +22,7 @@ import urllib.request
 from datetime import datetime, timezone
 
 from . import cancel as _cancel
+from . import copy as _copy
 from . import config, speech
 from . import errors_codes as _errors
 
@@ -182,13 +183,21 @@ def record_stop(rec: dict, state=None) -> pathlib.Path:
     return _record_finish(rec, state, settled=True)
 
 
+_SAMPLER_JOIN_S = 0.25
+
+
 def _record_finish(rec: dict, state=None, settled: bool = False
                    ) -> pathlib.Path:
     out = rec["out"]
     if not settled:
         # bounded path: proc already exited or timed out
         rec["sampler_stop"].set()
-    time.sleep(0.3)
+    # the level sampler may publish one more window after the recorder
+    # stops; wait for it to exit (event-driven) instead of a fixed
+    # 300 ms sleep, then zero the level. Bounded in case it is stuck.
+    sampler = rec.get("sampler")
+    if sampler is not None:
+        sampler.join(timeout=_SAMPLER_JOIN_S)
     if state:
         state.set_level(0.0)
     else:
@@ -408,6 +417,8 @@ def _publish_error(state, exc: BaseException) -> None:
     err = _ec.classify(exc, "internal")
     state.transition("error", error=err.public, error_code=err.code,
                      error_detail=err.detail[:500])
+    from . import report as _report
+    _report.capture(err.code, exc)
 
 
 def _shadow_decision(transcript: str, state_txt: str, questions: dict,
@@ -580,6 +591,41 @@ def capture_screen() -> pathlib.Path | None:
         return out if r.returncode == 0 and out.exists() else None
     except Exception:
         return None
+
+
+def _png_b64(png: pathlib.Path | None) -> str | None:
+    if not png:
+        return None
+    try:
+        return base64.b64encode(png.read_bytes()).decode()
+    finally:
+        png.unlink(missing_ok=True)
+
+
+def turn_screenshot(cfg: dict, speculative=None) -> str | None:
+    """The turn's screenshot (base64): the press-time speculative capture
+    when it is ready and fresh, else one inline capture. None when
+    screenshots are off."""
+    if cfg.get("agent", {}).get("screenshots", "true") != "true":
+        return None
+    if speculative is not None:
+        got = speculative.take("screenshot", wait=_SPEC_WAIT_S)
+        if got:
+            return got
+    return _png_b64(capture_screen())
+
+
+_SPEC_WAIT_S = 1.0
+
+
+def speculative_context(cfg: dict):
+    """Press-time speculation (W4): screenshot and window map, gathered
+    concurrently. Not started — the daemon calls `.start()`."""
+    from . import context as _context
+    g = {"windows": _context.windows_map}
+    if cfg.get("agent", {}).get("screenshots", "true") == "true":
+        g["screenshot"] = lambda: _png_b64(capture_screen())
+    return _context.Speculative(g)
 
 
 def screen_b64(cfg: dict, answers: dict) -> str | None:
@@ -847,7 +893,7 @@ def apply_choice(answers: dict, picked: str) -> dict:
 def run_listen(cfg: dict, state, wait_for_choice=None,
                wav: pathlib.Path | None = None,
                interrupted=None, spans=None, turn_id=None,
-               cancel=None) -> int:
+               cancel=None, speculative=None) -> int:
     """One push-to-talk cycle inside the daemon.
 
     `cancel` is the turn's CancelToken (U9; the daemon's `interrupt`
@@ -864,7 +910,9 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
     timestamps from the daemon; absent, spans start at this call.
     `state` may be a StateBus: the turn is then `turn_id` (adopted from
     the daemon's first press) or a fresh one, and every write goes
-    through the bus tagged with it.
+    through the bus tagged with it. `speculative` (context.Speculative,
+    started at press) supplies the screenshot and window map; the turn
+    discards whatever it did not consume when it ends.
     """
     token = cancel or _cancel.CancelToken()
     stop_watch = threading.Event()
@@ -879,9 +927,12 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
     try:
         with _cancel.bind(token):
             return _listen_turn(cfg, state, wait_for_choice, wav,
-                                interrupted, spans, turn_id, token)
+                                interrupted, spans, turn_id, token,
+                                speculative)
     finally:
         stop_watch.set()
+        if speculative is not None:
+            speculative.cancel()
 
 
 def _ask_prompt(state, wait_for_choice, token, options: list,
@@ -908,7 +959,7 @@ def _ask_prompt(state, wait_for_choice, token, options: list,
 
 
 def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
-                 turn_id, token) -> int:
+                 turn_id, token, speculative=None) -> int:
     secs = int(cfg.get("audio", {}).get("seconds", "60"))
     model = cfg.get("agent", {}).get("model", "typesafe/jev-1.13")
     result = ""
@@ -973,19 +1024,16 @@ def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
         # screen-first: capture once at trigger; act loop + answer share
         # it. Clicky does the same — the model sees the app instead of
         # asking which one.
-        shot_png = None
         shot_b64 = None
         if cfg.get("agent", {}).get("screenshots", "true") == "true":
             with sp.timed("screenshot"):
-                shot_png = capture_screen()
-            if shot_png:
-                try:
-                    shot_b64 = base64.b64encode(
-                        shot_png.read_bytes()).decode()
-                finally:
-                    shot_png.unlink(missing_ok=True)
+                shot_b64 = turn_screenshot(cfg, speculative)
             _trace.emit(turn, "screen_capture", "act",
-                        {"captured": bool(shot_b64)})
+                        {"captured": bool(shot_b64),
+                         "speculative": bool(speculative)})
+        wins = speculative.take("windows") if speculative else None
+        if wins:
+            context += "\n" + wins
         # goal memory — continuations ("it's open, just hit cmd-t") join
         # the open goal instead of starting a fresh act
         from . import goals as _goals
@@ -1026,6 +1074,7 @@ def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
         # brain) | off (always clarify via choices) — Rust parity
         sp.record("context", sp.mark_ns("stt"))
         route_start = sp.now()
+        route_meta = None
         router = cfg.get("brain", {}).get("router", "jev")
         agent_m = re.match(r"^\s*wisp\s+agent[:,.\s-]+(.*)$", text,
                            re.IGNORECASE)
@@ -1039,8 +1088,10 @@ def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
         elif router == "off":
             resp = {"answers": {"route": {"choice": "clarify"}}}
         else:
-            resp = ask_jev(text, model, build_questions(harness),
-                           context=context, cfg=cfg)
+            from . import route as _route
+            resp, route_meta = _route.decide(
+                text, model, build_questions(harness), context, cfg,
+                harness.get("apps"), spans=sp)
         token.check()
         sp.record("route", route_start)
         sp.arm("first_token", sp.mark_ns("route"))
@@ -1048,7 +1099,10 @@ def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
         answers = resp.get("answers", {})
         _trace.emit(turn, "decision", "thought",
                     {"model": model, "answers": answers,
-                     "latency_ms": resp.get("latency_ms")},
+                     "latency_ms": resp.get("latency_ms"),
+                     **({"route_source": route_meta["source"],
+                         "jev_status": route_meta["jev_status"]}
+                        if route_meta else {})},
                     sp.ms["context"] + sp.ms["route"])
         # transcript rescue: "open discord" with app=none shouldn't
         # clarify-prompt — the app name is right there in the words
@@ -1062,6 +1116,9 @@ def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
         if answers.get("route", {}).get("choice") == "launch" \
                 and complex_launch(text):
             answers["route"]["choice"] = "act"
+        if route_meta:
+            _route.log_ab(route_meta, text, turn,
+                          answers.get("route", {}).get("choice"))
         # clarify only gates routes that truly need a named target —
         # launch has no other way to resolve the app. act/agent resolve
         # the target from the screen + goal instead of asking.
@@ -1097,12 +1154,8 @@ def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
         state.transition("acting")
         confirm = None
         if wait_for_choice:
-            def confirm(prompt: str) -> bool:
-                pick = _ask_prompt(state, wait_for_choice, token,
-                                   [f"{prompt} — yes", "no"], 30, turn,
-                                   "confirm")
-                token.check()
-                return bool(pick) and "yes" in pick
+            from . import confirm as _confirm
+            confirm = _confirm.make(state, wait_for_choice, token, turn, cfg)
         from . import brain as _brain
         act_img = shot_b64 if shot_b64 and \
             _brain.supports_vision(cfg) else None
@@ -1240,7 +1293,8 @@ def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
         speech.stop()
         _trace.emit(turn, "cancelled", "lifecycle", {"result": result})
         fields = {"error": "", "error_code": "cancelled",
-                  "error_detail": "", "choices": [], "prompt_id": ""}
+                  "error_detail": "", "choices": [], "prompt_id": "",
+                  "confirm": None}
         if result:
             fields["result"] = result
         state.transition("idle", **fields)
@@ -1258,7 +1312,7 @@ def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
         log_decision({"ts": datetime.now(timezone.utc).isoformat(),
                       "result": f"ERROR ({e})",
                       "timing_ms": sp.legacy_timing()})
-        notify(err.public, "error", code=err.code,
+        notify(_copy.toast_text(err.code), "error", code=err.code,
                actions=[_open_log_action()],
                **_toast_ctx(state, turn, cfg))
         print(f"error: {err.code}: {e}", file=sys.stderr)

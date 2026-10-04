@@ -271,6 +271,12 @@ def main():
              if s.strip()]
     if not specs:
         specs = [cfg.get("brain", {}).get("default", "openrouter")]
+    sys.path.insert(0, str(pathlib.Path(__file__).parent))
+    import arena_policy
+    try:
+        arena_policy.gate(specs)
+    except arena_policy.PolicyError as e:
+        raise SystemExit(f"[clicklab] refused: {e}")
     results = []
     for spec in specs:
         if ":" not in spec:
@@ -319,13 +325,15 @@ def _provider_up(cfg: dict) -> bool:
 
 def _run_suite(cfg, tasks, page, dom, suite_name, spec, model,
                total, teach=False, apps_page=False) -> list:
-    from wisp import act, brain, judge, train
+    from wisp import act, judge, ledger, train
+    ledger.ACTIVE = True  # record every call in the one usage ledger
     print(f"[clicklab] {total} tasks, brain={spec}")
     results = []
     for i, (task, expr, oracle_len) in enumerate(tasks, 1):
-        if not brain.budget_ok():
-            print(f"[clicklab] DAILY CAP reached "
-                  f"(${brain.spend_today():.2f} spent today) — stopping")
+        if ledger.status(cfg)["blocked"]:
+            print(f"[clicklab] BUDGET CAP reached "
+                  f"(${ledger.totals()['today_usd']:.2f} spent today) "
+                  f"— stopping")
             break
         # reset the scoreboard per task — cumulative state would let a
         # repeat pass on a previous task's leftovers. The apps page
@@ -350,11 +358,11 @@ def _run_suite(cfg, tasks, page, dom, suite_name, spec, model,
                if teach else task)
         t0 = time.time()
         run_steps: list = []
-        brain.reset_usage()
+        ledger.reset_session()
         verdict = act.run_act_loop(ask, cfg,
                                    confirm=lambda p: True,
                                    steps_out=run_steps)
-        usage = brain.usage_totals()
+        usage = ledger.session_totals()
         ms = int((time.time() - t0) * 1000)
         ok = check(page, expr)
         # Jev judges what the scoreboard can't: efficiency, waste kind,
@@ -408,7 +416,7 @@ def _run_suite(cfg, tasks, page, dom, suite_name, spec, model,
     hits = sum(1 for r in results if r["verified"])
     spent = sum(r.get("cost_usd") or 0 for r in results)
     print(f"[clicklab:{model}] {hits}/{len(results)} verified "
-          f"(${spent:.4f} this run, ${brain.spend_today():.2f} today)")
+          f"(${spent:.4f} this run, ${ledger.totals()['today_usd']:.2f} today)")
     return results
 
 

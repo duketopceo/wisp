@@ -27,7 +27,8 @@ ERRORS = {
 _DOWN_TRY = "wispd health"
 for _code in errors_codes.CODES:
     ERRORS["E_" + _code.upper()] = (
-        errors_codes.human(_code) + ".",
+        errors_codes.human(_code)[:1].upper()
+        + errors_codes.human(_code)[1:] + ".",
         _DOWN_TRY if _code.endswith("_down") else "wispd doctor")
 ERRORS["E_STALE_PROMPT"] = ("That prompt expired.", "wispd watch")
 ERRORS["E_BUSY"] = ("Busy with another request.",
