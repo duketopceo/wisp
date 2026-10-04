@@ -3,14 +3,14 @@ usage: wispd cua log [-h] [-n N] [--audit] [--json] [--quiet] [--no-color]
 Show the driver journal, or the audit log (read only)
 
 options:
-  -h, --help     show this help message and exit
-  -n, --lines N  lines to show (default 50)
-  --audit        show wisp's own cua audit log instead
+  -h, --help       show this help message and exit
+  -n N, --lines N  lines to show (default 50)
+  --audit          show wisp's own cua audit log instead
 
 global options:
-  --json         machine-readable output (one JSON object)
-  --quiet, -q    print nothing on success
-  --no-color     plain output (also NO_COLOR, or not a tty)
+  --json           machine-readable output (one JSON object)
+  --quiet, -q      print nothing on success
+  --no-color       plain output (also NO_COLOR, or not a tty)
 
 Examples:
   wispd cua log
