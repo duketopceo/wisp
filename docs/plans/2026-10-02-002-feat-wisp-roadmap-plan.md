@@ -1,3 +1,7 @@
+---
+status: "superseded by 2026-10-04-0100-feat-wisp-unified-plan.md"
+---
+
 # Wisp roadmap — refreshed 2026-10-02
 
 Wisp: open-source, resident desktop AI companion. Push-to-talk → screen +

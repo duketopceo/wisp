@@ -73,7 +73,7 @@ tells the user exactly what's needed.
 ## Push-to-talk hotkey
 
 `wispd install` only writes Hyprland binds on Linux. On macOS bind
-`wispd listen` (or the trigger script) via SKHD, Raycast, Hammerspoon,
+`wispd trigger` (or the trigger script) via SKHD, Raycast, Hammerspoon,
 or a Shortcuts/Automator global shortcut. Native `global-hotkey`
 integration is a U10 packaging concern.
 
@@ -82,7 +82,7 @@ integration is a U10 packaging concern.
 **Thin native menu-bar item + panel** beats a Tauri v2 webview orb for
 U7 scope: the existing socket contract already serves a QML shell on
 Linux, and the smallest macOS surface is an `NSStatusItem`/`tray-icon`
-that reads the same socket and shells out `wispd listen`. A full Tauri
+that reads the same socket and shells out `wispd trigger`. A full Tauri
 shell duplicates the GUI tab work for ~zero user value pre-release;
 revisit if the orb needs to be a floating always-on-top panel (then
 Tauri is the pragmatic pick).
@@ -94,7 +94,7 @@ Tauri is the pragmatic pick).
 - Codesign/notarize/tray bundle: not implemented (U10 packaging). The
   daemon runs from source; there is no signed `.app` to ship yet.
 - No menu-bar surface: the Omarchy shell plugin is QML/Hyprland-only.
-  On macOS the daemon is driven by `wispd listen` from a hotkey binder
+  On macOS the daemon is driven by `wispd trigger` from a hotkey binder
   (see above) — there is no equivalent of the Linux bar widget.
 - The `[apps]` launch values are single-quoted deliberately: config
   values may not contain `"` (the TOML reader strips surrounding

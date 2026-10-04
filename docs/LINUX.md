@@ -40,7 +40,7 @@ mixed setups still work. Missing tools → `SKIP (… — hint)`.
   target.
 - **Hotkey**: `wispd install` writes Hyprland binds only. On GNOME the
   XDG GlobalShortcuts portal flow is owned by the tray app (U10); on
-  KDE/X11 bind `wispd listen` in System Settings / xbindkeys.
+  KDE/X11 bind `wispd trigger` in System Settings / xbindkeys.
 - `ydotool` needs the `ydotoold` service (uinput access) — install
   via your distro package.
 
