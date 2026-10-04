@@ -19,6 +19,7 @@ import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
+from wisp import desktop as _desktop  # noqa: E402
 from wisp import cancel, config, ipc, pipeline, speech, state as state_mod, trace as _trace  # noqa: E402
 
 # daemon-scoped handles the rec watchdog needs (set in run_daemon)
@@ -453,7 +454,7 @@ def cmd_trigger(cfg: dict, phase: str = "") -> int:
             st.close()
 
 
-def install_files() -> None:
+def install_files(dry_run: bool = False) -> None:
     """Copy runtime files to the per-OS opt dir, write the trigger shim
     and service registration, and install the shell plugin directory
     (Linux/Omarchy only)."""
@@ -496,6 +497,14 @@ def install_files() -> None:
               "(python3 wispd install) — this wispd IS the installed "
               "copy; nothing updated")
         return
+    if dry_run:
+        res = _desktop.install(src, config.HOME, opt, dry_run=True)
+        for f in res["written"]:
+            print(f"would write {f}")
+        for f in res["backups"]:
+            print(f"would back up the edited file to {f}")
+        print("dry run: nothing written")
+        return
     opt.mkdir(parents=True, exist_ok=True)
     pkg = src / "wisp"
     if pkg.is_dir():
@@ -515,28 +524,13 @@ def install_files() -> None:
     if shells_src.is_dir():
         shutil.copytree(shells_src, opt / "shells", dirs_exist_ok=True)
         print(f"installed {opt}/shells")
-    desktop = (config.HOME / ".local" / "share" / "applications"
-               / "wisp.desktop")
-    desktop.parent.mkdir(parents=True, exist_ok=True)
-    desktop.write_text(f"""\
-[Desktop Entry]
-Type=Application
-Name=Wisp
-GenericName=Voice Assistant
-Comment=Wisp voice assistant — management console
-Exec=quickshell -n -p {opt}/shells/debug
-Icon=wisp
-Terminal=false
-Categories=Utility;Accessibility;
-Keywords=voice;assistant;ai;wisp;
-StartupNotify=false
-""")
-    print(f"installed {desktop}")
-    icons_src = src / "assets" / "icons" / "hicolor"
-    if icons_src.is_dir():
-        icons_dst = config.HOME / ".local" / "share" / "icons" / "hicolor"
-        shutil.copytree(icons_src, icons_dst, dirs_exist_ok=True)
-        print(f"installed {icons_dst}")
+    res = _desktop.install(src, config.HOME, opt)
+    for f in res["backups"]:
+        print(f"backed up edited desktop file to {f}")
+    print(f"installed desktop entry + icons ({len(res['written'])} "
+          "files changed)")
+    for t in res["skipped"]:
+        print(f"skipped {t} (not found)")
     plugin_src = src / "shell-plugin"
     plugin_dst = (config.HOME / ".config" / "omarchy" / "plugins"
                   / "io.github.duketopceo.wisp")
