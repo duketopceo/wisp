@@ -48,15 +48,18 @@ def serve():
         http.server.SimpleHTTPRequestHandler,
         directory=str(pathlib.Path(__file__).parent))
     handler.log_message = lambda *a, **k: None
-    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", PORT),
-                                            handler)
+    try:
+        httpd = http.server.ThreadingHTTPServer(("127.0.0.1", PORT),
+                                                handler)
+    except OSError:
+        return None  # another run already serves the lab
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     return httpd
 
 
 def bos(tool: str, args: dict) -> str:
     from wisp.tools import mcpclient
-    return mcpclient.call(f"browseros {tool} {json.dumps(args)}", {})
+    return mcpclient.call(f"browseros-neo {tool} {json.dumps(args)}", {})
 
 
 def open_lab(seed: int = 0, url: str | None = None) -> int:
@@ -64,18 +67,28 @@ def open_lab(seed: int = 0, url: str | None = None) -> int:
     `seed` reshuffles the page layout (dots/buttons/shapes) so the
     agent can't memorize positions across runs."""
     url = (url or URL) + (f"?seed={seed}" if seed else "")
+    # don't pile up clicklab tabs across runs — close any left over
+    out = bos("tabs", {"action": "list"})
+    for tid in re.findall(r"\[(\d+)\][^\n]*" + str(PORT), out):
+        bos("tabs", {"action": "close", "page": int(tid)})
     out = bos("tabs", {"action": "new", "url": url})
     m = re.search(r"page (\d+)", out)
     if m:
+        page = int(m.group(1))
+        import atexit
+        atexit.register(bos, "tabs", {"action": "close", "page": page})
         time.sleep(2)
-        return int(m.group(1))
+        return page
     # fall back: find it in the tab list
     time.sleep(2)
     out = bos("tabs", {"action": "list"})
     ids = re.findall(r"\[(\d+)\][^\n]*" + str(PORT), out)
     if not ids:
         raise RuntimeError("clicklab tab not found:\n" + out)
-    return int(ids[-1])
+    page = int(ids[-1])
+    import atexit
+    atexit.register(bos, "tabs", {"action": "close", "page": page})
+    return page
 
 
 def check(page: int, expr: str) -> bool:
