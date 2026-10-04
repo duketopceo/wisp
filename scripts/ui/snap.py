@@ -72,6 +72,7 @@ TOLERANCE = {
     "EmptyState": Tolerance(10, 0.012),
     "Creature": Tolerance(12, 0.008),
     "Corner": Tolerance(12, 0.008),
+    "Companion": Tolerance(12, 0.006),
 }
 
 
@@ -143,6 +144,7 @@ def cases(only=None):
                         "width": scene.get("width"),
                         "pad": scene.get("pad", 10),
                         "on": scene.get("on", "canvas"),
+                        "source": scene.get("source"),
                     })
     if only:
         out = [c for c in out if only in c["id"]]

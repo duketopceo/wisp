@@ -11,6 +11,7 @@ Item {
   property var service: null
   // hover reveals talk and hide; a host can pin it
   property bool actions: hover.hovered
+  property real refreshHz: 60
   signal clicked()
   signal talk()
   signal hide()
@@ -32,6 +33,7 @@ Item {
     x: root.actions ? root.width - width - (box - width) / 2 : (root.box - width) / 2
     y: (root.box - height) / 2
     service: root.service
+    refreshHz: root.refreshHz
   }
 
   Row {

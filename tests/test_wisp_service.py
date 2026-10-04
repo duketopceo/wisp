@@ -94,7 +94,7 @@ class TestSingleReader(unittest.TestCase):
     still carrying their own reader are counted so the number can only go
     down; W21 to W23 delete them."""
 
-    RATCHET = {"BarWidget.qml": 0, "Companion.qml": 1}
+    RATCHET = {"BarWidget.qml": 0}
 
     def test_service_is_a_reader(self):
         self.assertRegex(SRC, r"FileView\s*\{[^}]*state\.json|stateFile")

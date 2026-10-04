@@ -22,8 +22,8 @@ COMP = PLUGIN / "components"
 FIXTURE_SERVICE = ROOT / "tests" / "qml" / "harness" / "FixtureService.qml"
 
 EXPECTED = ["Answer", "AgentRow", "BarActions", "BarMark", "Beacon", "Bubble", "Chip", "Console",
-            "Corner", "Creature", "EmptyState", "GhostCursor", "Icon",
-            "Mark", "PanelTab", "Pill", "StatusLine", "StepRow",
+            "Corner", "CornerLayer", "Creature", "EmptyState", "GhostCursor", "Icon",
+            "Mark", "OverlayLayer", "PanelTab", "Pill", "StatusLine", "StepRow",
             "StopControl", "Transcript"]
 
 FORBIDDEN = [
@@ -75,7 +75,11 @@ class TestComponentSet(unittest.TestCase):
         import json
         scenes = json.loads(
             (ROOT / "tests/qml/harness/scenes.json").read_text())
-        self.assertEqual(set(EXPECTED) - {"Icon", "BarActions"} - set(scenes), set())
+        # the two layers are snapshotted together by the Companion scene;
+        # BarActions is non-visual
+        layers = {"Icon", "BarActions", "CornerLayer", "OverlayLayer"}
+        self.assertEqual(set(EXPECTED) - layers - set(scenes), set())
+        self.assertIn("Companion", scenes)
 
     def test_metrics_lib_has_no_colors(self):
         src = code(PLUGIN / "lib" / "metrics.js")
@@ -243,6 +247,17 @@ class TestPureLibs(unittest.TestCase):
     def test_pill_radius_square_theme(self):
         self.assertEqual(self.call("M.pillRadius(30, 0)", M="metrics"), 0)
         self.assertEqual(self.call("M.pillRadius(30, 8)", M="metrics"), 15)
+
+
+class TestPillTable(unittest.TestCase):
+    def test_every_state_fixture_is_in_the_pill_table(self):
+        src = (ROOT / "tests/qml/lib/tst_pill.qml").read_text()
+        listed = set(re.findall(r'\["(\w+)", "[^"]+", "\w+"\]', src))
+        fixtures = {p.stem for p in
+                    (ROOT / "tests/fixtures/states").glob("*.json")}
+        self.assertEqual(fixtures - listed, set(),
+                         "add the fixture to tst_pill.qml table()")
+        self.assertEqual(listed - fixtures, set())
 
 
 QMLLINT = shutil.which("qmllint") or (

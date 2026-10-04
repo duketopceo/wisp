@@ -71,6 +71,8 @@ Item {
   // --- copy (wisp/copy.py via lib/copy.js) ----------------------------
   readonly property string statusWord: Copy.statusWord(status)
   readonly property string statusTone: Copy.statusTone(status)
+  // Pill label: a done turn with a BLOCKED result reads "blocked", not "done".
+  readonly property var pillView: Copy.pillView(status, result)
   readonly property var resultView: Copy.translateResult(result)
   readonly property string errorMessage: errorCode !== "" ? Copy.errorMessage(errorCode) : ""
   readonly property string errorHint: errorCode !== "" ? Copy.errorHint(errorCode) : ""
