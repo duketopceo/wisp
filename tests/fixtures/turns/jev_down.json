@@ -1,5 +1,5 @@
 {
-  "description": "Jev answers 503 on every call. The turn ends in error with error_code jev_down, a human-safe error string and the raw text in error_detail (U7). No fallback router until U8.",
+  "description": "Jev answers 503 on every call. The heuristic router takes over (W11): 'open firefox' is a bare launch of a catalog app, so it launches and the turn ends done, never in error. The error-path copy for a genuine brain outage lives in brain_down.",
   "audio": "ask.wav",
   "endpoints": {
     "whisper": {
@@ -22,10 +22,19 @@
       "listening",
       "transcribing",
       "deciding",
-      "error"
+      "acting",
+      "done"
     ],
-    "error_code": "jev_down",
-    "error_detail_contains": "Jev HTTP 503"
+    "launch_calls": [
+      "firefox"
+    ],
+    "error_code": ""
   },
-  "name": "jev_down"
+  "name": "jev_down",
+  "catalog": {
+    "firefox": {
+      "launch": "firefox",
+      "cues": "web browser"
+    }
+  }
 }

@@ -66,6 +66,10 @@ def main(spec_path: str) -> int:
             return dst
         pipeline.record = fake_record
 
+        if spec.get("catalog"):
+            from wisp.tools import adapters
+            adapters.best_catalog = lambda: spec["catalog"]
+
         def fake_launch(arg):
             out["launch_calls"].append(arg)
             return f"LAUNCHED {arg} (replay stub)"
