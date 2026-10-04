@@ -80,6 +80,8 @@ Item {
   property var tokens: Tokens.load("", "", "dark").tokens
   property string tokenSource: "fallback"
   property string themeMode: "dark"
+  // Family for text; surfaces and components bind font.family to it.
+  readonly property string fontFamily: Style.fontFamily
   readonly property string motionMode: Motion.resolveMode(motionConfig, animationsEnabled)
 
   signal stateApplied(var view)
