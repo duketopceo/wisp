@@ -6,6 +6,7 @@ import "lib/state.js" as Reader
 import "lib/copy.js" as Copy
 import "lib/tokens.js" as Tokens
 import "lib/motion.js" as Motion
+import "lib/settings.js" as Settings
 
 // WispService: the one reader of wispd state for every surface (Companion,
 // Panel, bar widget). Surfaces bind to this object (shell.serviceFor(
@@ -60,6 +61,7 @@ Item {
   property string error: ""
   property string errorCode: ""
   property var health: ({})
+  property var spend: ({})
   property string turnId: ""
   property var seq: null
   property int contractVersion: 1
@@ -93,6 +95,14 @@ Item {
   readonly property string fontFamily: Style.fontFamily
   readonly property string motionMode: Motion.resolveMode(motionConfig, animationsEnabled)
 
+  // --- settings (W22): one-shot reads, writes through wispd config set ----
+  // Loaded when the Panel opens Settings; nothing here polls.
+  property var cuaStatus: null       // wispd cua status --json data
+  property var spendModels: []       // wispd spend --json models
+  property var configValues: ({})    // "section.key" -> value
+  property var configErrors: ({})    // key -> message from the daemon or validator
+  property string configSaved: ""    // key last written without error
+
   signal stateApplied(var view)
   signal turnChanged(string turnId)
 
@@ -123,6 +133,33 @@ Item {
   function interrupt() { run([wispd, "interrupt"]); }
   function trigger() { run([wispd, "trigger"]); }
   function label(verdict) { run([wispd, "label", verdict]); }
+
+  // Read the settings inputs once (config, cua status, spend by model).
+  function loadSettings() {
+    if (!cfgProc.running) cfgProc.running = true;
+    if (!cuaProc.running) cuaProc.running = true;
+    if (!spendProc.running) spendProc.running = true;
+  }
+
+  // Validate, then `wispd config set KEY VALUE`. A rejected value or a
+  // daemon error lands in configErrors[key] and nothing is written.
+  function configSet(key, value) {
+    var bad = Settings.validate(key, value);
+    var errs = {};
+    for (var k in configErrors) errs[k] = configErrors[k];
+    delete errs[key];
+    configSaved = "";
+    if (bad !== "") {
+      errs[key] = Copy.string(bad);
+      configErrors = errs;
+      return;
+    }
+    configErrors = errs;
+    setKey = key;
+    setValue = String(value).replace(/^\s+|\s+$/g, "");
+    setProc.command = Settings.setCommand(wispd, key, value);
+    setProc.running = true;
+  }
 
   // Re-read now: fresh stream snapshot when connected, else the file.
   function refresh() {
@@ -172,6 +209,7 @@ Item {
     root.error = v.error;
     root.errorCode = v.errorCode;
     root.health = v.health;
+    root.spend = v.spend;
     root.seq = v.seq;
     root.contractVersion = v.contractVersion;
     root.connection = v.connection;
@@ -320,6 +358,59 @@ Item {
     function onBackgroundChanged() { colorsView.reload(); }
     function onForegroundChanged() { colorsView.reload(); }
     function onUrgentChanged() { colorsView.reload(); }
+  }
+
+  property string setKey: ""
+  property string setValue: ""
+
+  Process {
+    id: setProc
+    stderr: StdioCollector { id: setErr }
+    onExited: function (code, status) {
+      var errs = {};
+      for (var k in root.configErrors) errs[k] = root.configErrors[k];
+      if (code === 0) {
+        delete errs[root.setKey];
+        var vals = {};
+        for (var j in root.configValues) vals[j] = root.configValues[j];
+        vals[root.setKey] = root.setValue;
+        root.configValues = vals;
+        root.configSaved = root.setKey;
+      } else {
+        errs[root.setKey] = Settings.errorText(setErr.text) || Copy.string("ui.err.unknown");
+      }
+      root.configErrors = errs;
+    }
+  }
+
+  Process {
+    id: cfgProc
+    command: [root.wispd, "config", "show", "--json"]
+    stdout: StdioCollector { id: cfgOut }
+    onExited: function (code) {
+      if (code !== 0) return;
+      try { root.configValues = Settings.flatten(JSON.parse(cfgOut.text)); } catch (e) {}
+    }
+  }
+
+  Process {
+    id: cuaProc
+    command: [root.wispd, "cua", "status", "--json"]
+    stdout: StdioCollector { id: cuaOut }
+    onExited: function (code) {
+      // exit 4 (cua selected but down) still carries the data
+      try { root.cuaStatus = JSON.parse(cuaOut.text).data || null; } catch (e) { root.cuaStatus = null; }
+    }
+  }
+
+  Process {
+    id: spendProc
+    command: [root.wispd, "spend", "--json"]
+    stdout: StdioCollector { id: spendOut }
+    onExited: function (code) {
+      if (code !== 0) return;
+      try { root.spendModels = JSON.parse(spendOut.text).data.models || []; } catch (e) {}
+    }
   }
 
   Process {

@@ -39,6 +39,7 @@ Item {
   property string error: ""
   property string errorCode: ""
   property var health: ({})
+  property var spend: ({})
   property string turnId: ""
   property bool offline: true
   property bool stale: false
@@ -67,6 +68,13 @@ Item {
   // snapshot: raw state.json object; mods: {offline, stale}
   function load(snapshot, mods) {
     var v = Reader.initial();
+    if (mods && mods.patch) {
+      // a variant overrides raw snapshot fields (health, spend, tasks)
+      var merged = {};
+      for (var sk in snapshot) merged[sk] = snapshot[sk];
+      for (var pk in mods.patch) merged[pk] = mods.patch[pk];
+      snapshot = merged;
+    }
     if (mods && mods.offline) {
       v = Reader.markOffline(v, 0);
     } else {
@@ -96,6 +104,7 @@ Item {
     root.error = v.error;
     root.errorCode = v.errorCode;
     root.health = v.health;
+    root.spend = v.spend;
     root.turnId = v.turnId;
     root.offline = v.offline;
     root.contractNewer = v.contractNewer;

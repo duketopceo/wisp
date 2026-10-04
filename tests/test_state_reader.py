@@ -200,6 +200,14 @@ class TestEvents(unittest.TestCase):
         self.assertEqual(h["code"], "jev_down")
         self.assertEqual(r["view"]["seq"], 5)  # events never bump seq
 
+    def test_spend_field_is_carried_into_the_view(self):
+        spend = {"today_usd": 0.5, "cap_usd": 2.0, "month_usd": 3.0,
+                 "monthly_cap_usd": 20.0, "blocked": False}
+        r = run([["snap", snap(spend=spend), 1000]])
+        self.assertEqual(r["view"]["spend"], spend)
+        r = run([["snap", snap(), 1000]])
+        self.assertEqual(r["view"]["spend"], {})
+
     def test_overflow_requests_resync(self):
         r = run(self.base + [["event", {"type": "event", "name": "overflow"}, 2]])
         self.assertTrue(r["resync"])

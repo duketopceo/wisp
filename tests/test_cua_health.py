@@ -307,7 +307,14 @@ class CliEntries(unittest.TestCase):
     def test_cua_status_includes_probe_state(self):
         with CliEnv() as env:
             code, out, err = env.run(["cua", "status", "--json"])
-            self.assertEqual(json.loads(out)["data"]["state"], "absent")
+            data = json.loads(out)["data"]
+            self.assertEqual(data["state"], "absent")
+            # W22: the Panel's Health section reads these
+            self.assertEqual(set(data) >= {"fix", "kill", "dry_run",
+                                           "version"}, True)
+            self.assertFalse(data["kill"])
+            self.assertFalse(data["dry_run"])
+            self.assertIn("install", data["fix"])
 
 
 if __name__ == "__main__":
