@@ -4,6 +4,10 @@
     python scripts/replay_turn.py tests/fixtures/turns/ask.json
     python scripts/replay_turn.py ask            # short name also works
     python scripts/replay_turn.py ask --json     # machine-readable
+    python scripts/replay_turn.py scenarios.jsonl [name]   # many turns
+
+Paths may be relative (to the CWD); `audio` in a fixture is relative
+to the fixture file, never the CWD.
 
 Fake model servers run on 127.0.0.1 ephemeral ports; nothing leaves
 loopback and the live wispd/model services are never touched. Exit
@@ -25,12 +29,17 @@ def main(argv: list) -> int:
     if not args:
         print(__doc__)
         return 2
-    target = args[0]
-    path = pathlib.Path(target)
-    if not path.exists():
-        path = runner.FIXTURE_DIR / (target if target.endswith(".json")
-                                     else target + ".json")
-    res = runner.run_turn(path)
+    try:
+        rows = runner.load_fixtures(args[0])
+    except FileNotFoundError as e:
+        print(e, file=sys.stderr)
+        return 2
+    only = args[1] if len(args) > 1 else None
+    rows = [r for r in rows if only in (None, r.get("name"))]
+    if len(rows) != 1:
+        return _many(rows, "--json" in argv)
+    res = runner.run_turn(rows[0])
+    path = args[0]
     problems = runner.check_expectations(res)
     if "--json" in argv:
         print(json.dumps({"statuses": res.statuses, "final": res.final,
@@ -57,6 +66,25 @@ def main(argv: list) -> int:
         print(f"EXPECT FAIL: {p}")
     print("expectations: " + ("FAIL" if problems else "ok"))
     return 1 if problems or res.violations else 0
+
+
+def _many(rows: list, as_json: bool) -> int:
+    """A .jsonl scenario file: run each line, one summary row apiece."""
+    rc, out = 0, []
+    for fx in rows:
+        res = runner.run_turn(fx)
+        problems = runner.check_expectations(res)
+        bad = bool(problems or res.violations or res.exit_code)
+        rc = rc or int(bad)
+        out.append({"name": fx.get("name"), "statuses": res.statuses,
+                    "problems": problems, "violations": res.violations})
+        if not as_json:
+            print(f"{'FAIL' if bad else 'ok  '} {fx.get('name')}: "
+                  f"{' > '.join(res.statuses)} "
+                  f"{problems or ''}{res.violations or ''}")
+    if as_json:
+        print(json.dumps(out, indent=2))
+    return rc
 
 
 if __name__ == "__main__":
