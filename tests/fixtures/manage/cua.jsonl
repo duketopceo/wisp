@@ -1,0 +1,8 @@
+{"ts":1759579200,"turn":"t-1","tool":"click","app":"firefox","decision":"allow","dry_run":false,"result":"OK","ms":212,"x":640,"y":380}
+{"ts":1759579204,"turn":"t-1","tool":"type_text","app":"firefox","decision":"allow","dry_run":false,"result":"OK","ms":95,"len":12,"sha":"3fa9c01be2d4"}
+{"ts":1759579209,"turn":"t-1","tool":"key","app":"firefox","decision":"allow","dry_run":false,"result":"OK","ms":41,"key":"ctrl+l"}
+{"ts":1759579215,"turn":"t-1","tool":"click","app":"1password","decision":"deny","dry_run":false,"result":"REFUSED","ms":3,"x":10,"y":10}
+not json
+{"tool": 3}
+{"ts":1759579221,"turn":"t-1","tool":"scroll","app":"thunar","decision":"dry_run","dry_run":true,"result":"DRYRUN","ms":1,"x":300,"y":400}
+{"ts":1759579230,"turn":"t-1","tool":"click","app":"ghostty","decision":"cancelled","dry_run":false,"result":"CANCELLED","ms":18,"x":50,"y":60}
