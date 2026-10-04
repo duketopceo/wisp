@@ -150,3 +150,84 @@ suppression (needs W7).
 | `WISP_OS` | force the OS adapter (`linux`/`macos`/`windows`) |
 | `WISP_DESKTOP` | force the Linux desktop table (`hyprland`/`gnome`/`kde`/`x11`) |
 | `XDG_*` | standard dir resolution for config/data/runtime |
+
+## Command line (`wispd <group> <verb>`)
+
+Every command takes `--help` (one-line summary plus examples) and the
+global flags `--json`, `--quiet` and `--no-color`, before or after the verb.
+Output is plain when stdout is not a tty or `NO_COLOR` is set. Tables use
+the Ember tokens from `wisp/theme.py`.
+
+```
+daemon run|install|harness     status  stop  interrupt  trigger [start|stop]
+watch [topic ...]              choice [pick] [--prompt-id ID] [--index N]
+doctor  health [start [--run]]  latency [--since 24h]  spend  binds  onboard
+cua status|test|log|enable|disable      notify test
+task list|status|cancel|run    memory edit|write    suggest list
+label report|set               context
+train stats|history|bank|rebuild        review list|run|approve|reject
+learn weekly|fails             skills list|import  recipes draft|approve
+trace show|digest              eval route
+config show|set                theme show|set|check|css
+connect list|add               sync  inventory  tui  completion bash|zsh|fish
+```
+
+`cua enable` and `cua disable` only edit `[pointer] backend`; wisp never
+starts or stops the cua-driver service. `cua test` only checks the binary
+and connects to the driver socket (nothing is sent).
+
+### Exit codes
+
+| code | meaning |
+|------|---------|
+| 0 | ok |
+| 1 | failure (the command ran and did not succeed) |
+| 2 | usage error |
+| 3 | daemon not running |
+| 4 | unhealthy dependency (model endpoint down, cua driver unreachable, doctor MISS rows, setup incomplete) |
+
+Errors go to stderr as `E_CODE: Sentence.` plus a `Try: ...` line. The code
+set is `E_USAGE`, `E_FAILED`, `E_DAEMON_DOWN`, `E_UNHEALTHY`, `E_CUA_DOWN`,
+`E_NOT_READY`, `E_BAD_CONFIG`, `E_NO_NOTIFIER`, plus one `E_<CODE>` per typed
+wisp error (`E_JEV_DOWN`, `E_BRAIN_DOWN`, `E_STALE_PROMPT`, ...).
+
+### JSON
+
+`--json` prints one object on stdout, for success and failure alike:
+
+```
+{"ok": true,  "command": "health", "data": {...}}
+{"ok": false, "command": "health", "error": {"code": "E_UNHEALTHY",
+  "message": "1 of 1 local endpoints are down.", "try": "wispd health start"},
+  "data": {...}}
+```
+
+`data` keys per command are declared in the registry (`wisp/cli/*.py`, the
+`schema` argument) and checked by `tests/test_cli.py`. `watch` is always
+NDJSON (one event per line) and `daemon run` / `tui` have no envelope.
+`doctor`: `{healthy, sections:[{name, rows:[{name, value, ok}]}]}`;
+`health`: `{healthy, endpoints:[{name, ok, latency_ms, code}]}`;
+`latency`: `{since_h, turns, rows:[{id, label, n, p50, p90, budget_p50,
+verdict}]}`; `spend`: `{today_usd, calls_today, cap_usd, paid_allowed,
+source}`; `binds`: `{hotkey:{mod,key,chord}, hyprland, binds}`;
+`cua status`: `{configured, backend, mode, binary, socket, live}`.
+
+### Old names
+
+These keep working for one release and map to the new commands:
+`install`, `harness`, `subscribe`, `tasks`, `task_status`, `task_cancel`,
+`agent <task>`, `memory-write`, `suggestions`, `fails`, `tele`, `models
+[start [--run]]`, `label correct|incorrect [note]`, `learn`, `trace
+--tail/--latency`, `train|review|skills|recipes` with no verb, `config`
+with no verb, `theme [name|--check|--css]`, `connect [--list|service]`,
+`daemon` with no verb. Output of the old forms is unchanged except that
+errors use the new `E_CODE` format and daemon-unreachable exits 3 (was 1);
+`doctor` now exits 4 (was 1) when a check fails.
+
+### Completion
+
+```
+wispd completion bash > ~/.local/share/bash-completion/completions/wispd
+wispd completion zsh  > "${fpath[1]}/_wispd"
+wispd completion fish > ~/.config/fish/completions/wispd.fish
+```

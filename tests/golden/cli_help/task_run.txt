@@ -1,0 +1,17 @@
+usage: wispd task run [-h] [--json] [--quiet] [--no-color] [task ...]
+
+Spawn a background agent for a task
+
+positional arguments:
+  task         what the agent should do
+
+options:
+  -h, --help   show this help message and exit
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd task run fix the flaky login test

@@ -1,0 +1,57 @@
+usage: wispd [--json] [--quiet] [--no-color] <command> [<verb>] [args]
+
+Wisp voice assistant control. `wispd <command> --help` shows verbs and examples.
+
+Daemon:
+  daemon       Run and install the wisp daemon
+  status       Show the daemon state (JSON)
+  stop         Ask the daemon to shut down
+  interrupt    Cancel the turn in flight; the daemon keeps running
+  trigger      Push-to-talk: tell the daemon to start or stop listening
+  watch        Follow the daemon push stream as NDJSON
+  choice       Answer a pending prompt from the keyboard or a script
+  tui          Open the terminal UI
+
+Diagnose:
+  doctor       Check every dependency wisp needs
+  health       Local model endpoint health
+  latency      p50 and p90 per budget path from recent turns
+  spend        Paid model spend today and the daily cap
+  binds        Show the push-to-talk hotkey and its Hyprland binds
+  onboard      Check first-run setup and say what to do next
+  trace        Turn trace and daily digest
+
+Pointer and notifications:
+  cua          The cua-driver pointer backend: status, test, log, enable
+  notify       Desktop notifications
+
+Agents and memory:
+  task         Background agents: list, status, cancel, run
+  memory       Edit the MEMORY and USER notes
+  suggest      Suggestions mined from your activity
+  label        Label the last turn to measure routing accuracy
+  context      Print what the daemon sees right now
+
+Learning:
+  train        Training arena stats, history and the skill bank
+  review       Staged reviewer proposals
+  learn        Weekly corrections and failure log
+  skills       Installed skills
+  recipes      Recipes drafted from past runs
+  eval         Replay logged decisions through candidate routers
+
+Settings:
+  config       Show or change config.toml (live, no restart)
+  theme        Pick the theme or audit its contrast
+  connect      Connect outside services (OAuth via the gateway)
+  sync         Refresh the MEMORY constitution block and import skills
+  inventory    Scan installed apps, CLI tools and MCP servers
+  completion   Print a shell completion script
+
+Global options:
+  --json       machine-readable output (one JSON object)
+  --quiet      print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Exit codes: 0 ok, 1 failure, 2 usage, 3 daemon not running, 4 unhealthy dependency.
+Old command names (tasks, task_status, models, ...) still work for one release.

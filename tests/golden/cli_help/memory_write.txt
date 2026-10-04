@@ -1,0 +1,18 @@
+usage: wispd memory write [-h] [--json] [--quiet] [--no-color] target BASE64
+
+Replace a whole notes document (base64 body)
+
+positional arguments:
+  target       memory or user
+  BASE64       whole document, base64 encoded
+
+options:
+  -h, --help   show this help message and exit
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd memory write user "$(base64 -w0 USER.md)"

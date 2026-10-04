@@ -1,0 +1,19 @@
+usage: wispd label set [-h] [--json] [--quiet] [--no-color] label [note ...]
+
+Label the last turn correct or incorrect
+
+positional arguments:
+  label        correct or incorrect: was the last route right?
+  note         optional note
+
+options:
+  -h, --help   show this help message and exit
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd label set correct
+  wispd label set incorrect it opened the wrong app

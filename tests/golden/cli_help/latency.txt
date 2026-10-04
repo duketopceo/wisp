@@ -1,0 +1,16 @@
+usage: wispd latency [-h] [--since AGE] [--json] [--quiet] [--no-color]
+
+p50 and p90 per budget path from recent turns
+
+options:
+  -h, --help   show this help message and exit
+  --since AGE  window: 24h, 90m, 2d (default 24h)
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd latency
+  wispd latency --since 6h --json
