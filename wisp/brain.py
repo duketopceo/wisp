@@ -14,7 +14,9 @@ brain — that's the router, not the answer provider.
 Fallback chain (backend U7): `[brain] fallback = "name:model, ..."`
 lists entries tried in order after `default`. A paid entry (OpenRouter,
 or `paid = "true"` on its section) is skipped unless
-`[brain] allow_paid = "true"` and `budget_ok()` (U10 hook). Each call
+`[brain] allow_paid = "true"` and `budget_ok()` (U10). A paid entry at
+ANY position, the primary included, is also refused once a `[budget]`
+cap is reached; local entries keep working. Each call
 gets ONE fast retry on connection refused/reset only (never a timeout —
 that would double the wait); streaming entries must produce a first
 token within `[brain] first_token_s` (default 3) or the chain moves on.
@@ -27,7 +29,7 @@ import time
 import urllib.request
 import urllib.error
 
-from . import cancel, config, errors_codes
+from . import cancel, config, errors_codes, ledger
 
 # set by the daemon: a health.HealthRegistry; entries it knows are down
 # are skipped without a connection attempt
@@ -99,9 +101,10 @@ def chain(cfg: dict) -> list:
     return out
 
 
-def budget_ok() -> bool:
-    """U10 hook: False once the daily paid-spend cap is reached."""
-    return True
+def budget_ok(cfg: dict | None = None) -> bool:
+    """U10 hook: False once a paid-spend cap (daily or monthly, from
+    `[budget]`) is reached, or when the ledger cannot be read."""
+    return ledger.paid_allowed(cfg if cfg is not None else {})
 
 
 def supports_vision(cfg: dict) -> bool:
@@ -174,14 +177,16 @@ def _chat_one(p: dict, messages: list, tools, timeout) -> dict:
             body["tools"] = tools
         resp = _post(f"{base}/api/chat", {}, body, timeout)
         msg = resp.get("message", {})
-        return {"content": msg.get("content", ""), "raw": msg}
+        return {"content": msg.get("content", ""), "raw": msg,
+                "usage": ledger.usage_of(resp)}
     body = {"model": p["model"], "messages": messages, "max_tokens": 600}
     if tools and _tools_ok(p):
         body["tools"] = tools
         body["tool_choice"] = "auto"
     resp = _post(f"{base}/chat/completions", _headers(p), body, timeout)
     msg = (resp.get("choices") or [{}])[0].get("message", {})
-    return {"content": msg.get("content", ""), "raw": msg}
+    return {"content": msg.get("content", ""), "raw": msg,
+            "usage": ledger.usage_of(resp)}
 
 
 def _relax(r, timeout) -> None:
@@ -203,14 +208,15 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
         url, headers = f"{base}/api/chat", {}
     else:
         body = {"model": p["model"], "messages": messages,
-                "max_tokens": 600, "stream": True}
+                "max_tokens": 600, "stream": True,
+                "stream_options": {"include_usage": True}}
         url, headers = f"{base}/chat/completions", _headers(p)
     req = urllib.request.Request(
         url, data=json.dumps(body).encode(),
         headers={"User-Agent": UA, "Content-Type": "application/json",
                  **headers}, method="POST")
     t0 = time.monotonic()
-    acc, msg = "", {}
+    acc, msg, usage = "", {}, {}
     try:
         with cancel.urlopen(req, timeout=first_token_s) as r:
             for raw in r:
@@ -226,6 +232,8 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
                     piece = (chunk.get("message") or {}).get("content") \
                         or ""
                     done = bool(chunk.get("done"))
+                    if done:
+                        usage = ledger.usage_of(chunk)
                 else:
                     if not line.startswith("data:"):
                         continue
@@ -236,6 +244,8 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
                         chunk = json.loads(payload)
                     except json.JSONDecodeError:
                         continue
+                    if chunk.get("usage"):
+                        usage = ledger.usage_of(chunk)
                     choice = (chunk.get("choices") or [{}])[0]
                     piece = (choice.get("delta") or {}).get("content") \
                         or ""
@@ -262,7 +272,12 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
             err.committed = True
             raise err from e
         raise
-    return {"content": acc, "raw": msg or {"content": acc}}
+    if not usage:  # provider sent none: estimate (~4 chars a token)
+        usage = {"in": sum(len(str(m.get("content", "")))
+                           for m in messages) // 4,
+                 "out": len(acc) // 4, "cost": None}
+    return {"content": acc, "raw": msg or {"content": acc},
+            "usage": usage}
 
 
 def _describe(p: dict, e: Exception) -> str:
@@ -293,12 +308,18 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
     allow_paid = cfg.get("brain", {}).get("allow_paid", "false") == "true"
     failures: list = []
     first_failed = None
+    capped = errored = False
     for i, p in enumerate(chain(cfg)):
         cancel.check()  # a cancelled turn never moves to the next brain
         if not p["base_url"]:
             failures.append(f"brain provider '{p['name']}' needs "
                             f"brain.{p['name']}.base_url")
-        elif i and p["paid"] and not (allow_paid and budget_ok()):
+        elif p["paid"] and not budget_ok(cfg):
+            # fail closed: a cap (or an unreadable ledger) stops paid
+            # calls before the request; local entries are untouched
+            capped = True
+            failures.append(f"{p['name']}: spend cap reached, skipped")
+        elif i and p["paid"] and not allow_paid:
             failures.append(f"{p['name']}: paid entry skipped")
             continue
         elif i and tools and not _tools_ok(p):
@@ -314,6 +335,7 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
                 if getattr(e, "committed", False) \
                         or isinstance(e, cancel.Cancelled):
                     raise
+                errored = True
                 failures.append(_describe(p, e))
                 if HEALTH is not None:
                     HEALTH.report_failure(f"brain_{p['name']}",
@@ -321,6 +343,8 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
             else:
                 res["provider"] = p["name"]
                 res["fallback_from"] = first_failed
+                ledger.note(p["name"], p["model"], p["paid"],
+                            res.get("usage") or {})
                 if first_failed:
                     trace.emit(trace.current(), "brain_fallback", "brain",
                                {"fallback_from": first_failed,
@@ -329,6 +353,9 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
                 return res
         if first_failed is None:
             first_failed = p["name"]
+    if capped and not errored:
+        raise errors_codes.WispError("budget_exceeded",
+                                     "; ".join(failures))
     raise errors_codes.WispError("brain_down", "; ".join(failures))
 
 

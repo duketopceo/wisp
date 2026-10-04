@@ -69,6 +69,7 @@ class State:
         self.error_code = ""    # closed set, wisp/errors_codes.py (U7)
         self.error_detail = ""  # raw text, local only
         self.health = {}        # {endpoint: {ok, since, latency_ms, code}}
+        self.spend = {}         # {today_usd, cap_usd, ...} from ledger.py
         self.started_at = _now()
         self.heartbeat_at = None
         self.meta = {"seq": 0, "updated_at": self.started_at,
@@ -154,6 +155,7 @@ class State:
             "error_code": self.error_code,
             "error_detail": self.error_detail,
             "health": {k: dict(v) for k, v in self.health.items()},
+            "spend": dict(self.spend),
             "started_at": self.started_at,
             "heartbeat_at": self.heartbeat_at,
             **self.meta,

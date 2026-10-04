@@ -165,6 +165,13 @@ base_url = "https://openrouter.ai/api/v1"
 model = "openai/text-embedding-3-small"
 key_env = "OPENROUTER_API_KEY"
 
+[budget]
+# Paid-model spend caps in USD (usage ledger, wisp/ledger.py). Paid calls
+# are refused once spend reaches a cap; local models always keep working.
+# Blank = no cap. Day and month roll over by local date.
+daily_usd = "2.00"
+monthly_usd = "20.00"
+
 [brain]
 # router: "jev" (typed decisions), "chat" (transcript+screen straight
 # to the answer brain), or "off" (always clarify via choices)
@@ -366,6 +373,7 @@ def _default_cfg_dict() -> dict:
             "default": "openrouter:meta-llama/llama-4-maverick",
             "fallback": "", "allow_paid": "false", "first_token_s": "3",
         },
+        "budget": {"daily_usd": "2.00", "monthly_usd": "20.00"},
         "health": {"enabled": "true", "interval_s": "30",
                    "press_stale_s": "10", "timeout_ms": "500"},
         "apps": _default_apps(),

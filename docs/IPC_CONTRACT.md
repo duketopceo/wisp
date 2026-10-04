@@ -68,6 +68,7 @@ lacks a section. Shells may offer a settings page on top of this command.
   "error_code": "closed set, see below; \"\" when no error",
   "error_detail": "string — raw failure text, local only",
   "health": {"<endpoint>": {"ok": true, "since": "ISO-8601", "latency_ms": 12, "code": null}},
+  "spend": {"today_usd": 0.0, "cap_usd": 2.0, "month_usd": 0.0, "monthly_cap_usd": 20.0, "blocked": false},
   "started_at": "ISO-8601",
   "turn_id": "string — turn that produced this write",
   "seq": 0,
@@ -99,6 +100,15 @@ transition, each with a stream event
 `{"type":"event","name":"health_changed","data":{name,ok,code}}`.
 Absent or `{}` on older cores and while probing is disabled. Remote
 endpoints are never probed and never listed.
+
+Spend (additive; W14): `spend` is `{today_usd, cap_usd|null, month_usd,
+monthly_cap_usd|null, blocked}` from the usage ledger (`wisp/ledger.py`),
+republished after every recorded model call and on each health tick (so
+the local-midnight rollover reaches shells without a call). `cap_usd` is
+the daily cap, null when unset; `blocked` is true while a cap is reached
+and paid calls are refused (local models still run). A `spend` health
+row goes down with code `budget_exceeded` in the same state. `{}` on
+older cores.
 
 Prompt ids (additive; U9): every `awaiting_choice` publishes `choices`
 together with a `prompt_id`, and clears both when the prompt resolves.
