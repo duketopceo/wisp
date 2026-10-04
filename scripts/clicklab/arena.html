@@ -1,19 +1,81 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
-<title>wisp — training arena</title>
+<title>wisp training arena</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  :root { --bg:#11121a; --panel:#1a1b26; --line:#2a2c44;
-          --tx:#c0caf5; --dim:#7a82b4; --ok:#9ece6a; --bad:#e05555;
-          --warn:#e0af68; --acc:#7aa2f7; --vio:#bb9af7; }
+/* wisp:tokens:begin */
+:root {
+  color-scheme: dark;
+  --wisp-canvas: #1a1b26;
+  --wisp-raised: #283457;
+  --wisp-keyline: #5c6179;
+  --wisp-keyline-strong: #7aa2f7;
+  --wisp-ink: #c0caf5;
+  --wisp-ink-muted: #9aa5ce;
+  --wisp-accent: #7aa2f7;
+  --wisp-ember: #7aa2f7;
+  --wisp-ember-core: #98c2ff;
+  --wisp-ember-wick: #5d83d5;
+  --wisp-ember-halo: #1a1b26;
+  --wisp-needs-you: #e0af68;
+  --wisp-fail: #e05555;
+  --wisp-ok: #9ece6a;
+  --wisp-selection: #3c4a6f;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+  color-scheme: light;
+  --wisp-canvas: #f5f6fa;
+  --wisp-raised: #e2e6f2;
+  --wisp-keyline: #9fa2ab;
+  --wisp-keyline-strong: #2e7de9;
+  --wisp-ink: #1f2335;
+  --wisp-ink-muted: #4c5578;
+  --wisp-accent: #2e7de9;
+  --wisp-ember: #2e7de9;
+  --wisp-ember-core: #4f9dff;
+  --wisp-ember-wick: #015ec7;
+  --wisp-ember-halo: #1f2335;
+  --wisp-needs-you: #8f5e15;
+  --wisp-fail: #c43a3a;
+  --wisp-ok: #33701f;
+  --wisp-selection: #afccf4;
+  }
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --wisp-canvas: #f5f6fa;
+  --wisp-raised: #e2e6f2;
+  --wisp-keyline: #9fa2ab;
+  --wisp-keyline-strong: #2e7de9;
+  --wisp-ink: #1f2335;
+  --wisp-ink-muted: #4c5578;
+  --wisp-accent: #2e7de9;
+  --wisp-ember: #2e7de9;
+  --wisp-ember-core: #4f9dff;
+  --wisp-ember-wick: #015ec7;
+  --wisp-ember-halo: #1f2335;
+  --wisp-needs-you: #8f5e15;
+  --wisp-fail: #c43a3a;
+  --wisp-ok: #33701f;
+  --wisp-selection: #afccf4;
+}
+/* wisp:tokens:end */
+  :root { --bg:var(--wisp-canvas); --panel:var(--wisp-raised);
+          --line:var(--wisp-keyline); --line2:var(--wisp-keyline-strong);
+          --tx:var(--wisp-ink); --dim:var(--wisp-ink-muted);
+          --ok:var(--wisp-ok); --bad:var(--wisp-fail);
+          --warn:var(--wisp-needs-you); --acc:var(--wisp-accent);
+          --ember:var(--wisp-ember); }
   * { box-sizing:border-box; }
   body { background:var(--bg); color:var(--tx); font:13px/1.45 system-ui;
          margin:0; padding:14px 18px; }
   header { display:flex; align-items:baseline; gap:14px;
            border-bottom:1px solid var(--line); padding-bottom:10px; }
   h1 { font-size:16px; margin:0; letter-spacing:.04em; }
-  h1 b { color:var(--vio); }
+  h1 b { color:var(--ember); }
   #clock { color:var(--dim); font-size:11px; }
   .grid { display:grid; grid-template-columns:300px 1fr 320px; gap:12px;
           margin-top:12px; height:calc(100vh - 70px); }
@@ -22,27 +84,29 @@
   .card h2 { font-size:11px; text-transform:uppercase; color:var(--dim);
              margin:0 0 8px; letter-spacing:.08em; }
   .stat { display:flex; justify-content:space-between; padding:3px 0;
-          border-bottom:1px dashed #23253a; }
+          border-bottom:1px dashed var(--line); }
   .stat b { font-family:monospace; }
   .ok { color:var(--ok); } .bad { color:var(--bad); }
   .warn { color:var(--warn); } .dim { color:var(--dim); }
   table { width:100%; border-collapse:collapse; font-size:12px; }
   td, th { padding:3px 6px; text-align:left; vertical-align:top;
-           border-bottom:1px solid #20223a; }
+           border-bottom:1px solid var(--line); }
   th { color:var(--dim); font-weight:600; font-size:10px;
        text-transform:uppercase; position:sticky; top:0;
        background:var(--panel); }
   .chip { display:inline-block; padding:0 7px; border-radius:9px;
           font-size:10px; font-weight:700; }
-  .chip.ok { background:#1d2b16; color:var(--ok); }
-  .chip.bad { background:#33161b; color:var(--bad); }
-  .chip.cand { background:#22263f; color:var(--acc); }
-  .chip.dem { background:#2b2216; color:var(--warn); }
+  .chip { background:var(--line); }
+  .chip.ok { background:color-mix(in srgb, var(--ok) 18%, var(--bg)); color:var(--ok); }
+  .chip.bad { background:color-mix(in srgb, var(--bad) 18%, var(--bg)); color:var(--bad); }
+  .chip.cand { background:color-mix(in srgb, var(--acc) 18%, var(--bg)); color:var(--acc); }
+  .chip.dem { background:color-mix(in srgb, var(--warn) 18%, var(--bg)); color:var(--warn); }
   .pill { color:var(--dim); font-family:monospace; font-size:10px; }
   .bar { height:8px; background:var(--acc); border-radius:4px;
-         display:inline-block; vertical-align:middle; }
+         display:inline-block; vertical-align:middle;
+         transition:width .3s ease; }
   #trend { width:100%; height:70px; }
-  .bankrow { padding:5px 0; border-bottom:1px dashed #23253a; }
+  .bankrow { padding:5px 0; border-bottom:1px dashed var(--line); }
   .bankrow .t { font-size:11px; }
   .feedrow { cursor:pointer; }
   .feedrow .steps { display:none; font-family:monospace;
@@ -57,23 +121,37 @@
                border:1px solid var(--line); font-size:11px;
                color:var(--dim); }
   .sels span.on { color:var(--tx); border-color:var(--acc); }
+  .sels span:focus-visible, .feedrow:focus-visible
+    { outline:2px solid var(--acc); outline-offset:1px; }
+  #clock::before { content:""; display:inline-block; width:6px;
+                   height:6px; border-radius:50%; margin-right:6px;
+                   background:var(--ember);
+                   animation:glow 2.4s ease-in-out infinite; }
+  @keyframes glow { 50% { opacity:.35; } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before { animation:none !important;
+                   transition:none !important; }
+  }
+  @media (max-width:900px) {
+    .grid { grid-template-columns:1fr; height:auto; }
+  }
 </style>
 </head>
 <body>
 <header>
   <h1><b>wisp</b> training arena</h1>
-  <span id="clock" class="dim">—</span>
+  <span id="clock" class="dim">waiting</span>
   <div class="sels" id="surfsel"></div>
   <div class="sels" id="mdlsel"></div>
 </header>
 <div class="grid">
   <div class="card">
     <h2>Surface stats</h2>
-    <div id="stats">…</div>
+    <div id="stats">loading</div>
     <h2 style="margin-top:14px">Waste breakdown</h2>
-    <div id="waste" class="dim">—</div>
-    <h2 style="margin-top:14px">Reliability <span class="dim">(pass^k, ≥2 runs)</span></h2>
-    <div id="reliability" class="dim">—</div>
+    <div id="waste" class="dim">none yet</div>
+    <h2 style="margin-top:14px">Reliability <span class="dim">(pass^k, 2 or more runs)</span></h2>
+    <div id="reliability" class="dim">none yet</div>
     <h2 style="margin-top:14px">Efficiency trend</h2>
     <canvas id="trend"></canvas>
   </div>
@@ -85,8 +163,8 @@
     </tr></thead><tbody id="feed"></tbody></table>
   </div>
   <div class="card">
-    <h2>Skill bank <span class="dim">auto-graduation ≥3 streak · eff≥0.9</span></h2>
-    <div id="bank" class="dim">—</div>
+    <h2>Skill bank <span class="dim">graduates at a streak of 3 and efficiency 0.9</span></h2>
+    <div id="bank" class="dim">none yet</div>
   </div>
 </div>
 <script>
@@ -100,7 +178,7 @@ async function j(u) { return (await fetch(u)).json(); }
 function chip(ok) {
   return ok === true  ? '<span class="chip ok">PASS</span>'
        : ok === false ? '<span class="chip bad">FAIL</span>'
-       : '<span class="chip">—</span>';
+       : '<span class="chip">none</span>';
 }
 function jchip(s) {
   return s === true  ? '<span class="chip ok">yes</span>'
@@ -109,7 +187,7 @@ function jchip(s) {
        : '<span class="chip cand">partial</span>';
 }
 function effbar(e) {
-  if (e == null) return '<span class="pill">—</span>';
+  if (e == null) return '<span class="pill">none</span>';
   const w = Math.round(e * 56);
   const c = e >= .9 ? 'var(--ok)' : e >= .6 ? 'var(--warn)'
                                         : 'var(--bad)';
@@ -152,7 +230,7 @@ async function refresh() {
        ' · '+v.avg_ms+'ms':''}</b></div>`).join('')
     + `<div class="stat"><span>bank</span><b class="dim">${
        Object.entries(stats.bank||{}).map(([k,v])=>`${k}:${v}`)
-             .join(' ')||'—'}</b></div>`;
+             .join(' ')||'none yet'}</b></div>`;
   // waste histogram
   const wmax = Math.max(1, ...Object.values(stats.waste || {}));
   $('waste').innerHTML = Object.entries(stats.waste || {})
@@ -160,7 +238,7 @@ async function refresh() {
       `<div class="wastebar"><span class="n">${esc(k)}</span>
        <span class="bar" style="width:${Math.round(v/wmax*120)}px;
              background:var(--warn)"></span>
-       <span class="pill">${v}</span></div>`).join('') || '—';
+       <span class="pill">${v}</span></div>`).join('') || 'none yet';
   // flake histogram — env/timing/judge_fn vs genuine model failures
   const fl = stats.flakes || {};
   const fmax = Math.max(1, ...Object.values(fl));
@@ -181,7 +259,7 @@ async function refresh() {
                           r.pass_rate >= .5 ? 'var(--warn)' :
                           'var(--bad)'}"></span>
        <span class="pill">${r.pass}/${r.runs}</span></div>`)
-    .join('') || '—';
+    .join('') || 'none yet';
   // efficiency sparkline
   const cv = $('trend'), cx = cv.getContext('2d');
   cv.width = cv.clientWidth * 2; cv.height = 140;
@@ -189,7 +267,7 @@ async function refresh() {
                    .filter(e => e != null);
   cx.clearRect(0, 0, cv.width, cv.height);
   if (effs.length > 1) {
-    cx.strokeStyle = '#7aa2f7'; cx.lineWidth = 2;
+    cx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--wisp-accent').trim(); cx.lineWidth = 2;
     cx.beginPath();
     effs.forEach((e, i) => {
       const x = i / (effs.length - 1) * (cv.width - 8) + 4;
@@ -202,8 +280,8 @@ async function refresh() {
   $('feed').innerHTML = runs.slice().reverse().map((r, i) => {
     const g = r.judge || {};
     const steps = (r.steps || []).map(s =>
-      `${esc(s.tool)} ${esc(s.arg)} → ${esc(s.result)}`).join('\n');
-    return `<tr class="feedrow" onclick="this.classList.toggle('open')">
+      `${esc(s.tool)} ${esc(s.arg)} gave ${esc(s.result)}`).join('\n');
+    return `<tr class="feedrow" tabindex="0" onclick="this.classList.toggle('open')">
       <td>${chip(r.verified)}</td>
       <td>${esc(r.task)}<div class="steps">${esc(steps)}</div></td>
       <td class="dim">${esc(r.surface||'')}</td>
@@ -231,7 +309,7 @@ async function refresh() {
       <span class="pill">streak ${e.streak} · eff ${em.toFixed(2)} ·
             ${esc(e.surface||'')}</span>
       <div class="t">${esc(e.task)}</div></div>`;
-  }).join('') || 'empty — run the lab';
+  }).join('') || 'empty, run the lab';
   $('clock').textContent = new Date().toLocaleTimeString();
 }
 refresh();
