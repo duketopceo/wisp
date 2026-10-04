@@ -207,7 +207,11 @@ target; the target is dropped when the status leaves those, when
 `turn_id` changes, and when the daemon goes offline. No target means the
 ghost cursor renders nothing. The emitter sends at most one `aim` per
 action, then `click`, then `done`; it need not repeat unchanged targets.
-Until W13 emits it, fixtures drive it (`tests/qml/harness/scenes.json`).
+W13 (`wisp/act.py` via `wisp/grounding.py`) emits it for every act-loop
+click/move: `aim` once the point is resolved, then `click` and `done`
+when the click landed; a failed, refused or dry-run click sends the
+clear. A guide-mode click or a move leaves the `aim` parked. Fixtures
+also drive it (`tests/qml/harness/scenes.json`).
 
 Topic filtering happens in the daemon: unrequested events are never
 queued for that client. Ordering is the bus's write order, identical for

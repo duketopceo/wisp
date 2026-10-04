@@ -237,6 +237,17 @@ class Guard:
                 return f"rate limit: {self.s['per_turn']} input calls per turn"
         return ""
 
+    def preflight(self, name: str) -> str:
+        """Refusal reason for `name` against the live window, or ''.
+        Side-effect free (no audit, no rate count): lets a caller skip
+        work that ships pixels to a model (grounding) when `run` would
+        refuse anyway."""
+        if not self.applies(name):
+            return ""
+        w = self._window() or {}
+        return self.check(name, (w.get("app") or "").lower(),
+                          w.get("title") or "")
+
     # -- the single entry point ----------------------------------------
     def run(self, name: str, arg: str, runner) -> str:
         if not self.applies(name):
