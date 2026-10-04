@@ -60,6 +60,15 @@ take focus, so `Esc` stays reachable while cua acts. Design notes:
 | `key_env` | `GROQ_API_KEY` | env var / `.env` key name holding the key |
 | `prompt` | `""` | vocab priming (names, jargon) |
 
+## [jev] — routing deadline and shadow decider
+
+| key | default | meaning |
+|-----|---------|---------|
+| `deadline_ms` | `400` | Jev gets this long to route; past it, on an error, or on a malformed reply the heuristic router decides and the turn goes on |
+| `shadow` | `""` | second decider logged to `shadow.jsonl` (`pplx`); never changes what Wisp does |
+
+Every routed turn appends Jev vs heuristic vs final route to `route_ab.jsonl`; read it with `wispd eval route`.
+
 ## [agent] — routing + action policy
 
 | key | default | meaning |

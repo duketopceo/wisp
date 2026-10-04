@@ -1,0 +1,46 @@
+{
+  "description": "Jev replies after 2 s, past the 400 ms deadline: the heuristic routes 'what time is it' to answer, the late reply is discarded and the brain streams the answer (W11).",
+  "audio": "ask.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "what time is it"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      },
+      "latency_ms": 2000
+    },
+    "brain": {
+      "responses": [
+        {
+          "content": "It is half past three.",
+          "chunk_delay_ms": 0
+        }
+      ]
+    }
+  },
+  "expect": {
+    "statuses": [
+      "listening",
+      "transcribing",
+      "deciding",
+      "acting",
+      "speaking",
+      "done"
+    ],
+    "transcript": "what time is it",
+    "answer": "It is half past three.",
+    "brain_calls": 1
+  },
+  "name": "jev_slow"
+}
