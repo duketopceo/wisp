@@ -404,11 +404,12 @@ class TestCli(unittest.TestCase):
                               for a in d["units"]}["wispd"], "new")
             self.assertFalse((env.home / ".config" / "systemd").exists())
 
-    def test_dry_run_alone_is_usage_error(self):
+    def test_dry_run_alone_prints_the_plan(self):
+        # W27 made plain `install --dry-run` a valid plan-only run
         from cli_env import CliEnv
         with CliEnv() as env:
             code, out, err = env.run(["install", "--dry-run"])
-            self.assertEqual(code, 2)
+            self.assertEqual(code, 0, err)
 
     def test_doctor_services_section(self):
         from cli_env import CliEnv

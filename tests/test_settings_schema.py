@@ -55,7 +55,7 @@ TABLE = [
     ("cua.kill_switch", "a\\b", "chars"),
     # not in the schema: writable (provider sections), but the Panel
     # cannot edit it
-    ("keys.submap", "x", ""),
+    ("whisper_cpp.model", "x", ""),
 ]
 
 
@@ -68,6 +68,12 @@ class TestSchemaShape(unittest.TestCase):
             self.assertTrue(f.description, f.key)
             self.assertIn(f.kind, ("usd", "int", "bool", "choice"), f.key)
             self.assertIn(f.widget, ("number", "toggle", "choice"), f.key)
+
+    def test_keys_submap_is_a_daemon_only_bool(self):
+        f = S.field("keys.submap")
+        self.assertFalse(f.panel)
+        self.assertEqual(S.problem("keys.submap", "false"), "")
+        self.assertEqual(S.problem("keys.submap", "x"), "choice")
 
     def test_defaults_pass_their_own_validator(self):
         for f in S.FIELDS:

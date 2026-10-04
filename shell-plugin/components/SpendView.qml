@@ -4,6 +4,7 @@
 // by the app after a one-shot read.
 import QtQuick
 import "../lib/metrics.js" as M
+import "../lib/copy.js" as Copy
 import "../lib/health.js" as H
 import "../lib/manage.js" as Manage
 
@@ -43,8 +44,12 @@ Column {
     bottomPadding: M.spacing.lg
   }
   Text {
-    visible: root.service.notice !== ""
-    text: root.service.notice
+    // W25 moved "out of date" off service.notice (a stale turn reads
+    // reconnecting in the status line); settings views still say it.
+    readonly property string line: root.service.notice !== "" ? root.service.notice
+      : root.service.stale ? Copy.string("state.stale") : ""
+    visible: line !== ""
+    text: line
     color: root.tk.needsYou
     font.family: root.service.fontFamily
     font.pixelSize: M.font.label

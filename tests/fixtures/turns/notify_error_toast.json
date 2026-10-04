@@ -26,7 +26,7 @@
   "expect": {
     "error_code": "brain_down",
     "notify_bodies": [
-      "The local brain is offline"
+      "can't reach the answering model\ncheck your model endpoint, then try again"
     ]
   },
   "name": "notify_error_toast",

@@ -42,5 +42,6 @@
     "answer": "It is half past three.",
     "brain_calls": 1
   },
-  "name": "jev_slow"
+  "name": "jev_slow",
+  "scenario": "Jev slow"
 }
