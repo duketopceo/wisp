@@ -126,6 +126,12 @@
    "size": 28
   }
  },
+ "BarMark": {
+  "mode": "state",
+  "pad": 8,
+  "scale2": true,
+  "on": "desktop"
+ },
  "StatusLine": {
   "mode": "state",
   "pad": 10

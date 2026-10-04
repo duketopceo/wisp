@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.duketopceo.wisp",
   "name": "Wisp",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "author": "duketopceo",
   "license": "MIT",
   "description": "Voice assistant: Super+D listens, Jev decides, agents spawn — state surfaced from the wispd daemon.",
@@ -20,7 +20,7 @@
   },
   "barWidget": {
     "displayName": "Wisp",
-    "description": "Voice assistant status and controls",
+    "description": "Wisp mark: state glyph, health and spend tooltip, click to talk, middle click to stop, right click for the panel",
     "category": "Productivity",
     "allowMultiple": false,
     "defaultSection": "center"
