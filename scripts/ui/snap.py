@@ -75,6 +75,10 @@ TOLERANCE = {
     "MemoryTab": Tolerance(10, 0.012),
     "SettingsTab": Tolerance(10, 0.012),
     "HealthSection": Tolerance(10, 0.012),
+    "HealthView": Tolerance(10, 0.012),
+    "SpendView": Tolerance(10, 0.012),
+    "AuditView": Tolerance(10, 0.012),
+    "BindsView": Tolerance(10, 0.012),
     "Creature": Tolerance(12, 0.008),
     "Corner": Tolerance(12, 0.008),
 }

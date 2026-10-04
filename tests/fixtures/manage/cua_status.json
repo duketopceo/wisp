@@ -1,0 +1,13 @@
+{
+ "configured": "cua",
+ "backend": "cua",
+ "mode": "guide",
+ "binary": "/usr/bin/cua-driver",
+ "socket": "/run/x.sock",
+ "live": false,
+ "state": "installed_not_running",
+ "fix": "systemctl --user start cua-driver.service",
+ "kill": true,
+ "dry_run": true,
+ "version": "0.4.2"
+}

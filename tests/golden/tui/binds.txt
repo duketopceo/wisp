@@ -1,0 +1,9 @@
+binds
+  hotkey and the Hyprland binds wisp registered
+  SUPER+D            hold to talk
+  global
+    SUPER+D            wispd trigger
+    SUPER+SHIFT+D      wispd interrupt
+  submap
+    Escape             wisp  wispd interrupt
+    1                  wisp  wispd choice 1

@@ -1,0 +1,7 @@
+binds
+  hotkey and the Hyprland binds wisp registered
+  SUPER+D            hold to talk
+  Hyprland is not reachable
+  global
+  submap
+    submap not installed

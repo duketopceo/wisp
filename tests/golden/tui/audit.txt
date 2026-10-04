@@ -1,0 +1,8 @@
+audit
+  one row per guarded cua call. Typed text is never stored.
+  12:00:30 stopped  ghostty        click         18 ms
+  12:00:21 dry run  thunar         scroll         1 ms
+  12:00:15 refused  1password      click          3 ms
+  12:00:09 allowed  firefox        key           41 ms
+  12:00:04 allowed  firefox        type_text     95 ms
+  12:00:00 allowed  firefox        click        212 ms

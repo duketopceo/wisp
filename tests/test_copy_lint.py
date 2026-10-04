@@ -106,6 +106,11 @@ class TestQmlCopy(unittest.TestCase):
             if n < ceiling:
                 self.fail(f"{name} improved to {n}: lower its RATCHET to {n}")
 
+    def test_management_app_ratchet_is_zero(self):
+        # W26: shells/debug/shell.qml is clean and stays clean
+        src = (ROOT / "shells" / "debug" / "shell.qml").read_text()
+        self.assertEqual(copylint.violations(copylint.qml_strings(src)), [])
+
     def test_every_qml_file_is_accounted_for(self):
         seen = {p.name for p in PLUGIN.glob("*.qml")}
         self.assertLessEqual(seen - set(STRICT_QML) - set(RATCHET), set())

@@ -318,7 +318,8 @@ def binds(ctx, a):
                 if "wisp" in blob:
                     found.append({"key": b.get("key", ""),
                                   "modmask": b.get("modmask", 0),
-                                  "arg": b.get("arg", "")})
+                                  "arg": b.get("arg", ""),
+                                  "submap": b.get("submap", "") or ""})
     except Exception:  # the socket is best effort here
         up = False
     data = {"hotkey": {"mod": mod, "key": key, "chord": f"{mod}+{key}"},
