@@ -4,6 +4,7 @@ type: feat
 date: 2026-09-18
 origin: docs/brainstorms/2026-09-18-dim-autonomous-assistant-requirements.md
 depth: deep
+status: "superseded by 2026-10-04-0100-feat-wisp-unified-plan.md"
 ---
 
 # feat: Wisp autonomous voice assistant for Omarchy
