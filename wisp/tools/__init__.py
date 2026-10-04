@@ -24,10 +24,12 @@ REGISTRY = {
     "screenshot": (system.screenshot, "safe", "capture the screen to a file"),
     "type_text": (system.type_text, "mutating", "type text into the focused window"),
     "click": (system.click, "mutating",
-              "click at 'x,y' (screenshot pixels) or 'x,y@logical' — "
+              "click at 'x,y' or target element e.g. 'monitor icon in menu bar' — "
               "in guide mode points the ghost cursor for the user"),
     "move": (system.move, "mutating",
-             "move the pointer to 'x,y' or 'x,y@logical'"),
+             "move the pointer to 'x,y' or target element"),
+    "ground": (system.ground, "safe",
+               "locate on-screen UI element center: 'monitor icon in menu bar' -> GROUNDED(x,y)"),
     "codegraph": (system.codegraph, "safe",
                   "query a repo's code-graph index (CBM): "
                   "'<tool> <json-args>' e.g. 'search_graph "

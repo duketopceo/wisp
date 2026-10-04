@@ -471,6 +471,15 @@ def install_bind(cfg: dict) -> None:
 
     bindings = config.HOME / ".config" / "hypr" / "bindings.lua"
     text = bindings.read_text() if bindings.exists() else ""
+    target_combo = f"{mod} + {key.upper()}"
+    conflicts = [l.strip() for l in text.splitlines() if target_combo in l.upper() and "wisp-trigger" not in l]
+    if conflicts:
+        print(f"⚠️  WARNING: Hotkey {target_combo} is already in use in {bindings}:")
+        for c in conflicts[:2]:
+            print(f"   {c}")
+        print("💡 Recommended alternative hotkeys without conflicts: SUPER + SPACE, ALT + D, F13")
+        print("   Configure [hotkey] in ~/.config/wisp/config.toml to override.")
+
     old = [l for l in text.splitlines() if "wisp-trigger" in l]
     if (len(old) >= 2
             and all("start" in l or "release" in l for l in old)):

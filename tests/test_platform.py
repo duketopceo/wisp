@@ -1,6 +1,7 @@
 """Platform seam tests — adapters exercised via WISP_OS override.
 No subprocess is spawned; we assert argv shape + graceful None."""
 import os
+import sys
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -23,17 +24,17 @@ class TestPlatform(unittest.TestCase):
     def test_macos_dirs(self):
         with _with_os("macos"):
             cfg, data, rt = platform.dirs()
-            self.assertIn("Application Support/wisp", str(cfg))
-            self.assertIn("Application Support/wisp", str(data))
-            self.assertTrue(str(rt).endswith("wisp"))
+            self.assertIn("Application Support/wisp", cfg.as_posix())
+            self.assertIn("Application Support/wisp", data.as_posix())
+            self.assertTrue(rt.as_posix().endswith("wisp"))
 
     def test_linux_dirs_unchanged(self):
         with _with_os("linux"), \
                 mock.patch.dict(os.environ, {},
                                 clear=False):
             cfg, data, rt = platform.dirs()
-            self.assertTrue(str(cfg).endswith(".config/wisp"))
-            self.assertTrue(str(data).endswith(
+            self.assertTrue(cfg.as_posix().endswith(".config/wisp"))
+            self.assertTrue(data.as_posix().endswith(
                 ".local/share/wisp"))
 
     def test_linux_cmds(self):
@@ -240,6 +241,8 @@ class TestDefaultApps(unittest.TestCase):
 
     def test_macos_defaults_are_which_able(self):
         import shutil
+        if sys.platform == "win32":
+            self.skipTest("shutil.which('open') only available on Unix")
         with _with_os("macos"):
             apps = config._default_apps()
         for name, value in apps.items():

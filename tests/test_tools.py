@@ -36,8 +36,11 @@ class TestRegistry(unittest.TestCase):
 class TestToolExec(unittest.TestCase):
     def test_workspace_parses_number(self):
         ok = mock.Mock(returncode=0)
+        from wisp import platform
         with mock.patch.object(tools.desktop.subprocess, "run",
-                               return_value=ok):
+                               return_value=ok), \
+             mock.patch.object(platform, "workspace_cmds",
+                               return_value=[["hyprctl", "workspace", "3"]]):
             self.assertEqual(tools.run("workspace", "3", {}), "WORKSPACE 3")
 
     def test_workspace_rejects_non_number(self):
