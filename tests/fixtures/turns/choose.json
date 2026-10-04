@@ -56,5 +56,6 @@
       "discord"
     ]
   },
-  "name": "choose"
+  "name": "choose",
+  "scenario": "choose/confirm"
 }

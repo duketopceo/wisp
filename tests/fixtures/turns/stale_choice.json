@@ -48,5 +48,6 @@
       "discord"
     ]
   },
-  "name": "stale_choice"
+  "name": "stale_choice",
+  "scenario": "stale choice"
 }

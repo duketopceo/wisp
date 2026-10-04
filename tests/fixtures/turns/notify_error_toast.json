@@ -1,5 +1,5 @@
 {
-  "description": "Answer brain returns 500 and no fallback is configured: the turn ends in error with error_code brain_down (U7). No canned answer.",
+  "description": "Brain down with the notify fake installed: the error turn raises an error toast.",
   "audio": "ask.wav",
   "endpoints": {
     "whisper": {
@@ -24,17 +24,14 @@
     }
   },
   "expect": {
-    "statuses": [
-      "listening",
-      "transcribing",
-      "deciding",
-      "acting",
-      "error"
-    ],
     "error_code": "brain_down",
-    "error_detail_contains": "openai_compat",
-    "brain_calls": 1
+    "notify_bodies": [
+      "The local brain is offline"
+    ]
   },
-  "name": "brain_down",
-  "scenario": "brain down"
+  "name": "notify_error_toast",
+  "scenario": "notify paths",
+  "fakes": {
+    "notify": {}
+  }
 }

@@ -229,17 +229,32 @@ def health_start(ctx, a):
 
 # -- latency --------------------------------------------------------------
 
-def _since_args(p):
+def _latency_args(p):
     p.add_argument("--since", default="24h", metavar="AGE",
                    help="window: 24h, 90m, 2d (default 24h)")
+    p.add_argument("--budgets", action="store_true",
+                   help="print the budget table instead of a report")
+    p.add_argument("--baseline", action="store_true",
+                   help="show the committed harness baseline (fakes)")
+    p.add_argument("--harness", action="store_true",
+                   help="measure now from the replay harness (fakes, "
+                        "needs a repo checkout)")
 
 
 @command("latency", "p50 and p90 per budget path from recent turns",
-         ["wispd latency", "wispd latency --since 6h --json"],
+         ["wispd latency", "wispd latency --since 6h --json",
+          "wispd latency --budgets", "wispd latency --harness"],
          {"since_h": "float", "turns": "int", "rows": "list"},
-         args=_since_args)
+         args=_latency_args)
 def latency(ctx, a):
     from .. import telemetry
+    if a.budgets:
+        t = telemetry.load_budgets()
+        return ctx.emit({"paths": t["paths"], "resources": t["resources"],
+                         "p90_factor": t["p90_factor"]},
+                        telemetry.budgets_text())
+    if a.baseline or a.harness:
+        return _latency_harness(ctx, a)
     hours = telemetry.parse_since(a.since)
     rep = telemetry.latency_report(hours)
     data = {"since_h": hours, "turns": rep["turns"], "rows": rep["rows"]}
@@ -257,6 +272,36 @@ def latency(ctx, a):
     text = f"latency {h}, {rep['turns']} turns (ms)\n" + ctx.table(
         ["id", "path", "n", "p50", "p90", "budget", "verdict"], rows, tones)
     return ctx.emit(data, text)
+
+
+def _latency_harness(ctx, a):
+    """Harness numbers: the committed baseline, or a fresh fake run."""
+    from .. import telemetry
+    if a.harness:
+        import pathlib
+        import sys
+        root = pathlib.Path(__file__).resolve().parent.parent.parent
+        if not (root / "tests" / "harness").is_dir():
+            raise CliError("E_NOT_FOUND", "the replay harness needs a "
+                           "repo checkout (tests/harness is missing).",
+                           "wispd latency --baseline")
+        sys.path.insert(0, str(root / "tests"))
+        from harness import latency as hl
+        series = hl.measure(3)
+        doc = {"fakes_only": True, "paths": hl.summarize(series),
+               "regressions": hl.check(series)}
+    else:
+        doc = telemetry.load_baseline()
+        if not doc:
+            raise CliError("E_NOT_FOUND", "no committed harness baseline.",
+                           "python scripts/latency_baseline.py --record")
+    rows = [[pid, r["label"], r["n"], r["p50"], r["p90"],
+             r["budget_p50_ms"]] for pid, r in doc["paths"].items()]
+    text = ("latency from the replay harness (fake models, ms)\n"
+            + ctx.table(["id", "path", "n", "p50", "p90", "budget"], rows))
+    for b in doc.get("regressions", []):
+        text += f"\nREGRESSION: {b}"
+    return ctx.emit(doc, text)
 
 
 # -- spend ----------------------------------------------------------------

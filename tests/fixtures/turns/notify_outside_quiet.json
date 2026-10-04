@@ -1,5 +1,5 @@
 {
-  "description": "Answer route: Jev routes to answer, brain streams a reply. Characterization baseline of today's pipeline.",
+  "description": "Control for notify_quiet_hours: same 22:00-07:00 window, fixed clock 12:00 is outside it, so the toast is sent.",
   "audio": "ask.wav",
   "endpoints": {
     "whisper": {
@@ -29,18 +29,20 @@
     }
   },
   "expect": {
-    "statuses": [
-      "listening",
-      "transcribing",
-      "deciding",
-      "acting",
-      "speaking",
-      "done"
-    ],
-    "transcript": "what time is it",
     "answer": "It is half past three.",
-    "brain_calls": 1
+    "notify_bodies": [
+      "ANSWERED"
+    ]
   },
-  "name": "ask",
-  "scenario": "answer"
+  "name": "notify_outside_quiet",
+  "scenario": "notify paths",
+  "fakes": {
+    "notify": {}
+  },
+  "config": {
+    "notify": {
+      "quiet": "22:00-07:00"
+    }
+  },
+  "notify_now": "2026-10-04T12:00"
 }

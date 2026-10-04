@@ -1,5 +1,5 @@
 {
-  "description": "Answer route: Jev routes to answer, brain streams a reply. Characterization baseline of today's pipeline.",
+  "description": "Answer turn with the notify fake installed: one success toast reaches notify-send.",
   "audio": "ask.wav",
   "endpoints": {
     "whisper": {
@@ -29,18 +29,14 @@
     }
   },
   "expect": {
-    "statuses": [
-      "listening",
-      "transcribing",
-      "deciding",
-      "acting",
-      "speaking",
-      "done"
-    ],
-    "transcript": "what time is it",
     "answer": "It is half past three.",
-    "brain_calls": 1
+    "notify_bodies": [
+      "ANSWERED"
+    ]
   },
-  "name": "ask",
-  "scenario": "answer"
+  "name": "notify_success_toast",
+  "scenario": "notify paths",
+  "fakes": {
+    "notify": {}
+  }
 }

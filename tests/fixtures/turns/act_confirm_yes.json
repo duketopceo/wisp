@@ -1,25 +1,18 @@
 {
-  "description": "Act route: the fake cua-driver click hangs; the user stop lands mid-call. W9: the guard/cancel path ends the turn INTERRUPTED within 150 ms of the stop and no further step runs.",
+  "description": "[cua] confirm = always: the click asks first; the scripted chooser answers yes and cua-driver is called once.",
   "audio": "act.wav",
-  "name": "cancel_mid_act",
+  "name": "act_confirm_yes",
   "config": {
     "pointer": {
       "mode": "drive",
       "backend": "auto"
     },
     "cua": {
-      "timeout_ms": "5000"
+      "confirm": "always"
     }
   },
   "fakes": {
-    "cua": {
-      "mode": "live",
-      "tools": {
-        "click": {
-          "hang": true
-        }
-      }
-    },
+    "cua": {},
     "hypr": {},
     "notify": {}
   },
@@ -58,9 +51,25 @@
     }
   },
   "expect": {
-    "result_prefix": "INTERRUPTED",
-    "stop_within_ms": 150
+    "statuses": [
+      "listening",
+      "transcribing",
+      "deciding",
+      "acting",
+      "awaiting_choice",
+      "acting",
+      "done"
+    ],
+    "cua_calls": [
+      "click"
+    ],
+    "steps_contain": [
+      "CLICKED(10,20)"
+    ]
   },
-  "interrupt_after_ms": 600,
-  "scenario": "cancel mid-act"
+  "scenario": "choose/confirm",
+  "chooser": {
+    "pick": "run click: 10,20@logical? \u2014 yes",
+    "delay_ms": 20
+  }
 }

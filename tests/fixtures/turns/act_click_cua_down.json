@@ -54,5 +54,6 @@
       "click"
     ],
     "cua_calls": []
-  }
+  },
+  "scenario": "cua down"
 }
