@@ -98,6 +98,7 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
                         except Exception:
                             rec["proc"].kill()
                         rec["sampler_stop"].set()
+                        _drop_speculation(ctl)
                         st.turn(ctl.pop("turn", None)
                                 or st.current_turn()).transition(
                             "done", result="", transcript="")
@@ -108,9 +109,13 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
                     if ctl["busy"].is_set():
                         return {"ok": False, "error": "busy"}
                     tid = ctl.pop("turn", None) or st.current_turn()
+                    # P2: key-up publishes `transcribing` before the
+                    # recorder is signalled and settled
+                    st.turn(tid).transition("transcribing")
                     try:
                         wav = pipeline.record_stop(rec, st.turn(tid))
                     except RuntimeError as e:
+                        _drop_speculation(ctl)
                         st.turn(tid).transition("error", error=str(e))
                         return {"ok": False, "error": str(e)}
                     ctl["busy"].set()
@@ -125,7 +130,6 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
                     return {"ok": False, "error": "busy"}
                 # first press: start open-ended capture; [audio] seconds
                 # is the safety cap, not the length.
-                speech.stop()
                 # a new turn: anything the previous turn still has in
                 # flight (TTS exit callback, level sampler) is stale now
                 tid = st.begin_turn()
@@ -133,15 +137,29 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
                 ctl["interrupt"].clear()
                 ctl["token"] = cancel.CancelToken()
                 th = st.turn(tid)
+                # P1: publish `listening` first; everything slower
+                # (killing TTS, spawning the recorder, speculative
+                # context) comes after
                 th.transition("listening", transcript="", result="",
                               answer="", choices=[], points=[], error="",
                               steps=[], guide=None)
                 req_sp.record("press", req_sp.t0)
+                speech.stop()
+                _drop_speculation(ctl)
+                try:
+                    spec = pipeline.speculative_context(cfg).start()
+                except Exception as e:  # speculation is best-effort
+                    dlog(f"speculative context off: {e}")
+                    spec = None
                 try:
                     ctl["rec"] = pipeline.record_start(th)
                 except RuntimeError as e:
+                    if spec is not None:
+                        spec.cancel()
                     th.transition("error", error=str(e))
                     return {"ok": False, "error": str(e)}
+                if spec is not None:
+                    ctl["spec"] = spec
                 ctl["spans"] = req_sp
                 secs = int(cfg.get("audio", {}).get("seconds", "60"))
                 threading.Thread(target=_rec_watchdog,
@@ -239,6 +257,7 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
         if c == "interrupt":
             # cancel the in-flight turn only — daemon keeps running
             ctl["interrupt"].set()
+            _drop_speculation(ctl)
             tok = ctl.get("token")
             if tok is not None:
                 tok.cancel()  # kills children, closes sockets (U9)
@@ -256,6 +275,13 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
             return {"ok": True}
         return {"ok": False, "error": f"unknown cmd {c!r}"}
     return handle
+
+
+def _drop_speculation(ctl: dict) -> None:
+    """Discard press-time speculative context nobody consumed (W4)."""
+    spec = ctl.pop("spec", None)
+    if spec is not None:
+        spec.cancel()
 
 
 def _choice_cmd(args: list):
@@ -317,12 +343,13 @@ def _run_listen(st: state_mod.StateBus, cfg: dict, ctl: dict,
     token = ctl.get("token")
     if token is None:
         token = ctl["token"] = cancel.CancelToken()
+    spec = ctl.pop("spec", None)  # speculative context from the press
     try:
         pipeline.run_listen(cfg, st,
                             wait_for_choice=_wait_for_choice(ctl, token),
                             interrupted=ctl["interrupt"].is_set,
                             wav=wav, spans=spans, turn_id=turn_id,
-                            cancel=token)
+                            cancel=token, speculative=spec)
         dlog(f"turn done: status={st.status} "
              f"transcript={st.transcript!r} result={st.result!r}")
     except Exception as e:
