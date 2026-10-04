@@ -328,20 +328,19 @@ def _run_suite(cfg, tasks, page, dom, suite_name, spec, model,
                           verified=ok) if "--no-judge" not in sys.argv \
             else {"success": ok, "efficiency": None, "waste": "none",
                   "first_fault": -1}
+        # indices of steps that actually executed (not error/skip/refuse)
+        nonerr = [i for i, s in enumerate(run_steps)
+                  if not str(s.get("result", "")).startswith(
+                      ("ERROR", "SKIP", "REFUS"))]
         # first-fault fallback when the judge didn't name one: verified
-        # fails fault at the last non-error step, clean passes at none.
+        # fails fault at the last executed step, clean passes at none.
         if j.get("first_fault", -1) < 0 and ok is False:
-            nonerr = [i for i, s in enumerate(run_steps)
-                      if not str(s.get("result", "")).startswith(
-                          ("ERROR", "SKIP", "REFUS"))]
             j["first_fault"] = nonerr[-1] if nonerr else -1
         # Objective efficiency when the suite carries an oracle:
         # minimal-steps / executed-steps, capped at 1.0. Jev's verdict
-        # stays on the record as judged_efficiency for disagreement
-        # auditing; `efficiency` resolves to the oracle when present.
-        actual = sum(1 for s in run_steps
-                     if not str(s.get("result", "")).startswith(
-                         ("ERROR", "SKIP", "REFUS")))
+        # stays on the record for disagreement auditing; `efficiency`
+        # resolves to the oracle when present.
+        actual = len(nonerr)
         eff_obj = (min(1.0, oracle_len / max(actual, 1))
                    if oracle_len else None)
         eff = eff_obj if eff_obj is not None else j.get("efficiency")

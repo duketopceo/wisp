@@ -161,8 +161,8 @@ def _fold(e: dict | None, rec: dict) -> dict:
 
 
 def stats() -> dict:
-    """Arena roll-up: per-surface/per-suite pass rates + efficiency +
-    waste histogram + bank status counts."""
+    """Arena roll-up: per-surface/per-model pass rates + efficiency,
+    pass^k reliability, waste + flake histograms, bank status."""
     recs = _load_jsonl(RESULTS)
     surfaces: dict = {}
     models: dict = {}
