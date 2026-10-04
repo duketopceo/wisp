@@ -49,7 +49,7 @@ Missing tools degrade to `SKIP (… — hint)`; nothing panics.
 ## Service / hotkey
 
 `wispd install` registers `schtasks /tn DimAgent /sc onlogon` instead of
-the systemd unit. Push-to-talk hotkey: bind `wispd listen` via
+the systemd unit. Push-to-talk hotkey: bind `wispd trigger` via
 PowerToys Keyboard Manager, AutoHotkey, or `global-hotkey` in the tray
 app (U10 packaging).
 
