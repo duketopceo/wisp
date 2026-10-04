@@ -32,26 +32,24 @@ def _install_args(p):
                    help="also install the pinned cua-driver "
                         "(scripts/cua/install.sh)")
     p.add_argument("--dry-run", action="store_true",
-                   help="with --cua: print the plan, change nothing")
+                   help="print the plan, change nothing")
 
 
 @command("daemon install",
          "Install runtime files, the systemd unit and the hotkey bind",
-         ["wispd daemon install", "wispd install --cua --dry-run"],
+         ["wispd daemon install", "wispd install --dry-run"],
          {"installed": "bool", "cua": "any"}, args=_install_args)
 def daemon_install(ctx, a):
-    if a.dry_run and not a.cua:
-        raise CliError("E_USAGE", "--dry-run needs --cua.",
-                       "wispd install --cua --dry-run")
     if a.cua:
         return _install_cua(ctx, a)
 
     def go():
-        ctx.host.install_files()
-        ctx.host.install_bind(ctx.cfg)
+        ctx.host.install_files(dry_run=a.dry_run)
+        if not a.dry_run:
+            ctx.host.install_bind(ctx.cfg)
         return 0
     rc, text = _host_call(ctx, go)
-    return ctx.emit({"installed": rc == 0, "cua": None})
+    return ctx.emit({"installed": rc == 0 and not a.dry_run, "cua": None})
 
 
 def _install_cua(ctx, a):
