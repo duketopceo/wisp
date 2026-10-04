@@ -21,6 +21,18 @@ _TIMEOUT = 10
 _TCP = _plat.current() == "windows"
 
 
+def _use_tcp() -> bool:
+    """TCP loopback on Windows, AF_UNIX elsewhere. Read dynamically
+    (not just at import) so WISP_OS overrides and tests take effect,
+    while the patched `ipc._TCP` module flag still forces TCP on."""
+    if _TCP:
+        return True
+    try:
+        return _plat.current() == "windows"
+    except Exception:
+        return False
+
+
 class Daemon:
     """IPC server. `handler(cmd_dict) -> dict` supplies the responses."""
 
@@ -35,7 +47,7 @@ class Daemon:
         self._sock_file.parent.mkdir(parents=True, exist_ok=True)
         if self._sock_file.exists():
             self._sock_file.unlink()
-        if _TCP:
+        if _use_tcp():
             srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             srv.bind(("127.0.0.1", 0))
             srv.listen(8)
@@ -105,7 +117,8 @@ def send(cmd: dict, sock_file=config.SOCK_FILE, timeout: float = _TIMEOUT) -> di
     """Send one command to the daemon; returns its reply dict.
 
     Raises ConnectionError when the socket is absent/refused."""
-    if _TCP:
+    tcp = _use_tcp()
+    if tcp:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.settimeout(timeout)
         try:
@@ -118,7 +131,7 @@ def send(cmd: dict, sock_file=config.SOCK_FILE, timeout: float = _TIMEOUT) -> di
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         s.settimeout(timeout)
     try:
-        if not _TCP:
+        if not tcp:
             s.connect(str(sock_file))
         s.sendall(json.dumps(cmd).encode() + b"\n")
         data = b""

@@ -328,9 +328,39 @@ def cmd_trigger(cfg: dict, phase: str = "") -> int:
 
 
 def install_files() -> None:
-    """Copy runtime files to ~/.local/opt/wisp, write the trigger shim
-    and the systemd user unit, and install the shell plugin directory."""
+    """Copy runtime files to the per-OS opt dir, write the trigger shim
+    and service registration, and install the shell plugin directory
+    (Linux/Omarchy only)."""
+    from wisp import platform as _plat
     src = pathlib.Path(__file__).resolve().parent
+    if _plat.current() == "windows":
+        opt = config.DATA_DIR / "opt" / "wisp"
+        opt.mkdir(parents=True, exist_ok=True)
+        pkg = src / "wisp"
+        if pkg.is_dir():
+            shutil.copytree(pkg, opt / "wisp", dirs_exist_ok=True)
+            print(f"installed {opt}/wisp")
+        target = opt / "wispd"
+        shutil.copy2(src / "wispd", target)
+        print(f"installed {target}")
+        # Task Scheduler: run wispd daemon at logon (U8). The shipped
+        # launcher is the extensionless Python script, so materialize a
+        # .cmd wrapper that schtasks can execute directly.
+        cmd = opt / "wispd.cmd"
+        cmd.write_text(
+            f'@echo off\r\n"{sys.executable}" "{opt / "wispd"}" %*\r\n')
+        print(f"installed {cmd}")
+        r = subprocess.run(
+            ["schtasks", "/create", "/tn", "Wisp", "/sc", "onlogon",
+             "/tr", f'"{cmd}" daemon', "/f"],
+            capture_output=True, text=True)
+        if r.returncode == 0:
+            print("registered Task Scheduler task Wisp (logon)")
+        else:
+            print(f"schtasks failed: {(r.stderr or r.stdout).strip()}")
+        print("push-to-talk: bind `wispd listen` via PowerToys Keyboard "
+              "Manager, AutoHotkey, or the tray app (see docs/WINDOWS.md)")
+        return
     opt = config.HOME / ".local" / "opt" / "wisp"
     opt.mkdir(parents=True, exist_ok=True)
     pkg = src / "wisp"
@@ -379,20 +409,7 @@ StartupNotify=false
     trigger.write_text(f'#!/bin/sh\nexec {sys.executable} {opt}/wispd trigger "$@"\n')
     trigger.chmod(0o755)
     print(f"installed {trigger}")
-    from wisp import platform as _plat
     if _plat.current() == "windows":
-        # Task Scheduler: run wispd daemon at logon (U8). The shipped
-        # launcher is the extensionless Python script, so materialize a
-        # .cmd wrapper that schtasks can execute directly.
-        cmd = opt / "wispd.cmd"
-        cmd.write_text(
-            f'@echo off\r\n"{sys.executable}" "{opt / "wispd"}" %*\r\n')
-        print(f"installed {cmd}")
-        subprocess.run(
-            ["schtasks", "/create", "/tn", "Wisp", "/sc", "onlogon",
-             "/tr", f'"{cmd}" daemon', "/f"],
-            capture_output=True)
-        print("registered Task Scheduler task Wisp (logon)")
         return
     if _plat.current() == "macos":
         # launchd agent plist (U7)
@@ -450,8 +467,9 @@ def install_bind(cfg: dict) -> None:
     from wisp import platform
     if not platform.supports_hotkey_install():
         print("hotkey install is Linux/Hyprland-only — on macOS bind "
-              "push-to-talk via SKHD/Raycast/a shortcut app: "
-              "`wispd listen` (see docs/MACOS.md)")
+              "push-to-talk via SKHD/Raycast/a shortcut app, on Windows "
+              "via PowerToys Keyboard Manager or AutoHotkey: "
+              "`wispd listen` (see docs/MACOS.md / docs/WINDOWS.md)")
         return
     mod = cfg.get("hotkey", {}).get("mod", "SUPER")
     key = cfg.get("hotkey", {}).get("key", "D")
@@ -526,12 +544,25 @@ def _doctor(cfg: dict) -> int:
         ok = False
 
     print("stt / audio:")
+    from wisp import platform as _plat
     wm = config.whisper_model(cfg)
     row("whisper model", wm.name, good=wm.exists())
     stt = cfg.get("stt", {}).get("provider", "local")
     row("stt provider", stt)
-    for b in ("pw-record", "wtype", "grim"):
-        row(b, _sh.which(b) or "", good=bool(_sh.which(b)))
+    if _plat.current() == "windows":
+        row("sox (mic)", _sh.which("sox") or "",
+            good=bool(_sh.which("sox")))
+        row("powershell", _plat._ps_bin() or "",
+            good=bool(_plat._ps_bin()))
+    elif _plat.current() == "macos":
+        row("afrecord/sox",
+            _sh.which("afrecord") or _sh.which("sox") or "",
+            good=bool(_sh.which("afrecord") or _sh.which("sox")))
+        row("screencapture", _sh.which("screencapture") or "",
+            good=bool(_sh.which("screencapture")))
+    else:
+        for b in ("pw-record", "wtype", "grim"):
+            row(b, _sh.which(b) or "", good=bool(_sh.which(b)))
 
     print("brain / router:")
     p = brain.provider(cfg)
@@ -544,7 +575,6 @@ def _doctor(cfg: dict) -> int:
         else key or "MISSING", good=bool(key))
 
     print("pointer:")
-    from wisp import platform as _plat
     pb = _plat.pointer_backend(cfg)
     mode = cfg.get("pointer", {}).get("mode", "guide")
     row("pointer backend", pb or "none — guide mode only")
@@ -556,7 +586,8 @@ def _doctor(cfg: dict) -> int:
     row("codegraph (CBM)", _sh.which("codebase-memory-mcp")
         or "not installed")
     row("hyprctl", _sh.which("hyprctl") or "",
-        good=bool(_sh.which("hyprctl")))
+        good=bool(_sh.which("hyprctl"))
+        or _plat.current() != "linux")
     row("sense enabled", cfg.get("sense", {}).get("enabled", "false"))
 
     print("data:")
@@ -569,9 +600,12 @@ def _doctor(cfg: dict) -> int:
 
 
 def rebuild_harness() -> int:
-    builder = config.HOME / ".local" / "opt" / "wisp" / "build_harness.py"
-    if not builder.exists():
-        builder = (pathlib.Path(__file__).resolve().parent
+    candidates = [
+        config.DATA_DIR / "opt" / "wisp" / "build_harness.py",
+        config.HOME / ".local" / "opt" / "wisp" / "build_harness.py",
+    ]
+    builder = next((c for c in candidates if c.exists()),
+                   pathlib.Path(__file__).resolve().parent
                    / "scripts" / "build_harness.py")
     return subprocess.run([sys.executable, str(builder)]).returncode
 

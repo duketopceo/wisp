@@ -147,6 +147,28 @@ class TestPlatform(unittest.TestCase):
                 self.assertIn("powershell",
                               platform.missing_deps_hint())
 
+    def test_windows_pwsh_fallback(self):
+        # pwsh-only box (powershell.exe absent) must still build shell
+        # argv via pwsh; a box with neither degrades to None/[].
+        with _with_os("windows"):
+            with mock.patch.object(platform, "_which",
+                                   lambda b: b == "pwsh"):
+                self.assertEqual(platform._ps_bin(), "pwsh")
+                self.assertEqual(
+                    platform.screenshot_cmd(Path("/t/s.png"))[0],
+                    "pwsh")
+                self.assertEqual(
+                    platform.type_text_cmd("hi")[0], "pwsh")
+                self.assertEqual(platform.tts_argv("hi")[0], "pwsh")
+                self.assertEqual(
+                    platform.notify_cmd("a", "b")[0], "pwsh")
+            with mock.patch.object(platform, "_which",
+                                   return_value=False):
+                self.assertIsNone(
+                    platform.screenshot_cmd(Path("/t/s.png")))
+                self.assertIsNone(platform.tts_argv("hi"))
+                self.assertIsNone(platform.type_text_cmd("hi"))
+
     def test_desktop_matrix(self):
         """Adapter selection per linux desktop — PATH fully faked."""
         cases = [

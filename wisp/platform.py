@@ -58,8 +58,17 @@ def desktop() -> str:
 
 
 def _ps(script: str) -> list:
-    return ["powershell", "-NoProfile", "-NonInteractive",
+    b = _ps_bin() or "powershell"
+    return [b, "-NoProfile", "-NonInteractive",
             "-Command", script]
+
+
+def _ps_bin() -> str | None:
+    """Windows shell: inbox powershell.exe or cross-platform pwsh."""
+    for b in ("powershell", "pwsh"):
+        if _which(b):
+            return b
+    return None
 
 
 def _sendkeys_escape(t: str) -> str:
@@ -192,7 +201,7 @@ def screenshot_cmd(out: Path) -> list | None:
         return (["screencapture", "-x", str(out)]
                 if _which("screencapture") else None)
     if o == "windows":
-        if _which("powershell"):
+        if _ps_bin():
             return _ps(
                 "Add-Type -AssemblyName System.Windows.Forms,"
                 "System.Drawing; $b=[System.Windows.Forms."
@@ -230,7 +239,7 @@ def type_text_cmd(text: str) -> list | None:
     if o == "macos":
         return _osa_keystroke(text) if _which("osascript") else None
     if o == "windows":
-        if _which("powershell"):
+        if _ps_bin():
             return _ps(
                 "Add-Type -AssemblyName System.Windows.Forms; "
                 "[System.Windows.Forms.SendKeys]::SendWait("
@@ -255,7 +264,7 @@ def tts_argv(msg: str) -> list | None:
     """Builtin TTS argv for `msg` — used when voice.cmd is empty.
     Windows speaks via PowerShell SAPI."""
     if current() == "windows":
-        if not _which("powershell"):
+        if not _ps_bin():
             return None
         esc = msg.replace("'", "''")
         return _ps(
@@ -276,7 +285,7 @@ def notify_cmd(title: str, body: str) -> list | None:
                 f'display notification "{esc(body)}" with title '
                 f'"{esc(title)}"']
     if o == "windows":
-        if not _which("powershell"):
+        if not _ps_bin():
             return None
         e = lambda s: s.replace("'", "''")
         return _ps(
@@ -356,7 +365,7 @@ def focus_cmds(cls: str) -> list[list]:
     if o == "macos":
         return [["open", "-a", cls]]
     if o == "windows":
-        if _which("powershell"):
+        if _ps_bin():
             return [_ps("(New-Object -ComObject WScript.Shell)"
                         f".AppActivate('{cls}') | Out-Null")]
         return []
@@ -386,7 +395,7 @@ def close_cmds(cls: str) -> list[list]:
                  'tell application "System Events" to keystroke "w" '
                  'using command down']]
     if o == "windows":
-        if not _which("powershell"):
+        if not _ps_bin():
             return []
         if not cls:
             return [_ps("(New-Object -ComObject WScript.Shell)"
@@ -506,7 +515,7 @@ def monitors() -> list[dict]:
                 x_off += int(w / scale)
         return mons
     if o == "windows":
-        if not _which("powershell"):
+        if not _ps_bin():
             return []
         try:
             import json
