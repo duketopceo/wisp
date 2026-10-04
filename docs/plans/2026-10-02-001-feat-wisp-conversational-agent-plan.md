@@ -1,3 +1,7 @@
+---
+status: "superseded by 2026-10-04-0100-feat-wisp-unified-plan.md"
+---
+
 # feat: Wisp conversational agent — Talk/Agent modes, goals, screen-first
 
 Date: 2026-10-02 (revised after Hey Clicky research)

@@ -3,6 +3,7 @@ title: "feat: Branch consolidation + local GPU actor loop"
 type: feat
 date: 2026-10-03
 origin: docs/brainstorms/2026-10-02-training-gauntlet-research.md
+status: "superseded by 2026-10-04-0100-feat-wisp-unified-plan.md"
 ---
 
 # feat: Branch consolidation + local GPU actor loop
