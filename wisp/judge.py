@@ -46,6 +46,14 @@ JUDGE_QUESTIONS = {
             "stalled": "model narrated instead of calling tools",
         },
     },
+    "first_fault": {
+        "type": "score",
+        "instructions": "Which numbered step was the EARLIEST wrong, "
+                        "wasteful, or unnecessary action? 0 = none (the "
+                        "run was clean or failed for reasons outside "
+                        "the agent's actions). Score = step number.",
+        "criteria": ["none"] + [f"step {i}" for i in range(1, 25)],
+    },
 }
 
 # score-type answers come back as numeric score → normalize to 0..1
@@ -73,6 +81,7 @@ def verdict(task: str, steps: list, outcome: str, cfg: dict,
         resp = pipeline.ask_jev(state, model, JUDGE_QUESTIONS)
     except Exception as e:
         return {"success": None, "efficiency": None,
+                "first_fault": -1,
                 "waste": "judge_error", "note": str(e)[:120]}
     answers = resp.get("answers") or {}
     succ = str((answers.get("success") or {}).get("choice", "")).lower()
@@ -83,8 +92,16 @@ def verdict(task: str, steps: list, outcome: str, cfg: dict,
     except (TypeError, ValueError):
         eff = None
     waste = str((answers.get("waste") or {}).get("choice", "")).lower()
+    ff_raw = (answers.get("first_fault") or {}).get("score")
+    try:
+        # criteria index: 0 = none → -1; score i → 0-indexed step i-1
+        ff = int(float(ff_raw)) - 1 if ff_raw is not None else -1
+        ff = max(-1, min(ff, len(steps) - 1))
+    except (TypeError, ValueError):
+        ff = -1
     return {"success": _OK.get(succ),
             "efficiency": eff,
+            "first_fault": ff,
             "waste": waste if waste in
             {c for c in JUDGE_QUESTIONS["waste"]["criteria"]}
             else "none",
@@ -96,7 +113,9 @@ def describe(v: dict) -> str:
     s = {True: "ok", False: "fail", None: "?"}[v.get("success")]
     e = v.get("efficiency")
     e_txt = f" eff={e:.2f}" if e is not None else ""
-    return f"judge:{s}{e_txt} waste={v.get('waste', '?')}"
+    ff = v.get("first_fault", -1)
+    ff_txt = f" fault@{ff + 1}" if ff >= 0 else ""
+    return f"judge:{s}{e_txt} waste={v.get('waste', '?')}{ff_txt}"
 
 
 def load_json(raw: str) -> dict:

@@ -348,3 +348,120 @@ class Timing(unittest.TestCase):
         assert rc == 0
         for k in ("record_ms", "stt_ms", "jev_ms", "act_ms"):
             assert k in logged["timing_ms"], f"missing {k}"
+
+
+class ActionText(unittest.TestCase):
+    """UI-TARS-style 'Action: name(args)' replies — providers flagged
+    action_text=true emit literal action text instead of tool_calls."""
+
+    def test_parse_click(self):
+        r = act._parse_action_text(
+            "Thought: the circle is at 72,405\nAction: click(72, 405)")
+        self.assertEqual(r["actions"], [("click", "72,405")])
+
+    def test_parse_type_quoted(self):
+        r = act._parse_action_text('Action: type("hello, world")')
+        self.assertEqual(r["actions"], [("type_text", "hello, world")])
+
+    def test_parse_type_content_kwarg(self):
+        r = act._parse_action_text("Action: type(content='it works')")
+        self.assertEqual(r["actions"], [("type_text", "it works")])
+
+    def test_parse_click_start_box(self):
+        r = act._parse_action_text(
+            "Action: click(start_box='(300,123)')")
+        self.assertEqual(r["actions"], [("click", "300,123")])
+
+    def test_parse_scroll_direction(self):
+        r = act._parse_action_text("Action: scroll(direction='down')")
+        self.assertEqual(r["actions"], [("scroll", "down")])
+
+    def test_parse_scroll_delta(self):
+        r = act._parse_action_text("Action: scroll(300, 400, 0, 450)")
+        self.assertEqual(r["actions"], [("scroll", "down 450")])
+
+    def test_parse_hotkey(self):
+        r = act._parse_action_text("Action: hotkey('ctrl', 'c')")
+        self.assertEqual(r["actions"], [("key", "ctrl+c")])
+
+    def test_parse_press(self):
+        r = act._parse_action_text("Action: press('enter')")
+        self.assertEqual(r["actions"], [("key", "enter")])
+
+    def test_parse_done(self):
+        r = act._parse_action_text("DONE")
+        self.assertEqual(r["actions"], [])
+        self.assertIsNotNone(r["done"])
+
+    def test_parse_finished_kwarg(self):
+        r = act._parse_action_text(
+            "Action: finished(content='opened discord')")
+        self.assertEqual(r["actions"], [])
+        self.assertIn("opened discord", r["done"])
+
+    def test_parse_garbage_returns_none(self):
+        self.assertIsNone(act._parse_action_text(
+            "let me think about this some more"))
+
+    def test_parse_click_no_coords_is_miss(self):
+        self.assertIsNone(act._parse_action_text("Action: click"))
+
+    def test_wait_is_skipped(self):
+        r = act._parse_action_text(
+            "Action: wait()\nAction: click(10, 20)")
+        self.assertEqual(r["actions"], [("click", "10,20")])
+
+    def test_loop_executes_action_text(self):
+        cfg = {"agent": {},
+               "brain": {"default": "uitars:ui-tars-7b"},
+               "brain.uitars": {"base_url": "http://127.0.0.1:8081",
+                                "tools": "false", "action_text": "true"}}
+        replies = [_msg(content="Thought: aim\nAction: click(10, 20)"),
+                   _msg(content="DONE")]
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run",
+                               return_value="CLICKED x") as run:
+            r = act.run_act_loop("click it", cfg)
+        run.assert_called_once()
+        args = run.call_args[0]
+        self.assertEqual(args[0], "click")
+        self.assertEqual(args[1], "10,20")
+        self.assertTrue(r.startswith("ACTED"))
+
+    def test_loop_done_text_finishes(self):
+        cfg = {"agent": {},
+               "brain": {"default": "uitars:m"},
+               "brain.uitars": {"action_text": "true", "tools": "false"}}
+        with mock.patch.object(act, "_post",
+                               return_value=_msg(
+                                   content="DONE: clicked the thing")):
+            r = act.run_act_loop("click it", cfg)
+        self.assertIn("clicked the thing", r)
+
+    def test_loop_unparseable_stalls_not_crashes(self):
+        cfg = {"agent": {},
+               "brain": {"default": "uitars:m"},
+               "brain.uitars": {"action_text": "true", "tools": "false"}}
+        with mock.patch.object(act, "_post",
+                               return_value=_msg(
+                                   content="I am pondering deeply")):
+            r = act.run_act_loop("click it", cfg)
+        self.assertIn("STALLED", r)
+
+    def test_denylist_applies_to_action_text(self):
+        cfg = {"agent": {},
+               "brain": {"default": "uitars:m"},
+               "brain.uitars": {"action_text": "true", "tools": "false"}}
+        replies = [_msg(content='Action: type("rm -rf /")'),
+                   _msg(content="DONE")]
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run") as run:
+            r = act.run_act_loop("type it", cfg)
+        run.assert_not_called()
+
+    def test_provider_without_flag_still_skips(self):
+        cfg = {"agent": {},
+               "brain": {"default": "plain:m"},
+               "brain.plain": {"tools": "false"}}
+        r = act.run_act_loop("click it", cfg)
+        self.assertTrue(r.startswith("SKIP"))

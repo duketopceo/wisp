@@ -1,58 +1,136 @@
 {
-  "core": [
-    ["click the button labeled ALPHA",
-     "return s.counts['btn-alpha'] >= 1"],
-    ["click dot 3",
-     "return s.counts['dot-3'] >= 1"],
-    ["click the green triangle",
-     "return s.counts['shape-green-triangle'] >= 1"],
-    ["click the button labeled DELTA",
-     "return s.counts['btn-delta'] >= 1"],
-    ["click dot 7",
-     "return s.counts['dot-7'] >= 1"],
-    ["click the red circle",
-     "return s.counts['shape-red-circle'] >= 1"],
-    ["click the second checkbox",
-     "return s.counts['chk-2'] >= 1"],
-    ["click the button labeled FOXTROT",
-     "return s.counts['btn-foxtrot'] >= 1"],
-    ["type 'hello wisp' into the text field",
-     "return (s.typed['textin']||'').includes('hello wisp')"],
-    ["scroll the list to the bottom",
-     "return s.scroll_top > 400"],
-    ["click the blue square",
-     "return s.counts['shape-blue-square'] >= 1"],
-    ["click dot 5",
-     "return s.counts['dot-5'] >= 1"],
-    ["select 'gamma' in the dropdown",
-     "return s.events.some(e => e.id==='sel' && e.value==='gamma')"],
-    ["type 'testing typing' into the big text area",
-     "return (s.typed['textbox']||'').includes('testing typing')"]
+ "core": [
+  [
+   "click the button labeled ALPHA",
+   "return s.counts['btn-alpha'] >= 1",
+   1
   ],
-  "dom-hard": [
-    ["click ALPHA and then click DELTA",
-     "return s.counts['btn-alpha'] >= 1 && s.counts['btn-delta'] >= 1"],
-    ["click the third checkbox",
-     "return s.counts['chk-3'] >= 1"],
-    ["select 'beta' in the dropdown",
-     "return s.events.some(e => e.id==='sel' && e.value==='beta')"],
-    ["type 'wisp' into the text field then click BRAVO",
-     "return (s.typed['textin']||'').includes('wisp') && s.counts['btn-bravo'] >= 1"],
-    ["scroll the list to the bottom then click ECHO",
-     "return s.scroll_top > 400 && s.counts['btn-echo'] >= 1"],
-    ["click dot 8",
-     "return s.counts['dot-8'] >= 1"],
-    ["click the button labeled CHARLIE then tick the first checkbox",
-     "return s.counts['btn-charlie'] >= 1 && s.counts['chk-1'] >= 1"],
-    ["select 'alpha' in the dropdown then click dot 1",
-     "return s.events.some(e => e.id==='sel' && e.value==='alpha') && s.counts['dot-1'] >= 1"],
-    ["type 'arena' into the text field and 'log' into the text area",
-     "return (s.typed['textin']||'').includes('arena') && (s.typed['textbox']||'').includes('log')"],
-    ["click the red circle and the blue square",
-     "return s.counts['shape-red-circle'] >= 1 && s.counts['shape-blue-square'] >= 1"],
-    ["scroll the list down partway, not all the way — stop around the middle",
-     "return s.scroll_top > 300"],
-    ["click FOXTROT, then type 'done' into the text field, then click ALPHA",
-     "return s.counts['btn-foxtrot'] >= 1 && (s.typed['textin']||'').includes('done') && s.counts['btn-alpha'] >= 1"]
+  [
+   "click dot 3",
+   "return s.counts['dot-3'] >= 1",
+   1
+  ],
+  [
+   "click the green triangle",
+   "return s.counts['shape-green-triangle'] >= 1",
+   1
+  ],
+  [
+   "click the button labeled DELTA",
+   "return s.counts['btn-delta'] >= 1",
+   1
+  ],
+  [
+   "click dot 7",
+   "return s.counts['dot-7'] >= 1",
+   1
+  ],
+  [
+   "click the red circle",
+   "return s.counts['shape-red-circle'] >= 1",
+   1
+  ],
+  [
+   "click the second checkbox",
+   "return s.counts['chk-2'] >= 1",
+   1
+  ],
+  [
+   "click the button labeled FOXTROT",
+   "return s.counts['btn-foxtrot'] >= 1",
+   1
+  ],
+  [
+   "type 'hello wisp' into the text field",
+   "return (s.typed['textin']||'').includes('hello wisp')",
+   2
+  ],
+  [
+   "scroll the list to the bottom",
+   "return s.scroll_top > 400",
+   1
+  ],
+  [
+   "click the blue square",
+   "return s.counts['shape-blue-square'] >= 1",
+   1
+  ],
+  [
+   "click dot 5",
+   "return s.counts['dot-5'] >= 1",
+   1
+  ],
+  [
+   "select 'gamma' in the dropdown",
+   "return s.events.some(e => e.id==='sel' && e.value==='gamma')",
+   4
+  ],
+  [
+   "type 'testing typing' into the big text area",
+   "return (s.typed['textbox']||'').includes('testing typing')",
+   2
   ]
+ ],
+ "dom-hard": [
+  [
+   "click ALPHA and then click DELTA",
+   "return s.counts['btn-alpha'] >= 1 && s.counts['btn-delta'] >= 1",
+   2
+  ],
+  [
+   "click the third checkbox",
+   "return s.counts['chk-3'] >= 1",
+   1
+  ],
+  [
+   "select 'beta' in the dropdown",
+   "return s.events.some(e => e.id==='sel' && e.value==='beta')",
+   3
+  ],
+  [
+   "type 'wisp' into the text field then click BRAVO",
+   "return (s.typed['textin']||'').includes('wisp') && s.counts['btn-bravo'] >= 1",
+   3
+  ],
+  [
+   "scroll the list to the bottom then click ECHO",
+   "return s.scroll_top > 400 && s.counts['btn-echo'] >= 1",
+   2
+  ],
+  [
+   "click dot 8",
+   "return s.counts['dot-8'] >= 1",
+   1
+  ],
+  [
+   "click the button labeled CHARLIE then tick the first checkbox",
+   "return s.counts['btn-charlie'] >= 1 && s.counts['chk-1'] >= 1",
+   2
+  ],
+  [
+   "select 'alpha' in the dropdown then click dot 1",
+   "return s.events.some(e => e.id==='sel' && e.value==='alpha') && s.counts['dot-1'] >= 1",
+   3
+  ],
+  [
+   "type 'arena' into the text field and 'log' into the text area",
+   "return (s.typed['textin']||'').includes('arena') && (s.typed['textbox']||'').includes('log')",
+   4
+  ],
+  [
+   "click the red circle and the blue square",
+   "return s.counts['shape-red-circle'] >= 1 && s.counts['shape-blue-square'] >= 1",
+   2
+  ],
+  [
+   "scroll the list down partway, not all the way \u2014 stop around the middle",
+   "return s.scroll_top > 300",
+   1
+  ],
+  [
+   "click FOXTROT, then type 'done' into the text field, then click ALPHA",
+   "return s.counts['btn-foxtrot'] >= 1 && (s.typed['textin']||'').includes('done') && s.counts['btn-alpha'] >= 1",
+   4
+  ]
+ ]
 }

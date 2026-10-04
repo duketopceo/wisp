@@ -116,6 +116,13 @@ def _tools_ok(p: dict) -> bool:
     return p.get("tools", "false") == "true"
 
 
+def action_text(cfg: dict) -> bool:
+    """Provider speaks literal action text (UI-TARS: 'Action:
+    click(x,y)') instead of OpenAI tool_calls — the act loop parses
+    replies into the same dispatch."""
+    return provider(cfg).get("action_text", "false") == "true"
+
+
 def _first_token_s(cfg: dict) -> float:
     try:
         return float(cfg.get("brain", {}).get("first_token_s", "3"))

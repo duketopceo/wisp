@@ -201,3 +201,34 @@ class TestChatStream(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LocalPresets(unittest.TestCase):
+    def test_uitars_preset_shape(self):
+        cfg = {"brain": {"default": "uitars:ui-tars-7b"},
+               "brain.uitars": {"kind": "openai_compat",
+                                "base_url": "http://127.0.0.1:8081/v1",
+                                "vision": "true", "tools": "false",
+                                "action_text": "true"}}
+        p = brain.provider(cfg)
+        self.assertEqual(p["name"], "uitars")
+        self.assertFalse(brain.supports_tools(cfg))
+        self.assertTrue(brain.action_text(cfg))
+        self.assertTrue(brain.supports_vision(cfg))
+
+    def test_llama_local_preset_shape(self):
+        cfg = {"brain": {"default": "llama_local:ornith"},
+               "brain.llama_local": {"kind": "openai_compat",
+                                     "base_url":
+                                     "http://127.0.0.1:8080/v1",
+                                     "vision": "true", "tools": "true"}}
+        p = brain.provider(cfg)
+        self.assertEqual(p["name"], "llama_local")
+        self.assertTrue(brain.supports_tools(cfg))
+        self.assertFalse(brain.action_text(cfg))
+
+    def test_default_config_mentions_presets(self):
+        from wisp import config
+        self.assertIn("brain.uitars", config.DEFAULT_CONFIG)
+        self.assertIn("action_text", config.DEFAULT_CONFIG)
+        self.assertIn("WISP_JEV_ENDPOINT", config.DEFAULT_CONFIG)
