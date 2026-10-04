@@ -17,6 +17,7 @@ DATA_DIR = pathlib.Path(
 CORRECTIONS = DATA_DIR / "corrections.jsonl"
 DECISIONS = DATA_DIR / "decisions.jsonl"
 SHADOW = DATA_DIR / "shadow.jsonl"
+ROUTE_AB = DATA_DIR / "route_ab.jsonl"
 _xdg_rt = os.environ.get("XDG_RUNTIME_DIR")
 RUN_DIR = (pathlib.Path(_xdg_rt) / "wisp") if _xdg_rt else RUN_DIR_P
 LEVEL_FILE = RUN_DIR / "level"
@@ -282,6 +283,9 @@ timeout_ms = "500"
 # Known values: "pplx" (Perplexity pplx-decider-v1-27b; needs
 # PERPLEXITY_API_KEY in .env or the environment).
 shadow = ""
+# Jev is an accelerator, never a gate: past this many ms the heuristic
+# router decides and the turn goes on (route_ab.jsonl keeps both).
+# deadline_ms = 400
 
 [debug]
 # full-fidelity event stream to ~/.local/share/wisp/trace.jsonl —

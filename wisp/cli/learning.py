@@ -12,7 +12,7 @@ GROUPS["learn"] = "Weekly corrections and failure log"
 GROUPS["skills"] = "Installed skills"
 GROUPS["recipes"] = "Recipes drafted from past runs"
 GROUPS["trace"] = "Turn trace and daily digest"
-GROUPS["eval"] = "Replay logged decisions through candidate routers"
+GROUPS["eval"] = "Route agreement and candidate-router replay"
 
 _TEXT = {"text": "str"}
 
@@ -208,14 +208,30 @@ def trace_digest(ctx, a):
 
 def _route_args(p):
     p.add_argument("limit", nargs="?", type=int, default=0,
-                   help="decisions to replay (default all)")
+                   help="turns to read (default all)")
+    p.add_argument("--replay", action="store_true",
+                   help="replay logged decisions through candidate "
+                        "models on OpenRouter (paid, orchestral key)")
 
 
-@command("eval route", "Replay logged decisions through candidate routers",
-         ["wispd eval route 100"], _TEXT, args=_route_args)
+_ROUTE_SCHEMA = {"turns": "int", "jev_answered": "int", "agreed": "int",
+                 "agreement": "float|null", "overrides": "int",
+                 "jev_status": "dict", "final_source": "dict",
+                 "jev_ms": "dict", "heuristic_ms": "dict",
+                 "disagreements": "list"}
+
+
+@command("eval route", "Jev vs heuristic route agreement and latency",
+         ["wispd eval route", "wispd eval route 100 --json",
+          "wispd eval route --replay 50"], _ROUTE_SCHEMA,
+         args=_route_args)
 def eval_route(ctx, a):
-    from .. import evalroute
-    return _text(ctx, evalroute.run(ctx.cfg, limit=a.limit))
+    if a.replay:
+        from .. import evalroute
+        return _text(ctx, evalroute.run(ctx.cfg, limit=a.limit))
+    from .. import route
+    rep = route.ab_report(route.load_ab(a.limit))
+    return ctx.emit(rep, route.ab_text(rep))
 
 
 def _capture(ctx, fn):
