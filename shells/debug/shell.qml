@@ -2,18 +2,20 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
+import "tokens.js" as Tokens
+import "copy.js" as Copy
 
-// Wisp — management app. Open/close from the launcher; the daemon stays
+// Wisp: management app. Open/close from the launcher; the daemon stays
 // resident. Tabs: Home (what it's doing + controls), Activity (turn
 // replay), Memory (editable notes it reads every turn), Agents
 // (background tasks), Settings (config.toml, grouped + explained).
-// Everything reads files/IPC — zero coupling to daemon internals.
+// Everything reads files/IPC: zero coupling to daemon internals.
 
 FloatingWindow {
   id: win
   title: "Wisp"
   minimumSize: Qt.size(900, 640)
-  color: "#16161e"
+  color: bg
 
   readonly property string rtDir: {
     var rd = Quickshell.env("XDG_RUNTIME_DIR");
@@ -96,7 +98,7 @@ FloatingWindow {
     watchChanges: true
     onFileChanged: reload()
     onLoaded: {
-      // latest record per key wins — the file appends status updates
+      // latest record per key wins: the file appends status updates
       var latest = {};
       var lines = suggView.text().split("\n");
       for (var i = 0; i < lines.length; i++) {
@@ -142,46 +144,85 @@ FloatingWindow {
   }
 
   // ── design tokens ──────────────────────────────────────────────
-  // Tokyo Night, flattened: fewer boxes, hairline separators, mono
-  // for labels + data, sans for prose.
+  // Omarchy theme tokens (tokens.js, the same adapter the shell plugin
+  // uses). This window is its own Quickshell process, so Omarchy's theme
+  // IPC never reaches it: it re-reads colors.toml whenever
+  // ~/.local/state/omarchy/current/theme.name changes. Fewer boxes,
+  // hairline separators, mono for labels + data, sans for prose.
 
-  readonly property color bg: "#16161e"
-  readonly property color raised: "#1f202e"
-  readonly property color hairline: "#2a2c3f"
-  readonly property color fg: "#e0e4f0"
-  readonly property color sub: "#9aa5ce"
-  readonly property color faint: "#565f89"
-  readonly property color accent: "#7aa2f7"
-  readonly property color ok: "#9ece6a"
-  readonly property color warn: "#e0af68"
-  readonly property color err: "#f7768e"
+  readonly property string themeDir:
+      Quickshell.env("HOME") + "/.local/state/omarchy/current"
+  property var tk: Tokens.load("", "", "dark")
+
+  function readText(view) {
+    try { return view.text() } catch (e) { return "" }
+  }
+  function retheme() {
+    win.tk = Tokens.load(readText(colorsView), readText(shellTomlView),
+                         "dark");
+  }
+
+  FileView {
+    id: themeNameView
+    path: win.themeDir + "/theme.name"
+    watchChanges: true
+    printErrors: false
+    onFileChanged: { reload(); colorsView.reload(); shellTomlView.reload() }
+  }
+  FileView {
+    id: colorsView
+    path: win.themeDir + "/theme/colors.toml"
+    printErrors: false
+    onLoaded: win.retheme()
+    onLoadFailed: win.retheme()
+  }
+  FileView {
+    id: shellTomlView
+    path: win.themeDir + "/theme/shell.toml"
+    printErrors: false
+    onLoaded: win.retheme()
+    onLoadFailed: win.retheme()
+  }
+
+  readonly property color bg: tk.tokens.canvas
+  readonly property color raised: tk.tokens.raised
+  readonly property color hairline: tk.tokens.keyline
+  readonly property color fg: tk.tokens.ink
+  readonly property color sub: tk.tokens.inkMuted
+  readonly property color faint: tk.tokens.inkMuted
+  readonly property color accent: tk.tokens.accent
+  readonly property color ember: tk.tokens.ember
+  readonly property color ok: tk.tokens.ok
+  readonly property color warn: tk.tokens.needsYou
+  readonly property color err: tk.tokens.fail
 
   readonly property string mono: "JetBrainsMono NF"
   readonly property string serif: "iA Writer Mono S"
 
-  function statusColor(s) {
-    if (s === "listening") return accent;
-    if (["transcribing","deciding"].indexOf(s) >= 0) return "#bb9af7";
-    if (["acting","awaiting_choice"].indexOf(s) >= 0) return ok;
-    if (s === "speaking") return warn;
-    if (s === "error" || s === "offline") return err;
-    return faint;
+  // tone -> color; `fail` is failed only, `needsYou` is waiting only
+  function toneColor(tone) {
+    if (tone === "ember") return ember;
+    if (tone === "needsYou") return warn;
+    if (tone === "fail") return err;
+    if (tone === "ok") return ok;
+    return sub;
   }
+  function statusColor(s) { return toneColor(Copy.statusTone(s)); }
   function statusBlurb(s) {
-    if (s === "listening") return "Recording — release the key to send";
-    if (s === "transcribing") return "Turning your speech into text";
-    if (s === "deciding") return "Thinking — picking what to do";
-    if (s === "acting") return "Running a tool or agent";
-    if (s === "awaiting_choice") return "Waiting for you to pick an option";
-    if (s === "speaking") return "Speaking the answer";
-    if (s === "done") return "Done — last turn just finished";
+    if (s === "listening") return "Recording. Release the key to send.";
+    if (s === "transcribing") return "Turning your speech into text.";
+    if (s === "deciding") return "Thinking about what to do.";
+    if (s === "acting") return "Running a tool or agent.";
+    if (s === "awaiting_choice") return "Waiting for you to pick an option.";
+    if (s === "speaking") return "Speaking the answer.";
+    if (s === "done") return "The last turn just finished.";
     if (s === "idle")
-      return "Idle — hold " +
+      return "Ready. Hold " +
           ((win.cfgObj.hotkey||{}).mod||"SUPER") + "+" +
-          ((win.cfgObj.hotkey||{}).key||"D") + " to talk";
-    if (s === "error") return "Something failed — see Activity";
-    if (s === "offline") return "Daemon not running — restart it below";
-    return s || "offline";
+          ((win.cfgObj.hotkey||{}).key||"D") + " to talk.";
+    if (s === "error") return "Something failed. See Activity.";
+    if (s === "offline") return "The daemon is not running. Restart it below.";
+    return Copy.statusWord(s);
   }
 
   // small mono section label
@@ -202,11 +243,12 @@ FloatingWindow {
     signal clicked()
     implicitWidth: lbl.implicitWidth + 26; implicitHeight: 30
     radius: 6
-    color: primary ? (ma.containsMouse ? "#8fb0ff" : accent)
-                   : (ma.containsMouse ? "#262839" : "transparent")
+    color: primary ? (ma.containsMouse ? Qt.lighter(accent, 1.15)
+                                          : accent)
+                   : (ma.containsMouse ? raised : "transparent")
     border.color: primary ? "transparent" : hairline
     Text { id: lbl; anchors.centerIn: parent; text: parent.label
-           color: parent.primary ? "#16161e" : sub
+           color: parent.primary ? bg : sub
            font.pixelSize: 12
            font.bold: parent.primary }
     MouseArea { id: ma; anchors.fill: parent; hoverEnabled: true
@@ -288,9 +330,9 @@ FloatingWindow {
           width: parent.parent.width - 64
           spacing: 18
 
-          // status — the hero, plain type
+          // status: the hero, plain type
           Text {
-            text: win.stateObj.status || "offline"
+            text: Copy.statusWord(win.stateObj.status || "offline")
             color: win.statusColor(win.stateObj.status || "offline")
             font.pixelSize: 34; font.family: mono; font.bold: true
             font.letterSpacing: -0.5
@@ -319,7 +361,7 @@ FloatingWindow {
           }
           Text {
             visible: (win.stateObj.error || "").length > 0
-            text: "error — " + (win.stateObj.error || "")
+            text: "error: " + (win.stateObj.error || "")
             color: err; font.pixelSize: 12; font.family: mono
             width: parent.width; wrapMode: Text.WordWrap
           }
@@ -367,7 +409,7 @@ FloatingWindow {
               Column {
                 width: actCol.width; spacing: 2
                 Text {
-                  text: "✦ " + (modelData.title || "")
+                  text: modelData.title || ""
                   color: warn; font.pixelSize: 13; font.bold: true
                   width: parent.width; elide: Text.ElideRight }
                 Text {
@@ -399,7 +441,7 @@ FloatingWindow {
                    parent.verticalCenter }
             Text {
               anchors.verticalCenter: parent.verticalCenter
-              text: "what it heard, decided, did — per stage timings"
+              text: "what it heard, decided and did, with timings per stage"
               color: faint; font.pixelSize: 11 }
           }
 
@@ -448,7 +490,7 @@ FloatingWindow {
           Text {
             visible: win.decisions.length === 0
             topPadding: 8
-            text: "Nothing yet — hold SUPER+D and talk."
+            text: "Nothing yet: hold SUPER+D and talk."
             color: faint; font.pixelSize: 13 }
 
           Column {
@@ -547,7 +589,7 @@ FloatingWindow {
                    parent.verticalCenter }
             Text {
               anchors.verticalCenter: parent.verticalCenter
-              text: "long-running tasks — they work while you do"
+              text: "long-running tasks: they work while you do"
               color: faint; font.pixelSize: 11 }
           }
 
@@ -657,32 +699,32 @@ FloatingWindow {
                    parent.verticalCenter }
             Text {
               anchors.verticalCenter: parent.verticalCenter
-              text: "config.toml — changes apply next turn"
+              text: "config.toml: changes apply next turn"
               color: faint; font.pixelSize: 11 }
           }
 
           Repeater {
             model: [
               ["Talking to it",
-               "hotkey.mod / hotkey.key — the hold-to-talk chord. " +
-               "audio.seconds — max record length, a safety cap not " +
+               "hotkey.mod / hotkey.key: the hold-to-talk chord. " +
+               "audio.seconds: max record length, a safety cap not " +
                "the limit (release the key to stop).",
                [["hotkey.mod","hotkey mod"],
                 ["hotkey.key","hotkey key"],
                 ["audio.seconds","max record secs"]]],
               ["Hearing",
-               "stt.provider — local = whisper.cpp offline; openai = " +
-               "any /audio/transcriptions endpoint (Groq, OpenAI…) — " +
+               "stt.provider: local = whisper.cpp offline; openai = " +
+               "any /audio/transcriptions endpoint (Groq, OpenAI…): " +
                "audio leaves the machine. stt.prompt primes jargon.",
                [["stt.provider","provider"],
                 ["stt.base_url","base_url"],
                 ["stt.model","model"],
                 ["stt.prompt","vocab prompt"]]],
               ["Brain",
-               "brain.router — jev routes via typed decisions; chat " +
+               "brain.router: jev routes via typed decisions; chat " +
                "sends transcript straight to the answer model; off " +
-               "always asks. brain.default — provider:model for " +
-               "answers. agent_runtime — opencode/codex/claude/devin.",
+               "always asks. brain.default: provider:model for " +
+               "answers. agent_runtime: opencode/codex/claude/devin.",
                [["brain.router","router"],
                 ["brain.default","answer provider"],
                 ["brain.agent_runtime","agent runtime"],
@@ -690,7 +732,7 @@ FloatingWindow {
                 ["agent.answer_model","answer model"],
                 ["agent.screenshots","screenshots"]]],
               ["Actions & safety",
-               "risk_threshold — auto-run when Jev's risk score is at " +
+               "risk_threshold: auto-run when Jev's risk score is at " +
                "or below it; higher scores ask first. allow_shell " +
                "lets the act loop run shell commands (denylisted " +
                "patterns still refuse).",
@@ -699,7 +741,7 @@ FloatingWindow {
                 ["agent.confidence_instant","instant conf"],
                 ["agent.confidence_ambiguous","ambiguous conf"]]],
               ["Memory & recall",
-               "recall.provider — none = FTS5 keyword search only " +
+               "recall.provider: none = FTS5 keyword search only " +
                "(zero keys); openai = semantic embeddings via any " +
                "OpenAI-compatible endpoint.",
                [["recall.provider","provider"],
@@ -707,8 +749,8 @@ FloatingWindow {
                 ["recall.base_url","base_url"],
                 ["agent.session_turns","context turns"]]],
               ["Debugging & voice",
-               "debug.trace — full per-turn event log to " +
-               "trace.jsonl. voice.enabled — spoken replies via " +
+               "debug.trace: full per-turn event log to " +
+               "trace.jsonl. voice.enabled: spoken replies via " +
                "espeak; voice.cmd for a custom TTS like piper.",
                [["debug.trace","trace"],
                 ["voice.enabled","voice"],
