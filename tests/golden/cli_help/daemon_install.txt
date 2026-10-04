@@ -8,7 +8,7 @@ options:
   --cua        also install the pinned cua-driver (scripts/cua/install.sh)
   --units      only install the systemd unit templates (scripts/units),
                backing up changed ones
-  --dry-run    with --cua or --units: print the plan, change nothing
+  --dry-run    print the plan, change nothing (also with --cua or --units)
 
 global options:
   --json       machine-readable output (one JSON object)
@@ -17,4 +17,5 @@ global options:
 
 Examples:
   wispd daemon install
+  wispd install --dry-run
   wispd install --units --dry-run
