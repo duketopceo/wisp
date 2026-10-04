@@ -82,6 +82,11 @@ class Daemon:
         self._thread = threading.Thread(target=self._accept_loop, daemon=True)
         self._thread.start()
 
+    def healthy(self) -> bool:
+        """Accept loop is running (watchdog liveness, W29)."""
+        t = self._thread
+        return bool(self._running and t is not None and t.is_alive())
+
     def stop(self) -> None:
         self._running = False
         if self._server:
