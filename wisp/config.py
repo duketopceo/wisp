@@ -97,11 +97,17 @@ model = "openrouter:google/gemini-2.5-flash"
 # drive = inject real clicks via the detected backend.
 # auto  = drive when a backend exists, guide otherwise.
 mode = "guide"
-# auto | cua | ydotool | wlrctl | none — auto prefers a live cua-driver
-# daemon (background virtual-pointer clicks on native Wayland — needs
-# the cua-hyprland plugin + CUA_DRIVER_RS_ENABLE_WAYLAND=1 on the
-# daemon), then hyprcursor/ydotool, then wlrctl.
+# auto | cua | hyprcursor | ydotool | wlrctl | none — auto prefers a
+# live cua-driver daemon (background virtual-pointer clicks on native
+# Wayland — needs the cua-hyprland plugin + CUA_DRIVER_RS_ENABLE_WAYLAND=1
+# on the daemon), then hyprcursor/ydotool, then wlrctl. A named backend
+# is used alone: if it is unavailable wisp guides instead.
 backend = "auto"
+
+[cua]
+# cua-driver client (wisp/cua.py). Per-call timeout; a click that times
+# out is reported as failed and never retried on another backend.
+timeout_ms = "800"
 
 [traj]
 # episodic memory for the act loop: every run is recorded and similar
@@ -322,6 +328,7 @@ def _default_cfg_dict() -> dict:
         },
         "voice": {"enabled": "false"},
         "pointer": {"mode": "guide", "backend": "auto"},
+        "cua": {"timeout_ms": "800"},
         "traj": {"enabled": "true", "max_inject": "3"},
         "agents": {"act_max_steps": "12"},
         "dev": {"refine": "true"},
