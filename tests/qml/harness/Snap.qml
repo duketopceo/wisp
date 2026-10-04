@@ -51,6 +51,7 @@ Window {
   function renderCase(c) {
     for (var k in stage.children) stage.children[k].destroy();
     svc.tokens = c.tokens;
+    svc.themeMode = c.theme;
     svc.load(c.snapshot, c.mods);
     var comp = Qt.createComponent("../../../shell-plugin/components/" + c.component + ".qml");
     if (comp.status !== Component.Ready) {

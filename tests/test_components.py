@@ -121,6 +121,38 @@ class TestComponentRules(unittest.TestCase):
                 self.assertIn("motionMode", src, p.name)
 
 
+class TestCompanionRules(unittest.TestCase):
+    """W21: no timers, no polling and no process spawns in components; the
+    creature ships its baked shader and a plain-item fallback."""
+
+    def test_no_timers_in_components(self):
+        for p in sorted(COMP.glob("*.qml")):
+            self.assertNotRegex(code(p), r"\bTimer\s*\{", p.name)
+
+    def test_no_hyprctl_or_polling(self):
+        for p in sorted(COMP.glob("*.qml")):
+            self.assertNotRegex(code(p), r"hyprctl|cursorpos|setInterval",
+                                p.name)
+
+    def test_creature_ships_shader_and_fallback(self):
+        src = code(COMP / "Creature.qml")
+        m = re.search(r'resolvedUrl\("\.\./shaders/([\w.]+)"\)', src)
+        self.assertIsNotNone(m)
+        self.assertTrue((PLUGIN / "shaders" / m.group(1)).is_file())
+        self.assertIn("GraphicsInfo.Software", src)
+        self.assertIn("visible: !root.shaderOk", src)
+
+    def test_ghost_cursor_reads_the_target_from_the_service(self):
+        src = code(COMP / "GhostCursor.qml")
+        self.assertIn("service.cuaTarget", src)
+
+    def test_window_free_libs_have_no_colors(self):
+        for name in ("creature", "cursor", "companion"):
+            src = code(PLUGIN / "lib" / f"{name}.js")
+            self.assertIsNone(HEX.search(src), name)
+            self.assertIn(".pragma library", src)
+
+
 class TestServiceSurface(unittest.TestCase):
     def test_service_members_exist_on_real_and_fixture_service(self):
         real = service_members((PLUGIN / "WispService.qml").read_text())

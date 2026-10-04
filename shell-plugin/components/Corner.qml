@@ -3,12 +3,14 @@
 // The host window owns placement and layer; this item is only the visual.
 import QtQuick
 import "../lib/metrics.js" as M
+import "../lib/companion.js" as Companion
 
 Item {
   id: root
 
   property var service: null
-  property bool actions: false
+  // hover reveals talk and hide; a host can pin it
+  property bool actions: hover.hovered
   signal clicked()
   signal talk()
   signal hide()
@@ -19,6 +21,11 @@ Item {
   implicitWidth: box + (actions ? talkChip.width + hideChip.width + 3 * M.spacing.md : 0)
   implicitHeight: box
   opacity: service.offline ? 0.6 : 1
+
+  HoverHandler { id: hover }
+
+  // the input region is the creature (and its actions), nothing else
+  readonly property var region: Companion.inputRegion(box, actions, talkChip.width + hideChip.width + 3 * M.spacing.md)
 
   Creature {
     id: creature
