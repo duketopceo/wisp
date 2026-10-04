@@ -16,9 +16,11 @@ global options:
 
 Settings (value, default, range):
   budget.daily_usd        Daily cap on paid model spend in USD
-                          default 2.00; 0 to 100000, blank for no cap
+                          default 8.00; 0 to 100000, blank for no cap
   budget.monthly_usd      Monthly cap on paid model spend in USD
-                          default 20.00; 0 to 100000, blank for no cap
+                          default 160.00; 0 to 100000, blank for no cap
+  budget.gate_primary     Also stop the primary paid model at the cap, not just fallbacks
+                          default false; true or false
   pointer.mode            guide points, drive clicks for you, auto does either
                           default guide; guide, drive, auto
   pointer.backend         Which backend injects clicks when driving

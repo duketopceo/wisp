@@ -223,7 +223,7 @@ class TestPanelW22(unittest.TestCase):
         for k in keys:
             sec, _, name = k.partition(".")
             self.assertRegex(config.DEFAULT_CONFIG,
-                             r"(?m)^%s\s*=" % _re.escape(name), k)
+                             r"(?m)^(?:# )?%s\s*=" % _re.escape(name), k)
 
 
 class TestPureLibs(unittest.TestCase):

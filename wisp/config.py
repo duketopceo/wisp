@@ -188,11 +188,14 @@ model = "openai/text-embedding-3-small"
 key_env = "OPENROUTER_API_KEY"
 
 [budget]
-# Paid-model spend caps in USD (usage ledger, wisp/ledger.py). Paid calls
-# are refused once spend reaches a cap; local models always keep working.
-# Blank = no cap. Day and month roll over by local date.
-daily_usd = "2.00"
-monthly_usd = "20.00"
+# Paid-model spend caps in USD (usage ledger, wisp/ledger.py). At a cap,
+# paid FALLBACK entries are refused; the primary brain still runs unless
+# gate_primary = "true". Local models always keep working. Blank = no
+# cap. Day and month roll over by local date.
+# daily_usd unset = the legacy [brain] daily_cap_usd, else 8.00.
+# daily_usd = "8.00"
+monthly_usd = "160.00"
+gate_primary = "false"
 
 [brain]
 # router: "jev" (typed decisions), "chat" (transcript+screen straight
@@ -409,7 +412,7 @@ def _default_cfg_dict() -> dict:
             "default": "openrouter:meta-llama/llama-4-maverick",
             "fallback": "", "allow_paid": "false", "first_token_s": "3",
         },
-        "budget": {"daily_usd": "2.00", "monthly_usd": "20.00"},
+        "budget": {"monthly_usd": "160.00", "gate_primary": "false"},
         "health": {"enabled": "true", "interval_s": "30",
                    "press_stale_s": "10", "timeout_ms": "500"},
         "apps": _default_apps(),

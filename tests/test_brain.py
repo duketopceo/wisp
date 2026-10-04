@@ -232,3 +232,93 @@ class LocalPresets(unittest.TestCase):
         self.assertIn("brain.uitars", config.DEFAULT_CONFIG)
         self.assertIn("action_text", config.DEFAULT_CONFIG)
         self.assertIn("WISP_JEV_ENDPOINT", config.DEFAULT_CONFIG)
+
+
+class SpendTest(unittest.TestCase):
+    """7ec4236's per-call usage tracking and daily cap, ported to the
+    W14 ledger (one writer: ledger.note; legacy spend.jsonl is read)."""
+
+    def setUp(self):
+        import tempfile
+        from wisp import ledger
+        self.ledger = ledger
+        self._td = tempfile.TemporaryDirectory()
+        self.addCleanup(self._td.cleanup)
+        self.dir = pathlib.Path(self._td.name)
+        ledger.reset_session()
+        p = mock.patch.object(ledger, "path",
+                              lambda: self.dir / "usage.jsonl")
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_usage_tracks_cost_and_tokens(self):
+        L = self.ledger
+        L.note("openrouter", "gemma", True,
+               {"cost": 0.001, "prompt_tokens": 10,
+                "completion_tokens": 5})
+        L.note("openrouter", "gemma", True,
+               {"cost": 0.002, "prompt_tokens": 20,
+                "completion_tokens": 7})
+        u = L.session_totals()
+        self.assertAlmostEqual(u["cost"], 0.003)
+        self.assertEqual(u["prompt_tokens"], 30)
+        self.assertEqual(u["completion_tokens"], 12)
+        self.assertEqual(u["calls"], 2)
+
+    def test_usage_tolerates_missing_cost(self):
+        L = self.ledger
+        L.note("mlx", "x", False, {"prompt_tokens": 3})
+        L.note("mlx", "x", False, {})
+        u = L.session_totals()
+        self.assertEqual(u["cost"], 0.0)
+        self.assertEqual(u["calls"], 2)
+
+    def test_chat_requests_usage_and_notes_once(self):
+        from wisp import ledger
+        sent = []
+
+        def fake_post(url, headers, body, timeout=60):
+            sent.append(body)
+            return {"choices": [{"message": {"content": "hi"}}],
+                    "usage": {"cost": 0.004, "prompt_tokens": 9,
+                              "completion_tokens": 2}}
+        cfg = {"brain": {"default": "openrouter:m"}}
+        with mock.patch.object(brain, "_post", fake_post):
+            brain.chat([{"role": "user", "content": "x"}], cfg)
+        self.assertEqual(sent[0]["usage"], {"include": True})
+        u = ledger.session_totals()
+        self.assertEqual(u["calls"], 1)
+        self.assertAlmostEqual(u["cost"], 0.004)
+
+    def _cfg(self, **b):
+        return {"budget": b}
+
+    def _write_legacy(self, cost):
+        import time
+        (self.dir / "spend.jsonl").write_text(
+            '{"ts": %f, "model": "m", "cost": %s, '
+            '"prompt_tokens": 3, "completion_tokens": 1}\n'
+            % (time.time(), cost))
+
+    def test_budget_ok_under_cap(self):
+        self._write_legacy(0.5)
+        self.assertTrue(brain.budget_ok({}))
+
+    def test_budget_ok_over_cap_blocks_fallback_not_primary(self):
+        self._write_legacy(999.0)
+        self.assertFalse(brain.budget_ok({}))
+        self.assertTrue(brain.budget_ok({}, primary=True))
+        self.assertFalse(brain.budget_ok(
+            self._cfg(gate_primary="true"), primary=True))
+
+    def test_legacy_daily_cap_alias(self):
+        self._write_legacy(1.5)
+        self.assertFalse(brain.budget_ok({"brain": {"daily_cap_usd": 1}}))
+        self.assertTrue(brain.budget_ok({"brain": {"daily_cap_usd": 10}}))
+        # [budget] daily_usd wins when both are set
+        self.assertTrue(brain.budget_ok(
+            {"brain": {"daily_cap_usd": 1},
+             "budget": {"daily_usd": "10"}}))
+
+    def test_budget_ok_missing_log(self):
+        self.assertTrue(brain.budget_ok({}))

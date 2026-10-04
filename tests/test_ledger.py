@@ -148,7 +148,64 @@ class TestCaps(LedgerCase):
 
     def test_no_cap_means_unlimited(self):
         self.rec(1000.0)
+        cfg = {"budget": {"daily_usd": "", "monthly_usd": ""}}
+        self.assertTrue(ledger.paid_allowed(cfg, D1, self.path))
+
+    def test_defaults_are_8_daily_160_monthly(self):
+        self.assertEqual(ledger.caps({}), (8.0, 160.0))
+        self.rec(7.99)
         self.assertTrue(ledger.paid_allowed({}, D1, self.path))
+        self.rec(0.01)
+        self.assertFalse(ledger.paid_allowed({}, D1, self.path))
+
+    def test_brain_daily_cap_alias_and_precedence(self):
+        self.assertEqual(ledger.caps({"brain": {"daily_cap_usd": "10"}}),
+                         (10.0, 160.0))
+        both = {"brain": {"daily_cap_usd": "10"},
+                "budget": {"daily_usd": "3"}}
+        self.assertEqual(ledger.caps(both)[0], 3.0)
+
+    def test_primary_policy(self):
+        self.rec(1.0)
+        cfg = {"budget": {"daily_usd": "1.00"}}
+        self.assertFalse(ledger.paid_allowed(cfg, D1, self.path))
+        self.assertTrue(ledger.paid_allowed(cfg, D1, self.path,
+                                            primary=True))
+        cfg["budget"]["gate_primary"] = "true"
+        self.assertFalse(ledger.paid_allowed(cfg, D1, self.path,
+                                             primary=True))
+
+    def test_unreadable_ledger_primary_allowed_unless_gated(self):
+        self.path.mkdir()
+        cfg = {"budget": {"daily_usd": "1"}}
+        self.assertFalse(ledger.paid_allowed(cfg, D1, self.path))
+        self.assertTrue(ledger.paid_allowed(cfg, D1, self.path,
+                                            primary=True))
+        cfg["budget"]["gate_primary"] = "true"
+        self.assertFalse(ledger.paid_allowed(cfg, D1, self.path,
+                                             primary=True))
+
+    def test_legacy_spend_jsonl_counts(self):
+        legacy = self.path.with_name("spend.jsonl")
+        legacy.write_text(json.dumps(
+            {"ts": D1.timestamp(), "model": "g", "cost": 0.75,
+             "prompt_tokens": 100, "completion_tokens": 10}) + "\n"
+            + json.dumps({"ts": D2.timestamp(), "cost": 5}) + "\n")
+        self.rec(0.25)
+        t = ledger.totals(now=D1, path=self.path)
+        self.assertAlmostEqual(t["today_usd"], 1.0)
+        self.assertEqual(t["calls_today"], 2)
+        self.assertEqual(t["tokens_in"], 110)
+        cfg = {"budget": {"daily_usd": "1.00"}}
+        self.assertFalse(ledger.paid_allowed(cfg, D1, self.path))
+
+    def test_gate_primary_key_accepted_by_schema(self):
+        from wisp import settings_schema as S
+        self.assertEqual(S.problem("budget.gate_primary", "true"), "")
+        self.assertEqual(S.problem("budget.gate_primary", "x"), "choice")
+        # the legacy alias is not a Panel field but is writable
+        self.assertEqual(S.problem("brain.daily_cap_usd", "10"), "")
+        self.assertIsNone(S.field("brain.daily_cap_usd"))
 
     def test_zero_cap_blocks_all_paid(self):
         cfg = {"budget": {"daily_usd": "0"}}
@@ -169,7 +226,7 @@ class TestCaps(LedgerCase):
 
     def test_bad_cap_value_ignored(self):
         cfg = {"budget": {"daily_usd": "lots"}}
-        self.assertEqual(ledger.caps(cfg), (None, None))
+        self.assertEqual(ledger.caps(cfg), (None, 160.0))
 
 
 class TestStateField(LedgerCase):
@@ -182,7 +239,7 @@ class TestStateField(LedgerCase):
         self.assertFalse(f["blocked"])
 
     def test_cap_null_when_unset(self):
-        f = ledger.spend_field({}, D1, self.path)
+        f = ledger.spend_field({"budget": {"daily_usd": ""}}, D1, self.path)
         self.assertIsNone(f["cap_usd"])
 
     def test_state_snapshot_carries_spend(self):
@@ -261,12 +318,31 @@ class TestBrainIntegration(LedgerCase):
         self.assertAlmostEqual(
             ledger.totals(path=self.path)["month_usd"], 0.0042)
 
-    def test_cap_reached_skips_paid_primary_local_still_answers(self):
+    def test_cap_reached_primary_still_runs_by_default(self):
+        self.rec(1.0, now=dt.datetime.now())
+        with fakes.FakeBrain() as loc, fakes.FakeBrain({"responses": [
+                {"content": "paid"}]}) as paid:
+            res = self.run_chat(
+                self.cfg(loc.url, paid.url, daily_usd="1.00"), paid, loc)
+            self.assertEqual(res["provider"], "paid")
+
+    def test_cap_reached_skips_paid_fallback(self):
+        self.rec(1.0, now=dt.datetime.now())
+        with fakes.FakeBrain({"responses": [{"content": "local"}]}) as loc, \
+                fakes.FakeBrain() as paid:
+            cfg = self.cfg(loc.url, paid.url, daily_usd="1.00")
+            cfg["brain"]["default"] = "loc:m0"
+            cfg["brain"]["fallback"] = "paid:m1"
+            self.run_chat(cfg, paid, loc)
+            self.assertEqual(chat_calls(paid), 0)
+
+    def test_gate_primary_skips_paid_primary_local_still_answers(self):
         self.rec(1.0, now=dt.datetime.now())
         with fakes.FakeBrain({"responses": [{"content": "local"}]}) as loc, \
                 fakes.FakeBrain() as paid:
             res = self.run_chat(
-                self.cfg(loc.url, paid.url, daily_usd="1.00"), paid, loc)
+                self.cfg(loc.url, paid.url, daily_usd="1.00",
+                         gate_primary="true"), paid, loc)
             self.assertEqual(res["content"], "local")
             self.assertEqual(res["provider"], "loc")
             self.assertEqual(chat_calls(paid), 0)
@@ -282,12 +358,23 @@ class TestBrainIntegration(LedgerCase):
     def test_only_paid_chain_at_cap_raises_budget_exceeded(self):
         self.rec(1.0, now=dt.datetime.now())
         with fakes.FakeBrain() as loc, fakes.FakeBrain() as paid:
-            cfg = self.cfg(loc.url, paid.url, daily_usd="1.00")
+            cfg = self.cfg(loc.url, paid.url, daily_usd="1.00",
+                           gate_primary="true")
             cfg["brain"]["fallback"] = ""
             with self.assertRaises(errors_codes.WispError) as cm:
                 self.run_chat(cfg, paid, loc)
             self.assertEqual(cm.exception.code, "budget_exceeded")
             self.assertEqual(chat_calls(paid), 0)
+
+    def test_one_ledger_row_per_call(self):
+        with fakes.FakeBrain() as loc, fakes.FakeBrain({"responses": [
+                {"content": "ok", "usage": {"prompt_tokens": 1,
+                                            "completion_tokens": 1,
+                                            "cost": 0.01}}]}) as paid:
+            self.run_chat(self.cfg(loc.url, paid.url, daily_usd="1"),
+                          paid, loc)
+        self.assertEqual(
+            ledger.totals(path=self.path)["calls_today"], 1)
 
     def test_budget_ok_hook_uses_ledger(self):
         self.rec(2.0, now=dt.datetime.now())

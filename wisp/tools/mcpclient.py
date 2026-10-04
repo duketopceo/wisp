@@ -44,14 +44,32 @@ def _rpc(method: str, params: dict | None = None,
     return msg
 
 
-def _call_http(url: str, tool: str, args: dict) -> str:
+# neo-style servers mint a session handle on first contact (returned in
+# result._meta['com.browseros.neo/session']) and expect it echoed on every
+# later call so tab ownership stays with one session. Each of our calls is
+# a fresh initialize, so cache the handle per server and inject it.
+_SESSIONS: dict = {}
+
+
+def _call_http(url: str, tool: str, args: dict,
+               server: str | None = None) -> str:
+    if server and server in _SESSIONS and "session" not in args:
+        args = dict(args, session=_SESSIONS[server])
+
+    mcp_session = []
+
     def post(payload):
+        headers = {"Content-Type": "application/json",
+                   "Accept": "application/json, text/event-stream"}
+        if mcp_session:
+            headers["mcp-session-id"] = mcp_session[0]
         req = urllib.request.Request(
             url, data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json",
-                     "Accept": "application/json, text/event-stream"},
-            method="POST")
+            headers=headers, method="POST")
         with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+            sid = r.headers.get("mcp-session-id")
+            if sid:
+                mcp_session.append(sid)
             body = r.read().decode("utf-8", "replace")
         # SSE: last 'data:' line is the response payload
         if "data:" in body and not body.lstrip().startswith("{"):
@@ -67,6 +85,11 @@ def _call_http(url: str, tool: str, args: dict) -> str:
     post(_rpc("notifications/initialized", {}, rid=0))
     resp = post(_rpc("tools/call",
                      {"name": tool, "arguments": args}))
+    if server:
+        meta = ((resp.get("result") or {}).get("_meta") or {})
+        sess = meta.get("com.browseros.neo/session")
+        if sess:
+            _SESSIONS[server] = sess
     return _extract(resp)
 
 
@@ -191,7 +214,7 @@ def call(arg: str, cfg: dict) -> str:
             url = spec.get("url")
             if not url:
                 return f"SKIP ({server} has no url)"
-            return _call_http(url, tool, args)
+            return _call_http(url, tool, args, server=server)
         if spec.get("command"):
             return _call_stdio(spec["command"], spec, tool, args)
         return f"SKIP ({server} spec has no url or command)"

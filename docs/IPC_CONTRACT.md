@@ -69,7 +69,7 @@ lacks a section. Shells may offer a settings page on top of this command.
   "error_code": "closed set, see below; \"\" when no error",
   "error_detail": "string — raw failure text, local only",
   "health": {"<endpoint>": {"ok": true, "since": "ISO-8601", "latency_ms": 12, "code": null}},
-  "spend": {"today_usd": 0.0, "cap_usd": 2.0, "month_usd": 0.0, "monthly_cap_usd": 20.0, "blocked": false},
+  "spend": {"today_usd": 0.0, "cap_usd": 8.0, "month_usd": 0.0, "monthly_cap_usd": 160.0, "blocked": false},
   "started_at": "ISO-8601",
   "turn_id": "string — turn that produced this write",
   "seq": 0,
@@ -107,7 +107,9 @@ monthly_cap_usd|null, blocked}` from the usage ledger (`wisp/ledger.py`),
 republished after every recorded model call and on each health tick (so
 the local-midnight rollover reaches shells without a call). `cap_usd` is
 the daily cap, null when unset; `blocked` is true while a cap is reached
-and paid calls are refused (local models still run). A `spend` health
+(or the ledger is unreadable): paid FALLBACK calls are refused, and the
+primary too only when `[budget] gate_primary = "true"` (local models
+always run). A `spend` health
 row goes down with code `budget_exceeded` in the same state. `{}` on
 older cores.
 

@@ -48,15 +48,18 @@ def serve():
         http.server.SimpleHTTPRequestHandler,
         directory=str(pathlib.Path(__file__).parent))
     handler.log_message = lambda *a, **k: None
-    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", PORT),
-                                            handler)
+    try:
+        httpd = http.server.ThreadingHTTPServer(("127.0.0.1", PORT),
+                                                handler)
+    except OSError:
+        return None  # another run already serves the lab
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     return httpd
 
 
 def bos(tool: str, args: dict) -> str:
     from wisp.tools import mcpclient
-    return mcpclient.call(f"browseros {tool} {json.dumps(args)}", {})
+    return mcpclient.call(f"browseros-neo {tool} {json.dumps(args)}", {})
 
 
 def open_lab(seed: int = 0, url: str | None = None) -> int:
@@ -64,18 +67,28 @@ def open_lab(seed: int = 0, url: str | None = None) -> int:
     `seed` reshuffles the page layout (dots/buttons/shapes) so the
     agent can't memorize positions across runs."""
     url = (url or URL) + (f"?seed={seed}" if seed else "")
+    # don't pile up clicklab tabs across runs — close any left over
+    out = bos("tabs", {"action": "list"})
+    for tid in re.findall(r"\[(\d+)\][^\n]*" + str(PORT), out):
+        bos("tabs", {"action": "close", "page": int(tid)})
     out = bos("tabs", {"action": "new", "url": url})
     m = re.search(r"page (\d+)", out)
     if m:
+        page = int(m.group(1))
+        import atexit
+        atexit.register(bos, "tabs", {"action": "close", "page": page})
         time.sleep(2)
-        return int(m.group(1))
+        return page
     # fall back: find it in the tab list
     time.sleep(2)
     out = bos("tabs", {"action": "list"})
     ids = re.findall(r"\[(\d+)\][^\n]*" + str(PORT), out)
     if not ids:
         raise RuntimeError("clicklab tab not found:\n" + out)
-    return int(ids[-1])
+    page = int(ids[-1])
+    import atexit
+    atexit.register(bos, "tabs", {"action": "close", "page": page})
+    return page
 
 
 def check(page: int, expr: str) -> bool:
@@ -312,10 +325,16 @@ def _provider_up(cfg: dict) -> bool:
 
 def _run_suite(cfg, tasks, page, dom, suite_name, spec, model,
                total, teach=False, apps_page=False) -> list:
-    from wisp import act, judge, train
+    from wisp import act, judge, ledger, train
+    ledger.ACTIVE = True  # record every call in the one usage ledger
     print(f"[clicklab] {total} tasks, brain={spec}")
     results = []
     for i, (task, expr, oracle_len) in enumerate(tasks, 1):
+        if ledger.status(cfg)["blocked"]:
+            print(f"[clicklab] BUDGET CAP reached "
+                  f"(${ledger.totals()['today_usd']:.2f} spent today) "
+                  f"— stopping")
+            break
         # reset the scoreboard per task — cumulative state would let a
         # repeat pass on a previous task's leftovers. The apps page
         # keeps board/app state in __score so a reload is the cleanest
@@ -339,9 +358,11 @@ def _run_suite(cfg, tasks, page, dom, suite_name, spec, model,
                if teach else task)
         t0 = time.time()
         run_steps: list = []
+        ledger.reset_session()
         verdict = act.run_act_loop(ask, cfg,
                                    confirm=lambda p: True,
                                    steps_out=run_steps)
+        usage = ledger.session_totals()
         ms = int((time.time() - t0) * 1000)
         ok = check(page, expr)
         # Jev judges what the scoreboard can't: efficiency, waste kind,
@@ -377,8 +398,10 @@ def _run_suite(cfg, tasks, page, dom, suite_name, spec, model,
                "flake": train.classify_flake(
                    {"verified": ok, "judge": j, "steps": run_steps,
                     "verdict": verdict}),
-               "cost_usd": 0.0 if not spec.startswith("openrouter")
-               else None,
+               "cost_usd": usage["cost"],
+               "tokens": {"prompt": usage["prompt_tokens"],
+                          "completion": usage["completion_tokens"],
+                          "calls": usage["calls"]},
                "steps": run_steps[:24], "ms": ms, "ts": time.time()}
         results.append(rec)
         entry = train.update_bank(rec)
@@ -391,7 +414,9 @@ def _run_suite(cfg, tasks, page, dom, suite_name, spec, model,
               flush=True)
         time.sleep(0.5)
     hits = sum(1 for r in results if r["verified"])
-    print(f"[clicklab:{model}] {hits}/{len(results)} verified")
+    spent = sum(r.get("cost_usd") or 0 for r in results)
+    print(f"[clicklab:{model}] {hits}/{len(results)} verified "
+          f"(${spent:.4f} this run, ${ledger.totals()['today_usd']:.2f} today)")
     return results
 
 

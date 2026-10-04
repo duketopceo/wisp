@@ -94,7 +94,7 @@ Every routed turn appends Jev vs heuristic vs final route to `route_ab.jsonl`; r
 | `router` | `"jev"` | `jev` (decision API) / `chat` (straight to answer brain) / `off` (clarify) |
 | `default` | `"openrouter:<answer_model>"` | `name:model` selecting a `[brain.<name>]` provider |
 | `fallback` | `""` | comma-separated `name:model` chain tried after `default` (e.g. `"mlx:ornith, ollama:ornith"`) |
-| `allow_paid` | `false` | allow paid fallback entries (OpenRouter, or `paid = "true"` on the section); the U10 daily cap hook (`brain.budget_ok`) also applies |
+| `allow_paid` | `false` | allow paid fallback entries (OpenRouter, or `paid = "true"` on the section); the U10 cap hook (`brain.budget_ok`, see `[budget]`) also applies; at a cap fallbacks are skipped, the primary runs unless `[budget] gate_primary` |
 | `first_token_s` | `3` | a streaming entry must emit a token within this many seconds or the chain moves on; all entries failing ends the turn `brain_down` |
 | `agent_runtime` | `"opencode"` | spawned-agent runtime: `opencode`/`codex`/`claude`/`devin` |
 
@@ -114,18 +114,33 @@ instead of falling back.
 
 Built-ins: `openrouter`, `ollama`, `lmstudio`, `mlx`.
 
-## [budget] — spend caps (W14)
+## [budget] — spend caps (W14, reconciled with 7ec4236)
 
 | key | default | meaning |
 |-----|---------|---------|
-| `daily_usd` | `"2.00"` | paid calls are refused once today's spend reaches this; blank = no cap; `0` blocks all paid calls |
-| `monthly_usd` | `"20.00"` | same, per calendar month |
+| `daily_usd` | unset = `8.00` | daily cap on paid spend; blank = no cap; `0` blocks all gated paid calls. If unset, the deprecated `[brain] daily_cap_usd` is honoured as an alias (a one-time deprecation hint is logged); `[budget] daily_usd` wins when both are set |
+| `monthly_usd` | `"160.00"` | same, per calendar month (20 days x the daily default, so it is never stricter than the daily cap) |
+| `gate_primary` | `"false"` | `false`: at/over a cap only paid FALLBACK entries are skipped and the primary still runs (so the agent lives). `true`: every paid entry, primary included, is refused at the cap |
+
+Policy table:
+
+| situation | paid fallback | paid primary |
+|-----------|---------------|--------------|
+| under every cap | runs | runs |
+| at/over a cap | skipped | runs (`gate_primary = "true"`: skipped) |
+| ledger unreadable | skipped | runs (`gate_primary = "true"`: skipped) |
 
 Local models are recorded (tokens, cost 0) but never gated. Rows live in
-`~/.local/share/wisp/usage.jsonl`. Cost is the OpenRouter-reported
-`usage.cost` when present, else a built-in price table; an unlisted paid
-model is priced high so it cannot look free. An unreadable ledger blocks
-paid calls (fail closed). Inspect with `wispd spend`.
+`~/.local/share/wisp/usage.jsonl`, the single ledger (`brain` makes one
+`ledger.note()` per call and requests OpenRouter `usage.include`). Cost is
+the OpenRouter-reported `usage.cost` when present, else a built-in price
+table; an unlisted paid model is priced high so it cannot look free.
+Rows from the old `~/.local/share/wisp/spend.jsonl` writer
+(`{ts, model, cost, prompt_tokens, completion_tokens}`) are still read
+and counted as paid openrouter rows (source `spend.jsonl`); nothing
+writes that file any more. The clicklab lab records per-task `cost_usd`
+and tokens from the same ledger and aborts at the daily cap. Inspect
+with `wispd spend`.
 
 ## [health] — endpoint probes (U7)
 

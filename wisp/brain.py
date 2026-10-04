@@ -14,9 +14,10 @@ brain — that's the router, not the answer provider.
 Fallback chain (backend U7): `[brain] fallback = "name:model, ..."`
 lists entries tried in order after `default`. A paid entry (OpenRouter,
 or `paid = "true"` on its section) is skipped unless
-`[brain] allow_paid = "true"` and `budget_ok()` (U10). A paid entry at
-ANY position, the primary included, is also refused once a `[budget]`
-cap is reached; local entries keep working. Each call
+`[brain] allow_paid = "true"` and `budget_ok()` (U10). Once a `[budget]`
+cap is reached paid FALLBACK entries are refused; the PRIMARY entry
+still runs (so the agent lives) unless `[budget] gate_primary = "true"`.
+Local entries always keep working. Each call
 gets ONE fast retry on connection refused/reset only (never a timeout —
 that would double the wait); streaming entries must produce a first
 token within `[brain] first_token_s` (default 3) or the chain moves on.
@@ -101,10 +102,13 @@ def chain(cfg: dict) -> list:
     return out
 
 
-def budget_ok(cfg: dict | None = None) -> bool:
-    """U10 hook: False once a paid-spend cap (daily or monthly, from
-    `[budget]`) is reached, or when the ledger cannot be read."""
-    return ledger.paid_allowed(cfg if cfg is not None else {})
+def budget_ok(cfg: dict | None = None, primary: bool = False) -> bool:
+    """U10 hook: may a paid entry run? Paid FALLBACK entries are refused
+    once a cap (daily or monthly, `[budget]`; `[brain] daily_cap_usd` is
+    an alias) is reached or the ledger cannot be read. The PRIMARY
+    entry still runs unless `[budget] gate_primary = "true"`."""
+    return ledger.paid_allowed(cfg if cfg is not None else {},
+                               primary=primary)
 
 
 def supports_vision(cfg: dict) -> bool:
@@ -179,7 +183,8 @@ def _chat_one(p: dict, messages: list, tools, timeout) -> dict:
         msg = resp.get("message", {})
         return {"content": msg.get("content", ""), "raw": msg,
                 "usage": ledger.usage_of(resp)}
-    body = {"model": p["model"], "messages": messages, "max_tokens": 600}
+    body = {"model": p["model"], "messages": messages, "max_tokens": 600,
+            "usage": {"include": True}}  # OpenRouter: report usage.cost
     if tools and _tools_ok(p):
         body["tools"] = tools
         body["tool_choice"] = "auto"
@@ -209,7 +214,8 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
     else:
         body = {"model": p["model"], "messages": messages,
                 "max_tokens": 600, "stream": True,
-                "stream_options": {"include_usage": True}}
+                "stream_options": {"include_usage": True},
+                "usage": {"include": True}}
         url, headers = f"{base}/chat/completions", _headers(p)
     req = urllib.request.Request(
         url, data=json.dumps(body).encode(),
@@ -314,9 +320,10 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
         if not p["base_url"]:
             failures.append(f"brain provider '{p['name']}' needs "
                             f"brain.{p['name']}.base_url")
-        elif p["paid"] and not budget_ok(cfg):
-            # fail closed: a cap (or an unreadable ledger) stops paid
-            # calls before the request; local entries are untouched
+        elif p["paid"] and not budget_ok(cfg, primary=not i):
+            # a cap (or an unreadable ledger) stops paid FALLBACK calls
+            # before the request; the primary runs unless gate_primary
+            # is set; local entries are untouched
             capped = True
             failures.append(f"{p['name']}: spend cap reached, skipped")
         elif i and p["paid"] and not allow_paid:
