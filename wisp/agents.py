@@ -11,6 +11,7 @@ import pathlib
 import shutil
 import signal
 import subprocess
+import sys
 from datetime import datetime, timezone
 
 from . import config, util
@@ -61,9 +62,21 @@ def _alive(pid: int, pstart: str = "") -> bool:
     except OSError:
         pass
     try:
+        if sys.platform == "win32":
+            import ctypes
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            SYNCHRONIZE = 0x00100000
+            handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, False, pid)
+            if not handle:
+                return False
+            exit_code = ctypes.c_ulong()
+            ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
+            ctypes.windll.kernel32.CloseHandle(handle)
+            STILL_ACTIVE = 259
+            return exit_code.value == STILL_ACTIVE
         os.kill(pid, 0)
         return True
-    except (ProcessLookupError, PermissionError, OverflowError):
+    except (OSError, ProcessLookupError, PermissionError, OverflowError):
         return False
 
 

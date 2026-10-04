@@ -100,11 +100,12 @@ class TestExecute(unittest.TestCase):
         self.assertIn("unknown app", out)
 
     def test_skips_missing_binary(self):
-        with mock.patch.object(pipeline.shutil, "which", return_value=None), \
-             mock.patch.object(pipeline.pathlib.Path, "exists",
-                               return_value=False):
-            out = pipeline.execute(self.answers(), self.cfg)
-        self.assertIn("not installed", out)
+        with mock.patch.dict(os.environ, {"WISP_OS": "linux"}):
+            with mock.patch.object(pipeline.shutil, "which", return_value=None), \
+                 mock.patch.object(pipeline.pathlib.Path, "exists",
+                                   return_value=False):
+                out = pipeline.execute(self.answers(), self.cfg)
+            self.assertIn("not installed", out)
 
     def test_dictation_route_types_transcript(self):
         from wisp import tools
