@@ -103,11 +103,36 @@ def hypr_env() -> dict:
     return env
 
 
-def notify(msg: str) -> None:
-    from . import platform
-    cmd = platform.notify_cmd("Wisp", msg)
-    if cmd:
-        subprocess.run(cmd, env=hypr_env())
+def notify(msg: str, level: str = "info", **kw) -> None:
+    """Toast via wisp.notify (replace-id per turn, dedupe, quiet hours,
+    never blocks). kw: cfg, turn, code, key, actions, spoken, stale."""
+    from . import notify as _notify
+    try:
+        _notify.send(msg, level=level, **kw)
+    except Exception:
+        pass
+
+
+def _toast_ctx(state, turn, cfg) -> dict:
+    """Common notify kwargs: this turn's id (replace-id) and whether a
+    newer turn has begun (stale turns never toast)."""
+    stale = False
+    try:
+        bus = getattr(state, "_bus", None)
+        stale = bool(bus and turn and bus.current_turn() != turn)
+    except Exception:
+        pass
+    return {"cfg": cfg, "turn": turn, "stale": stale}
+
+
+def _open_log_action():
+    def _open():
+        from . import config
+        subprocess.Popen(["xdg-open", str(config.DECISIONS)],
+                         env=hypr_env(), stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL)
+    # TODO(W17): label from wisp/copy.py
+    return ("open_log", "Open log", _open)
 
 
 def record(seconds: int, state=None) -> pathlib.Path:
@@ -911,7 +936,7 @@ def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
         state.transition("deciding", transcript=text)
         if not text or "[BLANK" in text:
             state.transition("done", result="heard nothing")
-            notify("heard nothing")
+            notify("Heard nothing", **_toast_ctx(state, turn, cfg))
             return 0
         from .tools import adapters
         harness = {"apps": adapters.best_catalog(),
@@ -1042,7 +1067,7 @@ def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
         if low_conf and not corrected:
             result = "CANCELLED (low confidence, no pick made)"
             state.transition("done", result=result)
-            notify(result)
+            notify(result, "attention", **_toast_ctx(state, turn, cfg))
             log_decision({"ts": datetime.now(timezone.utc).isoformat(),
                           "transcript": text, "answers": answers,
                           "result": result, "corrected": False})
@@ -1086,7 +1111,8 @@ def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
                 state.transition("done", result=result)
             session.append_turn(text, route="act", reply=q,
                                 result=result)
-            notify(result)
+            notify(result, "success", spoken=True,
+                   **_toast_ctx(state, turn, cfg))
             sp.record("done", sp.rel0)
             log_decision({"ts": datetime.now(timezone.utc).isoformat(),
                           "turn": turn,
@@ -1177,7 +1203,8 @@ def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
             _recall.index_turn(text, reply, result)
         except Exception:
             pass
-        notify(result)
+        notify(result, "success", spoken=True,
+               **_toast_ctx(state, turn, cfg))
         sp.record("done", sp.rel0)
         log_decision({"ts": datetime.now(timezone.utc).isoformat(),
                       "turn": turn,
@@ -1211,7 +1238,9 @@ def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
         log_decision({"ts": datetime.now(timezone.utc).isoformat(),
                       "result": f"ERROR ({e})",
                       "timing_ms": sp.legacy_timing()})
-        notify(f"error: {err.public}")
+        notify(err.public, "error", code=err.code,
+               actions=[_open_log_action()],
+               **_toast_ctx(state, turn, cfg))
         print(f"error: {err.code}: {e}", file=sys.stderr)
         return 1
     finally:
