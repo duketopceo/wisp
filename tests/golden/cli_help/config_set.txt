@@ -1,0 +1,19 @@
+usage: wispd config set [-h] [--json] [--quiet] [--no-color] key value
+
+Set one config key (live when the daemon runs)
+
+positional arguments:
+  key          section.key, for example audio.seconds
+  value
+
+options:
+  -h, --help   show this help message and exit
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd config set audio.seconds 30
+  wispd config set pointer.mode drive

@@ -1,0 +1,17 @@
+usage: wispd sync [-h] [--json] [--quiet] [--no-color] [repo]
+
+Refresh the MEMORY constitution block and import skills
+
+positional arguments:
+  repo         luke-agents checkout (default the standard location)
+
+options:
+  -h, --help   show this help message and exit
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd sync

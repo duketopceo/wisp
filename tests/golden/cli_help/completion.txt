@@ -1,0 +1,18 @@
+usage: wispd completion [-h] [--json] [--quiet] [--no-color] {bash,zsh,fish}
+
+Print a shell completion script
+
+positional arguments:
+  {bash,zsh,fish}
+
+options:
+  -h, --help       show this help message and exit
+
+global options:
+  --json           machine-readable output (one JSON object)
+  --quiet, -q      print nothing on success
+  --no-color       plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd completion bash > ~/.local/share/bash-completion/completions/wispd
+  wispd completion fish | source

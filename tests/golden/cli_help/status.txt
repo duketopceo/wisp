@@ -1,0 +1,15 @@
+usage: wispd status [-h] [--json] [--quiet] [--no-color]
+
+Show the daemon state (JSON)
+
+options:
+  -h, --help   show this help message and exit
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd status
+  wispd status --json

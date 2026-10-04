@@ -167,19 +167,41 @@ def atomic_write(path, blob: str) -> None:
     os.replace(tmp, path)
 
 
+TOPICS = frozenset({"state", "health", "tasks", "events"})
+
+
+def topic_of(ev: dict) -> str:
+    """Topic an event belongs to: `state` (diffs), `health`
+    (health_changed), `tasks` (task_*), `events` (any other named
+    event). `overflow` is delivered whatever the filter."""
+    if ev.get("type") == "state":
+        return "state"
+    name = ev.get("name", "")
+    if name == "health_changed":
+        return "health"
+    if name.startswith("task_"):
+        return "tasks"
+    return "events"
+
+
 class Subscription:
     """Bounded event queue for one subscriber. A reader that falls behind
-    is dropped: its queue is replaced by a final `overflow` event."""
+    is dropped: its queue is replaced by a final `overflow` event.
+    `topics` (None = everything) filters at offer time, so events the
+    subscriber never asked for cannot overflow its queue."""
 
-    def __init__(self, maxsize: int, snapshot: dict):
+    def __init__(self, maxsize: int, snapshot: dict, topics=None):
         self.maxsize = maxsize
         self.snapshot = snapshot
+        self.topics = frozenset(topics) if topics is not None else None
         self.closed = False
         self._q = collections.deque()
         self._cv = threading.Condition()
 
     def _offer(self, ev: dict) -> bool:
         """False when the subscriber overflowed and must be removed."""
+        if self.topics is not None and topic_of(ev) not in self.topics:
+            return not self.closed
         with self._cv:
             if self.closed:
                 return False
@@ -388,9 +410,11 @@ class StateBus:
 
     # -- subscribers ---------------------------------------------------
 
-    def subscribe(self, maxsize: int = 256) -> Subscription:
+    def subscribe(self, maxsize: int = 256, topics=None) -> Subscription:
+        """Snapshot and registration happen under the bus lock, so the
+        snapshot's `seq` is exactly one before the first queued diff."""
         with self._lock:
-            sub = Subscription(maxsize, self.state.snapshot())
+            sub = Subscription(maxsize, self.state.snapshot(), topics)
             self._subs.append(sub)
             return sub
 
