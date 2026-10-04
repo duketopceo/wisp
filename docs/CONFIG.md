@@ -171,6 +171,9 @@ and `wispd models` show current health.
 | `model` | model passed to the spawned runtime |
 | `recall` | number of recall notes injected into context |
 | `act_max_steps` | `12` | tool-call bound for the act loop |
+| `act_max_errors` | `2` | consecutive tool errors before the act loop gives up (0 to 20) |
+| `act_max_parse_misses` | `1` | unparseable model steps tolerated before the act loop stops (0 to 10) |
+| `writer_queue_max` | `256` | background writer queue for trajectory and recall writes; oldest dropped and counted when full |
 
 ## [mcp]
 
