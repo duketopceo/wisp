@@ -23,12 +23,12 @@ INDEX = ROOT / "docs" / "SCENARIOS.md"
 FIXTURES = sorted(p for p in DIR.glob("*.json"))
 
 # the plan's scenario list (W6) and the fixture tag that covers each.
-# Budget-blocked (W14, PR #88) is pending until the ledger is on master.
+# Budget-blocked (W14) landed on master with the ledger, so it is required.
 REQUIRED = {"answer", "act click via cua", "cancel mid-act", "Jev down",
-            "cua down", "deny-listed app", "rate limit hit", "kill switch",
+            "budget blocked", "cua down", "deny-listed app", "rate limit hit", "kill switch",
             "dry-run", "guide mode", "choose/confirm", "notify paths",
             "STT failure", "offline daemon"}
-PENDING = {"budget blocked"}
+PENDING = set()
 
 
 def _load(p):
