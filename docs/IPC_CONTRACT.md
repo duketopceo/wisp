@@ -97,7 +97,8 @@ spoken answer and publishes the normalized list.
   decision ts; joined to trajectories via the decision's transcript.
 - `trajectories.jsonl` — episodic act-loop memory (task, app, steps,
   outcome); feeds `context_for()` and `propose_recipes()`.
-- `goals.json` — open/closed goal state for cross-utterance continuity.
+- goal state — in-memory only (`wisp/goals.py`, `goal_ttl_s` TTL, lost
+  on restart); not a file.
 - `inventory.json` — scanned local terrain (apps, cli_tools, mcp
   servers, omarchy plugins/binds, dayflow, skills); 24h TTL.
 - `MEMORY.md`, `USER.md` — curated bounded memory (frozen snapshot).

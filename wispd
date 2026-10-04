@@ -27,13 +27,19 @@ _DAEMON_CTL = None
 _POLL_CMDS = {"task_status", "status"}  # widget pollers — keep out of trace
 
 
+_DLOG_MAX_BYTES = 2 * 1024 * 1024
+
+
 def dlog(msg: str) -> None:
     """Human-readable daemon log: ~/.local/share/wisp/wispd.log + journal."""
-    line = (f"{datetime.datetime.now():%H:%M:%S}."
-            f"{datetime.datetime.now().microsecond // 1000:03d} {msg}")
+    now = datetime.datetime.now()
+    line = f"{now:%Y-%m-%d %H:%M:%S}.{now.microsecond // 1000:03d} {msg}"
     try:
         config.DATA_DIR.mkdir(parents=True, exist_ok=True)
-        with open(config.DATA_DIR / "wispd.log", "a") as f:
+        fp = config.DATA_DIR / "wispd.log"
+        if fp.exists() and fp.stat().st_size > _DLOG_MAX_BYTES:
+            fp.replace(fp.with_suffix(".1.log"))
+        with fp.open("a") as f:
             f.write(line + "\n")
     except OSError:
         pass

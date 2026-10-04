@@ -1,7 +1,7 @@
 """Dev trace — full-fidelity event stream for dogfooding (issue #23).
 
 One append-only JSONL line per stage event at
-~/.local/state/wisp/trace.jsonl (data_dir). Every turn gets a
+~/.local/share/wisp/trace.jsonl (data_dir). Every turn gets a
 short id so `wispd trace --turn <id>` replays a whole push-to-talk
 cycle; daemon/IPC traffic logs under turn "sys".
 
