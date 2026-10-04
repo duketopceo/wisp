@@ -63,7 +63,8 @@ class Rig:
             f"CUA_SHA256_AARCH64={sha}\n"
             f"CUA_BIN_SHA256_AARCH64={bsha}\n"
             "CUA_URL_X86_64=https://example.invalid/cua-driver-x86_64\n"
-            f"CUA_SHA256_X86_64={sha}\n")
+            f"CUA_SHA256_X86_64={sha}\n"
+            f"CUA_BIN_SHA256_X86_64={bsha}\n")
         self.env = {"PATH": f"{self.bin}:/usr/bin:/bin",
                     "HOME": str(self.home), "STUB_LOG": str(self.log),
                     "STUB_PAYLOAD": str(t / "payload"),
