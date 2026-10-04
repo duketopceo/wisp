@@ -14,6 +14,40 @@ global options:
   --quiet, -q  print nothing on success
   --no-color   plain output (also NO_COLOR, or not a tty)
 
+Settings (value, default, range):
+  budget.daily_usd        Daily cap on paid model spend in USD
+                          default 2.00; 0 to 100000, blank for no cap
+  budget.monthly_usd      Monthly cap on paid model spend in USD
+                          default 20.00; 0 to 100000, blank for no cap
+  pointer.mode            guide points, drive clicks for you, auto does either
+                          default guide; guide, drive, auto
+  pointer.backend         Which backend injects clicks when driving
+                          default auto; auto, cua, hyprcursor, ydotool, wlrctl, none
+  cua.dry_run             Plan and log every action without performing it
+                          default false; true or false
+  cua.kill_switch         Refuse every injected click, key and scroll
+                          default false; true or false
+  cua.confirm             Confirm risky actions (tier) or every action (always)
+                          default tier; tier, always
+  cua.max_clicks_per_min  Most clicks allowed in one minute
+                          default 30; 1 to 600
+  cua.max_per_turn        Most actions allowed in one turn
+                          default 12; 1 to 200
+  cua.timeout_ms          Per call timeout for the cua driver in ms
+                          default 800; 50 to 60000
+  audio.seconds           Longest recording for one turn in seconds
+                          default 60; 1 to 600
+  agent.screenshots       Attach a screenshot to answer calls
+                          default true; true or false
+  ui.theme                Fallback theme when the desktop theme is unreadable
+                          default dark; dark, light
+  brain.router            How a turn is routed: jev, chat or off
+                          default jev; jev, chat, off
+  brain.allow_paid        Let the fallback chain use paid models
+                          default false; true or false
+  stt.provider            Speech to text: local whisper.cpp or an API
+                          default local; local, openai
+
 Examples:
   wispd config set audio.seconds 30
   wispd config set pointer.mode drive

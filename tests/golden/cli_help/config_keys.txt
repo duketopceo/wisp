@@ -1,0 +1,15 @@
+usage: wispd config keys [-h] [--json] [--quiet] [--no-color]
+
+List the settings wispd checks, with ranges
+
+options:
+  -h, --help   show this help message and exit
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd config keys
+  wispd config keys --json

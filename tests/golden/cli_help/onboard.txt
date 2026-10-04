@@ -1,15 +1,26 @@
-usage: wispd onboard [-h] [--json] [--quiet] [--no-color]
+usage: wispd onboard [-h] [--status] [--step ID] [--yes] [--undo ID]
+                     [--finish] [--reset] [--interactive] [--json] [--quiet]
+                     [--no-color]
 
-Check first-run setup and say what to do next
+Walk through first-run setup (every step skippable)
 
 options:
-  -h, --help   show this help message and exit
+  -h, --help     show this help message and exit
+  --status       print the checklist and exit 0 (the Panel card reads this)
+  --step ID      run one step: mic, models, cua, notifications, keybinding
+  --yes          with --step notifications: send the test now
+  --undo ID      forget one recorded step
+  --finish       mark setup finished (hides the Panel card)
+  --reset        forget all progress
+  --interactive  walk the steps even without a terminal
 
 global options:
-  --json       machine-readable output (one JSON object)
-  --quiet, -q  print nothing on success
-  --no-color   plain output (also NO_COLOR, or not a tty)
+  --json         machine-readable output (one JSON object)
+  --quiet, -q    print nothing on success
+  --no-color     plain output (also NO_COLOR, or not a tty)
 
 Examples:
   wispd onboard
-  wispd onboard --json
+  wispd onboard --status --json
+  wispd onboard --step notifications --yes
+  wispd onboard --undo mic
