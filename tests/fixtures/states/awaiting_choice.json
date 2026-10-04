@@ -1,0 +1,1 @@
+{"status": "awaiting_choice", "transcript": "open firefox", "answer": "", "result": "", "choices": ["app:firefox", "app:chromium", "app:none"], "prompt_id": "p-1", "points": [], "steps": [], "level": 0.0, "turn_id": "t-choice", "seq": 5, "contract_version": 1}
