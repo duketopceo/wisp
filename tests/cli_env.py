@@ -17,6 +17,8 @@ import tempfile
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import shorttmp  # noqa: E402
 from wisp import ipc  # noqa: E402
 
 
@@ -51,7 +53,7 @@ def canned(cmd: dict) -> dict:
 class CliEnv:
     def __init__(self, daemon: bool = False, extra_env: dict | None = None,
                  path: str | None = None):
-        self._td = tempfile.TemporaryDirectory()
+        self._td = shorttmp.TemporaryDirectory()
         self.home = pathlib.Path(self._td.name)
         self.ipc: list = []
         self._want_daemon = daemon

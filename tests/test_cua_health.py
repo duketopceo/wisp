@@ -15,6 +15,7 @@ sys.path.insert(0, str(HERE))
 from wisp import health, probes_cua  # noqa: E402
 from wisp.cli import registry  # noqa: E402
 from cli_env import CliEnv  # noqa: E402
+import shorttmp  # noqa: E402
 
 PIN = "0.33.1"
 
@@ -23,7 +24,7 @@ class Rig:
     """Everything the probe touches, injected."""
 
     def __init__(self, **cua):
-        self.td = tempfile.TemporaryDirectory()
+        self.td = shorttmp.TemporaryDirectory()
         self.dir = pathlib.Path(self.td.name)
         self.sock = self.dir / "cua.sock"
         self.kill = self.dir / "cua.kill"
