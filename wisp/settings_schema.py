@@ -84,12 +84,14 @@ def _f(key, kind, default, description, **kw):
 
 
 FIELDS = (
-    _f("budget.daily_usd", "usd", "2.00",
+    _f("budget.daily_usd", "usd", "8.00",
        "Daily cap on paid model spend in USD",
        panel=True, label="ui.set.daily"),
-    _f("budget.monthly_usd", "usd", "20.00",
+    _f("budget.monthly_usd", "usd", "160.00",
        "Monthly cap on paid model spend in USD",
        panel=True, label="ui.set.monthly"),
+    _f("budget.gate_primary", "bool", "false",
+       "Also stop the primary paid model at the cap, not just fallbacks"),
     _f("pointer.mode", "choice", "guide",
        "guide points, drive clicks for you, auto does either",
        choices=("guide", "drive", "auto"), panel=True,

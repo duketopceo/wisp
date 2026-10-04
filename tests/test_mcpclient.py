@@ -113,7 +113,8 @@ class EndToEnd(unittest.TestCase):
                                return_value="via http") as h:
             out = mcpclient.call('srv t {"a": 1}', {"mcp": {}})
         self.assertEqual(out, "via http")
-        h.assert_called_once_with("http://x/mcp", "t", {"a": 1})
+        h.assert_called_once_with("http://x/mcp", "t", {"a": 1},
+                                  server="srv")
 
     def test_dispatch_stdio(self):
         spec = {"command": "mycmd --flag"}

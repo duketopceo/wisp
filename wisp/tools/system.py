@@ -82,7 +82,7 @@ def _dom_shot(path, cfg: dict) -> str:
     import re as _re
     def _eval(code):
         out = mcpclient.call(
-            'browseros evaluate '
+            'browseros-neo evaluate '
             + _j.dumps({"page": page, "code": code}), {})
         m = _re.search(r"\{.*\}", out, _re.S)
         try:
@@ -246,7 +246,7 @@ def _dom_eval(cfg: dict, code: str) -> str:
     from . import mcpclient
     page = cfg.get("screen", {}).get("dom_page")
     out = mcpclient.call(
-        'browseros evaluate '
+        'browseros-neo evaluate '
         + _j.dumps({"page": page, "code": code}), cfg)
     m = _re.search(r"nonce=\w+ origin=[^\]]*\]", out)
     body = out[m.end():].strip() if m else out
@@ -536,7 +536,7 @@ def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
                 "return r"
                 % (cx, cy, cx, cy))
         out = mcpclient.call(
-            'browseros evaluate '
+            'browseros-neo evaluate '
             + _j.dumps({"page": dom_page, "code": code}), cfg)
         import re as _re
         hm = _re.search(r"hit:(\S+)", out)

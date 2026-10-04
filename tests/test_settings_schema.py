@@ -86,7 +86,10 @@ class TestSchemaShape(unittest.TestCase):
             m = re.search(r"(?ms)^\[%s\]\n(.*?)(?=^\[|\Z)" % re.escape(sec),
                           config.DEFAULT_CONFIG)
             self.assertIsNotNone(m, f.key)
-            mm = re.search(r'(?m)^%s\s*=\s*"?([^"\n#]*?)"?\s*(?:#.*)?$'
+            # budget.daily_usd stays commented in the template so the
+            # legacy [brain] daily_cap_usd alias can still apply
+            lead = "(?:# )?" if f.key == "budget.daily_usd" else ""
+            mm = re.search(r'(?m)^' + lead + r'%s\s*=\s*"?([^"\n#]*?)"?\s*(?:#.*)?$'
                            % re.escape(name), m.group(1))
             self.assertIsNotNone(mm, f.key)
             self.assertEqual(mm.group(1).strip(), f.default, f.key)
