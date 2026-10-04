@@ -1,0 +1,20 @@
+# wisp template (W29) — installed by `wispd install`.
+[Unit]
+Description=jev-shim — local decisions API for wisp
+After=llama-jev.service
+Wants=llama-jev.service
+StartLimitIntervalSec=900
+StartLimitBurst=30
+
+[Service]
+ExecStart=/usr/bin/python3 %h/bin/jev-shim
+Restart=on-failure
+RestartSec=2
+RestartSteps=5
+RestartMaxDelaySec=60
+Slice=session.slice
+ManagedOOMPreference=omit
+Environment=JEV_BACKEND=http://127.0.0.1:8091/v1 JEV_MODEL=qwen3-4b-instruct-q4km JEV_PORT=8931 JEV_TIMEOUT=60
+
+[Install]
+WantedBy=default.target
