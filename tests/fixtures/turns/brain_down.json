@@ -1,0 +1,39 @@
+{
+  "description": "Answer brain returns 500. Characterization: ANSWER_FAILED plus the canned reply, turn still ends done.",
+  "audio": "ask.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "what time is it"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "status": 500
+    }
+  },
+  "expect": {
+    "statuses": [
+      "listening",
+      "transcribing",
+      "deciding",
+      "acting",
+      "speaking",
+      "done"
+    ],
+    "result_prefix": "ANSWER_FAILED",
+    "answer": "You said: \"what time is it\". Not a desktop action I can take yet."
+  },
+  "name": "brain_down"
+}

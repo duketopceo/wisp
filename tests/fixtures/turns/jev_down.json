@@ -1,0 +1,30 @@
+{
+  "description": "Jev answers 503 on every call. Characterization: no fallback router yet, turn ends in error (U8 changes this).",
+  "audio": "ask.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "open firefox"
+    },
+    "jev": {
+      "answers": {},
+      "status": 503
+    },
+    "brain": {
+      "responses": [
+        {
+          "content": ""
+        }
+      ]
+    }
+  },
+  "expect": {
+    "statuses": [
+      "listening",
+      "transcribing",
+      "deciding",
+      "error"
+    ],
+    "error_contains": "Jev HTTP 503"
+  },
+  "name": "jev_down"
+}

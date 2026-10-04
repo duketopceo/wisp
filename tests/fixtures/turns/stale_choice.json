@@ -1,0 +1,52 @@
+{
+  "description": "Characterization: the chooser returns a pick that was never offered (stale prompt). Today it is applied verbatim; a later unit should reject it.",
+  "audio": "choose.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "open the chat app"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "launch"
+        },
+        "app": {
+          "choice": "discord",
+          "confidence": 0.5,
+          "probabilities": {
+            "discord": 0.5,
+            "browser": 0.3,
+            "terminal": 0.2
+          }
+        },
+        "action": {
+          "choice": "launch",
+          "probabilities": {
+            "launch": 0.9,
+            "answer": 0.1
+          }
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "content": ""
+        }
+      ]
+    }
+  },
+  "chooser": {
+    "pick": "app:ghostapp",
+    "delay_ms": 20
+  },
+  "expect": {
+    "launch_calls": [
+      "ghostapp"
+    ]
+  },
+  "name": "stale_choice"
+}

@@ -1,0 +1,50 @@
+{
+  "description": "Cancel fires while the answer is still streaming. Characterization: the answer route ignores interrupted() today; U9 makes it cancellable.",
+  "audio": "ask.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "what time is it"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "chunks": [
+            "It ",
+            "is ",
+            "half ",
+            "past ",
+            "three."
+          ],
+          "chunk_delay_ms": 120
+        }
+      ]
+    }
+  },
+  "interrupt_after_ms": 250,
+  "expect": {
+    "statuses": [
+      "listening",
+      "transcribing",
+      "deciding",
+      "acting",
+      "speaking",
+      "done"
+    ],
+    "answer": "It is half past three."
+  },
+  "name": "cancel_mid_stream"
+}
