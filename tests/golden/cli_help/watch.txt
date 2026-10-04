@@ -1,0 +1,18 @@
+usage: wispd watch [-h] [--json] [--quiet] [--no-color] [topic ...]
+
+Follow the daemon push stream as NDJSON
+
+positional arguments:
+  topic        state topics to follow (default: all)
+
+options:
+  -h, --help   show this help message and exit
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd watch
+  wispd watch state tasks

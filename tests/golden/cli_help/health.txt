@@ -1,0 +1,20 @@
+usage: wispd health [-h] [--json] [--quiet] [--no-color] <verb> ...
+
+Probe the local model endpoints
+
+positional arguments:
+  <verb>
+    start      Print (or with --run, execute) the command that starts down
+               endpoints
+
+options:
+  -h, --help   show this help message and exit
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd health
+  wispd health --json
