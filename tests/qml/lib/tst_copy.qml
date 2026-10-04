@@ -15,6 +15,14 @@ TestCase {
     compare(Copy.statusTone("awaiting_choice"), "needsYou")
   }
 
+  function test_pill_view() {
+    compare(Copy.pillView("done", "BLOCKED (risk=0.90 > 0.5)").word, "blocked")
+    compare(Copy.pillView("done", "BLOCKED (risk=0.90 > 0.5)").tone, "needsYou")
+    compare(Copy.pillView("done", "ACTED ok").word, "done")
+    compare(Copy.pillView("done", "").tone, "ok")
+    compare(Copy.pillView("acting", "BLOCKED (x)").word, "working")
+  }
+
   function test_results() {
     var r = Copy.translateResult("SKIP (launch route but no app identified)")
     compare(r.text, "didn't catch which app")

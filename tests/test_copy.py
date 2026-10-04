@@ -45,6 +45,18 @@ class TestStatusWords(unittest.TestCase):
         for s, w in exp.items():
             self.assertEqual(wcopy.status_word(s), w)
 
+    def test_pill_view_blocked_is_not_done(self):
+        self.assertEqual(wcopy.pill_view("done", "BLOCKED (risk=0.90 > 0.5)"),
+                         ("blocked", "needsYou"))
+        self.assertEqual(wcopy.pill_view("done", "ACTED ok"),
+                         ("done", "ok"))
+        self.assertEqual(wcopy.pill_view("done", ""), ("done", "ok"))
+        # only a finished turn is rewritten; every other status keeps its word
+        for s in wcopy.STATUS:
+            if s != "done":
+                self.assertEqual(wcopy.pill_view(s, "BLOCKED (x)"),
+                                 (wcopy.status_word(s), wcopy.status_tone(s)))
+
     def test_unknown_status_reads_offline(self):
         self.assertEqual(wcopy.status_word("bogus"), "offline")
         self.assertEqual(wcopy.status_word(""), "offline")
@@ -167,6 +179,13 @@ class TestJsParity(unittest.TestCase):
                              wcopy.status_word(s), s)
             self.assertEqual(self.js(f"Copy.statusTone({s!r})"),
                              wcopy.status_tone(s), s)
+
+    def test_pill_view(self):
+        for s in list(wcopy.STATUS) + ["bogus", ""]:
+            for r in self.RESULTS:
+                w, t = wcopy.pill_view(s, r)
+                got = self.js(f"Copy.pillView({s!r}, {r!r})")
+                self.assertEqual(got, {"word": w, "tone": t}, (s, r))
 
     def test_results(self):
         for raw in self.RESULTS:

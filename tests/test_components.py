@@ -245,6 +245,17 @@ class TestPureLibs(unittest.TestCase):
         self.assertEqual(self.call("M.pillRadius(30, 8)", M="metrics"), 15)
 
 
+class TestPillTable(unittest.TestCase):
+    def test_every_state_fixture_is_in_the_pill_table(self):
+        src = (ROOT / "tests/qml/lib/tst_pill.qml").read_text()
+        listed = set(re.findall(r'\["(\w+)", "[^"]+", "\w+"\]', src))
+        fixtures = {p.stem for p in
+                    (ROOT / "tests/fixtures/states").glob("*.json")}
+        self.assertEqual(fixtures - listed, set(),
+                         "add the fixture to tst_pill.qml table()")
+        self.assertEqual(listed - fixtures, set())
+
+
 QMLLINT = shutil.which("qmllint") or (
     "/usr/lib/qt6/bin/qmllint"
     if os.path.exists("/usr/lib/qt6/bin/qmllint") else None)

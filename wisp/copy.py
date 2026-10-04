@@ -111,6 +111,9 @@ STRINGS = {
     "ui.noted": "noted",
     "ui.undo": "undo",
     "ui.goal": "goal",
+    "ui.pill.blocked": "blocked",
+    "ui.label.good": "good",
+    "ui.label.wrong": "wrong",
     "ui.steps.none": "no steps yet",
     "ui.step.confirm": "needs your ok",
     "ui.agent.queued": "queued",
@@ -145,6 +148,20 @@ def status_word(status: str) -> str:
 
 def status_tone(status: str) -> str:
     return STATUS.get(status, STATUS[UNKNOWN_STATUS])[1]
+
+
+# result prefix that makes a finished turn read as blocked in the pill and
+# the status chips: the daemon reports `done` with a BLOCKED result.
+_BLOCKED = re.compile(r"^BLOCKED")
+
+
+def pill_view(status: str, result: str = "") -> tuple:
+    """(word, tone) for the pill: the status word, except a `done` turn
+    whose result is BLOCKED reads `blocked` in the needs-you tone, never
+    `done` (the action did not happen)."""
+    if status == "done" and _BLOCKED.match(result or ""):
+        return (STRINGS["ui.pill.blocked"], "needsYou")
+    return (status_word(status), status_tone(status))
 
 
 def translate_result(raw: str) -> dict:
