@@ -694,6 +694,27 @@ def main() -> int:
         else:
             print(train.stats_text())
         return 0
+    if cmd == "review":
+        # wispd review [run [N]|approve N|reject N|list] — staged
+        # reviewer proposals; approve is the only write path to the bank
+        from wisp import review
+        sub = sys.argv[2] if len(sys.argv) > 2 else "list"
+        if sub == "run":
+            n = int(sys.argv[3]) if len(sys.argv) > 3 else 10
+            r = review.run(cfg, limit=n)
+            print(f"reviewed {r['reviewed']} → {r['proposed']} proposals"
+                  + (f", {r['skipped']} skipped" if r["skipped"] else ""))
+            for note in r["notes"][:5]:
+                print(f"  - {note}")
+        elif sub == "approve":
+            print(review.approve(int(sys.argv[3])
+                                 if len(sys.argv) > 3 else 0))
+        elif sub == "reject":
+            print(review.reject(int(sys.argv[3])
+                                if len(sys.argv) > 3 else 0))
+        else:
+            print(review.list_text())
+        return 0
     if cmd == "learn":
         from wisp import learn
         out = learn.weekly()

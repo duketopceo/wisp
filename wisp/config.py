@@ -185,6 +185,11 @@ tools = "false"
 #
 # Jev can also run locally: point WISP_JEV_ENDPOINT at a jev-shim
 # (e.g. http://127.0.0.1:8931/decisions → llama-jev qwen3-4b :8091).
+#
+# Offline trajectory reviewer (`wispd review run`): point it at a
+# slower decider-class model — it reads step logs, not pixels.
+# [brain]
+# reviewer = "llama_local:ornith"   # or any configured provider
 
 [debug]
 # full-fidelity event stream to ~/.local/share/wisp/trace.jsonl —
