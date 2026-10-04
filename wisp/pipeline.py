@@ -238,6 +238,10 @@ def transcribe(wav: pathlib.Path, cfg: dict) -> str:
         try:
             import wordink
             return wordink.transcribe(str(wav))
+        except ImportError:
+            raise RuntimeError(
+                "stt provider 'wordink' requested but the wordink "
+                "module is not installed")
         except Exception:
             pass
     if provider == "openai":

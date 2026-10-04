@@ -72,12 +72,26 @@ class TestGrounding(unittest.TestCase):
         self.assertIn("ground", tools.REGISTRY)
         self.assertEqual(tools.risk_of("ground"), "safe")
 
-    @mock.patch("wordink.transcribe", return_value="hello from wordink")
-    def test_wordink_stt_provider(self, mock_wordink_stt):
-        dummy_wav = pathlib.Path("dummy.wav")
-        cfg = {"stt": {"provider": "wordink"}}
-        result = pipeline.transcribe(dummy_wav, cfg)
+    def test_wordink_stt_provider(self):
+        # wordink is an optional provider (not installed in CI) — stub
+        # it in sys.modules so pipeline's local `import wordink`
+        # resolves without the real package.
+        stub = mock.MagicMock()
+        stub.transcribe.return_value = "hello from wordink"
+        with mock.patch.dict("sys.modules", {"wordink": stub}):
+            dummy_wav = pathlib.Path("dummy.wav")
+            cfg = {"stt": {"provider": "wordink"}}
+            result = pipeline.transcribe(dummy_wav, cfg)
         self.assertEqual(result, "hello from wordink")
+
+    def test_wordink_missing_raises_clear_error(self):
+        # provider=wordink with no module must fail loudly, not fall
+        # through to a confusing whisper.cpp-missing error.
+        with mock.patch.dict("sys.modules", {"wordink": None}):
+            with self.assertRaises(RuntimeError) as ctx:
+                pipeline.transcribe(pathlib.Path("dummy.wav"),
+                                    {"stt": {"provider": "wordink"}})
+        self.assertIn("wordink", str(ctx.exception))
 
 
 if __name__ == "__main__":
