@@ -137,6 +137,31 @@ and GetCapabilities via `gdbus`); without one, `notify-send` is used (no
 buttons). Not yet implemented: server do-not-disturb and fullscreen
 suppression (needs W7).
 
+## [cua] — safety layer for injected input (W9)
+
+Applies when `[pointer] mode = "drive"` (click/move/scroll) and always to
+typing and key presses. Policy order: cancel, kill switch, deny, allow,
+rate limit, dry run, dispatch. Refusals read `REFUSED (...)`.
+
+| key | default | meaning |
+|-----|---------|---------|
+| `timeout_ms` | `800` | per-call driver timeout; a timed-out click is never retried on another backend |
+| `safety` | `true` | master switch for this layer (kill switch and audit go with it) |
+| `allow` | `""` | comma list of window-class substrings; when set, any other app is refused (an unknown window fails closed) |
+| `deny` | `""` | extra substrings to refuse; added to the built-in list (password managers, polkit/pinentry, keyrings, and terminals whose title shows `sudo`). Deny beats allow |
+| `max_clicks_per_min` | `30` | rolling 60 s cap on click/scroll/type/key calls per window class (moves are not counted) |
+| `max_per_turn` | `12` | cap on the same calls in one act run |
+| `dry_run` | `false` | log what would happen and return `DRYRUN ...`; no driver, ydotool or hyprctl call. Deny, kill and rate checks still apply |
+| `kill_switch` | `false` | refuse everything. The runtime file `$XDG_RUNTIME_DIR/wisp/cua.kill` does the same without a config edit (`cua_safety.kill()` / `resume()`) |
+| `confirm` | `tier` | `tier` keeps the tool tiers; `always` makes click/move/scroll/type/key ask once per (tool, focused app) per session |
+| `audit` | `true` | append one JSON line per call to `$XDG_STATE_HOME/wisp/cua.jsonl` |
+
+Audit line: `ts, turn, tool, app, decision (allow|deny|dry_run|cancelled),
+dry_run, result (first word only), ms`, plus `x`/`y` for coordinate
+targets, `key` for named keys and chords, and `len` + `sha` (12 hex of a
+per-process salted hash) for typed text. Typed text, target names,
+screenshots and result text are never written.
+
 ## [debug]
 
 | key | meaning |
