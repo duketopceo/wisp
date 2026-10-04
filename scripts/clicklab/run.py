@@ -319,10 +319,14 @@ def _provider_up(cfg: dict) -> bool:
 
 def _run_suite(cfg, tasks, page, dom, suite_name, spec, model,
                total, teach=False, apps_page=False) -> list:
-    from wisp import act, judge, train
+    from wisp import act, brain, judge, train
     print(f"[clicklab] {total} tasks, brain={spec}")
     results = []
     for i, (task, expr, oracle_len) in enumerate(tasks, 1):
+        if not brain.budget_ok():
+            print(f"[clicklab] DAILY CAP reached "
+                  f"(${brain.spend_today():.2f} spent today) — stopping")
+            break
         # reset the scoreboard per task — cumulative state would let a
         # repeat pass on a previous task's leftovers. The apps page
         # keeps board/app state in __score so a reload is the cleanest
@@ -346,9 +350,11 @@ def _run_suite(cfg, tasks, page, dom, suite_name, spec, model,
                if teach else task)
         t0 = time.time()
         run_steps: list = []
+        brain.reset_usage()
         verdict = act.run_act_loop(ask, cfg,
                                    confirm=lambda p: True,
                                    steps_out=run_steps)
+        usage = brain.usage_totals()
         ms = int((time.time() - t0) * 1000)
         ok = check(page, expr)
         # Jev judges what the scoreboard can't: efficiency, waste kind,
@@ -384,8 +390,10 @@ def _run_suite(cfg, tasks, page, dom, suite_name, spec, model,
                "flake": train.classify_flake(
                    {"verified": ok, "judge": j, "steps": run_steps,
                     "verdict": verdict}),
-               "cost_usd": 0.0 if not spec.startswith("openrouter")
-               else None,
+               "cost_usd": usage["cost"],
+               "tokens": {"prompt": usage["prompt_tokens"],
+                          "completion": usage["completion_tokens"],
+                          "calls": usage["calls"]},
                "steps": run_steps[:24], "ms": ms, "ts": time.time()}
         results.append(rec)
         entry = train.update_bank(rec)
@@ -398,7 +406,9 @@ def _run_suite(cfg, tasks, page, dom, suite_name, spec, model,
               flush=True)
         time.sleep(0.5)
     hits = sum(1 for r in results if r["verified"])
-    print(f"[clicklab:{model}] {hits}/{len(results)} verified")
+    spent = sum(r.get("cost_usd") or 0 for r in results)
+    print(f"[clicklab:{model}] {hits}/{len(results)} verified "
+          f"(${spent:.4f} this run, ${brain.spend_today():.2f} today)")
     return results
 
 
