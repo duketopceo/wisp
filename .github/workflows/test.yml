@@ -27,7 +27,7 @@ jobs:
       - name: Compile-check scripts
         run: python -m py_compile wispd wisp/*.py wisp/tools/*.py scripts/propose_criteria.py tests/*.py
       - name: Test deps
-        run: pip install sqlite-vec
+        run: pip install sqlite-vec pillow
       - name: Unit tests
         run: python -m unittest discover -s tests -v
 
