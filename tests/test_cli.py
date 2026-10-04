@@ -84,6 +84,18 @@ class TestAliasParity(unittest.TestCase):
         self.assertEqual(old - known, set())
 
 
+_METAVAR_OPT = re.compile(r"^( +)(-\w), (--[\w-]+) ([A-Z][A-Z_]*)", re.M)
+
+
+def _norm_help(text: str) -> str:
+    """argparse 3.13 prints `-n, --lines N` where 3.11/3.12 print
+    `-n N, --lines N`, and the column alignment shifts with it. Compare
+    the two spellings as equal: rewrite to the long form, then collapse
+    runs of spaces so the shifted alignment doesn't matter."""
+    text = _METAVAR_OPT.sub(r"\1\2 \4, \3 \4", text)
+    return re.sub(r" {2,}", " ", text)
+
+
 class TestHelp(unittest.TestCase):
     def test_every_command_has_summary_and_examples(self):
         for path, c in registry.commands().items():
@@ -110,7 +122,8 @@ class TestHelp(unittest.TestCase):
                 if update:
                     HELP_DIR.mkdir(parents=True, exist_ok=True)
                     f.write_text(out)
-                self.assertEqual(out, f.read_text(), f.name)
+                self.assertEqual(_norm_help(out), _norm_help(f.read_text()),
+                                 f.name)
 
     def test_group_help_exists_for_every_group(self):
         groups = {p.split()[0] for p in registry.commands() if " " in p}
@@ -381,7 +394,9 @@ class TestNewCommands(unittest.TestCase):
             import socket
             s = socket.socket(socket.AF_UNIX)
             s.bind(str(sock))
-            s.listen(1)
+            # nobody accepts, and two probes connect (status, test): a
+            # backlog of 1 admits only one pending connection on macOS
+            s.listen(8)
             try:
                 j = json.loads(env.run(["cua", "status", "--json"])[1])
                 self.assertTrue(j["data"]["live"])

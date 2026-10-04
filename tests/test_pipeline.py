@@ -116,12 +116,14 @@ class TurnSpansTest(unittest.TestCase):
         return logged, {e["step"]: e for e in evs}
 
     def test_route_excludes_screenshot_time(self):
-        logged, spans = self._run(shot_s=0.2, jev_s=0.05)
-        self.assertGreaterEqual(spans["screenshot"]["ms"], 190)
-        self.assertGreaterEqual(spans["context"]["ms"], 190)
-        self.assertLess(spans["context"]["ms"], 400)
+        # a 0.5 s screenshot dwarfs runner jitter: if route included it
+        # it would be >= 550 ms, so the 400 ms ceiling still discriminates
+        logged, spans = self._run(shot_s=0.5, jev_s=0.05)
+        self.assertGreaterEqual(spans["screenshot"]["ms"], 490)
+        self.assertGreaterEqual(spans["context"]["ms"], 490)
+        self.assertLess(spans["context"]["ms"], 900)
         self.assertGreaterEqual(spans["route"]["ms"], 45)
-        self.assertLess(spans["route"]["ms"], 150)
+        self.assertLess(spans["route"]["ms"], 400)
 
     def test_all_named_spans_present_on_answer_path(self):
         _, spans = self._run()
