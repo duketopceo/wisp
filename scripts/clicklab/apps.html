@@ -167,13 +167,14 @@ MAIL.forEach((m,i)=>{
     ev('star-'+i); };
   ml.appendChild(d);
 });
-btncompose.onclick = () => { composer.style.display='block'; ev('compose'); };
-btnsend.onclick = () => {
-  window.__score.typed['comp-to']=compto.value;
-  window.__score.typed['comp-subj']=compsubj.value;
-  window.__score.typed['comp-body']=compbody.value;
-  composer.style.display='none';
-  mailbody.textContent='sent to '+compto.value; ev('sent'); };
+const $ = id => document.getElementById(id);
+$('btn-compose').onclick = () => { $('composer').style.display='block'; ev('compose'); };
+$('btn-send').onclick = () => {
+  window.__score.typed['comp-to']=$('comp-to').value;
+  window.__score.typed['comp-subj']=$('comp-subj').value;
+  window.__score.typed['comp-body']=$('comp-body').value;
+  $('composer').style.display='none';
+  $('mailbody').textContent='sent to '+$('comp-to').value; ev('sent'); };
 for (const id of ['comp-to','comp-subj','comp-body'])
   document.getElementById(id).addEventListener('input',
     e => window.__score.typed[id]=e.target.value);
@@ -215,6 +216,6 @@ function openFile(f){
 document.querySelectorAll('#files div').forEach(d =>
   d.onclick=()=>openFile(d.dataset.file));
 openFile('main.py');
-btnrun.onclick=()=>{edstatus.textContent='ran '+window.__score.state['file'];ev('run');};
-edsearch.addEventListener('input',e=>window.__score.typed['ed-search']=e.target.value);
+$('btn-run').onclick=()=>{$('ed-status').textContent='ran '+window.__score.state['file'];ev('run');};
+$('ed-search').addEventListener('input',e=>window.__score.typed['ed-search']=e.target.value);
 </script></body></html>
