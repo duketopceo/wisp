@@ -1,0 +1,14 @@
+usage: wispd suggest list [-h] [--json] [--quiet] [--no-color]
+
+Show pending suggestions
+
+options:
+  -h, --help   show this help message and exit
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd suggest list

@@ -11,6 +11,8 @@ import subprocess
 import sys
 import unittest
 
+import jsnode
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts" / "assets"))
@@ -116,6 +118,83 @@ class TestPickLabel(unittest.TestCase):
                  "no": "no"}
         for pick, want in cases.items():
             self.assertEqual(wcopy.pick_label(pick), want, pick)
+
+
+class TestErrors(unittest.TestCase):
+    def test_every_error_code_has_copy(self):
+        from wisp import errors_codes
+        self.assertEqual(set(wcopy.ERRORS), set(errors_codes.CODES))
+        for code in errors_codes.CODES:
+            self.assertTrue(wcopy.error_message(code), code)
+
+    def test_unknown_code_reads_internal(self):
+        self.assertEqual(wcopy.error_message("nope"),
+                         wcopy.error_message("internal"))
+        self.assertEqual(wcopy.error_hint(""), wcopy.error_hint("internal"))
+
+    def test_messages_are_lowercase_plain(self):
+        for code, (msg, hint) in wcopy.ERRORS.items():
+            self.assertEqual(msg, msg.lower(), code)
+            self.assertNotRegex(msg, r"\bE_[A-Z_]+|Exception|Traceback", code)
+
+    def test_string_table(self):
+        self.assertEqual(wcopy.string("state.stale"), "out of date")
+        self.assertEqual(wcopy.string("no.such.key"), "no.such.key")
+
+
+@unittest.skipUnless(jsnode.NODE, "node not installed")
+class TestJsParity(unittest.TestCase):
+    """copy.js is generated, but its interpreter functions are
+    hand-written; run both sides over one matrix so they cannot drift."""
+
+    RESULTS = ["SKIP (launch route but no app identified)",
+               "BLOCKED (tool 'x' needs confirmation)",
+               "BLOCKED (risk=0.90 > 0.5)", "BLOCKED (a \u2014 b)",
+               "BLOCKED (window is locked)", "ASK_USER which account?",
+               "SKIPPED (shell disabled \u2014 set allow_shell=true)",
+               "SKIP (rc=3)", "ERROR (boom)", "ABORTED (user)",
+               "Opened Firefox.", ""]
+    PICKS = ["app:firefox", "app:none", "action:launch", "action:new_thing",
+             "suggestion:action:act", "Close all windows \u2014 yes", "no",
+             "", "x:y"]
+
+    def js(self, expr):
+        return jsnode.call(expr, Copy="copy")
+
+    def test_status(self):
+        for s in list(wcopy.STATUS) + ["bogus", ""]:
+            self.assertEqual(self.js(f"Copy.statusWord({s!r})"),
+                             wcopy.status_word(s), s)
+            self.assertEqual(self.js(f"Copy.statusTone({s!r})"),
+                             wcopy.status_tone(s), s)
+
+    def test_results(self):
+        for raw in self.RESULTS:
+            want = wcopy.translate_result(raw)
+            got = self.js(f"Copy.translateResult({raw!r})")
+            self.assertEqual(got, want, raw)
+
+    def test_picks(self):
+        for pick in self.PICKS:
+            self.assertEqual(self.js(f"Copy.pickLabel({pick!r})"),
+                             wcopy.pick_label(pick), pick)
+
+    def test_errors_and_strings(self):
+        for code in list(wcopy.ERRORS) + ["bogus", ""]:
+            self.assertEqual(self.js(f"Copy.errorMessage({code!r})"),
+                             wcopy.error_message(code), code)
+            self.assertEqual(self.js(f"Copy.errorHint({code!r})"),
+                             wcopy.error_hint(code), code)
+        for key in list(wcopy.STRINGS) + ["no.such.key"]:
+            self.assertEqual(self.js(f"Copy.string({key!r})"),
+                             wcopy.string(key), key)
+
+    def test_tables_identical(self):
+        self.assertEqual(self.js("Copy.ERRORS"),
+                         {k: list(v) for k, v in wcopy.ERRORS.items()})
+        self.assertEqual(self.js("Copy.STRINGS"), wcopy.STRINGS)
+        self.assertEqual(self.js("Copy.STATUS"),
+                         {k: list(v) for k, v in wcopy.STATUS.items()})
 
 
 class TestGenerated(unittest.TestCase):

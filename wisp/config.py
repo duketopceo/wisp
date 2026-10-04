@@ -97,11 +97,30 @@ model = "openrouter:google/gemini-2.5-flash"
 # drive = inject real clicks via the detected backend.
 # auto  = drive when a backend exists, guide otherwise.
 mode = "guide"
-# auto | cua | ydotool | wlrctl | none — auto prefers a live cua-driver
-# daemon (background virtual-pointer clicks on native Wayland — needs
-# the cua-hyprland plugin + CUA_DRIVER_RS_ENABLE_WAYLAND=1 on the
-# daemon), then hyprcursor/ydotool, then wlrctl.
+# auto | cua | hyprcursor | ydotool | wlrctl | none — auto prefers a
+# live cua-driver daemon (background virtual-pointer clicks on native
+# Wayland — needs the cua-hyprland plugin + CUA_DRIVER_RS_ENABLE_WAYLAND=1
+# on the daemon), then hyprcursor/ydotool, then wlrctl. A named backend
+# is used alone: if it is unavailable wisp guides instead.
 backend = "auto"
+
+[cua]
+# cua-driver client (wisp/cua.py). Per-call timeout; a click that times
+# out is reported as failed and never retried on another backend.
+timeout_ms = "800"
+# Safety layer (wisp/cua_safety.py) around every injected click/move/
+# scroll/type/key. Built-in deny: password managers, polkit/pinentry
+# prompts, terminals whose title shows sudo. allow/deny = comma lists of
+# window-class substrings (deny wins; a set allow list fails closed).
+safety = "true"
+allow = ""
+deny = ""
+max_clicks_per_min = "30"
+max_per_turn = "12"
+dry_run = "false"
+kill_switch = "false"
+confirm = "tier"
+audit = "true"
 
 [traj]
 # episodic memory for the act loop: every run is recorded and similar
@@ -254,6 +273,17 @@ enabled = false
 # otherwise the message is appended as the last arg. Empty = espeak default.
 cmd = ""
 
+[notify]
+# desktop toasts (D-Bus org.freedesktop.Notifications; notify-send fallback)
+enabled = true
+# silent window, may cross midnight; empty = never quiet
+quiet = ""
+# identical toasts inside this many seconds are dropped
+dedupe_secs = 60
+# toast expiry; buttons (Retry, Open log) only when the server supports them
+timeout_ms = 5000
+actions = true
+
 """
 
 
@@ -322,6 +352,11 @@ def _default_cfg_dict() -> dict:
         },
         "voice": {"enabled": "false"},
         "pointer": {"mode": "guide", "backend": "auto"},
+        "cua": {"timeout_ms": "800", "safety": "true", "allow": "",
+                "deny": "", "max_clicks_per_min": "30",
+                "max_per_turn": "12", "dry_run": "false",
+                "kill_switch": "false", "confirm": "tier",
+                "audit": "true"},
         "traj": {"enabled": "true", "max_inject": "3"},
         "agents": {"act_max_steps": "12"},
         "dev": {"refine": "true"},

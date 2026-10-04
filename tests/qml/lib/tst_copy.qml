@@ -39,4 +39,12 @@ TestCase {
     compare(Copy.pickLabel("suggestion:action:act"), "do it for me")
     compare(Copy.pickLabel("Close all windows — yes"), "Close all windows: yes")
   }
+
+  function test_errors_and_strings() {
+    compare(Copy.errorMessage("timeout"), "that took too long")
+    compare(Copy.errorMessage("nope"), Copy.errorMessage("internal"))
+    compare(Copy.errorHint("cancelled"), "")
+    compare(Copy.string("state.stale"), "out of date")
+    compare(Copy.string("no.such"), "no.such")
+  }
 }
