@@ -279,10 +279,18 @@ fn transcribe_openai(wav: &std::path::Path, cfg: &Cfg)
          "Content-Disposition: form-data; name=\"model\"");
     push(&mut body, "");
     push(&mut body, &cfg.stt_model);
+    // Groq rejects prompts over 896 chars — trim at the last term
+    // boundary so a vocab term isn't clipped mid-word.
+    let prompt = if cfg.stt_prompt.chars().count() > 896 {
+        let head: String = cfg.stt_prompt.chars().take(896).collect();
+        head.rsplit_once(',').map(|(h, _)| h).unwrap_or(&head).to_string()
+    } else {
+        cfg.stt_prompt.clone()
+    };
     push(&mut body, &format!("--{boundary}"));
     push(&mut body, "Content-Disposition: form-data; name=\"prompt\"");
     push(&mut body, "");
-    push(&mut body, &cfg.stt_prompt);
+    push(&mut body, &prompt);
     push(&mut body, &format!("--{boundary}"));
     push(&mut body, "Content-Disposition: form-data; name=\"file\"; \
                      filename=\"utterance.wav\"");

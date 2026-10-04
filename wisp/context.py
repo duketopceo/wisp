@@ -40,6 +40,31 @@ def focused_app() -> str:
     return (win.get("class") or win.get("app") or "").lower()
 
 
+def windows_map() -> str:
+    """'ws1:BrowserOS — Personal · ws4:Godot' — every open window per
+    workspace, so 'the browser' resolves by title when several are up
+    and 'what's on workspace N' is answerable without a tool call."""
+    try:
+        from . import tools as _tools
+        clients = _tools.desktop.clients()
+    except Exception:
+        return ""
+    if not clients:
+        return ""
+    per_ws = {}
+    for c in clients:
+        w = c.get("workspace") or {}
+        wsid = w.get("id", 0)
+        ws = str(wsid) if wsid and wsid > 0 else \
+            (w.get("name") or "scratch")
+        cls = c.get("class") or c.get("initialClass") or "?"
+        title = (c.get("title") or "")[:40]
+        per_ws.setdefault(ws, []).append(f"{cls}:{title}" if title
+                                        else cls)
+    return "[windows] " + " · ".join(
+        f"ws{ws}={'+'.join(v)}" for ws, v in sorted(per_ws.items()))
+
+
 def snapshot(cfg: dict) -> str:
     mode = cfg.get("act", {}).get("context", "full")
     if mode == "off":
@@ -59,4 +84,25 @@ def snapshot(cfg: dict) -> str:
         matched = app_skills(app)
         if matched:
             parts.append(f"skills={','.join(matched)}")
-    return "[focus] " + " ".join(parts) if parts else ""
+    out = ""
+    if parts:
+        out = "[focus] " + " ".join(parts)
+    wins = windows_map() if mode == "full" else ""
+    if wins:
+        out = (out + "\n" + wins).strip() or wins
+    if mode == "full":
+        from . import inventory as _inv
+        env = _inv.summary(cfg)
+        if env:
+            out += "\n" + env
+    pm = cfg.get("agent", {}).get("password_manager", "")
+    if pm == "1password":
+        out += ("\n[prefs] password_manager=1password — a 1Password "
+                "unlock/passkey prompt may appear mid-task; you may "
+                "interact with it (click Unlock / the passkey prompt) "
+                "but never type or guess a password — if it needs the "
+                "master password, ASK_USER.")
+    elif pm:
+        out += (f"\n[prefs] password_manager={pm} — do NOT interact "
+                "with password-manager prompts; ASK_USER instead.")
+    return out

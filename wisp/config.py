@@ -16,6 +16,7 @@ DATA_DIR = pathlib.Path(
     os.environ.get("XDG_DATA_HOME", DATA_DIR_P.parent)) / "wisp"
 CORRECTIONS = DATA_DIR / "corrections.jsonl"
 DECISIONS = DATA_DIR / "decisions.jsonl"
+SHADOW = DATA_DIR / "shadow.jsonl"
 _xdg_rt = os.environ.get("XDG_RUNTIME_DIR")
 RUN_DIR = (pathlib.Path(_xdg_rt) / "wisp") if _xdg_rt else RUN_DIR_P
 LEVEL_FILE = RUN_DIR / "level"
@@ -28,8 +29,22 @@ HARNESS_FILE = CFG_DIR / "harness.json"
 WHISPER_HOME = HOME / "src" / "whisper.cpp"
 WHISPER_BIN = WHISPER_HOME / "build" / "bin" / "whisper-cli"
 
-JEV_ENDPOINT = "https://openrouter.ai/api/alpha/decisions"
+JEV_ENDPOINT = os.environ.get(
+    "WISP_JEV_ENDPOINT", "https://openrouter.ai/api/alpha/decisions")
 CHAT_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
+
+# Second deciders, run alongside the primary purely to record agreement.
+# Selected with `[jev] shadow = "<name>"`; the primary still decides every
+# turn — a shadow never changes what the agent does, it only creates the
+# labeled-comparison data the v1.0 accuracy gate needs. Perplexity's model
+# is multimodal (state may carry images) and BYOK, so it needs its own key.
+SHADOW_PROVIDERS = {
+    "pplx": {
+        "endpoint": "https://api.perplexity.ai/v1/decisions",
+        "model": "pplx-decider-v1-27b",
+        "key_env": "PERPLEXITY_API_KEY",
+    },
+}
 
 DEFAULT_CONFIG = """\
 [hotkey]
@@ -82,8 +97,10 @@ model = "openrouter:google/gemini-2.5-flash"
 # drive = inject real clicks via the detected backend.
 # auto  = drive when a backend exists, guide otherwise.
 mode = "guide"
-# auto | ydotool | wlrctl | none — auto probes PATH (ydotool needs
-# ydotoold + /dev/uinput; wlrctl needs wlroots virtual-pointer).
+# auto | cua | ydotool | wlrctl | none — auto prefers a live cua-driver
+# daemon (background virtual-pointer clicks on native Wayland — needs
+# the cua-hyprland plugin + CUA_DRIVER_RS_ENABLE_WAYLAND=1 on the
+# daemon), then hyprcursor/ydotool, then wlrctl.
 backend = "auto"
 
 [traj]
@@ -136,6 +153,14 @@ router = "jev"
 # answer provider as "name:model" — named sections below or any
 # [brain.<name>] table you add (kind: openai_compat | ollama)
 default = "openrouter:meta-llama/llama-4-maverick"
+# fallback chain tried after `default`, comma-separated name:model.
+# Paid entries (openrouter, or paid = "true" on the section) are skipped
+# unless allow_paid = "true". Example: "mlx:ornith, ollama:ornith"
+fallback = ""
+allow_paid = "false"
+# an entry must stream its first token within this many seconds or the
+# chain moves on (a cold 21 GB model must not leave the turn stuck)
+first_token_s = "3"
 # background agent runtime: "auto" (probe PATH, opencode first) or an
 # explicit opencode | codex | claude | devin
 agent_runtime = "auto"
@@ -165,6 +190,56 @@ kind = "openai_compat"   # mlx-lm server, probed on /v1/models
 base_url = "http://localhost:8080/v1"
 vision = "false"
 tools = "false"
+
+[health]
+# probes of LOCAL endpoints (Jev, brain chain, optional extras); remote
+# endpoints are never probed. Results ride state.json `health`.
+enabled = "true"
+interval_s = "30"      # idle probe period
+press_stale_s = "10"   # on hotkey press, re-probe anything older
+timeout_ms = "500"
+# optional extra endpoints to watch:
+# ollama = "http://127.0.0.1:11434"
+# uitars = "http://127.0.0.1:8081"
+# `wispd models start [--run]`: user units behind each endpoint name
+# [health.units]
+# jev = "llama-jev,jev-shim"
+# brain_mlx = "llama-local"
+# uitars = "llama-uitars"
+
+# Local GPU models via llama.cpp Vulkan servers (uncomment to use).
+# `wispd` reads these like any other brain provider; the clicklab
+# matrix takes them as `--models llama_local:ornith,uitars:ui-tars`.
+# [brain.llama_local]
+# kind = "openai_compat"   # Ornith-35B + mmproj on llama-server :8080
+# base_url = "http://127.0.0.1:8080/v1"
+# vision = "true"
+# tools = "true"
+#
+# [brain.uitars]
+# kind = "openai_compat"   # UI-TARS-7B on llama-server :8081 — emits
+# base_url = "http://127.0.0.1:8081/v1"   # 'Action: click(x,y)' text
+# vision = "true"                          # instead of tool_calls
+# tools = "false"
+# action_text = "true"
+#
+# Jev can also run locally: point WISP_JEV_ENDPOINT at a jev-shim
+# (e.g. http://127.0.0.1:8931/decisions → llama-jev qwen3-4b :8091).
+#
+# Offline trajectory reviewer (`wispd review run`): point it at a
+# slower decider-class model — it reads step logs, not pixels.
+# [brain]
+# reviewer = "llama_local:ornith"   # or any configured provider
+
+[jev]
+# Shadow decider: a second decision model answers the same questions on
+# every turn so the two can be compared against your labels later. The
+# PRIMARY still decides — a shadow never changes what Wisp does, it only
+# accumulates the agreement data the soak needs. Both answers land in
+# shadow.jsonl, keyed by the same turn id decisions.jsonl carries. "" = off.
+# Known values: "pplx" (Perplexity pplx-decider-v1-27b; needs
+# PERPLEXITY_API_KEY in .env or the environment).
+shadow = ""
 
 [debug]
 # full-fidelity event stream to ~/.local/share/wisp/trace.jsonl —
@@ -254,7 +329,10 @@ def _default_cfg_dict() -> dict:
         "brain": {
             "router": "jev", "agent_runtime": "auto",
             "default": "openrouter:meta-llama/llama-4-maverick",
+            "fallback": "", "allow_paid": "false", "first_token_s": "3",
         },
+        "health": {"enabled": "true", "interval_s": "30",
+                   "press_stale_s": "10", "timeout_ms": "500"},
         "apps": _default_apps(),
     }
 

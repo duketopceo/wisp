@@ -146,6 +146,11 @@ def mine(cfg: dict, state=None, log=None) -> list:
     """One mining pass → new suggestions (also publishes the top one to
     state for the orb card). Empty list = nothing worth asking."""
     log = log or (lambda m: None)
+    from . import state as _state
+    bus = state if isinstance(state, _state.StateBus) else None
+    # the turn that is current NOW: if a new turn begins while the model
+    # is thinking, the publish below is dropped by the bus, not shown
+    turn_id = bus.current_turn() if bus else None
     window = sense.read_window(
         hours=float(cfg.get("sense", {}).get("window_h", "3")))
     if not _budget_ok(cfg):  # budget covers the Jev gate too — it's a
@@ -190,14 +195,17 @@ def mine(cfg: dict, state=None, log=None) -> list:
             pass
     if new and state is not None:
         top = new[0]
+        card = dict(
+            suggestion={"key": top["key"], "title": top.get("title", ""),
+                        "evidence": top.get("evidence", "")},
+            choices=["suggestion:automate", "suggestion:not now",
+                     "suggestion:never"],
+            result=f"suggestion: {top.get('title', '')}")
         try:
-            state.transition(
-                "suggestion",
-                suggestion={"key": top["key"], "title": top.get("title", ""),
-                            "evidence": top.get("evidence", "")},
-                choices=["suggestion:automate", "suggestion:not now",
-                         "suggestion:never"],
-                result=f"suggestion: {top.get('title', '')}")
+            if bus is not None:
+                bus.publish(turn_id, status="suggestion", **card)
+            else:
+                state.transition("suggestion", **card)
         except Exception:
             pass
     return new

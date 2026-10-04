@@ -17,7 +17,7 @@ import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-from wisp import config, ipc, pipeline, speech, state as state_mod  # noqa: E402
+from wisp import cancel, config, ipc, pipeline, speech, state as state_mod, trace as _trace  # noqa: E402
 
 # daemon-scoped handles the rec watchdog needs (set in run_daemon)
 _DAEMON_ST = None
@@ -27,20 +27,26 @@ _DAEMON_CTL = None
 _POLL_CMDS = {"task_status", "status"}  # widget pollers — keep out of trace
 
 
+_DLOG_MAX_BYTES = 2 * 1024 * 1024
+
+
 def dlog(msg: str) -> None:
     """Human-readable daemon log: ~/.local/share/wisp/wispd.log + journal."""
-    line = (f"{datetime.datetime.now():%H:%M:%S}."
-            f"{datetime.datetime.now().microsecond // 1000:03d} {msg}")
+    now = datetime.datetime.now()
+    line = f"{now:%Y-%m-%d %H:%M:%S}.{now.microsecond // 1000:03d} {msg}"
     try:
         config.DATA_DIR.mkdir(parents=True, exist_ok=True)
-        with open(config.DATA_DIR / "wispd.log", "a") as f:
+        fp = config.DATA_DIR / "wispd.log"
+        if fp.exists() and fp.stat().st_size > _DLOG_MAX_BYTES:
+            fp.replace(fp.with_suffix(".1.log"))
+        with fp.open("a") as f:
             f.write(line + "\n")
     except OSError:
         pass
     print(line, flush=True)
 
 
-def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
+def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
     def handle(cmd: dict) -> dict:
         c = cmd.get("cmd")
         _t0 = __import__("time").monotonic()
@@ -58,11 +64,28 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
         if c == "status":
             from wisp import agents
             agents.reap(cfg)  # zombie + timeout watchdog on each poll
-            st.tasks = agents.tasks()
-            st.transition(st.status)
+            cur = agents.tasks()
+            # long-running agent completion: notify once on the
+            # running → done transition
+            done = agents.finished(getattr(st, "_prev_tasks", {}), cur)
+            st._prev_tasks = cur
+            st.publish(None, tasks=cur)  # daemon-level: no turn
+            for t in done:
+                tail = (t.get("tail") or "")[:80]
+                from wisp.tools import system as _sys
+                _sys.notify_tool(
+                    f"wisp agent '{t['name']}' {t['status']}"
+                    + (f" — {tail}" if tail else ""))
             return {"ok": True, "state": st.snapshot()}
         if c == "listen":
             phase = cmd.get("phase", "")  # hold-to-talk: start|stop; empty = toggle
+            # U1: this request's start (client t0 when sent) — the press
+            # origin on a start, the key-up instant on a stop
+            req_sp = _trace.Spans(t0_ns=cmd.get("t0"))
+            if phase in ("", "start") and _HEALTH is not None:
+                # refresh endpoint health off the hot path (U7)
+                threading.Thread(target=_HEALTH.on_press,
+                                 daemon=True).start()
             with ctl["rec_lock"]:
                 if phase == "start" and ctl["rec"] is not None:
                     return {"ok": True, "recording": True}
@@ -82,21 +105,27 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
                         except Exception:
                             rec["proc"].kill()
                         rec["sampler_stop"].set()
-                        st.transition("done", result="", transcript="")
+                        st.turn(ctl.pop("turn", None)
+                                or st.current_turn()).transition(
+                            "done", result="", transcript="")
                         dlog(f"listen: {held * 1000:.0f}ms capture "
                              "ignored (phantom)")
                         return {"ok": True, "stopped": True,
                                 "ignored": True}
                     if ctl["busy"].is_set():
                         return {"ok": False, "error": "busy"}
+                    tid = ctl.pop("turn", None) or st.current_turn()
                     try:
-                        wav = pipeline.record_stop(rec, st)
+                        wav = pipeline.record_stop(rec, st.turn(tid))
                     except RuntimeError as e:
-                        st.transition("error", error=str(e))
+                        st.turn(tid).transition("error", error=str(e))
                         return {"ok": False, "error": str(e)}
                     ctl["busy"].set()
+                    sp = ctl.pop("spans", None) or _trace.Spans()
+                    sp.adopt_release(req_sp)
                     threading.Thread(
-                        target=_run_listen, args=(st, cfg, ctl, wav),
+                        target=_run_listen,
+                        args=(st, cfg, ctl, wav, sp, tid),
                         daemon=True).start()
                     return {"ok": True, "stopped": True}
                 if ctl["busy"].is_set():
@@ -104,14 +133,23 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
                 # first press: start open-ended capture; [audio] seconds
                 # is the safety cap, not the length.
                 speech.stop()
-                st.transition("listening", transcript="", result="",
+                # a new turn: anything the previous turn still has in
+                # flight (TTS exit callback, level sampler) is stale now
+                tid = st.begin_turn()
+                ctl["turn"] = tid
+                ctl["interrupt"].clear()
+                ctl["token"] = cancel.CancelToken()
+                th = st.turn(tid)
+                th.transition("listening", transcript="", result="",
                               answer="", choices=[], points=[], error="",
                               steps=[], guide=None)
+                req_sp.record("press", req_sp.t0)
                 try:
-                    ctl["rec"] = pipeline.record_start(st)
+                    ctl["rec"] = pipeline.record_start(th)
                 except RuntimeError as e:
-                    st.transition("error", error=str(e))
+                    th.transition("error", error=str(e))
                     return {"ok": False, "error": str(e)}
+                ctl["spans"] = req_sp
                 secs = int(cfg.get("audio", {}).get("seconds", "60"))
                 threading.Thread(target=_rec_watchdog,
                                  args=(ctl, secs), daemon=True).start()
@@ -137,11 +175,20 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
                     return {"ok": True, "result": "automating"}
                 if not ctl["busy"].is_set():
                     st.transition("done", result=out, choices=[],
-                                  suggestion=None, guide=None)
+                                  suggestion=None, guide=None)  # daemon-level
                 return {"ok": True, "result": out}
-            ctl["choice_pick"] = pick
-            ctl["choice_event"].set()
-            return {"ok": True}
+            broker = ctl.get("broker")
+            if broker is None:  # no prompt registry (bare test handles)
+                ctl["choice_pick"] = pick
+                ctl["choice_event"].set()
+                return {"ok": True}
+            idx = cmd.get("index")
+            try:
+                idx = None if idx is None else int(idx)
+            except (TypeError, ValueError):
+                return {"ok": False, "error": "bad_index"}
+            return broker.offer(pick=pick, prompt_id=cmd.get("prompt_id"),
+                                index=idx)
         if c == "suggestions":
             from wisp import suggest
             return {"ok": True,
@@ -196,6 +243,20 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
                 cfg.clear()
                 cfg.update(config.load_config())
             return {"ok": True, "config": cfg}
+        if c == "interrupt":
+            # cancel the in-flight turn only — daemon keeps running
+            ctl["interrupt"].set()
+            tok = ctl.get("token")
+            if tok is not None:
+                tok.cancel()  # kills children, closes sockets (U9)
+            speech.stop()
+            return {"ok": True}
+        if c == "context":
+            from wisp import context as _ctx
+            try:
+                return {"ok": True, "result": _ctx.snapshot(cfg)}
+            except Exception as e:
+                return {"ok": False, "error": str(e)}
         if c == "stop":
             speech.stop()
             ctl["stop"].set()
@@ -204,14 +265,35 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
     return handle
 
 
-def _wait_for_choice(ctl: dict):
-    def wait(timeout: float):
-        ctl["choice_event"].clear()
-        ctl["choice_pick"] = ""
-        if ctl["choice_event"].wait(timeout):
-            return ctl["choice_pick"] or None
-        return None
-    return wait
+def _choice_cmd(args: list):
+    """`wispd choice` argv -> IPC message, None on a malformed call.
+    `[pick] [--prompt-id ID] [--index N]` (1-based option index)."""
+    msg = {"cmd": "choice", "pick": ""}
+    it = iter(args)
+    for a in it:
+        if a.startswith("--prompt-id"):
+            val = a.partition("=")[2] or next(it, "")
+            if not val:
+                return None
+            msg["prompt_id"] = val
+        elif a.startswith("--index"):
+            val = a.partition("=")[2] or next(it, "")
+            try:
+                msg["index"] = int(val)
+            except ValueError:
+                return None
+        else:
+            msg["pick"] = a
+    return msg
+
+
+def _wait_for_choice(ctl: dict, token=None):
+    """Prompt waiter for one turn: `wait(timeout, prompt_id=, options=)`
+    blocks until a matching `choice` arrives (see cancel.PromptBroker)."""
+    broker = ctl.get("broker")
+    if broker is None:
+        broker = ctl["broker"] = cancel.PromptBroker()
+    return broker.waiter(token)
 
 
 def _rec_watchdog(ctl: dict, secs: int) -> None:
@@ -225,28 +307,35 @@ def _rec_watchdog(ctl: dict, secs: int) -> None:
     # mimic a second press: finish capture, hand wav to the pipeline —
     # state/cfg fetched at call time via the closure the daemon holds
     try:
-        wav = pipeline.record_stop(rec, _DAEMON_ST)
+        tid = _DAEMON_CTL.pop("turn", None) or _DAEMON_ST.current_turn()
+        wav = pipeline.record_stop(rec, _DAEMON_ST.turn(tid))
         _DAEMON_CTL["busy"].set()
         threading.Thread(
             target=_run_listen,
-            args=(_DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL, wav),
+            args=(_DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL, wav, None, tid),
             daemon=True).start()
     except RuntimeError as e:
         _DAEMON_ST.transition("error", error=str(e))
 
 
-def _run_listen(st: state_mod.State, cfg: dict, ctl: dict,
-                wav=None) -> None:
+def _run_listen(st: state_mod.StateBus, cfg: dict, ctl: dict,
+                wav=None, spans=None, turn_id=None) -> None:
+    turn_id = turn_id or st.current_turn()
+    token = ctl.get("token")
+    if token is None:
+        token = ctl["token"] = cancel.CancelToken()
     try:
         pipeline.run_listen(cfg, st,
-                            wait_for_choice=_wait_for_choice(ctl),
-                            wav=wav)
+                            wait_for_choice=_wait_for_choice(ctl, token),
+                            interrupted=ctl["interrupt"].is_set,
+                            wav=wav, spans=spans, turn_id=turn_id,
+                            cancel=token)
         dlog(f"turn done: status={st.status} "
              f"transcript={st.transcript!r} result={st.result!r}")
     except Exception as e:
         dlog(f"turn error: {e}")
         try:
-            st.transition("error", error=str(e))
+            pipeline._publish_error(st.turn(turn_id), e)
         except Exception:
             pass
     finally:
@@ -256,35 +345,62 @@ def _run_listen(st: state_mod.State, cfg: dict, ctl: dict,
 def _run_suggestion(st, cfg, ctl, routine: str) -> None:
     """Approved suggestion → bounded act loop (all gates apply)."""
     from wisp import act
+    th = st.turn(st.begin_turn())
     try:
-        st.transition("acting", transcript="", choices=[],
+        th.transition("acting", transcript="", choices=[],
                       suggestion=None, steps=[],
                       result="automating suggestion")
-        out = act.run_act_loop(routine, cfg, state=st,
+        out = act.run_act_loop(routine, cfg, state=th,
                                confirm=None)  # no re-confirm loop;
         # mutating steps skip rather than hang on a card
-        st.transition("done", result=out, guide=None)
+        th.transition("done", result=out, guide=None)
         dlog(f"suggestion run done: {out!r}")
     except Exception as e:
         dlog(f"suggestion run error: {e}")
-        st.transition("error", error=str(e))
+        th.transition("error", error=str(e))
     finally:
         ctl["busy"].clear()
 
 
+_HEALTH = None  # health.HealthRegistry while the daemon runs (U7)
+
+
+def _hypr_health() -> dict:
+    """Registry hook for the Hyprland socket (U5). Re-probes, since
+    hypr.health() only reports the last remembered state."""
+    from wisp import hypr, platform
+    if not platform.uses_hypr():
+        return {"ok": True, "code": None, "skipped": True}
+    hypr.probe()
+    return hypr.health()
+
+
 def run_daemon(cfg: dict) -> int:
-    global _DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL
+    global _DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL, _HEALTH
     from wisp import skills, theme, memory as _memory
     skills.register_tools()  # skill_<name> entries from skills/*/SKILL.md
     skills.seed()          # bundled dayflow-bridge/self-checkup skills
     skills.write_index_json()  # panel reads this without spawning IPC
     theme.emit(cfg)        # theme.json for the QML surfaces
     dlog(_memory.sync_constitution())  # luke-agents -> MEMORY.md block
-    st = state_mod.State()
+    from wisp import inventory as _inv
+    if not _inv.fresh():
+        inv = _inv.scan(cfg)
+        dlog(f"inventory: {len(inv.get('apps', []))} apps, "
+             f"{len(inv.get('cli_tools', {}))} cli tools")
+    st = state_mod.StateBus()
     ctl = {"stop": threading.Event(), "busy": threading.Event(),
+           "interrupt": threading.Event(),
            "choice_event": threading.Event(), "choice_pick": "",
+           "broker": cancel.PromptBroker(), "token": None,
            "rec": None, "rec_lock": threading.Lock()}
     _DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL = st, cfg, ctl
+    if cfg.get("health", {}).get("enabled", "true") == "true":
+        from wisp import brain as _brain, health as _health
+        _HEALTH = _health.HealthRegistry(cfg, bus=st)
+        _HEALTH.register("hypr", _hypr_health)
+        _brain.HEALTH = _HEALTH
+        _HEALTH.start()
     server = ipc.Daemon(_handler(st, cfg, ctl))
     server.start()
     dlog(f"wispd up — socket {config.SOCK_FILE} "
@@ -308,14 +424,18 @@ def run_daemon(cfg: dict) -> int:
     except KeyboardInterrupt:
         pass
     finally:
+        if _HEALTH is not None:
+            _HEALTH.stop()
         server.stop()
         st.transition("idle")
+        st.close()
     return 0
 
 
 def cmd_trigger(cfg: dict, phase: str = "") -> int:
     try:
-        resp = ipc.send({"cmd": "listen", "phase": phase})
+        resp = ipc.send({"cmd": "listen", "phase": phase,
+                         "t0": time.time_ns()})
         if resp.get("ok"):
             return 0
         print(f"wispd: {resp.get('error')}", file=sys.stderr)
@@ -323,8 +443,11 @@ def cmd_trigger(cfg: dict, phase: str = "") -> int:
     except (ConnectionError, OSError):
         # No daemon: run the pipeline inline so the bind still works
         # before the systemd unit is installed/enabled.
-        st = state_mod.State()
-        return pipeline.run_listen(cfg, st)
+        st = state_mod.StateBus()
+        try:
+            return pipeline.run_listen(cfg, st)
+        finally:
+            st.close()
 
 
 def install_files() -> None:
@@ -362,6 +485,14 @@ def install_files() -> None:
               "Manager, AutoHotkey, or the tray app (see docs/WINDOWS.md)")
         return
     opt = config.HOME / ".local" / "opt" / "wisp"
+    if src == opt:
+        # invoked via the ~/.local/bin symlink → __file__ resolves to
+        # the installed copy; copytree would self-copy and silently
+        # stay stale. Point the user at the real checkout instead.
+        print("wispd install must run from the source checkout "
+              "(python3 wispd install) — this wispd IS the installed "
+              "copy; nothing updated")
+        return
     opt.mkdir(parents=True, exist_ok=True)
     pkg = src / "wisp"
     if pkg.is_dir():
@@ -391,18 +522,26 @@ Name=Wisp
 GenericName=Voice Assistant
 Comment=Wisp voice assistant — management console
 Exec=quickshell -n -p {opt}/shells/debug
-Icon=audio-input-microphone
+Icon=wisp
 Terminal=false
 Categories=Utility;Accessibility;
 Keywords=voice;assistant;ai;wisp;
 StartupNotify=false
 """)
     print(f"installed {desktop}")
+    icons_src = src / "assets" / "icons" / "hicolor"
+    if icons_src.is_dir():
+        icons_dst = config.HOME / ".local" / "share" / "icons" / "hicolor"
+        shutil.copytree(icons_src, icons_dst, dirs_exist_ok=True)
+        print(f"installed {icons_dst}")
     plugin_src = src / "shell-plugin"
     plugin_dst = (config.HOME / ".config" / "omarchy" / "plugins"
                   / "io.github.duketopceo.wisp")
     if plugin_src.is_dir():
         shutil.copytree(plugin_src, plugin_dst, dirs_exist_ok=True)
+        # an old installer copied the directory itself — sweep the
+        # stale nested copy so there's exactly one QML source of truth
+        shutil.rmtree(plugin_dst / "shell-plugin", ignore_errors=True)
         print(f"installed {plugin_dst}")
     trigger = config.HOME / ".local" / "bin" / "wisp-trigger"
     trigger.parent.mkdir(parents=True, exist_ok=True)
@@ -574,6 +713,16 @@ def _doctor(cfg: dict) -> int:
     row("api key", "set" if key == "set" or (key and key != "n/a")
         else key or "MISSING", good=bool(key))
 
+    print("health (local endpoints, 500 ms probes):")
+    from wisp import health as _health
+    reg = _health.HealthRegistry(cfg)
+    snap = reg.probe_all()
+    if not snap:
+        row("endpoints", "none local to probe")
+    for name, h in snap.items():
+        row(name, f"{h['latency_ms']} ms" if h["ok"]
+            else f"DOWN ({h['code']})", good=h["ok"])
+
     print("pointer:")
     pb = _plat.pointer_backend(cfg)
     mode = cfg.get("pointer", {}).get("mode", "guide")
@@ -597,6 +746,35 @@ def _doctor(cfg: dict) -> int:
         row(f, f"{fp.stat().st_size // 1024}KB" if fp.exists()
             else "absent", good=True)
     return 0 if ok else 1
+
+
+def _models(cfg: dict, args: list) -> int:
+    """`wispd models` shows local endpoint health. `wispd models start`
+    PRINTS the systemctl command for the units behind down endpoints;
+    only `--run` executes it (explicit request, user-scope units)."""
+    from wisp import health as _health
+    snap = _health.HealthRegistry(cfg).probe_all()
+    if not args:
+        if not snap:
+            print("no local endpoints configured")
+        for name, h in snap.items():
+            print(f"{'ok  ' if h['ok'] else 'DOWN'} {name:<16} "
+                  + (f"{h['latency_ms']} ms" if h["ok"] else h["code"]))
+        return 0
+    if args[0] != "start":
+        print("usage: wispd models [start [--run]]", file=sys.stderr)
+        return 2
+    units = _health.units_to_start(cfg, snap)
+    if not units:
+        print("nothing to start (no down endpoint has units in "
+              "[health.units])")
+        return 0
+    cmd = _health.start_command(units)
+    if "--run" not in args:
+        print(" ".join(cmd))
+        print("(dry run — add --run to execute)")
+        return 0
+    return subprocess.run(cmd).returncode
 
 
 def rebuild_harness() -> int:
@@ -629,6 +807,13 @@ def main() -> int:
         except (ConnectionError, OSError) as e:
             print(f"wispd unreachable: {e}", file=sys.stderr)
             return 1
+    if cmd == "interrupt":
+        try:
+            ipc.send({"cmd": "interrupt"})
+            return 0
+        except (ConnectionError, OSError) as e:
+            print(f"wispd unreachable: {e}", file=sys.stderr)
+            return 1
     if cmd == "stop":
         try:
             ipc.send({"cmd": "stop"})
@@ -637,8 +822,17 @@ def main() -> int:
             print(f"wispd unreachable: {e}", file=sys.stderr)
             return 1
     if cmd == "choice":
+        msg = _choice_cmd(sys.argv[2:])
+        if msg is None:
+            print("usage: wispd choice [pick] [--prompt-id ID] "
+                  "[--index N]", file=sys.stderr)
+            return 2
         try:
-            ipc.send({"cmd": "choice", "pick": sys.argv[2] if len(sys.argv) > 2 else ""})
+            reply = ipc.send(msg)
+            if isinstance(reply, dict) and reply.get("ok") is False:
+                print(f"choice rejected: {reply.get('error')}",
+                      file=sys.stderr)
+                return 1
             return 0
         except (ConnectionError, OSError) as e:
             print(f"wispd unreachable: {e}", file=sys.stderr)
@@ -662,6 +856,54 @@ def main() -> int:
             print(out)
             return 0 if not out.startswith(("SKIP", "ERROR",
                                             "nothing")) else 1
+    if cmd == "tasks":
+        # wispd tasks — background agents: status + last log line
+        from wisp import agents
+        ts = agents.tasks()
+        if not ts:
+            print("no agents on record")
+            return 0
+        for name, t in sorted(ts.items(),
+                              key=lambda kv: kv[1].get("ts", "")):
+            tail = t.get("tail") or ""
+            print(f"{t['status']:<10} {name:<24} {t.get('task','')[:50]}"
+                  + (f"\n{'':<36}↳ {tail[:90]}" if tail else ""))
+        return 0
+    if cmd == "train":
+        # wispd train stats|history|bank|replay — arena telemetry
+        from wisp import train
+        sub = sys.argv[2] if len(sys.argv) > 2 else "stats"
+        if sub == "history":
+            print(train.history_text())
+        elif sub == "bank":
+            print(train.bank_text())
+        elif sub == "rebuild":
+            bank = train.replay_all()
+            print(f"rebuilt skill bank — {len(bank)} patterns")
+        else:
+            print(train.stats_text())
+        return 0
+    if cmd == "review":
+        # wispd review [run [N]|approve N|reject N|list] — staged
+        # reviewer proposals; approve is the only write path to the bank
+        from wisp import review
+        sub = sys.argv[2] if len(sys.argv) > 2 else "list"
+        if sub == "run":
+            n = int(sys.argv[3]) if len(sys.argv) > 3 else 10
+            r = review.run(cfg, limit=n)
+            print(f"reviewed {r['reviewed']} → {r['proposed']} proposals"
+                  + (f", {r['skipped']} skipped" if r["skipped"] else ""))
+            for note in r["notes"][:5]:
+                print(f"  - {note}")
+        elif sub == "approve":
+            print(review.approve(int(sys.argv[3])
+                                 if len(sys.argv) > 3 else 0))
+        elif sub == "reject":
+            print(review.reject(int(sys.argv[3])
+                                if len(sys.argv) > 3 else 0))
+        else:
+            print(review.list_text())
+        return 0
     if cmd == "learn":
         from wisp import learn
         out = learn.weekly()
@@ -700,6 +942,46 @@ def main() -> int:
         return 0
     if cmd == "harness":
         return rebuild_harness()
+    if cmd == "inventory":
+        from wisp import inventory as _inv
+        inv = _inv.scan(cfg)
+        o = inv.get("omarchy", {})
+        df = inv.get("dayflow", {})
+        print(f"inventory.json — {inv.get('generated', '?')}")
+        print(f"  apps:        {len(inv.get('apps', []))}")
+        print(f"  cli_tools:   {len(inv.get('cli_tools', {}))}")
+        print(f"  mcp servers: {len(inv.get('mcp', {}))} "
+              f"({', '.join(list(inv.get('mcp', {}))[:8])}…)")
+        print(f"  omarchy:     {len(o.get('plugins', []))} plugins, "
+              f"{len(o.get('bindings', []))} bindings")
+        print(f"  dayflow:     {len(df.get('top_apps', []))} top apps, "
+              f"{len(df.get('project_terms', []))} project terms")
+        print(f"  skills:      {len(inv.get('skills', []))}")
+        print(f"  file: {_inv.FILE}")
+        return 0
+    if cmd == "connect":
+        # wispd connect <service> — OAuth onboarding for the Strata
+        # connector suite via the local browseros gateway. '--list'
+        # dumps the connector catalog + status.
+        from wisp import mcpauth
+        name = sys.argv[2] if len(sys.argv) > 2 else ""
+        if not name or name == "--list":
+            if "--json" in sys.argv:
+                import json as _j
+                print(_j.dumps(mcpauth.list_connectors_json(cfg)))
+                return 0
+            print(mcpauth.list_connectors(cfg))
+            return 0
+        print(mcpauth.connect(name, cfg))
+        return 0
+    if cmd == "context":
+        try:
+            r = ipc.send({"cmd": "context"})
+            print(r.get("result") or r.get("error", "failed"))
+            return 0 if r.get("ok") else 1
+        except (ConnectionError, OSError) as e:
+            print(f"wispd unreachable: {e}", file=sys.stderr)
+            return 1
     if cmd in ("task_status", "task_cancel"):
         try:
             r = ipc.send({"cmd": cmd, "name": sys.argv[2]
@@ -742,6 +1024,8 @@ def main() -> int:
         return trace.main(sys.argv[2:])
     if cmd == "doctor":
         return _doctor(cfg)
+    if cmd == "models":
+        return _models(cfg, sys.argv[2:])
     if cmd == "tui":
         from wisp import tui
         return tui.main()
@@ -773,6 +1057,25 @@ def main() -> int:
     if cmd == "theme":
         from wisp import theme
         name = sys.argv[2] if len(sys.argv) > 2 else ""
+        if name in ("--check", "--css"):
+            # wispd theme --check [THEME_DIR]      contrast audit, exit 1 on fail
+            # wispd theme --css [THEME_DIR] [OUT]  theme.css (OUT '-' = stdout)
+            rest = sys.argv[3:]
+            res = theme.load(rest[0] if rest else None, cfg)
+            if name == "--css":
+                out = rest[1] if len(rest) > 1 else None
+                if out == "-":
+                    sys.stdout.write(theme.css(res))
+                else:
+                    print(theme.write_css(res, out))
+                return 0
+            rows = theme.check(res)
+            print(f"source {res['source']}, mode {res['mode']}")
+            for r in rows:
+                mark = "ok  " if r["ok"] else "FAIL"
+                print(f"{mark} {r['pair']:<18} {r['fg']} on {r['bg']}  "
+                      f"{r['ratio']:>5.2f} (min {r['min']})")
+            return 0 if all(r["ok"] for r in rows) else 1
         if name:
             if name not in theme.THEMES:
                 print(f"unknown theme {name!r} — "
@@ -843,8 +1146,8 @@ def main() -> int:
         return 0
     print("usage: wispd [daemon|install|trigger|status|stop|choice"
           "|agent|memory|task_status|task_cancel|learn|label|harness|trace"
-          "|doctor|tui|skills [import [--list] dir]|suggestions"
-          "|recipes [approve name]|fails|theme [name]|sync [repo]"
+          "|doctor|models [start [--run]]|tui|skills [import [--list] dir]|suggestions"
+          "|recipes [approve name]|fails|theme [name|--check|--css]|sync [repo]"
           "|eval route [n]"
           "|config [set k v]]")
     return 2

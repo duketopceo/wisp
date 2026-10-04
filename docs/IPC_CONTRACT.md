@@ -22,14 +22,21 @@ future tray apps). Shells MUST only depend on this document.
 | cmd | extra fields | reply | effect |
 |---|---|---|---|
 | `status` | — | `{ok, state}` | `state` = full state.json snapshot |
-| `listen` | — | `{ok}` or `{ok:false,error:"busy"}` | starts a listen cycle async; kills in-flight TTS (barge-in) |
-| `choice` | `pick: string` | `{ok}` | resolves a pending choice/confirm |
+| `listen` | `phase?: start\|stop`, `t0?: int` (client wall-clock ns of the keypress; additive, optional) | `{ok}` or `{ok:false,error:"busy"}` | starts a listen cycle async; kills in-flight TTS (barge-in) |
+| `choice` | `pick: string`, optional `prompt_id: string`, optional `index: int` | `{ok}` or `{ok:false, error}` | resolves the pending choice/confirm; see Prompt ids |
 | `task_status` | `name: string` | `{ok, result: string}` | named-agent status |
 | `task_cancel` | `name: string` | `{ok, result: string}` | cancel named agent |
 | `agent` | `task: string` | `{ok, result: string}` | spawn a background task via `[brain] agent_runtime`; `result` is `SPAWNED …`/`SKIP …` |
 | `memory` | `arg` or `target`+`body` | `{ok, result: string}` | `arg` = tool grammar `target|op|old|new`; `target`+`body` = whole-doc `write` (GUI editor path — pipes/newlines safe) |
 | `stop` | — | `{ok}` | daemon exits, socket removed; kills in-flight TTS |
+| `interrupt` | — | `{ok}` | cancels the in-flight turn only — daemon stays up; see Cancellation |
 | `config` | `set: {"section.key": "val"}` (optional) | `{ok, config}` | read config; with `set`, writes config.toml preserving comments/order and live-reloads |
+| `label` | `label: correct\|incorrect` | `{ok, result}` | tag the most recent decision (soak intent-match + trajectory join) |
+| `context` | — | `{ok, result}` | focused app, `[windows]` workspace map, inventory counts |
+| `inventory` | — | `{ok, result}` | rescan local terrain → `inventory.json` |
+| `connect` | `service` or `list` | `{ok, result, json?}` | OAuth connector flow via BrowserOS Strata; `list` returns the catalog (add `--json` for machine-readable) |
+| `recipes` | `approve <name>` optional | `{ok, result}` | list draft recipe-* proposals; `approve` installs as a skill |
+| `tele` / `fails` | — | `{ok, result}` | decision telemetry / recent failures |
 | `learn` | — | `{ok, result}` | weekly learning proposals (human-gated) |
 | `harness` | — | `{ok, result}` | regenerate the app harness catalog |
 | unknown/malformed | — | `{ok:false, error}` | — |
@@ -48,17 +55,79 @@ lacks a section. Shells may offer a settings page on top of this command.
   "answer": "string",
   "result": "string",
   "choices": ["string"],
+  "prompt_id": "string — id of the offered choices/confirm; \"\" when none",
   "points": [{"x": 0, "y": 0, "label": "string", "step": 1}],
+  "steps": ["tool arg → result", "…"],
+  "guide": {"x": 0, "y": 0, "label": "string", "mode": "guide|drive", "seq": 1},
+  "focus": {"app": "string", "title": "string"},
+  "goal": {"text": "string", "status": "open|done|failed"},
   "level": 0.0,
   "tasks": {"name": "running|done|failed|cancelled"},
-  "error": "string",
-  "started_at": "ISO-8601"
+  "error": "string — human-safe copy, never raw exception text",
+  "error_code": "closed set, see below; \"\" when no error",
+  "error_detail": "string — raw failure text, local only",
+  "health": {"<endpoint>": {"ok": true, "since": "ISO-8601", "latency_ms": 12, "code": null}},
+  "started_at": "ISO-8601",
+  "turn_id": "string — turn that produced this write",
+  "seq": 0,
+  "updated_at": "ISO-8601",
+  "contract_version": 1,
+  "heartbeat_at": "ISO-8601|null — refreshed every 15 s while transcribing/deciding/acting"
 }
 ```
 
+Single publisher (Python core): one `StateBus` owns every write. `seq`
+increases by one per written snapshot; a write from a turn that is no
+longer current is dropped; `level` is rate-limited to ~12 writes/s.
+Shells still just read the file — all of these fields are additive.
+
+Error codes (additive, Python core; U7): when `status` is `error`,
+`error_code` is one of `jev_down`, `brain_down`, `stt_down`,
+`ground_down`, `ground_failed`, `timeout`, `cancelled`, `busy`,
+`stale_prompt`, `restarted`, `tool_failed`, `budget_exceeded`,
+`internal`. Shells render copy from the code and must treat unknown
+codes as `internal`. `error_detail` is for logs and `wispd watch`, not
+for display. A turn that starts (`listening`) clears all three.
+
+Health (additive; U7): `health` maps local endpoint names (`jev`,
+`brain_<provider>`, `ollama`, `uitars`, `stt`, plus hook-registered
+ones such as `hypr`) to `{ok, since, latency_ms, code}`; `latency_ms`
+is from the first probe and any later transition, `code` is null while
+ok. It is republished on first observation and on every ok/down
+transition, each with a stream event
+`{"type":"event","name":"health_changed","data":{name,ok,code}}`.
+Absent or `{}` on older cores and while probing is disabled. Remote
+endpoints are never probed and never listed.
+
+Prompt ids (additive; U9): every `awaiting_choice` publishes `choices`
+together with a `prompt_id`, and clears both when the prompt resolves.
+`choice` may carry `prompt_id` and/or `index` (1-based into `choices`;
+`wispd choice [pick] [--prompt-id ID] [--index N]`). Replies:
+`{ok:true}` when applied; `{ok:false, error:"stale_prompt"}` when no
+prompt is pending or `prompt_id` is not the pending one (the pending
+prompt keeps waiting); `{ok:false, error:"not_offered"}` for a `pick`
+not in `choices`; `{ok:false, error:"bad_index"}` for an `index` out of
+range. A `choice` without `prompt_id` is accepted only while a prompt is
+pending (exactly one ever is) — this keeps current shells working. An
+empty `pick` dismisses the prompt like a timeout. The core also refuses
+an unoffered pick that reaches the turn by another path (trace
+`choice_rejected`) and falls back to its safe auto-pick.
+
+Cancellation (additive; U9): `interrupt` cancels the current turn at
+whatever stage it is in — the whisper child and tool subprocesses are
+killed, Jev/STT/brain connections are closed (a late reply is never
+read), the brain stream stops publishing deltas, speech is killed, and
+a cancelled turn never falls back to the next brain. The turn unwinds
+to `status: idle` with `error_code: "cancelled"` (`error` empty);
+`result` carries `INTERRUPTED (user)` when an act step was running. A
+new turn (`listening`) clears `error_code`. Speech now starts per
+completed sentence while the answer streams (state still goes
+`speaking` → `done` when the last sentence ends).
+
 Confirmation gate: when a mutating/shell action needs approval, the
 core transitions to `awaiting_choice` with `choices` = e.g.
-["<prompt> — yes", "no"]; clients reply via `choice` (pick string).
+["<prompt> — yes", "no"]; clients reply via `choice` (pick string, or
+`index`, with the `prompt_id` they saw).
 Both cores use this same mechanism — neither may block holding a
 client's request socket open for the answer.
 
@@ -82,13 +151,26 @@ spoken answer and publishes the normalized list.
 - `session.jsonl` — turns for follow-up context.
 - `corrections.jsonl` — user picks on ambiguous turns.
 - `tasks.jsonl` — agent registry; `tasks/<id>.log` per-agent output.
+- `labels.jsonl` — human labels (`correct`/`incorrect`) keyed to the
+  decision ts; joined to trajectories via the decision's transcript.
+- `trajectories.jsonl` — episodic act-loop memory (task, app, steps,
+  outcome); feeds `context_for()` and `propose_recipes()`.
+- goal state — in-memory only (`wisp/goals.py`, `goal_ttl_s` TTL, lost
+  on restart); not a file.
+- `inventory.json` — scanned local terrain (apps, cli_tools, mcp
+  servers, omarchy plugins/binds, dayflow, skills); 24h TTL.
 - `MEMORY.md`, `USER.md` — curated bounded memory (frozen snapshot).
 - `skills/*/SKILL.md` — self-authored skills (progressive disclosure).
 - `trace.jsonl` — full-fidelity dev trace (`[debug] trace`, default on):
   one event per line `{ts, turn, step, kind, ms, data}` covering
   listen_start/record/transcribe/decision/dispatch/tool_call/
-  tool_result/brain_call/answer/speak/points/ipc/error. `wispd trace`
-  `--tail N --turn <id> --kind <k>` on both cores. Rotates at 10 MB;
+  tool_result/brain_call/answer/speak/points/ipc/error, plus `kind=span`
+  events (`step` = press, release, stt, context, route, first_token,
+  first_step, tts_start, done, and sub-spans screenshot/hyprctl/memory/
+  goal; `ms` = duration, `data.offset_ms` from the keypress,
+  `data.t0_source` client|daemon). `wispd trace`
+  `--tail N --turn <id> --kind <k>` on both cores; Python core adds
+  `--latency [--since 24h]` (p50/p90 per budget path). Rotates at 10 MB;
   never logs secrets.
 - `recall.db` — sqlite-vec/FTS5 long-term recall.
 

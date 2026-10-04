@@ -153,5 +153,82 @@ class RuntimeProbeTest(unittest.TestCase):
             assert 'base_url = "http://gpu:11434"' in text
 
 
+class TestChatStream(unittest.TestCase):
+    def _sse(self, chunks):
+        lines = []
+        for c in chunks:
+            lines.append("data: " + json.dumps(
+                {"choices": [{"delta": {"content": c}}]}))
+        lines.append("data: [DONE]")
+        body = ("\n".join(lines) + "\n").encode()
+
+        class Resp:
+            def __enter__(self): return iter(body.splitlines(keepends=True))
+            def __exit__(self, *a): return False
+        return Resp()
+
+    def test_openai_compat_streams_deltas(self):
+        from wisp import brain
+        cfg = {"brain": {"default": "openai_compat:m"},
+               "brain.openai_compat":
+               {"base_url": "http://x.test/v1"}}
+        got = []
+        with mock.patch("urllib.request.urlopen",
+                        return_value=self._sse(["Hel", "lo ", "world"])):
+            out = brain.chat_stream([{"role": "user", "content": "hi"}],
+                                    cfg, on_delta=got.append)
+        self.assertEqual(out["content"], "Hello world")
+        self.assertEqual(got, ["Hel", "Hello ", "Hello world"])
+
+    def test_ollama_streams_ndjson_deltas(self):
+        # U7: ollama streams /api/chat so first-token is measurable
+        from wisp import brain
+        cfg = {"brain": {"default": "ollama:m"}}
+        body = (json.dumps({"message": {"content": "one-"}}) + "\n"
+                + json.dumps({"message": {"content": "shot"}}) + "\n"
+                + json.dumps({"done": True}) + "\n").encode()
+
+        class Resp:
+            def __enter__(self): return iter(body.splitlines(keepends=True))
+            def __exit__(self, *a): return False
+        got = []
+        with mock.patch("urllib.request.urlopen", return_value=Resp()):
+            out = brain.chat_stream([{"role": "user", "content": "hi"}],
+                                    cfg, on_delta=got.append)
+        self.assertEqual(out["content"], "one-shot")
+        self.assertEqual(got, ["one-", "one-shot"])
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class LocalPresets(unittest.TestCase):
+    def test_uitars_preset_shape(self):
+        cfg = {"brain": {"default": "uitars:ui-tars-7b"},
+               "brain.uitars": {"kind": "openai_compat",
+                                "base_url": "http://127.0.0.1:8081/v1",
+                                "vision": "true", "tools": "false",
+                                "action_text": "true"}}
+        p = brain.provider(cfg)
+        self.assertEqual(p["name"], "uitars")
+        self.assertFalse(brain.supports_tools(cfg))
+        self.assertTrue(brain.action_text(cfg))
+        self.assertTrue(brain.supports_vision(cfg))
+
+    def test_llama_local_preset_shape(self):
+        cfg = {"brain": {"default": "llama_local:ornith"},
+               "brain.llama_local": {"kind": "openai_compat",
+                                     "base_url":
+                                     "http://127.0.0.1:8080/v1",
+                                     "vision": "true", "tools": "true"}}
+        p = brain.provider(cfg)
+        self.assertEqual(p["name"], "llama_local")
+        self.assertTrue(brain.supports_tools(cfg))
+        self.assertFalse(brain.action_text(cfg))
+
+    def test_default_config_mentions_presets(self):
+        from wisp import config
+        self.assertIn("brain.uitars", config.DEFAULT_CONFIG)
+        self.assertIn("action_text", config.DEFAULT_CONFIG)
+        self.assertIn("WISP_JEV_ENDPOINT", config.DEFAULT_CONFIG)

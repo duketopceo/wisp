@@ -21,7 +21,9 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
+from . import cancel as _cancel
 from . import config, speech
+from . import errors_codes as _errors
 
 JEV_QUESTIONS = {
     "route": {
@@ -71,18 +73,6 @@ JEV_QUESTIONS = {
             "browser_new_tab": "user wants a new browser tab",
         },
     },
-    "action": {
-        "type": "choice",
-        "instructions": "What should be done?",
-        "criteria": {
-            "launch": "open or start it",
-            "close": "close or quit it",
-            "type_text": "type some text",
-            "run_shell": "run a shell command",
-            "answer": "respond to the user in text — questions, chat, "
-                      "or anything that is not a desktop action",
-        },
-    },
     "risk": {
         "type": "score",
         "instructions": "0 read-only launch, 2 mutating",
@@ -93,12 +83,6 @@ JEV_QUESTIONS = {
         "instructions": "Which tool should run? Only relevant when the "
                         "route is 'tool'.",
         "criteria": {},  # filled from the registry in build_questions
-    },
-    "needs_screen": {
-        "type": "noul",
-        "instructions": "Does fulfilling this request require seeing what "
-                        "is on the screen — reading an error, describing a "
-                        "window, referencing visible content?",
     },
 }
 
@@ -189,6 +173,9 @@ def _record_finish(rec: dict, state=None, settled: bool = False
     return out
 
 
+_LEVEL_WINDOW = 20
+
+
 def _amplitude_sampler(seconds: int | None, state=None,
                        stop_ev=None) -> None:
     """Breathing darkness: sample mic RMS, publish level for the overlay."""
@@ -208,17 +195,18 @@ def _amplitude_sampler(seconds: int | None, state=None,
         proc = subprocess.Popen(
             arec,
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=hypr_env())
+        # one 100 ms window (20 samples at 200 Hz) per read: the level
+        # arrives at an even 10 Hz instead of a burst once a second
         while True:
             if stop_ev is not None and stop_ev.is_set():
                 break
-            chunk = proc.stdout.read(200)
-            if not chunk:
+            w = proc.stdout.read(_LEVEL_WINDOW)
+            if not w:
                 break
-            step = 20
-            for i in range(0, len(chunk) - step, step):
-                w = chunk[i:i + step]
-                rms = sum(abs(b - 128) for b in w) / (len(w) * 128)
-                publish(min(1.0, rms * 6))
+            if len(w) < _LEVEL_WINDOW:
+                continue  # short tail at EOF — next read ends the loop
+            rms = sum(abs(b - 128) for b in w) / (len(w) * 128)
+            publish(min(1.0, rms * 6))
         if proc.poll() is None:
             proc.kill()
         proc.wait(timeout=5)
@@ -255,8 +243,17 @@ def transcribe(wav: pathlib.Path, cfg: dict) -> str:
     prompt = vocab.build(cfg)
     if prompt:
         argv += ["--prompt", prompt]
-    r = subprocess.run(argv, capture_output=True, text=True, timeout=120)
+    r = _cancel.run(argv, capture_output=True, text=True, timeout=120)
     return " ".join(r.stdout.split())
+
+
+def _cap_prompt(prompt: str, limit: int = 896) -> str:
+    """Groq rejects /audio/transcriptions prompts over 896 chars —
+    trim at the last term boundary so vocab terms aren't clipped
+    mid-word."""
+    if len(prompt) <= limit:
+        return prompt
+    return prompt[:limit].rsplit(",", 1)[0]
 
 
 def _transcribe_openai(wav: pathlib.Path, stt: dict,
@@ -280,7 +277,7 @@ def _transcribe_openai(wav: pathlib.Path, stt: dict,
         f"--{boundary}".encode(),
         b'Content-Disposition: form-data; name="prompt"',
         b"",
-        vocab.build(cfg or {"stt": stt}).encode(),
+        _cap_prompt(vocab.build(cfg or {"stt": stt})).encode(),
         f"--{boundary}".encode(),
         b'Content-Disposition: form-data; name="file"; '
         b'filename="utterance.wav"',
@@ -290,12 +287,15 @@ def _transcribe_openai(wav: pathlib.Path, stt: dict,
         f"--{boundary}--".encode(),
         b"",
     ])
+    from . import brain as _brain
     req = urllib.request.Request(
         f"{base}/audio/transcriptions", data=body,
         headers={"Authorization": f"Bearer {key}",
                  "User-Agent": "wisp/1.0",
-                 "Content-Type": f"multipart/form-data; boundary={boundary}"})
-    with urllib.request.urlopen(req, timeout=60) as resp:
+                 **_brain.app_headers(base),
+                 "Content-Type":
+                 f"multipart/form-data; boundary={boundary}"})
+    with _cancel.urlopen(req, timeout=60) as resp:
         return " ".join(
             json.loads(resp.read()).get("text", "").split())
 
@@ -326,29 +326,171 @@ def active_window() -> dict:
     return platform.active_window()
 
 
+def _jev_is_local(url: str) -> bool:
+    import urllib.parse
+    return (urllib.parse.urlparse(url).hostname or "") in \
+        ("localhost", "127.0.0.1", "::1")
+
+
 def ask_jev(transcript: str, model: str, questions: dict,
-            context: str = "") -> dict:
+            context: str = "", cfg: dict | None = None) -> dict:
+    """Jev decisions call. A loopback endpoint (jev-shim) needs no
+    OPENROUTER_API_KEY; a remote one does. Failures raise WispError:
+    refused/reset (after one fast retry), HTTP errors and unparseable
+    replies are `jev_down`, a timeout is `timeout` (never retried)."""
+    from . import errors_codes as _ec
     state_txt = f"{context}\n\nThe user said: \"{transcript}\"" \
         if context else f'The user said: "{transcript}"'
     payload = {"model": model, "state": state_txt, "questions": questions}
+    headers = {"Content-Type": "application/json",
+               "HTTP-Referer": "https://github.com/duketopceo/wisp",
+               "X-Title": "Wisp"}
+    endpoint = config.JEV_ENDPOINT
+    if _jev_is_local(endpoint):
+        key = config.load_env_key("OPENROUTER_API_KEY")
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
+    else:
+        try:
+            headers["Authorization"] = f"Bearer {config.load_api_key()}"
+        except RuntimeError as e:
+            raise _ec.WispError("jev_down", str(e)) from None
     req = urllib.request.Request(
-        config.JEV_ENDPOINT, data=json.dumps(payload).encode(),
-        headers={
-            "Authorization": f"Bearer {config.load_api_key()}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/duketopceo/wisp",
-            "X-Title": "Wisp",
-        }, method="POST")
+        endpoint, data=json.dumps(payload).encode(), headers=headers,
+        method="POST")
+    for attempt in (1, 2):
+        try:
+            with _cancel.urlopen(req, timeout=30) as resp:
+                out = json.loads(resp.read())
+            _shadow_decision(transcript, state_txt, questions, cfg, out,
+                             model)
+            return out
+        except urllib.error.HTTPError as e:
+            raise _ec.WispError(
+                "jev_down",
+                f"Jev HTTP {e.code}: {e.read().decode()[:200]}") from None
+        except Exception as e:
+            if attempt == 1 and _ec.is_connection_failure(e):
+                time.sleep(0.05)
+                continue
+            raise _ec.classify(e, "jev_down") from None
+
+
+def _publish_error(state, exc: BaseException) -> None:
+    """End a turn in `error` with a closed-set code: `error` is the
+    human-safe string, `error_detail` the raw text (local only)."""
+    from . import errors_codes as _ec
+    err = _ec.classify(exc, "internal")
+    state.transition("error", error=err.public, error_code=err.code,
+                     error_detail=err.detail[:500])
+
+
+def _shadow_decision(transcript: str, state_txt: str, questions: dict,
+                     cfg: dict | None, primary: dict, model: str) -> None:
+    """Answer the same questions with a second decider, in the background.
+
+    Fire-and-forget on purpose: a turn must never wait on a shadow, and a
+    shadow failing must never look like a turn failing. Its only output is
+    an appended comparison record in shadow.jsonl, which exists so the two
+    models can be scored against human labels instead of against each
+    other.
+
+    The trace turn id is stamped here rather than in the worker: trace ids
+    live in a thread-local, and the worker runs on its own daemon thread
+    where that local is unset. `log_decision` writes the same id, which is
+    the only reliable way to pair a shadow record with the decision a
+    human later labels — joining on transcript+timestamp mis-pairs a
+    repeated utterance.
+    """
+    name = str(((cfg or {}).get("jev") or {}).get("shadow") or "").strip()
+    spec = config.SHADOW_PROVIDERS.get(name)
+    if not spec:
+        return
+    key = config.load_env_key(spec["key_env"])
+    if not key:
+        return                      # no key -> nothing to compare against
+    from . import trace as _trace
+    threading.Thread(
+        target=_shadow_worker,
+        args=(name, spec, key, transcript, state_txt, questions, primary,
+              model, _trace.current()), daemon=True).start()
+
+
+def _shadow_worker(name: str, spec: dict, key: str, transcript: str,
+                   state_txt: str, questions: dict, primary: dict,
+                   primary_model: str, turn: str) -> None:
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read())
-    except urllib.error.HTTPError as e:
-        raise RuntimeError(f"Jev HTTP {e.code}: {e.read().decode()[:200]}") \
-            from None
+        body = json.dumps({"model": spec["model"], "state": state_txt,
+                           "questions": questions}).encode()
+        req = urllib.request.Request(
+            spec["endpoint"], data=body,
+            headers={"Authorization": f"Bearer {key}",
+                     "Content-Type": "application/json",
+                     "User-Agent": "wisp/1.0"}, method="POST")
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            shadow = json.loads(resp.read())
+    except Exception:                                   # noqa: BLE001
+        return                      # best-effort by definition
+
+    rec = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "turn": turn,
+        "transcript": transcript,
+        "primary": {"provider": "jev", "model": primary_model,
+                    "answers": (primary or {}).get("answers", {})},
+        "shadow": {"provider": name, "model": spec["model"],
+                   "answers": (shadow or {}).get("answers", {}),
+                   "input_tokens":
+                       ((shadow or {}).get("usage") or {}).get("input_tokens")},
+        "agree": _shadow_agree(primary, shadow),
+    }
+    try:
+        config.SHADOW.parent.mkdir(parents=True, exist_ok=True)
+        with config.SHADOW.open("a") as f:
+            f.write(json.dumps(rec, separators=(",", ":")) + "\n")
+    except OSError:
+        pass
+
+
+def _shadow_agree(primary: dict, shadow: dict) -> dict:
+    """Per-question agreement between two deciders.
+
+    choice compares the picked option. noul is a probability, not a label,
+    so it agrees when the two land within 0.2 — the same call at any sane
+    threshold. score compares the rounded expected level, since 1.78 and
+    1.82 are the same answer.
+    """
+    out = {}
+    pa = (primary or {}).get("answers") or {}
+    sa = (shadow or {}).get("answers") or {}
+    for name in sorted(set(pa) | set(sa)):
+        p, s = pa.get(name) or {}, sa.get(name) or {}
+        # A question one side never answered is unmeasured, not a
+        # disagreement — conflating the two would score an omission as a
+        # wrong route and quietly deflate the agreement rate.
+        if "choice" in p and "choice" in s:
+            pv, sv = p.get("choice"), s.get("choice")
+        elif "noul" in p and "noul" in s:
+            pv, sv = p.get("noul"), s.get("noul")
+        elif "score" in p and "score" in s:
+            try:
+                out[name] = round(float(p["score"])) == round(float(s["score"]))
+            except (TypeError, ValueError):
+                out[name] = None
+            continue
+        else:
+            out[name] = None
+            continue
+        if isinstance(pv, float) and isinstance(sv, float):
+            out[name] = abs(pv - sv) <= 0.2
+        else:
+            out[name] = pv == sv
+    return out
 
 
 def ask_chat(transcript: str, cfg: dict, session_text: str = "",
-             image_b64: str | None = None) -> str:
+             image_b64: str | None = None, on_delta=None,
+             meta: dict | None = None) -> str:
     """Real answer via the configured brain provider ([brain] default).
     image_b64 attaches a screenshot — dropped when the provider lacks
     vision support (U6 capability gating)."""
@@ -387,7 +529,15 @@ def ask_chat(transcript: str, cfg: dict, session_text: str = "",
         messages.append({"role": "system",
                          "content": f"Recent conversation:\n{session_text}"})
     messages.append({"role": "user", "content": user_content})
-    return brain.chat(messages, cfg, timeout=30)["content"].strip()
+    if on_delta is not None:
+        out = brain.chat_stream(messages, cfg, on_delta=on_delta,
+                                timeout=30)
+    else:
+        out = brain.chat(messages, cfg, timeout=30)
+    if meta is not None:
+        meta.update(provider=out.get("provider"),
+                    fallback_from=out.get("fallback_from"))
+    return out["content"].strip()
 
 
 def capture_screen() -> pathlib.Path | None:
@@ -400,21 +550,20 @@ def capture_screen() -> pathlib.Path | None:
         return None
     try:
         config.RUN_DIR.mkdir(parents=True, exist_ok=True)
-        r = subprocess.run(cmd, capture_output=True,
-                           timeout=10, env=hypr_env())
+        r = _cancel.run(cmd, capture_output=True,
+                        timeout=10, env=hypr_env())
         return out if r.returncode == 0 and out.exists() else None
     except Exception:
         return None
 
 
 def screen_b64(cfg: dict, answers: dict) -> str | None:
-    """Attach a screenshot when Jev flags needs_screen or the answer route
-    fires — unless screenshots are disabled in config."""
+    """Attach a screenshot on the answer route — the act loop already
+    gets the trigger-time capture via initial_image. Skipped when
+    screenshots are disabled in config."""
     if cfg.get("agent", {}).get("screenshots", "true") != "true":
         return None
-    needs = answers.get("needs_screen", {}).get("noul", 0)
-    route = answers.get("route", {}).get("choice")
-    if needs < 0.7 and route != "answer":
+    if answers.get("route", {}).get("choice") != "answer":
         return None
     png = capture_screen()
     if not png:
@@ -446,6 +595,17 @@ def dictation_text(text: str) -> str:
     return _DICTATE_PREFIX.sub("", text, count=1).strip() or text
 
 
+def _publish_delta(state, partial: str) -> None:
+    """Streamed answer text → state, coalesced by the bus when there is
+    one; plain handles (tests, standalone State) just transition."""
+    from . import state as _state
+    if isinstance(state, _state.TurnState):
+        state._bus.publish(state.turn_id, status="speaking",
+                           answer=partial, coalesce=True)
+    else:
+        state.transition("speaking", answer=partial)
+
+
 def _end_speaking(state):
     """Flip speaking → done when TTS exits (only if nothing moved on)."""
     def cb():
@@ -456,7 +616,7 @@ def _end_speaking(state):
 
 def execute(answers: dict, cfg: dict, harness: dict | None = None,
             detail: str = "", state=None, confirm=None,
-            initial_image: str | None = None) -> str:
+            initial_image: str | None = None, interrupted=None) -> str:
     """Route-aware dispatch. Falls back to the legacy action-based path
     when Jev's response lacks the route question. Jev only answers typed
     questions (noul/choice/score) — free-text args come from the
@@ -480,7 +640,8 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
     gated = route not in ("launch", "answer", "dictation") and \
         action not in ("launch", "answer")
     if gated and (tool_choice in ("launch", "answer")
-                  or tools.risk_of(tool_choice) == "safe"):
+                  or tools.risk_of(tool_choice)
+                  in ("safe", "interactive")):
         gated = False
     if gated and risk > threshold:
         return f"BLOCKED (risk={risk:.2f} > {threshold})"
@@ -491,7 +652,8 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
         from . import act
         return act.run_act_loop(detail, cfg, state=state,
                                 harness=harness, confirm=confirm,
-                                initial_image=initial_image)
+                                initial_image=initial_image,
+                                interrupted=interrupted)
     if route == "dictation":
         # type the spoken words; a leading dictate keyword is a command
         # prefix, not content — strip it. A correction prefix
@@ -515,7 +677,8 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
                   "body concise and procedural. Request: " + detail)
         return act.run_act_loop(prompt, cfg, state=state,
                                 harness=harness, confirm=confirm,
-                                initial_image=initial_image)
+                                initial_image=initial_image,
+                                interrupted=interrupted)
     if route == "tool":
         tool_name = answers.get("tool", {}).get("choice", "")
         if tool_name == "launch":
@@ -534,7 +697,8 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
             from . import act
             return act.run_act_loop(detail, cfg, state=state,
                                     harness=harness, confirm=confirm,
-                                    initial_image=initial_image)
+                                    initial_image=initial_image,
+                                    interrupted=interrupted)
         if tier == "mutating" and risk > threshold:
             return f"BLOCKED (tool {tool_name!r} needs confirmation)"
         if tier == "safe" or risk <= threshold:
@@ -650,46 +814,120 @@ def apply_choice(answers: dict, picked: str) -> dict:
     if kind == "app":
         corrected["app"]["choice"] = value
     else:
-        corrected["action"]["choice"] = value
+        corrected.setdefault("action", {})["choice"] = value
     corrected["corrected_by_user"] = True
     return corrected
 
 
 def run_listen(cfg: dict, state, wait_for_choice=None,
-               wav: pathlib.Path | None = None) -> int:
+               wav: pathlib.Path | None = None,
+               interrupted=None, spans=None, turn_id=None,
+               cancel=None) -> int:
     """One push-to-talk cycle inside the daemon.
+
+    `cancel` is the turn's CancelToken (U9; the daemon's `interrupt`
+    sets it). With only `interrupted` (a callable), a watcher bridges it
+    to a token within ~20 ms. Either way a cancelled turn closes its
+    sockets, kills its children and ends `idle` with
+    `error_code = cancelled`.
 
     `wav` set → toggle mode: the daemon already captured audio between
     two presses, so skip recording. `wait_for_choice(timeout)` -> picked
     label or None; injected by the daemon so ambiguous turns resolve via
     IPC/widget clicks. With no chooser wired, low-confidence turns cancel
-    rather than guess.
+    rather than guess. `spans` (trace.Spans) carries the press/release
+    timestamps from the daemon; absent, spans start at this call.
+    `state` may be a StateBus: the turn is then `turn_id` (adopted from
+    the daemon's first press) or a fresh one, and every write goes
+    through the bus tagged with it.
     """
+    token = cancel or _cancel.CancelToken()
+    stop_watch = threading.Event()
+    if interrupted is not None and cancel is None:
+        def watch():
+            while not stop_watch.is_set():
+                if interrupted():
+                    token.cancel()
+                    return
+                stop_watch.wait(0.02)
+        threading.Thread(target=watch, daemon=True).start()
+    try:
+        with _cancel.bind(token):
+            return _listen_turn(cfg, state, wait_for_choice, wav,
+                                interrupted, spans, turn_id, token)
+    finally:
+        stop_watch.set()
+
+
+def _ask_prompt(state, wait_for_choice, token, options: list,
+                timeout: float, turn: str, kind: str):
+    """Publish a prompt with a fresh prompt_id, wait for the answer and
+    return the pick — or None when none came, the turn was cancelled or
+    the pick was not one of the offered options (`choice_rejected`)."""
+    from . import trace as _trace
+    pid = _cancel.new_prompt_id()
+    state.transition("awaiting_choice", choices=list(options),
+                     prompt_id=pid)
+    try:
+        pick = wait_for_choice(timeout, prompt_id=pid,
+                               options=list(options))
+    finally:
+        if not token.cancelled:
+            state.transition("acting", choices=[], prompt_id="")
+    if pick and pick not in options:
+        _trace.emit(turn, "choice_rejected", "act",
+                    {"kind": kind, "pick": pick, "prompt_id": pid,
+                     "offered": list(options)})
+        return None
+    return pick
+
+
+def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
+                 turn_id, token) -> int:
     secs = int(cfg.get("audio", {}).get("seconds", "60"))
     model = cfg.get("agent", {}).get("model", "typesafe/jev-1.13")
-    t0 = time.monotonic()
-    timing = {}
+    result = ""
+    speaker = None
     from . import trace as _trace
-    turn = _trace.new_turn()
+    sp = spans or _trace.Spans()
+    from . import state as _state
+    if isinstance(state, _state.StateBus):
+        turn = turn_id or state.begin_turn()
+        _trace.set_turn(turn)
+        state = state.turn(turn)
+    else:
+        turn = _trace.new_turn()
+    sp.bind(turn)
     _trace.emit(turn, "listen_start", "lifecycle",
                 {"seconds": secs, "model": model})
     try:
+        token.check()
         if wav is None:
             state.transition("listening", transcript="", result="",
-                             answer="", choices=[], points=[], error="")
+                             answer="", choices=[], points=[], error="",
+                             error_code="", error_detail="")
+            sp.record("press", sp.t0)
+            rec_start = sp.now()
             wav = record(secs, state)
-        timing["record_ms"] = round((time.monotonic() - t0) * 1000)
+            sp.record("record", rec_start)
+            sp.set_release()
+        token.check()
+        rec_ms = sp.ms.get("record", 0)
         _trace.emit(turn, "record", "stt",
                     {"wav": str(wav),
                      "bytes": wav.stat().st_size if wav.exists() else 0},
-                    timing["record_ms"])
+                    rec_ms)
         state.transition("transcribing")
-        text = transcribe(wav, cfg)
-        timing["stt_ms"] = round((time.monotonic() - t0) * 1000
-                                 - timing["record_ms"])
+        sp.record("release", sp.rel0)
+        try:
+            text = transcribe(wav, cfg)
+        except Exception as e:
+            raise _errors.classify(e, "stt_down") from e
+        token.check()
+        sp.record("stt", sp.rel0)
         _trace.emit(turn, "transcribe", "stt",
                     {"provider": cfg.get("stt", {}).get("provider", "local"),
-                     "text": text}, timing["stt_ms"])
+                     "text": text}, sp.ms["stt"])
         state.transition("deciding", transcript=text)
         if not text or "[BLANK" in text:
             state.transition("done", result="heard nothing")
@@ -698,7 +936,8 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
         from .tools import adapters
         harness = {"apps": adapters.best_catalog(),
                    "context": adapters.context()}
-        win = active_window()
+        with sp.timed("hyprctl"):
+            win = active_window()
         if state:
             state.transition("deciding", transcript=text,
                              focus={"app": win.get("class", ""),
@@ -712,7 +951,8 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
         shot_png = None
         shot_b64 = None
         if cfg.get("agent", {}).get("screenshots", "true") == "true":
-            shot_png = capture_screen()
+            with sp.timed("screenshot"):
+                shot_png = capture_screen()
             if shot_png:
                 try:
                     shot_b64 = base64.b64encode(
@@ -724,7 +964,9 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
         # goal memory — continuations ("it's open, just hit cmd-t") join
         # the open goal instead of starting a fresh act
         from . import goals as _goals
-        goal, joined = _goals.join_or_new(text, win.get("class", ""), cfg)
+        with sp.timed("goal"):
+            goal, joined = _goals.join_or_new(text, win.get("class", ""),
+                                              cfg)
         context += "\n" + _goals.context_text()
         _trace.emit(turn, "goal", "thought",
                     {"joined": joined, "goal": goal["text"][:160]})
@@ -734,7 +976,8 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
         if session_text:
             context += f"\nRecent conversation:\n{session_text}"
         from . import memory
-        block = memory.context_block(text)
+        with sp.timed("memory"):
+            block = memory.context_block(text)
         if block:
             context += f"\n{block}"
         # refinement loop: a labeled-bad last turn or a correction cue
@@ -756,6 +999,8 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
                         {"via": corr["via"], "prior": corr["prior_task"]})
         # router: jev (default) | chat (transcript straight to answer
         # brain) | off (always clarify via choices) — Rust parity
+        sp.record("context", sp.mark_ns("stt"))
+        route_start = sp.now()
         router = cfg.get("brain", {}).get("router", "jev")
         agent_m = re.match(r"^\s*wisp\s+agent[:,.\s-]+(.*)$", text,
                            re.IGNORECASE)
@@ -765,20 +1010,21 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
             detail = agent_m.group(1).strip()
             resp = {"answers": {"route": {"choice": "act"}}}
         elif router == "chat":
-            resp = {"answers": {"route": {"choice": "answer"},
-                                "needs_screen": {"noul": 1.0}}}
+            resp = {"answers": {"route": {"choice": "answer"}}}
         elif router == "off":
             resp = {"answers": {"route": {"choice": "clarify"}}}
         else:
             resp = ask_jev(text, model, build_questions(harness),
-                           context=context)
-        timing["jev_ms"] = round((time.monotonic() - t0) * 1000
-                                 - timing["record_ms"] - timing["stt_ms"])
+                           context=context, cfg=cfg)
+        token.check()
+        sp.record("route", route_start)
+        sp.arm("first_token", sp.mark_ns("route"))
+        sp.arm("first_step", sp.mark_ns("route"))
         answers = resp.get("answers", {})
         _trace.emit(turn, "decision", "thought",
                     {"model": model, "answers": answers,
                      "latency_ms": resp.get("latency_ms")},
-                    timing["jev_ms"])
+                    sp.ms["context"] + sp.ms["route"])
         # transcript rescue: "open discord" with app=none shouldn't
         # clarify-prompt — the app name is right there in the words
         if answers.get("app", {}).get("choice", "none") in ("none", "", None):
@@ -800,9 +1046,10 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
         if low_conf:
             labels = ambiguous_choices(answers, cfg)
             if wait_for_choice:
-                state.transition("awaiting_choice", choices=labels)
-                picked = wait_for_choice(60) or auto_pick(answers)
-                state.transition("acting", choices=[])
+                picked = _ask_prompt(state, wait_for_choice, token,
+                                     labels, 60, turn, "clarify") \
+                    or auto_pick(answers)
+                token.check()
                 if picked:
                     corrected = apply_choice(answers, picked)
                     from . import learn, recall as _recall
@@ -826,20 +1073,23 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
         confirm = None
         if wait_for_choice:
             def confirm(prompt: str) -> bool:
-                state.transition("awaiting_choice",
-                                 choices=[f"{prompt} — yes", "no"])
-                pick = wait_for_choice(30)
-                state.transition("acting", choices=[])
+                pick = _ask_prompt(state, wait_for_choice, token,
+                                   [f"{prompt} — yes", "no"], 30, turn,
+                                   "confirm")
+                token.check()
                 return bool(pick) and "yes" in pick
         from . import brain as _brain
         act_img = shot_b64 if shot_b64 and \
             _brain.supports_vision(cfg) else None
         result = execute(answers, cfg, harness, detail=detail,
                          state=state, confirm=confirm,
-                         initial_image=act_img)
+                         initial_image=act_img, interrupted=interrupted)
         _trace.emit(turn, "dispatch", "act",
                     {"route": answers.get("route", {}).get("choice"),
                      "result": result})
+        if result.startswith("INTERRUPTED"):
+            token.cancel()   # `interrupted()` fired before the watcher
+        token.check()
         if corr:
             _learn.record_retry(corr["prior_ref"], result)
         reply = ""
@@ -857,44 +1107,86 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
             session.append_turn(text, route="act", reply=q,
                                 result=result)
             notify(result)
+            sp.record("done", sp.rel0)
             log_decision({"ts": datetime.now(timezone.utc).isoformat(),
+                          "turn": turn,
                           "transcript": text, "answers": answers,
-                          "result": result, "timing_ms": timing,
+                          "result": result,
+                          "timing_ms": sp.legacy_timing(),
                           "corrected": False})
             return 0
         if result == "ANSWERED":
             pts = []
+            speaker = speech.SentenceSpeaker(cfg, token=token)
+
+            def _delta(acc):
+                # stream the answer into state.json as it arrives — the
+                # cursor bubble renders it live. Rate-limited by the
+                # bus (coalesced, latest wins); incomplete
+                # trailing [POINT…/markdown-ish brackets hidden so the
+                # bubble never flashes raw tags.
+                sp.fire("first_token")
+                if state is None or token.cancelled:
+                    return  # a cancelled turn publishes no more deltas
+                partial = re.sub(r"\[[A-Za-z]*:?[^\]]*$", "", acc)
+                _publish_delta(state, partial)
+                # speak each completed sentence while the rest streams
+                from . import points as _pts
+                speaker.feed(_pts.extract(partial)[0])
+
             try:
                 _t = time.monotonic()
+                _meta: dict = {}
                 reply = ask_chat(text, cfg, session_text,
-                                 image_b64=shot_b64)
+                                 image_b64=shot_b64,
+                                 on_delta=_delta if state else None,
+                                 meta=_meta)
+                sp.fire("first_token")  # non-streaming brains
                 _trace.emit(turn, "brain_call", "brain",
                             {"endpoint": "chat/completions",
                              "model": cfg.get("agent", {})
                              .get("answer_model", ""),
+                             "provider": _meta.get("provider"),
+                             "fallback_from": _meta.get("fallback_from"),
                              "reply": reply},
                             round((time.monotonic() - _t) * 1000))
             except Exception as e:
-                result = f"ANSWER_FAILED ({e})"
-                reply = answer_text(text)
+                # every brain entry failed (brain_down), or a timeout /
+                # bug: the turn ends in a typed error rather than a
+                # canned answer the user would mistake for a real one
+                raise _errors.classify(e, "brain_down") from e
             if reply:
                 from . import points as _points
                 reply, raw = _points.extract(reply)
                 if raw:
-                    pts = _points.to_logical(raw, _points.monitors())
+                    _mons = _points.monitors()
+                    if _points.img_space_is_logical():
+                        pts = _points.canvas_to_logical(raw, _mons)
+                    else:
+                        pts = _points.to_logical(raw, _mons)
             if pts:
                 _trace.emit(turn, "points", "act", {"points": pts})
+            token.check()
             state.transition("speaking", result=result, answer=reply,
                              points=pts)
             _t = time.monotonic()
-            proc = speech.speak(reply, cfg)
+            tts_start = sp.now()
+            if speaker.started:
+                # sentences already went out as they completed; queue
+                # the unspoken tail and flip to done when the last ends
+                speaker.finish(reply, on_done=_end_speaking(state))
+                proc = True
+            else:
+                proc = speech.speak(reply, cfg)
+                if proc is not None:
+                    speech.on_exit(proc, _end_speaking(state))
+            sp.record("tts_start", tts_start)
             _trace.emit(turn, "speak", "tts",
                         {"cmd": cfg.get("voice", {}).get("cmd", ""),
-                         "spawned": proc is not None},
+                         "spawned": proc is not None,
+                         "streamed": speaker.started},
                         round((time.monotonic() - _t) * 1000))
-            if proc is not None:
-                speech.on_exit(proc, _end_speaking(state))
-            else:
+            if proc is None:
                 state.transition("done")
         else:
             state.transition("done", result=result)
@@ -906,20 +1198,43 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
         except Exception:
             pass
         notify(result)
-        timing["act_ms"] = round((time.monotonic() - t0) * 1000)
+        sp.record("done", sp.rel0)
         log_decision({"ts": datetime.now(timezone.utc).isoformat(),
+                      "turn": turn,
                       "transcript": text, "answers": answers, "result": result,
-                      "timing_ms": timing,
+                      "timing_ms": sp.legacy_timing(),
                       "corrected": bool(answers.get("corrected_by_user"))})
         return 0
-    except Exception as e:
-        _trace.emit(turn, "error", "error", {"error": str(e)})
-        state.transition("error", error=str(e))
+    except _cancel.Cancelled:
+        # stop works at every stage: sockets are closed and children
+        # killed by the token; kill any speech and settle on idle
+        if speaker is not None:
+            speaker.stop()
+        speech.stop()
+        _trace.emit(turn, "cancelled", "lifecycle", {"result": result})
+        fields = {"error": "", "error_code": "cancelled",
+                  "error_detail": "", "choices": [], "prompt_id": ""}
+        if result:
+            fields["result"] = result
+        state.transition("idle", **fields)
         log_decision({"ts": datetime.now(timezone.utc).isoformat(),
-                      "result": f"ERROR ({e})", "timing_ms": timing})
-        notify(f"error: {e}")
-        print(f"error: {e}", file=sys.stderr)
+                      "result": "CANCELLED (user)",
+                      "timing_ms": sp.legacy_timing()})
+        return 0
+    except Exception as e:
+        if speaker is not None:
+            speaker.stop()
+        err = _errors.classify(e, "internal")
+        _trace.emit(turn, "error", "error",
+                    {"error": str(e), "error_code": err.code})
+        _publish_error(state, err)
+        log_decision({"ts": datetime.now(timezone.utc).isoformat(),
+                      "result": f"ERROR ({e})",
+                      "timing_ms": sp.legacy_timing()})
+        notify(f"error: {err.public}")
+        print(f"error: {err.code}: {e}", file=sys.stderr)
         return 1
     finally:
+        sp.close()
         if state:
             state.set_level(0.0)

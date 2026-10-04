@@ -1,7 +1,7 @@
 """Sense layer — cheap, passive activity capture for the proactive loop.
 
 Runs as one daemon thread on a slow tick. Sources are deliberately free
-and local: `hyprctl activewindow` deltas and `dayflow today --json`
+and local: Hyprland active-window deltas and `dayflow today --json`
 block tails (dayflow already pays the screenshot/summarize cost — we
 read its journal, we don't re-observe the screen). Everything lands in
 ~/.local/share/wisp/activity.jsonl, rotated past _MAX_BYTES.
@@ -43,7 +43,7 @@ def _append(rec: dict, path=ACTIVITY_FILE) -> None:
 
 
 def _window() -> dict:
-    """Focused window via the platform seam — hyprctl on Linux, System
+    """Focused window via the platform seam — the Hyprland socket on Linux, System
     Events on macOS, Win32 on Windows. Shelling hyprctl directly here
     meant macOS recorded nothing, silently, forever."""
     try:

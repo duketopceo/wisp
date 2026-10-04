@@ -30,8 +30,11 @@ Item {
   property string error: ""
   property string lastAnswer: ""
   property bool userPinned: false
+  property int expandedAt: 0  // Date.now() when the card last opened
   property var steps: []
   property var guide: null      // {x,y,label,seq,mode} — ghost cursor target
+  property bool bubbleVisible: false
+  property string goal: ""
   property real cursorX: -1     // real pointer, polled while busy
   property real cursorY: -1
 
@@ -175,6 +178,12 @@ Item {
         var newAnswer = s.answer || "";
         var newChoices = s.choices || [];
         var newError = s.error || "";
+        // speech bubble at the cursor — Clicky-style: the answer lives
+        // where your eyes already are, not in a corner card
+        if (newAnswer.length > 0 && newAnswer !== root.lastAnswer) {
+          root.bubbleVisible = true;
+          bubbleTimer.restart();
+        }
         root.status = newStatus;
         root.transcript = s.transcript || "";
         root.answer = newAnswer;
@@ -191,11 +200,13 @@ Item {
         root.error = newError;
         root.steps = s.steps || [];
         root.guide = s.guide || null;
+        root.goal = s.goal || "";
         // Surfacing: the card pops while Wisp works (status + step log),
         // on an answer, a question, or an error — then auto-collapses.
         // Clicking the orb pins it open; auto-hide resumes on done.
         if (root.busy || newStatus === "awaiting_choice"
             || newStatus === "suggestion") {
+          if (!root.expanded) root.expandedAt = Date.now();
           root.expanded = true;
           root.userPinned = false;
           autoHide.stop();
@@ -204,6 +215,7 @@ Item {
               (newAnswer.length > 0 && newAnswer !== root.lastAnswer) ||
               newError.length > 0) {
             root.lastAnswer = newAnswer;
+            if (!root.expanded) root.expandedAt = Date.now();
             root.expanded = true;
             root.userPinned = false;
           }
@@ -232,6 +244,29 @@ Item {
     onTriggered: if (!root.userPinned) root.expanded = false
   }
 
+  // Compress watchdog — the card must never hang open. Busy states
+  // (listening/acting/awaiting_choice) get 120s before forced
+  // collapse: a stuck daemon status can't pin the UI forever. A
+  // user-pinned card gets 180s idle before it compresses too — a pin
+  // is a peek, not a window.
+  Timer {
+    id: compressWatch
+    interval: 2000
+    repeat: true
+    running: root.expanded
+    onTriggered: {
+      if (!root.expanded || root.expandedAt === 0) return;
+      var age = Date.now() - root.expandedAt;
+      var cap = root.userPinned ? 180000 : 120000;
+      if (!root.busy && root.status !== "awaiting_choice"
+          && !root.userPinned) return;  // autoHide owns idle collapse
+      if (age > cap) {
+        root.userPinned = false;
+        root.expanded = false;
+      }
+    }
+  }
+
   Timer {
     interval: 500
     running: true
@@ -255,13 +290,24 @@ Item {
     command: [root.wispd, "label", "correct"]
   }
 
+  Process {
+    id: interruptProc
+    command: [root.wispd, "interrupt"]
+  }
+
   // Real-cursor ring: poll hyprctl cursorpos while Wisp works (~11 Hz).
   // Cheap socket query; only runs during busy states — no always-on
   // tail-following.
   Timer {
+    id: bubbleTimer
+    interval: 9000
+    onTriggered: root.bubbleVisible = false
+  }
+
+  Timer {
     id: cursorPoll
     interval: 90
-    running: root.busy
+    running: root.busy || root.bubbleVisible
     repeat: true
     onTriggered: cursorProc.running = true
   }
@@ -285,6 +331,7 @@ Item {
     id: pointsWin
     visible: (root.pointsVisible && root.points.length > 0)
              || root.guide !== null
+             || root.bubbleVisible
              || (root.busy && root.cursorX >= 0)
     color: "transparent"
     anchors { left: true; right: true; top: true; bottom: true }
@@ -315,6 +362,44 @@ Item {
         width: 6; height: 6; radius: 3
         color: theme.guide
         opacity: root.guide !== null ? 1.0 : 0.7
+      }
+    }
+
+    // Speech bubble at the cursor — the Clicky pattern: the reply
+    // appears where the user is already looking, then fades. Glass
+    // card, max ~420px, clamps inside the screen.
+    Item {
+      id: bubble
+      visible: root.bubbleVisible && root.answer.length > 0
+      property int bx: Math.max(16, Math.min(parent.width - 440,
+                                           root.cursorX + 24))
+      property int by: Math.max(16, Math.min(parent.height - 160,
+                                             root.cursorY - 40))
+      x: bx; y: by
+      width: 0; height: 0
+      opacity: visible ? 1 : 0
+      Behavior on opacity { NumberAnimation { duration: 180 } }
+
+      Rectangle {
+        width: Math.min(420, btxt.implicitWidth + 28)
+        height: Math.min(150, btxt.implicitHeight + 24)
+        radius: 12
+        color: Qt.rgba(theme.canvas.r, theme.canvas.g,
+                       theme.canvas.b, 0.88)
+        border.color: theme.hairline
+        border.width: 1
+
+        Text {
+          id: btxt
+          x: 14; y: 12
+          width: 392
+          wrapMode: Text.WordWrap
+          text: root.answer
+          color: theme.ink
+          font.pixelSize: 13
+          maximumLineCount: 7
+          elide: Text.ElideRight
+        }
       }
     }
 
@@ -423,6 +508,138 @@ Item {
               text: modelData.label || ""
               color: theme.ink
               font.pixelSize: 11
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // ── listening pill ───────────────────────────────────────────────
+  // Spotlight-style bottom-center pill shown while a turn is in
+  // flight (listening → transcribing → deciding → acting → choice).
+  // Click-through shell; the choice chips are the only live pixels.
+  // (WispOverlay.qml was never instantiated — the manifest's overlay
+  // entry point is this file, so the pill lives here.)
+  readonly property bool pillActive:
+    ["listening", "transcribing", "deciding", "acting",
+     "awaiting_choice"].indexOf(status) >= 0
+
+  PanelWindow {
+    id: pillWin
+    visible: root.pillActive
+    color: "transparent"
+    anchors { left: true; right: true; bottom: true }
+    implicitHeight: pill.implicitHeight + 120
+    exclusionMode: ExclusionMode.Ignore
+    // input region = the pill only — clicks pass through everywhere
+    // else, chips stay clickable
+    mask: Region { item: pill }
+    WlrLayershell.namespace: "wisp-pill"
+    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+
+    Rectangle {
+      id: pill
+      anchors {
+        bottom: parent.bottom
+        bottomMargin: 96
+        horizontalCenter: parent.horizontalCenter
+      }
+      width: Math.min(pillWin.width * 0.6, pillCol.implicitWidth + 36)
+      height: pillCol.implicitHeight + 22
+      radius: height / 2
+      color: Qt.rgba(theme.canvas.r, theme.canvas.g, theme.canvas.b,
+                     0.92)
+      border.color: Qt.rgba(theme.accent.r, theme.accent.g,
+                            theme.accent.b, 0.35 + root.level * 0.4)
+      border.width: 1
+      opacity: pillWin.visible ? 1 : 0
+      scale: pillWin.visible ? 1 : 0.96
+      Behavior on opacity { NumberAnimation { duration: 140 } }
+      Behavior on scale { NumberAnimation { duration: 140
+                                            easing.type: Easing.OutCubic } }
+
+      Column {
+        id: pillCol
+        anchors.centerIn: parent
+        spacing: 8
+
+        Row {
+          anchors.horizontalCenter: parent.horizontalCenter
+          spacing: 10
+
+          // mic arc — three bars driven by level
+          Row {
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 2
+            height: 14
+            Repeater {
+              model: 3
+              Rectangle {
+                anchors.bottom: parent.bottom
+                width: 3; radius: 1.5
+                height: 4 + root.level * (8 + index * 4)
+                color: theme.accent
+                Behavior on height { NumberAnimation { duration: 80 } }
+              }
+            }
+          }
+
+          Text {
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.status === "awaiting_choice"
+                  ? "which one?" : root.statusWord()
+            color: theme.accent
+            font.pixelSize: 13
+            font.bold: true
+          }
+
+          Text {
+            visible: root.transcript.length > 0
+            anchors.verticalCenter: parent.verticalCenter
+            text: {
+              var t = root.transcript;
+              return t.length > 80 ? "…" + t.slice(-78) : t;
+            }
+            color: theme.ink
+            font.pixelSize: 13
+            elide: Text.ElideLeft
+            width: Math.min(implicitWidth, 420)
+          }
+        }
+
+        Row {
+          visible: root.choices.length > 0
+          anchors.horizontalCenter: parent.horizontalCenter
+          spacing: 6
+          Repeater {
+            model: root.choices
+            delegate: Rectangle {
+              width: chipLbl.implicitWidth + 16
+              height: chipLbl.implicitHeight + 8
+              radius: height / 2
+              color: chipMa.containsMouse
+                     ? Qt.rgba(theme.accent.r, theme.accent.g,
+                               theme.accent.b, 0.3)
+                     : Qt.rgba(theme.ink.r, theme.ink.g,
+                               theme.ink.b, 0.10)
+              border.color: Qt.rgba(theme.accent.r, theme.accent.g,
+                                    theme.accent.b, 0.5)
+              Text {
+                id: chipLbl
+                anchors.centerIn: parent
+                text: modelData
+                color: theme.ink
+                font.pixelSize: 12
+              }
+              MouseArea {
+                id: chipMa
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.sendChoice(modelData)
+              }
             }
           }
         }
@@ -580,6 +797,7 @@ Item {
           anchors.fill: parent
           onClicked: {
             root.expanded = true;
+            root.expandedAt = Date.now();
             root.userPinned = true;
             autoHide.stop();
           }
@@ -646,6 +864,16 @@ Item {
           }
 
           Text {
+            visible: root.goal.length > 0
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "goal: " + root.goal
+            color: theme.guide
+            font.pixelSize: 11
+            font.bold: true
+          }
+
+          Text {
             visible: root.transcript.length > 0
             width: parent.width
             wrapMode: Text.Wrap
@@ -665,10 +893,30 @@ Item {
               Text {
                 width: parent.width
                 text: "› " + modelData
-                color: theme.faint
+                color: index === root.steps.length - 1
+                       ? theme.ink : theme.faint
                 font.pixelSize: 10
                 font.family: "monospace"
                 elide: Text.ElideRight
+              }
+            }
+          }
+
+          // cancel the in-flight turn — interrupt, not daemon stop
+          Text {
+            visible: root.busy
+            text: "■ stop"
+            color: stopMa.containsMouse ? theme.err : theme.muted
+            font.pixelSize: 11
+            font.bold: true
+            MouseArea {
+              id: stopMa
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: {
+                interruptProc.running = false
+                interruptProc.running = true
               }
             }
           }
