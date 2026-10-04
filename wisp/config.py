@@ -83,8 +83,10 @@ model = "openrouter:google/gemini-2.5-flash"
 # drive = inject real clicks via the detected backend.
 # auto  = drive when a backend exists, guide otherwise.
 mode = "guide"
-# auto | ydotool | wlrctl | none — auto probes PATH (ydotool needs
-# ydotoold + /dev/uinput; wlrctl needs wlroots virtual-pointer).
+# auto | cua | ydotool | wlrctl | none — auto prefers a live cua-driver
+# daemon (background virtual-pointer clicks on native Wayland — needs
+# the cua-hyprland plugin + CUA_DRIVER_RS_ENABLE_WAYLAND=1 on the
+# daemon), then hyprcursor/ydotool, then wlrctl.
 backend = "auto"
 
 [traj]
