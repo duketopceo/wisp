@@ -506,8 +506,21 @@ def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
         import re as _re
         m = _re.match(r"^\s*(-?\d+)\s*,\s*(-?\d+)", arg or "")
         if not m:
-            return "FAIL (arg must be 'x,y')"
-        cx, cy = int(m.group(1)), int(m.group(2))
+            # element-name args resolve off the last shot's legend —
+            # 'click tab-nodes' shouldn't burn a step on a re-observe
+            legend = (cfg or {}).get("screen", {}).get("dom_els") or []
+            want = (arg or "").strip().strip("'\"")
+            for e in legend:
+                eid, _, coords = e.partition("@")
+                if eid == want or want in eid:
+                    mm = _re.match(r"\((\d+),(\d+)\)", coords)
+                    if mm:
+                        cx, cy = int(mm.group(1)), int(mm.group(2))
+                        break
+            else:
+                return "FAIL (arg must be 'x,y' or a known element id)"
+        else:
+            cx, cy = int(m.group(1)), int(m.group(2))
         if not do_click:
             return f"MOVED({cx},{cy})"
         from . import mcpclient
@@ -517,7 +530,12 @@ def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
                 "el.dispatchEvent(new MouseEvent('click',"
                 "{clientX:%d,clientY:%d,bubbles:true}));"
                 "try{el.focus()}catch(e){}"
-                "return 'hit:'+(el.id||el.tagName)"
+                "var r='hit:'+(el.id||el.tagName);"
+                "if(el.tagName==='SELECT'){"
+                "var o=[];for(var i=0;i<el.options.length;i++)"
+                "o.push((i===el.selectedIndex?'*':'')+el.options[i].text);"
+                "r+=' options['+o.join('|')+'] — use key down/up + enter';}"
+                "return r"
                 % (cx, cy, cx, cy))
         out = mcpclient.call(
             'browseros evaluate '
