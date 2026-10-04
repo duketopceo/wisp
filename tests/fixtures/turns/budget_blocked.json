@@ -1,0 +1,59 @@
+{
+  "description": "[budget] daily_usd = 0 with gate_primary = true and a paid primary brain: the cap gates the primary too, the request is never made and the turn ends in error with error_code budget_exceeded (W14).",
+  "audio": "ask.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "what time is it"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "status": 200,
+      "responses": [
+        {
+          "content": "should never be spoken",
+          "chunk_delay_ms": 0
+        }
+      ]
+    }
+  },
+  "expect": {
+    "statuses": [
+      "listening",
+      "transcribing",
+      "deciding",
+      "acting",
+      "error"
+    ],
+    "error_code": "budget_exceeded",
+    "error_detail_contains": "spend cap reached, skipped",
+    "brain_calls": 0
+  },
+  "name": "budget_blocked",
+  "config": {
+    "brain": {
+      "allow_paid": "true"
+    },
+    "brain.openai_compat": {
+      "paid": "true"
+    },
+    "budget": {
+      "daily_usd": "0",
+      "monthly_usd": "",
+      "gate_primary": "true"
+    }
+  },
+  "scenario": "budget blocked"
+}
