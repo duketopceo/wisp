@@ -104,6 +104,8 @@ STRINGS = {
     "ui.more": "more",
     "ui.stop": "stop",
     "ui.talk": "talk",
+    "ui.target.click": "click",
+    "ui.target.unsure": "not sure",
     "ui.hide": "hide",
     "ui.esc": "esc",
     "ui.noted": "noted",

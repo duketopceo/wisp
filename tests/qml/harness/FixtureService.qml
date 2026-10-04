@@ -14,6 +14,7 @@ Item {
   property var view: Reader.initial()
   property var tokens: ({})
   property string fontFamily: "Liberation Mono"
+  property string themeMode: "dark"
   // snapshot mode: motion off, so no animation can change a frame
   property string motionConfig: "off"
   property bool animationsEnabled: false
@@ -29,6 +30,7 @@ Item {
   property var steps: []
   property var suggestion: null
   property var guide: null
+  property var cuaTarget: null
   property string goal: ""
   property string goalStatus: ""
   property real level: 0
@@ -62,6 +64,9 @@ Item {
       v = Reader.markOffline(v, 0);
     } else {
       v = Reader.applySnapshot(v, snapshot, 1000, "stream").view;
+      // a cua.target stream event, through the real reducer
+      if (mods && mods.target)
+        v = Reader.applyEvent(v, { type: "event", name: "cua.target", data: mods.target }, 1001).view;
     }
     root.view = v;
     root.status = v.status;
@@ -75,6 +80,7 @@ Item {
     root.steps = v.steps;
     root.suggestion = v.suggestion;
     root.guide = v.guide;
+    root.cuaTarget = v.cuaTarget;
     root.goal = v.goal;
     root.goalStatus = v.goalStatus;
     root.level = v.level;

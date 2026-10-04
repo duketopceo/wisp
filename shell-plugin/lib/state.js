@@ -20,6 +20,7 @@ var ERROR_CODES = ["jev_down", "brain_down", "stt_down", "ground_down",
   "ground_failed", "timeout", "cancelled", "busy", "stale_prompt",
   "restarted", "tool_failed", "budget_exceeded", "internal"]
 var TOPICS = ["state", "health", "tasks", "events"]
+var CUA_PHASES = ["aim", "click", "done"]
 var META_KEYS = ["seq", "updated_at", "turn_id"]
 
 function subscribeRequest() { return { cmd: "subscribe", topics: TOPICS } }
@@ -40,6 +41,7 @@ function initial() {
     startedAt: "", turnId: "", seq: null, contractVersion: 1,
     updatedAt: "", heartbeatAt: "",
     connection: "none", offline: true, stale: false, contractNewer: false,
+    cuaTarget: null,
     changedAtMs: 0, lastMessageMs: 0, parseErrors: 0, raw: {}
   }
 }
@@ -80,6 +82,27 @@ function normalize(raw) {
   }
 }
 
+// cua.target stream event (docs/IPC_CONTRACT.md "cua.target"): data is
+// {x, y, window, label, confidence, phase}. x and y are screen pixels
+// (finite numbers), window and label strings, confidence 0..1, phase one
+// of CUA_PHASES (default "aim"). Returns the normalized target, null for
+// the explicit clear (x and y both null), or undefined when malformed
+// (the event is ignored and the current target stays).
+function normalizeTarget(d) {
+  if (!isObj(d)) return undefined
+  if (d.x === null && d.y === null) return null
+  if (typeof d.x !== "number" || typeof d.y !== "number") return undefined
+  var x = d.x, y = d.y
+  if (!isFinite(x) || !isFinite(y)) return undefined
+  var c = Number(d.confidence)
+  var phase = CUA_PHASES.indexOf(d.phase) >= 0 ? d.phase : "aim"
+  return { x: x, y: y, window: str(d.window), label: str(d.label),
+    confidence: isFinite(c) ? Math.max(0, Math.min(1, c)) : 1, phase: phase }
+}
+
+// Statuses in which a target may be shown; anything else drops it.
+var TARGET_STATUSES = ["acting", "deciding", "awaiting_choice"]
+
 function copy(o) { var r = {}; for (var k in o) r[k] = o[k]; return r }
 
 function build(prev, raw, source, nowMs, changed) {
@@ -89,6 +112,8 @@ function build(prev, raw, source, nowMs, changed) {
   v.raw = raw
   v.connection = source
   v.offline = false
+  if (v.cuaTarget && (TARGET_STATUSES.indexOf(v.status) < 0 || n.turnId !== prev.turnId))
+    v.cuaTarget = null
   v.contractNewer = v.contractVersion > CONTRACT_VERSION
   v.lastMessageMs = nowMs
   if (changed) v.changedAtMs = nowMs
@@ -135,6 +160,15 @@ function applyEvent(view, ev, nowMs) {
     var v = copy(view)
     v.lastMessageMs = nowMs
     if (ev.name === "overflow") return result(v, true, true)
+    if (ev.name === "cua.target") {
+      if (v.offline) return result(v, true)
+      var t = normalizeTarget(ev.data)
+      if (t === undefined) return result(v, false)
+      if (t && TARGET_STATUSES.indexOf(v.status) < 0) t = null
+      v.cuaTarget = t
+      v.changedAtMs = nowMs
+      return result(v, true)
+    }
     if (ev.name === "health_changed" && isObj(ev.data) && ev.data.name) {
       var h = copy(v.health)
       var prev = isObj(h[ev.data.name]) ? h[ev.data.name] : {}
@@ -191,6 +225,7 @@ function markOffline(view, nowMs) {
   var v = copy(view)
   v.status = "offline"
   v.rawStatus = "offline"
+  v.cuaTarget = null
   v.offline = true
   v.connection = "none"
   v.lastMessageMs = nowMs || view.lastMessageMs

@@ -1,16 +1,22 @@
 // Console card: status line, goal, step timeline, stop. Opens on user
 // click or when a choice is pending (the host decides); it never repeats
 // the answer, the bubble owns that. The compress watchdog still lives in
-// Companion.qml until W21 moves it here unchanged (plan KTD8).
+// Companion.qml until the host is rebuilt on these components (plan KTD8).
 import QtQuick
 import "../lib/metrics.js" as M
 import "../lib/steps.js" as Steps
+import "../lib/companion.js" as Companion
 
 Rectangle {
   id: root
 
   property var service: null
   signal stopClicked()
+
+  // opened by the user (host flag); a pending choice opens it regardless,
+  // listening, deciding and acting never do (Companion.consoleOpen)
+  property bool userOpen: false
+  readonly property bool wants: Companion.consoleOpen(service.status, service.choices.length > 0, userOpen)
 
   readonly property var tk: service ? service.tokens : ({})
   readonly property var rows: Steps.rows(service.steps, service.busy)

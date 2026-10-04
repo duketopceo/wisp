@@ -370,5 +370,74 @@ class TestReconnect(unittest.TestCase):
         self.assertEqual(v["connection"], "file")
 
 
+@unittest.skipUnless(jsnode.NODE, "node not installed")
+class TestCuaTarget(unittest.TestCase):
+    """cua.target stream event (W21 ghost cursor input; W13 emits it)."""
+
+    EV = {"type": "event", "name": "cua.target",
+          "data": {"x": 640, "y": 360, "window": "Settings",
+                   "label": "night light", "confidence": 0.9}}
+
+    def acting(self, **kw):
+        return ["snap", snap(status="acting", seq=2, **kw), 1]
+
+    def test_target_is_normalized_with_defaults(self):
+        r = run([self.acting(), ["event", self.EV, 2]])
+        self.assertEqual(r["view"]["cuaTarget"], {
+            "x": 640, "y": 360, "window": "Settings",
+            "label": "night light", "confidence": 0.9, "phase": "aim"})
+
+    def test_absent_by_default(self):
+        self.assertIsNone(run([self.acting()])["view"]["cuaTarget"])
+        self.assertIsNone(js("S.initial().cuaTarget"))
+
+    def test_malformed_is_ignored_and_keeps_current(self):
+        bad = {"type": "event", "name": "cua.target",
+               "data": {"x": "5", "y": 2}}
+        r = run([self.acting(), ["event", self.EV, 2], ["event", bad, 3]])
+        self.assertEqual(r["view"]["cuaTarget"]["x"], 640)
+        self.assertFalse(r["ok"])
+
+    def test_explicit_clear(self):
+        clear = {"type": "event", "name": "cua.target",
+                 "data": {"x": None, "y": None}}
+        r = run([self.acting(), ["event", self.EV, 2], ["event", clear, 3]])
+        self.assertIsNone(r["view"]["cuaTarget"])
+
+    def test_confidence_clamped_phase_closed_set(self):
+        ev = {"type": "event", "name": "cua.target",
+              "data": {"x": 1, "y": 2, "confidence": 7, "phase": "weird"}}
+        t = run([self.acting(), ["event", ev, 2]])["view"]["cuaTarget"]
+        self.assertEqual((t["confidence"], t["phase"]), (1, "aim"))
+        ev["data"]["phase"] = "click"
+        t = run([self.acting(), ["event", ev, 2]])["view"]["cuaTarget"]
+        self.assertEqual(t["phase"], "click")
+
+    def test_dropped_when_status_leaves_acting(self):
+        diff = {"type": "state", "seq": 3,
+                "diff": {"status": "done", "seq": 3}}
+        r = run([self.acting(), ["event", self.EV, 2], ["event", diff, 3]])
+        self.assertIsNone(r["view"]["cuaTarget"])
+
+    def test_ignored_when_not_acting(self):
+        r = run([["snap", snap(status="idle"), 1], ["event", self.EV, 2]])
+        self.assertIsNone(r["view"]["cuaTarget"])
+
+    def test_dropped_on_new_turn_and_offline(self):
+        s2 = ["snap", snap(status="acting", seq=3, turn_id="t2"), 3]
+        r = run([self.acting(), ["event", self.EV, 2], s2])
+        self.assertIsNone(r["view"]["cuaTarget"])
+        r = run([self.acting(), ["event", self.EV, 2], ["offline", 3]])
+        self.assertIsNone(r["view"]["cuaTarget"])
+
+    def test_event_does_not_bump_seq(self):
+        r = run([self.acting(), ["event", self.EV, 2]])
+        self.assertEqual(r["view"]["seq"], 2)
+
+    def test_message_path(self):
+        r = run([self.acting(), ["msg", json.dumps(self.EV), 2]])
+        self.assertEqual(r["view"]["cuaTarget"]["label"], "night light")
+
+
 if __name__ == "__main__":
     unittest.main()
