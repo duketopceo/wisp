@@ -16,7 +16,11 @@ import time
 import unittest
 from unittest import mock
 
-from wisp import hypr, platform
+import sys
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
+from fakes.hypr import FakeHypr, ok_handler  # noqa: E402,F401
+from wisp import hypr, platform  # noqa: E402
 from wisp.tools import desktop
 
 FIXTURE = json.loads((pathlib.Path(__file__).parent / "fixtures"
@@ -24,90 +28,8 @@ FIXTURE = json.loads((pathlib.Path(__file__).parent / "fixtures"
 INJECT = '"); hl.dsp.exec_cmd("rm -rf ~'
 
 
-def ok_handler(r):
-    """Fixture JSON for queries, 'ok' for every eval."""
-    return FIXTURE[r] if r.startswith("j/") and r in FIXTURE else "ok"
-
-
-class FakeHypr:
-    """Unix-socket fake. handler(request) -> reply str, or None to hang."""
-
-    def __init__(self, handler=None):
-        self.td = tempfile.TemporaryDirectory()
-        self.sig = "SIG1"
-        self.dir = pathlib.Path(self.td.name) / "hypr" / self.sig
-        self.dir.mkdir(parents=True)
-        self.handler = handler or (lambda r: FIXTURE.get(r, "unknown request"))
-        self.requests = []
-        self.event_chunks = []  # bytes written to each event client
-        self._stop = threading.Event()
-        self.srv = self._listen(".socket.sock")
-        self.srv2 = self._listen(".socket2.sock")
-        self.threads = [threading.Thread(target=self._serve, daemon=True),
-                        threading.Thread(target=self._serve2, daemon=True)]
-        for t in self.threads:
-            t.start()
-        self.env = mock.patch.dict(os.environ, {
-            "XDG_RUNTIME_DIR": self.td.name,
-            "HYPRLAND_INSTANCE_SIGNATURE": self.sig})
-
-    def _listen(self, name):
-        s = socket.socket(socket.AF_UNIX)
-        s.bind(str(self.dir / name))
-        s.listen(8)
-        s.settimeout(0.05)
-        return s
-
-    def _serve(self):
-        while not self._stop.is_set():
-            try:
-                c, _ = self.srv.accept()
-            except (socket.timeout, OSError):
-                continue
-            threading.Thread(target=self._one, args=(c,), daemon=True).start()
-
-    def _one(self, c):
-        c.settimeout(2)
-        try:
-            req = c.recv(65536).decode()
-            self.requests.append(req)
-            rep = self.handler(req)
-            if rep is None:
-                self._stop.wait(2)
-            else:
-                data = rep.encode()
-                # force multi-chunk delivery to exercise reassembly
-                for i in range(0, len(data), 4096):
-                    c.sendall(data[i:i + 4096])
-                    time.sleep(0.001)
-        except OSError:
-            pass
-        finally:
-            c.close()
-
-    def _serve2(self):
-        while not self._stop.is_set():
-            try:
-                c, _ = self.srv2.accept()
-            except (socket.timeout, OSError):
-                continue
-            for chunk in self.event_chunks:
-                c.sendall(chunk)
-                time.sleep(0.01)
-            c.close()
-
-    def __enter__(self):
-        self.env.start()
-        hypr.reset()
-        return self
-
-    def __exit__(self, *a):
-        self._stop.set()
-        self.env.stop()
-        for s in (self.srv, self.srv2):
-            s.close()
-        self.td.cleanup()
-        hypr.reset()
+# FakeHypr / ok_handler live in tests/fakes/hypr.py (W5) and are
+# re-exported here for the tests below and test_pointer_precedence.
 
 
 # --- tiny Lua string-literal tokenizer: proves payloads stay inside one
