@@ -1,0 +1,1 @@
+{"status": "deciding", "transcript": "open the display settings", "answer": "", "result": "", "choices": [], "points": [], "steps": [], "level": 0.0, "turn_id": "t-decide", "seq": 4, "contract_version": 1, "goal": {"text": "open display settings", "status": "active"}}
