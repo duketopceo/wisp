@@ -1,3 +1,7 @@
+---
+status: "superseded by 2026-10-04-0100-feat-wisp-unified-plan.md"
+---
+
 # Wisp Companion UX — research-grounded UI plan
 
 Origin: user asks for a "bleeding edge" UI where every decision is backed by

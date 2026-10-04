@@ -1,13 +1,14 @@
 ---
 title: "Wisp unified plan: stack landing, CUA, desktop surfaces, Ember, backend"
 type: feat
-status: active
+status: active (open: W12, W30, W31, W33, W34)
 date: 2026-10-04
 supersedes:
   - docs/plans/2026-10-02-2315-feat-wisp-ember-redesign-plan.md   (on PR #56; IDs Ember U1-U20)
   - docs/plans/2026-10-03-1455-feat-wisp-backend-core-plan.md     (on PR #56; IDs backend U1-U16)
   - docs/plans/2026-10-03-001-feat-consolidate-and-local-actor-plan.md (on PR #60; remaining items only)
   - docs/plans/2026-10-02-002-feat-wisp-roadmap-plan.md, ...-003-feat-wisp-companion-ux-plan.md (UX content folded in)
+  - docs/plans/2026-10-03-002-feat-gauntlet-v2-plan.md (shipped on master before this plan; closed in W33)
 ---
 
 # Wisp unified plan
@@ -17,41 +18,52 @@ unit text as design reference; this document owns IDs, order, dependencies and
 status from here on. Units use a new namespace, **W1..W34**, with a crosswalk at
 the end. Detail that already exists in the #56 plans is referenced, not copied.
 
-## Status as of 2026-10-04 (evening)
+## Status as of 2026-10-04 (after #100)
 
-Verified against `master` (`835b5ba`): merge commits and files present, not PR
-titles. Master now contains #55-#66, #67, #68, and the second landing: #78
-(`integrate/wisp-land`: W3, W8, W17, W18, W19, W20 and the W5 fakes that had
-merged only into intermediate branches), #79 (W9), #80 (W21), #81 (W10) and #77
-(Decision Agent grounding, WordInk STT, hotkey collision check; by the user).
-Only #82 is open.
+Verified against `master` (`33e6be0`): merge commits and files present, not PR
+titles. Earlier landings: #55-#68, #77, #78 (W3, W8, W17, W18, W19, W20 and the
+W5 fakes), #79 (W9), #80 (W21), #81 (W10), #82 (W23, `d4d9aa4`), #83 (plan
+status) and #86 (CI green). #100 (`integrate/wisp-finish`) then merged every
+remaining unit branch in one pass, with the cross-unit reconciliation commit
+`b88c098` (W11, W25, W27, W28, W29 interactions) and a single spend ledger
+(`7ec4236` reconciled with W14). Still open: W12, W30, W31, W33 and W34.
 
 | Unit | Status | Evidence |
 |---|---|---|
-| W1 | done (landing); supersession front matter not applied | #68 merged the stack; INDEX pointer present; old plans carry no `superseded` front matter yet |
-| W2 | todo | `latency` command and `latency_report` exist; baseline not recorded, budget table not revised |
+| W1 | done | #68 landed the stack; INDEX pointer present; the older plans carry `status: superseded by ...` front matter (W33) |
+| W2 | done (fakes baseline) | `ab9a5c3`: `wisp/budgets.json`, `docs/baselines/latency-harness.json`, `wispd latency`. A live baseline from real traces is still outstanding (the file's `needs_live_baseline`) |
 | W3 | done | #70 via #78 (`ipc.py` subscribe, `test_ipc_stream.py`, `test_agents_reaper.py`) |
-| W4 | todo | fixed `time.sleep(0.3)` still in `pipeline.py` |
-| W5 | done | #72 merged to master (fakes under `tests/fakes`) |
-| W6 | todo | no `tests/scenarios` |
-| W7 | done | #62 via #68 (`wisp/hypr.py`, `wispd binds`); `keys.py` belongs to W24 |
+| W4 | done | `795accb` fast trigger and speculative context (`wisp/fastkey.py`, `test_fast_trigger.py`) |
+| W5 | done | #72 (fakes under `tests/fakes`) |
+| W6 | done | `561ed52`, `99671b0`: turn fixture corpus under `tests/fixtures/turns`, `test_scenarios.py` |
+| W7 | done | #62 via #68 (`wisp/hypr.py`, `wispd binds`) |
 | W8 | done | #73 via #78 (`pointer.py`, `cua.py`) |
 | W9 | done | #79 (`cua_safety.py`) |
 | W10 | done | #81 (`probes_cua.py`, `scripts/cua/`) |
-| W11 | todo (partial) | shadow decider #55 merged; heuristic router absent |
+| W11 | done | `03c02c9`: Jev 400 ms deadline, heuristic router, `route_ab` log (`wisp/route.py`, `wispd eval route`) |
 | W12 | todo | no `wisp/stt.py`; open question 3 (STT engine) still with the user |
-| W13 | todo | #77 merged and overlaps `act.py` and grounding (WordInk STT, Decision Agent); `wisp/ground.py` per this unit not present; reconcile with #77 before starting |
-| W14 | todo | no ledger |
-| W15 | todo | no batch lane |
-| W16 | todo | no error reporting module |
+| W13 | done | `250bdd9`: `wisp/grounding.py` provider chain on top of #77, `test_ground_chain.py` |
+| W14 | done | `de1c516`, `7ec4236`: `wisp/ledger.py`, `usage.jsonl`, `wispd spend`, one policy (paid fallbacks stop at a cap; the primary continues unless `[budget] gate_primary`) |
+| W15 | done | `5a8f7c1`: `wisp/batch.py`, `wispd batch`, capped through the ledger |
+| W16 | done | `4a2429f`: `wisp/report.py`, opt-in scrubbed GlitchTip (`[report] dsn`) |
 | W17 | done | #71 via #78 (`copy.py`, `shell-plugin/lib`, copy lint) |
 | W18 | done | #69 via #78 (`notify.py`) |
 | W19 | done | #74 via #78 (`wisp/cli/` registry, `--json`) |
 | W20 | done | #75 via #78 (snapshot harness, `shell-plugin/components`) |
-| W21 | in progress | #80 merged (components, creature, ghost cursor); W21b `Companion.qml` host rewire in progress, monolith still present |
-| W22 | todo | waits on W14 |
-| W23 | in review | #82, stacked on `feat/wisp-w21-companion` (that base merged via #80; retarget to master) |
-| W24-W34 | todo | no code on master |
+| W21 | done | #80 plus W21b `5f1db10`: `Companion.qml` is a 204-line host over the components |
+| W22 | done | `93d06ea`: Panel four tabs and Health section |
+| W23 | done | #82 (`d4d9aa4`): bar mark and bar plugin |
+| W24 | done | `9fe4f44`: keyboard submap and Esc stop (`wisp/keys.py`) |
+| W25 | done | `badd172`: confirm card and error, offline and stale UX from one copy table (`wisp/confirm.py`) |
+| W26 | done | `9ef1daa`: management app and TUI on the W17 reader |
+| W27 | done | `2b2253e`: launcher actions, desktop entry, icon install, SNI detection (no tray item shipped) |
+| W28 | done | `5bda5fd`: settings schema, `wispd onboard`, first-run card |
+| W29 | done | `02b3ed1`: oomd-safe unit templates, watchdog, doctor service rows |
+| W30 | in progress | refactor of `pipeline.py` on its own branch; no code on master |
+| W31 | todo (partial) | `contract_version` 1 and `tests/test_contract.py` exist; the Rust freeze and `py-only` marks are not done |
+| W32 | done | `68acb31`, `1c10607`: arena restyle, orch gate and matrix policy; the training gauntlet v2 work it builds on (oracle, first-fault, pass^k, flake taxonomy, reviewer) is also on master |
+| W33 | in progress | this unit: README, README images, `docs/CUA.md`, plan closure, `ROADMAP.md` checklist, doc-lint test. Screen recordings need a person |
+| W34 | todo | checklist added to `ROADMAP.md`; needs the soak, a clean-VM install and two learning cycles |
 
 Open questions still with the user: STT engine, alias period, Rust core,
 premium handoff.

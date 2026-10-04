@@ -3,6 +3,7 @@ title: "feat: Wisp v0.1 usable — latency, Clicky presence, guarded computer-us
 created: 2026-09-20
 type: feat
 origin: docs/plans/2026-09-20-001-feat-dim-v1-roadmap-plan.md
+status: "superseded by 2026-10-04-0100-feat-wisp-unified-plan.md"
 ---
 
 # feat: Wisp v0.1 usable

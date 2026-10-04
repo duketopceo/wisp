@@ -64,13 +64,13 @@ Faster/cloud: set `stt.provider = "openai"`, `stt.base_url` to Groq
   the bar, overlay, hyprctl window ops.
 - **Linux GNOME/KDE/X11**: runs via the desktop adapter; window ops
   degrade where the platform has no API (documented in
-  `docs/LINUX.md`). Bind `wispd listen` through your DE's shortcut
+  `docs/LINUX.md`). Bind `wispd trigger` through your DE's shortcut
   settings.
 - **macOS**: `wispd install` writes the launchd plist; bind `wispd
   listen` via SKHD/Raycast. Grant Screen Recording + Accessibility.
   See `docs/MACOS.md`.
 - **Windows**: `wispd install` registers the logon task; bind via a
-  hotkey tool to `wispd.exe listen`. See `docs/WINDOWS.md`.
+  hotkey tool to `wispd.exe trigger`. See `docs/WINDOWS.md`.
 
 ## First run
 
@@ -97,8 +97,9 @@ Steps, in order:
 3. **cua** (optional): the cua-driver probe from `wispd cua status`.
 4. **notifications**: sends one test notification, only when you answer
    yes (or pass `--yes`).
-5. **keybinding** (optional): needs the W24 keyboard submap; shown as not
-   available until that lands.
+5. **keybinding** (optional): checks that the keyboard submap (Esc stops,
+   Enter confirms, number keys choose) is registered; shown as not
+   available while the daemon has not registered it (Hyprland only).
 
 Every step is skippable. A skip writes nothing and the step is offered
 again next time. A step that passed is recorded in
