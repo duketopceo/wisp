@@ -26,8 +26,8 @@ USER_FACING_PY = ("wisp/tui.py", "wisp/errors_codes.py")
 STRICT_QML = ["WispService.qml", "Companion.qml"] + sorted(
     p.name for p in (PLUGIN / "lib").glob("*.js")
     if p.name not in ("icons.js",))
-# files still being rewritten (W22); counts may only fall
-RATCHET = {"Panel.qml": 15, "BarWidget.qml": 0}
+# files still being rewritten; counts may only fall
+RATCHET = {"Panel.qml": 0, "BarWidget.qml": 0}
 
 
 def table_strings():
