@@ -448,6 +448,10 @@ def run_daemon(cfg: dict) -> int:
     server = ipc.Daemon(_handler(st, cfg, ctl), bus=st)
     server.start()
     _keys = _start_keys(st, cfg)
+    # systemd Type=notify + WatchdogSec (W29): no-ops outside systemd
+    from wisp import svc as _svc
+    _svc.notify("READY=1\nSTATUS=listening")
+    _svc.Watchdog(ctl["stop"], server.healthy).start()
     from wisp import agents as _agents
 
     def _agent_done(t: dict) -> None:
@@ -477,6 +481,7 @@ def run_daemon(cfg: dict) -> int:
     except KeyboardInterrupt:
         pass
     finally:
+        _svc.notify("STOPPING=1")
         if _HEALTH is not None:
             _HEALTH.stop()
         if _keys is not None:
@@ -631,25 +636,11 @@ StartupNotify=false
 <key>KeepAlive</key><true/></dict></plist>""")
         print(f"installed {plist} (launchctl load to activate)")
         return
-    unit_dir = config.HOME / ".config" / "systemd" / "user"
-    unit_dir.mkdir(parents=True, exist_ok=True)
-    unit = unit_dir / "wispd.service"
-    unit.write_text(f"""\
-[Unit]
-Description=Wisp voice assistant daemon
-After=graphical-session.target
-
-[Service]
-ExecStart={sys.executable} {opt}/wispd daemon
-Restart=on-failure
-RestartSec=2
-
-[Install]
-WantedBy=default.target
-""")
-    print(f"installed {unit}")
-    subprocess.run(["systemctl", "--user", "daemon-reload"],
-                   capture_output=True)
+    from wisp import svc
+    acts = svc.install_units(config.HOME)
+    print(svc.describe(acts))
+    print("units installed, not restarted; apply with systemctl --user "
+          "restart <unit>")
 
 
 def install_bind(cfg: dict) -> None:

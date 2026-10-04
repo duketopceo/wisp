@@ -30,6 +30,13 @@ def doctor_sections(cfg: dict, cua_probe=None) -> list:
     row = section("daemon")
     row("wispd", "running" if ipc.alive() else "not running")
 
+    from .. import svc
+    svc_rows = svc.doctor_rows() if _plat.current() == "linux" else []
+    if svc_rows:
+        row = section("services")
+        for r in svc_rows:
+            row(r["name"], r["value"], r["ok"])
+
     row = section("agent runtimes")
     found = agents.detect_runtimes()
     chosen = agents.resolve_runtime(cfg)

@@ -1,0 +1,25 @@
+# wisp template (W29) — installed by `wispd install`.
+# Type=notify + WatchdogSec: wispd sends READY=1 once the IPC socket is up
+# and WATCHDOG=1 every WatchdogSec/3 while its server thread is alive
+# (wisp/svc.py). A wedged daemon is aborted and restarted; Restart covers
+# the watchdog abort (on-failure includes watchdog).
+[Unit]
+Description=Wisp voice assistant daemon
+After=graphical-session.target
+StartLimitIntervalSec=900
+StartLimitBurst=30
+
+[Service]
+Type=notify
+NotifyAccess=main
+WatchdogSec=60
+TimeoutStartSec=120
+ExecStart=/usr/bin/python3 %h/.local/opt/wisp/wispd daemon
+Restart=on-failure
+RestartSec=2
+RestartSteps=5
+RestartMaxDelaySec=60
+Slice=session.slice
+
+[Install]
+WantedBy=default.target
