@@ -492,13 +492,18 @@ Name=Wisp
 GenericName=Voice Assistant
 Comment=Wisp voice assistant — management console
 Exec=quickshell -n -p {opt}/shells/debug
-Icon=audio-input-microphone
+Icon=wisp
 Terminal=false
 Categories=Utility;Accessibility;
 Keywords=voice;assistant;ai;wisp;
 StartupNotify=false
 """)
     print(f"installed {desktop}")
+    icons_src = src / "assets" / "icons" / "hicolor"
+    if icons_src.is_dir():
+        icons_dst = config.HOME / ".local" / "share" / "icons" / "hicolor"
+        shutil.copytree(icons_src, icons_dst, dirs_exist_ok=True)
+        print(f"installed {icons_dst}")
     plugin_src = src / "shell-plugin"
     plugin_dst = (config.HOME / ".config" / "omarchy" / "plugins"
                   / "io.github.duketopceo.wisp")
