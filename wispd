@@ -392,6 +392,8 @@ def run_daemon(cfg: dict) -> int:
         from wisp import brain as _brain, health as _health
         _HEALTH = _health.HealthRegistry(cfg, bus=st)
         _HEALTH.register("hypr", _hypr_health)
+        from wisp import probes_cua as _pc
+        _pc.register(_HEALTH, cfg)
         _brain.HEALTH = _HEALTH
         _HEALTH.start()
     server = ipc.Daemon(_handler(st, cfg, ctl), bus=st)
@@ -452,9 +454,39 @@ def cmd_trigger(cfg: dict, phase: str = "") -> int:
 
 
 def install_files() -> None:
-    """Copy runtime files to ~/.local/opt/wisp, write the trigger shim
-    and the systemd user unit, and install the shell plugin directory."""
+    """Copy runtime files to the per-OS opt dir, write the trigger shim
+    and service registration, and install the shell plugin directory
+    (Linux/Omarchy only)."""
+    from wisp import platform as _plat
     src = pathlib.Path(__file__).resolve().parent
+    if _plat.current() == "windows":
+        opt = config.DATA_DIR / "opt" / "wisp"
+        opt.mkdir(parents=True, exist_ok=True)
+        pkg = src / "wisp"
+        if pkg.is_dir():
+            shutil.copytree(pkg, opt / "wisp", dirs_exist_ok=True)
+            print(f"installed {opt}/wisp")
+        target = opt / "wispd"
+        shutil.copy2(src / "wispd", target)
+        print(f"installed {target}")
+        # Task Scheduler: run wispd daemon at logon (U8). The shipped
+        # launcher is the extensionless Python script, so materialize a
+        # .cmd wrapper that schtasks can execute directly.
+        cmd = opt / "wispd.cmd"
+        cmd.write_text(
+            f'@echo off\r\n"{sys.executable}" "{opt / "wispd"}" %*\r\n')
+        print(f"installed {cmd}")
+        r = subprocess.run(
+            ["schtasks", "/create", "/tn", "Wisp", "/sc", "onlogon",
+             "/tr", f'"{cmd}" daemon', "/f"],
+            capture_output=True, text=True)
+        if r.returncode == 0:
+            print("registered Task Scheduler task Wisp (logon)")
+        else:
+            print(f"schtasks failed: {(r.stderr or r.stdout).strip()}")
+        print("push-to-talk: bind `wispd listen` via PowerToys Keyboard "
+              "Manager, AutoHotkey, or the tray app (see docs/WINDOWS.md)")
+        return
     opt = config.HOME / ".local" / "opt" / "wisp"
     if src == opt:
         # invoked via the ~/.local/bin symlink → __file__ resolves to
@@ -519,20 +551,7 @@ StartupNotify=false
     trigger.write_text(f'#!/bin/sh\nexec {sys.executable} {opt}/wispd trigger "$@"\n')
     trigger.chmod(0o755)
     print(f"installed {trigger}")
-    from wisp import platform as _plat
     if _plat.current() == "windows":
-        # Task Scheduler: run wispd daemon at logon (U8). The shipped
-        # launcher is the extensionless Python script, so materialize a
-        # .cmd wrapper that schtasks can execute directly.
-        cmd = opt / "wispd.cmd"
-        cmd.write_text(
-            f'@echo off\r\n"{sys.executable}" "{opt / "wispd"}" %*\r\n')
-        print(f"installed {cmd}")
-        subprocess.run(
-            ["schtasks", "/create", "/tn", "Wisp", "/sc", "onlogon",
-             "/tr", f'"{cmd}" daemon', "/f"],
-            capture_output=True)
-        print("registered Task Scheduler task Wisp (logon)")
         return
     if _plat.current() == "macos":
         # launchd agent plist (U7)
@@ -590,8 +609,9 @@ def install_bind(cfg: dict) -> None:
     from wisp import platform
     if not platform.supports_hotkey_install():
         print("hotkey install is Linux/Hyprland-only — on macOS bind "
-              "push-to-talk via SKHD/Raycast/a shortcut app: "
-              "`wispd listen` (see docs/MACOS.md)")
+              "push-to-talk via SKHD/Raycast/a shortcut app, on Windows "
+              "via PowerToys Keyboard Manager or AutoHotkey: "
+              "`wispd listen` (see docs/MACOS.md / docs/WINDOWS.md)")
         return
     mod = cfg.get("hotkey", {}).get("mod", "SUPER")
     key = cfg.get("hotkey", {}).get("key", "D")
@@ -611,6 +631,15 @@ def install_bind(cfg: dict) -> None:
 
     bindings = config.HOME / ".config" / "hypr" / "bindings.lua"
     text = bindings.read_text() if bindings.exists() else ""
+    target_combo = f"{mod} + {key.upper()}"
+    conflicts = [l.strip() for l in text.splitlines() if target_combo in l.upper() and "wisp-trigger" not in l]
+    if conflicts:
+        print(f"⚠️  WARNING: Hotkey {target_combo} is already in use in {bindings}:")
+        for c in conflicts[:2]:
+            print(f"   {c}")
+        print("💡 Recommended alternative hotkeys without conflicts: SUPER + SPACE, ALT + D, F13")
+        print("   Configure [hotkey] in ~/.config/wisp/config.toml to override.")
+
     old = [l for l in text.splitlines() if "wisp-trigger" in l]
     if (len(old) >= 2
             and all("start" in l or "release" in l for l in old)):
@@ -628,10 +657,136 @@ def install_bind(cfg: dict) -> None:
                    capture_output=True)
 
 
+def _doctor(cfg: dict) -> int:
+    """Scan everything wispd depends on — the harness/runtime probe."""
+    import shutil as _sh
+    from wisp import agents, brain, skills
+    ok = True
+
+    def row(name, val, good=True):
+        nonlocal ok
+        ok = ok and good
+        print(f"  {'ok ' if good else 'MISS'} {name:<22} {val}")
+
+    print("agent runtimes:")
+    found = agents.detect_runtimes()
+    chosen = agents.resolve_runtime(cfg)
+    for rt in ("opencode", "codex", "claude", "devin"):
+        mark = " (selected)" if rt == chosen else ""
+        if rt in found:
+            row(rt, found[rt] + mark)
+        else:
+            # a missing runtime only fails doctor when it's the
+            # explicitly configured one — auto falls back
+            row(rt, f"not on PATH{mark}",
+                good=(rt != chosen or not mark))
+    if cfg.get("brain", {}).get("agent_runtime", "auto") == "auto" \
+            and not chosen:
+        print("  !! agent_runtime=auto but nothing detected")
+        ok = False
+
+    print("stt / audio:")
+    from wisp import platform as _plat
+    wm = config.whisper_model(cfg)
+    row("whisper model", wm.name, good=wm.exists())
+    stt = cfg.get("stt", {}).get("provider", "local")
+    row("stt provider", stt)
+    if _plat.current() == "windows":
+        row("sox (mic)", _sh.which("sox") or "",
+            good=bool(_sh.which("sox")))
+        row("powershell", _plat._ps_bin() or "",
+            good=bool(_plat._ps_bin()))
+    elif _plat.current() == "macos":
+        row("afrecord/sox",
+            _sh.which("afrecord") or _sh.which("sox") or "",
+            good=bool(_sh.which("afrecord") or _sh.which("sox")))
+        row("screencapture", _sh.which("screencapture") or "",
+            good=bool(_sh.which("screencapture")))
+    else:
+        for b in ("pw-record", "wtype", "grim"):
+            row(b, _sh.which(b) or "", good=bool(_sh.which(b)))
+
+    print("brain / router:")
+    p = brain.provider(cfg)
+    row("answer provider", f"{p['name']}:{p['model']}")
+    row("vision", p.get("vision"))
+    row("tools", p.get("tools"))
+    key = config.load_env_key(p.get("key_env", "")) \
+        if p.get("key_env") else "n/a"
+    row("api key", "set" if key == "set" or (key and key != "n/a")
+        else key or "MISSING", good=bool(key))
+
+    print("health (local endpoints, 500 ms probes):")
+    from wisp import health as _health
+    reg = _health.HealthRegistry(cfg)
+    snap = reg.probe_all()
+    if not snap:
+        row("endpoints", "none local to probe")
+    for name, h in snap.items():
+        row(name, f"{h['latency_ms']} ms" if h["ok"]
+            else f"DOWN ({h['code']})", good=h["ok"])
+
+    print("pointer:")
+    pb = _plat.pointer_backend(cfg)
+    mode = cfg.get("pointer", {}).get("mode", "guide")
+    row("pointer backend", pb or "none — guide mode only")
+    row("pointer mode", mode)
+
+    print("integrations:")
+    row("dayflow", _sh.which("dayflow") or "not installed",
+        good=bool(_sh.which("dayflow")))
+    row("codegraph (CBM)", _sh.which("codebase-memory-mcp")
+        or "not installed")
+    row("hyprctl", _sh.which("hyprctl") or "",
+        good=bool(_sh.which("hyprctl"))
+        or _plat.current() != "linux")
+    row("sense enabled", cfg.get("sense", {}).get("enabled", "false"))
+
+    print("data:")
+    row("skills", str(len(skills.index())) + " installed")
+    for f in ("decisions.jsonl", "labels.jsonl", "activity.jsonl"):
+        fp = config.DATA_DIR / f
+        row(f, f"{fp.stat().st_size // 1024}KB" if fp.exists()
+            else "absent", good=True)
+    return 0 if ok else 1
+
+
+def _models(cfg: dict, args: list) -> int:
+    """`wispd models` shows local endpoint health. `wispd models start`
+    PRINTS the systemctl command for the units behind down endpoints;
+    only `--run` executes it (explicit request, user-scope units)."""
+    from wisp import health as _health
+    snap = _health.HealthRegistry(cfg).probe_all()
+    if not args:
+        if not snap:
+            print("no local endpoints configured")
+        for name, h in snap.items():
+            print(f"{'ok  ' if h['ok'] else 'DOWN'} {name:<16} "
+                  + (f"{h['latency_ms']} ms" if h["ok"] else h["code"]))
+        return 0
+    if args[0] != "start":
+        print("usage: wispd models [start [--run]]", file=sys.stderr)
+        return 2
+    units = _health.units_to_start(cfg, snap)
+    if not units:
+        print("nothing to start (no down endpoint has units in "
+              "[health.units])")
+        return 0
+    cmd = _health.start_command(units)
+    if "--run" not in args:
+        print(" ".join(cmd))
+        print("(dry run — add --run to execute)")
+        return 0
+    return subprocess.run(cmd).returncode
+
+
 def rebuild_harness() -> int:
-    builder = config.HOME / ".local" / "opt" / "wisp" / "build_harness.py"
-    if not builder.exists():
-        builder = (pathlib.Path(__file__).resolve().parent
+    candidates = [
+        config.DATA_DIR / "opt" / "wisp" / "build_harness.py",
+        config.HOME / ".local" / "opt" / "wisp" / "build_harness.py",
+    ]
+    builder = next((c for c in candidates if c.exists()),
+                   pathlib.Path(__file__).resolve().parent
                    / "scripts" / "build_harness.py")
     return subprocess.run([sys.executable, str(builder)]).returncode
 

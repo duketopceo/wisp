@@ -21,7 +21,7 @@ PLUGIN = ROOT / "shell-plugin"
 COMP = PLUGIN / "components"
 FIXTURE_SERVICE = ROOT / "tests" / "qml" / "harness" / "FixtureService.qml"
 
-EXPECTED = ["Answer", "AgentRow", "Beacon", "Bubble", "Chip", "Console",
+EXPECTED = ["Answer", "AgentRow", "BarActions", "BarMark", "Beacon", "Bubble", "Chip", "Console",
             "Corner", "CornerLayer", "Creature", "EmptyState", "GhostCursor", "Icon",
             "Mark", "OverlayLayer", "PanelTab", "Pill", "StatusLine", "StepRow",
             "StopControl", "Transcript"]
@@ -75,8 +75,9 @@ class TestComponentSet(unittest.TestCase):
         import json
         scenes = json.loads(
             (ROOT / "tests/qml/harness/scenes.json").read_text())
-        # the two layers are snapshotted together by the Companion scene
-        layers = {"Icon", "CornerLayer", "OverlayLayer"}
+        # the two layers are snapshotted together by the Companion scene;
+        # BarActions is non-visual
+        layers = {"Icon", "BarActions", "CornerLayer", "OverlayLayer"}
         self.assertEqual(set(EXPECTED) - layers - set(scenes), set())
         self.assertIn("Companion", scenes)
 

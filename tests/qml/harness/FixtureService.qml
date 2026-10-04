@@ -56,6 +56,10 @@ Item {
     : contractNewer ? Copy.string("state.newer") : ""
   readonly property string motionMode: Motion.resolveMode(motionConfig, animationsEnabled)
 
+  // the bar actions call these; the harness never talks to a daemon
+  function trigger() {}
+  function interrupt() {}
+
   function ui(key) { return Copy.string(key); }
   function pickLabel(pick) { return Copy.pickLabel(pick); }
 

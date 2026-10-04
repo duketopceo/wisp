@@ -108,6 +108,19 @@ backend = "auto"
 # cua-driver client (wisp/cua.py). Per-call timeout; a click that times
 # out is reported as failed and never retried on another backend.
 timeout_ms = "800"
+# Safety layer (wisp/cua_safety.py) around every injected click/move/
+# scroll/type/key. Built-in deny: password managers, polkit/pinentry
+# prompts, terminals whose title shows sudo. allow/deny = comma lists of
+# window-class substrings (deny wins; a set allow list fails closed).
+safety = "true"
+allow = ""
+deny = ""
+max_clicks_per_min = "30"
+max_per_turn = "12"
+dry_run = "false"
+kill_switch = "false"
+confirm = "tier"
+audit = "true"
 
 [traj]
 # episodic memory for the act loop: every run is recorded and similar
@@ -339,7 +352,11 @@ def _default_cfg_dict() -> dict:
         },
         "voice": {"enabled": "false"},
         "pointer": {"mode": "guide", "backend": "auto"},
-        "cua": {"timeout_ms": "800"},
+        "cua": {"timeout_ms": "800", "safety": "true", "allow": "",
+                "deny": "", "max_clicks_per_min": "30",
+                "max_per_turn": "12", "dry_run": "false",
+                "kill_switch": "false", "confirm": "tier",
+                "audit": "true"},
         "traj": {"enabled": "true", "max_inject": "3"},
         "agents": {"act_max_steps": "12"},
         "dev": {"refine": "true"},
@@ -360,7 +377,7 @@ def load_config() -> dict:
     cfg = {}
     if CFG_FILE.exists():
         section = None
-        for raw in CFG_FILE.read_text().splitlines():
+        for raw in CFG_FILE.read_text(encoding="utf-8", errors="replace").splitlines():
             line = raw.split("#", 1)[0].strip()
             if not line:
                 continue
@@ -372,7 +389,7 @@ def load_config() -> dict:
                 cfg[section][k] = v.strip('"')
     else:
         CFG_DIR.mkdir(parents=True, exist_ok=True)
-        CFG_FILE.write_text(DEFAULT_CONFIG + _apps_toml())
+        CFG_FILE.write_text(DEFAULT_CONFIG + _apps_toml(), encoding="utf-8")
         cfg = _default_cfg_dict()
     return cfg
 

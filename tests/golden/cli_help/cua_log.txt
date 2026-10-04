@@ -1,10 +1,11 @@
-usage: wispd cua log [-h] [-n N] [--json] [--quiet] [--no-color]
+usage: wispd cua log [-h] [-n N] [--audit] [--json] [--quiet] [--no-color]
 
-Show the driver's recent journal lines (read only)
+Show the driver journal, or the audit log (read only)
 
 options:
   -h, --help     show this help message and exit
   -n, --lines N  lines to show (default 50)
+  --audit        show wisp's own cua audit log instead
 
 global options:
   --json         machine-readable output (one JSON object)
@@ -13,4 +14,4 @@ global options:
 
 Examples:
   wispd cua log
-  wispd cua log -n 200
+  wispd cua log --audit -n 20

@@ -23,9 +23,8 @@ class SttPromptTest(unittest.TestCase):
             return R()
         import tempfile as _tf
         from wisp import vocab as _v
-        # /bin/true is Linux-only; resolve a real binary so the
-        # existence check in transcribe() passes on any host.
-        _true = pathlib.Path(shutil.which("true") or "/usr/bin/true")
+        import sys
+        _true = pathlib.Path(shutil.which("true") or sys.executable)
         with mock.patch.object(_v, "CACHE",
                                pathlib.Path(_tf.mkdtemp()) / "v.txt"), \
              mock.patch.object(pipeline.config, "WHISPER_BIN", _true), \

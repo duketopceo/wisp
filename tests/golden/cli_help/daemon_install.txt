@@ -1,9 +1,12 @@
-usage: wispd daemon install [-h] [--json] [--quiet] [--no-color]
+usage: wispd daemon install [-h] [--cua] [--dry-run] [--json] [--quiet]
+                            [--no-color]
 
 Install runtime files, the systemd unit and the hotkey bind
 
 options:
   -h, --help   show this help message and exit
+  --cua        also install the pinned cua-driver (scripts/cua/install.sh)
+  --dry-run    with --cua: print the plan, change nothing
 
 global options:
   --json       machine-readable output (one JSON object)
@@ -12,3 +15,4 @@ global options:
 
 Examples:
   wispd daemon install
+  wispd install --cua --dry-run

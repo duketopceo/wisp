@@ -22,7 +22,7 @@ Diagnose:
   trace        Turn trace and daily digest
 
 Pointer and notifications:
-  cua          The cua-driver pointer backend: status, test, log, enable
+  cua          The cua-driver pointer backend: status, test, log, kill, enable
   notify       Desktop notifications
 
 Agents and memory:

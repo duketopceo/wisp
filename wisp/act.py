@@ -16,7 +16,7 @@ import re
 import urllib.error
 import urllib.request
 
-from . import cancel, config, tools
+from . import cancel, config, cua_safety, tools
 
 MAX_STEPS = 8  # default; [agents] act_max_steps overrides
 MAX_ERRORS = 2
@@ -30,7 +30,9 @@ SYSTEM = ("You are Wisp's hands on a Linux desktop (Hyprland). Complete "
           "the user's task using the provided tools — keep steps minimal "
           "and prefer safe tools. Take a screenshot first when the task "
           "needs on-screen targets; click/move take 'x,y' in that "
-          "screenshot's pixels. Never click twice off the same screenshot "
+          "screenshot's pixels or a target name (e.g. 'monitor icon in menu bar') "
+          "which automatically grounds via Clef/Jev noul probabilistic centering. "
+          "Never click twice off the same screenshot "
           "— after anything that changes the screen (click, key, type, "
           "launch, focus, workspace, shell), re-screenshot before the "
           "next pointer action. A GUIDE result means the ghost cursor "
@@ -62,7 +64,7 @@ def _post(messages: list, cfg: dict) -> dict:
 def _gate(name: str, arg: str, cfg: dict, confirm,
           state=None) -> str | None:
     """Returns a refusal string when the call is blocked, else None."""
-    tier = tools.risk_of(name)
+    tier = cua_safety.effective_tier(name, cfg)  # W9: confirm=always
     if tier == "shell" or name in tools.TEXT_INPUT:
         if tools.denied(arg):
             return "REFUSED (denylisted command)"
@@ -176,6 +178,8 @@ def run_act_loop(task: str, cfg: dict, state=None,
     def stopped() -> bool:
         return cancel.is_cancelled() or bool(interrupted and interrupted())
 
+    guard = cua_safety.Guard(cfg, state=state, interrupted=interrupted)
+
     while len(steps) < max_steps:
         if stopped():
             _goals.record_steps(steps)
@@ -257,7 +261,10 @@ def run_act_loop(task: str, cfg: dict, state=None,
                         _attach_image(messages, shot[5:].strip(), cfg)
                     screen_dirty = False
                 try:
-                    result = tools.run(name, arg, cfg, harness)
+                    # W9: kill/deny/rate/dry-run/audit around dispatch
+                    result = guard.run(
+                        name, arg,
+                        lambda: tools.run(name, arg, cfg, harness))
                 except cancel.Cancelled:
                     _goals.record_steps(steps)
                     return "INTERRUPTED (user)"
@@ -268,7 +275,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
             if name == "screenshot" and result.startswith("SHOT "):
                 screen_dirty = False
             elif name in _SCREEN_CHANGING and not result.startswith(
-                    ("ERROR", "SKIP", "REFUS")):
+                    ("ERROR", "SKIP", "REFUS", "DRYRUN")):
                 screen_dirty = True
             steps.append({"tool": name, "arg": arg, "result": result,
                           "reply": (msg.get("content") or "")[:500]})

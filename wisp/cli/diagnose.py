@@ -12,7 +12,7 @@ GROUPS["health"] = "Local model endpoint health"
 
 # -- doctor ---------------------------------------------------------------
 
-def doctor_sections(cfg: dict) -> list:
+def doctor_sections(cfg: dict, cua_probe=None) -> list:
     """[{name, rows:[{name, value, ok}]}] for everything wispd needs."""
     from .. import agents, brain, health as _health, ipc, \
         platform as _plat, skills
@@ -74,11 +74,7 @@ def doctor_sections(cfg: dict) -> list:
     pb = _plat.pointer_backend(cfg)
     row("pointer backend", pb or "none, guide mode only")
     row("pointer mode", cfg.get("pointer", {}).get("mode", "guide"))
-    from . import cua as _cua
-    live = _cua.is_live()
-    want = cfg.get("pointer", {}).get("backend", "auto")
-    row("cua driver", "reachable" if live else "not reachable",
-        live or want != "cua")
+    _cua_rows(row, cfg, cua_probe)
 
     row = section("integrations")
     row("dayflow", shutil.which("dayflow") or "not installed",
@@ -96,6 +92,36 @@ def doctor_sections(cfg: dict) -> list:
         row(f, f"{fp.stat().st_size // 1024}KB" if fp.exists()
             else "absent")
     return sections
+
+
+def _cua_rows(row, cfg: dict, probe=None) -> None:
+    """cua driver state, pinned version, safety modes, audit log (W10)."""
+    from .. import cua_safety, probes_cua
+    r = (probe or probes_cua.CuaProbe(cfg)).check()
+    st = r["state"]
+    want = cfg.get("pointer", {}).get("backend", "auto") == "cua"
+    label = st.replace("_", " ")
+    if st == "absent":
+        row("cua driver", "not installed: wispd install --cua",
+            not want)
+    elif r["ok"]:
+        row("cua driver", label)
+    else:
+        row("cua driver", f"{label}: {r['fix']}", False)
+    if r["binary"]:
+        v = r["version"] or "unknown"
+        pin = r["pin"] or "unpinned"
+        row("cua version", f"{v} (pin {pin})",
+            st != "version_mismatch")
+    s = cua_safety.settings(cfg)
+    modes = ["KILL SWITCH ON" if r["kill"] else "kill off",
+             "dry-run on" if s["dry_run"] else "dry-run off",
+             f"{s['per_min']}/min, {s['per_turn']}/turn"]
+    row("cua safety", ("safety on, " if s["safety"] else "SAFETY OFF, ")
+        + ", ".join(modes), s["safety"])
+    ap = cua_safety.audit_default_path()
+    row("cua audit log", f"{ap} ({ap.stat().st_size // 1024}KB)"
+        if ap.exists() else f"{ap} (empty)")
 
 
 @command("doctor", "Check every dependency wisp needs",
