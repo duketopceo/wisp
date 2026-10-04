@@ -4,6 +4,7 @@ no new writes — the ledger is decisions/trace, this is the lens.
 """
 import json
 import math
+import pathlib
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
@@ -13,11 +14,22 @@ DECISIONS = config.DECISIONS
 
 
 def _load(path) -> list:
+    """Parsed JSON lines; unreadable files and corrupt lines are skipped."""
     try:
-        return [json.loads(l) for l in path.read_text().splitlines()
-                if l.strip()]
+        lines = path.read_text().splitlines()
     except OSError:
         return []
+    out = []
+    for ln in lines:
+        if not ln.strip():
+            continue
+        try:
+            row = json.loads(ln)
+        except ValueError:
+            continue
+        if isinstance(row, dict):
+            out.append(row)
+    return out
 
 
 def digest(hours: int = 24, decisions_file=None,
@@ -84,21 +96,45 @@ def text(hours: int = 24) -> str:
 
 
 # --- latency report (U1) ---------------------------------------------
-# Budgets are p50 ms from the backend plan's Latency Budget table
-# (P3 is the Parakeet figure; a warm-whisper floor is 1300). The plan
-# allows revising this table once from the U1 baseline.
-BUDGETS = [
-    # id, label, p50 budget ms
-    ("P1", "press feedback", 25),
-    ("P2", "release feedback", 25),
-    ("P3", "transcript (key up -> text)", 600),
-    ("P4", "route (context + route)", 200),
-    ("P5", "answer (route -> 1st token)", 500),
-    ("P6", "spoken (reply -> TTS start)", 150),
-    ("P7", "act (route -> 1st step)", 1200),
-    ("E2E", "answer e2e (key up -> 1st token)", 1400),
-]
-P90_FACTOR = 1.5   # Definition of Done: p90 within 1.5x budget
+# The budget table is data: wisp/budgets.json (plan section 7). Each path
+# has a p50 ceiling; the verdict also requires p90 <= P90_FACTOR x budget.
+BUDGETS_FILE = pathlib.Path(__file__).with_name("budgets.json")
+
+
+def load_budgets() -> dict:
+    return json.loads(BUDGETS_FILE.read_text())
+
+
+_TABLE = load_budgets()
+BUDGETS = [(p["id"], p["label"], p["budget_p50_ms"])
+           for p in _TABLE["paths"]]
+P90_FACTOR = _TABLE["p90_factor"]   # Definition of Done: p90 within 1.5x
+_SPAN = {p["id"]: p["span"] for p in _TABLE["paths"]}
+BASELINE_FILE = (pathlib.Path(__file__).resolve().parent.parent
+                 / "docs" / "baselines" / "latency-harness.json")
+
+
+def budgets_text() -> str:
+    t = load_budgets()
+    lines = [f"latency budgets (p50 ms; p90 <= {t['p90_factor']}x)",
+             f"  {'path':<36}{'budget':>8}  harness"]
+    for p in t["paths"]:
+        lines.append(f"  {p['id'] + ' ' + p['label']:<36}"
+                     f"{p['budget_p50_ms']:>8}  {p['harness']}")
+    r = t["resources"]
+    lines.append(f"  wispd <= {r['wispd_rss_mb']} MB RSS and "
+                 f"{r['wispd_idle_cpu_pct']}% idle CPU; cua-driver "
+                 f"MemoryMax={r['cua_driver_memory_max']}; Companion <= "
+                 f"{r['companion_idle_cpu_pct_120hz']}% CPU at 120 Hz idle")
+    return "\n".join(lines)
+
+
+def load_baseline() -> dict:
+    """The committed harness baseline (fakes only), or {} if absent."""
+    try:
+        return json.loads(BASELINE_FILE.read_text())
+    except (OSError, ValueError):
+        return {}
 
 
 def parse_since(s) -> float:
@@ -137,10 +173,8 @@ def latency_report(since_hours: float = 24, trace_file=None) -> dict:
         per_turn.setdefault(e["turn"], {})[e["step"]] = e["ms"]
     series = {k: [] for k, _, _ in BUDGETS}
     for m in per_turn.values():
-        for pid, name in (("P1", "press"), ("P2", "release"),
-                          ("P3", "stt"), ("P5", "first_token"),
-                          ("P6", "tts_start"), ("P7", "first_step")):
-            if name in m:
+        for pid, name in _SPAN.items():
+            if pid not in ("P4", "E2E") and name in m:
                 series[pid].append(m[name])
         if "route" in m:
             series["P4"].append(m["route"] + m.get("context", 0))
@@ -177,6 +211,4 @@ def latency_text(since_hours: float = 24, trace_file=None) -> str:
         else:
             lines.append(f"  {r['id'] + ' ' + r['label']:<36}{0:>4}"
                          f"{'-':>7}{'-':>7}{r['budget_p50']:>8}  no data")
-    lines.append("  P8 agent, P9 stop, P10 offline: measured by U3, "
-                 "U9, U7")
     return "\n".join(lines)
