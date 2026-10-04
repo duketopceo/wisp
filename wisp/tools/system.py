@@ -44,16 +44,28 @@ def screenshot(arg: str = "", cfg: dict | None = None) -> str:
     return "SKIP (screenshot failed)"
 
 
-_DOM_QUERY = """
+_DOM_SELECTOR = ("button,[id^=dot-],.shape,input,select,textarea,"
+                 "#scroller,[onclick],.sq,.mail,.ln,.star,[data-file]")
+_DOM_META = f"""
+var n=0;
+document.querySelectorAll('{_DOM_SELECTOR}').forEach(el=>{{
+  var r=el.getBoundingClientRect(); if(r.width<3||r.height<3)return; n++;
+}});
+return JSON.stringify({{w:innerWidth,h:innerHeight,n}});
+"""
+
+
+def _dom_slice(start: int, end: int) -> str:
+    return f"""
 var els=[];
-document.querySelectorAll('button,[id^=dot-],.shape,input,select,textarea,#scroller,[onclick]').forEach(el=>{
+document.querySelectorAll('{_DOM_SELECTOR}').forEach(el=>{{
   var r=el.getBoundingClientRect(); if(r.width<3||r.height<3)return;
-  els.push({id:el.id||el.tagName.toLowerCase(),
+  els.push({{id:el.id||el.tagName.toLowerCase(),
     label:(el.textContent||el.placeholder||'').trim().slice(0,24),
     tag:el.tagName.toLowerCase(), x:Math.round(r.x),y:Math.round(r.y),
-    w:Math.round(r.width),h:Math.round(r.height)});
-});
-return JSON.stringify({w:innerWidth,h:innerHeight,els});
+    w:Math.round(r.width),h:Math.round(r.height)}});
+}});
+return JSON.stringify({{els:els.slice({start},{end})}});
 """
 
 
@@ -68,16 +80,28 @@ def _dom_shot(path, cfg: dict) -> str:
     from . import mcpclient
     import json as _j
     import re as _re
-    out = mcpclient.call(
-        'browseros evaluate '
-        + _j.dumps({"page": page, "code": _DOM_QUERY}), {})
-    m = _re.search(r"\{.*\}", out, _re.S)
-    if not m:
+    def _eval(code):
+        out = mcpclient.call(
+            'browseros evaluate '
+            + _j.dumps({"page": page, "code": code}), {})
+        m = _re.search(r"\{.*\}", out, _re.S)
+        try:
+            return _j.loads(m.group(0)) if m else None
+        except _j.JSONDecodeError:
+            return None
+
+    meta = _eval(_DOM_META)
+    if not meta:
         return "SKIP (dom shot failed)"
-    try:
-        dom = _j.loads(m.group(0))
-    except _j.JSONDecodeError:
-        return "SKIP (dom shot parse failed)"
+    dom = {"w": meta.get("w", 0), "h": meta.get("h", 0), "els": []}
+    n = meta.get("n", 0)
+    # paginate: a dense page (chess board + apps) overflows the MCP
+    # 4k response cap in a single shot
+    for s in range(0, n, 40):
+        chunk = _eval(_dom_slice(s, s + 40))
+        if not chunk:
+            return "SKIP (dom shot parse failed)"
+        dom["els"].extend(chunk.get("els", []))
     w, h = dom.get("w", 0), dom.get("h", 0)
     if not w or not h:
         return "SKIP (dom shot: empty viewport)"
@@ -85,7 +109,7 @@ def _dom_shot(path, cfg: dict) -> str:
     # OCR isn't the weak link
     screen["dom_els"] = [
         f"{e.get('id','?')}@({e['x'] + e['w'] // 2},{e['y'] + e['h'] // 2})"
-        for e in dom.get("els", [])][:30]
+        for e in dom.get("els", [])][:90]
     magick = shutil.which("magick")
     if not magick:
         return "SKIP (no magick for dom shot)"

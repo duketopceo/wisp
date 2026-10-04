@@ -1,0 +1,220 @@
+<!doctype html><html><head><meta charset="utf-8"><title>wisp applab</title>
+<style>
+body{font:14px system-ui;background:#1e1e28;color:#ddd;margin:0}
+#tabs{display:flex;gap:2px;background:#15151d;padding:6px}
+#tabs button{background:#2a2a3a;border:0;color:#ccc;padding:8px 16px;cursor:pointer}
+#tabs button.on{background:#4a4aff;color:#fff}
+.app{display:none;padding:14px}.app.on{display:block}
+button{cursor:pointer}
+/* chess */
+#board{display:grid;grid-template-columns:repeat(8,52px);width:416px;border:2px solid #555}
+.sq{width:52px;height:52px;display:flex;align-items:center;justify-content:center;font-size:32px;cursor:pointer}
+.sq.l{background:#ebecd0}.sq.d{background:#739552}.sq.sel{outline:3px solid #ff0}
+/* settings */
+.set{background:#2a2a3a;margin:6px 0;padding:10px;border-radius:6px;display:flex;justify-content:space-between;align-items:center;max-width:480px}
+/* email */
+.mail{padding:9px;border-bottom:1px solid #333;cursor:pointer;display:flex;gap:10px}
+.mail.unread{font-weight:700}.mail .star{cursor:pointer;width:20px}
+#mailbody{background:#2a2a3a;padding:12px;margin-top:10px;min-height:60px}
+/* nodes */
+.node{background:#33334a;padding:10px;margin:8px;border-radius:6px;width:210px;display:inline-block;vertical-align:top}
+.node input,.node select{width:100%;box-sizing:border-box;margin:4px 0;background:#1a1a26;color:#ddd;border:1px solid #444}
+#conns{clear:both;padding:8px;font-family:monospace;color:#8f8}
+/* editor */
+#files div{cursor:pointer;padding:4px 8px}.#files div.on{background:#3a3aff}
+#editorwrap{display:flex;gap:0}
+#files{background:#191922;width:140px}
+#code{background:#14141c;flex:1;font-family:monospace;padding:8px;white-space:pre}
+#code .ln{padding:0 6px;cursor:pointer}#code .ln:hover{background:#222}
+#code .ln.sel{background:#3a3a6a}
+</style></head><body>
+<div id="readout">waiting…</div>
+<div id="tabs"></div>
+
+<div class="app" id="app-chess">
+  <div id="board"></div><div id="cstatus">white to move</div>
+</div>
+
+<div class="app" id="app-settings">
+  <div class="set">Theme <select id="set-theme"><option>Light</option><option>Dark</option><option>System</option></select></div>
+  <div class="set">Hardware acceleration <input type="checkbox" id="set-hw"></div>
+  <div class="set">Volume <input type="range" id="set-vol" min="0" max="100" value="30"></div>
+  <div class="set">Send telemetry <input type="checkbox" id="set-tele" checked></div>
+  <div class="set">Autosave interval <select id="set-auto"><option>off</option><option>1 min</option><option>5 min</option><option>15 min</option></select></div>
+</div>
+
+<div class="app" id="app-email">
+  <button id="btn-compose">Compose</button>
+  <div id="maillist"></div><div id="mailbody">(no email open)</div>
+  <div id="composer" style="display:none">
+    <input id="comp-to" placeholder="to" style="width:90%;display:block;margin:4px 0">
+    <input id="comp-subj" placeholder="subject" style="width:90%;display:block;margin:4px 0">
+    <textarea id="comp-body" rows="4" placeholder="message" style="width:90%;display:block;margin:4px 0"></textarea>
+    <button id="btn-send">Send</button>
+  </div>
+</div>
+
+<div class="app" id="app-nodes">
+  <div class="node" data-node="texture"><b>Texture</b>
+    <div>file <select id="n-texture-file"><option>checker.png</option><option>photo.png</option><option>mask.png</option></select></div></div>
+  <div class="node" data-node="blur"><b>Blur</b>
+    <div>radius <input type="number" id="n-blur-radius" value="2" min="0" max="64"></div>
+    <div>input <select id="n-blur-input"><option value="">(none)</option><option value="texture">Texture</option><option value="noise">Noise</option></select></div></div>
+  <div class="node" data-node="noise"><b>Noise</b>
+    <div>scale <input type="number" id="n-noise-scale" value="1" min="0" max="10" step="0.5"></div></div>
+  <div class="node" data-node="grade"><b>Grade</b>
+    <div>input <select id="n-grade-input"><option value="">(none)</option><option value="blur">Blur</option><option value="noise">Noise</option><option value="texture">Texture</option></select></div>
+    <div>lift <input type="number" id="n-grade-lift" value="0" min="-1" max="1" step="0.05"></div></div>
+  <div id="conns">connections: —</div>
+</div>
+
+<div class="app" id="app-editor">
+  <div id="editorwrap">
+    <div id="files">
+      <div data-file="main.py" class="on">main.py</div>
+      <div data-file="utils.py">utils.py</div>
+      <div data-file="readme.md">readme.md</div>
+    </div>
+    <div id="code"></div>
+  </div>
+  <div style="margin-top:8px">
+    <input id="ed-search" placeholder="search in file">
+    <button id="btn-run">Run</button>
+    <span id="ed-status">idle</span>
+  </div>
+</div>
+
+<script>
+window.__score = {events: [], counts: {}, moves: [], typed: {},
+                  board: {}, conns: {}, state: {}};
+function ev(e){ window.__score.events.push(e);
+  window.__score.counts[e] = (window.__score.counts[e]||0)+1;
+  readout.textContent = 'events: ' + window.__score.events.length +
+    ' last: ' + e; document.title = 'wisp applab · ' +
+    window.__score.events.length; }
+
+/* ── tabs ── */
+const apps = ['chess','settings','email','nodes','editor'];
+for (const a of apps){
+  const b = document.createElement('button');
+  b.id = 'tab-' + a; b.textContent = a;
+  b.onclick = () => { apps.forEach(x => {
+    document.getElementById('app-'+x).classList.toggle('on', x===a);
+    document.getElementById('tab-'+x).classList.toggle('on', x===a);});
+    ev('tab-'+a); };
+  tabs.appendChild(b);
+}
+document.getElementById('tab-chess').classList.add('on');
+document.getElementById('app-chess').classList.add('on');
+
+/* ── chess ── */
+const PIECES = {e1:'♔',d1:'♕',a1:'♖',h1:'♖',b1:'♘',g1:'♘',c1:'♗',f1:'♗',
+  a8:'♜',h8:'♜',b8:'♞',g8:'♞',c8:'♝',f8:'♝',e8:'♚',d8:'♛'};
+for (let f=0;f<8;f++) PIECES['abcdefgh'[f]+'2']='♙';
+for (let f=0;f<8;f++) PIECES['abcdefgh'[f]+'7']='♟';
+PIECES['d4']='♟'; // en-passant-ish training pawn
+PIECES['e4']='♙';
+window.__score.board = Object.assign({}, PIECES);
+let sel = null;
+const board = document.getElementById('board');
+for (let r=8;r>=1;r--) for (let c=0;c<8;c++){
+  const sq = document.createElement('div');
+  const name = 'abcdefgh'[c]+r;
+  sq.className = 'sq '+(((r+c)%2)?'l':'d'); sq.id='sq-'+name;
+  sq.textContent = window.__score.board[name]||'';
+  sq.onclick = () => {
+    if (!sel){ if (sq.textContent){ sel=name;
+      sq.classList.add('sel'); ev('sel-'+name);} return; }
+    const mv = sel+'-'+name;
+    window.__score.board[name] = window.__score.board[sel];
+    delete window.__score.board[sel];
+    sq.textContent = window.__score.board[name]||'';
+    document.getElementById('sq-'+sel).textContent='';
+    document.getElementById('sq-'+sel).classList.remove('sel');
+    window.__score.moves.push(mv); ev('move-'+mv);
+    sel = null;
+    cstatus.textContent = 'last move '+mv; };
+  board.appendChild(sq);
+}
+
+/* ── settings ── */
+for (const id of ['set-theme','set-hw','set-vol','set-tele','set-auto']){
+  const el = document.getElementById(id);
+  el.addEventListener('change', () => { window.__score.state[id]=
+    el.type==='checkbox'?el.checked:el.value; ev(id+'='+el.value); });
+}
+
+/* ── email ── */
+const MAIL = [
+ {from:'alice@corp.io', subj:'Deploy schedule', body:'Ship Tuesday unless QA objects.'},
+ {from:'bob@corp.io', subj:'Lunch?', body:'Tacos at noon?'},
+ {from:'noreply@bank.example', subj:'Statement ready', body:'Your October statement is available.'},
+ {from:'carol@corp.io', subj:'Review: PR #77', body:'Left comments on the grounding patch.'}];
+const ml = document.getElementById('maillist');
+MAIL.forEach((m,i)=>{
+  const d = document.createElement('div');
+  d.className='mail unread'; d.id='mail-'+i;
+  d.innerHTML = `<span class="star" id="star-${i}">☆</span>
+    <span>${m.from} — ${m.subj}</span>`;
+  d.onclick = () => { d.classList.remove('unread');
+    window.__score.state['opened-'+i]=true;
+    mailbody.textContent = m.from+' | '+m.subj+' — '+m.body;
+    ev('open-mail-'+i); };
+  d.querySelector('.star').onclick = (e)=>{ e.stopPropagation();
+    const st = d.querySelector('.star');
+    st.textContent = st.textContent==='☆'?'★':'☆';
+    window.__score.state['starred-'+i]=st.textContent==='★';
+    ev('star-'+i); };
+  ml.appendChild(d);
+});
+btncompose.onclick = () => { composer.style.display='block'; ev('compose'); };
+btnsend.onclick = () => {
+  window.__score.typed['comp-to']=compto.value;
+  window.__score.typed['comp-subj']=compsubj.value;
+  window.__score.typed['comp-body']=compbody.value;
+  composer.style.display='none';
+  mailbody.textContent='sent to '+compto.value; ev('sent'); };
+for (const id of ['comp-to','comp-subj','comp-body'])
+  document.getElementById(id).addEventListener('input',
+    e => window.__score.typed[id]=e.target.value);
+
+/* ── nodes ── */
+function conn(id){
+  const s = document.getElementById(id);
+  window.__score.conns[id] = s.value; ev(id+'->'+s.value); refreshConns();}
+function refreshConns(){
+  conns.textContent = 'connections: ' +
+    Object.entries(window.__score.conns).map(([k,v])=>k+'→'+v).join(', ');}
+for (const id of ['n-blur-input','n-grade-input'])
+  document.getElementById(id).addEventListener('change',()=>conn(id));
+for (const id of ['n-blur-radius','n-noise-scale','n-grade-lift',
+                  'n-texture-file'])
+  document.getElementById(id).addEventListener('change', e => {
+    window.__score.state[id]=e.target.value; ev(id+'='+e.target.value);});
+
+/* ── editor ── */
+const SRC = {
+ 'main.py': 'def fetch(url):\n    return get(url)\n\ndef main():\n    r = fetch("api")\n    print(r)\n\nmain()',
+ 'utils.py': 'def get(u):\n    import urllib\n    return urllib.open(u)\n\nCACHE = {}',
+ 'readme.md': '# demo\n\nrun main.py to fetch.\nedit this file.'};
+const code = document.getElementById('code');
+function openFile(f){
+  window.__score.state['file'] = f;
+  document.querySelectorAll('#files div').forEach(d =>
+    d.classList.toggle('on', d.dataset.file===f));
+  code.innerHTML='';
+  SRC[f].split('\n').forEach((ln,i)=>{
+    const d=document.createElement('div'); d.className='ln';
+    d.id='ln-'+i; d.textContent=(i+1)+'  '+ln;
+    d.onclick=()=>{document.querySelectorAll('.ln').forEach(x=>x.classList.remove('sel'));
+      d.classList.add('sel');window.__score.state['line']=i+1;
+      ev('line-'+(i+1));};
+    code.appendChild(d); });
+  ev('open-'+f);
+}
+document.querySelectorAll('#files div').forEach(d =>
+  d.onclick=()=>openFile(d.dataset.file));
+openFile('main.py');
+btnrun.onclick=()=>{edstatus.textContent='ran '+window.__score.state['file'];ev('run');};
+edsearch.addEventListener('input',e=>window.__score.typed['ed-search']=e.target.value);
+</script></body></html>

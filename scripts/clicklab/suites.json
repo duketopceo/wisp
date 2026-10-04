@@ -132,5 +132,115 @@
    "return s.counts['btn-foxtrot'] >= 1 && (s.typed['textin']||'').includes('done') && s.counts['btn-alpha'] >= 1",
    4
   ]
+ ],
+ "apps-chess": [
+  [
+   "click the chess tab and move the pawn on e2 to e4",
+   "return s.moves.includes('e2-e4')",
+   3
+  ],
+  [
+   "click the chess tab and move the knight on g1 to f3",
+   "return s.moves.includes('g1-f3')",
+   3
+  ],
+  [
+   "click the chess tab and move the bishop on f1 to c4",
+   "return s.moves.includes('f1-c4')",
+   3
+  ],
+  [
+   "click the chess tab and capture the black pawn on d4 with the white pawn on e4",
+   "return s.moves.includes('e4-d4') && s.board['d4']==='\u2659'",
+   3
+  ]
+ ],
+ "apps-settings": [
+  [
+   "click the settings tab and set the theme to Dark",
+   "return s.state['set-theme']==='Dark'",
+   2
+  ],
+  [
+   "click the settings tab and turn hardware acceleration on",
+   "return s.state['set-hw']===true",
+   2
+  ],
+  [
+   "click the settings tab and turn telemetry off",
+   "return s.state['set-tele']===false",
+   2
+  ],
+  [
+   "click the settings tab and set autosave to 5 min",
+   "return s.state['set-auto']==='5 min'",
+   2
+  ]
+ ],
+ "apps-email": [
+  [
+   "click the email tab and open the email from alice",
+   "return s.state['opened-0']===true",
+   2
+  ],
+  [
+   "click the email tab and star the email about lunch",
+   "return s.state['starred-1']===true",
+   2
+  ],
+  [
+   "click the email tab and open the bank statement email",
+   "return s.state['opened-2']===true",
+   2
+  ],
+  [
+   "click the email tab, click compose, and type 'hello' in the message body",
+   "return s.typed['comp-body']==='hello'",
+   4
+  ]
+ ],
+ "apps-nodes": [
+  [
+   "click the nodes tab and set the blur radius to 8",
+   "return s.state['n-blur-radius']==='8'",
+   2
+  ],
+  [
+   "click the nodes tab and connect the texture node into the blur node",
+   "return s.conns['n-blur-input']==='texture'",
+   2
+  ],
+  [
+   "click the nodes tab and set the noise scale to 3.5",
+   "return s.state['n-noise-scale']==='3.5'",
+   2
+  ],
+  [
+   "click the nodes tab and connect the blur node into the grade node",
+   "return s.conns['n-grade-input']==='blur'",
+   2
+  ]
+ ],
+ "apps-editor": [
+  [
+   "click the editor tab and open the file utils.py",
+   "return s.state['file']==='utils.py'",
+   2
+  ],
+  [
+   "click the editor tab and click line 4 in the code",
+   "return s.state['line']===4",
+   2
+  ],
+  [
+   "click the editor tab and click the run button",
+   "return (s.counts['run']||0)>=1",
+   2
+  ],
+  [
+   "click the editor tab and type 'fetch' in the search box",
+   "return s.typed['ed-search']==='fetch'",
+   3
+  ]
  ]
 }
