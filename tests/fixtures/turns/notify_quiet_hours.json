@@ -1,5 +1,5 @@
 {
-  "description": "Same turn inside [notify] quiet hours: the toast is suppressed, nothing reaches notify-send.",
+  "description": "Same turn inside [notify] quiet hours (22:00-07:00, fixed clock 23:30 via notify_now): the toast is suppressed, nothing reaches notify-send.",
   "audio": "ask.wav",
   "endpoints": {
     "whisper": {
@@ -39,7 +39,8 @@
   },
   "config": {
     "notify": {
-      "quiet": "00:00-23:59"
+      "quiet": "22:00-07:00"
     }
-  }
+  },
+  "notify_now": "2026-10-04T23:30"
 }

@@ -17,7 +17,7 @@ python -m unittest tests.test_scenarios     # whole corpus, under 20 s
 `error_detail_contains`, `tool_calls`, `brain_calls`, `jev_calls`,
 `cua_calls`, `steps_contain` (one substring per act step, in order),
 `notify_count`, `notify_bodies`, `launch_calls`, `hypr_requests_contain`,
-`peer_closed`, `brain_fallback_from`, `stop_within_ms` (interrupt to idle,
+`peer_closed`, top-level `notify_now` (fixed clock for quiet hours), `brain_fallback_from`, `stop_within_ms` (interrupt to idle,
 the P9 budget). `tests/test_scenarios.py` requires every fixture to carry a
 `description`, a `scenario` tag and a non-empty `expect`, and requires this
 table to list every fixture.
@@ -42,7 +42,8 @@ table to list every fixture.
 | `cua_rate_limited` | rate limit hit | Per-turn click cap of 1: the first click goes through, the second is refused and never reaches cua-driver. |
 | `jev_down` | Jev down | Jev answers 503 on every call. The turn ends in error with error_code jev_down, a human-safe error string and the raw text in error_detail (U7). No fallback router until U8. |
 | `notify_error_toast` | notify paths | Brain down with the notify fake installed: the error turn raises an error toast. |
-| `notify_quiet_hours` | notify paths | Same turn inside [notify] quiet hours: the toast is suppressed, nothing reaches notify-send. |
+| `notify_outside_quiet` | notify paths | Control for notify_quiet_hours: same 22:00-07:00 window, fixed clock 12:00 is outside it, so the toast is sent. |
+| `notify_quiet_hours` | notify paths | Same turn inside [notify] quiet hours (22:00-07:00, fixed clock 23:30 via notify_now): the toast is suppressed, nothing reaches notify-send. |
 | `notify_success_toast` | notify paths | Answer turn with the notify fake installed: one success toast reaches notify-send. |
 | `offline_all` | offline daemon | Every model endpoint is down (STT, Jev, brain): the turn ends in a clean error, nothing leaves loopback. |
 | `stale_choice` | stale choice | The chooser returns a pick that was never offered (stale prompt). U9: it is rejected (choice_rejected in the trace) and the turn falls back to the safe auto-pick. |
@@ -56,8 +57,6 @@ table to list every fixture.
   `tests/test_scenarios.py`.
 - **agent spawn** (P8 agent ack): `agents.spawn` forks a process; needs an
   agent fake first.
-- **quiet hours** note: `notify_quiet_hours` uses `00:00-23:59`, so the
-  one minute at 23:59 each day is not quiet.
 
 ## Latency
 
