@@ -349,6 +349,13 @@ class TestReconnect(unittest.TestCase):
         self.assertEqual(js("S.backoffMs(-3)"), 500)
         self.assertEqual(js("S.backoffMs(undefined)"), 500)
 
+    def test_disconnect_keeps_content_until_proven_offline(self):
+        v = js("""(function(){var r=S.applySnapshot(S.initial(),%s,1,"stream");
+          return S.markDisconnected(r.view)})()""" % json.dumps(
+              snap(status="acting", answer="x")))
+        self.assertEqual((v["status"], v["answer"], v["connection"],
+                          v["offline"]), ("acting", "x", "none", False))
+
     def test_reconnect_replay_replaces_baseline(self):
         r = run([["snap", snap(seq=40, answer="before"), 1],
                  ["offline", 2],

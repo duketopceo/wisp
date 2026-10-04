@@ -197,6 +197,15 @@ function markOffline(view, nowMs) {
   return v
 }
 
+// Stream dropped but the daemon may be fine (resync, overflow, restart):
+// keep status and content, let the file fallback or a new subscription
+// supply the next snapshot.
+function markDisconnected(view) {
+  var v = copy(view)
+  v.connection = "none"
+  return v
+}
+
 // A busy turn whose snapshot has not changed for afterMs. Heartbeats
 // (heartbeat_at) and any state diff count as change; pings do not.
 function isStale(view, nowMs, afterMs) {
