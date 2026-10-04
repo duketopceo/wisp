@@ -258,6 +258,12 @@ def main():
              if s.strip()]
     if not specs:
         specs = [cfg.get("brain", {}).get("default", "openrouter")]
+    sys.path.insert(0, str(pathlib.Path(__file__).parent))
+    import arena_policy
+    try:
+        arena_policy.gate(specs)
+    except arena_policy.PolicyError as e:
+        raise SystemExit(f"[clicklab] refused: {e}")
     results = []
     for spec in specs:
         if ":" not in spec:
