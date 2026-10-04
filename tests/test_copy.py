@@ -150,7 +150,7 @@ class TestErrors(unittest.TestCase):
             self.assertNotRegex(msg, r"\bE_[A-Z_]+|Exception|Traceback", code)
 
     def test_string_table(self):
-        self.assertEqual(wcopy.string("state.stale"), "out of date")
+        self.assertEqual(wcopy.string("state.reconnecting"), "reconnecting")
         self.assertEqual(wcopy.string("no.such.key"), "no.such.key")
 
 

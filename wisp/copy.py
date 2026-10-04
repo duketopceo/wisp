@@ -50,6 +50,8 @@ RESULT_RULES = (
     (r"^SKIP(PED)? \((nothing to type|empty command|empty agent task"
      r"|empty pattern)\)", "didn't catch what to do", "didnt_understand"),
     (r"^SKIP(PED)? \(.* declined by user\)", "skipped, you said no", None),
+    (r"^SKIP(PED)? \(.* confirmation timed out\)", "skipped, no answer",
+     None),
     (r"^SKIP(PED)? \(.* needs user confirmation\)", "needs your ok", None),
     (r"^SKIP(PED)? \(shell disabled", "shell commands are off", None),
     (r"^SKIP(PED)?\b", "couldn't do that", None),
@@ -95,7 +97,6 @@ UNKNOWN_ERROR = "internal"
 # Reader and surface strings keyed "area.name". Sentence case is not used
 # for status-like words (lowercase), same as STATUS.
 STRINGS = {
-    "state.stale": "out of date",
     "state.reconnecting": "reconnecting",
     "state.offline": "wisp is not running",
     "state.degraded": "reading from file",
@@ -137,6 +138,11 @@ STRINGS = {
     "ui.bar.down": "down",
     "ui.bar.spend": "spent today",
     "ui.bar.hint": "click: talk, middle: stop, right: open",
+    "ui.bar.hint.offline": "click: start wisp, right: open",
+    "ui.confirm.title": "needs your ok",
+    "ui.confirm.allow": "allow",
+    "ui.confirm.deny": "deny",
+    "ui.confirm.hint": "no answer counts as deny",
 }
 
 _DASH = re.compile(r"\s*[—–]\s*")
@@ -159,13 +165,42 @@ def status_tone(status: str) -> str:
 _BLOCKED = re.compile(r"^BLOCKED")
 
 
-def pill_view(status: str, result: str = "") -> tuple:
-    """(word, tone) for the pill: the status word, except a `done` turn
-    whose result is BLOCKED reads `blocked` in the needs-you tone, never
-    `done` (the action did not happen)."""
+# statuses in which the daemon must keep publishing (the reader's BUSY
+# set, shell-plugin/lib/state.js); a stale flag only means something here
+BUSY = ("transcribing", "deciding", "acting")
+
+
+def word_view(status: str, result: str = "", code: str = "",
+              stale: bool = False) -> tuple:
+    """(word, tone) every surface shows for the live state (pill, console
+    status line, bar tooltip). One precedence, so no surface can disagree:
+      - a busy turn whose state stopped updating reads `reconnecting`
+        (muted), never the live word it can no longer vouch for;
+      - an `error` turn with a code reads that code's message (fail);
+      - a `done` turn whose result is BLOCKED reads `blocked` (needsYou),
+        never `done` (the action did not happen);
+      - anything else is the status word and tone.
+    Offline is the `offline` status, which has its own word."""
+    if stale and status in BUSY:
+        return (STRINGS["state.reconnecting"], "muted")
+    if status == "error" and code:
+        return (error_message(code), "fail")
     if status == "done" and _BLOCKED.match(result or ""):
         return (STRINGS["ui.pill.blocked"], "needsYou")
     return (status_word(status), status_tone(status))
+
+
+def pill_view(status: str, result: str = "") -> tuple:
+    """`word_view` without a code or stale flag (kept for callers that
+    only know status and result)."""
+    return word_view(status, result)
+
+
+def toast_text(code: str) -> str:
+    """Notification body for an error code: the same message and hint
+    every other surface shows, on two lines."""
+    msg, hint = ERRORS.get(code, ERRORS[UNKNOWN_ERROR])
+    return msg + ("\n" + hint if hint else "")
 
 
 def translate_result(raw: str) -> dict:

@@ -40,9 +40,10 @@ TestCase {
       ["suggestion", "idea", "ember"],
       ["done", "done", "ok"],
       ["long_answer", "speaking", "ember"],
-      ["error", "that failed", "fail"],
+      ["error", "can't reach the decision model", "fail"],
       ["blocked", "blocked", "needsYou"],
-      ["stale", "working", "ember"],
+      ["stale", "reconnecting", "muted"],
+      ["confirm", "your call", "needsYou"],
       ["offline", "offline", "muted"]
     ];
   }

@@ -20,15 +20,13 @@ BarWidget {
   readonly property var service: bar && bar.shell
     ? bar.shell.serviceFor(moduleName) : null
 
-  readonly property string word: service
-    ? (service.status === "error" && service.errorMessage !== ""
-       ? service.errorMessage : service.statusWord)
-    : "offline"
+  readonly property string word: service ? service.wordView.word : "offline"
 
   // Rebuilt from the service view only when it changes; no polling.
   readonly property string tooltip: service
     ? B.tooltipLines(service.view, {
-        word: root.word, notice: service.notice, stale: service.stale,
+        word: root.word, hint: service.status === "error" ? service.errorHint : "", notice: service.notice,
+        stale: service.stale,
         offline: service.offline, ui: service.ui
       }).join("\n")
     : "wisp: offline"

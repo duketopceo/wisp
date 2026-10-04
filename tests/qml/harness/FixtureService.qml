@@ -26,6 +26,7 @@ Item {
   property string result: ""
   property var choices: []
   property string promptId: ""
+  property var confirm: null
   property var points: []
   property var steps: []
   property var suggestion: null
@@ -46,19 +47,19 @@ Item {
 
   readonly property string statusWord: Copy.statusWord(status)
   readonly property string statusTone: Copy.statusTone(status)
-  // Pill label: a done turn with a BLOCKED result reads "blocked", not "done".
-  readonly property var pillView: Copy.pillView(status, result)
+  readonly property var wordView: Copy.wordView(status, result, errorCode, stale)
   readonly property var resultView: Copy.translateResult(result)
   readonly property string errorMessage: errorCode !== "" ? Copy.errorMessage(errorCode) : ""
   readonly property string errorHint: errorCode !== "" ? Copy.errorHint(errorCode) : ""
   readonly property string notice: offline ? Copy.string("state.offline")
-    : stale ? Copy.string("state.stale")
     : contractNewer ? Copy.string("state.newer") : ""
   readonly property string motionMode: Motion.resolveMode(motionConfig, animationsEnabled)
 
   // the bar actions call these; the harness never talks to a daemon
   function trigger() {}
   function interrupt() {}
+  function startDaemon() {}
+  function sendChoice(pick, pid) { return false; }
 
   function ui(key) { return Copy.string(key); }
   function pickLabel(pick) { return Copy.pickLabel(pick); }
@@ -82,6 +83,7 @@ Item {
     root.result = v.result;
     root.choices = v.choices;
     root.promptId = v.promptId;
+    root.confirm = v.confirm;
     root.points = v.points;
     root.steps = v.steps;
     root.suggestion = v.suggestion;
