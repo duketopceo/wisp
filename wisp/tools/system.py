@@ -320,8 +320,10 @@ def key(arg: str, cfg: dict | None = None) -> str:
     code = _KEYCODES.get(name)
     if code is None:
         return f"SKIP (unknown key {name!r})"
-    r = _cancel.run(["ydotool", "key", f"{code}:1", f"{code}:0"],
-                       capture_output=True, env=hypr_env())
+    from .. import keys as _keys
+    with _keys.suspended():  # the Wisp submap must not eat the agent's key
+        r = _cancel.run(["ydotool", "key", f"{code}:1", f"{code}:0"],
+                        capture_output=True, env=hypr_env())
     return "KEY" if r.returncode == 0 else "SKIP (ydotool key failed)"
 
 
