@@ -18,7 +18,7 @@ Diagnose:
   latency      p50 and p90 per budget path from recent turns
   spend        Model usage today and the daily and monthly caps
   binds        Show the push-to-talk hotkey and its Hyprland binds
-  onboard      Check first-run setup and say what to do next
+  onboard      Walk through first-run setup (every step skippable)
   trace        Turn trace and daily digest
 
 Pointer and notifications:

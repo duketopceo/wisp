@@ -5,10 +5,12 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "components"
+import "lib/onboard.js" as Onboard
 
 // Popup panel for io.github.duketopceo.wisp, opened from the bar mark.
 // Four tabs: Now (the turn in flight), Agents (tasks), Memory (skills and
-// recent decisions) and Settings (Health, then the config editor). State
+// recent decisions) and Settings (Health, then the config editor). Until
+// setup is finished a first-run card sits above the tabs (wispd onboard). State
 // comes only from the plugin's WispService (hostWidget.service); the tab
 // bodies are window-free components under components/. The only files read
 // here are skills.json and decisions.jsonl, watched, never polled; there
@@ -33,9 +35,28 @@ Panel {
   property var skills: []
   property var decisions: []
   property var connectors: []
+  // `wispd onboard --status` data, and the steps skipped this session
+  // (a skip is never written anywhere)
+  property var onboard: null
+  property var skippedSteps: []
 
-  onOpenedChanged: if (opened && tab === 3) loadSettings()
+  onOpenedChanged: {
+    if (opened) loadOnboard()
+    if (opened && tab === 3) loadSettings()
+  }
   onTabChanged: if (tab === 3) loadSettings()
+
+  function loadOnboard() {
+    if (!service || onboardStatusProc.running) return
+    onboardStatusProc.command = Onboard.statusCommand(service.wispd)
+    onboardStatusProc.running = true
+  }
+
+  function onboardRun(argv) {
+    if (onboardRunProc.running) return
+    onboardRunProc.command = argv
+    onboardRunProc.running = true
+  }
 
   function loadSettings() {
     if (!service) return
@@ -86,6 +107,20 @@ Panel {
   }
 
   Process {
+    id: onboardStatusProc
+    command: []
+    stdout: StdioCollector { id: onboardOut }
+    onExited: wisp.onboard = Onboard.parse(onboardOut.text)
+  }
+
+  // one card action at a time; the status is re-read when it ends
+  Process {
+    id: onboardRunProc
+    command: []
+    onExited: wisp.loadOnboard()
+  }
+
+  Process {
     id: connRunProc
     command: []
     onExited: connListProc.running = true
@@ -133,6 +168,21 @@ Panel {
               onClicked: wisp.tab = index
             }
           }
+        }
+
+        FirstRunCard {
+          visible: Onboard.visible(wisp.onboard)
+          width: col.width - 2 * col.padding
+          service: col.svc
+          steps: wisp.onboard ? wisp.onboard.steps : []
+          skipped: wisp.skippedSteps
+          onRun: function (id) {
+            wisp.skippedSteps = wisp.skippedSteps.filter(function (s) { return s !== id })
+            wisp.onboardRun(Onboard.stepCommand(col.svc.wispd, id))
+          }
+          onSkip: function (id) { wisp.skippedSteps = wisp.skippedSteps.concat([id]) }
+          onUndo: function (id) { wisp.onboardRun(Onboard.undoCommand(col.svc.wispd, id)) }
+          onFinish: wisp.onboardRun(Onboard.finishCommand(col.svc.wispd))
         }
 
         NowTab {

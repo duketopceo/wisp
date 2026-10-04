@@ -333,37 +333,88 @@ def binds(ctx, a):
 
 # -- onboard --------------------------------------------------------------
 
-@command("onboard", "Check first-run setup and say what to do next",
-         ["wispd onboard", "wispd onboard --json"],
-         {"ready": "bool", "steps": "list"})
+def _onboard_args(p):
+    p.add_argument("--status", action="store_true",
+                   help="print the checklist and exit 0 (the Panel card "
+                   "reads this)")
+    p.add_argument("--step", metavar="ID",
+                   help="run one step: mic, models, cua, notifications, "
+                   "keybinding")
+    p.add_argument("--yes", action="store_true",
+                   help="with --step notifications: send the test now")
+    p.add_argument("--undo", metavar="ID", help="forget one recorded step")
+    p.add_argument("--finish", action="store_true",
+                   help="mark setup finished (hides the Panel card)")
+    p.add_argument("--reset", action="store_true",
+                   help="forget all progress")
+    p.add_argument("--interactive", action="store_true",
+                   help="walk the steps even without a terminal")
+
+
+def _onboard_rows(ctx, st):
+    mark = {"done": "ok", "todo": "TODO", "na": "n/a"}
+    rows = [[mark[s["state"]], s["name"],
+             s["detail"] if s["state"] != "todo" or not s["try"]
+             else s["detail"] + ". Try: " + s["try"]]
+            for s in st["steps"]]
+    tones = [[{"done": "ok", "todo": "warn", "na": "muted"}[s["state"]],
+              None, "muted"] for s in st["steps"]]
+    return ctx.table(["", "", ""], rows, tones, header=False)
+
+
+@command("onboard", "Walk through first-run setup (every step skippable)",
+         ["wispd onboard", "wispd onboard --status --json",
+          "wispd onboard --step notifications --yes",
+          "wispd onboard --undo mic"],
+         {"ready": "bool", "finished": "bool", "done_count": "int",
+          "total": "int", "steps": "list"},
+         args=_onboard_args)
 def onboard(ctx, a):
-    # TODO(W28): the interactive first-run flow lives there; this is the
-    # non-interactive readiness checklist it will build on.
-    from .. import ipc
-    cfg = ctx.cfg
-    wm = config.whisper_model(cfg)
-    snap = _snapshot(ctx)
-    down = sorted(n for n, h in snap.items() if not h["ok"])
-    steps = [
-        ("config file", config.CFG_FILE.exists(), "wispd config show"),
-        ("speech model", wm.exists(), "scripts/fetch_whisper.sh"),
-        ("recorder (pw-record)", bool(shutil.which("pw-record")),
-         "omarchy pkg add pipewire"),
-        ("model endpoints", not down, "wispd health start"),
-        ("daemon running", ipc.alive(), "wispd daemon install"),
-    ]
-    out = [{"name": n, "ok": bool(ok), "try": hint}
-           for n, ok, hint in steps]
-    data = {"ready": all(s["ok"] for s in out), "steps": out}
-    rows = [["ok" if s["ok"] else "TODO", s["name"],
-             "" if s["ok"] else "Try: " + s["try"]] for s in out]
-    tones = [["ok" if s["ok"] else "warn", None, "muted"] for s in out]
-    text = ctx.table(["", "", ""], rows, tones, header=False)
-    if data["ready"]:
-        return ctx.emit(data, text)
+    import sys
+    from .. import onboard as ob
+    progress, probes = ob.Progress(), ob.Probes()
+    # a fresh machine has no config.toml, and ctx.cfg would write one;
+    # onboarding reads the defaults instead and writes nothing
+    cfg = ctx.cfg if config.CFG_FILE.exists() \
+        else config._default_cfg_dict()
+    ctx._cfg = cfg   # so table() cannot load (and write) the real file
+    ids = [s.id for s in ob.STEPS]
+    for name in (a.step, a.undo):
+        if name and name not in ids:
+            raise CliError("E_USAGE", f"Unknown step {name!r}. Choose "
+                           f"{', '.join(ids)}.", "wispd onboard --help")
+    if a.reset:
+        progress.reset()
+        return ctx.emit({"reset": True}, "progress cleared")
+    if a.undo:
+        r = ob.undo(a.undo, progress)
+        return ctx.emit(r, f"{a.undo}: " + ("undone" if r["undone"]
+                                            else "nothing to undo"))
+    if a.finish:
+        progress.finish()
+        return ctx.emit({"finished": True}, "setup marked finished")
+    if a.step:
+        r = ob.run_step(a.step, cfg, probes, progress, confirm=a.yes)
+        if r["done"]:
+            return ctx.emit(r, f"{a.step}: {r['detail']}")
+        hint = r["fix"] or "wispd onboard"
+        if a.step == "notifications" and not a.yes \
+                and r["state"] == "todo" and r["detail"].startswith("ready"):
+            hint = "wispd onboard --step notifications --yes"
+        raise CliError("E_NOT_READY", f"{r['name']}: {r['detail']}.", hint,
+                       data=r)
+    if a.interactive or (sys.stdin.isatty() and sys.stdout.isatty()
+                         and not ctx.json and not a.status):
+        res = ob.walk(cfg, probes, progress, input, print)
+        return ctx.emit(res, "setup finished" if res["finished"]
+                        else "progress saved, run wispd onboard to resume")
+    st = ob.status(cfg, probes, progress)
+    text = _onboard_rows(ctx, st)
+    if st["ready"] or a.status:
+        return ctx.emit(st, text)
     if not ctx.json and not ctx.flags.quiet:
         print(text)
-    n = sum(1 for s in out if not s["ok"])
-    raise CliError("E_NOT_READY", f"{n} setup step"
-                   f"{'s' if n != 1 else ''} still to do.",
-                   next(s["try"] for s in out if not s["ok"]), data=data)
+    todo = [s for s in st["steps"] if not s["optional"] and not s["ok"]]
+    raise CliError("E_NOT_READY", f"{len(todo)} setup step"
+                   f"{'s' if len(todo) != 1 else ''} still to do.",
+                   todo[0]["try"] or "wispd onboard", data=st)
