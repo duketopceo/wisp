@@ -217,14 +217,14 @@ def weekly(days: int = 7, corrections_file=config.CORRECTIONS,
             ts = datetime.fromisoformat(rec["ts"])
         except (KeyError, ValueError):
             continue
-        if ts >= cutoff:
+        if ts >= cutoff and rec.get("picked"):
             recent.append(rec)
     if not recent:
         return None
 
     counts = {}
     for rec in recent:
-        key = rec.get("picked", "")
+        key = rec["picked"]
         counts[key] = counts.get(key, 0) + 1
 
     iso_year, iso_week, _ = datetime.now(timezone.utc).isocalendar()

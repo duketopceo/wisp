@@ -1,0 +1,55 @@
+{
+  "description": "Act route: the brain makes two tool steps (recall, safe and local) then finishes.",
+  "audio": "act.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "wisp agent look up my notes on harness"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "tool_calls": [
+            {
+              "name": "recall",
+              "arg": "search harness"
+            }
+          ]
+        },
+        {
+          "tool_calls": [
+            {
+              "name": "recall",
+              "arg": "search notes"
+            }
+          ]
+        },
+        {
+          "content": "Checked recall twice, nothing saved yet."
+        }
+      ]
+    }
+  },
+  "expect": {
+    "tool_calls": [
+      "recall",
+      "recall"
+    ],
+    "result_prefix": "ACTED (2 steps)",
+    "brain_calls": 3
+  },
+  "name": "act"
+}

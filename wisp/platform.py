@@ -15,6 +15,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from . import hypr
+
 HOME = Path.home()
 
 
@@ -169,7 +171,7 @@ def sampler_cmd(seconds: float | None) -> list | None:
     return None
 
 
-def screenshot_cmd(out: Path) -> list | None:
+def screenshot_cmd(out: Path, output: str | None = None) -> list | None:
     o = current()
     if o == "linux":
         dt = desktop()
@@ -186,7 +188,13 @@ def screenshot_cmd(out: Path) -> list | None:
                     return [b, "-f", str(out)]
                 if b == "spectacle":
                     return [b, "-b", "-n", "-o", str(out)]
-                return [b, str(out)]
+                cmd = [b, str(out)]
+                # grim captures every output; `-o` limits to one —
+                # needed for headless/virtual outputs and panels whose
+                # screencopy stalls when powered off (lid closed).
+                if output and b == "grim":
+                    cmd = [b, "-o", output, str(out)]
+                return cmd
         return None
     if o == "macos":
         return (["screencapture", "-x", str(out)]
@@ -288,12 +296,6 @@ def notify_cmd(title: str, body: str) -> list | None:
 
 # ── window management ───────────────────────────────────────────────
 
-def _hypr(*args: str) -> list:
-    """hyprctl argv with HYPRLAND_INSTANCE_SIGNATURE env fix applied
-    at spawn by callers via `_env()`."""
-    return ["hyprctl", *args]
-
-
 def _env(extra: dict | None = None) -> dict:
     """Env for spawned cmds — discovers the Hyprland instance dir
     when HIS isn't exported (systemd-launched daemon case)."""
@@ -308,10 +310,6 @@ def _env(extra: dict | None = None) -> dict:
     return e
 
 
-def _eval(lua: str) -> list:
-    return _hypr("eval", f"hl.dispatch({lua})")
-
-
 def wm_ok(p: subprocess.CompletedProcess) -> bool:
     """Did a wm command work? Linux: 'ok' in stdout (Hyprland eval
     convention) or clean exit for legacy dispatch; macOS: exit code."""
@@ -321,10 +319,19 @@ def wm_ok(p: subprocess.CompletedProcess) -> bool:
     return p.returncode == 0
 
 
-def _try(cmds: list[list], timeout: int = 8) -> bool:
-    """Run each argv until one satisfies wm_ok (fallback semantics —
-    eval first, then legacy dispatch)."""
+def uses_hypr() -> bool:
+    """Window ops on this host go through the Hyprland socket."""
+    return current() == "linux" and desktop() in ("hyprland", "unknown")
+
+
+def _try(cmds: list, timeout: int = 8) -> bool:
+    """Run each command until one succeeds. A `hypr.LuaCmd` goes over the
+    Hyprland socket (no fork); anything else is an argv list."""
     for c in cmds:
+        if isinstance(c, hypr.LuaCmd):
+            if hypr.run_lua(c):
+                return True
+            continue
         try:
             p = subprocess.run(c, capture_output=True, text=True,
                                timeout=timeout, env=_env())
@@ -340,8 +347,7 @@ def focus_cmds(cls: str) -> list[list]:
     if o == "linux":
         dt = desktop()
         if dt in ("hyprland", "unknown"):
-            return [_eval(f'hl.dsp.focus({{window="class:^{cls}"}})'),
-                    _hypr("focuswindow", f"class:^{cls}")]
+            return [hypr.LuaCmd(hypr.focus_class(cls))]
         if dt == "kde":
             if _which("kdotool"):
                 return [["sh", "-c",
@@ -368,12 +374,7 @@ def close_cmds(cls: str) -> list[list]:
     if o == "linux":
         dt = desktop()
         if dt in ("hyprland", "unknown"):
-            if not cls:
-                return [_eval("hl.dsp.window.close()"),
-                        _hypr("killactive")]
-            return [_eval(
-                f'hl.dsp.window.close({{window="class:^{cls}"}})'),
-                _hypr("closewindow", f"class:^{cls}")]
+            return [hypr.LuaCmd(hypr.close_window(cls))]
         if dt in ("kde", "x11"):
             if not cls:
                 return ([["xdotool", "getactivewindow", "windowclose"]]
@@ -402,8 +403,7 @@ def workspace_cmds(n: int) -> list[list]:
     if o == "linux":
         dt = desktop()
         if dt in ("hyprland", "unknown"):
-            return [_eval(f"hl.dsp.focus({{workspace={n}}})"),
-                    _hypr("workspace", str(n))]
+            return [hypr.LuaCmd(hypr.focus_workspace(n))]
         if dt == "kde":
             return ([["qdbus", "org.kde.KWin", "/KWin",
                       "setCurrentDesktop", str(n)]]
@@ -426,8 +426,7 @@ def launch_exec_cmds(cmdline: str) -> list[list]:
     o = current()
     if o == "linux":
         if desktop() in ("hyprland", "unknown"):
-            return [_eval(f'hl.dsp.exec_cmd("{cmdline}")'),
-                    _hypr("dispatch", "exec", cmdline)]
+            return [hypr.LuaCmd(hypr.exec_cmd(cmdline))]
         return [["setsid", "sh", "-c", cmdline]]  # detached spawn
     if o == "macos":
         return [["sh", "-c", cmdline]]
@@ -443,13 +442,8 @@ def monitors() -> list[dict]:
         dt = desktop()
         if dt in ("hyprland", "unknown"):
             try:
-                p = subprocess.run(["hyprctl", "monitors", "-j"],
-                                   capture_output=True, text=True,
-                                   timeout=5, env=_env())
-                import json
-                return (json.loads(p.stdout)
-                        if p.returncode == 0 else [])
-            except Exception:
+                return hypr.query("monitors")
+            except hypr.HyprError:
                 return []
         if dt in ("kde", "x11"):
             # xrandr `NAME connected ... WxH+X+Y` (scale assumed 1)
@@ -547,16 +541,13 @@ def active_window() -> dict:
     """Focused window as {"class","title"}; {} when unsupported/empty."""
     o = current()
     if o == "linux":
-        if not shutil.which("hyprctl"):
-            return {}
-        r = subprocess.run(["hyprctl", "activewindow", "-j"],
-                           capture_output=True, text=True)
         try:
-            w = json.loads(r.stdout)
-            return {"class": w.get("class", ""),
-                    "title": w.get("title", "")}
-        except json.JSONDecodeError:
+            w = hypr.query("activewindow")
+        except hypr.HyprError:
             return {}
+        if not isinstance(w, dict):
+            return {}
+        return {"class": w.get("class", ""), "title": w.get("title", "")}
     if o == "macos":
         if not _which("osascript"):
             return {}
@@ -605,18 +596,53 @@ def active_window() -> dict:
     return {}
 
 
-def pointer_backend(cfg: dict | None = None) -> str | None:
-    """Pointer injector: 'ydotool' | 'wlrctl' | None.
+def _cua_live() -> bool:
+    """cua-driver daemon reachable on its socket (Wayland backend
+    enabled server-side via CUA_DRIVER_RS_ENABLE_WAYLAND)."""
+    import os
+    return _which("cua-driver") and os.path.exists(
+        os.path.expanduser("~/.cache/cua-driver/cua-driver.sock"))
 
-    [pointer] backend = "ydotool"|"wlrctl"|"none"|"auto" (default).
-    auto probes PATH on Linux; macOS/Windows injection isn't built —
+
+def pointer_backend(cfg: dict | None = None,
+                    exclude: tuple = ()) -> str | None:
+    """Pointer injector: 'cua' | 'hyprcursor' | 'ydotool' | 'wlrctl'
+    | None.
+
+    [pointer] backend = "cua"|"hyprcursor"|"ydotool"|"wlrctl"|"none"|
+    "auto" (default). cua routes clicks through cua-driver's background
+    virtual pointer — compositor-exact coords on native Wayland without
+    stealing the user's cursor or focus. hyprcursor positions via
+    Hyprland's own dispatcher — exact logical coords, immune to the
+    uinput-scale mismatch ydotool's absolute move shows on scaled
+    outputs — and clicks via ydotool. auto prefers the live cua daemon,
+    then hyprcursor on Hyprland; macOS/Windows injection isn't built —
     returns None so callers degrade to guide mode.
     """
     want = (cfg or {}).get("pointer", {}).get("backend", "auto")
+    if exclude:
+        # fallback lookup: first usable backend outside `exclude`,
+        # in auto order, ignoring an explicit [pointer] backend pin
+        if current() != "linux":
+            return None
+        if "hyprcursor" not in exclude and _which("hyprctl") \
+                and _which("ydotool"):
+            return "hyprcursor"
+        return next((b for b in ("ydotool", "wlrctl")
+                     if b not in exclude and _which(b)), None)
+    if want == "cua":
+        return "cua" if _cua_live() else None
+    if want == "hyprcursor":
+        return want if _which("hyprctl") and _which("ydotool") \
+            else None
     if want in ("ydotool", "wlrctl"):
         return want if _which(want) else None
     if want == "none" or current() != "linux":
         return None
+    if _cua_live():
+        return "cua"
+    if _which("hyprctl") and _which("ydotool"):
+        return "hyprcursor"
     for b in ("ydotool", "wlrctl"):
         if _which(b):
             return b
@@ -626,8 +652,22 @@ def pointer_backend(cfg: dict | None = None) -> str | None:
 def pointer_cmds(x: int, y: int, backend: str,
                  click: bool = True) -> list:
     """Argv list moving the pointer to logical (x,y) and optionally
-    clicking. Logical = Hyprland compositor coords, which both ydotool
-    and wlrctl take directly."""
+    clicking. Logical = Hyprland compositor coords."""
+    if backend == "cua":
+        import json as _json
+        if click:
+            return [["cua-driver", "call", "click",
+                     _json.dumps({"x": x, "y": y,
+                                  "coordinate_frame": "desktop",
+                                  "scope": "desktop"})]]
+        return [["cua-driver", "call", "move_cursor",
+                 _json.dumps({"x": x, "y": y, "scope": "desktop"})]]
+    if backend == "hyprcursor":
+        cmds = [["hyprctl", "dispatch",
+                 f"hl.dsp.cursor.move({{x={x},y={y}}})"]]
+        if click:
+            cmds.append(["ydotool", "click", "0xC0"])
+        return cmds
     if backend == "ydotool":
         cmds = [["ydotool", "mousemove", "--absolute",
                  "-x", str(x), "-y", str(y)]]

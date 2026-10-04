@@ -263,15 +263,38 @@ def reap(cfg: dict) -> None:
     _reap_expired(cfg)
 
 
-def tasks(tasks_file=config.TASKS_FILE) -> dict:
-    """name -> {status, tail-free summary} for state.json publication."""
+def tasks(tasks_file=config.TASKS_FILE,
+          log_dir=config.TASK_LOGS) -> dict:
+    """name -> {status, task, ts, tail} for state.json publication —
+    `tail` is the log's last non-empty line so the panel/orb shows live
+    progress on long-running agents."""
     _reap()
     out = {}
     for rec in _records(tasks_file):
         running = _alive(rec.get("pid", -1), rec.get("pstart", ""))
+        tail = ""
+        log = log_dir / f"{rec['id']}.log"
+        if log.exists():
+            lines = [l for l in
+                     log.read_text(errors="replace").splitlines()
+                     if l.strip()]
+            tail = lines[-1][:160] if lines else ""
         out[rec["name"]] = {
-            "status": "running" if running else rec.get("status", "exited"),
+            "status": "running" if running
+                      else rec.get("status", "exited"),
             "task": rec.get("task", ""),
             "ts": rec.get("ts", ""),
+            "tail": tail,
         }
+    return out
+
+
+def finished(prev: dict, cur: dict) -> list:
+    """Tasks that transitioned running → done between polls — the
+    daemon diffs tasks() snapshots and notifies on each."""
+    out = []
+    for name, st in cur.items():
+        if prev.get(name, {}).get("status") == "running" \
+                and st.get("status") != "running":
+            out.append({"name": name, **st})
     return out

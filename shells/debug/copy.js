@@ -1,0 +1,1 @@
+../../shell-plugin/lib/copy.js
