@@ -172,9 +172,33 @@ Lines, in order:
      `health`); `{"type":"event","name":"task_finished","data":{name,
      status,tail}}` (topic `tasks`; any `task_*` name belongs to it);
      other named events belong to `events`. Events do not bump `seq`.
+   - `{"type":"event","name":"cua.target","data":{x,y,window,label,
+     confidence,phase}}` (topic `events`; W21 reader, W13 emitter): the
+     screen point a computer-use click is about to hit, so the ghost
+     cursor can show it while the real pointer stays put. See
+     "cua.target" below.
    - `{"type":"ping"}` after 15 s with nothing to send (all topics; a
      keep-alive, ignore it). Clients should treat 45 s of silence as a
      dead connection and reconnect.
+
+### cua.target (ghost cursor input)
+
+`data` fields: `x`, `y` numbers, screen pixels in the compositor's global
+layout (required, finite); `window` string, the target window title or
+class (may be empty); `label` string, a short element name such as
+"night light" (may be empty); `confidence` number 0..1 from the grounding
+model (default 1); `phase` one of `aim` (default; the ghost travels to the
+point and parks), `click` (one ripple at the tip), `done` (the click
+landed; the ghost dims and returns). `{"x":null,"y":null}` clears.
+
+Reader rules (`shell-plugin/lib/state.js`, `view.cuaTarget`): the event
+is applied only while `status` is `acting`, `deciding` or
+`awaiting_choice`; a malformed payload is ignored and leaves the current
+target; the target is dropped when the status leaves those, when
+`turn_id` changes, and when the daemon goes offline. No target means the
+ghost cursor renders nothing. The emitter sends at most one `aim` per
+action, then `click`, then `done`; it need not repeat unchanged targets.
+Until W13 emits it, fixtures drive it (`tests/qml/harness/scenes.json`).
 
 Topic filtering happens in the daemon: unrequested events are never
 queued for that client. Ordering is the bus's write order, identical for
