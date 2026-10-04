@@ -190,6 +190,7 @@ app→command map.
 - `~/.local/share/wisp/trajectories.jsonl` — episodic act-loop memory
 - `~/.local/share/wisp/inventory.json` — scanned local terrain map
 - `~/.local/share/wisp/corrections.jsonl` — your clarify picks
+- `~/.local/share/wisp/shadow.jsonl` — a second decider's answers per turn, when `[jev] shadow` is set
 - `~/.local/share/wisp/tasks.jsonl` + `tasks/<id>.log` — agent registry
 - `~/.local/share/wisp/proposals/` — recipe-* skill proposals + weekly
   criteria proposals
