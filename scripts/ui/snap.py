@@ -70,6 +70,11 @@ TOLERANCE = {
     "StatusLine": Tolerance(10, 0.010),
     "AgentRow": Tolerance(10, 0.010),
     "EmptyState": Tolerance(10, 0.012),
+    "NowTab": Tolerance(10, 0.012),
+    "AgentsTab": Tolerance(10, 0.012),
+    "MemoryTab": Tolerance(10, 0.012),
+    "SettingsTab": Tolerance(10, 0.012),
+    "HealthSection": Tolerance(10, 0.012),
     "Creature": Tolerance(12, 0.008),
     "Corner": Tolerance(12, 0.008),
 }
