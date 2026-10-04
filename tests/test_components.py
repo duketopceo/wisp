@@ -22,8 +22,8 @@ COMP = PLUGIN / "components"
 FIXTURE_SERVICE = ROOT / "tests" / "qml" / "harness" / "FixtureService.qml"
 
 EXPECTED = ["Answer", "AgentRow", "Beacon", "Bubble", "Chip", "Console",
-            "Corner", "Creature", "EmptyState", "GhostCursor", "Icon",
-            "Mark", "PanelTab", "Pill", "StatusLine", "StepRow",
+            "Corner", "CornerLayer", "Creature", "EmptyState", "GhostCursor", "Icon",
+            "Mark", "OverlayLayer", "PanelTab", "Pill", "StatusLine", "StepRow",
             "StopControl", "Transcript"]
 
 FORBIDDEN = [
@@ -75,7 +75,10 @@ class TestComponentSet(unittest.TestCase):
         import json
         scenes = json.loads(
             (ROOT / "tests/qml/harness/scenes.json").read_text())
-        self.assertEqual(set(EXPECTED) - {"Icon"} - set(scenes), set())
+        # the two layers are snapshotted together by the Companion scene
+        layers = {"Icon", "CornerLayer", "OverlayLayer"}
+        self.assertEqual(set(EXPECTED) - layers - set(scenes), set())
+        self.assertIn("Companion", scenes)
 
     def test_metrics_lib_has_no_colors(self):
         src = code(PLUGIN / "lib" / "metrics.js")
