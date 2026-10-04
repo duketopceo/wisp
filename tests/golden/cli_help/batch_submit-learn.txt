@@ -1,0 +1,16 @@
+usage: wispd batch submit-learn [-h] [--model MODEL] [--json] [--quiet]
+                                [--no-color]
+
+Submit this week's learn pass as a batch
+
+options:
+  -h, --help     show this help message and exit
+  --model MODEL  allowlisted model slug
+
+global options:
+  --json         machine-readable output (one JSON object)
+  --quiet, -q    print nothing on success
+  --no-color     plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd batch submit-learn
