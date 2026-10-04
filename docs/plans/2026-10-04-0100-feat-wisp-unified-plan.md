@@ -17,6 +17,45 @@ unit text as design reference; this document owns IDs, order, dependencies and
 status from here on. Units use a new namespace, **W1..W34**, with a crosswalk at
 the end. Detail that already exists in the #56 plans is referenced, not copied.
 
+## Status as of 2026-10-04 (evening)
+
+Verified against `master` (`835b5ba`): merge commits and files present, not PR
+titles. Master now contains #55-#66, #67, #68, and the second landing: #78
+(`integrate/wisp-land`: W3, W8, W17, W18, W19, W20 and the W5 fakes that had
+merged only into intermediate branches), #79 (W9), #80 (W21), #81 (W10) and #77
+(Decision Agent grounding, WordInk STT, hotkey collision check; by the user).
+Only #82 is open.
+
+| Unit | Status | Evidence |
+|---|---|---|
+| W1 | done (landing); supersession front matter not applied | #68 merged the stack; INDEX pointer present; old plans carry no `superseded` front matter yet |
+| W2 | todo | `latency` command and `latency_report` exist; baseline not recorded, budget table not revised |
+| W3 | done | #70 via #78 (`ipc.py` subscribe, `test_ipc_stream.py`, `test_agents_reaper.py`) |
+| W4 | todo | fixed `time.sleep(0.3)` still in `pipeline.py` |
+| W5 | done | #72 merged to master (fakes under `tests/fakes`) |
+| W6 | todo | no `tests/scenarios` |
+| W7 | done | #62 via #68 (`wisp/hypr.py`, `wispd binds`); `keys.py` belongs to W24 |
+| W8 | done | #73 via #78 (`pointer.py`, `cua.py`) |
+| W9 | done | #79 (`cua_safety.py`) |
+| W10 | done | #81 (`probes_cua.py`, `scripts/cua/`) |
+| W11 | todo (partial) | shadow decider #55 merged; heuristic router absent |
+| W12 | todo | no `wisp/stt.py`; open question 3 (STT engine) still with the user |
+| W13 | todo | #77 merged and overlaps `act.py` and grounding (WordInk STT, Decision Agent); `wisp/ground.py` per this unit not present; reconcile with #77 before starting |
+| W14 | todo | no ledger |
+| W15 | todo | no batch lane |
+| W16 | todo | no error reporting module |
+| W17 | done | #71 via #78 (`copy.py`, `shell-plugin/lib`, copy lint) |
+| W18 | done | #69 via #78 (`notify.py`) |
+| W19 | done | #74 via #78 (`wisp/cli/` registry, `--json`) |
+| W20 | done | #75 via #78 (snapshot harness, `shell-plugin/components`) |
+| W21 | in progress | #80 merged (components, creature, ghost cursor); W21b `Companion.qml` host rewire in progress, monolith still present |
+| W22 | todo | waits on W14 |
+| W23 | in review | #82, stacked on `feat/wisp-w21-companion` (that base merged via #80; retarget to master) |
+| W24-W34 | todo | no code on master |
+
+Open questions still with the user: STT engine, alias period, Rust core,
+premium handoff.
+
 ## 0. Constraints carried into every unit
 
 - Cheap and local by default: brain `mlx:ornith` (:8080), Jev qwen3-4b (:8091),
@@ -555,35 +594,35 @@ Ranked by value for cost; each needs a go from the user before it becomes a unit
 
 | Old ID | New ID | Status |
 |---|---|---|
-| Ember U1, U2, U6 | #57, then W17 (copy and reader remainder) | PR open |
-| Ember U3 | W17 | planned |
-| Ember U4, U5 | W20 | planned |
-| Ember U7, U11, U12, U13 | W21 | planned |
+| Ember U1, U2, U6 | #57, then W17 (copy and reader remainder) | done (#57, #71) |
+| Ember U3 | W17 | done (#71) |
+| Ember U4, U5 | W20 | done (#75); Companion/Panel split continues in W21b |
+| Ember U7, U11, U12, U13 | W21 | in progress (#80 merged, W21b open) |
 | Ember U8 earcons | W21 (assets sub-task; synthesised, hand-authored) | planned |
-| Ember U9, U18 | #58, then W26, W27 | PR open |
-| Ember U10 | W23 | planned |
+| Ember U9, U18 | #58, then W26, W27 | #58 done; W26, W27 planned |
+| Ember U10 | W23 | in review (#82) |
 | Ember U14 | W24 | planned |
 | Ember U15, U16 | W25 | planned |
 | Ember U17 | W22 | planned |
 | Ember U19 | W32 | planned |
 | Ember U20 | W33 | planned |
-| Backend U1 | #59, W2 | PR open |
-| Backend U2 | #64 | PR open |
-| Backend U3 | W3 | planned |
+| Backend U1 | #59, W2 | #59 done; W2 todo |
+| Backend U2 | #64 | done (#64) |
+| Backend U3 | W3 | done (#70) |
 | Backend U4 | W4 | planned |
-| Backend U5 | #62, W7 | PR open |
+| Backend U5 | #62, W7 | done (#62) |
 | Backend U6 | W12 | planned |
-| Backend U7 | #65 (+W10, W29 probes) | PR open |
-| Backend U8 | W11 (+#55) | planned |
-| Backend U9 | #66 | PR open |
+| Backend U7 | #65 (+W10, W29 probes) | #65, W10 done; W29 planned |
+| Backend U8 | W11 (+#55) | #55 done; W11 todo |
+| Backend U9 | #66 | done (#66) |
 | Backend U10, U11 | W14, W15 | planned |
 | Backend U12 | W13 | planned |
 | Backend U13 | W16 | planned |
-| Backend U14 | #63, W5, W6 | PR open |
+| Backend U14 | #63, W5, W6 | #63, W5 done; W6 todo |
 | Backend U15 | W31 | planned |
 | Backend U16 | W29 | planned |
-| cua pointer backend (#61) | W8 to W10 | PR open |
-| New this plan | W1, W9, W18, W19, W28, W30, W34 | planned |
+| cua pointer backend (#61) | W8 to W10 | done (#61, #73, #79, #81) |
+| New this plan | W1, W9, W18, W19, W28, W30, W34 | W1 (landing), W9, W18, W19 done; rest planned |
 
 ## 11. Open questions
 
