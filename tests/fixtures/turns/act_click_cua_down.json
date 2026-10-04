@@ -1,0 +1,58 @@
+{
+  "description": "cua socket file exists but the daemon is dead: the click fails and is not retried elsewhere.",
+  "audio": "act.wav",
+  "name": "act_click_cua_down",
+  "config": {
+    "pointer": {
+      "mode": "drive",
+      "backend": "auto"
+    }
+  },
+  "fakes": {
+    "cua": {
+      "mode": "stale"
+    },
+    "hypr": {},
+    "notify": {}
+  },
+  "endpoints": {
+    "whisper": {
+      "transcript": "wisp agent click the save button"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "tool_calls": [
+            {
+              "name": "click",
+              "arg": "10,20@logical"
+            }
+          ]
+        },
+        {
+          "content": "Clicked save."
+        }
+      ]
+    }
+  },
+  "expect": {
+    "tool_calls": [
+      "click"
+    ],
+    "cua_calls": []
+  }
+}
