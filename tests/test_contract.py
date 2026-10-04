@@ -128,3 +128,32 @@ class BusWriterOutput(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PushStreamContract(unittest.TestCase):
+    """The `subscribe` framing every core must honour (W3)."""
+
+    def test_hello_snapshot_diff_framing_and_seq(self):
+        import tempfile
+        td = pathlib.Path(tempfile.mkdtemp())
+        bus = state.StateBus(state_file=td / "state.json")
+        srv = ipc.Daemon(lambda c: {"ok": True}, sock_file=td / "s.sock",
+                         bus=bus)
+        srv.start()
+        try:
+            it = ipc.subscribe(sock_file=td / "s.sock", timeout=3)
+            hello, snap = next(it), next(it)
+            assert hello["type"] == "hello" and hello["ok"] is True
+            assert hello["contract_version"] == state.CONTRACT_VERSION
+            assert snap["type"] == "snapshot"
+            assert snap["seq"] == snap["state"]["seq"]
+            assert StateFileShape.KEYS <= set(snap["state"])
+            t = bus.begin_turn()
+            bus.publish(t, status="listening")
+            ev = next(it)
+            assert ev["type"] == "state" and ev["seq"] == snap["seq"] + 1
+            assert ev["diff"]["status"] == "listening"
+            it.close()
+        finally:
+            srv.stop()
+            bus.close()

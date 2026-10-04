@@ -64,18 +64,9 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
         if c == "status":
             from wisp import agents
             agents.reap(cfg)  # zombie + timeout watchdog on each poll
-            cur = agents.tasks()
-            # long-running agent completion: notify once on the
-            # running → done transition
-            done = agents.finished(getattr(st, "_prev_tasks", {}), cur)
-            st._prev_tasks = cur
-            st.publish(None, tasks=cur)  # daemon-level: no turn
-            for t in done:
-                tail = (t.get("tail") or "")[:80]
-                from wisp.tools import system as _sys
-                _sys.notify_tool(
-                    f"wisp agent '{t['name']}' {t['status']}"
-                    + (f" — {tail}" if tail else ""))
+            # completion notices + task publishing run on the reaper
+            # thread (W3); a poll just refreshes the snapshot
+            st.publish(None, tasks=agents.tasks())  # daemon-level
             return {"ok": True, "state": st.snapshot()}
         if c == "listen":
             phase = cmd.get("phase", "")  # hold-to-talk: start|stop; empty = toggle
@@ -401,8 +392,16 @@ def run_daemon(cfg: dict) -> int:
         _HEALTH.register("hypr", _hypr_health)
         _brain.HEALTH = _HEALTH
         _HEALTH.start()
-    server = ipc.Daemon(_handler(st, cfg, ctl))
+    server = ipc.Daemon(_handler(st, cfg, ctl), bus=st)
     server.start()
+    from wisp import agents as _agents
+
+    def _agent_done(t: dict) -> None:
+        tail = (t.get("tail") or "")[:80]
+        from wisp.tools import system as _sys
+        _sys.notify_tool(f"wisp agent '{t['name']}' {t['status']}"
+                         + (f" — {tail}" if tail else ""))
+    _agents.start_reaper(cfg, st, ctl["stop"], on_finished=_agent_done)
     dlog(f"wispd up — socket {config.SOCK_FILE} "
          f"log {config.DATA_DIR / 'wispd.log'}")
     # sense + suggest threads — opt-in via [sense] enabled; each loop is
@@ -771,6 +770,16 @@ def main() -> int:
         except (ConnectionError, OSError) as e:
             print(f"wispd unreachable: {e}", file=sys.stderr)
             return 1
+    if cmd in ("watch", "subscribe"):
+        # wispd watch [topic ...] — NDJSON push stream, reconnects
+        import json
+        topics = sys.argv[2:] or None
+        try:
+            for ev in ipc.watch(topics):
+                print(json.dumps(ev), flush=True)
+        except KeyboardInterrupt:
+            pass
+        return 0
     if cmd == "stop":
         try:
             ipc.send({"cmd": "stop"})
@@ -1103,7 +1112,7 @@ def main() -> int:
         return 0
     print("usage: wispd [daemon|install|trigger|status|stop|choice"
           "|agent|memory|task_status|task_cancel|learn|label|harness|trace"
-          "|doctor|models [start [--run]]|tui|skills [import [--list] dir]|suggestions"
+          "|watch [topic ...]|doctor|models [start [--run]]|tui|skills [import [--list] dir]|suggestions"
           "|recipes [approve name]|fails|theme [name|--check|--css]|sync [repo]"
           "|eval route [n]"
           "|config [set k v]]")
