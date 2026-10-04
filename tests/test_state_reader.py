@@ -295,19 +295,19 @@ class TestStaleAndOffline(unittest.TestCase):
         # a ping proves the socket is up, not that the turn is moving
         steps = [["snap", snap(status="acting", seq=1), 10000],
                  ["msg", json.dumps({"type": "ping"}), 14000]]
-        self.assertTrue(self.stale(steps, 15001))
+        self.assertTrue(self.stale(steps, 30001))
 
-    def test_busy_snapshot_goes_stale_after_five_seconds(self):
+    def test_busy_snapshot_goes_stale_after_twenty_seconds(self):
         steps = [["snap", snap(status="deciding", seq=1), 10000]]
-        self.assertFalse(self.stale(steps, 14900))
-        self.assertTrue(self.stale(steps, 15001))
+        self.assertFalse(self.stale(steps, 29900))
+        self.assertTrue(self.stale(steps, 30001))
 
     def test_activity_refreshes_freshness(self):
         steps = [["snap", snap(status="acting", seq=1), 10000],
                  ["event", {"type": "state", "seq": 2,
                             "diff": {"level": 0.2, "seq": 2}}, 14000]]
-        self.assertFalse(self.stale(steps, 18900))
-        self.assertTrue(self.stale(steps, 19100))
+        self.assertFalse(self.stale(steps, 33900))
+        self.assertTrue(self.stale(steps, 34100))
 
     def test_heartbeat_change_refreshes_freshness(self):
         steps = [["snap", snap(status="acting", seq=1,
@@ -335,7 +335,7 @@ class TestStaleAndOffline(unittest.TestCase):
         self.assertFalse(self.stale(steps, 2500, 3000))
 
     def test_default_threshold_is_five_seconds(self):
-        self.assertEqual(js("S.STALE_AFTER_MS"), 5000)
+        self.assertEqual(js("S.STALE_AFTER_MS"), 20000)
 
 
 @unittest.skipUnless(jsnode.NODE, "node not installed")

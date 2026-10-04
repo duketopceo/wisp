@@ -73,8 +73,8 @@ class TestShape(unittest.TestCase):
         self.assertFalse(have & {"focus", "visible", "enabled", "state",
                                  "data", "children", "parent"}, have)
 
-    def test_stale_default_is_five_seconds(self):
-        self.assertRegex(SRC, r"staleAfterMs:\s*5000|Reader\.STALE_AFTER_MS")
+    def test_stale_default_is_above_heartbeat(self):
+        self.assertRegex(SRC, r"staleAfterMs:\s*20000|Reader\.STALE_AFTER_MS")
 
     def test_no_sub_two_second_timer_while_idle(self):
         for m in re.finditer(r"Timer\s*\{(.*?)\n\s*\}", SRC, re.S):

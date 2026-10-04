@@ -27,7 +27,7 @@ Item {
   property var manifest: null
 
   // --- configuration -------------------------------------------------
-  property int staleAfterMs: 5000
+  property int staleAfterMs: 20000  // W3 heartbeat is 15 s
   property bool streamEnabled: true
   // [ui] motion from config ("full" | "reduced" | "off" | ""), and the
   // Hyprland animations switch; resolved into motionMode.
