@@ -1,5 +1,5 @@
 {
-  "description": "Answer route: Jev routes to answer, brain streams a reply. Characterization baseline of today's pipeline.",
+  "description": "Same turn inside [notify] quiet hours: the toast is suppressed, nothing reaches notify-send.",
   "audio": "ask.wav",
   "endpoints": {
     "whisper": {
@@ -29,18 +29,17 @@
     }
   },
   "expect": {
-    "statuses": [
-      "listening",
-      "transcribing",
-      "deciding",
-      "acting",
-      "speaking",
-      "done"
-    ],
-    "transcript": "what time is it",
     "answer": "It is half past three.",
-    "brain_calls": 1
+    "notify_count": 0
   },
-  "name": "ask",
-  "scenario": "answer"
+  "name": "notify_quiet_hours",
+  "scenario": "notify paths",
+  "fakes": {
+    "notify": {}
+  },
+  "config": {
+    "notify": {
+      "quiet": "00:00-23:59"
+    }
+  }
 }

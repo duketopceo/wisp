@@ -51,5 +51,6 @@
     "result_prefix": "ACTED (2 steps)",
     "brain_calls": 3
   },
-  "name": "act"
+  "name": "act",
+  "scenario": "act via tools"
 }

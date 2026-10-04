@@ -26,7 +26,6 @@ SUITE = [
     ("brain_down", {"offline": True}),
     ("jev_down", {"offline": True}),
 ]
-TERMINAL = ("idle", "done", "error")
 
 
 def samples(res, offline: bool = False) -> dict:
@@ -46,12 +45,9 @@ def samples(res, offline: bool = False) -> dict:
     if all(k in sp for k in ("stt", "route", "first_token")):
         out["E2E"] = (sp["stt"] + sp.get("context", 0) + sp["route"]
                       + sp["first_token"])
-    if res.interrupt_fired:
-        after = [e["t_ms"] for e in res.events
-                 if e["status"] in TERMINAL
-                 and e["t_ms"] >= res.interrupt_t_ms]
-        if after:
-            out["P9"] = after[0] - res.interrupt_t_ms
+    stop = runner.stop_ms(res)
+    if stop is not None:
+        out["P9"] = stop
     if offline:
         err = [e["t_ms"] for e in res.events if e["status"] == "error"]
         if err:

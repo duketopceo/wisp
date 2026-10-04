@@ -1,9 +1,9 @@
 {
-  "description": "Answer brain returns 500 and no fallback is configured: the turn ends in error with error_code brain_down (U7). No canned answer.",
+  "description": "Whisper answers 500: the turn ends in error before routing; Jev and the brain are never called.",
   "audio": "ask.wav",
   "endpoints": {
     "whisper": {
-      "transcript": "what time is it"
+      "status": 500
     },
     "jev": {
       "answers": {
@@ -20,21 +20,24 @@
       }
     },
     "brain": {
-      "status": 500
+      "responses": [
+        {
+          "content": "It is half past three.",
+          "chunk_delay_ms": 0
+        }
+      ]
     }
   },
   "expect": {
     "statuses": [
       "listening",
       "transcribing",
-      "deciding",
-      "acting",
       "error"
     ],
-    "error_code": "brain_down",
-    "error_detail_contains": "openai_compat",
-    "brain_calls": 1
+    "error_code": "stt_down",
+    "jev_calls": 0,
+    "brain_calls": 0
   },
-  "name": "brain_down",
-  "scenario": "brain down"
+  "name": "stt_failure",
+  "scenario": "STT failure"
 }

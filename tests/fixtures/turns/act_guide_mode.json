@@ -1,25 +1,15 @@
 {
-  "description": "Act route: the fake cua-driver click hangs; the user stop lands mid-call. W9: the guard/cancel path ends the turn INTERRUPTED within 150 ms of the stop and no further step runs.",
+  "description": "pointer.mode = guide: the click is a user hand-off (ghost cursor guide), no backend is invoked.",
   "audio": "act.wav",
-  "name": "cancel_mid_act",
+  "name": "act_guide_mode",
   "config": {
     "pointer": {
-      "mode": "drive",
+      "mode": "guide",
       "backend": "auto"
-    },
-    "cua": {
-      "timeout_ms": "5000"
     }
   },
   "fakes": {
-    "cua": {
-      "mode": "live",
-      "tools": {
-        "click": {
-          "hang": true
-        }
-      }
-    },
+    "cua": {},
     "hypr": {},
     "notify": {}
   },
@@ -58,9 +48,11 @@
     }
   },
   "expect": {
-    "result_prefix": "INTERRUPTED",
-    "stop_within_ms": 150
+    "cua_calls": [],
+    "steps_contain": [
+      "GUIDE(10,20)"
+    ],
+    "result_prefix": "ACTED"
   },
-  "interrupt_after_ms": 600,
-  "scenario": "cancel mid-act"
+  "scenario": "guide mode"
 }

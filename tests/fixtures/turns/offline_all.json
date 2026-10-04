@@ -1,0 +1,28 @@
+{
+  "description": "Every model endpoint is down (STT, Jev, brain): the turn ends in a clean error, nothing leaves loopback.",
+  "audio": "ask.wav",
+  "endpoints": {
+    "whisper": {
+      "status": 503
+    },
+    "jev": {
+      "answers": {},
+      "status": 503
+    },
+    "brain": {
+      "status": 503
+    }
+  },
+  "expect": {
+    "statuses": [
+      "listening",
+      "transcribing",
+      "error"
+    ],
+    "error_code": "stt_down",
+    "jev_calls": 0,
+    "brain_calls": 0
+  },
+  "name": "offline_all",
+  "scenario": "offline daemon"
+}
