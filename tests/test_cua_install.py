@@ -1,10 +1,12 @@
 """W10: scripts/cua/install.sh under a fake HOME. curl, systemctl and
 hyprctl are stubs on PATH; nothing real runs, no network."""
 import hashlib
+import io
 import os
 import pathlib
 import shutil
 import subprocess
+import tarfile
 import tempfile
 import unittest
 
@@ -21,8 +23,22 @@ def stub(path, name, body=""):
     f.chmod(0o755)
 
 
+def make_tar(path, members, prefix=""):
+    """members: {name: bytes}; the driver goes in as an executable."""
+    with tarfile.open(path, "w:gz") as t:
+        for name, data in members.items():
+            ti = tarfile.TarInfo(prefix + name)
+            ti.size = len(data)
+            ti.mode = 0o755 if name == "cua-driver" else 0o644
+            t.addfile(ti, io.BytesIO(data))
+
+
+GOOD = {"cua-driver": PAYLOAD, "libcua_driver_sdk.so": b"sdk",
+        "wayland-helper/README.md": b"hi"}
+
+
 class Rig:
-    def __init__(self, sha=None):
+    def __init__(self, sha=None, members=None, prefix="", bin_sha=None):
         self.td = tempfile.TemporaryDirectory()
         t = pathlib.Path(self.td.name)
         self.home, self.bin = t / "home", t / "bin"
@@ -30,7 +46,7 @@ class Rig:
         self.bin.mkdir()
         self.log = t / "stub.log"
         self.log.touch()
-        (t / "payload").write_bytes(PAYLOAD)
+        make_tar(t / "payload", members or GOOD, prefix)
         stub(self.bin, "systemctl")
         stub(self.bin, "hyprctl")
         stub(self.bin, "curl",
@@ -38,12 +54,14 @@ class Rig:
              'if [ "$1" = -o ]; then out="$2"; fi; shift; done; '
              'cp "$STUB_PAYLOAD" "$out"')
         self.pin = t / "PIN"
-        good = hashlib.sha256(PAYLOAD).hexdigest()
+        good = hashlib.sha256((t / "payload").read_bytes()).hexdigest()
         sha = sha or good
+        bsha = bin_sha or hashlib.sha256(PAYLOAD).hexdigest()
         self.pin.write_text(
             "CUA_VERSION=0.33.1\n"
             "CUA_URL_AARCH64=https://example.invalid/cua-driver-aarch64\n"
             f"CUA_SHA256_AARCH64={sha}\n"
+            f"CUA_BIN_SHA256_AARCH64={bsha}\n"
             "CUA_URL_X86_64=https://example.invalid/cua-driver-x86_64\n"
             f"CUA_SHA256_X86_64={sha}\n")
         self.env = {"PATH": f"{self.bin}:/usr/bin:/bin",
@@ -84,6 +102,9 @@ class Installer(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual(self.r.binary.read_bytes(), PAYLOAD)
         self.assertTrue(os.access(self.r.binary, os.X_OK))
+        sib = self.r.binary.parent
+        self.assertEqual((sib / "libcua_driver_sdk.so").read_bytes(), b"sdk")
+        self.assertTrue((sib / "wayland-helper/README.md").exists())
         unit = self.r.unit.read_text()
         self.assertIn("ExecStart=%h/.local/share/cua-driver/cua-driver serve",
                       unit)
@@ -122,6 +143,40 @@ class Installer(unittest.TestCase):
         self.assertFalse(any(c.startswith("systemctl")
                              for c in bad.calls()))
 
+    def test_nested_layout_is_located(self):
+        n = Rig(prefix="pkg/")
+        self.addCleanup(n.close)
+        p = n.run()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(n.binary.read_bytes(), PAYLOAD)
+
+    def test_path_traversal_member_refused(self):
+        bad = Rig(members=dict(GOOD, **{"../evil": b"x"}))
+        self.addCleanup(bad.close)
+        p = bad.run()
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("refusing", p.stderr)
+        self.assertFalse(bad.binary.exists())
+        self.assertFalse(bad.unit.exists())
+        self.assertFalse((bad.home.parent / "evil").exists())
+
+    def test_absolute_member_refused(self):
+        bad = Rig(members=dict(GOOD, **{"/tmp/w10-evil": b"x"}))
+        self.addCleanup(bad.close)
+        self.assertNotEqual(bad.run().returncode, 0)
+        self.assertFalse(bad.binary.exists())
+
+    def test_binary_sha_mismatch_refused(self):
+        bad = Rig(bin_sha="1" * 64)
+        self.addCleanup(bad.close)
+        self.assertNotEqual(bad.run().returncode, 0)
+        self.assertFalse(bad.binary.exists())
+
+    def test_no_driver_in_archive_refused(self):
+        bad = Rig(members={"readme": b"x"})
+        self.addCleanup(bad.close)
+        self.assertNotEqual(bad.run().returncode, 0)
+
     def test_existing_wrong_binary_is_replaced_only_by_verified_one(self):
         self.r.binary.parent.mkdir(parents=True)
         self.r.binary.write_bytes(b"old")
@@ -155,6 +210,9 @@ class Shipped(unittest.TestCase):
         t = PIN.read_text()
         self.assertRegex(t, r"(?m)^CUA_VERSION=\d+\.\d+\.\d+$")
         self.assertRegex(t, r"(?m)^CUA_SHA256_AARCH64=[0-9a-f]{64}$")
+        self.assertRegex(t, r"(?m)^CUA_BIN_SHA256_AARCH64=[0-9a-f]{64}$")
+        self.assertRegex(t, r"(?m)^CUA_SHA256_X86_64=[0-9a-f]{64}$")
+        self.assertIn("cua-driver-rs-v", t)
 
     def test_unit_template_matches_machine_unit_plus_limits(self):
         t = UNIT.read_text()

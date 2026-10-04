@@ -1,12 +1,12 @@
-# Pinned cua-driver release. Upgrade is a one-line diff: bump CUA_VERSION and
-# the per-arch URL + SHA256 (of the downloaded file, the driver binary).
-# install.sh refuses any download whose sha256 differs. wisp/probes_cua.py
-# reads CUA_VERSION and reports `version_mismatch` when the running driver
-# differs.
+# Pinned cua-driver release (trycua/cua, tag cua-driver-rs-v<version>).
+# Upgrade is a one-line diff set: bump CUA_VERSION and the per-arch URL and
+# SHA256. SHA256 is of the ARCHIVE; install.sh refuses a mismatch before
+# anything is written. CUA_BIN_SHA256_* is the extracted cua-driver binary,
+# used for the "already installed" check (falls back to --version).
+# wisp/probes_cua.py reads CUA_VERSION and reports `version_mismatch`.
 CUA_VERSION=0.33.1
-# aarch64 sha256 is the binary installed and verified on omarchy-max
-# (cua-driver 0.33.1). URLs are the expected release asset paths: confirm
-# against the real release before the first non-dry-run install.
-CUA_URL_AARCH64=https://github.com/trycua/cua/releases/download/cua-driver-v0.33.1/cua-driver-linux-aarch64
-CUA_SHA256_AARCH64=dc25e309ea306f7229726a7fc9873f8086accc16b11ca914c26fbb1c148284a8
-# x86_64: no pin yet (fill both lines to enable; install.sh refuses without).
+CUA_URL_AARCH64=https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.33.1/cua-driver-rs-0.33.1-linux-arm64-binary.tar.gz
+CUA_SHA256_AARCH64=b0bfa5c7995d246aadaa2a5f8d26a4aae2d5557da45e04edc423ece7bdcaf258
+CUA_BIN_SHA256_AARCH64=dc25e309ea306f7229726a7fc9873f8086accc16b11ca914c26fbb1c148284a8
+CUA_URL_X86_64=https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.33.1/cua-driver-rs-0.33.1-linux-x86_64-binary.tar.gz
+CUA_SHA256_X86_64=dad278ccb3dafb840fec9577bc9cab185c8089f1cc5057434199e962d91fea0c
