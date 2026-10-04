@@ -8,6 +8,7 @@ import pathlib
 import shutil
 import socket
 import subprocess
+import time
 
 from .registry import CliError, GROUPS, command
 
@@ -156,7 +157,12 @@ def notify_test(ctx, a):
         send = None
     if send is not None:
         # W18 notifier: dedupe, replace-id, actions, quiet hours
-        ok = send(title="Wisp", body=body) is not False
+        # send(msg, level, *, cfg, key=...) returns a decision string
+        # ("sent" | "disabled" | "quiet" | "deduped" ...) and delivers
+        # async, so unique key defeats dedupe and join() waits for it.
+        r = send(body, "info", cfg=ctx.cfg, key=f"notify-test:{time.time()}")
+        getattr(getattr(_n, "_default", None), "join", lambda *a: None)()
+        ok = r in ("sent", True)
         return ctx.emit({"sent": ok, "via": "wisp.notify"},
                         "sent" if ok else None)
     # TODO(W18): drop this fallback once wisp/notify.py is on the branch.
