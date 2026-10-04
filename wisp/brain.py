@@ -23,6 +23,7 @@ falling back (a second answer would be spliced onto the first). When
 every entry fails the turn ends `brain_down`.
 """
 import json
+import pathlib
 import time
 import urllib.request
 import urllib.error
@@ -99,9 +100,78 @@ def chain(cfg: dict) -> list:
     return out
 
 
+_SPEND_LOG = pathlib.Path.home() / ".local/share/wisp/spend.jsonl"
+_USAGE = {"cost": 0.0, "prompt_tokens": 0, "completion_tokens": 0,
+          "calls": 0}
+
+
+def reset_usage() -> None:
+    for k in _USAGE:
+        _USAGE[k] = 0
+
+
+def usage_totals() -> dict:
+    return dict(_USAGE)
+
+
+def _track_usage(resp: dict, model: str = "") -> None:
+    u = resp.get("usage") or {}
+    cost = u.get("cost")
+    _USAGE["calls"] += 1
+    _USAGE["prompt_tokens"] += int(u.get("prompt_tokens") or 0)
+    _USAGE["completion_tokens"] += int(u.get("completion_tokens") or 0)
+    if cost is None:
+        return
+    _USAGE["cost"] += float(cost)
+    try:
+        _SPEND_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with open(_SPEND_LOG, "a") as f:
+            f.write(json.dumps({"ts": time.time(), "model": model,
+                                "cost": float(cost),
+                                "prompt_tokens": u.get("prompt_tokens"),
+                                "completion_tokens":
+                                    u.get("completion_tokens")}) + "\n")
+    except OSError:
+        pass
+
+
+def spend_today() -> float:
+    """Sum of today's recorded spend (USD) across all callers in this
+    process + earlier runs — the local ledger behind budget_ok()."""
+    day = time.strftime("%Y-%m-%d")
+    total = 0.0
+    try:
+        with open(_SPEND_LOG) as f:
+            for line in f:
+                try:
+                    r = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if time.strftime("%Y-%m-%d",
+                                 time.localtime(r.get("ts", 0))) == day:
+                    total += float(r.get("cost") or 0)
+    except OSError:
+        pass
+    return total
+
+
 def budget_ok() -> bool:
-    """U10 hook: False once the daily paid-spend cap is reached."""
-    return True
+    """False once today's recorded spend passes [brain] daily_cap_usd
+    (default $8). Applies to paid fallback entries; the primary model
+    is always allowed so the agent never dies outright."""
+    try:
+        cap = float(cfg_default_cap())
+    except (TypeError, ValueError):
+        cap = 8.0
+    return spend_today() < cap
+
+
+def cfg_default_cap():
+    try:
+        return config.load_config().get("brain", {}) \
+            .get("daily_cap_usd", 8.0)
+    except Exception:
+        return 8.0
 
 
 def supports_vision(cfg: dict) -> bool:
@@ -175,11 +245,13 @@ def _chat_one(p: dict, messages: list, tools, timeout) -> dict:
         resp = _post(f"{base}/api/chat", {}, body, timeout)
         msg = resp.get("message", {})
         return {"content": msg.get("content", ""), "raw": msg}
-    body = {"model": p["model"], "messages": messages, "max_tokens": 600}
+    body = {"model": p["model"], "messages": messages, "max_tokens": 600,
+            "usage": {"include": True}}
     if tools and _tools_ok(p):
         body["tools"] = tools
         body["tool_choice"] = "auto"
     resp = _post(f"{base}/chat/completions", _headers(p), body, timeout)
+    _track_usage(resp, p["model"])
     msg = (resp.get("choices") or [{}])[0].get("message", {})
     return {"content": msg.get("content", ""), "raw": msg}
 
@@ -203,14 +275,15 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
         url, headers = f"{base}/api/chat", {}
     else:
         body = {"model": p["model"], "messages": messages,
-                "max_tokens": 600, "stream": True}
+                "max_tokens": 600, "stream": True,
+                "usage": {"include": True}}
         url, headers = f"{base}/chat/completions", _headers(p)
     req = urllib.request.Request(
         url, data=json.dumps(body).encode(),
         headers={"User-Agent": UA, "Content-Type": "application/json",
                  **headers}, method="POST")
     t0 = time.monotonic()
-    acc, msg = "", {}
+    acc, msg, usage = "", {}, None
     try:
         with cancel.urlopen(req, timeout=first_token_s) as r:
             for raw in r:
@@ -236,6 +309,7 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
                         chunk = json.loads(payload)
                     except json.JSONDecodeError:
                         continue
+                    usage = chunk.get("usage") or usage
                     choice = (chunk.get("choices") or [{}])[0]
                     piece = (choice.get("delta") or {}).get("content") \
                         or ""
@@ -262,6 +336,8 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
             err.committed = True
             raise err from e
         raise
+    if usage and not ollama:
+        _track_usage({"usage": usage}, p["model"])
     return {"content": acc, "raw": msg or {"content": acc}}
 
 

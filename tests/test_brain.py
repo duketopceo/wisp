@@ -232,3 +232,76 @@ class LocalPresets(unittest.TestCase):
         self.assertIn("brain.uitars", config.DEFAULT_CONFIG)
         self.assertIn("action_text", config.DEFAULT_CONFIG)
         self.assertIn("WISP_JEV_ENDPOINT", config.DEFAULT_CONFIG)
+
+
+class SpendTest(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        brain.reset_usage()
+        self._log = tempfile.NamedTemporaryFile("w", suffix=".jsonl",
+                                                delete=False)
+        self._log.close()
+        self._old = brain._SPEND_LOG
+        brain._SPEND_LOG = __import__("pathlib") \
+            .Path(self._log.name)
+
+    def tearDown(self):
+        brain._SPEND_LOG = self._old
+
+    def test_usage_tracks_cost_and_tokens(self):
+        brain._track_usage({"usage": {"cost": 0.001,
+                                      "prompt_tokens": 10,
+                                      "completion_tokens": 5}},
+                           "gemma")
+        brain._track_usage({"usage": {"cost": 0.002,
+                                      "prompt_tokens": 20,
+                                      "completion_tokens": 7}},
+                           "gemma")
+        u = brain.usage_totals()
+        self.assertAlmostEqual(u["cost"], 0.003)
+        self.assertEqual(u["prompt_tokens"], 30)
+        self.assertEqual(u["completion_tokens"], 12)
+        self.assertEqual(u["calls"], 2)
+
+    def test_usage_tolerates_missing_cost(self):
+        brain._track_usage({"usage": {"prompt_tokens": 3}}, "x")
+        brain._track_usage({}, "x")
+        u = brain.usage_totals()
+        self.assertEqual(u["cost"], 0.0)
+        self.assertEqual(u["calls"], 2)
+
+    def test_budget_ok_under_cap(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl",
+                                         delete=False) as f:
+            f.write('{"ts": %d, "cost": 0.5}\n' % __import__("time")
+                    .time())
+            path = f.name
+        old = brain._SPEND_LOG
+        brain._SPEND_LOG = __import__("pathlib").Path(path)
+        try:
+            self.assertTrue(brain.budget_ok())
+        finally:
+            brain._SPEND_LOG = old
+
+    def test_budget_ok_over_cap(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl",
+                                         delete=False) as f:
+            f.write('{"ts": %d, "cost": 999.0}\n' % __import__("time")
+                    .time())
+            path = f.name
+        old = brain._SPEND_LOG
+        brain._SPEND_LOG = __import__("pathlib").Path(path)
+        try:
+            self.assertFalse(brain.budget_ok())
+        finally:
+            brain._SPEND_LOG = old
+
+    def test_budget_ok_missing_log(self):
+        old = brain._SPEND_LOG
+        brain._SPEND_LOG = __import__("pathlib").Path("/nonexistent/x")
+        try:
+            self.assertTrue(brain.budget_ok())
+        finally:
+            brain._SPEND_LOG = old
