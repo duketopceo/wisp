@@ -6,6 +6,7 @@ origin: DESIGN-v2.md
 artifact_contract: ce-unified-plan/v1
 product_contract_source: design-spec
 execution: code
+status: "superseded by 2026-10-04-0100-feat-wisp-unified-plan.md"
 ---
 
 # Wisp Ember Redesign - Plan

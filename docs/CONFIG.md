@@ -78,11 +78,12 @@ Every routed turn appends Jev vs heuristic vs final route to `route_ab.jsonl`; r
 | `session_turns` | `8` | turns of chat history kept in context |
 | `screenshots` | `true` | allow screen capture for context |
 | `confirm_timeout` | `120` | seconds a confirm card waits before it resolves as deny (clamped 5 to 600) |
-| `risk_threshold` | `1.5` | action risk score allowed before confirmation; lower = asks more |
+| `risk_threshold` | `9` | numeric risk gate; Jev scores run about 0 to 2, so the default only blocks extreme risk. Real protection is the denylist, `allow_shell` and the confirm tier |
 | `confidence_instant` | `0.95` | auto-accept cutoff |
 | `confidence_ambiguous` | `0.8` | ask-choice cutoff |
-| `allow_shell` | `false` | allow free-form shell tool |
-| `denylist` | built-in | commands never run |
+| `allow_shell` | `false` | allow free-form shell tool (commands also pass a built-in denylist that is not configurable) |
+| `max_concurrent` | `3` | most background agent tasks at once |
+| `task_timeout_s` | `1800` | lifetime of one background task |
 | `goal_ttl_s` | `600` | seconds an open goal accepts follow-up utterances |
 | `browseros_first` | `true` | `launch("browser")` prefers BrowserOS when its MCP server (:9200) is live |
 | `password_manager` | `""` | `1password` lets the agent click quick-unlock/passkey prompts (never types a master password); `off`/empty disables |
@@ -256,6 +257,60 @@ Resources: wispd under 250 MB RSS and 3% idle CPU; cua-driver
 `wispd latency` reports real turns; `--budgets` prints this table,
 `--baseline` the committed fake-backed baseline
 (`docs/baselines/latency-harness.json`), `--harness` re-measures it.
+
+## [pointer] and [ground]: how clicks happen and where they land
+
+| key | default | meaning |
+|-----|---------|---------|
+| `[pointer] mode` | `guide` | `guide`: Wisp points with the ghost cursor, you click. `drive`: inject real input through the backend. `auto`: drive when a backend exists, guide otherwise |
+| `[pointer] backend` | `auto` | `auto`, `cua`, `hyprcursor`, `ydotool`, `wlrctl` or `none`. A named backend is used alone; if it is unavailable Wisp guides |
+| `[ground] providers` | `a11y,uitars,jev` | grounding chain order: cua accessibility tree, local UI-TARS, vision fallback |
+| `[ground] min_confidence` | `0.5` | candidates below this are re-observed once, then refused |
+| `[ground] budget_ms` | `1200` | shared budget for the fast providers |
+| `[ground] fallback_timeout_ms` | `5000` | timeout for the vision fallback |
+| `[ground] uitars_url` | `http://127.0.0.1:8081` | UI-TARS endpoint (also `[health] uitars`); loopback only |
+| `[ground] uitars_coords` | `px` | `px` or `rel1000`, how UI-TARS writes coordinates |
+| `[ground] a11y_frame` | `global` | `global` or `window`, the frame of accessibility element boxes |
+
+The whole path is in `docs/CUA.md`.
+
+## [report]: opt-in error reporting (W16)
+
+| key | default | meaning |
+|-----|---------|---------|
+| `dsn` | `""` | GlitchTip (Sentry-compatible) DSN, or `omaseal://service/account`. Empty means off |
+| `per_code_per_hour` | `3` | reports per error code per hour |
+| `global_per_hour` | `20` | reports per hour in total |
+| `dedupe_secs` | `300` | identical reports inside this window are dropped |
+| `queue_max` | `50` | offline queue length |
+
+Only typed error codes and a scrubbed context are sent. Transcripts,
+screenshots, typed text, keys, environment values and home paths never are.
+
+## [sense]: activity sense and suggestions
+
+Off by default. Local sources only (Hyprland window changes, the dayflow journal).
+
+| key | default | meaning |
+|-----|---------|---------|
+| `enabled` | `false` | turn the collector on |
+| `interval_s` | `300` | seconds between samples |
+| `window_h` | `3` | hours of activity the miner reads |
+| `dayflow` | `true` | also read `dayflow today --json` |
+| `dayflow_every` | `4` | read dayflow every Nth sample |
+| `mine_every_s` | `2700` | how often suggestions are mined |
+| `max_calls_per_day` | `48` | cap on mining model calls |
+| `model` | `openrouter:google/gemini-2.5-flash` | `provider:model` for mining; a local one costs nothing |
+
+## [traj], [dev], [ui] and [apps]
+
+| key | default | meaning |
+|-----|---------|---------|
+| `[traj] enabled` | `true` | record act-loop runs and inject similar past runs as context |
+| `[traj] max_inject` | `3` | most prior runs injected |
+| `[dev] refine` | `true` | a labelled-bad turn or a correction ("no", "instead") retries with the failed attempt as context |
+| `[ui] theme` | `dark` | `dark` or `light`; `wispd theme <name>` swaps live |
+| `[apps]` | per OS | name to launch command map Jev resolves "open the terminal" against (`browser`, `terminal`, `files`, `vscode`, `music`, `settings`, `browser_new_tab`) |
 
 ## [debug]
 

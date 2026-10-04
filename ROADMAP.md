@@ -1,7 +1,7 @@
 # Wisp Roadmap
 
-State: **v0.9 released — conversational-agent pass shipped, soak in progress.**
-Last updated: 2026-10-02.
+State: **v0.9 released. The unified plan (W1 to W29, W32) has landed on master; the v1.0 gate (W34) is the soak, a clean-box install and the learning loop.**
+Last updated: 2026-10-04. Plan of record: `docs/plans/2026-10-04-0100-feat-wisp-unified-plan.md`.
 
 Progress on the v1.0 gates:
 
@@ -16,6 +16,58 @@ Progress on the v1.0 gates:
 - ⬜ Learning loop exercised twice (`wispd learn` → approve → clarify
   rate drops).
 - ⬜ Tag `v1.0.0` once the soak gates pass.
+
+Landed on master since v0.9 (unified plan, PRs #55 to #100): computer use as
+a subsystem (pointer registry, cua-driver install and health, safety policy
+and audit, grounding chain, `docs/CUA.md`); the Ember surfaces (companion,
+four-tab Panel, bar mark, confirm card, ghost cursor, keyboard submap with Esc
+stop, management app and TUI, first-run card, desktop entry); the backend core
+(push stream, one spend ledger with caps, Jev deadline and heuristic router,
+batch lane, opt-in GlitchTip reporting, oomd-safe units, `wispd onboard`, the
+`wispd <group> <verb>` CLI). Still open: W12 warm STT, W30 pipeline refactor,
+W31 contract freeze, and the gate below.
+
+## v1.0 gate checklist (W34)
+
+All four are required. Run them in this order; tick a box only with the
+evidence named next to it.
+
+- [ ] **Soak: 50 labelled runs per route, at least 50% intent match per route.**
+  Routes: launch, tool, agent, act, answer (dictate and clarify are reported
+  but not gated).
+  How: use Wisp daily. After each run label it, with the `good` and `wrong`
+  buttons or `wispd label set correct` / `wispd label set incorrect`. Read the
+  per-route table with `wispd label report` (add `--json` to archive it). Fix
+  the top failure mode weekly (`wispd learn fails`, `wispd eval route`,
+  `wispd trace digest`), then re-measure. Evidence: the `wispd label report
+  --json` output, showing n >= 50 and match >= 0.50 on every gated route,
+  pasted into the release notes. The 85% figure in the v1.0 definition below is
+  the stretch target; 50% is the gate the unified plan sets for the tag.
+- [ ] **Fresh-box install in under 10 minutes via `wispd onboard`.**
+  How: on a clean Omarchy VM with nothing of Wisp installed, start a stopwatch
+  and run only what `docs/INSTALL.md` says: `git clone`, `python3 wispd
+  install`, `systemctl --user enable --now wispd`, `wispd onboard` (every step
+  or a deliberate skip), then `wispd doctor` and one spoken turn. Stop when the
+  turn gets an answer. Evidence: the elapsed time, the `wispd doctor` output
+  (exit 0) and `wispd onboard --status`. Not yet done: needs a VM and a person.
+- [ ] **Learning loop exercised twice.**
+  How: cycle one: `wispd learn weekly` stages a criteria proposal; review it,
+  approve it (merge the edits into `~/.config/wisp/criteria_overrides.json`,
+  never automatic), and approve any recipe with `wispd recipes approve <n>`.
+  Cycle two: repeat a week later. Evidence: for each cycle the proposal file,
+  what was approved, and the clarify rate for the week before and after from
+  `wispd trace digest` (it must drop, or the reason it did not is written
+  down).
+- [ ] **Tag `v1.0.0`.**
+  How: when the three boxes above are ticked, the full gate set is green
+  (unittest, `snap.py check`, `gen_copy.py --check`, `gen_settings.py
+  --check`) and the release workflow builds all five platform archives, tag
+  `v1.0.0` with release notes (the soak table, the install time, the two
+  learning cycles) and file the Omarchy plugin marketplace verify request.
+
+Also open before the tag (not gating): live screen recordings for the README
+(list in `README.md`, section Media), a live latency baseline (W2
+`needs_live_baseline`), and the Rust contract freeze (W31).
 
 Shipped beyond the v1.0 gates (post-roadmap work, live on master):
 

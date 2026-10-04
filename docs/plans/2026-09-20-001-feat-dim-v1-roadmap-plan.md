@@ -4,6 +4,7 @@ created: 2026-09-20
 type: feat
 origin: docs/brainstorms/2026-09-18-dim-autonomous-assistant-requirements.md
 supersedes-partially: docs/plans/2026-09-18-001-feat-dim-autonomous-assistant-plan.md
+status: "superseded by 2026-10-04-0100-feat-wisp-unified-plan.md"
 ---
 
 # feat: Wisp v1.0 roadmap
