@@ -16,13 +16,14 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
 import fakes  # noqa: E402
+import shorttmp  # noqa: E402
 
 
 class Sandbox:
     """Temp root + HOME/run dirs + a BinDir, torn down on exit."""
 
     def __init__(self):
-        self.td = tempfile.TemporaryDirectory(prefix="wisp-fakes-")
+        self.td = shorttmp.TemporaryDirectory(prefix="wf-")
         self.root = pathlib.Path(self.td.name)
         self.home = self.root / "home"
         self.run = self.root / "run"
