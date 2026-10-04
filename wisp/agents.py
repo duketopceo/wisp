@@ -36,14 +36,36 @@ def _records(tasks_file=config.TASKS_FILE) -> list:
         return []
 
 
-def _pstart(pid: int) -> str:
-    """Process start-time (stat field 22) — pins identity against PID
-    reuse: a recycled pid fails this check before we signal anything."""
+def _proc_stat(pid: int) -> tuple[str, str] | None:
+    """(state letter, start-time token) for a pid, or None if unreadable.
+
+    Linux reads /proc/<pid>/stat (state + field 22). Hosts without /proc
+    (macOS) fall back to `ps -o stat=,lstart=`; the start token is only
+    ever compared with one taken the same way on the same host."""
     try:
         stat = pathlib.Path(f"/proc/{pid}/stat").read_text()
-        return stat.rsplit(")", 1)[-1].split()[19]
+        tail = stat.rsplit(")", 1)[-1].split()
+        return tail[0], tail[19]
     except (OSError, IndexError):
-        return ""
+        pass
+    if sys.platform == "win32" or pathlib.Path("/proc/self").exists():
+        return None
+    try:
+        out = subprocess.run(["ps", "-o", "stat=,lstart=", "-p", str(pid)],
+                             capture_output=True, text=True,
+                             timeout=2).stdout.split()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if len(out) < 2:
+        return None
+    return out[0][0], "-".join(out[1:])
+
+
+def _pstart(pid: int) -> str:
+    """Process start-time — pins identity against PID reuse: a recycled
+    pid fails this check before we signal anything."""
+    st = _proc_stat(pid)
+    return st[1] if st else ""
 
 
 def _alive(pid: int, pstart: str = "") -> bool:
@@ -53,15 +75,12 @@ def _alive(pid: int, pstart: str = "") -> bool:
     reused by an unrelated process — treat as dead."""
     if pid <= 0:  # kill(-1,0) probes our own process group — never ok
         return False
-    try:
-        stat = pathlib.Path(f"/proc/{pid}/stat").read_text()
-        tail = stat.rsplit(")", 1)[-1].split()
-        if tail[0] == "Z":
+    st = _proc_stat(pid)
+    if st:
+        if st[0] == "Z":
             return False
-        if pstart and tail[19] != pstart:
+        if pstart and st[1] != pstart:
             return False
-    except OSError:
-        pass
     try:
         if sys.platform == "win32":
             import ctypes

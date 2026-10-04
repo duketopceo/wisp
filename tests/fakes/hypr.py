@@ -23,10 +23,11 @@ import json
 import os
 import pathlib
 import socket
-import tempfile
 import threading
 import time
 from unittest import mock
+
+import shorttmp  # tests/ is on sys.path (unittest discover -s tests)
 
 FIXTURE = json.loads((pathlib.Path(__file__).resolve().parent.parent
                       / "fixtures" / "hypr_probe.json").read_text())
@@ -45,7 +46,7 @@ class FakeHypr:
         self.script = dict(script or {})
         self.td = None
         if runtime_dir is None:
-            self.td = tempfile.TemporaryDirectory()
+            self.td = shorttmp.TemporaryDirectory()
             runtime_dir = self.td.name
         self.runtime_dir = pathlib.Path(runtime_dir)
         self.sig = sig

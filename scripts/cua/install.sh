@@ -50,7 +50,14 @@ case "$SHA" in
 esac
 [ "${#SHA}" -eq 64 ] || die "PIN sha256 for $ARCH is not 64 hex chars"
 
-sha_of() { sha256sum "$1" | cut -d' ' -f1; }
+# sha256sum is GNU coreutils; macOS ships `shasum` (perl) instead.
+if command -v sha256sum >/dev/null 2>&1; then
+  sha_of() { sha256sum "$1" | cut -d' ' -f1; }
+elif command -v shasum >/dev/null 2>&1; then
+  sha_of() { shasum -a 256 "$1" | cut -d' ' -f1; }
+else
+  die "need sha256sum or shasum to verify downloads"
+fi
 BIN_SHA="$(pin_get "CUA_BIN_SHA256_$ARCH")"
 have_binary() {
   [ -x "$BIN" ] || return 1

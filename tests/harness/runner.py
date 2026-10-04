@@ -33,6 +33,7 @@ ROOT = HERE.parent.parent
 FIXTURE_DIR = ROOT / "tests" / "fixtures" / "turns"
 
 sys.path.insert(0, str(HERE.parent))
+import shorttmp  # noqa: E402
 from harness import fakes  # noqa: E402
 from fakes import FakeSet  # noqa: E402  (W5: cua/hypr/notify/systemctl)
 
@@ -310,7 +311,7 @@ def child_env(tmp: pathlib.Path, fs: FakeSet) -> dict:
 def run_turn(fixture, timeout: float = 60.0) -> TurnResult:
     fx = fixture if isinstance(fixture, dict) else load_fixture(fixture)
     wav = resolve_audio(fx)
-    tmp = pathlib.Path(tempfile.mkdtemp(prefix="wisp-replay-"))
+    tmp = pathlib.Path(shorttmp.mkdtemp(prefix="wr-"))
     live = {}
     fs = None
     try:

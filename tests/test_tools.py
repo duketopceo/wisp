@@ -35,6 +35,15 @@ class TestRegistry(unittest.TestCase):
 
 
 class TestToolExec(unittest.TestCase):
+    def _hypr_up(self):
+        """Pin a Hyprland host with a live socket: launch execs through
+        Hyprland, and CI runners have none."""
+        for p in (mock.patch.dict(os.environ, {"WISP_OS": "linux",
+                                               "WISP_DESKTOP": "hyprland"}),
+                  mock.patch.object(hypr, "available", return_value=True)):
+            p.start()
+            self.addCleanup(p.stop)
+
     def test_workspace_parses_number(self):
         with mock.patch.dict(os.environ, {"WISP_OS": "linux",
                                           "WISP_DESKTOP": "hyprland"}), \
@@ -57,6 +66,7 @@ class TestToolExec(unittest.TestCase):
                                  "WORKSPACE 4")
 
     def test_browser_prefers_browseros_when_live(self):
+        self._hypr_up()
         # soak fix: 'browser' means the signed-in BrowserOS when its
         # MCP server is up — chromium is the fallback, not the default
         cfg = {"apps": {"browser": "chromium"}, "agent": {}}
@@ -70,6 +80,7 @@ class TestToolExec(unittest.TestCase):
         ex.assert_called_once_with("browseros")
 
     def test_browser_falls_back_to_chromium(self):
+        self._hypr_up()
         cfg = {"apps": {"browser": "chromium"}, "agent": {}}
         with mock.patch.object(tools.desktop.shutil, "which",
                                return_value="/x/browseros"), \
@@ -81,6 +92,7 @@ class TestToolExec(unittest.TestCase):
         ex.assert_called_once_with("chromium")
 
     def test_browseros_first_opt_out(self):
+        self._hypr_up()
         cfg = {"apps": {"browser": "chromium"},
                "agent": {"browseros_first": "false"}}
         with mock.patch.object(tools.desktop.shutil, "which",

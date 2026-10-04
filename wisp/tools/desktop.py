@@ -55,9 +55,9 @@ def _browseros_live() -> bool:
 
 
 def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
-    down = _wm_down()
-    if down:
-        return down
+    # Resolve the app first: "unknown app" / "not installed" are about the
+    # request and read the same with or without a window manager. The
+    # Hyprland gate applies only once we are about to exec through it.
     apps = _resolve_apps(cfg, harness)
     # soak fix: "browser" prefers BrowserOS (live logins) when its MCP
     # server is up — opt out with [agent] browseros_first = "false"
@@ -65,6 +65,9 @@ def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
             and cfg.get("agent", {}).get("browseros_first",
                                          "true") == "true" \
             and shutil.which("browseros") and _browseros_live():
+        down = _wm_down()
+        if down:
+            return down
         _exec_detached("browseros")
         return "LAUNCHED browser -> browseros"
     binname = apps.get(app)
@@ -78,6 +81,9 @@ def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
             binname = binary = "xdg-terminal-exec"
         else:
             return f"SKIP ({app} -> {binary!r} not installed)"
+    down = _wm_down()
+    if down:
+        return down
     _exec_detached(binname)
     return f"LAUNCHED {app} -> {binname}"
 
