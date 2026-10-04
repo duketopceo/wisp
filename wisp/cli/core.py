@@ -35,30 +35,29 @@ def _install_args(p):
                    help="only install the systemd unit templates "
                         "(scripts/units), backing up changed ones")
     p.add_argument("--dry-run", action="store_true",
-                   help="with --cua or --units: print the plan, "
-                        "change nothing")
+                   help="print the plan, change nothing "
+                        "(also with --cua or --units)")
 
 
 @command("daemon install",
          "Install runtime files, the systemd unit and the hotkey bind",
-         ["wispd daemon install", "wispd install --units --dry-run"],
+         ["wispd daemon install", "wispd install --dry-run",
+          "wispd install --units --dry-run"],
          {"installed": "bool", "cua": "any", "units": "any"},
          args=_install_args)
 def daemon_install(ctx, a):
-    if a.dry_run and not (a.cua or a.units):
-        raise CliError("E_USAGE", "--dry-run needs --cua or --units.",
-                       "wispd install --units --dry-run")
     if a.cua:
         return _install_cua(ctx, a)
     if a.units:
         return _install_units(ctx, a)
 
     def go():
-        ctx.host.install_files()
-        ctx.host.install_bind(ctx.cfg)
+        ctx.host.install_files(dry_run=a.dry_run)
+        if not a.dry_run:
+            ctx.host.install_bind(ctx.cfg)
         return 0
     rc, text = _host_call(ctx, go)
-    return ctx.emit({"installed": rc == 0, "cua": None})
+    return ctx.emit({"installed": rc == 0 and not a.dry_run, "cua": None})
 
 
 def _install_units(ctx, a):

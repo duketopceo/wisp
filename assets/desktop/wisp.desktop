@@ -1,0 +1,28 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Wisp
+GenericName=Voice Assistant
+Comment=Wisp voice assistant: talk, stop, open the console
+Exec=@SHELL_EXEC@
+Icon=wisp
+Terminal=false
+Categories=Utility;Accessibility;
+Keywords=voice;assistant;ai;wisp;
+StartupNotify=false
+Actions=Listen;Stop;Panel;
+
+[Desktop Action Listen]
+Name=Listen
+Exec=@WISPD@ trigger
+Icon=wisp
+
+[Desktop Action Stop]
+Name=Stop
+Exec=@WISPD@ interrupt
+Icon=wisp
+
+[Desktop Action Panel]
+Name=Panel
+Exec=@SHELL_EXEC@
+Icon=wisp

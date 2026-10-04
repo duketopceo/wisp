@@ -17,7 +17,19 @@ python3 wispd install   # core files + service + plugin + menu entry
   GUI (`shells/`), shell plugin source
 - `~/.local/bin/wispd` + `wisp-trigger` on PATH
 - `~/.local/share/applications/wisp.desktop` — "Wisp" in the app menu
-  opens the management app
+  opens the management app; right-click actions: Listen (`wispd
+  trigger`), Stop (`wispd interrupt`), Panel (the management app).
+  Template: `assets/desktop/wisp.desktop`. An edited file is kept as
+  `wisp.desktop.bak`; `wispd install --dry-run` previews the change.
+- hicolor icons under `~/.local/share/icons/hicolor/` (16 to 512 px
+  plus scalable); `update-desktop-database` and `gtk-update-icon-cache`
+  run only if installed
+- No tray icon: the bar mark is the status surface. A StatusNotifier
+  host exists on Omarchy (quickshell owns
+  `org.kde.StatusNotifierWatcher`; check with `busctl --user list |
+  grep StatusNotifier`), but publishing an item needs a D-Bus
+  service object, which stdlib Python and busctl cannot export, so no
+  SNI item is shipped (W27).
 - Omarchy plugin `io.github.duketopceo.wisp` (Linux/Omarchy)
 - a service: `wispd.service` (systemd user, Linux),
   `ai.wisp.wispd` launchd plist (macOS), Task Scheduler `Wisp` (Windows)
