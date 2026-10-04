@@ -1,0 +1,19 @@
+usage: wispd theme css [-h] [--json] [--quiet] [--no-color] [dir] [out]
+
+Write theme.css from the theme tokens
+
+positional arguments:
+  dir          theme directory
+  out          output file, or - for stdout
+
+options:
+  -h, --help   show this help message and exit
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd theme css
+  wispd theme css ~/themes/x -

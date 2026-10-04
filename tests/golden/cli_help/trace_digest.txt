@@ -1,0 +1,17 @@
+usage: wispd trace digest [-h] [--json] [--quiet] [--no-color] [hours]
+
+Local digest over decisions and trace
+
+positional arguments:
+  hours        window in hours (default 24)
+
+options:
+  -h, --help   show this help message and exit
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd trace digest 48
