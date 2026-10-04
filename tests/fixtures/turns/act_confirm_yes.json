@@ -1,0 +1,75 @@
+{
+  "description": "[cua] confirm = always: the click asks first; the scripted chooser answers yes and cua-driver is called once.",
+  "audio": "act.wav",
+  "name": "act_confirm_yes",
+  "config": {
+    "pointer": {
+      "mode": "drive",
+      "backend": "auto"
+    },
+    "cua": {
+      "confirm": "always"
+    }
+  },
+  "fakes": {
+    "cua": {},
+    "hypr": {},
+    "notify": {}
+  },
+  "endpoints": {
+    "whisper": {
+      "transcript": "wisp agent click the save button"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "tool_calls": [
+            {
+              "name": "click",
+              "arg": "10,20@logical"
+            }
+          ]
+        },
+        {
+          "content": "Clicked save."
+        }
+      ]
+    }
+  },
+  "expect": {
+    "statuses": [
+      "listening",
+      "transcribing",
+      "deciding",
+      "acting",
+      "awaiting_choice",
+      "acting",
+      "done"
+    ],
+    "cua_calls": [
+      "click"
+    ],
+    "steps_contain": [
+      "CLICKED(10,20)"
+    ]
+  },
+  "scenario": "choose/confirm",
+  "chooser": {
+    "pick": "run click: 10,20@logical? \u2014 yes",
+    "delay_ms": 20
+  }
+}

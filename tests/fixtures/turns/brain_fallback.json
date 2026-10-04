@@ -49,5 +49,6 @@
     "brain": {
       "fallback": "fallback_fake:fake-model-2"
     }
-  }
+  },
+  "scenario": "brain fallback"
 }

@@ -1,0 +1,66 @@
+{
+  "description": "Focused window is a password manager: the built-in deny list refuses the click, cua-driver is never called.",
+  "audio": "act.wav",
+  "name": "cua_denied_app",
+  "config": {
+    "pointer": {
+      "mode": "drive",
+      "backend": "auto"
+    }
+  },
+  "fakes": {
+    "cua": {},
+    "hypr": {
+      "replies": {
+        "j/activewindow": {
+          "class": "1password",
+          "title": "1Password"
+        }
+      }
+    },
+    "notify": {}
+  },
+  "endpoints": {
+    "whisper": {
+      "transcript": "wisp agent click the save button"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "tool_calls": [
+            {
+              "name": "click",
+              "arg": "10,20@logical"
+            }
+          ]
+        },
+        {
+          "content": "Clicked save."
+        }
+      ]
+    }
+  },
+  "expect": {
+    "result_prefix": "ACTED",
+    "cua_calls": [],
+    "steps_contain": [
+      "REFUSED (app 1password is denied)"
+    ],
+    "notify_count": 1
+  },
+  "scenario": "deny-listed app"
+}

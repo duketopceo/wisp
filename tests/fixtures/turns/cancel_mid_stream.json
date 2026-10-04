@@ -49,5 +49,6 @@
       "brain"
     ]
   },
-  "name": "cancel_mid_stream"
+  "name": "cancel_mid_stream",
+  "scenario": "cancel mid-stream"
 }
