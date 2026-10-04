@@ -1,0 +1,1 @@
+hl.define_submap("wisp", function() hl.bind("escape", function() hl.dispatch(hl.dsp.exec_cmd("/usr/bin/python3 /opt/wisp/wisp/fastkey.py --sock /run/user/1000/wisp/wispd.sock interrupt")); hl.dispatch(hl.dsp.submap("reset")) end, {description = "wisp:sub:wisp:escape"}) end)
