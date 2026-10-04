@@ -15,10 +15,12 @@ arbitrary; a skill can declare `tier: safe` only for genuinely read-only
 work).
 """
 import json
+import os
 import re
 import shlex
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from . import config, util
@@ -226,14 +228,21 @@ def run_tool(name: str, arg: str) -> str | None:
     sp = SKILLS_DIR / _slug(name[6:]) / script
     if not sp.is_file():
         return None
-    bash = shutil.which("bash")
+    bash = None
+    if sys.platform == "win32":
+        for cand in [r"C:\Program Files\Git\bin\bash.exe", r"C:\Program Files\Git\bin\sh.exe"]:
+            if os.path.isfile(cand):
+                bash = cand
+                break
+    if not bash:
+        bash = shutil.which("bash")
     if not bash:
         return "SKIP (no bash)"
     from . import tools as _tools
     if _tools.denied(arg):
         return "REFUSED (denylisted command)"
     try:
-        r = subprocess.run([bash, str(sp)] + shlex.split(arg),
+        r = subprocess.run([bash, sp.as_posix()] + shlex.split(arg),
                            capture_output=True, text=True, timeout=60)
         return (r.stdout or r.stderr).strip()[:2000] or \
             f"(exit {r.returncode})"

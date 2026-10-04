@@ -248,7 +248,7 @@ def weekly(days: int = 7, corrections_file=config.CORRECTIONS,
         lines.append(
             f"- `{value}` chosen {n}x — strengthen its criteria text or "
             f"add the heard phrases as cues (approve to apply)")
-    out.write_text("\n".join(lines) + "\n")
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return str(out)
 
 
