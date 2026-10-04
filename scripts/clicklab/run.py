@@ -9,6 +9,7 @@ MCP `evaluate` tool — auto-labeled runs, no human ✓/✗.
 Usage:
     python3 scripts/clicklab/run.py [--tasks N] [--repeat R]
         [--suite NAME] [--seed S] [--dom] [--only SUBSTR]
+        [--page index.html|apps.html] [--teach]
         [--models "provider:model,provider:model"]
 """
 import json
@@ -58,11 +59,11 @@ def bos(tool: str, args: dict) -> str:
     return mcpclient.call(f"browseros {tool} {json.dumps(args)}", {})
 
 
-def open_lab(seed: int = 0) -> int:
+def open_lab(seed: int = 0, url: str | None = None) -> int:
     """Open clicklab in a new BrowserOS tab; return its page id.
     `seed` reshuffles the page layout (dots/buttons/shapes) so the
     agent can't memorize positions across runs."""
-    url = URL + (f"?seed={seed}" if seed else "")
+    url = (url or URL) + (f"?seed={seed}" if seed else "")
     out = bos("tabs", {"action": "new", "url": url})
     m = re.search(r"page (\d+)", out)
     if m:
@@ -186,11 +187,15 @@ def main():
         return
     suite_name = _flag("--suite", "core")
     seed = int(_flag("--seed", "0"))
+    teach = "--teach" in sys.argv
+    page_name = _flag("--page", "index.html")
+    url = f"http://127.0.0.1:{PORT}/{page_name}"
     serve()
-    print(f"[clicklab] serving on {URL} suite={suite_name}"
-          + (f" seed={seed}" if seed else ""))
+    print(f"[clicklab] serving on {url} suite={suite_name}"
+          + (f" seed={seed}" if seed else "")
+          + (" teach" if teach else ""))
     try:
-        page = open_lab(seed)
+        page = open_lab(seed, url)
     except RuntimeError as e:
         print(f"[clicklab] {e}")
         sys.exit(2)
@@ -211,8 +216,10 @@ def main():
         # origin involved; keep SHOT_ORIGIN bookkeeping consistent
         cfg["screen"]["dom_origin"] = [0, 0]
         # liveness probe: a DOM click at a known element's rect
+        probe_id = "tab-chess" if page_name == "apps.html" \
+            else "btn-alpha"
         out = bos("evaluate", {"page": page, "code":
-                               "var b=document.getElementById('btn-alpha');"
+                               f"var b=document.getElementById('{probe_id}');"
                                "if(!b)return 'miss';"
                                "var r=b.getBoundingClientRect();"
                                "return ''+Math.round(r.x+r.width/2)+','+"
@@ -266,7 +273,8 @@ def main():
             continue
         results.extend(
             _run_suite(mcfg, tasks, page, dom, suite_name, spec,
-                       model, len(tasks)))
+                       model, len(tasks), teach=teach,
+                       apps_page=page_name == "apps.html"))
 
     hits = sum(1 for r in results if r["verified"])
     print(f"\n[clicklab] {hits}/{len(results)} verified "
@@ -297,26 +305,35 @@ def _provider_up(cfg: dict) -> bool:
 
 
 def _run_suite(cfg, tasks, page, dom, suite_name, spec, model,
-               total) -> list:
+               total, teach=False, apps_page=False) -> list:
     from wisp import act, judge, train
     print(f"[clicklab] {total} tasks, brain={spec}")
     results = []
     for i, (task, expr, oracle_len) in enumerate(tasks, 1):
         # reset the scoreboard per task — cumulative state would let a
-        # repeat pass on a previous task's leftovers
-        bos("evaluate", {"page": page, "code":
-                         "window.__score={events:[],counts:{},"
-                         "scroll_top:0,typed:{},lastClick:null};"
-                         "document.querySelectorAll('input,textarea')"
-                         ".forEach(e=>e.value='');"
-                         "document.getElementById('scroller')"
-                         ".scrollTop=0;"
-                         "document.activeElement.blur();return 'r'"})
+        # repeat pass on a previous task's leftovers. The apps page
+        # keeps board/app state in __score so a reload is the cleanest
+        # reset; index.html resets in place.
+        if apps_page:
+            bos("evaluate", {"page": page, "code": "location.reload()"})
+            time.sleep(1.5)
+        else:
+            bos("evaluate", {"page": page, "code":
+                             "window.__score={events:[],counts:{},"
+                             "scroll_top:0,typed:{},lastClick:null};"
+                             "document.querySelectorAll('input,textarea')"
+                             ".forEach(e=>e.value='');"
+                             "document.getElementById('scroller')"
+                             ".scrollTop=0;"
+                             "document.activeElement.blur();return 'r'"})
         if not dom:
             focus_browseros()
+        ask = ("Teach the user as you go — briefly say what you are "
+               "doing and why before each action, then do it: " + task
+               if teach else task)
         t0 = time.time()
         run_steps: list = []
-        verdict = act.run_act_loop(task, cfg,
+        verdict = act.run_act_loop(ask, cfg,
                                    confirm=lambda p: True,
                                    steps_out=run_steps)
         ms = int((time.time() - t0) * 1000)
@@ -345,6 +362,7 @@ def _run_suite(cfg, tasks, page, dom, suite_name, spec, model,
                    if oracle_len else None)
         eff = eff_obj if eff_obj is not None else j.get("efficiency")
         rec = {"i": i, "task": task, "suite": suite_name,
+               "teach": teach or None,
                "check": expr, "verdict": verdict,
                "verified": ok, "judge": j, "surface": "browser-dom",
                "model": model, "provider": spec,

@@ -11,18 +11,23 @@ MIN=${1:-60}
 LOGDIR=~/.local/share/wisp/training-logs
 mkdir -p "$LOGDIR"
 END=$(( $(date +%s) + MIN * 60 ))
-SUITES=(core dom-hard)
+# suite:page pairs — index.html lab vs apps.html multi-app arena
+SUITES=("core:index.html" "dom-hard:index.html"
+        "apps-chess:apps.html" "apps-settings:apps.html"
+        "apps-email:apps.html" "apps-nodes:apps.html"
+        "apps-editor:apps.html")
 MODELS=("openrouter:google/gemma-4-31b-it" "openrouter:google/gemini-2.5-flash")
 SEED=0
 while [ "$(date +%s)" -lt "$END" ]; do
     for M in "${MODELS[@]}"; do
-        for S in "${SUITES[@]}"; do
+        for SP in "${SUITES[@]}"; do
             [ "$(date +%s)" -ge "$END" ] && break 2
+            S=${SP%%:*}; P=${SP##*:}
             TS=$(date +%Y%m%d-%H%M%S)
             TAG=${M##*/}
-            echo "[hammer] $TS suite=$S seed=$SEED model=$TAG"
+            echo "[hammer] $TS suite=$S page=$P seed=$SEED model=$TAG"
             uv run python scripts/clicklab/run.py --dom --suite "$S" \
-                --seed "$SEED" --models "$M" \
+                --page "$P" --seed "$SEED" --models "$M" \
                 > "$LOGDIR/run-$TS-$S-s$SEED-$TAG.log" 2>&1
             TAIL=$(tail -2 "$LOGDIR/run-$TS-$S-s$SEED-$TAG.log" | head -1)
             echo "[hammer] done: $TAIL"
