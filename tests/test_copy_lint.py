@@ -23,11 +23,11 @@ from wisp import errors_codes  # noqa: E402
 
 PLUGIN = ROOT / "shell-plugin"
 USER_FACING_PY = ("wisp/tui.py", "wisp/errors_codes.py")
-STRICT_QML = ["WispService.qml"] + sorted(
+STRICT_QML = ["WispService.qml", "Companion.qml"] + sorted(
     p.name for p in (PLUGIN / "lib").glob("*.js")
     if p.name not in ("icons.js",))
-# files being rewritten by W21-W23; counts may only fall
-RATCHET = {"Companion.qml": 6, "Panel.qml": 15, "BarWidget.qml": 3}
+# files still being rewritten (W22, W23); counts may only fall
+RATCHET = {"Panel.qml": 15, "BarWidget.qml": 3}
 
 
 def table_strings():
