@@ -1,0 +1,21 @@
+{
+  "mode": "light",
+  "source": "omarchy",
+  "tokens": {
+    "accent": "#1e66f5",
+    "canvas": "#eff1f5",
+    "ember": "#1e66f5",
+    "emberCore": "#3e87ff",
+    "emberHalo": "#eff1f5",
+    "emberWick": "#0044d2",
+    "fail": "#d20f39",
+    "ink": "#4c4f69",
+    "inkMuted": "#696c83",
+    "keyline": "#aeb0bd",
+    "keylineStrong": "#1e66f5",
+    "needsYou": "#c87800",
+    "ok": "#3d9d27",
+    "raised": "#dce0e8",
+    "selection": "#ccd0da"
+  }
+}
