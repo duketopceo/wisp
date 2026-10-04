@@ -21,13 +21,21 @@ const libs = JSON.parse(process.argv[1]);
 const expr = process.argv[2];
 const ctx = {};
 vm.createContext(ctx);
-for (const [name, path] of Object.entries(libs)) {
-  const src = fs.readFileSync(path, 'utf8').replace(/^\\.pragma library/m, '');
+const path = require('path');
+// `.import "x.js" as Name` (QML library syntax): load x.js beside this
+// file into its own scope and expose it as Name.
+function load(file) {
+  let src = fs.readFileSync(file, 'utf8').replace(/^\\.pragma library/m, '');
   const scope = {};
   vm.createContext(scope);
+  src = src.replace(/^\\.import\\s+"([^"]+)"\\s+as\\s+(\\w+)\\s*$/gm, (_m, rel, name) => {
+    scope[name] = load(path.join(path.dirname(file), rel));
+    return '';
+  });
   vm.runInContext(src, scope);
-  ctx[name] = scope;
+  return scope;
 }
+for (const [name, p] of Object.entries(libs)) ctx[name] = load(p);
 process.stdout.write(JSON.stringify(vm.runInContext(expr, ctx)));
 """
 

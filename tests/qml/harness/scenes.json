@@ -1898,5 +1898,297 @@
     }
    }
   }
+ },
+ "FirstRunCard": {
+  "mode": "variant",
+  "pad": 10,
+  "width": 360,
+  "scale2": true,
+  "on": "canvas",
+  "variants": {
+   "fresh": {
+    "_state": "idle",
+    "steps": [
+     {
+      "id": "mic",
+      "name": "microphone",
+      "optional": false,
+      "state": "todo",
+      "ok": false,
+      "done": false,
+      "detail": "pw-record and the speech model are ready",
+      "try": ""
+     },
+     {
+      "id": "models",
+      "name": "local models",
+      "optional": false,
+      "state": "todo",
+      "ok": false,
+      "done": false,
+      "detail": "ornith up, jev up, jev-shim up, uitars down, ollama down",
+      "try": ""
+     },
+     {
+      "id": "cua",
+      "name": "cua pointer driver",
+      "optional": true,
+      "state": "todo",
+      "ok": false,
+      "done": false,
+      "detail": "cua-driver running",
+      "try": ""
+     },
+     {
+      "id": "notifications",
+      "name": "notifications",
+      "optional": false,
+      "state": "todo",
+      "ok": false,
+      "done": false,
+      "detail": "ready; a test send needs your ok",
+      "try": ""
+     },
+     {
+      "id": "keybinding",
+      "name": "keybinding",
+      "optional": true,
+      "state": "na",
+      "ok": false,
+      "done": false,
+      "detail": "needs the keyboard submap (not installed yet)",
+      "try": ""
+     }
+    ],
+    "skipped": []
+   },
+   "partial": {
+    "_state": "idle",
+    "steps": [
+     {
+      "id": "mic",
+      "name": "microphone",
+      "optional": false,
+      "state": "done",
+      "ok": true,
+      "done": true,
+      "detail": "pw-record and the speech model are ready",
+      "try": ""
+     },
+     {
+      "id": "models",
+      "name": "local models",
+      "optional": false,
+      "state": "done",
+      "ok": true,
+      "done": true,
+      "detail": "ornith up, jev up, jev-shim up, uitars down, ollama down",
+      "try": ""
+     },
+     {
+      "id": "cua",
+      "name": "cua pointer driver",
+      "optional": true,
+      "state": "todo",
+      "ok": false,
+      "done": false,
+      "detail": "cua-driver running",
+      "try": ""
+     },
+     {
+      "id": "notifications",
+      "name": "notifications",
+      "optional": false,
+      "state": "todo",
+      "ok": false,
+      "done": false,
+      "detail": "ready; a test send needs your ok",
+      "try": ""
+     },
+     {
+      "id": "keybinding",
+      "name": "keybinding",
+      "optional": true,
+      "state": "na",
+      "ok": false,
+      "done": false,
+      "detail": "needs the keyboard submap (not installed yet)",
+      "try": ""
+     }
+    ],
+    "skipped": []
+   },
+   "skipped": {
+    "_state": "idle",
+    "steps": [
+     {
+      "id": "mic",
+      "name": "microphone",
+      "optional": false,
+      "state": "done",
+      "ok": true,
+      "done": true,
+      "detail": "pw-record and the speech model are ready",
+      "try": ""
+     },
+     {
+      "id": "models",
+      "name": "local models",
+      "optional": false,
+      "state": "todo",
+      "ok": false,
+      "done": false,
+      "detail": "ornith up, jev up, jev-shim up, uitars down, ollama down",
+      "try": ""
+     },
+     {
+      "id": "cua",
+      "name": "cua pointer driver",
+      "optional": true,
+      "state": "todo",
+      "ok": false,
+      "done": false,
+      "detail": "cua-driver running",
+      "try": ""
+     },
+     {
+      "id": "notifications",
+      "name": "notifications",
+      "optional": false,
+      "state": "todo",
+      "ok": false,
+      "done": false,
+      "detail": "ready; a test send needs your ok",
+      "try": ""
+     },
+     {
+      "id": "keybinding",
+      "name": "keybinding",
+      "optional": true,
+      "state": "na",
+      "ok": false,
+      "done": false,
+      "detail": "needs the keyboard submap (not installed yet)",
+      "try": ""
+     }
+    ],
+    "skipped": [
+     "cua",
+     "notifications"
+    ]
+   },
+   "problem": {
+    "_state": "idle",
+    "steps": [
+     {
+      "id": "mic",
+      "name": "microphone",
+      "optional": false,
+      "state": "todo",
+      "ok": false,
+      "done": false,
+      "detail": "no recorder found",
+      "try": "omarchy pkg add pipewire"
+     },
+     {
+      "id": "models",
+      "name": "local models",
+      "optional": false,
+      "state": "todo",
+      "ok": false,
+      "done": false,
+      "detail": "ornith up, jev up, jev-shim up, uitars down, ollama down",
+      "try": ""
+     },
+     {
+      "id": "cua",
+      "name": "cua pointer driver",
+      "optional": true,
+      "state": "todo",
+      "ok": false,
+      "done": false,
+      "detail": "cua-driver running",
+      "try": ""
+     },
+     {
+      "id": "notifications",
+      "name": "notifications",
+      "optional": false,
+      "state": "todo",
+      "ok": false,
+      "done": false,
+      "detail": "ready; a test send needs your ok",
+      "try": ""
+     },
+     {
+      "id": "keybinding",
+      "name": "keybinding",
+      "optional": true,
+      "state": "na",
+      "ok": false,
+      "done": false,
+      "detail": "needs the keyboard submap (not installed yet)",
+      "try": ""
+     }
+    ],
+    "skipped": []
+   },
+   "all_done": {
+    "_state": "idle",
+    "steps": [
+     {
+      "id": "mic",
+      "name": "microphone",
+      "optional": false,
+      "state": "done",
+      "ok": true,
+      "done": true,
+      "detail": "pw-record and the speech model are ready",
+      "try": ""
+     },
+     {
+      "id": "models",
+      "name": "local models",
+      "optional": false,
+      "state": "done",
+      "ok": true,
+      "done": true,
+      "detail": "ornith up, jev up, jev-shim up, uitars down, ollama down",
+      "try": ""
+     },
+     {
+      "id": "cua",
+      "name": "cua pointer driver",
+      "optional": true,
+      "state": "done",
+      "ok": true,
+      "done": true,
+      "detail": "cua-driver running",
+      "try": ""
+     },
+     {
+      "id": "notifications",
+      "name": "notifications",
+      "optional": false,
+      "state": "done",
+      "ok": true,
+      "done": true,
+      "detail": "ready; a test send needs your ok",
+      "try": ""
+     },
+     {
+      "id": "keybinding",
+      "name": "keybinding",
+      "optional": true,
+      "state": "na",
+      "ok": false,
+      "done": false,
+      "detail": "needs the keyboard submap (not installed yet)",
+      "try": ""
+     }
+    ],
+    "skipped": []
+   }
+  }
  }
 }
