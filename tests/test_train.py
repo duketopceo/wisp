@@ -144,3 +144,116 @@ class ModelMatrix(unittest.TestCase):
         self.assertIn("1,2", h)
         h2 = train.hint_for("click alpha", "browser-dom", model="other")
         self.assertIn("9,9", h2)  # falls back to unkeyed
+
+
+class Reliability(unittest.TestCase):
+    def setUp(self):
+        self.dir = pathlib.Path(tempfile.mkdtemp())
+        self.bank = self.dir / "skillbank.json"
+        self.results = self.dir / "clicklab.jsonl"
+        mock.patch.object(train, "BANK_FILE", self.bank).start()
+        mock.patch.object(train, "RESULTS", self.results).start()
+        self.addCleanup(mock.patch.stopall)
+
+    def _write(self, recs):
+        import json as _j
+        with self.results.open("a") as f:
+            for r in recs:
+                f.write(_j.dumps(r) + "\n")
+
+    def test_pass_rate_per_task(self):
+        rs = [dict(_rec(ok=True), model="m1"),
+              dict(_rec(ok=True), model="m1"),
+              dict(_rec(ok=False), model="m1")]
+        rs[2]["judge"]["success"] = False
+        self._write(rs)
+        s = train.stats()
+        rel = [r for r in s["reliability"] if r["model"] == "m1"]
+        self.assertEqual(len(rel), 1)
+        self.assertEqual(rel[0]["runs"], 3)
+        self.assertEqual(rel[0]["pass"], 2)
+        self.assertAlmostEqual(rel[0]["pass_rate"], 2 / 3, places=2)
+
+    def test_models_bucket_separately(self):
+        self._write([dict(_rec(ok=True), model="m1"),
+                     dict(_rec(ok=False), model="m2")])
+        s = train.stats()
+        # each model has 1 run — below the runs>=2 floor
+        self.assertEqual(s["reliability"], [])
+
+    def test_surfaces_bucket_separately(self):
+        self._write([dict(_rec(ok=True), surface="browser-dom"),
+                     dict(_rec(ok=False), surface="desktop"),
+                     dict(_rec(ok=True), surface="desktop")])
+        s = train.stats()
+        self.assertEqual(len(s["reliability"]), 1)
+        self.assertEqual(s["reliability"][0]["surface"], "desktop")
+
+    def test_empty_results_no_crash(self):
+        s = train.stats()
+        self.assertEqual(s["reliability"], [])
+
+
+class FlakeTaxonomy(unittest.TestCase):
+    def test_verified_pass_is_none(self):
+        self.assertEqual(train.classify_flake(_rec(ok=True)), "none")
+
+    def test_verified_pass_judge_dissent_is_judge_fn(self):
+        r = _rec(ok=True)
+        r["judge"]["success"] = False
+        self.assertEqual(train.classify_flake(r), "judge_fn")
+
+    def test_all_error_steps_is_env(self):
+        r = _rec(ok=False)
+        r["steps"] = [{"tool": "click", "result": "ERROR mcp"},
+                      {"tool": "key", "result": "ERROR mcp"}]
+        self.assertEqual(train.classify_flake(r), "env")
+
+    def test_env_hint_in_any_step_is_env(self):
+        r = _rec(ok=False)
+        r["steps"] = [{"tool": "click", "result": "CLICKED DIV"},
+                      {"tool": "key", "result": "ERROR mcp timeout"}]
+        self.assertEqual(train.classify_flake(r), "env")
+
+    def test_short_stall_is_timing(self):
+        r = _rec(ok=False)
+        r["steps"] = [{"tool": "click", "result": "CLICKED DIV"}]
+        r["verdict"] = "ABORTED: no tools"
+        self.assertEqual(train.classify_flake(r), "timing")
+
+    def test_real_fail_is_model(self):
+        r = _rec(ok=False)
+        r["steps"] = [{"tool": "click", "result": "CLICKED wrong"},
+                      {"tool": "click", "result": "CLICKED wrong"},
+                      {"tool": "click", "result": "CLICKED wrong"}]
+        r["verdict"] = "ACTED (3 steps): hmm"
+        self.assertEqual(train.classify_flake(r), "model")
+
+    def test_stats_histogram_counts_flakes(self):
+        import tempfile, pathlib, json as _j
+        with tempfile.TemporaryDirectory() as d:
+            res = pathlib.Path(d) / "r.jsonl"
+            rs = [_rec(ok=True), _rec(ok=False)]
+            rs[1]["steps"] = [{"tool": "x", "result": "ERROR mcp"}]
+            with res.open("w") as f:
+                for r in rs:
+                    f.write(_j.dumps(r) + "\n")
+            with mock.patch.object(train, "RESULTS", res), \
+                 mock.patch.object(train, "BANK_FILE",
+                                   pathlib.Path(d) / "b.json"):
+                s = train.stats()
+        self.assertEqual(s["flakes"], {"env": 1})
+
+    def test_stats_uses_stored_flake_field(self):
+        import tempfile, pathlib, json as _j
+        with tempfile.TemporaryDirectory() as d:
+            res = pathlib.Path(d) / "r.jsonl"
+            r = _rec(ok=True)
+            r["flake"] = "env"   # stored label wins over re-classify
+            with res.open("w") as f:
+                f.write(_j.dumps(r) + "\n")
+            with mock.patch.object(train, "RESULTS", res), \
+                 mock.patch.object(train, "BANK_FILE",
+                                   pathlib.Path(d) / "b.json"):
+                s = train.stats()
+        self.assertEqual(s["flakes"], {"env": 1})

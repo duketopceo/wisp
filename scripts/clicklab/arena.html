@@ -72,6 +72,8 @@
     <div id="stats">…</div>
     <h2 style="margin-top:14px">Waste breakdown</h2>
     <div id="waste" class="dim">—</div>
+    <h2 style="margin-top:14px">Reliability <span class="dim">(pass^k, ≥2 runs)</span></h2>
+    <div id="reliability" class="dim">—</div>
     <h2 style="margin-top:14px">Efficiency trend</h2>
     <canvas id="trend"></canvas>
   </div>
@@ -159,6 +161,27 @@ async function refresh() {
        <span class="bar" style="width:${Math.round(v/wmax*120)}px;
              background:var(--warn)"></span>
        <span class="pill">${v}</span></div>`).join('') || '—';
+  // flake histogram — env/timing/judge_fn vs genuine model failures
+  const fl = stats.flakes || {};
+  const fmax = Math.max(1, ...Object.values(fl));
+  $('waste').innerHTML += Object.entries(fl).sort((a,b)=>b[1]-a[1])
+    .map(([k,v]) =>
+      `<div class="wastebar"><span class="n">flake:${esc(k)}</span>
+       <span class="bar" style="width:${Math.round(v/fmax*120)}px;
+             background:var(--bad)"></span>
+       <span class="pill">${v}</span></div>`).join('');
+  // reliability — pass^k per task+model, worst first
+  $('reliability').innerHTML = (stats.reliability || [])
+    .slice(0, 12).map(r =>
+      `<div class="wastebar"><span class="n" title="${esc(r.task)}">
+       ${esc((r.model ? r.model + ' · ' : '') +
+             r.task.slice(0, 34))}</span>
+       <span class="bar" style="width:${Math.round(r.pass_rate * 120)}px;
+             background:${r.pass_rate >= .9 ? 'var(--ok)' :
+                          r.pass_rate >= .5 ? 'var(--warn)' :
+                          'var(--bad)'}"></span>
+       <span class="pill">${r.pass}/${r.runs}</span></div>`)
+    .join('') || '—';
   // efficiency sparkline
   const cv = $('trend'), cx = cv.getContext('2d');
   cv.width = cv.clientWidth * 2; cv.height = 140;
@@ -187,7 +210,11 @@ async function refresh() {
       <td class="dim">${esc(r.model||'')}</td>
       <td>${jchip(g.success)} ${effbar(g.efficiency)}
           ${g.waste && g.waste!=='none' ?
-            `<span class="pill warn">${esc(g.waste)}</span>` : ''}</td>
+            `<span class="pill warn">${esc(g.waste)}</span>` : ''}
+          ${r.flake && r.flake !== 'none' ?
+            `<span class="pill warn">flake:${esc(r.flake)}</span>` : ''}
+          ${(g.first_fault ?? -1) >= 0 ?
+            `<span class="pill warn">fault@${g.first_fault + 1}</span>` : ''}</td>
       <td class="pill" style="text-align:right">${r.ms||''}</td>
     </tr>`;
   }).join('');
