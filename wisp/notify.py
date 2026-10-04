@@ -36,6 +36,15 @@ CODE_LEVEL = {
     "timeout": "attention", "ground_failed": "attention",
 }
 
+def for_code(code: str):
+    """(level, text) for an error code: the level from CODE_LEVEL (None =
+    no toast) and the body from the shared copy table, so a notification
+    reads exactly like the bubble, console and bar."""
+    from . import copy as _copy
+    level = CODE_LEVEL.get(code, "error")
+    return level, _copy.toast_text(code)
+
+
 _DEST = "org.freedesktop.Notifications"
 _PATH = "/org/freedesktop/Notifications"
 _IFACE = "org.freedesktop.Notifications"

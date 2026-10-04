@@ -14,8 +14,10 @@ Rectangle {
 
   readonly property var tk: service ? service.tokens : ({})
   readonly property bool listening: service.status === "listening"
-  readonly property var picks: service.choices.slice(0, 5)
+  // a confirm card owns its own allow/deny chips (Bubble), so no chips here
+  readonly property var picks: service.confirm ? [] : service.choices.slice(0, 5)
   // the host shows the pill for these statuses (Companion.pillVisible)
+  property real refreshHz: 60
   readonly property bool wanted: Companion.pillVisible(service.status)
 
   implicitWidth: 380
@@ -39,11 +41,13 @@ Rectangle {
         anchors.verticalCenter: parent.verticalCenter
         service: root.service
         size: M.size.creaturePill
+        refreshHz: root.refreshHz
       }
       Text {
         anchors.verticalCenter: parent.verticalCenter
-        text: root.service.statusWord
-        color: root.tk[M.toneToken(root.service.statusTone)]
+        objectName: "word"
+        text: root.service.wordView.word
+        color: root.tk[M.toneToken(root.service.wordView.tone)]
         font.family: root.service.fontFamily
         font.pixelSize: M.font.body
         font.weight: Font.DemiBold

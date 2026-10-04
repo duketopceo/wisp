@@ -2,14 +2,20 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
-import "tokens.js" as Tokens
-import "copy.js" as Copy
+import "components"
 
-// Wisp: management app. Open/close from the launcher; the daemon stays
-// resident. Tabs: Home (what it's doing + controls), Activity (turn
-// replay), Memory (editable notes it reads every turn), Agents
-// (background tasks), Settings (config.toml, grouped + explained).
-// Everything reads files/IPC: zero coupling to daemon internals.
+// Wisp: management app. Open/close from the launcher (the desktop entry's
+// Panel action opens it); the daemon stays resident. Views: Home (what it is
+// doing + controls), Activity (turn replay), Memory (editable notes it reads
+// every turn), Agents (background tasks), Health (W22 section), Spend (W14
+// ledger), Audit (cua.jsonl, read only), Binds (hotkey + Hyprland binds),
+// Settings (config.toml, grouped + explained).
+//
+// One reader: WispService (the W17 reader, shared with the shell plugin)
+// owns state, theme tokens and the one-shot wispd reads. This file opens no
+// state.json, runs no timers, and polls nothing: files that change while a
+// view is open (decisions, corrections, notes, the cua audit log) are
+// watched, and wispd results are read once when a view opens.
 
 FloatingWindow {
   id: win
@@ -17,51 +23,56 @@ FloatingWindow {
   minimumSize: Qt.size(900, 640)
   color: bg
 
-  readonly property string rtDir: {
-    var rd = Quickshell.env("XDG_RUNTIME_DIR");
-    if (!rd || rd.length === 0) rd = "/tmp";
-    return rd + "/wisp";
-  }
   readonly property string dataDir:
       Quickshell.env("HOME") + "/.local/share/wisp"
+  readonly property string auditPath: {
+    var base = Quickshell.env("XDG_STATE_HOME");
+    if (!base || base.length === 0)
+      base = Quickshell.env("HOME") + "/.local/state";
+    return base + "/wisp/cua.jsonl";
+  }
 
-  property var stateObj: ({})
+  WispService { id: svc }
+
   property var decisions: []
   property var corrections: []
   property var suggestions: []
-  property var cfgObj: ({})
-  property var tasks: ({})
+  property string auditText: ""
+  property var bindsData: null
   property int tab: 0
+
+  readonly property var tabs: ["home", "activity", "memory", "agents",
+                               "health", "spend", "audit", "binds",
+                               "settings"]
 
   function wispd(args) {
     if (cmdProc.running) return;
-    cmdProc.command = ["wispd"].concat(args);
+    cmdProc.command = [svc.wispd].concat(args);
     cmdProc.running = true;
   }
-  function svc(args) {
+  function svcCtl(args) {
     if (svcProc.running) return;
     svcProc.command =
         ["systemctl", "--user"].concat(args).concat(["wispd"]);
     svcProc.running = true;
   }
-
-  // ── data plumbing ──────────────────────────────────────────────
-
-  FileView {
-    id: stateView
-    path: win.rtDir + "/state.json"
-    watchChanges: true
-    onFileChanged: reload()
-    onLoaded: {
-      try {
-        var s = JSON.parse(stateView.text());
-        win.stateObj = s;
-        win.tasks = s.tasks || {};  // state publishes task liveness
-      } catch (e) {}
-    }
+  // a task is {status, task, ...}; older daemons publish just the status
+  function taskOf(name) {
+    var t = svc.tasks[name];
+    if (t === null || t === undefined) return {};
+    return typeof t === "string" ? { status: t, task: "" } : t;
   }
-  Timer { interval: 400; running: true; repeat: true
-          onTriggered: stateView.reload() }
+
+  // One-shot reads when a view opens (never on a timer).
+  function enter(key) {
+    if (key === "health" || key === "spend" || key === "settings")
+      svc.loadSettings();
+    if (key === "binds" && !bindsProc.running) bindsProc.running = true;
+  }
+  onTabChanged: enter(tabs[tab])
+  Component.onCompleted: svc.loadSettings()
+
+  // ── data plumbing: watched files ───────────────────────────────
 
   FileView {
     id: decisionsView
@@ -124,80 +135,53 @@ FloatingWindow {
   FileView { id: memoryView; path: win.dataDir + "/MEMORY.md" }
   FileView { id: userView;    path: win.dataDir + "/USER.md" }
 
+  // cua audit log (wisp/cua_safety.audit_default_path()): read only.
+  FileView {
+    id: auditView
+    path: win.auditPath
+    watchChanges: true
+    printErrors: false
+    onFileChanged: reload()
+    onLoaded: win.auditText = auditView.text()
+    onLoadFailed: win.auditText = ""
+  }
+
   Process {
-    id: cfgProc
-    command: ["wispd", "config"]
+    id: bindsProc
+    command: [svc.wispd, "binds", "--json"]
     stdout: StdioCollector {
       onStreamFinished: {
-        try { win.cfgObj = JSON.parse(this.text) } catch (e) {}
+        try { win.bindsData = JSON.parse(this.text).data }
+        catch (e) { win.bindsData = null }
       }
     }
   }
-  Process { id: cmdProc; command: ["wispd"]
-            onExited: { cfgProc.running = true } }
+  Process { id: cmdProc; command: [svc.wispd] }
   Process { id: svcProc
             command: ["systemctl", "--user", "status", "wispd"] }
-  Process { id: writeProc; command: ["wispd"] }
-
-  Component.onCompleted: {
-    cfgProc.running = true;
-  }
+  Process { id: writeProc; command: [svc.wispd] }
 
   // ── design tokens ──────────────────────────────────────────────
-  // Omarchy theme tokens (tokens.js, the same adapter the shell plugin
-  // uses). This window is its own Quickshell process, so Omarchy's theme
-  // IPC never reaches it: it re-reads colors.toml whenever
-  // ~/.local/state/omarchy/current/theme.name changes. Fewer boxes,
-  // hairline separators, mono for labels + data, sans for prose.
+  // Omarchy theme tokens come from the service (lib/tokens.js over the
+  // current theme's colors.toml, re-read when the theme swaps, see the
+  // Commons shim beside this file). Fewer boxes, hairline separators,
+  // mono for labels + data, sans for prose.
 
-  readonly property string themeDir:
-      Quickshell.env("HOME") + "/.local/state/omarchy/current"
-  property var tk: Tokens.load("", "", "dark")
+  readonly property var tk: svc.tokens
+  readonly property color bg: tk.canvas
+  readonly property color raised: tk.raised
+  readonly property color hairline: tk.keyline
+  readonly property color fg: tk.ink
+  readonly property color sub: tk.inkMuted
+  readonly property color faint: tk.inkMuted
+  readonly property color accent: tk.accent
+  readonly property color ember: tk.ember
+  readonly property color ok: tk.ok
+  readonly property color warn: tk.needsYou
+  readonly property color err: tk.fail
 
-  function readText(view) {
-    try { return view.text() } catch (e) { return "" }
-  }
-  function retheme() {
-    win.tk = Tokens.load(readText(colorsView), readText(shellTomlView),
-                         "dark");
-  }
-
-  FileView {
-    id: themeNameView
-    path: win.themeDir + "/theme.name"
-    watchChanges: true
-    printErrors: false
-    onFileChanged: { reload(); colorsView.reload(); shellTomlView.reload() }
-  }
-  FileView {
-    id: colorsView
-    path: win.themeDir + "/theme/colors.toml"
-    printErrors: false
-    onLoaded: win.retheme()
-    onLoadFailed: win.retheme()
-  }
-  FileView {
-    id: shellTomlView
-    path: win.themeDir + "/theme/shell.toml"
-    printErrors: false
-    onLoaded: win.retheme()
-    onLoadFailed: win.retheme()
-  }
-
-  readonly property color bg: tk.tokens.canvas
-  readonly property color raised: tk.tokens.raised
-  readonly property color hairline: tk.tokens.keyline
-  readonly property color fg: tk.tokens.ink
-  readonly property color sub: tk.tokens.inkMuted
-  readonly property color faint: tk.tokens.inkMuted
-  readonly property color accent: tk.tokens.accent
-  readonly property color ember: tk.tokens.ember
-  readonly property color ok: tk.tokens.ok
-  readonly property color warn: tk.tokens.needsYou
-  readonly property color err: tk.tokens.fail
-
-  readonly property string mono: "JetBrainsMono NF"
-  readonly property string serif: "iA Writer Mono S"
+  readonly property string mono: svc.fontFamily
+  readonly property string serif: svc.fontFamily
 
   // tone -> color; `fail` is failed only, `needsYou` is waiting only
   function toneColor(tone) {
@@ -207,7 +191,6 @@ FloatingWindow {
     if (tone === "ok") return ok;
     return sub;
   }
-  function statusColor(s) { return toneColor(Copy.statusTone(s)); }
   function statusBlurb(s) {
     if (s === "listening") return "Recording. Release the key to send.";
     if (s === "transcribing") return "Turning your speech into text.";
@@ -218,11 +201,11 @@ FloatingWindow {
     if (s === "done") return "The last turn just finished.";
     if (s === "idle")
       return "Ready. Hold " +
-          ((win.cfgObj.hotkey||{}).mod||"SUPER") + "+" +
-          ((win.cfgObj.hotkey||{}).key||"D") + " to talk.";
+          (svc.configValues["hotkey.mod"] || "SUPER") + "+" +
+          (svc.configValues["hotkey.key"] || "D") + " to talk.";
     if (s === "error") return "Something failed. See Activity.";
     if (s === "offline") return "The daemon is not running. Restart it below.";
-    return Copy.statusWord(s);
+    return svc.statusWord;
   }
 
   // small mono section label
@@ -273,10 +256,9 @@ FloatingWindow {
           Rectangle {
             width: 8; height: 8; radius: 4
             anchors.verticalCenter: parent.verticalCenter
-            color: win.statusColor(win.stateObj.status || "offline")
+            color: win.toneColor(svc.statusTone)
             SequentialAnimation on opacity {
-              running: ["listening","transcribing","deciding",
-                        "acting"].indexOf(win.stateObj.status || "") >= 0
+              running: svc.busy && svc.motionMode !== "off"
               loops: Animation.Infinite
               NumberAnimation { to: 0.3; duration: 800 }
               NumberAnimation { to: 1.0; duration: 800 }
@@ -286,7 +268,7 @@ FloatingWindow {
                  font.family: serif; font.bold: true }
         }
         Repeater {
-          model: ["Home", "Activity", "Memory", "Agents", "Settings"]
+          model: win.tabs
           Item {
             width: parent.width; height: 30
             Rectangle {
@@ -298,7 +280,7 @@ FloatingWindow {
             Text {
               anchors { verticalCenter: parent.verticalCenter
                         left: parent.left; leftMargin: 12 }
-              text: modelData
+              text: svc.ui("ui.manage." + modelData)
               color: win.tab === index ? fg : faint
               font.pixelSize: 13
               Behavior on color { ColorAnimation { duration: 120 } }
@@ -332,13 +314,18 @@ FloatingWindow {
 
           // status: the hero, plain type
           Text {
-            text: Copy.statusWord(win.stateObj.status || "offline")
-            color: win.statusColor(win.stateObj.status || "offline")
+            text: svc.statusWord
+            color: win.toneColor(svc.statusTone)
             font.pixelSize: 34; font.family: mono; font.bold: true
             font.letterSpacing: -0.5
           }
           Text {
-            text: win.statusBlurb(win.stateObj.status || "offline")
+            visible: svc.notice !== ""
+            text: svc.notice
+            color: warn; font.pixelSize: 12; font.family: mono
+          }
+          Text {
+            text: win.statusBlurb(svc.status)
             color: sub; font.pixelSize: 13
           }
 
@@ -346,22 +333,21 @@ FloatingWindow {
 
           Sect { label: "LAST TURN" }
           Text {
-            visible: (win.stateObj.transcript || "").length > 0
-            text: "“" + (win.stateObj.transcript || "") + "”"
+            visible: svc.transcript.length > 0
+            text: "“" + svc.transcript + "”"
             color: fg; font.pixelSize: 16; font.family: serif
             width: parent.width; wrapMode: Text.WordWrap
           }
           Text {
-            visible: (win.stateObj.answer || win.stateObj.result
-                      || "").length > 0
-            text: win.stateObj.answer || win.stateObj.result || ""
+            visible: (svc.answer || svc.resultView.text).length > 0
+            text: svc.answer || svc.resultView.text
             color: sub; font.pixelSize: 14
             width: parent.width; wrapMode: Text.WordWrap
             lineHeight: 1.35
           }
           Text {
-            visible: (win.stateObj.error || "").length > 0
-            text: "error: " + (win.stateObj.error || "")
+            visible: (svc.errorMessage || svc.error).length > 0
+            text: svc.errorMessage || svc.error
             color: err; font.pixelSize: 12; font.family: mono
             width: parent.width; wrapMode: Text.WordWrap
           }
@@ -369,7 +355,7 @@ FloatingWindow {
           Row {
             spacing: 8; topPadding: 6
             Btn { label: "Talk"; primary: true
-                  onClicked: win.wispd(["trigger"]) }
+                  onClicked: svc.trigger() }
             Btn { label: "Restart daemon"
                   onClicked: win.svc(["restart"]) }
             Btn { label: "Stop"
@@ -420,14 +406,14 @@ FloatingWindow {
                 Row {
                   spacing: 8; topPadding: 2
                   Btn { label: "automate"
-                        onClicked: win.wispd(["choice",
-                          "suggestion:automate:" + modelData.key]) }
+                        onClicked: svc.sendChoice(
+                          "suggestion:automate:" + modelData.key) }
                   Btn { label: "not now"
-                        onClicked: win.wispd(["choice",
-                          "suggestion:not now:" + modelData.key]) }
+                        onClicked: svc.sendChoice(
+                          "suggestion:not now:" + modelData.key) }
                   Btn { label: "never"
-                        onClicked: win.wispd(["choice",
-                          "suggestion:never:" + modelData.key]) }
+                        onClicked: svc.sendChoice(
+                          "suggestion:never:" + modelData.key) }
                 }
               }
             }
@@ -549,7 +535,7 @@ FloatingWindow {
                   label: "Save"
                   onClicked: {
                     writeProc.command =
-                        ["wispd", "memory-write", modelData[0],
+                        [svc.wispd, "memory", "write", modelData[0],
                          Qt.btoa(edit.text)];
                     writeProc.running = true;
                   }
@@ -614,7 +600,7 @@ FloatingWindow {
               label: "Spawn"; primary: true
               onClicked: {
                 if (taskInput.text.trim().length === 0) return;
-                win.wispd(["agent", taskInput.text.trim()]);
+                win.wispd(["task", "run", taskInput.text.trim()]);
                 taskInput.text = "";
               }
             }
@@ -631,10 +617,10 @@ FloatingWindow {
               id: taskCol
               width: parent.width; spacing: 0
               Repeater {
-                model: Object.keys(win.tasks)
+                model: Object.keys(svc.tasks)
                 Column {
                   width: taskCol.width
-                  property var t: win.tasks[modelData] || {}
+                  property var t: win.taskOf(modelData)
                   Rectangle { width: parent.width; height: 1
                               color: hairline }
                   Row {
@@ -667,18 +653,75 @@ FloatingWindow {
                     Btn {
                       visible: parent.parent.t.status === "running"
                       label: "Cancel"
-                      onClicked: win.wispd(["task_cancel", modelData])
+                      onClicked: win.wispd(["task", "cancel", modelData])
                     }
                   }
                 }
               }
               Text {
-                visible: Object.keys(win.tasks).length === 0
+                visible: Object.keys(svc.tasks).length === 0
                 topPadding: 8
                 text: "No agents running. Say \"agent, …\" or spawn one."
                 color: faint; font.pixelSize: 13 }
             }
           }
+        }
+      }
+
+      // ════ HEALTH ════
+      Flickable {
+        contentWidth: width
+        contentHeight: healthView.implicitHeight + 56
+        clip: true; boundsBehavior: Flickable.StopAtBounds
+        HealthView {
+          id: healthView
+          x: 32; y: 28
+          width: parent.width - 64
+          service: svc
+          cua: svc.cuaStatus
+          spendModels: svc.spendModels
+        }
+      }
+
+      // ════ SPEND ════
+      Flickable {
+        contentWidth: width
+        contentHeight: spendView.implicitHeight + 56
+        clip: true; boundsBehavior: Flickable.StopAtBounds
+        SpendView {
+          id: spendView
+          x: 32; y: 28
+          width: parent.width - 64
+          service: svc
+          models: svc.spendModels
+        }
+      }
+
+      // ════ AUDIT ════
+      Flickable {
+        contentWidth: width
+        contentHeight: auditViewList.implicitHeight + 56
+        clip: true; boundsBehavior: Flickable.StopAtBounds
+        AuditView {
+          id: auditViewList
+          x: 32; y: 28
+          width: parent.width - 64
+          service: svc
+          log: win.auditText
+        }
+      }
+
+      // ════ BINDS ════
+      Flickable {
+        contentWidth: width
+        contentHeight: bindsView.implicitHeight + 56
+        clip: true; boundsBehavior: Flickable.StopAtBounds
+        BindsView {
+          id: bindsView
+          x: 32; y: 28
+          width: parent.width - 64
+          service: svc
+          binds: win.bindsData
         }
       }
 
@@ -699,7 +742,7 @@ FloatingWindow {
                    parent.verticalCenter }
             Text {
               anchors.verticalCenter: parent.verticalCenter
-              text: "config.toml: changes apply next turn"
+              text: "config.toml: changes apply next turn. A rejected value shows a red border and nothing is written."
               color: faint; font.pixelSize: 11 }
           }
 
@@ -786,8 +829,9 @@ FloatingWindow {
                       width: parent.width - 138; height: 24; radius: 4
                       color: hov.hovered || valEdit.activeFocus
                              ? raised : "transparent"
-                      border.color: valEdit.activeFocus ? accent
-                                                        : hairline
+                      border.color: svc.configErrors[parent.k] !== undefined ? err
+                                    : valEdit.activeFocus ? accent
+                                                          : hairline
                       HoverHandler { id: hov }
                       TextInput {
                         id: valEdit
@@ -798,17 +842,12 @@ FloatingWindow {
                         selectByMouse: true
                         color: fg; font.pixelSize: 11; font.family: mono
                         text: {
-                          var parts = parent.parent.k.split(".");
-                          var v = win.cfgObj;
-                          for (var i = 0; i < parts.length && v; i++)
-                            v = v[parts[i]];
+                          var v = svc.configValues[parent.parent.k];
                           return (v === undefined || v === null)
                                  ? "" : String(v);
                         }
-                        onEditingFinished: {
-                          win.wispd(["config", "set",
-                                     parent.parent.k, text]);
-                        }
+                        onEditingFinished:
+                          svc.configSet(parent.parent.k, text)
                       }
                     }
                   }

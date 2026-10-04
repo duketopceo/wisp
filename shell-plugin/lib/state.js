@@ -35,9 +35,9 @@ function backoffMs(attempt) {
 function initial() {
   return {
     status: "offline", rawStatus: "offline", transcript: "", answer: "",
-    result: "", choices: [], promptId: "", points: [], steps: [],
+    result: "", choices: [], promptId: "", confirm: null, points: [], steps: [],
     suggestion: null, guide: null, focus: {}, goal: "", goalStatus: "",
-    level: 0, tasks: {}, error: "", errorCode: "", health: {},
+    level: 0, tasks: {}, error: "", errorCode: "", health: {}, spend: {},
     startedAt: "", turnId: "", seq: null, contractVersion: 1,
     updatedAt: "", heartbeatAt: "",
     connection: "none", offline: true, stale: false, contractNewer: false,
@@ -49,6 +49,25 @@ function initial() {
 function isObj(x) { return x !== null && typeof x === "object" && !Array.isArray(x) }
 function str(x) { return typeof x === "string" ? x : "" }
 function arr(x) { return Array.isArray(x) ? x : [] }
+
+// state.confirm (additive, W25): {prompt_id, prompt, timeout_s} while a
+// confirm waits. Anything without a prompt id is not a card.
+function normalizeConfirm(c) {
+  if (!isObj(c) || !str(c.prompt_id)) return null
+  var t = Number(c.timeout_s)
+  return { promptId: str(c.prompt_id), prompt: str(c.prompt),
+    timeoutS: isFinite(t) && t > 0 ? t : 0 }
+}
+
+// UI-side prompt id guard: a reply goes to the daemon only when it names
+// the prompt the view currently shows and picks one of its choices. A
+// click on a card that has already been answered, timed out or replaced
+// is dropped here (the daemon refuses it too: stale_prompt).
+function acceptChoice(view, pick, promptId) {
+  if (!view || !promptId || view.promptId !== promptId) return false
+  if (view.status !== "awaiting_choice") return false
+  return view.choices.indexOf(pick) >= 0
+}
 
 // Raw snapshot object -> view fields (defaults, clamps, closed sets).
 function normalize(raw) {
@@ -65,16 +84,18 @@ function normalize(raw) {
   var cv = Number(raw.contract_version)
   if (!isFinite(cv) || cv < 1) cv = 1
   var choices = arr(raw.choices).filter(function (c) { return typeof c === "string" })
+  var confirm = normalizeConfirm(raw.confirm)
   return {
     status: status, rawStatus: st, transcript: str(raw.transcript),
     answer: str(raw.answer), result: str(raw.result), choices: choices,
-    promptId: str(raw.prompt_id), points: arr(raw.points),
+    promptId: str(raw.prompt_id), confirm: confirm, points: arr(raw.points),
     steps: arr(raw.steps), suggestion: isObj(raw.suggestion) ? raw.suggestion : null,
     guide: isObj(raw.guide) ? raw.guide : null,
     focus: isObj(raw.focus) ? raw.focus : {},
     goal: goalText, goalStatus: goalStatus, level: Math.max(0, Math.min(1, lv)),
     tasks: isObj(raw.tasks) ? raw.tasks : {}, error: str(raw.error),
     errorCode: code, health: isObj(raw.health) ? raw.health : {},
+    spend: isObj(raw.spend) ? raw.spend : {},
     startedAt: str(raw.started_at), turnId: str(raw.turn_id),
     seq: raw.seq === undefined || raw.seq === null || !isFinite(seq) ? null : seq,
     contractVersion: cv, updatedAt: str(raw.updated_at),

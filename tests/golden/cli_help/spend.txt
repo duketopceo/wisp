@@ -1,6 +1,6 @@
 usage: wispd spend [-h] [--json] [--quiet] [--no-color]
 
-Paid model spend today and the daily cap
+Model usage today and the daily and monthly caps
 
 options:
   -h, --help   show this help message and exit

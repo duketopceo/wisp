@@ -1,0 +1,58 @@
+{
+  "description": "pointer.mode = guide: the click is a user hand-off (ghost cursor guide), no backend is invoked.",
+  "audio": "act.wav",
+  "name": "act_guide_mode",
+  "config": {
+    "pointer": {
+      "mode": "guide",
+      "backend": "auto"
+    }
+  },
+  "fakes": {
+    "cua": {},
+    "hypr": {},
+    "notify": {}
+  },
+  "endpoints": {
+    "whisper": {
+      "transcript": "wisp agent click the save button"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "tool_calls": [
+            {
+              "name": "click",
+              "arg": "10,20@logical"
+            }
+          ]
+        },
+        {
+          "content": "Clicked save."
+        }
+      ]
+    }
+  },
+  "expect": {
+    "cua_calls": [],
+    "steps_contain": [
+      "GUIDE(10,20)"
+    ],
+    "result_prefix": "ACTED"
+  },
+  "scenario": "guide mode"
+}

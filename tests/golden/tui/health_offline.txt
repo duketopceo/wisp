@@ -1,0 +1,10 @@
+health
+  wisp is not running
+  endpoints
+    DOWN brain ollama       down
+    ok   jev                12 ms
+  cua
+    DOWN not checked yet
+  spend
+  last errors
+    brain ollama: can't reach the answering model

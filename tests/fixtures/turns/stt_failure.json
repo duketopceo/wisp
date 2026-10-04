@@ -1,0 +1,43 @@
+{
+  "description": "Whisper answers 500: the turn ends in error before routing; Jev and the brain are never called.",
+  "audio": "ask.wav",
+  "endpoints": {
+    "whisper": {
+      "status": 500
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "content": "It is half past three.",
+          "chunk_delay_ms": 0
+        }
+      ]
+    }
+  },
+  "expect": {
+    "statuses": [
+      "listening",
+      "transcribing",
+      "error"
+    ],
+    "error_code": "stt_down",
+    "jev_calls": 0,
+    "brain_calls": 0
+  },
+  "name": "stt_failure",
+  "scenario": "STT failure"
+}

@@ -19,6 +19,7 @@ clash with an existing bind.
 from __future__ import annotations
 
 import atexit
+import dataclasses
 import json
 import os
 import pathlib
@@ -290,6 +291,8 @@ def active_binds() -> dict:
 def reset_binds() -> None:
     global _exit_hooked
     _binds.clear()
+    _submaps.clear()
+    _entered.clear()
     _exit_hooked = False
 
 
@@ -336,6 +339,13 @@ def clear_stale() -> None:
 def shutdown() -> None:
     """Remove this process's binds. Never raises; gives up at the first
     dead-compositor error rather than waiting per bind."""
+    try:
+        leave_submap()
+    except HyprError as e:
+        if e.code in ("timeout", "unavailable"):
+            _binds.clear()
+            _submaps.clear()
+            return
     for handle in list(_binds):
         try:
             unbind(handle)
@@ -343,6 +353,115 @@ def shutdown() -> None:
             if e.code in ("timeout", "unavailable"):
                 break
     _binds.clear()
+    _submaps.clear()
+
+
+# ── submaps (W24) ───────────────────────────────────────────────────
+#
+# A submap holds modifier-free keys (Esc, Enter, 1..9) that only exist
+# while the compositor is IN the submap, so they never shadow a global
+# bind or an app's typing outside it. The registry defines one under a
+# Wisp-owned name, enters it, and always leaves it again (explicitly, on
+# shutdown, and from the Esc bind itself). Every bind carries a
+# `wisp:`-prefixed description, which is how our own leftovers are told
+# apart from someone else's binds in the same submap.
+
+@dataclasses.dataclass(frozen=True)
+class SubmapBind:
+    key: str                    # bare key name, e.g. "escape", "1"
+    argv: list                  # command run on press
+    then_reset: bool = False    # also leave the submap on press
+
+
+_submaps: dict[str, str] = {}   # handle -> submap name
+_entered: list = []             # [name] while inside a Wisp submap
+
+
+def _submap_name(name: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9_]+", str(name or "")):
+        raise ValueError(f"bad submap name {name!r}")
+    return name
+
+
+def _submap_key(key: str) -> str:
+    if not _KEY_RE.fullmatch(str(key or "")) or key.upper() in MODS:
+        raise ValueError(f"bad submap key {key!r}")
+    return key
+
+
+def define_submap_lua(name: str, binds) -> str:
+    name = _submap_name(name)
+    parts = []
+    for b in binds:
+        key = _submap_key(b.key)
+        body = f"hl.dispatch(hl.dsp.exec_cmd({lua_str(_cmd(b.argv))}))"
+        if b.then_reset:
+            body += '; hl.dispatch(hl.dsp.submap("reset"))'
+        desc = lua_str(f"{HANDLE_PREFIX}sub:{name}:{key}")
+        parts.append(f"hl.bind({lua_str(key)}, function() {body} end, "
+                     f"{{description = {desc}}})")
+    return (f"hl.define_submap({lua_str(name)}, function() "
+            + "; ".join(parts) + " end)")
+
+
+def enter_submap_lua(name: str) -> str:
+    return f"hl.dispatch(hl.dsp.submap({lua_str(_submap_name(name))}))"
+
+
+def leave_submap_lua() -> str:
+    return 'hl.dispatch(hl.dsp.submap("reset"))'
+
+
+def submap_conflicts(name: str) -> list:
+    """Binds already in submap `name` that Wisp did not create."""
+    name = _submap_name(name)
+    return [b for b in query("binds")
+            if (b.get("submap") or "") == name
+            and not str(b.get("description") or "").startswith(HANDLE_PREFIX)]
+
+
+def define_submap(name: str, binds, check: bool = True) -> str:
+    """Define a submap of Wisp binds. Raises HyprError('bind_clash') when
+    the name is already used by binds that are not ours (reported, never
+    clobbered). Returns a handle."""
+    global _exit_hooked
+    binds = list(binds)
+    lua = define_submap_lua(name, binds)
+    if check:
+        clash = submap_conflicts(name)
+        if clash:
+            raise HyprError("bind_clash", ", ".join(
+                str(b.get("key", "?")) for b in clash))
+    eval_lua(lua)
+    handle = f"{HANDLE_PREFIX}sub-{name}"
+    _submaps[handle] = name
+    if not _exit_hooked:
+        _exit_hooked = True
+        atexit.register(shutdown)
+    return handle
+
+
+def enter_submap(handle: str) -> None:
+    name = _submaps.get(handle)
+    if name is None:
+        raise ValueError(f"unknown submap handle {handle!r}")
+    eval_lua(enter_submap_lua(name))
+    _entered[:] = [name]
+
+
+def leave_submap(force: bool = False) -> None:
+    """Back to the global map. A no-op unless we are inside a Wisp
+    submap, or `force` (daemon start: clear what a crash left)."""
+    if not (_entered or force):
+        return
+    try:
+        eval_lua(leave_submap_lua())
+    finally:
+        _entered.clear()
+
+
+def active_submaps() -> dict:
+    return dict(_submaps)
 
 
 # ── events ──────────────────────────────────────────────────────────

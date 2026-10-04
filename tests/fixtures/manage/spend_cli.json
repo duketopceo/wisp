@@ -1,0 +1,26 @@
+{
+ "today_usd": 2.0,
+ "month_usd": 6.1,
+ "calls_today": 23,
+ "cap_usd": 2.0,
+ "monthly_cap_usd": 20.0,
+ "blocked": true,
+ "paid_allowed": true,
+ "source": "usage.jsonl",
+ "models": [
+  {
+   "model": "openrouter/llama-4-maverick",
+   "calls": 14,
+   "in": 9120,
+   "out": 2210,
+   "usd": 1.5
+  },
+  {
+   "model": "openrouter/gemini-2.5-flash",
+   "calls": 9,
+   "in": 4300,
+   "out": 1100,
+   "usd": 0.5
+  }
+ ]
+}

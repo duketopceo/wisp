@@ -15,6 +15,14 @@ TestCase {
     compare(Copy.statusTone("awaiting_choice"), "needsYou")
   }
 
+  function test_pill_view() {
+    compare(Copy.pillView("done", "BLOCKED (risk=0.90 > 0.5)").word, "blocked")
+    compare(Copy.pillView("done", "BLOCKED (risk=0.90 > 0.5)").tone, "needsYou")
+    compare(Copy.pillView("done", "ACTED ok").word, "done")
+    compare(Copy.pillView("done", "").tone, "ok")
+    compare(Copy.pillView("acting", "BLOCKED (x)").word, "working")
+  }
+
   function test_results() {
     var r = Copy.translateResult("SKIP (launch route but no app identified)")
     compare(r.text, "didn't catch which app")
@@ -44,7 +52,7 @@ TestCase {
     compare(Copy.errorMessage("timeout"), "that took too long")
     compare(Copy.errorMessage("nope"), Copy.errorMessage("internal"))
     compare(Copy.errorHint("cancelled"), "")
-    compare(Copy.string("state.stale"), "out of date")
+    compare(Copy.string("state.reconnecting"), "reconnecting")
     compare(Copy.string("no.such"), "no.such")
   }
 }

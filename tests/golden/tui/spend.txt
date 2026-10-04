@@ -1,0 +1,9 @@
+spend
+  usage ledger, caps and paid calls
+  today $2.00 / $2.00
+  [####################]
+  paid calls paused
+  this month $6.10 / $20.00
+  by model today
+    openrouter/llama-4-maverick         14 calls    9120/2210    $1.50
+    openrouter/gemini-2.5-flash          9 calls    4300/1100    $0.50

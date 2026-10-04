@@ -1,0 +1,23 @@
+health
+  endpoints
+    DOWN brain ollama       down
+    ok   jev                12 ms
+    ok   uitars             ok
+    ok   speech             ok
+  cua
+    DOWN installed, not running  version 0.4.2
+    fix: systemctl --user start cua-driver.service
+    kill switch on
+    dry run
+  spend
+    today $2.00 / $2.00
+    [####################]
+    paid calls paused
+    this month $6.10 / $20.00
+    by model today
+      openrouter/llama-4-maverick  14  $1.50
+      openrouter/gemini-2.5-flash  9  $0.50
+  last errors
+    brain ollama: can't reach the answering model
+    cua: installed, not running
+    spend: today's model budget is used up

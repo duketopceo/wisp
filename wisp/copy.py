@@ -50,6 +50,8 @@ RESULT_RULES = (
     (r"^SKIP(PED)? \((nothing to type|empty command|empty agent task"
      r"|empty pattern)\)", "didn't catch what to do", "didnt_understand"),
     (r"^SKIP(PED)? \(.* declined by user\)", "skipped, you said no", None),
+    (r"^SKIP(PED)? \(.* confirmation timed out\)", "skipped, no answer",
+     None),
     (r"^SKIP(PED)? \(.* needs user confirmation\)", "needs your ok", None),
     (r"^SKIP(PED)? \(shell disabled", "shell commands are off", None),
     (r"^SKIP(PED)?\b", "couldn't do that", None),
@@ -95,7 +97,6 @@ UNKNOWN_ERROR = "internal"
 # Reader and surface strings keyed "area.name". Sentence case is not used
 # for status-like words (lowercase), same as STATUS.
 STRINGS = {
-    "state.stale": "out of date",
     "state.reconnecting": "reconnecting",
     "state.offline": "wisp is not running",
     "state.degraded": "reading from file",
@@ -111,6 +112,9 @@ STRINGS = {
     "ui.noted": "noted",
     "ui.undo": "undo",
     "ui.goal": "goal",
+    "ui.pill.blocked": "blocked",
+    "ui.label.good": "good",
+    "ui.label.wrong": "wrong",
     "ui.steps.none": "no steps yet",
     "ui.step.confirm": "needs your ok",
     "ui.agent.queued": "queued",
@@ -130,10 +134,116 @@ STRINGS = {
     "ui.empty.memory.hint": "say remember that, then what to keep",
     "ui.empty.settings": "settings are not loaded",
     "ui.empty.settings.hint": "start wisp, then reopen this panel",
+    "ui.now.asks": "wisp asks",
+    "ui.now.right": "was that right?",
+    "ui.now.yes": "yes",
+    "ui.now.no": "no",
+    "ui.now.recent": "recent turns",
+    "ui.memory.skills": "skills",
+    "ui.memory.activity": "recent decisions",
+    "ui.memory.more": "more in wispd skills",
+    "ui.memory.failed": "needs attention",
+    "ui.settings.health": "health",
+    "ui.settings.budget": "budget",
+    "ui.settings.pointer": "pointer",
+    "ui.settings.cua": "cua safety",
+    "ui.settings.connect": "connectors",
+    "ui.settings.connect.none": "no connectors, run wispd inventory",
+    "ui.settings.connect.go": "connect",
+    "ui.set.daily": "daily cap in usd",
+    "ui.set.monthly": "monthly cap in usd",
+    "ui.set.pointer": "pointer mode",
+    "ui.set.dry_run": "dry run",
+    "ui.set.kill": "kill switch",
+    "ui.set.confirm": "confirm",
+    "ui.set.clicks": "clicks per minute",
+    "ui.set.per_turn": "actions per turn",
+    "ui.set.save": "save",
+    "ui.set.saved": "saved",
+    "ui.set.blank": "blank means no cap",
+    "ui.err.number": "enter a plain number",
+    "ui.err.range": "that number is out of range",
+    "ui.err.choice": "pick one of the options",
+    "ui.err.chars": "no quotes, backslash or hash",
+    "ui.err.unknown": "that setting can't be changed here",
+    "ui.onboard.title": "set up wisp",
+    "ui.onboard.progress": "steps done",
+    "ui.onboard.step.mic": "microphone",
+    "ui.onboard.step.models": "local models",
+    "ui.onboard.step.cua": "cua pointer driver",
+    "ui.onboard.step.notifications": "notifications",
+    "ui.onboard.step.keybinding": "keybinding",
+    "ui.onboard.state.done": "done",
+    "ui.onboard.state.todo": "to do",
+    "ui.onboard.state.skipped": "skipped",
+    "ui.onboard.state.na": "not available",
+    "ui.onboard.optional": "optional",
+    "ui.onboard.run": "check",
+    "ui.onboard.run.notifications": "send a test",
+    "ui.onboard.again": "check again",
+    "ui.onboard.skip": "skip",
+    "ui.onboard.undo": "undo",
+    "ui.onboard.finish": "finish setup",
+    "ui.health.endpoints": "endpoints",
+    "ui.health.none": "none configured",
+    "ui.health.stt": "speech",
+    "ui.health.cua": "cua",
+    "ui.health.spend": "spend",
+    "ui.health.errors": "last errors",
+    "ui.health.no_errors": "no errors",
+    "ui.health.since": "since",
+    "ui.health.fix": "fix",
+    "ui.health.version": "version",
+    "ui.health.models": "by model today",
+    "ui.spend.today": "today",
+    "ui.spend.month": "this month",
+    "ui.spend.cap": "cap",
+    "ui.spend.no_cap": "no cap",
+    "ui.spend.blocked": "paid calls paused",
+    "ui.cua.absent": "not installed",
+    "ui.cua.installed_not_running": "installed, not running",
+    "ui.cua.socket_unresponsive": "not responding",
+    "ui.cua.running": "running",
+    "ui.cua.version_mismatch": "wrong version",
+    "ui.cua.kill_switch_on": "kill switch on",
+    "ui.cua.dry_run": "dry run",
+    "ui.cua.unknown": "not checked yet",
+    "ui.manage.home": "home",
+    "ui.manage.activity": "activity",
+    "ui.manage.memory": "memory",
+    "ui.manage.agents": "agents",
+    "ui.manage.health": "health",
+    "ui.manage.spend": "spend",
+    "ui.manage.audit": "audit",
+    "ui.manage.binds": "binds",
+    "ui.manage.settings": "settings",
+    "ui.manage.spend.sub": "usage ledger, caps and paid calls",
+    "ui.manage.spend.calls": "calls",
+    "ui.manage.spend.tokens": "tokens",
+    "ui.manage.spend.none": "no paid calls today",
+    "ui.manage.audit.sub": "one row per guarded cua call. Typed text is never stored.",
+    "ui.manage.audit.none": "no guarded calls yet",
+    "ui.manage.audit.dry": "dry run",
+    "ui.manage.audit.allow": "allowed",
+    "ui.manage.audit.deny": "refused",
+    "ui.manage.audit.dry_run": "dry run",
+    "ui.manage.audit.cancelled": "stopped",
+    "ui.manage.binds.sub": "hotkey and the Hyprland binds wisp registered",
+    "ui.manage.binds.hold": "hold to talk",
+    "ui.manage.binds.global": "global",
+    "ui.manage.binds.submap": "submap",
+    "ui.manage.binds.no_submap": "submap not installed",
+    "ui.manage.binds.none": "no wisp binds registered",
+    "ui.manage.binds.no_hypr": "Hyprland is not reachable",
     "ui.bar.ok": "ok",
     "ui.bar.down": "down",
     "ui.bar.spend": "spent today",
     "ui.bar.hint": "click: talk, middle: stop, right: open",
+    "ui.bar.hint.offline": "click: start wisp, right: open",
+    "ui.confirm.title": "needs your ok",
+    "ui.confirm.allow": "allow",
+    "ui.confirm.deny": "deny",
+    "ui.confirm.hint": "no answer counts as deny",
 }
 
 _DASH = re.compile(r"\s*[—–]\s*")
@@ -149,6 +259,49 @@ def status_word(status: str) -> str:
 
 def status_tone(status: str) -> str:
     return STATUS.get(status, STATUS[UNKNOWN_STATUS])[1]
+
+
+# result prefix that makes a finished turn read as blocked in the pill and
+# the status chips: the daemon reports `done` with a BLOCKED result.
+_BLOCKED = re.compile(r"^BLOCKED")
+
+
+# statuses in which the daemon must keep publishing (the reader's BUSY
+# set, shell-plugin/lib/state.js); a stale flag only means something here
+BUSY = ("transcribing", "deciding", "acting")
+
+
+def word_view(status: str, result: str = "", code: str = "",
+              stale: bool = False) -> tuple:
+    """(word, tone) every surface shows for the live state (pill, console
+    status line, bar tooltip). One precedence, so no surface can disagree:
+      - a busy turn whose state stopped updating reads `reconnecting`
+        (muted), never the live word it can no longer vouch for;
+      - an `error` turn with a code reads that code's message (fail);
+      - a `done` turn whose result is BLOCKED reads `blocked` (needsYou),
+        never `done` (the action did not happen);
+      - anything else is the status word and tone.
+    Offline is the `offline` status, which has its own word."""
+    if stale and status in BUSY:
+        return (STRINGS["state.reconnecting"], "muted")
+    if status == "error" and code:
+        return (error_message(code), "fail")
+    if status == "done" and _BLOCKED.match(result or ""):
+        return (STRINGS["ui.pill.blocked"], "needsYou")
+    return (status_word(status), status_tone(status))
+
+
+def pill_view(status: str, result: str = "") -> tuple:
+    """`word_view` without a code or stale flag (kept for callers that
+    only know status and result)."""
+    return word_view(status, result)
+
+
+def toast_text(code: str) -> str:
+    """Notification body for an error code: the same message and hint
+    every other surface shows, on two lines."""
+    msg, hint = ERRORS.get(code, ERRORS[UNKNOWN_ERROR])
+    return msg + ("\n" + hint if hint else "")
 
 
 def translate_result(raw: str) -> dict:

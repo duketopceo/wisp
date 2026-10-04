@@ -1,0 +1,18 @@
+usage: wispd batch poll [-h] [--json] [--quiet] [--no-color] [job]
+
+Check jobs, record spend, stage finished results
+
+positional arguments:
+  job          job id
+
+options:
+  -h, --help   show this help message and exit
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd batch poll
+  wispd batch poll learn-2026-W40

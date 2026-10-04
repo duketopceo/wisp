@@ -17,7 +17,19 @@ python3 wispd install   # core files + service + plugin + menu entry
   GUI (`shells/`), shell plugin source
 - `~/.local/bin/wispd` + `wisp-trigger` on PATH
 - `~/.local/share/applications/wisp.desktop` — "Wisp" in the app menu
-  opens the management app
+  opens the management app; right-click actions: Listen (`wispd
+  trigger`), Stop (`wispd interrupt`), Panel (the management app).
+  Template: `assets/desktop/wisp.desktop`. An edited file is kept as
+  `wisp.desktop.bak`; `wispd install --dry-run` previews the change.
+- hicolor icons under `~/.local/share/icons/hicolor/` (16 to 512 px
+  plus scalable); `update-desktop-database` and `gtk-update-icon-cache`
+  run only if installed
+- No tray icon: the bar mark is the status surface. A StatusNotifier
+  host exists on Omarchy (quickshell owns
+  `org.kde.StatusNotifierWatcher`; check with `busctl --user list |
+  grep StatusNotifier`), but publishing an item needs a D-Bus
+  service object, which stdlib Python and busctl cannot export, so no
+  SNI item is shipped (W27).
 - Omarchy plugin `io.github.duketopceo.wisp` (Linux/Omarchy)
 - a service: `wispd.service` (systemd user, Linux),
   `ai.wisp.wispd` launchd plist (macOS), Task Scheduler `Wisp` (Windows)
@@ -59,6 +71,48 @@ Faster/cloud: set `stt.provider = "openai"`, `stt.base_url` to Groq
   See `docs/MACOS.md`.
 - **Windows**: `wispd install` registers the logon task; bind via a
   hotkey tool to `wispd.exe listen`. See `docs/WINDOWS.md`.
+
+## First run
+
+After `wispd install`, run the guided setup (or open the Panel, where a
+first-run card shows the same steps until setup is finished):
+
+```sh
+wispd onboard                    # walk the steps on a terminal
+wispd onboard --status           # checklist only, exit 0
+wispd onboard --step mic         # run one step
+wispd onboard --undo mic         # forget one recorded step
+wispd onboard --finish           # mark setup finished (hides the card)
+wispd onboard --reset            # forget all progress
+```
+
+Steps, in order:
+
+1. **mic**: a recorder (`pw-record`, `parecord` or `arecord`) and the
+   whisper model (skipped when `stt.provider` is not `local`).
+2. **models**: probes the local ladder over loopback only (Ornith
+   `:8080`, Jev `:8091` and `:8931`, UI-TARS `:8081`, Ollama `:11434`).
+   It never starts or stops a service; `wispd health start` is the
+   manual way to do that.
+3. **cua** (optional): the cua-driver probe from `wispd cua status`.
+4. **notifications**: sends one test notification, only when you answer
+   yes (or pass `--yes`).
+5. **keybinding** (optional): needs the W24 keyboard submap; shown as not
+   available until that lands.
+
+Every step is skippable. A skip writes nothing and the step is offered
+again next time. A step that passed is recorded in
+`~/.local/share/wisp/onboard.json`, so a partly finished run resumes where
+it stopped; `--undo` forgets one. Onboarding never edits `config.toml`.
+
+## Settings
+
+`wispd config keys` lists every setting wispd validates, with its default
+and range. The same table (`wisp/settings_schema.py`) generates the
+Panel settings tab (`shell-plugin/lib/settings_schema.js`, written by
+`python scripts/assets/gen_settings.py`; `--check` fails when it is
+stale) and the daemon's check in `wispd config set`, so a bad value gets
+the same `E_BAD_CONFIG` message from the CLI, the Panel and the daemon.
 
 ## Verifying
 

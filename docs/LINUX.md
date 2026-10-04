@@ -77,3 +77,26 @@ schemas for tools wisp does not use yet are unverified.
 Consequence for W13: grounding can prefer `get_window_state` over pixels
 for apps with an accessibility tree, falling back to UI-TARS. `Cua`
 already exposes `list_windows()` and `window_state(pid, window_id)`.
+
+## Service hygiene (W29)
+
+`scripts/units/*.service` are the templates for `llama-local`, `llama-jev`,
+`llama-uitars`, `jev-shim` and `wispd`. `wispd install` (or
+`wispd install --units`, preview with `--dry-run`) copies them to
+`~/.config/systemd/user/`, backing a changed unit up to
+`<unit>.service.bak-<stamp>` first, then runs `daemon-reload` only. It never
+enables, starts or restarts a unit, and skips a llama unit whose wrapper is
+not installed.
+
+- `Slice=session.slice`: `app.slice` carries `ManagedOOMMemoryPressure=kill`
+  and `ManagedOOMSwap=kill`, so a 21G llama server is the oomd's first pick.
+  `ManagedOOMPreference=omit` alone does not cover the swap rule (systemd only
+  honours it for swap when the cgroup is root-owned), so the slice move is the
+  primary fix and `omit` is defence in depth.
+- `StartLimitIntervalSec=900`, `StartLimitBurst=30`, `RestartSec` with
+  `RestartSteps=5`/`RestartMaxDelaySec=60`: never lands "enabled but dead".
+- `wispd.service` is `Type=notify` with `WatchdogSec=60`; the daemon sends
+  `READY=1` and `WATCHDOG=1` every 20 s while its IPC server thread is alive.
+- `wispd doctor` adds a `services` section: llama unit state, slice, oomd
+  preference, and the voxtype `alsa::poll() POLLERR` spin (journal rate or a
+  hot `cpal_alsa` thread), with the fix `systemctl --user restart voxtype`.

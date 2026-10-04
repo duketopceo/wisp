@@ -41,5 +41,6 @@
     "answer": "It is half past three.",
     "brain_calls": 1
   },
-  "name": "ask"
+  "name": "ask",
+  "scenario": "answer"
 }

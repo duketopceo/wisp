@@ -1,0 +1,25 @@
+# wisp template (W29) — installed by `wispd install`.
+# Slice=session.slice: ~/.config/systemd/user/app.slice.d/10-oomd.conf sets
+# ManagedOOMMemoryPressure=kill and ManagedOOMSwap=kill on app.slice, and a
+# 21G+ llama.cpp server is its fattest member. Outside app.slice oomd never
+# monitors or selects it. ManagedOOMPreference=omit is defence in depth.
+[Unit]
+Description=llama.cpp Vulkan server for wisp decision model (qwen3-4b-instruct)
+After=graphical-session.target
+# Never give up: oomd kills count as failures, so the stock 5-in-10s limit
+# used to land these "enabled but dead". Backoff below keeps the rate low.
+StartLimitIntervalSec=900
+StartLimitBurst=30
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/llama-jev
+Restart=on-failure
+RestartSec=5
+RestartSteps=5
+RestartMaxDelaySec=60
+Slice=session.slice
+ManagedOOMPreference=omit
+
+[Install]
+WantedBy=default.target

@@ -19,6 +19,7 @@ import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
+from wisp import desktop as _desktop  # noqa: E402
 from wisp import cancel, config, ipc, pipeline, speech, state as state_mod, trace as _trace  # noqa: E402
 
 # daemon-scoped handles the rec watchdog needs (set in run_daemon)
@@ -98,6 +99,7 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
                         except Exception:
                             rec["proc"].kill()
                         rec["sampler_stop"].set()
+                        _drop_speculation(ctl)
                         st.turn(ctl.pop("turn", None)
                                 or st.current_turn()).transition(
                             "done", result="", transcript="")
@@ -108,9 +110,13 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
                     if ctl["busy"].is_set():
                         return {"ok": False, "error": "busy"}
                     tid = ctl.pop("turn", None) or st.current_turn()
+                    # P2: key-up publishes `transcribing` before the
+                    # recorder is signalled and settled
+                    st.turn(tid).transition("transcribing")
                     try:
                         wav = pipeline.record_stop(rec, st.turn(tid))
                     except RuntimeError as e:
+                        _drop_speculation(ctl)
                         st.turn(tid).transition("error", error=str(e))
                         return {"ok": False, "error": str(e)}
                     ctl["busy"].set()
@@ -125,7 +131,6 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
                     return {"ok": False, "error": "busy"}
                 # first press: start open-ended capture; [audio] seconds
                 # is the safety cap, not the length.
-                speech.stop()
                 # a new turn: anything the previous turn still has in
                 # flight (TTS exit callback, level sampler) is stale now
                 tid = st.begin_turn()
@@ -133,15 +138,29 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
                 ctl["interrupt"].clear()
                 ctl["token"] = cancel.CancelToken()
                 th = st.turn(tid)
+                # P1: publish `listening` first; everything slower
+                # (killing TTS, spawning the recorder, speculative
+                # context) comes after
                 th.transition("listening", transcript="", result="",
                               answer="", choices=[], points=[], error="",
                               steps=[], guide=None)
                 req_sp.record("press", req_sp.t0)
+                speech.stop()
+                _drop_speculation(ctl)
+                try:
+                    spec = pipeline.speculative_context(cfg).start()
+                except Exception as e:  # speculation is best-effort
+                    dlog(f"speculative context off: {e}")
+                    spec = None
                 try:
                     ctl["rec"] = pipeline.record_start(th)
                 except RuntimeError as e:
+                    if spec is not None:
+                        spec.cancel()
                     th.transition("error", error=str(e))
                     return {"ok": False, "error": str(e)}
+                if spec is not None:
+                    ctl["spec"] = spec
                 ctl["spans"] = req_sp
                 secs = int(cfg.get("audio", {}).get("seconds", "60"))
                 threading.Thread(target=_rec_watchdog,
@@ -239,6 +258,7 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
         if c == "interrupt":
             # cancel the in-flight turn only — daemon keeps running
             ctl["interrupt"].set()
+            _drop_speculation(ctl)
             tok = ctl.get("token")
             if tok is not None:
                 tok.cancel()  # kills children, closes sockets (U9)
@@ -256,6 +276,13 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
             return {"ok": True}
         return {"ok": False, "error": f"unknown cmd {c!r}"}
     return handle
+
+
+def _drop_speculation(ctl: dict) -> None:
+    """Discard press-time speculative context nobody consumed (W4)."""
+    spec = ctl.pop("spec", None)
+    if spec is not None:
+        spec.cancel()
 
 
 def _choice_cmd(args: list):
@@ -317,12 +344,13 @@ def _run_listen(st: state_mod.StateBus, cfg: dict, ctl: dict,
     token = ctl.get("token")
     if token is None:
         token = ctl["token"] = cancel.CancelToken()
+    spec = ctl.pop("spec", None)  # speculative context from the press
     try:
         pipeline.run_listen(cfg, st,
                             wait_for_choice=_wait_for_choice(ctl, token),
                             interrupted=ctl["interrupt"].is_set,
                             wav=wav, spans=spans, turn_id=turn_id,
-                            cancel=token)
+                            cancel=token, speculative=spec)
         dlog(f"turn done: status={st.status} "
              f"transcript={st.transcript!r} result={st.result!r}")
     except Exception as e:
@@ -368,6 +396,25 @@ def _hypr_health() -> dict:
     return hypr.health()
 
 
+def _start_keys(st, cfg: dict):
+    """Keyboard submap (W24): Esc/Enter/number keys while a turn acts or
+    waits. Linux/Hyprland only; `[keys] submap = "false"` turns it off.
+    Never fatal: without it the turn is voice and mouse only."""
+    from wisp import keys, platform
+    if cfg.get("keys", {}).get("submap", "true") != "true" \
+            or not platform.uses_hypr():
+        return None
+    try:
+        k = keys.Keys(log=dlog)
+        k.start()
+        k.attach(st)
+        keys.ACTIVE = k
+        return k
+    except Exception as e:
+        dlog(f"keys: disabled: {e}")
+        return None
+
+
 def run_daemon(cfg: dict) -> int:
     global _DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL, _HEALTH
     from wisp import skills, theme, memory as _memory
@@ -388,16 +435,24 @@ def run_daemon(cfg: dict) -> int:
            "broker": cancel.PromptBroker(), "token": None,
            "rec": None, "rec_lock": threading.Lock()}
     _DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL = st, cfg, ctl
+    from wisp import ledger as _ledger
+    _ledger.attach(st, cfg)  # publishes `spend` on the state stream
     if cfg.get("health", {}).get("enabled", "true") == "true":
         from wisp import brain as _brain, health as _health
         _HEALTH = _health.HealthRegistry(cfg, bus=st)
         _HEALTH.register("hypr", _hypr_health)
+        _HEALTH.register("spend", _ledger.health_hook(cfg))
         from wisp import probes_cua as _pc
         _pc.register(_HEALTH, cfg)
         _brain.HEALTH = _HEALTH
         _HEALTH.start()
     server = ipc.Daemon(_handler(st, cfg, ctl), bus=st)
     server.start()
+    _keys = _start_keys(st, cfg)
+    # systemd Type=notify + WatchdogSec (W29): no-ops outside systemd
+    from wisp import svc as _svc
+    _svc.notify("READY=1\nSTATUS=listening")
+    _svc.Watchdog(ctl["stop"], server.healthy).start()
     from wisp import agents as _agents
 
     def _agent_done(t: dict) -> None:
@@ -427,8 +482,11 @@ def run_daemon(cfg: dict) -> int:
     except KeyboardInterrupt:
         pass
     finally:
+        _svc.notify("STOPPING=1")
         if _HEALTH is not None:
             _HEALTH.stop()
+        if _keys is not None:
+            _keys.stop()
         server.stop()
         st.transition("idle")
         st.close()
@@ -453,7 +511,7 @@ def cmd_trigger(cfg: dict, phase: str = "") -> int:
             st.close()
 
 
-def install_files() -> None:
+def install_files(dry_run: bool = False) -> None:
     """Copy runtime files to the per-OS opt dir, write the trigger shim
     and service registration, and install the shell plugin directory
     (Linux/Omarchy only)."""
@@ -496,6 +554,14 @@ def install_files() -> None:
               "(python3 wispd install) — this wispd IS the installed "
               "copy; nothing updated")
         return
+    if dry_run:
+        res = _desktop.install(src, config.HOME, opt, dry_run=True)
+        for f in res["written"]:
+            print(f"would write {f}")
+        for f in res["backups"]:
+            print(f"would back up the edited file to {f}")
+        print("dry run: nothing written")
+        return
     opt.mkdir(parents=True, exist_ok=True)
     pkg = src / "wisp"
     if pkg.is_dir():
@@ -515,28 +581,13 @@ def install_files() -> None:
     if shells_src.is_dir():
         shutil.copytree(shells_src, opt / "shells", dirs_exist_ok=True)
         print(f"installed {opt}/shells")
-    desktop = (config.HOME / ".local" / "share" / "applications"
-               / "wisp.desktop")
-    desktop.parent.mkdir(parents=True, exist_ok=True)
-    desktop.write_text(f"""\
-[Desktop Entry]
-Type=Application
-Name=Wisp
-GenericName=Voice Assistant
-Comment=Wisp voice assistant — management console
-Exec=quickshell -n -p {opt}/shells/debug
-Icon=wisp
-Terminal=false
-Categories=Utility;Accessibility;
-Keywords=voice;assistant;ai;wisp;
-StartupNotify=false
-""")
-    print(f"installed {desktop}")
-    icons_src = src / "assets" / "icons" / "hicolor"
-    if icons_src.is_dir():
-        icons_dst = config.HOME / ".local" / "share" / "icons" / "hicolor"
-        shutil.copytree(icons_src, icons_dst, dirs_exist_ok=True)
-        print(f"installed {icons_dst}")
+    res = _desktop.install(src, config.HOME, opt)
+    for f in res["backups"]:
+        print(f"backed up edited desktop file to {f}")
+    print(f"installed desktop entry + icons ({len(res['written'])} "
+          "files changed)")
+    for t in res["skipped"]:
+        print(f"skipped {t} (not found)")
     plugin_src = src / "shell-plugin"
     plugin_dst = (config.HOME / ".config" / "omarchy" / "plugins"
                   / "io.github.duketopceo.wisp")
@@ -579,25 +630,11 @@ StartupNotify=false
 <key>KeepAlive</key><true/></dict></plist>""")
         print(f"installed {plist} (launchctl load to activate)")
         return
-    unit_dir = config.HOME / ".config" / "systemd" / "user"
-    unit_dir.mkdir(parents=True, exist_ok=True)
-    unit = unit_dir / "wispd.service"
-    unit.write_text(f"""\
-[Unit]
-Description=Wisp voice assistant daemon
-After=graphical-session.target
-
-[Service]
-ExecStart={sys.executable} {opt}/wispd daemon
-Restart=on-failure
-RestartSec=2
-
-[Install]
-WantedBy=default.target
-""")
-    print(f"installed {unit}")
-    subprocess.run(["systemctl", "--user", "daemon-reload"],
-                   capture_output=True)
+    from wisp import svc
+    acts = svc.install_units(config.HOME)
+    print(svc.describe(acts))
+    print("units installed, not restarted; apply with systemctl --user "
+          "restart <unit>")
 
 
 def install_bind(cfg: dict) -> None:
@@ -792,7 +829,8 @@ def rebuild_harness() -> int:
 
 
 def main() -> int:
-    from wisp import cli
+    from wisp import cli, ledger
+    ledger.ACTIVE = True  # real runs record usage; library use does not
     return cli.main(sys.argv[1:], host=sys.modules[__name__])
 
 

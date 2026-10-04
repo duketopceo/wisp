@@ -320,8 +320,10 @@ def key(arg: str, cfg: dict | None = None) -> str:
     code = _KEYCODES.get(name)
     if code is None:
         return f"SKIP (unknown key {name!r})"
-    r = _cancel.run(["ydotool", "key", f"{code}:1", f"{code}:0"],
-                       capture_output=True, env=hypr_env())
+    from .. import keys as _keys
+    with _keys.suspended():  # the Wisp submap must not eat the agent's key
+        r = _cancel.run(["ydotool", "key", f"{code}:1", f"{code}:0"],
+                        capture_output=True, env=hypr_env())
     return "KEY" if r.returncode == 0 else "SKIP (ydotool key failed)"
 
 
@@ -432,29 +434,25 @@ def _parse_xy(arg: str):
 
 
 def _resolve_target_xy(arg: str, cfg: dict | None = None):
-    """Resolve 'x,y', 'x,y@logical', or natural language element via decision grounding."""
+    """Resolve 'x,y', 'x,y@logical', or a natural-language element via the
+    W13 grounding adapter."""
     xy = _parse_xy(arg)
     if xy is not None:
         return xy
-    # Attempt decision-agent visual grounding
+    # name -> grounding adapter chain (a11y / UI-TARS / Jev). Returns
+    # compositor-global (== logical) coords; a low-confidence or missing
+    # target resolves to None and is never clicked.
     try:
-        from .. import pipeline, grounding
-        shot = pipeline.capture_screen()
-        if shot and shot.exists():
-            try:
-                import base64
-                b64 = base64.b64encode(shot.read_bytes()).decode()
-                hint = "menu bar" if any(w in (arg or "").lower() for w in ("menu", "bar", "top", "panel")) else ""
-                res = grounding.ground_element(b64, target_description=arg, region_hint=hint, cfg=cfg)
-                if res:
-                    from .. import points
-                    pts = points.to_logical([{"x": res[0], "y": res[1]}], points.monitors())
-                    return pts[0]["x"], pts[0]["y"]
-            finally:
-                shot.unlink(missing_ok=True)
-    except Exception:
-        pass
-    return None
+        from .. import grounding
+        t = grounding.ground_target(arg, cfg)
+        return t.x, t.y
+    except grounding.GroundRefused:
+        return None
+    except Exception as e:
+        from .. import cancel
+        if isinstance(e, cancel.Cancelled):
+            raise
+        return None
 
 
 def _run_cmds(cmds: list) -> bool:

@@ -17,6 +17,7 @@ DATA_DIR = pathlib.Path(
 CORRECTIONS = DATA_DIR / "corrections.jsonl"
 DECISIONS = DATA_DIR / "decisions.jsonl"
 SHADOW = DATA_DIR / "shadow.jsonl"
+ROUTE_AB = DATA_DIR / "route_ab.jsonl"
 _xdg_rt = os.environ.get("XDG_RUNTIME_DIR")
 RUN_DIR = (pathlib.Path(_xdg_rt) / "wisp") if _xdg_rt else RUN_DIR_P
 LEVEL_FILE = RUN_DIR / "level"
@@ -104,6 +105,11 @@ mode = "guide"
 # is used alone: if it is unavailable wisp guides instead.
 backend = "auto"
 
+[keys]
+# Keyboard submap while a turn acts or waits (wisp/keys.py): Esc stops,
+# Enter confirms, number keys choose. "false" leaves the keyboard alone.
+submap = "true"
+
 [cua]
 # cua-driver client (wisp/cua.py). Per-call timeout; a click that times
 # out is reported as failed and never retried on another backend.
@@ -121,6 +127,22 @@ dry_run = "false"
 kill_switch = "false"
 confirm = "tier"
 audit = "true"
+
+[ground]
+# UI grounding adapter (wisp/grounding.py, W13): click/move target name ->
+# screen point. Chain order; a11y = cua get_window_state tree (when the
+# driver is up), uitars = local llama-server (loopback only, screenshots
+# never leave the box), jev = the Decision-Agent patch fallback.
+providers = "a11y,uitars,jev"
+# candidates below this are re-observed once, then refused (never clicked)
+min_confidence = "0.5"
+# shared budget for the fast providers (P7: act first step 1.2 s)
+budget_ms = "1200"
+# the slow vision fallback gets its own timeout
+fallback_timeout_ms = "5000"
+# uitars_url = "http://127.0.0.1:8081"   # default: [health] uitars or this
+# uitars_coords = "px"                    # px | rel1000
+# a11y_frame = "global"                   # global | window (element frames)
 
 [traj]
 # episodic memory for the act loop: every run is recorded and similar
@@ -164,6 +186,16 @@ provider = "none"
 base_url = "https://openrouter.ai/api/v1"
 model = "openai/text-embedding-3-small"
 key_env = "OPENROUTER_API_KEY"
+
+[budget]
+# Paid-model spend caps in USD (usage ledger, wisp/ledger.py). At a cap,
+# paid FALLBACK entries are refused; the primary brain still runs unless
+# gate_primary = "true". Local models always keep working. Blank = no
+# cap. Day and month roll over by local date.
+# daily_usd unset = the legacy [brain] daily_cap_usd, else 8.00.
+# daily_usd = "8.00"
+monthly_usd = "160.00"
+gate_primary = "false"
 
 [brain]
 # router: "jev" (typed decisions), "chat" (transcript+screen straight
@@ -259,6 +291,9 @@ timeout_ms = "500"
 # Known values: "pplx" (Perplexity pplx-decider-v1-27b; needs
 # PERPLEXITY_API_KEY in .env or the environment).
 shadow = ""
+# Jev is an accelerator, never a gate: past this many ms the heuristic
+# router decides and the turn goes on (route_ab.jsonl keeps both).
+# deadline_ms = 400
 
 [debug]
 # full-fidelity event stream to ~/.local/share/wisp/trace.jsonl —
@@ -283,6 +318,17 @@ dedupe_secs = 60
 # toast expiry; buttons (Retry, Open log) only when the server supports them
 timeout_ms = 5000
 actions = true
+
+[report]
+# opt-in error reporting to GlitchTip (Sentry-compatible). Off while dsn
+# is empty. dsn may be omaseal://svc/acct. Only typed error codes and a
+# scrubbed context are sent: never transcripts, screenshots, typed text,
+# paths with your username, env values or keys.
+dsn = ""
+per_code_per_hour = 3
+global_per_hour = 20
+dedupe_secs = 300
+queue_max = 50
 
 """
 
@@ -366,6 +412,7 @@ def _default_cfg_dict() -> dict:
             "default": "openrouter:meta-llama/llama-4-maverick",
             "fallback": "", "allow_paid": "false", "first_token_s": "3",
         },
+        "budget": {"monthly_usd": "160.00", "gate_primary": "false"},
         "health": {"enabled": "true", "interval_s": "30",
                    "press_stale_s": "10", "timeout_ms": "500"},
         "apps": _default_apps(),
@@ -446,6 +493,14 @@ def set_config(section: str, key: str, value: str) -> None:
     value — reject them rather than writing corrupt TOML."""
     if any(c in value for c in '"\\#\n'):
         raise ValueError("config values may not contain \" \\ # or newline")
+    # keys in the settings schema (wisp/settings_schema.py) are also
+    # checked for type and range, so every writer shares one rule
+    from . import settings_schema
+    bad = settings_schema.message(f"{section}.{key}", value)
+    if bad:
+        raise ValueError(bad)
+    if settings_schema.field(f"{section}.{key}"):
+        value = value.strip()
     import re as _re
     # section may be nested ("brain.ollama"); key stays a bare name
     for part, pat in ((section, r"[A-Za-z0-9_.-]+"),

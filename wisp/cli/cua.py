@@ -34,17 +34,20 @@ def is_live() -> bool:
          ["wispd cua status", "wispd cua status --json"],
          {"configured": "str", "backend": "str|null", "mode": "str",
           "binary": "str|null", "socket": "str", "live": "bool",
-          "state": "str"})
+          "state": "str", "fix": "str|null", "kill": "bool",
+          "dry_run": "bool", "version": "str|null"})
 def cua_status(ctx, a):
     from .. import platform
     p = ctx.cfg.get("pointer", {})
+    probe = probes_cua.CuaProbe(ctx.cfg).check(version=False)
     data = {"configured": p.get("backend", "auto"),
             "backend": platform.pointer_backend(ctx.cfg),
             "mode": p.get("mode", "guide"),
             "binary": shutil.which("cua-driver"),
             "socket": str(socket_path()), "live": is_live(),
-            "state": probes_cua.CuaProbe(ctx.cfg).check(
-                version=False)["state"]}
+            "state": probe["state"], "fix": probe["fix"],
+            "kill": probe["kill"], "dry_run": probe["dry_run"],
+            "version": probe["version"]}
     rows = [["configured", data["configured"]],
             ["active backend", data["backend"] or "none"],
             ["mode", data["mode"]],

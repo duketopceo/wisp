@@ -1,0 +1,37 @@
+{
+  "description": "Brain down with the notify fake installed: the error turn raises an error toast.",
+  "audio": "ask.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "what time is it"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "status": 500
+    }
+  },
+  "expect": {
+    "error_code": "brain_down",
+    "notify_bodies": [
+      "can't reach the answering model\ncheck your model endpoint, then try again"
+    ]
+  },
+  "name": "notify_error_toast",
+  "scenario": "notify paths",
+  "fakes": {
+    "notify": {}
+  }
+}
