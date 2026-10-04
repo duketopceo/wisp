@@ -130,6 +130,10 @@ STRINGS = {
     "ui.empty.memory.hint": "say remember that, then what to keep",
     "ui.empty.settings": "settings are not loaded",
     "ui.empty.settings.hint": "start wisp, then reopen this panel",
+    "ui.bar.ok": "ok",
+    "ui.bar.down": "down",
+    "ui.bar.spend": "spent today",
+    "ui.bar.hint": "click: talk, middle: stop, right: open",
 }
 
 _DASH = re.compile(r"\s*[—–]\s*")

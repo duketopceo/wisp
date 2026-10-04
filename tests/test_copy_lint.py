@@ -27,7 +27,7 @@ STRICT_QML = ["WispService.qml"] + sorted(
     p.name for p in (PLUGIN / "lib").glob("*.js")
     if p.name not in ("icons.js",))
 # files being rewritten by W21-W23; counts may only fall
-RATCHET = {"Companion.qml": 6, "Panel.qml": 15, "BarWidget.qml": 3}
+RATCHET = {"Companion.qml": 6, "Panel.qml": 15, "BarWidget.qml": 0}
 
 
 def table_strings():
