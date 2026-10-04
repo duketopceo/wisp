@@ -9,25 +9,16 @@ import json
 import socket
 import urllib.error
 
+from . import copy as _copy
+
 CODES = ("jev_down", "brain_down", "stt_down", "ground_down",
          "ground_failed", "timeout", "cancelled", "busy", "stale_prompt",
          "restarted", "tool_failed", "budget_exceeded", "internal")
 
-_HUMAN = {
-    "jev_down": "The router is offline",
-    "brain_down": "The local brain is offline",
-    "stt_down": "Speech recognition is offline",
-    "ground_down": "Screen grounding is offline",
-    "ground_failed": "Could not find that on screen",
-    "timeout": "That took too long",
-    "cancelled": "Cancelled",
-    "busy": "Busy with another request",
-    "stale_prompt": "That prompt expired",
-    "restarted": "Wisp restarted",
-    "tool_failed": "A step failed",
-    "budget_exceeded": "Daily model budget reached",
-    "internal": "Something went wrong",
-}
+# Safe fallback strings come from the shared copy table (wisp/copy.py
+# ERRORS), so state.json `error` can never disagree with what a surface
+# renders from `error_code`.
+_HUMAN = {c: _copy.error_message(c) for c in CODES}
 
 
 def human(code: str) -> str:

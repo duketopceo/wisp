@@ -86,6 +86,8 @@ def _gate(name: str, arg: str, cfg: dict, confirm,
         if confirm is None:
             return f"SKIPPED ({name} needs user confirmation)"
         if not confirm(f"run {name}: {arg or '(no arg)'}?"):
+            if getattr(confirm, "last", "") == "timeout":
+                return f"SKIPPED ({name} confirmation timed out)"
             return f"SKIPPED ({name} declined by user)"
         if key is not None:
             state.confirmed.add(key)
