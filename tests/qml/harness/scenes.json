@@ -405,5 +405,91 @@
     "tab": "settings"
    }
   }
+ },
+ "Companion": {
+  "mode": "variant",
+  "source": "CompanionStage.qml",
+  "pad": 0,
+  "width": 1280,
+  "scale2": true,
+  "on": "desktop",
+  "props": {
+   "height": 720
+  },
+  "variants": {
+   "idle": {
+    "_state": "idle"
+   },
+   "listening": {
+    "_state": "listening"
+   },
+   "acting_target": {
+    "_state": "acting",
+    "_fixture": {
+     "target": {
+      "x": 420,
+      "y": 260,
+      "window": "Settings",
+      "label": "night light",
+      "confidence": 0.92,
+      "phase": "aim"
+     }
+    }
+   },
+   "acting_console": {
+    "_state": "acting",
+    "_fixture": {
+     "target": {
+      "x": 420,
+      "y": 260,
+      "window": "Settings",
+      "label": "night light",
+      "confidence": 0.92,
+      "phase": "aim"
+     }
+    },
+    "userOpen": true
+   },
+   "awaiting_choice": {
+    "_state": "awaiting_choice"
+   },
+   "answer": {
+    "_state": "done"
+   },
+   "answer_pointer": {
+    "_state": "done",
+    "pointer": {
+     "x": 420,
+     "y": 300
+    }
+   },
+   "long_answer": {
+    "_state": "long_answer"
+   },
+   "error": {
+    "_state": "error"
+   },
+   "blocked": {
+    "_state": "blocked"
+   },
+   "offline": {
+    "_state": "offline"
+   },
+   "stale": {
+    "_state": "stale"
+   },
+   "fullscreen": {
+    "_state": "listening",
+    "fullscreen": true
+   },
+   "hidden": {
+    "_state": "idle",
+    "hidden": true
+   },
+   "hz120": {
+    "_state": "listening",
+    "refreshHz": 120
+   }
+  }
  }
 }
