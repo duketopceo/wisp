@@ -8,7 +8,6 @@ move-only uses the socket eval, clicks use ydotool. All fakes: a stub
 standing in for the cua daemon, and test_hypr's FakeHypr."""
 import os
 import pathlib
-import socket
 import stat
 import sys
 import tempfile
@@ -16,7 +15,8 @@ import unittest
 from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
-from test_hypr import FakeHypr, ok_handler  # noqa: E402
+import fakes  # noqa: E402
+from fakes import FakeHypr, ok_handler  # noqa: E402
 
 from wisp import platform  # noqa: E402
 from wisp.tools import system  # noqa: E402
@@ -25,45 +25,48 @@ CFG = {"pointer": {"mode": "drive", "backend": "auto"}}
 
 
 class Rig:
+    """cua-driver is the W5 FakeCua (daemon socket + CLI shim, calls
+    recorded); ydotool stays a logging stub."""
+
     def __init__(self, cua_live: bool, cua_exit: int = 0):
         self.td = tempfile.TemporaryDirectory()
         t = pathlib.Path(self.td.name)
-        self.bin = t / "bin"
-        self.bin.mkdir()
+        self.bins = fakes.BinDir(t / "bin")
         self.log = t / "calls.log"
-        for name, code in (("cua-driver", cua_exit), ("ydotool", 0)):
-            p = self.bin / name
-            p.write_text(f'#!/bin/sh\necho "{name} $*" >> "{self.log}"\n'
-                         f'exit {code}\n')
-            p.chmod(p.stat().st_mode | stat.S_IXUSR)
-        self.srv = None
-        if cua_live:
-            d = t / ".cache" / "cua-driver"
-            d.mkdir(parents=True)
-            self.srv = socket.socket(socket.AF_UNIX)
-            self.srv.bind(str(d / "cua-driver.sock"))
+        p = self.bins.path / "ydotool"
+        p.write_text(f'#!/bin/sh\necho "ydotool $*" >> "{self.log}"\n'
+                     'exit 0\n')
+        p.chmod(p.stat().st_mode | stat.S_IXUSR)
+        script = {"mode": "live" if cua_live else "absent"}
+        if cua_exit:
+            script["tools"] = {"default": {"ok": False,
+                                           "error": "E_CUA_REFUSED"}}
+        self.cua = fakes.FakeCua(t, self.bins, script)
         self.hypr = FakeHypr(ok_handler)
         self.env = mock.patch.dict(os.environ, {
-            "HOME": self.td.name, "PATH": str(self.bin), "WISP_OS": "linux",
-            "WISP_DESKTOP": "hyprland"})
+            "HOME": self.td.name, "PATH": str(self.bins.path),
+            "WISP_OS": "linux", "WISP_DESKTOP": "hyprland"})
 
     def calls(self):
-        return self.log.read_text().splitlines() if self.log.exists() \
+        ys = self.log.read_text().splitlines() if self.log.exists() \
             else []
+        cs = [f"cua-driver call {c['tool']} {c['args']}"
+              for c in self.cua.calls]
+        return cs + ys
 
     def cursor_evals(self):
         return [r for r in self.hypr.requests if "cursor.move" in r]
 
     def __enter__(self):
         self.hypr.__enter__()
+        self.cua.start()
         self.env.start()
         return self
 
     def __exit__(self, *a):
         self.env.stop()
+        self.cua.stop()
         self.hypr.__exit__(*a)
-        if self.srv:
-            self.srv.close()
         self.td.cleanup()
 
 
