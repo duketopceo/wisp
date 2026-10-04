@@ -1,0 +1,409 @@
+{
+ "Creature": {
+  "mode": "variant",
+  "pad": 12,
+  "scale2": true,
+  "on": "desktop",
+  "variants": {
+   "offline": {
+    "forceState": "offline",
+    "size": 56,
+    "level": 0
+   },
+   "idle": {
+    "forceState": "idle",
+    "size": 56,
+    "level": 0
+   },
+   "listening": {
+    "forceState": "listening",
+    "size": 56,
+    "level": 0.6
+   },
+   "transcribing": {
+    "forceState": "transcribing",
+    "size": 56,
+    "level": 0
+   },
+   "thinking": {
+    "forceState": "thinking",
+    "size": 56,
+    "level": 0
+   },
+   "speaking": {
+    "forceState": "speaking",
+    "size": 56,
+    "level": 0
+   },
+   "acting": {
+    "forceState": "acting",
+    "size": 56,
+    "level": 0
+   },
+   "awaiting_choice": {
+    "forceState": "awaiting_choice",
+    "size": 56,
+    "level": 0
+   },
+   "suggestion": {
+    "forceState": "suggestion",
+    "size": 56,
+    "level": 0
+   },
+   "confirmed": {
+    "forceState": "confirmed",
+    "size": 56,
+    "level": 0
+   },
+   "didnt_understand": {
+    "forceState": "didnt_understand",
+    "size": 56,
+    "level": 0
+   },
+   "error": {
+    "forceState": "error",
+    "size": 56,
+    "level": 0
+   },
+   "done": {
+    "forceState": "done",
+    "size": 56,
+    "level": 0
+   },
+   "listening_rest": {
+    "forceState": "listening",
+    "size": 40,
+    "level": 0.6
+   },
+   "thinking_rest": {
+    "forceState": "thinking",
+    "size": 28
+   },
+   "error_rest": {
+    "forceState": "error",
+    "size": 28
+   },
+   "listening_reduced": {
+    "forceState": "listening",
+    "size": 56,
+    "level": 0.6,
+    "motion": "reduced"
+   },
+   "awaiting_choice_reduced": {
+    "forceState": "awaiting_choice",
+    "size": 56,
+    "motion": "reduced"
+   },
+   "speaking_reduced": {
+    "forceState": "speaking",
+    "size": 56,
+    "motion": "reduced"
+   },
+   "didnt_understand_reduced": {
+    "forceState": "didnt_understand",
+    "size": 56,
+    "motion": "reduced"
+   },
+   "listening_hz120": {
+    "forceState": "listening",
+    "size": 56,
+    "level": 0.6,
+    "refreshHz": 120
+   },
+   "idle_hz120": {
+    "forceState": "idle",
+    "size": 56,
+    "refreshHz": 120
+   }
+  }
+ },
+ "Mark": {
+  "mode": "state",
+  "pad": 8,
+  "size": 28,
+  "scale2": true,
+  "props": {
+   "size": 28
+  }
+ },
+ "StatusLine": {
+  "mode": "state",
+  "pad": 10
+ },
+ "Transcript": {
+  "mode": "state",
+  "pad": 10,
+  "width": 280
+ },
+ "Answer": {
+  "mode": "state",
+  "pad": 10,
+  "width": 320,
+  "props": {
+   "maxLines": 4
+  }
+ },
+ "StopControl": {
+  "mode": "state",
+  "pad": 10
+ },
+ "Pill": {
+  "mode": "state",
+  "pad": 12,
+  "scale2": true,
+  "on": "desktop"
+ },
+ "Bubble": {
+  "mode": "state",
+  "pad": 12,
+  "scale2": true,
+  "on": "desktop"
+ },
+ "Console": {
+  "mode": "state",
+  "pad": 12,
+  "on": "desktop"
+ },
+ "Corner": {
+  "mode": "state",
+  "pad": 12,
+  "scale2": true,
+  "on": "desktop"
+ },
+ "Chip": {
+  "mode": "variant",
+  "pad": 10,
+  "variants": {
+   "normal": {
+    "label": "open it",
+    "hint": "1"
+   },
+   "hover": {
+    "label": "open it",
+    "hint": "1",
+    "hovered": true
+   },
+   "pressed": {
+    "label": "open it",
+    "hint": "1",
+    "pressed": true
+   },
+   "selected": {
+    "label": "open it",
+    "hint": "1",
+    "selected": true
+   },
+   "disabled": {
+    "label": "open it",
+    "hint": "1",
+    "enabled": false
+   },
+   "keyed": {
+    "label": "none of these",
+    "hint": "3"
+   }
+  }
+ },
+ "StepRow": {
+  "mode": "variant",
+  "pad": 10,
+  "width": 300,
+  "variants": {
+   "pending": {
+    "text": "verify toggle",
+    "state": "pending"
+   },
+   "running": {
+    "text": "click night light toggle",
+    "state": "running"
+   },
+   "done": {
+    "text": "focus Settings",
+    "state": "done"
+   },
+   "failed": {
+    "text": "click rename",
+    "state": "failed"
+   },
+   "confirm": {
+    "text": "run_shell rm -r Downloads",
+    "state": "confirm"
+   }
+  }
+ },
+ "GhostCursor": {
+  "mode": "variant",
+  "pad": 12,
+  "variants": {
+   "traveling": {
+    "forceState": "traveling"
+   },
+   "clicking": {
+    "forceState": "clicking"
+   },
+   "parked": {
+    "forceState": "parked",
+    "forceLabel": "night light"
+   },
+   "returning": {
+    "forceState": "returning"
+   },
+   "reduced_parked": {
+    "forceState": "parked",
+    "forceLabel": "night light",
+    "motion": "reduced"
+   },
+   "target_aim": {
+    "_state": "acting",
+    "_fixture": {
+     "target": {
+      "x": 640,
+      "y": 360,
+      "window": "Settings",
+      "label": "night light",
+      "confidence": 0.92,
+      "phase": "aim"
+     }
+    }
+   },
+   "target_click": {
+    "_state": "acting",
+    "_fixture": {
+     "target": {
+      "x": 640,
+      "y": 360,
+      "window": "Settings",
+      "label": "night light",
+      "confidence": 0.92,
+      "phase": "click"
+     }
+    }
+   },
+   "target_done": {
+    "_state": "acting",
+    "_fixture": {
+     "target": {
+      "x": 640,
+      "y": 360,
+      "window": "Settings",
+      "label": "night light",
+      "confidence": 0.92,
+      "phase": "done"
+     }
+    }
+   },
+   "target_unsure": {
+    "_state": "acting",
+    "_fixture": {
+     "target": {
+      "x": 640,
+      "y": 360,
+      "window": "Settings",
+      "label": "",
+      "confidence": 0.3,
+      "phase": "aim"
+     }
+    }
+   },
+   "absent": {
+    "_state": "acting"
+   }
+  },
+  "on": "desktop",
+  "scale2": true
+ },
+ "Beacon": {
+  "mode": "variant",
+  "pad": 10,
+  "variants": {
+   "landing": {
+    "forceState": "landing",
+    "index": 1
+   },
+   "holding": {
+    "forceState": "holding",
+    "index": 2
+   },
+   "fading": {
+    "forceState": "fading",
+    "index": 3
+   },
+   "auto_off": {
+    "index": 4
+   }
+  },
+  "on": "desktop",
+  "scale2": true
+ },
+ "PanelTab": {
+  "mode": "variant",
+  "pad": 6,
+  "variants": {
+   "normal": {
+    "text": "agents"
+   },
+   "hover": {
+    "text": "agents",
+    "hovered": true
+   },
+   "selected": {
+    "text": "now",
+    "selected": true
+   }
+  }
+ },
+ "AgentRow": {
+  "mode": "variant",
+  "pad": 10,
+  "width": 340,
+  "variants": {
+   "queued": {
+    "name": "tidy downloads",
+    "state": "queued",
+    "seconds": 0
+   },
+   "running": {
+    "name": "summarize inbox",
+    "state": "running",
+    "seconds": 83,
+    "line": "reading message 12 of 40"
+   },
+   "done": {
+    "name": "weekly report",
+    "state": "done",
+    "seconds": 301,
+    "line": "saved to Documents"
+   },
+   "failed": {
+    "name": "sync notes",
+    "state": "failed",
+    "seconds": 12,
+    "line": "endpoint refused the request"
+   },
+   "cancelled": {
+    "name": "index photos",
+    "state": "cancelled",
+    "seconds": 47
+   }
+  }
+ },
+ "EmptyState": {
+  "mode": "variant",
+  "pad": 12,
+  "width": 340,
+  "variants": {
+   "now": {
+    "tab": "now"
+   },
+   "agents": {
+    "tab": "agents"
+   },
+   "memory": {
+    "tab": "memory"
+   },
+   "settings": {
+    "tab": "settings"
+   }
+  }
+ }
+}

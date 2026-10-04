@@ -511,12 +511,13 @@ def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
     mode = (cfg or {}).get("pointer", {}).get("mode", "guide")
     if mode == "drive" and backend:
         verb = "click" if do_click else "move"
-        ok = _drive(x, y, backend, do_click)
-        if not ok and backend == "cua" and not do_click:
-            # move is idempotent: fall through the rest of the chain.
-            # A failed cua click is NOT retried elsewhere (double-click
-            # risk); the act loop re-observes instead.
-            ok = _move_fallback(x, y, cfg)
+        # pointer.Registry owns precedence: a move falls through the
+        # chain, a failed click is NOT retried elsewhere (double-click
+        # risk) and the act loop re-observes instead.
+        from .. import pointer
+        reg = pointer.Registry(cfg)
+        ok = (reg.click if do_click else reg.move)(
+            x, y, backend=backend).ok
         if not ok:
             return f"SKIP ({verb} failed via {backend})"
         return f"{'CLICKED' if do_click else 'MOVED'}({x},{y})"

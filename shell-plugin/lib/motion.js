@@ -39,6 +39,7 @@ function travelMs(distancePx, mode) {
 }
 
 // Only the creature loops, only in states that need it, only in full mode.
+// Accepts reducer statuses and creature states ("thinking").
 var LOOPING = ["listening", "deciding", "thinking", "speaking"]
 function loops(status, mode) {
   return mode === "full" && LOOPING.indexOf(status) >= 0

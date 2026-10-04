@@ -1,0 +1,1 @@
+{"status": "done", "transcript": "open the terminal", "answer": "Opened the terminal on workspace 2.", "result": "Opened Alacritty.", "choices": [], "points": [], "steps": ["launch alacritty -> ok"], "level": 0.0, "turn_id": "t-done", "seq": 9, "contract_version": 1}

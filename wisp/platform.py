@@ -615,47 +615,12 @@ def _cua_live() -> bool:
 
 def pointer_backend(cfg: dict | None = None,
                     exclude: tuple = ()) -> str | None:
-    """Pointer injector: 'cua' | 'hyprcursor' | 'ydotool' | 'wlrctl'
-    | None.
-
-    [pointer] backend = "cua"|"hyprcursor"|"ydotool"|"wlrctl"|"none"|
-    "auto" (default). cua routes clicks through cua-driver's background
-    virtual pointer — compositor-exact coords on native Wayland without
-    stealing the user's cursor or focus. hyprcursor positions via
-    Hyprland's own dispatcher — exact logical coords, immune to the
-    uinput-scale mismatch ydotool's absolute move shows on scaled
-    outputs — and clicks via ydotool. auto prefers the live cua daemon,
-    then hyprcursor on Hyprland; macOS/Windows injection isn't built —
-    returns None so callers degrade to guide mode.
-    """
-    want = (cfg or {}).get("pointer", {}).get("backend", "auto")
-    if exclude:
-        # fallback lookup: first usable backend outside `exclude`,
-        # in auto order, ignoring an explicit [pointer] backend pin
-        if current() != "linux":
-            return None
-        if "hyprcursor" not in exclude and _which("hyprctl") \
-                and _which("ydotool"):
-            return "hyprcursor"
-        return next((b for b in ("ydotool", "wlrctl")
-                     if b not in exclude and _which(b)), None)
-    if want == "cua":
-        return "cua" if _cua_live() else None
-    if want == "hyprcursor":
-        return want if _which("hyprctl") and _which("ydotool") \
-            else None
-    if want in ("ydotool", "wlrctl"):
-        return want if _which(want) else None
-    if want == "none" or current() != "linux":
-        return None
-    if _cua_live():
-        return "cua"
-    if _which("hyprctl") and _which("ydotool"):
-        return "hyprcursor"
-    for b in ("ydotool", "wlrctl"):
-        if _which(b):
-            return b
-    return None
+    """Pointer injector name ('cua'|'hyprcursor'|'ydotool'|'wlrctl') or
+    None (guide mode). Thin shim over `wisp.pointer.Registry` (W8); the
+    selection rules live there. Kept for the Rust parity tests."""
+    from . import pointer
+    b = pointer.Registry(cfg).select(exclude=exclude)
+    return b.name if b else None
 
 
 def pointer_cmds(x: int, y: int, backend: str,

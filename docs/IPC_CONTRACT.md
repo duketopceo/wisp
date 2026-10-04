@@ -28,6 +28,7 @@ future tray apps). Shells MUST only depend on this document.
 | `task_cancel` | `name: string` | `{ok, result: string}` | cancel named agent |
 | `agent` | `task: string` | `{ok, result: string}` | spawn a background task via `[brain] agent_runtime`; `result` is `SPAWNED …`/`SKIP …` |
 | `memory` | `arg` or `target`+`body` | `{ok, result: string}` | `arg` = tool grammar `target|op|old|new`; `target`+`body` = whole-doc `write` (GUI editor path — pipes/newlines safe) |
+| `subscribe` | `topics?: ["state","health","tasks","events"]` | NOT one reply: a push stream, see Push stream | long-lived connection of newline-delimited JSON events |
 | `stop` | — | `{ok}` | daemon exits, socket removed; kills in-flight TTS |
 | `interrupt` | — | `{ok}` | cancels the in-flight turn only — daemon stays up; see Cancellation |
 | `config` | `set: {"section.key": "val"}` (optional) | `{ok, config}` | read config; with `set`, writes config.toml preserving comments/order and live-reloads |
@@ -143,6 +144,82 @@ scale); `label` and `step` are optional strings/ints. The model emits
 them as `[POINT:x,y:label]` / `[POINTS:[{x,y,label}]]` tags in
 screenshot-pixel coords; the core strips tags from the displayed/
 spoken answer and publishes the normalized list.
+
+## Push stream (additive; W3)
+
+`{"cmd":"subscribe","topics":[...]}` (topics optional, default all) turns
+the connection into a server-to-client stream of newline-delimited JSON.
+The client sends nothing further; it closes the socket to unsubscribe.
+Core-only and additive: shells that keep reading `state.json` are
+unaffected, and `state.json` is still written on every change.
+
+Lines, in order:
+
+1. `{"type":"hello","ok":true,"contract_version":1,"topics":[...]}`.
+   On refusal (`unknown topic`, no bus) `{"type":"hello","ok":false,
+   "error":"..."}` and the daemon closes.
+2. `{"type":"snapshot","seq":N,"state":{...}}`, the full state.json
+   content at subscribe time. Every connect, including a reconnect,
+   starts with a fresh snapshot, so a client never replays history.
+3. Then, as they happen:
+   - `{"type":"state","seq":N+1,"diff":{...}}` (topic `state`): the
+     changed fields plus `seq`, `updated_at`, `turn_id`. `seq` rises by
+     exactly one per written snapshot: the first diff is `snapshot.seq+1`
+     and a gap means the client missed data and must reconnect. Diffs
+     include `heartbeat_at` (every 15 s while transcribing, deciding or
+     acting) and `tasks` / `health` when those change.
+   - `{"type":"event","name":"health_changed","data":{...}}` (topic
+     `health`); `{"type":"event","name":"task_finished","data":{name,
+     status,tail}}` (topic `tasks`; any `task_*` name belongs to it);
+     other named events belong to `events`. Events do not bump `seq`.
+   - `{"type":"event","name":"cua.target","data":{x,y,window,label,
+     confidence,phase}}` (topic `events`; W21 reader, W13 emitter): the
+     screen point a computer-use click is about to hit, so the ghost
+     cursor can show it while the real pointer stays put. See
+     "cua.target" below.
+   - `{"type":"ping"}` after 15 s with nothing to send (all topics; a
+     keep-alive, ignore it). Clients should treat 45 s of silence as a
+     dead connection and reconnect.
+
+### cua.target (ghost cursor input)
+
+`data` fields: `x`, `y` numbers, screen pixels in the compositor's global
+layout (required, finite); `window` string, the target window title or
+class (may be empty); `label` string, a short element name such as
+"night light" (may be empty); `confidence` number 0..1 from the grounding
+model (default 1); `phase` one of `aim` (default; the ghost travels to the
+point and parks), `click` (one ripple at the tip), `done` (the click
+landed; the ghost dims and returns). `{"x":null,"y":null}` clears.
+
+Reader rules (`shell-plugin/lib/state.js`, `view.cuaTarget`): the event
+is applied only while `status` is `acting`, `deciding` or
+`awaiting_choice`; a malformed payload is ignored and leaves the current
+target; the target is dropped when the status leaves those, when
+`turn_id` changes, and when the daemon goes offline. No target means the
+ghost cursor renders nothing. The emitter sends at most one `aim` per
+action, then `click`, then `done`; it need not repeat unchanged targets.
+Until W13 emits it, fixtures drive it (`tests/qml/harness/scenes.json`).
+
+Topic filtering happens in the daemon: unrequested events are never
+queued for that client. Ordering is the bus's write order, identical for
+every subscriber.
+
+Backpressure: each subscriber has its own bounded queue (256 events) fed
+from the bus without blocking it. A subscriber that falls behind, or
+whose socket stays unwritable for 5 s, is dropped: the daemon sends a
+final `{"type":"event","name":"overflow"}` when it still can, then
+closes. A dropped client reconnects and gets a new snapshot. A slow
+subscriber never delays state.json writes or other subscribers.
+
+`wispd watch [topic ...]` prints this stream (reconnecting forever).
+
+Agent reaper (core behaviour behind the `tasks` field): every 5 s the
+daemon closes tasks whose process is gone (`exited`), SIGTERMs tasks past
+`[agent] task_timeout_s` (`timed_out`), SIGKILLs a cancelled or timed-out
+process that ignored SIGTERM for 10 s, and never signals a pid whose
+start-time differs from the one recorded at spawn (PID reuse). Each
+running to not-running transition publishes the new `tasks` and one
+`task_finished` event.
 
 ## Data files (shared by both cores, never versioned differently)
 

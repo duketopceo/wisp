@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """wispd — Wisp: resident voice assistant daemon for Omarchy.
 
-`wispd daemon` runs the IPC server (systemd user service). `wispd trigger`
-is the push-to-talk client the Hyprland bind executes — it sends `listen`
-to the running daemon, or runs the pipeline inline when no daemon is up.
-Other subcommands: status, stop, install, harness.
+`wispd daemon run` runs the IPC server (systemd user service). `wispd
+trigger` is the push-to-talk client the Hyprland bind executes — it sends
+`listen` to the running daemon, or runs the pipeline inline when no
+daemon is up. The command line itself (`wispd <group> <verb>`, --help,
+--json, exit codes, completions, old-name aliases) lives in wisp/cli/;
+this script keeps the daemon, installer and IPC handler it calls into.
 """
 import datetime
 import pathlib
@@ -64,18 +66,9 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
         if c == "status":
             from wisp import agents
             agents.reap(cfg)  # zombie + timeout watchdog on each poll
-            cur = agents.tasks()
-            # long-running agent completion: notify once on the
-            # running → done transition
-            done = agents.finished(getattr(st, "_prev_tasks", {}), cur)
-            st._prev_tasks = cur
-            st.publish(None, tasks=cur)  # daemon-level: no turn
-            for t in done:
-                tail = (t.get("tail") or "")[:80]
-                from wisp.tools import system as _sys
-                _sys.notify_tool(
-                    f"wisp agent '{t['name']}' {t['status']}"
-                    + (f" — {tail}" if tail else ""))
+            # completion notices + task publishing run on the reaper
+            # thread (W3); a poll just refreshes the snapshot
+            st.publish(None, tasks=agents.tasks())  # daemon-level
             return {"ok": True, "state": st.snapshot()}
         if c == "listen":
             phase = cmd.get("phase", "")  # hold-to-talk: start|stop; empty = toggle
@@ -399,10 +392,20 @@ def run_daemon(cfg: dict) -> int:
         from wisp import brain as _brain, health as _health
         _HEALTH = _health.HealthRegistry(cfg, bus=st)
         _HEALTH.register("hypr", _hypr_health)
+        from wisp import probes_cua as _pc
+        _pc.register(_HEALTH, cfg)
         _brain.HEALTH = _HEALTH
         _HEALTH.start()
-    server = ipc.Daemon(_handler(st, cfg, ctl))
+    server = ipc.Daemon(_handler(st, cfg, ctl), bus=st)
     server.start()
+    from wisp import agents as _agents
+
+    def _agent_done(t: dict) -> None:
+        tail = (t.get("tail") or "")[:80]
+        from wisp.tools import system as _sys
+        _sys.notify_tool(f"wisp agent '{t['name']}' {t['status']}"
+                         + (f" — {tail}" if tail else ""))
+    _agents.start_reaper(cfg, st, ctl["stop"], on_finished=_agent_done)
     dlog(f"wispd up — socket {config.SOCK_FILE} "
          f"log {config.DATA_DIR / 'wispd.log'}")
     # sense + suggest threads — opt-in via [sense] enabled; each loop is
@@ -789,368 +792,8 @@ def rebuild_harness() -> int:
 
 
 def main() -> int:
-    cmd = sys.argv[1] if len(sys.argv) > 1 else "status"
-    cfg = config.load_config()
-    if cmd == "daemon":
-        return run_daemon(cfg)
-    if cmd == "install":
-        install_files()
-        install_bind(cfg)
-        return 0
-    if cmd == "trigger":
-        return cmd_trigger(cfg, sys.argv[2] if len(sys.argv) > 2 else "")
-    if cmd == "status":
-        try:
-            import json
-            print(json.dumps(ipc.send({"cmd": "status"}), indent=2))
-            return 0
-        except (ConnectionError, OSError) as e:
-            print(f"wispd unreachable: {e}", file=sys.stderr)
-            return 1
-    if cmd == "interrupt":
-        try:
-            ipc.send({"cmd": "interrupt"})
-            return 0
-        except (ConnectionError, OSError) as e:
-            print(f"wispd unreachable: {e}", file=sys.stderr)
-            return 1
-    if cmd == "stop":
-        try:
-            ipc.send({"cmd": "stop"})
-            return 0
-        except (ConnectionError, OSError) as e:
-            print(f"wispd unreachable: {e}", file=sys.stderr)
-            return 1
-    if cmd == "choice":
-        msg = _choice_cmd(sys.argv[2:])
-        if msg is None:
-            print("usage: wispd choice [pick] [--prompt-id ID] "
-                  "[--index N]", file=sys.stderr)
-            return 2
-        try:
-            reply = ipc.send(msg)
-            if isinstance(reply, dict) and reply.get("ok") is False:
-                print(f"choice rejected: {reply.get('error')}",
-                      file=sys.stderr)
-                return 1
-            return 0
-        except (ConnectionError, OSError) as e:
-            print(f"wispd unreachable: {e}", file=sys.stderr)
-            return 1
-    if cmd == "label":
-        # wispd label correct|incorrect [note] — soak intent-match;
-        # bare `wispd label` prints the per-route report
-        if len(sys.argv) < 3:
-            from wisp import learn
-            print(learn.soak_stats())
-            return 0
-        label = sys.argv[2]
-        note = " ".join(sys.argv[3:])
-        try:
-            r = ipc.send({"cmd": "label", "label": label, "note": note})
-            print(r.get("result") or r.get("error", "failed"))
-            return 0 if r.get("ok") else 1
-        except (ConnectionError, OSError):
-            from wisp import learn
-            out = learn.label_last(label, note)
-            print(out)
-            return 0 if not out.startswith(("SKIP", "ERROR",
-                                            "nothing")) else 1
-    if cmd == "tasks":
-        # wispd tasks — background agents: status + last log line
-        from wisp import agents
-        ts = agents.tasks()
-        if not ts:
-            print("no agents on record")
-            return 0
-        for name, t in sorted(ts.items(),
-                              key=lambda kv: kv[1].get("ts", "")):
-            tail = t.get("tail") or ""
-            print(f"{t['status']:<10} {name:<24} {t.get('task','')[:50]}"
-                  + (f"\n{'':<36}↳ {tail[:90]}" if tail else ""))
-        return 0
-    if cmd == "train":
-        # wispd train stats|history|bank|replay — arena telemetry
-        from wisp import train
-        sub = sys.argv[2] if len(sys.argv) > 2 else "stats"
-        if sub == "history":
-            print(train.history_text())
-        elif sub == "bank":
-            print(train.bank_text())
-        elif sub == "rebuild":
-            bank = train.replay_all()
-            print(f"rebuilt skill bank — {len(bank)} patterns")
-        else:
-            print(train.stats_text())
-        return 0
-    if cmd == "review":
-        # wispd review [run [N]|approve N|reject N|list] — staged
-        # reviewer proposals; approve is the only write path to the bank
-        from wisp import review
-        sub = sys.argv[2] if len(sys.argv) > 2 else "list"
-        if sub == "run":
-            n = int(sys.argv[3]) if len(sys.argv) > 3 else 10
-            r = review.run(cfg, limit=n)
-            print(f"reviewed {r['reviewed']} → {r['proposed']} proposals"
-                  + (f", {r['skipped']} skipped" if r["skipped"] else ""))
-            for note in r["notes"][:5]:
-                print(f"  - {note}")
-        elif sub == "approve":
-            print(review.approve(int(sys.argv[3])
-                                 if len(sys.argv) > 3 else 0))
-        elif sub == "reject":
-            print(review.reject(int(sys.argv[3])
-                                if len(sys.argv) > 3 else 0))
-        else:
-            print(review.list_text())
-        return 0
-    if cmd == "learn":
-        from wisp import learn
-        out = learn.weekly()
-        print(out if out else "no corrections this week — nothing to propose")
-        return 0
-    if cmd == "config":
-        # wispd config                      -> print config
-        # wispd config set section.key val  -> write + live reload via IPC
-        sub = sys.argv[2] if len(sys.argv) > 2 else ""
-        if sub == "set" and len(sys.argv) > 4:
-            k, v = sys.argv[3], sys.argv[4]
-            section, _, key = k.rpartition(".")
-            if not section or not key:
-                print("usage: wispd config set section.key value",
-                      file=sys.stderr)
-                return 2
-            try:
-                resp = ipc.send({"cmd": "config", "set": {k: v}})
-                if not resp.get("ok"):
-                    print(f"error: {resp.get('error')}", file=sys.stderr)
-                    return 1
-            except (ConnectionError, OSError):
-                try:
-                    config.set_config(section, key, v)  # daemon down
-                except ValueError as e:
-                    print(f"error: {e}", file=sys.stderr)
-                    return 1
-            print(f"{k} = {v}")
-            return 0
-        import json
-        try:
-            print(json.dumps(ipc.send({"cmd": "config"})["config"],
-                             indent=2))
-        except (ConnectionError, OSError):
-            print(json.dumps(config.load_config(), indent=2))
-        return 0
-    if cmd == "harness":
-        return rebuild_harness()
-    if cmd == "inventory":
-        from wisp import inventory as _inv
-        inv = _inv.scan(cfg)
-        o = inv.get("omarchy", {})
-        df = inv.get("dayflow", {})
-        print(f"inventory.json — {inv.get('generated', '?')}")
-        print(f"  apps:        {len(inv.get('apps', []))}")
-        print(f"  cli_tools:   {len(inv.get('cli_tools', {}))}")
-        print(f"  mcp servers: {len(inv.get('mcp', {}))} "
-              f"({', '.join(list(inv.get('mcp', {}))[:8])}…)")
-        print(f"  omarchy:     {len(o.get('plugins', []))} plugins, "
-              f"{len(o.get('bindings', []))} bindings")
-        print(f"  dayflow:     {len(df.get('top_apps', []))} top apps, "
-              f"{len(df.get('project_terms', []))} project terms")
-        print(f"  skills:      {len(inv.get('skills', []))}")
-        print(f"  file: {_inv.FILE}")
-        return 0
-    if cmd == "connect":
-        # wispd connect <service> — OAuth onboarding for the Strata
-        # connector suite via the local browseros gateway. '--list'
-        # dumps the connector catalog + status.
-        from wisp import mcpauth
-        name = sys.argv[2] if len(sys.argv) > 2 else ""
-        if not name or name == "--list":
-            if "--json" in sys.argv:
-                import json as _j
-                print(_j.dumps(mcpauth.list_connectors_json(cfg)))
-                return 0
-            print(mcpauth.list_connectors(cfg))
-            return 0
-        print(mcpauth.connect(name, cfg))
-        return 0
-    if cmd == "context":
-        try:
-            r = ipc.send({"cmd": "context"})
-            print(r.get("result") or r.get("error", "failed"))
-            return 0 if r.get("ok") else 1
-        except (ConnectionError, OSError) as e:
-            print(f"wispd unreachable: {e}", file=sys.stderr)
-            return 1
-    if cmd in ("task_status", "task_cancel"):
-        try:
-            r = ipc.send({"cmd": cmd, "name": sys.argv[2]
-                          if len(sys.argv) > 2 else ""})
-            print(r.get("result") or r.get("error", "failed"))
-            return 0 if r.get("ok") else 1
-        except (ConnectionError, OSError) as e:
-            print(f"wispd unreachable: {e}", file=sys.stderr)
-            return 1
-    if cmd == "memory-write":
-        # GUI editor path — `wispd memory-write <target> <base64>`
-        # (argv can't carry raw newlines; body decodes server-side)
-        import base64
-        try:
-            body = base64.b64decode(sys.argv[3]).decode()
-            r = ipc.send({"cmd": "memory", "target": sys.argv[2],
-                          "body": body})
-            print(r.get("result") or r.get("error", "failed"))
-            return 0 if r.get("ok") else 1
-        except (IndexError, ValueError) as e:
-            print(f"usage: wispd memory-write memory|user <b64> ({e})",
-                  file=sys.stderr)
-            return 2
-        except (ConnectionError, OSError) as e:
-            print(f"wispd unreachable: {e}", file=sys.stderr)
-            return 1
-    if cmd in ("agent", "memory"):
-        # GUI hooks — `wispd agent <task>` spawns a background runtime
-        # task, `wispd memory 'target|op|old|new'` edits MEMORY/USER.md
-        field = "task" if cmd == "agent" else "arg"
-        try:
-            r = ipc.send({"cmd": cmd, field: " ".join(sys.argv[2:])})
-            print(r.get("result") or r.get("error", "failed"))
-            return 0 if r.get("ok") else 1
-        except (ConnectionError, OSError) as e:
-            print(f"wispd unreachable: {e}", file=sys.stderr)
-            return 1
-    if cmd == "trace":
-        from wisp import trace
-        return trace.main(sys.argv[2:])
-    if cmd == "doctor":
-        return _doctor(cfg)
-    if cmd == "models":
-        return _models(cfg, sys.argv[2:])
-    if cmd == "tui":
-        from wisp import tui
-        return tui.main()
-    if cmd == "skills":
-        from wisp import skills
-        sub = sys.argv[2] if len(sys.argv) > 2 else ""
-        if sub == "import":
-            preview = "--list" in sys.argv
-            srcs = [a for a in sys.argv[3:] if not a.startswith("--")]
-            if not srcs:
-                print("usage: wispd skills import [--list] <dir>",
-                      file=sys.stderr)
-                return 2
-            print(skills.import_dir(srcs[0], preview=preview))
-            return 0
-        for s in skills.index():
-            print(f"{s['name']}: {s['description']}")
-        return 0
-    if cmd == "suggestions":
-        try:
-            r = ipc.send({"cmd": "suggestions"})
-            for s in r.get("suggestions", []):
-                print(f"[{s.get('status','?')}] {s.get('title','')} "
-                      f"— {s.get('evidence','')}")
-            return 0
-        except (ConnectionError, OSError) as e:
-            print(f"wispd unreachable: {e}", file=sys.stderr)
-            return 1
-    if cmd == "theme":
-        from wisp import theme
-        name = sys.argv[2] if len(sys.argv) > 2 else ""
-        if name in ("--check", "--css"):
-            # wispd theme --check [THEME_DIR]      contrast audit, exit 1 on fail
-            # wispd theme --css [THEME_DIR] [OUT]  theme.css (OUT '-' = stdout)
-            rest = sys.argv[3:]
-            res = theme.load(rest[0] if rest else None, cfg)
-            if name == "--css":
-                out = rest[1] if len(rest) > 1 else None
-                if out == "-":
-                    sys.stdout.write(theme.css(res))
-                else:
-                    print(theme.write_css(res, out))
-                return 0
-            rows = theme.check(res)
-            print(f"source {res['source']}, mode {res['mode']}")
-            for r in rows:
-                mark = "ok  " if r["ok"] else "FAIL"
-                print(f"{mark} {r['pair']:<18} {r['fg']} on {r['bg']}  "
-                      f"{r['ratio']:>5.2f} (min {r['min']})")
-            return 0 if all(r["ok"] for r in rows) else 1
-        if name:
-            if name not in theme.THEMES:
-                print(f"unknown theme {name!r} — "
-                      f"{', '.join(sorted(theme.THEMES))}",
-                      file=sys.stderr)
-                return 2
-            config.set_config("ui", "theme", name)
-            cfg = config.load_config()
-            print(f"theme = {theme.emit(cfg)}")
-        else:
-            theme.emit(cfg)
-            print(theme.current(cfg))
-        return 0
-    if cmd == "fails":
-        from wisp import learn
-        print(learn.fails())
-        return 0
-    if cmd == "tele":
-        # wispd tele [hours] — local digest over decisions/trace
-        from wisp import telemetry
-        hours = int(sys.argv[2]) if len(sys.argv) > 2 else 24
-        print(telemetry.text(hours))
-        return 0
-    if cmd == "eval":
-        # wispd eval route [limit] — replay logged decisions through
-        # candidate routers (eval spend: orchestral key per org rule)
-        from wisp import evalroute
-        if len(sys.argv) > 2 and sys.argv[2] != "route":
-            print("usage: wispd eval route [limit]", file=sys.stderr)
-            return 2
-        limit = int(sys.argv[3]) if len(sys.argv) > 3 else 0
-        print(evalroute.run(cfg, limit=limit))
-        return 0
-    if cmd == "sync":
-        # refresh MEMORY.md constitution block + import luke-agents
-        # _LUKE skills (snapshot, never symlink)
-        from wisp import memory as _m, skills as _sk
-        print(_m.sync_constitution(sys.argv[2] if len(sys.argv) > 2
-                                   else None))
-        print(_sk.import_dir(
-            "~/Documents/github/personal/luke-agents/_LUKE"))
-        _sk.write_index_json()
-        return 0
-    if cmd == "recipes":
-        from wisp import trajectories
-        from wisp import skills as _sk
-        sub = sys.argv[2] if len(sys.argv) > 2 else ""
-        if sub == "approve":
-            name = sys.argv[3] if len(sys.argv) > 3 else ""
-            src = config.DATA_DIR / "proposals" / f"{name}.md"
-            if not name.startswith("recipe-") or not src.exists():
-                print("usage: wispd recipes approve <recipe-name>",
-                      file=sys.stderr)
-                return 2
-            dest = _sk.SKILLS_DIR / name
-            dest.mkdir(parents=True, exist_ok=True)
-            from datetime import datetime, timezone
-            body = src.read_text()
-            body += ("\n<!-- approved by wispd recipes approve "
-                     f"{datetime.now(timezone.utc).isoformat()} "
-                     "— human-gated install -->\n")
-            (dest / "SKILL.md").write_text(body)
-            _sk.write_index_json()
-            print(f"installed {name}")
-            return 0
-        for p in trajectories.propose_recipes():
-            print(f"drafted {p}")
-        return 0
-    print("usage: wispd [daemon|install|trigger|status|stop|choice"
-          "|agent|memory|task_status|task_cancel|learn|label|harness|trace"
-          "|doctor|models [start [--run]]|tui|skills [import [--list] dir]|suggestions"
-          "|recipes [approve name]|fails|theme [name|--check|--css]|sync [repo]"
-          "|eval route [n]"
-          "|config [set k v]]")
-    return 2
+    from wisp import cli
+    return cli.main(sys.argv[1:], host=sys.modules[__name__])
 
 
 if __name__ == "__main__":
