@@ -62,7 +62,10 @@ lacks a section. Shells may offer a settings page on top of this command.
   "goal": {"text": "string", "status": "open|done|failed"},
   "level": 0.0,
   "tasks": {"name": "running|done|failed|cancelled"},
-  "error": "string",
+  "error": "string — human-safe copy, never raw exception text",
+  "error_code": "closed set, see below; \"\" when no error",
+  "error_detail": "string — raw failure text, local only",
+  "health": {"<endpoint>": {"ok": true, "since": "ISO-8601", "latency_ms": 12, "code": null}},
   "started_at": "ISO-8601",
   "turn_id": "string — turn that produced this write",
   "seq": 0,
@@ -76,6 +79,24 @@ Single publisher (Python core): one `StateBus` owns every write. `seq`
 increases by one per written snapshot; a write from a turn that is no
 longer current is dropped; `level` is rate-limited to ~12 writes/s.
 Shells still just read the file — all of these fields are additive.
+
+Error codes (additive, Python core; U7): when `status` is `error`,
+`error_code` is one of `jev_down`, `brain_down`, `stt_down`,
+`ground_down`, `ground_failed`, `timeout`, `cancelled`, `busy`,
+`stale_prompt`, `restarted`, `tool_failed`, `budget_exceeded`,
+`internal`. Shells render copy from the code and must treat unknown
+codes as `internal`. `error_detail` is for logs and `wispd watch`, not
+for display. A turn that starts (`listening`) clears all three.
+
+Health (additive; U7): `health` maps local endpoint names (`jev`,
+`brain_<provider>`, `ollama`, `uitars`, `stt`, plus hook-registered
+ones such as `hypr`) to `{ok, since, latency_ms, code}`; `latency_ms`
+is from the first probe and any later transition, `code` is null while
+ok. It is republished on first observation and on every ok/down
+transition, each with a stream event
+`{"type":"event","name":"health_changed","data":{name,ok,code}}`.
+Absent or `{}` on older cores and while probing is disabled. Remote
+endpoints are never probed and never listed.
 
 Confirmation gate: when a mutating/shell action needs approval, the
 core transitions to `awaiting_choice` with `choices` = e.g.

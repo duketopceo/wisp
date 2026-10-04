@@ -1,5 +1,5 @@
 {
-  "description": "Jev answers 503 on every call. Characterization: no fallback router yet, turn ends in error (U8 changes this).",
+  "description": "Jev answers 503 on every call. The turn ends in error with error_code jev_down, a human-safe error string and the raw text in error_detail (U7). No fallback router until U8.",
   "audio": "ask.wav",
   "endpoints": {
     "whisper": {
@@ -24,7 +24,8 @@
       "deciding",
       "error"
     ],
-    "error_contains": "Jev HTTP 503"
+    "error_code": "jev_down",
+    "error_detail_contains": "Jev HTTP 503"
   },
   "name": "jev_down"
 }

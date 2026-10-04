@@ -1,5 +1,5 @@
 {
-  "description": "Answer brain returns 500. Characterization: ANSWER_FAILED plus the canned reply, turn still ends done.",
+  "description": "Answer brain returns 500 and no fallback is configured: the turn ends in error with error_code brain_down (U7). No canned answer.",
   "audio": "ask.wav",
   "endpoints": {
     "whisper": {
@@ -29,11 +29,11 @@
       "transcribing",
       "deciding",
       "acting",
-      "speaking",
-      "done"
+      "error"
     ],
-    "result_prefix": "ANSWER_FAILED",
-    "answer": "You said: \"what time is it\". Not a desktop action I can take yet."
+    "error_code": "brain_down",
+    "error_detail_contains": "openai_compat",
+    "brain_calls": 1
   },
   "name": "brain_down"
 }

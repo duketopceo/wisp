@@ -137,6 +137,14 @@ router = "jev"
 # answer provider as "name:model" — named sections below or any
 # [brain.<name>] table you add (kind: openai_compat | ollama)
 default = "openrouter:meta-llama/llama-4-maverick"
+# fallback chain tried after `default`, comma-separated name:model.
+# Paid entries (openrouter, or paid = "true" on the section) are skipped
+# unless allow_paid = "true". Example: "mlx:ornith, ollama:ornith"
+fallback = ""
+allow_paid = "false"
+# an entry must stream its first token within this many seconds or the
+# chain moves on (a cold 21 GB model must not leave the turn stuck)
+first_token_s = "3"
 # background agent runtime: "auto" (probe PATH, opencode first) or an
 # explicit opencode | codex | claude | devin
 agent_runtime = "auto"
@@ -166,6 +174,22 @@ kind = "openai_compat"   # mlx-lm server, probed on /v1/models
 base_url = "http://localhost:8080/v1"
 vision = "false"
 tools = "false"
+
+[health]
+# probes of LOCAL endpoints (Jev, brain chain, optional extras); remote
+# endpoints are never probed. Results ride state.json `health`.
+enabled = "true"
+interval_s = "30"      # idle probe period
+press_stale_s = "10"   # on hotkey press, re-probe anything older
+timeout_ms = "500"
+# optional extra endpoints to watch:
+# ollama = "http://127.0.0.1:11434"
+# uitars = "http://127.0.0.1:8081"
+# `wispd models start [--run]`: user units behind each endpoint name
+# [health.units]
+# jev = "llama-jev,jev-shim"
+# brain_mlx = "llama-local"
+# uitars = "llama-uitars"
 
 [debug]
 # full-fidelity event stream to ~/.local/share/wisp/trace.jsonl —
@@ -255,7 +279,10 @@ def _default_cfg_dict() -> dict:
         "brain": {
             "router": "jev", "agent_runtime": "auto",
             "default": "openrouter:meta-llama/llama-4-maverick",
+            "fallback": "", "allow_paid": "false", "first_token_s": "3",
         },
+        "health": {"enabled": "true", "interval_s": "30",
+                   "press_stale_s": "10", "timeout_ms": "500"},
         "apps": _default_apps(),
     }
 

@@ -185,9 +185,21 @@ def check_expectations(res: TurnResult) -> list:
             bad.append(f"{key}: expected {ex[key]!r}, got {got!r}")
 
     want("statuses", res.statuses)
+    if "error_detail_contains" in ex and ex["error_detail_contains"] \
+            not in str(res.final.get("error_detail", "")):
+        bad.append(f"error_detail_contains {ex['error_detail_contains']!r}"
+                   f" not in {res.final.get('error_detail')!r}")
     want("answer", res.final.get("answer"))
     want("transcript", res.final.get("transcript"))
     want("launch_calls", res.launch_calls)
+    want("error_code", res.final.get("error_code"))
+    if "brain_fallback_from" in ex:
+        got = [e.get("fallback_from")
+               for e in res.trace_events("brain_call")]
+        want_ = ex["brain_fallback_from"]
+        if got != [want_]:
+            bad.append(f"brain_fallback_from: expected {[want_]!r}, "
+                       f"got {got!r}")
     want("tool_calls", [t["name"] for t in res.trace_events("tool_call")])
     if "brain_calls" in ex:
         want("brain_calls", len(res.chat_calls()))
@@ -209,7 +221,7 @@ def _build_fakes(fx: dict) -> dict:
     live = {}
     for name in ("jev", "brain", "whisper"):
         live[name] = fakes.KINDS[name](dict(eps.get(name, {})))
-    for name in ("uitars", "openrouter_batch"):
+    for name in ("brain2", "uitars", "openrouter_batch"):
         if name in eps:
             live[name] = fakes.KINDS[name](dict(eps[name]))
     return live
@@ -231,6 +243,8 @@ def run_turn(fixture, timeout: float = 60.0) -> TurnResult:
             urls["brain_base"] = fx["brain_base_url_override"]
         else:
             urls["brain_base"] = urls["brain"] + "/v1"
+        if "brain2" in urls:
+            urls["brain2_base"] = urls["brain2"] + "/v1"
         spec = {
             "tmp": str(tmp),
             "wav": str(base / fx["audio"]),

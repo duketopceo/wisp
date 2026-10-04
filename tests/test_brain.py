@@ -180,19 +180,23 @@ class TestChatStream(unittest.TestCase):
         self.assertEqual(out["content"], "Hello world")
         self.assertEqual(got, ["Hel", "Hello ", "Hello world"])
 
-    def test_ollama_falls_back_single_delta(self):
+    def test_ollama_streams_ndjson_deltas(self):
+        # U7: ollama streams /api/chat so first-token is measurable
         from wisp import brain
         cfg = {"brain": {"default": "ollama:m"}}
+        body = (json.dumps({"message": {"content": "one-"}}) + "\n"
+                + json.dumps({"message": {"content": "shot"}}) + "\n"
+                + json.dumps({"done": True}) + "\n").encode()
+
+        class Resp:
+            def __enter__(self): return iter(body.splitlines(keepends=True))
+            def __exit__(self, *a): return False
         got = []
-        with mock.patch.object(brain, "_probe"), \
-             mock.patch.object(brain, "chat",
-                               return_value={"content": "one-shot",
-                                             "raw": {}}) as ch:
+        with mock.patch("urllib.request.urlopen", return_value=Resp()):
             out = brain.chat_stream([{"role": "user", "content": "hi"}],
                                     cfg, on_delta=got.append)
-        ch.assert_called_once()
         self.assertEqual(out["content"], "one-shot")
-        self.assertEqual(got, ["one-shot"])
+        self.assertEqual(got, ["one-", "one-shot"])
 
 
 if __name__ == "__main__":

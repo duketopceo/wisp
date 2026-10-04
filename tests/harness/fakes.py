@@ -253,5 +253,6 @@ class FakeBatch(FakeServer):
         self.respond(h, 200, out)
 
 
-KINDS = {"jev": FakeJev, "brain": FakeBrain, "whisper": FakeWhisper,
+KINDS = {"jev": FakeJev, "brain": FakeBrain, "brain2": FakeBrain,
+         "whisper": FakeWhisper,
          "uitars": FakeUiTars, "openrouter_batch": FakeBatch}

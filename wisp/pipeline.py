@@ -22,6 +22,7 @@ import urllib.request
 from datetime import datetime, timezone
 
 from . import config, speech
+from . import errors_codes as _errors
 
 JEV_QUESTIONS = {
     "route": {
@@ -312,29 +313,65 @@ def active_window() -> dict:
     return platform.active_window()
 
 
+def _jev_is_local(url: str) -> bool:
+    import urllib.parse
+    return (urllib.parse.urlparse(url).hostname or "") in \
+        ("localhost", "127.0.0.1", "::1")
+
+
 def ask_jev(transcript: str, model: str, questions: dict,
             context: str = "") -> dict:
+    """Jev decisions call. A loopback endpoint (jev-shim) needs no
+    OPENROUTER_API_KEY; a remote one does. Failures raise WispError:
+    refused/reset (after one fast retry), HTTP errors and unparseable
+    replies are `jev_down`, a timeout is `timeout` (never retried)."""
+    from . import errors_codes as _ec
     state_txt = f"{context}\n\nThe user said: \"{transcript}\"" \
         if context else f'The user said: "{transcript}"'
     payload = {"model": model, "state": state_txt, "questions": questions}
+    headers = {"Content-Type": "application/json",
+               "HTTP-Referer": "https://github.com/duketopceo/wisp",
+               "X-Title": "Wisp"}
+    endpoint = config.JEV_ENDPOINT
+    if _jev_is_local(endpoint):
+        key = config.load_env_key("OPENROUTER_API_KEY")
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
+    else:
+        try:
+            headers["Authorization"] = f"Bearer {config.load_api_key()}"
+        except RuntimeError as e:
+            raise _ec.WispError("jev_down", str(e)) from None
     req = urllib.request.Request(
-        config.JEV_ENDPOINT, data=json.dumps(payload).encode(),
-        headers={
-            "Authorization": f"Bearer {config.load_api_key()}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/duketopceo/wisp",
-            "X-Title": "Wisp",
-        }, method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read())
-    except urllib.error.HTTPError as e:
-        raise RuntimeError(f"Jev HTTP {e.code}: {e.read().decode()[:200]}") \
-            from None
+        endpoint, data=json.dumps(payload).encode(), headers=headers,
+        method="POST")
+    for attempt in (1, 2):
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            raise _ec.WispError(
+                "jev_down",
+                f"Jev HTTP {e.code}: {e.read().decode()[:200]}") from None
+        except Exception as e:
+            if attempt == 1 and _ec.is_connection_failure(e):
+                time.sleep(0.05)
+                continue
+            raise _ec.classify(e, "jev_down") from None
+
+
+def _publish_error(state, exc: BaseException) -> None:
+    """End a turn in `error` with a closed-set code: `error` is the
+    human-safe string, `error_detail` the raw text (local only)."""
+    from . import errors_codes as _ec
+    err = _ec.classify(exc, "internal")
+    state.transition("error", error=err.public, error_code=err.code,
+                     error_detail=err.detail[:500])
 
 
 def ask_chat(transcript: str, cfg: dict, session_text: str = "",
-             image_b64: str | None = None, on_delta=None) -> str:
+             image_b64: str | None = None, on_delta=None,
+             meta: dict | None = None) -> str:
     """Real answer via the configured brain provider ([brain] default).
     image_b64 attaches a screenshot — dropped when the provider lacks
     vision support (U6 capability gating)."""
@@ -374,9 +411,14 @@ def ask_chat(transcript: str, cfg: dict, session_text: str = "",
                          "content": f"Recent conversation:\n{session_text}"})
     messages.append({"role": "user", "content": user_content})
     if on_delta is not None:
-        return brain.chat_stream(messages, cfg, on_delta=on_delta,
-                                 timeout=30)["content"].strip()
-    return brain.chat(messages, cfg, timeout=30)["content"].strip()
+        out = brain.chat_stream(messages, cfg, on_delta=on_delta,
+                                timeout=30)
+    else:
+        out = brain.chat(messages, cfg, timeout=30)
+    if meta is not None:
+        meta.update(provider=out.get("provider"),
+                    fallback_from=out.get("fallback_from"))
+    return out["content"].strip()
 
 
 def capture_screen() -> pathlib.Path | None:
@@ -682,7 +724,8 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
     try:
         if wav is None:
             state.transition("listening", transcript="", result="",
-                             answer="", choices=[], points=[], error="")
+                             answer="", choices=[], points=[], error="",
+                             error_code="", error_detail="")
             sp.record("press", sp.t0)
             rec_start = sp.now()
             wav = record(secs, state)
@@ -695,7 +738,10 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
                     rec_ms)
         state.transition("transcribing")
         sp.record("release", sp.rel0)
-        text = transcribe(wav, cfg)
+        try:
+            text = transcribe(wav, cfg)
+        except Exception as e:
+            raise _errors.classify(e, "stt_down") from e
         sp.record("stt", sp.rel0)
         _trace.emit(turn, "transcribe", "stt",
                     {"provider": cfg.get("stt", {}).get("provider", "local"),
@@ -898,19 +944,25 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
 
             try:
                 _t = time.monotonic()
+                _meta: dict = {}
                 reply = ask_chat(text, cfg, session_text,
                                  image_b64=shot_b64,
-                                 on_delta=_delta if state else None)
+                                 on_delta=_delta if state else None,
+                                 meta=_meta)
                 sp.fire("first_token")  # non-streaming brains
                 _trace.emit(turn, "brain_call", "brain",
                             {"endpoint": "chat/completions",
                              "model": cfg.get("agent", {})
                              .get("answer_model", ""),
+                             "provider": _meta.get("provider"),
+                             "fallback_from": _meta.get("fallback_from"),
                              "reply": reply},
                             round((time.monotonic() - _t) * 1000))
             except Exception as e:
-                result = f"ANSWER_FAILED ({e})"
-                reply = answer_text(text)
+                # every brain entry failed (brain_down), or a timeout /
+                # bug: the turn ends in a typed error rather than a
+                # canned answer the user would mistake for a real one
+                raise _errors.classify(e, "brain_down") from e
             if reply:
                 from . import points as _points
                 reply, raw = _points.extract(reply)
@@ -953,13 +1005,15 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
                       "corrected": bool(answers.get("corrected_by_user"))})
         return 0
     except Exception as e:
-        _trace.emit(turn, "error", "error", {"error": str(e)})
-        state.transition("error", error=str(e))
+        err = _errors.classify(e, "internal")
+        _trace.emit(turn, "error", "error",
+                    {"error": str(e), "error_code": err.code})
+        _publish_error(state, err)
         log_decision({"ts": datetime.now(timezone.utc).isoformat(),
                       "result": f"ERROR ({e})",
                       "timing_ms": sp.legacy_timing()})
-        notify(f"error: {e}")
-        print(f"error: {e}", file=sys.stderr)
+        notify(f"error: {err.public}")
+        print(f"error: {err.code}: {e}", file=sys.stderr)
         return 1
     finally:
         sp.close()

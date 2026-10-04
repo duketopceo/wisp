@@ -21,9 +21,10 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
 from harness import fakes, runner  # noqa: E402
+from wisp import errors_codes  # noqa: E402
 
 FIXTURES = ROOT / "tests" / "fixtures" / "turns"
-FIXTURE_NAMES = ["ask", "act", "choose", "jev_down", "brain_down",
+FIXTURE_NAMES = ["ask", "act", "choose", "jev_down", "brain_down", "brain_fallback",
                  "cancel_mid_stream", "stale_choice"]
 
 
@@ -279,16 +280,37 @@ class TurnReplayTest(unittest.TestCase):
         res = runner.run_turn(FIXTURES / "stale_choice.json")
         self.assertEqual(res.launch_calls, ["ghostapp"])
 
-    def test_jev_down_baseline_is_error_state(self):
-        # characterization: no fallback router yet (U8 changes this)
+    def test_jev_down_ends_in_typed_error(self):
         res = runner.run_turn(FIXTURES / "jev_down.json")
         self.assertEqual(res.statuses[-1], "error")
-        self.assertIn("Jev HTTP 503", res.final["error"])
+        self.assertEqual(res.final["error_code"], "jev_down")
+        self.assertEqual(res.final["error"], errors_codes.human("jev_down"))
+        self.assertIn("Jev HTTP 503", res.final["error_detail"])
+        self.assertNotIn("503", res.final["error"])
 
-    def test_brain_down_baseline_falls_back_to_canned_answer(self):
+    def test_brain_down_without_fallback_is_typed_error(self):
         res = runner.run_turn(FIXTURES / "brain_down.json")
-        self.assertIn("ANSWER_FAILED", res.final["result"])
+        self.assertEqual(res.statuses[-1], "error")
+        self.assertEqual(res.final["error_code"], "brain_down")
+        self.assertNotIn("ANSWER_FAILED", res.final["result"])
+        self.assertEqual(res.final["answer"], "")
+
+    def test_brain_down_error_arrives_within_one_second_of_acting(self):
+        res = runner.run_turn(FIXTURES / "brain_down.json")
+        t = {e["status"]: e["t_ms"] for e in res.events}
+        self.assertLess(t["error"] - t["acting"], 1000)
+
+    def test_brain_fallback_answers_from_second_brain(self):
+        res = runner.run_turn(FIXTURES / "brain_fallback.json")
+        self.assertEqual(res.exit_code, 0, res.stderr)
         self.assertEqual(res.statuses[-1], "done")
+        self.assertEqual(res.final["answer"], "Fallback brain here.")
+        self.assertEqual(len(res.chat_calls("brain")), 1)   # primary tried
+        self.assertEqual(len(res.chat_calls("brain2")), 1)  # fallback used
+        self.assertEqual(res.trace_events("brain_call")[0]["fallback_from"],
+                         "openai_compat")
+        fb = res.trace_events("brain_fallback")
+        self.assertEqual(fb[0]["to"], "fallback_fake")
 
     def test_cancel_mid_stream_baseline_ignored_for_answer_route(self):
         # characterization: interrupted() is only honoured by the act

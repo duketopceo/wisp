@@ -1,0 +1,53 @@
+{
+  "description": "Primary answer brain returns 500; [brain] fallback names a second fake brain which answers. Trace records fallback_from (U7).",
+  "audio": "ask.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "what time is it"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "status": 500
+    },
+    "brain2": {
+      "responses": [
+        {
+          "content": "Fallback brain here.",
+          "chunk_delay_ms": 0
+        }
+      ]
+    }
+  },
+  "expect": {
+    "statuses": [
+      "listening",
+      "transcribing",
+      "deciding",
+      "acting",
+      "speaking",
+      "done"
+    ],
+    "answer": "Fallback brain here.",
+    "brain_calls": 1,
+    "brain_fallback_from": "openai_compat"
+  },
+  "name": "brain_fallback",
+  "config": {
+    "brain": {
+      "fallback": "fallback_fake:fake-model-2"
+    }
+  }
+}

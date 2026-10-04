@@ -41,6 +41,10 @@ def main(spec_path: str) -> int:
         cfg["brain.openai_compat"] = {
             "base_url": urls["brain_base"], "key_env": "",
             "vision": "false", "tools": "true"}
+        if "brain2_base" in urls:
+            cfg["brain.fallback_fake"] = {
+                "base_url": urls["brain2_base"], "key_env": "",
+                "vision": "false", "tools": "true"}
         for section, vals in spec.get("config", {}).items():
             cfg.setdefault(section, {}).update(vals)
 
@@ -133,6 +137,8 @@ def main(spec_path: str) -> int:
                     "transcript": view["transcript"],
                     "answer": view["answer"], "result": view["result"],
                     "choices": view["choices"], "error": view["error"],
+                    "error_code": view.get("error_code", ""),
+                    "error_detail": view.get("error_detail", ""),
                     "steps": len(view["steps"])})
         drainer = threading.Thread(target=drain, daemon=True)
         drainer.start()

@@ -76,6 +76,10 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
             # U1: this request's start (client t0 when sent) — the press
             # origin on a start, the key-up instant on a stop
             req_sp = _trace.Spans(t0_ns=cmd.get("t0"))
+            if phase in ("", "start") and _HEALTH is not None:
+                # refresh endpoint health off the hot path (U7)
+                threading.Thread(target=_HEALTH.on_press,
+                                 daemon=True).start()
             with ctl["rec_lock"]:
                 if phase == "start" and ctl["rec"] is not None:
                     return {"ok": True, "recording": True}
@@ -287,7 +291,7 @@ def _run_listen(st: state_mod.StateBus, cfg: dict, ctl: dict,
     except Exception as e:
         dlog(f"turn error: {e}")
         try:
-            st.turn(turn_id).transition("error", error=str(e))
+            pipeline._publish_error(st.turn(turn_id), e)
         except Exception:
             pass
     finally:
@@ -314,8 +318,11 @@ def _run_suggestion(st, cfg, ctl, routine: str) -> None:
         ctl["busy"].clear()
 
 
+_HEALTH = None  # health.HealthRegistry while the daemon runs (U7)
+
+
 def run_daemon(cfg: dict) -> int:
-    global _DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL
+    global _DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL, _HEALTH
     from wisp import skills, theme, memory as _memory
     skills.register_tools()  # skill_<name> entries from skills/*/SKILL.md
     skills.seed()          # bundled dayflow-bridge/self-checkup skills
@@ -333,6 +340,11 @@ def run_daemon(cfg: dict) -> int:
            "choice_event": threading.Event(), "choice_pick": "",
            "rec": None, "rec_lock": threading.Lock()}
     _DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL = st, cfg, ctl
+    if cfg.get("health", {}).get("enabled", "true") == "true":
+        from wisp import brain as _brain, health as _health
+        _HEALTH = _health.HealthRegistry(cfg, bus=st)
+        _brain.HEALTH = _HEALTH
+        _HEALTH.start()
     server = ipc.Daemon(_handler(st, cfg, ctl))
     server.start()
     dlog(f"wispd up — socket {config.SOCK_FILE} "
@@ -356,6 +368,8 @@ def run_daemon(cfg: dict) -> int:
     except KeyboardInterrupt:
         pass
     finally:
+        if _HEALTH is not None:
+            _HEALTH.stop()
         server.stop()
         st.transition("idle")
         st.close()
@@ -598,6 +612,16 @@ def _doctor(cfg: dict) -> int:
     row("api key", "set" if key == "set" or (key and key != "n/a")
         else key or "MISSING", good=bool(key))
 
+    print("health (local endpoints, 500 ms probes):")
+    from wisp import health as _health
+    reg = _health.HealthRegistry(cfg)
+    snap = reg.probe_all()
+    if not snap:
+        row("endpoints", "none local to probe")
+    for name, h in snap.items():
+        row(name, f"{h['latency_ms']} ms" if h["ok"]
+            else f"DOWN ({h['code']})", good=h["ok"])
+
     print("pointer:")
     from wisp import platform as _plat
     pb = _plat.pointer_backend(cfg)
@@ -621,6 +645,35 @@ def _doctor(cfg: dict) -> int:
         row(f, f"{fp.stat().st_size // 1024}KB" if fp.exists()
             else "absent", good=True)
     return 0 if ok else 1
+
+
+def _models(cfg: dict, args: list) -> int:
+    """`wispd models` shows local endpoint health. `wispd models start`
+    PRINTS the systemctl command for the units behind down endpoints;
+    only `--run` executes it (explicit request, user-scope units)."""
+    from wisp import health as _health
+    snap = _health.HealthRegistry(cfg).probe_all()
+    if not args:
+        if not snap:
+            print("no local endpoints configured")
+        for name, h in snap.items():
+            print(f"{'ok  ' if h['ok'] else 'DOWN'} {name:<16} "
+                  + (f"{h['latency_ms']} ms" if h["ok"] else h["code"]))
+        return 0
+    if args[0] != "start":
+        print("usage: wispd models [start [--run]]", file=sys.stderr)
+        return 2
+    units = _health.units_to_start(cfg, snap)
+    if not units:
+        print("nothing to start (no down endpoint has units in "
+              "[health.units])")
+        return 0
+    cmd = _health.start_command(units)
+    if "--run" not in args:
+        print(" ".join(cmd))
+        print("(dry run — add --run to execute)")
+        return 0
+    return subprocess.run(cmd).returncode
 
 
 def rebuild_harness() -> int:
@@ -837,6 +890,8 @@ def main() -> int:
         return trace.main(sys.argv[2:])
     if cmd == "doctor":
         return _doctor(cfg)
+    if cmd == "models":
+        return _models(cfg, sys.argv[2:])
     if cmd == "tui":
         from wisp import tui
         return tui.main()
@@ -938,7 +993,7 @@ def main() -> int:
         return 0
     print("usage: wispd [daemon|install|trigger|status|stop|choice"
           "|agent|memory|task_status|task_cancel|learn|label|harness|trace"
-          "|doctor|tui|skills [import [--list] dir]|suggestions"
+          "|doctor|models [start [--run]]|tui|skills [import [--list] dir]|suggestions"
           "|recipes [approve name]|fails|theme [name]|sync [repo]"
           "|eval route [n]"
           "|config [set k v]]")
