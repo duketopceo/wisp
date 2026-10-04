@@ -3,6 +3,7 @@ title: "feat: Training gauntlet v2 — oracle scoring, Pass^k, first-fault, revi
 type: feat
 date: 2026-10-03
 origin: docs/brainstorms/2026-10-02-training-gauntlet-research.md
+status: "superseded by 2026-10-04-0100-feat-wisp-unified-plan.md"
 ---
 
 # feat: Training gauntlet v2 — oracle scoring, Pass^k, first-fault, reviewer tier

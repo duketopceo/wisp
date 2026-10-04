@@ -5,6 +5,7 @@ date: 2026-10-03
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-plan-bootstrap
 execution: code
+status: "superseded by 2026-10-04-0100-feat-wisp-unified-plan.md"
 ---
 
 # Wisp Backend Core - Plan

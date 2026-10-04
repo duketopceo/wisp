@@ -1,8 +1,8 @@
 ---
 plan: dim-companion-crossplatform
 created: 2026-09-26
-status: ready
 origin: docs/brainstorms/2026-09-26-dim-companion-cross-platform-requirements.md
+status: "superseded by 2026-10-04-0100-feat-wisp-unified-plan.md"
 ---
 
 # Wisp — Cross-Platform Companion (Hey Clicky clone, BYO-brain)
