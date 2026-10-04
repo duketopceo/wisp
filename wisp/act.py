@@ -270,7 +270,8 @@ def run_act_loop(task: str, cfg: dict, state=None,
             elif name in _SCREEN_CHANGING and not result.startswith(
                     ("ERROR", "SKIP", "REFUS")):
                 screen_dirty = True
-            steps.append({"tool": name, "arg": arg, "result": result})
+            steps.append({"tool": name, "arg": arg, "result": result,
+                          "reply": (msg.get("content") or "")[:500]})
             _publish(state, task, steps)
             _publish_guide(state, name, arg, result)
             # GUIDE() is a user-handoff (guide mode / no backend), not
