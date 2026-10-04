@@ -90,3 +90,7 @@ daemon: `systemctl --user wispd` (runs `~/.local/opt/wisp/wispd`);
 | `docs/WINDOWS.md` | Windows adapter: TCP transport, command map, schtasks install, residuals |
 | `tests/test_ipc_tcp.py` | TCP transport roundtrip (Windows path proven on Linux) |
 | `docs/LINUX.md` | Generic-Linux adapter: desktop detection + per-desktop command matrix |
+
+## Plans
+
+Current plan of record: `docs/plans/2026-10-04-0100-feat-wisp-unified-plan.md` (supersedes the Ember redesign, backend core and consolidate plans; W-unit IDs with crosswalk).
