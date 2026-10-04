@@ -40,7 +40,7 @@ def dlog(msg: str) -> None:
     print(line, flush=True)
 
 
-def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
+def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
     def handle(cmd: dict) -> dict:
         c = cmd.get("cmd")
         _t0 = __import__("time").monotonic()
@@ -63,8 +63,7 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
             # running → done transition
             done = agents.finished(getattr(st, "_prev_tasks", {}), cur)
             st._prev_tasks = cur
-            st.tasks = cur
-            st.transition(st.status)
+            st.publish(None, tasks=cur)  # daemon-level: no turn
             for t in done:
                 tail = (t.get("tail") or "")[:80]
                 from wisp.tools import system as _sys
@@ -96,23 +95,27 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
                         except Exception:
                             rec["proc"].kill()
                         rec["sampler_stop"].set()
-                        st.transition("done", result="", transcript="")
+                        st.turn(ctl.pop("turn", None)
+                                or st.current_turn()).transition(
+                            "done", result="", transcript="")
                         dlog(f"listen: {held * 1000:.0f}ms capture "
                              "ignored (phantom)")
                         return {"ok": True, "stopped": True,
                                 "ignored": True}
                     if ctl["busy"].is_set():
                         return {"ok": False, "error": "busy"}
+                    tid = ctl.pop("turn", None) or st.current_turn()
                     try:
-                        wav = pipeline.record_stop(rec, st)
+                        wav = pipeline.record_stop(rec, st.turn(tid))
                     except RuntimeError as e:
-                        st.transition("error", error=str(e))
+                        st.turn(tid).transition("error", error=str(e))
                         return {"ok": False, "error": str(e)}
                     ctl["busy"].set()
                     sp = ctl.pop("spans", None) or _trace.Spans()
                     sp.adopt_release(req_sp)
                     threading.Thread(
-                        target=_run_listen, args=(st, cfg, ctl, wav, sp),
+                        target=_run_listen,
+                        args=(st, cfg, ctl, wav, sp, tid),
                         daemon=True).start()
                     return {"ok": True, "stopped": True}
                 if ctl["busy"].is_set():
@@ -120,14 +123,19 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
                 # first press: start open-ended capture; [audio] seconds
                 # is the safety cap, not the length.
                 speech.stop()
-                st.transition("listening", transcript="", result="",
+                # a new turn: anything the previous turn still has in
+                # flight (TTS exit callback, level sampler) is stale now
+                tid = st.begin_turn()
+                ctl["turn"] = tid
+                th = st.turn(tid)
+                th.transition("listening", transcript="", result="",
                               answer="", choices=[], points=[], error="",
                               steps=[], guide=None)
                 req_sp.record("press", req_sp.t0)
                 try:
-                    ctl["rec"] = pipeline.record_start(st)
+                    ctl["rec"] = pipeline.record_start(th)
                 except RuntimeError as e:
-                    st.transition("error", error=str(e))
+                    th.transition("error", error=str(e))
                     return {"ok": False, "error": str(e)}
                 ctl["spans"] = req_sp
                 secs = int(cfg.get("audio", {}).get("seconds", "60"))
@@ -155,7 +163,7 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
                     return {"ok": True, "result": "automating"}
                 if not ctl["busy"].is_set():
                     st.transition("done", result=out, choices=[],
-                                  suggestion=None, guide=None)
+                                  suggestion=None, guide=None)  # daemon-level
                 return {"ok": True, "result": out}
             ctl["choice_pick"] = pick
             ctl["choice_event"].set()
@@ -254,30 +262,32 @@ def _rec_watchdog(ctl: dict, secs: int) -> None:
     # mimic a second press: finish capture, hand wav to the pipeline —
     # state/cfg fetched at call time via the closure the daemon holds
     try:
-        wav = pipeline.record_stop(rec, _DAEMON_ST)
+        tid = _DAEMON_CTL.pop("turn", None) or _DAEMON_ST.current_turn()
+        wav = pipeline.record_stop(rec, _DAEMON_ST.turn(tid))
         _DAEMON_CTL["busy"].set()
         threading.Thread(
             target=_run_listen,
-            args=(_DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL, wav),
+            args=(_DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL, wav, None, tid),
             daemon=True).start()
     except RuntimeError as e:
         _DAEMON_ST.transition("error", error=str(e))
 
 
-def _run_listen(st: state_mod.State, cfg: dict, ctl: dict,
-                wav=None, spans=None) -> None:
+def _run_listen(st: state_mod.StateBus, cfg: dict, ctl: dict,
+                wav=None, spans=None, turn_id=None) -> None:
+    turn_id = turn_id or st.current_turn()
     try:
         ctl["interrupt"].clear()
         pipeline.run_listen(cfg, st,
                             wait_for_choice=_wait_for_choice(ctl),
                             interrupted=ctl["interrupt"].is_set,
-                            wav=wav, spans=spans)
+                            wav=wav, spans=spans, turn_id=turn_id)
         dlog(f"turn done: status={st.status} "
              f"transcript={st.transcript!r} result={st.result!r}")
     except Exception as e:
         dlog(f"turn error: {e}")
         try:
-            st.transition("error", error=str(e))
+            st.turn(turn_id).transition("error", error=str(e))
         except Exception:
             pass
     finally:
@@ -287,18 +297,19 @@ def _run_listen(st: state_mod.State, cfg: dict, ctl: dict,
 def _run_suggestion(st, cfg, ctl, routine: str) -> None:
     """Approved suggestion → bounded act loop (all gates apply)."""
     from wisp import act
+    th = st.turn(st.begin_turn())
     try:
-        st.transition("acting", transcript="", choices=[],
+        th.transition("acting", transcript="", choices=[],
                       suggestion=None, steps=[],
                       result="automating suggestion")
-        out = act.run_act_loop(routine, cfg, state=st,
+        out = act.run_act_loop(routine, cfg, state=th,
                                confirm=None)  # no re-confirm loop;
         # mutating steps skip rather than hang on a card
-        st.transition("done", result=out, guide=None)
+        th.transition("done", result=out, guide=None)
         dlog(f"suggestion run done: {out!r}")
     except Exception as e:
         dlog(f"suggestion run error: {e}")
-        st.transition("error", error=str(e))
+        th.transition("error", error=str(e))
     finally:
         ctl["busy"].clear()
 
@@ -316,7 +327,7 @@ def run_daemon(cfg: dict) -> int:
         inv = _inv.scan(cfg)
         dlog(f"inventory: {len(inv.get('apps', []))} apps, "
              f"{len(inv.get('cli_tools', {}))} cli tools")
-    st = state_mod.State()
+    st = state_mod.StateBus()
     ctl = {"stop": threading.Event(), "busy": threading.Event(),
            "interrupt": threading.Event(),
            "choice_event": threading.Event(), "choice_pick": "",
@@ -347,6 +358,7 @@ def run_daemon(cfg: dict) -> int:
     finally:
         server.stop()
         st.transition("idle")
+        st.close()
     return 0
 
 
@@ -361,8 +373,11 @@ def cmd_trigger(cfg: dict, phase: str = "") -> int:
     except (ConnectionError, OSError):
         # No daemon: run the pipeline inline so the bind still works
         # before the systemd unit is installed/enabled.
-        st = state_mod.State()
-        return pipeline.run_listen(cfg, st)
+        st = state_mod.StateBus()
+        try:
+            return pipeline.run_listen(cfg, st)
+        finally:
+            st.close()
 
 
 def install_files() -> None:

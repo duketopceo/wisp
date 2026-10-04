@@ -47,6 +47,11 @@ def new_turn() -> str:
     return turn
 
 
+def set_turn(turn: str) -> None:
+    """Adopt a turn id issued elsewhere (the StateBus) for this thread."""
+    _local.turn = turn
+
+
 def current() -> str:
     """Turn id for implicit emitters (tool calls inside execute)."""
     return getattr(_local, "turn", "sys")

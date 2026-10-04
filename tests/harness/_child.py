@@ -61,22 +61,81 @@ def main(spec_path: str) -> int:
         desc = tools.REGISTRY["launch"][2]
         tools.REGISTRY["launch"] = (fake_launch, "safe", desc)
 
-        # -- observe state transitions --------------------------------
+        # -- observe the StateBus (U2) ---------------------------------
+        # Events come from a bus subscription: every write, once, in seq
+        # order. Wrappers record whether anything wrote state.json
+        # outside the bus, and every publish with its turn id / fate.
+        import os
         t0 = time.monotonic()
         out["t0"] = t0
-        real_transition = state_mod.State.transition
+        bus_obs = {"publishes": [], "turn_ids": [], "dropped": 0,
+                   "file_replaces": 0, "bus_writes": 0,
+                   "boot_writes": 0, "outside_writes": 0,
+                   "event_seqs": []}
+        out["bus"] = bus_obs
+        in_bus = threading.local()
+        real_write = state_mod.StateBus._write_locked
+        real_publish = state_mod.StateBus.publish
+        real_replace = os.replace
+        state_file = str(config.STATE_FILE)
 
-        def transition(self, status, **fields):
-            real_transition(self, status, **fields)
-            snap = self.snapshot()
-            out["events"].append({
-                "t": time.monotonic(), "status": status,
-                "transcript": snap["transcript"], "answer": snap["answer"],
-                "result": snap["result"], "choices": snap["choices"],
-                "error": snap["error"], "steps": len(snap["steps"])})
-        state_mod.State.transition = transition
+        def write_locked(self):
+            in_bus.on = True
+            try:
+                bus_obs["bus_writes"] += 1
+                return real_write(self)
+            finally:
+                in_bus.on = False
 
-        st = state_mod.State()
+        def publish(self, turn_id, **fields):
+            ok = real_publish(self, turn_id, **fields)
+            bus_obs["publishes"].append(
+                {"turn": turn_id, "ok": ok, "fields": sorted(fields)})
+            if turn_id is not None:
+                bus_obs["turn_ids"].append(turn_id)
+            if not ok:
+                bus_obs["dropped"] += 1
+            return ok
+
+        def replace(src, dst, *a, **k):
+            if str(dst) == state_file:
+                bus_obs["file_replaces"] += 1
+                if not getattr(in_bus, "on", False):
+                    bus_obs["outside_writes"] += 1
+            return real_replace(src, dst, *a, **k)
+        state_mod.StateBus._write_locked = write_locked
+        state_mod.StateBus.publish = publish
+        os.replace = replace
+
+        st = state_mod.StateBus()
+        bus_obs["boot_writes"] = bus_obs["bus_writes"]
+        bus_obs["file_replaces_boot"] = bus_obs["file_replaces"]
+        bus_obs["file_replaces"] = 0
+        bus_obs["bus_writes"] = 0
+        sub = st.subscribe(maxsize=10000)
+        view = dict(sub.snapshot)
+        stop_drain = threading.Event()
+
+        def drain():
+            while True:
+                ev = sub.get(0.05)
+                if ev is None:
+                    if stop_drain.is_set():
+                        return
+                    continue
+                if ev.get("type") != "state":
+                    continue
+                view.update(ev["diff"])
+                bus_obs["event_seqs"].append(ev["seq"])
+                out["events"].append({
+                    "t": time.monotonic(), "status": view["status"],
+                    "seq": ev["seq"], "turn_id": view["turn_id"],
+                    "transcript": view["transcript"],
+                    "answer": view["answer"], "result": view["result"],
+                    "choices": view["choices"], "error": view["error"],
+                    "steps": len(view["steps"])})
+        drainer = threading.Thread(target=drain, daemon=True)
+        drainer.start()
 
         # -- chooser (stands in for the IPC choice waiter) ------------
         chooser = spec.get("chooser")
@@ -97,7 +156,11 @@ def main(spec_path: str) -> int:
         code = pipeline.run_listen(cfg, st, wait_for_choice=wait,
                                    interrupted=interrupt.is_set)
         out["exit_code"] = code
+        time.sleep(0.2)            # let a coalesced tail flush
+        stop_drain.set()
+        drainer.join(timeout=2)
         out["final"] = st.snapshot()
+        st.close()
         out["trace"] = trace_mod.read(tail=2000)
     finally:
         out["violations"] = list(guard.violations)

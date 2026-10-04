@@ -170,6 +170,9 @@ def _record_finish(rec: dict, state=None, settled: bool = False
     return out
 
 
+_LEVEL_WINDOW = 20
+
+
 def _amplitude_sampler(seconds: int | None, state=None,
                        stop_ev=None) -> None:
     """Breathing darkness: sample mic RMS, publish level for the overlay."""
@@ -189,17 +192,18 @@ def _amplitude_sampler(seconds: int | None, state=None,
         proc = subprocess.Popen(
             arec,
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=hypr_env())
+        # one 100 ms window (20 samples at 200 Hz) per read: the level
+        # arrives at an even 10 Hz instead of a burst once a second
         while True:
             if stop_ev is not None and stop_ev.is_set():
                 break
-            chunk = proc.stdout.read(200)
-            if not chunk:
+            w = proc.stdout.read(_LEVEL_WINDOW)
+            if not w:
                 break
-            step = 20
-            for i in range(0, len(chunk) - step, step):
-                w = chunk[i:i + step]
-                rms = sum(abs(b - 128) for b in w) / (len(w) * 128)
-                publish(min(1.0, rms * 6))
+            if len(w) < _LEVEL_WINDOW:
+                continue  # short tail at EOF — next read ends the loop
+            rms = sum(abs(b - 128) for b in w) / (len(w) * 128)
+            publish(min(1.0, rms * 6))
         if proc.poll() is None:
             proc.kill()
         proc.wait(timeout=5)
@@ -430,6 +434,17 @@ def dictation_text(text: str) -> str:
     return _DICTATE_PREFIX.sub("", text, count=1).strip() or text
 
 
+def _publish_delta(state, partial: str) -> None:
+    """Streamed answer text → state, coalesced by the bus when there is
+    one; plain handles (tests, standalone State) just transition."""
+    from . import state as _state
+    if isinstance(state, _state.TurnState):
+        state._bus.publish(state.turn_id, status="speaking",
+                           answer=partial, coalesce=True)
+    else:
+        state.transition("speaking", answer=partial)
+
+
 def _end_speaking(state):
     """Flip speaking → done when TTS exits (only if nothing moved on)."""
     def cb():
@@ -637,7 +652,7 @@ def apply_choice(answers: dict, picked: str) -> dict:
 
 def run_listen(cfg: dict, state, wait_for_choice=None,
                wav: pathlib.Path | None = None,
-               interrupted=None, spans=None) -> int:
+               interrupted=None, spans=None, turn_id=None) -> int:
     """One push-to-talk cycle inside the daemon.
 
     `wav` set → toggle mode: the daemon already captured audio between
@@ -646,12 +661,21 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
     IPC/widget clicks. With no chooser wired, low-confidence turns cancel
     rather than guess. `spans` (trace.Spans) carries the press/release
     timestamps from the daemon; absent, spans start at this call.
+    `state` may be a StateBus: the turn is then `turn_id` (adopted from
+    the daemon's first press) or a fresh one, and every write goes
+    through the bus tagged with it.
     """
     secs = int(cfg.get("audio", {}).get("seconds", "60"))
     model = cfg.get("agent", {}).get("model", "typesafe/jev-1.13")
     from . import trace as _trace
     sp = spans or _trace.Spans()
-    turn = _trace.new_turn()
+    from . import state as _state
+    if isinstance(state, _state.StateBus):
+        turn = turn_id or state.begin_turn()
+        _trace.set_turn(turn)
+        state = state.turn(turn)
+    else:
+        turn = _trace.new_turn()
     sp.bind(turn)
     _trace.emit(turn, "listen_start", "lifecycle",
                 {"seconds": secs, "model": model})
@@ -859,22 +883,18 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
             return 0
         if result == "ANSWERED":
             pts = []
-            _last_push = [0.0]
 
             def _delta(acc):
                 # stream the answer into state.json as it arrives — the
-                # cursor bubble renders it live. Throttled; incomplete
+                # cursor bubble renders it live. Rate-limited by the
+                # bus (coalesced, latest wins); incomplete
                 # trailing [POINT…/markdown-ish brackets hidden so the
                 # bubble never flashes raw tags.
                 sp.fire("first_token")
                 if state is None:
                     return
-                now = time.monotonic()
-                if now - _last_push[0] < 0.12:
-                    return
-                _last_push[0] = now
                 partial = re.sub(r"\[[A-Za-z]*:?[^\]]*$", "", acc)
-                state.transition("speaking", answer=partial)
+                _publish_delta(state, partial)
 
             try:
                 _t = time.monotonic()

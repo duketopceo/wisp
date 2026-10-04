@@ -12,9 +12,10 @@ Why a child process rather than in-process: ``wisp.config``/``session``/
 means setting the environment before the first import. The child also
 installs the loopback-only ``NetworkGuard`` below.
 
-Until U3 lands there is no push stream, so events come from wrapping
-``State.transition`` in the child (same data ``state.json`` carries).
-The runner never writes state itself.
+Events come from a ``StateBus`` subscription in the child (U2): every
+write once, in ``seq`` order, with the diff applied onto the subscribe
+snapshot. The child also audits that nothing but the bus wrote
+``state.json`` (``TurnResult.bus``). The runner never writes state.
 """
 import ipaddress
 import json
@@ -134,6 +135,7 @@ class TurnResult:
     stderr: str = ""
     events: list = field(default_factory=list)   # state transitions
     trace: list = field(default_factory=list)    # wisp trace events
+    bus: dict = field(default_factory=dict)      # StateBus writer audit (U2)
     final: dict = field(default_factory=dict)    # last snapshot
     calls: dict = field(default_factory=dict)    # fake name -> [call]
     spans: dict = field(default_factory=dict)    # ms timings
@@ -268,6 +270,7 @@ def run_turn(fixture, timeout: float = 60.0) -> TurnResult:
             out = json.loads(rp.read_text())
         res.events = out.get("events", [])
         res.trace = out.get("trace", [])
+        res.bus = out.get("bus", {})
         res.final = out.get("final", {})
         res.violations = out.get("violations", [])
         res.launch_calls = out.get("launch_calls", [])

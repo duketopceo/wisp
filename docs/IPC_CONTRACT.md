@@ -63,9 +63,19 @@ lacks a section. Shells may offer a settings page on top of this command.
   "level": 0.0,
   "tasks": {"name": "running|done|failed|cancelled"},
   "error": "string",
-  "started_at": "ISO-8601"
+  "started_at": "ISO-8601",
+  "turn_id": "string — turn that produced this write",
+  "seq": 0,
+  "updated_at": "ISO-8601",
+  "contract_version": 1,
+  "heartbeat_at": "ISO-8601|null — refreshed every 15 s while transcribing/deciding/acting"
 }
 ```
+
+Single publisher (Python core): one `StateBus` owns every write. `seq`
+increases by one per written snapshot; a write from a turn that is no
+longer current is dropped; `level` is rate-limited to ~12 writes/s.
+Shells still just read the file — all of these fields are additive.
 
 Confirmation gate: when a mutating/shell action needs approval, the
 core transitions to `awaiting_choice` with `choices` = e.g.

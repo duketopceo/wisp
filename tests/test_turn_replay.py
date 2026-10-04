@@ -159,6 +159,49 @@ class GuardTest(unittest.TestCase):
         self.assertTrue(any("192.0.2.1" in v for v in res.violations))
 
 
+class BusSingleWriterTest(unittest.TestCase):
+    """U2: during a replayed turn the StateBus is the only writer of
+    state.json and subscribers see every write once, in order."""
+
+    def _bus(self, name):
+        res = runner.run_turn(FIXTURES / f"{name}.json")
+        self.assertEqual(res.exit_code, 0, res.stderr)
+        return res, res.bus
+
+    def test_ask_turn_every_write_goes_through_the_bus(self):
+        res, bus = self._bus("ask")
+        self.assertTrue(bus["file_replaces"], "no state.json writes seen")
+        # every os.replace onto state.json happened inside a bus write
+        self.assertEqual(bus["file_replaces"], bus["bus_writes"])
+        self.assertEqual(bus["outside_writes"], 0)
+        self.assertEqual(bus["dropped"], 0)
+
+    def test_ask_turn_seq_monotonic_no_gaps_no_duplicates(self):
+        res, bus = self._bus("ask")
+        seqs = bus["event_seqs"]
+        self.assertEqual(seqs, list(range(seqs[0], seqs[0] + len(seqs))))
+        # first turn write follows the boot write; one event per write
+        self.assertEqual(seqs[0], bus["boot_writes"] + 1)
+        self.assertEqual(len(seqs), bus["bus_writes"])
+        self.assertEqual(seqs[-1], res.final["seq"])
+        self.assertEqual(len(set(seqs)), len(seqs))
+
+    def test_ask_turn_all_publishes_carry_one_turn_id(self):
+        res, bus = self._bus("ask")
+        self.assertEqual(len(set(bus["turn_ids"])), 1)
+        self.assertEqual(res.final["turn_id"], bus["turn_ids"][0])
+        self.assertEqual(res.statuses,
+                         ["listening", "transcribing", "deciding",
+                          "acting", "speaking", "done"])
+
+    def test_cancel_and_choose_turns_also_single_writer(self):
+        for name in ("choose", "cancel_mid_stream", "stale_choice"):
+            with self.subTest(name):
+                res, bus = self._bus(name)
+                self.assertEqual(bus["outside_writes"], 0)
+                self.assertEqual(bus["file_replaces"], bus["bus_writes"])
+
+
 class FixtureFilesTest(unittest.TestCase):
     def test_all_named_fixtures_exist_and_parse(self):
         for name in FIXTURE_NAMES:

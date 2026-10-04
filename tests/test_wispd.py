@@ -290,7 +290,7 @@ class TestListenSpans(unittest.TestCase):
         rec = {"proc": mock.Mock(), "sampler_stop": mock.Mock(),
                "t0": time.monotonic() - 2}
 
-        def fake_run(st, cfg, ctl, wav=None, spans=None):
+        def fake_run(st, cfg, ctl, wav=None, spans=None, turn_id=None):
             seen["spans"] = spans
             ctl["busy"].clear()
         with mock.patch.object(self.w.pipeline, "record_start",
@@ -318,6 +318,42 @@ class TestListenSpans(unittest.TestCase):
         self.assertIs(seen["spans"], sp)
         self.assertEqual(sp.rel0_source, "client")
         self.assertNotIn("spans", self.ctl)
+
+    def test_press_begins_a_bus_turn_and_hands_its_id_to_the_pipeline(self):
+        import tempfile
+        import time
+        from wisp import state as state_mod
+        bus = state_mod.StateBus(
+            state_file=pathlib.Path(tempfile.mkdtemp()) / "state.json")
+        self.addCleanup(bus.close)
+        handle = self.w._handler(bus, {}, self.ctl)
+        seen = {}
+        rec = {"proc": mock.Mock(), "sampler_stop": mock.Mock(),
+               "t0": time.monotonic() - 2}
+
+        def fake_run(st, cfg, ctl, wav=None, spans=None, turn_id=None):
+            seen["turn_id"] = turn_id
+            ctl["busy"].clear()
+        before = bus.current_turn()
+        with mock.patch.object(self.w.pipeline, "record_start",
+                               return_value=rec), \
+             mock.patch.object(self.w.pipeline, "record_stop",
+                               return_value="x.wav"), \
+             mock.patch.object(self.w.speech, "stop"), \
+             mock.patch.object(self.w, "_rec_watchdog"), \
+             mock.patch.object(self.w, "_run_listen", fake_run), \
+             mock.patch.object(self.w, "dlog"):
+            handle({"cmd": "listen", "phase": "start"})
+            started = bus.current_turn()
+            self.assertNotEqual(started, before)
+            self.assertEqual(bus.snapshot()["status"], "listening")
+            self.assertEqual(bus.snapshot()["turn_id"], started)
+            handle({"cmd": "listen", "phase": "stop"})
+            for _ in range(100):
+                if "turn_id" in seen:
+                    break
+                time.sleep(0.01)
+        self.assertEqual(seen["turn_id"], started)
 
     def test_cmd_trigger_sends_client_timestamp(self):
         sent = {}
