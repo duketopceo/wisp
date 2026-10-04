@@ -17,7 +17,7 @@ import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-from wisp import config, ipc, pipeline, speech, state as state_mod  # noqa: E402
+from wisp import config, ipc, pipeline, speech, state as state_mod, trace as _trace  # noqa: E402
 
 # daemon-scoped handles the rec watchdog needs (set in run_daemon)
 _DAEMON_ST = None
@@ -58,11 +58,25 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
         if c == "status":
             from wisp import agents
             agents.reap(cfg)  # zombie + timeout watchdog on each poll
-            st.tasks = agents.tasks()
+            cur = agents.tasks()
+            # long-running agent completion: notify once on the
+            # running → done transition
+            done = agents.finished(getattr(st, "_prev_tasks", {}), cur)
+            st._prev_tasks = cur
+            st.tasks = cur
             st.transition(st.status)
+            for t in done:
+                tail = (t.get("tail") or "")[:80]
+                from wisp.tools import system as _sys
+                _sys.notify_tool(
+                    f"wisp agent '{t['name']}' {t['status']}"
+                    + (f" — {tail}" if tail else ""))
             return {"ok": True, "state": st.snapshot()}
         if c == "listen":
             phase = cmd.get("phase", "")  # hold-to-talk: start|stop; empty = toggle
+            # U1: this request's start (client t0 when sent) — the press
+            # origin on a start, the key-up instant on a stop
+            req_sp = _trace.Spans(t0_ns=cmd.get("t0"))
             with ctl["rec_lock"]:
                 if phase == "start" and ctl["rec"] is not None:
                     return {"ok": True, "recording": True}
@@ -95,8 +109,10 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
                         st.transition("error", error=str(e))
                         return {"ok": False, "error": str(e)}
                     ctl["busy"].set()
+                    sp = ctl.pop("spans", None) or _trace.Spans()
+                    sp.adopt_release(req_sp)
                     threading.Thread(
-                        target=_run_listen, args=(st, cfg, ctl, wav),
+                        target=_run_listen, args=(st, cfg, ctl, wav, sp),
                         daemon=True).start()
                     return {"ok": True, "stopped": True}
                 if ctl["busy"].is_set():
@@ -107,11 +123,13 @@ def _handler(st: state_mod.State, cfg: dict, ctl: dict) -> callable:
                 st.transition("listening", transcript="", result="",
                               answer="", choices=[], points=[], error="",
                               steps=[], guide=None)
+                req_sp.record("press", req_sp.t0)
                 try:
                     ctl["rec"] = pipeline.record_start(st)
                 except RuntimeError as e:
                     st.transition("error", error=str(e))
                     return {"ok": False, "error": str(e)}
+                ctl["spans"] = req_sp
                 secs = int(cfg.get("audio", {}).get("seconds", "60"))
                 threading.Thread(target=_rec_watchdog,
                                  args=(ctl, secs), daemon=True).start()
@@ -247,13 +265,13 @@ def _rec_watchdog(ctl: dict, secs: int) -> None:
 
 
 def _run_listen(st: state_mod.State, cfg: dict, ctl: dict,
-                wav=None) -> None:
+                wav=None, spans=None) -> None:
     try:
         ctl["interrupt"].clear()
         pipeline.run_listen(cfg, st,
                             wait_for_choice=_wait_for_choice(ctl),
                             interrupted=ctl["interrupt"].is_set,
-                            wav=wav)
+                            wav=wav, spans=spans)
         dlog(f"turn done: status={st.status} "
              f"transcript={st.transcript!r} result={st.result!r}")
     except Exception as e:
@@ -334,7 +352,8 @@ def run_daemon(cfg: dict) -> int:
 
 def cmd_trigger(cfg: dict, phase: str = "") -> int:
     try:
-        resp = ipc.send({"cmd": "listen", "phase": phase})
+        resp = ipc.send({"cmd": "listen", "phase": phase,
+                         "t0": time.time_ns()})
         if resp.get("ok"):
             return 0
         print(f"wispd: {resp.get('error')}", file=sys.stderr)
@@ -656,6 +675,33 @@ def main() -> int:
             print(out)
             return 0 if not out.startswith(("SKIP", "ERROR",
                                             "nothing")) else 1
+    if cmd == "tasks":
+        # wispd tasks — background agents: status + last log line
+        from wisp import agents
+        ts = agents.tasks()
+        if not ts:
+            print("no agents on record")
+            return 0
+        for name, t in sorted(ts.items(),
+                              key=lambda kv: kv[1].get("ts", "")):
+            tail = t.get("tail") or ""
+            print(f"{t['status']:<10} {name:<24} {t.get('task','')[:50]}"
+                  + (f"\n{'':<36}↳ {tail[:90]}" if tail else ""))
+        return 0
+    if cmd == "train":
+        # wispd train stats|history|bank|replay — arena telemetry
+        from wisp import train
+        sub = sys.argv[2] if len(sys.argv) > 2 else "stats"
+        if sub == "history":
+            print(train.history_text())
+        elif sub == "bank":
+            print(train.bank_text())
+        elif sub == "rebuild":
+            bank = train.replay_all()
+            print(f"rebuilt skill bank — {len(bank)} patterns")
+        else:
+            print(train.stats_text())
+        return 0
     if cmd == "learn":
         from wisp import learn
         out = learn.weekly()

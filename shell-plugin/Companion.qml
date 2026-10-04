@@ -30,6 +30,7 @@ Item {
   property string error: ""
   property string lastAnswer: ""
   property bool userPinned: false
+  property int expandedAt: 0  // Date.now() when the card last opened
   property var steps: []
   property var guide: null      // {x,y,label,seq,mode} — ghost cursor target
   property bool bubbleVisible: false
@@ -205,6 +206,7 @@ Item {
         // Clicking the orb pins it open; auto-hide resumes on done.
         if (root.busy || newStatus === "awaiting_choice"
             || newStatus === "suggestion") {
+          if (!root.expanded) root.expandedAt = Date.now();
           root.expanded = true;
           root.userPinned = false;
           autoHide.stop();
@@ -213,6 +215,7 @@ Item {
               (newAnswer.length > 0 && newAnswer !== root.lastAnswer) ||
               newError.length > 0) {
             root.lastAnswer = newAnswer;
+            if (!root.expanded) root.expandedAt = Date.now();
             root.expanded = true;
             root.userPinned = false;
           }
@@ -239,6 +242,29 @@ Item {
     id: autoHide
     interval: 15000
     onTriggered: if (!root.userPinned) root.expanded = false
+  }
+
+  // Compress watchdog — the card must never hang open. Busy states
+  // (listening/acting/awaiting_choice) get 120s before forced
+  // collapse: a stuck daemon status can't pin the UI forever. A
+  // user-pinned card gets 180s idle before it compresses too — a pin
+  // is a peek, not a window.
+  Timer {
+    id: compressWatch
+    interval: 2000
+    repeat: true
+    running: root.expanded
+    onTriggered: {
+      if (!root.expanded || root.expandedAt === 0) return;
+      var age = Date.now() - root.expandedAt;
+      var cap = root.userPinned ? 180000 : 120000;
+      if (!root.busy && root.status !== "awaiting_choice"
+          && !root.userPinned) return;  // autoHide owns idle collapse
+      if (age > cap) {
+        root.userPinned = false;
+        root.expanded = false;
+      }
+    }
   }
 
   Timer {
@@ -771,6 +797,7 @@ Item {
           anchors.fill: parent
           onClicked: {
             root.expanded = true;
+            root.expandedAt = Date.now();
             root.userPinned = true;
             autoHide.stop();
           }

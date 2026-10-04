@@ -88,6 +88,47 @@ def monitors() -> list[dict]:
     return platform.monitors()
 
 
+def logical_bbox(mons: list[dict]) -> tuple:
+    """(x, y, w, h) bounding box of the monitor layout in *logical*
+    coords — each monitor contributes x, y, w/scale, h/scale."""
+    if not mons:
+        return 0, 0, 0, 0
+    x0 = min(m.get("x", 0) for m in mons)
+    y0 = min(m.get("y", 0) for m in mons)
+    x1 = max(m.get("x", 0) + m.get("width", 0)
+             / float(m.get("scale", 1) or 1) for m in mons)
+    y1 = max(m.get("y", 0) + m.get("height", 0)
+             / float(m.get("scale", 1) or 1) for m in mons)
+    return int(x0), int(y0), round(x1 - x0), round(y1 - y0)
+
+
+def img_space_is_logical() -> bool:
+    """True when screenshots are normalized to the logical canvas —
+    magick is present to resize, or every monitor is scale 1 anyway.
+    When True, model-emitted image pixels are already logical coords."""
+    if shutil.which("magick"):
+        return True
+    return all(float(m.get("scale", 1) or 1) == 1.0
+               for m in monitors())
+
+
+SHOT_ORIGIN: tuple | None = None
+"""Logical (x,y) origin of the most recent normalized screenshot —
+set by the screenshot tool; falls back to the canvas bbox origin."""
+
+
+def canvas_to_logical(points_img: list[dict],
+                      mons: list[dict]) -> list[dict]:
+    """Map points in *normalized* image space to logical coords —
+    the shot's logical origin offset."""
+    if SHOT_ORIGIN is not None:
+        ox, oy = SHOT_ORIGIN
+    else:
+        ox, oy, _, _ = logical_bbox(mons)
+    return [{**p, "x": p["x"] + ox, "y": p["y"] + oy}
+            for p in points_img]
+
+
 def to_logical(points_px: list[dict], mons: list[dict]) -> list[dict]:
     """Map screenshot-pixel points to Hyprland logical coords. Points
     outside every monitor rect pass through 1:1 (scale 1 assumed)."""

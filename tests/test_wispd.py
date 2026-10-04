@@ -265,6 +265,69 @@ class TestSttProvider(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             pipeline.transcribe(pathlib.Path("/tmp/x.wav"), cfg)
 
+class TestListenSpans(unittest.TestCase):
+    """U1: the daemon builds press/release spans from the client t0."""
+
+    def setUp(self):
+        import importlib.machinery
+        import importlib.util
+        import threading
+        path = str(pathlib.Path(__file__).resolve().parent.parent / "wispd")
+        loader = importlib.machinery.SourceFileLoader("wispd_mod", path)
+        spec = importlib.util.spec_from_loader("wispd_mod", loader)
+        self.w = importlib.util.module_from_spec(spec)
+        loader.exec_module(self.w)
+        self.st = mock.Mock()
+        self.ctl = {"stop": threading.Event(), "busy": threading.Event(),
+                    "interrupt": threading.Event(),
+                    "choice_event": threading.Event(), "choice_pick": "",
+                    "rec": None, "rec_lock": threading.Lock()}
+        self.handle = self.w._handler(self.st, {}, self.ctl)
+
+    def test_press_then_release_hand_spans_to_the_pipeline(self):
+        import time
+        seen = {}
+        rec = {"proc": mock.Mock(), "sampler_stop": mock.Mock(),
+               "t0": time.monotonic() - 2}
+
+        def fake_run(st, cfg, ctl, wav=None, spans=None):
+            seen["spans"] = spans
+            ctl["busy"].clear()
+        with mock.patch.object(self.w.pipeline, "record_start",
+                               return_value=rec), \
+             mock.patch.object(self.w.pipeline, "record_stop",
+                               return_value="x.wav"), \
+             mock.patch.object(self.w.speech, "stop"), \
+             mock.patch.object(self.w, "_rec_watchdog"), \
+             mock.patch.object(self.w, "_run_listen", fake_run), \
+             mock.patch.object(self.w, "dlog"):
+            r1 = self.handle({"cmd": "listen", "phase": "start",
+                              "t0": time.time_ns() - 5_000_000})
+            self.assertTrue(r1["ok"])
+            sp = self.ctl["spans"]
+            self.assertEqual(sp.t0_source, "client")
+            self.assertGreaterEqual(sp.ms["press"], 5)
+            self.assertLess(sp.ms["press"], 500)
+            r2 = self.handle({"cmd": "listen", "phase": "stop",
+                              "t0": time.time_ns()})
+            self.assertTrue(r2["ok"])
+            for _ in range(100):
+                if "spans" in seen:
+                    break
+                time.sleep(0.01)
+        self.assertIs(seen["spans"], sp)
+        self.assertEqual(sp.rel0_source, "client")
+        self.assertNotIn("spans", self.ctl)
+
+    def test_cmd_trigger_sends_client_timestamp(self):
+        sent = {}
+        with mock.patch.object(self.w.ipc, "send",
+                               side_effect=lambda c, **k: sent.update(c)
+                               or {"ok": True}):
+            self.w.cmd_trigger({}, "start")
+        self.assertIsInstance(sent["t0"], int)
+        self.assertGreater(sent["t0"], 1_600_000_000_000_000_000)
+
 
 if __name__ == "__main__":
     unittest.main()

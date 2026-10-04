@@ -54,14 +54,26 @@ class Gate(unittest.TestCase):
         out = act._gate("shell", "rm -rf /", cfg, lambda p: True)
         assert out and "REFUSED" in out
 
+    def test_interactive_runs_without_confirm(self):
+        # clicks/typing execute — the agent acts, it doesn't ask
+        assert act._gate("click", "10,10", {"agent": {}}, None) is None
+        assert act._gate("type_text", "hi", {"agent": {}}, None) is None
+        assert act._gate("scroll", "down", {"agent": {}}, None) is None
+        assert act._gate("key", "enter", {"agent": {}}, None) is None
+
+    def test_interactive_denylist_still_applies(self):
+        # prompt-free tier must not type destruction into a terminal
+        out = act._gate("type_text", "rm -rf /", {"agent": {}}, None)
+        assert out and "REFUSED" in out
+
     def test_mutating_skips_without_confirm(self):
-        out = act._gate("type_text", "hi", {"agent": {}}, None)
+        out = act._gate("close", "", {"agent": {}}, None)
         assert out and "SKIPPED" in out
 
     def test_mutating_runs_when_confirmed(self):
         cfg = {"agent": {}}
-        assert act._gate("type_text", "hi", cfg, lambda p: True) is None
-        out = act._gate("type_text", "hi", cfg, lambda p: False)
+        assert act._gate("close", "", cfg, lambda p: True) is None
+        out = act._gate("close", "", cfg, lambda p: False)
         assert out and "declined" in out
 
 
@@ -81,7 +93,8 @@ class Loop(unittest.TestCase):
         with mock.patch.object(act, "_post", side_effect=replies), \
              mock.patch.object(tools, "run",
                                return_value="LAUNCHED discord") as run:
-            r = act.run_act_loop("open discord", self.cfg)
+            r = act.run_act_loop("open discord", self.cfg,
+                             initial_image="aGk=")
         run.assert_called_once()
         assert r.startswith("ACTED (1 steps)")
 
@@ -125,7 +138,8 @@ class Loop(unittest.TestCase):
         cfg = {"agent": {"allow_shell": "true"}}
         with mock.patch.object(act, "_post", side_effect=replies), \
              mock.patch.object(tools, "run") as run:
-            r = act.run_act_loop("delete everything", cfg)
+            r = act.run_act_loop("delete everything", cfg,
+                             initial_image="aGk=")
         run.assert_not_called()
         assert "REFUSED" in json.dumps(
             [c.get("function") for c in []] or [{"x": "y"}]) or r
@@ -144,9 +158,12 @@ class Loop(unittest.TestCase):
         # screenshot — the loop must re-shoot before the next click,
         # not click stale pixels
         calls = []
+        import tempfile, pathlib
+        shot = pathlib.Path(tempfile.mktemp(suffix=".png"))
+        shot.write_bytes(b"\x89PNG\r\n\x1a\nfake")
         def fake_run(name, arg, cfg, harness=None):
             calls.append(name)
-            return "SHOT /tmp/shot.png" if name == "screenshot" \
+            return f"SHOT {shot}" if name == "screenshot" \
                 else "ok"
         replies = [_msg(calls=[_call("launch", "x")]),
                    _msg(calls=[_call("click", "100,200")]),
@@ -163,7 +180,8 @@ class Loop(unittest.TestCase):
                              confirm=lambda pr: True)
         assert r.startswith("ACTED")
         # screenshot must sit between the mutation and the click
-        assert calls == ["launch", "screenshot", "click"]
+        # startup observe + post-mutation re-observe
+        assert calls == ["screenshot", "launch", "screenshot", "click"]
 
     def test_no_reobserve_when_screen_fresh(self):
         # trigger-time image is still valid → first click goes straight
@@ -186,11 +204,15 @@ class Loop(unittest.TestCase):
         assert calls == ["click"]
 
     def test_no_blind_click_without_any_image(self):
-        # no trigger image + vision → even the first click re-observes
+        # no trigger image + vision → the loop observes before the
+        # first model call, not just before the first click
+        import tempfile, pathlib
+        shot = pathlib.Path(tempfile.mktemp(suffix=".png"))
+        shot.write_bytes(b"\x89PNG\r\n\x1a\nfake")
         calls = []
         def fake_run(name, arg, cfg, harness=None):
             calls.append(name)
-            return "SHOT /tmp/s.png" if name == "screenshot" else "ok"
+            return f"SHOT {shot}" if name == "screenshot" else "ok"
         replies = [_msg(calls=[_call("click", "10,20")]),
                    _msg(content="done")]
         cfg = {"agent": {}}
@@ -226,12 +248,12 @@ class Loop(unittest.TestCase):
             prompts.append(p)
             return True
 
-        replies = [_msg(calls=[_call("type_text", "a")]),
-                   _msg(calls=[_call("type_text", "b")]),
-                   _msg(content="typed")]
+        replies = [_msg(calls=[_call("close", "w1")]),
+                   _msg(calls=[_call("close", "w2")]),
+                   _msg(content="closed")]
         with mock.patch.object(act, "_post", side_effect=replies), \
              mock.patch.object(tools, "run", return_value="ok"):
-            r = act.run_act_loop("type stuff", cfg, state=st,
+            r = act.run_act_loop("close stuff", cfg, state=st,
                                  confirm=confirm)
         assert r.startswith("ACTED")
         assert len(prompts) == 1  # second call hit the confirm cache
@@ -248,7 +270,7 @@ class Loop(unittest.TestCase):
             return True
 
         # different focus app → fresh confirm
-        replies = [_msg(calls=[_call("type_text", "a")]),
+        replies = [_msg(calls=[_call("close", "w1")]),
                    _msg(content="ok")]
         with mock.patch.object(act, "_post", side_effect=replies), \
              mock.patch.object(tools, "run", return_value="ok"):

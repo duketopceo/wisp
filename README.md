@@ -152,6 +152,8 @@ app→command map.
 | `wispd recipes` | draft skill proposals from trajectories |
 | `wispd recipes approve <n>` | install a recipe as a skill |
 | `wispd learn` | stage this week's criteria proposal |
+| `wispd train stats\|history\|bank\|rebuild` | training arena — per-surface stats, run feed, skill bank |
+| `wispd tasks` | background agents — status + live log tail |
 | `wispd harness` | rebuild `harness.json` from dayflow (optional) |
 | `wispd install` | install files, plugin, unit, bind |
 
@@ -166,6 +168,9 @@ app→command map.
 - `~/.local/share/wisp/tasks.jsonl` + `tasks/<id>.log` — agent registry
 - `~/.local/share/wisp/proposals/` — recipe-* skill proposals + weekly
   criteria proposals
+- `~/.local/share/wisp/clicklab.jsonl` — judged arena runs (clicklab)
+- `~/.local/share/wisp/skillbank.json` — graduated/candidate/demoted
+  task patterns per surface+app
 - `~/.config/wisp/mcp.json` — OAuth-connected MCP services
 - `~/.config/wisp/harness.json` — mined app catalog (dayflow adapter)
 - `~/.config/wisp/criteria_overrides.json` — approved learning edits

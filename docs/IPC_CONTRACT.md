@@ -22,7 +22,7 @@ future tray apps). Shells MUST only depend on this document.
 | cmd | extra fields | reply | effect |
 |---|---|---|---|
 | `status` | — | `{ok, state}` | `state` = full state.json snapshot |
-| `listen` | — | `{ok}` or `{ok:false,error:"busy"}` | starts a listen cycle async; kills in-flight TTS (barge-in) |
+| `listen` | `phase?: start\|stop`, `t0?: int` (client wall-clock ns of the keypress; additive, optional) | `{ok}` or `{ok:false,error:"busy"}` | starts a listen cycle async; kills in-flight TTS (barge-in) |
 | `choice` | `pick: string` | `{ok}` | resolves a pending choice/confirm |
 | `task_status` | `name: string` | `{ok, result: string}` | named-agent status |
 | `task_cancel` | `name: string` | `{ok, result: string}` | cancel named agent |
@@ -105,8 +105,13 @@ spoken answer and publishes the normalized list.
 - `trace.jsonl` — full-fidelity dev trace (`[debug] trace`, default on):
   one event per line `{ts, turn, step, kind, ms, data}` covering
   listen_start/record/transcribe/decision/dispatch/tool_call/
-  tool_result/brain_call/answer/speak/points/ipc/error. `wispd trace`
-  `--tail N --turn <id> --kind <k>` on both cores. Rotates at 10 MB;
+  tool_result/brain_call/answer/speak/points/ipc/error, plus `kind=span`
+  events (`step` = press, release, stt, context, route, first_token,
+  first_step, tts_start, done, and sub-spans screenshot/hyprctl/memory/
+  goal; `ms` = duration, `data.offset_ms` from the keypress,
+  `data.t0_source` client|daemon). `wispd trace`
+  `--tail N --turn <id> --kind <k>` on both cores; Python core adds
+  `--latency [--since 24h]` (p50/p90 per budget path). Rotates at 10 MB;
   never logs secrets.
 - `recall.db` — sqlite-vec/FTS5 long-term recall.
 

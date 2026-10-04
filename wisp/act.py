@@ -35,7 +35,12 @@ SYSTEM = ("You are Wisp's hands on a Linux desktop (Hyprland). Complete "
           "launch, focus, workspace, shell), re-screenshot before the "
           "next pointer action. A GUIDE result means the ghost cursor "
           "is parked there for the user to click — treat it as done, "
-          "not an error, and continue or finish. When done, reply with "
+          "not an error, and continue or finish. CLICKED echoes the id "
+          "of the element actually hit — if it is not the target you "
+          "aimed at, re-aim from the image and click again rather than "
+          "declaring success. For a dropdown/select, click it to focus "
+          "then use key down/up and enter to choose — typing text into "
+          "it does nothing. When done, reply with "
           "one short sentence describing the outcome. If a tool is "
           "refused or skipped, do not retry it; work around or report "
           "the block. If the task cannot proceed without information "
@@ -58,10 +63,12 @@ def _gate(name: str, arg: str, cfg: dict, confirm,
           state=None) -> str | None:
     """Returns a refusal string when the call is blocked, else None."""
     tier = tools.risk_of(name)
-    if tier == "shell":
+    if tier == "shell" or name in tools.TEXT_INPUT:
         if tools.denied(arg):
             return "REFUSED (denylisted command)"
-        if cfg.get("agent", {}).get("allow_shell", "false") != "true":
+        if tier == "shell" and \
+                cfg.get("agent", {}).get("allow_shell",
+                                         "false") != "true":
             return "SKIPPED (shell disabled — set allow_shell=true)"
     if tier in ("mutating", "shell"):
         # confirm-once: a yes for (tool, focused-app) holds for the
@@ -86,10 +93,12 @@ def _gate(name: str, arg: str, cfg: dict, confirm,
 def run_act_loop(task: str, cfg: dict, state=None,
                  harness: dict | None = None, confirm=None,
                  initial_image: str | None = None,
-                 interrupted=None) -> str:
+                 interrupted=None,
+                 steps_out: list | None = None) -> str:
     """Drive the chat model through the toolbelt until it finishes or a
     bound trips. `confirm(prompt)->bool` asks the user (choice widget /
-    IPC) when wired; without it mutating calls skip."""
+    IPC) when wired; without it mutating calls skip. `steps_out`, if a
+    list, receives the run's step records for judging/replay."""
     from . import brain
     if not brain.supports_tools(cfg):
         p = brain.provider(cfg)
@@ -108,22 +117,54 @@ def run_act_loop(task: str, cfg: dict, state=None,
     prior = trajectories.context_for(task, cfg=cfg)
     if prior:
         system += "\n\n" + prior
+    from . import train as _train
+    hint = _train.hint_for(task, _surface(cfg))
+    if hint:
+        system += "\n\n" + hint
     from . import goals as _goals
     goal_txt = _goals.context_text()
     user_msg = (goal_txt + "\n\n" + task) if goal_txt else task
+    p = brain.provider(cfg)
+    vision = p.get("vision", "false") == "true"
+    if not initial_image and vision:
+        # no trigger-time image (direct/IPC path) — observe before the
+        # first model call so the loop never plans blind
+        shot = tools.run("screenshot", "", cfg, harness)
+        if shot.startswith("SHOT "):
+            import pathlib as _pl
+            try:
+                initial_image = base64.b64encode(
+                    _pl.Path(shot[5:].strip()).read_bytes()).decode()
+            except OSError:
+                pass
     if initial_image:
-        # screen at trigger — the model sees the app, no "what app" ask
-        user_msg = [{"type": "text", "text": user_msg},
+        # screen at trigger — the model sees the app, no "what app" ask.
+        # Name the pixel space: models click more accurately when they
+        # know the image's true dimensions.
+        dims = _png_dims(initial_image)
+        cap = ""
+        if dims:
+            cap = (f"[screen image: {dims[0]}x{dims[1]} px — "
+                   "click/move x,y use THESE pixels")
+            if cfg.get("screen", {}).get("dom_page"):
+                els = cfg["screen"].get("dom_els") or []
+                cap += ("; elements: " + "; ".join(els) +
+                        " — click the printed center" if els else
+                        "; each element is labeled with its id and "
+                        "center (x,y)")
+            cap += "]\n\n"
+        user_msg = [{"type": "text", "text": cap + user_msg},
                     {"type": "image_url",
                      "image_url": {"url": f"data:image/png;base64,"
                                           f"{initial_image}"}}]
     messages = [{"role": "system", "content": system},
                 {"role": "user", "content": user_msg}]
-    steps, errors = [], 0
+    steps = steps_out if steps_out is not None else []
+    if steps_out is not None:
+        steps_out.clear()
+    errors = 0
     max_steps = int(cfg.get("agents", {}).get("act_max_steps",
                                              str(MAX_STEPS)))
-    p = brain.provider(cfg)
-    vision = p.get("vision", "false") == "true"
     # trigger-time image counts as the current observation; a mutating
     # step flips this and forces a fresh screenshot before the next
     # click/move
@@ -145,7 +186,8 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 return "ASK_USER " + text[9:].strip()
             _goals.close("done")
             out = f"ACTED ({len(steps)} steps): {text or 'done'}"
-            trajectories.record(task, _app(harness), steps, out)
+            trajectories.record(task, _app(harness), steps, out,
+                               surface=_surface(cfg))
             return out
         messages.append(msg)
         for call in calls:
@@ -168,7 +210,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
                                   "result": shot})
                     _publish(state, task, steps)
                     if shot.startswith("SHOT "):
-                        _attach_image(messages, shot[5:].strip())
+                        _attach_image(messages, shot[5:].strip(), cfg)
                     screen_dirty = False
                 try:
                     result = tools.run(name, arg, cfg, harness)
@@ -193,17 +235,19 @@ def run_act_loop(task: str, cfg: dict, state=None,
                              "content": result})
             if name == "screenshot" and vision \
                     and result.startswith("SHOT "):
-                _attach_image(messages, result[5:].strip())
+                _attach_image(messages, result[5:].strip(), cfg)
             if errors > MAX_ERRORS:
                 _goals.record_steps(steps)
                 out = f"ABORTED (repeated failures): {_last(steps)}"
-                trajectories.record(task, _app(harness), steps, out)
+                trajectories.record(task, _app(harness), steps, out,
+                               surface=_surface(cfg))
                 return out
             if len(steps) >= max_steps:
                 break
     out = f"ABORTED (max {max_steps} steps): {_last(steps)}"
     _goals.record_steps(steps)
-    trajectories.record(task, _app(harness), steps, out)
+    trajectories.record(task, _app(harness), steps, out,
+                               surface=_surface(cfg))
     return out
 
 
@@ -234,6 +278,16 @@ def _app(harness: dict | None) -> str:
         return ""
 
 
+def _surface(cfg: dict | None) -> str:
+    """Interaction substrate tag — keeps browser-DOM and real-desktop
+    training data in separate buckets."""
+    if (cfg or {}).get("screen", {}).get("dom_page"):
+        return "browser-dom"
+    if (cfg or {}).get("pointer", {}).get("mode") == "guide":
+        return "desktop-guide"
+    return "desktop"
+
+
 _GUIDE_RE = re.compile(r"(?:GUIDE|MOVE-GUIDE|CLICKED|MOVED)\((-?\d+),"
                        r"(-?\d+)\)")
 
@@ -258,7 +312,19 @@ def _publish_guide(state, name: str, arg: str, result: str) -> None:
         pass
 
 
-def _attach_image(messages: list, path: str) -> None:
+def _png_dims(b64: str) -> tuple | None:
+    """(w,h) from a base64 PNG's IHDR — no decoder needed."""
+    import struct
+    try:
+        raw = base64.b64decode(b64)[:26]
+        if raw[:8] == b"\x89PNG\r\n\x1a\n" and raw[12:16] == b"IHDR":
+            return struct.unpack(">II", raw[16:24])
+    except Exception:
+        pass
+    return None
+
+
+def _attach_image(messages: list, path: str, cfg: dict | None = None) -> None:
     """Feed the screenshot back as an image part on a follow-up user
     message — the model can't act on a screen it can't see. Keeps at
     most MAX_IMAGES image parts in the window (oldest dropped)."""
@@ -268,6 +334,7 @@ def _attach_image(messages: list, path: str) -> None:
             pathlib.Path(path).read_bytes()).decode()
     except OSError:
         return
+    dims = _png_dims(b64)
     # drop oldest image parts beyond the cap
     kept = 0
     for m in reversed(messages):
@@ -279,7 +346,17 @@ def _attach_image(messages: list, path: str) -> None:
                 if kept >= MAX_IMAGES:
                     m["content"] = [p for p in c
                                     if p.get("type") != "image_url"]
+    caption = (f"current screen ({dims[0]}x{dims[1]} px — click/move "
+               "x,y use these pixels" if dims else "current screen")
+    if dims and (cfg or {}).get("screen", {}).get("dom_page"):
+        els = (cfg or {})["screen"].get("dom_els") or []
+        if els:
+            caption += "; elements: " + "; ".join(els)
+        else:
+            caption += ("; elements are labeled with id and center "
+                        "(x,y)")
+    caption += "):" if dims else ":"
     messages.append({"role": "user", "content": [
-        {"type": "text", "text": "current screen:"},
+        {"type": "text", "text": caption},
         {"type": "image_url",
          "image_url": {"url": f"data:image/png;base64,{b64}"}}]})
