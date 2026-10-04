@@ -286,12 +286,21 @@ class TestClientsOffLinux(unittest.TestCase):
         with _with_os("windows"):
             self.assertEqual(desktop.clients(), [])
 
-    def test_hyprctl_still_called_on_linux(self):
+    def test_linux_queries_hypr_socket_not_hyprctl(self):
         with _with_os("linux"), \
-             mock.patch.object(desktop.subprocess, "run") as run:
-            run.return_value = mock.Mock(stdout="[{\"class\": \"a\"}]")
+             mock.patch.object(desktop.hypr, "query",
+                               return_value=[{"class": "a"}]) as q, \
+             mock.patch("subprocess.run") as run:
             self.assertEqual(desktop.clients(), [{"class": "a"}])
-        self.assertEqual(run.call_args[0][0][0], "hyprctl")
+        q.assert_called_once_with("clients")
+        run.assert_not_called()
+
+    def test_empty_when_hypr_down(self):
+        with _with_os("linux"), \
+             mock.patch.object(desktop.hypr, "query",
+                               side_effect=desktop.hypr.HyprError(
+                                   "unavailable")):
+            self.assertEqual(desktop.clients(), [])
 
 
 if __name__ == "__main__":

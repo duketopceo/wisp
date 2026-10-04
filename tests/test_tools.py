@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Toolbelt + agent-manager tests — all subprocesses mocked."""
 import json
+import os
 import pathlib
 import sys
 import tempfile
@@ -9,7 +10,7 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from wisp import agents, pipeline, tools  # noqa: E402
+from wisp import agents, hypr, pipeline, tools  # noqa: E402
 
 
 class TestRegistry(unittest.TestCase):
@@ -35,19 +36,22 @@ class TestRegistry(unittest.TestCase):
 
 class TestToolExec(unittest.TestCase):
     def test_workspace_parses_number(self):
-        ok = mock.Mock(returncode=0)
-        with mock.patch.object(tools.desktop.subprocess, "run",
-                               return_value=ok):
+        with mock.patch.dict(os.environ, {"WISP_OS": "linux",
+                                          "WISP_DESKTOP": "hyprland"}), \
+             mock.patch.object(hypr, "available", return_value=True), \
+             mock.patch.object(hypr, "run_lua", return_value=True) as ev:
             self.assertEqual(tools.run("workspace", "3", {}), "WORKSPACE 3")
+        ev.assert_called_once_with(hypr.focus_workspace(3))
 
     def test_workspace_rejects_non_number(self):
         self.assertIn("SKIP", tools.run("workspace", "abc", {}))
 
     def test_workspace_parses_natural_language(self):
         # soak fix: "workspace 4" / "ws4" must extract the digit
-        ok = mock.Mock(returncode=0)
-        with mock.patch.object(tools.desktop.subprocess, "run",
-                               return_value=ok):
+        with mock.patch.dict(os.environ, {"WISP_OS": "linux",
+                                          "WISP_DESKTOP": "hyprland"}), \
+             mock.patch.object(hypr, "available", return_value=True), \
+             mock.patch.object(hypr, "run_lua", return_value=True):
             for arg in ("workspace 4", "ws4", "go to 4"):
                 self.assertEqual(tools.run("workspace", arg, {}),
                                  "WORKSPACE 4")

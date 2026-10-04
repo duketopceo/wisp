@@ -83,7 +83,7 @@ def _add(points: list, x, y, label) -> None:
 
 def monitors() -> list[dict]:
     """[{x, y, width, height, scale}] via the platform adapter —
-    hyprctl on Linux, system_profiler on macOS. Empty on failure."""
+    the Hyprland socket on Linux, system_profiler on macOS. Empty on failure."""
     from . import platform
     return platform.monitors()
 

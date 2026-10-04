@@ -1,12 +1,9 @@
 """Desktop tools: app launch/focus/close and Hyprland workspace ops."""
-import json
 import re
 import shutil
-import subprocess
 
-from .. import cancel as _cancel
 from .. import config
-from ..pipeline import hypr_env
+from .. import hypr
 
 
 def _resolve_apps(cfg: dict, harness: dict | None) -> dict:
@@ -17,9 +14,18 @@ def _resolve_apps(cfg: dict, harness: dict | None) -> dict:
     return apps
 
 
-def _exec_detached(binname: str) -> None:
+def _wm_down() -> str | None:
+    """Tool-failure string when window ops need Hyprland and its socket
+    is not answering (checked by the startup/periodic probe, no fork)."""
     from .. import platform
-    platform._try(platform.launch_exec_cmds(binname))
+    if platform.uses_hypr() and not hypr.available():
+        return "ERROR tool_failed (hypr_unavailable)"
+    return None
+
+
+def _exec_detached(binname: str) -> bool:
+    from .. import platform
+    return platform._try(platform.launch_exec_cmds(binname))
 
 
 def _on_path(binary: str) -> bool:
@@ -49,6 +55,9 @@ def _browseros_live() -> bool:
 
 
 def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
+    down = _wm_down()
+    if down:
+        return down
     apps = _resolve_apps(cfg, harness)
     # soak fix: "browser" prefers BrowserOS (live logins) when its MCP
     # server is up — opt out with [agent] browseros_first = "false"
@@ -75,6 +84,9 @@ def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
 
 def focus(classname: str) -> str:
     from .. import platform
+    down = _wm_down()
+    if down:
+        return down
     cmds = platform.focus_cmds(classname)
     if not cmds:
         return (f"SKIP (focus unsupported — "
@@ -86,6 +98,9 @@ def focus(classname: str) -> str:
 
 def close(classname: str) -> str:
     from .. import platform
+    down = _wm_down()
+    if down:
+        return down
     if platform._try(platform.close_cmds(classname)):
         return f"CLOSED {classname or 'active window'}"
     return f"SKIP (nothing closed for {classname!r})"
@@ -98,6 +113,9 @@ def workspace(n: str) -> str:
     if not m:
         return f"SKIP (workspace {n!r} has no number)"
     num = int(m.group())
+    down = _wm_down()
+    if down:
+        return down
     cmds = platform.workspace_cmds(num)
     if not cmds:
         return (f"SKIP (workspace {num} unsupported — "
@@ -109,13 +127,12 @@ def workspace(n: str) -> str:
 def clients() -> list:
     """Open windows, as Hyprland reports them. Hyprland-only: no other
     platform has an equivalent enumerator here, so return [] instead of
-    raising FileNotFoundError on a host without hyprctl."""
+    raising on a host without Hyprland."""
     from .. import platform
     if platform.current() != "linux":
         return []
-    r = _cancel.run(["hyprctl", "clients", "-j"],
-                       capture_output=True, text=True, env=hypr_env())
     try:
-        return json.loads(r.stdout)
-    except json.JSONDecodeError:
+        clients = hypr.query("clients")
+    except hypr.HyprError:
         return []
+    return clients if isinstance(clients, list) else []
