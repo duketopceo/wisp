@@ -375,6 +375,17 @@ class TurnReplayTest(unittest.TestCase):
         res = runner.run_turn(fx)
         self.assertTrue(res.final["result"].startswith("INTERRUPTED"))
 
+    def test_cancel_mid_act_ends_within_150ms_of_stop(self):
+        # W9: the stop lands while a (hanging) fake cua click is in
+        # flight; the guard/cancel path kills it and the turn ends.
+        res = runner.run_turn(FIXTURES / "cancel_mid_act.json")
+        self.assertTrue(res.interrupt_fired)
+        self.assertTrue(res.final["result"].startswith("INTERRUPTED"),
+                        res.final)
+        self.assertEqual([c["tool"] for c in res.fake_calls["cua"]],
+                         ["click"])
+        self.assertLess(res.events[-1]["t_ms"] - res.interrupt_t_ms, 150)
+
     def test_cleanup_removes_tempdir_and_ports(self):
         res = runner.run_turn(FIXTURES / "ask.json")
         self.assertFalse(pathlib.Path(res.tempdir).exists())
