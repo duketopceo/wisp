@@ -52,7 +52,9 @@ JUDGE_QUESTIONS = {
                         "wasteful, or unnecessary action? 0 = none (the "
                         "run was clean or failed for reasons outside "
                         "the agent's actions). Score = step number.",
-        "criteria": ["none"] + [f"step {i}" for i in range(1, 25)],
+        # Jev caps score criteria at 10: none + steps 1-8 + "9 or later"
+        "criteria": (["none"] + [f"step {i}" for i in range(1, 9)]
+                     + ["step 9 or later"]),
     },
 }
 
