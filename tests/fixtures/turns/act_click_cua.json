@@ -1,0 +1,59 @@
+{
+  "description": "Act route: click through the fake cua-driver (daemon socket + CLI); notify and Hyprland fakes on PATH.",
+  "audio": "act.wav",
+  "name": "act_click_cua",
+  "config": {
+    "pointer": {
+      "mode": "drive",
+      "backend": "auto"
+    }
+  },
+  "fakes": {
+    "cua": {},
+    "hypr": {},
+    "notify": {}
+  },
+  "endpoints": {
+    "whisper": {
+      "transcript": "wisp agent click the save button"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "tool_calls": [
+            {
+              "name": "click",
+              "arg": "10,20@logical"
+            }
+          ]
+        },
+        {
+          "content": "Clicked save."
+        }
+      ]
+    }
+  },
+  "expect": {
+    "tool_calls": [
+      "click"
+    ],
+    "cua_calls": [
+      "click"
+    ],
+    "result_prefix": "ACTED"
+  }
+}

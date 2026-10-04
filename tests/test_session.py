@@ -38,6 +38,22 @@ class TestSession(unittest.TestCase):
         self.assertIn("user: open discord", txt)
         self.assertIn("wisp: opened discord", txt)
 
+    def test_as_text_spoken_friendly(self):
+        # act-loop noise must read like conversation, not internals —
+        # 'ACTED (3 steps): opened it' → 'opened it'; failures admit
+        turns = [{"transcript": "open it",
+                  "result": "ACTED (3 steps): opened it"},
+                 {"transcript": "click gdx",
+                  "result": "SKIP (click needs user confirmation)"},
+                 {"transcript": "which account",
+                  "result": "ASK_USER which account?"}]
+        txt = session.as_text(turns)
+        self.assertIn("wisp: opened it", txt)
+        self.assertIn("wisp: couldn't do that", txt)
+        self.assertIn("wisp: asked: which account?", txt)
+        self.assertNotIn("ACTED", txt)
+        self.assertNotIn("SKIP", txt)
+
 
 class TestAskChat(unittest.TestCase):
     def _resp(self, content="real reply"):
@@ -89,29 +105,18 @@ class TestAskChat(unittest.TestCase):
 
 class TestScreenB64(unittest.TestCase):
     def answers(self, noul=0.0, route="launch"):
-        return {"needs_screen": {"noul": noul},
-                "route": {"choice": route}}
+        # needs_screen question removed — route alone decides now
+        return {"route": {"choice": route}}
 
     def test_disabled_in_config(self):
         cfg = {"agent": {"screenshots": "false"}}
         self.assertIsNone(pipeline.screen_b64(cfg, self.answers(noul=1.0)))
 
-    def test_low_noul_no_capture(self):
+    def test_non_answer_route_no_capture(self):
         with mock.patch.object(pipeline, "capture_screen") as c:
-            out = pipeline.screen_b64({"agent": {}}, self.answers(noul=0.2))
+            out = pipeline.screen_b64({"agent": {}}, self.answers())
         self.assertIsNone(out)
         c.assert_not_called()
-
-    def test_high_noul_captures(self):
-        with tempfile.TemporaryDirectory() as td:
-            png = pathlib.Path(td) / "s.png"
-            png.write_bytes(b"fakepng")
-            with mock.patch.object(pipeline, "capture_screen",
-                                   return_value=png):
-                out = pipeline.screen_b64({"agent": {}},
-                                          self.answers(noul=0.9))
-        self.assertEqual(base64.b64decode(out), b"fakepng")
-        self.assertFalse(png.exists())  # cleaned up
 
     def test_answer_route_captures(self):
         with tempfile.TemporaryDirectory() as td:

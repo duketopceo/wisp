@@ -1,12 +1,15 @@
 # Wisp
 
-**Wisp, open spotify.** — a resident voice assistant for Omarchy
-(Hyprland). Press `Super+D`, speak, and Wisp hears, decides, and acts:
-launch an app, run a desktop tool, spawn a coding agent, or just answer.
+A resident voice companion for Omarchy (Hyprland). Press `Super+D`,
+speak, and Wisp hears, decides, and acts: answer with the screen as
+context, drive the desktop step by step, point at the thing it means,
+or spawn a background coding agent — while holding the conversation
+open across utterances.
 
 Push-to-talk → PipeWire mic capture → whisper.cpp → Jev routing
-(OpenRouter) → risk-tiered toolbelt / `ori opencode` agents → widgets in
-your Omarchy bar.
+(OpenRouter) → Talk answers with `[POINT]` ghost cursor / a guarded
+act loop / named agent runtimes → companion orb, cursor bubble, and
+listening pill on your desktop.
 
 ## Platforms
 
@@ -22,36 +25,66 @@ suite on `ubuntu-latest` and `macos-latest`.
 - **Resident daemon**: `wispd` runs as a systemd user service holding
   session, choice, and agent state on a unix socket. `Super+D` sends
   `listen`; the daemon owns the whole pipeline.
+- **Two modes, Clicky-style**: Talk (hotkey → screen + voice → spoken
+  answer + `[POINT]` ghost cursor) vs Agent (`"wisp agent …"` or the
+  act route → a bounded tool-call loop that re-screenshots before every
+  pointer action — no blind clicks).
+- **Screen at trigger**: the screenshot is captured the moment you
+  invoke Wisp and rides into the model — it sees the focused app, so
+  it never asks "which app?". Set `screenshots = false` to keep images
+  local.
 - **Jev routing**: each utterance is classified as `launch`, `tool`,
-  `agent`, `answer`, or `clarify` — questions get text answers, not
-  forced actions. The confidence gate keys on the *target* (app/tool)
-  so a hesitant action score never cancels a correct launch.
-- **Real answers**: the `answer` route calls an OpenRouter chat model
-  (`answer_model`, vision-capable) — with a `grim` screenshot attached
-  when Jev flags `needs_screen`, so "what's this error?" works. Set
-  `screenshots = false` to keep images local.
-- **Session memory**: turns persist to `session.jsonl` and the last N
-  (`session_turns`, default 8) feed Jev + the answer model — "repeat
-  that" and "yes, do it" follow-ups work across restarts.
-- **Toolbelt**: launch/focus/close apps, workspace switch, notify,
-  screenshot (`grim`), type text (`wtype`), guarded shell, file search —
-  each with a risk tier (`safe` runs, `mutating` confirms, `shell`
-  always confirms + denylist).
-- **Autonomous agents**: "Wisp, agent — fix the tests in wisp"
-  spawns a named `ori opencode run` task (all OpenRouter) you can
-  check on or cancel later.
-- **Omarchy shell plugin** (`io.github.duketopceo.wisp`): center bar icon,
-  breathing-dark listening overlay, choice buttons, transcript/answer
-  panel, agent status — all rendered from the daemon's `state.json`.
-- **Week-by-week learning**: every clarify pick is logged; `wispd learn`
-  stages a weekly proposal of criteria improvements you approve into
-  `criteria_overrides.json`. Human-gated, never auto-applied.
+  `agent`, `act`, `dictate`, `answer`, or `clarify` — Jev decides *what*
+  to do, not whether; `clarify` only survives for a bare launch. The
+  confidence gate keys on the *target* (app/tool).
+- **Goal memory**: utterances sharing the focused app or the running
+  goal's topic join one goal (`[agent] goal_ttl_s`, 10 min default) —
+  "check robinhood" → "open it" → "type the URL" → "click GDX" is one
+  task, not four. `ASK_USER:` answers come back through the voice
+  backchannel without killing the goal.
+- **Confirm-once**: one "yes" approves a `(tool, app)` pair for the
+  session — follow-on steps in the same app don't re-prompt. Denylist
+  and `allow_shell` unchanged.
+- **Streaming answers**: OpenAI-compatible brains stream token deltas
+  into `state.json`, so the answer types out live at your cursor.
+- **Toolbelt**: launch/focus/close apps, workspace switch (natural
+  language: "workspace 4"), notify, screenshot (`grim`), pointer
+  (`click`/`move` with ghost-cursor guide), type text (`wtype`), guarded
+  shell, file search, `mcp_call` — each with a risk tier (`safe` runs,
+  `mutating` confirms, `shell` always confirms + denylist).
+- **MCP access**: `mcp_call` speaks streamable-HTTP and stdio JSON-RPC —
+  the inventory discovers configured servers (BrowserOS, Cloudflare,
+  omaseal, dayflow, …) and `wispd connect <svc>` rides the local
+  BrowserOS Strata gateway for OAuth (GitHub, Gmail, Slack, Notion,
+  Linear, ~45 services). `browser` prefers the signed-in BrowserOS
+  when its MCP server is live (`[agent] browseros_first`).
+- **Local inventory passthrough**: `wispd inventory` maps installed
+  apps, CLI tools, Omarchy plugins/binds, MCP servers, skills, and
+  dayflow projects/goals into the act/answer context — the agent knows
+  the terrain before it acts.
+- **Autonomous agents**: "Wisp, agent — fix the tests in wisp" spawns a
+  named task on your configured runtime (`opencode`/`codex`/`claude`/
+  `devin`, `agent_runtime = "auto"` probes PATH) you can check on or
+  cancel later.
+- **Omarchy shell plugin** (`io.github.duketopceo.wisp`): companion orb
+  with mode badge and goal line, cursor-adjacent answer bubble,
+  bottom-center listening pill, panel with Now/Agents/Activity/Tele/
+  Skills/Context/Connect tabs — all rendered from `state.json`.
+- **Learning that ships as skills**: every run is labeled
+  (`wispd label correct|incorrect` or panel ✓/✗); trajectories feed
+  future attempts, and a verified multi-step workflow graduates into a
+  `recipe-*` skill proposal — `wispd recipes approve` installs it.
+  Human-gated, never auto-applied.
+- **Interruptible**: `wispd interrupt` (or the ■ stop chip) cancels the
+  in-flight turn without killing the daemon.
 - **Generic install**: works on a fresh Omarchy box — app catalog comes
   from `.desktop` files + `$PATH`. Optional adapters (dayflow activity
   mining, omaseal) layer on top when present; nothing personal is
   required or committed.
 - **Text-first, optional voice**: answers render as widgets; set
   `voice.enabled = true` for `espeak`/`espeak-ng` spoken replies.
+  `password_manager = "1password"` lets the agent click through
+  quick-unlock/passkey prompts — it never types your master password.
 
 ## Architecture
 
@@ -63,17 +96,46 @@ suite on `ubuntu-latest` and `macos-latest`.
   pw-record 5s wav → whisper.cpp (ggml-small.en)   state.json ◀── poll
         │                                           (widgets)
         ▼
-  Jev decisions (typesafe/jev-1.13)
-  route: launch | tool | agent | answer | clarify
+  Jev decisions (typesafe/jev-latest)
+  route: launch | tool | agent | act | dictate | answer | clarify
         │
-   ┌────┼─────────┬───────────┐
-   ▼    ▼         ▼           ▼
- launch toolbelt  agent    answer
-        │      ori opencode  │
-        ▼      run (named    ▼
-  hyprctl /    persistent)  text widget
-  grim / wtype  tasks.jsonl  (+ espeak)
+   ┌────┼─────────┬──────────────┐
+   ▼    ▼         ▼              ▼
+ launch toolbelt  act loop    answer (streamed)
+        │      (re-observe,   │ + [POINT] ghost
+        ▼      confirm-once)  │ cursor at pointer
+  hyprctl /      │            ▼
+  grim / wtype   ▼        cursor bubble /
+        │      agents:    pill (+ espeak)
+        ▼      opencode /
+  mcp_call ──▶ codex / claude / devin
+  (MCP servers, OAuth via Strata)
 ```
+
+## Local models (optional)
+
+Wisp can run entirely on local OpenAI-compatible servers — useful for
+training volume at zero marginal cost. Any `llama.cpp`/`llama-server`,
+Ollama, or LM Studio endpoint works as a `[brain.<name>]` provider;
+commented presets ship in `~/.config/wisp/config.toml`:
+
+| Provider | Endpoint | Role | Flags |
+|---|---|---|---|
+| `[brain.llama_local]` | `:8080` (llama-server, GPU) | answer/act brain | `vision=true tools=true` |
+| `[brain.uitars]` | `:8081` (UI-TARS-7B, GPU) | GUI grounding actor | `action_text=true` — emits `Action: click(x,y)` text instead of tool_calls; the act loop parses it through the same toolbelt and denylist |
+| jev-shim | `:8931` | decisions router | `WISP_JEV_ENDPOINT` env var overrides the decisions URL |
+
+Compare actors head-to-head on the same suite + seed:
+
+```sh
+python3 scripts/clicklab/run.py --dom --suite core \
+    --models "openrouter:google/gemini-3.1-flash-lite,uitars:ui-tars-7b"
+```
+
+Runs are tagged per model — `wispd train stats` and the arena page
+group pass-rate and latency by actor, and the skill bank keys
+graduated sequences per model so hints don't cross-contaminate.
+Local endpoints that are down are skipped, not failed.
 
 ## Install
 
@@ -104,8 +166,19 @@ app→command map.
 | `wispd trigger` | push-to-talk client (what the bind runs) |
 | `wispd status` | dump daemon state.json |
 | `wispd stop` | stop the daemon |
+| `wispd interrupt` | cancel the in-flight turn, keep the daemon |
 | `wispd choice <pick>` | answer a pending clarify prompt |
+| `wispd label correct\|incorrect` | label the last run (soak metric) |
+| `wispd context` | focused app + workspace map + inventory counts |
+| `wispd inventory` | rescan local terrain (apps/CLIs/MCP/dayflow) |
+| `wispd connect <svc>` | OAuth a connector via the Strata gateway |
+| `wispd connect --list` | connector catalog + connected status |
+| `wispd tele` / `wispd fails` | decision telemetry / recent failures |
+| `wispd recipes` | draft skill proposals from trajectories |
+| `wispd recipes approve <n>` | install a recipe as a skill |
 | `wispd learn` | stage this week's criteria proposal |
+| `wispd train stats\|history\|bank\|rebuild` | training arena — per-surface stats, run feed, skill bank |
+| `wispd tasks` | background agents — status + live log tail |
 | `wispd harness` | rebuild `harness.json` from dayflow (optional) |
 | `wispd install` | install files, plugin, unit, bind |
 
@@ -113,9 +186,18 @@ app→command map.
 
 - `~/.local/share/wisp/session.jsonl` — persistent conversation turns
 - `~/.local/share/wisp/decisions.jsonl` — every decision + result
+- `~/.local/share/wisp/labels.jsonl` — your correct/incorrect run labels
+- `~/.local/share/wisp/trajectories.jsonl` — episodic act-loop memory
+- `~/.local/share/wisp/inventory.json` — scanned local terrain map
 - `~/.local/share/wisp/corrections.jsonl` — your clarify picks
+- `~/.local/share/wisp/shadow.jsonl` — a second decider's answers per turn, when `[jev] shadow` is set
 - `~/.local/share/wisp/tasks.jsonl` + `tasks/<id>.log` — agent registry
-- `~/.local/share/wisp/proposals/YYYY-WW.md` — weekly learning proposals
+- `~/.local/share/wisp/proposals/` — recipe-* skill proposals + weekly
+  criteria proposals
+- `~/.local/share/wisp/clicklab.jsonl` — judged arena runs (clicklab)
+- `~/.local/share/wisp/skillbank.json` — graduated/candidate/demoted
+  task patterns per surface+app
+- `~/.config/wisp/mcp.json` — OAuth-connected MCP services
 - `~/.config/wisp/harness.json` — mined app catalog (dayflow adapter)
 - `~/.config/wisp/criteria_overrides.json` — approved learning edits
 - `$XDG_RUNTIME_DIR/wisp/state.json` — live widget state
@@ -124,7 +206,7 @@ app→command map.
 ## Development
 
 ```sh
-python3 -m unittest discover -s tests -v   # 253 tests, host-independent
+python3 -m unittest discover -s tests -v   # 300+ tests, host-independent
 python3 -m py_compile wispd wisp/*.py wisp/tools/*.py
 ```
 
@@ -135,9 +217,12 @@ for the Omarchy bar), `scripts/` (harness + criteria helpers),
 
 ## Safety
 
-- Mutating tools (`close`, `type_text`, `task_cancel`) and all `shell`
-  calls require confirmation — nothing fires silently.
+- Mutating tools (`click`, `type_text`, `close`, `task_cancel`, …) and
+  all `shell`/`key` calls require confirmation — nothing fires silently.
+  Confirm-once caches a yes per `(tool, focused app)` for the session.
 - Shell commands pass a denylist before the confirmation prompt.
 - Risk scores above `risk_threshold` block before any route executes.
-- Learning proposals are staged files you approve; Jev criteria never
-  mutate themselves.
+- Learning proposals and recipe skills are staged files you approve;
+  nothing installs itself.
+- The agent may click through a password-manager prompt but is
+  instructed never to type a master password (`password_manager`).

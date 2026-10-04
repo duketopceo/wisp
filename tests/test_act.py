@@ -54,14 +54,26 @@ class Gate(unittest.TestCase):
         out = act._gate("shell", "rm -rf /", cfg, lambda p: True)
         assert out and "REFUSED" in out
 
+    def test_interactive_runs_without_confirm(self):
+        # clicks/typing execute — the agent acts, it doesn't ask
+        assert act._gate("click", "10,10", {"agent": {}}, None) is None
+        assert act._gate("type_text", "hi", {"agent": {}}, None) is None
+        assert act._gate("scroll", "down", {"agent": {}}, None) is None
+        assert act._gate("key", "enter", {"agent": {}}, None) is None
+
+    def test_interactive_denylist_still_applies(self):
+        # prompt-free tier must not type destruction into a terminal
+        out = act._gate("type_text", "rm -rf /", {"agent": {}}, None)
+        assert out and "REFUSED" in out
+
     def test_mutating_skips_without_confirm(self):
-        out = act._gate("type_text", "hi", {"agent": {}}, None)
+        out = act._gate("close", "", {"agent": {}}, None)
         assert out and "SKIPPED" in out
 
     def test_mutating_runs_when_confirmed(self):
         cfg = {"agent": {}}
-        assert act._gate("type_text", "hi", cfg, lambda p: True) is None
-        out = act._gate("type_text", "hi", cfg, lambda p: False)
+        assert act._gate("close", "", cfg, lambda p: True) is None
+        out = act._gate("close", "", cfg, lambda p: False)
         assert out and "declined" in out
 
 
@@ -81,9 +93,31 @@ class Loop(unittest.TestCase):
         with mock.patch.object(act, "_post", side_effect=replies), \
              mock.patch.object(tools, "run",
                                return_value="LAUNCHED discord") as run:
-            r = act.run_act_loop("open discord", self.cfg)
+            r = act.run_act_loop("open discord", self.cfg,
+                             initial_image="aGk=")
         run.assert_called_once()
         assert r.startswith("ACTED (1 steps)")
+
+    def test_interrupt_stops_loop(self):
+        replies = [_msg(calls=[_call("launch", "x")])] * 20
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run", return_value="ok"):
+            r = act.run_act_loop("loop", self.cfg,
+                                 interrupted=lambda: True)
+        assert r == "INTERRUPTED (user)"
+
+    def test_interrupt_between_steps(self):
+        flag = {"stop": False}
+        def should_stop():
+            return flag["stop"]
+        def stop_after_one(name, arg, cfg, harness=None):
+            flag["stop"] = True
+            return "ok"
+        replies = [_msg(calls=[_call("launch", "x")])] * 5
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run", side_effect=stop_after_one):
+            r = act.run_act_loop("loop", self.cfg, interrupted=should_stop)
+        assert r == "INTERRUPTED (user)"
 
     def test_aborts_at_max_steps(self):
         replies = [_msg(calls=[_call("launch", "x")])] * 20
@@ -104,7 +138,8 @@ class Loop(unittest.TestCase):
         cfg = {"agent": {"allow_shell": "true"}}
         with mock.patch.object(act, "_post", side_effect=replies), \
              mock.patch.object(tools, "run") as run:
-            r = act.run_act_loop("delete everything", cfg)
+            r = act.run_act_loop("delete everything", cfg,
+                             initial_image="aGk=")
         run.assert_not_called()
         assert "REFUSED" in json.dumps(
             [c.get("function") for c in []] or [{"x": "y"}]) or r
@@ -117,6 +152,81 @@ class Loop(unittest.TestCase):
              mock.patch.object(tools, "run", return_value="LAUNCHED"):
             r = act.run_act_loop("open something", self.cfg)
         assert r.startswith("ACTED")
+
+    def test_reobserve_before_click_after_mutation(self):
+        # soak fix: a screen-changing step invalidates the last
+        # screenshot — the loop must re-shoot before the next click,
+        # not click stale pixels
+        calls = []
+        import tempfile, pathlib
+        shot = pathlib.Path(tempfile.mktemp(suffix=".png"))
+        shot.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+        def fake_run(name, arg, cfg, harness=None):
+            calls.append(name)
+            return f"SHOT {shot}" if name == "screenshot" \
+                else "ok"
+        replies = [_msg(calls=[_call("launch", "x")]),
+                   _msg(calls=[_call("click", "100,200")]),
+                   _msg(content="done")]
+        cfg = {"agent": {}, "brain.openrouter": {"vision": "true"}}
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch("wisp.brain.provider",
+                        return_value={"name": "openrouter",
+                                      "vision": "true",
+                                      "tools": "true"}), \
+             mock.patch.object(act, "_attach_image"), \
+             mock.patch.object(tools, "run", side_effect=fake_run):
+            r = act.run_act_loop("click the thing", cfg,
+                             confirm=lambda pr: True)
+        assert r.startswith("ACTED")
+        # screenshot must sit between the mutation and the click
+        # startup observe + post-mutation re-observe
+        assert calls == ["screenshot", "launch", "screenshot", "click"]
+
+    def test_no_reobserve_when_screen_fresh(self):
+        # trigger-time image is still valid → first click goes straight
+        calls = []
+        def fake_run(name, arg, cfg, harness=None):
+            calls.append(name)
+            return "ok"
+        replies = [_msg(calls=[_call("click", "10,20")]),
+                   _msg(content="done")]
+        cfg = {"agent": {}, "brain.openrouter": {"vision": "true"}}
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch("wisp.brain.provider",
+                        return_value={"name": "openrouter",
+                                      "vision": "true",
+                                      "tools": "true"}), \
+             mock.patch.object(tools, "run", side_effect=fake_run):
+            r = act.run_act_loop("click", cfg, initial_image="aGk=",
+                             confirm=lambda pr: True)
+        assert r.startswith("ACTED")
+        assert calls == ["click"]
+
+    def test_no_blind_click_without_any_image(self):
+        # no trigger image + vision → the loop observes before the
+        # first model call, not just before the first click
+        import tempfile, pathlib
+        shot = pathlib.Path(tempfile.mktemp(suffix=".png"))
+        shot.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+        calls = []
+        def fake_run(name, arg, cfg, harness=None):
+            calls.append(name)
+            return f"SHOT {shot}" if name == "screenshot" else "ok"
+        replies = [_msg(calls=[_call("click", "10,20")]),
+                   _msg(content="done")]
+        cfg = {"agent": {}}
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch("wisp.brain.provider",
+                        return_value={"name": "openrouter",
+                                      "vision": "true",
+                                      "tools": "true"}), \
+             mock.patch.object(act, "_attach_image"), \
+             mock.patch.object(tools, "run", side_effect=fake_run):
+            r = act.run_act_loop("click", cfg,
+                                 confirm=lambda pr: True)
+        assert r.startswith("ACTED")
+        assert calls == ["screenshot", "click"]
 
     def test_ask_user_returns_backchannel(self):
         with mock.patch.object(act, "_post",
@@ -138,12 +248,12 @@ class Loop(unittest.TestCase):
             prompts.append(p)
             return True
 
-        replies = [_msg(calls=[_call("type_text", "a")]),
-                   _msg(calls=[_call("type_text", "b")]),
-                   _msg(content="typed")]
+        replies = [_msg(calls=[_call("close", "w1")]),
+                   _msg(calls=[_call("close", "w2")]),
+                   _msg(content="closed")]
         with mock.patch.object(act, "_post", side_effect=replies), \
              mock.patch.object(tools, "run", return_value="ok"):
-            r = act.run_act_loop("type stuff", cfg, state=st,
+            r = act.run_act_loop("close stuff", cfg, state=st,
                                  confirm=confirm)
         assert r.startswith("ACTED")
         assert len(prompts) == 1  # second call hit the confirm cache
@@ -160,7 +270,7 @@ class Loop(unittest.TestCase):
             return True
 
         # different focus app → fresh confirm
-        replies = [_msg(calls=[_call("type_text", "a")]),
+        replies = [_msg(calls=[_call("close", "w1")]),
                    _msg(content="ok")]
         with mock.patch.object(act, "_post", side_effect=replies), \
              mock.patch.object(tools, "run", return_value="ok"):
@@ -238,3 +348,120 @@ class Timing(unittest.TestCase):
         assert rc == 0
         for k in ("record_ms", "stt_ms", "jev_ms", "act_ms"):
             assert k in logged["timing_ms"], f"missing {k}"
+
+
+class ActionText(unittest.TestCase):
+    """UI-TARS-style 'Action: name(args)' replies — providers flagged
+    action_text=true emit literal action text instead of tool_calls."""
+
+    def test_parse_click(self):
+        r = act._parse_action_text(
+            "Thought: the circle is at 72,405\nAction: click(72, 405)")
+        self.assertEqual(r["actions"], [("click", "72,405")])
+
+    def test_parse_type_quoted(self):
+        r = act._parse_action_text('Action: type("hello, world")')
+        self.assertEqual(r["actions"], [("type_text", "hello, world")])
+
+    def test_parse_type_content_kwarg(self):
+        r = act._parse_action_text("Action: type(content='it works')")
+        self.assertEqual(r["actions"], [("type_text", "it works")])
+
+    def test_parse_click_start_box(self):
+        r = act._parse_action_text(
+            "Action: click(start_box='(300,123)')")
+        self.assertEqual(r["actions"], [("click", "300,123")])
+
+    def test_parse_scroll_direction(self):
+        r = act._parse_action_text("Action: scroll(direction='down')")
+        self.assertEqual(r["actions"], [("scroll", "down")])
+
+    def test_parse_scroll_delta(self):
+        r = act._parse_action_text("Action: scroll(300, 400, 0, 450)")
+        self.assertEqual(r["actions"], [("scroll", "down 450")])
+
+    def test_parse_hotkey(self):
+        r = act._parse_action_text("Action: hotkey('ctrl', 'c')")
+        self.assertEqual(r["actions"], [("key", "ctrl+c")])
+
+    def test_parse_press(self):
+        r = act._parse_action_text("Action: press('enter')")
+        self.assertEqual(r["actions"], [("key", "enter")])
+
+    def test_parse_done(self):
+        r = act._parse_action_text("DONE")
+        self.assertEqual(r["actions"], [])
+        self.assertIsNotNone(r["done"])
+
+    def test_parse_finished_kwarg(self):
+        r = act._parse_action_text(
+            "Action: finished(content='opened discord')")
+        self.assertEqual(r["actions"], [])
+        self.assertIn("opened discord", r["done"])
+
+    def test_parse_garbage_returns_none(self):
+        self.assertIsNone(act._parse_action_text(
+            "let me think about this some more"))
+
+    def test_parse_click_no_coords_is_miss(self):
+        self.assertIsNone(act._parse_action_text("Action: click"))
+
+    def test_wait_is_skipped(self):
+        r = act._parse_action_text(
+            "Action: wait()\nAction: click(10, 20)")
+        self.assertEqual(r["actions"], [("click", "10,20")])
+
+    def test_loop_executes_action_text(self):
+        cfg = {"agent": {},
+               "brain": {"default": "uitars:ui-tars-7b"},
+               "brain.uitars": {"base_url": "http://127.0.0.1:8081",
+                                "tools": "false", "action_text": "true"}}
+        replies = [_msg(content="Thought: aim\nAction: click(10, 20)"),
+                   _msg(content="DONE")]
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run",
+                               return_value="CLICKED x") as run:
+            r = act.run_act_loop("click it", cfg)
+        run.assert_called_once()
+        args = run.call_args[0]
+        self.assertEqual(args[0], "click")
+        self.assertEqual(args[1], "10,20")
+        self.assertTrue(r.startswith("ACTED"))
+
+    def test_loop_done_text_finishes(self):
+        cfg = {"agent": {},
+               "brain": {"default": "uitars:m"},
+               "brain.uitars": {"action_text": "true", "tools": "false"}}
+        with mock.patch.object(act, "_post",
+                               return_value=_msg(
+                                   content="DONE: clicked the thing")):
+            r = act.run_act_loop("click it", cfg)
+        self.assertIn("clicked the thing", r)
+
+    def test_loop_unparseable_stalls_not_crashes(self):
+        cfg = {"agent": {},
+               "brain": {"default": "uitars:m"},
+               "brain.uitars": {"action_text": "true", "tools": "false"}}
+        with mock.patch.object(act, "_post",
+                               return_value=_msg(
+                                   content="I am pondering deeply")):
+            r = act.run_act_loop("click it", cfg)
+        self.assertIn("STALLED", r)
+
+    def test_denylist_applies_to_action_text(self):
+        cfg = {"agent": {},
+               "brain": {"default": "uitars:m"},
+               "brain.uitars": {"action_text": "true", "tools": "false"}}
+        replies = [_msg(content='Action: type("rm -rf /")'),
+                   _msg(content="DONE")]
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run") as run:
+            r = act.run_act_loop("type it", cfg)
+        run.assert_not_called()
+
+    def test_provider_without_flag_still_skips(self):
+        cfg = {"agent": {},
+               "brain": {"default": "plain:m"},
+               "brain.plain": {"tools": "false"}}
+        r = act.run_act_loop("click it", cfg)
+        self.assertTrue(r.startswith("SKIP"))

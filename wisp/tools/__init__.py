@@ -1,35 +1,57 @@
 """Toolbelt: named tools Jev can route to, each with a risk tier.
 
 Tiers:
-  safe     — read-only/launch; executes immediately
-  mutating — changes desktop state (window ops, typing, close); needs a
-             confirmation unless the user enabled elevated mode
-  shell    — arbitrary command; always needs per-call confirmation and
-             is subject to the denylist
+  safe        — read-only/launch; executes immediately
+  interactive — reversible desktop I/O (click, type, scroll, key,
+                workspace); executes without prompting — the agent must
+                act, not ask. The denylist still applies to text-bearing
+                args so `type_text "rm -rf ~"` can't slip through.
+  mutating    — irreversible-ish state changes (close, cancel, memory,
+                skill edits, MCP calls); confirm-once per (tool, app)
+  shell       — arbitrary command; always needs per-call confirmation
+                and is subject to the denylist
 """
-from . import desktop, system
+from . import desktop, mcpclient, system
 
-RISK = {"safe": 0, "mutating": 1, "shell": 2}
+RISK = {"safe": 0, "interactive": 1, "mutating": 2, "shell": 3}
 
 # hard refusals — checked before any confirmation prompt
 SHELL_DENYLIST = ("rm -rf /", "rm -rf ~", "rm -rf $HOME", "mkfs",
                   "dd if=", ":(){ ", "shutdown", "reboot")
 
+# interactive tools whose arg carries user-bound text/keystrokes —
+# denylist applies so a prompt-free tier can't type destruction into a
+# terminal
+TEXT_INPUT = {"type_text", "key"}
+
 REGISTRY = {
     "launch": (desktop.launch, "safe", "open an application"),
     "focus": (desktop.focus, "safe", "focus a window by class"),
     "close": (desktop.close, "mutating", "close the active/matching window"),
-    "workspace": (desktop.workspace, "mutating", "switch Hyprland workspace"),
+    "workspace": (desktop.workspace, "interactive", "switch Hyprland workspace"),
     "notify": (system.notify_tool, "safe", "send a desktop notification"),
     "screenshot": (system.screenshot, "safe", "capture the screen to a file"),
-    "type_text": (system.type_text, "mutating", "type text into the focused window"),
-    "click": (system.click, "mutating",
+    "type_text": (system.type_text, "interactive", "type text into the focused window"),
+    "click": (system.click, "interactive",
               "click at 'x,y' or target element e.g. 'monitor icon in menu bar' — "
               "in guide mode points the ghost cursor for the user"),
-    "move": (system.move, "mutating",
+    "move": (system.move, "interactive",
              "move the pointer to 'x,y' or target element"),
     "ground": (system.ground, "safe",
                "locate on-screen UI element center: 'monitor icon in menu bar' -> GROUNDED(x,y)"),
+    "scroll": (system.scroll, "interactive",
+               "scroll the view — 'down'/'up'/'down 400'/'bottom'"),
+    "key": (system.key, "interactive",
+            "press a named key — 'enter', 'tab', 'esc', 'down', "
+            "'pageup', 'pagedown', 'backspace', arrows"),
+    "mcp_call": (mcpclient.call, "mutating",
+                 "call a tool on a configured MCP server — "
+                 "'<server> <tool> <json-args>' e.g. 'browseros tabs "
+                 "{\"action\":\"list\"}'. For strata-registered OAuth "
+                 "services (wispd connect) the tool token is "
+                 "'<category>/<action>'. Server names/URLs are in "
+                 "inventory.json and the [env] context line"),
+>>>>>>> origin/master
     "codegraph": (system.codegraph, "safe",
                   "query a repo's code-graph index (CBM): "
                   "'<tool> <json-args>' e.g. 'search_graph "
@@ -149,7 +171,10 @@ def _run_inner(name: str, arg: str, cfg: dict,
     fn = entry[0]
     if fn is desktop.launch:
         return fn(arg, cfg, harness)
-    if fn in (system.click, system.move):
+    if fn in (system.click, system.move, system.screenshot,
+              system.scroll, system.key, system.type_text):
+        return fn(arg, cfg)
+    if fn is mcpclient.call:
         return fn(arg, cfg)
     return fn(arg)
 

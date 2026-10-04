@@ -39,12 +39,32 @@ def tail(n: int = 8, path=config.SESSION_FILE) -> list[dict]:
     return out[-n:]
 
 
+def _spoken_result(result: str) -> str:
+    """Turn an act-loop outcome into conversation — 'ACTED (3 steps):
+    opened it' reads as 'opened it'; raw SKIP/ERROR noise becomes a
+    short honest admission instead of internal jargon."""
+    import re
+    if not result:
+        return ""
+    m = re.match(r"^ACTED \(\d+ steps\):\s*(.*)", result, re.S)
+    if m:
+        return m.group(1).strip()
+    if result.startswith("ASK_USER "):
+        return "asked: " + result[9:].strip()
+    if result.startswith(("SKIP", "ERROR", "ABORTED", "INTERRUPTED")):
+        # strip the status word + parenthesized cause → human reason
+        cause = re.sub(r"^\w+\s*\((.*)\)\s*$", r"\1", result).strip()
+        cause = cause.split(":", 1)[-1].strip()[:80] or "it failed"
+        return "couldn't do that — " + cause
+    return result
+
+
 def as_text(turns: list[dict]) -> str:
     """Compact transcript for Jev's state / the chat model."""
     parts = []
     for t in turns:
         said = t.get("transcript", "")
-        reply = t.get("reply") or t.get("result", "")
+        reply = t.get("reply") or _spoken_result(t.get("result", ""))
         if said:
             parts.append(f"user: {said}")
         if reply:

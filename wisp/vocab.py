@@ -84,6 +84,12 @@ def collect(cfg: dict) -> list:
             add(app)
     except (OSError, ValueError):
         pass
+    try:
+        from . import inventory
+        for tool in (inventory.load().get("cli_tools") or {}):
+            add(tool)
+    except Exception:
+        pass
     import pathlib
     plug = pathlib.Path.home() / ".config/omarchy/plugins"
     if plug.is_dir():

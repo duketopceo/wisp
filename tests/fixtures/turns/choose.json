@@ -1,0 +1,60 @@
+{
+  "description": "Low-confidence launch: pipeline offers choices, the scripted chooser picks app:discord, launch stub records it.",
+  "audio": "choose.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "open the chat app"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "launch"
+        },
+        "app": {
+          "choice": "discord",
+          "confidence": 0.5,
+          "probabilities": {
+            "discord": 0.5,
+            "browser": 0.3,
+            "terminal": 0.2
+          }
+        },
+        "action": {
+          "choice": "launch",
+          "probabilities": {
+            "launch": 0.9,
+            "answer": 0.1
+          }
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "content": ""
+        }
+      ]
+    }
+  },
+  "chooser": {
+    "pick": "app:discord",
+    "delay_ms": 20
+  },
+  "expect": {
+    "statuses": [
+      "listening",
+      "transcribing",
+      "deciding",
+      "awaiting_choice",
+      "acting",
+      "done"
+    ],
+    "launch_calls": [
+      "discord"
+    ]
+  },
+  "name": "choose"
+}

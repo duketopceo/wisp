@@ -31,7 +31,24 @@ routing → guarded actions. Python reference daemon + Rust parity core
 | `learn.py` | corrections → weekly human-gated criteria proposals |
 | `brain.py` | pluggable answer providers — `[brain] default = "name:model"` + `[brain.<name>]` tables (kind openai_compat\|ollama, base_url, key_env, vision, tools); router `jev`\|`chat`\|`off` |
 | `agents.py` | background task registry (spawn/status/cancel, `tasks.jsonl`); `[brain] agent_runtime` = opencode\|codex\|claude\|devin, PATH-probed |
-| `tools/` | toolbelt: `__init__.py` registry + tiers + `tool_schemas()`; `desktop.py`/`system.py`/`adapters.py` shell-outs |
+| `goals.py` | cross-utterance goal continuity — join/record/close, `goal_ttl_s` TTL; `ASK_USER` keeps goals open |
+| `trajectories.py` | episodic act-loop memory (`trajectories.jsonl`) — `similar()` retrieval, label join via decision transcript, `propose_recipes()` drafts human-gated `recipe-*` skills |
+| `context.py` | prompt context assembly — focused app, `[windows]` workspace map, inventory `[env]` line, password_manager instruction |
+| `inventory.py` | local-terrain scanner → `inventory.json`: apps, cli_tools, mcp servers, omarchy plugins/binds, dayflow, skills (24h TTL) |
+| `mcpauth.py` | OAuth connector flow via the local BrowserOS Strata gateway — `wispd connect <svc>`, catalog list, mcp.json registration |
+| `telemetry.py` | decision telemetry + `wispd tele` digest |
+| `action_stats.py` | per-app tool outcome stats — planner bias block injected into the act system prompt |
+| `judge.py` | Jev-as-judge — structured success/efficiency/waste verdict per act run |
+| `train.py` | training arena — `skillbank.json` per-(surface,app,task) streaks, auto-graduation (≥3 streak, eff≥0.9), demotion, `hint_for()` proven-sequence injection |
+| `points.py` | `[POINT:x,y:label]` tag parsing → normalized ghost-cursor points |
+| `sense.py` | opt-in proactive collector — dayflow + hyprctl deltas → `activity.jsonl` |
+| `suggest.py` | Jev-gated suggestion miner → orb "an idea" cards (approval-only) |
+| `evalroute.py` | route-eval helper for Jev criteria experiments |
+| `theme.py` | GUI theme/table helpers |
+| `tui.py` | `wispd tui` terminal surface |
+| `vocab.py` | Whisper prompt vocab — MEMORY.md facts + discovered CLI/app names prime STT |
+| `platform.py` | OS/desktop adapter seam — active window, launch/focus/workspace cmd builders per platform |
+| `tools/` | toolbelt: `__init__.py` registry + tiers + `tool_schemas()` + `mcp_call` client (HTTP/stdio JSON-RPC); `desktop.py`/`system.py`/`adapters.py` shell-outs |
 | `util.py` | shared slug/text helpers used by agents + skills |
 
 ## Rust modules (`rs/wispd/src/`)
@@ -73,3 +90,7 @@ daemon: `systemctl --user wispd` (runs `~/.local/opt/wisp/wispd`);
 | `docs/WINDOWS.md` | Windows adapter: TCP transport, command map, schtasks install, residuals |
 | `tests/test_ipc_tcp.py` | TCP transport roundtrip (Windows path proven on Linux) |
 | `docs/LINUX.md` | Generic-Linux adapter: desktop detection + per-desktop command matrix |
+
+## Plans
+
+Current plan of record: `docs/plans/2026-10-04-0100-feat-wisp-unified-plan.md` (supersedes the Ember redesign, backend core and consolidate plans; W-unit IDs with crosswalk).
