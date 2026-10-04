@@ -11,17 +11,27 @@ from unittest import mock
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from wisp import grounding, pipeline, tools, config  # noqa: E402
-from PIL import Image  # noqa: E402
+try:
+    from PIL import Image  # noqa: E402
+except ImportError:  # optional dep; grounding degrades without it
+    Image = None
+
+
+needs_pil = unittest.skipIf(Image is None, "Pillow not installed")
 
 
 class TestGrounding(unittest.TestCase):
     def setUp(self):
+        self.img_b64 = None
+        if Image is None:  # PIL-free tests below still run
+            return
         # Create a small dummy image for testing
         img = Image.new("RGB", (200, 100), color=(30, 30, 30))
         buf = io.BytesIO()
         img.save(buf, format="PNG")
         self.img_b64 = base64.b64encode(buf.getvalue()).decode()
 
+    @needs_pil
     @mock.patch("wisp.config.load_api_key", return_value="sk-test-key")
     @mock.patch("urllib.request.urlopen")
     def test_ground_element_probabilistic_centering(self, mock_urlopen, mock_key):
@@ -49,6 +59,7 @@ class TestGrounding(unittest.TestCase):
         self.assertGreaterEqual(coords[0], 0)
         self.assertGreaterEqual(coords[1], 0)
 
+    @needs_pil
     @mock.patch("wisp.config.load_api_key", return_value="sk-test-key")
     @mock.patch("urllib.request.urlopen")
     def test_ground_element_low_confidence_returns_none(self, mock_urlopen, mock_key):
@@ -67,6 +78,10 @@ class TestGrounding(unittest.TestCase):
             region_hint="menu bar"
         )
         self.assertIsNone(coords)
+
+    def test_ground_element_degrades_without_pillow(self):
+        with mock.patch.object(grounding, "_PIL_AVAILABLE", False):
+            self.assertIsNone(grounding.ground_element("", "any button"))
 
     def test_tools_ground_registry(self):
         self.assertIn("ground", tools.REGISTRY)
