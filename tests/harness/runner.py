@@ -34,6 +34,7 @@ FIXTURE_DIR = ROOT / "tests" / "fixtures" / "turns"
 
 sys.path.insert(0, str(HERE.parent))
 from harness import fakes  # noqa: E402
+from fakes import FakeSet  # noqa: E402  (W5: cua/hypr/notify/systemctl)
 
 
 class NetworkViolation(OSError):
@@ -111,13 +112,49 @@ class NetworkGuard:
 
 # -- fixtures ------------------------------------------------------
 
-def load_fixture(path) -> dict:
+def resolve_fixture_path(path) -> pathlib.Path:
+    """Absolute path of a fixture: as given (relative to the CWD), else a
+    short name under tests/fixtures/turns (``.json`` optional)."""
     p = pathlib.Path(path)
-    if not p.is_absolute() and not p.exists():
-        p = FIXTURE_DIR / p
-    fx = json.loads(p.read_text())
-    fx["_dir"] = str(p.parent)
-    return fx
+    for cand in (p, p.with_suffix(p.suffix + ".json") if not p.suffix
+                 else p):
+        if cand.exists():
+            return cand.resolve()
+    if not p.is_absolute():
+        for cand in (FIXTURE_DIR / p, FIXTURE_DIR / (str(p) + ".json")):
+            if cand.exists():
+                return cand.resolve()
+    raise FileNotFoundError(f"replay fixture not found: {path}")
+
+
+def load_fixtures(path) -> list:
+    """All fixtures in a ``.json`` file (one) or ``.jsonl`` (one per
+    non-blank line). Every fixture records its resolved directory in
+    ``_dir``; relative ``audio`` is resolved against it at run time, so
+    the CWD never matters."""
+    p = resolve_fixture_path(path)
+    text = p.read_text()
+    rows = ([json.loads(ln) for ln in text.splitlines() if ln.strip()]
+            if p.suffix == ".jsonl" else [json.loads(text)])
+    for fx in rows:
+        fx["_dir"] = str(p.parent)
+    return rows
+
+
+def load_fixture(path) -> dict:
+    return load_fixtures(path)[0]
+
+
+def resolve_audio(fx: dict) -> pathlib.Path:
+    """Fixture WAV as an absolute path (fixture-relative unless already
+    absolute). Raises FileNotFoundError up front, not in the child."""
+    base = pathlib.Path(fx.get("_dir", FIXTURE_DIR)).resolve()
+    wav = pathlib.Path(fx["audio"])
+    wav = wav if wav.is_absolute() else base / wav
+    if not wav.is_file():
+        raise FileNotFoundError(
+            f"fixture audio not found: {wav} (audio={fx['audio']!r})")
+    return wav.resolve()
 
 
 def dedupe(seq: list) -> list:
@@ -142,6 +179,7 @@ class TurnResult:
     violations: list = field(default_factory=list)
     launch_calls: list = field(default_factory=list)
     notifications: list = field(default_factory=list)
+    fake_calls: dict = field(default_factory=dict)  # cua/hypr/notify/...
     interrupt_fired: bool = False
     interrupt_t_ms: int = 0
     peer_closed: dict = field(default_factory=dict)  # fake -> bool
@@ -207,6 +245,19 @@ def check_expectations(res: TurnResult) -> list:
             if not res.peer_closed.get(name):
                 bad.append(f"peer_closed: {name} never saw the client "
                            "hang up")
+    if "cua_calls" in ex:
+        want("cua_calls", [c["tool"] for c in
+                           res.fake_calls.get("cua", [])])
+    if "notify_bodies" in ex:
+        want("notify_bodies", [n["body"] for n in
+                               res.fake_calls.get("notify", [])])
+    if "notify_count" in ex:
+        want("notify_count", len(res.fake_calls.get("notify", [])))
+    if "systemctl_calls" in ex:
+        want("systemctl_calls", res.fake_calls.get("systemctl", []))
+    for sub in ex.get("hypr_requests_contain", []):
+        if not any(sub in r for r in res.fake_calls.get("hypr", [])):
+            bad.append(f"hypr_requests_contain: {sub!r} never requested")
     want("tool_calls", [t["name"] for t in res.trace_events("tool_call")])
     if "brain_calls" in ex:
         want("brain_calls", len(res.chat_calls()))
@@ -234,14 +285,44 @@ def _build_fakes(fx: dict) -> dict:
     return live
 
 
+def child_env(tmp: pathlib.Path, fs: FakeSet) -> dict:
+    """The turn child's environment. PATH is ONLY the fake bin dir, so a
+    real binary (cua-driver, hyprctl, notify-send, systemctl, ...) can
+    never be reached: whatever is not faked is "command not found"."""
+    env = {
+        "PATH": "",
+        "HOME": str(tmp / "home"),
+        "XDG_CONFIG_HOME": str(tmp / "config"),
+        "XDG_DATA_HOME": str(tmp / "data"),
+        "XDG_STATE_HOME": str(tmp / "state"),
+        "XDG_RUNTIME_DIR": str(tmp / "run"),
+        "TMPDIR": str(tmp),
+        "WISP_OS": "linux",
+        "WISP_FAKE_STT_KEY": "fake-stt-key",
+        "OPENROUTER_API_KEY": "fake-openrouter-key",
+        "PYTHONPATH": str(ROOT),
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
+    env.update(fs.env())
+    return env
+
+
 def run_turn(fixture, timeout: float = 60.0) -> TurnResult:
     fx = fixture if isinstance(fixture, dict) else load_fixture(fixture)
-    base = pathlib.Path(fx.get("_dir", FIXTURE_DIR))
+    wav = resolve_audio(fx)
     tmp = pathlib.Path(tempfile.mkdtemp(prefix="wisp-replay-"))
+    live = {}
+    fs = None
+    try:
+        fs = FakeSet(fx.get("fakes", {}), tmp, tmp / "home", tmp / "run")
+    except ValueError:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
     live = _build_fakes(fx)
     res = TurnResult(fixture=fx.get("name", ""), tempdir=str(tmp),
                      expect=fx.get("expect", {}))
     try:
+        fs.start()
         for s in live.values():
             s.start()
         res.endpoint_urls = {k: s.url for k, s in live.items()}
@@ -254,7 +335,9 @@ def run_turn(fixture, timeout: float = 60.0) -> TurnResult:
             urls["brain2_base"] = urls["brain2"] + "/v1"
         spec = {
             "tmp": str(tmp),
-            "wav": str(base / fx["audio"]),
+            "wav": str(wav),
+            "real_notify": "notify" in fx.get("fakes", {}),
+            "real_hypr": "hypr" in fx.get("fakes", {}),
             "urls": urls,
             "config": fx.get("config", {}),
             "chooser": fx.get("chooser"),
@@ -264,22 +347,8 @@ def run_turn(fixture, timeout: float = 60.0) -> TurnResult:
         spec_path = tmp / "spec.json"
         spec_path.write_text(json.dumps(spec))
         home = tmp / "home"
-        home.mkdir()
-        env = {
-            "PATH": os.environ.get("PATH", ""),
-            "HOME": str(home),
-            "XDG_CONFIG_HOME": str(tmp / "config"),
-            "XDG_DATA_HOME": str(tmp / "data"),
-            "XDG_STATE_HOME": str(tmp / "state"),
-            "XDG_RUNTIME_DIR": str(tmp / "run"),
-            "TMPDIR": str(tmp),
-            "WISP_OS": "linux",
-            "WISP_FAKE_STT_KEY": "fake-stt-key",
-            "OPENROUTER_API_KEY": "fake-openrouter-key",
-            "PYTHONPATH": str(ROOT),
-            "PYTHONDONTWRITEBYTECODE": "1",
-        }
-        (tmp / "run").mkdir()
+        home.mkdir(exist_ok=True)
+        env = child_env(tmp, fs)
         proc = subprocess.run(
             [sys.executable, str(HERE / "_child.py"), str(spec_path)],
             env=env, capture_output=True, text=True, timeout=timeout,
@@ -293,7 +362,8 @@ def run_turn(fixture, timeout: float = 60.0) -> TurnResult:
         res.trace = out.get("trace", [])
         res.bus = out.get("bus", {})
         res.final = out.get("final", {})
-        res.violations = out.get("violations", [])
+        res.violations = out.get("violations", []) + fs.violations()
+        res.fake_calls = fs.calls()
         res.launch_calls = out.get("launch_calls", [])
         res.notifications = out.get("notifications", [])
         res.interrupt_fired = out.get("interrupt_fired", False)
@@ -314,6 +384,7 @@ def run_turn(fixture, timeout: float = 60.0) -> TurnResult:
     finally:
         for s in live.values():
             s.stop()
+        fs.stop()
         shutil.rmtree(tmp, ignore_errors=True)
 
 
