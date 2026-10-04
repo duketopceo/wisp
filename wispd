@@ -434,10 +434,13 @@ def run_daemon(cfg: dict) -> int:
            "broker": cancel.PromptBroker(), "token": None,
            "rec": None, "rec_lock": threading.Lock()}
     _DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL = st, cfg, ctl
+    from wisp import ledger as _ledger
+    _ledger.attach(st, cfg)  # publishes `spend` on the state stream
     if cfg.get("health", {}).get("enabled", "true") == "true":
         from wisp import brain as _brain, health as _health
         _HEALTH = _health.HealthRegistry(cfg, bus=st)
         _HEALTH.register("hypr", _hypr_health)
+        _HEALTH.register("spend", _ledger.health_hook(cfg))
         from wisp import probes_cua as _pc
         _pc.register(_HEALTH, cfg)
         _brain.HEALTH = _HEALTH
@@ -841,7 +844,8 @@ def rebuild_harness() -> int:
 
 
 def main() -> int:
-    from wisp import cli
+    from wisp import cli, ledger
+    ledger.ACTIVE = True  # real runs record usage; library use does not
     return cli.main(sys.argv[1:], host=sys.modules[__name__])
 
 

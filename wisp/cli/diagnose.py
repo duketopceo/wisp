@@ -254,42 +254,49 @@ def latency(ctx, a):
 
 # -- spend ----------------------------------------------------------------
 
-@command("spend", "Paid model spend today and the daily cap",
+@command("spend", "Model usage today and the daily and monthly caps",
          ["wispd spend", "wispd spend --json"],
-         {"today_usd": "float", "calls_today": "int",
-          "cap_usd": "float|null", "paid_allowed": "bool",
-          "source": "str"})
+         {"today_usd": "float", "month_usd": "float",
+          "calls_today": "int", "cap_usd": "float|null",
+          "monthly_cap_usd": "float|null", "blocked": "bool",
+          "paid_allowed": "bool", "models": "list", "source": "str"})
 def spend(ctx, a):
-    # TODO(W14): read the real usage ledger and cap once it lands; until
-    # then this reads DATA_DIR/usage.jsonl rows {ts, usd, model, paid}.
-    ledger = config.DATA_DIR / "usage.jsonl"
-    today = datetime.date.today().isoformat()
-    total, calls, source = 0.0, 0, "none"
+    from .. import ledger
+    target = ledger.path()
     try:
-        lines = ledger.read_text().splitlines()
-        source = ledger.name
-    except OSError:
-        lines = []
-    for ln in lines:
-        try:
-            r = json.loads(ln)
-        except ValueError:
-            continue
-        if isinstance(r, dict) and str(r.get("ts", ""))[:10] == today:
-            total += float(r.get("usd") or 0)
-            calls += 1
-    try:
-        cap = float(ctx.cfg.get("budget", {}).get("daily_usd", ""))
-    except ValueError:
-        cap = None
+        st = ledger.status(ctx.cfg)
+    except OSError as e:
+        raise CliError("E_FAILED", f"Cannot read the usage ledger: {e}.",
+                       "Check the permissions on " + str(target))
+    source = target.name if target.exists() else "none"
     paid = ctx.cfg.get("brain", {}).get("allow_paid", "false") == "true"
-    data = {"today_usd": round(total, 4), "calls_today": calls,
-            "cap_usd": cap, "paid_allowed": paid, "source": source}
-    text = ctx.table(["", ""], [
-        ["spent today", f"${total:.4f} over {calls} calls"],
-        ["daily cap", "none set" if cap is None else f"${cap:.2f}"],
-        ["paid fallback", "allowed" if paid else "off (local only)"],
-        ["ledger", source]], header=False)
+    models = [{"model": k, **v} for k, v in sorted(
+        st["by_model"].items(), key=lambda kv: -kv[1]["usd"])]
+    data = {"today_usd": round(st["today_usd"], 4),
+            "month_usd": round(st["month_usd"], 4),
+            "calls_today": st["calls_today"], "cap_usd": st["cap_usd"],
+            "monthly_cap_usd": st["monthly_cap_usd"],
+            "blocked": st["blocked"], "paid_allowed": paid,
+            "models": models, "source": source}
+
+    def cap(v):
+        return "none set" if v is None else f"${v:.2f}"
+    rows = [["spent today", f"${st['today_usd']:.4f} over "
+             f"{st['calls_today']} calls"],
+            ["daily cap", cap(st["cap_usd"])],
+            ["spent this month", f"${st['month_usd']:.4f}"],
+            ["monthly cap", cap(st["monthly_cap_usd"])],
+            ["paid fallback",
+             "BLOCKED: " + st["reason"].replace("_", " ")
+             if st["blocked"] else "allowed" if paid
+             else "off (local only)"],
+            ["ledger", source]]
+    text = ctx.table(["", ""], rows, header=False)
+    if models:
+        text += "\n" + ctx.table(
+            ["model today", "calls", "tokens", "usd"],
+            [[m["model"], str(m["calls"]), f"{m['in']}/{m['out']}",
+              f"${m['usd']:.4f}"] for m in models])
     return ctx.emit(data, text)
 
 
