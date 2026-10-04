@@ -205,23 +205,32 @@ def record_correction(transcript: str, picked: str, answers: dict,
         pass
 
 
-def weekly(days: int = 7, corrections_file=config.CORRECTIONS,
-           decisions_file=config.DECISIONS,
-           out_dir=PROPOSALS_DIR) -> str | None:
-    """Aggregate the last `days` of corrections into a proposal file.
-    Returns the proposal path, or None when there is nothing to propose."""
+def recent(days: int = 7, corrections_file=config.CORRECTIONS) -> list:
+    """Corrections from the last `days` that carry a pick."""
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    recent = []
+    out = []
     for rec in _read_jsonl(corrections_file):
         try:
             ts = datetime.fromisoformat(rec["ts"])
         except (KeyError, ValueError):
             continue
         if ts >= cutoff and rec.get("picked"):
-            recent.append(rec)
-    if not recent:
-        return None
+            out.append(rec)
+    return out
 
+
+def weekly(days: int = 7, corrections_file=config.CORRECTIONS,
+           decisions_file=config.DECISIONS,
+           out_dir=PROPOSALS_DIR) -> str | None:
+    """Aggregate the last `days` of corrections into a proposal file.
+    Returns the proposal path, or None when there is nothing to propose."""
+    recent_recs = recent(days, corrections_file)
+    if not recent_recs:
+        return None
+    return _write_weekly(recent_recs, days, out_dir)
+
+
+def _write_weekly(recent, days, out_dir):
     counts = {}
     for rec in recent:
         key = rec["picked"]
