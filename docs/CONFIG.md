@@ -10,6 +10,39 @@ restart) or the Settings tab in the GUI. Every key has a default.
 | `mod` | `"SUPER"` | modifier for push-to-talk |
 | `key` | `"D"` | key for push-to-talk (SUPER+D) |
 
+## [keys] — keyboard submap (Linux/Hyprland)
+
+| key | default | meaning |
+|-----|---------|---------|
+| `submap` | `"true"` | register the Wisp keyboard submap while a turn acts or waits |
+
+While a turn is `acting` or `awaiting_choice`, `wispd` registers and enters
+a Hyprland submap named `wisp` and leaves it on every other status:
+
+| state | keys |
+|-------|------|
+| `acting`, or waiting with no options | `Esc` stops the turn |
+| `awaiting_choice`, n options | `Esc` stops, `Enter` picks option 1 (the "yes" of a confirm), `1`..`min(n,9)` pick that option |
+
+The keys are modifier-free but exist only inside the submap, so they never
+shadow a global bind or typing outside those states. Pointer backends do not
+take focus, so `Esc` stays reachable while cua acts. Design notes:
+
+- Registered at runtime through the bind registry in `wisp/hypr.py`
+  (`hyprctl eval` / the request socket), never by editing `bindings.lua` or
+  anything under `/usr/share/omarchy`. Nothing is written to `~/.config/hypr`.
+- Every bind's description starts with `wisp:`. If a submap named `wisp`
+  already holds binds without that prefix, Wisp reports the conflict in
+  `wispd.log` and runs voice/mouse only; it never overwrites them.
+- The daemon leaves the submap on idle, on shutdown, and at startup (clears
+  what a crash left). The `Esc` bind itself also leaves the submap, so a dead
+  daemon cannot strand the keyboard in it.
+- `Esc` runs `wisp/fastkey.py --sock <wispd.sock> interrupt`: the same IPC
+  `interrupt` command as `wispd interrupt`, without importing the daemon
+  (cold `wispd interrupt` is about 120 ms; `fastkey.py` about 20 ms).
+- The agent's own `key` tool steps run outside the submap so a scripted
+  `Esc` cannot stop its own turn.
+
 ## [audio]
 
 | key | default | meaning |
