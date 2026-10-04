@@ -11,7 +11,7 @@
 // Highest contract_version this reader understands; a newer daemon is
 // still read (additive fields) but flagged contractNewer.
 var CONTRACT_VERSION = 1
-var STALE_AFTER_MS = 5000
+var STALE_AFTER_MS = 20000  // above the W3 bus heartbeat (15 s) so long turns never flag stale between beats
 var STATUSES = ["idle", "listening", "transcribing", "deciding",
   "awaiting_choice", "acting", "speaking", "suggestion", "done", "error"]
 // statuses in which the daemon is working and must keep writing

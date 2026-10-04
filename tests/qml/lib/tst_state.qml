@@ -64,10 +64,10 @@ TestCase {
     compare(r.view.parseErrors, 1)
   }
 
-  function test_stale_after_five_seconds() {
+  function test_stale_after_default_window() {
     var v = S.applySnapshot(S.initial(), snap({ status: "acting" }), 10000, "file").view
-    verify(!S.isStale(v, 14900))
-    verify(S.isStale(v, 15001))
+    verify(!S.isStale(v, 29900))
+    verify(S.isStale(v, 30001))
     var idle = S.applySnapshot(S.initial(), snap({ status: "idle" }), 0, "file").view
     verify(!S.isStale(idle, 999999))
   }
