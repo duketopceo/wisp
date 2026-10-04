@@ -1,0 +1,232 @@
+{
+ "Creature": {
+  "mode": "state",
+  "pad": 12,
+  "scale2": true,
+  "on": "desktop"
+ },
+ "Mark": {
+  "mode": "state",
+  "pad": 8,
+  "size": 28,
+  "scale2": true,
+  "props": {
+   "size": 28
+  }
+ },
+ "StatusLine": {
+  "mode": "state",
+  "pad": 10
+ },
+ "Transcript": {
+  "mode": "state",
+  "pad": 10,
+  "width": 280
+ },
+ "Answer": {
+  "mode": "state",
+  "pad": 10,
+  "width": 320,
+  "props": {
+   "maxLines": 4
+  }
+ },
+ "StopControl": {
+  "mode": "state",
+  "pad": 10
+ },
+ "Pill": {
+  "mode": "state",
+  "pad": 12,
+  "scale2": true,
+  "on": "desktop"
+ },
+ "Bubble": {
+  "mode": "state",
+  "pad": 12,
+  "scale2": true,
+  "on": "desktop"
+ },
+ "Console": {
+  "mode": "state",
+  "pad": 12,
+  "on": "desktop"
+ },
+ "Corner": {
+  "mode": "state",
+  "pad": 12,
+  "scale2": true,
+  "on": "desktop"
+ },
+ "Chip": {
+  "mode": "variant",
+  "pad": 10,
+  "variants": {
+   "normal": {
+    "label": "open it",
+    "hint": "1"
+   },
+   "hover": {
+    "label": "open it",
+    "hint": "1",
+    "hovered": true
+   },
+   "pressed": {
+    "label": "open it",
+    "hint": "1",
+    "pressed": true
+   },
+   "selected": {
+    "label": "open it",
+    "hint": "1",
+    "selected": true
+   },
+   "disabled": {
+    "label": "open it",
+    "hint": "1",
+    "enabled": false
+   },
+   "keyed": {
+    "label": "none of these",
+    "hint": "3"
+   }
+  }
+ },
+ "StepRow": {
+  "mode": "variant",
+  "pad": 10,
+  "width": 300,
+  "variants": {
+   "pending": {
+    "text": "verify toggle",
+    "state": "pending"
+   },
+   "running": {
+    "text": "click night light toggle",
+    "state": "running"
+   },
+   "done": {
+    "text": "focus Settings",
+    "state": "done"
+   },
+   "failed": {
+    "text": "click rename",
+    "state": "failed"
+   },
+   "confirm": {
+    "text": "run_shell rm -r Downloads",
+    "state": "confirm"
+   }
+  }
+ },
+ "GhostCursor": {
+  "mode": "variant",
+  "pad": 12,
+  "variants": {
+   "traveling": {
+    "state": "traveling"
+   },
+   "clicking": {
+    "state": "clicking"
+   },
+   "parked": {
+    "state": "parked",
+    "label": "night light"
+   },
+   "returning": {
+    "state": "returning"
+   }
+  },
+  "on": "desktop"
+ },
+ "Beacon": {
+  "mode": "variant",
+  "pad": 10,
+  "variants": {
+   "landing": {
+    "state": "landing",
+    "index": 1
+   },
+   "holding": {
+    "state": "holding",
+    "index": 2
+   },
+   "fading": {
+    "state": "fading",
+    "index": 3
+   }
+  },
+  "on": "desktop"
+ },
+ "PanelTab": {
+  "mode": "variant",
+  "pad": 6,
+  "variants": {
+   "normal": {
+    "text": "agents"
+   },
+   "hover": {
+    "text": "agents",
+    "hovered": true
+   },
+   "selected": {
+    "text": "now",
+    "selected": true
+   }
+  }
+ },
+ "AgentRow": {
+  "mode": "variant",
+  "pad": 10,
+  "width": 340,
+  "variants": {
+   "queued": {
+    "name": "tidy downloads",
+    "state": "queued",
+    "seconds": 0
+   },
+   "running": {
+    "name": "summarize inbox",
+    "state": "running",
+    "seconds": 83,
+    "line": "reading message 12 of 40"
+   },
+   "done": {
+    "name": "weekly report",
+    "state": "done",
+    "seconds": 301,
+    "line": "saved to Documents"
+   },
+   "failed": {
+    "name": "sync notes",
+    "state": "failed",
+    "seconds": 12,
+    "line": "endpoint refused the request"
+   },
+   "cancelled": {
+    "name": "index photos",
+    "state": "cancelled",
+    "seconds": 47
+   }
+  }
+ },
+ "EmptyState": {
+  "mode": "variant",
+  "pad": 12,
+  "width": 340,
+  "variants": {
+   "now": {
+    "tab": "now"
+   },
+   "agents": {
+    "tab": "agents"
+   },
+   "memory": {
+    "tab": "memory"
+   },
+   "settings": {
+    "tab": "settings"
+   }
+  }
+ }
+}
