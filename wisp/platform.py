@@ -15,6 +15,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from . import hypr
+
 HOME = Path.home()
 
 
@@ -288,12 +290,6 @@ def notify_cmd(title: str, body: str) -> list | None:
 
 # ── window management ───────────────────────────────────────────────
 
-def _hypr(*args: str) -> list:
-    """hyprctl argv with HYPRLAND_INSTANCE_SIGNATURE env fix applied
-    at spawn by callers via `_env()`."""
-    return ["hyprctl", *args]
-
-
 def _env(extra: dict | None = None) -> dict:
     """Env for spawned cmds — discovers the Hyprland instance dir
     when HIS isn't exported (systemd-launched daemon case)."""
@@ -308,10 +304,6 @@ def _env(extra: dict | None = None) -> dict:
     return e
 
 
-def _eval(lua: str) -> list:
-    return _hypr("eval", f"hl.dispatch({lua})")
-
-
 def wm_ok(p: subprocess.CompletedProcess) -> bool:
     """Did a wm command work? Linux: 'ok' in stdout (Hyprland eval
     convention) or clean exit for legacy dispatch; macOS: exit code."""
@@ -321,10 +313,19 @@ def wm_ok(p: subprocess.CompletedProcess) -> bool:
     return p.returncode == 0
 
 
-def _try(cmds: list[list], timeout: int = 8) -> bool:
-    """Run each argv until one satisfies wm_ok (fallback semantics —
-    eval first, then legacy dispatch)."""
+def uses_hypr() -> bool:
+    """Window ops on this host go through the Hyprland socket."""
+    return current() == "linux" and desktop() in ("hyprland", "unknown")
+
+
+def _try(cmds: list, timeout: int = 8) -> bool:
+    """Run each command until one succeeds. A `hypr.LuaCmd` goes over the
+    Hyprland socket (no fork); anything else is an argv list."""
     for c in cmds:
+        if isinstance(c, hypr.LuaCmd):
+            if hypr.run_lua(c):
+                return True
+            continue
         try:
             p = subprocess.run(c, capture_output=True, text=True,
                                timeout=timeout, env=_env())
@@ -340,8 +341,7 @@ def focus_cmds(cls: str) -> list[list]:
     if o == "linux":
         dt = desktop()
         if dt in ("hyprland", "unknown"):
-            return [_eval(f'hl.dsp.focus({{window="class:^{cls}"}})'),
-                    _hypr("focuswindow", f"class:^{cls}")]
+            return [hypr.LuaCmd(hypr.focus_class(cls))]
         if dt == "kde":
             if _which("kdotool"):
                 return [["sh", "-c",
@@ -368,12 +368,7 @@ def close_cmds(cls: str) -> list[list]:
     if o == "linux":
         dt = desktop()
         if dt in ("hyprland", "unknown"):
-            if not cls:
-                return [_eval("hl.dsp.window.close()"),
-                        _hypr("killactive")]
-            return [_eval(
-                f'hl.dsp.window.close({{window="class:^{cls}"}})'),
-                _hypr("closewindow", f"class:^{cls}")]
+            return [hypr.LuaCmd(hypr.close_window(cls))]
         if dt in ("kde", "x11"):
             if not cls:
                 return ([["xdotool", "getactivewindow", "windowclose"]]
@@ -402,8 +397,7 @@ def workspace_cmds(n: int) -> list[list]:
     if o == "linux":
         dt = desktop()
         if dt in ("hyprland", "unknown"):
-            return [_eval(f"hl.dsp.focus({{workspace={n}}})"),
-                    _hypr("workspace", str(n))]
+            return [hypr.LuaCmd(hypr.focus_workspace(n))]
         if dt == "kde":
             return ([["qdbus", "org.kde.KWin", "/KWin",
                       "setCurrentDesktop", str(n)]]
@@ -426,8 +420,7 @@ def launch_exec_cmds(cmdline: str) -> list[list]:
     o = current()
     if o == "linux":
         if desktop() in ("hyprland", "unknown"):
-            return [_eval(f'hl.dsp.exec_cmd("{cmdline}")'),
-                    _hypr("dispatch", "exec", cmdline)]
+            return [hypr.LuaCmd(hypr.exec_cmd(cmdline))]
         return [["setsid", "sh", "-c", cmdline]]  # detached spawn
     if o == "macos":
         return [["sh", "-c", cmdline]]
@@ -443,13 +436,8 @@ def monitors() -> list[dict]:
         dt = desktop()
         if dt in ("hyprland", "unknown"):
             try:
-                p = subprocess.run(["hyprctl", "monitors", "-j"],
-                                   capture_output=True, text=True,
-                                   timeout=5, env=_env())
-                import json
-                return (json.loads(p.stdout)
-                        if p.returncode == 0 else [])
-            except Exception:
+                return hypr.query("monitors")
+            except hypr.HyprError:
                 return []
         if dt in ("kde", "x11"):
             # xrandr `NAME connected ... WxH+X+Y` (scale assumed 1)
@@ -547,16 +535,13 @@ def active_window() -> dict:
     """Focused window as {"class","title"}; {} when unsupported/empty."""
     o = current()
     if o == "linux":
-        if not shutil.which("hyprctl"):
-            return {}
-        r = subprocess.run(["hyprctl", "activewindow", "-j"],
-                           capture_output=True, text=True)
         try:
-            w = json.loads(r.stdout)
-            return {"class": w.get("class", ""),
-                    "title": w.get("title", "")}
-        except json.JSONDecodeError:
+            w = hypr.query("activewindow")
+        except hypr.HyprError:
             return {}
+        if not isinstance(w, dict):
+            return {}
+        return {"class": w.get("class", ""), "title": w.get("title", "")}
     if o == "macos":
         if not _which("osascript"):
             return {}

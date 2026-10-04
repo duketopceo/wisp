@@ -4,6 +4,7 @@ import shutil
 import subprocess
 
 from .. import config
+from .. import hypr
 from ..pipeline import hypr_env, notify
 
 
@@ -103,6 +104,9 @@ def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
     mode = (cfg or {}).get("pointer", {}).get("mode", "guide")
     if mode == "drive" and backend:
         verb = "click" if do_click else "move"
+        if not do_click and platform.uses_hypr() \
+                and hypr.run_lua(hypr.cursor_move(x, y)):
+            return f"MOVED({x},{y})"  # socket eval, no process fork
         cmds = platform.pointer_cmds(x, y, backend, click=do_click)
         for c in cmds:
             r = subprocess.run(c, capture_output=True, env=hypr_env(),
