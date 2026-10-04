@@ -16,6 +16,13 @@ from wisp import copy as wcopy  # noqa: E402
 OUT = ROOT / "shell-plugin" / "lib" / "copy.js"
 
 _FUNCTIONS = r"""
+function errorMessage(code) { return (ERRORS[code] || ERRORS[UNKNOWN_ERROR])[0] }
+
+function errorHint(code) { return (ERRORS[code] || ERRORS[UNKNOWN_ERROR])[1] }
+
+// UI string by key; an unknown key returns the key so a typo is visible.
+function string(key) { return STRINGS.hasOwnProperty(key) ? STRINGS[key] : key }
+
 function undash(s) { return String(s).replace(/\s*[—–]\s*/g, ": ").replace(/^\s+|\s+$/g, "") }
 
 function statusWord(status) { return (STATUS[status] || STATUS[UNKNOWN_STATUS])[0] }
@@ -64,6 +71,9 @@ def render() -> str:
         f"var UNKNOWN_STATUS = {js(wcopy.UNKNOWN_STATUS)}",
         f"var RESULT_RULES = {js([list(r) for r in wcopy.RESULT_RULES])}",
         f"var ACTION_VERBS = {js(wcopy.ACTION_VERBS)}",
+        f"var ERRORS = {js({k: list(v) for k, v in wcopy.ERRORS.items()})}",
+        f"var UNKNOWN_ERROR = {js(wcopy.UNKNOWN_ERROR)}",
+        f"var STRINGS = {js(wcopy.STRINGS)}",
     ]) + "\n" + _FUNCTIONS
 
 

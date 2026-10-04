@@ -8,6 +8,16 @@ var STATUS = {"idle": ["ready", "muted"], "listening": ["listening", "ember"], "
 var UNKNOWN_STATUS = "offline"
 var RESULT_RULES = [["^ASK_USER:?\\s+(.*)$", "{1}", null], ["^BLOCKED \\(tool .* needs confirmation\\)", "blocked: needs your ok", null], ["^BLOCKED \\(risk=", "blocked: too risky to do on my own", null], ["^BLOCKED \\(shell tool", "blocked: shell commands are off", null], ["^BLOCKED \\((.*)\\)$", "blocked: {1}", null], ["^BLOCKED", "blocked", null], ["^SKIP(PED)? \\(launch( route)? but no app identified\\)", "didn't catch which app", "didnt_understand"], ["^SKIP(PED)? \\(unknown app", "didn't recognize that app", "didnt_understand"], ["^SKIP(PED)? \\((nothing to type|empty command|empty agent task|empty pattern)\\)", "didn't catch what to do", "didnt_understand"], ["^SKIP(PED)? \\(.* declined by user\\)", "skipped, you said no", null], ["^SKIP(PED)? \\(.* needs user confirmation\\)", "needs your ok", null], ["^SKIP(PED)? \\(shell disabled", "shell commands are off", null], ["^SKIP(PED)?\\b", "couldn't do that", null], ["^(ERROR|FAIL|FAILED|REFUSED)\\b", "that failed", null], ["^(ABORTED|CANCELLED)\\b", "stopped", null]]
 var ACTION_VERBS = {"launch": "open it", "run_shell": "run a command", "answer": "just answer", "act": "do it for me", "agent": "send to agent", "dictation": "dictate it"}
+var ERRORS = {"jev_down": ["can't reach the decision model", "check the jev service, then try again"], "brain_down": ["can't reach the answering model", "check your model endpoint, then try again"], "stt_down": ["can't hear you right now", "check the speech service, then try again"], "ground_down": ["screen grounding is offline", "check the grounding service, then try again"], "ground_failed": ["couldn't find that on screen", "try again with the window in view"], "timeout": ["that took too long", "try again"], "cancelled": ["stopped", ""], "busy": ["still working on the last request", "wait for it to finish or say stop"], "stale_prompt": ["that question expired", "ask again"], "restarted": ["wisp restarted", "try again"], "tool_failed": ["a step failed", "open details to see which one"], "budget_exceeded": ["today's model budget is used up", "raise the budget in settings or wait until tomorrow"], "internal": ["something went wrong", "open details, then try again"]}
+var UNKNOWN_ERROR = "internal"
+var STRINGS = {"state.stale": "out of date", "state.reconnecting": "reconnecting", "state.offline": "wisp is not running", "state.degraded": "reading from file", "state.newer": "wisp is newer than this panel", "state.details": "details"}
+
+function errorMessage(code) { return (ERRORS[code] || ERRORS[UNKNOWN_ERROR])[0] }
+
+function errorHint(code) { return (ERRORS[code] || ERRORS[UNKNOWN_ERROR])[1] }
+
+// UI string by key; an unknown key returns the key so a typo is visible.
+function string(key) { return STRINGS.hasOwnProperty(key) ? STRINGS[key] : key }
 
 function undash(s) { return String(s).replace(/\s*[—–]\s*/g, ": ").replace(/^\s+|\s+$/g, "") }
 
