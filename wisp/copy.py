@@ -64,6 +64,45 @@ ACTION_VERBS = {
     "agent": "send to agent", "dictation": "dictate it",
 }
 
+# error_code -> (message, hint). Codes are the closed set in
+# wisp/errors_codes.py (docs/IPC_CONTRACT.md "Error codes"); a code outside
+# the set reads as `internal`. Message says what happened, hint says what
+# to try. Shown by every surface; raw `error_detail` never is.
+ERRORS = {
+    "jev_down": ("can't reach the decision model",
+                 "check the jev service, then try again"),
+    "brain_down": ("can't reach the answering model",
+                   "check your model endpoint, then try again"),
+    "stt_down": ("can't hear you right now",
+                 "check the speech service, then try again"),
+    "ground_down": ("screen grounding is offline",
+                    "check the grounding service, then try again"),
+    "ground_failed": ("couldn't find that on screen",
+                      "try again with the window in view"),
+    "timeout": ("that took too long", "try again"),
+    "cancelled": ("stopped", ""),
+    "busy": ("still working on the last request",
+             "wait for it to finish or say stop"),
+    "stale_prompt": ("that question expired", "ask again"),
+    "restarted": ("wisp restarted", "try again"),
+    "tool_failed": ("a step failed", "open details to see which one"),
+    "budget_exceeded": ("today's model budget is used up",
+                        "raise the budget in settings or wait until tomorrow"),
+    "internal": ("something went wrong", "open details, then try again"),
+}
+UNKNOWN_ERROR = "internal"
+
+# Reader and surface strings keyed "area.name". Sentence case is not used
+# for status-like words (lowercase), same as STATUS.
+STRINGS = {
+    "state.stale": "out of date",
+    "state.reconnecting": "reconnecting",
+    "state.offline": "wisp is not running",
+    "state.degraded": "reading from file",
+    "state.newer": "wisp is newer than this panel",
+    "state.details": "details",
+}
+
 _DASH = re.compile(r"\s*[—–]\s*")
 
 
@@ -103,3 +142,16 @@ def pick_label(pick: str) -> str:
     if kind == "action":
         return ACTION_VERBS.get(val) or val.replace("_", " ")
     return _undash(val)
+
+
+def error_message(code: str) -> str:
+    return ERRORS.get(code, ERRORS[UNKNOWN_ERROR])[0]
+
+
+def error_hint(code: str) -> str:
+    return ERRORS.get(code, ERRORS[UNKNOWN_ERROR])[1]
+
+
+def string(key: str) -> str:
+    """UI string by key; unknown keys return the key so a typo is visible."""
+    return STRINGS.get(key, key)
