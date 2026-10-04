@@ -38,6 +38,8 @@ routing → guarded actions. Python reference daemon + Rust parity core
 | `mcpauth.py` | OAuth connector flow via the local BrowserOS Strata gateway — `wispd connect <svc>`, catalog list, mcp.json registration |
 | `telemetry.py` | decision telemetry + `wispd tele` digest |
 | `action_stats.py` | per-app tool outcome stats — planner bias block injected into the act system prompt |
+| `judge.py` | Jev-as-judge — structured success/efficiency/waste verdict per act run |
+| `train.py` | training arena — `skillbank.json` per-(surface,app,task) streaks, auto-graduation (≥3 streak, eff≥0.9), demotion, `hint_for()` proven-sequence injection |
 | `points.py` | `[POINT:x,y:label]` tag parsing → normalized ghost-cursor points |
 | `sense.py` | opt-in proactive collector — dayflow + hyprctl deltas → `activity.jsonl` |
 | `suggest.py` | Jev-gated suggestion miner → orb "an idea" cards (approval-only) |

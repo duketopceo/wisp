@@ -1,0 +1,9 @@
+{
+  "_note": "Live probe of the Hyprland (Lua) request socket, 2026-10-03, scrubbed. Request -> reply, replayed by tests/test_hypr.py.",
+  "j/activewindow": "{\n    \"address\": \"0xaaaa\",\n    \"mapped\": true,\n    \"class\": \"foot\",\n    \"title\": \"~\",\n    \"workspace\": {\"id\": 1, \"name\": \"1\"}\n}\n",
+  "j/monitors": "[{\"id\": 0, \"name\": \"eDP-1\", \"x\": 0, \"y\": 0, \"width\": 3456, \"height\": 2160, \"scale\": 2.0}]\n",
+  "j/binds": "[\n{\"modmask\": 64, \"submap\": \"\", \"key\": \"D\", \"description\": \"Display\"},\n{\"modmask\": 0, \"submap\": \"\", \"key\": \"XF86AudioRaiseVolume\", \"description\": \"Volume up\"},\n{\"modmask\": 69, \"submap\": \"resize\", \"key\": \"h\", \"description\": \"in submap\"}\n]\n",
+  "eval return 1": "ok",
+  "eval hl.nonexistent()": "error: [string \"return hl.nonexistent();\"]:1: attempt to call a nil value (field 'nonexistent')",
+  "j/nonsense": "unknown request"
+}

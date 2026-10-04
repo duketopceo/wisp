@@ -1,0 +1,53 @@
+{
+  "description": "Cancel fires while the answer is still streaming. U9: the stream stops promptly, the brain socket closes, no further deltas publish and the turn ends idle with error_code cancelled.",
+  "audio": "ask.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "what time is it"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "chunks": [
+            "It ",
+            "is ",
+            "half ",
+            "past ",
+            "three."
+          ],
+          "chunk_delay_ms": 120
+        }
+      ]
+    }
+  },
+  "interrupt_after_ms": 450,
+  "expect": {
+    "statuses": [
+      "listening",
+      "transcribing",
+      "deciding",
+      "acting",
+      "speaking",
+      "idle"
+    ],
+    "error_code": "cancelled",
+    "peer_closed": [
+      "brain"
+    ]
+  },
+  "name": "cancel_mid_stream"
+}

@@ -1,0 +1,45 @@
+{
+  "description": "Answer route: Jev routes to answer, brain streams a reply. Characterization baseline of today's pipeline.",
+  "audio": "ask.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "what time is it"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "content": "It is half past three.",
+          "chunk_delay_ms": 0
+        }
+      ]
+    }
+  },
+  "expect": {
+    "statuses": [
+      "listening",
+      "transcribing",
+      "deciding",
+      "acting",
+      "speaking",
+      "done"
+    ],
+    "transcript": "what time is it",
+    "answer": "It is half past three.",
+    "brain_calls": 1
+  },
+  "name": "ask"
+}

@@ -74,6 +74,57 @@ class StateFileShape(unittest.TestCase):
         assert on_disk["status"] == "listening"
         assert on_disk["transcript"] == "hi"
 
+    def test_snapshot_carries_stamps(self):
+        f = pathlib.Path("/tmp/wisp-ct-state4.json")
+        f.unlink(missing_ok=True)
+        st = state.State(state_file=f)
+        s = st.snapshot()
+        assert s["contract_version"] == state.CONTRACT_VERSION == 1
+        assert isinstance(s["seq"], int)
+        assert "turn_id" in s and "updated_at" in s
+
+
+class BusWriterOutput(unittest.TestCase):
+    """What the single publisher writes must satisfy the contract."""
+    STATUSES = StateFileShape.STATUSES
+
+    def test_bus_file_matches_contract(self):
+        import tempfile
+        f = pathlib.Path(tempfile.mkdtemp()) / "state.json"
+        bus = state.StateBus(state_file=f)
+        try:
+            t = bus.begin_turn()
+            bus.publish(t, status="listening", transcript="hi")
+            bus.publish(t, level=0.4)
+            bus.publish(t, status="done", result="ok")
+            d = json.loads(f.read_text())
+        finally:
+            bus.close()
+        assert StateFileShape.KEYS <= set(d), StateFileShape.KEYS - set(d)
+        assert d["status"] in self.STATUSES
+        assert d["contract_version"] == 1
+        assert d["turn_id"] == t
+        assert isinstance(d["seq"], int) and d["seq"] >= 3
+        assert d["updated_at"].endswith("+00:00")
+        # additive only: nothing from the v1 document is renamed away
+        for k in ("points", "steps", "guide", "focus", "goal",
+                  "transcript", "answer", "choices"):
+            assert k in d, k
+
+    def test_seq_is_strictly_increasing_across_writes(self):
+        import tempfile
+        f = pathlib.Path(tempfile.mkdtemp()) / "state.json"
+        bus = state.StateBus(state_file=f)
+        try:
+            t = bus.begin_turn()
+            seen = []
+            for s in ("listening", "transcribing", "deciding", "done"):
+                bus.publish(t, status=s)
+                seen.append(json.loads(f.read_text())["seq"])
+        finally:
+            bus.close()
+        assert seen == sorted(set(seen)) and len(seen) == 4
+
 
 if __name__ == "__main__":
     unittest.main()

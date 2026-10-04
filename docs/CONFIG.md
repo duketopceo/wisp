@@ -50,7 +50,14 @@ restart) or the Settings tab in the GUI. Every key has a default.
 |-----|---------|---------|
 | `router` | `"jev"` | `jev` (decision API) / `chat` (straight to answer brain) / `off` (clarify) |
 | `default` | `"openrouter:<answer_model>"` | `name:model` selecting a `[brain.<name>]` provider |
+| `fallback` | `""` | comma-separated `name:model` chain tried after `default` (e.g. `"mlx:ornith, ollama:ornith"`) |
+| `allow_paid` | `false` | allow paid fallback entries (OpenRouter, or `paid = "true"` on the section); the U10 daily cap hook (`brain.budget_ok`) also applies |
+| `first_token_s` | `3` | a streaming entry must emit a token within this many seconds or the chain moves on; all entries failing ends the turn `brain_down` |
 | `agent_runtime` | `"opencode"` | spawned-agent runtime: `opencode`/`codex`/`claude`/`devin` |
+
+Retries: one fast retry on connection refused/reset only; timeouts are
+never retried. Once answer text has streamed, a failure ends the turn
+instead of falling back.
 
 ### [brain.<name>] provider tables
 
@@ -59,9 +66,31 @@ restart) or the Settings tab in the GUI. Every key has a default.
 | `type` | `openrouter`, `openai_compat`, or `ollama` |
 | `base_url` | endpoint |
 | `key_env` | env var name; may be `omaseal://service/account` |
+| `paid` | `true`/`false`; defaults to true for `openrouter.ai` URLs. Paid fallback entries need `[brain] allow_paid` |
 | `vision` / `tools` | capability flags — gates screenshots and tool schemas |
 
 Built-ins: `openrouter`, `ollama`, `lmstudio`, `mlx`.
+
+## [health] — endpoint probes (U7)
+
+Local endpoints only (Jev, every brain-chain entry, optional extras, a
+loopback `[stt]` server); remote ones are never probed. Any HTTP answer
+counts as up. Results appear as `health` in state.json and a
+`health_changed` event fires on each transition.
+
+| key | default | meaning |
+|-----|---------|---------|
+| `enabled` | `true` | run the daemon's probe loop |
+| `interval_s` | `30` | idle probe period |
+| `press_stale_s` | `10` | on hotkey press, re-probe anything older than this |
+| `timeout_ms` | `500` | per-probe timeout |
+| `ollama` / `uitars` | unset | extra endpoint base URLs to watch |
+
+`[health.units]` maps an endpoint name (`jev`, `brain_<provider>`,
+`uitars`, `ollama`, `stt`) to a comma list of user systemd units.
+`wispd models start` prints the `systemctl --user start ...` command for
+the units behind down endpoints; `--run` executes it. `wispd doctor`
+and `wispd models` show current health.
 
 ## [agents]
 

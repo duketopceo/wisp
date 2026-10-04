@@ -145,29 +145,32 @@ class TestExecute(unittest.TestCase):
             self.assertEqual(pipeline.dictation_text(raw), want, raw)
 
     def test_launch_uses_lua_dispatcher(self):
-        ok = mock.Mock(returncode=0, stdout="ok")
+        from wisp import hypr
         with _with_os("linux"), \
+             mock.patch.dict(os.environ, {"WISP_DESKTOP": "hyprland"}), \
              mock.patch.object(pipeline.shutil, "which",
                                return_value="/usr/bin/ghostty"), \
-             mock.patch.object(pipeline.subprocess, "run",
-                               return_value=ok) as run:
+             mock.patch.object(hypr, "available", return_value=True), \
+             mock.patch.object(hypr, "run_lua",
+                               return_value=True) as ev, \
+             mock.patch.object(pipeline.subprocess, "run") as run:
             out = pipeline.execute(self.answers(), self.cfg)
         self.assertIn("LAUNCHED", out)
-        cmd = run.call_args[0][0]
-        self.assertEqual(cmd[:2], ["hyprctl", "eval"])
-        self.assertIn('hl.dsp.exec_cmd("ghostty")', cmd[2])
+        lua = ev.call_args[0][0]
+        self.assertIn('hl.dsp.exec_cmd("ghostty")', lua)
+        run.assert_not_called()  # socket eval, never hyprctl
 
-    def test_launch_falls_back_to_dispatch(self):
-        fail = mock.Mock(returncode=1, stdout="err")
+    def test_launch_fails_fast_when_hypr_down(self):
+        from wisp import hypr
         with _with_os("linux"), \
+             mock.patch.dict(os.environ, {"WISP_DESKTOP": "hyprland"}), \
              mock.patch.object(pipeline.shutil, "which",
                                return_value="/usr/bin/ghostty"), \
-             mock.patch.object(pipeline.subprocess, "run",
-                               return_value=fail) as run:
+             mock.patch.object(hypr, "available", return_value=False), \
+             mock.patch.object(pipeline.subprocess, "run") as run:
             out = pipeline.execute(self.answers(), self.cfg)
-        self.assertIn("LAUNCHED", out)
-        self.assertEqual(run.call_args_list[-1][0][0],
-                         ["hyprctl", "dispatch", "exec", "ghostty"])
+        self.assertIn("tool_failed", out)
+        run.assert_not_called()
 
 
 class TestConfidenceGate(unittest.TestCase):
@@ -264,6 +267,105 @@ class TestSttProvider(unittest.TestCase):
         cfg = {"stt": {"provider": "openai", "key_env": "NO_SUCH_KEY_XYZ"}}
         with self.assertRaises(RuntimeError):
             pipeline.transcribe(pathlib.Path("/tmp/x.wav"), cfg)
+
+class TestListenSpans(unittest.TestCase):
+    """U1: the daemon builds press/release spans from the client t0."""
+
+    def setUp(self):
+        import importlib.machinery
+        import importlib.util
+        import threading
+        path = str(pathlib.Path(__file__).resolve().parent.parent / "wispd")
+        loader = importlib.machinery.SourceFileLoader("wispd_mod", path)
+        spec = importlib.util.spec_from_loader("wispd_mod", loader)
+        self.w = importlib.util.module_from_spec(spec)
+        loader.exec_module(self.w)
+        self.st = mock.Mock()
+        self.ctl = {"stop": threading.Event(), "busy": threading.Event(),
+                    "interrupt": threading.Event(),
+                    "choice_event": threading.Event(), "choice_pick": "",
+                    "rec": None, "rec_lock": threading.Lock()}
+        self.handle = self.w._handler(self.st, {}, self.ctl)
+
+    def test_press_then_release_hand_spans_to_the_pipeline(self):
+        import time
+        seen = {}
+        rec = {"proc": mock.Mock(), "sampler_stop": mock.Mock(),
+               "t0": time.monotonic() - 2}
+
+        def fake_run(st, cfg, ctl, wav=None, spans=None, turn_id=None):
+            seen["spans"] = spans
+            ctl["busy"].clear()
+        with mock.patch.object(self.w.pipeline, "record_start",
+                               return_value=rec), \
+             mock.patch.object(self.w.pipeline, "record_stop",
+                               return_value="x.wav"), \
+             mock.patch.object(self.w.speech, "stop"), \
+             mock.patch.object(self.w, "_rec_watchdog"), \
+             mock.patch.object(self.w, "_run_listen", fake_run), \
+             mock.patch.object(self.w, "dlog"):
+            r1 = self.handle({"cmd": "listen", "phase": "start",
+                              "t0": time.time_ns() - 5_000_000})
+            self.assertTrue(r1["ok"])
+            sp = self.ctl["spans"]
+            self.assertEqual(sp.t0_source, "client")
+            self.assertGreaterEqual(sp.ms["press"], 5)
+            self.assertLess(sp.ms["press"], 500)
+            r2 = self.handle({"cmd": "listen", "phase": "stop",
+                              "t0": time.time_ns()})
+            self.assertTrue(r2["ok"])
+            for _ in range(100):
+                if "spans" in seen:
+                    break
+                time.sleep(0.01)
+        self.assertIs(seen["spans"], sp)
+        self.assertEqual(sp.rel0_source, "client")
+        self.assertNotIn("spans", self.ctl)
+
+    def test_press_begins_a_bus_turn_and_hands_its_id_to_the_pipeline(self):
+        import tempfile
+        import time
+        from wisp import state as state_mod
+        bus = state_mod.StateBus(
+            state_file=pathlib.Path(tempfile.mkdtemp()) / "state.json")
+        self.addCleanup(bus.close)
+        handle = self.w._handler(bus, {}, self.ctl)
+        seen = {}
+        rec = {"proc": mock.Mock(), "sampler_stop": mock.Mock(),
+               "t0": time.monotonic() - 2}
+
+        def fake_run(st, cfg, ctl, wav=None, spans=None, turn_id=None):
+            seen["turn_id"] = turn_id
+            ctl["busy"].clear()
+        before = bus.current_turn()
+        with mock.patch.object(self.w.pipeline, "record_start",
+                               return_value=rec), \
+             mock.patch.object(self.w.pipeline, "record_stop",
+                               return_value="x.wav"), \
+             mock.patch.object(self.w.speech, "stop"), \
+             mock.patch.object(self.w, "_rec_watchdog"), \
+             mock.patch.object(self.w, "_run_listen", fake_run), \
+             mock.patch.object(self.w, "dlog"):
+            handle({"cmd": "listen", "phase": "start"})
+            started = bus.current_turn()
+            self.assertNotEqual(started, before)
+            self.assertEqual(bus.snapshot()["status"], "listening")
+            self.assertEqual(bus.snapshot()["turn_id"], started)
+            handle({"cmd": "listen", "phase": "stop"})
+            for _ in range(100):
+                if "turn_id" in seen:
+                    break
+                time.sleep(0.01)
+        self.assertEqual(seen["turn_id"], started)
+
+    def test_cmd_trigger_sends_client_timestamp(self):
+        sent = {}
+        with mock.patch.object(self.w.ipc, "send",
+                               side_effect=lambda c, **k: sent.update(c)
+                               or {"ok": True}):
+            self.w.cmd_trigger({}, "start")
+        self.assertIsInstance(sent["t0"], int)
+        self.assertGreater(sent["t0"], 1_600_000_000_000_000_000)
 
 
 if __name__ == "__main__":
