@@ -55,5 +55,6 @@
       "click"
     ],
     "result_prefix": "ACTED"
-  }
+  },
+  "scenario": "act click via cua"
 }

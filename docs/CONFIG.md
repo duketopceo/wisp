@@ -209,6 +209,30 @@ targets, `key` for named keys and chords, and `len` + `sha` (12 hex of a
 per-process salted hash) for typed text. Typed text, target names,
 screenshots and result text are never written.
 
+## Latency budgets (W2)
+
+Data, not config: `wisp/budgets.json` (p50 ceiling per path; the verdict
+also needs p90 <= 1.5x). Not revised yet from live traces.
+
+| id | path | p50 ms |
+|---|---|---|
+| P1 / P2 | press / release feedback | 25 / 25 |
+| P3 | transcript (key up -> text); warm whisper floor 1300 | 600 |
+| P4 | route (context + route) | 200 |
+| P5 | first answer token | 500 |
+| P6 | TTS start | 150 |
+| P7 | act first step (UI-TARS grounding) | 1200 |
+| P8 | agent ack | 300 |
+| P9 | stop (request -> idle) | 150 |
+| P10 | offline error | 1000 |
+| E2E | answer, key up -> first token | 1400 |
+
+Resources: wispd under 250 MB RSS and 3% idle CPU; cua-driver
+`MemoryMax=512M`; Companion under 5% CPU at 120 Hz idle.
+`wispd latency` reports real turns; `--budgets` prints this table,
+`--baseline` the committed fake-backed baseline
+(`docs/baselines/latency-harness.json`), `--harness` re-measures it.
+
 ## [debug]
 
 | key | meaning |

@@ -27,5 +27,6 @@
     "error_code": "jev_down",
     "error_detail_contains": "Jev HTTP 503"
   },
-  "name": "jev_down"
+  "name": "jev_down",
+  "scenario": "Jev down"
 }

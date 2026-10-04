@@ -216,6 +216,16 @@ class TurnResult:
         return sorted(rows, key=lambda r: r[0])
 
 
+def stop_ms(res: "TurnResult"):
+    """Interrupt fired -> first terminal state event (P9), or None."""
+    if not res.interrupt_fired:
+        return None
+    after = [e["t_ms"] for e in res.events
+             if e["status"] in ("idle", "done", "error")
+             and e["t_ms"] >= res.interrupt_t_ms]
+    return after[0] - res.interrupt_t_ms if after else None
+
+
 def check_expectations(res: TurnResult) -> list:
     """Compare a result with the fixture's ``expect`` block; returns a
     list of human-readable mismatches (empty = pass)."""
@@ -259,6 +269,22 @@ def check_expectations(res: TurnResult) -> list:
     for sub in ex.get("hypr_requests_contain", []):
         if not any(sub in r for r in res.fake_calls.get("hypr", [])):
             bad.append(f"hypr_requests_contain: {sub!r} never requested")
+    if "jev_calls" in ex:
+        want("jev_calls", len(res.calls.get("jev", [])))
+    if "steps_contain" in ex:
+        steps = res.final.get("steps", [])
+        if len(steps) != len(ex["steps_contain"]):
+            bad.append(f"steps_contain: expected {len(ex['steps_contain'])}"
+                       f" steps, got {steps!r}")
+        else:
+            for want_s, got_s in zip(ex["steps_contain"], steps):
+                if want_s not in got_s:
+                    bad.append(f"steps_contain: {want_s!r} not in {got_s!r}")
+    if "stop_within_ms" in ex:
+        ms = stop_ms(res)
+        if ms is None or ms > ex["stop_within_ms"]:
+            bad.append(f"stop_within_ms: expected <= "
+                       f"{ex['stop_within_ms']}, got {ms}")
     want("tool_calls", [t["name"] for t in res.trace_events("tool_call")])
     if "brain_calls" in ex:
         want("brain_calls", len(res.chat_calls()))
@@ -342,6 +368,7 @@ def run_turn(fixture, timeout: float = 60.0) -> TurnResult:
             "urls": urls,
             "config": fx.get("config", {}),
             "chooser": fx.get("chooser"),
+            "notify_now": fx.get("notify_now"),
             "interrupt_after_ms": fx.get("interrupt_after_ms"),
             "result": str(tmp / "result.json"),
         }
