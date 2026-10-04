@@ -47,6 +47,9 @@ Item {
   property var steps: []
   property var suggestion: null
   property var guide: null
+  // cua.target stream event (docs/IPC_CONTRACT.md): where a CUA click
+  // will land, or null. Drives GhostCursor; nothing renders when null.
+  property var cuaTarget: null
   property var windowFocus: ({})
   property string goal: ""
   property string goalStatus: ""
@@ -146,6 +149,7 @@ Item {
     root.steps = v.steps;
     root.suggestion = v.suggestion;
     root.guide = v.guide;
+    root.cuaTarget = v.cuaTarget;
     root.windowFocus = v.focus;
     root.goal = v.goal;
     root.goalStatus = v.goalStatus;

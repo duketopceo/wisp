@@ -84,4 +84,22 @@ TestCase {
     compare(q.cmd, "subscribe")
     compare(q.topics.length, 4)
   }
+
+  function test_cua_target_event() {
+    var v = S.applySnapshot(S.initial(), snap({ status: "acting", seq: 2 }), 1, "stream").view
+    compare(v.cuaTarget, null)
+    var ev = { type: "event", name: "cua.target", data: { x: 640, y: 360, window: "Settings", label: "night light", confidence: 0.9 } }
+    var r = S.applyEvent(v, ev, 2)
+    compare(r.view.cuaTarget.x, 640)
+    compare(r.view.cuaTarget.phase, "aim")
+    compare(r.view.seq, 2)
+    var bad = S.applyEvent(r.view, { type: "event", name: "cua.target", data: { x: "5", y: 2 } }, 3)
+    verify(!bad.ok)
+    compare(bad.view.cuaTarget.x, 640)
+    var clear = S.applyEvent(r.view, { type: "event", name: "cua.target", data: { x: null, y: null } }, 3)
+    compare(clear.view.cuaTarget, null)
+    var done = S.applyEvent(r.view, { type: "state", seq: 3, diff: { status: "done", seq: 3 } }, 3)
+    compare(done.view.cuaTarget, null)
+    compare(S.applyEvent(S.initial(), ev, 2).view.cuaTarget, null)
+  }
 }

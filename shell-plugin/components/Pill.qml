@@ -1,8 +1,10 @@
 // Listening pill: one row with the riding creature, status word and the
-// transcript tail; while a choice is pending it adds keyed chips (1 2 3).
+// transcript tail with a mic icon; while a choice is pending it adds
+// chips, the first three keyed 1 2 3 and the rest click or voice only.
 // Keyline is ember at 0.35 + level * 0.4 while listening.
 import QtQuick
 import "../lib/metrics.js" as M
+import "../lib/companion.js" as Companion
 
 Rectangle {
   id: root
@@ -12,7 +14,9 @@ Rectangle {
 
   readonly property var tk: service ? service.tokens : ({})
   readonly property bool listening: service.status === "listening"
-  readonly property var picks: service.choices.slice(0, 3)
+  readonly property var picks: service.choices.slice(0, 5)
+  // the host shows the pill for these statuses (Companion.pillVisible)
+  readonly property bool wanted: Companion.pillVisible(service.status)
 
   implicitWidth: 380
   implicitHeight: col.implicitHeight + 2 * M.spacing.xl
@@ -44,6 +48,14 @@ Rectangle {
         font.pixelSize: M.font.body
         font.weight: Font.DemiBold
       }
+      Icon {
+        id: mic
+        anchors.verticalCenter: parent.verticalCenter
+        visible: root.service.transcript !== ""
+        name: "mic"
+        size: M.font.icon
+        color: root.tk.inkMuted
+      }
       Text {
         anchors.verticalCenter: parent.verticalCenter
         width: parent.width - x
@@ -53,6 +65,7 @@ Rectangle {
         color: root.tk.inkMuted
         font.family: root.service.fontFamily
         font.pixelSize: M.font.label
+        font.italic: false
       }
     }
 
@@ -67,7 +80,7 @@ Rectangle {
           required property int index
           service: root.service
           label: root.service.pickLabel(modelData)
-          hint: String(index + 1)
+          hint: index < 3 ? String(index + 1) : ""
           onClicked: root.choose(modelData, index)
         }
       }
