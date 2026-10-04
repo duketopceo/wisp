@@ -1,5 +1,6 @@
 import pathlib
 import stat
+import sys
 import tempfile
 import time
 import unittest
@@ -15,10 +16,13 @@ class SpeechTests(unittest.TestCase):
     def setUp(self):
         speech.stop()
         self.dir = tempfile.TemporaryDirectory()
-        script = pathlib.Path(self.dir.name) / "tts.sh"
-        script.write_text("#!/bin/sh\nsleep 60\n")
-        script.chmod(script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP)
-        self.script = str(script)
+        if sys.platform == "win32":
+            self.script = f'"{sys.executable}" -c "import time; time.sleep(60)"'
+        else:
+            script = pathlib.Path(self.dir.name) / "tts.sh"
+            script.write_text("#!/bin/sh\nsleep 60\n")
+            script.chmod(script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP)
+            self.script = str(script)
 
     def tearDown(self):
         speech.stop()
@@ -53,11 +57,16 @@ class SpeechTests(unittest.TestCase):
         self.assertIsNotNone(first.returncode)
 
     def test_text_placeholder(self):
-        script = pathlib.Path(self.dir.name) / "echo.sh"
         out = pathlib.Path(self.dir.name) / "out.txt"
-        script.write_text(f'#!/bin/sh\necho "$1" > {out}\n')
-        script.chmod(script.stat().st_mode | stat.S_IXUSR)
-        speech.speak("hello world", self.cfg(f"{script} {{text}}"))
+        if sys.platform == "win32":
+            py_code = 'import sys, pathlib; pathlib.Path(sys.argv[1]).write_text(sys.argv[2])'
+            cmd = f'"{sys.executable}" -c "{py_code}" "{out}" {{text}}'
+        else:
+            script = pathlib.Path(self.dir.name) / "echo.sh"
+            script.write_text(f'#!/bin/sh\necho "$1" > {out}\n')
+            script.chmod(script.stat().st_mode | stat.S_IXUSR)
+            cmd = f"{script} {{text}}"
+        speech.speak("hello world", self.cfg(cmd))
         for _ in range(50):
             if out.exists():
                 break
@@ -67,10 +76,14 @@ class SpeechTests(unittest.TestCase):
     def test_on_exit_fires_and_clears(self):
         import threading
         done = threading.Event()
-        script = pathlib.Path(self.dir.name) / "fast.sh"
-        script.write_text("#!/bin/sh\nexit 0\n")
-        script.chmod(script.stat().st_mode | stat.S_IXUSR)
-        proc = speech.speak("hi", self.cfg(str(script)))
+        if sys.platform == "win32":
+            cmd = f'"{sys.executable}" -c "import sys; sys.exit(0)"'
+        else:
+            script = pathlib.Path(self.dir.name) / "fast.sh"
+            script.write_text("#!/bin/sh\nexit 0\n")
+            script.chmod(script.stat().st_mode | stat.S_IXUSR)
+            cmd = str(script)
+        proc = speech.speak("hi", self.cfg(cmd))
         self.assertIsNotNone(proc)
         speech.on_exit(proc, done.set)
         self.assertTrue(done.wait(timeout=5))
