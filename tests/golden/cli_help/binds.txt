@@ -1,0 +1,15 @@
+usage: wispd binds [-h] [--json] [--quiet] [--no-color]
+
+Show the push-to-talk hotkey and its Hyprland binds
+
+options:
+  -h, --help   show this help message and exit
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd binds
+  wispd binds --json

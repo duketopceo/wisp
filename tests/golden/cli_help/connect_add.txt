@@ -1,0 +1,17 @@
+usage: wispd connect add [-h] [--json] [--quiet] [--no-color] service
+
+Connect a service (opens the OAuth flow)
+
+positional arguments:
+  service      service name from `connect list`
+
+options:
+  -h, --help   show this help message and exit
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd connect add github

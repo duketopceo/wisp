@@ -1,0 +1,15 @@
+usage: wispd spend [-h] [--json] [--quiet] [--no-color]
+
+Paid model spend today and the daily cap
+
+options:
+  -h, --help   show this help message and exit
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd spend
+  wispd spend --json

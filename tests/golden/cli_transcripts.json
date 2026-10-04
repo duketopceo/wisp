@@ -1,0 +1,467 @@
+{
+ "agent": {
+  "argv": [
+   "agent",
+   "do",
+   "a",
+   "thing"
+  ],
+  "code": 0,
+  "ipc": [
+   {
+    "cmd": "agent",
+    "task": "do a thing"
+   }
+  ],
+  "stdout": "SPAWNED do a thing\n"
+ },
+ "choice_bad_index": {
+  "argv": [
+   "choice",
+   "--index",
+   "x"
+  ],
+  "code": 2,
+  "ipc": [],
+  "stdout": ""
+ },
+ "choice_ids": {
+  "argv": [
+   "choice",
+   "--prompt-id",
+   "p1",
+   "--index",
+   "2",
+   "x"
+  ],
+  "code": 0,
+  "ipc": [
+   {
+    "cmd": "choice",
+    "index": 2,
+    "pick": "x",
+    "prompt_id": "p1"
+   }
+  ],
+  "stdout": ""
+ },
+ "choice_plain": {
+  "argv": [
+   "choice",
+   "app:kitty"
+  ],
+  "code": 0,
+  "ipc": [
+   {
+    "cmd": "choice",
+    "pick": "app:kitty"
+   }
+  ],
+  "stdout": ""
+ },
+ "choice_stale": {
+  "argv": [
+   "choice",
+   "stale"
+  ],
+  "code": 1,
+  "ipc": [
+   {
+    "cmd": "choice",
+    "pick": "stale"
+   }
+  ],
+  "stdout": ""
+ },
+ "config_set": {
+  "argv": [
+   "config",
+   "set",
+   "audio.seconds",
+   "30"
+  ],
+  "code": 0,
+  "ipc": [
+   {
+    "cmd": "config",
+    "set": {
+     "audio.seconds": "30"
+    }
+   }
+  ],
+  "stdout": "audio.seconds = 30\n"
+ },
+ "config_set_bad": {
+  "argv": [
+   "config",
+   "set",
+   "nokey",
+   "30"
+  ],
+  "code": 2,
+  "ipc": [],
+  "stdout": ""
+ },
+ "config_set_offline": {
+  "argv": [
+   "config",
+   "set",
+   "audio.seconds",
+   "30"
+  ],
+  "code": 0,
+  "ipc": [],
+  "stdout": "audio.seconds = 30\n"
+ },
+ "config_show": {
+  "argv": [
+   "config"
+  ],
+  "code": 0,
+  "ipc": [
+   {
+    "cmd": "config"
+   }
+  ],
+  "stdout": "{\n  \"audio\": {\n    \"seconds\": \"60\"\n  }\n}\n"
+ },
+ "context": {
+  "argv": [
+   "context"
+  ],
+  "code": 0,
+  "ipc": [
+   {
+    "cmd": "context"
+   }
+  ],
+  "stdout": "ctx: terminal focused\n"
+ },
+ "fails": {
+  "argv": [
+   "fails"
+  ],
+  "code": 0,
+  "ipc": [],
+  "stdout": "no failures logged\n"
+ },
+ "interrupt": {
+  "argv": [
+   "interrupt"
+  ],
+  "code": 0,
+  "ipc": [
+   {
+    "cmd": "interrupt"
+   }
+  ],
+  "stdout": ""
+ },
+ "label_offline": {
+  "argv": [
+   "label",
+   "correct"
+  ],
+  "code": 1,
+  "ipc": [],
+  "stdout": "nothing to label\n"
+ },
+ "label_report": {
+  "argv": [
+   "label"
+  ],
+  "code": 0,
+  "ipc": [],
+  "stdout": "no labels yet \u2014 use `wispd label correct|incorrect`\n"
+ },
+ "label_set": {
+  "argv": [
+   "label",
+   "correct",
+   "was",
+   "right"
+  ],
+  "code": 0,
+  "ipc": [
+   {
+    "cmd": "label",
+    "label": "correct",
+    "note": "was right"
+   }
+  ],
+  "stdout": "LABELLED correct\n"
+ },
+ "learn": {
+  "argv": [
+   "learn"
+  ],
+  "code": 0,
+  "ipc": [],
+  "stdout": "no corrections this week \u2014 nothing to propose\n"
+ },
+ "memory": {
+  "argv": [
+   "memory",
+   "memory|add||x"
+  ],
+  "code": 0,
+  "ipc": [
+   {
+    "arg": "memory|add||x",
+    "cmd": "memory"
+   }
+  ],
+  "stdout": "memory ok memory|add||x\n"
+ },
+ "memory_write": {
+  "argv": [
+   "memory-write",
+   "user",
+   "bGluZSBvbmUKbGluZSB0d28="
+  ],
+  "code": 0,
+  "ipc": [
+   {
+    "body": "line one\nline two",
+    "cmd": "memory",
+    "target": "user"
+   }
+  ],
+  "stdout": "memory ok user\n"
+ },
+ "models": {
+  "argv": [
+   "models"
+  ],
+  "code": 0,
+  "ipc": [],
+  "stdout": "DOWN jev              jev_down\n"
+ },
+ "recipes": {
+  "argv": [
+   "recipes"
+  ],
+  "code": 0,
+  "ipc": [],
+  "stdout": ""
+ },
+ "recipes_approve_bad": {
+  "argv": [
+   "recipes",
+   "approve",
+   "nope"
+  ],
+  "code": 2,
+  "ipc": [],
+  "stdout": ""
+ },
+ "review": {
+  "argv": [
+   "review"
+  ],
+  "code": 0,
+  "ipc": [],
+  "stdout": "nothing staged \u2014 run `wispd review run` after a batch\n"
+ },
+ "skills": {
+  "argv": [
+   "skills"
+  ],
+  "code": 0,
+  "ipc": [],
+  "stdout": ""
+ },
+ "skills_import_usage": {
+  "argv": [
+   "skills",
+   "import"
+  ],
+  "code": 2,
+  "ipc": [],
+  "stdout": ""
+ },
+ "status": {
+  "argv": [
+   "status"
+  ],
+  "code": 0,
+  "ipc": [
+   {
+    "cmd": "status"
+   }
+  ],
+  "stdout": "{\n  \"ok\": true,\n  \"state\": {\n    \"status\": \"idle\",\n    \"tasks\": {}\n  }\n}\n"
+ },
+ "status_default": {
+  "argv": [],
+  "code": 0,
+  "ipc": [
+   {
+    "cmd": "status"
+   }
+  ],
+  "stdout": "{\n  \"ok\": true,\n  \"state\": {\n    \"status\": \"idle\",\n    \"tasks\": {}\n  }\n}\n"
+ },
+ "stop": {
+  "argv": [
+   "stop"
+  ],
+  "code": 0,
+  "ipc": [
+   {
+    "cmd": "stop"
+   }
+  ],
+  "stdout": ""
+ },
+ "suggestions": {
+  "argv": [
+   "suggestions"
+  ],
+  "code": 0,
+  "ipc": [
+   {
+    "cmd": "suggestions"
+   }
+  ],
+  "stdout": "[new] Open notes \u2014 3 times\n"
+ },
+ "task_cancel": {
+  "argv": [
+   "task_cancel",
+   "foo"
+  ],
+  "code": 0,
+  "ipc": [
+   {
+    "cmd": "task_cancel",
+    "name": "foo"
+   }
+  ],
+  "stdout": "task_cancel foo\n"
+ },
+ "task_status": {
+  "argv": [
+   "task_status",
+   "foo"
+  ],
+  "code": 0,
+  "ipc": [
+   {
+    "cmd": "task_status",
+    "name": "foo"
+   }
+  ],
+  "stdout": "task_status foo\n"
+ },
+ "tasks": {
+  "argv": [
+   "tasks"
+  ],
+  "code": 0,
+  "ipc": [],
+  "stdout": "done       fix-bug                  fix the login bug\nfailed     write-docs               draft the docs\n"
+ },
+ "tasks_empty": {
+  "argv": [
+   "tasks"
+  ],
+  "code": 0,
+  "ipc": [],
+  "stdout": "no agents on record\n"
+ },
+ "tele": {
+  "argv": [
+   "tele",
+   "24"
+  ],
+  "code": 0,
+  "ipc": [],
+  "stdout": "no turns in the last 24h\n"
+ },
+ "theme_set": {
+  "argv": [
+   "theme",
+   "light"
+  ],
+  "code": 0,
+  "ipc": [],
+  "stdout": "theme = light\n"
+ },
+ "theme_show": {
+  "argv": [
+   "theme"
+  ],
+  "code": 0,
+  "ipc": [],
+  "stdout": "dark\n"
+ },
+ "theme_unknown": {
+  "argv": [
+   "theme",
+   "nope"
+  ],
+  "code": 2,
+  "ipc": [],
+  "stdout": ""
+ },
+ "trace_latency": {
+  "argv": [
+   "trace",
+   "--latency"
+  ],
+  "code": 0,
+  "ipc": [],
+  "stdout": "no spans in the last 24h (run a turn first)\n"
+ },
+ "trace_tail": {
+  "argv": [
+   "trace",
+   "--tail",
+   "5"
+  ],
+  "code": 0,
+  "ipc": [],
+  "stdout": ""
+ },
+ "train": {
+  "argv": [
+   "train"
+  ],
+  "code": 0,
+  "ipc": [],
+  "stdout": "runs: 0\n"
+ },
+ "train_bank": {
+  "argv": [
+   "train",
+   "bank"
+  ],
+  "code": 0,
+  "ipc": [],
+  "stdout": "skill bank empty \u2014 run the arena first\n"
+ },
+ "train_history": {
+  "argv": [
+   "train",
+   "history"
+  ],
+  "code": 0,
+  "ipc": [],
+  "stdout": "no runs yet\n"
+ },
+ "trigger": {
+  "argv": [
+   "trigger",
+   "start"
+  ],
+  "code": 0,
+  "ipc": [
+   {
+    "cmd": "listen",
+    "phase": "start"
+   }
+  ],
+  "stdout": ""
+ }
+}
