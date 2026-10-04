@@ -55,6 +55,7 @@ class State:
         self.result = ""
         self.choices = []
         self.prompt_id = ""    # id of the offered choices/confirm (U9)
+        self.confirm = None    # {prompt_id, prompt, timeout_s} while a confirm waits (W25)
         self.points = []
         self.steps = []
         self.suggestion = None
@@ -142,6 +143,7 @@ class State:
             "result": self.result,
             "choices": list(self.choices),
             "prompt_id": self.prompt_id,
+            "confirm": dict(self.confirm) if self.confirm else None,
             "points": list(self.points),
             "steps": list(self.steps),
             "suggestion": self.suggestion,

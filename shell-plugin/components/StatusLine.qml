@@ -1,6 +1,6 @@
 // Status line: mark, status word in its tone, and the one-line notice
-// (offline, stale, newer contract) when there is one. Errors show the
-// typed message from the copy table instead of the generic word.
+// (offline, newer contract) when there is one. The word is the service's
+// wordView: the typed error message, or reconnecting while stale.
 import QtQuick
 import "../lib/metrics.js" as M
 
@@ -9,8 +9,7 @@ Row {
 
   property var service: null
   readonly property var tk: service ? service.tokens : ({})
-  readonly property string word: service.status === "error" && service.errorCode !== ""
-    ? service.errorMessage : service.statusWord
+  readonly property var wv: service.wordView
 
   spacing: M.spacing.md
 
@@ -21,8 +20,8 @@ Row {
 
   Text {
     anchors.verticalCenter: parent.verticalCenter
-    text: root.word
-    color: root.tk[M.toneToken(root.service.statusTone)]
+    text: root.wv.word
+    color: root.tk[M.toneToken(root.wv.tone)]
     font.family: root.service.fontFamily
     font.pixelSize: M.font.body
     font.weight: Font.DemiBold

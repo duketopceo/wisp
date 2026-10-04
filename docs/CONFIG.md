@@ -35,6 +35,7 @@ restart) or the Settings tab in the GUI. Every key has a default.
 | `answer_model` | `meta-llama/llama-4-maverick` | model that writes answers (used when `brain.default` unset) |
 | `session_turns` | `8` | turns of chat history kept in context |
 | `screenshots` | `true` | allow screen capture for context |
+| `confirm_timeout` | `120` | seconds a confirm card waits before it resolves as deny (clamped 5 to 600) |
 | `risk_threshold` | `1.5` | action risk score allowed before confirmation; lower = asks more |
 | `confidence_instant` | `0.95` | auto-accept cutoff |
 | `confidence_ambiguous` | `0.8` | ask-choice cutoff |

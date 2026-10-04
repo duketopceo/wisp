@@ -52,7 +52,7 @@ TestCase {
     compare(Copy.errorMessage("timeout"), "that took too long")
     compare(Copy.errorMessage("nope"), Copy.errorMessage("internal"))
     compare(Copy.errorHint("cancelled"), "")
-    compare(Copy.string("state.stale"), "out of date")
+    compare(Copy.string("state.reconnecting"), "reconnecting")
     compare(Copy.string("no.such"), "no.such")
   }
 }

@@ -26,10 +26,12 @@ Item {
   property bool bubbleDismissed: false
   property bool labeled: false
   signal choose(string pick, int index)
+  signal confirmChosen(string pick, string promptId)
   signal moreClicked()
   signal verdict(string verdict)
 
-  readonly property bool pillShown: service !== null && Companion.pillVisible(service.status)
+  // a confirm card replaces the pill (it carries the question and the chips)
+  readonly property bool pillShown: service !== null && Companion.pillVisible(service.status) && service.confirm === null
   readonly property bool bubbleShown: service !== null && bubble.has && !bubbleDismissed
   readonly property bool bubbleHovered: bubbleHover.hovered
   readonly property bool ghostShown: ghost.shown
@@ -72,11 +74,12 @@ Item {
         pointer: root.pointer
         screen: ({ w: root.width, h: root.height })
         onMoreClicked: root.moreClicked()
+        onConfirmChosen: function (pick, promptId) { root.confirmChosen(pick, promptId); }
       }
 
       Row {
         spacing: M.spacing.md
-        visible: root.service.status === "done" && root.service.answer !== "" && !root.labeled
+        visible: root.service.status === "done" && root.service.answer !== "" && !root.labeled && root.service.confirm === null
         Chip {
           service: root.service
           label: root.service.ui("ui.label.good")
