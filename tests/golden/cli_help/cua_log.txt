@@ -1,0 +1,16 @@
+usage: wispd cua log [-h] [-n N] [--json] [--quiet] [--no-color]
+
+Show the driver's recent journal lines (read only)
+
+options:
+  -h, --help     show this help message and exit
+  -n, --lines N  lines to show (default 50)
+
+global options:
+  --json         machine-readable output (one JSON object)
+  --quiet, -q    print nothing on success
+  --no-color     plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd cua log
+  wispd cua log -n 200

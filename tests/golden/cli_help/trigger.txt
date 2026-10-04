@@ -1,0 +1,18 @@
+usage: wispd trigger [-h] [--json] [--quiet] [--no-color] [{,start,stop}]
+
+Push-to-talk: tell the daemon to start or stop listening
+
+positional arguments:
+  {,start,stop}  start or stop for hold-to-talk; empty toggles
+
+options:
+  -h, --help     show this help message and exit
+
+global options:
+  --json         machine-readable output (one JSON object)
+  --quiet, -q    print nothing on success
+  --no-color     plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd trigger start
+  wispd trigger stop
