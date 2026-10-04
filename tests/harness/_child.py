@@ -137,6 +137,7 @@ def main(spec_path: str) -> int:
                     "transcript": view["transcript"],
                     "answer": view["answer"], "result": view["result"],
                     "choices": view["choices"], "error": view["error"],
+                    "prompt_id": view.get("prompt_id", ""),
                     "error_code": view.get("error_code", ""),
                     "error_detail": view.get("error_detail", ""),
                     "steps": len(view["steps"])})
@@ -147,7 +148,7 @@ def main(spec_path: str) -> int:
         chooser = spec.get("chooser")
         wait = None
         if chooser is not None:
-            def wait(timeout):
+            def wait(timeout, **_kw):
                 time.sleep(chooser.get("delay_ms", 0) / 1000.0)
                 return chooser.get("pick")
 
@@ -155,6 +156,7 @@ def main(spec_path: str) -> int:
         after = spec.get("interrupt_after_ms")
         if after is not None:
             def fire():
+                out["interrupt_t"] = time.monotonic()
                 interrupt.set()
                 out["interrupt_fired"] = True
             threading.Timer(after / 1000.0, fire).start()

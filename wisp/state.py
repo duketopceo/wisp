@@ -54,6 +54,7 @@ class State:
         self.answer = ""
         self.result = ""
         self.choices = []
+        self.prompt_id = ""    # id of the offered choices/confirm (U9)
         self.points = []
         self.steps = []
         self.suggestion = None
@@ -140,6 +141,7 @@ class State:
             "answer": self.answer,
             "result": self.result,
             "choices": list(self.choices),
+            "prompt_id": self.prompt_id,
             "points": list(self.points),
             "steps": list(self.steps),
             "suggestion": self.suggestion,

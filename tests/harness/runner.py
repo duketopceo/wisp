@@ -143,6 +143,8 @@ class TurnResult:
     launch_calls: list = field(default_factory=list)
     notifications: list = field(default_factory=list)
     interrupt_fired: bool = False
+    interrupt_t_ms: int = 0
+    peer_closed: dict = field(default_factory=dict)  # fake -> bool
     tempdir: str = ""
     endpoint_urls: dict = field(default_factory=dict)
     expect: dict = field(default_factory=dict)
@@ -200,6 +202,11 @@ def check_expectations(res: TurnResult) -> list:
         if got != [want_]:
             bad.append(f"brain_fallback_from: expected {[want_]!r}, "
                        f"got {got!r}")
+    if "peer_closed" in ex:
+        for name in ex["peer_closed"]:
+            if not res.peer_closed.get(name):
+                bad.append(f"peer_closed: {name} never saw the client "
+                           "hang up")
     want("tool_calls", [t["name"] for t in res.trace_events("tool_call")])
     if "brain_calls" in ex:
         want("brain_calls", len(res.chat_calls()))
@@ -290,6 +297,7 @@ def run_turn(fixture, timeout: float = 60.0) -> TurnResult:
         res.launch_calls = out.get("launch_calls", [])
         res.notifications = out.get("notifications", [])
         res.interrupt_fired = out.get("interrupt_fired", False)
+        res.interrupt_t_ms = round((out.get("interrupt_t", 0) - out.get("t0", 0)) * 1000)
         t0 = out.get("t0", 0.0)
         for e in res.events:
             e["t_ms"] = round((e["t"] - t0) * 1000)
@@ -300,6 +308,7 @@ def run_turn(fixture, timeout: float = 60.0) -> TurnResult:
                  "body": c["body"], "t": c["t"],
                  "t_ms": round((c["t"] - t0) * 1000)}
                 for c in s.calls]
+        res.peer_closed = {n: s.peer_closed for n, s in live.items()}
         res.spans = _spans(res)
         return res
     finally:

@@ -275,10 +275,24 @@ class TurnReplayTest(unittest.TestCase):
         res = runner.run_turn(fx)
         self.assertEqual(res.launch_calls, ["discord"])
 
-    def test_stale_choice_baseline_is_accepted_verbatim(self):
-        # characterization: a pick that was never offered is applied
+    def test_stale_choice_is_rejected_not_applied(self):
+        # U9: a pick that was never offered is refused; the turn falls
+        # back to the safe auto-pick instead of launching it
         res = runner.run_turn(FIXTURES / "stale_choice.json")
-        self.assertEqual(res.launch_calls, ["ghostapp"])
+        self.assertEqual(res.exit_code, 0, res.stderr)
+        self.assertNotIn("ghostapp", res.launch_calls)
+        self.assertEqual(res.launch_calls, ["discord"])
+        rej = res.trace_events("choice_rejected")
+        self.assertEqual(len(rej), 1)
+        self.assertEqual(rej[0]["pick"], "app:ghostapp")
+
+    def test_every_offered_prompt_carries_a_prompt_id(self):
+        res = runner.run_turn(FIXTURES / "choose.json")
+        offered = [e for e in res.events if e["status"] == "awaiting_choice"]
+        self.assertTrue(offered)
+        self.assertTrue(all(e["prompt_id"] for e in offered))
+        self.assertEqual(len({e["prompt_id"] for e in offered}), 1)
+        self.assertEqual(res.final["prompt_id"], "")
 
     def test_jev_down_ends_in_typed_error(self):
         res = runner.run_turn(FIXTURES / "jev_down.json")
@@ -312,13 +326,46 @@ class TurnReplayTest(unittest.TestCase):
         fb = res.trace_events("brain_fallback")
         self.assertEqual(fb[0]["to"], "fallback_fake")
 
-    def test_cancel_mid_stream_baseline_ignored_for_answer_route(self):
-        # characterization: interrupted() is only honoured by the act
-        # loop today; U9 makes the answer stream cancellable
+    def test_cancel_mid_stream_stops_the_stream_promptly(self):
+        # U9: interrupt during the answer stream closes the brain socket,
+        # publishes no further deltas and ends idle/cancelled
         res = runner.run_turn(FIXTURES / "cancel_mid_stream.json")
+        self.assertEqual(res.exit_code, 0, res.stderr)
         self.assertTrue(res.interrupt_fired)
-        self.assertEqual(res.statuses[-1], "done")
-        self.assertTrue(res.final["answer"])
+        self.assertEqual(res.statuses[-1], "idle")
+        self.assertEqual(res.final["error_code"], "cancelled")
+        full = "It is half past three."
+        ans = res.final["answer"]
+        self.assertTrue(ans, "cancel fired before anything streamed")
+        self.assertNotEqual(ans, full)
+        self.assertTrue(full.startswith(ans), ans)
+        idle = [e for e in res.events if e["status"] == "idle"][-1]
+        self.assertEqual(res.events[-1], idle, "events after the cancel")
+        self.assertLess(idle["t_ms"] - res.interrupt_t_ms, 150)
+        self.assertTrue(res.peer_closed["brain"],
+                        "brain socket was not closed")
+        self.assertEqual(res.violations, [])
+
+    def test_cancel_during_jev_ends_idle_and_ignores_the_late_reply(self):
+        fx = copy.deepcopy(runner.load_fixture(FIXTURES / "ask.json"))
+        fx["endpoints"]["jev"]["latency_ms"] = 700
+        fx["interrupt_after_ms"] = 200
+        res = runner.run_turn(fx)
+        self.assertEqual(res.statuses[-1], "idle")
+        self.assertEqual(res.final["error_code"], "cancelled")
+        self.assertEqual(res.chat_calls(), [])   # never reached the brain
+        self.assertTrue(res.peer_closed["jev"])
+        self.assertLess(res.events[-1]["t_ms"] - res.interrupt_t_ms, 150)
+
+    def test_cancel_during_stt_ends_idle_within_150ms(self):
+        fx = copy.deepcopy(runner.load_fixture(FIXTURES / "ask.json"))
+        fx["endpoints"]["whisper"]["latency_ms"] = 700
+        fx["interrupt_after_ms"] = 200
+        res = runner.run_turn(fx)
+        self.assertEqual(res.statuses[-1], "idle")
+        self.assertEqual(res.final["error_code"], "cancelled")
+        self.assertEqual(res.calls["jev"], [])
+        self.assertLess(res.events[-1]["t_ms"] - res.interrupt_t_ms, 150)
 
     def test_act_loop_honours_cancel_between_steps(self):
         fx = copy.deepcopy(runner.load_fixture(FIXTURES / "act.json"))

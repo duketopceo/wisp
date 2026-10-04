@@ -16,7 +16,7 @@ import re
 import urllib.error
 import urllib.request
 
-from . import config, tools
+from . import cancel, config, tools
 
 MAX_STEPS = 8  # default; [agents] act_max_steps overrides
 MAX_ERRORS = 2
@@ -170,11 +170,18 @@ def run_act_loop(task: str, cfg: dict, state=None,
     # click/move
     screen_dirty = not initial_image
 
+    def stopped() -> bool:
+        return cancel.is_cancelled() or bool(interrupted and interrupted())
+
     while len(steps) < max_steps:
-        if interrupted and interrupted():
+        if stopped():
             _goals.record_steps(steps)
             return "INTERRUPTED (user)"
-        msg = _post(messages, cfg)
+        try:
+            msg = _post(messages, cfg)
+        except cancel.Cancelled:
+            _goals.record_steps(steps)
+            return "INTERRUPTED (user)"
         calls = msg.get("tool_calls") or []
         if not calls:
             text = (msg.get("content") or "").strip()
@@ -191,6 +198,9 @@ def run_act_loop(task: str, cfg: dict, state=None,
             return out
         messages.append(msg)
         for call in calls:
+            if stopped():  # no further steps once the user said stop
+                _goals.record_steps(steps)
+                return "INTERRUPTED (user)"
             fn = call.get("function", {})
             name, arg = fn.get("name", ""), ""
             try:
@@ -214,6 +224,9 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     screen_dirty = False
                 try:
                     result = tools.run(name, arg, cfg, harness)
+                except cancel.Cancelled:
+                    _goals.record_steps(steps)
+                    return "INTERRUPTED (user)"
                 except Exception as e:
                     result = f"ERROR ({e})"
             else:

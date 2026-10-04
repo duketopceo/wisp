@@ -4,6 +4,7 @@ import re
 import shutil
 import subprocess
 
+from .. import cancel as _cancel
 from .. import config
 from ..pipeline import hypr_env
 
@@ -112,7 +113,7 @@ def clients() -> list:
     from .. import platform
     if platform.current() != "linux":
         return []
-    r = subprocess.run(["hyprctl", "clients", "-j"],
+    r = _cancel.run(["hyprctl", "clients", "-j"],
                        capture_output=True, text=True, env=hypr_env())
     try:
         return json.loads(r.stdout)

@@ -1,5 +1,5 @@
 {
-  "description": "Cancel fires while the answer is still streaming. Characterization: the answer route ignores interrupted() today; U9 makes it cancellable.",
+  "description": "Cancel fires while the answer is still streaming. U9: the stream stops promptly, the brain socket closes, no further deltas publish and the turn ends idle with error_code cancelled.",
   "audio": "ask.wav",
   "endpoints": {
     "whisper": {
@@ -34,7 +34,7 @@
       ]
     }
   },
-  "interrupt_after_ms": 250,
+  "interrupt_after_ms": 450,
   "expect": {
     "statuses": [
       "listening",
@@ -42,9 +42,12 @@
       "deciding",
       "acting",
       "speaking",
-      "done"
+      "idle"
     ],
-    "answer": "It is half past three."
+    "error_code": "cancelled",
+    "peer_closed": [
+      "brain"
+    ]
   },
   "name": "cancel_mid_stream"
 }

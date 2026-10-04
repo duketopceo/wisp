@@ -17,7 +17,7 @@ import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-from wisp import config, ipc, pipeline, speech, state as state_mod, trace as _trace  # noqa: E402
+from wisp import cancel, config, ipc, pipeline, speech, state as state_mod, trace as _trace  # noqa: E402
 
 # daemon-scoped handles the rec watchdog needs (set in run_daemon)
 _DAEMON_ST = None
@@ -131,6 +131,8 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
                 # flight (TTS exit callback, level sampler) is stale now
                 tid = st.begin_turn()
                 ctl["turn"] = tid
+                ctl["interrupt"].clear()
+                ctl["token"] = cancel.CancelToken()
                 th = st.turn(tid)
                 th.transition("listening", transcript="", result="",
                               answer="", choices=[], points=[], error="",
@@ -169,9 +171,18 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
                     st.transition("done", result=out, choices=[],
                                   suggestion=None, guide=None)  # daemon-level
                 return {"ok": True, "result": out}
-            ctl["choice_pick"] = pick
-            ctl["choice_event"].set()
-            return {"ok": True}
+            broker = ctl.get("broker")
+            if broker is None:  # no prompt registry (bare test handles)
+                ctl["choice_pick"] = pick
+                ctl["choice_event"].set()
+                return {"ok": True}
+            idx = cmd.get("index")
+            try:
+                idx = None if idx is None else int(idx)
+            except (TypeError, ValueError):
+                return {"ok": False, "error": "bad_index"}
+            return broker.offer(pick=pick, prompt_id=cmd.get("prompt_id"),
+                                index=idx)
         if c == "suggestions":
             from wisp import suggest
             return {"ok": True,
@@ -228,8 +239,11 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
             return {"ok": True, "config": cfg}
         if c == "interrupt":
             # cancel the in-flight turn only — daemon keeps running
-            speech.stop()
             ctl["interrupt"].set()
+            tok = ctl.get("token")
+            if tok is not None:
+                tok.cancel()  # kills children, closes sockets (U9)
+            speech.stop()
             return {"ok": True}
         if c == "context":
             from wisp import context as _ctx
@@ -245,14 +259,35 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
     return handle
 
 
-def _wait_for_choice(ctl: dict):
-    def wait(timeout: float):
-        ctl["choice_event"].clear()
-        ctl["choice_pick"] = ""
-        if ctl["choice_event"].wait(timeout):
-            return ctl["choice_pick"] or None
-        return None
-    return wait
+def _choice_cmd(args: list):
+    """`wispd choice` argv -> IPC message, None on a malformed call.
+    `[pick] [--prompt-id ID] [--index N]` (1-based option index)."""
+    msg = {"cmd": "choice", "pick": ""}
+    it = iter(args)
+    for a in it:
+        if a.startswith("--prompt-id"):
+            val = a.partition("=")[2] or next(it, "")
+            if not val:
+                return None
+            msg["prompt_id"] = val
+        elif a.startswith("--index"):
+            val = a.partition("=")[2] or next(it, "")
+            try:
+                msg["index"] = int(val)
+            except ValueError:
+                return None
+        else:
+            msg["pick"] = a
+    return msg
+
+
+def _wait_for_choice(ctl: dict, token=None):
+    """Prompt waiter for one turn: `wait(timeout, prompt_id=, options=)`
+    blocks until a matching `choice` arrives (see cancel.PromptBroker)."""
+    broker = ctl.get("broker")
+    if broker is None:
+        broker = ctl["broker"] = cancel.PromptBroker()
+    return broker.waiter(token)
 
 
 def _rec_watchdog(ctl: dict, secs: int) -> None:
@@ -280,12 +315,15 @@ def _rec_watchdog(ctl: dict, secs: int) -> None:
 def _run_listen(st: state_mod.StateBus, cfg: dict, ctl: dict,
                 wav=None, spans=None, turn_id=None) -> None:
     turn_id = turn_id or st.current_turn()
+    token = ctl.get("token")
+    if token is None:
+        token = ctl["token"] = cancel.CancelToken()
     try:
-        ctl["interrupt"].clear()
         pipeline.run_listen(cfg, st,
-                            wait_for_choice=_wait_for_choice(ctl),
+                            wait_for_choice=_wait_for_choice(ctl, token),
                             interrupted=ctl["interrupt"].is_set,
-                            wav=wav, spans=spans, turn_id=turn_id)
+                            wav=wav, spans=spans, turn_id=turn_id,
+                            cancel=token)
         dlog(f"turn done: status={st.status} "
              f"transcript={st.transcript!r} result={st.result!r}")
     except Exception as e:
@@ -338,6 +376,7 @@ def run_daemon(cfg: dict) -> int:
     ctl = {"stop": threading.Event(), "busy": threading.Event(),
            "interrupt": threading.Event(),
            "choice_event": threading.Event(), "choice_pick": "",
+           "broker": cancel.PromptBroker(), "token": None,
            "rec": None, "rec_lock": threading.Lock()}
     _DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL = st, cfg, ctl
     if cfg.get("health", {}).get("enabled", "true") == "true":
@@ -718,8 +757,17 @@ def main() -> int:
             print(f"wispd unreachable: {e}", file=sys.stderr)
             return 1
     if cmd == "choice":
+        msg = _choice_cmd(sys.argv[2:])
+        if msg is None:
+            print("usage: wispd choice [pick] [--prompt-id ID] "
+                  "[--index N]", file=sys.stderr)
+            return 2
         try:
-            ipc.send({"cmd": "choice", "pick": sys.argv[2] if len(sys.argv) > 2 else ""})
+            reply = ipc.send(msg)
+            if isinstance(reply, dict) and reply.get("ok") is False:
+                print(f"choice rejected: {reply.get('error')}",
+                      file=sys.stderr)
+                return 1
             return 0
         except (ConnectionError, OSError) as e:
             print(f"wispd unreachable: {e}", file=sys.stderr)

@@ -41,6 +41,12 @@ class _Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):  # silence
         pass
 
+    def handle(self):
+        try:
+            super().handle()
+        except ConnectionError:
+            pass  # a cancelled caller hanging up is not an error
+
     def _body(self):
         n = int(self.headers.get("Content-Length") or 0)
         return self.rfile.read(n) if n else b""
@@ -63,6 +69,7 @@ class FakeServer:
         self.script = script or {}
         self.calls: list = []
         self._lock = threading.Lock()
+        self.peer_closed = False   # a client hung up before we replied
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
         self.server.daemon_threads = True
         self.server.fake = self
@@ -112,7 +119,9 @@ class FakeServer:
             h.close_connection = True
             h.connection.close()
             return
-        self._sleep(self.script.get("latency_ms", 0))
+        self._sleep_watch(h, self.script.get("latency_ms", 0))
+        if self.client_gone(h):
+            return  # the caller cancelled: nobody to answer
         if n in self.script.get("fail_on_calls", ()):
             st = self.script.get("fail_status", 500)
             return self.respond(h, st, {"error": f"scripted failure #{n}"})
@@ -133,6 +142,29 @@ class FakeServer:
         self.respond(h, 200, {})
 
     # helpers -----------------------------------------------------
+    def client_gone(self, h) -> bool:
+        """True (and remembered in ``peer_closed``) when the client has
+        closed its end of the connection."""
+        import socket as _s
+        try:
+            data = h.connection.recv(1, _s.MSG_PEEK | _s.MSG_DONTWAIT)
+            gone = data == b""
+        except BlockingIOError:
+            gone = False
+        except OSError:
+            gone = True
+        if gone:
+            self.peer_closed = True
+        return gone
+
+    def _sleep_watch(self, h, ms) -> None:
+        """Sleep `ms`, waking early once the client hangs up."""
+        end = time.monotonic() + ms / 1000.0
+        while time.monotonic() < end:
+            if self.client_gone(h):
+                return
+            time.sleep(min(0.01, max(0.0, end - time.monotonic())))
+
     @staticmethod
     def _sleep(ms) -> None:
         if ms:
@@ -145,7 +177,10 @@ class FakeServer:
         h.send_header("Content-Type", "application/json")
         h.send_header("Content-Length", str(len(data)))
         h.end_headers()
-        h.wfile.write(data)
+        try:
+            h.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # the caller cancelled before the reply
 
 
 class FakeJev(FakeServer):
@@ -163,7 +198,12 @@ class FakeWhisper(FakeServer):
 
 
 class FakeBrain(FakeServer):
-    """OpenAI-compatible chat server with optional SSE streaming."""
+    """OpenAI-compatible chat server with optional SSE streaming.
+    ``sent`` records (monotonic time, text) for every streamed chunk."""
+
+    def __init__(self, script: dict | None = None):
+        super().__init__(script)
+        self.sent: list = []
 
     def counts(self, path: str) -> bool:
         return path.rstrip("/").endswith("/chat/completions")
@@ -207,10 +247,14 @@ class FakeBrain(FakeServer):
         h.close_connection = True
         try:
             for p in pieces:
+                if self.client_gone(h):
+                    return  # client cancelled mid-stream
                 chunk = {"choices": [{"index": 0,
                                       "delta": {"content": p}}]}
                 h.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
                 h.wfile.flush()
+                with self._lock:
+                    self.sent.append((time.monotonic(), p))
                 self._sleep(entry.get("chunk_delay_ms", 0))
             h.wfile.write(b"data: [DONE]\n\n")
             h.wfile.flush()

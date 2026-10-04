@@ -23,13 +23,13 @@ future tray apps). Shells MUST only depend on this document.
 |---|---|---|---|
 | `status` | — | `{ok, state}` | `state` = full state.json snapshot |
 | `listen` | `phase?: start\|stop`, `t0?: int` (client wall-clock ns of the keypress; additive, optional) | `{ok}` or `{ok:false,error:"busy"}` | starts a listen cycle async; kills in-flight TTS (barge-in) |
-| `choice` | `pick: string` | `{ok}` | resolves a pending choice/confirm |
+| `choice` | `pick: string`, optional `prompt_id: string`, optional `index: int` | `{ok}` or `{ok:false, error}` | resolves the pending choice/confirm; see Prompt ids |
 | `task_status` | `name: string` | `{ok, result: string}` | named-agent status |
 | `task_cancel` | `name: string` | `{ok, result: string}` | cancel named agent |
 | `agent` | `task: string` | `{ok, result: string}` | spawn a background task via `[brain] agent_runtime`; `result` is `SPAWNED …`/`SKIP …` |
 | `memory` | `arg` or `target`+`body` | `{ok, result: string}` | `arg` = tool grammar `target|op|old|new`; `target`+`body` = whole-doc `write` (GUI editor path — pipes/newlines safe) |
 | `stop` | — | `{ok}` | daemon exits, socket removed; kills in-flight TTS |
-| `interrupt` | — | `{ok}` | cancels the in-flight turn only — daemon stays up |
+| `interrupt` | — | `{ok}` | cancels the in-flight turn only — daemon stays up; see Cancellation |
 | `config` | `set: {"section.key": "val"}` (optional) | `{ok, config}` | read config; with `set`, writes config.toml preserving comments/order and live-reloads |
 | `label` | `label: correct\|incorrect` | `{ok, result}` | tag the most recent decision (soak intent-match + trajectory join) |
 | `context` | — | `{ok, result}` | focused app, `[windows]` workspace map, inventory counts |
@@ -55,6 +55,7 @@ lacks a section. Shells may offer a settings page on top of this command.
   "answer": "string",
   "result": "string",
   "choices": ["string"],
+  "prompt_id": "string — id of the offered choices/confirm; \"\" when none",
   "points": [{"x": 0, "y": 0, "label": "string", "step": 1}],
   "steps": ["tool arg → result", "…"],
   "guide": {"x": 0, "y": 0, "label": "string", "mode": "guide|drive", "seq": 1},
@@ -98,9 +99,35 @@ transition, each with a stream event
 Absent or `{}` on older cores and while probing is disabled. Remote
 endpoints are never probed and never listed.
 
+Prompt ids (additive; U9): every `awaiting_choice` publishes `choices`
+together with a `prompt_id`, and clears both when the prompt resolves.
+`choice` may carry `prompt_id` and/or `index` (1-based into `choices`;
+`wispd choice [pick] [--prompt-id ID] [--index N]`). Replies:
+`{ok:true}` when applied; `{ok:false, error:"stale_prompt"}` when no
+prompt is pending or `prompt_id` is not the pending one (the pending
+prompt keeps waiting); `{ok:false, error:"not_offered"}` for a `pick`
+not in `choices`; `{ok:false, error:"bad_index"}` for an `index` out of
+range. A `choice` without `prompt_id` is accepted only while a prompt is
+pending (exactly one ever is) — this keeps current shells working. An
+empty `pick` dismisses the prompt like a timeout. The core also refuses
+an unoffered pick that reaches the turn by another path (trace
+`choice_rejected`) and falls back to its safe auto-pick.
+
+Cancellation (additive; U9): `interrupt` cancels the current turn at
+whatever stage it is in — the whisper child and tool subprocesses are
+killed, Jev/STT/brain connections are closed (a late reply is never
+read), the brain stream stops publishing deltas, speech is killed, and
+a cancelled turn never falls back to the next brain. The turn unwinds
+to `status: idle` with `error_code: "cancelled"` (`error` empty);
+`result` carries `INTERRUPTED (user)` when an act step was running. A
+new turn (`listening`) clears `error_code`. Speech now starts per
+completed sentence while the answer streams (state still goes
+`speaking` → `done` when the last sentence ends).
+
 Confirmation gate: when a mutating/shell action needs approval, the
 core transitions to `awaiting_choice` with `choices` = e.g.
-["<prompt> — yes", "no"]; clients reply via `choice` (pick string).
+["<prompt> — yes", "no"]; clients reply via `choice` (pick string, or
+`index`, with the `prompt_id` they saw).
 Both cores use this same mechanism — neither may block holding a
 client's request socket open for the answer.
 

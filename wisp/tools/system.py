@@ -3,6 +3,7 @@ import pathlib
 import shutil
 import subprocess
 
+from .. import cancel as _cancel
 from .. import config
 from ..pipeline import hypr_env, notify
 
@@ -31,7 +32,7 @@ def screenshot(arg: str = "", cfg: dict | None = None) -> str:
     try:
         # screencopy can stall forever on a powered-off panel (lid
         # closed) — never let it block the loop
-        r = subprocess.run(cmd, capture_output=True, env=hypr_env(),
+        r = _cancel.run(cmd, capture_output=True, env=hypr_env(),
                            timeout=15)
     except subprocess.TimeoutExpired:
         f.unlink(missing_ok=True)
@@ -158,7 +159,7 @@ def _dom_shot(path, cfg: dict) -> str:
     svg += "</svg>"
     svgp = path.with_suffix(".svg")
     svgp.write_text(svg)
-    r = subprocess.run([magick, str(svgp), str(path)],
+    r = _cancel.run([magick, str(svgp), str(path)],
                        capture_output=True, timeout=15)
     svgp.unlink(missing_ok=True)
     if r.returncode != 0 or not path.exists():
@@ -202,7 +203,7 @@ def _normalize_shot(path, output: str | None = None) -> None:
             + [f"line 0,{gy} {w},{gy}" for gy in range(100, h, 100)]
             + [f"text {gx + 2},12 '{gx}'" for gx in range(0, w, 100)]
             + [f"text 2,{gy + 12} '{gy}'" for gy in range(0, h, 100)])
-        subprocess.run(
+        _cancel.run(
             [magick, str(path), "-resize", f"{w}x{h}!",
              "-stroke", "rgba(255,80,80,0.45)", "-strokewidth", "1",
              "-fill", "rgba(255,80,80,0.9)", "-pointsize", "12",
@@ -256,7 +257,7 @@ def type_text(text: str, cfg: dict | None = None) -> str:
     cmd = platform.type_text_cmd(text)
     if not cmd:
         return (f"SKIP (no typer — {platform.missing_deps_hint()})")
-    r = subprocess.run(cmd, capture_output=True, env=hypr_env())
+    r = _cancel.run(cmd, capture_output=True, env=hypr_env())
     return "TYPED" if r.returncode == 0 else "SKIP (typer failed)"
 
 
@@ -294,7 +295,7 @@ def key(arg: str, cfg: dict | None = None) -> str:
     code = _KEYCODES.get(name)
     if code is None:
         return f"SKIP (unknown key {name!r})"
-    r = subprocess.run(["ydotool", "key", f"{code}:1", f"{code}:0"],
+    r = _cancel.run(["ydotool", "key", f"{code}:1", f"{code}:0"],
                        capture_output=True, env=hypr_env())
     return "KEY" if r.returncode == 0 else "SKIP (ydotool key failed)"
 
@@ -343,7 +344,7 @@ def scroll(arg: str, cfg: dict | None = None) -> str:
         amt = 7200
     elif top:
         amt, up = 7200, True
-    r = subprocess.run(
+    r = _cancel.run(
         ["ydotool", "mousemove", "--wheel",
          "-y", str(-amt if up else amt)],
         capture_output=True, env=hypr_env())
@@ -356,7 +357,7 @@ def shell(cmd: str) -> str:
     executes via the user's shell and captures a bounded result."""
     if not cmd:
         return "SKIP (empty command)"
-    r = subprocess.run(cmd, shell=True, capture_output=True, text=True,
+    r = _cancel.run(cmd, shell=True, capture_output=True, text=True,
                        timeout=60, env=hypr_env())
     out = (r.stdout or r.stderr).strip()[:200]
     return f"SHELL rc={r.returncode} {out}"
@@ -449,7 +450,7 @@ def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
         verb = "click" if do_click else "move"
         cmds = platform.pointer_cmds(x, y, backend, click=do_click)
         for c in cmds:
-            r = subprocess.run(c, capture_output=True, env=hypr_env(),
+            r = _cancel.run(c, capture_output=True, env=hypr_env(),
                                timeout=10)
             if r.returncode != 0:
                 return f"SKIP ({verb} failed via {backend})"
@@ -493,7 +494,7 @@ def codegraph(arg: str) -> str:
         return ("SKIP (codebase-memory-mcp not installed — "
                 "no code-graph index available)")
     try:
-        r = subprocess.run(
+        r = _cancel.run(
             [_CBM_BIN, "cli", "--quiet", "--json", parts[0], parts[1]],
             capture_output=True, text=True, timeout=30)
     except subprocess.SubprocessError as e:

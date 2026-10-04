@@ -27,7 +27,7 @@ import time
 import urllib.request
 import urllib.error
 
-from . import config, errors_codes
+from . import cancel, config, errors_codes
 
 # set by the daemon: a health.HealthRegistry; entries it knows are down
 # are skipped without a connection attempt
@@ -128,7 +128,7 @@ def _post(url: str, headers: dict, body: dict, timeout: float = 60) -> dict:
         url, data=json.dumps(body).encode(),
         headers={"User-Agent": UA, "Content-Type": "application/json",
                  **headers}, method="POST")
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+    with cancel.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read())
 
 
@@ -205,8 +205,9 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
     t0 = time.monotonic()
     acc, msg = "", {}
     try:
-        with urllib.request.urlopen(req, timeout=first_token_s) as r:
+        with cancel.urlopen(req, timeout=first_token_s) as r:
             for raw in r:
+                cancel.check()
                 line = raw.decode("utf-8", "replace").strip()
                 if ollama:
                     if not line:
@@ -245,7 +246,10 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
                         f"no first token within {first_token_s:g}s")
                 if done:
                     break
+        cancel.check()  # a closed socket ends the loop like EOF
     except Exception as e:
+        if cancel.is_cancelled():
+            raise cancel.Cancelled() from e
         if acc:  # the caller already saw text: never splice a 2nd answer
             err = errors_codes.classify(e, "brain_down")
             err.committed = True
@@ -268,6 +272,8 @@ def _attempt(p: dict, fn):
     try:
         return fn(p)
     except Exception as e:
+        if cancel.is_cancelled():
+            raise cancel.Cancelled() from e
         if getattr(e, "committed", False) \
                 or not errors_codes.is_connection_failure(e):
             raise
@@ -281,6 +287,7 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
     failures: list = []
     first_failed = None
     for i, p in enumerate(chain(cfg)):
+        cancel.check()  # a cancelled turn never moves to the next brain
         if not p["base_url"]:
             failures.append(f"brain provider '{p['name']}' needs "
                             f"brain.{p['name']}.base_url")
@@ -297,7 +304,8 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
             try:
                 res = _attempt(p, fn)
             except Exception as e:
-                if getattr(e, "committed", False):
+                if getattr(e, "committed", False) \
+                        or isinstance(e, cancel.Cancelled):
                     raise
                 failures.append(_describe(p, e))
                 if HEALTH is not None:

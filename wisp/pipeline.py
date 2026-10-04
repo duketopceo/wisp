@@ -21,6 +21,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
+from . import cancel as _cancel
 from . import config, speech
 from . import errors_codes as _errors
 
@@ -230,7 +231,7 @@ def transcribe(wav: pathlib.Path, cfg: dict) -> str:
     prompt = vocab.build(cfg)
     if prompt:
         argv += ["--prompt", prompt]
-    r = subprocess.run(argv, capture_output=True, text=True, timeout=120)
+    r = _cancel.run(argv, capture_output=True, text=True, timeout=120)
     return " ".join(r.stdout.split())
 
 
@@ -282,7 +283,7 @@ def _transcribe_openai(wav: pathlib.Path, stt: dict,
                  **_brain.app_headers(base),
                  "Content-Type":
                  f"multipart/form-data; boundary={boundary}"})
-    with urllib.request.urlopen(req, timeout=60) as resp:
+    with _cancel.urlopen(req, timeout=60) as resp:
         return " ".join(
             json.loads(resp.read()).get("text", "").split())
 
@@ -347,7 +348,7 @@ def ask_jev(transcript: str, model: str, questions: dict,
         method="POST")
     for attempt in (1, 2):
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with _cancel.urlopen(req, timeout=30) as resp:
                 return json.loads(resp.read())
         except urllib.error.HTTPError as e:
             raise _ec.WispError(
@@ -431,8 +432,8 @@ def capture_screen() -> pathlib.Path | None:
         return None
     try:
         config.RUN_DIR.mkdir(parents=True, exist_ok=True)
-        r = subprocess.run(cmd, capture_output=True,
-                           timeout=10, env=hypr_env())
+        r = _cancel.run(cmd, capture_output=True,
+                        timeout=10, env=hypr_env())
         return out if r.returncode == 0 and out.exists() else None
     except Exception:
         return None
@@ -694,8 +695,15 @@ def apply_choice(answers: dict, picked: str) -> dict:
 
 def run_listen(cfg: dict, state, wait_for_choice=None,
                wav: pathlib.Path | None = None,
-               interrupted=None, spans=None, turn_id=None) -> int:
+               interrupted=None, spans=None, turn_id=None,
+               cancel=None) -> int:
     """One push-to-talk cycle inside the daemon.
+
+    `cancel` is the turn's CancelToken (U9; the daemon's `interrupt`
+    sets it). With only `interrupted` (a callable), a watcher bridges it
+    to a token within ~20 ms. Either way a cancelled turn closes its
+    sockets, kills its children and ends `idle` with
+    `error_code = cancelled`.
 
     `wav` set → toggle mode: the daemon already captured audio between
     two presses, so skip recording. `wait_for_choice(timeout)` -> picked
@@ -707,8 +715,53 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
     the daemon's first press) or a fresh one, and every write goes
     through the bus tagged with it.
     """
+    token = cancel or _cancel.CancelToken()
+    stop_watch = threading.Event()
+    if interrupted is not None and cancel is None:
+        def watch():
+            while not stop_watch.is_set():
+                if interrupted():
+                    token.cancel()
+                    return
+                stop_watch.wait(0.02)
+        threading.Thread(target=watch, daemon=True).start()
+    try:
+        with _cancel.bind(token):
+            return _listen_turn(cfg, state, wait_for_choice, wav,
+                                interrupted, spans, turn_id, token)
+    finally:
+        stop_watch.set()
+
+
+def _ask_prompt(state, wait_for_choice, token, options: list,
+                timeout: float, turn: str, kind: str):
+    """Publish a prompt with a fresh prompt_id, wait for the answer and
+    return the pick — or None when none came, the turn was cancelled or
+    the pick was not one of the offered options (`choice_rejected`)."""
+    from . import trace as _trace
+    pid = _cancel.new_prompt_id()
+    state.transition("awaiting_choice", choices=list(options),
+                     prompt_id=pid)
+    try:
+        pick = wait_for_choice(timeout, prompt_id=pid,
+                               options=list(options))
+    finally:
+        if not token.cancelled:
+            state.transition("acting", choices=[], prompt_id="")
+    if pick and pick not in options:
+        _trace.emit(turn, "choice_rejected", "act",
+                    {"kind": kind, "pick": pick, "prompt_id": pid,
+                     "offered": list(options)})
+        return None
+    return pick
+
+
+def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
+                 turn_id, token) -> int:
     secs = int(cfg.get("audio", {}).get("seconds", "60"))
     model = cfg.get("agent", {}).get("model", "typesafe/jev-1.13")
+    result = ""
+    speaker = None
     from . import trace as _trace
     sp = spans or _trace.Spans()
     from . import state as _state
@@ -722,6 +775,7 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
     _trace.emit(turn, "listen_start", "lifecycle",
                 {"seconds": secs, "model": model})
     try:
+        token.check()
         if wav is None:
             state.transition("listening", transcript="", result="",
                              answer="", choices=[], points=[], error="",
@@ -731,6 +785,7 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
             wav = record(secs, state)
             sp.record("record", rec_start)
             sp.set_release()
+        token.check()
         rec_ms = sp.ms.get("record", 0)
         _trace.emit(turn, "record", "stt",
                     {"wav": str(wav),
@@ -742,6 +797,7 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
             text = transcribe(wav, cfg)
         except Exception as e:
             raise _errors.classify(e, "stt_down") from e
+        token.check()
         sp.record("stt", sp.rel0)
         _trace.emit(turn, "transcribe", "stt",
                     {"provider": cfg.get("stt", {}).get("provider", "local"),
@@ -834,6 +890,7 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
         else:
             resp = ask_jev(text, model, build_questions(harness),
                            context=context)
+        token.check()
         sp.record("route", route_start)
         sp.arm("first_token", sp.mark_ns("route"))
         sp.arm("first_step", sp.mark_ns("route"))
@@ -863,9 +920,10 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
         if low_conf:
             labels = ambiguous_choices(answers, cfg)
             if wait_for_choice:
-                state.transition("awaiting_choice", choices=labels)
-                picked = wait_for_choice(60) or auto_pick(answers)
-                state.transition("acting", choices=[])
+                picked = _ask_prompt(state, wait_for_choice, token,
+                                     labels, 60, turn, "clarify") \
+                    or auto_pick(answers)
+                token.check()
                 if picked:
                     corrected = apply_choice(answers, picked)
                     from . import learn, recall as _recall
@@ -889,10 +947,10 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
         confirm = None
         if wait_for_choice:
             def confirm(prompt: str) -> bool:
-                state.transition("awaiting_choice",
-                                 choices=[f"{prompt} — yes", "no"])
-                pick = wait_for_choice(30)
-                state.transition("acting", choices=[])
+                pick = _ask_prompt(state, wait_for_choice, token,
+                                   [f"{prompt} — yes", "no"], 30, turn,
+                                   "confirm")
+                token.check()
                 return bool(pick) and "yes" in pick
         from . import brain as _brain
         act_img = shot_b64 if shot_b64 and \
@@ -903,6 +961,9 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
         _trace.emit(turn, "dispatch", "act",
                     {"route": answers.get("route", {}).get("choice"),
                      "result": result})
+        if result.startswith("INTERRUPTED"):
+            token.cancel()   # `interrupted()` fired before the watcher
+        token.check()
         if corr:
             _learn.record_retry(corr["prior_ref"], result)
         reply = ""
@@ -929,6 +990,7 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
             return 0
         if result == "ANSWERED":
             pts = []
+            speaker = speech.SentenceSpeaker(cfg, token=token)
 
             def _delta(acc):
                 # stream the answer into state.json as it arrives — the
@@ -937,10 +999,13 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
                 # trailing [POINT…/markdown-ish brackets hidden so the
                 # bubble never flashes raw tags.
                 sp.fire("first_token")
-                if state is None:
-                    return
+                if state is None or token.cancelled:
+                    return  # a cancelled turn publishes no more deltas
                 partial = re.sub(r"\[[A-Za-z]*:?[^\]]*$", "", acc)
                 _publish_delta(state, partial)
+                # speak each completed sentence while the rest streams
+                from . import points as _pts
+                speaker.feed(_pts.extract(partial)[0])
 
             try:
                 _t = time.monotonic()
@@ -974,19 +1039,27 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
                         pts = _points.to_logical(raw, _mons)
             if pts:
                 _trace.emit(turn, "points", "act", {"points": pts})
+            token.check()
             state.transition("speaking", result=result, answer=reply,
                              points=pts)
             _t = time.monotonic()
             tts_start = sp.now()
-            proc = speech.speak(reply, cfg)
+            if speaker.started:
+                # sentences already went out as they completed; queue
+                # the unspoken tail and flip to done when the last ends
+                speaker.finish(reply, on_done=_end_speaking(state))
+                proc = True
+            else:
+                proc = speech.speak(reply, cfg)
+                if proc is not None:
+                    speech.on_exit(proc, _end_speaking(state))
             sp.record("tts_start", tts_start)
             _trace.emit(turn, "speak", "tts",
                         {"cmd": cfg.get("voice", {}).get("cmd", ""),
-                         "spawned": proc is not None},
+                         "spawned": proc is not None,
+                         "streamed": speaker.started},
                         round((time.monotonic() - _t) * 1000))
-            if proc is not None:
-                speech.on_exit(proc, _end_speaking(state))
-            else:
+            if proc is None:
                 state.transition("done")
         else:
             state.transition("done", result=result)
@@ -1004,7 +1077,25 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
                       "timing_ms": sp.legacy_timing(),
                       "corrected": bool(answers.get("corrected_by_user"))})
         return 0
+    except _cancel.Cancelled:
+        # stop works at every stage: sockets are closed and children
+        # killed by the token; kill any speech and settle on idle
+        if speaker is not None:
+            speaker.stop()
+        speech.stop()
+        _trace.emit(turn, "cancelled", "lifecycle", {"result": result})
+        fields = {"error": "", "error_code": "cancelled",
+                  "error_detail": "", "choices": [], "prompt_id": ""}
+        if result:
+            fields["result"] = result
+        state.transition("idle", **fields)
+        log_decision({"ts": datetime.now(timezone.utc).isoformat(),
+                      "result": "CANCELLED (user)",
+                      "timing_ms": sp.legacy_timing()})
+        return 0
     except Exception as e:
+        if speaker is not None:
+            speaker.stop()
         err = _errors.classify(e, "internal")
         _trace.emit(turn, "error", "error",
                     {"error": str(e), "error_code": err.code})

@@ -1,5 +1,5 @@
 {
-  "description": "Characterization: the chooser returns a pick that was never offered (stale prompt). Today it is applied verbatim; a later unit should reject it.",
+  "description": "The chooser returns a pick that was never offered (stale prompt). U9: it is rejected (choice_rejected in the trace) and the turn falls back to the safe auto-pick.",
   "audio": "choose.wav",
   "endpoints": {
     "whisper": {
@@ -45,7 +45,7 @@
   },
   "expect": {
     "launch_calls": [
-      "ghostapp"
+      "discord"
     ]
   },
   "name": "stale_choice"
