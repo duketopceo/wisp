@@ -25,7 +25,9 @@ EXPECTED = ["Answer", "AgentRow", "AgentsTab", "BarActions", "BarMark", "Beacon"
             "Corner", "Creature", "EmptyState", "GhostCursor",
             "HealthSection", "Icon", "Mark", "MemoryTab", "NowTab",
             "PanelTab", "Pill", "SettingsTab", "StatusLine", "StepRow",
-            "StopControl", "Transcript"]
+            "StopControl", "Transcript",
+            # management app views (W26)
+            "AuditView", "BindsView", "HealthView", "SpendView"]
 
 FORBIDDEN = [
     (r"\bimport\s+Quickshell", "Quickshell import"),
