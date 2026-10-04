@@ -221,6 +221,7 @@ class TestJson(unittest.TestCase):
         (["cua", "status"], False), (["cua", "test"], False),
         (["cua", "log"], False), (["cua", "enable"], False),
         (["cua", "disable"], False), (["notify", "test"], False),
+        (["cua", "kill"], False), (["cua", "resume"], False),
         (["completion", "bash"], False),
     ]
     TYPES = {"str": str, "int": int, "float": (int, float), "bool": bool,

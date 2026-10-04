@@ -1,0 +1,14 @@
+usage: wispd cua kill [-h] [--json] [--quiet] [--no-color]
+
+Arm the kill switch: refuse all cua input at once
+
+options:
+  -h, --help   show this help message and exit
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd cua kill
