@@ -49,8 +49,15 @@ def main(spec_path: str) -> int:
             cfg.setdefault(section, {}).update(vals)
 
         # -- seams: no desktop, no notifications, no real launches ----
-        pipeline.notify = lambda msg: out["notifications"].append(msg)
-        pipeline.active_window = lambda: {}
+        # a fixture that declares the notify / hypr fakes gets the REAL
+        # code path (notify-send on PATH / the Hyprland socket)
+        if not spec.get("real_notify"):
+            # notify() takes keyword args (level, cfg, turn, code,
+            # actions, spoken, stale); the stub accepts and ignores them
+            pipeline.notify = lambda msg, *a, **k: \
+                out["notifications"].append(msg)
+        if not spec.get("real_hypr"):
+            pipeline.active_window = lambda: {}
 
         def fake_record(secs, state=None):
             dst = config.CFG_DIR / "utterance.wav"
