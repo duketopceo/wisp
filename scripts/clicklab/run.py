@@ -8,6 +8,8 @@ MCP `evaluate` tool — auto-labeled runs, no human ✓/✗.
 
 Usage:
     python3 scripts/clicklab/run.py [--tasks N] [--repeat R]
+        [--suite NAME] [--seed S] [--dom] [--only SUBSTR]
+        [--models "provider:model,provider:model"]
 """
 import json
 import sys
@@ -29,13 +31,15 @@ SUITES_FILE = pathlib.Path(__file__).parent / "suites.json"
 
 
 def load_suite(name: str) -> list:
-    """(instruction, JS check) pairs — check body runs with `s` bound
-    to window.__score and must return a bool."""
+    """(instruction, JS check, oracle_len) triples — check body runs
+    with `s` bound to window.__score and must return a bool; oracle_len
+    is the authored minimal tool-call count (0 = unknown)."""
     suites = json.loads(SUITES_FILE.read_text())
     if name not in suites:
         raise SystemExit(f"unknown suite '{name}' "
                          f"(have: {', '.join(suites)})")
-    return [tuple(t) for t in suites[name]]
+    return [(t[0], t[1], t[2] if len(t) > 2 else 0)
+            for t in suites[name]]
 
 
 def serve():
@@ -231,17 +235,73 @@ def main():
     suite = load_suite(suite_name)
     only = _flag("--only")
     if only:
-        suite = [t for t in suite if only.lower() in t[0].lower()]
+        suite = [t for t in suite
+                 if only.lower() in t[0].lower()]
         if not suite:
             raise SystemExit(f"no task in '{suite_name}' "
                              f"matching '{only}'")
     n = int(_flag("--tasks", str(len(suite))))
     tasks = (suite * repeat)[:n * repeat]
-    brain = cfg.get("brain", {}).get("default", "openrouter")
-    print(f"[clicklab] {len(tasks)} tasks, brain={brain}")
 
+    # --models "provider:model,provider:model" — same suite, same seed,
+    # each run tagged with the actor so the bank and arena compare
+    # models on equal footing. Local endpoints get a health check and
+    # are skipped (not failed) when their server is down.
+    specs = [s.strip() for s in _flag("--models").split(",")
+             if s.strip()]
+    if not specs:
+        specs = [cfg.get("brain", {}).get("default", "openrouter")]
     results = []
-    for i, (task, expr) in enumerate(tasks, 1):
+    for spec in specs:
+        if ":" not in spec:
+            print(f"[clicklab] bad --models spec '{spec}' — want "
+                  "provider:model; skipping")
+            continue
+        import copy as _copy
+        mcfg = _copy.deepcopy(cfg)
+        mcfg.setdefault("brain", {})["default"] = spec
+        model = spec.split(":", 1)[1]
+        if not _provider_up(mcfg):
+            print(f"[clicklab] SKIP {spec} — provider unreachable")
+            continue
+        results.extend(
+            _run_suite(mcfg, tasks, page, dom, suite_name, spec,
+                       model, len(tasks)))
+
+    hits = sum(1 for r in results if r["verified"])
+    print(f"\n[clicklab] {hits}/{len(results)} verified "
+          f"({100 * hits // max(len(results), 1)}%)")
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    with OUT.open("a") as f:
+        for r in results:
+            f.write(json.dumps(r) + "\n")
+    print(f"[clicklab] results appended to {OUT}")
+
+
+def _provider_up(cfg: dict) -> bool:
+    """Local OpenAI-compatible endpoints get a 3s reachability probe;
+    remote providers are assumed up."""
+    from wisp import brain as _brain
+    p = _brain.provider(cfg)
+    base = (p.get("base_url") or "").rstrip("/")
+    if not base or "openrouter.ai" in base:
+        return True
+    if not re.search(r"127\.0\.0\.1|localhost", base):
+        return True
+    try:
+        import urllib.request
+        urllib.request.urlopen(f"{base}/models", timeout=3)
+        return True
+    except Exception:
+        return False
+
+
+def _run_suite(cfg, tasks, page, dom, suite_name, spec, model,
+               total) -> list:
+    from wisp import act, judge, train
+    print(f"[clicklab] {total} tasks, brain={spec}")
+    results = []
+    for i, (task, expr, oracle_len) in enumerate(tasks, 1):
         # reset the scoreboard per task — cumulative state would let a
         # repeat pass on a previous task's leftovers
         bos("evaluate", {"page": page, "code":
@@ -266,10 +326,35 @@ def main():
         # still wins on success — the judge reconciles, not overrides.
         j = judge.verdict(task, run_steps, verdict, cfg,
                           verified=ok) if "--no-judge" not in sys.argv \
-            else {"success": ok, "efficiency": None, "waste": "none"}
+            else {"success": ok, "efficiency": None, "waste": "none",
+                  "first_fault": -1}
+        # indices of steps that actually executed (not error/skip/refuse)
+        nonerr = [i for i, s in enumerate(run_steps)
+                  if not str(s.get("result", "")).startswith(
+                      ("ERROR", "SKIP", "REFUS"))]
+        # first-fault fallback when the judge didn't name one: verified
+        # fails fault at the last executed step, clean passes at none.
+        if j.get("first_fault", -1) < 0 and ok is False:
+            j["first_fault"] = nonerr[-1] if nonerr else -1
+        # Objective efficiency when the suite carries an oracle:
+        # minimal-steps / executed-steps, capped at 1.0. Jev's verdict
+        # stays on the record for disagreement auditing; `efficiency`
+        # resolves to the oracle when present.
+        actual = len(nonerr)
+        eff_obj = (min(1.0, oracle_len / max(actual, 1))
+                   if oracle_len else None)
+        eff = eff_obj if eff_obj is not None else j.get("efficiency")
         rec = {"i": i, "task": task, "suite": suite_name,
                "check": expr, "verdict": verdict,
                "verified": ok, "judge": j, "surface": "browser-dom",
+               "model": model, "provider": spec,
+               "efficiency": eff, "oracle_len": oracle_len or None,
+               "actual_len": actual,
+               "flake": train.classify_flake(
+                   {"verified": ok, "judge": j, "steps": run_steps,
+                    "verdict": verdict}),
+               "cost_usd": 0.0 if not spec.startswith("openrouter")
+               else None,
                "steps": run_steps[:24], "ms": ms, "ts": time.time()}
         results.append(rec)
         entry = train.update_bank(rec)
@@ -281,15 +366,9 @@ def main():
               f"{judge.describe(j)}",
               flush=True)
         time.sleep(0.5)
-
     hits = sum(1 for r in results if r["verified"])
-    print(f"\n[clicklab] {hits}/{len(results)} verified "
-          f"({100 * hits // max(len(results), 1)}%)")
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    with OUT.open("a") as f:
-        for r in results:
-            f.write(json.dumps(r) + "\n")
-    print(f"[clicklab] results appended to {OUT}")
+    print(f"[clicklab:{model}] {hits}/{len(results)} verified")
+    return results
 
 
 if __name__ == "__main__":

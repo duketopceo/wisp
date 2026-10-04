@@ -27,13 +27,19 @@ _DAEMON_CTL = None
 _POLL_CMDS = {"task_status", "status"}  # widget pollers — keep out of trace
 
 
+_DLOG_MAX_BYTES = 2 * 1024 * 1024
+
+
 def dlog(msg: str) -> None:
     """Human-readable daemon log: ~/.local/share/wisp/wispd.log + journal."""
-    line = (f"{datetime.datetime.now():%H:%M:%S}."
-            f"{datetime.datetime.now().microsecond // 1000:03d} {msg}")
+    now = datetime.datetime.now()
+    line = f"{now:%Y-%m-%d %H:%M:%S}.{now.microsecond // 1000:03d} {msg}"
     try:
         config.DATA_DIR.mkdir(parents=True, exist_ok=True)
-        with open(config.DATA_DIR / "wispd.log", "a") as f:
+        fp = config.DATA_DIR / "wispd.log"
+        if fp.exists() and fp.stat().st_size > _DLOG_MAX_BYTES:
+            fp.replace(fp.with_suffix(".1.log"))
+        with fp.open("a") as f:
             f.write(line + "\n")
     except OSError:
         pass
@@ -817,6 +823,27 @@ def main() -> int:
             print(f"rebuilt skill bank — {len(bank)} patterns")
         else:
             print(train.stats_text())
+        return 0
+    if cmd == "review":
+        # wispd review [run [N]|approve N|reject N|list] — staged
+        # reviewer proposals; approve is the only write path to the bank
+        from wisp import review
+        sub = sys.argv[2] if len(sys.argv) > 2 else "list"
+        if sub == "run":
+            n = int(sys.argv[3]) if len(sys.argv) > 3 else 10
+            r = review.run(cfg, limit=n)
+            print(f"reviewed {r['reviewed']} → {r['proposed']} proposals"
+                  + (f", {r['skipped']} skipped" if r["skipped"] else ""))
+            for note in r["notes"][:5]:
+                print(f"  - {note}")
+        elif sub == "approve":
+            print(review.approve(int(sys.argv[3])
+                                 if len(sys.argv) > 3 else 0))
+        elif sub == "reject":
+            print(review.reject(int(sys.argv[3])
+                                if len(sys.argv) > 3 else 0))
+        else:
+            print(review.list_text())
         return 0
     if cmd == "learn":
         from wisp import learn

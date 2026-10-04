@@ -611,17 +611,31 @@ def active_window() -> dict:
     return {}
 
 
-def pointer_backend(cfg: dict | None = None) -> str | None:
-    """Pointer injector: 'hyprcursor' | 'ydotool' | 'wlrctl' | None.
+def _cua_live() -> bool:
+    """cua-driver daemon reachable on its socket (Wayland backend
+    enabled server-side via CUA_DRIVER_RS_ENABLE_WAYLAND)."""
+    import os
+    return _which("cua-driver") and os.path.exists(
+        os.path.expanduser("~/.cache/cua-driver/cua-driver.sock"))
 
-    [pointer] backend = "hyprcursor"|"ydotool"|"wlrctl"|"none"|"auto"
-    (default). hyprcursor positions via Hyprland's own dispatcher —
-    exact logical coords, immune to the uinput-scale mismatch ydotool's
-    absolute move shows on scaled outputs — and clicks via ydotool.
-    auto prefers it on Hyprland; macOS/Windows injection isn't built —
+
+def pointer_backend(cfg: dict | None = None) -> str | None:
+    """Pointer injector: 'cua' | 'hyprcursor' | 'ydotool' | 'wlrctl'
+    | None.
+
+    [pointer] backend = "cua"|"hyprcursor"|"ydotool"|"wlrctl"|"none"|
+    "auto" (default). cua routes clicks through cua-driver's background
+    virtual pointer — compositor-exact coords on native Wayland without
+    stealing the user's cursor or focus. hyprcursor positions via
+    Hyprland's own dispatcher — exact logical coords, immune to the
+    uinput-scale mismatch ydotool's absolute move shows on scaled
+    outputs — and clicks via ydotool. auto prefers the live cua daemon,
+    then hyprcursor on Hyprland; macOS/Windows injection isn't built —
     returns None so callers degrade to guide mode.
     """
     want = (cfg or {}).get("pointer", {}).get("backend", "auto")
+    if want == "cua":
+        return "cua" if _cua_live() else None
     if want == "hyprcursor":
         return want if _which("hyprctl") and _which("ydotool") \
             else None
@@ -629,6 +643,8 @@ def pointer_backend(cfg: dict | None = None) -> str | None:
         return want if _which(want) else None
     if want == "none" or current() != "linux":
         return None
+    if _cua_live():
+        return "cua"
     if _which("hyprctl") and _which("ydotool"):
         return "hyprcursor"
     for b in ("ydotool", "wlrctl"):
@@ -641,6 +657,15 @@ def pointer_cmds(x: int, y: int, backend: str,
                  click: bool = True) -> list:
     """Argv list moving the pointer to logical (x,y) and optionally
     clicking. Logical = Hyprland compositor coords."""
+    if backend == "cua":
+        import json as _json
+        if click:
+            return [["cua-driver", "call", "click",
+                     _json.dumps({"x": x, "y": y,
+                                  "coordinate_frame": "desktop",
+                                  "scope": "desktop"})]]
+        return [["cua-driver", "call", "move_cursor",
+                 _json.dumps({"x": x, "y": y, "scope": "desktop"})]]
     if backend == "hyprcursor":
         cmds = [["hyprctl", "dispatch",
                  f"hl.dsp.cursor.move({{x={x},y={y}}})"]]

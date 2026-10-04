@@ -100,7 +100,8 @@ def run_act_loop(task: str, cfg: dict, state=None,
     IPC) when wired; without it mutating calls skip. `steps_out`, if a
     list, receives the run's step records for judging/replay."""
     from . import brain
-    if not brain.supports_tools(cfg):
+    at_mode = brain.action_text(cfg)
+    if not brain.supports_tools(cfg) and not at_mode:
         p = brain.provider(cfg)
         return (f"SKIP (brain provider '{p['name']}' does not support "
                 f"tools — set [brain.{p['name']}] tools=true or pick a "
@@ -118,7 +119,8 @@ def run_act_loop(task: str, cfg: dict, state=None,
     if prior:
         system += "\n\n" + prior
     from . import train as _train
-    hint = _train.hint_for(task, _surface(cfg))
+    hint = _train.hint_for(task, _surface(cfg),
+                           model=brain.provider(cfg).get("model", ""))
     if hint:
         system += "\n\n" + hint
     from . import goals as _goals
@@ -163,6 +165,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
     if steps_out is not None:
         steps_out.clear()
     errors = 0
+    parse_misses = 0
     max_steps = int(cfg.get("agents", {}).get("act_max_steps",
                                              str(MAX_STEPS)))
     # trigger-time image counts as the current observation; a mutating
@@ -183,6 +186,37 @@ def run_act_loop(task: str, cfg: dict, state=None,
             _goals.record_steps(steps)
             return "INTERRUPTED (user)"
         calls = msg.get("tool_calls") or []
+        if not calls and at_mode:
+            parsed = _parse_action_text(msg.get("content") or "")
+            if parsed is None:
+                parse_misses += 1
+                if parse_misses > 1:
+                    _goals.record_steps(steps)
+                    out = (f"STALLED (unparseable action replies): "
+                           f"{_last(steps)}")
+                    trajectories.record(task, _app(harness), steps, out,
+                                        surface=_surface(cfg))
+                    return out
+                messages.append(
+                    {"role": "user",
+                     "content": "Reply with exactly one Action: line "
+                                "(click(x, y) | type('text') | scroll | "
+                                "hotkey('a','b')) or DONE."})
+                continue
+            parse_misses = 0
+            if not parsed["actions"]:
+                text = (parsed["done"] or "done").strip()
+                _publish(state, task, steps)
+                _goals.record_steps(steps)
+                _goals.close("done")
+                out = f"ACTED ({len(steps)} steps): {text}"
+                trajectories.record(task, _app(harness), steps, out,
+                                    surface=_surface(cfg))
+                return out
+            calls = [{"id": f"at-{len(steps)}-{i}", "_at": True,
+                      "function": {"name": n,
+                                   "arguments": json.dumps({"arg": a})}}
+                     for i, (n, a) in enumerate(parsed["actions"])]
         if not calls:
             text = (msg.get("content") or "").strip()
             _publish(state, task, steps)
@@ -243,9 +277,12 @@ def run_act_loop(task: str, cfg: dict, state=None,
             # a failure — don't burn the error budget on it.
             errors = errors + 1 if result.startswith(("ERROR", "SKIP",
                                                       "REFUS")) else 0
-            messages.append({"role": "tool",
-                             "tool_call_id": call.get("id", name),
-                             "content": result})
+            if call.get("_at"):
+                messages.append({"role": "user", "content": result})
+            else:
+                messages.append({"role": "tool",
+                                 "tool_call_id": call.get("id", name),
+                                 "content": result})
             if name == "screenshot" and vision \
                     and result.startswith("SHOT "):
                 _attach_image(messages, result[5:].strip(), cfg)
@@ -303,6 +340,77 @@ def _surface(cfg: dict | None) -> str:
 
 _GUIDE_RE = re.compile(r"(?:GUIDE|MOVE-GUIDE|CLICKED|MOVED)\((-?\d+),"
                        r"(-?\d+)\)")
+
+# UI-TARS-style action grammar — providers flagged action_text=true.
+# One action per reply; 'Action:' prefix and bare 'name(args)' both
+# accepted. Returns {"actions": [(tool, arg)], "done": text|None} or
+# None when nothing parses.
+_AT_DONE_RE = re.compile(
+    r"^(?:DONE\b:?\s*(?P<dt>.*)|"
+    r"(?:Action:\s*)?finished\s*\(\s*content\s*=\s*(?P<fq>['\"])(?P<fc>.*?)"
+    r"(?P=fq)\s*\)|(?:Action:\s*)?FAIL\b.*)$", re.I | re.S)
+_AT_CALL_RE = re.compile(
+    r"^(?:Action:\s*)?([a-z_]+)\s*\((?P<args>.*)\)\s*\.?$",
+    re.I | re.S)
+_AT_QUOTED_RE = re.compile(r"['\"]([^'\"]*)['\"]")
+_AT_NUM_RE = re.compile(r"-?\d+")
+
+
+def _at_coords(args: str) -> str | None:
+    nums = _AT_NUM_RE.findall(args)
+    return f"{nums[0]},{nums[1]}" if len(nums) >= 2 else None
+
+
+def _parse_action_text(text: str) -> dict | None:
+    t = (text or "").strip()
+    if not t:
+        return None
+    m = _AT_DONE_RE.match(t)
+    if m:
+        return {"actions": [],
+                "done": (m.group("dt") or m.group("fc") or t).strip()}
+    actions = []
+    for line in t.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if line.lower().startswith(("thought", "observation")):
+            continue
+        cm = _AT_CALL_RE.match(line)
+        if not cm:
+            return None if not actions else {"actions": actions,
+                                             "done": None}
+        fn, args = cm.group(1).lower(), cm.group("args")
+        if fn in ("click", "left_double", "right_single", "tap"):
+            xy = _at_coords(args)
+            if xy is None:
+                continue
+            actions.append(("click", xy))
+        elif fn == "type":
+            q = _AT_QUOTED_RE.search(args)
+            if q:
+                actions.append(("type_text", q.group(1)))
+        elif fn == "scroll":
+            d = _AT_QUOTED_RE.search(args)
+            if d:
+                actions.append(("scroll", d.group(1).lower()))
+            else:
+                nums = [int(n) for n in _AT_NUM_RE.findall(args)]
+                dy = nums[-1] if nums else 0
+                if dy:
+                    actions.append(
+                        ("scroll",
+                         f"{'down' if dy > 0 else 'up'} {abs(dy)}"))
+        elif fn in ("hotkey", "press", "key"):
+            keys = _AT_QUOTED_RE.findall(args)
+            if keys:
+                actions.append(("key", "+".join(k.lower()
+                                                for k in keys)))
+        elif fn == "wait":
+            continue  # no wait tool — free no-op
+        else:
+            actions.append((fn, args.strip()))  # unknown → tool error
+    return {"actions": actions, "done": None} if actions else None
 
 
 def _publish_guide(state, name: str, arg: str, result: str) -> None:

@@ -70,3 +70,55 @@ class JudgeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FirstFault(unittest.TestCase):
+    def setUp(self):
+        self.cfg = {"agent": {}}
+        self.steps = [{"tool": "click", "arg": "1,2",
+                       "result": "CLICKED DIV"}] * 3
+
+    def _resp(self, ff):
+        return {"answers": {
+            "success": {"choice": "no"},
+            "efficiency": {"score": 1},
+            "waste": {"choice": "re_aim"},
+            "first_fault": {"score": ff}}}
+
+    def test_fault_step_maps_to_zero_indexed(self):
+        with mock.patch("wisp.pipeline.ask_jev",
+                        return_value=self._resp(2)):
+            v = judge.verdict("t", self.steps, "x", self.cfg,
+                              verified=False)
+        self.assertEqual(v["first_fault"], 1)  # step 2 → index 1
+
+    def test_none_maps_to_minus_one(self):
+        with mock.patch("wisp.pipeline.ask_jev",
+                        return_value=self._resp(0)):
+            v = judge.verdict("t", self.steps, "x", self.cfg)
+        self.assertEqual(v["first_fault"], -1)
+
+    def test_out_of_range_clamped(self):
+        with mock.patch("wisp.pipeline.ask_jev",
+                        return_value=self._resp(20)):
+            v = judge.verdict("t", self.steps, "x", self.cfg)
+        self.assertEqual(v["first_fault"], 2)  # clamped to len-1
+
+    def test_missing_answer_defaults_minus_one(self):
+        r = {"answers": {"success": {"choice": "yes"},
+                         "efficiency": {"score": 3},
+                         "waste": {"choice": "none"}}}
+        with mock.patch("wisp.pipeline.ask_jev", return_value=r):
+            v = judge.verdict("t", self.steps, "x", self.cfg)
+        self.assertEqual(v["first_fault"], -1)
+
+    def test_judge_error_carries_minus_one(self):
+        with mock.patch("wisp.pipeline.ask_jev",
+                        side_effect=RuntimeError("x")):
+            v = judge.verdict("t", self.steps, "x", self.cfg)
+        self.assertEqual(v["first_fault"], -1)
+
+    def test_describe_shows_fault(self):
+        s = judge.describe({"success": False, "efficiency": 0.5,
+                            "waste": "re_aim", "first_fault": 2})
+        self.assertIn("fault@3", s)

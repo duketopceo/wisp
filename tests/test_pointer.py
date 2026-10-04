@@ -1,4 +1,5 @@
 """Guide-cursor pointer tools: arg parsing, guide/drive modes, backend."""
+import json
 import unittest
 from unittest import mock
 
@@ -115,3 +116,45 @@ class PointerTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CuaBackend(unittest.TestCase):
+    def test_explicit_cua_without_daemon_returns_none(self):
+        cfg = {"pointer": {"mode": "drive", "backend": "cua"}}
+        with mock.patch.object(platform, "_cua_live", return_value=False):
+            self.assertIsNone(platform.pointer_backend(cfg))
+
+    def test_explicit_cua_with_daemon(self):
+        cfg = {"pointer": {"mode": "drive", "backend": "cua"}}
+        with mock.patch.object(platform, "_cua_live", return_value=True):
+            self.assertEqual(platform.pointer_backend(cfg), "cua")
+
+    def test_auto_prefers_live_cua_over_hyprcursor(self):
+        with mock.patch.object(platform, "_cua_live", return_value=True), \
+             mock.patch.object(platform, "_which", return_value="/x"), \
+             mock.patch.object(platform, "current", return_value="linux"):
+            self.assertEqual(platform.pointer_backend({}), "cua")
+
+    def test_auto_falls_to_hyprcursor_when_daemon_down(self):
+        with mock.patch.object(platform, "_cua_live", return_value=False), \
+             mock.patch.object(platform, "_which",
+                               return_value="/x"), \
+             mock.patch.object(platform, "current", return_value="linux"):
+            self.assertEqual(platform.pointer_backend({}), "hyprcursor")
+
+    def test_cua_click_cmd_shape(self):
+        cmds = platform.pointer_cmds(100, 200, "cua", click=True)
+        self.assertEqual(len(cmds), 1)
+        c = cmds[0]
+        self.assertEqual(c[:3], ["cua-driver", "call", "click"])
+        args = json.loads(c[3])
+        self.assertEqual(args["x"], 100)
+        self.assertEqual(args["y"], 200)
+        self.assertEqual(args["scope"], "desktop")
+        self.assertEqual(args["coordinate_frame"], "desktop")
+
+    def test_cua_move_uses_move_cursor(self):
+        cmds = platform.pointer_cmds(10, 20, "cua", click=False)
+        self.assertEqual(cmds[0][:3],
+                         ["cua-driver", "call", "move_cursor"])
+        self.assertEqual(json.loads(cmds[0][3])["scope"], "desktop")

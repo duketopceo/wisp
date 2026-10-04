@@ -83,8 +83,10 @@ model = "openrouter:google/gemini-2.5-flash"
 # drive = inject real clicks via the detected backend.
 # auto  = drive when a backend exists, guide otherwise.
 mode = "guide"
-# auto | ydotool | wlrctl | none — auto probes PATH (ydotool needs
-# ydotoold + /dev/uinput; wlrctl needs wlroots virtual-pointer).
+# auto | cua | ydotool | wlrctl | none — auto prefers a live cua-driver
+# daemon (background virtual-pointer clicks on native Wayland — needs
+# the cua-hyprland plugin + CUA_DRIVER_RS_ENABLE_WAYLAND=1 on the
+# daemon), then hyprcursor/ydotool, then wlrctl.
 backend = "auto"
 
 [traj]
@@ -190,6 +192,30 @@ timeout_ms = "500"
 # jev = "llama-jev,jev-shim"
 # brain_mlx = "llama-local"
 # uitars = "llama-uitars"
+
+# Local GPU models via llama.cpp Vulkan servers (uncomment to use).
+# `wispd` reads these like any other brain provider; the clicklab
+# matrix takes them as `--models llama_local:ornith,uitars:ui-tars`.
+# [brain.llama_local]
+# kind = "openai_compat"   # Ornith-35B + mmproj on llama-server :8080
+# base_url = "http://127.0.0.1:8080/v1"
+# vision = "true"
+# tools = "true"
+#
+# [brain.uitars]
+# kind = "openai_compat"   # UI-TARS-7B on llama-server :8081 — emits
+# base_url = "http://127.0.0.1:8081/v1"   # 'Action: click(x,y)' text
+# vision = "true"                          # instead of tool_calls
+# tools = "false"
+# action_text = "true"
+#
+# Jev can also run locally: point WISP_JEV_ENDPOINT at a jev-shim
+# (e.g. http://127.0.0.1:8931/decisions → llama-jev qwen3-4b :8091).
+#
+# Offline trajectory reviewer (`wispd review run`): point it at a
+# slower decider-class model — it reads step logs, not pixels.
+# [brain]
+# reviewer = "llama_local:ornith"   # or any configured provider
 
 [debug]
 # full-fidelity event stream to ~/.local/share/wisp/trace.jsonl —

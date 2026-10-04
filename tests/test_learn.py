@@ -52,6 +52,23 @@ class TestWeekly(unittest.TestCase):
         self.assertIn("retro-large", body)
         self.assertIn("retroarch` chosen 3x", body)
 
+    def test_legacy_dump_rows_ignored(self):
+        # pre-record_correction rows were decision dumps ({transcript,
+        # answers, result, corrected}) — they carry no user pick
+        with tempfile.TemporaryDirectory() as td:
+            cf = pathlib.Path(td) / "corrections.jsonl"
+            legacy = {"ts": corr()["ts"], "transcript": "open spotify",
+                      "answers": {"app": {"choice": "music"}},
+                      "result": "LAUNCHED", "corrected": True}
+            cf.write_text(json.dumps(legacy) + "\n"
+                          + json.dumps(corr()) + "\n")
+            out = learn.weekly(corrections_file=cf,
+                               decisions_file=pathlib.Path(td) / "d.jsonl",
+                               out_dir=pathlib.Path(td) / "prop")
+            body = pathlib.Path(out).read_text()
+        self.assertIn("1 corrections", body)
+        self.assertNotIn("open spotify", body)
+
     def test_empty_week_returns_none(self):
         with tempfile.TemporaryDirectory() as td:
             cf = pathlib.Path(td) / "corrections.jsonl"
