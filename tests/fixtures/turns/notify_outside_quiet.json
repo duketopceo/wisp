@@ -1,5 +1,5 @@
 {
-  "description": "Same turn inside [notify] quiet hours (22:00-07:00, fixed clock 23:30 via notify_now): the toast is suppressed, nothing reaches notify-send.",
+  "description": "Control for notify_quiet_hours: same 22:00-07:00 window, fixed clock 12:00 is outside it, so the toast is sent.",
   "audio": "ask.wav",
   "endpoints": {
     "whisper": {
@@ -30,9 +30,11 @@
   },
   "expect": {
     "answer": "It is half past three.",
-    "notify_count": 0
+    "notify_bodies": [
+      "ANSWERED"
+    ]
   },
-  "name": "notify_quiet_hours",
+  "name": "notify_outside_quiet",
   "scenario": "notify paths",
   "fakes": {
     "notify": {}
@@ -42,5 +44,5 @@
       "quiet": "22:00-07:00"
     }
   },
-  "notify_now": "2026-10-04T23:30"
+  "notify_now": "2026-10-04T12:00"
 }
