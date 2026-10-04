@@ -254,6 +254,17 @@ enabled = false
 # otherwise the message is appended as the last arg. Empty = espeak default.
 cmd = ""
 
+[notify]
+# desktop toasts (D-Bus org.freedesktop.Notifications; notify-send fallback)
+enabled = true
+# silent window, may cross midnight; empty = never quiet
+quiet = ""
+# identical toasts inside this many seconds are dropped
+dedupe_secs = 60
+# toast expiry; buttons (Retry, Open log) only when the server supports them
+timeout_ms = 5000
+actions = true
+
 """
 
 

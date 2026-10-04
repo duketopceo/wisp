@@ -49,7 +49,7 @@ def main(spec_path: str) -> int:
             cfg.setdefault(section, {}).update(vals)
 
         # -- seams: no desktop, no notifications, no real launches ----
-        pipeline.notify = lambda msg: out["notifications"].append(msg)
+        pipeline.notify = lambda msg, *a, **k: out["notifications"].append(msg)
         pipeline.active_window = lambda: {}
 
         def fake_record(secs, state=None):
