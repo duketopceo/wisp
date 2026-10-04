@@ -29,6 +29,14 @@ function statusWord(status) { return (STATUS[status] || STATUS[UNKNOWN_STATUS])[
 
 function statusTone(status) { return (STATUS[status] || STATUS[UNKNOWN_STATUS])[1] }
 
+// Pill label: the status word, except a done turn whose result is BLOCKED
+// reads blocked in the needs-you tone. Mirrors copy.pill_view.
+function pillView(status, result) {
+  if (status === "done" && /^BLOCKED/.test(result || ""))
+    return { word: string("ui.pill.blocked"), tone: "needsYou" }
+  return { word: statusWord(status), tone: statusTone(status) }
+}
+
 // Result text -> { text, state, detail }; detail is the raw string when it
 // was translated (for a details disclosure), else "".
 function translateResult(raw) {
