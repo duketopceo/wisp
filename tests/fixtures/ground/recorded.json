@@ -1,0 +1,30 @@
+{
+  "_note": "Hand-built fixture in the shape of recorded provider outputs (no live model was called). Replace entries with real captures from a local llama-uitars run (see docs in scripts/clicklab/arena.py --help). Coordinates: 'sent' is the size of the image the model saw; uitars text is the raw reply; baseline is the current Jev provider's (x, y, confidence) in full-shot pixels; expect_box is [x0, y0, x1, y1] in compositor-global logical px.",
+  "layouts": {
+    "laptop": {
+      "monitors": [{"name": "eDP-1", "x": 0, "y": 0, "width": 3456, "height": 2160, "scale": 2.0}],
+      "shot": [3456, 2160]
+    },
+    "dock": {
+      "monitors": [
+        {"name": "eDP-1", "x": 0, "y": 0, "width": 3456, "height": 2160, "scale": 2.0},
+        {"name": "DP-3", "x": 1728, "y": 0, "width": 3440, "height": 1440, "scale": 1.0}
+      ],
+      "shot": [10336, 2880]
+    }
+  },
+  "cases": [
+    {"layout": "laptop", "target": "night light toggle", "expect_box": [840, 520, 890, 560],
+     "recorded": {"uitars": {"sent": [1728, 1080], "text": "click(start_box='(864,540)')"},
+                  "baseline": {"xy": [1700, 1100], "confidence": 0.9}}},
+    {"layout": "laptop", "target": "volume icon", "expect_box": [1650, 5, 1700, 35],
+     "recorded": {"uitars": {"sent": [1728, 1080], "text": "(1672,20)"},
+                  "baseline": {"xy": [1200, 100], "confidence": 0.7}}},
+    {"layout": "dock", "target": "close button", "expect_box": [1980, 380, 2030, 420],
+     "recorded": {"uitars": {"sent": [2584, 720], "text": "Action: click(start_box='<|box_start|>(1000,200)<|box_end|>')"},
+                  "baseline": {"xy": [4010, 790], "confidence": 0.8}}},
+    {"layout": "dock", "target": "search field", "expect_box": [400, 100, 520, 140],
+     "recorded": {"uitars": {"sent": [2584, 720], "text": "I could not find that element"},
+                  "baseline": {"xy": [900, 250], "confidence": 0.6}}}
+  ]
+}
