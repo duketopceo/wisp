@@ -16,7 +16,7 @@ Diagnose:
   doctor       Check every dependency wisp needs
   health       Local model endpoint health
   latency      p50 and p90 per budget path from recent turns
-  spend        Paid model spend today and the daily cap
+  spend        Model usage today and the daily and monthly caps
   binds        Show the push-to-talk hotkey and its Hyprland binds
   onboard      Check first-run setup and say what to do next
   trace        Turn trace and daily digest

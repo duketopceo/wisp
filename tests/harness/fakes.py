@@ -230,10 +230,12 @@ class FakeBrain(FakeServer):
             msg = {"role": "assistant", "content": content}
             if tcs:
                 msg["tool_calls"] = tcs
-            return self.respond(h, 200, {
-                "choices": [{"index": 0, "message": msg,
-                             "finish_reason": "tool_calls" if tcs
-                             else "stop"}]})
+            out = {"choices": [{"index": 0, "message": msg,
+                                "finish_reason": "tool_calls" if tcs
+                                else "stop"}]}
+            if entry.get("usage"):
+                out["usage"] = entry["usage"]
+            return self.respond(h, 200, out)
         pieces = entry.get("chunks")
         if pieces is None:
             pieces = [w + " " for w in content.split()]
@@ -256,6 +258,9 @@ class FakeBrain(FakeServer):
                 with self._lock:
                     self.sent.append((time.monotonic(), p))
                 self._sleep(entry.get("chunk_delay_ms", 0))
+            if entry.get("usage"):
+                u = {"choices": [], "usage": entry["usage"]}
+                h.wfile.write(f"data: {json.dumps(u)}\n\n".encode())
             h.wfile.write(b"data: [DONE]\n\n")
             h.wfile.flush()
         except (BrokenPipeError, ConnectionResetError):

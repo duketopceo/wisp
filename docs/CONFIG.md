@@ -105,6 +105,19 @@ instead of falling back.
 
 Built-ins: `openrouter`, `ollama`, `lmstudio`, `mlx`.
 
+## [budget] — spend caps (W14)
+
+| key | default | meaning |
+|-----|---------|---------|
+| `daily_usd` | `"2.00"` | paid calls are refused once today's spend reaches this; blank = no cap; `0` blocks all paid calls |
+| `monthly_usd` | `"20.00"` | same, per calendar month |
+
+Local models are recorded (tokens, cost 0) but never gated. Rows live in
+`~/.local/share/wisp/usage.jsonl`. Cost is the OpenRouter-reported
+`usage.cost` when present, else a built-in price table; an unlisted paid
+model is priced high so it cannot look free. An unreadable ledger blocks
+paid calls (fail closed). Inspect with `wispd spend`.
+
 ## [health] — endpoint probes (U7)
 
 Local endpoints only (Jev, every brain-chain entry, optional extras, a
