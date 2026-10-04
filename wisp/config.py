@@ -153,6 +153,9 @@ max_inject = 3
 [agents]
 # coding-agent runtime overrides ([agent] is the Jev router section)
 act_max_steps = 12
+act_max_errors = 2          # consecutive failed tool calls tolerated
+act_max_parse_misses = 1    # unparseable replies in action-text mode
+writer_queue_max = 256      # background trajectory/recall writes queued
 
 [dev]
 # refinement loop: a labeled-bad turn or a correction cue ("no",
@@ -404,7 +407,9 @@ def _default_cfg_dict() -> dict:
                 "kill_switch": "false", "confirm": "tier",
                 "audit": "true"},
         "traj": {"enabled": "true", "max_inject": "3"},
-        "agents": {"act_max_steps": "12"},
+        "agents": {"act_max_steps": "12", "act_max_errors": "2",
+                   "act_max_parse_misses": "1",
+                   "writer_queue_max": "256"},
         "dev": {"refine": "true"},
         "ui": {"theme": "dark"},
         "brain": {

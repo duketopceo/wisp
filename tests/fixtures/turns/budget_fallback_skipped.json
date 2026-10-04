@@ -1,0 +1,62 @@
+{
+  "description": "At the cap, paid FALLBACKS are skipped but the primary still runs (gate_primary off): the free primary returns 500, the paid fallback is refused before any request, and the turn ends brain_down naming the skipped entry (W14 reconciled policy).",
+  "audio": "ask.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "what time is it"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "status": 500
+    },
+    "brain2": {
+      "responses": [
+        {
+          "content": "must not be reached",
+          "chunk_delay_ms": 0
+        }
+      ]
+    }
+  },
+  "expect": {
+    "statuses": [
+      "listening",
+      "transcribing",
+      "deciding",
+      "acting",
+      "error"
+    ],
+    "error_code": "brain_down",
+    "error_detail_contains": "fallback_fake: spend cap reached, skipped",
+    "brain_calls": 1
+  },
+  "name": "budget_fallback_skipped",
+  "config": {
+    "brain": {
+      "allow_paid": "true",
+      "fallback": "fallback_fake:fake-model-2"
+    },
+    "brain.fallback_fake": {
+      "paid": "true"
+    },
+    "budget": {
+      "daily_usd": "0",
+      "monthly_usd": "",
+      "gate_primary": "false"
+    }
+  },
+  "scenario": "budget blocked"
+}

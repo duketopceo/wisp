@@ -16,10 +16,13 @@ import re
 import urllib.error
 import urllib.request
 
-from . import cancel, config, cua_safety, grounding, tools
+from . import bgwriter, cancel, config, cua_safety, grounding, tools
 
-MAX_STEPS = 8  # default; [agents] act_max_steps overrides
+# Defaults; the daemon reads [agents] act_max_steps, act_max_errors and
+# act_max_parse_misses (wisp/settings_schema.py) through _limit().
+MAX_STEPS = 8
 MAX_ERRORS = 2
+MAX_PARSE_MISSES = 1
 MAX_IMAGES = 3  # cap retained screenshots in the message window
 # tools whose success may change what's on screen → re-observe before
 # the next pointer step
@@ -170,8 +173,10 @@ def run_act_loop(task: str, cfg: dict, state=None,
         steps_out.clear()
     errors = 0
     parse_misses = 0
-    max_steps = int(cfg.get("agents", {}).get("act_max_steps",
-                                             str(MAX_STEPS)))
+    max_steps = _limit(cfg, "act_max_steps", MAX_STEPS)
+    max_errors = _limit(cfg, "act_max_errors", MAX_ERRORS)
+    max_parse_misses = _limit(cfg, "act_max_parse_misses", MAX_PARSE_MISSES)
+    bgwriter.configure(cfg)
     # trigger-time image counts as the current observation; a mutating
     # step flips this and forces a fresh screenshot before the next
     # click/move
@@ -196,12 +201,11 @@ def run_act_loop(task: str, cfg: dict, state=None,
             parsed = _parse_action_text(msg.get("content") or "")
             if parsed is None:
                 parse_misses += 1
-                if parse_misses > 1:
+                if parse_misses > max_parse_misses:
                     _goals.record_steps(steps)
                     out = (f"STALLED (unparseable action replies): "
                            f"{_last(steps)}")
-                    trajectories.record(task, _app(harness), steps, out,
-                                        surface=_surface(cfg))
+                    _record_traj(task, harness, steps, out, cfg)
                     return out
                 messages.append(
                     {"role": "user",
@@ -216,8 +220,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 _goals.record_steps(steps)
                 _goals.close("done")
                 out = f"ACTED ({len(steps)} steps): {text}"
-                trajectories.record(task, _app(harness), steps, out,
-                                    surface=_surface(cfg))
+                _record_traj(task, harness, steps, out, cfg)
                 return out
             calls = [{"id": f"at-{len(steps)}-{i}", "_at": True,
                       "function": {"name": n,
@@ -233,8 +236,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 return "ASK_USER " + text[9:].strip()
             _goals.close("done")
             out = f"ACTED ({len(steps)} steps): {text or 'done'}"
-            trajectories.record(task, _app(harness), steps, out,
-                               surface=_surface(cfg))
+            _record_traj(task, harness, steps, out, cfg)
             return out
         messages.append(msg)
         for call in calls:
@@ -306,18 +308,16 @@ def run_act_loop(task: str, cfg: dict, state=None,
             if name == "screenshot" and vision \
                     and result.startswith("SHOT "):
                 _attach_image(messages, result[5:].strip(), cfg)
-            if errors > MAX_ERRORS:
+            if errors > max_errors:
                 _goals.record_steps(steps)
                 out = f"ABORTED (repeated failures): {_last(steps)}"
-                trajectories.record(task, _app(harness), steps, out,
-                               surface=_surface(cfg))
+                _record_traj(task, harness, steps, out, cfg)
                 return out
             if len(steps) >= max_steps:
                 break
     out = f"ABORTED (max {max_steps} steps): {_last(steps)}"
     _goals.record_steps(steps)
-    trajectories.record(task, _app(harness), steps, out,
-                               surface=_surface(cfg))
+    _record_traj(task, harness, steps, out, cfg)
     return out
 
 
@@ -404,6 +404,29 @@ def _publish(state, task: str, steps: list) -> None:
 
 def _last(steps: list) -> str:
     return "; ".join(f"{s['tool']}→{s['result']}" for s in steps[-3:])
+
+
+def _limit(cfg: dict | None, key: str, default: int) -> int:
+    """An [agents] integer bound, `default` when absent or not a number."""
+    raw = ((cfg or {}).get("agents") or {}).get(key)
+    try:
+        return int(raw) if raw not in (None, "") else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _record_traj(task: str, harness: dict | None, steps: list, out: str,
+                 cfg: dict | None) -> None:
+    """Hand the run's trajectory to the background writer: the step list
+    is copied (the caller reuses it), and the active-window lookup, the
+    rotation check and the append all happen off the turn's hot path."""
+    from . import trajectories
+    snap = [dict(s) for s in steps]
+    record = trajectories.record     # bound now: patches stay honoured
+
+    def write():
+        record(task, _app(harness), snap, out, surface=_surface(cfg))
+    bgwriter.submit(write)
 
 
 def _app(harness: dict | None) -> str:

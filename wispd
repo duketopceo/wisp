@@ -490,6 +490,8 @@ def run_daemon(cfg: dict) -> int:
         server.stop()
         st.transition("idle")
         st.close()
+        from wisp import bgwriter
+        bgwriter.stop(5)   # flush queued trajectory/recall writes
     return 0
 
 

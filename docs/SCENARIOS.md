@@ -33,6 +33,8 @@ table to list every fixture.
 | `ask` | answer | Answer route: Jev routes to answer, brain streams a reply. Characterization baseline of today's pipeline. |
 | `brain_down` | brain down | Answer brain returns 500 and no fallback is configured: the turn ends in error with error_code brain_down (U7). No canned answer. |
 | `brain_fallback` | brain fallback | Primary answer brain returns 500; [brain] fallback names a second fake brain which answers. Trace records fallback_from (U7). |
+| `budget_blocked` | budget blocked | W14: `[budget] daily_usd = 0` with `gate_primary = true` and a paid primary brain. The cap gates the primary too: no request is made and the turn ends in error with error_code budget_exceeded. |
+| `budget_fallback_skipped` | budget blocked | W14 reconciled policy: at the cap a paid FALLBACK is skipped but the primary still runs. The free primary returns 500, the paid fallback is refused before any request, the turn ends brain_down naming the skipped entry. |
 | `cancel_mid_act` | cancel mid-act | Act route: the fake cua-driver click hangs; the user stop lands mid-call. W9: the guard/cancel path ends the turn INTERRUPTED within 150 ms of the stop and no further step runs. |
 | `cancel_mid_stream` | cancel mid-stream | Cancel fires while the answer is still streaming. U9: the stream stops promptly, the brain socket closes, no further deltas publish and the turn ends idle with error_code cancelled. |
 | `choose` | choose/confirm | Low-confidence launch: pipeline offers choices, the scripted chooser picks app:discord, launch stub records it. |
@@ -52,10 +54,6 @@ table to list every fixture.
 
 ## Pending
 
-- **budget blocked** (W14 usage ledger): the ledger and spend cap are in
-  open PR #88, not on master. Add `budget_blocked.json` once the ledger
-  lands, and move the tag from `PENDING` to `REQUIRED` in
-  `tests/test_scenarios.py`.
 - **agent spawn** (P8 agent ack): `agents.spawn` forks a process; needs an
   agent fake first.
 
