@@ -470,6 +470,14 @@ def set_config(section: str, key: str, value: str) -> None:
     value — reject them rather than writing corrupt TOML."""
     if any(c in value for c in '"\\#\n'):
         raise ValueError("config values may not contain \" \\ # or newline")
+    # keys in the settings schema (wisp/settings_schema.py) are also
+    # checked for type and range, so every writer shares one rule
+    from . import settings_schema
+    bad = settings_schema.message(f"{section}.{key}", value)
+    if bad:
+        raise ValueError(bad)
+    if settings_schema.field(f"{section}.{key}"):
+        value = value.strip()
     import re as _re
     # section may be nested ("brain.ollama"); key stays a bare name
     for part, pat in ((section, r"[A-Za-z0-9_.-]+"),

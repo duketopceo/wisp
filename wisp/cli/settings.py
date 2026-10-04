@@ -1,7 +1,7 @@
 """Settings and onboarding data: config, theme, connect, sync, inventory."""
 import json
 
-from .. import config
+from .. import config, settings_schema
 from .registry import CliError, GROUPS, command
 
 GROUPS["config"] = "Show or change config.toml (live, no restart)"
@@ -31,6 +31,9 @@ def set_key(ctx, key: str, value: str):
     if not section or not name:
         raise CliError("E_USAGE", "Config keys must look like "
                        "section.key.", "wispd config set audio.seconds 30")
+    bad = settings_schema.message(key, value)
+    if bad:
+        raise CliError("E_BAD_CONFIG", bad, "wispd config keys")
     try:
         resp = ctx.send({"cmd": "config", "set": {key: value}})
     except CliError as e:
@@ -50,6 +53,8 @@ def set_key(ctx, key: str, value: str):
 def _set_args(p):
     p.add_argument("key", help="section.key, for example audio.seconds")
     p.add_argument("value")
+    # the key table comes from the settings schema, never hand written
+    p.epilog = settings_schema.help_table() + "\n\n" + p.epilog
 
 
 @command("config set", "Set one config key (live when the daemon runs)",
@@ -60,6 +65,14 @@ def config_set(ctx, a):
     set_key(ctx, a.key, a.value)
     return ctx.emit({"key": a.key, "value": a.value},
                     f"{a.key} = {a.value}")
+
+
+@command("config keys", "List the settings wispd checks, with ranges",
+         ["wispd config keys", "wispd config keys --json"],
+         {"keys": "list"})
+def config_keys(ctx, a):
+    return ctx.emit({"keys": [f.as_dict() for f in settings_schema.FIELDS]},
+                    settings_schema.help_table())
 
 
 @command("theme show", "Print the active theme and refresh theme.json",

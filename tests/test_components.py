@@ -22,7 +22,7 @@ COMP = PLUGIN / "components"
 FIXTURE_SERVICE = ROOT / "tests" / "qml" / "harness" / "FixtureService.qml"
 
 EXPECTED = ["Answer", "AgentRow", "AgentsTab", "BarActions", "BarMark", "Beacon", "Bubble", "Chip", "Console",
-            "Corner", "CornerLayer", "Creature", "EmptyState", "GhostCursor",
+            "Corner", "CornerLayer", "Creature", "EmptyState", "FirstRunCard", "GhostCursor",
             "HealthSection", "Icon", "Mark", "MemoryTab", "NowTab", "OverlayLayer",
             "PanelTab", "Pill", "SettingsTab", "StatusLine", "StepRow",
             "StopControl", "Transcript",
@@ -217,8 +217,8 @@ class TestPanelW22(unittest.TestCase):
         sys.path.insert(0, str(ROOT))
         from wisp import config
         import re as _re
-        js = (PLUGIN / "lib" / "settings.js").read_text()
-        keys = _re.findall(r'key: "([a-z_]+\.[a-z_]+)"', js)
+        js = (PLUGIN / "lib" / "settings_schema.js").read_text()
+        keys = _re.findall(r'"key": "([a-z_]+\.[a-z_]+)"', js)
         self.assertGreaterEqual(len(keys), 8)
         for k in keys:
             sec, _, name = k.partition(".")
