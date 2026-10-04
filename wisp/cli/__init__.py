@@ -17,8 +17,8 @@ def load_groups():
     if _LOADED:
         return
     _LOADED = True
-    from . import (agents, core, cua, diagnose, learning,  # noqa: F401
-                   settings)
+    from . import (agents, batchcmd, core, cua, diagnose,  # noqa: F401
+                   learning, settings)
     registry.SECTIONS[:] = [
         ("Daemon", ["daemon", "status", "stop", "interrupt", "trigger",
                     "watch", "choice", "tui"]),
@@ -28,7 +28,7 @@ def load_groups():
         ("Agents and memory", ["task", "memory", "suggest", "label",
                                "context"]),
         ("Learning", ["train", "review", "learn", "skills", "recipes",
-                      "eval"]),
+                      "eval", "batch"]),
         ("Settings", ["config", "theme", "connect", "sync", "inventory",
                       "completion"]),
     ]
