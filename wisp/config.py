@@ -284,6 +284,17 @@ dedupe_secs = 60
 timeout_ms = 5000
 actions = true
 
+[report]
+# opt-in error reporting to GlitchTip (Sentry-compatible). Off while dsn
+# is empty. dsn may be omaseal://svc/acct. Only typed error codes and a
+# scrubbed context are sent: never transcripts, screenshots, typed text,
+# paths with your username, env values or keys.
+dsn = ""
+per_code_per_hour = 3
+global_per_hour = 20
+dedupe_secs = 300
+queue_max = 50
+
 """
 
 

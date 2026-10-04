@@ -408,6 +408,8 @@ def _publish_error(state, exc: BaseException) -> None:
     err = _ec.classify(exc, "internal")
     state.transition("error", error=err.public, error_code=err.code,
                      error_detail=err.detail[:500])
+    from . import report as _report
+    _report.capture(err.code, exc)
 
 
 def _shadow_decision(transcript: str, state_txt: str, questions: dict,

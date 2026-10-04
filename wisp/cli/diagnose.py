@@ -85,6 +85,11 @@ def doctor_sections(cfg: dict, cua_probe=None) -> list:
         bool(shutil.which("hyprctl")))
     row("sense enabled", cfg.get("sense", {}).get("enabled", "false"))
 
+    row = section("reporting")
+    from .. import report as _report
+    on, depth = _report.status(cfg)
+    row("error reporting", f"on, {depth} queued" if on else "off")
+
     row = section("data")
     row("skills", str(len(skills.index())) + " installed")
     for f in ("decisions.jsonl", "labels.jsonl", "activity.jsonl"):
