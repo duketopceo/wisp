@@ -1,0 +1,14 @@
+usage: wispd train history [-h] [--json] [--quiet] [--no-color]
+
+Recent arena runs
+
+options:
+  -h, --help   show this help message and exit
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd train history

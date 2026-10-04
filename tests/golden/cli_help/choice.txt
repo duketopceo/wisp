@@ -1,0 +1,22 @@
+usage: wispd choice [-h] [--prompt-id ID] [--index N] [--json] [--quiet]
+                    [--no-color]
+                    [pick]
+
+Answer a pending prompt from the keyboard or a script
+
+positional arguments:
+  pick            the option to pick (omit when using --index)
+
+options:
+  -h, --help      show this help message and exit
+  --prompt-id ID  answer this prompt only
+  --index N       1-based option number
+
+global options:
+  --json          machine-readable output (one JSON object)
+  --quiet, -q     print nothing on success
+  --no-color      plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd choice app:kitty
+  wispd choice --prompt-id p1 --index 2
