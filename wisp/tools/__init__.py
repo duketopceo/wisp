@@ -51,7 +51,6 @@ REGISTRY = {
                  "services (wispd connect) the tool token is "
                  "'<category>/<action>'. Server names/URLs are in "
                  "inventory.json and the [env] context line"),
->>>>>>> origin/master
     "codegraph": (system.codegraph, "safe",
                   "query a repo's code-graph index (CBM): "
                   "'<tool> <json-args>' e.g. 'search_graph "

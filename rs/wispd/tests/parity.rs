@@ -5,7 +5,6 @@
 //! checks stay in a single test fn.
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
 use std::process::{Child, Command};
 use std::time::{Duration, Instant};
 
@@ -13,13 +12,50 @@ fn bin() -> Command {
     Command::new(env!("CARGO_BIN_EXE_wispd"))
 }
 
+#[cfg(unix)]
 fn send(sock: &std::path::Path, cmd: &Value) -> Value {
+    use std::os::unix::net::UnixStream;
     let mut c = UnixStream::connect(sock).unwrap();
     c.write_all((serde_json::to_string(cmd).unwrap() + "\n").as_bytes())
         .unwrap();
     let mut line = String::new();
     BufReader::new(&mut c).read_line(&mut line).unwrap();
     serde_json::from_str(line.trim()).unwrap()
+}
+
+#[cfg(windows)]
+fn send(sock: &std::path::Path, cmd: &Value) -> Value {
+    // Windows transport: daemon binds 127.0.0.1:<ephemeral> and writes
+    // the port to the sock path as plain text (see docs/WINDOWS.md).
+    use std::net::TcpStream;
+    let port: u16 = std::fs::read_to_string(sock).unwrap()
+        .trim().parse().unwrap();
+    let mut c = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    c.write_all((serde_json::to_string(cmd).unwrap() + "\n").as_bytes())
+        .unwrap();
+    let mut line = String::new();
+    BufReader::new(&mut c).read_line(&mut line).unwrap();
+    serde_json::from_str(line.trim()).unwrap()
+}
+
+/// Can we talk to the daemon yet? (connect probe, transport-aware)
+#[cfg(unix)]
+fn probe(sock: &std::path::Path) -> bool {
+    use std::os::unix::net::UnixStream;
+    UnixStream::connect(sock).is_ok()
+}
+
+#[cfg(windows)]
+fn probe(sock: &std::path::Path) -> bool {
+    use std::net::TcpStream;
+    let port: u16 = match std::fs::read_to_string(sock) {
+        Ok(t) => match t.trim().parse() {
+            Ok(p) => p,
+            Err(_) => return false,
+        },
+        Err(_) => return false,
+    };
+    TcpStream::connect(("127.0.0.1", port)).is_ok()
 }
 
 struct Daemon(Child, std::path::PathBuf);
@@ -43,8 +79,7 @@ impl Daemon {
         let deadline = Instant::now() + Duration::from_secs(5);
         while Instant::now() < deadline {
             if d.1.exists() {
-                if let Ok(c) = UnixStream::connect(&d.1) {
-                    drop(c);
+                if probe(&d.1) {
                     return d;
                 }
             }

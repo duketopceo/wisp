@@ -222,7 +222,7 @@ fn screenshot_cmd_for(os: Os, dt: Desktop,
             c
         }
         Os::Windows => {
-            if !crate::tools::which("powershell") { return None; }
+            if ps_bin().is_none() { return None; }
             let script = concat!(
                 "Add-Type -AssemblyName System.Windows.Forms,",
                 "System.Drawing; $b=[System.Windows.Forms.",
@@ -287,7 +287,7 @@ fn type_text_cmd_for(os: Os, dt: Desktop,
             c
         }
         Os::Windows => {
-            if !crate::tools::which("powershell") { return None; }
+            if ps_bin().is_none() { return None; }
             return Some(ps(&format!(
                 "Add-Type -AssemblyName System.Windows.Forms;                  [System.Windows.Forms.SendKeys]::SendWait(\"{}\")",
                 sendkeys_escape(text))));
@@ -329,7 +329,7 @@ fn tts_cmd_for(os: Os, text: &str, voice_cmd: &str) -> Option<Command> {
             c
         }
         Os::Windows => {
-            if !crate::tools::which("powershell") { return None; }
+            if ps_bin().is_none() { return None; }
             let esc = text.replace('\'', "''");
             return Some(ps(&format!(
                 "Add-Type -AssemblyName System.Speech; \
@@ -401,9 +401,9 @@ fn tts_binary_for(os: Os) -> Option<&'static str> {
 /// can append/pid-track. Windows uses PowerShell SAPI.
 pub fn tts_argv(msg: &str) -> Option<(String, Vec<String>)> {
     if let Os::Windows = current() {
-        if !crate::tools::which("powershell") { return None; }
+        let bin = ps_bin()?;
         let esc = msg.replace('\'', "''");
-        return Some(("powershell".into(), vec![
+        return Some((bin.into(), vec![
             "-NoProfile".into(), "-NonInteractive".into(),
             "-Command".into(), format!(
                 "Add-Type -AssemblyName System.Speech;                  (New-Object System.Speech.Synthesis.                 SpeechSynthesizer).Speak('{esc}')")]));
@@ -431,7 +431,7 @@ fn notify_cmd_for(os: Os, title: &str, body: &str) -> Option<Command> {
             c
         }
         Os::Windows => {
-            if !crate::tools::which("powershell") { return None; }
+            if ps_bin().is_none() { return None; }
             let e = |s: &str| s.replace('\'', "''");
             return Some(ps(&format!(
                 "if (Get-Module -ListAvailable BurntToast) {{                  New-BurntToastNotification -Text '{}','{}' }}                  else {{ msg * '{}: {}' }}",
@@ -461,9 +461,20 @@ fn hypr_cmd(args: &[String]) -> Command {
 }
 
 fn ps(script: &str) -> Command {
-    let mut c = Command::new("powershell");
+    let mut c = Command::new(ps_bin().unwrap_or("powershell"));
     c.args(["-NoProfile", "-NonInteractive", "-Command", script]);
     c
+}
+
+/// Windows shell: inbox powershell.exe or cross-platform pwsh.
+#[cfg_attr(not(test), allow(dead_code))]
+fn ps_bin() -> Option<&'static str> {
+    for b in ["powershell", "pwsh"] {
+        if crate::tools::which(b) {
+            return Some(b);
+        }
+    }
+    None
 }
 
 /// Escape SendKeys metacharacters ({ } + ^ % ~ ( )) for
@@ -531,7 +542,7 @@ fn focus_cmds_for(os: Os, dt: Desktop, class: &str) -> Vec<Command> {
             vec![c]
         }
         Os::Windows => {
-            if crate::tools::which("powershell") {
+            if ps_bin().is_some() {
                 vec![ps(&format!(
                     "(New-Object -ComObject WScript.Shell)                     .AppActivate('{class}') | Out-Null"))]
             } else { vec![] }
@@ -585,7 +596,7 @@ fn close_cmds_for(os: Os, dt: Desktop, class: &str) -> Vec<Command> {
             vec![c]
         }
         Os::Windows => {
-            if !crate::tools::which("powershell") { return vec![]; }
+            if ps_bin().is_none() { return vec![]; }
             if class.is_empty() {
                 vec![ps(
                     "(New-Object -ComObject WScript.Shell)                     .SendKeys('%{F4}')")]
@@ -797,7 +808,7 @@ fn monitors_for(os: Os, dt: Desktop) -> Vec<Value> {
             }
         }
         Os::Windows => {
-            if !crate::tools::which("powershell") { return vec![]; }
+            if ps_bin().is_none() { return vec![]; }
             let out = crate::util::run_timeout(
                 &mut ps(concat!(
                     "Add-Type -AssemblyName System.Windows.Forms; ",
@@ -833,7 +844,7 @@ fn missing_deps_hint_for(os: Os) -> &'static str {
         Os::MacOS => "need screencapture/osascript + sox for mic (brew \
                      install sox — there is no afrecord on macOS); grant \
                      Screen Recording + Accessibility in System Settings",
-        Os::Windows => "need powershell + sox for mic/level;              toast via BurntToast optional",
+        Os::Windows => "need powershell/pwsh + sox for mic/level;              toast via BurntToast optional",
     }
 }
 
@@ -897,14 +908,14 @@ mod tests {
         // SAPI argv path: powershell exists on CI windows runners but
         // not here — just ensure no panic either way
         let _ = crate::platform::tts_argv("hi");
-        if crate::tools::which("powershell") {
+        if ps_bin().is_some() {
             assert!(screenshot_cmd_for(Os::Windows, Desktop::Hyprland, std::path::Path::new("/t/s.png")).is_some());
         }
         assert!(workspace_cmds_for(Os::Windows, Desktop::Hyprland, 2).is_empty()
             || true);
         let f = focus_cmds_for(Os::Windows, Desktop::Hyprland, "Notepad");
-        if crate::tools::which("powershell") {
-            assert_eq!(f[0].get_program(), "powershell");
+        if ps_bin().is_some() {
+            assert!(["powershell", "pwsh"].contains(&f[0].get_program().to_str().unwrap_or("")));
         }
         let l = launch_exec_cmds_for(Os::Windows, Desktop::Hyprland, "app.exe");
         assert_eq!(l[0].get_program(), "cmd");
