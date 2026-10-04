@@ -1,0 +1,1 @@
+{"status": "awaiting_choice", "transcript": "close the settings window", "answer": "", "result": "", "choices": ["run close: Settings? — yes", "no"], "prompt_id": "p-7", "confirm": {"prompt_id": "p-7", "prompt": "run close: Settings?", "timeout_s": 120}, "points": [], "steps": ["focus Settings -> ok"], "level": 0.0, "turn_id": "t-confirm", "seq": 14, "contract_version": 1}

@@ -8,11 +8,12 @@
 // Qt.LeftButton, Qt.RightButton, Qt.MiddleButton
 var LEFT = 1, RIGHT = 2, MIDDLE = 4
 
-// left: toggle listening (wispd trigger, empty phase toggles); middle:
+// left: toggle listening (wispd trigger, empty phase toggles), or start
+// the daemon while offline; middle:
 // stop the turn in flight (wispd interrupt, the daemon keeps running);
 // right: open the Panel. Anything else does nothing.
-function actionFor(button) {
-  if (button === LEFT) return "talk"
+function actionFor(button, offline) {
+  if (button === LEFT) return offline ? "start" : "talk"
   if (button === MIDDLE) return "stop"
   if (button === RIGHT) return "panel"
   return ""
@@ -57,12 +58,16 @@ function spendLine(spend, ui) {
   return ui("ui.bar.spend") + " " + today + (cap !== "" ? " / " + cap : "")
 }
 
-// Tooltip lines. o: {word, notice, stale, offline, ui}. Offline shows the
-// notice and the hint only; stale keeps the rows and says so.
+// Tooltip lines. o: {word, hint, notice, stale, offline, ui}. `word` is the
+// service's wordView word (reconnecting while stale, the typed message on
+// an error) and `hint` the error's next step, both from the copy table.
+// Offline shows the notice and the start action only; stale keeps the rows
+// and says so.
 function tooltipLines(view, o) {
   var ui = o.ui
   var lines = ["wisp: " + o.word]
   if (o.notice) lines.push(o.notice)
+  if (o.hint && !o.offline) lines.push(o.hint)
   if (!o.offline) {
     var rows = healthRows(view.health)
     var shown = Math.min(rows.length, MAX_ROWS)
@@ -75,7 +80,7 @@ function tooltipLines(view, o) {
     var sp = spendLine(view.raw ? view.raw.spend : null, ui)
     if (sp) lines.push(sp)
   }
-  lines.push(ui("ui.bar.hint"))
+  lines.push(ui(o.offline ? "ui.bar.hint.offline" : "ui.bar.hint"))
   return lines
 }
 

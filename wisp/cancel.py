@@ -282,7 +282,9 @@ class PromptBroker:
     The turn calls `waiter(token)(timeout, prompt_id=, options=)`; the
     daemon's `choice` handler calls `offer(...)` from another thread."""
 
-    def __init__(self):
+    def __init__(self, clock=time.monotonic):
+        # `clock` is injectable so tests drive the deadline without sleeping
+        self._clock = clock
         self._cv = threading.Condition()
         self._pending = None
         self._pick = _UNSET
@@ -300,12 +302,12 @@ class PromptBroker:
                                  "options": None if options is None
                                  else list(options)}
                 self._pick = _UNSET
-                end = time.monotonic() + timeout
+                end = self._clock() + timeout
                 try:
                     while self._pick is _UNSET:
                         if token is not None and token.cancelled:
                             return None
-                        left = end - time.monotonic()
+                        left = end - self._clock()
                         if left <= 0:
                             return None
                         self._cv.wait(min(left, 0.02))

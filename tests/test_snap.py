@@ -219,5 +219,44 @@ class TestRender(unittest.TestCase):
             self.assertTrue(report.failures)
 
 
+class TestCheckCleanup(unittest.TestCase):
+    """check() with no out_dir must not leave /tmp/wisp-snap-* behind when
+    everything matched."""
+
+    def test_temp_dir_removed_on_success_and_error(self):
+        from unittest import mock
+        seen = []
+
+        def fake_render(d, only=None, runner=None):
+            seen.append(pathlib.Path(d))
+            return []
+
+        ok = snap.Report()
+        with mock.patch.object(snap, "render", fake_render), \
+                mock.patch.object(snap, "compare_dir", lambda *a, **k: ok):
+            rep = snap.check()
+        self.assertTrue(rep.ok)
+        self.assertFalse(seen[0].exists())
+        with mock.patch.object(snap, "render",
+                               side_effect=RuntimeError("x")) as r:
+            r.side_effect = lambda d, **k: (seen.append(pathlib.Path(d)),
+                                            (_ for _ in ()).throw(
+                                                RuntimeError("x")))
+            with self.assertRaises(RuntimeError):
+                snap.check()
+        self.assertFalse(seen[-1].exists())
+
+    def test_failing_run_keeps_its_renders(self):
+        from unittest import mock
+        bad = snap.Report(failures=[snap.Failure("a", "b")])
+        with mock.patch.object(snap, "render", lambda d, **k: []), \
+                mock.patch.object(snap, "compare_dir", lambda *a, **k: bad):
+            rep = snap.check()
+        try:
+            self.assertTrue(rep.kept and rep.kept.exists())
+        finally:
+            shutil.rmtree(rep.kept, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main()

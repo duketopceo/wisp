@@ -43,6 +43,8 @@ Item {
   property string result: ""
   property var choices: []
   property string promptId: ""
+  // {promptId, prompt, timeoutS} while a confirm card waits, else null
+  property var confirm: null
   property var points: []
   property var steps: []
   property var suggestion: null
@@ -71,14 +73,16 @@ Item {
   // --- copy (wisp/copy.py via lib/copy.js) ----------------------------
   readonly property string statusWord: Copy.statusWord(status)
   readonly property string statusTone: Copy.statusTone(status)
-  // Pill label: a done turn with a BLOCKED result reads "blocked", not "done".
-  readonly property var pillView: Copy.pillView(status, result)
+  // The one live-state word every surface shows (pill, console status
+  // line, bar tooltip): reconnecting while stale, the typed message on an
+  // error, blocked for a blocked turn, else the status word.
+  readonly property var wordView: Copy.wordView(status, result, errorCode, stale)
   readonly property var resultView: Copy.translateResult(result)
   readonly property string errorMessage: errorCode !== "" ? Copy.errorMessage(errorCode) : ""
   readonly property string errorHint: errorCode !== "" ? Copy.errorHint(errorCode) : ""
-  // One line for banners: offline, stale, or newer-contract; "" when fine.
+  // One line for banners: offline or newer-contract; "" when fine (a stale
+  // turn says so through wordView).
   readonly property string notice: offline ? Copy.string("state.offline")
-    : stale ? Copy.string("state.stale")
     : contractNewer ? Copy.string("state.newer") : ""
 
   // --- tokens and motion (lib/tokens.js, lib/motion.js) ----------------
@@ -104,11 +108,18 @@ Item {
   function ui(key) { return Copy.string(key); }
   function pickLabel(pick) { return Copy.pickLabel(pick); }
 
+  // Reply to the prompt the card shows. Dropped here when the id is not
+  // the pending prompt's (answered, timed out or replaced meanwhile); the
+  // daemon refuses a stale id as well.
   function sendChoice(pick, pid) {
+    if (!Reader.acceptChoice(root.view, pick, pid)) return false;
     var cmd = [wispd, "choice", pick];
-    if (pid) cmd = cmd.concat(["--prompt-id", pid]);
+    cmd = cmd.concat(["--prompt-id", pid]);
     run(cmd);
+    return true;
   }
+  // Bar action while offline: start the user service (no daemon to ask).
+  function startDaemon() { run(["systemctl", "--user", "start", "wispd.service"]); }
   function interrupt() { run([wispd, "interrupt"]); }
   function trigger() { run([wispd, "trigger"]); }
   function label(verdict) { run([wispd, "label", verdict]); }
@@ -147,6 +158,7 @@ Item {
     root.result = v.result;
     root.choices = v.choices;
     root.promptId = v.promptId;
+    root.confirm = v.confirm;
     root.points = v.points;
     root.steps = v.steps;
     root.suggestion = v.suggestion;

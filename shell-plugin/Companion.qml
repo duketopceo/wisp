@@ -72,6 +72,12 @@ Item {
       root.bubbleDismissed = false;
       root.labeled = false;
     }
+    function onConfirmChanged() {
+      if (root.svc.confirm === null) return;
+      root.bubbleDismissed = false;
+      root.pointer = null;
+      root.pointerRequest += 1;
+    }
     function onAnswerChanged() {
       if (root.svc.answer === "") return;
       root.bubbleDismissed = false;
@@ -168,10 +174,11 @@ Item {
         function onPointerRequestChanged() { cursorProc.running = true; }
       }
 
-      // Bubble dwell: 9 s plus 40 ms per word, paused while hovered.
+      // Bubble dwell: 9 s plus 40 ms per word, paused while hovered. A
+      // confirm card ignores it: the daemon's own deadline ends the card.
       Timer {
         interval: Cursor.dwellMs(root.svc.answer)
-        running: layer.bubbleShown && !layer.bubbleHovered
+        running: layer.bubbleShown && !layer.bubbleHovered && root.svc.confirm === null
         onTriggered: root.bubbleDismissed = true
       }
 
@@ -188,6 +195,7 @@ Item {
         bubbleDismissed: root.bubbleDismissed
         labeled: root.labeled
         onChoose: function (pick, index) { root.svc.sendChoice(pick, root.svc.promptId); }
+        onConfirmChosen: function (pick, promptId) { root.svc.sendChoice(pick, promptId); }
         onMoreClicked: { root.userOpen = true; root.capped = false; }
         onVerdict: function (verdict) { root.labeled = true; root.svc.label(verdict); }
       }

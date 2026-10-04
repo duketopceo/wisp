@@ -22,6 +22,7 @@ import urllib.request
 from datetime import datetime, timezone
 
 from . import cancel as _cancel
+from . import copy as _copy
 from . import config, speech
 from . import errors_codes as _errors
 
@@ -1097,12 +1098,8 @@ def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
         state.transition("acting")
         confirm = None
         if wait_for_choice:
-            def confirm(prompt: str) -> bool:
-                pick = _ask_prompt(state, wait_for_choice, token,
-                                   [f"{prompt} — yes", "no"], 30, turn,
-                                   "confirm")
-                token.check()
-                return bool(pick) and "yes" in pick
+            from . import confirm as _confirm
+            confirm = _confirm.make(state, wait_for_choice, token, turn, cfg)
         from . import brain as _brain
         act_img = shot_b64 if shot_b64 and \
             _brain.supports_vision(cfg) else None
@@ -1240,7 +1237,8 @@ def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
         speech.stop()
         _trace.emit(turn, "cancelled", "lifecycle", {"result": result})
         fields = {"error": "", "error_code": "cancelled",
-                  "error_detail": "", "choices": [], "prompt_id": ""}
+                  "error_detail": "", "choices": [], "prompt_id": "",
+                  "confirm": None}
         if result:
             fields["result"] = result
         state.transition("idle", **fields)
@@ -1258,7 +1256,7 @@ def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
         log_decision({"ts": datetime.now(timezone.utc).isoformat(),
                       "result": f"ERROR ({e})",
                       "timing_ms": sp.legacy_timing()})
-        notify(err.public, "error", code=err.code,
+        notify(_copy.toast_text(err.code), "error", code=err.code,
                actions=[_open_log_action()],
                **_toast_ctx(state, turn, cfg))
         print(f"error: {err.code}: {e}", file=sys.stderr)

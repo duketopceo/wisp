@@ -57,6 +57,7 @@ lacks a section. Shells may offer a settings page on top of this command.
   "result": "string",
   "choices": ["string"],
   "prompt_id": "string — id of the offered choices/confirm; \"\" when none",
+  "confirm": "null, or {prompt_id, prompt, timeout_s} while a confirm card waits (additive, W25)",
   "points": [{"x": 0, "y": 0, "label": "string", "step": 1}],
   "steps": ["tool arg → result", "…"],
   "guide": {"x": 0, "y": 0, "label": "string", "mode": "guide|drive", "seq": 1},
@@ -124,6 +125,14 @@ to `status: idle` with `error_code: "cancelled"` (`error` empty);
 new turn (`listening`) clears `error_code`. Speech now starts per
 completed sentence while the answer streams (state still goes
 `speaking` → `done` when the last sentence ends).
+
+Confirm card (additive; W25): while a confirm waits the core also
+publishes `confirm = {prompt_id, prompt, timeout_s}` (`null` otherwise,
+cleared with `choices`). `confirm.prompt_id` equals `prompt_id`; the
+card's replies use it, and a reply with any other id is `stale_prompt`.
+No reply within `timeout_s` (`[agent] confirm_timeout`, default 120,
+clamped 5 to 600) resolves as deny: the daemon owns the deadline, the
+step result is `SKIPPED (<tool> confirmation timed out)`.
 
 Confirmation gate: when a mutating/shell action needs approval, the
 core transitions to `awaiting_choice` with `choices` = e.g.

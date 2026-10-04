@@ -264,6 +264,7 @@ class Report:
     failures: list = field(default_factory=list)
     missing: list = field(default_factory=list)
     orphans: list = field(default_factory=list)
+    kept: object = None
 
     @property
     def ok(self):
@@ -295,11 +296,27 @@ def compare_dir(out_dir, only=None):
 
 
 def check(out_dir=None, only=None, runner=None):
-    """Render and compare. Failing renders are kept in out_dir."""
-    if out_dir is None:
+    """Render and compare. With no `out_dir` the renders go to a private
+    temp directory that is removed afterwards when everything matched; a
+    failing run keeps it (the path is printed by main) so the PNGs can be
+    looked at."""
+    made = out_dir is None
+    if made:
         out_dir = pathlib.Path(tempfile.mkdtemp(prefix="wisp-snap-"))
-    render(out_dir, only=only, runner=runner)
-    return compare_dir(out_dir, only=only)
+    try:
+        render(out_dir, only=only, runner=runner)
+        rep = compare_dir(out_dir, only=only)
+    except BaseException:
+        if made:
+            shutil.rmtree(out_dir, ignore_errors=True)
+        raise
+    rep.kept = None
+    if made:
+        if rep.ok:
+            shutil.rmtree(out_dir, ignore_errors=True)
+        else:
+            rep.kept = out_dir
+    return rep
 
 
 def update(only=None, runner=None):
@@ -408,6 +425,8 @@ def main(argv=None, runner="auto"):
         print(f"MISSING {m}")
     for o in rep.orphans:
         print(f"ORPHAN  {o}")
+    if rep.kept:
+        print(f"snap: failing renders kept in {rep.kept}")
     print(f"snap: {rep.total} compared, {len(rep.failures)} differ, "
           f"{len(rep.missing)} missing, {len(rep.orphans)} orphans")
     return EXIT_OK if rep.ok else EXIT_DIFF
