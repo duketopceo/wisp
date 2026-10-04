@@ -127,10 +127,14 @@ def cases(only=None):
                     items = [(v, VARIANT_FIXTURE, props) for v, props
                              in scene["variants"].items()]
                 for label, fx, extra in items:
-                    raw = dict(fixtures[fx])
-                    mods = raw.pop("_fixture", {})
                     props = dict(scene.get("props", {}))
                     props.update(extra)
+                    # a variant may pick another state fixture and add
+                    # fixture mods (e.g. a cua.target event)
+                    fx = props.pop("_state", fx)
+                    raw = dict(fixtures[fx])
+                    mods = raw.pop("_fixture", {})
+                    mods = dict(mods, **props.pop("_fixture", {}))
                     out.append({
                         "id": f"{theme}/{scale}x/{comp}__{label}",
                         "component": comp, "theme": theme, "scale": scale,
