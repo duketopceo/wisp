@@ -27,16 +27,67 @@ def daemon_run(ctx, a):
     return ctx.host.run_daemon(ctx.cfg)
 
 
+def _install_args(p):
+    p.add_argument("--cua", action="store_true",
+                   help="also install the pinned cua-driver "
+                        "(scripts/cua/install.sh)")
+    p.add_argument("--dry-run", action="store_true",
+                   help="with --cua: print the plan, change nothing")
+
+
 @command("daemon install",
          "Install runtime files, the systemd unit and the hotkey bind",
-         ["wispd daemon install"], {"installed": "bool"})
+         ["wispd daemon install", "wispd install --cua --dry-run"],
+         {"installed": "bool", "cua": "any"}, args=_install_args)
 def daemon_install(ctx, a):
+    if a.dry_run and not a.cua:
+        raise CliError("E_USAGE", "--dry-run needs --cua.",
+                       "wispd install --cua --dry-run")
+    if a.cua:
+        return _install_cua(ctx, a)
+
     def go():
         ctx.host.install_files()
         ctx.host.install_bind(ctx.cfg)
         return 0
     rc, text = _host_call(ctx, go)
-    return ctx.emit({"installed": rc == 0})
+    return ctx.emit({"installed": rc == 0, "cua": None})
+
+
+def _install_cua(ctx, a):
+    """Run scripts/cua/install.sh. The wisp files are not reinstalled:
+    `--cua` is the driver only (use plain `wispd install` for the rest)."""
+    import pathlib
+    import subprocess
+    script = pathlib.Path(__file__).resolve().parents[2] / "scripts" \
+        / "cua" / "install.sh"
+    if not script.exists():
+        raise CliError("E_FAILED", "scripts/cua/install.sh is not next to "
+                       "this wispd.", "run from the source checkout")
+    cmd = ["bash", str(script)] + (["--dry-run"] if a.dry_run else [])
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           timeout=300)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise CliError("E_FAILED", f"The cua installer did not run ({e}).",
+                       "wispd install --cua --dry-run")
+    out = (r.stdout + r.stderr).rstrip()
+    data = {"installed": r.returncode == 0 and not a.dry_run,
+            "cua": {"exit": r.returncode, "dry_run": a.dry_run,
+                    "output": out}}
+    if r.returncode:
+        if not ctx.json and not ctx.flags.quiet:
+            print(out)
+        raise CliError("E_FAILED", f"The cua installer exited "
+                       f"{r.returncode}.", "wispd install --cua --dry-run",
+                       data=data)
+    text = out
+    if not a.dry_run:
+        from .. import probes_cua
+        st = probes_cua.CuaProbe(ctx.cfg).check()
+        data["cua"]["state"] = st["state"]
+        text += f"\ncua state: {st['state']}"
+    return ctx.emit(data, text)
 
 
 @command("daemon harness", "Rebuild the agent harness file",

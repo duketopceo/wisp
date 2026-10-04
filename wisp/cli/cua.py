@@ -10,9 +10,10 @@ import socket
 import subprocess
 import time
 
+from .. import probes_cua
 from .registry import CliError, GROUPS, command
 
-GROUPS["cua"] = "The cua-driver pointer backend: status, test, log, enable"
+GROUPS["cua"] = "The cua-driver pointer backend: status, test, log, kill, enable"
 GROUPS["notify"] = "Desktop notifications"
 
 
@@ -32,7 +33,8 @@ def is_live() -> bool:
 @command("cua status", "Show whether the cua pointer backend is usable",
          ["wispd cua status", "wispd cua status --json"],
          {"configured": "str", "backend": "str|null", "mode": "str",
-          "binary": "str|null", "socket": "str", "live": "bool"})
+          "binary": "str|null", "socket": "str", "live": "bool",
+          "state": "str"})
 def cua_status(ctx, a):
     from .. import platform
     p = ctx.cfg.get("pointer", {})
@@ -40,14 +42,18 @@ def cua_status(ctx, a):
             "backend": platform.pointer_backend(ctx.cfg),
             "mode": p.get("mode", "guide"),
             "binary": shutil.which("cua-driver"),
-            "socket": str(socket_path()), "live": is_live()}
+            "socket": str(socket_path()), "live": is_live(),
+            "state": probes_cua.CuaProbe(ctx.cfg).check(
+                version=False)["state"]}
     rows = [["configured", data["configured"]],
             ["active backend", data["backend"] or "none"],
             ["mode", data["mode"]],
             ["cua-driver", data["binary"] or "not on PATH"],
             ["socket", data["socket"]],
-            ["driver", "reachable" if data["live"] else "not reachable"]]
-    tones = [[None, None]] * 5 + [[None, "ok" if data["live"] else "fail"]]
+            ["driver", "reachable" if data["live"] else "not reachable"],
+            ["state", data["state"].replace("_", " ")]]
+    tones = [[None, None]] * 5 + [[None, "ok" if data["live"] else "fail"],
+                                  [None, None]]
     text = ctx.table(["", ""], rows, tones, header=False)
     if data["configured"] == "cua" and not data["live"]:
         if not ctx.json and not ctx.flags.quiet:
@@ -99,12 +105,24 @@ def cua_test(ctx, a):
 def _log_args(p):
     p.add_argument("-n", "--lines", type=int, default=50, metavar="N",
                    help="lines to show (default 50)")
+    p.add_argument("--audit", action="store_true",
+                   help="show wisp's own cua audit log instead")
 
 
-@command("cua log", "Show the driver's recent journal lines (read only)",
-         ["wispd cua log", "wispd cua log -n 200"], {"lines": "list"},
+@command("cua log", "Show the driver journal, or the audit log (read only)",
+         ["wispd cua log", "wispd cua log --audit -n 20"],
+         {"lines": "list"},
          args=_log_args)
 def cua_log(ctx, a):
+    if a.audit:
+        from .. import cua_safety
+        try:
+            text = cua_safety.audit_default_path().read_text()
+        except OSError:
+            text = ""
+        lines = text.splitlines()[-max(a.lines, 0):] if a.lines else []
+        return ctx.emit({"lines": lines},
+                        "\n".join(lines) if lines else None)
     cmd = ["journalctl", "--user", "-u", "cua-driver.service", "-n",
            str(a.lines), "--no-pager"]
     if not shutil.which("journalctl"):
@@ -117,6 +135,32 @@ def cua_log(ctx, a):
                        "wispd cua status")
     lines = r.stdout.splitlines()
     return ctx.emit({"lines": lines}, "\n".join(lines) if lines else None)
+
+
+@command("cua kill", "Arm the kill switch: refuse all cua input at once",
+         ["wispd cua kill"], {"armed": "bool", "path": "str"})
+def cua_kill(ctx, a):
+    from .. import cua_safety
+    p = cua_safety.kill_default_path()
+    cua_safety.kill(p)
+    return ctx.emit({"armed": True, "path": str(p)},
+                    f"kill switch armed ({p}); undo with wispd cua resume")
+
+
+@command("cua resume", "Clear the kill switch file",
+         ["wispd cua resume"],
+         {"armed": "bool", "path": "str", "config_kill": "bool"})
+def cua_resume(ctx, a):
+    from .. import cua_safety
+    p = cua_safety.kill_default_path()
+    cua_safety.resume(p)
+    cfg_kill = cua_safety.settings(ctx.cfg)["kill"]
+    note = ""
+    if cfg_kill:
+        note = "\n[cua] kill_switch is still true in config: input stays refused."
+    return ctx.emit({"armed": bool(cfg_kill), "path": str(p),
+                     "config_kill": bool(cfg_kill)},
+                    "kill switch file cleared" + note)
 
 
 def _set_backend(ctx, value: str) -> int:
