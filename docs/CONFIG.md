@@ -120,6 +120,23 @@ and `wispd models` show current health.
 | `enabled` | speak answers aloud |
 | `cmd` | override TTS command; `{text}` placeholder or appended arg. Empty = platform default (espeak/say/SAPI) |
 
+## [notify] — desktop toasts
+
+| key | meaning |
+|-----|---------|
+| `enabled` | `false` turns every toast off |
+| `quiet` | silent window `"22:00-07:00"` (may cross midnight); empty = never |
+| `dedupe_secs` | drop an identical toast inside this window (default 60) |
+| `timeout_ms` | toast expiry (default 5000) |
+| `actions` | `false` never sends buttons (they are only sent when the server advertises `actions`) |
+
+One toast per turn is updated in place (replace-id). Cancelled turns and
+stale turns never toast; spoken answers do not also toast when `[voice]
+enabled` is true. The server is detected at runtime (GetServerInformation
+and GetCapabilities via `gdbus`); without one, `notify-send` is used (no
+buttons). Not yet implemented: server do-not-disturb and fullscreen
+suppression (needs W7).
+
 ## [debug]
 
 | key | meaning |
