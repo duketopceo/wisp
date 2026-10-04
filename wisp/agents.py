@@ -11,6 +11,7 @@ import pathlib
 import shutil
 import signal
 import subprocess
+import threading
 from datetime import datetime, timezone
 
 from . import config, util
@@ -73,20 +74,53 @@ def status(name: str, tasks_file=config.TASKS_FILE,
     rec = _find(name, tasks_file)
     if not rec:
         return f"SKIP (no task {name!r})"
-    running = _alive(rec.get("pid", -1), rec.get("pstart", ""))
-    log = log_dir / f"{rec['id']}.log"
-    tail = ""
-    if log.exists():
-        lines = [l for l in log.read_text(errors="replace").splitlines()
-                 if l.strip()]
-        tail = lines[-1][:160] if lines else ""
-    state = "running" if running else rec.get("status", "exited")
+    tail = _tail(log_dir / f"{rec['id']}.log")
+    state = _state_of(rec)
     return f"TASK {rec['name']} [{state}] {tail}".strip()
+
+
+def _latest(tasks_file=config.TASKS_FILE) -> list:
+    """One merged record per task, in spawn order: later records
+    overlay earlier ones (so the newest `status` wins) and `started`
+    keeps the spawn timestamp."""
+    merged: dict = {}
+    for rec in _records(tasks_file):
+        key = rec.get("id") or rec.get("name")
+        if not key:
+            continue
+        cur = merged.setdefault(key, {"started": rec.get("ts", "")})
+        cur.update(rec)
+    return list(merged.values())
+
+
+def _state_of(rec: dict) -> str:
+    """Honest status: `running` only while the recorded status says so
+    AND the process (same start-time) is alive; a dead task whose
+    record never got closed reads `exited`."""
+    status = rec.get("status", "exited")
+    if status == "running":
+        return "running" if _alive(rec.get("pid", -1),
+                                   rec.get("pstart", "")) else "exited"
+    return status
+
+
+def _tail(log: pathlib.Path) -> str:
+    """Last non-empty log line (reads only the file's last 4 KiB)."""
+    try:
+        with log.open("rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - 4096))
+            data = f.read().decode(errors="replace")
+    except OSError:
+        return ""
+    lines = [l for l in data.splitlines() if l.strip()]
+    return lines[-1][:160] if lines else ""
 
 
 def _find(name: str, tasks_file=config.TASKS_FILE) -> dict | None:
     name = name.strip().lower()
-    for rec in reversed(_records(tasks_file)):
+    for rec in reversed(_latest(tasks_file)):
         if rec.get("name", "").lower() == name \
                 or rec.get("id", "").lower() == name:
             return rec
@@ -94,36 +128,50 @@ def _find(name: str, tasks_file=config.TASKS_FILE) -> dict | None:
 
 
 def _running(tasks_file=config.TASKS_FILE) -> list:
-    return [r for r in _records(tasks_file)
+    """Tasks whose process is still alive (also one that is closing
+    down after SIGTERM — it still holds a concurrency slot)."""
+    return [r for r in _latest(tasks_file)
             if _alive(r.get("pid", -1), r.get("pstart", ""))]
 
 
+def _signal(rec: dict, sig: int) -> None:
+    """Signal a task's process group — only after the pid's start-time
+    still matches the record, so a recycled pid is never touched."""
+    pid = rec.get("pid", -1)
+    if not _alive(pid, rec.get("pstart", "")):
+        return
+    try:
+        os.killpg(pid, sig)
+    except (ProcessLookupError, PermissionError):
+        try:
+            os.kill(pid, sig)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+
 def _reap_expired(cfg: dict, tasks_file=config.TASKS_FILE) -> list:
-    """Kill running tasks past [agent] task_timeout_s — the runaway
+    """SIGTERM running tasks past [agent] task_timeout_s — the runaway
     guardrail. Returns names of reaped tasks."""
     timeout = int(cfg.get("agent", {}).get("task_timeout_s", "1800"))
     if timeout <= 0:
         return []
     now = datetime.now(timezone.utc)
     reaped = []
-    for rec in _running(tasks_file):
+    for rec in _latest(tasks_file):
+        if rec.get("status") != "running" \
+                or not _alive(rec.get("pid", -1), rec.get("pstart", "")):
+            continue
         try:
             age = (now - datetime.fromisoformat(
-                rec.get("ts", ""))).total_seconds()
+                rec.get("started", ""))).total_seconds()
         except (ValueError, TypeError):
             continue
         if age <= timeout:
             continue
-        pid = rec.get("pid", -1)
-        try:
-            os.killpg(pid, signal.SIGTERM)
-        except (ProcessLookupError, PermissionError):
-            try:
-                os.kill(pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-        _log_line({"id": rec["id"], "name": rec["name"], "status": "timed_out",
-                   "ts": now.isoformat()}, tasks_file)
+        _signal(rec, signal.SIGTERM)
+        _log_line({"id": rec["id"], "name": rec["name"],
+                   "status": "timed_out", "ts": now.isoformat()},
+                  tasks_file)
         reaped.append(rec["name"])
     return reaped
 
@@ -242,16 +290,9 @@ def cancel(name: str, tasks_file=config.TASKS_FILE) -> str:
     rec = _find(name, tasks_file)
     if not rec:
         return f"SKIP (no task {name!r})"
-    pid = rec.get("pid", -1)
-    if not _alive(pid, rec.get("pstart", "")):
+    if not _alive(rec.get("pid", -1), rec.get("pstart", "")):
         return f"SKIP ({name} not running)"
-    try:
-        os.killpg(pid, signal.SIGTERM)
-    except (ProcessLookupError, PermissionError):
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
+    _signal(rec, signal.SIGTERM)
     _log_line({"id": rec["id"], "name": rec["name"], "status": "cancelled",
                "ts": datetime.now(timezone.utc).isoformat()}, tasks_file)
     return f"CANCELLED {name}"
@@ -270,21 +311,12 @@ def tasks(tasks_file=config.TASKS_FILE,
     progress on long-running agents."""
     _reap()
     out = {}
-    for rec in _records(tasks_file):
-        running = _alive(rec.get("pid", -1), rec.get("pstart", ""))
-        tail = ""
-        log = log_dir / f"{rec['id']}.log"
-        if log.exists():
-            lines = [l for l in
-                     log.read_text(errors="replace").splitlines()
-                     if l.strip()]
-            tail = lines[-1][:160] if lines else ""
+    for rec in _latest(tasks_file):
         out[rec["name"]] = {
-            "status": "running" if running
-                      else rec.get("status", "exited"),
+            "status": _state_of(rec),
             "task": rec.get("task", ""),
             "ts": rec.get("ts", ""),
-            "tail": tail,
+            "tail": _tail(log_dir / f"{rec['id']}.log"),
         }
     return out
 
@@ -298,3 +330,82 @@ def finished(prev: dict, cur: dict) -> list:
                 and st.get("status") != "running":
             out.append({"name": name, **st})
     return out
+
+
+KILL_GRACE_S = 10.0
+
+
+def _tick(cfg: dict, tasks_file, log_dir, kill_grace_s: float) -> dict:
+    """One reaper pass; returns the fresh `tasks()` snapshot."""
+    _reap()
+    now = datetime.now(timezone.utc)
+    stamp = now.isoformat()
+    for rec in _latest(tasks_file):
+        pid, pstart = rec.get("pid", -1), rec.get("pstart", "")
+        alive = _alive(pid, pstart)
+        status = rec.get("status")
+        if status == "running" and not alive:
+            # process gone, or its pid now belongs to someone else
+            _log_line({"id": rec["id"], "name": rec["name"],
+                       "status": "exited", "ts": stamp}, tasks_file)
+        elif status in ("cancelled", "timed_out") and alive:
+            # SIGTERM was sent when the record was closed; an ignorer
+            # gets SIGKILL once the grace period is over
+            try:
+                since = (now - datetime.fromisoformat(
+                    rec.get("ts", ""))).total_seconds()
+            except (ValueError, TypeError):
+                since = kill_grace_s
+            if since >= kill_grace_s:
+                _signal(rec, signal.SIGKILL)
+    _reap_expired(cfg, tasks_file)
+    return tasks(tasks_file, log_dir)
+
+
+def reap_tick(cfg: dict, tasks_file=config.TASKS_FILE,
+              log_dir=config.TASK_LOGS,
+              kill_grace_s: float = KILL_GRACE_S) -> list:
+    """One reaper pass. Returns the tasks that went running -> not
+    running during it (`finished()` shape)."""
+    return _tick_events(cfg, tasks_file, log_dir, kill_grace_s)[1]
+
+
+def _tick_events(cfg, tasks_file, log_dir, kill_grace_s) -> tuple:
+    """(tasks snapshot, finished list). A task is `finished` when its
+    registry status was `running` before the pass and is not after —
+    judged on the raw record, since `tasks()` already reads a dead
+    unclosed task as exited."""
+    was_running = {r["name"] for r in _latest(tasks_file)
+                   if r.get("status") == "running"}
+    cur = _tick(cfg, tasks_file, log_dir, kill_grace_s)
+    done = [{"name": n, **cur[n]} for n in cur
+            if n in was_running and cur[n]["status"] != "running"]
+    return cur, done
+
+
+def start_reaper(cfg: dict, bus, stop: threading.Event,
+                 interval_s: float = 5.0, tasks_file=config.TASKS_FILE,
+                 log_dir=config.TASK_LOGS, on_finished=None,
+                 kill_grace_s: float = KILL_GRACE_S) -> threading.Thread:
+    """Daemon thread: reap every `interval_s`, publish `tasks` to the
+    bus (so progress tails and status changes are pushed, not polled)
+    and emit a `task_finished` event per running -> done transition,
+    whoever caused it (exit, timeout, `task_cancel`). Idle cost is one
+    small file read per tick; it stops when `stop` is set."""
+    def run() -> None:
+        while not stop.is_set():
+            try:
+                cur, done = _tick_events(cfg, tasks_file, log_dir,
+                                         kill_grace_s)
+                bus.publish(None, tasks=cur)
+                for t in done:
+                    bus.emit_event("task_finished", name=t["name"],
+                                   status=t["status"], tail=t["tail"])
+                    if on_finished:
+                        on_finished(t)
+            except Exception:
+                pass  # a bad record must never kill the reaper
+            stop.wait(interval_s)
+    th = threading.Thread(target=run, name="agent-reaper", daemon=True)
+    th.start()
+    return th
