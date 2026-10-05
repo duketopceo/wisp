@@ -67,15 +67,19 @@ def open_lab(seed: int = 0, url: str | None = None) -> int:
     `seed` reshuffles the page layout (dots/buttons/shapes) so the
     agent can't memorize positions across runs."""
     url = (url or URL) + (f"?seed={seed}" if seed else "")
-    # don't pile up clicklab tabs across runs — close any left over
+    # don't pile up clicklab tabs across runs — close stale ones, but
+    # never a tab claimed by a live sibling run (parallel hammering)
+    live = _live_pages()
     out = bos("tabs", {"action": "list"})
     for tid in re.findall(r"\[(\d+)\][^\n]*" + str(PORT), out):
-        bos("tabs", {"action": "close", "page": int(tid)})
+        if int(tid) not in live:
+            bos("tabs", {"action": "close", "page": int(tid)})
     out = bos("tabs", {"action": "new", "url": url})
     m = re.search(r"page (\d+)", out)
     if m:
         page = int(m.group(1))
         import atexit
+        _claim(page)
         atexit.register(bos, "tabs", {"action": "close", "page": page})
         time.sleep(2)
         return page
@@ -86,15 +90,57 @@ def open_lab(seed: int = 0, url: str | None = None) -> int:
     if not ids:
         raise RuntimeError("clicklab tab not found:\n" + out)
     page = int(ids[-1])
+    _claim(page)
     import atexit
     atexit.register(bos, "tabs", {"action": "close", "page": page})
     return page
 
 
-def check(page: int, expr: str) -> bool:
+import os
+
+LIVE_DIR = (pathlib.Path.home()
+            / ".local/share/wisp/clicklab-live")
+
+
+def _live_pages() -> set:
+    """Page ids claimed by running clicklab processes (pid liveness)."""
+    out = set()
+    try:
+        for f in LIVE_DIR.glob("*.json"):
+            try:
+                rec = json.loads(f.read_text())
+                pid = int(f.stem)
+                os.kill(pid, 0)          # raises if dead
+                out.add(int(rec["page"]))
+            except (ValueError, OSError, json.JSONDecodeError,
+                    KeyError):
+                f.unlink(missing_ok=True)  # dead process: reclaim
+    except OSError:
+        pass
+    return out
+
+
+def _claim(page: int) -> None:
+    LIVE_DIR.mkdir(parents=True, exist_ok=True)
+    f = LIVE_DIR / f"{os.getpid()}.json"
+    f.write_text(json.dumps({"page": page, "ts": time.time()}))
+    import atexit
+    atexit.register(f.unlink, missing_ok=True)
+
+
+def ev(page, code: str) -> str:
+    """Evaluate JS on the lab page — CDP Page object or neo tab id."""
+    if hasattr(page, "evaluate"):          # cdpx.Page
+        try:
+            return page.evaluate(code)
+        except Exception as e:
+            return f"CDP_ERR ({e})"
+    return bos("evaluate", {"page": page, "code": code})
+
+
+def check(page, expr: str) -> bool:
     code = (f"var s = window.__score || {{}}; {expr}")
-    out = bos("evaluate", {"page": page, "code": code})
-    return "true" in out.lower()
+    return "true" in ev(page, code).lower()
 
 
 LAB_WS = 97
@@ -202,18 +248,32 @@ def main():
     seed = int(_flag("--seed", "0"))
     teach = "--teach" in sys.argv
     page_name = _flag("--page", "index.html")
-    url = f"http://127.0.0.1:{PORT}/{page_name}"
-    serve()
-    print(f"[clicklab] serving on {url} suite={suite_name}"
-          + (f" seed={seed}" if seed else "")
-          + (" teach" if teach else ""))
-    try:
-        page = open_lab(seed, url)
-    except RuntimeError as e:
-        print(f"[clicklab] {e}")
-        sys.exit(2)
-    print(f"[clicklab] page id {page}")
-    dom = "--dom" in sys.argv
+    cdp = _flag("--cdp")                   # "host:port" of a chromium
+    if cdp:
+        # sandboxed chromium (CubeVM guest): file:// lab, no local
+        # server or browser tab needed
+        url = f"file:///opt/lab/{page_name}" \
+              + (f"?seed={seed}" if seed else "")
+        serve()
+        print(f"[clicklab] cdp={cdp} url={url} suite={suite_name}")
+        from wisp.tools import cdpx
+        chost, _, cport = cdp.partition(":")
+        page = cdpx.open_page(chost, url, int(cport or 9222))
+        import atexit
+        atexit.register(page.close)
+    else:
+        url = f"http://127.0.0.1:{PORT}/{page_name}"
+        serve()
+        print(f"[clicklab] serving on {url} suite={suite_name}"
+              + (f" seed={seed}" if seed else "")
+              + (" teach" if teach else ""))
+        try:
+            page = open_lab(seed, url)
+        except RuntimeError as e:
+            print(f"[clicklab] {e}")
+            sys.exit(2)
+    print(f"[clicklab] page {page}")
+    dom = "--dom" in sys.argv or bool(cdp)
     if not dom:
         focus_browseros()
         time.sleep(1)
@@ -223,7 +283,9 @@ def main():
     if dom:
         # DOM-schematic mode: screenshots are synthesized from element
         # rects — works with the panel powered off (lid closed)
-        cfg["screen"]["dom_page"] = page
+        cfg["screen"]["dom_page"] = "cdp" if cdp else page
+        if cdp:
+            cfg["screen"]["dom_cdp_page"] = page
         cfg["screen"]["output"] = ""
         # clicks in dom mode are pure viewport CSS px — no compositor
         # origin involved; keep SHOT_ORIGIN bookkeeping consistent
@@ -231,22 +293,21 @@ def main():
         # liveness probe: a DOM click at a known element's rect
         probe_id = "tab-chess" if page_name == "apps.html" \
             else "btn-alpha"
-        out = bos("evaluate", {"page": page, "code":
-                               f"var b=document.getElementById('{probe_id}');"
-                               "if(!b)return 'miss';"
-                               "var r=b.getBoundingClientRect();"
-                               "return ''+Math.round(r.x+r.width/2)+','+"
-                               "Math.round(r.y+r.height/2)"})
+        out = ev(page,
+                 f"var b=document.getElementById('{probe_id}');"
+                 "if(!b)return 'miss';"
+                 "var r=b.getBoundingClientRect();"
+                 "return ''+Math.round(r.x+r.width/2)+','+"
+                 "Math.round(r.y+r.height/2)")
         m = re.search(r"(\d+),(\d+)", out)
         if m:
             from wisp import tools
             print(f"[clicklab] probe click at {m.group(0)}")
             print(f"[clicklab] probe → "
                   f"{tools.run('click', m.group(0), cfg)}")
-            bos("evaluate", {"page": page, "code":
-                             "window.__score={events:[],counts:{},"
-                             "scroll_top:0,typed:{},lastClick:null};"
-                             "return 'reset'"})
+            ev(page, "window.__score={events:[],counts:{},"
+                     "scroll_top:0,typed:{},lastClick:null};"
+                     "'reset'")
         else:
             print("[clicklab] WARN: probe failed — page reachable?")
     else:
@@ -340,17 +401,16 @@ def _run_suite(cfg, tasks, page, dom, suite_name, spec, model,
         # keeps board/app state in __score so a reload is the cleanest
         # reset; index.html resets in place.
         if apps_page:
-            bos("evaluate", {"page": page, "code": "location.reload()"})
+            ev(page, "location.reload();'reloading'")
             time.sleep(1.5)
         else:
-            bos("evaluate", {"page": page, "code":
-                             "window.__score={events:[],counts:{},"
-                             "scroll_top:0,typed:{},lastClick:null};"
-                             "document.querySelectorAll('input,textarea')"
-                             ".forEach(e=>e.value='');"
-                             "document.getElementById('scroller')"
-                             ".scrollTop=0;"
-                             "document.activeElement.blur();return 'r'"})
+            ev(page, "window.__score={events:[],counts:{},"
+                     "scroll_top:0,typed:{},lastClick:null};"
+                     "document.querySelectorAll('input,textarea')"
+                     ".forEach(e=>e.value='');"
+                     "var sc=document.getElementById('scroller');"
+                     "if(sc)sc.scrollTop=0;"
+                     "document.activeElement.blur();'r'")
         if not dom:
             focus_browseros()
         ask = ("Teach the user as you go — briefly say what you are "

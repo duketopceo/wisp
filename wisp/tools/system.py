@@ -76,14 +76,10 @@ def _dom_shot(path, cfg: dict) -> str:
     CSS px; cfg.screen.dom_origin holds the viewport's logical origin
     so click mapping stays 1:1."""
     screen = (cfg or {}).get("screen", {})
-    page = screen.get("dom_page")
-    from . import mcpclient
     import json as _j
     import re as _re
     def _eval(code):
-        out = mcpclient.call(
-            'browseros-neo evaluate '
-            + _j.dumps({"page": page, "code": code}), {})
+        out = _dom_eval(cfg, code)
         m = _re.search(r"\{.*\}", out, _re.S)
         try:
             return _j.loads(m.group(0)) if m else None
@@ -244,6 +240,14 @@ def _dom_eval(cfg: dict, code: str) -> str:
     import json as _j
     import re as _re
     from . import mcpclient
+    # CDP backend (sandboxed chromium, e.g. a CubeVM guest) — a connected
+    # cdpx.Page rides on cfg["screen"]["dom_cdp_page"]; otherwise neo.
+    cdp_page = (cfg or {}).get("screen", {}).get("dom_cdp_page")
+    if cdp_page is not None:
+        try:
+            return cdp_page.evaluate(code)
+        except Exception as e:
+            return f"CDP_ERR ({e})"
     page = cfg.get("screen", {}).get("dom_page")
     out = mcpclient.call(
         'browseros-neo evaluate '
@@ -535,9 +539,7 @@ def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
                 "r+=' options['+o.join('|')+'] — use key down/up + enter';}"
                 "return r"
                 % (cx, cy, cx, cy))
-        out = mcpclient.call(
-            'browseros-neo evaluate '
-            + _j.dumps({"page": dom_page, "code": code}), cfg)
+        out = _dom_eval(cfg, code)
         import re as _re
         hm = _re.search(r"hit:([^\n]+)", out)
         return (f"CLICKED {hm.group(1).strip()}" if hm
