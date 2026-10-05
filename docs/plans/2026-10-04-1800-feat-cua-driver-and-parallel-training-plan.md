@@ -328,3 +328,34 @@ land it immediately, before the research swarm even finishes.
 - `cua-bench` adoption — R5 reports; adoption is a separate plan if viable.
 - Replacing neo as wispd's default browser path — A6 is an eval, not a
   migration.
+
+## Status update — 2026-10-05 02:00
+
+**Landed (verified live):**
+- `wisp/tools/cdpx.py` — stdlib CDP transport (websocket + evaluate, no deps)
+- `scripts/clicklab/cube.py` — CubeVM worker: create sandbox (arm64
+  `code-interpreter` tpl), install chromium, upload lab, guest relay
+  :9223→:9222, `up|run|down|status`. Verified: `apps-chess` 4/4 on
+  flash inside a live MicroVM, $0.0265 billed to eval key via `orch`.
+- `run.py --cdp host:port` + `--suite-file` — DOM mode over CDP;
+  `system._dom_eval` routes to the Page object when present.
+- `synthesize.py` — task+oracle generator: DOM inventory → probe battery
+  (fires clicks, diffs `__score` before/after) → model proposes tasks
+  grounded in OBSERVED transitions → two-gate validation (phantom refs +
+  degenerate-already-true). Verified: 8/8 generated tasks verified in
+  CubeVM. This is the "for everyone" generalization seed.
+
+**Found this session:**
+- Last hammer window produced ZERO records — every run refused at
+  `arena_policy.gate` (no `--via-orch`/`WISP_ARENA_ORCH`). Probe output
+  looked like success at a glance.
+- `--remote-debugging-address=0.0.0.0` is ignored by Debian chromium
+  headless — guest relay on 9223 is the working pattern.
+- envd Connect RPC status is "exit status 0" (string), not "0".
+- `[budget] daily_usd = 1` set in config (was deprecated
+  `daily_cap_usd`); per-call `usage.cost` ledger live-verified.
+
+**Next:** hammer-parallel (N cube.py workers), Tier-1 site adapters
+(X post / YouTube analytics / Linear project), one Tier-2 adapter to
+prove the pattern off-browser (Godot/OBS — scripting API = the app's
+own `__score`), recipe auto-promotion, federation plumbing.
