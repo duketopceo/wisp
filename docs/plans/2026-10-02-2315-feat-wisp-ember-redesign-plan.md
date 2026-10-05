@@ -6,7 +6,9 @@ origin: DESIGN-v2.md
 artifact_contract: ce-unified-plan/v1
 product_contract_source: design-spec
 execution: code
-status: "superseded by 2026-10-04-0100-feat-wisp-unified-plan.md"
+deepened: 2026-10-05
+program_plan: docs/plans/2026-10-05-001-feat-wisp-full-roadmap-plan.md
+id_owner: docs/plans/2026-10-04-0100-feat-wisp-unified-plan.md
 ---
 
 # Wisp Ember Redesign - Plan
@@ -16,9 +18,60 @@ status: "superseded by 2026-10-04-0100-feat-wisp-unified-plan.md"
 - **Objective:** Wisp looks and behaves like a native part of whichever Omarchy theme is active, with one recognizable living element (the Wisp light) that shows what Wisp is doing, leads the user's eye when it acts, and gets out of the way when it is done.
 - **Means:** implement `DESIGN-v2.md` ("Ember in the terminal") as PR-sized units: one token adapter and one state reader first, then owned custom assets, then each surface, then the secondary surfaces and README (KTD1 to KTD12).
 - **Authority hierarchy:** user instructions > this plan's Requirements > `DESIGN-v2.md` (origin spec) > `docs/plans/2026-10-02-003-feat-wisp-companion-ux-plan.md` invariants > `DESIGN.md` v1 (history only). When this plan deviates from `DESIGN-v2.md`, the deviation is a numbered KTD with its reason.
-- **Execution profile:** Deep, 20 units, each one PR. Foundations (U1 to U5) land before any visible surface change. QML-heavy work is verified by offscreen snapshots plus one live `grim` capture per surface unit.
-- **Stop conditions:** stop and ask if (a) the user's uncommitted `shell-plugin/Companion.qml` and `scripts/clicklab/run.py` changes are still uncommitted when U4 starts, (b) the Omarchy plugin `shell` facade cannot return the plugin's own service to the overlay entry point (KTD1 fallback needs a decision), (c) the creature shader cannot hold the DESIGN-v2 section 8 performance budget on the AGX GPU, or (d) any unit would need a paid API call or AI-generated imagery.
+- **Execution profile:** Deep, 20 units, each one PR. As of 2026-10-05, 17 are done, 3 are partly done and 1 is not started; the Status Ledger below is the source for what remains, and the unit bodies for the open units were revised against what shipped. Foundations (U1 to U5) land before any visible surface change. QML-heavy work is verified by offscreen snapshots plus one live `grim` capture per surface unit.
+- **Stop conditions:** stop and ask if (a) any remaining unit would need to rewrite the compress watchdog in `shell-plugin/Companion.qml` rather than carry it (KTD8; the original in-flight-work blocker cleared when PR #60 merged), (b) the Omarchy plugin `shell` facade cannot return the plugin's own service to the overlay entry point (KTD1 fallback needs a decision), (c) the creature shader cannot hold the DESIGN-v2 section 8 performance budget on the AGX GPU, or (d) any unit would need a paid API call or AI-generated imagery.
 - **Who finishes:** an implementing agent (`ce-work`) per unit; the user commits the in-flight work, approves the open questions, and runs the one live multi-theme pass (U20) because it switches the desktop theme.
+
+---
+
+## Status Ledger
+
+Verified 2026-10-05 against `master` at `67b520c` (merge commits, files and greps, not PR titles). IDs stay U1 to U20; the unified plan (`docs/plans/2026-10-04-0100-feat-wisp-unified-plan.md`) owns order and crosswalks these to W-IDs. Progress lives here because this plan is the design reference for the remaining Ember work; the shipped units are not re-planned.
+
+| U-ID | State | Evidence | What is left |
+|---|---|---|---|
+| U1 | done | #57: `wisp/theme.py`, `tests/test_theme.py`, fixtures `tests/fixtures/themes/{vantablack,tokyo-night,white,catppuccin-latte,flexoki-light,red-accent,partial}` | none |
+| U2 | done with one gap | #57: `shell-plugin/lib/{tokens,motion,copy}.js`, `wisp/copy.py`, `scripts/assets/gen_copy.py`; #71 (W17) copy lint | `[ui] motion` is read by `WispService.qml` (`motionConfig`) but nothing sets it, `animationsEnabled` is never read from Hyprland, and the key is absent from `wisp/config.py`, `wisp/settings_schema.py` and `docs/CONFIG.md`. Carried in U2 below (R16) |
+| U3 | done | #71 (W17): one reader in `WispService.qml`; `BarWidget.qml` has no own `FileView` after #82 | none |
+| U4 | done | #75 (W20) and #80/#84 (W21): `Companion.qml` is a 204-line host over `shell-plugin/components/*.qml` | none |
+| U5 | partly done | #75: `scripts/ui/snap.py`, `tests/qml/harness/`, `tests/test_snap.py`, snapshots under `tests/qml/snapshots/{dark,light}` | `wispd replay` and the state-writer pause flag do not exist (`wisp/cli` has no replay verb; `scripts/replay_turn.py` from #63 drives fake model servers through a turn, not scripted overlay states). Carried in U5 below |
+| U6 | done | #57: `assets/icons/src`, `scripts/assets/build_icons.py`, `shell-plugin/lib/icons.js`, `components/Icon.qml`, `tests/test_icons.py` | none |
+| U7 | done, perf unverified | #80 (W21): `assets/shaders/wisp.frag` (+ `.sha256`), `shell-plugin/shaders/wisp.frag.qsb`, `components/Creature.qml`, `lib/creature.js`, `tests/qml/lib/tst_creature.qml`, `scripts/assets/bake_shaders.sh` | no recorded AGX frame-time or idle-CPU measurement (stop condition c). Carried into U20 |
+| U8 | not started | no `assets/sound/`, no `scripts/assets/make_earcons.py`, no `SoundEffect` in `shell-plugin/` | whole unit, revised below |
+| U9 | done | #58 (icon, desktop entry); #95 (W27: Listen/Stop/Panel actions, icon install, SNI detection) | none |
+| U10 | done | #82 (W23, `d4d9aa4`): `components/BarMark.qml`, `lib/bar.js`, `tests/qml/lib/tst_bar.qml` | none |
+| U11 | done | #80, #84: `components/{Corner,CornerLayer,Console}.qml`; the compress watchdog is kept in `Companion.qml` (120 s busy or daemon-opened, 180 s user-opened) per KTD8 | none |
+| U12 | done | #80, #84: `components/{Pill,Bubble,Answer}.qml`, `tests/qml/lib/tst_pill.qml` | none |
+| U13 | partly done | #80: `components/{GhostCursor,Beacon}.qml`, `lib/cursor.js` (bubble placement, dwell, travel), `tests/qml/lib/tst_cursor.qml` | the pointer is read by one `hyprctl cursorpos` fork per answer or confirm (`Companion.qml`, `cursorProc`), not through the Hyprland socket (KTD5), and the creature never rides the pointer during listening or thinking (no rider in `shell-plugin/`). R10 and the zero-fork success criterion are unmet. Revised below |
+| U14 | done | #87 (W24, `9fe4f44`): `wisp/keys.py`, bind handles through `wisp/hypr.py` `bind`/`unbind` (OQ1 resolved: runtime binds) | none |
+| U15 | done | W25 `badd172` via #100: `wisp/confirm.py`, additive `confirm` object in `docs/IPC_CONTRACT.md` (OQ2 resolved) | none |
+| U16 | done | W25 `badd172`: stale and offline UX from one copy table; `updated_at` and `seq` stamped by `wisp/state.py` (#64) | none |
+| U17 | done | W22 `93d06ea` via #100: `Panel.qml` is 241 lines over `components/{NowTab,AgentsTab,SettingsTab,MemoryTab}.qml` and the Health section | none |
+| U18 | done | #58 (management app and TUI on tokens); W26 `9ef1daa` (on the W17 reader) | none |
+| U19 | done | W32 `1c10607` via #100: `scripts/clicklab/arena.html` on wisp tokens | none |
+| U20 | partly done | #101 (W33): README with real renders from `scripts/ui/readme_media.py` (`assets/readme/*.png`), `tests/test_readme_media.py` | hero recording, multi-theme live pass, perf and contrast evidence, friction log. Needs the user for the live theme switch. Revised below |
+
+### Blocked on the user
+
+- **Cleared: the uncommitted `shell-plugin/Companion.qml` and `scripts/clicklab/run.py` work.** The original plan blocked U4 on it. PR #60 merged the compress watchdog and training arena, the main clone's working tree is clean on `master`, and `Companion.qml` has since been rebuilt as the thin host. Nothing in the Ember plan waits on it any more.
+- **Open, user-run: the live multi-theme pass (U20).** It switches the desktop theme, so only the user runs it; the agent supplies the script and the comparison tooling.
+- **Open, user decision: earcon defaults (OQ4) and creature rest placement (OQ5).** The plan's assumptions stand until the user overrides them; neither blocks U8 or U13 from starting.
+- **Open, user-run: README screen recordings.** `README.md` section Media lists them; they need a person at the desktop.
+- **Open, user-run: apply the oomd-safe unit templates on the machine.** Not an Ember item, but the live llama units still sit in `app.slice` (see the roadmap plan, U4 there).
+
+### Dependency picture for what remains
+
+```mermaid
+flowchart TB
+  U2gap[U2 motion wiring] --> U8
+  U2gap --> U13
+  U5gap[U5 wispd replay] --> U13
+  U5gap --> U20
+  U8 --> U20
+  U13 --> U20
+```
+
+U2, U5 and U8 can run in parallel as three small PRs; U13 needs the first two for its verification (motion modes, scripted acting turn); U20 closes the program.
 
 ---
 
@@ -111,8 +164,8 @@ The user's uncommitted compress watchdog in `shell-plugin/Companion.qml` (forced
 
 #### Resolve before the dependent unit
 
-- OQ1 (blocks U14). Submap keybinds: may `wispd` register transient binds at runtime with `hyprctl eval` (recommended, KTD6), or must they live in a sourced file in the stash? Origin question 4.
-- OQ2 (blocks U15). May `state.json` gain an additive `confirm` object (recommended; it is not a status value, so the closed status vocabulary in `docs/IPC_CONTRACT.md` is unchanged)? Origin question 3.
+- OQ1 (resolved by #87): submap keybinds: may `wispd` register transient binds at runtime with `hyprctl eval` (recommended, KTD6), or must they live in a sourced file in the stash? Origin question 4.
+- OQ2 (resolved by W25): may `state.json` gain an additive `confirm` object (recommended; it is not a status value, so the closed status vocabulary in `docs/IPC_CONTRACT.md` is unchanged)? Origin question 3.
 
 #### Deferred to implementation
 
@@ -123,8 +176,8 @@ The user's uncommitted compress watchdog in `shell-plugin/Companion.qml` (forced
 
 ### Assumptions
 
-- The user commits (or otherwise resolves) the uncommitted `shell-plugin/Companion.qml` watchdog and `scripts/clicklab/run.py` changes on `feat/training-arena` before U4. Redesign branches are cut from that tip, or from `master` once `feat/training-arena` merges.
-- `DESIGN-v2.md` is currently untracked; U1 commits it and marks the `DESIGN.md` v1 token block superseded.
+- Resolved: the in-flight watchdog and training-arena work merged in #60 and `Companion.qml` was rebuilt as a thin host over the components; redesign branches are cut from `master`.
+- Resolved: `DESIGN-v2.md` is tracked on `master` (#56).
 - Light fixture themes are `catppuccin-latte`, `flexoki-light` and `white` (stock, `mode = "light"` inside `colors.toml`); dark fixtures are `vantablack` (copied from the user override at `~/.config/omarchy/themes/vantablack/colors.toml`, accent `#e58a4b`; the stock vantablack is greyscale), `tokyo-night` and one red-accent theme to exercise the ember-vs-urgent rotation.
 - CI (`.github/workflows/test.yml`) has no Qt; QML tests are a local gate and their logic is mirrored in Python tests that CI runs.
 
@@ -219,7 +272,7 @@ flowchart TB
 
 ### Sequencing Notes
 
-- U4 is the first unit to modify `shell-plugin/Companion.qml`; it waits for the user's watchdog change to be committed (stop condition a) and carries it verbatim.
+- The remaining units (U2 gap, U5 gap, U8, U13, U20) touch `WispService.qml`, `wisp/`, `Companion.qml`'s cursor block and assets only; none rewrites the watchdog, which stays in the host (KTD8).
 - No unit touches `scripts/clicklab/run.py`.
 - Each surface unit reinstalls the plugin copy (`wispd install`) before live checks; U3 additionally needs an `omarchy-shell` restart because the service is `keepLoaded` (KTD1). Restarts are brief and done once per unit, not per iteration; offscreen snapshots carry iteration.
 
@@ -280,6 +333,7 @@ flowchart TB
 
 ### U1. Omarchy token adapter (Python reference)
 
+- **Status:** done (#57). Body below is the original design reference; evidence in the Status Ledger.
 - **Goal:** one function turns an Omarchy `colors.toml` into the Wisp token set, including ember, contrast-corrected `inkMuted` and `emberHalo`.
 - **Requirements:** R1, R3, R15; KTD2.
 - **Dependencies:** none.
@@ -303,26 +357,26 @@ flowchart TB
 - **Verification:** all fixture tests pass; `wispd theme --check` passes on the live theme.
 
 ### U2. QML tokens, motion tokens and generated copy
-
-- **Goal:** QML surfaces get the same tokens as U1 live, plus motion tokens and one copy map.
-- **Requirements:** R4, R5, R6, R16; KTD2, KTD7.
-- **Dependencies:** U1.
-- **Files:** create `shell-plugin/lib/tokens.js`, `shell-plugin/lib/motion.js`, `wisp/copy.py`, `shell-plugin/lib/copy.js` (generated), `scripts/assets/gen_copy.py`, `tests/test_copy.py`, `tests/qml/lib/tst_tokens.qml`; modify `wisp/config.py` (new `[ui] motion` default, validated against `full`/`reduced`/`off`) and `docs/CONFIG.md`.
+- **Status:** done except the motion-mode wiring (R16). Evidence in the Status Ledger. The original body (tokens, copy table, lint) shipped in #57 and #71 and is not repeated.
+- **Goal (remaining):** `full`, `reduced` and `off` motion modes actually take effect, defaulting from Hyprland's `animations:enabled`, with `[ui] motion` as the override.
+- **Requirements:** R16; KTD2.
+- **Dependencies:** none.
+- **Files:** modify `wisp/config.py` (`[ui] motion`, validated against `full`/`reduced`/`off`/empty), `wisp/settings_schema.py`, `docs/CONFIG.md`, `wisp/ipc.py` or `wisp/state.py` (surface the value to the shell through the existing `settings` push, not a new reader), `shell-plugin/WispService.qml` (set `motionConfig`; read `animationsEnabled` through the Hyprland request socket once at load and on `configreloaded`, not by polling), `tests/test_settings_schema.py`, `tests/qml/lib/tst_motion.qml`.
 - **Approach:**
-  1. Port U1's pure functions to JS; inputs are the `Color` singleton values plus the extra ANSI keys from `colors.toml`.
-  2. `motion.js` holds origin 5.5 spring and duration tokens and resolves the motion mode (config value, else Hyprland `animations:enabled`).
-  3. `wisp/copy.py` holds the status-word map, result-prefix translations and `pickLabel`; `gen_copy.py` writes `copy.js`.
+  1. Add the key with an empty default so the Hyprland value decides until the user sets it.
+  2. Feed `motionConfig` from the same settings channel the Panel's Settings tab already uses, so a change applies without restarting the shell.
+  3. Query `animations:enabled` once via the request socket (`getoption animations:enabled`), refreshed on the `configreloaded` event the socket already streams.
+  4. Surface the effective mode in the Panel Settings tab as read-only help text ("follows Hyprland animations").
 - **Test scenarios:**
-  - `tst_tokens.qml` loads each U1 fixture and matches `expected.json` within one 8-bit channel step.
-  - `copy.py` maps every status in `docs/IPC_CONTRACT.md` to a word; an unknown status maps to "offline".
-  - `SKIP (launch route but no app identified)` translates to "didn't catch which app" and flags `didnt_understand`.
-  - `BLOCKED (tool 'x' needs confirmation)` translates to "blocked: needs your ok".
-  - `test_copy.py` fails when `copy.js` is stale relative to `copy.py`.
-  - No translated string contains an em-dash or en-dash.
-- **Verification:** Python tests pass in CI; `qmltestrunner` passes locally on the pure-JS lib tests (`tokens.js`, `motion.js`, `copy.js` have no Quickshell imports).
+  - `resolveMode("", false)` returns `reduced`; `resolveMode("off", true)` returns `off`; an invalid config value falls back to the Hyprland-derived mode.
+  - `wispd config` rejects `[ui] motion = "fast"` with the settings-schema error and leaves the file unchanged.
+  - With `motion = off` the snapshot harness renders static creature marks and no running `Animation` (existing `tst_creature.qml` states, new `off` case).
+  - `docs/CONFIG.md` lists the key (the doc-lint test fails otherwise).
+- **Verification:** `python -m unittest discover -s tests`; `qmltestrunner -input tests/qml/lib`; live: toggle `animations:enabled` with `hyprctl eval`, confirm the creature goes static within one second.
 
 ### U3. Single state reader
 
+- **Status:** done (#71). Body below is the original design reference; evidence in the Status Ledger.
 - **Goal:** `WispService.qml` is the only reader of `state.json` and `colors.toml`; every surface binds to it.
 - **Requirements:** R4, R19; KTD1.
 - **Dependencies:** U2.
@@ -343,6 +397,7 @@ flowchart TB
 
 ### U4. Split Companion into window-free components
 
+- **Status:** done (#75, #80, #84). Body below is the original design reference; evidence in the Status Ledger.
 - **Goal:** each overlay surface is a standalone component; the window wrappers in `Companion.qml` become thin hosts.
 - **Requirements:** enables R8 to R10 and KTD9; preserves KTD8.
 - **Dependencies:** U3; the user's watchdog change committed.
@@ -359,24 +414,27 @@ flowchart TB
 - **Verification:** live capture matches the pre-split capture for listening, acting and awaiting_choice fixture states.
 
 ### U5. Snapshot harness and `wispd replay`
-
-- **Goal:** any surface can be rendered offscreen for any fixture state and theme, and the live overlays can be driven by scripted state with no model call.
-- **Requirements:** R15, R18 (demo), quality checklist "five states"; KTD9, KTD10.
-- **Dependencies:** U4.
-- **Files:** create `scripts/ui/snap.py`, `tests/qml/harness/Snap.qml`, `tests/fixtures/states/*.json` (one per status plus edge cases), `tests/fixtures/replays/{ask,act,choose,error}.json`; modify `wispd` (`replay` subcommand), `wisp/state.py` (pause flag); create `tests/test_replay.py`.
+- **Status:** harness shipped (#75); `wispd replay` not built.
+- **Goal (remaining):** live overlays can be driven by scripted state sequences with no model call, so live checks and the README recording are deterministic (KTD10).
+- **Requirements:** R15, R18 (demo); KTD10.
+- **Dependencies:** none (the StateBus from #64 exists).
+- **Files:** create `wisp/cli/replay.py` (registered as `wispd replay <script>` in `wisp/cli/registry.py`, with `--json`, `--list`), `tests/fixtures/replays/{ask,act,choose,confirm,error}.json`, `tests/test_replay_cli.py`; modify `wisp/state.py` (a pause flag the bus honours while a replay holds it), `docs/IPC_CONTRACT.md` (replay marker field, additive), golden help text under `tests/golden/cli_help/`.
 - **Approach:**
-  1. Harness runs per KTD9 (`quickshell -p tests/qml/harness`, offscreen, RHI OpenGL backend): loads one component, injects a fixture theme, sets inputs from a fixture state, and saves a PNG. It fails if the scenegraph backend is `software` while a `ShaderEffect` is present.
-  2. `snap.py` renders the surface by state by theme matrix into a contact sheet (gitignored output dir) and reports contrast of sampled text/background pairs.
-  3. `wispd replay` publishes each scripted snapshot with its delay through the state writer, holding a pause flag so the daemon's own publishes wait.
+  1. Publish each scripted snapshot through the normal StateBus turn handle, so every consumer sees exactly what a real turn produces.
+  2. Hold the pause flag for the replay's duration; daemon publishes queue and apply after, never interleave.
+  3. Validate the whole script (statuses against the closed vocabulary in `docs/IPC_CONTRACT.md`, delays non-negative) before writing the first snapshot.
+  4. Refuse to run while a real turn is active, with a one-line error and exit code from the W19 registry.
 - **Test scenarios:**
-  - Replay of `ask.json` writes the scripted statuses in order with the scripted delays (tolerance 50ms).
-  - A daemon publish attempted during replay is deferred, then applied after replay ends.
-  - Replay of a script with an unknown status is rejected before writing anything.
-  - Harness renders the pill fixture for `listening` on `vantablack` and `catppuccin-latte` to non-empty PNGs.
-- **Verification:** contact sheet for current (pre-redesign) surfaces renders on 2 themes; this becomes the "before" set for every later unit.
+  - `ask.json` writes the scripted statuses in order with the scripted delays (tolerance 50 ms), driven by an injected clock in the test.
+  - A daemon publish during a replay is deferred, then applied after it ends.
+  - A script with an unknown status is rejected before anything is written.
+  - A replay during an active turn exits non-zero and writes nothing.
+  - `wispd replay --list` and `--json` match the golden CLI fixtures.
+- **Verification:** unit tests; live: `wispd replay act` while watching the real overlay, one `grim` capture.
 
 ### U6. Icon, bar-glyph and mark set
 
+- **Status:** done (#57). Body below is the original design reference; evidence in the Status Ledger.
 - **Goal:** owned vector set: 24 UI icons, 7 bar states, the Wisp mark, the wordmark, the ghost-cursor silhouette and the beacon.
 - **Requirements:** R7, R18; KTD4.
 - **Dependencies:** U2.
@@ -395,6 +453,7 @@ flowchart TB
 
 ### U7. Creature shader, 13 states
 
+- **Status:** done in #80; AGX frame-time record moves to U20. Body below is the original design reference; evidence in the Status Ledger.
 - **Goal:** the Wisp creature renders all origin 5.5 states on dark and light themes within budget.
 - **Requirements:** R3, R16, R18, R19; KTD3.
 - **Dependencies:** U5, U6.
@@ -415,22 +474,29 @@ flowchart TB
 - **Verification:** harness contact sheet of 13 states by 2 modes; live: `QSG_RENDER_TIMING=1` dev instance shows creature frame cost and idle redraw cap; 28px rest size readable on Vantablack and a light theme.
 
 ### U8. Earcons
-
-- **Goal:** five designed cues that sit under TTS, with config toggles.
+- **Status:** not started. No earcon assets, script or `SoundEffect` exist on `master`.
+- **Goal:** five designed cues that sit under TTS, with config toggles; never the only signal (R17).
 - **Requirements:** R17, R18; KTD11.
-- **Dependencies:** U5.
-- **Files:** create `scripts/assets/make_earcons.py`, `assets/sound/{mic-open,mic-close,needs-you,done,error}.wav`, `shell-plugin/components/Earcons.qml`, `tests/test_earcons.py`; modify `wisp/config.py` defaults, `docs/CONFIG.md`, `wispd` install (copy sounds).
-- **Approach:** synthesize per origin A9 from one shared timbre; preload with `SoundEffect`; play on status edges from the service, gated by `[ui.sound]` and global toggle, and suppressed while the default PipeWire sink is muted or Omarchy notification do-not-disturb is readable and on (origin 7).
+- **Dependencies:** U5 gap (replay, for the live check). U2 gap is independent.
+- **Files:** create `scripts/assets/make_earcons.py` (stdlib `wave` plus math, deterministic), `assets/sound/{mic-open,mic-close,needs-you,done,error}.wav`, `shell-plugin/components/Earcons.qml`, `shell-plugin/lib/earcons.js` (edge detection and gating as pure functions), `tests/test_earcons.py`, `tests/qml/lib/tst_earcons.qml`; modify `wisp/config.py` and `wisp/settings_schema.py` (`[ui.sound]`: `enabled`, per-cue booleans), `docs/CONFIG.md`, `wisp/cli/core.py` install path (`wispd install` copies `assets/sound`), `shell-plugin/Companion.qml` (instantiate `Earcons` once, in the host, not per screen), `tests/test_assets_baked.py` (fail when the WAVs are stale relative to the script).
+- **Approach:**
+  1. Synthesize from one shared timbre (sine plus one partial, 8 ms attack, exponential decay); mic-open rising, mic-close falling, needs-you two-note, error low two-note, done a single soft tick.
+  2. `Earcons.qml` preloads five `SoundEffect`s (`QtMultimedia` is present under `/usr/lib/qt6/qml`); `earcons.js` maps status edges to cues, so a repeated status never replays.
+  3. Defaults: mic open/close, needs-you and error on, done off (OQ4 assumption, user may flip).
+  4. Gate on `[ui.sound]`, then on the default sink being muted and on Omarchy do-not-disturb when readable; the visual state always changes regardless.
+  5. Under `motion = off` cues still play (sound is not motion) but honour the global toggle.
 - **Test scenarios:**
-  - Each WAV is 48 kHz, 16-bit, under 250ms, peak at or below -6 dBFS.
-  - Script output is deterministic (same bytes on rerun).
-  - `[ui.sound] enabled=false` suppresses all cues; `done=false` default suppresses only done.
-  - Listening edge plays mic-open once; a repeated listening status does not replay it.
-  - With the default sink muted (or DND on), no cue plays and the visual state still changes.
-- **Verification:** listen on the live machine under TTS; latency from status edge to sound under 50ms by ear plus `pw-top` check.
+  - Each WAV is 48 kHz, 16-bit mono, under 250 ms, peak at or below -6 dBFS (measured in the test).
+  - Rerunning `make_earcons.py` produces byte-identical files.
+  - `enabled = false` suppresses all cues; `done = false` (default) suppresses only done.
+  - A `listening` edge plays mic-open once; a repeated `listening` snapshot does not replay it.
+  - Muted sink or DND on: no cue, state still changes.
+  - `wispd install --dry-run` lists the five files.
+- **Verification:** Python and QML lib tests; live under TTS by ear plus `pw-top` to confirm the cue starts within 50 ms of the status edge; no paid API or generated audio (R18).
 
 ### U9. App icon and desktop entry
 
+- **Status:** done (#58, #95). Body below is the original design reference; evidence in the Status Ledger.
 - **Goal:** Wisp has its own icon in launchers and the README.
 - **Requirements:** R18.
 - **Dependencies:** U6.
@@ -443,6 +509,7 @@ flowchart TB
 
 ### U10. Bar mark
 
+- **Status:** done (#82). Body below is the original design reference; evidence in the Status Ledger.
 - **Goal:** the bar shows the Wisp mark per state with the shared color semantics.
 - **Requirements:** R5, R7, R9.
 - **Dependencies:** U3, U6.
@@ -457,6 +524,7 @@ flowchart TB
 
 ### U11. Corner creature and on-demand console
 
+- **Status:** done (#80, #84); watchdog kept in the host per KTD8. Body below is the original design reference; evidence in the Status Ledger.
 - **Goal:** the orb becomes the creature at rest, and the card becomes a console that opens only when needed.
 - **Requirements:** R2, R8, R9, R14; KTD8, KTD12.
 - **Dependencies:** U7, U8.
@@ -476,6 +544,7 @@ flowchart TB
 
 ### U12. Pill and cursor bubble
 
+- **Status:** done (#80, #84). Body below is the original design reference; evidence in the Status Ledger.
 - **Goal:** the pill owns live progress and choices; the bubble owns answers.
 - **Requirements:** R6, R8, R9, R13, R15.
 - **Dependencies:** U11.
@@ -494,28 +563,29 @@ flowchart TB
 - **Verification:** live replay of ask and choose; harness matrix on 2 themes.
 
 ### U13. Fork-free cursor, rider, ghost cursor, beacons
-
-- **Goal:** the Wisp rides near the pointer during a turn and travels as the ghost cursor; tracking costs no process spawns.
+- **Status:** ghost cursor, beacons and bubble placement shipped (#80, #84). The fork-free pointer feed and the rider are not built.
+- **Goal (remaining):** during a turn the Wisp light follows near the pointer without spawning processes (R10, R19); the answer bubble and confirm card still open where the user is looking.
 - **Requirements:** R10, R16, R19; KTD5.
-- **Dependencies:** U7.
-- **Files:** create `shell-plugin/lib/cursor.js` or a `CursorFeed` item in `WispService.qml`; modify `shell-plugin/components/GhostCursor.qml`, `shell-plugin/components/Beacon.qml`, `shell-plugin/Companion.qml`.
+- **Dependencies:** U2 gap (motion modes), U5 gap (scripted acting turn for the process-count check). U7 done.
+- **Files:** create `shell-plugin/lib/pointer.js` (request framing, parse, rate gate; pure), `shell-plugin/components/CursorFeed.qml` (a `Socket` to `$XDG_RUNTIME_DIR/hypr/<signature>/.socket.sock` sending `j/cursorpos`), `tests/qml/lib/tst_pointer.qml`; modify `shell-plugin/Companion.qml` (delete `cursorProc` and `pointerRequest`; bind the feed), `shell-plugin/components/OverlayLayer.qml` and `components/Creature.qml` (rider placement), `shell-plugin/lib/cursor.js` (rider spring, 520 ms travel cap), `tests/qml/harness/scenes.json` (rider on both themes).
 - **Approach:**
-  1. Verify first that the Hyprland request socket answers `cursorpos` on this build; else use the KTD5 fallback.
-  2. Feed runs at most 30 Hz and only while the rider, ghost or bubble is visible.
-  3. Remove the user-pointer ring; rider sits at +18,+18 from the pointer with `spatialDefault` lag.
-  4. Ghost: A5 silhouette carrying the creature; distance-scaled travel, curved path, single 220ms click ripple, last 3 breadcrumbs fading over 2s, guide mode parks and holds still.
-  5. Beacons: land with one spring overshoot, hold, fade after 8s or next turn.
+  1. First verify, in a scratch Quickshell run, that the Lua Hyprland build answers `j/cursorpos` on the request socket; if it does not, use the KTD5 fallback (one persistent helper process holding one connection) and record which was chosen in the PR.
+  2. The feed runs at most 30 Hz and only while the rider, ghost or bubble is visible; it idles at zero when none is.
+  3. Rider: during `listening`, `transcribing`, `thinking` the creature leaves the corner and sits at +18,+18 from the pointer with the `spatialDefault` spring; `speaking` hands the creature to the pill (the state machine in the Planning Contract).
+  4. Remove the one-shot `hyprctl cursorpos` fork; the bubble reads the same feed's last sample.
+  5. `motion = reduced`: travel becomes a 140 ms cross-fade; `off`: the creature jumps and holds its static mark.
 - **Test scenarios:**
-  - During a replayed acting turn, no `hyprctl` process is spawned (process count probe).
-  - Feed stops when no consumer is visible; restarts when the bubble shows.
-  - Travel duration for 1000px is 520ms cap; for 100px is 345ms.
-  - Guide-mode target reached: ghost holds still with label chip "click Settings", no loop running.
-  - `motion=reduced`: travel becomes a 140ms cross-fade.
-  - Beacon fixture with 3 points shows 3 beacons, each settling once.
-- **Verification:** `pidstat`/process count during replay; `QSG_RENDER_TIMING` during travel; live capture of a ghost travel.
+  - During a replayed acting turn the process-spawn probe sees zero `hyprctl` children (this is the success-criterion check, and the reason U5 gap comes first).
+  - The feed stops with no visible consumer and restarts when the bubble shows.
+  - Travel duration for 1000 px is capped at 520 ms; for 100 px it is 345 ms.
+  - Rider offset flips at screen edges using the existing `cursor.js` placement tests (`tst_cursor.qml`), now with the creature as the placed item.
+  - Guide mode parks the ghost with its chip and no timer running.
+  - Multi-monitor: pointer on a second screen translates by that screen's origin (existing `originX`/`originY` inputs).
+- **Verification:** `pidstat` or a process-count probe during `wispd replay act`; `QSG_RENDER_TIMING=1` during travel; one live `grim` capture of the rider and one of the ghost.
 
 ### U14. Keyboard submap and Esc stop
 
+- **Status:** done (#87). Body below is the original design reference; evidence in the Status Ledger.
 - **Goal:** choices, stop and (later) confirms are reachable by keyboard without overlays taking focus.
 - **Requirements:** R13; KTD6. Blocked by OQ1.
 - **Dependencies:** U12, U13.
@@ -532,6 +602,7 @@ flowchart TB
 
 ### U15. Confirm card
 
+- **Status:** done (W25 `badd172`, #100). Body below is the original design reference; evidence in the Status Ledger.
 - **Goal:** risky tools ask for approval inline at the cursor instead of only by voice.
 - **Requirements:** R9, R13, R14. Blocked by OQ2.
 - **Dependencies:** U14.
@@ -549,6 +620,7 @@ flowchart TB
 
 ### U16. Error, offline and stale-state UX
 
+- **Status:** done (W25 `badd172`, #100). Body below is the original design reference; evidence in the Status Ledger.
 - **Goal:** every failure is visible, honest and recoverable from the surface where it appears.
 - **Requirements:** R6, R14.
 - **Dependencies:** U11, U12.
@@ -568,6 +640,7 @@ flowchart TB
 
 ### U17. Panel four tabs
 
+- **Status:** done (W22 `93d06ea`, #100). Body below is the original design reference; evidence in the Status Ledger.
 - **Goal:** the panel reads like a product, not a debugger, with no data lost.
 - **Requirements:** R5, R6, R7, R9, R11.
 - **Dependencies:** U3, U6.
@@ -582,6 +655,7 @@ flowchart TB
 
 ### U18. Management app and TUI on shared tokens
 
+- **Status:** done (#58, W26 `9ef1daa`). Body below is the original design reference; evidence in the Status Ledger.
 - **Goal:** secondary surfaces match the theme.
 - **Requirements:** R1, R6, R7, R12.
 - **Dependencies:** U1, U6.
@@ -594,6 +668,7 @@ flowchart TB
 
 ### U19. Training arena restyle
 
+- **Status:** done (W32 `1c10607`, #100). Body below is the original design reference; evidence in the Status Ledger.
 - **Goal:** the arena page uses generated tokens and a two-zone layout.
 - **Requirements:** R1, R7, R12.
 - **Dependencies:** U1, U9.
@@ -606,18 +681,18 @@ flowchart TB
 - **Verification:** BrowserOS neo screenshots at 1440 and 390 widths in a dark and a light theme css.
 
 ### U20. README media and program QA pass
-
-- **Goal:** the README shows the real product, and the whole redesign is checked against the quality bar once more.
+- **Status:** README renders shipped (#101); recordings, perf record and the multi-theme pass are open.
+- **Goal:** the README shows the real product, and the whole redesign is checked once against the quality bar with measured numbers.
 - **Requirements:** R15, R18, R19; success criteria.
-- **Dependencies:** U13, U16, U17.
-- **Files:** modify `README.md`; create `assets/readme/{hero.webm,hero.gif,states.png,social.png}`, `scripts/ui/record_demo.sh`, `assets/readme/social.svg`.
+- **Dependencies:** U8, U13 (and the U5 gap for deterministic recording). U16 and U17 are done.
+- **Files:** modify `README.md` (section Media), `docs/PERF.md` only if the measured numbers need a durable home (otherwise the PR description); create `assets/readme/{hero.webm,hero.gif,states.png,social.png}`, `scripts/ui/record_demo.sh`, `assets/readme/social.svg`.
 - **Approach:**
-  1. Record a 6 to 8s hero with `gpu-screen-recorder` region capture while `wispd replay` plays a scripted ask-then-act turn; GIF via `gifski` at 3 MB or less.
-  2. User-run step: repeat the recording on one light theme, then restore the original theme; compose side by side with `ffmpeg`.
-  3. State contact sheet from the U5 harness; social preview from an SVG template rendered with `resvg`.
-  4. QA pass: perf budgets (R19), contrast audit, friction log for first run, error path and return visit.
-- **Test scenarios:** Test expectation: none -- media and documentation; covered by the QA pass below.
-- **Verification:** recordings contain no notifications or personal windows; measured budgets recorded in the PR description.
+  1. Agent-run, no theme switch: record the 6 to 8 s hero with `gpu-screen-recorder` region capture while `wispd replay` plays the ask-then-act turn; GIF via `gifski` at 3 MB or less; contact sheet from `scripts/ui/snap.py sheet` for `states.png`; social preview from the SVG via `resvg`.
+  2. User-run, one theme switch: repeat on one light theme, restore the original theme, compose side by side with `ffmpeg`.
+  3. Measurement record: idle CPU for 60 s (`pidstat`, needs `omarchy pkg add sysstat`), creature frame time on AGX (closes stop condition c), zero `hyprctl` forks during a replayed act turn, `wispd theme --check` on the live theme, contrast report on all seven fixture themes.
+  4. Friction log for first run, error path and return visit; file anything found as separate issues, not scope creep.
+- **Test scenarios:** Test expectation: none -- media and measurement; the existing `tests/test_readme_media.py` keeps the README image references honest.
+- **Verification:** recordings contain no notifications, personal windows or tokens (reviewed frame by frame at 1 fps); measured budgets are recorded in the PR description and match R19.
 
 ---
 
@@ -634,6 +709,8 @@ flowchart TB
 | Contrast audit | `wispd theme --check` on the live theme plus the harness contrast report on fixtures | U1, every surface unit |
 | Live check | `wispd install`, `wispd replay <script>`, one `grim` capture of the affected surface on the current theme | every surface unit |
 | Performance | prerequisite: `omarchy pkg add sysstat` (pidstat is not installed); `pidstat` idle sample (60s) and process-spawn count during a replayed act turn; `QSG_RENDER_TIMING=1` on a dev shell for creature and travel | U3, U7, U13, U20 |
+| Doc lint | `python -m unittest tests.test_docs_lint` (README, ROADMAP and `docs/*.md` only name real commands and config keys) | any unit that adds a command or key (U2 gap, U5 gap, U8) |
+| Snapshot check | `python scripts/ui/snap.py check` and `python scripts/assets/gen_copy.py --check` | every QML or copy change |
 | Static lints | tests that fail on: hex literals outside the adapter, `Canvas`, `Animation.Infinite` on chrome, Unicode symbol icons, em-dashes in copy, more than one `state.json` reader | added progressively U3 to U19 |
 
 Live checks never switch the Omarchy theme; multi-theme evidence comes from fixtures (KTD9), except the user-run step in U20.
