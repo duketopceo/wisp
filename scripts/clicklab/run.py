@@ -358,6 +358,10 @@ def main():
                        model, len(tasks), teach=teach,
                        apps_page=page_name == "apps.html"))
 
+    # parallel-worker attribution: hammer-parallel.sh passes --worker
+    # and --sandbox-id so records can be grouped per CubeVM worker
+    _stamp(results, _flag("--worker"), _flag("--sandbox-id"))
+
     hits = sum(1 for r in results if r["verified"])
     print(f"\n[clicklab] {hits}/{len(results)} verified "
           f"({100 * hits // max(len(results), 1)}%)")
@@ -366,6 +370,17 @@ def main():
         for r in results:
             f.write(json.dumps(r) + "\n")
     print(f"[clicklab] results appended to {OUT}")
+
+
+def _stamp(results: list, worker, sandbox_id):
+    """Add worker/sandbox attribution to every record (parallel runs)."""
+    if not worker and not sandbox_id:
+        return
+    for r in results:
+        if worker:
+            r["worker"] = int(worker)
+        if sandbox_id:
+            r["sandbox_id"] = sandbox_id
 
 
 def _provider_up(cfg: dict) -> bool:
