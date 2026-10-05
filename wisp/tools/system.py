@@ -539,8 +539,8 @@ def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
             'browseros-neo evaluate '
             + _j.dumps({"page": dom_page, "code": code}), cfg)
         import re as _re
-        hm = _re.search(r"hit:(\S+)", out)
-        return (f"CLICKED {hm.group(1)}" if hm
+        hm = _re.search(r"hit:([^\n]+)", out)
+        return (f"CLICKED {hm.group(1).strip()}" if hm
                 else f"SKIP ({out[:60]})")
     xy = _resolve_target_xy(arg, cfg)
     if xy is None:
