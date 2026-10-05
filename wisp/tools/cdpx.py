@@ -149,20 +149,23 @@ class Page:
         return self
 
     def evaluate(self, code: str, timeout: float = TIMEOUT) -> str:
-        # bare `return` is illegal at top level — wrap in an IIFE like
-        # the neo evaluate endpoint does
-        import re as _re
-        if _re.search(r"\breturn\b", code):
-            code = f"(function(){{{code}\n}})()"
-        r = self._rpc("Runtime.evaluate",
-                      {"expression": code, "returnByValue": True,
-                       "awaitPromise": True})
+        r = self._eval_raw(code)
+        # bare `return` is illegal at top level — retry wrapped in an
+        # IIFE like the neo evaluate endpoint does
+        if "Illegal return" in json.dumps(
+                r.get("exceptionDetails", {})):
+            r = self._eval_raw(f"(function(){{{code}\n}})()")
         res = r.get("result", {})
         if r.get("exceptionDetails"):
             return "EVAL_ERR " + json.dumps(
                 r["exceptionDetails"].get("text", ""))[:200]
         return json.dumps(res.get("value"))[:8000] \
             if res.get("type") != "string" else res.get("value", "")
+
+    def _eval_raw(self, code: str) -> dict:
+        return self._rpc("Runtime.evaluate",
+                         {"expression": code, "returnByValue": True,
+                          "awaitPromise": True})
 
     def close(self):
         try:

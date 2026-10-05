@@ -35,7 +35,9 @@ def load_suite(name: str) -> list:
     """(instruction, JS check, oracle_len) triples — check body runs
     with `s` bound to window.__score and must return a bool; oracle_len
     is the authored minimal tool-call count (0 = unknown)."""
-    suites = json.loads(SUITES_FILE.read_text())
+    src = _flag("--suite-file")
+    suites = json.loads((pathlib.Path(src) if src
+                         else SUITES_FILE).read_text())
     if name not in suites:
         raise SystemExit(f"unknown suite '{name}' "
                          f"(have: {', '.join(suites)})")
