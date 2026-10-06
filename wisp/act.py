@@ -44,9 +44,13 @@ SYSTEM = ("You are Wisp's hands on a Linux desktop (Hyprland). Complete "
           "not an error, and continue or finish. CLICKED echoes the id "
           "of the element actually hit — if it is not the target you "
           "aimed at, re-aim from the image and click again rather than "
-          "declaring success. For a dropdown/select, click it to focus "
-          "then use key down/up and enter to choose — typing text into "
-          "it does nothing. When done, reply with "
+          "declaring success. For a dropdown/select, input, or textarea "
+          "with a known element id, use fill '<id> <value>' — it sets "
+          "the value directly in one step; click+key navigation is the "
+          "fallback, typing into a select does nothing. In DOM mode the "
+          "screen caption lists element ids — click '<id>' and fill "
+          "'<id> <value>' resolve elements directly, so only screenshot "
+          "when your target is not in the legend. When done, reply with "
           "one short sentence describing the outcome. If a tool is "
           "refused or skipped, do not retry it; work around or report "
           "the block. If the task cannot proceed without information "
@@ -261,7 +265,14 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 # screen the last coordinates came from, so take a fresh
                 # screenshot before any pointer call. Deterministic —
                 # doesn't rely on the model remembering to look.
-                if name in ("click", "move") and vision and screen_dirty:
+                # DOM-mode id clicks are exempt: they dispatch through
+                # getElementById + scrollIntoView, so stale legend
+                # coords can't misaim them.
+                _id_arg = name == "click" \
+                    and (cfg or {}).get("screen", {}).get("dom_page") \
+                    and not re.match(r"^\s*-?\d+\s*,", arg or "")
+                if (name in ("click", "move") and vision
+                        and screen_dirty and not _id_arg):
                     shot = tools.run("screenshot", "", cfg, harness)
                     steps.append({"tool": "screenshot",
                                   "arg": "(auto re-observe)",
