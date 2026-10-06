@@ -46,17 +46,20 @@ def summarize(records):
     for r in records:
         key = (r.get("model") or "?", r.get("suite") or "?")
         g = groups.setdefault(key, {"n": 0, "verified": 0,
-                                    "cost": 0.0})
+                                    "cost": 0.0, "calls": 0})
         g["n"] += 1
         g["verified"] += 1 if r.get("verified") else 0
         g["cost"] += r.get("cost_usd") or 0.0
+        g["calls"] += (r.get("tokens") or {}).get("calls") or 0
     return groups
 
 
 def render(groups):
     rows = []
     for (model, suite), g in sorted(groups.items()):
-        cpv = g["n"] / g["verified"] if g["verified"] else float("inf")
+        # real model calls per verified task — not tasks-per-verified
+        cpv = g["calls"] / g["verified"] if g["verified"] \
+            else float("inf")
         rows.append({
             "model": model, "suite": suite, "tasks": g["n"],
             "verified": g["verified"],

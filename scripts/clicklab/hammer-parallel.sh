@@ -72,6 +72,14 @@ worker() {
             local SP=${SUITES[$idx]}
             local S=${SP%%:*} P=${SP##*:}
             [ "$(date +%s)" -ge "$END" ] && break
+            # a dead CDP endpoint means the sandbox is gone — fail
+            # fast instead of burning every remaining task on it
+            if ! curl -sf --max-time 5 \
+                    "http://$ip:$port/json/version" >/dev/null; then
+                echo "[w$i] CDP dead at $ip:$port — worker exiting" \
+                    >>"$log"
+                return
+            fi
             echo "[w$i] suite=$S seed=$seed model=${M##*/}" >>"$log"
             uv run python scripts/clicklab/run.py --dom \
                 --cdp "$ip:$port" --suite "$S" --page "$P" \

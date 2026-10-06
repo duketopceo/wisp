@@ -72,10 +72,10 @@ class FillToolTest(unittest.TestCase):
         self.assertEqual(out, "FILLED n-blur-radius=8")
         code = ev.call_args[0][1]
         self.assertIn("n-blur-radius", code)
-        self.assertIn("'8'", code)
+        self.assertIn('"8"', code)   # json-encoded JS string
         with self._eval("filled:x=y") as ev2:
             system.fill("x = y", self.CFG)
-        self.assertIn("'y'", ev2.call_args[0][1])
+        self.assertIn('"y"', ev2.call_args[0][1])
 
     def test_dispatches_input_and_change(self):
         with self._eval("filled:x=1") as ev:
@@ -290,13 +290,13 @@ class ReportTest(unittest.TestCase):
     def test_grouping_and_calls_per_verified(self):
         path = self._write([
             {"model": "m1", "suite": "s", "verified": True,
-             "cost_usd": 0.01, "ts": 100.0},
+             "cost_usd": 0.01, "tokens": {"calls": 3}, "ts": 100.0},
             {"model": "m1", "suite": "s", "verified": False,
-             "cost_usd": 0.02, "ts": 100.0},
+             "cost_usd": 0.02, "tokens": {"calls": 5}, "ts": 100.0},
             {"model": "m1", "suite": "s", "verified": True,
-             "cost_usd": 0.01, "ts": 100.0},
+             "cost_usd": 0.01, "tokens": {"calls": 4}, "ts": 100.0},
             {"model": "m2", "suite": "s", "verified": False,
-             "cost_usd": 0.5, "ts": 100.0},
+             "cost_usd": 0.5, "tokens": {"calls": 2}, "ts": 100.0},
         ])
         recs = [json.loads(l) for l in pathlib.Path(path).read_text().splitlines()]
         rows = report.render(report.summarize(recs))
@@ -304,7 +304,8 @@ class ReportTest(unittest.TestCase):
         self.assertEqual(m1["tasks"], 3)
         self.assertEqual(m1["verified"], 2)
         self.assertAlmostEqual(m1["cost_usd"], 0.04)
-        self.assertAlmostEqual(m1["calls_per_verified"], 1.5)
+        # (3+5+4) calls / 2 verified = 6.0 — real call count, not tasks
+        self.assertAlmostEqual(m1["calls_per_verified"], 6.0)
         m2 = next(r for r in rows if r["model"] == "m2")
         self.assertIsNone(m2["calls_per_verified"])
 

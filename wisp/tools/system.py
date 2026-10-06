@@ -357,33 +357,38 @@ def fill(arg: str, cfg: dict | None = None) -> str:
         target, val = parts
     target = target.strip().strip("'\"")
     val = val.strip().strip("'\"")
-    esc_t = target.replace("\\", "\\\\").replace("'", "\\'")
-    esc_v = val.replace("\\", "\\\\").replace("'", "\\'")
-    esc_vl = esc_v.lower()
+    import json as _j
+    js_t = _j.dumps(target)          # JS string literal, newline-safe
+    js_v = _j.dumps(val)
+    js_vl = _j.dumps(val.lower())
     code = (
-        "var el=document.getElementById('%s')"
-        "||document.querySelector('[name=\\'%s\\']');"
+        "var el=document.getElementById(%s)"
+        "||document.querySelector('[name='+%s+']');"
         "if(!el){var cs=document.querySelectorAll('input,select,textarea');"
         "for(var i=0;i<cs.length;i++){var c=cs[i];"
-        "if((c.id||'').indexOf('%s')>=0){el=c;break}}}"
+        "if((c.id||'').indexOf(%s)>=0){el=c;break}}}"
         "if(!el)return 'miss:no-el';"
         "if(el.tagName==='SELECT'){"
         "var opts=el.options,found=-1;"
+        # exact value/label match wins over substring — 'New York'
+        # must not steal a fill meant for 'New York City'
         "for(var i=0;i<opts.length;i++){"
+        "if(opts[i].value===%s||opts[i].text===%s"
+        "||opts[i].text.toLowerCase()===%s){found=i;break}}"
+        "if(found<0){for(var i=0;i<opts.length;i++){"
         "var ot=opts[i].text.toLowerCase();"
-        "if(opts[i].value==='%s'||opts[i].text==='%s'"
-        "||ot==='%s'||ot.indexOf('%s')>=0){found=i;break}}"
+        "if(ot.indexOf(%s)>=0){found=i;break}}}"
         "if(found<0){var names=[];for(var i=0;i<opts.length;i++)"
         "names.push(opts[i].value||opts[i].text);"
         "return 'miss:no-option options['+names.join('|')+']';}"
         "el.selectedIndex=found;"
         "}else{"
-        "el.value='%s';"
+        "el.value=%s;"
         "}"
         "el.dispatchEvent(new Event('input',{bubbles:true}));"
         "el.dispatchEvent(new Event('change',{bubbles:true}));"
         "return 'filled:'+(el.id||el.tagName)+'='+el.value"
-        % (esc_t, esc_t, esc_t, esc_v, esc_v, esc_vl, esc_vl, esc_v))
+        % (js_t, js_t, js_t, js_v, js_v, js_vl, js_vl, js_v))
     r = _dom_eval(cfg, code)
     return (f"FILLED {r[7:]}" if r.startswith("filled:")
             else f"SKIP ({r[:60]})")

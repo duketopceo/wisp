@@ -182,9 +182,11 @@ def _create() -> dict:
         if not _wait_envd(ip):
             raise RuntimeError(f"envd never came up on {ip}")
         w["cdp_port"] = provision(ip)
-    except Exception:
-        # a sandbox that can't finish coming up is useless — kill it
-        # so it can't leak untracked or be "reused" half-configured
+    except BaseException:
+        # provision() raises SystemExit on CDP failure — that bypasses
+        # 'except Exception'. A sandbox that can't finish coming up is
+        # useless — kill it so it can't leak untracked or be "reused"
+        # half-configured
         try:
             _kill(sid)
         except Exception:
@@ -201,11 +203,20 @@ def up(count: int = 1) -> list:
         if _alive(w):
             print(f"[cube] reusing {w['sandbox_id']} @ {w['ip']}",
                   file=sys.stderr)
-            w["cdp_port"] = provision(w["ip"])   # idempotent
             live.append(w)
         else:
+            # envd unreachable — try to kill it rather than dropping
+            # the id; the sandbox may still be running and would leak
             print(f"[cube] stale sandbox {w.get('sandbox_id')}, "
                   "recreating", file=sys.stderr)
+            try:
+                _kill(w["sandbox_id"])
+            except Exception:
+                pass
+    # provision only the workers this call hands out — reprovisioning
+    # extras would restart chromium under a concurrent run's feet
+    for w in live[:count]:
+        w["cdp_port"] = provision(w["ip"])   # idempotent
     # save as we go: a _create() that raises must not strand the
     # sandboxes it already made — they would be running but untracked
     while len(live) < count:
@@ -305,6 +316,7 @@ def down():
     if not ws:
         print("[cube] no tracked sandbox")
         return
+    survivors = []
     for w in ws:
         sid = w.get("sandbox_id")
         if not sid:
@@ -312,8 +324,11 @@ def down():
         try:
             _kill(sid)
         except Exception as e:
+            # keep the id — clearing state for a sandbox that may still
+            # run makes later cleanup impossible
             print(f"[cube] kill {sid} failed: {e}")
-    _save_state({})
+            survivors.append(w)
+    _save_workers(survivors)
 
 
 def _flag(name, default=None):

@@ -270,7 +270,10 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     if shot.startswith("SHOT "):
                         _attach_image(messages, shot[5:].strip(), cfg)
                         last_shot = shot
-                    screen_dirty = False
+                        screen_dirty = False
+                    # a failed observe leaves the screen dirty AND the
+                    # cached shot ineligible — a stale DOM digest is
+                    # worse than no digest
                 tgt = None
                 if (name == "screenshot" and not screen_dirty
                         and last_shot
