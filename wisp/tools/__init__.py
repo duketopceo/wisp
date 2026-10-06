@@ -11,7 +11,7 @@ Tiers:
   shell       — arbitrary command; always needs per-call confirmation
                 and is subject to the denylist
 """
-from . import desktop, mcpclient, system
+from . import desktop, mcpclient, social, system
 
 RISK = {"safe": 0, "interactive": 1, "mutating": 2, "shell": 3}
 
@@ -32,6 +32,9 @@ REGISTRY = {
     "notify": (system.notify_tool, "safe", "send a desktop notification"),
     "screenshot": (system.screenshot, "safe", "capture the screen to a file"),
     "type_text": (system.type_text, "interactive", "type text into the focused window"),
+    "fill": (system.fill, "interactive",
+             "set a field's value directly — 'field-id value' "
+             "(selects pick the matching option); dom-mode only"),
     "click": (system.click, "interactive",
               "click at 'x,y' or target element e.g. 'monitor icon in menu bar' — "
               "in guide mode points the ghost cursor for the user"),
@@ -51,6 +54,11 @@ REGISTRY = {
                  "services (wispd connect) the tool token is "
                  "'<category>/<action>'. Server names/URLs are in "
                  "inventory.json and the [env] context line"),
+    "post": (social.post_draft, "safe",
+             "preview an X post — 'post <text>'; always dry-run"),
+    "post_send": (social.post_open, "mutating",
+                  "open X's compose window pre-filled — "
+                  "'post_send <text>'; the user presses Post"),
     "codegraph": (system.codegraph, "safe",
                   "query a repo's code-graph index (CBM): "
                   "'<tool> <json-args>' e.g. 'search_graph "
@@ -171,7 +179,8 @@ def _run_inner(name: str, arg: str, cfg: dict,
     if fn is desktop.launch:
         return fn(arg, cfg, harness)
     if fn in (system.click, system.move, system.screenshot,
-              system.scroll, system.key, system.type_text):
+              system.scroll, system.key, system.type_text,
+              system.fill):
         return fn(arg, cfg)
     if fn is mcpclient.call:
         return fn(arg, cfg)

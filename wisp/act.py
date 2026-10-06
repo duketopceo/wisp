@@ -27,7 +27,8 @@ MAX_IMAGES = 3  # cap retained screenshots in the message window
 # tools whose success may change what's on screen → re-observe before
 # the next pointer step
 _SCREEN_CHANGING = {"click", "move", "type_text", "key", "launch",
-                    "focus", "close", "workspace", "shell"}
+                    "focus", "close", "workspace", "shell", "fill",
+                    "post_send"}
 
 SYSTEM = ("You are Wisp's hands on a Linux desktop (Hyprland). Complete "
           "the user's task using the provided tools — keep steps minimal "
@@ -181,6 +182,10 @@ def run_act_loop(task: str, cfg: dict, state=None,
     # step flips this and forces a fresh screenshot before the next
     # click/move
     screen_dirty = not initial_image
+    # last fresh screenshot result — in DOM mode a model-requested
+    # observe while the screen is clean serves this instead of another
+    # eval round-trip (unneeded_observe is the dominant judged waste)
+    last_shot = None
 
     def stopped() -> bool:
         return cancel.is_cancelled() or bool(interrupted and interrupted())
@@ -250,6 +255,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
             except json.JSONDecodeError:
                 pass
             refused = _gate(name, arg, cfg, confirm, state=state)
+            served_cached = False
             if refused is None:
                 # soak fix: re-observe — a mutating step invalidates the
                 # screen the last coordinates came from, so take a fresh
@@ -263,31 +269,48 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     _publish(state, task, steps)
                     if shot.startswith("SHOT "):
                         _attach_image(messages, shot[5:].strip(), cfg)
-                    screen_dirty = False
+                        last_shot = shot
+                        screen_dirty = False
+                    # a failed observe leaves the screen dirty AND the
+                    # cached shot ineligible — a stale DOM digest is
+                    # worse than no digest
                 tgt = None
-                try:
-                    # W13: resolve the point BEFORE the guard so the
-                    # audit records x,y (not just len) for name targets
-                    tool_arg, tgt, result = _aim(name, arg, cfg, guard,
-                                                 state)
-                    if result is None:
-                        # W9: kill/deny/rate/dry-run/audit around dispatch
-                        result = guard.run(
-                            name, tool_arg,
-                            lambda: tools.run(name, tool_arg, cfg,
-                                              harness))
-                    _aimed_done(state, name, tgt, result)
-                except cancel.Cancelled:
-                    grounding.emit_target(state, None)
-                    _goals.record_steps(steps)
-                    return "INTERRUPTED (user)"
-                except Exception as e:
-                    grounding.emit_target(state, None)
-                    result = f"ERROR ({e})"
+                if (name == "screenshot" and not screen_dirty
+                        and last_shot
+                        and (cfg or {}).get("screen", {}).get(
+                            "dom_page")):
+                    # DOM observation is deterministic given unchanged
+                    # state — the model already has this digest/image
+                    result = last_shot + " (unchanged)"
+                    served_cached = True
+                else:
+                    try:
+                        # W13: resolve the point BEFORE the guard so the
+                        # audit records x,y (not just len) for name
+                        # targets
+                        tool_arg, tgt, result = _aim(
+                            name, arg, cfg, guard, state)
+                        if result is None:
+                            # W9: kill/deny/rate/dry-run/audit around
+                            # dispatch
+                            result = guard.run(
+                                name, tool_arg,
+                                lambda: tools.run(name, tool_arg, cfg,
+                                                  harness))
+                        _aimed_done(state, name, tgt, result)
+                    except cancel.Cancelled:
+                        grounding.emit_target(state, None)
+                        _goals.record_steps(steps)
+                        return "INTERRUPTED (user)"
+                    except Exception as e:
+                        grounding.emit_target(state, None)
+                        result = f"ERROR ({e})"
             else:
                 result = refused
             if name == "screenshot" and result.startswith("SHOT "):
                 screen_dirty = False
+                if not served_cached:
+                    last_shot = result
             elif name in _SCREEN_CHANGING and not result.startswith(
                     ("ERROR", "SKIP", "REFUS", "DRYRUN")):
                 screen_dirty = True
@@ -306,7 +329,8 @@ def run_act_loop(task: str, cfg: dict, state=None,
                                  "tool_call_id": call.get("id", name),
                                  "content": result})
             if name == "screenshot" and vision \
-                    and result.startswith("SHOT "):
+                    and result.startswith("SHOT ") \
+                    and not served_cached:
                 _attach_image(messages, result[5:].strip(), cfg)
             if errors > max_errors:
                 _goals.record_steps(steps)

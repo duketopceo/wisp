@@ -31,7 +31,8 @@ LOCAL_PROVIDERS = ("ollama", "lmstudio", "mlx", "llama_local", "uitars")
 HOSTED_PRICES = {
     "openrouter:x-ai/grok-4.7": (1.60, 4.80),
     "openrouter:google/gemini-2.5-flash": (0.30, 2.50),
-    "openrouter:meta-llama/llama-4-maverick": (0.15, 0.60),
+    "openrouter:google/gemma-4-31b-it": (0.09, 0.34),
+    "openrouter:meta-llama/llama-4-maverick": (0.19, 0.65),
 }
 
 PREMIUM = ("anthropic", "claude", "opus", "sonnet", "fable", "haiku",

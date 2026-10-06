@@ -84,6 +84,22 @@ class TrainTest(unittest.TestCase):
         # wrong surface → no hint
         self.assertEqual(train.hint_for("click alpha", "desktop"), "")
 
+    def test_recipe_id_on_promotion(self):
+        # candidates have no recipe id; graduation stamps a stable one
+        train.update_bank(_rec())
+        train.update_bank(_rec())
+        bank = train.load_bank()
+        e = next(iter(bank.values()))
+        self.assertNotIn("recipe_id", e)
+        e = train.update_bank(_rec())
+        rid = e["recipe_id"]
+        self.assertTrue(rid.startswith("recipe-"))
+        # survives demotion + re-graduation
+        train.update_bank(_rec(ok=False, eff=0.0))
+        for _ in range(train.GRAD_STREAK):
+            e = train.update_bank(_rec())
+        self.assertEqual(e["recipe_id"], rid)
+
     def test_stats_buckets(self):
         self.results.write_text(
             "\n".join(__import__("json").dumps(r) for r in

@@ -4,12 +4,14 @@ chromium + the clicklab pages inside it, and hand back a CDP endpoint
 that run.py --cdp can drive. Brain/model calls stay on the host; only
 the browser runs in the sandbox.
 
-  up                 create + provision a sandbox, print CDP host:port
-  run [run.py args]  up, then exec run.py --cdp <ip:port> with the args
-  down               kill the tracked sandbox
-  status             show the tracked sandbox
+  up [--count N]     create + provision N sandboxes, print CDP host:port
+                     per worker (one per line, "i ip:port")
+  run [run.py args]  up worker 0, then exec run.py --cdp <ip:port> with
+                     the args
+  down [--all]       kill every tracked sandbox
+  status             show tracked sandboxes
 
-State: ~/.local/share/wisp/cube-worker.json  {sandbox_id, ip}
+State: ~/.local/share/wisp/cube-worker.json  {"workers":[{...}]}
 Key:   $CUBE_API_KEY or omaseal cubesandbox/api-key
 """
 import base64
@@ -54,14 +56,30 @@ def _req(method: str, path: str, body=None, timeout=30):
 
 def _state() -> dict:
     try:
-        return json.load(open(STATE))
+        with open(STATE) as f:
+            return json.load(f)
     except (OSError, json.JSONDecodeError):
         return {}
 
 
 def _save_state(d: dict):
     os.makedirs(os.path.dirname(STATE), exist_ok=True)
-    json.dump(d, open(STATE, "w"), indent=1)
+    with open(STATE, "w") as f:
+        json.dump(d, f, indent=1)
+
+
+def _workers() -> list:
+    """Tracked workers; migrates the legacy {sandbox_id,ip} shape."""
+    st = _state()
+    if isinstance(st.get("workers"), list):
+        return st["workers"]
+    if st.get("sandbox_id") and st.get("ip"):
+        return [st]
+    return []
+
+
+def _save_workers(ws: list):
+    _save_state({"workers": ws})
 
 
 def sandbox_ip(sandbox_id: str) -> str:
@@ -136,39 +154,78 @@ def _wait_envd(ip: str, tries: int = 60) -> bool:
     return False
 
 
-def up() -> dict:
-    st = _state()
-    if st.get("sandbox_id") and st.get("ip"):
-        # reuse if envd still answers
-        try:
-            exec_guest(st["ip"], "true", timeout=4)
-            print(f"[cube] reusing {st['sandbox_id']} @ {st['ip']}",
-                  file=sys.stderr)
-            st["cdp_port"] = provision(st["ip"])   # idempotent
-            _save_state(st)
-            return st
-        except Exception:
-            print("[cube] stale sandbox, recreating", file=sys.stderr)
+def _alive(w: dict) -> bool:
+    try:
+        exec_guest(w["ip"], "true", timeout=4)
+        return True
+    except Exception:
+        return False
+
+
+def _create() -> dict:
     resp = _req("POST", "/sandboxes",
                 {"templateID": TEMPLATE, "timeout": 3600})
     sid = resp.get("sandboxID") or resp.get("sandboxId")
     print(f"[cube] created {sid}", file=sys.stderr)
-    ip = None
-    for _ in range(30):
+    w = {"sandbox_id": sid, "created": time.time()}
+    try:
+        ip = None
+        for _ in range(30):
+            try:
+                ip = sandbox_ip(sid)
+                break
+            except Exception:
+                time.sleep(2)
+        if not ip:
+            raise RuntimeError(f"no IP for {sid}")
+        w["ip"] = ip
+        if not _wait_envd(ip):
+            raise RuntimeError(f"envd never came up on {ip}")
+        w["cdp_port"] = provision(ip)
+    except BaseException:
+        # provision() raises SystemExit on CDP failure — that bypasses
+        # 'except Exception'. A sandbox that can't finish coming up is
+        # useless — kill it so it can't leak untracked or be "reused"
+        # half-configured
         try:
-            ip = sandbox_ip(sid)
-            break
+            _kill(sid)
         except Exception:
-            time.sleep(2)
-    if not ip:
-        raise SystemExit(f"[cube] no IP for {sid}")
-    st = {"sandbox_id": sid, "ip": ip, "created": time.time()}
-    _save_state(st)
-    if not _wait_envd(ip):
-        raise SystemExit(f"[cube] envd never came up on {ip}")
-    st["cdp_port"] = provision(ip)
-    _save_state(st)
-    return st
+            pass
+        raise
+    return w
+
+
+def up(count: int = 1) -> list:
+    """Ensure `count` live, provisioned workers; returns the list."""
+    ws = _workers()
+    live = []
+    for w in ws:
+        if _alive(w):
+            print(f"[cube] reusing {w['sandbox_id']} @ {w['ip']}",
+                  file=sys.stderr)
+            live.append(w)
+        else:
+            # envd unreachable — try to kill it rather than dropping
+            # the id; the sandbox may still be running and would leak
+            print(f"[cube] stale sandbox {w.get('sandbox_id')}, "
+                  "recreating", file=sys.stderr)
+            try:
+                _kill(w["sandbox_id"])
+            except Exception:
+                pass
+    # provision only the workers this call hands out — reprovisioning
+    # extras would restart chromium under a concurrent run's feet
+    for w in live[:count]:
+        w["cdp_port"] = provision(w["ip"])   # idempotent
+    # save as we go: a _create() that raises must not strand the
+    # sandboxes it already made — they would be running but untracked
+    while len(live) < count:
+        live.append(_create())
+        _save_workers(live)
+    # keep every live worker tracked — shrinking count must not leak
+    # a running sandbox just because it isn't handed out this call
+    _save_workers(live)
+    return live[:count]
 
 
 def provision(ip: str):
@@ -177,10 +234,14 @@ def provision(ip: str):
     if not guest:
         print("[cube] installing chromium (first run, ~1-2min)",
               file=sys.stderr)
-        exec_guest(ip, "apt-get update -qq && DEBIAN_FRONTEND="
-                       "noninteractive apt-get install -y -qq chromium",
+        # the worker rootfs is ~1G and chromium's recommends (avahi,
+        # cups-pk-helper, zutty, printers) overflow it — clean first,
+        # install essentials only, then drop the lists + .deb cache
+        exec_guest(ip, "apt-get clean && apt-get update -qq && "
+                       "DEBIAN_FRONTEND=noninteractive apt-get install "
+                       "-y -qq --no-install-recommends chromium && "
+                       "apt-get clean && rm -rf /var/lib/apt/lists/*",
                    timeout=600)
-        exec_guest(ip, "apt-get clean")   # reclaim .deb cache — ~200MB
         guest = exec_guest(ip, "command -v chromium || command -v "
                                "chromium-browser").strip()
     print(f"[cube] chromium: {guest}", file=sys.stderr)
@@ -237,41 +298,67 @@ def provision(ip: str):
     raise SystemExit(f"[cube] chromium CDP never reachable on {ip}")
 
 
-def down():
-    st = _state()
-    sid = st.get("sandbox_id")
-    if not sid:
-        print("[cube] no tracked sandbox")
-        return
+def _kill(sid: str) -> None:
+    last = None
     for method, path in (("DELETE", f"/sandboxes/{sid}"),
                          ("POST", f"/sandboxes/{sid}/kill")):
         try:
             _req(method, path, {})
-            print(f"[cube] killed {sid}")
-            break
+            print(f"[cube] killed {sid}", file=sys.stderr)
+            return
         except Exception as e:
             last = e
-    else:
-        print(f"[cube] kill failed: {last}")
-    _save_state({})
+    raise last or RuntimeError(f"kill {sid} failed")
+
+
+def down():
+    ws = _workers()
+    if not ws:
+        print("[cube] no tracked sandbox")
+        return
+    survivors = []
+    for w in ws:
+        sid = w.get("sandbox_id")
+        if not sid:
+            continue
+        try:
+            _kill(sid)
+        except Exception as e:
+            # keep the id — clearing state for a sandbox that may still
+            # run makes later cleanup impossible
+            print(f"[cube] kill {sid} failed: {e}")
+            survivors.append(w)
+    _save_workers(survivors)
+
+
+def _flag(name, default=None):
+    if name in sys.argv:
+        i = sys.argv.index(name)
+        if i + 1 < len(sys.argv):
+            return sys.argv[i + 1]
+        return True
+    return default
 
 
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "up"
     if cmd == "up":
-        st = up()
-        print(f"{st['ip']}:{st.get('cdp_port', CDP_PORT + 1)}")
+        ws = up(int(_flag("--count", "1") or 1))
+        for i, w in enumerate(ws):
+            print(f"{i} {w['ip']}:{w.get('cdp_port', CDP_PORT + 1)}")
     elif cmd == "down":
         down()
     elif cmd == "status":
         print(json.dumps(_state(), indent=1))
     elif cmd == "run":
-        st = up()
+        ws = up(1)
+        w = ws[0]
         args = [a for a in sys.argv[2:] if a != "--"]
         run = os.path.join(HERE, "run.py")
         rc = subprocess.call(
             [sys.executable, run, "--cdp",
-             f"{st['ip']}:{st.get('cdp_port', CDP_PORT + 1)}"]
+             f"{w['ip']}:{w.get('cdp_port', CDP_PORT + 1)}",
+             "--worker", "0", "--sandbox-id", w["sandbox_id"]]
             + args)
         sys.exit(rc)
     else:
