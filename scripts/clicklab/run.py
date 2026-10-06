@@ -496,7 +496,7 @@ def _stamp(results: list, worker, sandbox_id):
         return
     for r in results:
         if worker:
-            r["worker"] = int(worker)
+            r["worker"] = int(worker) if str(worker).lstrip("-").isdigit() else worker
         if sandbox_id:
             r["sandbox_id"] = sandbox_id
 
