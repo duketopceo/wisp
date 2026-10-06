@@ -64,6 +64,15 @@ def bos(tool: str, args: dict) -> str:
     return mcpclient.call(f"browseros-neo {tool} {json.dumps(args)}", {})
 
 
+def _lab_url(cdp_host: str, page_name: str, seed: int) -> str:
+    """Where the lab lives for a CDP endpoint: guests get the baked-in
+    file:// copy; a local browser reaches the http server directly."""
+    base = (f"http://127.0.0.1:{PORT}/{page_name}"
+            if cdp_host in ("127.0.0.1", "localhost")
+            else f"file:///opt/lab/{page_name}")
+    return base + (f"?seed={seed}" if seed else "")
+
+
 def open_lab(seed: int = 0, url: str | None = None) -> int:
     """Open clicklab in a new BrowserOS tab; return its page id.
     `seed` reshuffles the page layout (dots/buttons/shapes) so the
@@ -274,31 +283,76 @@ def distill():
             print("[distill] no candidates")
         return
     serve()
-    page = open_lab(seed)
+    cdp = _flag("--cdp")
     cfg = config.load_config()
-    cfg.setdefault("screen", {})["dom_page"] = page
-    cfg["screen"]["dom_origin"] = [0, 0]
+    cfg.setdefault("screen", {})
+
+    def _open(page_name: str):
+        """Fresh lab page for a candidate group — local http for a
+        local CDP endpoint / BrowserOS, file://opt/lab on CubeVM."""
+        if cdp:
+            from wisp.tools import cdpx
+            host, _, port = cdp.partition(":")
+            return cdpx.open_page(host, _lab_url(host, page_name, seed),
+                                  int(port or 9222))
+        return open_lab(seed, f"http://127.0.0.1:{PORT}/{page_name}")
+
+    def _page_for(e: dict) -> str:
+        s = str(e.get("suite") or "")
+        return "apps.html" if s.startswith("apps-") else "index.html"
+
     changed = False
+
+    def _run_group(entries, page_name, retry_out=None):
+        nonlocal changed
+        if not entries:
+            return
+        page = _open(page_name)
+        cfg["screen"]["dom_page"] = "cdp" if cdp else page
+        if cdp:
+            cfg["screen"]["dom_cdp_page"] = page
+        cfg["screen"]["dom_origin"] = [0, 0]
+        for e in entries:
+            # reload per candidate: DOM mutations (stars, select
+            # values, open files) persist across entries — a score
+            # reset alone leaves stale state that flips checks
+            ev(page, "location.reload(); return 'r'")
+            for _ in range(20):
+                time.sleep(0.3)
+                if "object" in ev(
+                        page, "return typeof window.__score"):
+                    break
+            d = train.distill_steps(e["steps"])
+            print(f"\n== {e['task']}  {len(e['steps'])}→{len(d)} steps "
+                  f"(streak={e['streak']})")
+            for s in d:
+                r = tools.run(s["tool"], s.get("arg", ""), cfg)
+                print(f"   {s['tool']} {s.get('arg','')[:40]} → {r[:60]}")
+            if check(page, e["check"]):
+                train.promote(e, d)
+                print(f"   → PASS — graduated {e['recipe_id']}")
+            elif retry_out is not None:
+                retry_out.append(e)
+                print(f"   → miss on {page_name} — retrying other page")
+                continue
+            else:
+                e["distill_fails"] = e.get("distill_fails", 0) + 1
+                print("   → FAIL (stays candidate)")
+            changed = True
+
+    groups: dict = {}
     for e in cands:
-        bos("evaluate", {"page": page, "code":
-                         "window.__score={events:[],counts:{},"
-                         "scroll_top:0,typed:{},lastClick:null};"
-                         "return 'r'"})
-        d = train.distill_steps(e["steps"])
-        print(f"\n== {e['task']}  {len(e['steps'])}→{len(d)} steps "
-              f"(streak={e['streak']})")
-        for s in d:
-            r = tools.run(s["tool"], s.get("arg", ""), cfg)
-            print(f"   {s['tool']} {s.get('arg','')[:40]} → {r[:60]}")
-        ok = check(page, e["check"])
-        if ok:
-            train.promote(e, d)
-            changed = True
-            print(f"   → PASS — graduated {e['recipe_id']}")
-        else:
-            e["distill_fails"] = e.get("distill_fails", 0) + 1
-            changed = True
-            print("   → FAIL (stays candidate)")
+        groups.setdefault(_page_for(e), []).append(e)
+    for page_name, entries in groups.items():
+        # suite-less entries (pre-suite-tagging records) can't be
+        # routed — a miss on one page retries on the other
+        unsuited = [e for e in entries if not e.get("suite")]
+        suited = [e for e in entries if e.get("suite")]
+        retry = []
+        _run_group(suited, page_name)
+        _run_group(unsuited, page_name, retry_out=retry)
+        other = "index.html" if page_name == "apps.html" else "apps.html"
+        _run_group(retry, other)
     if changed:
         train.save_bank(bank)
 
@@ -317,10 +371,9 @@ def main():
     page_name = _flag("--page", "index.html")
     cdp = _flag("--cdp")                   # "host:port" of a chromium
     if cdp:
-        # sandboxed chromium (CubeVM guest): file:// lab, no local
-        # server or browser tab needed
-        url = f"file:///opt/lab/{page_name}" \
-              + (f"?seed={seed}" if seed else "")
+        # sandboxed chromium (CubeVM guest) gets the baked file:// lab;
+        # a local CDP endpoint reaches this process's http server
+        url = _lab_url(cdp.partition(":")[0], page_name, seed)
         serve()
         print(f"[clicklab] cdp={cdp} url={url} suite={suite_name}")
         from wisp.tools import cdpx

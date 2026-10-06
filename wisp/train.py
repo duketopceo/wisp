@@ -213,6 +213,9 @@ def _fold(e: dict | None, rec: dict) -> dict:
         e["steps"] = rec["steps"][:24]
     if rec.get("check"):
         e["check"] = rec["check"]
+    if rec.get("suite"):
+        # distillation routes candidates to the page their suite ran on
+        e["suite"] = rec["suite"]
     return e
 
 
