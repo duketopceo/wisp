@@ -274,9 +274,18 @@ def type_text(text: str, cfg: dict | None = None) -> str:
             "var el=document.activeElement;"
             "if(!el||!(el.tagName==='INPUT'||el.tagName==='TEXTAREA'))"
             "return 'miss:no-focus';"
-            "var s=el.selectionStart||0,e=el.selectionEnd||0;"
-            "el.value=el.value.slice(0,s)+'%s'+el.value.slice(e);"
-            "var p=s+%d;el.selectionStart=el.selectionEnd=p;"
+            # number/date inputs mean 'set', not insert (appending
+            # makes '13.5' of '3.5' onto '1'); modern Chrome no longer
+            # throws on selectionStart for these, so detect by type
+            "var types={number:1,date:1,range:1,time:1,month:1,"
+            "week:1,'datetime-local':1,color:1};"
+            "var s=0,e=0,replace=!!types[el.type];"
+            "if(!replace){try{s=el.selectionStart||0;"
+            "e=el.selectionEnd||0}catch(x){replace=true;}}"
+            "el.value=(replace?'':el.value.slice(0,s))+'%s'"
+            "+(replace?'':el.value.slice(e));"
+            "var p=s+%d;try{el.selectionStart=el.selectionEnd=p}"
+            "catch(x){}"
             "el.dispatchEvent(new Event('input',{bubbles:true}));"
             "el.dispatchEvent(new Event('change',{bubbles:true}));"
             "return 'typed:'+el.id" % (esc, len(text))))
@@ -329,6 +338,60 @@ def key(arg: str, cfg: dict | None = None) -> str:
         r = _cancel.run(["ydotool", "key", f"{code}:1", f"{code}:0"],
                         capture_output=True, env=hypr_env())
     return "KEY" if r.returncode == 0 else "SKIP (ydotool key failed)"
+
+
+def fill(arg: str, cfg: dict | None = None) -> str:
+    """Set a field's value in one step — 'field-id value'. DOM mode
+    only: selects pick the matching option; inputs get value +
+    input/change events. This is the primitive a real form fill is —
+    click+select-all+type compressed, no focus race."""
+    if not (cfg or {}).get("screen", {}).get("dom_page"):
+        return "SKIP (fill is dom-mode only — click then type_text)"
+    arg = (arg or "").strip()
+    if "=" in arg:
+        target, _, val = arg.partition("=")
+    else:
+        parts = arg.split(None, 1)
+        if len(parts) < 2:
+            return "SKIP (fill needs 'field value')"
+        target, val = parts
+    target = target.strip().strip("'\"")
+    val = val.strip().strip("'\"")
+    import json as _j
+    js_t = _j.dumps(target)          # JS string literal, newline-safe
+    js_v = _j.dumps(val)
+    js_vl = _j.dumps(val.lower())
+    code = (
+        "var el=document.getElementById(%s)"
+        "||document.querySelector('[name='+%s+']');"
+        "if(!el){var cs=document.querySelectorAll('input,select,textarea');"
+        "for(var i=0;i<cs.length;i++){var c=cs[i];"
+        "if((c.id||'').indexOf(%s)>=0){el=c;break}}}"
+        "if(!el)return 'miss:no-el';"
+        "if(el.tagName==='SELECT'){"
+        "var opts=el.options,found=-1;"
+        # exact value/label match wins over substring — 'New York'
+        # must not steal a fill meant for 'New York City'
+        "for(var i=0;i<opts.length;i++){"
+        "if(opts[i].value===%s||opts[i].text===%s"
+        "||opts[i].text.toLowerCase()===%s){found=i;break}}"
+        "if(found<0){for(var i=0;i<opts.length;i++){"
+        "var ot=opts[i].text.toLowerCase();"
+        "if(ot.indexOf(%s)>=0){found=i;break}}}"
+        "if(found<0){var names=[];for(var i=0;i<opts.length;i++)"
+        "names.push(opts[i].value||opts[i].text);"
+        "return 'miss:no-option options['+names.join('|')+']';}"
+        "el.selectedIndex=found;"
+        "}else{"
+        "el.value=%s;"
+        "}"
+        "el.dispatchEvent(new Event('input',{bubbles:true}));"
+        "el.dispatchEvent(new Event('change',{bubbles:true}));"
+        "return 'filled:'+(el.id||el.tagName)+'='+el.value"
+        % (js_t, js_t, js_t, js_v, js_v, js_vl, js_vl, js_v))
+    r = _dom_eval(cfg, code)
+    return (f"FILLED {r[7:]}" if r.startswith("filled:")
+            else f"SKIP ({r[:60]})")
 
 
 def scroll(arg: str, cfg: dict | None = None) -> str:
@@ -536,7 +599,8 @@ def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
                 "if(el.tagName==='SELECT'){"
                 "var o=[];for(var i=0;i<el.options.length;i++)"
                 "o.push((i===el.selectedIndex?'*':'')+el.options[i].text);"
-                "r+=' options['+o.join('|')+'] — use key down/up + enter';}"
+                "r+=' options['+o.join('|')+'] — key down/up + enter,"
+                " or fill \\''+el.id+' <option>\\'';}"
                 "return r"
                 % (cx, cy, cx, cy))
         out = _dom_eval(cfg, code)

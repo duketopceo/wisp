@@ -228,6 +228,75 @@ class Loop(unittest.TestCase):
         assert r.startswith("ACTED")
         assert calls == ["screenshot", "click"]
 
+    def test_dom_clean_observe_serves_cache(self):
+        # DOM mode + clean screen: a model-requested re-observe adds
+        # nothing (unneeded_observe is the dominant judged waste) —
+        # serve the prior shot and skip the eval round-trip
+        calls = []
+        def fake_run(name, arg, cfg, harness=None):
+            calls.append(name)
+            return "SHOT domdigest-1" if name == "screenshot" else "ok"
+        replies = [_msg(calls=[_call("screenshot")]),
+                   _msg(calls=[_call("screenshot")]),
+                   _msg(content="done")]
+        cfg = {"agent": {}, "screen": {"dom_page": "p"}}
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run", side_effect=fake_run):
+            r = act.run_act_loop("look twice", cfg,
+                                 initial_image="aGk=")
+        assert r.startswith("ACTED")
+        assert calls == ["screenshot"], calls
+
+    def test_dom_dirty_observe_runs_fresh(self):
+        # a mutating step must invalidate the cache
+        calls = []
+        def fake_run(name, arg, cfg, harness=None):
+            calls.append(name)
+            return "SHOT d" if name == "screenshot" else "ok"
+        replies = [_msg(calls=[_call("screenshot")]),
+                   _msg(calls=[_call("click", "10,20")]),
+                   _msg(calls=[_call("screenshot")]),
+                   _msg(content="done")]
+        cfg = {"agent": {}, "screen": {"dom_page": "p"}}
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run", side_effect=fake_run):
+            r = act.run_act_loop("click then look", cfg,
+                                 initial_image="aGk=",
+                                 confirm=lambda pr: True)
+        assert r.startswith("ACTED")
+        assert calls == ["screenshot", "click", "screenshot"], calls
+
+    def test_dom_first_observe_never_cached(self):
+        # no prior shot → nothing to serve
+        calls = []
+        def fake_run(name, arg, cfg, harness=None):
+            calls.append(name)
+            return "SHOT d" if name == "screenshot" else "ok"
+        replies = [_msg(calls=[_call("screenshot")]),
+                   _msg(content="done")]
+        cfg = {"agent": {}, "screen": {"dom_page": "p"}}
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run", side_effect=fake_run):
+            act.run_act_loop("look", cfg, initial_image="aGk=")
+        assert calls == ["screenshot"], calls
+
+    def test_pixel_mode_observe_never_cached(self):
+        # pixel shots reflect a live screen the user may change —
+        # elision is DOM-mode only
+        calls = []
+        def fake_run(name, arg, cfg, harness=None):
+            calls.append(name)
+            return "SHOT p" if name == "screenshot" else "ok"
+        replies = [_msg(calls=[_call("screenshot")]),
+                   _msg(calls=[_call("screenshot")]),
+                   _msg(content="done")]
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run", side_effect=fake_run):
+            r = act.run_act_loop("look twice", self.cfg,
+                                 initial_image="aGk=")
+        assert r.startswith("ACTED")
+        assert calls == ["screenshot", "screenshot"], calls
+
     def test_ask_user_returns_backchannel(self):
         with mock.patch.object(act, "_post",
                                return_value=_msg(
