@@ -256,10 +256,60 @@ def replay(match: str):
         raise SystemExit(1)
 
 
+def distill():
+    """Re-verify distilled (minimal) trajectories for streak-rich
+    candidates and promote the ones that hold on a fresh seed —
+    'reliable but wasteful' recipes become replayable graduates without
+    another model run."""
+    from wisp import config, tools, train
+    seed = int(_flag("--seed", "0"))
+    bank = train.load_bank()
+    cands = train.distill_candidates(bank)
+    if "--dry-run" in sys.argv or not cands:
+        for e in cands:
+            print(f"[distill] {e['task'][:60]!r} streak={e['streak']} "
+                  f"{len(e['steps'])}→{len(train.distill_steps(e['steps']))} "
+                  "steps")
+        if not cands:
+            print("[distill] no candidates")
+        return
+    serve()
+    page = open_lab(seed)
+    cfg = config.load_config()
+    cfg.setdefault("screen", {})["dom_page"] = page
+    cfg["screen"]["dom_origin"] = [0, 0]
+    changed = False
+    for e in cands:
+        bos("evaluate", {"page": page, "code":
+                         "window.__score={events:[],counts:{},"
+                         "scroll_top:0,typed:{},lastClick:null};"
+                         "return 'r'"})
+        d = train.distill_steps(e["steps"])
+        print(f"\n== {e['task']}  {len(e['steps'])}→{len(d)} steps "
+              f"(streak={e['streak']})")
+        for s in d:
+            r = tools.run(s["tool"], s.get("arg", ""), cfg)
+            print(f"   {s['tool']} {s.get('arg','')[:40]} → {r[:60]}")
+        ok = check(page, e["check"])
+        if ok:
+            train.promote(e, d)
+            changed = True
+            print(f"   → PASS — graduated {e['recipe_id']}")
+        else:
+            e["distill_fails"] = e.get("distill_fails", 0) + 1
+            changed = True
+            print("   → FAIL (stays candidate)")
+    if changed:
+        train.save_bank(bank)
+
+
 def main():
     from wisp import act, config, judge, train
     if "--replay" in sys.argv:
         replay(_flag("--replay"))
+        return
+    if "--distill" in sys.argv:
+        distill()
         return
     suite_name = _flag("--suite", "core")
     seed = int(_flag("--seed", "0"))
