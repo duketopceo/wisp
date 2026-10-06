@@ -167,19 +167,29 @@ def _create() -> dict:
                 {"templateID": TEMPLATE, "timeout": 3600})
     sid = resp.get("sandboxID") or resp.get("sandboxId")
     print(f"[cube] created {sid}", file=sys.stderr)
-    ip = None
-    for _ in range(30):
+    w = {"sandbox_id": sid, "created": time.time()}
+    try:
+        ip = None
+        for _ in range(30):
+            try:
+                ip = sandbox_ip(sid)
+                break
+            except Exception:
+                time.sleep(2)
+        if not ip:
+            raise RuntimeError(f"no IP for {sid}")
+        w["ip"] = ip
+        if not _wait_envd(ip):
+            raise RuntimeError(f"envd never came up on {ip}")
+        w["cdp_port"] = provision(ip)
+    except Exception:
+        # a sandbox that can't finish coming up is useless — kill it
+        # so it can't leak untracked or be "reused" half-configured
         try:
-            ip = sandbox_ip(sid)
-            break
+            _kill(sid)
         except Exception:
-            time.sleep(2)
-    if not ip:
-        raise SystemExit(f"[cube] no IP for {sid}")
-    w = {"sandbox_id": sid, "ip": ip, "created": time.time()}
-    if not _wait_envd(ip):
-        raise SystemExit(f"[cube] envd never came up on {ip}")
-    w["cdp_port"] = provision(ip)
+            pass
+        raise
     return w
 
 
@@ -213,10 +223,14 @@ def provision(ip: str):
     if not guest:
         print("[cube] installing chromium (first run, ~1-2min)",
               file=sys.stderr)
-        exec_guest(ip, "apt-get update -qq && DEBIAN_FRONTEND="
-                       "noninteractive apt-get install -y -qq chromium",
+        # the worker rootfs is ~1G and chromium's recommends (avahi,
+        # cups-pk-helper, zutty, printers) overflow it — clean first,
+        # install essentials only, then drop the lists + .deb cache
+        exec_guest(ip, "apt-get clean && apt-get update -qq && "
+                       "DEBIAN_FRONTEND=noninteractive apt-get install "
+                       "-y -qq --no-install-recommends chromium && "
+                       "apt-get clean && rm -rf /var/lib/apt/lists/*",
                    timeout=600)
-        exec_guest(ip, "apt-get clean")   # reclaim .deb cache — ~200MB
         guest = exec_guest(ip, "command -v chromium || command -v "
                                "chromium-browser").strip()
     print(f"[cube] chromium: {guest}", file=sys.stderr)
@@ -273,6 +287,19 @@ def provision(ip: str):
     raise SystemExit(f"[cube] chromium CDP never reachable on {ip}")
 
 
+def _kill(sid: str) -> None:
+    last = None
+    for method, path in (("DELETE", f"/sandboxes/{sid}"),
+                         ("POST", f"/sandboxes/{sid}/kill")):
+        try:
+            _req(method, path, {})
+            print(f"[cube] killed {sid}", file=sys.stderr)
+            return
+        except Exception as e:
+            last = e
+    raise last or RuntimeError(f"kill {sid} failed")
+
+
 def down():
     ws = _workers()
     if not ws:
@@ -282,18 +309,10 @@ def down():
         sid = w.get("sandbox_id")
         if not sid:
             continue
-        last = None
-        for method, path in (("DELETE", f"/sandboxes/{sid}"),
-                             ("POST", f"/sandboxes/{sid}/kill")):
-            try:
-                _req(method, path, {})
-                print(f"[cube] killed {sid}")
-                last = None
-                break
-            except Exception as e:
-                last = e
-        if last is not None:
-            print(f"[cube] kill {sid} failed: {last}")
+        try:
+            _kill(sid)
+        except Exception as e:
+            print(f"[cube] kill {sid} failed: {e}")
     _save_state({})
 
 

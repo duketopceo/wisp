@@ -210,35 +210,50 @@ def _flag(name: str, default: str = "") -> str:
 
 
 def replay(match: str):
-    """Re-run a banked step sequence deterministically — no model —
-    and re-check the ground truth. Proves a graduated recipe still
-    works on a fresh layout seed."""
+    """Re-run a graduated recipe's banked steps — no model, $0 — and
+    re-check the ground truth on a fresh layout seed. Candidates are
+    skipped unless --all is passed; a recipe must earn replay via the
+    streak, not just exist in the bank."""
     from wisp import config, tools, train
     seed = int(_flag("--seed", "0"))
     bank = train.load_bank()
+    m = match.lower()
     hits = [e for e in bank.values()
-            if match.lower() in (e.get("task") or "").lower()]
+            if m in (e.get("task") or "").lower()
+            or m == (e.get("recipe_id") or "").lower()]
+    if "--all" not in sys.argv:
+        skipped = [e for e in hits if e.get("status") != "graduated"]
+        hits = [e for e in hits if e.get("status") == "graduated"]
+        for e in skipped:
+            print(f"[clicklab] skip {e.get('task')!r} "
+                  f"(status={e.get('status')}, needs {train.GRAD_STREAK}"
+                  f" verified streak)")
     if not hits:
-        raise SystemExit(f"no bank entry matching '{match}'")
+        raise SystemExit(f"no graduated recipe matching '{match}'")
     serve()
     page = open_lab(seed)
     print(f"[clicklab] replay page {page} seed={seed}")
     cfg = config.load_config()
     cfg.setdefault("screen", {})["dom_page"] = page
     cfg["screen"]["dom_origin"] = [0, 0]
+    failed = False
     for e in hits:
         bos("evaluate", {"page": page, "code":
                          "window.__score={events:[],counts:{},"
                          "scroll_top:0,typed:{},lastClick:null};"
                          "return 'r'"})
-        print(f"\n== {e['task']}  (status={e['status']})")
+        rid = e.get("recipe_id") or "unpromoted"
+        print(f"\n== {e['task']}  ({rid}, status={e['status']})")
         for s in e.get("steps") or []:
             r = tools.run(s["tool"], s.get("arg", ""), cfg)
             print(f"   {s['tool']} {s.get('arg','')[:40]} → {r[:60]}")
         if e.get("check"):
             ok = check(page, e["check"])
+            failed = failed or not ok
             print(f"   → {'PASS' if ok else 'FAIL'} "
                   f"(re-verified on seed={seed})")
+    if failed:
+        raise SystemExit(1)
 
 
 def main():

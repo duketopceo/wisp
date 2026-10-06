@@ -6,6 +6,7 @@ task patterns that auto-graduate once proven (streak>=3, mean
 efficiency>=0.9) and demote when they regress. No weight training —
 this is credit assignment and recipe distillation over logs.
 """
+import hashlib
 import json
 from datetime import datetime, timezone
 
@@ -152,6 +153,10 @@ def _fold(e: dict | None, rec: dict) -> dict:
         e["status"] = "graduated"
         e["graduated_at"] = \
             datetime.now(timezone.utc).isoformat()
+        # promoted entries get a stable recipe id for replay/lookup
+        e.setdefault("recipe_id",
+                     "recipe-" + hashlib.sha1(
+                         e["key"].encode()).hexdigest()[:10])
     e["changed"] = e["status"] != prev
     if ok and rec.get("steps"):
         e["steps"] = rec["steps"][:24]
