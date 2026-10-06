@@ -381,11 +381,16 @@ def fill(arg: str, cfg: dict | None = None) -> str:
         "if(found<0){var names=[],sug='';for(var i=0;i<opts.length;i++){"
         "var ov=opts[i].value||opts[i].text;names.push(ov);"
         # the arg containing an option (e.g. 'n-texture-file' for
-        # 'texture') is the common aim-miss — name the retry value
-        "var ol=(ov||'').toLowerCase();"
-        "if(ol&&ol.length>1&&%s.indexOf(ol)>=0)sug=ov}"
-        "return 'miss:no-option options['+names.join('|')+']'"
-        "+(sug?' — try \\''+sug+'\\'':'');}"
+        # 'texture') is the common aim-miss — name the retry value;
+        # check value AND label ('us' vs 'United States')
+        "var ol=(ov||'').toLowerCase(),"
+        "tl=(opts[i].text||'').toLowerCase();"
+        "if(ol&&ol.length>1&&%s.indexOf(ol)>=0)sug=ov;"
+        "else if(!sug&&tl.length>1&&%s.indexOf(tl)>=0)sug=ov}"
+        # suggestion FIRST — the options list can overflow the 60-char
+        # SKIP truncation and silently eat the hint
+        "return 'miss:no-option'+(sug?' — try \\''+sug+'\\'':'')"
+        "+' options['+names.join('|')+']';}"
         "el.selectedIndex=found;"
         "}else{"
         "el.value=%s;"
@@ -393,7 +398,8 @@ def fill(arg: str, cfg: dict | None = None) -> str:
         "el.dispatchEvent(new Event('input',{bubbles:true}));"
         "el.dispatchEvent(new Event('change',{bubbles:true}));"
         "return 'filled:'+(el.id||el.tagName)+'='+el.value"
-        % (js_t, js_t, js_t, js_v, js_v, js_vl, js_vl, js_vl, js_v))
+        % (js_t, js_t, js_t, js_v, js_v, js_vl, js_vl, js_vl, js_vl,
+           js_v))
     r = _dom_eval(cfg, code)
     return (f"FILLED {r[7:]}" if r.startswith("filled:")
             else f"SKIP ({r[:60]})")
@@ -568,6 +574,7 @@ def _move_fallback(x: int, y: int, cfg: dict | None) -> bool:
 # elements land, then dispatch. Args: (want_json, _DOM_SELECTOR).
 _CLICK_ID_JS = """
 var want=%s;
+if(!want)return 'miss:no-el';
 var el=document.getElementById(want);
 if(!el){
   var cs=document.querySelectorAll('%s');
@@ -579,7 +586,9 @@ if(!el){
 }
 if(!el)return 'miss:no-el';
 el.scrollIntoView({block:'center',inline:'center'});
-el.dispatchEvent(new MouseEvent('click',{bubbles:true}));
+var cr=el.getBoundingClientRect();
+el.dispatchEvent(new MouseEvent('click',{bubbles:true,
+  clientX:cr.x+cr.width/2,clientY:cr.y+cr.height/2}));
 try{el.focus()}catch(e){}
 var r='hit:'+(el.id||el.tagName);
 if(el.tagName==='SELECT'){
