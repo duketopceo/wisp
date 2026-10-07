@@ -2,7 +2,7 @@
 title: Wisp label-grounding + recipe optimization wave
 type: feat
 date: 2026-10-06
-status: active
+status: done
 ---
 
 # Next training wave — label grounding, recipe optimization, coverage
@@ -78,6 +78,28 @@ baseline; new failures get waste-classified into the next wave.
 - `core` stragglers from the U3 corpus.
 - Smoke the daemon path end-to-end locally (not just clicklab): one
   PTT invocation → act → verify on the real desktop.
+
+## Outcome (2026-10-06)
+
+Shipped on `feat/label-grounding-distill` → PR #108 (on #107):
+
+- U1 done — legend emits `id → sanitized label → tag`; `_CLICK_ID_JS`
+  matches truncated labels. `open utils.py` verified live.
+- U2 done — `train.distill_steps` + `run.py --distill`; first real run
+  promoted 31 candidates (graduated 22 → 52, now 55 after coverage).
+  Found + fixed: suite→page routing, per-entry reload (DOM state
+  leaked between candidates), `--cdp` + `_lab_url` for local chromium.
+- U3 done (sequential, not parallel — CubeVM workers expired; local
+  headless chromium :9222 instead). Seed 23, gemma-4-31b via orch:
+  core 14/14, dom-hard 12/12, chess/settings/email 4/4, editor 3/4,
+  nodes 2/4 → **43/46 (93%)**, $0.18. Residuals: nodes select-vs-
+  number aim confusion, editor `ln-4` id-vs-visible-label trap.
+- U4 done at daemon level — wispd restarted on cloud backend
+  (gemini-2.5-flash), doctor all-green, `context` captures live
+  desktop (focus/workspace map/env inventory). PTT keypress smoke
+  deferred to the user's first real use.
+- Bonus fix: `_stamp` accepts string worker ids (was crashing
+  `int('local')` and silently dropping a run's ledger records).
 
 ## Non-goals
 
