@@ -3,21 +3,16 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
-import Quickshell.Hyprland
 import qs.Commons
 import "components"
 import "lib/cursor.js" as Cursor
-import "lib/companion.js" as Companion
 
-// Companion host for io.github.duketopceo.wisp (Ember U11 to U13).
-// Window plumbing only: every visual is a component in components/, every
-// piece of state comes from WispService (never state.json directly).
-//   Top window     wisp-companion: corner creature + console, hidden when
-//                  the focused workspace has a fullscreen window.
-//   Overlay window wisp-points: pill, answer bubble, ghost cursor, beacons
-//                  (a waiting Wisp stays visible over fullscreen).
-// Both windows are full-output, click-through (empty input region) except
-// the interactive items: creature, console, pill, bubble.
+// Companion overlay for io.github.duketopceo.wisp.
+// The corner creature/orb is gone (2026-10-07): a persistent bottom-right
+// window sat over user content; the live surface is the bar pill now.
+// One window remains — wisp-points, a transient overlay for the listening
+// pill, answer bubble, ghost cursor and beacons. Full-output, click-through
+// except the interactive items: pill, bubble.
 Item {
   id: root
 
@@ -29,45 +24,33 @@ Item {
   readonly property var svc: service ? service
     : (shell && manifest ? shell.serviceFor(manifest.id) : null)
 
-  // user hid the corner creature until the next Super+D or bar click
-  property bool hidden: false
-  property bool userOpen: false
-  // the safety net fired: a stuck daemon status must not pin the console
-  property bool capped: false
   property bool bubbleDismissed: false
   property bool labeled: false
   // real pointer in layer coordinates, read once when an answer arrives
   property var pointer: null
   property int pointerRequest: 0
-  // width the open console takes (0 when closed), for bubble placement
-  property real consoleExtent: 0
 
-  // event-driven (Hyprland workspace state), no polling
-  readonly property bool fullscreen: Hyprland.focusedWorkspace
-    ? Hyprland.focusedWorkspace.hasFullscreen : false
+  // plugin contract: the shell calls these for reasons that are not ours
+  // (rescan, panel sweep); an overlay with nothing persistent has nothing
+  // to open, but a sweep may collapse a stale bubble.
+  function open(payload) {}
+  function close() { root.bubbleDismissed = true; }
+  function toggle() {}
+  function dismiss() { root.bubbleDismissed = true; }
 
   // refresh rate of the output a window sits on (QScreen has it, the
-  // shell's screen object does not); the creature quantizes its clock to it
+  // shell's screen object does not); creatures quantize their clock to it.
+  // Application is not resolvable in every plugin context — default 60.
   function refreshOf(shellScreen) {
+    if (typeof Application === "undefined" || !shellScreen) return 60;
     var list = Application.screens;
-    for (var i = 0; shellScreen && i < list.length; i++)
+    for (var i = 0; i < list.length; i++)
       if (list[i].name === shellScreen.name) return list[i].refreshRate;
     return 60;
   }
 
-  // plugin contract: the shell calls these for reasons that are not ours
-  // (rescan, panel sweep), so open() only reveals and close() only collapses
-  function open(payload) { root.hidden = false; }
-  function close() { root.userOpen = false; }
-  function toggle() { root.userOpen = Companion.userToggle(root.userOpen); root.capped = false; }
-  function dismiss() { root.userOpen = false; }
-
   Connections {
     target: root.svc
-    function onStatusChanged() {
-      root.capped = false;
-      if (root.svc.status === "listening") root.hidden = false;
-    }
     function onTurnChanged() {
       root.bubbleDismissed = false;
       root.labeled = false;
@@ -86,59 +69,6 @@ Item {
     }
   }
 
-  // ── top window: corner creature and console ─────────────────────
-  LazyLoader {
-    active: root.svc !== null
-
-    PanelWindow {
-      id: topWin
-      visible: top.shown
-      color: "transparent"
-      anchors { left: true; right: true; top: true; bottom: true }
-      exclusionMode: ExclusionMode.Ignore
-      // input only where interactive: the creature's bounds and the console
-      mask: Region {
-        Region { item: top.cornerShown ? top.corner : null }
-        Region { item: top.consoleShown ? top.consoleCard : null }
-      }
-      WlrLayershell.namespace: "wisp-companion"
-      WlrLayershell.layer: WlrLayer.Top
-      WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-
-      // Safety net (plan KTD8): the console never hangs open. One the user
-      // opened compresses after 180 s, one the daemon opened (a choice) or
-      // a busy one after 120 s. One-shot, runs only while the console shows.
-      Timer {
-        id: capTimer
-        interval: root.userOpen ? 180000 : 120000
-        running: top.consoleShown
-        onTriggered: { root.userOpen = false; root.capped = true; }
-      }
-      Connections {
-        target: root.svc
-        function onStatusChanged() { if (capTimer.running) capTimer.restart(); }
-      }
-
-      CornerLayer {
-        id: top
-        anchors.fill: parent
-        service: root.svc
-        hidden: root.hidden
-        fullscreen: root.fullscreen
-        capped: root.capped
-        userOpen: root.userOpen
-        gap: Style.gapsOut
-        refreshHz: root.refreshOf(topWin.screen)
-        onConsoleExtentChanged: root.consoleExtent = consoleExtent
-        onCornerClicked: root.toggle()
-        onTalk: root.svc.trigger()
-        onHide: { root.hidden = true; root.userOpen = false; }
-        onStopClicked: root.svc.interrupt()
-      }
-    }
-  }
-
-  // ── overlay window: pill, bubble, ghost cursor, beacons ─────────
   LazyLoader {
     active: root.svc !== null
 
@@ -148,6 +78,7 @@ Item {
       color: "transparent"
       anchors { left: true; right: true; top: true; bottom: true }
       exclusionMode: ExclusionMode.Ignore
+      // input only where interactive: the pill and the bubble
       mask: Region {
         Region { item: layer.pillShown ? layer.pill : null }
         Region { item: layer.bubbleShown ? layer.bubbleHost : null }
@@ -191,12 +122,11 @@ Item {
         originY: win.screen.y
         gap: Style.gapsOut
         refreshHz: root.refreshOf(win.screen)
-        consoleExtent: root.consoleExtent
         bubbleDismissed: root.bubbleDismissed
         labeled: root.labeled
         onChoose: function (pick, index) { root.svc.sendChoice(pick, root.svc.promptId); }
         onConfirmChosen: function (pick, promptId) { root.svc.sendChoice(pick, promptId); }
-        onMoreClicked: { root.userOpen = true; root.capped = false; }
+        onMoreClicked: root.bubbleDismissed = true
         onVerdict: function (verdict) { root.labeled = true; root.svc.label(verdict); }
       }
     }

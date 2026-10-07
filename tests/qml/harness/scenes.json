@@ -1,463 +1,309 @@
 {
- "Creature": {
+ "AgentRow": {
   "mode": "variant",
-  "pad": 12,
-  "scale2": true,
-  "on": "desktop",
+  "pad": 10,
   "variants": {
-   "offline": {
-    "forceState": "offline",
-    "size": 56,
-    "level": 0
-   },
-   "idle": {
-    "forceState": "idle",
-    "size": 56,
-    "level": 0
-   },
-   "listening": {
-    "forceState": "listening",
-    "size": 56,
-    "level": 0.6
-   },
-   "transcribing": {
-    "forceState": "transcribing",
-    "size": 56,
-    "level": 0
-   },
-   "thinking": {
-    "forceState": "thinking",
-    "size": 56,
-    "level": 0
-   },
-   "speaking": {
-    "forceState": "speaking",
-    "size": 56,
-    "level": 0
-   },
-   "acting": {
-    "forceState": "acting",
-    "size": 56,
-    "level": 0
-   },
-   "awaiting_choice": {
-    "forceState": "awaiting_choice",
-    "size": 56,
-    "level": 0
-   },
-   "suggestion": {
-    "forceState": "suggestion",
-    "size": 56,
-    "level": 0
-   },
-   "confirmed": {
-    "forceState": "confirmed",
-    "size": 56,
-    "level": 0
-   },
-   "didnt_understand": {
-    "forceState": "didnt_understand",
-    "size": 56,
-    "level": 0
-   },
-   "error": {
-    "forceState": "error",
-    "size": 56,
-    "level": 0
+   "cancelled": {
+    "name": "index photos",
+    "seconds": 47,
+    "state": "cancelled"
    },
    "done": {
-    "forceState": "done",
-    "size": 56,
-    "level": 0
+    "line": "saved to Documents",
+    "name": "weekly report",
+    "seconds": 301,
+    "state": "done"
    },
-   "listening_rest": {
-    "forceState": "listening",
-    "size": 40,
-    "level": 0.6
+   "failed": {
+    "line": "endpoint refused the request",
+    "name": "sync notes",
+    "seconds": 12,
+    "state": "failed"
    },
-   "thinking_rest": {
-    "forceState": "thinking",
-    "size": 28
+   "queued": {
+    "name": "tidy downloads",
+    "seconds": 0,
+    "state": "queued"
    },
-   "error_rest": {
-    "forceState": "error",
-    "size": 28
-   },
-   "listening_reduced": {
-    "forceState": "listening",
-    "size": 56,
-    "level": 0.6,
-    "motion": "reduced"
-   },
-   "awaiting_choice_reduced": {
-    "forceState": "awaiting_choice",
-    "size": 56,
-    "motion": "reduced"
-   },
-   "speaking_reduced": {
-    "forceState": "speaking",
-    "size": 56,
-    "motion": "reduced"
-   },
-   "didnt_understand_reduced": {
-    "forceState": "didnt_understand",
-    "size": 56,
-    "motion": "reduced"
-   },
-   "listening_hz120": {
-    "forceState": "listening",
-    "size": 56,
-    "level": 0.6,
-    "refreshHz": 120
-   },
-   "idle_hz120": {
-    "forceState": "idle",
-    "size": 56,
-    "refreshHz": 120
+   "running": {
+    "line": "reading message 12 of 40",
+    "name": "summarize inbox",
+    "seconds": 83,
+    "state": "running"
    }
-  }
+  },
+  "width": 340
  },
- "Mark": {
-  "mode": "state",
-  "pad": 8,
-  "size": 28,
-  "scale2": true,
-  "props": {
-   "size": 28
-  }
- },
- "BarMark": {
-  "mode": "state",
-  "pad": 8,
-  "scale2": true,
-  "on": "desktop"
- },
- "StatusLine": {
-  "mode": "state",
-  "pad": 10
- },
- "Transcript": {
-  "mode": "state",
+ "AgentsTab": {
+  "mode": "variant",
   "pad": 10,
-  "width": 280
+  "scale2": true,
+  "variants": {
+   "empty": {
+    "_state": "idle"
+   },
+   "tasks": {
+    "_fixture": {
+     "patch": {
+      "tasks": {
+       "summarize inbox": {
+        "line": "reading message 12 of 40",
+        "seconds": 83,
+        "status": "running",
+        "task": "summarize inbox"
+       },
+       "sync notes": {
+        "line": "endpoint refused the request",
+        "seconds": 12,
+        "status": "failed",
+        "task": "sync notes"
+       },
+       "tidy downloads": {
+        "status": "queued",
+        "task": "move old files into folders"
+       },
+       "weekly report": {
+        "line": "saved to Documents",
+        "seconds": 301,
+        "status": "done",
+        "task": "weekly report"
+       }
+      }
+     }
+    },
+    "_state": "idle"
+   }
+  },
+  "width": 360
  },
  "Answer": {
   "mode": "state",
   "pad": 10,
-  "width": 320,
   "props": {
    "maxLines": 4
-  }
+  },
+  "width": 320
  },
- "StopControl": {
-  "mode": "state",
-  "pad": 10
- },
- "Pill": {
-  "mode": "state",
-  "pad": 12,
-  "scale2": true,
-  "on": "desktop"
- },
- "Bubble": {
-  "mode": "state",
-  "pad": 12,
-  "scale2": true,
-  "on": "desktop"
- },
- "Console": {
-  "mode": "state",
-  "pad": 12,
-  "on": "desktop"
- },
- "Corner": {
-  "mode": "state",
-  "pad": 12,
-  "scale2": true,
-  "on": "desktop"
- },
- "Chip": {
+ "AuditView": {
   "mode": "variant",
   "pad": 10,
+  "scale2": true,
   "variants": {
-   "normal": {
-    "label": "open it",
-    "hint": "1"
+   "empty": {
+    "_state": "idle",
+    "log": ""
    },
-   "hover": {
-    "label": "open it",
-    "hint": "1",
-    "hovered": true
-   },
-   "pressed": {
-    "label": "open it",
-    "hint": "1",
-    "pressed": true
-   },
-   "selected": {
-    "label": "open it",
-    "hint": "1",
-    "selected": true
-   },
-   "disabled": {
-    "label": "open it",
-    "hint": "1",
-    "enabled": false
-   },
-   "keyed": {
-    "label": "none of these",
-    "hint": "3"
-   }
-  }
- },
- "StepRow": {
-  "mode": "variant",
-  "pad": 10,
-  "width": 300,
-  "variants": {
-   "pending": {
-    "text": "verify toggle",
-    "state": "pending"
-   },
-   "running": {
-    "text": "click night light toggle",
-    "state": "running"
-   },
-   "done": {
-    "text": "focus Settings",
-    "state": "done"
-   },
-   "failed": {
-    "text": "click rename",
-    "state": "failed"
-   },
-   "confirm": {
-    "text": "run_shell rm -r Downloads",
-    "state": "confirm"
-   }
-  }
- },
- "GhostCursor": {
-  "mode": "variant",
-  "pad": 12,
-  "variants": {
-   "traveling": {
-    "forceState": "traveling"
-   },
-   "clicking": {
-    "forceState": "clicking"
-   },
-   "parked": {
-    "forceState": "parked",
-    "forceLabel": "night light"
-   },
-   "returning": {
-    "forceState": "returning"
-   },
-   "reduced_parked": {
-    "forceState": "parked",
-    "forceLabel": "night light",
-    "motion": "reduced"
-   },
-   "target_aim": {
-    "_state": "acting",
+   "offline": {
     "_fixture": {
-     "target": {
-      "x": 640,
-      "y": 360,
-      "window": "Settings",
-      "label": "night light",
-      "confidence": 0.92,
-      "phase": "aim"
-     }
-    }
+     "offline": true
+    },
+    "_state": "idle",
+    "log": "{\"ts\":1759579200,\"turn\":\"t-1\",\"tool\":\"click\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":212,\"x\":640,\"y\":380}\n{\"ts\":1759579204,\"turn\":\"t-1\",\"tool\":\"type_text\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":95,\"len\":12,\"sha\":\"3fa9c01be2d4\"}\n{\"ts\":1759579209,\"turn\":\"t-1\",\"tool\":\"key\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":41,\"key\":\"ctrl+l\"}\n{\"ts\":1759579215,\"turn\":\"t-1\",\"tool\":\"click\",\"app\":\"1password\",\"decision\":\"deny\",\"dry_run\":false,\"result\":\"REFUSED\",\"ms\":3,\"x\":10,\"y\":10}\n{\"ts\":1759579221,\"turn\":\"t-1\",\"tool\":\"scroll\",\"app\":\"thunar\",\"decision\":\"dry_run\",\"dry_run\":true,\"result\":\"DRYRUN\",\"ms\":1,\"x\":300,\"y\":400}\n{\"ts\":1759579230,\"turn\":\"t-1\",\"tool\":\"click\",\"app\":\"ghostty\",\"decision\":\"cancelled\",\"dry_run\":false,\"result\":\"CANCELLED\",\"ms\":18,\"x\":50,\"y\":60}"
    },
-   "target_click": {
-    "_state": "acting",
-    "_fixture": {
-     "target": {
-      "x": 640,
-      "y": 360,
-      "window": "Settings",
-      "label": "night light",
-      "confidence": 0.92,
-      "phase": "click"
-     }
-    }
-   },
-   "target_done": {
-    "_state": "acting",
-    "_fixture": {
-     "target": {
-      "x": 640,
-      "y": 360,
-      "window": "Settings",
-      "label": "night light",
-      "confidence": 0.92,
-      "phase": "done"
-     }
-    }
-   },
-   "target_unsure": {
-    "_state": "acting",
-    "_fixture": {
-     "target": {
-      "x": 640,
-      "y": 360,
-      "window": "Settings",
-      "label": "",
-      "confidence": 0.3,
-      "phase": "aim"
-     }
-    }
-   },
-   "absent": {
-    "_state": "acting"
+   "rows": {
+    "_state": "idle",
+    "log": "{\"ts\":1759579200,\"turn\":\"t-1\",\"tool\":\"click\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":212,\"x\":640,\"y\":380}\n{\"ts\":1759579204,\"turn\":\"t-1\",\"tool\":\"type_text\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":95,\"len\":12,\"sha\":\"3fa9c01be2d4\"}\n{\"ts\":1759579209,\"turn\":\"t-1\",\"tool\":\"key\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":41,\"key\":\"ctrl+l\"}\n{\"ts\":1759579215,\"turn\":\"t-1\",\"tool\":\"click\",\"app\":\"1password\",\"decision\":\"deny\",\"dry_run\":false,\"result\":\"REFUSED\",\"ms\":3,\"x\":10,\"y\":10}\n{\"ts\":1759579221,\"turn\":\"t-1\",\"tool\":\"scroll\",\"app\":\"thunar\",\"decision\":\"dry_run\",\"dry_run\":true,\"result\":\"DRYRUN\",\"ms\":1,\"x\":300,\"y\":400}\n{\"ts\":1759579230,\"turn\":\"t-1\",\"tool\":\"click\",\"app\":\"ghostty\",\"decision\":\"cancelled\",\"dry_run\":false,\"result\":\"CANCELLED\",\"ms\":18,\"x\":50,\"y\":60}"
    }
   },
+  "width": 560
+ },
+ "BarMark": {
+  "mode": "state",
   "on": "desktop",
+  "pad": 8,
+  "scale2": true
+ },
+ "BarPill": {
+  "mode": "state",
+  "on": "desktop",
+  "pad": 8,
   "scale2": true
  },
  "Beacon": {
   "mode": "variant",
+  "on": "desktop",
   "pad": 10,
+  "scale2": true,
   "variants": {
-   "landing": {
-    "forceState": "landing",
-    "index": 1
-   },
-   "holding": {
-    "forceState": "holding",
-    "index": 2
+   "auto_off": {
+    "index": 4
    },
    "fading": {
     "forceState": "fading",
     "index": 3
    },
-   "auto_off": {
-    "index": 4
-   }
-  },
-  "on": "desktop",
-  "scale2": true
- },
- "PanelTab": {
-  "mode": "variant",
-  "pad": 6,
-  "variants": {
-   "normal": {
-    "text": "agents"
+   "holding": {
+    "forceState": "holding",
+    "index": 2
    },
-   "hover": {
-    "text": "agents",
-    "hovered": true
-   },
-   "selected": {
-    "text": "now",
-    "selected": true
+   "landing": {
+    "forceState": "landing",
+    "index": 1
    }
   }
  },
- "AgentRow": {
+ "BindsView": {
   "mode": "variant",
   "pad": 10,
-  "width": 340,
+  "scale2": true,
   "variants": {
-   "queued": {
-    "name": "tidy downloads",
-    "state": "queued",
-    "seconds": 0
+   "global": {
+    "_state": "idle",
+    "binds": {
+     "binds": [
+      {
+       "arg": "wispd trigger",
+       "key": "D",
+       "modmask": 64,
+       "submap": ""
+      },
+      {
+       "arg": "wispd interrupt",
+       "key": "D",
+       "modmask": 65,
+       "submap": ""
+      }
+     ],
+     "hotkey": {
+      "chord": "SUPER+D",
+      "key": "D",
+      "mod": "SUPER"
+     },
+     "hyprland": true
+    }
    },
-   "running": {
-    "name": "summarize inbox",
-    "state": "running",
-    "seconds": 83,
-    "line": "reading message 12 of 40"
+   "no_hyprland": {
+    "_state": "idle",
+    "binds": {
+     "binds": [],
+     "hotkey": {
+      "chord": "SUPER+D",
+      "key": "D",
+      "mod": "SUPER"
+     },
+     "hyprland": false
+    }
    },
-   "done": {
-    "name": "weekly report",
-    "state": "done",
-    "seconds": 301,
-    "line": "saved to Documents"
+   "none_registered": {
+    "_state": "idle",
+    "binds": {
+     "binds": [],
+     "hotkey": {
+      "chord": "SUPER+D",
+      "key": "D",
+      "mod": "SUPER"
+     },
+     "hyprland": true
+    }
    },
-   "failed": {
-    "name": "sync notes",
-    "state": "failed",
-    "seconds": 12,
-    "line": "endpoint refused the request"
-   },
-   "cancelled": {
-    "name": "index photos",
-    "state": "cancelled",
-    "seconds": 47
+   "submap": {
+    "_state": "idle",
+    "binds": {
+     "binds": [
+      {
+       "arg": "wispd trigger",
+       "key": "D",
+       "modmask": 64,
+       "submap": ""
+      },
+      {
+       "arg": "wispd interrupt",
+       "key": "D",
+       "modmask": 65,
+       "submap": ""
+      },
+      {
+       "arg": "wispd interrupt",
+       "key": "Escape",
+       "modmask": 0,
+       "submap": "wisp"
+      },
+      {
+       "arg": "wispd choice yes",
+       "key": "Return",
+       "modmask": 0,
+       "submap": "wisp"
+      },
+      {
+       "arg": "wispd choice 1",
+       "key": "1",
+       "modmask": 0,
+       "submap": "wisp"
+      }
+     ],
+     "hotkey": {
+      "chord": "SUPER+D",
+      "key": "D",
+      "mod": "SUPER"
+     },
+     "hyprland": true
+    }
    }
-  }
+  },
+  "width": 560
  },
- "EmptyState": {
-  "mode": "variant",
+ "Bubble": {
+  "mode": "state",
+  "on": "desktop",
   "pad": 12,
-  "width": 340,
+  "scale2": true
+ },
+ "Chip": {
+  "mode": "variant",
+  "pad": 10,
   "variants": {
-   "now": {
-    "tab": "now"
+   "disabled": {
+    "enabled": false,
+    "hint": "1",
+    "label": "open it"
    },
-   "agents": {
-    "tab": "agents"
+   "hover": {
+    "hint": "1",
+    "hovered": true,
+    "label": "open it"
    },
-   "memory": {
-    "tab": "memory"
+   "keyed": {
+    "hint": "3",
+    "label": "none of these"
    },
-   "settings": {
-    "tab": "settings"
+   "normal": {
+    "hint": "1",
+    "label": "open it"
+   },
+   "pressed": {
+    "hint": "1",
+    "label": "open it",
+    "pressed": true
+   },
+   "selected": {
+    "hint": "1",
+    "label": "open it",
+    "selected": true
    }
   }
  },
  "Companion": {
   "mode": "variant",
-  "source": "CompanionStage.qml",
-  "pad": 0,
-  "width": 1280,
-  "scale2": true,
   "on": "desktop",
+  "pad": 0,
   "props": {
    "height": 720
   },
+  "scale2": true,
+  "source": "CompanionStage.qml",
   "variants": {
-   "idle": {
-    "_state": "idle"
-   },
-   "listening": {
-    "_state": "listening"
-   },
    "acting_target": {
-    "_state": "acting",
     "_fixture": {
      "target": {
-      "x": 420,
-      "y": 260,
-      "window": "Settings",
-      "label": "night light",
       "confidence": 0.92,
-      "phase": "aim"
-     }
-    }
-   },
-   "acting_console": {
-    "_state": "acting",
-    "_fixture": {
-     "target": {
-      "x": 420,
-      "y": 260,
-      "window": "Settings",
       "label": "night light",
-      "confidence": 0.92,
-      "phase": "aim"
+      "phase": "aim",
+      "window": "Settings",
+      "x": 420,
+      "y": 260
      }
     },
-    "userOpen": true
-   },
-   "awaiting_choice": {
-    "_state": "awaiting_choice"
+    "_state": "acting"
    },
    "answer": {
     "_state": "done"
@@ -469,788 +315,1274 @@
      "y": 300
     }
    },
-   "long_answer": {
-    "_state": "long_answer"
+   "awaiting_choice": {
+    "_state": "awaiting_choice"
+   },
+   "blocked": {
+    "_state": "blocked"
+   },
+   "confirm": {
+    "_state": "confirm"
    },
    "error": {
     "_state": "error"
    },
-   "blocked": {
-    "_state": "blocked"
+   "hz120": {
+    "_state": "listening",
+    "refreshHz": 120
+   },
+   "idle": {
+    "_state": "idle"
+   },
+   "listening": {
+    "_state": "listening"
+   },
+   "long_answer": {
+    "_state": "long_answer"
    },
    "offline": {
     "_state": "offline"
    },
    "stale": {
     "_state": "stale"
+   }
+  },
+  "width": 1280
+ },
+ "Creature": {
+  "mode": "variant",
+  "on": "desktop",
+  "pad": 12,
+  "scale2": true,
+  "variants": {
+   "acting": {
+    "forceState": "acting",
+    "level": 0,
+    "size": 56
    },
-   "fullscreen": {
-    "_state": "listening",
-    "fullscreen": true
+   "awaiting_choice": {
+    "forceState": "awaiting_choice",
+    "level": 0,
+    "size": 56
    },
-   "hidden": {
+   "awaiting_choice_reduced": {
+    "forceState": "awaiting_choice",
+    "motion": "reduced",
+    "size": 56
+   },
+   "confirmed": {
+    "forceState": "confirmed",
+    "level": 0,
+    "size": 56
+   },
+   "didnt_understand": {
+    "forceState": "didnt_understand",
+    "level": 0,
+    "size": 56
+   },
+   "didnt_understand_reduced": {
+    "forceState": "didnt_understand",
+    "motion": "reduced",
+    "size": 56
+   },
+   "done": {
+    "forceState": "done",
+    "level": 0,
+    "size": 56
+   },
+   "error": {
+    "forceState": "error",
+    "level": 0,
+    "size": 56
+   },
+   "error_rest": {
+    "forceState": "error",
+    "size": 28
+   },
+   "idle": {
+    "forceState": "idle",
+    "level": 0,
+    "size": 56
+   },
+   "idle_hz120": {
+    "forceState": "idle",
+    "refreshHz": 120,
+    "size": 56
+   },
+   "listening": {
+    "forceState": "listening",
+    "level": 0.6,
+    "size": 56
+   },
+   "listening_hz120": {
+    "forceState": "listening",
+    "level": 0.6,
+    "refreshHz": 120,
+    "size": 56
+   },
+   "listening_reduced": {
+    "forceState": "listening",
+    "level": 0.6,
+    "motion": "reduced",
+    "size": 56
+   },
+   "listening_rest": {
+    "forceState": "listening",
+    "level": 0.6,
+    "size": 40
+   },
+   "offline": {
+    "forceState": "offline",
+    "level": 0,
+    "size": 56
+   },
+   "speaking": {
+    "forceState": "speaking",
+    "level": 0,
+    "size": 56
+   },
+   "speaking_reduced": {
+    "forceState": "speaking",
+    "motion": "reduced",
+    "size": 56
+   },
+   "suggestion": {
+    "forceState": "suggestion",
+    "level": 0,
+    "size": 56
+   },
+   "thinking": {
+    "forceState": "thinking",
+    "level": 0,
+    "size": 56
+   },
+   "thinking_rest": {
+    "forceState": "thinking",
+    "size": 28
+   },
+   "transcribing": {
+    "forceState": "transcribing",
+    "level": 0,
+    "size": 56
+   }
+  }
+ },
+ "EmptyState": {
+  "mode": "variant",
+  "pad": 12,
+  "variants": {
+   "agents": {
+    "tab": "agents"
+   },
+   "memory": {
+    "tab": "memory"
+   },
+   "now": {
+    "tab": "now"
+   },
+   "settings": {
+    "tab": "settings"
+   }
+  },
+  "width": 340
+ },
+ "FirstRunCard": {
+  "mode": "variant",
+  "on": "canvas",
+  "pad": 10,
+  "scale2": true,
+  "variants": {
+   "all_done": {
     "_state": "idle",
-    "hidden": true
+    "skipped": [],
+    "steps": [
+     {
+      "detail": "pw-record and the speech model are ready",
+      "done": true,
+      "id": "mic",
+      "name": "microphone",
+      "ok": true,
+      "optional": false,
+      "state": "done",
+      "try": ""
+     },
+     {
+      "detail": "ornith up, jev up, jev-shim up, uitars down, ollama down",
+      "done": true,
+      "id": "models",
+      "name": "local models",
+      "ok": true,
+      "optional": false,
+      "state": "done",
+      "try": ""
+     },
+     {
+      "detail": "cua-driver running",
+      "done": true,
+      "id": "cua",
+      "name": "cua pointer driver",
+      "ok": true,
+      "optional": true,
+      "state": "done",
+      "try": ""
+     },
+     {
+      "detail": "ready; a test send needs your ok",
+      "done": true,
+      "id": "notifications",
+      "name": "notifications",
+      "ok": true,
+      "optional": false,
+      "state": "done",
+      "try": ""
+     },
+     {
+      "detail": "needs the keyboard submap (not installed yet)",
+      "done": false,
+      "id": "keybinding",
+      "name": "keybinding",
+      "ok": false,
+      "optional": true,
+      "state": "na",
+      "try": ""
+     }
+    ]
    },
-   "hz120": {
-    "_state": "listening",
-    "refreshHz": 120
+   "fresh": {
+    "_state": "idle",
+    "skipped": [],
+    "steps": [
+     {
+      "detail": "pw-record and the speech model are ready",
+      "done": false,
+      "id": "mic",
+      "name": "microphone",
+      "ok": false,
+      "optional": false,
+      "state": "todo",
+      "try": ""
+     },
+     {
+      "detail": "ornith up, jev up, jev-shim up, uitars down, ollama down",
+      "done": false,
+      "id": "models",
+      "name": "local models",
+      "ok": false,
+      "optional": false,
+      "state": "todo",
+      "try": ""
+     },
+     {
+      "detail": "cua-driver running",
+      "done": false,
+      "id": "cua",
+      "name": "cua pointer driver",
+      "ok": false,
+      "optional": true,
+      "state": "todo",
+      "try": ""
+     },
+     {
+      "detail": "ready; a test send needs your ok",
+      "done": false,
+      "id": "notifications",
+      "name": "notifications",
+      "ok": false,
+      "optional": false,
+      "state": "todo",
+      "try": ""
+     },
+     {
+      "detail": "needs the keyboard submap (not installed yet)",
+      "done": false,
+      "id": "keybinding",
+      "name": "keybinding",
+      "ok": false,
+      "optional": true,
+      "state": "na",
+      "try": ""
+     }
+    ]
    },
-   "confirm": {
-    "_state": "confirm"
+   "partial": {
+    "_state": "idle",
+    "skipped": [],
+    "steps": [
+     {
+      "detail": "pw-record and the speech model are ready",
+      "done": true,
+      "id": "mic",
+      "name": "microphone",
+      "ok": true,
+      "optional": false,
+      "state": "done",
+      "try": ""
+     },
+     {
+      "detail": "ornith up, jev up, jev-shim up, uitars down, ollama down",
+      "done": true,
+      "id": "models",
+      "name": "local models",
+      "ok": true,
+      "optional": false,
+      "state": "done",
+      "try": ""
+     },
+     {
+      "detail": "cua-driver running",
+      "done": false,
+      "id": "cua",
+      "name": "cua pointer driver",
+      "ok": false,
+      "optional": true,
+      "state": "todo",
+      "try": ""
+     },
+     {
+      "detail": "ready; a test send needs your ok",
+      "done": false,
+      "id": "notifications",
+      "name": "notifications",
+      "ok": false,
+      "optional": false,
+      "state": "todo",
+      "try": ""
+     },
+     {
+      "detail": "needs the keyboard submap (not installed yet)",
+      "done": false,
+      "id": "keybinding",
+      "name": "keybinding",
+      "ok": false,
+      "optional": true,
+      "state": "na",
+      "try": ""
+     }
+    ]
    },
-   "confirm_console": {
-    "_state": "confirm",
-    "userOpen": true
+   "problem": {
+    "_state": "idle",
+    "skipped": [],
+    "steps": [
+     {
+      "detail": "no recorder found",
+      "done": false,
+      "id": "mic",
+      "name": "microphone",
+      "ok": false,
+      "optional": false,
+      "state": "todo",
+      "try": "omarchy pkg add pipewire"
+     },
+     {
+      "detail": "ornith up, jev up, jev-shim up, uitars down, ollama down",
+      "done": false,
+      "id": "models",
+      "name": "local models",
+      "ok": false,
+      "optional": false,
+      "state": "todo",
+      "try": ""
+     },
+     {
+      "detail": "cua-driver running",
+      "done": false,
+      "id": "cua",
+      "name": "cua pointer driver",
+      "ok": false,
+      "optional": true,
+      "state": "todo",
+      "try": ""
+     },
+     {
+      "detail": "ready; a test send needs your ok",
+      "done": false,
+      "id": "notifications",
+      "name": "notifications",
+      "ok": false,
+      "optional": false,
+      "state": "todo",
+      "try": ""
+     },
+     {
+      "detail": "needs the keyboard submap (not installed yet)",
+      "done": false,
+      "id": "keybinding",
+      "name": "keybinding",
+      "ok": false,
+      "optional": true,
+      "state": "na",
+      "try": ""
+     }
+    ]
    },
-   "stale_busy": {
-    "_state": "stale",
-    "userOpen": true
+   "skipped": {
+    "_state": "idle",
+    "skipped": [
+     "cua",
+     "notifications"
+    ],
+    "steps": [
+     {
+      "detail": "pw-record and the speech model are ready",
+      "done": true,
+      "id": "mic",
+      "name": "microphone",
+      "ok": true,
+      "optional": false,
+      "state": "done",
+      "try": ""
+     },
+     {
+      "detail": "ornith up, jev up, jev-shim up, uitars down, ollama down",
+      "done": false,
+      "id": "models",
+      "name": "local models",
+      "ok": false,
+      "optional": false,
+      "state": "todo",
+      "try": ""
+     },
+     {
+      "detail": "cua-driver running",
+      "done": false,
+      "id": "cua",
+      "name": "cua pointer driver",
+      "ok": false,
+      "optional": true,
+      "state": "todo",
+      "try": ""
+     },
+     {
+      "detail": "ready; a test send needs your ok",
+      "done": false,
+      "id": "notifications",
+      "name": "notifications",
+      "ok": false,
+      "optional": false,
+      "state": "todo",
+      "try": ""
+     },
+     {
+      "detail": "needs the keyboard submap (not installed yet)",
+      "done": false,
+      "id": "keybinding",
+      "name": "keybinding",
+      "ok": false,
+      "optional": true,
+      "state": "na",
+      "try": ""
+     }
+    ]
+   }
+  },
+  "width": 360
+ },
+ "GhostCursor": {
+  "mode": "variant",
+  "on": "desktop",
+  "pad": 12,
+  "scale2": true,
+  "variants": {
+   "absent": {
+    "_state": "acting"
    },
-   "error_console": {
-    "_state": "error",
-    "userOpen": true
+   "clicking": {
+    "forceState": "clicking"
    },
-   "offline_console": {
-    "_state": "offline",
-    "userOpen": true
+   "parked": {
+    "forceLabel": "night light",
+    "forceState": "parked"
+   },
+   "reduced_parked": {
+    "forceLabel": "night light",
+    "forceState": "parked",
+    "motion": "reduced"
+   },
+   "returning": {
+    "forceState": "returning"
+   },
+   "target_aim": {
+    "_fixture": {
+     "target": {
+      "confidence": 0.92,
+      "label": "night light",
+      "phase": "aim",
+      "window": "Settings",
+      "x": 640,
+      "y": 360
+     }
+    },
+    "_state": "acting"
+   },
+   "target_click": {
+    "_fixture": {
+     "target": {
+      "confidence": 0.92,
+      "label": "night light",
+      "phase": "click",
+      "window": "Settings",
+      "x": 640,
+      "y": 360
+     }
+    },
+    "_state": "acting"
+   },
+   "target_done": {
+    "_fixture": {
+     "target": {
+      "confidence": 0.92,
+      "label": "night light",
+      "phase": "done",
+      "window": "Settings",
+      "x": 640,
+      "y": 360
+     }
+    },
+    "_state": "acting"
+   },
+   "target_unsure": {
+    "_fixture": {
+     "target": {
+      "confidence": 0.3,
+      "label": "",
+      "phase": "aim",
+      "window": "Settings",
+      "x": 640,
+      "y": 360
+     }
+    },
+    "_state": "acting"
+   },
+   "traveling": {
+    "forceState": "traveling"
    }
   }
  },
  "HealthSection": {
   "mode": "variant",
   "pad": 10,
-  "width": 360,
   "scale2": true,
   "variants": {
    "all_ok": {
-    "_state": "idle",
     "_fixture": {
      "patch": {
       "health": {
-       "jev": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 12,
-        "code": null
-       },
        "brain_ollama": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
+        "code": null,
         "latency_ms": 41,
-        "code": null
-       },
-       "stt": {
         "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 9,
-        "code": null
+        "since": "2026-10-04T08:00:00Z"
        },
        "cua": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
+        "code": null,
         "latency_ms": 3,
-        "code": null
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "jev": {
+        "code": null,
+        "latency_ms": 12,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
        },
        "spend": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
+        "code": null,
         "latency_ms": 0,
-        "code": null
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "stt": {
+        "code": null,
+        "latency_ms": 9,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
        }
       },
       "spend": {
-       "today_usd": 0.42,
+       "blocked": false,
        "cap_usd": 2.0,
        "month_usd": 6.1,
        "monthly_cap_usd": 20.0,
-       "blocked": false
+       "today_usd": 0.42
       }
      }
     },
+    "_state": "idle",
     "cua": {
-     "state": "running",
+     "dry_run": false,
      "fix": null,
      "kill": false,
-     "dry_run": false,
-     "version": "0.4.2",
      "live": true,
-     "mode": "guide"
-    },
-    "spendModels": [
-     {
-      "model": "openrouter/llama-4-maverick",
-      "calls": 14,
-      "usd": 0.31
-     },
-     {
-      "model": "openrouter/gemini-2.5-flash",
-      "calls": 9,
-      "usd": 0.11
-     }
-    ]
-   },
-   "endpoint_down": {
-    "_state": "idle",
-    "_fixture": {
-     "patch": {
-      "health": {
-       "jev": {
-        "ok": false,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": null,
-        "code": "jev_down"
-       },
-       "brain_ollama": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 41,
-        "code": null
-       },
-       "stt": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 9,
-        "code": null
-       },
-       "cua": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 3,
-        "code": null
-       },
-       "spend": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 0,
-        "code": null
-       }
-      },
-      "spend": {
-       "today_usd": 0.42,
-       "cap_usd": 2.0,
-       "month_usd": 6.1,
-       "monthly_cap_usd": 20.0,
-       "blocked": false
-      }
-     }
-    },
-    "cua": {
+     "mode": "guide",
      "state": "running",
-     "fix": null,
-     "kill": false,
-     "dry_run": false,
-     "version": "0.4.2",
-     "live": true,
-     "mode": "guide"
+     "version": "0.4.2"
     },
     "spendModels": [
      {
-      "model": "openrouter/llama-4-maverick",
       "calls": 14,
+      "model": "openrouter/llama-4-maverick",
       "usd": 0.31
      },
      {
-      "model": "openrouter/gemini-2.5-flash",
       "calls": 9,
-      "usd": 0.11
-     }
-    ]
-   },
-   "cua_down": {
-    "_state": "idle",
-    "_fixture": {
-     "patch": {
-      "health": {
-       "jev": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 12,
-        "code": null
-       },
-       "brain_ollama": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 41,
-        "code": null
-       },
-       "stt": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 9,
-        "code": null
-       },
-       "cua": {
-        "ok": false,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": null,
-        "code": "cua_down"
-       },
-       "spend": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 0,
-        "code": null
-       }
-      },
-      "spend": {
-       "today_usd": 0.42,
-       "cap_usd": 2.0,
-       "month_usd": 6.1,
-       "monthly_cap_usd": 20.0,
-       "blocked": false
-      }
-     }
-    },
-    "cua": {
-     "state": "installed_not_running",
-     "fix": "systemctl --user start cua-driver.service",
-     "kill": false,
-     "dry_run": false,
-     "version": "0.4.2",
-     "live": false,
-     "mode": "guide"
-    },
-    "spendModels": [
-     {
-      "model": "openrouter/llama-4-maverick",
-      "calls": 14,
-      "usd": 0.31
-     },
-     {
       "model": "openrouter/gemini-2.5-flash",
-      "calls": 9,
       "usd": 0.11
      }
     ]
    },
    "budget_blocked": {
-    "_state": "idle",
     "_fixture": {
      "patch": {
       "health": {
-       "jev": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 12,
-        "code": null
-       },
        "brain_ollama": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
+        "code": null,
         "latency_ms": 41,
-        "code": null
-       },
-       "stt": {
         "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 9,
-        "code": null
+        "since": "2026-10-04T08:00:00Z"
        },
        "cua": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
+        "code": null,
         "latency_ms": 3,
-        "code": null
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "jev": {
+        "code": null,
+        "latency_ms": 12,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
        },
        "spend": {
-        "ok": false,
-        "since": "2026-10-04T08:00:00Z",
+        "code": "budget_exceeded",
         "latency_ms": null,
-        "code": "budget_exceeded"
+        "ok": false,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "stt": {
+        "code": null,
+        "latency_ms": 9,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
        }
       },
       "spend": {
-       "today_usd": 2.0,
+       "blocked": true,
        "cap_usd": 2.0,
        "month_usd": 6.1,
        "monthly_cap_usd": 20.0,
-       "blocked": true
+       "today_usd": 2.0
       }
      }
     },
+    "_state": "idle",
     "cua": {
-     "state": "running",
+     "dry_run": false,
      "fix": null,
      "kill": false,
-     "dry_run": false,
-     "version": "0.4.2",
      "live": true,
-     "mode": "guide"
+     "mode": "guide",
+     "state": "running",
+     "version": "0.4.2"
     },
     "spendModels": [
      {
-      "model": "openrouter/llama-4-maverick",
       "calls": 14,
+      "model": "openrouter/llama-4-maverick",
       "usd": 0.31
      },
      {
-      "model": "openrouter/gemini-2.5-flash",
       "calls": 9,
+      "model": "openrouter/gemini-2.5-flash",
       "usd": 0.11
      }
     ]
    },
-   "stale": {
-    "_state": "idle",
+   "cua_down": {
     "_fixture": {
      "patch": {
       "health": {
-       "jev": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 12,
-        "code": null
-       },
        "brain_ollama": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
+        "code": null,
         "latency_ms": 41,
-        "code": null
-       },
-       "stt": {
         "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 9,
-        "code": null
+        "since": "2026-10-04T08:00:00Z"
        },
        "cua": {
+        "code": "cua_down",
+        "latency_ms": null,
+        "ok": false,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "jev": {
+        "code": null,
+        "latency_ms": 12,
         "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 3,
-        "code": null
+        "since": "2026-10-04T08:00:00Z"
        },
        "spend": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
+        "code": null,
         "latency_ms": 0,
-        "code": null
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "stt": {
+        "code": null,
+        "latency_ms": 9,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
        }
       },
       "spend": {
-       "today_usd": 0.42,
+       "blocked": false,
        "cap_usd": 2.0,
        "month_usd": 6.1,
        "monthly_cap_usd": 20.0,
-       "blocked": false
+       "today_usd": 0.42
+      }
+     }
+    },
+    "_state": "idle",
+    "cua": {
+     "dry_run": false,
+     "fix": "systemctl --user start cua-driver.service",
+     "kill": false,
+     "live": false,
+     "mode": "guide",
+     "state": "installed_not_running",
+     "version": "0.4.2"
+    },
+    "spendModels": [
+     {
+      "calls": 14,
+      "model": "openrouter/llama-4-maverick",
+      "usd": 0.31
+     },
+     {
+      "calls": 9,
+      "model": "openrouter/gemini-2.5-flash",
+      "usd": 0.11
+     }
+    ]
+   },
+   "endpoint_down": {
+    "_fixture": {
+     "patch": {
+      "health": {
+       "brain_ollama": {
+        "code": null,
+        "latency_ms": 41,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "cua": {
+        "code": null,
+        "latency_ms": 3,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "jev": {
+        "code": "jev_down",
+        "latency_ms": null,
+        "ok": false,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "spend": {
+        "code": null,
+        "latency_ms": 0,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "stt": {
+        "code": null,
+        "latency_ms": 9,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       }
+      },
+      "spend": {
+       "blocked": false,
+       "cap_usd": 2.0,
+       "month_usd": 6.1,
+       "monthly_cap_usd": 20.0,
+       "today_usd": 0.42
+      }
+     }
+    },
+    "_state": "idle",
+    "cua": {
+     "dry_run": false,
+     "fix": null,
+     "kill": false,
+     "live": true,
+     "mode": "guide",
+     "state": "running",
+     "version": "0.4.2"
+    },
+    "spendModels": [
+     {
+      "calls": 14,
+      "model": "openrouter/llama-4-maverick",
+      "usd": 0.31
+     },
+     {
+      "calls": 9,
+      "model": "openrouter/gemini-2.5-flash",
+      "usd": 0.11
+     }
+    ]
+   },
+   "offline": {
+    "_fixture": {
+     "offline": true,
+     "patch": {
+      "health": {},
+      "spend": {}
+     }
+    },
+    "_state": "idle",
+    "cua": null,
+    "spendModels": []
+   },
+   "stale": {
+    "_fixture": {
+     "patch": {
+      "health": {
+       "brain_ollama": {
+        "code": null,
+        "latency_ms": 41,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "cua": {
+        "code": null,
+        "latency_ms": 3,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "jev": {
+        "code": null,
+        "latency_ms": 12,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "spend": {
+        "code": null,
+        "latency_ms": 0,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "stt": {
+        "code": null,
+        "latency_ms": 9,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       }
+      },
+      "spend": {
+       "blocked": false,
+       "cap_usd": 2.0,
+       "month_usd": 6.1,
+       "monthly_cap_usd": 20.0,
+       "today_usd": 0.42
       }
      },
      "stale": true
     },
+    "_state": "idle",
     "cua": {
-     "state": "running",
+     "dry_run": false,
      "fix": null,
      "kill": false,
-     "dry_run": false,
-     "version": "0.4.2",
      "live": true,
-     "mode": "guide"
+     "mode": "guide",
+     "state": "running",
+     "version": "0.4.2"
     },
     "spendModels": [
      {
-      "model": "openrouter/llama-4-maverick",
       "calls": 14,
+      "model": "openrouter/llama-4-maverick",
       "usd": 0.31
      },
      {
-      "model": "openrouter/gemini-2.5-flash",
       "calls": 9,
+      "model": "openrouter/gemini-2.5-flash",
+      "usd": 0.11
+     }
+    ]
+   }
+  },
+  "width": 360
+ },
+ "HealthView": {
+  "mode": "variant",
+  "pad": 10,
+  "scale2": true,
+  "variants": {
+   "all_ok": {
+    "_fixture": {
+     "patch": {
+      "health": {
+       "brain_ollama": {
+        "code": null,
+        "latency_ms": 41,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "cua": {
+        "code": null,
+        "latency_ms": 3,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "jev": {
+        "code": null,
+        "latency_ms": 12,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "spend": {
+        "code": null,
+        "latency_ms": 0,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "stt": {
+        "code": null,
+        "latency_ms": 9,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       }
+      },
+      "spend": {
+       "blocked": false,
+       "cap_usd": 2.0,
+       "month_usd": 6.1,
+       "monthly_cap_usd": 20.0,
+       "today_usd": 0.42
+      }
+     }
+    },
+    "_state": "idle",
+    "cua": {
+     "dry_run": false,
+     "fix": null,
+     "kill": false,
+     "live": true,
+     "mode": "guide",
+     "state": "running",
+     "version": "0.4.2"
+    },
+    "spendModels": [
+     {
+      "calls": 14,
+      "model": "openrouter/llama-4-maverick",
+      "usd": 0.31
+     },
+     {
+      "calls": 9,
+      "model": "openrouter/gemini-2.5-flash",
+      "usd": 0.11
+     }
+    ]
+   },
+   "budget_blocked": {
+    "_fixture": {
+     "patch": {
+      "health": {
+       "brain_ollama": {
+        "code": null,
+        "latency_ms": 41,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "cua": {
+        "code": null,
+        "latency_ms": 3,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "jev": {
+        "code": null,
+        "latency_ms": 12,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "spend": {
+        "code": "budget_exceeded",
+        "latency_ms": null,
+        "ok": false,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "stt": {
+        "code": null,
+        "latency_ms": 9,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       }
+      },
+      "spend": {
+       "blocked": true,
+       "cap_usd": 2.0,
+       "month_usd": 6.1,
+       "monthly_cap_usd": 20.0,
+       "today_usd": 2.0
+      }
+     }
+    },
+    "_state": "idle",
+    "cua": {
+     "dry_run": false,
+     "fix": null,
+     "kill": false,
+     "live": true,
+     "mode": "guide",
+     "state": "running",
+     "version": "0.4.2"
+    },
+    "spendModels": [
+     {
+      "calls": 14,
+      "model": "openrouter/llama-4-maverick",
+      "usd": 0.31
+     },
+     {
+      "calls": 9,
+      "model": "openrouter/gemini-2.5-flash",
+      "usd": 0.11
+     }
+    ]
+   },
+   "cua_down": {
+    "_fixture": {
+     "patch": {
+      "health": {
+       "brain_ollama": {
+        "code": null,
+        "latency_ms": 41,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "cua": {
+        "code": "cua_down",
+        "latency_ms": null,
+        "ok": false,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "jev": {
+        "code": null,
+        "latency_ms": 12,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "spend": {
+        "code": null,
+        "latency_ms": 0,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "stt": {
+        "code": null,
+        "latency_ms": 9,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       }
+      },
+      "spend": {
+       "blocked": false,
+       "cap_usd": 2.0,
+       "month_usd": 6.1,
+       "monthly_cap_usd": 20.0,
+       "today_usd": 0.42
+      }
+     }
+    },
+    "_state": "idle",
+    "cua": {
+     "dry_run": false,
+     "fix": "systemctl --user start cua-driver.service",
+     "kill": false,
+     "live": false,
+     "mode": "guide",
+     "state": "installed_not_running",
+     "version": "0.4.2"
+    },
+    "spendModels": [
+     {
+      "calls": 14,
+      "model": "openrouter/llama-4-maverick",
+      "usd": 0.31
+     },
+     {
+      "calls": 9,
+      "model": "openrouter/gemini-2.5-flash",
+      "usd": 0.11
+     }
+    ]
+   },
+   "endpoint_down": {
+    "_fixture": {
+     "patch": {
+      "health": {
+       "brain_ollama": {
+        "code": null,
+        "latency_ms": 41,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "cua": {
+        "code": null,
+        "latency_ms": 3,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "jev": {
+        "code": "jev_down",
+        "latency_ms": null,
+        "ok": false,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "spend": {
+        "code": null,
+        "latency_ms": 0,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "stt": {
+        "code": null,
+        "latency_ms": 9,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       }
+      },
+      "spend": {
+       "blocked": false,
+       "cap_usd": 2.0,
+       "month_usd": 6.1,
+       "monthly_cap_usd": 20.0,
+       "today_usd": 0.42
+      }
+     }
+    },
+    "_state": "idle",
+    "cua": {
+     "dry_run": false,
+     "fix": null,
+     "kill": false,
+     "live": true,
+     "mode": "guide",
+     "state": "running",
+     "version": "0.4.2"
+    },
+    "spendModels": [
+     {
+      "calls": 14,
+      "model": "openrouter/llama-4-maverick",
+      "usd": 0.31
+     },
+     {
+      "calls": 9,
+      "model": "openrouter/gemini-2.5-flash",
       "usd": 0.11
      }
     ]
    },
    "offline": {
-    "_state": "idle",
     "_fixture": {
+     "offline": true,
      "patch": {
       "health": {},
       "spend": {}
-     },
-     "offline": true
+     }
     },
+    "_state": "idle",
     "cua": null,
     "spendModels": []
-   }
-  }
- },
- "SettingsTab": {
-  "mode": "variant",
-  "pad": 10,
-  "width": 360,
-  "scale2": true,
-  "variants": {
-   "ok": {
-    "_state": "idle",
-    "_fixture": {
-     "patch": {
-      "health": {
-       "jev": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 12,
-        "code": null
-       },
-       "brain_ollama": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 41,
-        "code": null
-       },
-       "stt": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 9,
-        "code": null
-       },
-       "cua": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 3,
-        "code": null
-       },
-       "spend": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 0,
-        "code": null
-       }
-      },
-      "spend": {
-       "today_usd": 0.42,
-       "cap_usd": 2.0,
-       "month_usd": 6.1,
-       "monthly_cap_usd": 20.0,
-       "blocked": false
-      }
-     }
-    },
-    "cua": {
-     "state": "running",
-     "fix": null,
-     "kill": false,
-     "dry_run": false,
-     "version": "0.4.2",
-     "live": true,
-     "mode": "guide"
-    },
-    "spendModels": [
-     {
-      "model": "openrouter/llama-4-maverick",
-      "calls": 14,
-      "usd": 0.31
-     },
-     {
-      "model": "openrouter/gemini-2.5-flash",
-      "calls": 9,
-      "usd": 0.11
-     }
-    ],
-    "values": {
-     "budget.daily_usd": "2.00",
-     "budget.monthly_usd": "20.00",
-     "pointer.mode": "guide",
-     "cua.dry_run": "false",
-     "cua.kill_switch": "false",
-     "cua.confirm": "tier",
-     "cua.max_clicks_per_min": "30",
-     "cua.max_per_turn": "12"
-    },
-    "connectors": [
-     {
-      "name": "Gmail",
-      "alias": "gmail",
-      "connected": true
-     },
-     {
-      "name": "Slack",
-      "alias": "slack",
-      "connected": false
-     }
-    ]
-   },
-   "invalid_edit": {
-    "_state": "idle",
-    "_fixture": {
-     "patch": {
-      "health": {
-       "jev": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 12,
-        "code": null
-       },
-       "brain_ollama": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 41,
-        "code": null
-       },
-       "stt": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 9,
-        "code": null
-       },
-       "cua": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 3,
-        "code": null
-       },
-       "spend": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 0,
-        "code": null
-       }
-      },
-      "spend": {
-       "today_usd": 0.42,
-       "cap_usd": 2.0,
-       "month_usd": 6.1,
-       "monthly_cap_usd": 20.0,
-       "blocked": false
-      }
-     }
-    },
-    "cua": {
-     "state": "running",
-     "fix": null,
-     "kill": false,
-     "dry_run": false,
-     "version": "0.4.2",
-     "live": true,
-     "mode": "guide"
-    },
-    "spendModels": [
-     {
-      "model": "openrouter/llama-4-maverick",
-      "calls": 14,
-      "usd": 0.31
-     },
-     {
-      "model": "openrouter/gemini-2.5-flash",
-      "calls": 9,
-      "usd": 0.11
-     }
-    ],
-    "values": {
-     "budget.daily_usd": "2.00",
-     "budget.monthly_usd": "20.00",
-     "pointer.mode": "guide",
-     "cua.dry_run": "false",
-     "cua.kill_switch": "false",
-     "cua.confirm": "tier",
-     "cua.max_clicks_per_min": "30",
-     "cua.max_per_turn": "12"
-    },
-    "connectors": [
-     {
-      "name": "Gmail",
-      "alias": "gmail",
-      "connected": true
-     },
-     {
-      "name": "Slack",
-      "alias": "slack",
-      "connected": false
-     }
-    ],
-    "draft": {
-     "budget.daily_usd": "two",
-     "cua.max_per_turn": "900"
-    }
-   },
-   "daemon_error": {
-    "_state": "idle",
-    "_fixture": {
-     "patch": {
-      "health": {
-       "jev": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 12,
-        "code": null
-       },
-       "brain_ollama": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 41,
-        "code": null
-       },
-       "stt": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 9,
-        "code": null
-       },
-       "cua": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 3,
-        "code": null
-       },
-       "spend": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 0,
-        "code": null
-       }
-      },
-      "spend": {
-       "today_usd": 0.42,
-       "cap_usd": 2.0,
-       "month_usd": 6.1,
-       "monthly_cap_usd": 20.0,
-       "blocked": false
-      }
-     }
-    },
-    "cua": {
-     "state": "running",
-     "fix": null,
-     "kill": false,
-     "dry_run": false,
-     "version": "0.4.2",
-     "live": true,
-     "mode": "guide"
-    },
-    "spendModels": [
-     {
-      "model": "openrouter/llama-4-maverick",
-      "calls": 14,
-      "usd": 0.31
-     },
-     {
-      "model": "openrouter/gemini-2.5-flash",
-      "calls": 9,
-      "usd": 0.11
-     }
-    ],
-    "values": {
-     "budget.daily_usd": "2.00",
-     "budget.monthly_usd": "20.00",
-     "pointer.mode": "guide",
-     "cua.dry_run": "false",
-     "cua.kill_switch": "false",
-     "cua.confirm": "tier",
-     "cua.max_clicks_per_min": "30",
-     "cua.max_per_turn": "12"
-    },
-    "connectors": [
-     {
-      "name": "Gmail",
-      "alias": "gmail",
-      "connected": true
-     },
-     {
-      "name": "Slack",
-      "alias": "slack",
-      "connected": false
-     }
-    ],
-    "errors": {
-     "budget.monthly_usd": "The daemon rejected it: bad value."
-    },
-    "savedKey": "budget.daily_usd"
-   },
-   "offline": {
-    "_state": "idle",
-    "_fixture": {
-     "patch": {
-      "health": {},
-      "spend": {}
-     },
-     "offline": true
-    },
-    "cua": null,
-    "spendModels": [],
-    "values": {},
-    "connectors": []
-   }
-  }
- },
- "NowTab": {
-  "mode": "variant",
-  "pad": 10,
-  "width": 360,
-  "scale2": true,
-  "variants": {
-   "idle": {
-    "_state": "idle"
-   },
-   "acting": {
-    "_state": "acting"
-   },
-   "awaiting_choice": {
-    "_state": "awaiting_choice"
-   },
-   "error": {
-    "_state": "error"
-   },
-   "long_answer": {
-    "_state": "long_answer"
-   },
-   "done": {
-    "_state": "done"
    },
    "stale": {
-    "_state": "stale"
-   },
-   "offline": {
-    "_state": "offline",
-    "_fixture": {
-     "offline": true
-    }
-   }
-  }
- },
- "AgentsTab": {
-  "mode": "variant",
-  "pad": 10,
-  "width": 360,
-  "scale2": true,
-  "variants": {
-   "empty": {
-    "_state": "idle"
-   },
-   "tasks": {
-    "_state": "idle",
     "_fixture": {
      "patch": {
-      "tasks": {
-       "tidy downloads": {
-        "status": "queued",
-        "task": "move old files into folders"
+      "health": {
+       "brain_ollama": {
+        "code": null,
+        "latency_ms": 41,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
        },
-       "summarize inbox": {
-        "status": "running",
-        "task": "summarize inbox",
-        "seconds": 83,
-        "line": "reading message 12 of 40"
+       "cua": {
+        "code": null,
+        "latency_ms": 3,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
        },
-       "weekly report": {
-        "status": "done",
-        "task": "weekly report",
-        "seconds": 301,
-        "line": "saved to Documents"
+       "jev": {
+        "code": null,
+        "latency_ms": 12,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
        },
-       "sync notes": {
-        "status": "failed",
-        "task": "sync notes",
-        "seconds": 12,
-        "line": "endpoint refused the request"
+       "spend": {
+        "code": null,
+        "latency_ms": 0,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "stt": {
+        "code": null,
+        "latency_ms": 9,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
        }
+      },
+      "spend": {
+       "blocked": false,
+       "cap_usd": 2.0,
+       "month_usd": 6.1,
+       "monthly_cap_usd": 20.0,
+       "today_usd": 0.42
       }
+     },
+     "stale": true
+    },
+    "_state": "idle",
+    "cua": {
+     "dry_run": false,
+     "fix": null,
+     "kill": false,
+     "live": true,
+     "mode": "guide",
+     "state": "running",
+     "version": "0.4.2"
+    },
+    "spendModels": [
+     {
+      "calls": 14,
+      "model": "openrouter/llama-4-maverick",
+      "usd": 0.31
+     },
+     {
+      "calls": 9,
+      "model": "openrouter/gemini-2.5-flash",
+      "usd": 0.11
      }
-    }
+    ]
    }
-  }
+  },
+  "width": 560
+ },
+ "Mark": {
+  "mode": "state",
+  "pad": 8,
+  "props": {
+   "size": 28
+  },
+  "scale2": true,
+  "size": 28
  },
  "MemoryTab": {
   "mode": "variant",
   "pad": 10,
-  "width": 360,
   "scale2": true,
   "variants": {
    "empty": {
@@ -1258,937 +1590,562 @@
    },
    "filled": {
     "_state": "idle",
-    "skills": [
-     {
-      "name": "rename-files",
-      "description": "rename files by pattern"
-     },
-     {
-      "name": "night-light",
-      "description": "toggle the night light"
-     },
-     {
-      "name": "summarize-page",
-      "description": "summarize the focused page"
-     }
-    ],
     "decisions": [
      {
-      "ts": "08:12:01",
+      "failed": false,
       "route": "act",
       "text": "turn on night light",
-      "failed": false
+      "ts": "08:12:01"
      },
      {
-      "ts": "08:10:44",
+      "failed": false,
       "route": "answer",
       "text": "what is on my calendar",
-      "failed": false
+      "ts": "08:10:44"
      },
      {
-      "ts": "08:05:10",
+      "failed": true,
       "route": "act",
       "text": "rename the project folder",
-      "failed": true
+      "ts": "08:05:10"
+     }
+    ],
+    "skills": [
+     {
+      "description": "rename files by pattern",
+      "name": "rename-files"
+     },
+     {
+      "description": "toggle the night light",
+      "name": "night-light"
+     },
+     {
+      "description": "summarize the focused page",
+      "name": "summarize-page"
      }
     ]
+   }
+  },
+  "width": 360
+ },
+ "NowTab": {
+  "mode": "variant",
+  "pad": 10,
+  "scale2": true,
+  "variants": {
+   "acting": {
+    "_state": "acting"
+   },
+   "awaiting_choice": {
+    "_state": "awaiting_choice"
+   },
+   "done": {
+    "_state": "done"
+   },
+   "error": {
+    "_state": "error"
+   },
+   "idle": {
+    "_state": "idle"
+   },
+   "long_answer": {
+    "_state": "long_answer"
+   },
+   "offline": {
+    "_fixture": {
+     "offline": true
+    },
+    "_state": "offline"
+   },
+   "stale": {
+    "_state": "stale"
+   }
+  },
+  "width": 360
+ },
+ "PanelTab": {
+  "mode": "variant",
+  "pad": 6,
+  "variants": {
+   "hover": {
+    "hovered": true,
+    "text": "agents"
+   },
+   "normal": {
+    "text": "agents"
+   },
+   "selected": {
+    "selected": true,
+    "text": "now"
    }
   }
  },
- "HealthView": {
+ "Pill": {
+  "mode": "state",
+  "on": "desktop",
+  "pad": 12,
+  "scale2": true
+ },
+ "SettingsTab": {
   "mode": "variant",
   "pad": 10,
-  "width": 560,
   "scale2": true,
   "variants": {
-   "all_ok": {
-    "_state": "idle",
+   "daemon_error": {
     "_fixture": {
      "patch": {
       "health": {
-       "jev": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 12,
-        "code": null
-       },
        "brain_ollama": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
+        "code": null,
         "latency_ms": 41,
-        "code": null
-       },
-       "stt": {
         "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 9,
-        "code": null
+        "since": "2026-10-04T08:00:00Z"
        },
        "cua": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
+        "code": null,
         "latency_ms": 3,
-        "code": null
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "jev": {
+        "code": null,
+        "latency_ms": 12,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
        },
        "spend": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
+        "code": null,
         "latency_ms": 0,
-        "code": null
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "stt": {
+        "code": null,
+        "latency_ms": 9,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
        }
       },
       "spend": {
-       "today_usd": 0.42,
+       "blocked": false,
        "cap_usd": 2.0,
        "month_usd": 6.1,
        "monthly_cap_usd": 20.0,
-       "blocked": false
+       "today_usd": 0.42
       }
      }
     },
+    "_state": "idle",
+    "connectors": [
+     {
+      "alias": "gmail",
+      "connected": true,
+      "name": "Gmail"
+     },
+     {
+      "alias": "slack",
+      "connected": false,
+      "name": "Slack"
+     }
+    ],
     "cua": {
-     "state": "running",
+     "dry_run": false,
      "fix": null,
      "kill": false,
-     "dry_run": false,
-     "version": "0.4.2",
      "live": true,
-     "mode": "guide"
+     "mode": "guide",
+     "state": "running",
+     "version": "0.4.2"
     },
+    "errors": {
+     "budget.monthly_usd": "The daemon rejected it: bad value."
+    },
+    "savedKey": "budget.daily_usd",
     "spendModels": [
      {
-      "model": "openrouter/llama-4-maverick",
       "calls": 14,
+      "model": "openrouter/llama-4-maverick",
       "usd": 0.31
      },
      {
-      "model": "openrouter/gemini-2.5-flash",
       "calls": 9,
+      "model": "openrouter/gemini-2.5-flash",
       "usd": 0.11
      }
-    ]
+    ],
+    "values": {
+     "budget.daily_usd": "2.00",
+     "budget.monthly_usd": "20.00",
+     "cua.confirm": "tier",
+     "cua.dry_run": "false",
+     "cua.kill_switch": "false",
+     "cua.max_clicks_per_min": "30",
+     "cua.max_per_turn": "12",
+     "pointer.mode": "guide"
+    }
    },
-   "endpoint_down": {
-    "_state": "idle",
+   "invalid_edit": {
     "_fixture": {
      "patch": {
       "health": {
-       "jev": {
-        "ok": false,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": null,
-        "code": "jev_down"
-       },
        "brain_ollama": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
+        "code": null,
         "latency_ms": 41,
-        "code": null
-       },
-       "stt": {
         "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 9,
-        "code": null
+        "since": "2026-10-04T08:00:00Z"
        },
        "cua": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
+        "code": null,
         "latency_ms": 3,
-        "code": null
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "jev": {
+        "code": null,
+        "latency_ms": 12,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
        },
        "spend": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
+        "code": null,
         "latency_ms": 0,
-        "code": null
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "stt": {
+        "code": null,
+        "latency_ms": 9,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
        }
       },
       "spend": {
-       "today_usd": 0.42,
+       "blocked": false,
        "cap_usd": 2.0,
        "month_usd": 6.1,
        "monthly_cap_usd": 20.0,
-       "blocked": false
+       "today_usd": 0.42
       }
      }
     },
+    "_state": "idle",
+    "connectors": [
+     {
+      "alias": "gmail",
+      "connected": true,
+      "name": "Gmail"
+     },
+     {
+      "alias": "slack",
+      "connected": false,
+      "name": "Slack"
+     }
+    ],
     "cua": {
-     "state": "running",
+     "dry_run": false,
      "fix": null,
      "kill": false,
-     "dry_run": false,
-     "version": "0.4.2",
      "live": true,
-     "mode": "guide"
-    },
-    "spendModels": [
-     {
-      "model": "openrouter/llama-4-maverick",
-      "calls": 14,
-      "usd": 0.31
-     },
-     {
-      "model": "openrouter/gemini-2.5-flash",
-      "calls": 9,
-      "usd": 0.11
-     }
-    ]
-   },
-   "cua_down": {
-    "_state": "idle",
-    "_fixture": {
-     "patch": {
-      "health": {
-       "jev": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 12,
-        "code": null
-       },
-       "brain_ollama": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 41,
-        "code": null
-       },
-       "stt": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 9,
-        "code": null
-       },
-       "cua": {
-        "ok": false,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": null,
-        "code": "cua_down"
-       },
-       "spend": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 0,
-        "code": null
-       }
-      },
-      "spend": {
-       "today_usd": 0.42,
-       "cap_usd": 2.0,
-       "month_usd": 6.1,
-       "monthly_cap_usd": 20.0,
-       "blocked": false
-      }
-     }
-    },
-    "cua": {
-     "state": "installed_not_running",
-     "fix": "systemctl --user start cua-driver.service",
-     "kill": false,
-     "dry_run": false,
-     "version": "0.4.2",
-     "live": false,
-     "mode": "guide"
-    },
-    "spendModels": [
-     {
-      "model": "openrouter/llama-4-maverick",
-      "calls": 14,
-      "usd": 0.31
-     },
-     {
-      "model": "openrouter/gemini-2.5-flash",
-      "calls": 9,
-      "usd": 0.11
-     }
-    ]
-   },
-   "budget_blocked": {
-    "_state": "idle",
-    "_fixture": {
-     "patch": {
-      "health": {
-       "jev": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 12,
-        "code": null
-       },
-       "brain_ollama": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 41,
-        "code": null
-       },
-       "stt": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 9,
-        "code": null
-       },
-       "cua": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 3,
-        "code": null
-       },
-       "spend": {
-        "ok": false,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": null,
-        "code": "budget_exceeded"
-       }
-      },
-      "spend": {
-       "today_usd": 2.0,
-       "cap_usd": 2.0,
-       "month_usd": 6.1,
-       "monthly_cap_usd": 20.0,
-       "blocked": true
-      }
-     }
-    },
-    "cua": {
+     "mode": "guide",
      "state": "running",
-     "fix": null,
-     "kill": false,
-     "dry_run": false,
-     "version": "0.4.2",
-     "live": true,
-     "mode": "guide"
+     "version": "0.4.2"
+    },
+    "draft": {
+     "budget.daily_usd": "two",
+     "cua.max_per_turn": "900"
     },
     "spendModels": [
      {
-      "model": "openrouter/llama-4-maverick",
       "calls": 14,
+      "model": "openrouter/llama-4-maverick",
       "usd": 0.31
      },
      {
-      "model": "openrouter/gemini-2.5-flash",
       "calls": 9,
+      "model": "openrouter/gemini-2.5-flash",
       "usd": 0.11
      }
-    ]
-   },
-   "stale": {
-    "_state": "idle",
-    "_fixture": {
-     "patch": {
-      "health": {
-       "jev": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 12,
-        "code": null
-       },
-       "brain_ollama": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 41,
-        "code": null
-       },
-       "stt": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 9,
-        "code": null
-       },
-       "cua": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 3,
-        "code": null
-       },
-       "spend": {
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z",
-        "latency_ms": 0,
-        "code": null
-       }
-      },
-      "spend": {
-       "today_usd": 0.42,
-       "cap_usd": 2.0,
-       "month_usd": 6.1,
-       "monthly_cap_usd": 20.0,
-       "blocked": false
-      }
-     },
-     "stale": true
-    },
-    "cua": {
-     "state": "running",
-     "fix": null,
-     "kill": false,
-     "dry_run": false,
-     "version": "0.4.2",
-     "live": true,
-     "mode": "guide"
-    },
-    "spendModels": [
-     {
-      "model": "openrouter/llama-4-maverick",
-      "calls": 14,
-      "usd": 0.31
-     },
-     {
-      "model": "openrouter/gemini-2.5-flash",
-      "calls": 9,
-      "usd": 0.11
-     }
-    ]
+    ],
+    "values": {
+     "budget.daily_usd": "2.00",
+     "budget.monthly_usd": "20.00",
+     "cua.confirm": "tier",
+     "cua.dry_run": "false",
+     "cua.kill_switch": "false",
+     "cua.max_clicks_per_min": "30",
+     "cua.max_per_turn": "12",
+     "pointer.mode": "guide"
+    }
    },
    "offline": {
-    "_state": "idle",
     "_fixture": {
+     "offline": true,
      "patch": {
       "health": {},
       "spend": {}
-     },
-     "offline": true
+     }
     },
+    "_state": "idle",
+    "connectors": [],
     "cua": null,
-    "spendModels": []
+    "spendModels": [],
+    "values": {}
+   },
+   "ok": {
+    "_fixture": {
+     "patch": {
+      "health": {
+       "brain_ollama": {
+        "code": null,
+        "latency_ms": 41,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "cua": {
+        "code": null,
+        "latency_ms": 3,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "jev": {
+        "code": null,
+        "latency_ms": 12,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "spend": {
+        "code": null,
+        "latency_ms": 0,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "stt": {
+        "code": null,
+        "latency_ms": 9,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       }
+      },
+      "spend": {
+       "blocked": false,
+       "cap_usd": 2.0,
+       "month_usd": 6.1,
+       "monthly_cap_usd": 20.0,
+       "today_usd": 0.42
+      }
+     }
+    },
+    "_state": "idle",
+    "connectors": [
+     {
+      "alias": "gmail",
+      "connected": true,
+      "name": "Gmail"
+     },
+     {
+      "alias": "slack",
+      "connected": false,
+      "name": "Slack"
+     }
+    ],
+    "cua": {
+     "dry_run": false,
+     "fix": null,
+     "kill": false,
+     "live": true,
+     "mode": "guide",
+     "state": "running",
+     "version": "0.4.2"
+    },
+    "spendModels": [
+     {
+      "calls": 14,
+      "model": "openrouter/llama-4-maverick",
+      "usd": 0.31
+     },
+     {
+      "calls": 9,
+      "model": "openrouter/gemini-2.5-flash",
+      "usd": 0.11
+     }
+    ],
+    "values": {
+     "budget.daily_usd": "2.00",
+     "budget.monthly_usd": "20.00",
+     "cua.confirm": "tier",
+     "cua.dry_run": "false",
+     "cua.kill_switch": "false",
+     "cua.max_clicks_per_min": "30",
+     "cua.max_per_turn": "12",
+     "pointer.mode": "guide"
+    }
    }
-  }
+  },
+  "width": 360
  },
  "SpendView": {
   "mode": "variant",
   "pad": 10,
-  "width": 560,
   "scale2": true,
   "variants": {
-   "ok": {
-    "_state": "idle",
-    "_fixture": {
-     "patch": {
-      "spend": {
-       "today_usd": 0.42,
-       "cap_usd": 2.0,
-       "month_usd": 6.1,
-       "monthly_cap_usd": 20.0,
-       "blocked": false
-      }
-     }
-    },
-    "models": [
-     {
-      "model": "openrouter/llama-4-maverick",
-      "calls": 14,
-      "in": 9120,
-      "out": 2210,
-      "usd": 0.31
-     },
-     {
-      "model": "openrouter/gemini-2.5-flash",
-      "calls": 9,
-      "in": 4300,
-      "out": 1100,
-      "usd": 0.11
-     }
-    ]
-   },
    "blocked": {
-    "_state": "idle",
     "_fixture": {
      "patch": {
       "spend": {
-       "today_usd": 2.0,
+       "blocked": true,
        "cap_usd": 2.0,
        "month_usd": 6.1,
        "monthly_cap_usd": 20.0,
-       "blocked": true
+       "today_usd": 2.0
       }
      }
     },
+    "_state": "idle",
     "models": [
      {
-      "model": "openrouter/llama-4-maverick",
       "calls": 14,
       "in": 9120,
+      "model": "openrouter/llama-4-maverick",
       "out": 2210,
       "usd": 0.31
      },
      {
-      "model": "openrouter/gemini-2.5-flash",
       "calls": 9,
       "in": 4300,
+      "model": "openrouter/gemini-2.5-flash",
       "out": 1100,
       "usd": 0.11
      }
     ]
    },
    "no_cap": {
-    "_state": "idle",
     "_fixture": {
      "patch": {
       "spend": {
-       "today_usd": 0.0,
+       "blocked": false,
        "cap_usd": null,
        "month_usd": 0.0,
        "monthly_cap_usd": null,
-       "blocked": false
+       "today_usd": 0.0
       }
      }
     },
+    "_state": "idle",
     "models": []
    },
-   "stale": {
+   "offline": {
+    "_fixture": {
+     "offline": true,
+     "patch": {
+      "health": {},
+      "spend": {}
+     }
+    },
     "_state": "idle",
+    "models": []
+   },
+   "ok": {
     "_fixture": {
      "patch": {
       "spend": {
-       "today_usd": 0.42,
+       "blocked": false,
        "cap_usd": 2.0,
        "month_usd": 6.1,
        "monthly_cap_usd": 20.0,
-       "blocked": false
+       "today_usd": 0.42
       }
-     },
-     "stale": true
+     }
     },
+    "_state": "idle",
     "models": [
      {
-      "model": "openrouter/llama-4-maverick",
       "calls": 14,
       "in": 9120,
+      "model": "openrouter/llama-4-maverick",
       "out": 2210,
       "usd": 0.31
      },
      {
-      "model": "openrouter/gemini-2.5-flash",
       "calls": 9,
       "in": 4300,
+      "model": "openrouter/gemini-2.5-flash",
       "out": 1100,
       "usd": 0.11
      }
     ]
    },
-   "offline": {
-    "_state": "idle",
+   "stale": {
     "_fixture": {
      "patch": {
-      "health": {},
-      "spend": {}
-     },
-     "offline": true
-    },
-    "models": []
-   }
-  }
- },
- "AuditView": {
-  "mode": "variant",
-  "pad": 10,
-  "width": 560,
-  "scale2": true,
-  "variants": {
-   "rows": {
-    "_state": "idle",
-    "log": "{\"ts\":1759579200,\"turn\":\"t-1\",\"tool\":\"click\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":212,\"x\":640,\"y\":380}\n{\"ts\":1759579204,\"turn\":\"t-1\",\"tool\":\"type_text\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":95,\"len\":12,\"sha\":\"3fa9c01be2d4\"}\n{\"ts\":1759579209,\"turn\":\"t-1\",\"tool\":\"key\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":41,\"key\":\"ctrl+l\"}\n{\"ts\":1759579215,\"turn\":\"t-1\",\"tool\":\"click\",\"app\":\"1password\",\"decision\":\"deny\",\"dry_run\":false,\"result\":\"REFUSED\",\"ms\":3,\"x\":10,\"y\":10}\n{\"ts\":1759579221,\"turn\":\"t-1\",\"tool\":\"scroll\",\"app\":\"thunar\",\"decision\":\"dry_run\",\"dry_run\":true,\"result\":\"DRYRUN\",\"ms\":1,\"x\":300,\"y\":400}\n{\"ts\":1759579230,\"turn\":\"t-1\",\"tool\":\"click\",\"app\":\"ghostty\",\"decision\":\"cancelled\",\"dry_run\":false,\"result\":\"CANCELLED\",\"ms\":18,\"x\":50,\"y\":60}"
-   },
-   "empty": {
-    "_state": "idle",
-    "log": ""
-   },
-   "offline": {
-    "_state": "idle",
-    "_fixture": {
-     "offline": true
-    },
-    "log": "{\"ts\":1759579200,\"turn\":\"t-1\",\"tool\":\"click\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":212,\"x\":640,\"y\":380}\n{\"ts\":1759579204,\"turn\":\"t-1\",\"tool\":\"type_text\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":95,\"len\":12,\"sha\":\"3fa9c01be2d4\"}\n{\"ts\":1759579209,\"turn\":\"t-1\",\"tool\":\"key\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":41,\"key\":\"ctrl+l\"}\n{\"ts\":1759579215,\"turn\":\"t-1\",\"tool\":\"click\",\"app\":\"1password\",\"decision\":\"deny\",\"dry_run\":false,\"result\":\"REFUSED\",\"ms\":3,\"x\":10,\"y\":10}\n{\"ts\":1759579221,\"turn\":\"t-1\",\"tool\":\"scroll\",\"app\":\"thunar\",\"decision\":\"dry_run\",\"dry_run\":true,\"result\":\"DRYRUN\",\"ms\":1,\"x\":300,\"y\":400}\n{\"ts\":1759579230,\"turn\":\"t-1\",\"tool\":\"click\",\"app\":\"ghostty\",\"decision\":\"cancelled\",\"dry_run\":false,\"result\":\"CANCELLED\",\"ms\":18,\"x\":50,\"y\":60}"
-   }
-  }
- },
- "BindsView": {
-  "mode": "variant",
-  "pad": 10,
-  "width": 560,
-  "scale2": true,
-  "variants": {
-   "global": {
-    "_state": "idle",
-    "binds": {
-     "hotkey": {
-      "mod": "SUPER",
-      "key": "D",
-      "chord": "SUPER+D"
-     },
-     "hyprland": true,
-     "binds": [
-      {
-       "key": "D",
-       "modmask": 64,
-       "arg": "wispd trigger",
-       "submap": ""
-      },
-      {
-       "key": "D",
-       "modmask": 65,
-       "arg": "wispd interrupt",
-       "submap": ""
+      "spend": {
+       "blocked": false,
+       "cap_usd": 2.0,
+       "month_usd": 6.1,
+       "monthly_cap_usd": 20.0,
+       "today_usd": 0.42
       }
-     ]
-    }
-   },
-   "submap": {
+     },
+     "stale": true
+    },
     "_state": "idle",
-    "binds": {
-     "hotkey": {
-      "mod": "SUPER",
-      "key": "D",
-      "chord": "SUPER+D"
-     },
-     "hyprland": true,
-     "binds": [
-      {
-       "key": "D",
-       "modmask": 64,
-       "arg": "wispd trigger",
-       "submap": ""
-      },
-      {
-       "key": "D",
-       "modmask": 65,
-       "arg": "wispd interrupt",
-       "submap": ""
-      },
-      {
-       "key": "Escape",
-       "modmask": 0,
-       "arg": "wispd interrupt",
-       "submap": "wisp"
-      },
-      {
-       "key": "Return",
-       "modmask": 0,
-       "arg": "wispd choice yes",
-       "submap": "wisp"
-      },
-      {
-       "key": "1",
-       "modmask": 0,
-       "arg": "wispd choice 1",
-       "submap": "wisp"
-      }
-     ]
-    }
-   },
-   "no_hyprland": {
-    "_state": "idle",
-    "binds": {
-     "hotkey": {
-      "mod": "SUPER",
-      "key": "D",
-      "chord": "SUPER+D"
-     },
-     "hyprland": false,
-     "binds": []
-    }
-   },
-   "none_registered": {
-    "_state": "idle",
-    "binds": {
-     "hotkey": {
-      "mod": "SUPER",
-      "key": "D",
-      "chord": "SUPER+D"
-     },
-     "hyprland": true,
-     "binds": []
-    }
-   }
-  }
- },
- "FirstRunCard": {
-  "mode": "variant",
-  "pad": 10,
-  "width": 360,
-  "scale2": true,
-  "on": "canvas",
-  "variants": {
-   "fresh": {
-    "_state": "idle",
-    "steps": [
+    "models": [
      {
-      "id": "mic",
-      "name": "microphone",
-      "optional": false,
-      "state": "todo",
-      "ok": false,
-      "done": false,
-      "detail": "pw-record and the speech model are ready",
-      "try": ""
+      "calls": 14,
+      "in": 9120,
+      "model": "openrouter/llama-4-maverick",
+      "out": 2210,
+      "usd": 0.31
      },
      {
-      "id": "models",
-      "name": "local models",
-      "optional": false,
-      "state": "todo",
-      "ok": false,
-      "done": false,
-      "detail": "ornith up, jev up, jev-shim up, uitars down, ollama down",
-      "try": ""
-     },
-     {
-      "id": "cua",
-      "name": "cua pointer driver",
-      "optional": true,
-      "state": "todo",
-      "ok": false,
-      "done": false,
-      "detail": "cua-driver running",
-      "try": ""
-     },
-     {
-      "id": "notifications",
-      "name": "notifications",
-      "optional": false,
-      "state": "todo",
-      "ok": false,
-      "done": false,
-      "detail": "ready; a test send needs your ok",
-      "try": ""
-     },
-     {
-      "id": "keybinding",
-      "name": "keybinding",
-      "optional": true,
-      "state": "na",
-      "ok": false,
-      "done": false,
-      "detail": "needs the keyboard submap (not installed yet)",
-      "try": ""
+      "calls": 9,
+      "in": 4300,
+      "model": "openrouter/gemini-2.5-flash",
+      "out": 1100,
+      "usd": 0.11
      }
-    ],
-    "skipped": []
-   },
-   "partial": {
-    "_state": "idle",
-    "steps": [
-     {
-      "id": "mic",
-      "name": "microphone",
-      "optional": false,
-      "state": "done",
-      "ok": true,
-      "done": true,
-      "detail": "pw-record and the speech model are ready",
-      "try": ""
-     },
-     {
-      "id": "models",
-      "name": "local models",
-      "optional": false,
-      "state": "done",
-      "ok": true,
-      "done": true,
-      "detail": "ornith up, jev up, jev-shim up, uitars down, ollama down",
-      "try": ""
-     },
-     {
-      "id": "cua",
-      "name": "cua pointer driver",
-      "optional": true,
-      "state": "todo",
-      "ok": false,
-      "done": false,
-      "detail": "cua-driver running",
-      "try": ""
-     },
-     {
-      "id": "notifications",
-      "name": "notifications",
-      "optional": false,
-      "state": "todo",
-      "ok": false,
-      "done": false,
-      "detail": "ready; a test send needs your ok",
-      "try": ""
-     },
-     {
-      "id": "keybinding",
-      "name": "keybinding",
-      "optional": true,
-      "state": "na",
-      "ok": false,
-      "done": false,
-      "detail": "needs the keyboard submap (not installed yet)",
-      "try": ""
-     }
-    ],
-    "skipped": []
-   },
-   "skipped": {
-    "_state": "idle",
-    "steps": [
-     {
-      "id": "mic",
-      "name": "microphone",
-      "optional": false,
-      "state": "done",
-      "ok": true,
-      "done": true,
-      "detail": "pw-record and the speech model are ready",
-      "try": ""
-     },
-     {
-      "id": "models",
-      "name": "local models",
-      "optional": false,
-      "state": "todo",
-      "ok": false,
-      "done": false,
-      "detail": "ornith up, jev up, jev-shim up, uitars down, ollama down",
-      "try": ""
-     },
-     {
-      "id": "cua",
-      "name": "cua pointer driver",
-      "optional": true,
-      "state": "todo",
-      "ok": false,
-      "done": false,
-      "detail": "cua-driver running",
-      "try": ""
-     },
-     {
-      "id": "notifications",
-      "name": "notifications",
-      "optional": false,
-      "state": "todo",
-      "ok": false,
-      "done": false,
-      "detail": "ready; a test send needs your ok",
-      "try": ""
-     },
-     {
-      "id": "keybinding",
-      "name": "keybinding",
-      "optional": true,
-      "state": "na",
-      "ok": false,
-      "done": false,
-      "detail": "needs the keyboard submap (not installed yet)",
-      "try": ""
-     }
-    ],
-    "skipped": [
-     "cua",
-     "notifications"
     ]
-   },
-   "problem": {
-    "_state": "idle",
-    "steps": [
-     {
-      "id": "mic",
-      "name": "microphone",
-      "optional": false,
-      "state": "todo",
-      "ok": false,
-      "done": false,
-      "detail": "no recorder found",
-      "try": "omarchy pkg add pipewire"
-     },
-     {
-      "id": "models",
-      "name": "local models",
-      "optional": false,
-      "state": "todo",
-      "ok": false,
-      "done": false,
-      "detail": "ornith up, jev up, jev-shim up, uitars down, ollama down",
-      "try": ""
-     },
-     {
-      "id": "cua",
-      "name": "cua pointer driver",
-      "optional": true,
-      "state": "todo",
-      "ok": false,
-      "done": false,
-      "detail": "cua-driver running",
-      "try": ""
-     },
-     {
-      "id": "notifications",
-      "name": "notifications",
-      "optional": false,
-      "state": "todo",
-      "ok": false,
-      "done": false,
-      "detail": "ready; a test send needs your ok",
-      "try": ""
-     },
-     {
-      "id": "keybinding",
-      "name": "keybinding",
-      "optional": true,
-      "state": "na",
-      "ok": false,
-      "done": false,
-      "detail": "needs the keyboard submap (not installed yet)",
-      "try": ""
-     }
-    ],
-    "skipped": []
-   },
-   "all_done": {
-    "_state": "idle",
-    "steps": [
-     {
-      "id": "mic",
-      "name": "microphone",
-      "optional": false,
-      "state": "done",
-      "ok": true,
-      "done": true,
-      "detail": "pw-record and the speech model are ready",
-      "try": ""
-     },
-     {
-      "id": "models",
-      "name": "local models",
-      "optional": false,
-      "state": "done",
-      "ok": true,
-      "done": true,
-      "detail": "ornith up, jev up, jev-shim up, uitars down, ollama down",
-      "try": ""
-     },
-     {
-      "id": "cua",
-      "name": "cua pointer driver",
-      "optional": true,
-      "state": "done",
-      "ok": true,
-      "done": true,
-      "detail": "cua-driver running",
-      "try": ""
-     },
-     {
-      "id": "notifications",
-      "name": "notifications",
-      "optional": false,
-      "state": "done",
-      "ok": true,
-      "done": true,
-      "detail": "ready; a test send needs your ok",
-      "try": ""
-     },
-     {
-      "id": "keybinding",
-      "name": "keybinding",
-      "optional": true,
-      "state": "na",
-      "ok": false,
-      "done": false,
-      "detail": "needs the keyboard submap (not installed yet)",
-      "try": ""
-     }
-    ],
-    "skipped": []
    }
-  }
+  },
+  "width": 560
+ },
+ "StatusLine": {
+  "mode": "state",
+  "pad": 10
+ },
+ "StepRow": {
+  "mode": "variant",
+  "pad": 10,
+  "variants": {
+   "confirm": {
+    "state": "confirm",
+    "text": "run_shell rm -r Downloads"
+   },
+   "done": {
+    "state": "done",
+    "text": "focus Settings"
+   },
+   "failed": {
+    "state": "failed",
+    "text": "click rename"
+   },
+   "pending": {
+    "state": "pending",
+    "text": "verify toggle"
+   },
+   "running": {
+    "state": "running",
+    "text": "click night light toggle"
+   }
+  },
+  "width": 300
+ },
+ "StopControl": {
+  "mode": "state",
+  "pad": 10
+ },
+ "Transcript": {
+  "mode": "state",
+  "pad": 10,
+  "width": 280
  }
 }

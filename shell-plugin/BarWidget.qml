@@ -75,15 +75,33 @@ BarWidget {
     bar: root.bar
     labelVisible: false
     hasVisualContent: true
-    fixedWidth: mark.implicitWidth + Style.spaceReal(2 * horizontalMargin)
+    fixedWidth: content.implicitWidth + Style.spaceReal(2 * horizontalMargin)
     tooltipText: root.tooltip
     onPressed: function(buttonCode) { actions.press(buttonCode) }
 
-    BarMark {
-      id: mark
+    // live-activities grow/shrink: the bar widens smoothly while the pill
+    // clips and fades its contents in; off when motion is off
+    Behavior on fixedWidth {
+      enabled: root.service ? root.service.motionMode !== "off" : false
+      NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+    }
+
+    Row {
+      id: content
       anchors.centerIn: parent
-      service: root.service
-      size: Style.bar.iconCanvas
+      spacing: 0
+
+      BarMark {
+        id: mark
+        anchors.verticalCenter: parent.verticalCenter
+        service: root.service
+        size: Style.bar.iconCanvas
+      }
+
+      BarPill {
+        anchors.verticalCenter: parent.verticalCenter
+        service: root.service
+      }
     }
   }
 }
