@@ -44,8 +44,10 @@ Item {
   function refreshOf(shellScreen) {
     if (typeof Application === "undefined" || !shellScreen) return 60;
     var list = Application.screens;
-    for (var i = 0; i < list.length; i++)
-      if (list[i].name === shellScreen.name) return list[i].refreshRate;
+    for (var i = 0; i < list.length; i++) {
+      var rate = list[i].refreshRate;
+      if (list[i].name === shellScreen.name && typeof rate === "number" && isFinite(rate)) return rate;
+    }
     return 60;
   }
 
