@@ -49,8 +49,10 @@ def _spoken_result(result: str) -> str:
     m = re.match(r"^ACTED \(\d+ steps\):\s*(.*)", result, re.S)
     if m:
         return m.group(1).strip()
-    if result.startswith("ASK_USER "):
-        return "asked: " + result[9:].strip()
+    m = re.match(r"^ASK_USER[ :]\s*(.*)", result, re.S)
+    if m:
+        # act loop logs 'ASK_USER x'; the answer route logs 'ASK_USER: x'
+        return "asked: " + m.group(1).strip()
     if result.startswith(("SKIP", "ERROR", "ABORTED", "INTERRUPTED")):
         # strip the status word + parenthesized cause → human reason
         cause = re.sub(r"^\w+\s*\((.*)\)\s*$", r"\1", result).strip()
