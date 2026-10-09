@@ -94,8 +94,8 @@ Evidence is `master` at `67b520c`, `gh pr list --state merged`, the open PR and 
 
 #### Resolve before the dependent unit
 
-- OQ1 (blocks U7). STT engine: warm whisper.cpp, Parakeet, or a hosted provider behind the existing `[stt] provider` seam? The W12 benchmark produces the numbers; the owner decides.
-- OQ2 (blocks U8). Rust parity scope: keep `rs/wispd` at full parity, or freeze it to the minimal contract subset and mark the rest `py-only`?
+- OQ1 (blocks U8). STT engine: warm whisper.cpp, Parakeet, or a hosted provider behind the existing `[stt] provider` seam? The W12 benchmark produces the numbers; the owner decides.
+- OQ2 (blocks U9). Rust parity scope: keep `rs/wispd` at full parity, or freeze it to the minimal contract subset and mark the rest `py-only`?
 - OQ3 (blocks U9). Is a premium handoff route wanted at all? The default answer under `AGENTS.md` is no.
 
 #### Deferred to implementation
@@ -154,7 +154,6 @@ flowchart TB
   U1 --> U10
   U4 --> U7
   U6 --> U7
-  U8 --> U1
   U9 --> U10
   U7 --> U12
   U5 --> U11
@@ -219,7 +218,7 @@ U1 is the critical path and is mostly the owner's time. U2 to U5 are the agent-e
 - **Goal:** `v1.0.0` exists with release notes that carry the gate evidence.
 - **Requirements:** R1, R10.
 - **Status:** not started. `ROADMAP.md` records 0 of 50 labelled runs per route, no timed clean-VM install and 0 of 2 learning cycles. Tooling exists: `wispd label`, `wispd learn`, `wispd trace digest`, `wispd onboard`, `wispd doctor`.
-- **Dependencies:** none to begin the soak; the tag needs U2 to U5 done or consciously waived.
+- **Dependencies:** none to begin the soak; the tag needs U2 to U5 done or consciously waived. U8 (warm STT) is a possible remediation if the soak identifies STT as the top failure mode, not a prerequisite.
 - **Files:** modify `ROADMAP.md` (tick boxes with evidence), release notes in the GitHub release; no code unless the soak surfaces a defect, which becomes its own unit.
 - **Approach:**
   1. Owner labels every run for the soak window; weekly, read the per-route table, fix the top failure mode, re-measure.
