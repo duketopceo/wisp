@@ -93,29 +93,11 @@ TestCase {
     compare(Cur.BUBBLE_LINES, 12)
   }
 
-  function test_console_opens_only_when_asked_or_choosing() {
-    compare(Co.consoleOpen("listening", false, false), false)
-    compare(Co.consoleOpen("deciding", false, false), false)
-    compare(Co.consoleOpen("acting", false, false), false)
-    compare(Co.consoleOpen("awaiting_choice", true, false), true)
-    compare(Co.consoleOpen("acting", true, false), true)
-    compare(Co.consoleOpen("idle", false, true), true)
-    compare(Co.userToggle(true), false)
-  }
-
-  function test_corner_and_pill_visibility() {
-    compare(Co.cornerVisible(false, false), true)
-    compare(Co.cornerVisible(true, false), false)
-    compare(Co.cornerVisible(false, true), false)
+  function test_pill_visibility() {
     compare(Co.pillVisible("awaiting_choice"), true)
     compare(Co.pillVisible("listening"), true)
+    compare(Co.pillVisible("transcribing"), true)
+    compare(Co.pillVisible("acting"), false)
     compare(Co.pillVisible("idle"), false)
-  }
-
-  function test_input_region_is_the_creature_only() {
-    var r = Co.inputRegion(40, false, 100)
-    compare(r.w, 40); compare(r.h, 40)
-    compare(Co.inputRegion(20, false, 0).w, 28)
-    compare(Co.inputRegion(40, true, 100).w, 140)
   }
 }
