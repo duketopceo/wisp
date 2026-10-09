@@ -110,6 +110,57 @@ def replay_all(path=None) -> dict:
     return bank
 
 
+# tools that never mutate verifiable page state — a screenshot or a
+# hover can't be what an oracle checks
+PASSIVE_TOOLS = frozenset({"screenshot", "move"})
+NO_EFFECT = ("SKIP", "ERROR", "FAIL", "REFUS", "DRYRUN", "STALLED",
+             "INTERRUPTED", "ASK_USER")
+
+
+def distill_steps(steps: list) -> list:
+    """Minimal re-executable sequence — drop passive observes/moves and
+    steps that returned no effect. A trajectory can pass reliably and
+    still be twice the necessary length; this is the shrink."""
+    out = []
+    for s in steps or []:
+        if s.get("tool") in PASSIVE_TOOLS:
+            continue
+        if (s.get("result") or "").startswith(NO_EFFECT):
+            continue
+        out.append({"tool": s["tool"], "arg": s.get("arg", "")})
+    return out
+
+
+def distill_candidates(bank: dict) -> list:
+    """Candidates that pass reliably but wastefully: streak>=GRAD_STREAK
+    yet sub-floor efficiency, and a banked trajectory that actually
+    shrinks under distillation. These are 'reliable, optimize it' —
+    not 'learn it'."""
+    out = []
+    for e in bank.values():
+        if e.get("status") != "candidate" \
+                or e.get("streak", 0) < GRAD_STREAK or not e.get("check"):
+            continue
+        if len(distill_steps(e.get("steps"))) < len(e.get("steps") or []):
+            out.append(e)
+    return out
+
+
+def promote(e: dict, steps: list) -> dict:
+    """Graduate a distilled entry after its minimal sequence re-verified
+    on a fresh seed. The re-verified shorter path IS the efficiency
+    proof — no judged run needed."""
+    e["status"] = "graduated"
+    e["optimized"] = True
+    e["orig_steps"] = len(e.get("steps") or [])
+    e["steps"] = steps[:24]
+    e["graduated_at"] = datetime.now(timezone.utc).isoformat()
+    e.setdefault("recipe_id",
+                 "recipe-" + hashlib.sha1(
+                     (e.get("key") or "").encode()).hexdigest()[:10])
+    return e
+
+
 def _fold(e: dict | None, rec: dict) -> dict:
     """Fold one judged run into an entry — pure, no file I/O.
     Graduation judges the current streak's efficiency window (a past
@@ -162,6 +213,9 @@ def _fold(e: dict | None, rec: dict) -> dict:
         e["steps"] = rec["steps"][:24]
     if rec.get("check"):
         e["check"] = rec["check"]
+    if rec.get("suite"):
+        # distillation routes candidates to the page their suite ran on
+        e["suite"] = rec["suite"]
     return e
 
 
