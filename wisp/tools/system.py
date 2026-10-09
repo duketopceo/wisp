@@ -1,5 +1,6 @@
 """System tools: notifications, screenshot, typing, guarded shell, file search."""
 import pathlib
+import re
 import shutil
 import subprocess
 
@@ -55,12 +56,24 @@ return JSON.stringify({{w:innerWidth,h:innerHeight,n}});
 """
 
 
+def _legend_key(e: dict) -> str:
+    """Aimable name for a dom_els entry — real id first, then the
+    element's visible label ('utils.py' file rows have no id; a bare
+    'div' is useless to click). Label chars that would break the
+    'key@(x,y)' parse are stripped."""
+    return (e.get("id")
+            or re.sub(r"\s+", " ",
+                      re.sub(r"[@()\n]+", " ",
+                             (e.get("label") or "")).strip()).strip()
+            or e.get("tag") or "?")
+
+
 def _dom_slice(start: int, end: int) -> str:
     return f"""
 var els=[];
 document.querySelectorAll('{_DOM_SELECTOR}').forEach(el=>{{
   var r=el.getBoundingClientRect(); if(r.width<3||r.height<3)return;
-  els.push({{id:el.id||el.tagName.toLowerCase(),
+  els.push({{id:el.id,
     label:(el.textContent||el.placeholder||'').trim().slice(0,24),
     tag:el.tagName.toLowerCase(), x:Math.round(r.x),y:Math.round(r.y),
     w:Math.round(r.width),h:Math.round(r.height)}});
@@ -102,9 +115,12 @@ def _dom_shot(path, cfg: dict) -> str:
     if not w or not h:
         return "SKIP (dom shot: empty viewport)"
     # stash a textual legend — the caption reads exact centers so label
-    # OCR isn't the weak link
+    # OCR isn't the weak link. Elements without an id key on their
+    # label ('utils.py@(x,y)') so click/fill can name them — a bare
+    # tag name is useless to aim at.
     screen["dom_els"] = [
-        f"{e.get('id','?')}@({e['x'] + e['w'] // 2},{e['y'] + e['h'] // 2})"
+        f"{_legend_key(e)}@({e['x'] + e['w'] // 2},"
+        f"{e['y'] + e['h'] // 2})"
         for e in dom.get("els", [])][:90]
     magick = shutil.which("magick")
     if not magick:
@@ -581,7 +597,7 @@ if(!el){
   for(var i=0;i<cs.length;i++){var c=cs[i];
     if(c.id===want||c.tagName.toLowerCase()===want
        ||(c.id||'').indexOf(want)>=0
-       ||(c.textContent||'').trim().toLowerCase()
+       ||(c.textContent||'').trim().slice(0,24).toLowerCase()
            ===want.toLowerCase()){el=c;break}}
 }
 if(!el)return 'miss:no-el';

@@ -111,8 +111,49 @@ class TrainTest(unittest.TestCase):
         self.assertEqual(s["surfaces"]["desktop"]["pass"], 1)
 
 
-if __name__ == "__main__":
-    unittest.main()
+class DistillTest(unittest.TestCase):
+    """Streak-rich wasteful candidates: distill the banked trajectory,
+    re-verify on a fresh seed, graduate the shorter path."""
+
+    def test_distill_drops_passive_and_no_effect(self):
+        steps = [
+            {"tool": "click", "arg": "tab", "result": "CLICKED tab"},
+            {"tool": "screenshot", "arg": "", "result": "SHOT x"},
+            {"tool": "screenshot", "arg": "(auto re-observe)",
+             "result": "SHOT x"},
+            {"tool": "move", "arg": "1,2", "result": "MOVED(1,2)"},
+            {"tool": "click", "arg": "nope", "result": "SKIP (miss)"},
+            {"tool": "key", "arg": "enter", "result": "ERROR (x)"},
+            {"tool": "fill", "arg": "f v", "result": "FILLED f=v"},
+        ]
+        d = train.distill_steps(steps)
+        self.assertEqual([s["tool"] for s in d],
+                         ["click", "fill"])
+
+    def test_candidates_need_streak_check_and_shrink(self):
+        base = {"status": "candidate", "streak": 5, "check": "1",
+                "steps": [{"tool": "screenshot", "result": "SHOT"},
+                          {"tool": "click", "arg": "a",
+                           "result": "CLICKED"}]}
+        self.assertEqual(train.distill_candidates({"k": base}), [base])
+        for e in (dict(base, steps=[{"tool": "click", "arg": "a",
+                                     "result": "CLICKED"}]),
+                  dict(base, streak=1),
+                  dict(base, status="graduated"),
+                  dict(base, check="")):
+            self.assertEqual(train.distill_candidates({"k": e}), [], e)
+
+    def test_promote_stamps_recipe(self):
+        e = {"key": "abc", "status": "candidate",
+             "steps": [{"tool": "click"}, {"tool": "screenshot"},
+                       {"tool": "click"}]}
+        d = train.distill_steps(e["steps"])
+        train.promote(e, d)
+        self.assertEqual(e["status"], "graduated")
+        self.assertTrue(e["optimized"])
+        self.assertEqual(e["orig_steps"], 3)
+        self.assertEqual(e["steps"], d)
+        self.assertTrue(e["recipe_id"].startswith("recipe-"))
 
 
 class ModelMatrix(unittest.TestCase):
@@ -273,3 +314,6 @@ class FlakeTaxonomy(unittest.TestCase):
                                    pathlib.Path(d) / "b.json"):
                 s = train.stats()
         self.assertEqual(s["flakes"], {"env": 1})
+
+if __name__ == "__main__":
+    unittest.main()

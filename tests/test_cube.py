@@ -195,6 +195,97 @@ class ClickByIdTest(unittest.TestCase):
         self.assertIn("FAIL", system.move("nope", self.CFG))
 
 
+class LegendKeyTest(unittest.TestCase):
+    """dom_els legend keys: real id > visible label > tag. Id-less
+    elements (file rows, list items) must be aimable by label —
+    'click utils.py' can't work if the legend says 'div@(x,y)'."""
+
+    def test_id_wins(self):
+        e = {"id": "btn-a", "label": "Alpha", "tag": "button"}
+        self.assertEqual(system._legend_key(e), "btn-a")
+
+    def test_label_when_no_id(self):
+        e = {"id": "", "label": "utils.py", "tag": "div"}
+        self.assertEqual(system._legend_key(e), "utils.py")
+
+    def test_tag_fallback(self):
+        e = {"id": "", "label": "", "tag": "button"}
+        self.assertEqual(system._legend_key(e), "button")
+
+    def test_label_sanitized(self):
+        e = {"id": "", "label": "a(b) @c\nline", "tag": "div"}
+        self.assertEqual(system._legend_key(e), "a b c line")
+
+    def test_click_js_matches_truncated_label(self):
+        with mock.patch.object(system, "_dom_eval",
+                               return_value="hit:div") as ev:
+            system.click("utils.py", {"screen": {"dom_page": "p"}})
+        code = ev.call_args[0][1]
+        # textContent compare must slice(0,24) — the legend label is
+        # truncated, so full-text equality would never match long
+        # labels
+        self.assertIn("slice(0,24).toLowerCase()", code)
+
+
+class DistillCLITest(unittest.TestCase):
+    def test_dry_run_lists_without_serving(self):
+        entry = {"task": "click alpha then beta", "status": "candidate",
+                 "streak": 5, "check": "1",
+                 "steps": [{"tool": "screenshot", "result": "SHOT"},
+                           {"tool": "click", "arg": "1,2",
+                            "result": "CLICKED"}]}
+        with mock.patch.object(sys, "argv",
+                               ["run.py", "--distill", "--dry-run"]), \
+             mock.patch("wisp.train.load_bank",
+                        return_value={"k": entry}), \
+             mock.patch.object(run, "serve") as serve, \
+             mock.patch.object(run, "open_lab") as lab:
+            run.distill()
+        serve.assert_not_called()
+        lab.assert_not_called()
+
+    def test_promotes_only_on_reverify(self):
+        entry = {"key": "k", "task": "click alpha", "status": "candidate",
+                 "streak": 5, "check": "1",
+                 "steps": [{"tool": "screenshot", "result": "SHOT"},
+                           {"tool": "click", "arg": "1,2",
+                            "result": "CLICKED"}]}
+        bank = {"k": entry}
+        with mock.patch.object(sys, "argv", ["run.py", "--distill"]), \
+             mock.patch("wisp.train.load_bank", return_value=bank), \
+             mock.patch.object(run, "serve"), \
+             mock.patch.object(run, "open_lab", return_value="p"), \
+             mock.patch.object(run, "bos"), \
+             mock.patch.object(run, "check", return_value=True), \
+             mock.patch("wisp.train.save_bank") as save, \
+             mock.patch("wisp.tools.run", return_value="OK"):
+            run.distill()
+        self.assertEqual(entry["status"], "graduated")
+        self.assertTrue(entry["optimized"])
+        self.assertEqual(entry["steps"],
+                         [{"tool": "click", "arg": "1,2"}])
+        save.assert_called_once()
+
+    def test_failed_reverify_stays_candidate(self):
+        entry = {"key": "k", "task": "click alpha", "status": "candidate",
+                 "streak": 5, "check": "1",
+                 "steps": [{"tool": "screenshot", "result": "SHOT"},
+                           {"tool": "click", "arg": "1,2",
+                            "result": "CLICKED"}]}
+        bank = {"k": entry}
+        with mock.patch.object(sys, "argv", ["run.py", "--distill"]), \
+             mock.patch("wisp.train.load_bank", return_value=bank), \
+             mock.patch.object(run, "serve"), \
+             mock.patch.object(run, "open_lab", return_value="p"), \
+             mock.patch.object(run, "bos"), \
+             mock.patch.object(run, "check", return_value=False), \
+             mock.patch("wisp.train.save_bank"), \
+             mock.patch("wisp.tools.run", return_value="OK"):
+            run.distill()
+        self.assertEqual(entry["status"], "candidate")
+        self.assertEqual(entry["distill_fails"], 1)
+
+
 class CubeStateTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -265,6 +356,7 @@ class CubeStateTest(unittest.TestCase):
 
         with mock.patch.object(cube, "_alive", side_effect=alive), \
                 mock.patch.object(cube, "provision", return_value=9223), \
+                mock.patch.object(cube, "_kill"), \
                 mock.patch.object(cube, "_create", side_effect=create):
             ws = cube.up(2)
         self.assertEqual(len(ws), 2)
