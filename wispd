@@ -99,6 +99,12 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
                         except Exception:
                             rec["proc"].kill()
                         rec["sampler_stop"].set()
+                        if ctl.pop("mini", None) is not None:
+                            # mini-capture bounce — the parked turn owns
+                            # the state surface and the turn id; settle
+                            # nothing but the recorder
+                            return {"ok": True, "stopped": True,
+                                    "ignored": True}
                         _drop_speculation(ctl)
                         st.turn(ctl.pop("turn", None)
                                 or st.current_turn()).transition(
@@ -107,6 +113,17 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
                              "ignored (phantom)")
                         return {"ok": True, "stopped": True,
                                 "ignored": True}
+                    mini = ctl.pop("mini", None)
+                    if mini is not None:
+                        # a press during a parked/running turn captured a
+                        # voice interjection — it answers a pending
+                        # prompt or interrupts; it is not a new turn and
+                        # the running turn keeps its state surface
+                        try:
+                            wav = pipeline.record_stop(rec)
+                        except RuntimeError as e:
+                            return {"ok": False, "error": str(e)}
+                        return _voice_answer(st, cfg, ctl, wav, mini)
                     if ctl["busy"].is_set():
                         return {"ok": False, "error": "busy"}
                     tid = ctl.pop("turn", None) or st.current_turn()
@@ -128,7 +145,22 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
                         daemon=True).start()
                     return {"ok": True, "stopped": True}
                 if ctl["busy"].is_set():
-                    return {"ok": False, "error": "busy"}
+                    # a press during a parked or running turn is an
+                    # interjection, not a new turn: voice-answer the
+                    # pending prompt, else listen for a spoken stop.
+                    # No begin_turn, no state churn — the running turn
+                    # owns the surface; a sub-0.4s capture is discarded
+                    # by the phantom check like any bounce.
+                    broker = ctl.get("broker")
+                    ctl["mini"] = ("choice" if broker is not None
+                                   and broker.pending_id else "stop")
+                    try:
+                        ctl["rec"] = pipeline.record_start()
+                    except RuntimeError as e:
+                        ctl.pop("mini", None)
+                        return {"ok": False, "error": str(e)}
+                    return {"ok": True, "recording": True,
+                            "mini": ctl["mini"]}
                 # first press: start open-ended capture; [audio] seconds
                 # is the safety cap, not the length.
                 # a new turn: anything the previous turn still has in
@@ -336,6 +368,42 @@ def _rec_watchdog(ctl: dict, secs: int) -> None:
             daemon=True).start()
     except RuntimeError as e:
         _DAEMON_ST.transition("error", error=str(e))
+
+
+def _voice_answer(st, cfg: dict, ctl: dict, wav, kind: str) -> dict:
+    """A mini-capture released during a parked/running turn: transcribe
+    the clip, then resolve the pending prompt (kind=choice) or interrupt
+    on a spoken stop (kind=stop). Never a new turn — the running turn
+    owns the state surface throughout."""
+    from wisp import voicepick
+    try:
+        text = (pipeline.transcribe(wav, cfg) or "").strip()
+    except Exception as e:
+        dlog(f"voice answer transcribe failed: {e}")
+        return {"ok": False, "error": "stt_down"}
+    if kind == "choice":
+        broker = ctl.get("broker")
+        pend = broker.pending() if broker is not None else None
+        if pend is not None:
+            idx = voicepick.map_pick(text, pend["options"])
+            _trace.emit(st.current_turn(), "choice_voice", "act",
+                        {"text": text[:80], "mapped": idx is not None})
+            if idx is not None:
+                return broker.offer(index=idx + 1, prompt_id=pend["id"])
+        # heard but unmappable — the card stays up; a spoken nudge is
+        # the ack so the miss isn't silence
+        speech.speak("didn't catch that", cfg)
+        return {"ok": True, "heard": text, "mapped": False}
+    if kind == "stop" and ctl["busy"].is_set() and voicepick.is_stop(text):
+        ctl["interrupt"].set()
+        if ctl.get("token") is not None:
+            ctl["token"].cancel()
+        _trace.emit(st.current_turn(), "interrupt_voice", "act",
+                    {"text": text[:80]})
+        return {"ok": True, "result": "interrupted", "heard": text}
+    _trace.emit(st.current_turn(), "interjection_dropped", "act",
+                {"text": text[:80]})
+    return {"ok": True, "heard": text, "mapped": False}
 
 
 def _run_listen(st: state_mod.StateBus, cfg: dict, ctl: dict,

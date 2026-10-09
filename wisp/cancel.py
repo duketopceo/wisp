@@ -294,6 +294,15 @@ class PromptBroker:
         with self._cv:
             return self._pending["id"] if self._pending else ""
 
+    def pending(self) -> dict | None:
+        """The live prompt {"id", "options"} or None — a voice-answer
+        path needs the offered options to map an utterance onto."""
+        with self._cv:
+            if self._pending is None:
+                return None
+            return {"id": self._pending["id"],
+                    "options": list(self._pending["options"] or [])}
+
     def waiter(self, token=None):
         def wait(timeout, prompt_id=None, options=None):
             pid = prompt_id or new_prompt_id()
