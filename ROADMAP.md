@@ -3,6 +3,17 @@
 State: **v0.9 released. The unified plan (W1 to W29, W32) has landed on master; the v1.0 gate (W34) is the soak, a clean-box install and the learning loop.**
 Last updated: 2026-10-04. Plan of record: `docs/plans/2026-10-04-0100-feat-wisp-unified-plan.md`.
 
+## Plans
+
+Read in this order. The roadmap plan is the program-level view (Now, Next, Later, with status and evidence per workstream); the rest are child plans it links by unit.
+
+1. `docs/plans/2026-10-05-001-feat-wisp-full-roadmap-plan.md`: full roadmap, current state and U1 to U12.
+2. `docs/plans/2026-10-04-0100-feat-wisp-unified-plan.md`: owner of the W1 to W34 IDs and the crosswalk.
+3. `docs/plans/2026-10-02-2315-feat-wisp-ember-redesign-plan.md`: Ember UI redesign, with the per-unit Status Ledger (spec: `DESIGN-v2.md`).
+4. `docs/plans/2026-10-03-1455-feat-wisp-backend-core-plan.md`: backend core (StateBus, health, cancel, ledger, replay).
+5. `docs/plans/2026-10-03-002-feat-gauntlet-v2-plan.md`: training gauntlet v2 (shipped).
+6. `docs/plans/2026-10-04-1800-feat-cua-driver-and-parallel-training-plan.md`: CUA wiring and parallel training.
+
 Progress on the v1.0 gates:
 
 - ✅ U10 merged (PR #31); release CI verified — `v0.9.0` published all
