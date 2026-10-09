@@ -14,15 +14,13 @@ Item {
   id: root
 
   property var service: null
-  // real pointer {x,y} in layer coordinates, or null (bubble then sits
-  // above the corner creature)
+  // real pointer {x,y} in layer coordinates, or null (bubble then floats
+  // above the bottom edge)
   property var pointer: null
   property real originX: 0
   property real originY: 0
   property real gap: 5
   property real refreshHz: 60
-  // width the console takes at the corner (CornerLayer.consoleExtent)
-  property real consoleExtent: 0
   property bool bubbleDismissed: false
   property bool labeled: false
   signal choose(string pick, int index)
@@ -51,16 +49,16 @@ Item {
     onChoose: function (pick, index) { root.choose(pick, index); }
   }
 
-  // answer at the pointer; before the pointer is known it sits above the
-  // corner creature, left of an open console
+  // answer at the pointer; before the pointer is known it floats above
+  // the bottom edge, clear of the listening pill
   Item {
     id: bubbleHost
     visible: root.bubbleShown
     width: bubbleCol.implicitWidth
     height: bubbleCol.implicitHeight
     readonly property var spot: bubble.place
-    x: spot ? spot.x : root.width - root.gap - root.consoleExtent - width
-    y: spot ? spot.y : root.height - root.gap - (root.consoleExtent > 0 ? 0 : M.size.creatureListening + M.spacing.lg) - height
+    x: spot ? spot.x : root.width - root.gap - width
+    y: spot ? spot.y : root.height - root.gap - M.size.creatureListening - M.spacing.lg - height
 
     HoverHandler { id: bubbleHover }
 

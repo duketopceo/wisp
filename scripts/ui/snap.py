@@ -64,7 +64,7 @@ DEFAULT_TOLERANCE = Tolerance(channel=8, fraction=0.004)
 TOLERANCE = {
     "Answer": Tolerance(10, 0.012),
     "Bubble": Tolerance(10, 0.010),
-    "Console": Tolerance(10, 0.010),
+    "BarPill": Tolerance(10, 0.010),
     "Pill": Tolerance(10, 0.010),
     "Transcript": Tolerance(10, 0.012),
     "StatusLine": Tolerance(10, 0.010),
@@ -80,7 +80,6 @@ TOLERANCE = {
     "AuditView": Tolerance(10, 0.012),
     "BindsView": Tolerance(10, 0.012),
     "Creature": Tolerance(12, 0.008),
-    "Corner": Tolerance(12, 0.008),
     "Companion": Tolerance(12, 0.006),
 }
 
