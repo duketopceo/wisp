@@ -144,7 +144,7 @@ Panel {
       id: content
       width: parent.width
       active: wisp.service !== null
-      implicitHeight: item ? item.implicitHeight : 0
+      height: item ? item.implicitHeight : 0
 
       sourceComponent: Column {
         id: col
