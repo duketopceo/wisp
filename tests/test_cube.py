@@ -129,6 +129,16 @@ class FillToolTest(unittest.TestCase):
             run.replay("recipe-abc1234567")
         self.assertEqual(ran, [("click", "1,2")])
 
+    def test_miss_suggests_option_inside_arg(self):
+        # 'n-blur-input n-texture-file' must fail with a hint naming
+        # the real option ('texture') — the id-instead-of-value miss
+        # is the top nodes-suite failure
+        with self._eval("x") as ev:
+            system.fill("n-blur-input n-texture-file", self.CFG)
+        code = ev.call_args[0][1]
+        self.assertIn("indexOf(ol)>=0", code)
+        self.assertIn("try ", code)
+
     def test_type_text_number_input_fallback(self):
         # number inputs throw on selectionStart — the emitted JS must
         # wrap it in try/catch rather than crashing
@@ -142,6 +152,47 @@ class FillToolTest(unittest.TestCase):
         # Chrome 154 doesn't throw on selectionStart — detect by type
         self.assertIn("types[el.type]", code)
         self.assertIn("replace=true", code)
+
+
+class ClickByIdTest(unittest.TestCase):
+    """DOM-mode click resolves element ids by direct dispatch +
+    scrollIntoView — legend coords are viewport-space and go stale
+    under scroll (the dom-hard 'miss:empty' failure class)."""
+    CFG = {"screen": {"dom_page": "p",
+                      "dom_els": ["btn-alpha@(10,20)"]}}
+
+    def _eval(self, ret):
+        return mock.patch.object(system, "_dom_eval",
+                                 return_value=ret)
+
+    def test_id_click_dispatches_directly(self):
+        with self._eval("hit:btn-alpha") as ev:
+            out = system.click("btn-alpha", self.CFG)
+        self.assertEqual(out, "CLICKED btn-alpha")
+        code = ev.call_args[0][1]
+        self.assertIn("getElementById", code)
+        self.assertIn("scrollIntoView", code)
+        self.assertNotIn("elementFromPoint", code)
+
+    def test_id_click_miss_reports(self):
+        with self._eval("miss:no-el"):
+            out = system.click("nope", self.CFG)
+        self.assertIn("SKIP", out)
+        self.assertIn("miss:no-el", out)
+
+    def test_coord_click_still_uses_point(self):
+        with self._eval("hit:btn-x") as ev:
+            system.click("10,20", self.CFG)
+        self.assertIn("elementFromPoint", ev.call_args[0][1])
+
+    def test_move_by_id_uses_legend(self):
+        with self._eval("never") as ev:
+            out = system.move("btn-alpha", self.CFG)
+        self.assertEqual(out, "MOVED(10,20)")
+        ev.assert_not_called()
+
+    def test_move_by_id_unknown_fails(self):
+        self.assertIn("FAIL", system.move("nope", self.CFG))
 
 
 class CubeStateTest(unittest.TestCase):
