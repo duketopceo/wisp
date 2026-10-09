@@ -266,6 +266,59 @@ class Loop(unittest.TestCase):
         assert r.startswith("ACTED")
         assert calls == ["screenshot", "click", "screenshot"], calls
 
+    def test_dom_id_click_skips_reobserve(self):
+        # click 'btn-x' dispatches through getElementById +
+        # scrollIntoView — stale legend coords can't misaim it, so a
+        # dirty screen must NOT trigger the auto re-observe
+        calls = []
+        def fake_run(name, arg, cfg, harness=None):
+            calls.append(name)
+            return "SHOT d" if name == "screenshot" else "ok"
+        replies = [_msg(calls=[_call("screenshot")]),
+                   _msg(calls=[_call("type_text", "hi")]),
+                   _msg(calls=[_call("click", "btn-x")]),
+                   _msg(content="done")]
+        cfg = {"agent": {}, "screen": {"dom_page": "p"},
+               "brain.openrouter": {"vision": "true"}}
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch("wisp.brain.provider",
+                        return_value={"name": "openrouter",
+                                      "vision": "true",
+                                      "tools": "true"}), \
+             mock.patch.object(tools, "run", side_effect=fake_run):
+            r = act.run_act_loop("type then click id", cfg,
+                                 initial_image="aGk=",
+                                 confirm=lambda pr: True)
+        assert r.startswith("ACTED")
+        # no screenshot between the type mutation and the id click
+        assert calls == ["screenshot", "type_text", "click"], calls
+
+    def test_dom_coord_click_still_reobserves(self):
+        # coordinate clicks DO depend on fresh pixels — keep the soak
+        calls = []
+        def fake_run(name, arg, cfg, harness=None):
+            calls.append(name)
+            return "SHOT d" if name == "screenshot" else "ok"
+        replies = [_msg(calls=[_call("screenshot")]),
+                   _msg(calls=[_call("type_text", "hi")]),
+                   _msg(calls=[_call("click", "10,20")]),
+                   _msg(content="done")]
+        cfg = {"agent": {}, "screen": {"dom_page": "p"},
+               "brain.openrouter": {"vision": "true"}}
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch("wisp.brain.provider",
+                        return_value={"name": "openrouter",
+                                      "vision": "true",
+                                      "tools": "true"}), \
+             mock.patch.object(act, "_attach_image"), \
+             mock.patch.object(tools, "run", side_effect=fake_run):
+            r = act.run_act_loop("type then click xy", cfg,
+                                 initial_image="aGk=",
+                                 confirm=lambda pr: True)
+        assert r.startswith("ACTED")
+        assert calls == ["screenshot", "type_text", "screenshot",
+                         "click"], calls
+
     def test_dom_first_observe_never_cached(self):
         # no prior shot → nothing to serve
         calls = []

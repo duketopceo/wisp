@@ -378,9 +378,19 @@ def fill(arg: str, cfg: dict | None = None) -> str:
         "if(found<0){for(var i=0;i<opts.length;i++){"
         "var ot=opts[i].text.toLowerCase();"
         "if(ot.indexOf(%s)>=0){found=i;break}}}"
-        "if(found<0){var names=[];for(var i=0;i<opts.length;i++)"
-        "names.push(opts[i].value||opts[i].text);"
-        "return 'miss:no-option options['+names.join('|')+']';}"
+        "if(found<0){var names=[],sug='';for(var i=0;i<opts.length;i++){"
+        "var ov=opts[i].value||opts[i].text;names.push(ov);"
+        # the arg containing an option (e.g. 'n-texture-file' for
+        # 'texture') is the common aim-miss — name the retry value;
+        # check value AND label ('us' vs 'United States')
+        "var ol=(ov||'').toLowerCase(),"
+        "tl=(opts[i].text||'').toLowerCase();"
+        "if(ol&&ol.length>1&&%s.indexOf(ol)>=0)sug=ov;"
+        "else if(!sug&&tl.length>1&&%s.indexOf(tl)>=0)sug=ov}"
+        # suggestion FIRST — the options list can overflow the 60-char
+        # SKIP truncation and silently eat the hint
+        "return 'miss:no-option'+(sug?' — try \\''+sug+'\\'':'')"
+        "+' options['+names.join('|')+']';}"
         "el.selectedIndex=found;"
         "}else{"
         "el.value=%s;"
@@ -388,7 +398,8 @@ def fill(arg: str, cfg: dict | None = None) -> str:
         "el.dispatchEvent(new Event('input',{bubbles:true}));"
         "el.dispatchEvent(new Event('change',{bubbles:true}));"
         "return 'filled:'+(el.id||el.tagName)+'='+el.value"
-        % (js_t, js_t, js_t, js_v, js_v, js_vl, js_vl, js_v))
+        % (js_t, js_t, js_t, js_v, js_v, js_vl, js_vl, js_vl, js_vl,
+           js_v))
     r = _dom_eval(cfg, code)
     return (f"FILLED {r[7:]}" if r.startswith("filled:")
             else f"SKIP ({r[:60]})")
@@ -558,6 +569,38 @@ def _move_fallback(x: int, y: int, cfg: dict | None) -> bool:
         platform.pointer_cmds(x, y, nxt, click=False))
 
 
+# click-by-id: legend ids are 'el.id || el.tagName' with substring
+# matching — replicate that lookup, scrollIntoView so off-viewport
+# elements land, then dispatch. Args: (want_json, _DOM_SELECTOR).
+_CLICK_ID_JS = """
+var want=%s;
+if(!want)return 'miss:no-el';
+var el=document.getElementById(want);
+if(!el){
+  var cs=document.querySelectorAll('%s');
+  for(var i=0;i<cs.length;i++){var c=cs[i];
+    if(c.id===want||c.tagName.toLowerCase()===want
+       ||(c.id||'').indexOf(want)>=0
+       ||(c.textContent||'').trim().toLowerCase()
+           ===want.toLowerCase()){el=c;break}}
+}
+if(!el)return 'miss:no-el';
+el.scrollIntoView({block:'center',inline:'center'});
+var cr=el.getBoundingClientRect();
+el.dispatchEvent(new MouseEvent('click',{bubbles:true,
+  clientX:cr.x+cr.width/2,clientY:cr.y+cr.height/2}));
+try{el.focus()}catch(e){}
+var r='hit:'+(el.id||el.tagName);
+if(el.tagName==='SELECT'){
+  var o=[];for(var i=0;i<el.options.length;i++)
+    o.push((i===el.selectedIndex?'*':'')+el.options[i].text);
+  r+=' options['+o.join('|')+'] — key down/up + enter,'
+     +' or fill \\''+el.id+' <option>\\'';
+}
+return r
+"""
+
+
 def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
     """click/move shared core. Returns 'GUIDE(x,y) label' when the
     pointer is user-driven (mode=guide or no backend) — the act loop
@@ -571,25 +614,31 @@ def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
         import re as _re
         m = _re.match(r"^\s*(-?\d+)\s*,\s*(-?\d+)", arg or "")
         if not m:
-            # element-name args resolve off the last shot's legend —
-            # 'click tab-nodes' shouldn't burn a step on a re-observe
-            legend = (cfg or {}).get("screen", {}).get("dom_els") or []
+            # element-name args dispatch by id directly — legend
+            # coords are viewport-space and go stale under scroll
+            # (off-viewport elements hit elementFromPoint=null). Direct
+            # dispatch scrolls into view first: deterministic.
             want = (arg or "").strip().strip("'\"")
-            for e in legend:
-                eid, _, coords = e.partition("@")
-                if eid == want or want in eid:
-                    mm = _re.match(r"\((\d+),(\d+)\)", coords)
-                    if mm:
-                        cx, cy = int(mm.group(1)), int(mm.group(2))
-                        break
-            else:
+            if not do_click:
+                legend = (cfg or {}).get("screen",
+                                        {}).get("dom_els") or []
+                for e in legend:
+                    eid, _, coords = e.partition("@")
+                    if eid == want or want in eid:
+                        mm = _re.match(r"\((\d+),(\d+)\)", coords)
+                        if mm:
+                            return (f"MOVED({mm.group(1)},{mm.group(2)})")
                 return "FAIL (arg must be 'x,y' or a known element id)"
-        else:
-            cx, cy = int(m.group(1)), int(m.group(2))
+            import json as _j
+            out = _dom_eval(
+                cfg, _CLICK_ID_JS % (_j.dumps(want), _DOM_SELECTOR))
+            hm = _re.search(r"hit:([^\n]+)", out)
+            if hm:
+                return f"CLICKED {hm.group(1).strip()}"
+            return f"SKIP ({out[:60]})"
+        cx, cy = int(m.group(1)), int(m.group(2))
         if not do_click:
             return f"MOVED({cx},{cy})"
-        from . import mcpclient
-        import json as _j
         code = ("var el=document.elementFromPoint(%d,%d);"
                 "if(!el)return 'miss:empty';"
                 "el.dispatchEvent(new MouseEvent('click',"
