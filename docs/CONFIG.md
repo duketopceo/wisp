@@ -210,6 +210,23 @@ newlines unless a confirmed send is armed. Personal corrections live in
 `~/.local/share/wisp/dictation.json` — `wispd dictate correct` records
 one, `wispd dictate list` shows them.
 
+## [clicklab] — adaptive training arena (U7)
+
+The arena (`scripts/clicklab/run.py`, `wisp/train.py`, `wisp/judge.py`)
+runs golden tasks against the lab pages, judges each run, and keeps a
+skill bank of proven recipes plus a rolling failure-bucket summary.
+
+| key | default | meaning |
+|-----|---------|---------|
+| `adaptive` | `"false"` | `--adaptive` / `true`: the task list is synthesized on the fly — each verdict steers the next task at the hottest failure bucket (same skill, varied surface) until `--tasks` or the budget cap |
+| `promote_after` | `"3"` | verified successes a recipe needs to graduate into the bank; a post-promotion failure demotes it |
+| `judge` | `"jev"` | run grader: `jev` (decisions endpoint, brain.chat fallback), `brain` (skip Jev), `off` (scoreboard alone; `--no-judge` is the same) |
+
+Every run appends to `clicklab.jsonl`, mirrors the verdict onto
+`verdicts.jsonl`, and refolds `buckets.json` (counts by failure class x
+task skill x surface). When every judge is down the verdict is
+`judged: false` — unjudged runs never count toward promotion.
+
 ## [voice] — text-to-speech
 
 | key | meaning |

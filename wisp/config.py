@@ -333,6 +333,17 @@ shadow = ""
 # router decides and the turn goes on (route_ab.jsonl keeps both).
 # deadline_ms = 400
 
+[clicklab]
+# the training arena (scripts/clicklab): adaptive = each run's verdict
+# steers the next synthesized task at the hottest failure bucket
+# (same skill, varied surface); judge picks the run grader — "jev"
+# (decisions endpoint, brain fallback), "brain" only, or "off" (the
+# scoreboard alone); promote_after = verified successes a recipe needs
+# before it graduates into the skill bank.
+adaptive = "false"
+promote_after = "3"
+judge = "jev"
+
 [debug]
 # full-fidelity event stream to ~/.local/share/wisp/trace.jsonl —
 # every stage of every turn (record/stt/decision/tools/brain/tts/ipc)
@@ -444,6 +455,8 @@ def _default_cfg_dict() -> dict:
                 "kill_switch": "false", "confirm": "tier",
                 "audit": "true", "delivery": "auto"},
         "traj": {"enabled": "true", "max_inject": "3"},
+        "clicklab": {"adaptive": "false", "promote_after": "3",
+                     "judge": "jev"},
         "agents": {"act_max_steps": "12", "act_max_errors": "2",
                    "act_max_parse_misses": "1", "act_max_seconds": "600",
                    "act_max_usd": "0",
