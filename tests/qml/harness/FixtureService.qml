@@ -45,6 +45,9 @@ Item {
   property bool stale: false
   property bool contractNewer: false
   readonly property bool busy: Reader.BUSY.indexOf(status) >= 0
+  // {verb, pending, ok, message, at} — mirrors WispService.lastAction;
+  // the harness never runs actions, so null unless a scene sets it
+  property var lastAction: null
 
   readonly property string statusWord: Copy.statusWord(status)
   readonly property string statusTone: Copy.statusTone(status)

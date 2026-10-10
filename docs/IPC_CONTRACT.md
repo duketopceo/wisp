@@ -23,7 +23,7 @@ future tray apps). Shells MUST only depend on this document.
 |---|---|---|---|
 | `status` | — | `{ok, state}` | `state` = full state.json snapshot |
 | `listen` | `phase?: start\|stop`, `t0?: int` (client wall-clock ns of the keypress; additive, optional) | `{ok}` or `{ok:false,error:"busy"}` | starts a listen cycle async; kills in-flight TTS (barge-in) |
-| `choice` | `pick: string`, optional `prompt_id: string`, optional `index: int` | `{ok}` or `{ok:false, error}` | resolves the pending choice/confirm; see Prompt ids |
+| `choice` | `pick: string`, optional `prompt_id: string`, optional `index: int` | `{ok}` or `{ok:false, error}`; `{ok, result}` for `suggestion:` picks | resolves the pending choice/confirm; see Prompt ids |
 | `task_status` | `name: string` | `{ok, result: string}` | named-agent status |
 | `task_cancel` | `name: string` | `{ok, result: string}` | cancel named agent |
 | `agent` | `task: string` | `{ok, result: string}` | spawn a background task via `[brain] agent_runtime`; `result` is `SPAWNED …`/`SKIP …` |
@@ -126,6 +126,13 @@ pending (exactly one ever is) — this keeps current shells working. An
 empty `pick` dismisses the prompt like a timeout. The core also refuses
 an unoffered pick that reaches the turn by another path (trace
 `choice_rejected`) and falls back to its safe auto-pick.
+
+A `pick` beginning `suggestion:` needs no `prompt_id`: the daemon
+resolves it before the broker (`suggestion:<act>` for the live card,
+`suggestion:<act>:<key>` for a pending suggestions.jsonl row) and
+replies `{ok:true, result}` — `result` is the daemon's own words for
+the surface ack (`automating`, `OK (snoozed)`, `SKIP (suggestion
+expired)`, `OK (never suggest that again)`).
 
 Cancellation (additive; U9): `interrupt` cancels the current turn at
 whatever stage it is in — the whisper child and tool subprocesses are

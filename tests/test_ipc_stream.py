@@ -28,8 +28,8 @@ class StreamCase(unittest.TestCase):
         self.srv = None
 
     def serve(self, **kw):
-        self.srv = ipc.Daemon(lambda c: {"ok": True}, sock_file=self.sock,
-                              bus=self.bus, **kw)
+        self.srv = ipc.Daemon(lambda c, peer=None: {"ok": True},
+                              sock_file=self.sock, bus=self.bus, **kw)
         self.srv.start()
         self.addCleanup(self.srv.stop)
         return self.srv
@@ -134,7 +134,8 @@ class SubscribeTest(StreamCase):
         self.assertEqual(self.bus.subscriber_count(), 0)
 
     def test_no_bus_replies_error(self):
-        srv = ipc.Daemon(lambda c: {"ok": True}, sock_file=self.sock)
+        srv = ipc.Daemon(lambda c, peer=None: {"ok": True},
+                         sock_file=self.sock)
         srv.start()
         self.addCleanup(srv.stop)
         f = self.open()

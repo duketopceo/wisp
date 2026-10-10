@@ -541,6 +541,41 @@ class WispdWiringTest(unittest.TestCase):
         self.assertEqual(f([]), {"cmd": "choice", "pick": ""})
         self.assertIsNone(f(["--index", "two"]))
 
+    def test_suggestion_pick_resolves_before_the_broker(self):
+        """suggestion: picks carry no prompt_id — the daemon resolves
+        them locally (never reaches the prompt broker), and the reply
+        carries the daemon's own words for the surface ack (U1)."""
+        from wisp import suggest
+        with tempfile.TemporaryDirectory() as td:
+            with mock.patch.object(
+                    suggest, "SUGGESTIONS_FILE",
+                    pathlib.Path(td) / "suggestions.jsonl"), \
+                 mock.patch.object(
+                    suggest, "NEVER_FILE", pathlib.Path(td) / "never.json"):
+                r = self.handle({"cmd": "choice",
+                                 "pick": "suggestion:never:k9"})
+                self.assertTrue(r["ok"])
+                self.assertIn("never suggest", r["result"])
+                # no live suggestion record -> the act reports a SKIP
+                # instead of guessing at a routine
+                r = self.handle({"cmd": "choice",
+                                 "pick": "suggestion:automate:missing"})
+                self.assertTrue(r["ok"])
+                self.assertIn("SKIP", r["result"])
+        self.assertFalse(self.ctl["broker"].pending_id)  # broker untouched
+
+    def test_ipc_log_line_carries_peer_attribution(self):
+        """ipc._serve hands SO_PEERCRED {pid, uid} to the handler; the
+        dlog line attributes the command when it has them (U1)."""
+        with mock.patch.object(self.w, "dlog") as dl:
+            self.handle({"cmd": "bogus-cmd"}, {"pid": 4321, "uid": 1000})
+            self.handle({"cmd": "bogus-cmd"})
+        with_peer = dl.call_args_list[0][0][0]
+        without = dl.call_args_list[1][0][0]
+        self.assertIn("ipc bogus-cmd", with_peer)
+        self.assertIn("peer=4321:1000", with_peer)
+        self.assertNotIn("peer=", without)
+
 
 class SentenceSpeakerTest(unittest.TestCase):
     """TTS starts per completed sentence while the answer streams."""

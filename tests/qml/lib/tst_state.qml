@@ -102,4 +102,77 @@ TestCase {
     compare(done.view.cuaTarget, null)
     compare(S.applyEvent(S.initial(), ev, 2).view.cuaTarget, null)
   }
+
+  function test_confirm_snapshots_offered_picks() {
+    // the card carries its own allow/deny — a later diff emptying
+    // `choices` must not change what a pending click sends
+    var r = S.applySnapshot(S.initial(), snap({ status: "awaiting_choice",
+      choices: ["yes", "no"], prompt_id: "p7",
+      confirm: { prompt_id: "p7", prompt: "run?", timeout_s: 120 } }), 1, "file")
+    compare(r.view.confirm.allow, "yes")
+    compare(r.view.confirm.deny, "no")
+    var gone = S.applyEvent(r.view, { type: "state", seq: 2,
+      diff: { choices: [], seq: 2 } }, 2)
+    compare(gone.view.confirm.allow, "yes")
+    compare(gone.view.confirm.deny, "no")
+  }
+
+  function test_accept_choice_normal_and_suggestion() {
+    var SUG = ["suggestion:automate", "suggestion:not now", "suggestion:never"]
+    // a normal pick: the shown prompt id plus an offered choice
+    var waiting = S.applySnapshot(S.initial(), snap({ status: "awaiting_choice",
+      choices: ["yes", "no"], prompt_id: "p7" }), 1, "file").view
+    verify(S.acceptChoice(waiting, "no", "p7"))
+    verify(!S.acceptChoice(waiting, "no", "p6"))   // another prompt
+    verify(!S.acceptChoice(waiting, "no", ""))     // no id
+    verify(!S.acceptChoice(waiting, "later", "p7"))// not offered
+    // suggestion picks carry no prompt id: a bare pick passes only while
+    // the card is live and offers it
+    var sug = S.applySnapshot(S.initial(), snap({ status: "suggestion",
+      choices: SUG }), 1, "file").view
+    verify(S.acceptChoice(sug, "suggestion:automate", ""))
+    verify(!S.acceptChoice(sug, "suggestion:later", ""))
+    verify(!S.acceptChoice(waiting, "suggestion:automate", ""))
+    // a keyed pick addresses a suggestions.jsonl row — safe to pass at
+    // any time (a stale key ends in a SKIP server-side)
+    var idle = S.applySnapshot(S.initial(), snap({}), 1, "file").view
+    verify(S.acceptChoice(idle, "suggestion:automate:abc123", ""))
+    verify(S.acceptChoice(idle, "suggestion:never:zz", ""))
+    // malformed picks still drop
+    verify(!S.acceptChoice(idle, "suggestion:", ""))
+    verify(!S.acceptChoice(idle, "suggestion:automate:", ""))
+    verify(!S.acceptChoice(idle, "", ""))
+    verify(!S.acceptChoice(null, "x", ""))
+    verify(!S.acceptChoice(idle, 3, ""))
+  }
+
+  function test_action_result_never_silent() {
+    // --json envelope success: the daemon's words land in text
+    var ok = S.actionResult(0,
+      '{"ok":true,"data":{"result":"labeled correct: t1"}}', "")
+    verify(ok.ok)
+    compare(ok.text, "labeled correct: t1")
+    // --json envelope typed refusal
+    var stale = S.actionResult(1,
+      '{"ok":false,"error":{"code":"E_STALE_PROMPT","message":"That prompt expired."}}', "")
+    verify(!stale.ok)
+    compare(stale.error, "stale_prompt")
+    compare(stale.text, "That prompt expired.")
+    // raw daemon error line
+    var raw = S.actionResult(1, '{"ok":false,"error":"stale_prompt"}', "")
+    compare(raw.error, "stale_prompt")
+    // E_-coded human-mode stderr
+    var busy = S.actionResult(1, "",
+      "E_BUSY: Busy with another request.\nTry: wispd interrupt")
+    verify(!busy.ok)
+    compare(busy.error, "busy")
+    compare(busy.text, "Busy with another request.")
+    // nonzero exit without parseable output still reports
+    compare(S.actionResult(3, "", "spawn blew up").text, "spawn blew up")
+    compare(S.actionResult(3, "", "").text, "exit 3")
+    // success without JSON still surfaces stdout's first line
+    var line = S.actionResult(0, "labeled correct: t1\n", "")
+    verify(line.ok)
+    compare(line.text, "labeled correct: t1")
+  }
 }

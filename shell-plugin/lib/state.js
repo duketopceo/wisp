@@ -51,20 +51,40 @@ function str(x) { return typeof x === "string" ? x : "" }
 function arr(x) { return Array.isArray(x) ? x : [] }
 
 // state.confirm (additive, W25): {prompt_id, prompt, timeout_s} while a
-// confirm waits. Anything without a prompt id is not a card.
-function normalizeConfirm(c) {
+// confirm waits. Anything without a prompt id is not a card. `allow` and
+// `deny` snapshot the offered picks *with the card* — a diff that
+// empties `choices` after the card published must not change what a
+// click sends (allow is the first offer, deny the last).
+function normalizeConfirm(c, choices) {
   if (!isObj(c) || !str(c.prompt_id)) return null
   var t = Number(c.timeout_s)
+  var opts = arr(choices)
   return { promptId: str(c.prompt_id), prompt: str(c.prompt),
-    timeoutS: isFinite(t) && t > 0 ? t : 0 }
+    timeoutS: isFinite(t) && t > 0 ? t : 0,
+    allow: opts.length > 0 ? opts[0] : "",
+    deny: opts.length > 0 ? opts[opts.length - 1] : "" }
 }
 
 // UI-side prompt id guard: a reply goes to the daemon only when it names
-// the prompt the view currently shows and picks one of its choices. A
-// click on a card that has already been answered, timed out or replaced
-// is dropped here (the daemon refuses it too: stale_prompt).
+// the prompt the view currently shows and picks one of its choices, or
+// when it is a suggestion-card pick. Suggestions carry no prompt id and
+// the daemon resolves them before the prompt broker (wispd): a bare
+// `suggestion:<act>` pick passes only while a suggestion card is live
+// and offers it; a fully keyed `suggestion:<act>:<key>` pick passes at
+// any time — the key addresses a row in suggestions.jsonl and a stale
+// key ends in a safe SKIP server-side. Any other reply for a prompt
+// that was answered, timed out or replaced is dropped here (the daemon
+// refuses a stale id as well: stale_prompt).
 function acceptChoice(view, pick, promptId) {
-  if (!view || !promptId || view.promptId !== promptId) return false
+  if (!view || typeof pick !== "string" || pick === "") return false
+  if (pick.indexOf("suggestion:") === 0) {
+    var rest = pick.slice("suggestion:".length)
+    var sep = rest.indexOf(":")
+    if (sep > 0 && rest.slice(sep + 1) !== "") return true  // keyed pick
+    return view.status === "suggestion"
+        && view.choices.indexOf(pick) >= 0
+  }
+  if (!promptId || view.promptId !== promptId) return false
   if (view.status !== "awaiting_choice") return false
   return view.choices.indexOf(pick) >= 0
 }
@@ -84,7 +104,7 @@ function normalize(raw) {
   var cv = Number(raw.contract_version)
   if (!isFinite(cv) || cv < 1) cv = 1
   var choices = arr(raw.choices).filter(function (c) { return typeof c === "string" })
-  var confirm = normalizeConfirm(raw.confirm)
+  var confirm = normalizeConfirm(raw.confirm, choices)
   return {
     status: status, rawStatus: st, transcript: str(raw.transcript),
     answer: str(raw.answer), result: str(raw.result), choices: choices,
@@ -129,6 +149,13 @@ function copy(o) { var r = {}; for (var k in o) r[k] = o[k]; return r }
 function build(prev, raw, source, nowMs, changed) {
   var v = copy(prev)
   var n = normalize(raw)
+  // a diff that dropped `choices` while the same confirm prompt is still
+  // pending must not blank the picks the card already snapshotted
+  if (n.confirm !== null && prev.confirm !== null
+      && n.confirm.promptId === prev.confirm.promptId) {
+    if (n.confirm.allow === "") n.confirm.allow = prev.confirm.allow
+    if (n.confirm.deny === "") n.confirm.deny = prev.confirm.deny
+  }
   for (var k in n) v[k] = n[k]
   v.raw = raw
   v.connection = source
@@ -269,4 +296,61 @@ function isStale(view, nowMs, afterMs) {
   if (BUSY.indexOf(view.status) < 0) return false
   var limit = afterMs === undefined ? STALE_AFTER_MS : afterMs
   return nowMs - view.changedAtMs > limit
+}
+
+// First line of `text` that parses as a JSON reply object carrying an
+// `ok` field — the CLI's `--json` envelope ({"ok":bool,"data"/"error"})
+// or a raw daemon reply ({"ok":bool,"error":"..."}). Null when nothing
+// parseable arrived.
+function _jsonReply(text) {
+  var lines = String(text || "").split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var l = lines[i].replace(/^\s+|\s+$/g, "")
+    if (l === "") continue
+    try {
+      var o = JSON.parse(l)
+      if (isObj(o) && o.ok !== undefined) return o
+    } catch (e) {}
+  }
+  return null
+}
+
+// One-shot action subprocess (wispd choice/label/interrupt/trigger
+// --json, or a systemctl call) -> {ok, error, text}. `error` is the
+// typed daemon or CLI code without the E_ prefix (stale_prompt, busy,
+// not_offered — "" when nothing typed arrived); `text` is the human
+// line (the result on success, the message on a refusal). Nonzero exit
+// with no parseable output still reports the first stderr line so a
+// failure is never silent.
+function actionResult(exitCode, stdout, stderr) {
+  var code = Number(exitCode)
+  if (!isFinite(code)) code = 1
+  var env = _jsonReply(stdout)
+  if (env !== null) {
+    if (env.ok === false) {
+      var eobj = isObj(env.error) ? env.error : {}
+      var raw = typeof env.error === "string" ? env.error : ""
+      var ec = str(eobj.code || raw)
+      return { ok: false, error: ec.replace(/^E_/, "").toLowerCase(),
+               text: str(eobj.message) || raw || ec }
+    }
+    var d = isObj(env.data) ? env.data : env
+    return { ok: true, error: "",
+             text: str(d.result) || str(d.text) || str(d.sent) }
+  }
+  var m = /E_([A-Z_]+):?[ \t]*([^\n]*)/.exec(String(stderr || ""))
+  if (m !== null)
+    return { ok: false, error: m[1].toLowerCase(), text: str(m[2]) }
+  var w = /(?:^|\n)[ \t]*wispd:[ \t]*([^\n]+)/.exec(String(stderr || ""))
+  if (w !== null) {
+    var t = str(w[1])
+    return { ok: false,
+             error: ERROR_CODES.indexOf(t) >= 0 ? t : "", text: t }
+  }
+  if (code !== 0) {
+    var l = str(String(stderr || "").split("\n")[0])
+    return { ok: false, error: "", text: l !== "" ? l : "exit " + code }
+  }
+  return { ok: true, error: "",
+           text: str(String(stdout || "").split("\n")[0]) }
 }

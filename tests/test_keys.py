@@ -328,8 +328,8 @@ class TestEscStopsWithinBudget(unittest.TestCase):
 
     def test_fastkey_choice_sends_index(self):
         got = []
-        srv = ipc.Daemon(lambda c: got.append(c) or {"ok": True},
-                         sock_file=self.sock)
+        srv = ipc.Daemon(lambda c, peer=None: got.append(c)
+                         or {"ok": True}, sock_file=self.sock)
         srv.start()
         self.addCleanup(srv.stop)
         argv = keys.runner_for(self.sock) + ["choice", "2"]

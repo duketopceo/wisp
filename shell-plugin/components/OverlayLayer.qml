@@ -89,6 +89,21 @@ Item {
           onClicked: root.verdict("incorrect")
         }
       }
+
+      // the verdict's ack ("noted", or the daemon's own reply such as
+      // "nothing to label") once the chips fold away
+      Text {
+        visible: root.labeled
+        text: {
+          var a = root.service.lastAction;
+          return a && a.verb === "label" && !a.pending && a.message !== ""
+            ? a.message : root.service.ui("ui.noted");
+        }
+        color: root.service.lastAction && root.service.lastAction.ok === false
+          ? root.tk.fail : root.tk.inkMuted
+        font.family: root.service.fontFamily
+        font.pixelSize: M.font.label
+      }
     }
   }
 

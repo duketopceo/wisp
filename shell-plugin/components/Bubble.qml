@@ -2,9 +2,10 @@
 // its hint), on canvas with a keyline; keylineStrong while it belongs to
 // the live turn. While a confirm waits it is the confirm card instead: the
 // needs-you keyline, what is being asked, allow and deny chips that reply
-// with the card's own prompt id, and a one-line note that silence means
-// deny. The label prompt and dismissal live in the host (a card ignores
-// the dwell).
+// with the card's own prompt id and the picks snapshotted at publish time
+// (an in-flight diff can't turn a click into undefined), and a one-line
+// note that silence means deny. The label prompt and dismissal live in
+// the host (a card ignores the dwell).
 import QtQuick
 import "../lib/metrics.js" as M
 import "../lib/cursor.js" as Cursor
@@ -75,13 +76,13 @@ Rectangle {
         objectName: "allow"
         service: root.service
         label: root.service.ui("ui.confirm.allow")
-        onClicked: root.confirmChosen(root.service.choices[0], root.card.promptId)
+        onClicked: root.confirmChosen(root.card.allow, root.card.promptId)
       }
       Chip {
         objectName: "deny"
         service: root.service
         label: root.service.ui("ui.confirm.deny")
-        onClicked: root.confirmChosen(root.service.choices[root.service.choices.length - 1], root.card.promptId)
+        onClicked: root.confirmChosen(root.card.deny, root.card.promptId)
       }
     }
     Text {

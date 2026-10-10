@@ -467,7 +467,27 @@ class TestConfirmCard(unittest.TestCase):
     def test_confirm_maps_and_clamps(self):
         c = self.pending()["confirm"]
         self.assertEqual(c, {"promptId": "p7", "prompt": "run close: w1?",
-                             "timeoutS": 120})
+                             "timeoutS": 120,
+                             "allow": "run close: w1? — yes",
+                             "deny": "no"})
+
+    def test_card_picks_survive_a_diff_that_empties_choices(self):
+        # the race U1 repairs: a state diff between render and click may
+        # empty `choices`; the card's snapshotted picks must not blank
+        diff = {"type": "state", "seq": 3, "diff": {"choices": [], "seq": 3}}
+        r = run([["snap", snap(status="awaiting_choice", seq=2,
+                               choices=["a", "no"], prompt_id="p7",
+                               confirm=CARD), 1], ["event", diff, 2]])
+        c = r["view"]["confirm"]
+        self.assertEqual((c["allow"], c["deny"]), ("a", "no"))
+        # a fresh pick set for the same prompt still wins the snapshot
+        diff = {"type": "state", "seq": 3,
+                "diff": {"choices": ["go", "stop"], "seq": 3}}
+        r = run([["snap", snap(status="awaiting_choice", seq=2,
+                               choices=["a", "no"], prompt_id="p7",
+                               confirm=CARD), 1], ["event", diff, 2]])
+        c = r["view"]["confirm"]
+        self.assertEqual((c["allow"], c["deny"]), ("go", "stop"))
 
     def test_malformed_confirm_is_dropped(self):
         for bad in ("yes", 3, [], {"prompt": "x"}, {"prompt_id": ""}):
@@ -503,6 +523,108 @@ class TestConfirmCard(unittest.TestCase):
         idle = run([["snap", snap(status="acting", seq=3), 2]])["view"]
         self.assertFalse(js("S.acceptChoice(%s, 'no', 'p7')"
                             % json.dumps(idle)))  # nothing pending now
+
+
+@unittest.skipUnless(jsnode.NODE, "node not installed")
+class TestAcceptSuggestion(unittest.TestCase):
+    """acceptChoice for suggestion: picks — they carry no prompt id and
+    the daemon resolves them before the broker, so they must pass the
+    UI gate instead of dying on it (U1)."""
+
+    SUGGEST = ["suggestion:automate", "suggestion:not now",
+               "suggestion:never"]
+
+    def f(self, view, pick, pid=""):
+        return js("S.acceptChoice(%s, %s, %s)"
+                  % (json.dumps(view), json.dumps(pick), json.dumps(pid)))
+
+    def test_bare_pick_passes_only_while_the_card_is_live(self):
+        sug = run([["snap", snap(status="suggestion", seq=2,
+                                 choices=self.SUGGEST), 1]])["view"]
+        self.assertTrue(self.f(sug, "suggestion:automate"))
+        self.assertTrue(self.f(sug, "suggestion:never"))
+        # a pick the card never offered still drops
+        self.assertFalse(self.f(sug, "suggestion:later"))
+
+    def test_bare_pick_drops_without_a_live_card(self):
+        idle = run([["snap", snap(status="idle", seq=2), 1]])["view"]
+        self.assertFalse(self.f(idle, "suggestion:automate"))
+        waiting = run([["snap", snap(status="awaiting_choice", seq=2,
+                                     choices=["a", "no"],
+                                     prompt_id="p7"), 1]])["view"]
+        self.assertFalse(self.f(waiting, "suggestion:automate"))
+
+    def test_keyed_pick_passes_at_any_time(self):
+        # suggestion:<act>:<key> addresses a suggestions.jsonl row — a
+        # stale key ends in a safe SKIP server-side, so the UI may pass
+        # it regardless of what is on screen (the debug shell's list)
+        idle = run([["snap", snap(status="idle", seq=2), 1]])["view"]
+        self.assertTrue(self.f(idle, "suggestion:automate:abc123"))
+        self.assertTrue(self.f(idle, "suggestion:never:zz"))
+        sug = run([["snap", snap(status="suggestion", seq=2,
+                                 choices=self.SUGGEST), 1]])["view"]
+        self.assertTrue(self.f(sug, "suggestion:not now:k1"))
+
+    def test_malformed_picks_stay_refused(self):
+        idle = run([["snap", snap(status="idle", seq=2), 1]])["view"]
+        self.assertFalse(self.f(idle, ""))
+        self.assertFalse(self.f(idle, "suggestion:"))
+        self.assertFalse(self.f(idle, "suggestion:automate:"))  # empty key
+        self.assertFalse(self.f(idle, "suggestion::k"))         # empty act
+        self.assertFalse(self.f(None, "x"))
+        self.assertFalse(self.f(idle, 3))
+
+
+@unittest.skipUnless(jsnode.NODE, "node not installed")
+class TestActionResult(unittest.TestCase):
+    """actionResult: one-shot action subprocess output ->
+    {ok, error, text}; every refusal path ends in a message, not
+    silence (U1)."""
+
+    def ar(self, code, out="", err=""):
+        return js("S.actionResult(%d, %s, %s)"
+                  % (code, json.dumps(out), json.dumps(err)))
+
+    def test_json_envelope_success(self):
+        r = self.ar(0, '{"ok":true,"command":"label set","data":'
+                    '{"result":"labeled correct: t1"}}')
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["text"], "labeled correct: t1")
+
+    def test_json_envelope_typed_error(self):
+        r = self.ar(1, '{"ok":false,"error":{"code":"E_STALE_PROMPT",'
+                    '"message":"That prompt expired.","try":"wispd watch"}}')
+        self.assertFalse(r["ok"])
+        self.assertEqual(r["error"], "stale_prompt")
+        self.assertEqual(r["text"], "That prompt expired.")
+
+    def test_raw_daemon_error_reply(self):
+        # an unwrapped daemon reply line ({"ok":false,"error":"x"})
+        r = self.ar(1, '{"ok":false,"error":"stale_prompt"}')
+        self.assertEqual(r["error"], "stale_prompt")
+
+    def test_e_code_on_stderr(self):
+        r = self.ar(1, "", "E_BUSY: Busy with another request.\n"
+                    "Try: wispd interrupt, then try again")
+        self.assertEqual(r["error"], "busy")
+        self.assertEqual(r["text"], "Busy with another request.")
+
+    def test_wispd_stderr_line(self):
+        r = self.ar(1, "", "wispd: busy")
+        self.assertEqual(r["error"], "busy")
+        r = self.ar(1, "", "wispd: daemon closed without a reply")
+        self.assertEqual(r["error"], "")
+        self.assertEqual(r["text"], "daemon closed without a reply")
+
+    def test_nonzero_without_output_still_reports(self):
+        r = self.ar(3, "", "spawn blew up\nmore detail")
+        self.assertEqual(r["text"], "spawn blew up")
+        self.assertEqual(self.ar(3)["text"], "exit 3")
+
+    def test_success_reports_first_stdout_line(self):
+        r = self.ar(0, "labeled correct: t1\n")
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["text"], "labeled correct: t1")
 
 
 if __name__ == "__main__":

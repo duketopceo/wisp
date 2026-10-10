@@ -20,6 +20,12 @@ Column {
     && service.choices.length === 0 && service.error === ""
   readonly property bool judgeable: !service.busy && service.status !== "offline"
     && (service.result !== "" || service.transcript !== "")
+  // The label verdict's ack: service.lastAction while a label click is
+  // the newest event (a state change after it ends the row's moment).
+  readonly property var labelAck: service.lastAction
+    && service.lastAction.verb === "label"
+    && service.lastAction.at >= service.view.changedAtMs
+    ? service.lastAction : null
 
   spacing: M.spacing.xl
   width: 340
@@ -110,7 +116,7 @@ Column {
   }
 
   Row {
-    visible: root.judgeable
+    visible: root.judgeable && root.labelAck === null
     spacing: M.spacing.lg
     Text {
       anchors.verticalCenter: parent.verticalCenter
@@ -129,5 +135,16 @@ Column {
       label: root.service.ui("ui.now.no")
       onClicked: root.labelClicked("incorrect")
     }
+  }
+
+  Text {
+    visible: root.labelAck !== null
+    width: parent.width
+    text: root.labelAck !== null && !root.labelAck.pending && root.labelAck.message !== ""
+      ? root.labelAck.message : root.service.ui("ui.noted")
+    wrapMode: Text.Wrap
+    color: root.labelAck !== null && root.labelAck.ok === false ? root.tk.fail : root.tk.inkMuted
+    font.family: root.service.fontFamily
+    font.pixelSize: M.font.label
   }
 }

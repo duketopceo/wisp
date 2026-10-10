@@ -50,12 +50,17 @@ def dlog(msg: str) -> None:
 
 
 def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
-    def handle(cmd: dict) -> dict:
+    def handle(cmd: dict, peer: dict | None = None) -> dict:
         c = cmd.get("cmd")
         _t0 = __import__("time").monotonic()
         from wisp import trace as _trace
         out = _dispatch(c, cmd)
-        dlog(f"ipc {c} phase={cmd.get('phase', '-')} ok={out.get('ok')}"
+        # peer is the connecting client's SO_PEERCRED attribution
+        # ({pid, uid}) from ipc._serve — None over TCP or on direct calls
+        who = ""
+        if isinstance(peer, dict) and peer.get("pid") is not None:
+            who = f" peer={peer['pid']}:{peer.get('uid', '?')}"
+        dlog(f"ipc {c}{who} phase={cmd.get('phase', '-')} ok={out.get('ok')}"
              + (f" err={out.get('error')}" if not out.get("ok") else ""))
         if c not in _POLL_CMDS:
             _trace.emit("sys", "ipc", "ipc",

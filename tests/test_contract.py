@@ -137,8 +137,8 @@ class PushStreamContract(unittest.TestCase):
         import tempfile
         td = pathlib.Path(tempfile.mkdtemp())
         bus = state.StateBus(state_file=td / "state.json")
-        srv = ipc.Daemon(lambda c: {"ok": True}, sock_file=td / "s.sock",
-                         bus=bus)
+        srv = ipc.Daemon(lambda c, peer=None: {"ok": True},
+                         sock_file=td / "s.sock", bus=bus)
         srv.start()
         try:
             it = ipc.subscribe(sock_file=td / "s.sock", timeout=3)
