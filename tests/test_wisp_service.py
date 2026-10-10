@@ -21,7 +21,8 @@ PLUGIN = ROOT / "shell-plugin"
 SRC = (PLUGIN / "WispService.qml").read_text()
 
 PROPS = ["view", "status", "rawStatus", "transcript", "answer", "result",
-         "choices", "promptId", "points", "steps", "suggestion", "guide",
+         "choices", "promptId", "points", "steps", "actions",
+         "suggestion", "guide",
          "windowFocus", "goal", "goalStatus", "level", "tasks", "error",
          "errorCode", "health", "turnId", "seq", "contractVersion",
          "connection", "offline", "stale", "contractNewer",

@@ -369,5 +369,119 @@ class TestListenSpans(unittest.TestCase):
         self.assertGreater(sent["t0"], 1_600_000_000_000_000_000)
 
 
+class TestHandlerActionStream(unittest.TestCase):
+    """U2: command-line surfaces are stream events too — a pick, a
+    spoken-style interrupt, a label verdict each land as a terminal
+    entry, so the shell log explains what the daemon did."""
+
+    def setUp(self):
+        import importlib.machinery
+        import importlib.util
+        import threading
+        path = str(pathlib.Path(__file__).resolve().parent.parent / "wispd")
+        loader = importlib.machinery.SourceFileLoader("wispd_mod", path)
+        spec = importlib.util.spec_from_loader("wispd_mod", loader)
+        self.w = importlib.util.module_from_spec(spec)
+        loader.exec_module(self.w)
+        import tempfile
+        from wisp import state as state_mod, cancel
+        self.bus = state_mod.StateBus(
+            state_file=pathlib.Path(tempfile.mkdtemp()) / "state.json")
+        self.addCleanup(self.bus.close)
+        self.cancel = cancel
+        self.threading = threading
+
+    def handle(self, ctl=None):
+        c = {"stop": self.threading.Event(),
+             "busy": self.threading.Event(),
+             "interrupt": self.threading.Event(),
+             "choice_event": self.threading.Event(),
+             "choice_pick": ""}
+        if ctl:
+            c.update(ctl)
+        return self.w._handler(self.bus, {}, c)
+
+    def actions(self, kind=None):
+        acts = self.bus.snapshot()["actions"]
+        return acts if kind is None else \
+            [a for a in acts if a["kind"] == kind]
+
+    def test_a_resolved_pick_lands_done(self):
+        broker = self.cancel.PromptBroker()
+        out_box = {}
+
+        def wait():
+            out_box["pick"] = broker.waiter()(5, prompt_id="p1",
+                                              options=["yes", "no"])
+        th = self.threading.Thread(target=wait, daemon=True)
+        th.start()
+        for _ in range(100):
+            if broker.pending_id:
+                break
+            import time
+            time.sleep(0.01)
+        r = self.handle({"broker": broker})(
+            {"cmd": "choice", "pick": "yes", "prompt_id": "p1"})
+        self.assertTrue(r["ok"])
+        th.join(2)
+        e = self.actions("choice")[-1]
+        self.assertEqual(e["status"], "done")
+        self.assertEqual(e["label"], "yes")
+
+    def test_a_stale_pick_is_a_visible_failed_event(self):
+        broker = self.cancel.PromptBroker()  # nothing pending
+        r = self.handle({"broker": broker})(
+            {"cmd": "choice", "pick": "yes", "prompt_id": "p9"})
+        self.assertFalse(r["ok"])
+        e = self.actions("choice")[-1]
+        self.assertEqual(e["status"], "failed")
+        self.assertEqual(e["reason"], "stale_prompt")
+
+    def test_bad_index_records_the_refusal(self):
+        broker = self.cancel.PromptBroker()
+        r = self.handle({"broker": broker})(
+            {"cmd": "choice", "index": "bogus"})
+        self.assertEqual(r["error"], "bad_index")
+        self.assertEqual(self.actions("choice")[-1]["reason"],
+                         "bad_index")
+
+    def test_interrupt_lands_as_a_done_event(self):
+        with mock.patch.object(self.w.speech, "stop"):
+            r = self.handle()({"cmd": "interrupt"})
+        self.assertTrue(r["ok"])
+        e = self.actions("interrupt")[-1]
+        self.assertEqual(e["status"], "done")
+
+    def test_label_lands_with_its_result(self):
+        with mock.patch("wisp.learn.label_last",
+                        return_value="labeled correct: t1") as lab:
+            r = self.handle()({"cmd": "label", "label": "correct"})
+        lab.assert_called_once()
+        self.assertTrue(r["ok"])
+        e = self.actions("label")[-1]
+        self.assertEqual((e["status"], e["reason"]),
+                         ("done", "labeled correct: t1"))
+
+    def test_label_refusal_is_failed_not_silent(self):
+        with mock.patch("wisp.learn.label_last",
+                        return_value="SKIP (no completed turn)"):
+            r = self.handle()({"cmd": "label", "label": "wrong"})
+        self.assertTrue(r["ok"])  # command ran; the outcome failed
+        self.assertEqual(self.actions("label")[-1]["status"], "failed")
+
+    def test_suggestion_pick_resolves_the_card_entry(self):
+        # the card's stream entry resolves by kind when the pick lands
+        self.bus.action_add("suggestion", "try x", status="awaiting",
+                            options=["suggestion:not now",
+                                     "suggestion:never"])
+        with mock.patch("wisp.suggest._mark"):  # keep the run test-only
+            r = self.handle()({"cmd": "choice",
+                               "pick": "suggestion:not now"})
+        self.assertTrue(r["ok"])
+        e = self.actions("suggestion")[-1]
+        self.assertEqual((e["status"], e["reason"]),
+                         ("cancelled", "snoozed"))
+
+
 if __name__ == "__main__":
     unittest.main()

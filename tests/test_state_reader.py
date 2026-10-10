@@ -19,7 +19,7 @@ def js(expr):
 
 def snap(**kw):
     base = {"status": "idle", "seq": 1, "turn_id": "t1",
-            "contract_version": 1, "started_at": "2026-10-04T10:00:00Z",
+            "contract_version": 2, "started_at": "2026-10-04T10:00:00Z",
             "updated_at": "2026-10-04T10:00:01Z"}
     base.update(kw)
     return base
@@ -62,6 +62,10 @@ class TestSnapshot(unittest.TestCase):
                  goal={"text": "ship", "status": "open"}, level=0.4,
                  tasks={"a": "running"}, error="", error_code="",
                  health={"jev": {"ok": True}}, seq=7, turn_id="t9",
+                 actions=[{"id": "a1", "kind": "tool", "label": "click",
+                           "status": "done", "target": "1,2",
+                           "reason": "ok", "undo_ref": None,
+                           "at": "2026-10-04T10:00:00Z"}],
                  heartbeat_at="2026-10-04T10:00:02Z")
         v = run([["snap", s, 1000]])["view"]
         self.assertEqual(v["status"], "awaiting_choice")
@@ -77,8 +81,9 @@ class TestSnapshot(unittest.TestCase):
         self.assertEqual(v["level"], 0.4)
         self.assertEqual(v["tasks"], {"a": "running"})
         self.assertEqual(v["health"], {"jev": {"ok": True}})
+        self.assertEqual(v["actions"][0]["id"], "a1")
         self.assertEqual((v["seq"], v["turnId"], v["contractVersion"]),
-                         (7, "t9", 1))
+                         (7, "t9", 2))
         self.assertEqual(v["heartbeatAt"], "2026-10-04T10:00:02Z")
         self.assertFalse(v["offline"])
 
@@ -122,10 +127,10 @@ class TestSnapshot(unittest.TestCase):
         self.assertEqual(run([["snap", snap(level=-1), 1]])["view"]["level"], 0)
 
     def test_newer_contract_flagged_but_still_read(self):
-        v = run([["snap", snap(contract_version=2, status="acting"), 1]])["view"]
+        v = run([["snap", snap(contract_version=3, status="acting"), 1]])["view"]
         self.assertTrue(v["contractNewer"])
         self.assertEqual(v["status"], "acting")
-        v = run([["snap", snap(contract_version=1), 1]])["view"]
+        v = run([["snap", snap(contract_version=2), 1]])["view"]
         self.assertFalse(v["contractNewer"])
 
     def test_older_seq_same_daemon_is_dropped(self):
@@ -573,6 +578,126 @@ class TestAcceptSuggestion(unittest.TestCase):
         self.assertFalse(self.f(idle, "suggestion::k"))         # empty act
         self.assertFalse(self.f(None, "x"))
         self.assertFalse(self.f(idle, 3))
+
+
+@unittest.skipUnless(jsnode.NODE, "node not installed")
+class TestActionStream(unittest.TestCase):
+    """state.actions (contract v2, U2): the unified lifecycle stream the
+    step display and the demoted confirm card read. Entries normalize to
+    camelCase view fields, cap at the last 50 like the daemon's list,
+    and ride the same snapshot+diff path as every other field."""
+
+    def entry(self, i, **kw):
+        e = {"id": f"a{i}", "kind": "tool", "label": f"tool{i}",
+             "status": "done", "target": "", "reason": "",
+             "undo_ref": None, "at": "2026-10-10T01:00:00Z"}
+        e.update(kw)
+        return e
+
+    def test_absent_is_empty_and_initial_is_empty(self):
+        v = run([["snap", snap(), 1]])["view"]
+        self.assertEqual(v["actions"], [])
+        self.assertEqual(js("S.initial()")["actions"], [])
+
+    def test_entries_normalize_with_defaults(self):
+        a = self.entry(1, status="in_flight", target="640,360",
+                       options=["yes", "no"], prompt_id="p1",
+                       undo_ref="u9")
+        v = run([["snap", snap(actions=[a]), 1]])["view"]
+        e = v["actions"][0]
+        self.assertEqual(e["id"], "a1")
+        self.assertEqual(e["kind"], "tool")
+        self.assertEqual(e["status"], "in_flight")
+        self.assertEqual(e["target"], "640,360")
+        self.assertEqual(e["options"], ["yes", "no"])
+        self.assertEqual(e["promptId"], "p1")
+        self.assertEqual(e["undoRef"], "u9")
+        self.assertEqual(e["at"], "2026-10-10T01:00:00Z")
+
+    def test_unknown_status_reads_done_and_junk_drops(self):
+        v = run([["snap", snap(actions=[self.entry(1, status="weird"),
+                                        "junk", None, 4,
+                                        self.entry(2)]), 1]])["view"]
+        self.assertEqual([e["id"] for e in v["actions"]], ["a1", "a2"])
+        self.assertEqual(v["actions"][0]["status"], "done")
+        v = run([["snap", snap(actions="nope"), 1]])["view"]
+        self.assertEqual(v["actions"], [])
+
+    def test_ordering_preserved_and_capped_at_fifty(self):
+        entries = [self.entry(i) for i in range(1, 61)]
+        v = run([["snap", snap(actions=entries), 1]])["view"]
+        self.assertEqual(len(v["actions"]), 50)
+        self.assertEqual(v["actions"][0]["id"], "a11")
+        self.assertEqual(v["actions"][-1]["id"], "a60")
+
+    def test_diff_replaces_the_stream_wholesale(self):
+        base = [["snap", snap(seq=2, actions=[self.entry(1)]), 1]]
+        diff = {"type": "state", "seq": 3,
+                "diff": {"actions": [self.entry(1),
+                                     self.entry(2, status="awaiting",
+                                                prompt_id="p9")],
+                         "seq": 3}}
+        r = run(base + [["event", diff, 2]])
+        self.assertEqual([e["id"] for e in r["view"]["actions"]],
+                         ["a1", "a2"])
+        # a later diff mutating the same entry lands the new list
+        diff2 = {"type": "state", "seq": 4,
+                 "diff": {"actions": [self.entry(1),
+                                      self.entry(2, status="done")],
+                          "seq": 4}}
+        r = run(base + [["event", diff, 2], ["event", diff2, 3]])
+        self.assertEqual(r["view"]["actions"][-1]["status"], "done")
+
+    def test_awaiting_confirm_entry_drives_the_card(self):
+        entry = self.entry(1, kind="confirm", status="awaiting",
+                           label="run close: w1?",
+                           options=["run close: w1? — yes", "no"],
+                           prompt_id="p7")
+        v = run([["snap", snap(status="awaiting_choice", seq=2,
+                               prompt_id="p7", actions=[entry]), 1]])["view"]
+        c = v["confirm"]
+        self.assertEqual(c["promptId"], "p7")
+        self.assertEqual(c["prompt"], "run close: w1?")
+        self.assertEqual((c["allow"], c["deny"]),
+                         ("run close: w1? — yes", "no"))
+
+    def test_confirm_entry_inherits_timeout_from_the_legacy_object(self):
+        entry = self.entry(1, kind="confirm", status="awaiting",
+                           label="run?", options=["y", "n"],
+                           prompt_id="p7")
+        v = run([["snap", snap(status="awaiting_choice", seq=2,
+                               prompt_id="p7", confirm=CARD,
+                               actions=[entry]), 1]])["view"]
+        self.assertEqual(v["confirm"]["timeoutS"], 120)
+
+    def test_stale_awaiting_entry_does_not_hold_a_dead_card(self):
+        # the prompt already resolved elsewhere (prompt_id cleared or
+        # another prompt live) — an unresolved entry can't park a card
+        entry = self.entry(1, kind="confirm", status="awaiting",
+                           options=["y", "n"], prompt_id="p7")
+        v = run([["snap", snap(status="acting", seq=2, prompt_id="",
+                               actions=[entry]), 1]])["view"]
+        self.assertIsNone(v["confirm"])
+        v = run([["snap", snap(status="awaiting_choice", seq=2,
+                               prompt_id="p8", actions=[entry]), 1]])["view"]
+        self.assertIsNone(v["confirm"])
+
+    def test_only_confirm_entries_demote_to_the_card(self):
+        for kind in ("clarify", "suggestion", "question", "choice"):
+            entry = self.entry(1, kind=kind, status="awaiting",
+                               options=["a", "b"], prompt_id="p7")
+            v = run([["snap", snap(status="awaiting_choice", seq=2,
+                                   prompt_id="p7",
+                                   actions=[entry]), 1]])["view"]
+            self.assertIsNone(v["confirm"], kind)
+
+    def test_resolved_confirm_entry_falls_back_to_legacy_field(self):
+        entry = self.entry(1, kind="confirm", status="cancelled",
+                           reason="denied", prompt_id="p7")
+        v = run([["snap", snap(status="acting", seq=2,
+                               actions=[entry]), 1]])["view"]
+        self.assertIsNone(v["confirm"])
+        self.assertEqual(v["actions"][0]["reason"], "denied")
 
 
 @unittest.skipUnless(jsnode.NODE, "node not installed")

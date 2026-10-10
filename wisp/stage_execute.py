@@ -6,6 +6,9 @@ wisp.pipeline.
 """
 import re
 
+from . import cancel as _cancel
+from . import state as _state
+
 
 def _pl():
     """wisp.pipeline, resolved late (patch targets live there)."""
@@ -125,6 +128,17 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
     return f"SKIP (route={route!r} action={action!r} unhandled)"
 
 
+def _dispatch_status(result: str) -> str:
+    """Route-level entry resolution from the dispatch result string."""
+    if result.startswith("INTERRUPTED"):
+        return "cancelled"
+    if result.startswith(("BLOCKED", "SKIP")):
+        return "cancelled"
+    if result.startswith(("ERROR", "ABORTED", "STALLED", "FAIL")):
+        return "failed"
+    return "done"
+
+
 def execute_stage(ctx) -> None:
     """Run the dispatch for this turn; sets ctx.result."""
     from . import trace as _trace
@@ -139,10 +153,28 @@ def execute_stage(ctx) -> None:
     from . import brain as _brain
     act_img = ctx.shot_b64 if ctx.shot_b64 and \
         _brain.supports_vision(cfg) else None
-    result = ctx.result = pl.execute(
-        answers, cfg, ctx.harness, detail=ctx.detail, state=state,
-        confirm=confirm, initial_image=act_img,
-        interrupted=ctx.interrupted)
+    # the whole dispatch is one stream entry: in flight while route/
+    # act-loop work runs, resolved by the result it returns
+    aid = _state.action_add(
+        state, "route",
+        answers.get("route", {}).get("choice")
+        or answers.get("action", {}).get("choice") or "execute",
+        target=ctx.detail, status="in_flight")
+    try:
+        result = ctx.result = pl.execute(
+            answers, cfg, ctx.harness, detail=ctx.detail, state=state,
+            confirm=confirm, initial_image=act_img,
+            interrupted=ctx.interrupted)
+    except _cancel.Cancelled:
+        _state.action_set(state, aid, status="cancelled",
+                          reason="interrupted")
+        raise
+    except Exception as e:
+        _state.action_set(state, aid, status="failed",
+                          reason=f"ERROR ({e})")
+        raise
+    _state.action_set(state, aid, status=_dispatch_status(result),
+                      reason=result)
     _trace.emit(ctx.turn, "dispatch", "act",
                 {"route": answers.get("route", {}).get("choice"),
                  "result": result})

@@ -17,6 +17,7 @@ import urllib.error
 import urllib.request
 
 from . import bgwriter, cancel, config, cua_safety, grounding, tools
+from . import state as _state
 
 # Defaults; the daemon reads [agents] act_max_steps, act_max_errors and
 # act_max_parse_misses (wisp/settings_schema.py) through _limit().
@@ -242,6 +243,8 @@ def run_act_loop(task: str, cfg: dict, state=None,
             if text.upper().startswith("ASK_USER:"):
                 # conversational backchannel — speak the question, keep
                 # the goal open for the next utterance
+                _state.action_add(state, "question", text[9:].strip(),
+                                  status="awaiting")
                 return "ASK_USER " + text[9:].strip()
             _goals.close("done")
             out = f"ACTED ({len(steps)} steps): {text or 'done'}"
@@ -258,9 +261,13 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 arg = json.loads(fn.get("arguments") or "{}").get("arg", "")
             except json.JSONDecodeError:
                 pass
+            # lifecycle stream: queued when the model proposes the call,
+            # in_flight while gates/dispatch run, terminal on the result
+            aid = _state.action_add(state, "tool", name, target=arg)
             refused = _gate(name, arg, cfg, confirm, state=state)
             served_cached = False
             if refused is None:
+                _state.action_set(state, aid, status="in_flight")
                 # soak fix: re-observe — a mutating step invalidates the
                 # screen the last coordinates came from, so take a fresh
                 # screenshot before any pointer call. Deterministic —
@@ -273,7 +280,13 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     and not re.match(r"^\s*-?\d+\s*,", arg or "")
                 if (name in ("click", "move") and vision
                         and screen_dirty and not _id_arg):
+                    rid = _state.action_add(
+                        state, "tool", "screenshot",
+                        target="(auto re-observe)", status="in_flight")
                     shot = tools.run("screenshot", "", cfg, harness)
+                    _state.action_set(state, rid,
+                                      status=_tool_status(shot),
+                                      reason=shot)
                     steps.append({"tool": "screenshot",
                                   "arg": "(auto re-observe)",
                                   "result": shot})
@@ -310,6 +323,8 @@ def run_act_loop(task: str, cfg: dict, state=None,
                                                   harness))
                         _aimed_done(state, name, tgt, result)
                     except cancel.Cancelled:
+                        _state.action_set(state, aid, status="cancelled",
+                                          reason="interrupted")
                         grounding.emit_target(state, None)
                         _goals.record_steps(steps)
                         return "INTERRUPTED (user)"
@@ -318,6 +333,8 @@ def run_act_loop(task: str, cfg: dict, state=None,
                         result = f"ERROR ({e})"
             else:
                 result = refused
+            _state.action_set(state, aid, status=_tool_status(result),
+                              reason=result)
             if name == "screenshot" and result.startswith("SHOT "):
                 screen_dirty = False
                 if not served_cached:
@@ -421,6 +438,17 @@ def _aimed_done(state, name: str, tgt, result: str) -> None:
         grounding.emit_target(state, "done", tgt)
     elif not result.startswith(("GUIDE", "MOVED", "MOVE-GUIDE")):
         grounding.emit_target(state, None)
+
+
+def _tool_status(result: str) -> str:
+    """Map a tool-call result string onto the action lifecycle: calls
+    the gates turned away are `cancelled` (deny, timeout, disabled —
+    the reason field says which), real failures are `failed`."""
+    if result.startswith(("SKIP", "BLOCKED")):
+        return "cancelled"
+    if result.startswith(("ERROR", "REFUS", "FAIL", "ABORT", "STALL")):
+        return "failed"
+    return "done"
 
 
 def _publish(state, task: str, steps: list) -> None:

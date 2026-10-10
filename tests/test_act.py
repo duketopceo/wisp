@@ -429,6 +429,123 @@ class Loop(unittest.TestCase):
         assert "acting" in calls
 
 
+class ActionStream(unittest.TestCase):
+    """U2: every proposed tool call is a lifecycle entry — queued when
+    the model asks, in flight while gates/dispatch run, then terminal.
+    `steps` keeps its compat strings; the stream is the richer log."""
+
+    def setUp(self):
+        import tempfile, pathlib
+        from wisp import state
+        self.cfg = {"agent": {}}
+        self.st = state.State(
+            pathlib.Path(tempfile.mkdtemp()) / "state.json",
+            write_initial=False)
+
+    def entries(self, kind="tool"):
+        return [a for a in self.st.snapshot()["actions"]
+                if a["kind"] == kind]
+
+    def test_tool_call_lands_done(self):
+        replies = [_msg(calls=[_call("launch", "discord")]),
+                   _msg(content="opened it")]
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run", return_value="LAUNCHED"):
+            act.run_act_loop("open discord", self.cfg, state=self.st,
+                         initial_image="aGk=")
+        e = self.entries()[-1]
+        self.assertEqual((e["label"], e["target"]), ("launch", "discord"))
+        self.assertEqual(e["status"], "done")
+        self.assertEqual(e["reason"], "LAUNCHED")
+
+    def test_each_call_gets_its_own_entry(self):
+        replies = [_msg(calls=[_call("launch", "a"), _call("launch", "b")]),
+                   _msg(content="both")]
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run", return_value="ok"):
+            act.run_act_loop("open two", self.cfg, state=self.st,
+                         initial_image="aGk=")
+        self.assertEqual([e["target"] for e in self.entries()], ["a", "b"])
+
+    def test_refused_call_lands_cancelled_with_the_reason(self):
+        replies = [_msg(calls=[_call("bogus")]), _msg(content="can't")]
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run") as run:
+            act.run_act_loop("break things", self.cfg, state=self.st,
+                         initial_image="aGk=")
+        run.assert_not_called()
+        e = self.entries()[-1]
+        self.assertEqual(e["status"], "cancelled")
+        self.assertIn("SKIPPED", e["reason"])
+
+    def test_failed_tool_lands_failed(self):
+        replies = [_msg(calls=[_call("launch", "x")]), _msg(content="hm")]
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run",
+                               return_value="ERROR (nope)"):
+            act.run_act_loop("open", self.cfg, state=self.st,
+                         initial_image="aGk=")
+        self.assertEqual(self.entries()[-1]["status"], "failed")
+
+    def test_interrupt_mid_run_cancels_the_in_flight_entry(self):
+        def die(name, arg, cfg, harness=None):
+            raise act.cancel.Cancelled()
+        replies = [_msg(calls=[_call("launch", "x")])]
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run", side_effect=die):
+            act.run_act_loop("t", self.cfg, state=self.st,
+                         initial_image="aGk=")
+        e = self.entries()[-1]
+        self.assertEqual(e["status"], "cancelled")
+        self.assertEqual(e["reason"], "interrupted")
+
+    def test_ask_user_publishes_an_awaiting_question(self):
+        with mock.patch.object(act, "_post",
+                               return_value=_msg(
+                                   content="ASK_USER: which account?")):
+            act.run_act_loop("check it", self.cfg, state=self.st,
+                         initial_image="aGk=")
+        e = self.entries("question")[-1]
+        self.assertEqual(e["status"], "awaiting")
+        self.assertEqual(e["label"], "which account?")
+
+    def test_confirm_gate_and_tool_entries_both_lifecycle(self):
+        # a denied confirm cancels the tool entry AND resolves the
+        # confirm's own entry — the stream holds both halves
+        from wisp import cancel, confirm
+        st = self.st
+        st.focus = {"app": "firefox"}
+        broker = cancel.PromptBroker()
+        token = cancel.CancelToken()
+        ask = confirm.make(st, broker.waiter(token), token, "t1", {})
+        replies = [_msg(calls=[_call("close", "w1")]), _msg(content="ok")]
+        import threading
+        done = threading.Event()
+
+        def offer_no():
+            for _ in range(400):
+                if broker.pending_id:
+                    broker.offer(pick="no", prompt_id=broker.pending_id)
+                    done.set()
+                    return
+                import time
+                time.sleep(0.005)
+        threading.Thread(target=offer_no, daemon=True).start()
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run") as run:
+            act.run_act_loop("close w1", self.cfg, state=st, confirm=ask,
+                         initial_image="aGk=")
+        done.wait(3)
+        run.assert_not_called()
+        acts = self.st.snapshot()["actions"]
+        conf = [a for a in acts if a["kind"] == "confirm"][-1]
+        tool = [a for a in acts if a["kind"] == "tool"][-1]
+        self.assertEqual((conf["status"], conf["reason"]),
+                         ("cancelled", "denied"))
+        self.assertEqual(tool["status"], "cancelled")
+        self.assertIn("declined", tool["reason"])
+
+
 if __name__ == "__main__":
     unittest.main()
 

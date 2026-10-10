@@ -10,7 +10,7 @@
 
 // Highest contract_version this reader understands; a newer daemon is
 // still read (additive fields) but flagged contractNewer.
-var CONTRACT_VERSION = 1
+var CONTRACT_VERSION = 2
 var STALE_AFTER_MS = 20000  // above the W3 bus heartbeat (15 s) so long turns never flag stale between beats
 var STATUSES = ["idle", "listening", "transcribing", "deciding",
   "awaiting_choice", "acting", "speaking", "suggestion", "done", "error"]
@@ -22,6 +22,11 @@ var ERROR_CODES = ["jev_down", "brain_down", "stt_down", "ground_down",
 var TOPICS = ["state", "health", "tasks", "events"]
 var CUA_PHASES = ["aim", "click", "done"]
 var META_KEYS = ["seq", "updated_at", "turn_id"]
+// action stream (contract v2): statuses are a closed set — anything
+// else renders done; kinds are open and render generically
+var ACTION_STATUSES = ["queued", "in_flight", "awaiting", "done",
+  "failed", "cancelled"]
+var ACTIONS_CAP = 50
 
 function subscribeRequest() { return { cmd: "subscribe", topics: TOPICS } }
 
@@ -35,7 +40,8 @@ function backoffMs(attempt) {
 function initial() {
   return {
     status: "offline", rawStatus: "offline", transcript: "", answer: "",
-    result: "", choices: [], promptId: "", confirm: null, points: [], steps: [],
+    result: "", choices: [], promptId: "", confirm: null, points: [],
+    steps: [], actions: [],
     suggestion: null, guide: null, focus: {}, goal: "", goalStatus: "",
     level: 0, tasks: {}, error: "", errorCode: "", health: {}, spend: {},
     startedAt: "", turnId: "", seq: null, contractVersion: 1,
@@ -63,6 +69,60 @@ function normalizeConfirm(c, choices) {
     timeoutS: isFinite(t) && t > 0 ? t : 0,
     allow: opts.length > 0 ? opts[0] : "",
     deny: opts.length > 0 ? opts[opts.length - 1] : "" }
+}
+
+// state.actions (additive, U2): the unified lifecycle stream — one
+// {id, kind, label, status, target, reason, undo_ref, at} entry per
+// dispatch, tool call, prompt, pick, interrupt, label and suggestion.
+// Awaiting prompt entries also carry `options` and `prompt_id`. Unknown
+// kinds pass through; an unknown status reads as done; non-objects are
+// dropped. Capped at the last ACTIONS_CAP like the daemon's list.
+function normalizeActions(list) {
+  var out = []
+  var items = arr(list)
+  for (var i = 0; i < items.length; i++) {
+    var a = items[i]
+    if (!isObj(a)) continue
+    var st = str(a.status)
+    if (ACTION_STATUSES.indexOf(st) < 0) st = "done"
+    var e = { id: str(a.id), kind: str(a.kind) || "action",
+      label: str(a.label), status: st, target: str(a.target),
+      reason: str(a.reason), undoRef: a.undo_ref === undefined
+        || a.undo_ref === null ? null : a.undo_ref, at: str(a.at) }
+    var opts = arr(a.options).filter(function (c) {
+      return typeof c === "string" })
+    if (opts.length > 0) e.options = opts
+    var pid = str(a.prompt_id)
+    if (pid !== "") e.promptId = pid
+    out.push(e)
+  }
+  return out.length > ACTIONS_CAP ? out.slice(out.length - ACTIONS_CAP)
+    : out
+}
+
+// The card is a state IN the stream: the newest awaiting entry of kind
+// confirm — but only while it is the live prompt (its prompt_id equals
+// the top-level one). A prompt that ended without its entry resolving
+// (a stale-turn drop, an older daemon) closes the card with prompt_id
+// rather than parking a dead card. Other awaiting kinds (clarify
+// choices, suggestion cards, act-loop questions) stay in the list —
+// only a confirm demotes to the card path. `confirm` still publishes
+// for old daemons and supplies the timeout seconds the entry lacks.
+function confirmFromActions(actions, confirm, promptId) {
+  for (var i = actions.length - 1; i >= 0; i--) {
+    var a = actions[i]
+    if (a.kind === "confirm" && a.status === "awaiting"
+        && str(a.promptId) !== "" && a.promptId === promptId) {
+      var opts = a.options || []
+      return { promptId: a.promptId,
+        prompt: a.label || (confirm ? confirm.prompt : ""),
+        timeoutS: confirm !== null ? confirm.timeoutS : 0,
+        allow: opts.length > 0 ? opts[0] : (confirm ? confirm.allow : ""),
+        deny: opts.length > 0 ? opts[opts.length - 1]
+          : (confirm ? confirm.deny : "") }
+    }
+  }
+  return confirm
 }
 
 // UI-side prompt id guard: a reply goes to the daemon only when it names
@@ -104,12 +164,15 @@ function normalize(raw) {
   var cv = Number(raw.contract_version)
   if (!isFinite(cv) || cv < 1) cv = 1
   var choices = arr(raw.choices).filter(function (c) { return typeof c === "string" })
-  var confirm = normalizeConfirm(raw.confirm, choices)
+  var actions = normalizeActions(raw.actions)
+  var confirm = confirmFromActions(
+    actions, normalizeConfirm(raw.confirm, choices), str(raw.prompt_id))
   return {
     status: status, rawStatus: st, transcript: str(raw.transcript),
     answer: str(raw.answer), result: str(raw.result), choices: choices,
     promptId: str(raw.prompt_id), confirm: confirm, points: arr(raw.points),
-    steps: arr(raw.steps), suggestion: isObj(raw.suggestion) ? raw.suggestion : null,
+    steps: arr(raw.steps), actions: actions,
+    suggestion: isObj(raw.suggestion) ? raw.suggestion : null,
     guide: isObj(raw.guide) ? raw.guide : null,
     focus: isObj(raw.focus) ? raw.focus : {},
     goal: goalText, goalStatus: goalStatus, level: Math.max(0, Math.min(1, lv)),

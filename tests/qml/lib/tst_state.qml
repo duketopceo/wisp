@@ -8,10 +8,18 @@ TestCase {
   name: "state"
 
   function snap(o) {
-    var b = { status: "idle", seq: 1, turn_id: "t1", contract_version: 1,
+    var b = { status: "idle", seq: 1, turn_id: "t1", contract_version: 2,
               started_at: "2026-10-04T10:00:00Z" }
     for (var k in o) b[k] = o[k]
     return b
+  }
+
+  function entry(i, extra) {
+    var e = { id: "a" + i, kind: "tool", label: "tool" + i,
+              status: "done", target: "", reason: "", undo_ref: null,
+              at: "2026-10-10T01:00:00Z" }
+    for (var k in (extra || {})) e[k] = extra[k]
+    return e
   }
 
   function test_initial_offline() {
@@ -101,6 +109,77 @@ TestCase {
     var done = S.applyEvent(r.view, { type: "state", seq: 3, diff: { status: "done", seq: 3 } }, 3)
     compare(done.view.cuaTarget, null)
     compare(S.applyEvent(S.initial(), ev, 2).view.cuaTarget, null)
+  }
+
+  function test_actions_normalize_cap_and_diff() {
+    // absent -> empty; the stream rides the same snapshot+diff path
+    var v = S.applySnapshot(S.initial(), snap({}), 1, "file").view
+    compare(v.actions.length, 0)
+    var a = entry(1, { status: "in_flight", target: "640,360",
+                       prompt_id: "p1", options: ["yes", "no"] })
+    v = S.applySnapshot(S.initial(), snap({ actions: [a] }), 1, "file").view
+    compare(v.actions[0].id, "a1")
+    compare(v.actions[0].status, "in_flight")
+    compare(v.actions[0].promptId, "p1")
+    compare(v.actions[0].options.length, 2)
+    // unknown status reads done; junk drops; cap keeps the last 50
+    v = S.applySnapshot(S.initial(), snap({ actions:
+      [entry(1, { status: "weird" }), "junk", null, entry(2)] }), 1, "file").view
+    compare(v.actions.length, 2)
+    compare(v.actions[0].status, "done")
+    var many = []
+    for (var i = 1; i <= 61; i++) many.push(entry(i))
+    v = S.applySnapshot(S.initial(), snap({ actions: many }), 1, "file").view
+    compare(v.actions.length, 50)
+    compare(v.actions[0].id, "a12")
+    compare(v.actions[49].id, "a61")
+    // a diff replaces the stream wholesale
+    v = S.applySnapshot(S.initial(), snap({ seq: 5,
+      actions: [entry(1)] }), 1, "stream").view
+    var r = S.applyEvent(v, { type: "state", seq: 6,
+      diff: { seq: 6, actions: [entry(1), entry(2, { status: "awaiting" })] } }, 2)
+    compare(r.view.actions.length, 2)
+    compare(r.view.actions[1].status, "awaiting")
+  }
+
+  function test_confirm_demotes_from_the_stream() {
+    // v2: the card IS an awaiting stream entry — options + prompt id
+    // come from the entry; the legacy confirm object only adds timeout
+    var conf = entry(1, { kind: "confirm", status: "awaiting",
+      label: "run close: w1?", prompt_id: "p7",
+      options: ["run close: w1? — yes", "no"] })
+    var v = S.applySnapshot(S.initial(), snap({ status: "awaiting_choice",
+      prompt_id: "p7", actions: [conf] }), 1, "file").view
+    compare(v.confirm.promptId, "p7")
+    compare(v.confirm.prompt, "run close: w1?")
+    compare(v.confirm.allow, "run close: w1? — yes")
+    compare(v.confirm.deny, "no")
+    // a stale awaiting entry (prompt already over, or another live)
+    // can't park a dead card
+    v = S.applySnapshot(S.initial(), snap({ status: "acting",
+      prompt_id: "", actions: [conf] }), 1, "file").view
+    verify(v.confirm === null)
+    v = S.applySnapshot(S.initial(), snap({ status: "awaiting_choice",
+      prompt_id: "p8", actions: [conf] }), 1, "file").view
+    verify(v.confirm === null)
+    // other awaiting kinds never demote to the card
+    var sug = entry(2, { kind: "suggestion", status: "awaiting",
+      prompt_id: "p7", options: ["a", "b"] })
+    v = S.applySnapshot(S.initial(), snap({ status: "awaiting_choice",
+      prompt_id: "p7", actions: [sug] }), 1, "file").view
+    verify(v.confirm === null)
+    // resolved confirm entry -> back to the legacy field (none here)
+    var done = entry(1, { kind: "confirm", status: "cancelled",
+      prompt_id: "p7" })
+    v = S.applySnapshot(S.initial(), snap({ status: "acting",
+      actions: [done] }), 1, "file").view
+    verify(v.confirm === null)
+    // legacy fallback still works when no entry carries the card
+    v = S.applySnapshot(S.initial(), snap({ status: "awaiting_choice",
+      choices: ["y", "n"], prompt_id: "p9",
+      confirm: { prompt_id: "p9", prompt: "run?", timeout_s: 30 } }), 1, "file").view
+    compare(v.confirm.prompt, "run?")
+    compare(v.confirm.timeoutS, 30)
   }
 
   function test_confirm_snapshots_offered_picks() {

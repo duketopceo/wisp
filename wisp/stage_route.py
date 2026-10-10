@@ -15,6 +15,12 @@ from datetime import datetime, timezone
 
 from . import cancel as _cancel
 from . import config
+from . import state as _state
+
+# distinguishes "the waiter returned nothing" (timeout/dismiss → the
+# normal resolution path) from "the waiter died" (exception propagating
+# — the entry still gets resolved in the finally)
+_UNSET = object()
 
 
 def _pl():
@@ -362,19 +368,31 @@ def _ask_prompt(state, wait_for_choice, token, options: list,
     the pick was not one of the offered options (`choice_rejected`)."""
     from . import trace as _trace
     pid = _cancel.new_prompt_id()
+    aid = _state.action_add(state, kind, ", ".join(options) or "clarify",
+                            status="awaiting", options=options,
+                            prompt_id=pid)
     state.transition("awaiting_choice", choices=list(options),
                      prompt_id=pid)
+    pick = _UNSET
     try:
         pick = wait_for_choice(timeout, prompt_id=pid,
                                options=list(options))
     finally:
         if not token.cancelled:
             state.transition("acting", choices=[], prompt_id="")
+            if pick is _UNSET:
+                _state.action_set(state, aid, status="cancelled",
+                                  reason="error")
     if pick and pick not in options:
+        _state.action_set(state, aid, status="failed", reason="rejected")
         _trace.emit(turn, "choice_rejected", "act",
                     {"kind": kind, "pick": pick, "prompt_id": pid,
                      "offered": list(options)})
         return None
+    _state.action_set(
+        state, aid,
+        status="done" if pick else "cancelled",
+        reason=pick or ("interrupted" if token.cancelled else "timeout"))
     return pick
 
 

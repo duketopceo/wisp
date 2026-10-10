@@ -1,4 +1,4 @@
-# Wisp IPC + State Contract v1
+# Wisp IPC + State Contract v2
 
 The stable boundary between `wispd` (any implementation — Python
 reference or `wispd-rs`) and UI shells (Omarchy quickshell plugin,
@@ -60,6 +60,9 @@ lacks a section. Shells may offer a settings page on top of this command.
   "confirm": "null, or {prompt_id, prompt, timeout_s} while a confirm card waits (additive, W25)",
   "points": [{"x": 0, "y": 0, "label": "string", "step": 1}],
   "steps": ["tool arg → result", "…"],
+  "actions": [{"id": "a3", "kind": "tool", "label": "click",
+               "status": "in_flight", "target": "640,360",
+               "reason": "", "undo_ref": null, "at": "ISO-8601"}],
   "guide": {"x": 0, "y": 0, "label": "string", "mode": "guide|drive", "seq": 1},
   "focus": {"app": "string", "title": "string"},
   "goal": {"text": "string", "status": "open|done|failed"},
@@ -74,7 +77,7 @@ lacks a section. Shells may offer a settings page on top of this command.
   "turn_id": "string — turn that produced this write",
   "seq": 0,
   "updated_at": "ISO-8601",
-  "contract_version": 1,
+  "contract_version": 2,
   "heartbeat_at": "ISO-8601|null — refreshed every 15 s while transcribing/deciding/acting"
 }
 ```
@@ -153,6 +156,32 @@ No reply within `timeout_s` (`[agent] confirm_timeout`, default 120,
 clamped 5 to 600) resolves as deny: the daemon owns the deadline, the
 step result is `SKIPPED (<tool> confirmation timed out)`.
 
+Action stream (additive; U2): `actions` is the unified lifecycle log —
+one entry per dispatch, tool call, prompt, pick, interrupt, label and
+suggestion, newest last, capped at the most recent 50. Entry shape:
+`{id, kind, label, status, target, reason, undo_ref, at}`; prompt
+entries also carry `options` (the offered picks) and `prompt_id`.
+`id` is a per-boot `a<N>` counter — unique within one daemon run.
+`status` is a closed set: `queued`, `in_flight`, `awaiting`, `done`,
+`failed`, `cancelled` — shells must map unknown values to `done`.
+`kind` is an open set (`route`, `tool`, `confirm`, `clarify`, `choice`,
+`interrupt`, `label`, `suggestion`, `question` today); render entries
+generically and ignore unknown kinds' extras. `target` is the
+truncated arg (tool) or key (suggestion); `reason` is the terminal or
+waiting context — a result string for tools, `denied` / `timeout` /
+`interrupted` on `cancelled` prompts, `never` / `snoozed` / `expired` /
+`accepted` on suggestions. `undo_ref` is reserved (`null` today).
+`at` is the ISO-8601 entry-creation time. Entries mutate in place by
+`id`: the whole capped list ships in each diff, so subscribers replace
+it wholesale. The newest `awaiting` entry of kind `confirm` IS the
+confirm card while its `prompt_id` equals the top-level `prompt_id`
+(supersedes `confirm` in newer shells; `confirm` still publishes for
+compatibility and supplies `timeout_s`). An `awaiting` entry whose
+prompt already ended is stale — render it cancelled, don't keep the
+card. The list is daemon-lifetime — it is not cleared per turn and not
+persisted across restarts. `steps` still publishes the per-turn step
+strings for older shells.
+
 Confirmation gate: when a mutating/shell action needs approval, the
 core transitions to `awaiting_choice` with `choices` = e.g.
 ["<prompt> — yes", "no"]; clients reply via `choice` (pick string, or
@@ -183,7 +212,7 @@ unaffected, and `state.json` is still written on every change.
 
 Lines, in order:
 
-1. `{"type":"hello","ok":true,"contract_version":1,"topics":[...]}`.
+1. `{"type":"hello","ok":true,"contract_version":2,"topics":[...]}`.
    On refusal (`unknown topic`, no bus) `{"type":"hello","ok":false,
    "error":"..."}` and the daemon closes.
 2. `{"type":"snapshot","seq":N,"state":{...}}`, the full state.json

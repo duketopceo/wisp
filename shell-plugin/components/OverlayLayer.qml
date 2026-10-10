@@ -28,7 +28,9 @@ Item {
   signal moreClicked()
   signal verdict(string verdict)
 
-  // a confirm card replaces the pill (it carries the question and the chips)
+  // a confirm card replaces the pill (it carries the question and the
+  // chips); on a v2 daemon the card is the stream's awaiting confirm
+  // entry, normalized into service.confirm
   readonly property bool pillShown: service !== null && Companion.pillVisible(service.status) && service.confirm === null
   readonly property bool bubbleShown: service !== null && bubble.has && !bubbleDismissed
   readonly property bool bubbleHovered: bubbleHover.hovered

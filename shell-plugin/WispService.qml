@@ -48,6 +48,10 @@ Item {
   property var confirm: null
   property var points: []
   property var steps: []
+  // unified lifecycle stream (contract v2): [{id, kind, label, status,
+  // target, reason, undoRef, at, options?, promptId?}]. Supersedes
+  // `steps` where a v2 daemon feeds it; `steps` stays for older cores.
+  property var actions: []
   property var suggestion: null
   property var guide: null
   // cua.target stream event (docs/IPC_CONTRACT.md): where a CUA click
@@ -248,6 +252,7 @@ Item {
     root.confirm = v.confirm;
     root.points = v.points;
     root.steps = v.steps;
+    root.actions = v.actions;
     root.suggestion = v.suggestion;
     root.guide = v.guide;
     root.cuaTarget = v.cuaTarget;

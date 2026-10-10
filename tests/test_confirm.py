@@ -184,6 +184,62 @@ class TestConfirmTimeout(ConfirmBase):
         self.assertTrue(self.out.get("cancelled"))  # token.check() raised
 
 
+class TestConfirmActionStream(ConfirmBase):
+    """U2: the confirm card is a state in the action stream — an
+    `awaiting` entry carrying the offered picks, transitioned on the
+    same answer path the card resolves."""
+
+    def last_entry(self, kind="confirm"):
+        return [a for a in self.st.snapshot()["actions"]
+                if a["kind"] == kind][-1]
+
+    def test_pending_confirm_publishes_an_awaiting_entry(self):
+        th = self.run_confirm()
+        pid = self.broker.pending_id
+        e = self.last_entry()
+        self.assertEqual(e["status"], "awaiting")
+        self.assertEqual(e["label"], "run click: save?")
+        self.assertEqual(e["prompt_id"], pid)
+        self.assertEqual(e["options"], ["run click: save? — yes", "no"])
+        self.broker.offer(pick="no", prompt_id=pid)
+        self.wait_done(th)
+
+    def test_yes_transitions_the_entry_to_done(self):
+        th = self.run_confirm()
+        pid = self.broker.pending_id
+        e = self.last_entry()
+        self.broker.offer(index=1, prompt_id=pid)
+        self.wait_done(th)
+        self.assertTrue(self.out["ok"])
+        done = self.last_entry()
+        self.assertEqual(done["id"], e["id"])  # same entry, not a new row
+        self.assertEqual(done["status"], "done")
+
+    def test_no_transitions_to_cancelled_denied(self):
+        th = self.run_confirm()
+        self.broker.offer(pick="no", prompt_id=self.broker.pending_id)
+        self.wait_done(th)
+        e = self.last_entry()
+        self.assertEqual(e["status"], "cancelled")
+        self.assertEqual(e["reason"], "denied")
+
+    def test_timeout_transitions_to_cancelled_timeout(self):
+        th = self.run_confirm()
+        self.clock.t += 500
+        self.wait_done(th)
+        e = self.last_entry()
+        self.assertEqual(e["status"], "cancelled")
+        self.assertEqual(e["reason"], "timeout")
+
+    def test_interrupt_transitions_to_cancelled_interrupted(self):
+        th = self.run_confirm()
+        self.token.cancel()
+        self.wait_done(th)
+        e = self.last_entry()
+        self.assertEqual(e["status"], "cancelled")
+        self.assertEqual(e["reason"], "interrupted")
+
+
 class TestDenyResult(unittest.TestCase):
     def gate(self, last):
         def ask(prompt):

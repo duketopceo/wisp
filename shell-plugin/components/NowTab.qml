@@ -18,6 +18,11 @@ Column {
   readonly property bool idle: service.transcript === "" && service.answer === ""
     && service.result === "" && service.steps.length === 0
     && service.choices.length === 0 && service.error === ""
+  // the step/action display is the lifecycle stream when a v2 daemon
+  // feeds it; `steps` is the same list on older cores
+  readonly property var stepRows: service.actions.length > 0
+    ? Steps.actionRows(service.actions, service.status, service.promptId)
+    : Steps.rows(service.steps, service.busy)
   readonly property bool judgeable: !service.busy && service.status !== "offline"
     && (service.result !== "" || service.transcript !== "")
   // The label verdict's ack: service.lastAction while a label click is
@@ -71,10 +76,10 @@ Column {
   }
 
   Column {
-    visible: root.service.steps.length > 0
+    visible: root.stepRows.length > 0
     width: parent.width
     Repeater {
-      model: Steps.rows(root.service.steps, root.service.busy)
+      model: root.stepRows
       delegate: StepRow {
         width: root.width
         service: root.service

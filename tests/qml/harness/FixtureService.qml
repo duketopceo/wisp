@@ -29,6 +29,7 @@ Item {
   property var confirm: null
   property var points: []
   property var steps: []
+  property var actions: []
   property var suggestion: null
   property var guide: null
   property var cuaTarget: null
@@ -97,6 +98,7 @@ Item {
     root.confirm = v.confirm;
     root.points = v.points;
     root.steps = v.steps;
+    root.actions = v.actions;
     root.suggestion = v.suggestion;
     root.guide = v.guide;
     root.cuaTarget = v.cuaTarget;
