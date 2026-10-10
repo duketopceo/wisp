@@ -164,6 +164,7 @@ STRINGS = {
     "ui.set.per_turn": "actions per turn",
     "ui.settings.agent": "agent",
     "ui.set.autonomy": "autonomy",
+    "ui.set.dictation": "dictation mode",
     "ui.set.save": "save",
     "ui.set.saved": "saved",
     "ui.set.blank": "blank means no cap",

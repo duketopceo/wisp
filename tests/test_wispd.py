@@ -115,26 +115,41 @@ class TestExecute(unittest.TestCase):
             self.assertIn("not installed", out)
 
     def test_dictation_route_types_transcript(self):
-        from wisp import tools
+        # U6: execute delegates to dictate.run; raw mode inserts the
+        # stripped transcript via the type_text fallback chain
+        from wisp import dictate, tools
         ans = {"route": {"choice": "dictation"},
                "action": {"choice": ""}, "app": {"choice": "none"},
                "risk": {"score": 1.0}}
-        with mock.patch.object(tools, "run", return_value="TYPED") as r:
-            out = pipeline.execute(ans, self.cfg,
-                                   detail="dictate hello there")
-        self.assertEqual(out, "TYPED")
-        r.assert_called_once_with("type_text", "hello there", self.cfg)
+        cfg = dict(self.cfg, dictation={"mode": "raw"})
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(dictate, "FILE",
+                               pathlib.Path(td) / "d.json"), \
+             mock.patch.object(dictate.platform, "active_window",
+                               return_value={}), \
+             mock.patch.dict("sys.modules", {"wordink": None}), \
+             mock.patch.object(tools, "run", return_value="TYPED") as r:
+            out = pipeline.execute(ans, cfg, detail="dictate hello there")
+        self.assertEqual(out, "INSERTED: hello there")
+        r.assert_called_once_with("type_text", "hello there", cfg)
 
     def test_dictation_not_risk_gated(self):
         # dictation is self-confirming: transcript is the user's own
         # instruction — high Jev risk score must not block it
-        from wisp import tools
+        from wisp import dictate, tools
         ans = {"route": {"choice": "dictation"},
                "action": {"choice": ""}, "app": {"choice": "none"},
                "risk": {"score": 2.0}}
-        with mock.patch.object(tools, "run", return_value="TYPED") as r:
-            out = pipeline.execute(ans, self.cfg, detail="dictate x")
-        self.assertEqual(out, "TYPED")
+        cfg = dict(self.cfg, dictation={"mode": "raw"})
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(dictate, "FILE",
+                               pathlib.Path(td) / "d.json"), \
+             mock.patch.object(dictate.platform, "active_window",
+                               return_value={}), \
+             mock.patch.dict("sys.modules", {"wordink": None}), \
+             mock.patch.object(tools, "run", return_value="TYPED") as r:
+            out = pipeline.execute(ans, cfg, detail="dictate x")
+        self.assertEqual(out, "INSERTED: x")
         r.assert_called_once()
 
     def test_dictation_text_strips_prefix(self):

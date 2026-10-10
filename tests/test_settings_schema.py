@@ -105,7 +105,7 @@ class TestSchemaShape(unittest.TestCase):
             ["budget.daily_usd", "budget.monthly_usd", "pointer.mode",
              "cua.dry_run", "cua.kill_switch", "cua.confirm",
              "cua.delivery", "cua.max_clicks_per_min",
-             "cua.max_per_turn", "agent.autonomy"])
+             "cua.max_per_turn", "agent.autonomy", "dictation.mode"])
 
 
 class TestValidation(unittest.TestCase):

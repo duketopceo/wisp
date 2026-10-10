@@ -33,6 +33,7 @@ future tray apps). Shells MUST only depend on this document.
 | `interrupt` | — | `{ok}` | cancels the in-flight turn only — daemon stays up; see Cancellation |
 | `config` | `set: {"section.key": "val"}` (optional) | `{ok, config}` | read config; with `set`, writes config.toml preserving comments/order and live-reloads |
 | `label` | `label: correct\|incorrect` | `{ok, result}` | tag the most recent decision (soak intent-match + trajectory join) |
+| `dictate_correct` | `{"heard","meant"}` | `{ok, result}` | record a personal dictation correction → `dictation.json` (U6); cleanup/compose prompts carry the table |
 | `context` | — | `{ok, result}` | focused app, `[windows]` workspace map, inventory counts |
 | `inventory` | — | `{ok, result}` | rescan local terrain → `inventory.json` |
 | `connect` | `service` or `list` | `{ok, result, json?}` | OAuth connector flow via BrowserOS Strata; `list` returns the catalog (add `--json` for machine-readable) |

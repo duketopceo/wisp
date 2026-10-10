@@ -39,6 +39,8 @@ Settings (value, default, range):
                                default 12; 1 to 200
   agent.autonomy               Confirm policy: autonomous runs reversible steps free, guided asks on them too, always_ask confirms everything
                                default autonomous; autonomous, guided, always_ask
+  dictation.mode               Dictate mode: raw is verbatim, cleanup fixes grammar, compose writes the finished text from your idea
+                               default cleanup; raw, cleanup, compose
   cua.timeout_ms               Per call timeout for the cua driver in ms
                                default 800; 50 to 60000
   audio.seconds                Longest recording for one turn in seconds

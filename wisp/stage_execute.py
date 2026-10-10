@@ -73,16 +73,14 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
         # type the spoken words; a leading dictate keyword is a command
         # prefix, not content — strip it. A correction prefix
         # ('[previous attempt: ...]') is metadata, never dictated.
+        # U6: dictate.run picks the mode (spoken token > per-app
+        # profile > [dictation] mode), maybe rewrites through the
+        # brain, guards terminals and inserts.
         body = re.sub(r"^\[previous attempt:[^\]]*\]\s*", "", detail)
         text_to_paste = dictation_text(body)
-        try:
-            import wordink
-            inserter = wordink.TextInserter()
-            if inserter.insert_text(text_to_paste):
-                return f"DICTATED: {text_to_paste}"
-        except Exception:
-            pass
-        return tools.run("type_text", text_to_paste, cfg)
+        from . import dictate
+        return dictate.run(text_to_paste, cfg, state=state,
+                           confirm=confirm)
     if route == "learn":
         from . import act
         prompt = ("Author a reusable skill for this request using the "

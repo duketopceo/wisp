@@ -227,6 +227,7 @@ verbs and examples. Add `--json` for machine-readable output.
 | `wispd notify test` | send one test notification |
 | `wispd task list` | background agents |
 | `wispd memory edit` | edit the MEMORY and USER notes |
+| `wispd dictate correct` / `wispd dictate list` | teach a heard->meant dictation correction, or show them |
 | `wispd suggest list` | suggestions mined from your activity |
 | `wispd label set` / `wispd label report` | label a run, or the per-route report |
 | `wispd context` | what the daemon sees right now |
@@ -253,7 +254,8 @@ Local, never committed:
 
 - `~/.local/share/wisp/`: `session.jsonl`, `decisions.jsonl`,
   `labels.jsonl`, `trajectories.jsonl`, `usage.jsonl` (the spend
-  ledger), `inventory.json`, `corrections.jsonl`, `tasks.jsonl`,
+  ledger), `inventory.json`, `corrections.jsonl`, `dictation.json`
+  (dictate corrections + per-app counts), `tasks.jsonl`,
   `skillbank.json`, `proposals/`, `onboard.json`
 - `~/.local/state/wisp/cua.jsonl`: the cua audit log
 - `~/.config/wisp/`: `config.toml`, `.env`, `mcp.json`

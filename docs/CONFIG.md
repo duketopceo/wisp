@@ -191,6 +191,25 @@ and `wispd models` show current health.
 | `provider` | `"none"` | `none` (FTS5 keyword search) or `openai` (embeddings + RRF fusion) |
 | `base_url` / `model` / `key_env` | openrouter | embedding endpoint + model + key env |
 
+## [dictation] — LLM-aware dictation (U6)
+
+| key | default | meaning |
+|-----|---------|---------|
+| `mode` | `"cleanup"` | what `dictate` does: `raw` verbatim, `cleanup` fixes grammar/spelling without changing your words, `compose` turns the ramble into finished text for the focused app's genre |
+| `terminal_classes` | `""` | extra window classes that count as terminals for the newline guard (comma list; built-ins: foot, alacritty, kitty, ghostty, wezterm) |
+| `model` | `""` | `provider:model` override for the cleanup/compose pass; empty = the `[brain]` chain |
+
+Per-app profiles (VoiceInk Power Mode, thin): a `[dictation.profiles.
+<pattern>]` section matched `*pattern*` against the focused window
+class, longest match winning — `mode`, `style` (a free-text style hint
+folded into the rewrite prompt) and `auto_send` (`true` asks before
+pressing Return after the insert). Spoken overrides: `dictate raw ...`
+skips the rewrite for that call; "write an email ..." intent words
+trigger compose. Into a terminal-class window every mode collapses
+newlines unless a confirmed send is armed. Personal corrections live in
+`~/.local/share/wisp/dictation.json` — `wispd dictate correct` records
+one, `wispd dictate list` shows them.
+
 ## [voice] — text-to-speech
 
 | key | meaning |

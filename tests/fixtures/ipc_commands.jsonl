@@ -8,4 +8,5 @@
 {"cmd": "config"}
 {"cmd": "config", "set": {"agent.answer_model": "x"}}
 {"cmd": "learn"}
+{"cmd": "dictate_correct", "heard": "wisp dot ai", "meant": "wisp.ai"}
 {"cmd": "harness"}

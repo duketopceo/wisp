@@ -125,6 +125,11 @@ FIELDS = (
        "asks on them too, always_ask confirms everything",
        choices=("autonomous", "guided", "always_ask"),
        panel=True, label="ui.set.autonomy"),
+    _f("dictation.mode", "choice", "cleanup",
+       "Dictate mode: raw is verbatim, cleanup fixes grammar, "
+       "compose writes the finished text from your idea",
+       choices=("raw", "cleanup", "compose"),
+       panel=True, label="ui.set.dictation"),
     _f("cua.timeout_ms", "int", "800",
        "Per call timeout for the cua driver in ms",
        min=50, max=60000),

@@ -347,15 +347,56 @@ _KEYCODES = {"esc": 1, "enter": 28, "tab": 15, "space": 57,
              "backspace": 14, "up": 103, "down": 108, "left": 105,
              "right": 106, "pageup": 104, "pagedown": 109,
              "home": 102, "end": 107}
+_MODS = {"ctrl": 29, "control": 29, "shift": 42, "alt": 56,
+         "super": 125, "meta": 125, "cmd": 125}
+# evdev letter/digit codes for chords like 'ctrl+v' (dictation paste):
+# linux/input-event-codes.h — KEY_Q..P = 16..25, KEY_A..L = 30..38,
+# KEY_Z..M = 44..50 (the codes follow qwerty order, not alphabetical)
+_LETTERCODES = {c: k for c, k in zip(
+    "qwertyuiopasdfghjklzxcvbnm",
+    (16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 30, 31, 32, 33, 34,
+     35, 36, 37, 38, 44, 45, 46, 47, 48, 49, 50))}
+_DIGITCODES = {str(d): c for d, c in enumerate(
+    (11, 2, 3, 4, 5, 6, 7, 8, 9, 10))}      # '0'->11, '1'->2 ...
+
+
+def _chord(name: str) -> list | None:
+    """'ctrl+shift+v' -> ydotool key seq [mods down, key down, key up,
+    mods up]; None when any part is unmappable."""
+    parts = name.split("+")
+    if len(parts) < 2:
+        return None
+    mods = [_MODS.get(p) for p in parts[:-1]]
+    if any(c is None for c in mods):
+        return None
+    last = parts[-1]
+    code = _KEYCODES.get(last) or _LETTERCODES.get(last) \
+        or _DIGITCODES.get(last)
+    if code is None:
+        return None
+    return [f"{c}:1" for c in mods] + [f"{code}:1", f"{code}:0"] \
+        + [f"{c}:0" for c in reversed(mods)]
 
 
 def key(arg: str, cfg: dict | None = None) -> str:
-    """Press a named key — 'enter', 'tab', 'down', 'pagedown', …"""
+    """Press a named key — 'enter', 'tab', 'down', 'pagedown', 'ctrl+v',
+    'ctrl+shift+t' (modifier chords are ydotool-only, never DOM)."""
     _delivery.note("background")   # key events ride the keyboard path
     name = (arg or "").strip().lower().replace(" ", "")
     name = {"return": "enter", "escape": "esc", "pgdn": "pagedown",
             "pgup": "pageup", "arrowdown": "down",
             "arrowup": "up"}.get(name, name)
+    if "+" in name:
+        seq = _chord(name)
+        if seq is None:
+            return f"SKIP (unknown chord {name!r})"
+        if (cfg or {}).get("screen", {}).get("dom_page"):
+            return "SKIP (key chords are ydotool-only, not dom)"
+        from .. import keys as _keys
+        with _keys.suspended():  # the Wisp submap must not eat the chord
+            r = _cancel.run(["ydotool", "key", *seq],
+                            capture_output=True, env=hypr_env())
+        return "KEY" if r.returncode == 0 else "SKIP (ydotool key failed)"
     if (cfg or {}).get("screen", {}).get("dom_page"):
         r = _dom_eval(cfg, (
             "var el=document.activeElement||document.body;"

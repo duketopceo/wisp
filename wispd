@@ -272,6 +272,19 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
                     "", cmd.get("body", ""))}
             return {"ok": True,
                     "result": memory.run(cmd.get("arg", ""))}
+        if c == "dictate_correct":
+            # U6: a personal dictation correction (heard -> meant) —
+            # cleanup/compose prompts carry the table from here on
+            from wisp import dictate
+            result = dictate.add_correction(cmd.get("heard", ""),
+                                            cmd.get("meant", ""))
+            state_mod.action_add(
+                st, "dictation",
+                f"correct {cmd.get('heard', '')[:40]}",
+                status="failed" if result.startswith("SKIP")
+                else "done", reason=result)
+            return {"ok": not result.startswith("SKIP"),
+                    "result": result}
         if c == "label":
             from wisp import learn
             result = learn.label_last(cmd.get("label", ""),

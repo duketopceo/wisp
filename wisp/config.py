@@ -197,6 +197,25 @@ key_env = "GROQ_API_KEY"
 # `prompt` param on the openai provider (huge accuracy win on names)
 prompt = "Wisp, wispd, Omarchy, Hyprland, Jev, OpenRouter, dayflow, omaseal, omarchy plugins, RetroArch, Steam, Discord, VS Code, Kubernetes, k8s, Tailscale, Waybar, Quickshell"
 
+[dictation]
+# what `dictate` does with the transcript: raw (verbatim), cleanup
+# (grammar/spelling pass, words preserved), compose (ramble -> finished
+# text in the focused app's genre). "dictate raw ..." overrides per
+# call; "write an email ..." phrasing triggers compose.
+mode = "cleanup"
+# extra window classes that count as terminals for the newline guard
+# (comma list; built-ins: foot, alacritty, kitty, ghostty, wezterm)
+# terminal_classes = "cool-retro-term"
+# model override for the cleanup/compose pass, "provider:model" like
+# [brain] default — falls back to the brain chain when unset
+# model = ""
+# per-app profiles (VoiceInk-style Power Mode, thin): one section per
+# class pattern, matched *pattern* against the focused window class
+# [dictation.profiles.chromium]
+# mode = "compose"
+# style = "professional email"
+# auto_send = false          # true asks before pressing Return
+
 [recall]
 # semantic recall via embeddings: "none" = FTS5 only (zero keys needed).
 # provider = "openai" uses any OpenAI-compatible /embeddings endpoint —
@@ -417,6 +436,7 @@ def _default_cfg_dict() -> dict:
             "autonomy": "autonomous",
         },
         "voice": {"enabled": "false"},
+        "dictation": {"mode": "cleanup"},
         "pointer": {"mode": "guide", "backend": "auto"},
         "cua": {"timeout_ms": "800", "safety": "true", "allow": "",
                 "deny": "", "max_clicks_per_min": "30",
