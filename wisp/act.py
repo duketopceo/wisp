@@ -23,7 +23,8 @@ import urllib.error
 import urllib.request
 
 from . import bgwriter, cancel, config, cua_safety, grounding, ledger, \
-    policy, tools
+    policy, realinput, tools
+from . import delivery as _delivery
 from . import state as _state
 
 # Defaults; the daemon reads [agents] act_max_steps, act_max_errors,
@@ -221,7 +222,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
     dirty_step = ""
 
     def stopped() -> bool:
-        return cancel.is_cancelled() or bool(interrupted and interrupted())
+        return cancel.is_cancelled() or _user_interrupted()
 
     def budget_hit() -> str:
         """The tripped per-run bound as a result-string tail, "" while
@@ -233,228 +234,262 @@ def run_act_loop(task: str, cfg: dict, state=None,
             return f"budget: spend >${max_usd:g}"
         return ""
 
-    guard = cua_safety.Guard(cfg, state=state, interrupted=interrupted)
+    # U5: exclusive drive with instant takeover — while a pointer-delivery
+    # op is in flight, real input (physical mouse/keys; the injectors are
+    # filtered out of the watch) must win immediately, same as the user's
+    # own interrupt. Mode is logged for the run's audit trail.
+    watch_mode = realinput.begin(cfg)
+    try:
+        from . import trace as _trace
+        _trace.emit(_trace.current(), "yield_watch", "cua",
+                    {"mode": watch_mode})
+    except Exception:
+        pass
+
+    def _user_interrupted() -> bool:
+        return bool(interrupted and interrupted()) \
+            or realinput.yielded()
+
+    guard = cua_safety.Guard(cfg, state=state,
+                           interrupted=_user_interrupted)
     gate_ctx = policy.gate_ctx()   # per-run declines (U3)
 
-    while len(steps) < max_steps:
-        why = budget_hit()
-        if why:
-            _goals.record_steps(steps)
-            out = _budget_abort(state, task, steps, why)
-            _record_traj(task, harness, steps, out, cfg)
-            return out
-        if stopped():
-            _goals.record_steps(steps)
-            return "INTERRUPTED (user)"
-        try:
-            msg = _post(messages, cfg)
-        except cancel.Cancelled:
-            _goals.record_steps(steps)
-            return "INTERRUPTED (user)"
-        calls = msg.get("tool_calls") or []
-        if not calls and at_mode:
-            parsed = _parse_action_text(msg.get("content") or "")
-            if parsed is None:
-                parse_misses += 1
-                if parse_misses > max_parse_misses:
-                    _goals.record_steps(steps)
-                    out = (f"STALLED (unparseable action replies): "
-                           f"{_last(steps)}")
-                    _record_traj(task, harness, steps, out, cfg)
-                    return out
-                messages.append(
-                    {"role": "user",
-                     "content": "Reply with exactly one Action: line "
-                                "(click(x, y) | type('text') | scroll | "
-                                "hotkey('a','b')) or DONE."})
-                continue
-            parse_misses = 0
-            if not parsed["actions"]:
-                text = (parsed["done"] or "done").strip()
-                _publish(state, task, steps)
-                _goals.record_steps(steps)
-                _goals.close("done")
-                out = f"ACTED ({len(steps)} steps): {text}"
-                _record_traj(task, harness, steps, out, cfg)
-                return out
-            calls = [{"id": f"at-{len(steps)}-{i}", "_at": True,
-                      "function": {"name": n,
-                                   "arguments": json.dumps({"arg": a})}}
-                     for i, (n, a) in enumerate(parsed["actions"])]
-        if not calls:
-            text = (msg.get("content") or "").strip()
-            _publish(state, task, steps)
-            _goals.record_steps(steps)
-            if text.upper().startswith("ASK_USER:"):
-                # conversational backchannel — speak the question, keep
-                # the goal open for the next utterance
-                _state.action_add(state, "question", text[9:].strip(),
-                                  status="awaiting")
-                return "ASK_USER " + text[9:].strip()
-            _goals.close("done")
-            out = f"ACTED ({len(steps)} steps): {text or 'done'}"
-            _record_traj(task, harness, steps, out, cfg)
-            return out
-        messages.append(msg)
-        for ci, call in enumerate(calls):
-            if stopped():  # no further steps once the user said stop
-                _goals.record_steps(steps)
-                return "INTERRUPTED (user)"
-            name, arg = _name_arg(call)
+    try:
+        while len(steps) < max_steps:
             why = budget_hit()
             if why:
                 _goals.record_steps(steps)
                 out = _budget_abort(state, task, steps, why)
                 _record_traj(task, harness, steps, out, cfg)
                 return out
-            if name == "ask_user":
-                # U4 conversational backchannel: the question parks on
-                # the prompt broker like a confirm card and the pick/
-                # spoken answer comes back as this call's result. No
-                # gate — it's a question, not an action.
-                try:
-                    result = _ask_user(state, ask, arg)
-                except cancel.Cancelled:
+            if stopped():
+                _goals.record_steps(steps)
+                return "INTERRUPTED (user)"
+            try:
+                msg = _post(messages, cfg)
+            except cancel.Cancelled:
+                _goals.record_steps(steps)
+                return "INTERRUPTED (user)"
+            calls = msg.get("tool_calls") or []
+            if not calls and at_mode:
+                parsed = _parse_action_text(msg.get("content") or "")
+                if parsed is None:
+                    parse_misses += 1
+                    if parse_misses > max_parse_misses:
+                        _goals.record_steps(steps)
+                        out = (f"STALLED (unparseable action replies): "
+                               f"{_last(steps)}")
+                        _record_traj(task, harness, steps, out, cfg)
+                        return out
+                    messages.append(
+                        {"role": "user",
+                         "content": "Reply with exactly one Action: line "
+                                    "(click(x, y) | type('text') | scroll | "
+                                    "hotkey('a','b')) or DONE."})
+                    continue
+                parse_misses = 0
+                if not parsed["actions"]:
+                    text = (parsed["done"] or "done").strip()
+                    _publish(state, task, steps)
+                    _goals.record_steps(steps)
+                    _goals.close("done")
+                    out = f"ACTED ({len(steps)} steps): {text}"
+                    _record_traj(task, harness, steps, out, cfg)
+                    return out
+                calls = [{"id": f"at-{len(steps)}-{i}", "_at": True,
+                          "function": {"name": n,
+                                       "arguments": json.dumps({"arg": a})}}
+                         for i, (n, a) in enumerate(parsed["actions"])]
+            if not calls:
+                text = (msg.get("content") or "").strip()
+                _publish(state, task, steps)
+                _goals.record_steps(steps)
+                if text.upper().startswith("ASK_USER:"):
+                    # conversational backchannel — speak the question, keep
+                    # the goal open for the next utterance
+                    _state.action_add(state, "question", text[9:].strip(),
+                                      status="awaiting")
+                    return "ASK_USER " + text[9:].strip()
+                _goals.close("done")
+                out = f"ACTED ({len(steps)} steps): {text or 'done'}"
+                _record_traj(task, harness, steps, out, cfg)
+                return out
+            messages.append(msg)
+            for ci, call in enumerate(calls):
+                if stopped():  # no further steps once the user said stop
                     _goals.record_steps(steps)
                     return "INTERRUPTED (user)"
-                steps.append(
-                    {"tool": name, "arg": arg, "result": result,
-                     "reply": (msg.get("content") or "")[:500]})
+                name, arg = _name_arg(call)
+                why = budget_hit()
+                if why:
+                    _goals.record_steps(steps)
+                    out = _budget_abort(state, task, steps, why)
+                    _record_traj(task, harness, steps, out, cfg)
+                    return out
+                if name == "ask_user":
+                    # U4 conversational backchannel: the question parks on
+                    # the prompt broker like a confirm card and the pick/
+                    # spoken answer comes back as this call's result. No
+                    # gate — it's a question, not an action.
+                    try:
+                        result = _ask_user(state, ask, arg)
+                    except cancel.Cancelled:
+                        _goals.record_steps(steps)
+                        return "INTERRUPTED (user)"
+                    steps.append(
+                        {"tool": name, "arg": arg, "result": result,
+                         "reply": (msg.get("content") or "")[:500]})
+                    _publish(state, task, steps)
+                    if call.get("_at"):
+                        messages.append({"role": "user", "content": result})
+                    else:
+                        messages.append(
+                            {"role": "tool",
+                             "tool_call_id": call.get("id", name),
+                             "content": result})
+                    continue
+                # lifecycle stream: queued when the model proposes the call,
+                # in_flight while gates/dispatch run, terminal on the result;
+                # T1 steps carry how to take them back (undo_ref)
+                aid = _state.action_add(
+                    state, "tool", name, target=arg,
+                    undo_ref=policy.undo_ref(name, arg, cfg))
+                # T2 checkpoint: _gate batches the reply's remaining gated
+                # calls into ONE card (not a card per tool)
+                refused = _gate(
+                    name, arg, cfg, confirm, state=state,
+                    batch=[_name_arg(c) for c in calls[ci + 1:]],
+                    ctx=gate_ctx)
+                served_cached = False
+                if refused is None:
+                    _state.action_set(state, aid, status="in_flight")
+                    # soak fix: re-observe — a mutating step invalidates the
+                    # screen the last coordinates came from, so take a fresh
+                    # screenshot before any pointer call. Deterministic —
+                    # doesn't rely on the model remembering to look.
+                    # DOM-mode id clicks are exempt: they dispatch through
+                    # getElementById + scrollIntoView, so stale legend
+                    # coords can't misaim them.
+                    _id_arg = name == "click" \
+                        and (cfg or {}).get("screen", {}).get("dom_page") \
+                        and not re.match(r"^\s*-?\d+\s*,", arg or "")
+                    if (name in ("click", "move") and vision
+                            and screen_dirty and not _id_arg):
+                        rid = _state.action_add(
+                            state, "tool", "screenshot",
+                            target="(auto re-observe)", status="in_flight")
+                        shot = tools.run("screenshot", "", cfg, harness)
+                        _state.action_set(state, rid,
+                                          status=_tool_status(shot),
+                                          reason=shot)
+                        steps.append({"tool": "screenshot",
+                                      "arg": "(auto re-observe)",
+                                      "result": shot})
+                        _publish(state, task, steps)
+                        if shot.startswith("SHOT "):
+                            _attach_image(
+                                messages, shot[5:].strip(), cfg,
+                                why=f"re-observe: verify "
+                                    f"'{dirty_step or 'last step'}' landed")
+                            last_shot = shot
+                            screen_dirty = False
+                        # a failed observe leaves the screen dirty AND the
+                        # cached shot ineligible — a stale DOM digest is
+                        # worse than no digest
+                    tgt = None
+                    if (name == "screenshot" and not screen_dirty
+                            and last_shot
+                            and (cfg or {}).get("screen", {}).get(
+                                "dom_page")):
+                        # DOM observation is deterministic given unchanged
+                        # state — the model already has this digest/image
+                        result = last_shot + " (unchanged)"
+                        served_cached = True
+                    else:
+                        try:
+                            # W13: resolve the point BEFORE the guard so the
+                            # audit records x,y (not just len) for name
+                            # targets
+                            tool_arg, tgt, result = _aim(
+                                name, arg, cfg, guard, state)
+                            if result is None:
+                                # W9: kill/deny/rate/dry-run/audit around
+                                # dispatch
+                                result = guard.run(
+                                    name, tool_arg,
+                                    lambda: tools.run(name, tool_arg, cfg,
+                                                      harness))
+                            _aimed_done(state, name, tgt, result,
+                                        guard.last_delivery)
+                        except cancel.Cancelled:
+                            _state.action_set(state, aid, status="cancelled",
+                                              reason="interrupted")
+                            grounding.emit_target(state, None)
+                            _goals.record_steps(steps)
+                            return "INTERRUPTED (user)"
+                        except Exception as e:
+                            grounding.emit_target(state, None)
+                            result = f"ERROR ({e})"
+                else:
+                    result = refused
+                # the stream entry keeps the raw result — the verify line
+                # below is model-facing feedback (step record + tool
+                # result), not stream copy. `delivery` records the channel
+                # the call actually used (U5); a gated/cached step records
+                # the mode it would have used.
+                d = _delivery.planned(name, cfg) \
+                    if refused is not None or served_cached \
+                    else guard.last_delivery
+                kw = {"status": _tool_status(result), "reason": result}
+                if d:
+                    kw["delivery"] = d
+                _state.action_set(state, aid, **kw)
+                result += _verify_hint(name, arg, result, cfg)
+                if name == "screenshot" and result.startswith("SHOT "):
+                    screen_dirty = False
+                    if not served_cached:
+                        last_shot = result
+                elif name in _SCREEN_CHANGING and not result.startswith(
+                        ("ERROR", "SKIP", "REFUS", "DRYRUN")):
+                    screen_dirty = True
+                    dirty_step = f"{name} {arg}".strip()[:60]
+                step = {"tool": name, "arg": arg, "result": result,
+                        "reply": (msg.get("content") or "")[:500]}
+                if d:
+                    step["delivery"] = d
+                steps.append(step)
                 _publish(state, task, steps)
+                _publish_guide(state, name, arg, result)
+                # GUIDE() is a user-handoff (guide mode / no backend), not
+                # a failure — don't burn the error budget on it.
+                errors = errors + 1 if result.startswith(("ERROR", "SKIP",
+                                                          "REFUS")) else 0
                 if call.get("_at"):
                     messages.append({"role": "user", "content": result})
                 else:
-                    messages.append(
-                        {"role": "tool",
-                         "tool_call_id": call.get("id", name),
-                         "content": result})
-                continue
-            # lifecycle stream: queued when the model proposes the call,
-            # in_flight while gates/dispatch run, terminal on the result;
-            # T1 steps carry how to take them back (undo_ref)
-            aid = _state.action_add(
-                state, "tool", name, target=arg,
-                undo_ref=policy.undo_ref(name, arg, cfg))
-            # T2 checkpoint: _gate batches the reply's remaining gated
-            # calls into ONE card (not a card per tool)
-            refused = _gate(
-                name, arg, cfg, confirm, state=state,
-                batch=[_name_arg(c) for c in calls[ci + 1:]],
-                ctx=gate_ctx)
-            served_cached = False
-            if refused is None:
-                _state.action_set(state, aid, status="in_flight")
-                # soak fix: re-observe — a mutating step invalidates the
-                # screen the last coordinates came from, so take a fresh
-                # screenshot before any pointer call. Deterministic —
-                # doesn't rely on the model remembering to look.
-                # DOM-mode id clicks are exempt: they dispatch through
-                # getElementById + scrollIntoView, so stale legend
-                # coords can't misaim them.
-                _id_arg = name == "click" \
-                    and (cfg or {}).get("screen", {}).get("dom_page") \
-                    and not re.match(r"^\s*-?\d+\s*,", arg or "")
-                if (name in ("click", "move") and vision
-                        and screen_dirty and not _id_arg):
-                    rid = _state.action_add(
-                        state, "tool", "screenshot",
-                        target="(auto re-observe)", status="in_flight")
-                    shot = tools.run("screenshot", "", cfg, harness)
-                    _state.action_set(state, rid,
-                                      status=_tool_status(shot),
-                                      reason=shot)
-                    steps.append({"tool": "screenshot",
-                                  "arg": "(auto re-observe)",
-                                  "result": shot})
-                    _publish(state, task, steps)
-                    if shot.startswith("SHOT "):
-                        _attach_image(
-                            messages, shot[5:].strip(), cfg,
-                            why=f"re-observe: verify "
-                                f"'{dirty_step or 'last step'}' landed")
-                        last_shot = shot
-                        screen_dirty = False
-                    # a failed observe leaves the screen dirty AND the
-                    # cached shot ineligible — a stale DOM digest is
-                    # worse than no digest
-                tgt = None
-                if (name == "screenshot" and not screen_dirty
-                        and last_shot
-                        and (cfg or {}).get("screen", {}).get(
-                            "dom_page")):
-                    # DOM observation is deterministic given unchanged
-                    # state — the model already has this digest/image
-                    result = last_shot + " (unchanged)"
-                    served_cached = True
-                else:
-                    try:
-                        # W13: resolve the point BEFORE the guard so the
-                        # audit records x,y (not just len) for name
-                        # targets
-                        tool_arg, tgt, result = _aim(
-                            name, arg, cfg, guard, state)
-                        if result is None:
-                            # W9: kill/deny/rate/dry-run/audit around
-                            # dispatch
-                            result = guard.run(
-                                name, tool_arg,
-                                lambda: tools.run(name, tool_arg, cfg,
-                                                  harness))
-                        _aimed_done(state, name, tgt, result)
-                    except cancel.Cancelled:
-                        _state.action_set(state, aid, status="cancelled",
-                                          reason="interrupted")
-                        grounding.emit_target(state, None)
-                        _goals.record_steps(steps)
-                        return "INTERRUPTED (user)"
-                    except Exception as e:
-                        grounding.emit_target(state, None)
-                        result = f"ERROR ({e})"
-            else:
-                result = refused
-            # the stream entry keeps the raw result — the verify line
-            # below is model-facing feedback (step record + tool
-            # result), not stream copy
-            _state.action_set(state, aid, status=_tool_status(result),
-                              reason=result)
-            result += _verify_hint(name, arg, result, cfg)
-            if name == "screenshot" and result.startswith("SHOT "):
-                screen_dirty = False
-                if not served_cached:
-                    last_shot = result
-            elif name in _SCREEN_CHANGING and not result.startswith(
-                    ("ERROR", "SKIP", "REFUS", "DRYRUN")):
-                screen_dirty = True
-                dirty_step = f"{name} {arg}".strip()[:60]
-            steps.append({"tool": name, "arg": arg, "result": result,
-                          "reply": (msg.get("content") or "")[:500]})
-            _publish(state, task, steps)
-            _publish_guide(state, name, arg, result)
-            # GUIDE() is a user-handoff (guide mode / no backend), not
-            # a failure — don't burn the error budget on it.
-            errors = errors + 1 if result.startswith(("ERROR", "SKIP",
-                                                      "REFUS")) else 0
-            if call.get("_at"):
-                messages.append({"role": "user", "content": result})
-            else:
-                messages.append({"role": "tool",
-                                 "tool_call_id": call.get("id", name),
-                                 "content": result})
-            if name == "screenshot" and vision \
-                    and result.startswith("SHOT ") \
-                    and not served_cached:
-                _attach_image(messages, result[5:].strip(), cfg)
-            if errors > max_errors:
-                _goals.record_steps(steps)
-                out = f"ABORTED (repeated failures): {_last(steps)}"
-                _record_traj(task, harness, steps, out, cfg)
-                return out
-            if len(steps) >= max_steps:
-                break
-    out = _budget_abort(state, task, steps, f"max {max_steps} steps")
-    _goals.record_steps(steps)
-    _record_traj(task, harness, steps, out, cfg)
-    return out
+                    messages.append({"role": "tool",
+                                     "tool_call_id": call.get("id", name),
+                                     "content": result})
+                if name == "screenshot" and vision \
+                        and result.startswith("SHOT ") \
+                        and not served_cached:
+                    _attach_image(messages, result[5:].strip(), cfg)
+                if errors > max_errors:
+                    _goals.record_steps(steps)
+                    out = f"ABORTED (repeated failures): {_last(steps)}"
+                    _record_traj(task, harness, steps, out, cfg)
+                    return out
+                if len(steps) >= max_steps:
+                    break
+        out = _budget_abort(state, task, steps, f"max {max_steps} steps")
+        _goals.record_steps(steps)
+        _record_traj(task, harness, steps, out, cfg)
+        return out
+    finally:
+        # U5: disarm the yield watch — armed/yielded must
+        # never outlive the run they armed for (a stale
+        # yield would poison the next real-pointer call)
+        realinput.finish()
 
 
 def _aim(name: str, arg: str, cfg: dict, guard, state):
@@ -480,7 +515,7 @@ def _aim(name: str, arg: str, cfg: dict, guard, state):
             return arg, None, None
         tgt = grounding.Target(xy[0], xy[1], "global", 1.0, "model",
                                label="")
-        _announce(state, tgt)
+        _announce(state, tgt, name=name, cfg=cfg)
         return arg, tgt, None
     if guard.preflight(name):
         return arg, None, None       # guard.run refuses + audits it
@@ -490,14 +525,15 @@ def _aim(name: str, arg: str, cfg: dict, guard, state):
         grounding.emit_target(state, None)
         return arg, None, (f"REFUSED (could not ground {arg[:60]!r}: "
                            f"{e.reason or e.code})")
-    _announce(state, tgt, label=arg[:40])
+    _announce(state, tgt, name=name, cfg=cfg, label=arg[:40])
     return f"{tgt.x},{tgt.y}@logical", tgt, None
 
 
 _XY_ARG = re.compile(r"^\s*-?\d+\s*,\s*-?\d+\s*(@logical)?\s*$")
 
 
-def _announce(state, tgt, label: str = "") -> None:
+def _announce(state, tgt, name: str = "", cfg: dict | None = None,
+              label: str = "") -> None:
     if state is None or not callable(getattr(state, "emit_event", None)):
         return
     win = ""
@@ -507,10 +543,14 @@ def _announce(state, tgt, label: str = "") -> None:
         win = w.get("title") or w.get("class") or ""
     except Exception:
         pass
-    grounding.emit_target(state, "aim", tgt, window=win, label=label)
+    # the aim carries the delivery the call would use — a visible
+    # "pointer" aim is the escalation the user sees before it lands
+    grounding.emit_target(state, "aim", tgt, window=win, label=label,
+                          delivery=_delivery.planned(name, cfg))
 
 
-def _aimed_done(state, name: str, tgt, result: str) -> None:
+def _aimed_done(state, name: str, tgt, result: str,
+                delivery: str = "") -> None:
     """After a pointer step: a landed click is `click` (ripple) then
     `done`; a guide handoff / move leaves the aim parked; anything else
     (failed, refused, dry-run) clears. Emitted after the result so a
@@ -518,8 +558,8 @@ def _aimed_done(state, name: str, tgt, result: str) -> None:
     if tgt is None or name not in ("click", "move"):
         return
     if name == "click" and result.startswith("CLICKED"):
-        grounding.emit_target(state, "click", tgt)
-        grounding.emit_target(state, "done", tgt)
+        grounding.emit_target(state, "click", tgt, delivery=delivery)
+        grounding.emit_target(state, "done", tgt, delivery=delivery)
     elif not result.startswith(("GUIDE", "MOVED", "MOVE-GUIDE")):
         grounding.emit_target(state, None)
 
@@ -696,6 +736,22 @@ _AT_CALL_RE = re.compile(
 _AT_QUOTED_RE = re.compile(r"['\"]([^'\"]*)['\"]")
 _AT_NUM_RE = re.compile(r"-?\d+")
 
+# action-text gesture names -> the blocked tool name whose dispatch
+# returns a legible refusal (desktop-scope real-pointer input is off,
+# U5 — see system.BLOCKED_INPUT). UI-TARS emits e.g. left_double /
+# right_single / left_click_drag; they must not silently map to click.
+_AT_BLOCKED = {
+    "left_double": "double_click", "right_double": "double_click",
+    "double_click": "double_click", "tap_double": "double_click",
+    "triple_click": "triple_click",
+    "right_single": "right_click", "right_click": "right_click",
+    "middle": "middle_click", "middle_click": "middle_click",
+    "mouse_down": "mouse_down", "mouse_up": "mouse_up",
+    "left_mouse_down": "mouse_down", "left_mouse_up": "mouse_up",
+    "drag": "drag", "move_drag": "drag", "left_click_drag": "drag",
+    "drag_and_drop": "drag", "swipe": "drag",
+}
+
 
 def _at_coords(args: str) -> str | None:
     nums = _AT_NUM_RE.findall(args)
@@ -722,11 +778,16 @@ def _parse_action_text(text: str) -> dict | None:
             return None if not actions else {"actions": actions,
                                              "done": None}
         fn, args = cm.group(1).lower(), cm.group("args")
-        if fn in ("click", "left_double", "right_single", "tap"):
+        if fn in ("click", "tap"):
             xy = _at_coords(args)
             if xy is None:
                 continue
             actions.append(("click", xy))
+        elif fn in _AT_BLOCKED:
+            # gestures that would fight the user for the real pointer
+            # parse to the blocked tool names — the call returns a
+            # legible BLOCKED rather than silently becoming a click
+            actions.append((_AT_BLOCKED[fn], fn))
         elif fn == "type":
             q = _AT_QUOTED_RE.search(args)
             if q:

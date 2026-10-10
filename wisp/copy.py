@@ -159,6 +159,7 @@ STRINGS = {
     "ui.set.dry_run": "dry run",
     "ui.set.kill": "kill switch",
     "ui.set.confirm": "confirm",
+    "ui.set.delivery": "delivery",
     "ui.set.clicks": "clicks per minute",
     "ui.set.per_turn": "actions per turn",
     "ui.settings.agent": "agent",

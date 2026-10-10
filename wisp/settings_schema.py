@@ -108,6 +108,12 @@ FIELDS = (
     _f("cua.confirm", "choice", "tier",
        "Confirm risky actions (tier) or every action (always)",
        choices=("tier", "always"), panel=True, label="ui.set.confirm"),
+    _f("cua.delivery", "choice", "auto",
+       "Input delivery: auto = background where possible, pointer "
+       "escalation otherwise; background never touches the real "
+       "cursor; pointer prefers it",
+       choices=("auto", "background", "pointer"),
+       panel=True, label="ui.set.delivery"),
     _f("cua.max_clicks_per_min", "int", "30",
        "Most clicks allowed in one minute", min=1, max=600,
        panel=True, label="ui.set.clicks"),

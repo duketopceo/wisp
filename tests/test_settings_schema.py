@@ -44,6 +44,8 @@ TABLE = [
     ("cua.dry_run", "true", ""),
     ("cua.dry_run", "yes", "choice"),
     ("cua.confirm", "always", ""),
+    ("cua.delivery", "pointer", ""),
+    ("cua.delivery", "sneaky", "choice"),
     ("cua.max_per_turn", "12", ""),
     ("cua.max_per_turn", "0", "range"),
     ("cua.max_per_turn", "900", "range"),
@@ -102,8 +104,8 @@ class TestSchemaShape(unittest.TestCase):
             [f.key for f in S.FIELDS if f.panel],
             ["budget.daily_usd", "budget.monthly_usd", "pointer.mode",
              "cua.dry_run", "cua.kill_switch", "cua.confirm",
-             "cua.max_clicks_per_min", "cua.max_per_turn",
-             "agent.autonomy"])
+             "cua.delivery", "cua.max_clicks_per_min",
+             "cua.max_per_turn", "agent.autonomy"])
 
 
 class TestValidation(unittest.TestCase):

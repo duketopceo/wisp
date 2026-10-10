@@ -62,7 +62,8 @@ lacks a section. Shells may offer a settings page on top of this command.
   "steps": ["tool arg → result", "…"],
   "actions": [{"id": "a3", "kind": "tool", "label": "click",
                "status": "in_flight", "target": "640,360",
-               "reason": "", "undo_ref": null, "at": "ISO-8601"}],
+               "reason": "", "undo_ref": null, "delivery": "background",
+               "at": "ISO-8601"}],
   "guide": {"x": 0, "y": 0, "label": "string", "mode": "guide|drive", "seq": 1},
   "focus": {"app": "string", "title": "string"},
   "goal": {"text": "string", "status": "open|done|failed"},
@@ -176,7 +177,9 @@ the model receives a `NO_ANSWER` tool result rather than a stuck turn.
 Action stream (additive; U2): `actions` is the unified lifecycle log —
 one entry per dispatch, tool call, prompt, pick, interrupt, label and
 suggestion, newest last, capped at the most recent 50. Entry shape:
-`{id, kind, label, status, target, reason, undo_ref, at}`; prompt
+`{id, kind, label, status, target, reason, undo_ref, at}` plus the
+additive `delivery` (U5 — `background` | `pointer` | `guide`, `""` when
+no input channel applies); prompt
 entries also carry `options` (the offered picks) and `prompt_id`.
 `id` is a per-boot `a<N>` counter — unique within one daemon run.
 `status` is a closed set: `queued`, `in_flight`, `awaiting`, `done`,
@@ -266,7 +269,9 @@ class (may be empty); `label` string, a short element name such as
 "night light" (may be empty); `confidence` number 0..1 from the grounding
 model (default 1); `phase` one of `aim` (default; the ghost travels to the
 point and parks), `click` (one ripple at the tip), `done` (the click
-landed; the ghost dims and returns). `{"x":null,"y":null}` clears.
+landed; the ghost dims and returns); `delivery` string — `background`,
+`pointer` or `guide`, the input channel the aim would take (`""` on
+older cores; additive, U5). `{"x":null,"y":null}` clears.
 
 Reader rules (`shell-plugin/lib/state.js`, `view.cuaTarget`): the event
 is applied only while `status` is `acting`, `deciding` or

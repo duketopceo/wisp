@@ -6,8 +6,33 @@ import subprocess
 
 from .. import cancel as _cancel
 from .. import config
+from .. import delivery as _delivery
 from .. import hypr
 from ..pipeline import hypr_env, notify
+
+# input tools that would seize the real cursor in a way the user can't
+# take back cleanly — double-click races the user's own clicks, drag
+# holds a button across motion, right/middle buttons are unsupported by
+# the virtual-pointer path anyway (docs/research/cua-tool-catalog.md).
+# They stay dispatchable but every call returns a legible BLOCKED.
+BLOCKED_INPUT = frozenset({
+    "drag", "mouse_drag", "move_drag", "left_click_drag",
+    "drag_and_drop", "swipe",
+    "double_click", "triple_click", "left_double", "right_double",
+    "right_click", "right_single", "middle_click", "middle",
+    "mouse_down", "mouse_up", "left_mouse_down", "left_mouse_up",
+})
+
+
+def blocked_scope(arg: str) -> str:
+    """Desktop-scope real-cursor gestures are disabled (U5): they hold
+    or multi-hit the real pointer, which fights the user's own input —
+    the legible refusal is the deliverable, not the injection."""
+    name = (arg or "").strip().split()[0] or "gesture"
+    return (f"BLOCKED ({name}: desktop-scope real-cursor input is "
+            "disabled — drags and multi-click gestures would fight "
+            "the user for the pointer; use click, scroll, key or "
+            "type_text instead)")
 
 
 def notify_tool(msg: str) -> str:
@@ -282,6 +307,9 @@ def _dom_eval(cfg: dict, code: str) -> str:
 
 
 def type_text(text: str, cfg: dict | None = None) -> str:
+    # typing never moves the pointer — wtype/ydotool type at the
+    # focused surface, the DOM path sets values over JS
+    _delivery.note("background")
     if not text:
         return "SKIP (nothing to type)"
     if (cfg or {}).get("screen", {}).get("dom_page"):
@@ -323,6 +351,7 @@ _KEYCODES = {"esc": 1, "enter": 28, "tab": 15, "space": 57,
 
 def key(arg: str, cfg: dict | None = None) -> str:
     """Press a named key — 'enter', 'tab', 'down', 'pagedown', …"""
+    _delivery.note("background")   # key events ride the keyboard path
     name = (arg or "").strip().lower().replace(" ", "")
     name = {"return": "enter", "escape": "esc", "pgdn": "pagedown",
             "pgup": "pageup", "arrowdown": "down",
@@ -361,6 +390,7 @@ def fill(arg: str, cfg: dict | None = None) -> str:
     only: selects pick the matching option; inputs get value +
     input/change events. This is the primitive a real form fill is —
     click+select-all+type compressed, no focus race."""
+    _delivery.note("background")   # DOM-only tool — pure JS dispatch
     if not (cfg or {}).get("screen", {}).get("dom_page"):
         return "SKIP (fill is dom-mode only — click then type_text)"
     arg = (arg or "").strip()
@@ -423,6 +453,7 @@ def fill(arg: str, cfg: dict | None = None) -> str:
 
 def scroll(arg: str, cfg: dict | None = None) -> str:
     """Scroll — 'down'/'up'/'down 400' (px/wheel units)."""
+    _delivery.note("background")   # wheel axis events never move the pointer
     parts = (arg or "down").split()
     up = parts[0].lower() in ("up", "-")
     bottom = parts[0].lower() in ("bottom", "end") \
@@ -627,6 +658,7 @@ def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
     # works with the lid closed / panel powered off)
     dom_page = (cfg or {}).get("screen", {}).get("dom_page")
     if dom_page:
+        _delivery.note("background")   # JS dispatch — no pointer at all
         import re as _re
         m = _re.match(r"^\s*(-?\d+)\s*,\s*(-?\d+)", arg or "")
         if not m:
@@ -678,23 +710,37 @@ def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
         return f"FAIL (could not resolve coordinates or ground target {arg!r})"
     x, y = xy
     from .. import platform
-    backend = platform.pointer_backend(cfg)
     mode = (cfg or {}).get("pointer", {}).get("mode", "guide")
-    if mode == "drive" and backend:
-        verb = "click" if do_click else "move"
+    op = "click" if do_click else "move"
+    # [cua] delivery picks the backend (auto order, pointer-escalation
+    # for `pointer`, real-pointer refusal for `background`); a DOM page
+    # already returned above — everything below is a compositor op
+    backend = _delivery.resolve_backend(cfg, op) if mode == "drive" \
+        else None
+    if backend:
         # pointer.Registry owns precedence: a move falls through the
         # chain, a failed click is NOT retried elsewhere (double-click
         # risk) and the act loop re-observes instead.
         from .. import pointer
         reg = pointer.Registry(cfg)
-        ok = (reg.click if do_click else reg.move)(
-            x, y, backend=backend).ok
-        if not ok:
-            return f"SKIP ({verb} failed via {backend})"
+        out = (reg.click if do_click else reg.move)(x, y, backend=backend)
+        _delivery.note(out.delivery
+                       or _delivery.backend_delivery(
+                           out.backend or backend, op))
+        if not out.ok:
+            return f"SKIP ({op} failed via {out.backend or backend})"
         return f"{'CLICKED' if do_click else 'MOVED'}({x},{y})"
     # guide mode — ghost cursor carries the intent, the user clicks
     verb = "GUIDE" if do_click else "MOVE-GUIDE"
-    reason = "" if mode == "guide" else " (no pointer backend)"
+    _delivery.note("guide")
+    if mode != "guide":
+        raw = platform.pointer_backend(cfg)
+        reason = " (background delivery only)" \
+            if raw and _delivery.mode(cfg) == "background" \
+            and _delivery.backend_delivery(raw, op) == "pointer" \
+            else " (no pointer backend)"
+    else:
+        reason = ""
     return f"{verb}({x},{y}){reason}"
 
 

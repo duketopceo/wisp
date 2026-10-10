@@ -131,6 +131,16 @@ dry_run = "false"
 kill_switch = "false"
 confirm = "tier"
 audit = "true"
+# Input delivery policy (wisp/delivery.py, U5): "auto" takes each op's
+# natural channel — background where a no-cursor path exists (DOM/JS
+# dispatch, cua virtual-pointer clicks, typing, wheel scrolls, Hyprland
+# window ops), real-pointer escalation for pixel clicks/moves on
+# ydotool-class backends. "background" never touches the real cursor —
+# a pointer-only op degrades to the ghost cursor instead of injecting.
+# "pointer" prefers the real pointer (auto order skips the
+# background-only cua backend for clicks). The actual channel is
+# recorded per call in the audit log and action stream.
+delivery = "auto"
 
 [ground]
 # UI grounding adapter (wisp/grounding.py, W13): click/move target name ->
@@ -412,7 +422,7 @@ def _default_cfg_dict() -> dict:
                 "deny": "", "max_clicks_per_min": "30",
                 "max_per_turn": "12", "dry_run": "false",
                 "kill_switch": "false", "confirm": "tier",
-                "audit": "true"},
+                "audit": "true", "delivery": "auto"},
         "traj": {"enabled": "true", "max_inject": "3"},
         "agents": {"act_max_steps": "12", "act_max_errors": "2",
                    "act_max_parse_misses": "1", "act_max_seconds": "600",

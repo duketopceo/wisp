@@ -231,11 +231,12 @@ rate limit, dry run, dispatch. Refusals read `REFUSED (...)`.
 | `max_per_turn` | `12` | cap on the same calls in one act run |
 | `dry_run` | `false` | log what would happen and return `DRYRUN ...`; no driver, ydotool or hyprctl call. Deny, kill and rate checks still apply |
 | `kill_switch` | `false` | refuse everything. The runtime file `$XDG_RUNTIME_DIR/wisp/cua.kill` does the same without a config edit (`cua_safety.kill()` / `resume()`) |
+| `delivery` | `auto` | input delivery policy (`wisp/delivery.py`, U5): `auto` uses each op's natural channel — background where the backend offers one (cua click/scroll, type, key), real pointer otherwise; `background` refuses to silently drive the real pointer and guides instead; `pointer` prefers a real-pointer backend for clicks even when cua is up. An explicit `[pointer] backend` pin outranks the policy |
 | `confirm` | `tier` | `tier` keeps the tool tiers; `always` makes click/move/scroll/type/key ask once per (tool, focused app) per session |
 | `audit` | `true` | append one JSON line per call to `$XDG_STATE_HOME/wisp/cua.jsonl` |
 
 Audit line: `ts, turn, tool, app, decision (allow|deny|dry_run|cancelled),
-dry_run, result (first word only), ms`, plus `x`/`y` for coordinate
+dry_run, result (first word only), delivery, ms`, plus `x`/`y` for coordinate
 targets, `key` for named keys and chords, and `len` + `sha` (12 hex of a
 per-process salted hash) for typed text. Typed text, target names,
 screenshots and result text are never written.

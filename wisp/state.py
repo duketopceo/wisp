@@ -43,7 +43,7 @@ ACTION_STATUSES = frozenset(
 ACTIONS_CAP = 50
 ACTION_FIELDS = frozenset({"id", "kind", "label", "status", "target",
                            "reason", "undo_ref", "at", "options",
-                           "prompt_id"})
+                           "prompt_id", "delivery"})
 # statuses where the model is working and the UI would otherwise sit
 # silent; the bus heartbeat runs only here
 BUSY = frozenset({"transcribing", "deciding", "acting"})

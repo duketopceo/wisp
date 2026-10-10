@@ -206,6 +206,8 @@ def tool_schemas() -> list:
 
 
 def risk_of(name: str) -> str:
+    if name in system.BLOCKED_INPUT:
+        return "safe"   # blocked gestures never inject — never gate them
     if name.startswith("skill_"):
         from .. import skills
         return skills.tier_of(name)  # dynamic — skills can appear mid-session
@@ -231,6 +233,8 @@ def run(name: str, arg: str, cfg: dict, harness: dict | None = None) -> str:
 def _run_inner(name: str, arg: str, cfg: dict,
                harness: dict | None = None) -> str:
     from .. import agents
+    if name in system.BLOCKED_INPUT:
+        return system.blocked_scope(name)
     if name == "agent_spawn":
         return agents.spawn(arg, cfg)
     if name == "task_status":

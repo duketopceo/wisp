@@ -31,6 +31,8 @@ Settings (value, default, range):
                                default false; true or false
   cua.confirm                  Confirm risky actions (tier) or every action (always)
                                default tier; tier, always
+  cua.delivery                 Input delivery: auto = background where possible, pointer escalation otherwise; background never touches the real cursor; pointer prefers it
+                               default auto; auto, background, pointer
   cua.max_clicks_per_min       Most clicks allowed in one minute
                                default 30; 1 to 600
   cua.max_per_turn             Most actions allowed in one turn

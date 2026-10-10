@@ -789,6 +789,8 @@ class Continuity(unittest.TestCase):
                                             "wisp: opened it"):
             act.run_act_loop("now close it", {"agent": {}})
         um = seen[0]["content"]
+        if isinstance(um, list):  # vision attach → parts list
+            um = "".join(p.get("text", "") for p in um)
         self.assertIn("[previous turn]", um)
         self.assertIn("open discord", um)
         self.assertIn("opened it", um)

@@ -398,7 +398,8 @@ class TestCuaTarget(unittest.TestCase):
         r = run([self.acting(), ["event", self.EV, 2]])
         self.assertEqual(r["view"]["cuaTarget"], {
             "x": 640, "y": 360, "window": "Settings",
-            "label": "night light", "confidence": 0.9, "phase": "aim"})
+            "label": "night light", "confidence": 0.9, "phase": "aim",
+            "delivery": ""})
 
     def test_absent_by_default(self):
         self.assertIsNone(run([self.acting()])["view"]["cuaTarget"])

@@ -78,7 +78,8 @@ function normalizeConfirm(c, choices) {
 // state.actions (additive, U2): the unified lifecycle stream — one
 // {id, kind, label, status, target, reason, undo_ref, at} entry per
 // dispatch, tool call, prompt, pick, interrupt, label and suggestion.
-// Awaiting prompt entries also carry `options` and `prompt_id`. Unknown
+// Awaiting prompt entries also carry `options` and `prompt_id`; input
+// entries carry `delivery` (U5: background|pointer|guide). Unknown
 // kinds pass through; an unknown status reads as done; non-objects are
 // dropped. Capped at the last ACTIONS_CAP like the daemon's list.
 function normalizeActions(list) {
@@ -98,6 +99,8 @@ function normalizeActions(list) {
     if (opts.length > 0) e.options = opts
     var pid = str(a.prompt_id)
     if (pid !== "") e.promptId = pid
+    var dlv = str(a.delivery)
+    if (dlv !== "") e.delivery = dlv
     out.push(e)
   }
   return out.length > ACTIONS_CAP ? out.slice(out.length - ACTIONS_CAP)
@@ -194,10 +197,12 @@ function normalize(raw) {
 }
 
 // cua.target stream event (docs/IPC_CONTRACT.md "cua.target"): data is
-// {x, y, window, label, confidence, phase}. x and y are screen pixels
-// (finite numbers), window and label strings, confidence 0..1, phase one
-// of CUA_PHASES (default "aim"). Returns the normalized target, null for
-// the explicit clear (x and y both null), or undefined when malformed
+// {x, y, window, label, confidence, phase, delivery}. x and y are
+// screen pixels (finite numbers), window and label strings, confidence
+// 0..1, phase one of CUA_PHASES (default "aim"), delivery the channel
+// the aim would use ("background"|"pointer"|"guide", U5 — "" when the
+// event predates it). Returns the normalized target, null for the
+// explicit clear (x and y both null), or undefined when malformed
 // (the event is ignored and the current target stays).
 function normalizeTarget(d) {
   if (!isObj(d)) return undefined
@@ -208,7 +213,8 @@ function normalizeTarget(d) {
   var c = Number(d.confidence)
   var phase = CUA_PHASES.indexOf(d.phase) >= 0 ? d.phase : "aim"
   return { x: x, y: y, window: str(d.window), label: str(d.label),
-    confidence: isFinite(c) ? Math.max(0, Math.min(1, c)) : 1, phase: phase }
+    confidence: isFinite(c) ? Math.max(0, Math.min(1, c)) : 1,
+    phase: phase, delivery: str(d.delivery) }
 }
 
 // Statuses in which a target may be shown; anything else drops it.
