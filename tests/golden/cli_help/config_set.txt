@@ -35,6 +35,8 @@ Settings (value, default, range):
                                default 30; 1 to 600
   cua.max_per_turn             Most actions allowed in one turn
                                default 12; 1 to 200
+  agent.autonomy               Confirm policy: autonomous runs reversible steps free, guided asks on them too, always_ask confirms everything
+                               default autonomous; autonomous, guided, always_ask
   cua.timeout_ms               Per call timeout for the cua driver in ms
                                default 800; 50 to 60000
   audio.seconds                Longest recording for one turn in seconds

@@ -114,6 +114,11 @@ FIELDS = (
     _f("cua.max_per_turn", "int", "12",
        "Most actions allowed in one turn", min=1, max=200,
        panel=True, label="ui.set.per_turn"),
+    _f("agent.autonomy", "choice", "autonomous",
+       "Confirm policy: autonomous runs reversible steps free, guided "
+       "asks on them too, always_ask confirms everything",
+       choices=("autonomous", "guided", "always_ask"),
+       panel=True, label="ui.set.autonomy"),
     _f("cua.timeout_ms", "int", "800",
        "Per call timeout for the cua driver in ms",
        min=50, max=60000),

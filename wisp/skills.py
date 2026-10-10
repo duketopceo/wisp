@@ -330,7 +330,14 @@ def register_tools() -> None:
         if not meta.get("tool"):
             continue
         name = f"skill_{_slug(d.name)}"
+        tier = tier_of(name)
         tools.REGISTRY[name] = (
             lambda arg, _n=name: run_tool(_n, arg) or
             f"SKIP ({_n} script missing)",
-            tier_of(name), meta.get("description", f"skill {d.name}"))
+            tier, meta.get("description", f"skill {d.name}"),
+            # a `tool:` script runs bash — never T1-or-lower, never
+            # promised undoable (risk floor is mutating for the same
+            # reason); maps through the risk→autonomy table like the
+            # dynamic skill_* names policy resolves
+            {"tier": tools.RISK_AUTONOMY.get(tier, "T2"),
+             "reversible": False, "external": True})

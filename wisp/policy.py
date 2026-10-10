@@ -1,0 +1,259 @@
+"""Autonomy tier policy (plan U3, KTD9): the confirm gate consults
+policy(tier, session_mode) instead of per-tool bolt-ons.
+
+Tools declare a T0–T3 tier in `tools.REGISTRY` meta; calls that vary by
+argument refine it here (`memory add` is T1, an mcp read is T0, an
+OAuth/credential-shaped mcp call is T3). `agent.autonomy` picks the
+session mode:
+
+  autonomous (default) — T1 runs free, T2 confirms at batched
+                         checkpoints, T3 hands off. Matches the
+                         pre-policy gate shape.
+  guided               — conservative: T1 confirms too.
+  always_ask           — every call confirms.
+
+Session grants ride `state.confirmed`, the existing confirm-once set:
+a yes writes (tool, focused-app) as before; an "always" pick writes the
+("*", "*") wildcard — approve every gated call this session. T3 is
+never grantable: the wildcard and every mode still hand off.
+
+`gate()` returns a refusal/result string or None (run it). Hard
+preempts come first — the SHELL_DENYLIST on shell + text-bearing args
+and the allow_shell check refuse before a tier is consulted.
+`[cua] confirm = "always"` keeps promoting T1 input tools to T2 through
+cua_safety.effective_tier.
+"""
+import json
+import re
+
+from . import cua_safety, tools
+
+MODES = ("autonomous", "guided", "always_ask")
+ALWAYS_GRANT = ("*", "*")
+
+
+def mode_of(cfg: dict | None) -> str:
+    """The session autonomy mode from `[agent] autonomy`."""
+    v = str((cfg or {}).get("agent", {}).get("autonomy") or "")
+    return v.strip().lower() if v.strip().lower() in MODES \
+        else "autonomous"
+
+
+def tier_of(name: str, arg: str = "", cfg: dict | None = None) -> str:
+    """The call's autonomy tier: the declared meta, refined by arg, then
+    the [cua] confirm=always promotion (T1 input -> T2)."""
+    t = declared_tier(name)
+    t = _refine(name, arg or "", t)
+    if t == "T1" and name in cua_safety.GUARDED \
+            and cua_safety.settings(cfg)["confirm"] == "always":
+        t = "T2"
+    return t
+
+
+def declared_tier(name: str) -> str:
+    """Declared meta tier, else the risk-tier mapping (dynamic skill_*
+    tools, bare 3-tuple registrations, unknown names -> shell -> T2)."""
+    meta = tools.meta_of(name)
+    if meta:
+        return meta["tier"]
+    return tools.RISK_AUTONOMY.get(tools.risk_of(name), "T2")
+
+
+def decide(name: str, arg: str, cfg: dict | None) -> str:
+    """"run" | "confirm" | "handoff" — what the gate does with a call."""
+    t = tier_of(name, arg, cfg)
+    if t == "T3":
+        return "handoff"
+    mode = mode_of(cfg)
+    if mode == "always_ask" or t == "T2":
+        return "confirm"
+    if t == "T1" and mode == "guided":
+        return "confirm"
+    return "run"
+
+
+def preempted(name: str, arg: str, cfg: dict | None) -> str | None:
+    """Hard preempts before policy: denylist on shell + text-bearing
+    args, and shell needs allow_shell."""
+    tier = cua_safety.effective_tier(name, cfg)
+    if tier == "shell" or name in tools.TEXT_INPUT:
+        if tools.denied(arg):
+            return "REFUSED (denylisted command)"
+        if tier == "shell" and \
+                (cfg or {}).get("agent", {}).get(
+                    "allow_shell", "false") != "true":
+            return "SKIPPED (shell disabled — set allow_shell=true)"
+    return None
+
+
+def gate_ctx() -> dict:
+    """Per-run gate memory: (tool, app) keys the user declined this run,
+    so a no isn't re-asked when the model retries."""
+    return {"declined": set()}
+
+
+def gate(name: str, arg: str, cfg: dict, confirm,
+         state=None, batch=(), ctx=None) -> str | None:
+    """The act loop's gate: a refusal/result string when the call is
+    blocked or handed off, else None. `batch` is the reply's remaining
+    (name, arg) calls so one checkpoint card covers every gated step
+    still queued — not a card per tool."""
+    hit = preempted(name, arg, cfg)
+    if hit:
+        return hit
+    decision = decide(name, arg, cfg)
+    if decision == "run":
+        return None
+    if decision == "handoff":
+        return _handoff(name, arg, confirm)
+    app = _focus_app(state)
+    confirmed = getattr(state, "confirmed", None)
+    grants = confirmed if isinstance(confirmed, set) else frozenset()
+    if (name, app) in grants or ALWAYS_GRANT in grants:
+        return None
+    if ctx is not None and (name, app) in ctx["declined"]:
+        return f"SKIPPED ({name} declined by user)"
+    if confirm is None:
+        return f"SKIPPED ({name} needs user confirmation)"
+    items = [(name, arg)] + [
+        (n, a) for n, a in batch
+        if (n, app) not in grants
+        and (ctx is None or (n, app) not in ctx["declined"])
+        and preempted(n, a, cfg) is None
+        and decide(n, a, cfg) == "confirm"]
+    ok, last = _ask(confirm, checkpoint_prompt(items))
+    if ok:
+        if isinstance(confirmed, set):
+            if last == "always":
+                confirmed.add(ALWAYS_GRANT)
+            else:
+                for n, _a in items:
+                    confirmed.add((n, app))
+        return None
+    if ctx is not None:
+        ctx["declined"].update((n, app) for n, _a in items)
+    if last == "timeout":
+        return f"SKIPPED ({name} confirmation timed out)"
+    return f"SKIPPED ({name} declined by user)"
+
+
+def checkpoint_prompt(items: list) -> str:
+    """Card text for the gated steps of one reply: a single step keeps
+    the 'run close: w1?' shape; several batch into one card naming each
+    step (the artifact the user is approving)."""
+    if len(items) <= 1:
+        n, a = items[0] if items else ("step", "")
+        return f"run {n}: {a or '(no arg)'}?"
+    steps = " · ".join(f"{n} {a}".strip()[:60] for n, a in items)
+    return f"run these {len(items)} steps: {steps[:200]}?"
+
+
+_UNDO = {
+    "click": "undo in the app",
+    "type_text": "undo in the app",
+    "key": "undo in the app",
+    "fill": "revert the field",
+    "scroll": "scroll back",
+    "workspace": "switch back",
+    "memory": "memory remove",
+    "agent_spawn": "task_cancel",
+}
+
+
+def undo_ref(name: str, arg: str, cfg: dict | None) -> str | None:
+    """T1 stream entries carry how to take the step back; other tiers
+    publish none."""
+    if tier_of(name, arg, cfg) != "T1":
+        return None
+    return _UNDO.get(name)
+
+
+# -- call-shape refinements ----------------------------------------------
+
+# `memory` arg: 'target|op|old|new' — add is reversible (remove undoes
+# it); replace/remove destroy a curated fact, anything else stays T2.
+def _refine(name: str, arg: str, tier: str) -> str:
+    if name == "memory":
+        op = arg.split("|", 2)[1].strip().lower() if "|" in arg else ""
+        return "T1" if op == "add" else "T2"
+    if name == "mcp_call":
+        return _mcp_tier(arg)
+    if name == "skill_manage":
+        return "T0" if arg.split("|", 1)[0].strip().lower() == "list" \
+            else "T2"
+    return tier
+
+
+# mcp_call varies by call: OAuth/credential/purchase-shaped server or
+# tool names hand off (T3 — the agent does everything up to the
+# boundary, then waits); read-verb tools observe (T0); everything else
+# stays T2. Hints match the server+tool names only — a "payment history"
+# lookup in the args must not pause the run.
+_MCP_T3 = ("oauth", "login", "signin", "sign_in", "credential",
+           "password", "passwd", "secret", "token", "payment",
+           "purchase", "checkout", "billing")
+_MCP_READ = ("list", "get", "read", "search", "fetch", "query",
+             "describe", "find", "status", "show", "tabs", "poll",
+             "snapshot", "inspect")
+
+
+def _mcp_tier(arg: str) -> str:
+    parts = arg.split(None, 2)
+    if len(parts) < 2:
+        return "T2"
+    probe = f"{parts[0]} {parts[1]}".lower()
+    if any(h in probe for h in _MCP_T3):
+        return "T3"
+    tool = parts[1].lower().split("/")[-1]  # strata '<category>/<action>'
+    if re.split(r"[_.\s]", tool, maxsplit=1)[0] in _MCP_READ:
+        action = _mcp_action(parts)
+        if not action \
+                or re.split(r"[_.\s]", action, maxsplit=1)[0] \
+                in _MCP_READ:
+            return "T0"
+    return "T2"
+
+
+def _mcp_action(parts: list) -> str:
+    """The `action` field of a JSON args tail — browseros-style tools
+    carry their verb there ('tabs {"action":"close"}')."""
+    if len(parts) < 3:
+        return ""
+    try:
+        a = json.loads(parts[2])
+    except ValueError:
+        return ""
+    return str(a.get("action", "")).lower() if isinstance(a, dict) else ""
+
+
+def _focus_app(state) -> str:
+    """The (tool, app) confirm-once scope: the app focused when the turn
+    started, "" when no usable state was handed down."""
+    focus = getattr(state, "focus", None)
+    return focus.get("app", "") if isinstance(focus, dict) else ""
+
+
+def _ask(confirm, prompt: str, kind: str = "confirm") -> tuple:
+    """Call the confirm callable. Rich ones (wisp/confirm.make) take
+    `kind` and offer the "always" session grant; plain doubles take just
+    the prompt. Returns (ok, confirm.last)."""
+    if getattr(confirm, "rich", False):
+        ok = confirm(prompt, kind=kind, always=kind == "confirm")
+    else:
+        ok = confirm(prompt)
+    return bool(ok), str(getattr(confirm, "last", "") or "")
+
+
+def _handoff(name: str, arg: str, confirm) -> str:
+    """T3 — the run pauses with a "needs you" card; the user does the
+    step (OAuth, credentials, a purchase) and answers. The tool itself
+    never runs: a yes reads HANDED_OFF, anything else skips."""
+    if confirm is None:
+        return f"SKIPPED ({name} needs a human — no handoff channel)"
+    prompt = f"needs you: {name} {arg}".strip()[:80]
+    ok, last = _ask(confirm, prompt, kind="handoff")
+    if ok:
+        return f"HANDED_OFF ({name} done by the user)"
+    if last == "timeout":
+        return f"SKIPPED ({name} handoff timed out)"
+    return f"SKIPPED ({name} handoff declined by user)"

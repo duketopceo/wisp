@@ -77,6 +77,10 @@ confidence_ambiguous = 0.8
 # runaway guards: max simultaneous agent tasks + per-task lifetime
 max_concurrent = 3
 task_timeout_s = 1800
+# autonomy mode for the act loop's confirm policy (wisp/policy.py):
+# autonomous runs reversible steps free and batch-confirms irreversible
+# ones; guided confirms reversible steps too; always_ask confirms all
+autonomy = "autonomous"
 
 [sense]
 # Passive activity sense + proactive suggestions. Off by default —
@@ -398,6 +402,7 @@ def _default_cfg_dict() -> dict:
             "session_turns": "8", "screenshots": "true",
             "risk_threshold": "9",
             "confidence_instant": "0.95", "confidence_ambiguous": "0.8",
+            "autonomy": "autonomous",
         },
         "voice": {"enabled": "false"},
         "pointer": {"mode": "guide", "backend": "auto"},

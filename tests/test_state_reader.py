@@ -472,9 +472,9 @@ class TestConfirmCard(unittest.TestCase):
     def test_confirm_maps_and_clamps(self):
         c = self.pending()["confirm"]
         self.assertEqual(c, {"promptId": "p7", "prompt": "run close: w1?",
-                             "timeoutS": 120,
+                             "timeoutS": 120, "kind": "confirm",
                              "allow": "run close: w1? — yes",
-                             "deny": "no"})
+                             "deny": "no", "middle": []})
 
     def test_card_picks_survive_a_diff_that_empties_choices(self):
         # the race U1 repairs: a state diff between render and click may

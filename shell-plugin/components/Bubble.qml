@@ -75,13 +75,28 @@ Rectangle {
       Chip {
         objectName: "allow"
         service: root.service
-        label: root.service.ui("ui.confirm.allow")
+        // a handoff card (T3) is done/cancel, not allow/deny
+        label: root.card && root.card.kind === "handoff"
+               ? root.service.ui("ui.confirm.done")
+               : root.service.ui("ui.confirm.allow")
         onClicked: root.confirmChosen(root.card.allow, root.card.promptId)
+      }
+      Repeater {
+        // extra picks between allow and deny — the "always" session
+        // grant; the chip label is the option itself
+        model: root.card ? root.card.middle : []
+        delegate: Chip {
+          service: root.service
+          label: modelData
+          onClicked: root.confirmChosen(modelData, root.card.promptId)
+        }
       }
       Chip {
         objectName: "deny"
         service: root.service
-        label: root.service.ui("ui.confirm.deny")
+        label: root.card && root.card.kind === "handoff"
+               ? root.service.ui("ui.confirm.cancel")
+               : root.service.ui("ui.confirm.deny")
         onClicked: root.confirmChosen(root.card.deny, root.card.promptId)
       }
     }

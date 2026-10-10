@@ -50,8 +50,11 @@ RESULT_RULES = (
     (r"^SKIP(PED)? \((nothing to type|empty command|empty agent task"
      r"|empty pattern)\)", "didn't catch what to do", "didnt_understand"),
     (r"^SKIP(PED)? \(.* declined by user\)", "skipped, you said no", None),
-    (r"^SKIP(PED)? \(.* confirmation timed out\)", "skipped, no answer",
-     None),
+    (r"^SKIP(PED)? \(.* (handoff|confirmation) timed out\)",
+     "skipped, no answer", None),
+    (r"^SKIP(PED)? \(.* needs a human",
+     "skipped, needed you to do it", None),
+    (r"^HANDED_OFF ", "you handled it", None),
     (r"^SKIP(PED)? \(.* needs user confirmation\)", "needs your ok", None),
     (r"^SKIP(PED)? \(shell disabled", "shell commands are off", None),
     (r"^SKIP(PED)?\b", "couldn't do that", None),
@@ -158,6 +161,8 @@ STRINGS = {
     "ui.set.confirm": "confirm",
     "ui.set.clicks": "clicks per minute",
     "ui.set.per_turn": "actions per turn",
+    "ui.settings.agent": "agent",
+    "ui.set.autonomy": "autonomy",
     "ui.set.save": "save",
     "ui.set.saved": "saved",
     "ui.set.blank": "blank means no cap",
@@ -243,6 +248,8 @@ STRINGS = {
     "ui.confirm.title": "needs your ok",
     "ui.confirm.allow": "allow",
     "ui.confirm.deny": "deny",
+    "ui.confirm.done": "done",
+    "ui.confirm.cancel": "cancel",
     "ui.confirm.hint": "no answer counts as deny",
 }
 

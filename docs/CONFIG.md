@@ -82,6 +82,7 @@ Every routed turn appends Jev vs heuristic vs final route to `route_ab.jsonl`; r
 | `confidence_instant` | `0.95` | auto-accept cutoff |
 | `confidence_ambiguous` | `0.8` | ask-choice cutoff |
 | `allow_shell` | `false` | allow free-form shell tool (commands also pass a built-in denylist that is not configurable) |
+| `autonomy` | `"autonomous"` | act-loop confirm policy (wisp/policy.py): `autonomous` runs reversible (T1) steps free and batch-confirms irreversible (T2) ones; `guided` confirms T1 steps too; `always_ask` confirms every tool call. Human-only (T3) steps hand off under every mode |
 | `max_concurrent` | `3` | most background agent tasks at once |
 | `task_timeout_s` | `1800` | lifetime of one background task |
 | `goal_ttl_s` | `600` | seconds an open goal accepts follow-up utterances |

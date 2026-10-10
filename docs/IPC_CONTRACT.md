@@ -57,7 +57,7 @@ lacks a section. Shells may offer a settings page on top of this command.
   "result": "string",
   "choices": ["string"],
   "prompt_id": "string — id of the offered choices/confirm; \"\" when none",
-  "confirm": "null, or {prompt_id, prompt, timeout_s} while a confirm card waits (additive, W25)",
+  "confirm": "null, or {prompt_id, prompt, timeout_s, kind} while a confirm card waits (additive, W25; kind \"confirm\"|\"handoff\" added U3)",
   "points": [{"x": 0, "y": 0, "label": "string", "step": 1}],
   "steps": ["tool arg → result", "…"],
   "actions": [{"id": "a3", "kind": "tool", "label": "click",
@@ -149,12 +149,17 @@ completed sentence while the answer streams (state still goes
 `speaking` → `done` when the last sentence ends).
 
 Confirm card (additive; W25): while a confirm waits the core also
-publishes `confirm = {prompt_id, prompt, timeout_s}` (`null` otherwise,
-cleared with `choices`). `confirm.prompt_id` equals `prompt_id`; the
-card's replies use it, and a reply with any other id is `stale_prompt`.
-No reply within `timeout_s` (`[agent] confirm_timeout`, default 120,
-clamped 5 to 600) resolves as deny: the daemon owns the deadline, the
-step result is `SKIPPED (<tool> confirmation timed out)`.
+publishes `confirm = {prompt_id, prompt, timeout_s, kind}` (`null`
+otherwise, cleared with `choices`). `confirm.prompt_id` equals
+`prompt_id`; the card's replies use it, and a reply with any other id is
+`stale_prompt`. No reply within `timeout_s` (`[agent] confirm_timeout`,
+default 120, clamped 5 to 600) resolves as deny: the daemon owns the
+deadline, the step result is `SKIPPED (<tool> confirmation timed out)`.
+`kind` is `"confirm"` (absent on older cores) or `"handoff"` (U3: a T3
+step the user must do themselves — options read `… — done` / `cancel`,
+the tool never runs). A `confirm` card's `choices` may carry a middle
+`"always"` pick (U3 session grant): first option is still the allow
+pick, last is still the deny.
 
 Action stream (additive; U2): `actions` is the unified lifecycle log —
 one entry per dispatch, tool call, prompt, pick, interrupt, label and
@@ -164,13 +169,16 @@ entries also carry `options` (the offered picks) and `prompt_id`.
 `id` is a per-boot `a<N>` counter — unique within one daemon run.
 `status` is a closed set: `queued`, `in_flight`, `awaiting`, `done`,
 `failed`, `cancelled` — shells must map unknown values to `done`.
-`kind` is an open set (`route`, `tool`, `confirm`, `clarify`, `choice`,
-`interrupt`, `label`, `suggestion`, `question` today); render entries
-generically and ignore unknown kinds' extras. `target` is the
+`kind` is an open set (`route`, `tool`, `confirm`, `handoff`,
+`clarify`, `choice`, `interrupt`, `label`, `suggestion`, `question`
+today); render entries generically and ignore unknown kinds' extras.
+`target` is the
 truncated arg (tool) or key (suggestion); `reason` is the terminal or
 waiting context — a result string for tools, `denied` / `timeout` /
 `interrupted` on `cancelled` prompts, `never` / `snoozed` / `expired` /
-`accepted` on suggestions. `undo_ref` is reserved (`null` today).
+`accepted` on suggestions. `undo_ref` carries a short undo hint on
+reversible (T1) tool entries (`"undo in the app"`, `"switch back"`),
+else `null`.
 `at` is the ISO-8601 entry-creation time. Entries mutate in place by
 `id`: the whole capped list ships in each diff, so subscribers replace
 it wholesale. The newest `awaiting` entry of kind `confirm` IS the

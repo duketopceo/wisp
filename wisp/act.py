@@ -16,7 +16,8 @@ import re
 import urllib.error
 import urllib.request
 
-from . import bgwriter, cancel, config, cua_safety, grounding, tools
+from . import bgwriter, cancel, config, cua_safety, grounding, policy, \
+    tools
 from . import state as _state
 
 # Defaults; the daemon reads [agents] act_max_steps, act_max_errors and
@@ -71,36 +72,26 @@ def _post(messages: list, cfg: dict) -> dict:
 
 
 def _gate(name: str, arg: str, cfg: dict, confirm,
-          state=None) -> str | None:
-    """Returns a refusal string when the call is blocked, else None."""
-    tier = cua_safety.effective_tier(name, cfg)  # W9: confirm=always
-    if tier == "shell" or name in tools.TEXT_INPUT:
-        if tools.denied(arg):
-            return "REFUSED (denylisted command)"
-        if tier == "shell" and \
-                cfg.get("agent", {}).get("allow_shell",
-                                         "false") != "true":
-            return "SKIPPED (shell disabled — set allow_shell=true)"
-    if tier in ("mutating", "shell"):
-        # confirm-once: a yes for (tool, focused-app) holds for the
-        # session — one "yes" shouldn't gate every step of one goal
-        key = None
-        confirmed = getattr(state, "confirmed", None)
-        if state is not None and isinstance(confirmed, set):
-            focus = getattr(state, "focus", None)
-            app = focus.get("app", "") if isinstance(focus, dict) else ""
-            key = (name, app)
-            if key in confirmed:
-                return None
-        if confirm is None:
-            return f"SKIPPED ({name} needs user confirmation)"
-        if not confirm(f"run {name}: {arg or '(no arg)'}?"):
-            if getattr(confirm, "last", "") == "timeout":
-                return f"SKIPPED ({name} confirmation timed out)"
-            return f"SKIPPED ({name} declined by user)"
-        if key is not None:
-            state.confirmed.add(key)
-    return None
+          state=None, batch=(), ctx=None) -> str | None:
+    """Returns a refusal string when the call is blocked, else None.
+    All tier logic lives in wisp/policy.py (U3) — the denylist and
+    allow_shell preempt there before a tier is consulted, the autonomy
+    mode + [cua] confirm=always promotion apply, T2 checkpoints batch
+    the reply's pending gated steps into one card, and T3 hands the
+    step to the user."""
+    return policy.gate(name, arg, cfg, confirm, state=state,
+                       batch=batch, ctx=ctx)
+
+
+def _name_arg(call: dict) -> tuple:
+    """(tool name, arg) from one provider tool_call object."""
+    fn = call.get("function", {})
+    name = fn.get("name", "")
+    try:
+        arg = json.loads(fn.get("arguments") or "{}").get("arg", "")
+    except json.JSONDecodeError:
+        arg = ""
+    return name, arg
 
 
 def run_act_loop(task: str, cfg: dict, state=None,
@@ -196,6 +187,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
         return cancel.is_cancelled() or bool(interrupted and interrupted())
 
     guard = cua_safety.Guard(cfg, state=state, interrupted=interrupted)
+    gate_ctx = policy.gate_ctx()   # per-run declines (U3)
 
     while len(steps) < max_steps:
         if stopped():
@@ -251,20 +243,23 @@ def run_act_loop(task: str, cfg: dict, state=None,
             _record_traj(task, harness, steps, out, cfg)
             return out
         messages.append(msg)
-        for call in calls:
+        for ci, call in enumerate(calls):
             if stopped():  # no further steps once the user said stop
                 _goals.record_steps(steps)
                 return "INTERRUPTED (user)"
-            fn = call.get("function", {})
-            name, arg = fn.get("name", ""), ""
-            try:
-                arg = json.loads(fn.get("arguments") or "{}").get("arg", "")
-            except json.JSONDecodeError:
-                pass
+            name, arg = _name_arg(call)
             # lifecycle stream: queued when the model proposes the call,
-            # in_flight while gates/dispatch run, terminal on the result
-            aid = _state.action_add(state, "tool", name, target=arg)
-            refused = _gate(name, arg, cfg, confirm, state=state)
+            # in_flight while gates/dispatch run, terminal on the result;
+            # T1 steps carry how to take them back (undo_ref)
+            aid = _state.action_add(
+                state, "tool", name, target=arg,
+                undo_ref=policy.undo_ref(name, arg, cfg))
+            # T2 checkpoint: _gate batches the reply's remaining gated
+            # calls into ONE card (not a card per tool)
+            refused = _gate(
+                name, arg, cfg, confirm, state=state,
+                batch=[_name_arg(c) for c in calls[ci + 1:]],
+                ctx=gate_ctx)
             served_cached = False
             if refused is None:
                 _state.action_set(state, aid, status="in_flight")

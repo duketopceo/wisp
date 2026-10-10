@@ -1,6 +1,8 @@
-"""Toolbelt: named tools Jev can route to, each with a risk tier.
+"""Toolbelt: named tools Jev can route to, each with a risk tier and
+autonomy metadata.
 
-Tiers:
+Risk tiers (the blast-radius vocabulary the denylist, allow_shell and
+Jev's risk gate still speak):
   safe        — read-only/launch; executes immediately
   interactive — reversible desktop I/O (click, type, scroll, key,
                 workspace); executes without prompting — the agent must
@@ -10,10 +12,34 @@ Tiers:
                 skill edits, MCP calls); confirm-once per (tool, app)
   shell       — arbitrary command; always needs per-call confirmation
                 and is subject to the denylist
+
+Autonomy tiers (wisp/policy.py — when a step asks a human, U3/KTD9):
+  T0 observe/navigate      — never confirms
+  T1 reversible local      — runs confirm-free, renders in-flight + undo
+  T2 irreversible/external — confirms at batched checkpoints
+  T3 human-only            — pauses the run for a handoff ("needs you")
+
+Risk → autonomy mapping for entries carrying no meta (dynamic skill_*
+tools, callers that hand-register a bare 3-tuple):
+  safe → T0 · interactive → T1 · mutating → T2 · shell → T2
+
+Every static entry declares its meta as the fourth tuple element —
+{"tier", "reversible", "external"}: the declared T-tier the policy
+consults, whether a user can take the effect back, and whether it
+reaches outside this machine. `memory`, `mcp_call` and `skill_manage`
+declare their worst case; the policy refines per call (a `memory add`
+is T1, an mcp read is T0, an OAuth/credential call is T3). The lint in
+tests/test_policy.py fails when an entry lacks it.
 """
 from . import desktop, mcpclient, social, system
 
 RISK = {"safe": 0, "interactive": 1, "mutating": 2, "shell": 3}
+
+AUTONOMY_TIERS = ("T0", "T1", "T2", "T3")
+
+# risk tier → autonomy tier for entries with no declared meta
+RISK_AUTONOMY = {"safe": "T0", "interactive": "T1",
+                 "mutating": "T2", "shell": "T2"}
 
 # hard refusals — checked before any confirmation prompt
 SHELL_DENYLIST = ("rm -rf /", "rm -rf ~", "rm -rf $HOME", "mkfs",
@@ -25,59 +51,95 @@ SHELL_DENYLIST = ("rm -rf /", "rm -rf ~", "rm -rf $HOME", "mkfs",
 TEXT_INPUT = {"type_text", "key"}
 
 REGISTRY = {
-    "launch": (desktop.launch, "safe", "open an application"),
-    "focus": (desktop.focus, "safe", "focus a window by class"),
-    "close": (desktop.close, "mutating", "close the active/matching window"),
-    "workspace": (desktop.workspace, "interactive", "switch Hyprland workspace"),
-    "notify": (system.notify_tool, "safe", "send a desktop notification"),
-    "screenshot": (system.screenshot, "safe", "capture the screen to a file"),
-    "type_text": (system.type_text, "interactive", "type text into the focused window"),
+    "launch": (desktop.launch, "safe", "open an application",
+               {"tier": "T0", "reversible": True, "external": False}),
+    "focus": (desktop.focus, "safe", "focus a window by class",
+              {"tier": "T0", "reversible": True, "external": False}),
+    "close": (desktop.close, "mutating",
+              "close the active/matching window",
+              {"tier": "T2", "reversible": False, "external": False}),
+    "workspace": (desktop.workspace, "interactive",
+                  "switch Hyprland workspace",
+                  {"tier": "T1", "reversible": True, "external": False}),
+    "notify": (system.notify_tool, "safe", "send a desktop notification",
+               {"tier": "T0", "reversible": True, "external": False}),
+    "screenshot": (system.screenshot, "safe",
+                   "capture the screen to a file",
+                   {"tier": "T0", "reversible": True, "external": False}),
+    "type_text": (system.type_text, "interactive",
+                  "type text into the focused window",
+                  {"tier": "T1", "reversible": True, "external": False}),
     "fill": (system.fill, "interactive",
              "set a field's value directly — 'field-id value' "
-             "(selects pick the matching option); dom-mode only"),
+             "(selects pick the matching option); dom-mode only",
+             {"tier": "T1", "reversible": True, "external": False}),
     "click": (system.click, "interactive",
               "click at 'x,y' or target element e.g. 'monitor icon in menu bar' — "
-              "in guide mode points the ghost cursor for the user"),
+              "in guide mode points the ghost cursor for the user",
+              {"tier": "T1", "reversible": True, "external": False}),
     "move": (system.move, "interactive",
-             "move the pointer to 'x,y' or target element"),
+             "move the pointer to 'x,y' or target element",
+             {"tier": "T1", "reversible": True, "external": False}),
     "ground": (system.ground, "safe",
-               "locate on-screen UI element center: 'monitor icon in menu bar' -> GROUNDED(x,y)"),
+               "locate on-screen UI element center: 'monitor icon in menu bar' -> GROUNDED(x,y)",
+               {"tier": "T0", "reversible": True, "external": False}),
     "scroll": (system.scroll, "interactive",
-               "scroll the view — 'down'/'up'/'down 400'/'bottom'"),
+               "scroll the view — 'down'/'up'/'down 400'/'bottom'",
+               {"tier": "T1", "reversible": True, "external": False}),
     "key": (system.key, "interactive",
             "press a named key — 'enter', 'tab', 'esc', 'down', "
-            "'pageup', 'pagedown', 'backspace', arrows"),
+            "'pageup', 'pagedown', 'backspace', arrows",
+            {"tier": "T1", "reversible": True, "external": False}),
     "mcp_call": (mcpclient.call, "mutating",
                  "call a tool on a configured MCP server — "
                  "'<server> <tool> <json-args>' e.g. 'browseros tabs "
                  "{\"action\":\"list\"}'. For strata-registered OAuth "
                  "services (wispd connect) the tool token is "
                  "'<category>/<action>'. Server names/URLs are in "
-                 "inventory.json and the [env] context line"),
+                 "inventory.json and the [env] context line",
+                 {"tier": "T2", "reversible": False, "external": True}),
     "post": (social.post_draft, "safe",
-             "preview an X post — 'post <text>'; always dry-run"),
+             "preview an X post — 'post <text>'; always dry-run",
+             {"tier": "T0", "reversible": True, "external": False}),
     "post_send": (social.post_open, "mutating",
                   "open X's compose window pre-filled — "
-                  "'post_send <text>'; the user presses Post"),
+                  "'post_send <text>'; the user presses Post",
+                  {"tier": "T2", "reversible": False, "external": True}),
     "codegraph": (system.codegraph, "safe",
                   "query a repo's code-graph index (CBM): "
                   "'<tool> <json-args>' e.g. 'search_graph "
-                  "{\"project\":\"wisp\",\"query\":\"State\"}'"),
-    "shell": (system.shell, "shell", "run a shell command"),
-    "search_files": (system.search_files, "safe", "find files by name under ~"),
-    "agent_spawn": (None, "safe", "spawn a named ori opencode agent"),  # wired in wisp.agents
-    "task_status": (None, "safe", "report a named agent's status"),
-    "task_cancel": (None, "mutating", "cancel a named agent"),
+                  "{\"project\":\"wisp\",\"query\":\"State\"}'",
+                  {"tier": "T0", "reversible": True, "external": False}),
+    "shell": (system.shell, "shell", "run a shell command",
+              {"tier": "T2", "reversible": False, "external": True}),
+    "search_files": (system.search_files, "safe",
+                     "find files by name under ~",
+                     {"tier": "T0", "reversible": True, "external": False}),
+    "agent_spawn": (None, "safe", "spawn a named ori opencode agent",
+                    {"tier": "T1", "reversible": True,
+                     "external": False}),  # wired in wisp.agents
+    "task_status": (None, "safe", "report a named agent's status",
+                    {"tier": "T0", "reversible": True,
+                     "external": False}),
+    "task_cancel": (None, "mutating", "cancel a named agent",
+                    {"tier": "T2", "reversible": False,
+                     "external": False}),
     "memory": (None, "mutating", "curate long-term memory — "
                "'memory|add|new fact' or 'memory|replace|old|new' or "
-               "'memory|remove|old' (target 'user' for USER.md)"),
+               "'memory|remove|old' (target 'user' for USER.md)",
+               {"tier": "T2", "reversible": False, "external": False}),
     "recall": (None, "safe", "search long-term recall — "
-               "'search <query>' returns top-k indexed context"),
+               "'search <query>' returns top-k indexed context",
+               {"tier": "T0", "reversible": True, "external": False}),
     "skill_manage": (None, "mutating", "author a self-taught skill — "
                      "'create|name|description|body', 'edit|name||body', "
                      "'write_file|name|filename|body', 'delete|name', "
-                     "'remove_file|name|filename', 'list'"),
-    "skill_view": (None, "safe", "read a skill's full SKILL.md by name"),
+                     "'remove_file|name|filename', 'list'",
+                     {"tier": "T2", "reversible": False,
+                      "external": False}),
+    "skill_view": (None, "safe", "read a skill's full SKILL.md by name",
+                   {"tier": "T0", "reversible": True,
+                    "external": False}),
 }
 
 
@@ -91,9 +153,19 @@ def get(name: str):
     return REGISTRY.get(name)
 
 
+def meta_of(name: str) -> dict:
+    """The declared autonomy meta for a static entry
+    ({"tier","reversible","external"}); {} for dynamic entries —
+    policy maps their risk tier instead."""
+    entry = REGISTRY.get(name)
+    if entry is not None and len(entry) > 3:
+        return entry[3]
+    return {}
+
+
 def describe() -> dict:
     """Criteria text for Jev's tool question."""
-    return {name: desc for name, (_, _, desc) in REGISTRY.items()}
+    return {name: e[2] for name, e in REGISTRY.items()}
 
 
 def tool_schemas() -> list:
@@ -101,7 +173,8 @@ def tool_schemas() -> list:
     string arg per tool. Derived, not static, so new tools appear in the
     act loop automatically."""
     out = []
-    for name, (fn, tier, desc) in REGISTRY.items():
+    for name, e in REGISTRY.items():
+        fn, tier, desc = e[0], e[1], e[2]
         if fn is None and name not in EXTERN:
             continue
         out.append({

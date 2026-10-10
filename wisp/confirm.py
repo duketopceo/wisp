@@ -3,13 +3,14 @@
 A risky tool step asks the user before it runs. The ask rides the same
 prompt-id channel as every other prompt (#66, `cancel.PromptBroker`):
 
-  - `state.confirm = {prompt_id, prompt, timeout_s}` is published next to
-    `choices` (`["<prompt> — yes", "no"]`) and `prompt_id`, status
-    `awaiting_choice`; shells draw the card from `confirm`;
+  - `state.confirm = {prompt_id, prompt, timeout_s, kind}` is published
+    next to `choices` and `prompt_id`, status `awaiting_choice`; shells
+    draw the card from `confirm`;
   - contract v2 (U2): the card is also an `awaiting` entry in
     `state.actions` (`kind=confirm`, carrying `options` + `prompt_id`) —
     v2 readers demote the card from the stream and transition the same
-    entry on the answer;
+    entry on the answer. `kind=handoff` entries (U3, T3 steps) stay in
+    the stream: the "needs you" row for a step the user took over;
   - a reply with another prompt id, or after the confirm ended, is refused
     by the broker (`stale_prompt`) and the confirm keeps waiting;
   - no reply inside `[agent] confirm_timeout` seconds (default 120, clamped
@@ -18,9 +19,14 @@ prompt-id channel as every other prompt (#66, `cancel.PromptBroker`):
   - the card is cleared and the turn returns to `acting` however the
     confirm ended, except on stop (the turn unwinds to idle itself).
 
-`make()` returns the `confirm(prompt) -> bool` the act loop calls. The
-function carries `.last` (`yes`, `no`, `timeout`) so the act gate can say
-why a deny happened.
+`make()` returns the `confirm(prompt, kind=, always=) -> bool` the act
+loop calls — `.rich` marks it so policy can pass the kwargs (plain
+doubles take just the prompt). `kind="handoff"` swaps the options for
+done/cancel — the user does the step, wisp never runs it. `always=True`
+inserts an "always" middle option: picking it grants the session the
+("*", "*") key in `state.confirmed` (the same confirm-once set a
+per-(tool, app) yes writes). The function carries `.last` (`yes`,
+`always`, `no`, `timeout`) so the gate can say why a deny happened.
 """
 import time
 
@@ -31,11 +37,17 @@ DEFAULT_TIMEOUT = 120
 MIN_TIMEOUT = 5
 MAX_TIMEOUT = 600
 NO = "no"
+ALWAYS = "always"
+CANCEL = "cancel"
 _UNSET = object()
 
 
 def yes_option(prompt: str) -> str:
     return f"{prompt} — yes"
+
+
+def done_option(prompt: str) -> str:
+    return f"{prompt} — done"
 
 
 def timeout_s(cfg) -> int:
@@ -52,20 +64,27 @@ def make(state, wait_for_choice, token, turn, cfg, clock=time.monotonic):
     broker waiter, `token` the turn's CancelToken."""
     secs = timeout_s(cfg)
 
-    def confirm(prompt: str) -> bool:
+    def confirm(prompt: str, kind: str = "confirm",
+                always: bool = False) -> bool:
         from . import trace as _trace
         pid = _cancel.new_prompt_id()
-        options = [yes_option(prompt), NO]
+        if kind == "handoff":
+            options = [done_option(prompt), CANCEL]
+        else:
+            options = [yes_option(prompt)]
+            if always:
+                options.append(ALWAYS)
+            options.append(NO)
         # the card is a state in the action stream: the awaiting entry
         # goes first so a stream-driven surface never sees a card whose
         # entry doesn't exist yet
-        aid = _state.action_add(state, "confirm", prompt,
+        aid = _state.action_add(state, kind, prompt,
                                 status="awaiting", options=options,
                                 prompt_id=pid)
         state.transition("awaiting_choice", choices=list(options),
                          prompt_id=pid,
                          confirm={"prompt_id": pid, "prompt": prompt,
-                                  "timeout_s": secs})
+                                  "timeout_s": secs, "kind": kind})
         start = clock()
         pick = _UNSET
         try:
@@ -87,6 +106,10 @@ def make(state, wait_for_choice, token, turn, cfg, clock=time.monotonic):
         if pick == options[0]:
             confirm.last = "yes"
             _state.action_set(state, aid, status="done")
+        elif always and pick == ALWAYS:
+            confirm.last = "always"
+            _state.action_set(state, aid, status="done",
+                              reason="always")
         elif not pick and clock() - start >= secs:
             confirm.last = "timeout"
             _state.action_set(state, aid, status="cancelled",
@@ -97,7 +120,8 @@ def make(state, wait_for_choice, token, turn, cfg, clock=time.monotonic):
             confirm.last = "no"
             _state.action_set(state, aid, status="cancelled",
                               reason="denied")
-        return confirm.last == "yes"
+        return confirm.last in ("yes", "always")
 
     confirm.last = ""
+    confirm.rich = True   # policy._ask may pass kind=/always=
     return confirm

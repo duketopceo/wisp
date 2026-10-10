@@ -67,7 +67,7 @@ class State:
         self.result = ""
         self.choices = []
         self.prompt_id = ""    # id of the offered choices/confirm (U9)
-        self.confirm = None    # {prompt_id, prompt, timeout_s} while a confirm waits (W25)
+        self.confirm = None    # {prompt_id, prompt, timeout_s, kind} while a confirm waits (W25; kind U3)
         self.points = []
         self.steps = []
         # unified lifecycle stream — survives turns (unlike `steps`),

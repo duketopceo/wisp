@@ -50,6 +50,9 @@ TABLE = [
     ("cua.max_clicks_per_min", "x", "number"),
     ("cua.max_clicks_per_min", "601", "range"),
     ("cua.max_clicks_per_min", "600", ""),
+    ("agent.autonomy", "guided", ""),
+    ("agent.autonomy", "always_ask", ""),
+    ("agent.autonomy", "yolo", "choice"),
     ("cua.kill_switch", 'tr"ue', "chars"),
     ("cua.kill_switch", "a\nb", "chars"),
     ("cua.kill_switch", "a\\b", "chars"),
@@ -99,7 +102,8 @@ class TestSchemaShape(unittest.TestCase):
             [f.key for f in S.FIELDS if f.panel],
             ["budget.daily_usd", "budget.monthly_usd", "pointer.mode",
              "cua.dry_run", "cua.kill_switch", "cua.confirm",
-             "cua.max_clicks_per_min", "cua.max_per_turn"])
+             "cua.max_clicks_per_min", "cua.max_per_turn",
+             "agent.autonomy"])
 
 
 class TestValidation(unittest.TestCase):

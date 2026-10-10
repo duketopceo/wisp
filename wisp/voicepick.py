@@ -53,8 +53,10 @@ def _label(option: str) -> str:
 
 
 def _is_confirm(options) -> bool:
-    """The confirm card's shape: exactly two options, the last negative."""
-    return (len(options) == 2
+    """The confirm card's shape: two or three options (yes [/ always] /
+    no — the U3 session grant adds a middle pick), the last negative.
+    Handoff cards read done/cancel and take the same path."""
+    return (2 <= len(options) <= 3
             and _label(options[-1]) in ("no", "deny", "cancel"))
 
 

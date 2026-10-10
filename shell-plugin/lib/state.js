@@ -56,19 +56,23 @@ function isObj(x) { return x !== null && typeof x === "object" && !Array.isArray
 function str(x) { return typeof x === "string" ? x : "" }
 function arr(x) { return Array.isArray(x) ? x : [] }
 
-// state.confirm (additive, W25): {prompt_id, prompt, timeout_s} while a
-// confirm waits. Anything without a prompt id is not a card. `allow` and
-// `deny` snapshot the offered picks *with the card* — a diff that
-// empties `choices` after the card published must not change what a
-// click sends (allow is the first offer, deny the last).
+// state.confirm (additive, W25): {prompt_id, prompt, timeout_s, kind}
+// while a confirm waits. Anything without a prompt id is not a card.
+// `allow` and `deny` snapshot the offered picks *with the card* — a
+// diff that empties `choices` after the card published must not change
+// what a click sends (allow is the first offer, deny the last). `kind`
+// is "confirm" on older cores, "handoff" for a T3 user-takes-over card.
 function normalizeConfirm(c, choices) {
   if (!isObj(c) || !str(c.prompt_id)) return null
   var t = Number(c.timeout_s)
   var opts = arr(choices)
   return { promptId: str(c.prompt_id), prompt: str(c.prompt),
     timeoutS: isFinite(t) && t > 0 ? t : 0,
+    kind: str(c.kind) || "confirm",
     allow: opts.length > 0 ? opts[0] : "",
-    deny: opts.length > 0 ? opts[opts.length - 1] : "" }
+    deny: opts.length > 0 ? opts[opts.length - 1] : "",
+    // picks between allow and deny — U3's "always" session grant
+    middle: opts.length > 2 ? opts.slice(1, -1) : [] }
 }
 
 // state.actions (additive, U2): the unified lifecycle stream — one
@@ -117,9 +121,12 @@ function confirmFromActions(actions, confirm, promptId) {
       return { promptId: a.promptId,
         prompt: a.label || (confirm ? confirm.prompt : ""),
         timeoutS: confirm !== null ? confirm.timeoutS : 0,
+        kind: "confirm",
         allow: opts.length > 0 ? opts[0] : (confirm ? confirm.allow : ""),
         deny: opts.length > 0 ? opts[opts.length - 1]
-          : (confirm ? confirm.deny : "") }
+          : (confirm ? confirm.deny : ""),
+        middle: opts.length > 2 ? opts.slice(1, -1)
+          : (confirm ? confirm.middle : []) }
     }
   }
   return confirm
