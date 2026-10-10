@@ -174,6 +174,8 @@ and `wispd models` show current health.
 | `act_max_steps` | tool-call bound for the act loop (default 12) |
 | `act_max_errors` | consecutive tool errors before the act loop gives up (0 to 20) (default 2) |
 | `act_max_parse_misses` | unparseable model steps tolerated before the act loop stops (0 to 10) (default 1) |
+| `act_max_seconds` | wall-clock bound for one act run; the abort publishes a `failed` action entry with reason `budget` (0 disables, default 600) |
+| `act_max_usd` | per-run cap on model spend added during the run (0 disables, default 0) |
 | `writer_queue_max` | background writer queue for trajectory and recall writes; oldest dropped and counted when full (default 256) |
 
 ## [mcp]

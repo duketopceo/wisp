@@ -155,11 +155,23 @@ otherwise, cleared with `choices`). `confirm.prompt_id` equals
 `stale_prompt`. No reply within `timeout_s` (`[agent] confirm_timeout`,
 default 120, clamped 5 to 600) resolves as deny: the daemon owns the
 deadline, the step result is `SKIPPED (<tool> confirmation timed out)`.
-`kind` is `"confirm"` (absent on older cores) or `"handoff"` (U3: a T3
+`kind` is `"confirm"` (absent on older cores), `"handoff"` (U3: a T3
 step the user must do themselves — options read `… — done` / `cancel`,
-the tool never runs). A `confirm` card's `choices` may carry a middle
-`"always"` pick (U3 session grant): first option is still the allow
-pick, last is still the deny.
+the tool never runs), or `"question"` (U4: the act loop's `ask_user` —
+the agent asked mid-task instead of guessing). A `confirm` card's
+`choices` may carry a middle `"always"` pick (U3 session grant):
+first option is still the allow pick, last is still the deny.
+
+Question card (additive; U4): a `confirm` block with `kind:"question"`
+means the running agent asked the user something (`prompt` is the
+question text). When the model offered picks, `choices` carries them
+and the usual `choice` pick/index rules apply; when it did not,
+`choices` is empty and ANY non-empty `pick` resolves the card — a
+typed `wispd choice "the answer"` or a free-form spoken reply resolves
+it verbatim (voice answers are offered as picks when no options are
+pending, and mapped onto options when they are). No reply inside
+`timeout_s` lapses the question (`cancelled`, reason `timeout`) and
+the model receives a `NO_ANSWER` tool result rather than a stuck turn.
 
 Action stream (additive; U2): `actions` is the unified lifecycle log —
 one entry per dispatch, tool call, prompt, pick, interrupt, label and

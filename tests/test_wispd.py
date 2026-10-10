@@ -79,9 +79,16 @@ class TestExecute(unittest.TestCase):
                 self.cfg)
         self.assertEqual(out, "LAUNCHED")
 
-    def test_skips_non_launch(self):
-        out = pipeline.execute(self.answers(action="bogus"), self.cfg)
-        self.assertTrue(out.startswith("SKIP"))
+    def test_unhandled_action_falls_back_to_act_loop(self):
+        # U4: an actionable turn with no usable route/action no longer
+        # dead-ends on SKIP — the act loop gets the transcript
+        from wisp import act
+        with mock.patch.object(act, "run_act_loop",
+                               return_value="ACTED (1 steps): ok") as r:
+            out = pipeline.execute(self.answers(action="bogus"),
+                                   self.cfg, detail="do the thing")
+        self.assertEqual(out, "ACTED (1 steps): ok")
+        r.assert_called_once()
 
     def test_close_dispatches_tool(self):
         from wisp import tools

@@ -27,6 +27,11 @@ inserts an "always" middle option: picking it grants the session the
 ("*", "*") key in `state.confirmed` (the same confirm-once set a
 per-(tool, app) yes writes). The function carries `.last` (`yes`,
 `always`, `no`, `timeout`) so the gate can say why a deny happened.
+
+`make_ask()` builds the matching `ask(question, options) -> pick|None`
+for the act loop's `ask_user` tool (U4): `kind="question"` in the
+stream and on the card, free-form picks accepted when the model
+offered no options.
 """
 import time
 
@@ -125,3 +130,72 @@ def make(state, wait_for_choice, token, turn, cfg, clock=time.monotonic):
     confirm.last = ""
     confirm.rich = True   # policy._ask may pass kind=/always=
     return confirm
+
+
+def make_ask(state, wait_for_choice, token, turn, cfg,
+             clock=time.monotonic):
+    """Build `ask(question, options=None) -> pick|None` for the act
+    loop's `ask_user` tool (U4): the conversational card a running
+    agent raises mid-loop instead of ending the turn.
+
+    Same broker channel as confirm, inverted shape: the prompt IS the
+    payload, so the stream entry is `kind="question"` with `options`
+    only when the model offered picks. With no options the broker
+    accepts any pick string — a typed `wispd choice "the answer"` or a
+    spoken free-form reply resolves it; with options the usual
+    click/index/voice-map rules apply. The question is spoken too —
+    a voice loop that asks silently isn't a conversation.
+
+    Returns the picked/typed answer text, or None on
+    timeout/dismiss/cancel (the caller turns that into a NO_ANSWER
+    tool result). A cancelled turn raises `cancel.Cancelled`, like the
+    confirm card.
+    """
+    secs = timeout_s(cfg)
+
+    def ask(question: str, options: list | None = None) -> str | None:
+        from . import trace as _trace
+        opts = [str(o)[:80] for o in (options or []) if str(o).strip()][:6]
+        pid = _cancel.new_prompt_id()
+        aid = _state.action_add(state, "question", question,
+                                status="awaiting", options=opts or None,
+                                prompt_id=pid)
+        state.transition("awaiting_choice", choices=list(opts),
+                         prompt_id=pid,
+                         confirm={"prompt_id": pid, "prompt": question,
+                                  "timeout_s": secs,
+                                  "kind": "question"})
+        try:
+            from . import speech
+            speech.speak(question, cfg)   # gated by voice.enabled
+        except Exception:
+            pass
+        start = clock()
+        pick = _UNSET
+        try:
+            pick = wait_for_choice(secs, prompt_id=pid,
+                                   options=opts or None)
+        finally:
+            if not token.cancelled:
+                state.transition("acting", choices=[], prompt_id="",
+                                 confirm=None)
+                if pick is _UNSET:
+                    _state.action_set(state, aid, status="cancelled",
+                                      reason="error")
+        if token.cancelled:
+            _state.action_set(state, aid, status="cancelled",
+                              reason="interrupted")
+            token.check()
+        if pick:
+            _state.action_set(state, aid, status="done",
+                              reason=str(pick)[:120])
+            return str(pick)
+        if clock() - start >= secs:
+            _trace.emit(turn, "ask_timeout", "act",
+                        {"prompt_id": pid, "timeout_s": secs})
+        _state.action_set(state, aid, status="cancelled",
+                          reason="timeout")
+        return None
+
+    ask.rich = True
+    return ask

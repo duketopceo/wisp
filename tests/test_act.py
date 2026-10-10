@@ -546,6 +546,308 @@ class ActionStream(unittest.TestCase):
         self.assertIn("declined", tool["reason"])
 
 
+class AskUser(unittest.TestCase):
+    """U4: ask_user is a T0 question tool — the model asks mid-loop,
+    the question parks on the prompt broker as a `question` card, and
+    the click/typed/spoken answer comes back as the tool result so the
+    loop continues instead of ending the turn."""
+
+    def setUp(self):
+        import pathlib, tempfile
+        from wisp import state
+        self.cfg = {"agent": {}}
+        self.st = state.State(
+            pathlib.Path(tempfile.mkdtemp()) / "state.json",
+            write_initial=False)
+        from wisp import cancel, confirm
+        self.broker = cancel.PromptBroker()
+        self.token = cancel.CancelToken()
+        self.ask = confirm.make_ask(
+            self.st, self.broker.waiter(self.token), self.token,
+            "t-ask", self.cfg)
+
+    def _offer(self, **kw):
+        """Resolve the next pending prompt from a thread — the way a
+        shell pick or a voice answer arrives over IPC."""
+        import threading, time
+        def run():
+            for _ in range(600):
+                pid = self.broker.pending_id
+                if pid:
+                    self.broker.offer(prompt_id=pid, **kw)
+                    return
+                time.sleep(0.005)
+        threading.Thread(target=run, daemon=True).start()
+
+    def _questions(self):
+        return [a for a in self.st.snapshot()["actions"]
+                if a["kind"] == "question"]
+
+    def test_schema_lists_ask_user(self):
+        names = {t["function"]["name"] for t in tools.tool_schemas()}
+        assert "ask_user" in names
+        self.assertEqual(tools.REGISTRY["ask_user"][3]["tier"], "T0")
+
+    def test_option_answer_returns_and_loop_continues(self):
+        seen = []
+
+        def post(messages, cfg):
+            seen.append([dict(m) for m in messages])
+            return (_msg(calls=[_call("ask_user",
+                                      "which file | a.py | b.py")])
+                    if len(seen) == 1 else _msg(content="picked it"))
+
+        self._offer(pick="b.py")
+        with mock.patch.object(act, "_post", side_effect=post):
+            r = act.run_act_loop("rename it", self.cfg, state=self.st,
+                                 ask=self.ask, initial_image="aGk=")
+        assert r.startswith("ACTED"), r
+        tool_msgs = [m for m in seen[-1] if m.get("role") == "tool"]
+        self.assertIn("USER ANSWERED: b.py", tool_msgs[-1]["content"])
+        q = self._questions()[-1]
+        self.assertEqual((q["status"], q["reason"]), ("done", "b.py"))
+        self.assertEqual(q["options"], ["a.py", "b.py"])
+        self.assertEqual(q["label"], "which file")
+        t = [a for a in self.st.snapshot()["actions"]
+             if a["label"] == "ask_user"][-1]
+        self.assertEqual(t["status"], "done")
+
+    def test_indexed_click_answer(self):
+        # IPC `choice 2` → broker index → that option's text comes back
+        seen = []
+
+        def post(messages, cfg):
+            seen.append([dict(m) for m in messages])
+            return (_msg(calls=[_call("ask_user", "pick | red | blue")])
+                    if len(seen) == 1 else _msg(content="ok"))
+
+        self._offer(index=2)
+        with mock.patch.object(act, "_post", side_effect=post):
+            act.run_act_loop("pick", self.cfg, state=self.st,
+                             ask=self.ask, initial_image="aGk=")
+        tool_msgs = [m for m in seen[-1] if m.get("role") == "tool"]
+        self.assertIn("USER ANSWERED: blue", tool_msgs[-1]["content"])
+
+    def test_free_form_answer_no_options(self):
+        # no options → the broker takes any pick string verbatim — a
+        # typed `choice` or a spoken reply resolves the question
+        seen = []
+
+        def post(messages, cfg):
+            seen.append([dict(m) for m in messages])
+            return (_msg(calls=[_call("ask_user",
+                                      "what should I name it?")])
+                    if len(seen) == 1 else _msg(content="named"))
+
+        self._offer(pick="purple monkey")
+        with mock.patch.object(act, "_post", side_effect=post):
+            act.run_act_loop("name it", self.cfg, state=self.st,
+                             ask=self.ask, initial_image="aGk=")
+        tool_msgs = [m for m in seen[-1] if m.get("role") == "tool"]
+        self.assertIn("USER ANSWERED: purple monkey",
+                      tool_msgs[-1]["content"])
+        self.assertIsNone(self._questions()[-1].get("options"))
+
+    def test_unanswered_question_lapses_to_no_answer(self):
+        # the waiter returning nothing on the deadline → the question
+        # entry cancels with reason=timeout and the model gets a
+        # NO_ANSWER tool result, not a stuck loop
+        from wisp import confirm
+        clock = iter([0.0, 999.0]).__next__  # start, then past the cap
+        ask = confirm.make_ask(self.st, lambda *a, **k: None,
+                               self.token, "t1", self.cfg, clock=clock)
+        seen = []
+
+        def post(messages, cfg):
+            seen.append([dict(m) for m in messages])
+            return (_msg(calls=[_call("ask_user", "which?")])
+                    if len(seen) == 1 else _msg(content="guessed"))
+
+        with mock.patch.object(act, "_post", side_effect=post):
+            r = act.run_act_loop("t", self.cfg, state=self.st, ask=ask,
+                                 initial_image="aGk=")
+        assert r.startswith("ACTED")
+        q = self._questions()[-1]
+        self.assertEqual((q["status"], q["reason"]),
+                         ("cancelled", "timeout"))
+        tool_msgs = [m for m in seen[-1] if m.get("role") == "tool"]
+        self.assertIn("NO_ANSWER", tool_msgs[-1]["content"])
+
+    def test_no_channel_returns_no_answer(self):
+        # callers without a broker (direct/IPC runs) still get a
+        # bounded legible result — never a hang
+        replies = [_msg(calls=[_call("ask_user", "which?")]),
+                   _msg(content="guessed")]
+        with mock.patch.object(act, "_post", side_effect=replies):
+            r = act.run_act_loop("t", self.cfg, state=self.st,
+                                 initial_image="aGk=")
+        assert r.startswith("ACTED")
+        t = [a for a in self.st.snapshot()["actions"]
+             if a["label"] == "ask_user"][-1]
+        self.assertEqual(t["status"], "cancelled")
+        self.assertIn("NO_ANSWER", t["reason"])
+
+    def test_cancel_unwinds_the_loop(self):
+        from wisp import cancel as _cancel, confirm
+        token = _cancel.CancelToken()
+
+        def wait(*a, **k):
+            token.cancel()
+            return None
+
+        ask = confirm.make_ask(self.st, wait, token, "t1", self.cfg)
+        replies = [_msg(calls=[_call("ask_user", "which?")])]
+        with mock.patch.object(act, "_post", side_effect=replies):
+            r = act.run_act_loop("t", self.cfg, state=self.st, ask=ask,
+                                 initial_image="aGk=")
+        self.assertEqual(r, "INTERRUPTED (user)")
+        q = self._questions()[-1]
+        self.assertEqual((q["status"], q["reason"]),
+                         ("cancelled", "interrupted"))
+
+
+class Budgets(unittest.TestCase):
+    """U4: bounds beyond step count — wall-clock seconds and per-run
+    spend. A tripped bound publishes a `failed` stream entry with
+    reason `budget` plus the steps so far, and the result names what
+    tripped."""
+
+    def setUp(self):
+        import pathlib, tempfile
+        from wisp import state
+        self.cfg = {"agent": {}}
+        self.st = state.State(
+            pathlib.Path(tempfile.mkdtemp()) / "state.json",
+            write_initial=False)
+
+    def test_seconds_cap_aborts_with_budget_entry(self):
+        import time as _t
+        cfg = {"agent": {}, "agents": {"act_max_seconds": "0.05"}}
+
+        def slow_post(messages, cfg):
+            _t.sleep(0.08)   # burn past the cap inside the model call
+            return _msg(calls=[_call("launch", "x")])
+
+        with mock.patch.object(act, "_post", side_effect=slow_post), \
+             mock.patch.object(tools, "run", return_value="ok"):
+            r = act.run_act_loop("loop", cfg, state=self.st,
+                                 initial_image="aGk=")
+        assert r.startswith("ABORTED (budget"), r
+        e = self.st.snapshot()["actions"][-1]
+        self.assertEqual((e["status"], e["reason"]), ("failed", "budget"))
+
+    def test_usd_cap_aborts_with_budget_entry(self):
+        cfg = {"agent": {}, "agents": {"act_max_usd": "0.01"}}
+        # spend0 snapshot, in-budget checks, then the run's delta
+        # crosses the cap — bounded abort on the next gate point
+        totals = iter([{"cost": 0.0}, {"cost": 0.0}, {"cost": 0.0},
+                       {"cost": 0.02}, {"cost": 0.02}])
+        replies = [_msg(calls=[_call("launch", "x")]),
+                   _msg(content="done")]
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(act.ledger, "session_totals",
+                               side_effect=lambda: next(
+                                   totals, {"cost": 0.02})), \
+             mock.patch.object(tools, "run", return_value="ok"):
+            r = act.run_act_loop("loop", cfg, state=self.st,
+                                 initial_image="aGk=")
+        assert "budget" in r and "ABORTED" in r, r
+        e = self.st.snapshot()["actions"][-1]
+        self.assertEqual((e["status"], e["reason"]), ("failed", "budget"))
+
+    def test_max_steps_is_a_budget_abort(self):
+        cfg = {"agent": {}, "agents": {"act_max_steps": "1"}}
+        replies = [_msg(calls=[_call("launch", "x")])] * 3
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run", return_value="ok"):
+            r = act.run_act_loop("loop", cfg, state=self.st,
+                                 initial_image="aGk=")
+        assert r.startswith("ABORTED (max 1 steps)"), r
+        e = self.st.snapshot()["actions"][-1]
+        self.assertEqual((e["status"], e["reason"]), ("failed", "budget"))
+
+
+class Continuity(unittest.TestCase):
+    """U4: a follow-up turn's user message carries the previous turn's
+    outcome — not only learn-flagged corrections."""
+
+    def test_prior_turn_lands_in_user_message(self):
+        from wisp import session
+        seen = []
+
+        def post(messages, cfg):
+            seen.append(messages[1])
+            return _msg(content="done")
+
+        with mock.patch.object(act, "_post", side_effect=post), \
+             mock.patch.object(session, "tail", return_value=[
+                 {"transcript": "open discord",
+                  "reply": "opened it",
+                  "result": "ACTED (1 steps): opened it"}]), \
+             mock.patch.object(session, "as_text",
+                               return_value="user: open discord\n"
+                                            "wisp: opened it"):
+            act.run_act_loop("now close it", {"agent": {}})
+        um = seen[0]["content"]
+        self.assertIn("[previous turn]", um)
+        self.assertIn("open discord", um)
+        self.assertIn("opened it", um)
+
+
+class RouteFallback(unittest.TestCase):
+    """U4: an unknown or missing Jev route for an actionable request
+    dispatches to the act loop — no dead SKIP. Explicit routes are
+    untouched; Jev's decision path is not in this file."""
+
+    CFG = {"agent": {"risk_threshold": "9"}}
+
+    def test_unknown_route_runs_act_loop(self):
+        from wisp import stage_execute
+        answers = {"route": {"choice": "teleport"},
+                   "action": {"choice": ""}, "app": {"choice": ""},
+                   "risk": {"score": 0.5}}
+        with mock.patch.object(act, "run_act_loop",
+                               return_value="ACTED (1 steps): ok") as r:
+            out = stage_execute.execute(answers, self.CFG,
+                                        detail="do the thing")
+        self.assertEqual(out, "ACTED (1 steps): ok")
+        r.assert_called_once()
+        self.assertEqual(r.call_args.args[0], "do the thing")
+
+    def test_missing_route_runs_act_loop(self):
+        from wisp import stage_execute
+        answers = {"risk": {"score": 0.5}}
+        with mock.patch.object(act, "run_act_loop",
+                               return_value="ACTED (1 steps): ok") as r:
+            out = stage_execute.execute(answers, self.CFG,
+                                        detail="do the thing")
+        self.assertEqual(out, "ACTED (1 steps): ok")
+        r.assert_called_once()
+
+    def test_fallback_forwards_the_ask_channel(self):
+        from wisp import stage_execute
+        sentinel = object()
+        answers = {"route": {"choice": "bogus"},
+                   "risk": {"score": 0.5}}
+        with mock.patch.object(act, "run_act_loop",
+                               return_value="x") as r:
+            stage_execute.execute(answers, self.CFG, detail="t",
+                                  ask=sentinel)
+        self.assertIs(r.call_args.kwargs["ask"], sentinel)
+
+    def test_explicit_routes_untouched(self):
+        from wisp import stage_execute
+        for route in ("answer",):
+            answers = {"route": {"choice": route},
+                       "action": {"choice": ""}, "app": {"choice": ""},
+                       "risk": {"score": 0.5}}
+            with mock.patch.object(act, "run_act_loop") as r:
+                out = stage_execute.execute(answers, self.CFG,
+                                            detail="q")
+            self.assertEqual(out, "ANSWERED")
+            r.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
 

@@ -408,17 +408,36 @@ def _voice_answer(st, cfg: dict, ctl: dict, wav, kind: str) -> dict:
         broker = ctl.get("broker")
         pend = broker.pending() if broker is not None else None
         if pend is not None:
-            idx = voicepick.map_pick(text, pend["options"])
-            _trace.emit(st.current_turn(), "choice_voice", "act",
-                        {"text": text[:80], "mapped": idx is not None})
-            if idx is not None:
-                out = broker.offer(index=idx + 1, prompt_id=pend["id"])
-                state_mod.action_add(
-                    st, "choice", pend["options"][idx],
-                    status="done" if out.get("ok") else "failed",
-                    reason="" if out.get("ok")
-                    else str(out.get("error", "")), target=text[:80])
-                return out
+            if not pend["options"]:
+                # free-form question (U4 ask_user): the utterance IS
+                # the answer — offer it verbatim, no option map
+                _trace.emit(st.current_turn(), "choice_voice", "act",
+                            {"text": text[:80], "free": True})
+                if text:
+                    out = broker.offer(pick=text,
+                                       prompt_id=pend["id"])
+                    state_mod.action_add(
+                        st, "choice", text[:80],
+                        status="done" if out.get("ok") else "failed",
+                        reason="" if out.get("ok")
+                        else str(out.get("error", "")),
+                        target=text[:80])
+                    return out
+            else:
+                idx = voicepick.map_pick(text, pend["options"])
+                _trace.emit(st.current_turn(), "choice_voice", "act",
+                            {"text": text[:80],
+                             "mapped": idx is not None})
+                if idx is not None:
+                    out = broker.offer(index=idx + 1,
+                                       prompt_id=pend["id"])
+                    state_mod.action_add(
+                        st, "choice", pend["options"][idx],
+                        status="done" if out.get("ok") else "failed",
+                        reason="" if out.get("ok")
+                        else str(out.get("error", "")),
+                        target=text[:80])
+                    return out
         # heard but unmappable — the card stays up; a spoken nudge is
         # the ack so the miss isn't silence
         speech.speak("didn't catch that", cfg)
@@ -464,8 +483,9 @@ def _run_listen(st: state_mod.StateBus, cfg: dict, ctl: dict,
 
 def _run_suggestion(st, cfg, ctl, routine: str) -> None:
     """Approved suggestion → bounded act loop (all gates apply)."""
-    from wisp import act, stage_execute
-    th = st.turn(st.begin_turn())
+    from wisp import act, confirm as _confirm, stage_execute
+    tid = st.begin_turn()
+    th = st.turn(tid)
     # the dispatch is a route entry like execute_stage's — the card's
     # own suggestion entry resolved on the pick, this is the run
     aid = state_mod.action_add(th, "route", "suggestion",
@@ -474,9 +494,25 @@ def _run_suggestion(st, cfg, ctl, routine: str) -> None:
         th.transition("acting", transcript="", choices=[],
                       suggestion=None, steps=[],
                       result="automating suggestion")
+        # U4: a suggestion run's ask_user still gets the broker card —
+        # fresh token so a dead turn token can't eat the wait, bridged
+        # to the shared interrupt so a stop kills a parked question;
+        # confirm stays None so mutating steps skip, not hang
+        stoken = cancel.CancelToken()
+        if ctl["interrupt"].is_set():
+            stoken.cancel()
+        else:
+            threading.Thread(
+                target=lambda: (ctl["interrupt"].wait(),
+                                stoken.cancel()),
+                daemon=True).start()
+        ask = _confirm.make_ask(th, _wait_for_choice(ctl, stoken),
+                                stoken, tid, cfg)
         out = act.run_act_loop(routine, cfg, state=th,
-                               confirm=None)  # no re-confirm loop;
-        # mutating steps skip rather than hang on a card
+                               confirm=None, ask=ask,
+                               interrupted=ctl["interrupt"].is_set)
+        # no re-confirm loop; mutating steps skip rather than hang on
+        # a card
         state_mod.action_set(th, aid,
                              status=stage_execute._dispatch_status(out),
                              reason=out)

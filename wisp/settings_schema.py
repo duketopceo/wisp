@@ -145,6 +145,13 @@ FIELDS = (
     _f("agents.act_max_parse_misses", "int", "1",
        "Unparseable action replies tolerated in action text mode",
        min=0, max=10),
+    _f("agents.act_max_seconds", "int", "600",
+       "Wall-clock seconds one act run may take before it aborts "
+       "(0 disables)",
+       min=0, max=86400),
+    _f("agents.act_max_usd", "usd", "0",
+       "Per-run cap on model spend in USD added during the run "
+       "(0 disables)"),
     _f("agents.writer_queue_max", "int", "256",
        "Trajectory and recall writes held in memory before the oldest "
        "is dropped",

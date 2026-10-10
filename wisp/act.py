@@ -1,4 +1,4 @@
-"""Act route: a bounded, guarded tool-call loop.
+"""Act route: a bounded, guarded conversational tool-call loop.
 
 Jev decides the user wants a multi-step desktop task; this loop hands the
 toolbelt to the chat model as OpenAI-style tools and lets it drive. Every
@@ -7,24 +7,33 @@ allow_shell, risk tier — so the model can ask for anything but only
 safe/confirmed work runs.
 
 Bounds: MAX_STEPS tool calls total, MAX_ERRORS consecutive tool failures,
-then ABORTED. Every step is published to state.json (the companion orb
-shows progress) and recorded in decisions.jsonl by the caller.
+MAX_SECONDS wall-clock and (when set) act_max_usd of model spend per run
+— a tripped bound publishes a `failed` stream entry with reason `budget`
+and the step list so far. `ask_user` lets the model hold a conversation
+mid-loop: it parks on the same prompt broker the confirm card uses and
+the pick/typed/spoken answer comes back as the tool result. Every step
+is published to state.json and recorded in decisions.jsonl by the
+caller.
 """
 import base64
 import json
 import re
+import time
 import urllib.error
 import urllib.request
 
-from . import bgwriter, cancel, config, cua_safety, grounding, policy, \
-    tools
+from . import bgwriter, cancel, config, cua_safety, grounding, ledger, \
+    policy, tools
 from . import state as _state
 
-# Defaults; the daemon reads [agents] act_max_steps, act_max_errors and
-# act_max_parse_misses (wisp/settings_schema.py) through _limit().
+# Defaults; the daemon reads [agents] act_max_steps, act_max_errors,
+# act_max_parse_misses, act_max_seconds and act_max_usd
+# (wisp/settings_schema.py) through _limit()/_limit_f().
 MAX_STEPS = 8
 MAX_ERRORS = 2
 MAX_PARSE_MISSES = 1
+MAX_SECONDS = 600          # wall-clock cap for one run; 0 = off
+MAX_USD = 0.0              # per-run paid-model spend cap; 0 = off
 MAX_IMAGES = 3  # cap retained screenshots in the message window
 # tools whose success may change what's on screen → re-observe before
 # the next pointer step
@@ -55,12 +64,21 @@ SYSTEM = ("You are Wisp's hands on a Linux desktop (Hyprland). Complete "
           "when your target is not in the legend. When done, reply with "
           "one short sentence describing the outcome. If a tool is "
           "refused or skipped, do not retry it; work around or report "
-          "the block. If the task cannot proceed without information "
-          "only the user has (a choice between real options, missing "
-          "credentials), reply 'ASK_USER: <one short question>' — do "
-          "not guess or stall. The screen image attached to the first "
-          "message shows the desktop at trigger time — use it to find "
-          "the app and targets instead of asking which app is meant.")
+          "the block. A fresh screenshot after a mutating step is the "
+          "verify pass: check the last action landed (target changed "
+          "or gone) before planning the next step — if it clearly did "
+          "not land, re-aim and retry instead of continuing. When the "
+          "task needs information only the user has (a choice between "
+          "real options, missing credentials, an ambiguous target), "
+          "call ask_user with the question — 'question' or 'question | "
+          "option | option' — the user answers by voice or click and "
+          "the reply comes back as the tool result; keep going with "
+          "it. (Reply 'ASK_USER: <question>' instead only when the run "
+          "must END for the answer — the next turn resumes the goal.) "
+          "Do not guess or stall. The screen image attached to the "
+          "first message shows the desktop at trigger time — use it "
+          "to find the app and targets instead of asking which app is "
+          "meant.")
 
 
 def _post(messages: list, cfg: dict) -> dict:
@@ -98,11 +116,15 @@ def run_act_loop(task: str, cfg: dict, state=None,
                  harness: dict | None = None, confirm=None,
                  initial_image: str | None = None,
                  interrupted=None,
-                 steps_out: list | None = None) -> str:
+                 steps_out: list | None = None,
+                 ask=None) -> str:
     """Drive the chat model through the toolbelt until it finishes or a
     bound trips. `confirm(prompt)->bool` asks the user (choice widget /
-    IPC) when wired; without it mutating calls skip. `steps_out`, if a
-    list, receives the run's step records for judging/replay."""
+    IPC) when wired; without it mutating calls skip. `ask(question,
+    options)->pick|None` is the in-loop conversation channel (U4 —
+    `confirm.make_ask` on the same broker); without it `ask_user` calls
+    resolve NO_ANSWER. `steps_out`, if a list, receives the run's step
+    records for judging/replay."""
     from . import brain
     at_mode = brain.action_text(cfg)
     if not brain.supports_tools(cfg) and not at_mode:
@@ -129,7 +151,11 @@ def run_act_loop(task: str, cfg: dict, state=None,
         system += "\n\n" + hint
     from . import goals as _goals
     goal_txt = _goals.context_text()
-    user_msg = (goal_txt + "\n\n" + task) if goal_txt else task
+    # U4: a follow-up turn sees the previous turn's outcome, not just
+    # the open goal — corrections already carry the failed attempt, so
+    # this is the general "previous turn did X" context
+    prev_txt = _prev_turn()
+    user_msg = "\n\n".join(t for t in (goal_txt, prev_txt, task) if t)
     p = brain.provider(cfg)
     vision = p.get("vision", "false") == "true"
     if not initial_image and vision:
@@ -173,6 +199,14 @@ def run_act_loop(task: str, cfg: dict, state=None,
     max_steps = _limit(cfg, "act_max_steps", MAX_STEPS)
     max_errors = _limit(cfg, "act_max_errors", MAX_ERRORS)
     max_parse_misses = _limit(cfg, "act_max_parse_misses", MAX_PARSE_MISSES)
+    max_seconds = _limit_f(cfg, "act_max_seconds", MAX_SECONDS)
+    max_usd = _limit_f(cfg, "act_max_usd", MAX_USD)
+    t0 = time.monotonic()
+    # ledger's in-process session counters cover every brain call the
+    # loop makes; snapshot now and cap the run's DELTA (a stale global
+    # total can't trip a fresh run)
+    spend0 = ledger.session_totals().get("cost", 0.0) \
+        if max_usd > 0 else 0.0
     bgwriter.configure(cfg)
     # trigger-time image counts as the current observation; a mutating
     # step flips this and forces a fresh screenshot before the next
@@ -182,14 +216,33 @@ def run_act_loop(task: str, cfg: dict, state=None,
     # observe while the screen is clean serves this instead of another
     # eval round-trip (unneeded_observe is the dominant judged waste)
     last_shot = None
+    # the mutating step that dirtied the screen — the re-observe
+    # caption names it so the model reads the shot as the verify pass
+    dirty_step = ""
 
     def stopped() -> bool:
         return cancel.is_cancelled() or bool(interrupted and interrupted())
+
+    def budget_hit() -> str:
+        """The tripped per-run bound as a result-string tail, "" while
+        the run is inside its step/seconds/spend budget (U4)."""
+        if max_seconds > 0 and time.monotonic() - t0 >= max_seconds:
+            return f"budget: >{max_seconds:g}s"
+        if max_usd > 0 and ledger.session_totals().get(
+                "cost", 0.0) - spend0 >= max_usd:
+            return f"budget: spend >${max_usd:g}"
+        return ""
 
     guard = cua_safety.Guard(cfg, state=state, interrupted=interrupted)
     gate_ctx = policy.gate_ctx()   # per-run declines (U3)
 
     while len(steps) < max_steps:
+        why = budget_hit()
+        if why:
+            _goals.record_steps(steps)
+            out = _budget_abort(state, task, steps, why)
+            _record_traj(task, harness, steps, out, cfg)
+            return out
         if stopped():
             _goals.record_steps(steps)
             return "INTERRUPTED (user)"
@@ -248,6 +301,34 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 _goals.record_steps(steps)
                 return "INTERRUPTED (user)"
             name, arg = _name_arg(call)
+            why = budget_hit()
+            if why:
+                _goals.record_steps(steps)
+                out = _budget_abort(state, task, steps, why)
+                _record_traj(task, harness, steps, out, cfg)
+                return out
+            if name == "ask_user":
+                # U4 conversational backchannel: the question parks on
+                # the prompt broker like a confirm card and the pick/
+                # spoken answer comes back as this call's result. No
+                # gate — it's a question, not an action.
+                try:
+                    result = _ask_user(state, ask, arg)
+                except cancel.Cancelled:
+                    _goals.record_steps(steps)
+                    return "INTERRUPTED (user)"
+                steps.append(
+                    {"tool": name, "arg": arg, "result": result,
+                     "reply": (msg.get("content") or "")[:500]})
+                _publish(state, task, steps)
+                if call.get("_at"):
+                    messages.append({"role": "user", "content": result})
+                else:
+                    messages.append(
+                        {"role": "tool",
+                         "tool_call_id": call.get("id", name),
+                         "content": result})
+                continue
             # lifecycle stream: queued when the model proposes the call,
             # in_flight while gates/dispatch run, terminal on the result;
             # T1 steps carry how to take them back (undo_ref)
@@ -287,7 +368,10 @@ def run_act_loop(task: str, cfg: dict, state=None,
                                   "result": shot})
                     _publish(state, task, steps)
                     if shot.startswith("SHOT "):
-                        _attach_image(messages, shot[5:].strip(), cfg)
+                        _attach_image(
+                            messages, shot[5:].strip(), cfg,
+                            why=f"re-observe: verify "
+                                f"'{dirty_step or 'last step'}' landed")
                         last_shot = shot
                         screen_dirty = False
                     # a failed observe leaves the screen dirty AND the
@@ -328,8 +412,12 @@ def run_act_loop(task: str, cfg: dict, state=None,
                         result = f"ERROR ({e})"
             else:
                 result = refused
+            # the stream entry keeps the raw result — the verify line
+            # below is model-facing feedback (step record + tool
+            # result), not stream copy
             _state.action_set(state, aid, status=_tool_status(result),
                               reason=result)
+            result += _verify_hint(name, arg, result, cfg)
             if name == "screenshot" and result.startswith("SHOT "):
                 screen_dirty = False
                 if not served_cached:
@@ -337,6 +425,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
             elif name in _SCREEN_CHANGING and not result.startswith(
                     ("ERROR", "SKIP", "REFUS", "DRYRUN")):
                 screen_dirty = True
+                dirty_step = f"{name} {arg}".strip()[:60]
             steps.append({"tool": name, "arg": arg, "result": result,
                           "reply": (msg.get("content") or "")[:500]})
             _publish(state, task, steps)
@@ -362,7 +451,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 return out
             if len(steps) >= max_steps:
                 break
-    out = f"ABORTED (max {max_steps} steps): {_last(steps)}"
+    out = _budget_abort(state, task, steps, f"max {max_steps} steps")
     _goals.record_steps(steps)
     _record_traj(task, harness, steps, out, cfg)
     return out
@@ -439,7 +528,7 @@ def _tool_status(result: str) -> str:
     """Map a tool-call result string onto the action lifecycle: calls
     the gates turned away are `cancelled` (deny, timeout, disabled —
     the reason field says which), real failures are `failed`."""
-    if result.startswith(("SKIP", "BLOCKED")):
+    if result.startswith(("SKIP", "BLOCKED", "NO_ANSWER")):
         return "cancelled"
     if result.startswith(("ERROR", "REFUS", "FAIL", "ABORT", "STALL")):
         return "failed"
@@ -471,6 +560,90 @@ def _limit(cfg: dict | None, key: str, default: int) -> int:
         return int(raw) if raw not in (None, "") else default
     except (TypeError, ValueError):
         return default
+
+
+def _limit_f(cfg: dict | None, key: str, default: float) -> float:
+    """An [agents] bound as a float — seconds/usd caps take fractional
+    values; `default` when absent or not a number."""
+    raw = ((cfg or {}).get("agents") or {}).get(key)
+    try:
+        return float(raw) if raw not in (None, "") else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _budget_abort(state, task: str, steps: list, why: str) -> str:
+    """Bounded abort (U4, R17): publish a `failed` stream entry with
+    reason `budget` and the step list so far, then the result string."""
+    _state.action_add(state, "act", f"run: {task[:60]}",
+                      status="failed", reason="budget",
+                      target=_last(steps)[:160])
+    return f"ABORTED ({why}): {_last(steps)}"
+
+
+def _prev_turn() -> str:
+    """'[previous turn] user: "x" → wisp: y' — every follow-up turn gets
+    the prior turn's outcome, not just labeled corrections (U4)."""
+    try:
+        from . import session
+        last = session.tail(1)
+        txt = session.as_text(last) if last else ""
+    except Exception:
+        return ""
+    return f"[previous turn]\n{txt[:400]}" if txt else ""
+
+
+def _parse_ask(arg: str) -> tuple:
+    """ask_user arg 'question | opt | opt' -> (question, [options])."""
+    parts = [p.strip().strip("'\"") for p in (arg or "").split("|")]
+    q = parts[0] if parts else ""
+    return q, [p for p in parts[1:] if p][:6]
+
+
+def _ask_user(state, ask, arg: str) -> str:
+    """Run the model's ask_user call: the question parks on the turn's
+    ask channel (`confirm.make_ask` — a `question` card on the same
+    prompt broker the confirm card uses) and the pick/typed/spoken
+    answer comes back as the tool result. NO_ANSWER when no channel is
+    wired or the question lapsed."""
+    q, opts = _parse_ask(arg)
+    aid = _state.action_add(state, "tool", "ask_user", target=arg,
+                            status="in_flight")
+    answer = ask(q, opts or None) if callable(ask) else None
+    result = (f"USER ANSWERED: {answer}" if answer else
+              "NO_ANSWER (no usable reply — the question lapsed or "
+              "no answer channel is wired; proceed on your best "
+              "judgment or report the block)")
+    _state.action_set(state, aid, status=_tool_status(result),
+                      reason=result)
+    return result
+
+
+def _verify_hint(name: str, arg: str, result: str, cfg: dict) -> str:
+    """One-line verify feedback appended to a mutating call's result
+    (U4 observe→act→verify): the model is told the screen changed and
+    to check the step landed on the next observation — and a DOM
+    click-by-id whose echo names a clearly different element than the
+    aim reads as retryable feedback, not a silent continue. Pixel-space
+    verify rides the re-observe screenshot; no second model call."""
+    if not result or result.startswith(
+            ("ERROR", "SKIP", "REFUS", "FAIL", "DRYRUN", "GUIDE",
+             "MOVE", "NO_ANSWER", "HANDED")):
+        return ""
+    if name == "click" and result.startswith("CLICKED ") \
+            and (cfg or {}).get("screen", {}).get("dom_page"):
+        hit = result[len("CLICKED "):].strip()
+        want = (arg or "").strip().strip("'\"").lower()
+        if want and hit and want not in hit.lower() \
+                and hit.lower() not in want:
+            return (f" — verify FAILED: aimed at {want!r}, hit "
+                    f"{hit[:40]!r}; re-aim and click again rather "
+                    "than continuing")
+    if name in _SCREEN_CHANGING:
+        return (" — screen changed; verify the step landed on the "
+                "next screenshot before planning the next pointer "
+                "action")
+    return ""
 
 
 def _record_traj(task: str, harness: dict | None, steps: list, out: str,
@@ -613,10 +786,13 @@ def _png_dims(b64: str) -> tuple | None:
     return None
 
 
-def _attach_image(messages: list, path: str, cfg: dict | None = None) -> None:
+def _attach_image(messages: list, path: str, cfg: dict | None = None,
+                  why: str = "") -> None:
     """Feed the screenshot back as an image part on a follow-up user
     message — the model can't act on a screen it can't see. Keeps at
-    most MAX_IMAGES image parts in the window (oldest dropped)."""
+    most MAX_IMAGES image parts in the window (oldest dropped). `why`
+    prefaces the caption when a re-observe exists to VERIFY the last
+    mutating step rather than to plan the next one (U4)."""
     import pathlib
     try:
         b64 = base64.b64encode(
@@ -635,8 +811,9 @@ def _attach_image(messages: list, path: str, cfg: dict | None = None) -> None:
                 if kept >= MAX_IMAGES:
                     m["content"] = [p for p in c
                                     if p.get("type") != "image_url"]
-    caption = (f"current screen ({dims[0]}x{dims[1]} px — click/move "
-               "x,y use these pixels" if dims else "current screen")
+    caption = (f"{why} — " if why else "") + (
+        f"current screen ({dims[0]}x{dims[1]} px — click/move "
+        "x,y use these pixels" if dims else "current screen")
     if dims and (cfg or {}).get("screen", {}).get("dom_page"):
         els = (cfg or {})["screen"].get("dom_els") or []
         if els:

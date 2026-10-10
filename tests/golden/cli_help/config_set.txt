@@ -57,6 +57,10 @@ Settings (value, default, range):
                                default 2; 0 to 20
   agents.act_max_parse_misses  Unparseable action replies tolerated in action text mode
                                default 1; 0 to 10
+  agents.act_max_seconds       Wall-clock seconds one act run may take before it aborts (0 disables)
+                               default 600; 0 to 86400
+  agents.act_max_usd           Per-run cap on model spend in USD added during the run (0 disables)
+                               default 0; 0 to 100000, blank for no cap
   agents.writer_queue_max      Trajectory and recall writes held in memory before the oldest is dropped
                                default 256; 1 to 100000
   stt.provider                 Speech to text: local whisper.cpp or an API

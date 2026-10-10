@@ -140,13 +140,22 @@ REGISTRY = {
     "skill_view": (None, "safe", "read a skill's full SKILL.md by name",
                    {"tier": "T0", "reversible": True,
                     "external": False}),
+    "ask_user": (None, "safe",
+                 "ask the user a question mid-task and wait for the "
+                 "reply — 'question text' or 'question | option | "
+                 "option'; the pick or spoken answer comes back as the "
+                 "tool result",
+                 {"tier": "T0", "reversible": True,
+                     "external": False}),  # wired in the act loop (U4)
 }
 
 
 # registry entries whose executor lives outside REGISTRY[0] — the
-# dispatch in run() owns these names; tool_schemas must not drop them.
+# dispatch in run() owns these names (ask_user's lives in the act
+# loop, not here); tool_schemas must not drop them.
 EXTERN = frozenset({"agent_spawn", "task_status", "task_cancel",
-                    "memory", "recall", "skill_manage", "skill_view"})
+                    "memory", "recall", "skill_manage", "skill_view",
+                    "ask_user"})
 
 
 def get(name: str):

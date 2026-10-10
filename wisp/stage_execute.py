@@ -29,13 +29,15 @@ def dictation_text(text: str) -> str:
 
 def execute(answers: dict, cfg: dict, harness: dict | None = None,
             detail: str = "", state=None, confirm=None,
-            initial_image: str | None = None, interrupted=None) -> str:
+            initial_image: str | None = None, interrupted=None,
+            ask=None) -> str:
     """Route-aware dispatch. Falls back to the legacy action-based path
     when Jev's response lacks the route question. Jev only answers typed
     questions (noul/choice/score) — free-text args come from the
     transcript via `detail`. `initial_image` is the trigger-time
     screenshot (b64) handed to the act loop so the model sees the app
-    instead of asking which one."""
+    instead of asking which one. `ask` is the in-loop question channel
+    (U4) forwarded to every act-loop dispatch."""
     from . import agents, tools
     route = answers.get("route", {}).get("choice")
     action = answers.get("action", {}).get("choice")
@@ -66,7 +68,7 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
         return act.run_act_loop(detail, cfg, state=state,
                                 harness=harness, confirm=confirm,
                                 initial_image=initial_image,
-                                interrupted=interrupted)
+                                interrupted=interrupted, ask=ask)
     if route == "dictation":
         # type the spoken words; a leading dictate keyword is a command
         # prefix, not content — strip it. A correction prefix
@@ -91,7 +93,7 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
         return act.run_act_loop(prompt, cfg, state=state,
                                 harness=harness, confirm=confirm,
                                 initial_image=initial_image,
-                                interrupted=interrupted)
+                                interrupted=interrupted, ask=ask)
     if route == "tool":
         tool_name = answers.get("tool", {}).get("choice", "")
         if tool_name == "launch":
@@ -111,7 +113,7 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
             return act.run_act_loop(detail, cfg, state=state,
                                     harness=harness, confirm=confirm,
                                     initial_image=initial_image,
-                                    interrupted=interrupted)
+                                    interrupted=interrupted, ask=ask)
         if tier == "mutating" and risk > threshold:
             return f"BLOCKED (tool {tool_name!r} needs confirmation)"
         if tier == "safe" or risk <= threshold:
@@ -125,7 +127,15 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
         return "ANSWERED"
     if action in tools.REGISTRY:
         return tools.run(action, detail, cfg, harness)
-    return f"SKIP (route={route!r} action={action!r} unhandled)"
+    # U4 route fallback: a missing/garbage route for an actionable
+    # request still has the transcript — hand it to the act loop
+    # rather than returning a dead SKIP. (Jev's decision path itself
+    # is untouched; this only rescues the dispatch.)
+    from . import act
+    return act.run_act_loop(detail or app or "continue the task", cfg,
+                            state=state, harness=harness,
+                            confirm=confirm, initial_image=initial_image,
+                            interrupted=interrupted, ask=ask)
 
 
 def _dispatch_status(result: str) -> str:
@@ -146,9 +156,15 @@ def execute_stage(ctx) -> None:
     answers = ctx.answers
     state.transition("acting")
     confirm = None
+    ask = None
     if ctx.wait_for_choice:
         from . import confirm as _confirm
         confirm = _confirm.make(state, ctx.wait_for_choice, token,
+                                ctx.turn, cfg)
+        # U4: the act loop's ask_user rides the same broker — the
+        # question card is the confirm card inverted (prompt IS the
+        # payload, picks only when the model offered them)
+        ask = _confirm.make_ask(state, ctx.wait_for_choice, token,
                                 ctx.turn, cfg)
     from . import brain as _brain
     act_img = ctx.shot_b64 if ctx.shot_b64 and \
@@ -164,7 +180,7 @@ def execute_stage(ctx) -> None:
         result = ctx.result = pl.execute(
             answers, cfg, ctx.harness, detail=ctx.detail, state=state,
             confirm=confirm, initial_image=act_img,
-            interrupted=ctx.interrupted)
+            interrupted=ctx.interrupted, ask=ask)
     except _cancel.Cancelled:
         _state.action_set(state, aid, status="cancelled",
                           reason="interrupted")
