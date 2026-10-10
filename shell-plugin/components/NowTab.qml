@@ -1,6 +1,8 @@
-// Panel Now tab: goal, what was heard, the answer, the step list, choice
-// chips, stop, and the yes/no label row. Reads everything from `service`;
-// actions leave as signals (the Panel wires them to the service).
+// Panel Now tab: the run card first (U8 — intent, live step, interrupt,
+// terminal summary), then goal, what was heard, the answer, the step
+// list, choice chips, stop, and the yes/no label row. Reads everything
+// from `service`; actions leave as signals (the Panel wires them to the
+// service).
 import QtQuick
 import "../lib/metrics.js" as M
 import "../lib/steps.js" as Steps
@@ -14,10 +16,18 @@ Column {
   signal labelClicked(string verdict)
 
   readonly property var tk: service ? service.tokens : ({})
+  readonly property var run: service ? service.run : ({
+    present: false, active: false, question: null, key: "" })
+  // a terminal card hides on its own "hide"; a new run (new key) shows
+  // again — the dismissal dies with the run it was for
+  property string dismissedRun: ""
+  readonly property bool runShown: run.present
+    && (run.active || dismissedRun !== run.key)
   readonly property bool asking: service.result.indexOf("ASK_USER") === 0
   readonly property bool idle: service.transcript === "" && service.answer === ""
     && service.result === "" && service.steps.length === 0
     && service.choices.length === 0 && service.error === ""
+    && !runShown
   // the step/action display is the lifecycle stream when a v2 daemon
   // feeds it; `steps` is the same list on older cores
   readonly property var stepRows: service.actions.length > 0
@@ -40,6 +50,16 @@ Column {
     service: root.service
     tab: "now"
     width: parent.width
+  }
+
+  RunCard {
+    visible: root.runShown
+    width: parent.width
+    service: root.service
+    onChoose: function (pick) { root.choose(pick) }
+    onAnswer: function (text) { root.choose(text) }
+    onStopClicked: root.stopClicked()
+    onDismissed: root.dismissedRun = root.run.key
   }
 
   Text {
@@ -91,7 +111,8 @@ Column {
   }
 
   Flow {
-    visible: root.service.choices.length > 0
+    // a live question carries its picks inside the run card
+    visible: root.service.choices.length > 0 && root.run.question === null
     width: parent.width
     spacing: M.spacing.lg
     Repeater {
@@ -115,9 +136,18 @@ Column {
     font.pixelSize: M.font.label
   }
 
-  StopControl {
-    service: root.service
-    onClicked: root.stopClicked()
+  // the run card owns its interrupt while a run is non-terminal; this
+  // stop stays for busy turns that have no run yet (listening through
+  // deciding) and for speaking
+  Item {
+    width: parent.width
+    visible: !root.run.active
+    implicitHeight: stop.visible ? stop.implicitHeight : 0
+    StopControl {
+      id: stop
+      service: root.service
+      onClicked: root.stopClicked()
+    }
   }
 
   Row {

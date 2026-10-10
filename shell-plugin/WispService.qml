@@ -7,6 +7,7 @@ import "lib/copy.js" as Copy
 import "lib/tokens.js" as Tokens
 import "lib/motion.js" as Motion
 import "lib/settings.js" as Settings
+import "lib/run.js" as Run
 
 // WispService: the one reader of wispd state for every surface (Companion,
 // Panel, bar widget). Surfaces bind to this object (shell.serviceFor(
@@ -75,6 +76,13 @@ Item {
   property bool stale: false
   property bool contractNewer: false
   readonly property bool busy: Reader.BUSY.indexOf(status) >= 0
+  // The newest run in the action stream (U8): intent, step cursor,
+  // in-flight step, outcome + mutation count, live ask_user question.
+  // {present, active, intent, key, steps, current, outcome, durationS,
+  // mutations, undoRefs, question} — lib/run.js; surfaces show nothing
+  // when present is false (empty stream, daemon restart).
+  readonly property var run: Run.card(actions, status, promptId, stale,
+    goal !== "" ? goal : transcript, Date.now())
   // The last one-shot action through run(): {verb, pending, ok,
   // message, at} — pending while the subprocess is in flight, then the
   // terminal outcome (daemon refusal text or typed error code mapped

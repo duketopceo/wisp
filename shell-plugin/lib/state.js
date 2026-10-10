@@ -61,7 +61,9 @@ function arr(x) { return Array.isArray(x) ? x : [] }
 // `allow` and `deny` snapshot the offered picks *with the card* — a
 // diff that empties `choices` after the card published must not change
 // what a click sends (allow is the first offer, deny the last). `kind`
-// is "confirm" on older cores, "handoff" for a T3 user-takes-over card.
+// is "confirm" on older cores, "handoff" for a T3 user-takes-over card,
+// "question" for the act loop's ask_user (U4 — options carries the
+// offered picks verbatim; empty means free-text).
 function normalizeConfirm(c, choices) {
   if (!isObj(c) || !str(c.prompt_id)) return null
   var t = Number(c.timeout_s)
@@ -69,6 +71,7 @@ function normalizeConfirm(c, choices) {
   return { promptId: str(c.prompt_id), prompt: str(c.prompt),
     timeoutS: isFinite(t) && t > 0 ? t : 0,
     kind: str(c.kind) || "confirm",
+    options: opts,
     allow: opts.length > 0 ? opts[0] : "",
     deny: opts.length > 0 ? opts[opts.length - 1] : "",
     // picks between allow and deny — U3's "always" session grant
@@ -125,6 +128,7 @@ function confirmFromActions(actions, confirm, promptId) {
         prompt: a.label || (confirm ? confirm.prompt : ""),
         timeoutS: confirm !== null ? confirm.timeoutS : 0,
         kind: "confirm",
+        options: opts.length > 0 ? opts : (confirm ? confirm.options : []),
         allow: opts.length > 0 ? opts[0] : (confirm ? confirm.allow : ""),
         deny: opts.length > 0 ? opts[opts.length - 1]
           : (confirm ? confirm.deny : ""),
@@ -156,7 +160,19 @@ function acceptChoice(view, pick, promptId) {
   }
   if (!promptId || view.promptId !== promptId) return false
   if (view.status !== "awaiting_choice") return false
-  return view.choices.indexOf(pick) >= 0
+  if (view.choices.indexOf(pick) >= 0) return true
+  // a question card with no offered picks resolves on ANY non-empty
+  // pick (docs/IPC_CONTRACT.md "Question card"): the typed or spoken
+  // answer goes through verbatim. The card is the live prompt only when
+  // the confirm block or an awaiting stream entry says `question`.
+  if (view.choices.length !== 0) return false
+  if (view.confirm && view.confirm.kind === "question") return true
+  for (var i = view.actions.length - 1; i >= 0; i--) {
+    var a = view.actions[i]
+    if (a.kind === "question" && a.status === "awaiting"
+        && a.promptId === promptId) return true
+  }
+  return false
 }
 
 // Raw snapshot object -> view fields (defaults, clamps, closed sets).

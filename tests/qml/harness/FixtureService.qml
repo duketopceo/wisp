@@ -2,6 +2,7 @@ import QtQuick
 import "../../../shell-plugin/lib/state.js" as Reader
 import "../../../shell-plugin/lib/copy.js" as Copy
 import "../../../shell-plugin/lib/motion.js" as Motion
+import "../../../shell-plugin/lib/run.js" as Run
 
 // Stand-in for WispService in the snapshot harness: the same property and
 // function names components read, filled from a lib/state.js view built from
@@ -46,6 +47,10 @@ Item {
   property bool stale: false
   property bool contractNewer: false
   readonly property bool busy: Reader.BUSY.indexOf(status) >= 0
+  // mirrors WispService.run (lib/run.js) — 0 as nowMs: the card's
+  // duration then comes from entry timestamps alone, snapshot-stable
+  readonly property var run: Run.card(actions, status, promptId, stale,
+    goal !== "" ? goal : transcript, 0)
   // {verb, pending, ok, message, at} — mirrors WispService.lastAction;
   // the harness never runs actions, so null unless a scene sets it
   property var lastAction: null

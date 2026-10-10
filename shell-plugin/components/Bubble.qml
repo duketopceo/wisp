@@ -4,7 +4,10 @@
 // needs-you keyline, what is being asked, allow and deny chips that reply
 // with the card's own prompt id and the picks snapshotted at publish time
 // (an in-flight diff can't turn a click into undefined), and a one-line
-// note that silence means deny. The label prompt and dismissal live in
+// note that silence means deny. A `question` card (the act loop's ask_user)
+// keeps the same shape: "wisp asks" plus the question, its offered picks
+// as verbatim chips, or the say-it hint when the model offered none.
+// The label prompt and dismissal live in
 // the host (a card ignores the dwell).
 import QtQuick
 import "../lib/metrics.js" as M
@@ -31,6 +34,7 @@ Rectangle {
   readonly property var tk: service ? service.tokens : ({})
   readonly property bool failed: service.status === "error"
   readonly property var card: service.confirm
+  readonly property bool question: card !== null && card.kind === "question"
   readonly property bool has: card !== null || failed || service.answer !== "" || service.resultView.text !== ""
   readonly property bool attached: service.busy || service.status === "speaking"
 
@@ -52,7 +56,7 @@ Rectangle {
     Text {
       visible: root.card !== null
       width: parent.width
-      text: root.service.ui("ui.confirm.title")
+      text: root.question ? root.service.ui("ui.now.asks") : root.service.ui("ui.confirm.title")
       color: root.tk.needsYou
       font.family: root.service.fontFamily
       font.pixelSize: M.font.label
@@ -70,7 +74,7 @@ Rectangle {
       font.pixelSize: M.font.answer
     }
     Row {
-      visible: root.card !== null
+      visible: root.card !== null && !root.question
       spacing: M.spacing.md
       Chip {
         objectName: "allow"
@@ -100,10 +104,25 @@ Rectangle {
         onClicked: root.confirmChosen(root.card.deny, root.card.promptId)
       }
     }
-    Text {
-      visible: root.card !== null
+    // a question's picks answer it verbatim — no allow/deny wording
+    Flow {
+      visible: root.question && root.card.options.length > 0
       width: parent.width
-      text: root.service.ui("ui.confirm.hint")
+      spacing: M.spacing.md
+      Repeater {
+        model: root.question ? root.card.options : []
+        delegate: Chip {
+          required property var modelData
+          service: root.service
+          label: modelData
+          onClicked: root.confirmChosen(modelData, root.card.promptId)
+        }
+      }
+    }
+    Text {
+      visible: root.card !== null && (!root.question || root.card.options.length === 0)
+      width: parent.width
+      text: root.question ? root.service.ui("ui.question.hint") : root.service.ui("ui.confirm.hint")
       color: root.tk.inkMuted
       font.family: root.service.fontFamily
       font.pixelSize: M.font.caption

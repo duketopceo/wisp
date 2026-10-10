@@ -225,6 +225,39 @@ TestCase {
     verify(!S.acceptChoice(idle, 3, ""))
   }
 
+  function test_accept_choice_free_text_questions() {
+    // a live question card with no offered picks accepts ANY non-empty
+    // pick — the typed or spoken answer goes through verbatim (U8)
+    var q = S.applySnapshot(S.initial(), snap({ status: "awaiting_choice",
+      choices: [], prompt_id: "p9",
+      confirm: { prompt_id: "p9", prompt: "which file?",
+                 timeout_s: 60, kind: "question" } }), 1, "file").view
+    verify(S.acceptChoice(q, "the second one", "p9"))
+    verify(!S.acceptChoice(q, "arbitrary", "p8"))   // another prompt's id
+    verify(!S.acceptChoice(q, "", "p9"))            // empty stays refused
+    // the awaiting question stream entry alone (no confirm block) is
+    // enough — the card may derive from the stream only
+    var qe = S.applySnapshot(S.initial(), snap({ status: "awaiting_choice",
+      choices: [], prompt_id: "p9",
+      actions: [entry(1, { kind: "question", status: "awaiting",
+                           prompt_id: "p9" })] }), 1, "file").view
+    verify(S.acceptChoice(qe, "free text", "p9"))
+    // but a normal confirm card whose choices list emptied is NOT
+    // free-text — the prompt kind gate keeps it option-only
+    var c = S.applySnapshot(S.initial(), snap({ status: "awaiting_choice",
+      choices: [], prompt_id: "p9",
+      confirm: { prompt_id: "p9", prompt: "run?", timeout_s: 60 } }),
+      1, "file").view
+    verify(!S.acceptChoice(c, "arbitrary", "p9"))
+    // and a question that DID offer picks takes only those picks
+    var qp = S.applySnapshot(S.initial(), snap({ status: "awaiting_choice",
+      choices: ["work", "personal"], prompt_id: "p9",
+      confirm: { prompt_id: "p9", prompt: "which account?",
+                 timeout_s: 60, kind: "question" } }), 1, "file").view
+    verify(S.acceptChoice(qp, "work", "p9"))
+    verify(!S.acceptChoice(qp, "unlisted", "p9"))
+  }
+
   function test_action_result_never_silent() {
     // --json envelope success: the daemon's words land in text
     var ok = S.actionResult(0,

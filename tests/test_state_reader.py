@@ -474,6 +474,7 @@ class TestConfirmCard(unittest.TestCase):
         c = self.pending()["confirm"]
         self.assertEqual(c, {"promptId": "p7", "prompt": "run close: w1?",
                              "timeoutS": 120, "kind": "confirm",
+                             "options": ["run close: w1? — yes", "no"],
                              "allow": "run close: w1? — yes",
                              "deny": "no", "middle": []})
 
@@ -579,6 +580,178 @@ class TestAcceptSuggestion(unittest.TestCase):
         self.assertFalse(self.f(idle, "suggestion::k"))         # empty act
         self.assertFalse(self.f(None, "x"))
         self.assertFalse(self.f(idle, 3))
+
+
+@unittest.skipUnless(jsnode.NODE, "node not installed")
+class TestQuestionChoice(unittest.TestCase):
+    """acceptChoice free-text gate (U8): a live question card with no
+    offered picks resolves on ANY non-empty pick — the typed or spoken
+    answer goes through verbatim. The gate is the prompt KIND, so a
+    normal confirm card whose choices list emptied never turns into an
+    unrestricted input."""
+
+    def qview(self, **kw):
+        kw.setdefault("status", "awaiting_choice")
+        kw.setdefault("prompt_id", "p9")
+        return run([["snap", snap(**kw), 1]])["view"]
+
+    def f(self, view, pick, pid="p9"):
+        return js("S.acceptChoice(%s, %s, %s)"
+                  % (json.dumps(view), json.dumps(pick), json.dumps(pid)))
+
+    def test_question_card_accepts_any_nonempty_pick(self):
+        v = self.qview(choices=[],
+                       confirm={"prompt_id": "p9", "prompt": "which file?",
+                                "timeout_s": 60, "kind": "question"})
+        self.assertTrue(self.f(v, "the second one"))
+        self.assertFalse(self.f(v, "arbitrary", "p8"))   # another prompt
+        self.assertFalse(self.f(v, ""))                  # empty refused
+
+    def test_awaiting_question_entry_alone_opens_free_text(self):
+        # the card may live only in the stream (no confirm block)
+        q = {"id": "a1", "kind": "question", "label": "which file?",
+             "status": "awaiting", "target": "", "reason": "",
+             "undo_ref": None, "prompt_id": "p9",
+             "at": "2026-10-10T01:00:00Z"}
+        v = self.qview(choices=[], actions=[q])
+        self.assertTrue(self.f(v, "free text"))
+
+    def test_confirm_with_empty_choices_is_not_free_text(self):
+        v = self.qview(choices=[],
+                       confirm={"prompt_id": "p9", "prompt": "run?",
+                                "timeout_s": 60})
+        self.assertFalse(self.f(v, "arbitrary"))
+
+    def test_question_with_options_takes_only_those(self):
+        v = self.qview(choices=["work", "personal"],
+                       confirm={"prompt_id": "p9", "prompt": "which?",
+                                "timeout_s": 60, "kind": "question"})
+        self.assertTrue(self.f(v, "work"))
+        self.assertFalse(self.f(v, "unlisted"))
+
+
+@unittest.skipUnless(jsnode.NODE, "node not installed")
+class TestRunCard(unittest.TestCase):
+    """lib/run.js (U8): the action stream -> the run card — intent, step
+    cursor, in-flight step, outcome, mutation accounting, live question.
+    A settled status or stale heartbeat resolves open entries cancelled
+    so nothing ever ghosts as running."""
+
+    def card(self, actions, status="acting", prompt_id="", stale=False,
+             intent="", now=0):
+        return jsnode.call("R.card(%s, %s, %s, %s, %s, %s)"
+                           % (json.dumps(actions), json.dumps(status),
+                              json.dumps(prompt_id), json.dumps(stale),
+                              json.dumps(intent), now), R="run")
+
+    def ent(self, i, **kw):
+        e = {"id": f"a{i}", "kind": "tool", "label": f"tool{i}",
+             "status": "done", "target": "", "reason": "", "undoRef": None,
+             "at": "2026-10-10T01:00:00Z"}
+        e.update(kw)
+        return e
+
+    def boundary(self, **kw):
+        b = {"id": "a1", "kind": "route", "label": "act",
+             "status": "in_flight", "target": "open discord",
+             "reason": "", "undoRef": None, "at": "2026-10-10T01:00:00Z"}
+        b.update(kw)
+        return b
+
+    def test_empty_stream_and_chatter_only_are_not_runs(self):
+        self.assertFalse(self.card([])["present"])
+        self.assertFalse(self.card(None)["present"])
+        chatter = [self.ent(1, kind="label"),
+                   self.ent(2, kind="suggestion")]
+        self.assertFalse(self.card(chatter)["present"])
+
+    def test_active_run(self):
+        c = self.card([self.boundary(),
+                       self.ent(2, status="done", undoRef="switch back"),
+                       self.ent(3, status="in_flight", label="type",
+                                target="hey"),
+                       self.ent(4, status="queued", label="key")])
+        self.assertTrue(c["present"] and c["active"])
+        self.assertEqual(c["intent"], "open discord")
+        self.assertEqual((c["steps"], c["stepAt"]), (3, 2))
+        self.assertEqual(c["current"], "type hey")
+        self.assertEqual(c["outcome"], "")
+        self.assertEqual(c["key"], "a1")
+
+    def test_terminal_run_outcome_mutations_duration(self):
+        c = self.card([self.boundary(status="done"),
+                       self.ent(2, status="done", undoRef="switch back",
+                                delivery="background",
+                                at="2026-10-10T01:00:01Z"),
+                       self.ent(3, status="done",
+                                at="2026-10-10T01:00:03Z")],
+                      status="done")
+        self.assertTrue(c["present"] and not c["active"])
+        self.assertEqual(c["outcome"], "done")
+        self.assertEqual(c["steps"], 2)
+        self.assertEqual(c["mutations"], 1)
+        self.assertEqual(c["undoRefs"], ["switch back"])
+        self.assertEqual(c["durationS"], 3)
+        # the boundary's verdict IS the run's: a failed step inside a
+        # run the daemon still reported done does not fail the card
+        recovered = self.card([self.boundary(status="done"),
+                               self.ent(2, status="failed")], status="done")
+        self.assertEqual(recovered["outcome"], "done")
+        failed = self.card([self.boundary(status="failed"),
+                            self.ent(2, status="failed")], status="error")
+        self.assertEqual(failed["outcome"], "failed")
+
+    def test_settled_and_stale_resolve_open_entries_cancelled(self):
+        acts = [self.boundary(), self.ent(2, status="in_flight")]
+        for status in ("idle", "done", "error", "offline"):
+            c = self.card(acts, status=status)
+            self.assertTrue(c["present"] and not c["active"], status)
+            self.assertEqual(c["outcome"], "cancelled", status)
+        c = self.card(acts, status="acting", stale=True)
+        self.assertFalse(c["active"])
+        self.assertEqual(c["outcome"], "cancelled")
+        # a dead boundary alone resolves cancelled too
+        c = self.card([self.boundary(), self.ent(2, status="done")],
+                      status="idle")
+        self.assertEqual(c["outcome"], "cancelled")
+
+    def test_live_question(self):
+        q = self.ent(2, kind="question", status="awaiting",
+                     label="which account?", promptId="p9",
+                     options=["work", "personal"])
+        c = self.card([self.boundary(), q], status="awaiting_choice",
+                      prompt_id="p9")
+        self.assertEqual(c["question"]["text"], "which account?")
+        self.assertEqual(c["question"]["options"], ["work", "personal"])
+        # no offered picks -> free-text affordance; wrong prompt id ->
+        # not the live card
+        q.pop("options")
+        c = self.card([self.boundary(), q], status="awaiting_choice",
+                      prompt_id="p9")
+        self.assertEqual(c["question"]["options"], [])
+        c = self.card([self.boundary(), q], status="awaiting_choice",
+                      prompt_id="p8")
+        self.assertIsNone(c["question"])
+
+    def test_newest_boundary_wins_and_intent_fallbacks(self):
+        # an older run's entries don't pollute the newest run
+        old = [{"id": "a0", "kind": "route", "label": "act",
+                "status": "done", "target": "old task", "reason": "",
+                "undoRef": None, "at": "2026-10-10T00:00:00Z"},
+               self.ent(0, label="old", status="done")]
+        c = self.card(old + [self.boundary(id="a9"),
+                             self.ent(3, status="in_flight")])
+        self.assertEqual(c["key"], "a9")
+        self.assertEqual(c["steps"], 1)
+        # act-kind boundary: label wins (minus run:), then target
+        c = self.card([{"id": "a1", "kind": "act",
+                        "label": "run: rename shots", "status": "in_flight",
+                        "target": "", "reason": "", "undoRef": None,
+                        "at": "2026-10-10T01:00:00Z"}])
+        self.assertEqual(c["intent"], "rename shots")
+        # no boundary: whole stream is the cluster, intent falls back
+        c = self.card([self.ent(1, status="in_flight")], intent="do it")
+        self.assertEqual(c["intent"], "do it")
 
 
 @unittest.skipUnless(jsnode.NODE, "node not installed")
