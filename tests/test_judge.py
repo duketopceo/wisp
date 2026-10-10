@@ -48,7 +48,7 @@ class JudgeTest(unittest.TestCase):
         self.assertAlmostEqual(v["efficiency"], 0.34)
 
     def test_jev_failure_returns_unknowns(self):
-        # U7: a Jev failure falls through to the brain fallback — both
+        # a Jev failure falls through to the brain fallback — both
         # have to be down for the run to go unjudged
         with mock.patch("wisp.pipeline.ask_jev",
                         side_effect=RuntimeError("offline")), \

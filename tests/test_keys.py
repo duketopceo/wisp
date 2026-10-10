@@ -79,7 +79,7 @@ class TestGeneration(unittest.TestCase):
             hypr.define_submap_lua('w"', [hypr.SubmapBind("escape", ["x"])])
 
     def test_no_modifier_free_chords_only_inside_the_submap(self):
-        # KTD6: never a bare key in the global map. Every generated bind
+        # never a bare key in the global map. Every generated bind
         # lives inside define_submap(...)
         lua = hypr.define_submap_lua("wisp", keys.entries("choose:9", RUNNER))
         self.assertTrue(lua.startswith('hl.define_submap("wisp", function()'))

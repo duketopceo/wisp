@@ -26,6 +26,7 @@ cua_safety.effective_tier.
 import json
 import re
 
+from . import confirm as _confirm
 from . import cua_safety, tools
 
 MODES = ("autonomous", "guided", "always_ask")
@@ -121,10 +122,10 @@ def gate(name: str, arg: str, cfg: dict, confirm,
         and (ctx is None or (n, app) not in ctx["declined"])
         and preempted(n, a, cfg) is None
         and decide(n, a, cfg) == "confirm"]
-    ok, last = _ask(confirm, checkpoint_prompt(items))
+    ok, last = ask(confirm, checkpoint_prompt(items))
     if ok:
         if isinstance(confirmed, set):
-            if last == "always":
+            if last == _confirm.ALWAYS:
                 confirmed.add(ALWAYS_GRANT)
             else:
                 for n, _a in items:
@@ -132,7 +133,7 @@ def gate(name: str, arg: str, cfg: dict, confirm,
         return None
     if ctx is not None:
         ctx["declined"].update((n, app) for n, _a in items)
-    if last == "timeout":
+    if last == _confirm.TIMEOUT:
         return f"SKIPPED ({name} confirmation timed out)"
     return f"SKIPPED ({name} declined by user)"
 
@@ -233,7 +234,7 @@ def _focus_app(state) -> str:
     return focus.get("app", "") if isinstance(focus, dict) else ""
 
 
-def _ask(confirm, prompt: str, kind: str = "confirm") -> tuple:
+def ask(confirm, prompt: str, kind: str = "confirm") -> tuple:
     """Call the confirm callable. Rich ones (wisp/confirm.make) take
     `kind` and offer the "always" session grant; plain doubles take just
     the prompt. Returns (ok, confirm.last)."""
@@ -251,9 +252,9 @@ def _handoff(name: str, arg: str, confirm) -> str:
     if confirm is None:
         return f"SKIPPED ({name} needs a human — no handoff channel)"
     prompt = f"needs you: {name} {arg}".strip()[:80]
-    ok, last = _ask(confirm, prompt, kind="handoff")
+    ok, last = ask(confirm, prompt, kind="handoff")
     if ok:
         return f"HANDED_OFF ({name} done by the user)"
-    if last == "timeout":
+    if last == _confirm.TIMEOUT:
         return f"SKIPPED ({name} handoff timed out)"
     return f"SKIPPED ({name} handoff declined by user)"

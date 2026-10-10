@@ -41,9 +41,11 @@ from . import state as _state
 DEFAULT_TIMEOUT = 120
 MIN_TIMEOUT = 5
 MAX_TIMEOUT = 600
+YES = "yes"
 NO = "no"
 ALWAYS = "always"
 CANCEL = "cancel"
+TIMEOUT = "timeout"
 _UNSET = object()
 
 
@@ -53,6 +55,43 @@ def yes_option(prompt: str) -> str:
 
 def done_option(prompt: str) -> str:
     return f"{prompt} — done"
+
+
+def park_prompt(state, wait_for_choice, token, kind: str, label: str,
+                options, secs: float, confirm_blob=None,
+                clear_confirm: bool = True) -> tuple:
+    """The shared prompt-card lifecycle: publish the awaiting stream
+    entry + `awaiting_choice` (and `confirm`, when confirm_blob is
+    given), park on the broker, then restore `acting` unless the turn
+    was cancelled (the turn unwinds to idle itself).
+
+    Returns (aid, pid, pick). pick is _UNSET when the waiter died
+    without an answer — the awaiting row is resolved 'error' on the
+    way out so no dead card is left parked. Pick resolution and
+    terminal statuses stay with the caller — confirm maps yes/no/
+    always, ask returns text, clarify rejects off-menu picks."""
+    pid = _cancel.new_prompt_id()
+    opts = list(options) if options else None
+    aid = _state.action_add(state, kind, label, status="awaiting",
+                            options=opts, prompt_id=pid)
+    fields = {"choices": list(opts or []), "prompt_id": pid}
+    if confirm_blob is not None:
+        confirm_blob["prompt_id"] = pid
+        fields["confirm"] = confirm_blob
+    state.transition("awaiting_choice", **fields)
+    pick = _UNSET
+    try:
+        pick = wait_for_choice(secs, prompt_id=pid, options=opts)
+    finally:
+        if not token.cancelled:
+            clear = {"choices": [], "prompt_id": ""}
+            if clear_confirm:
+                clear["confirm"] = None
+            state.transition("acting", **clear)
+            if pick is _UNSET:
+                _state.action_set(state, aid, status="cancelled",
+                                  reason="error")
+    return aid, pid, pick
 
 
 def timeout_s(cfg) -> int:
@@ -72,7 +111,6 @@ def make(state, wait_for_choice, token, turn, cfg, clock=time.monotonic):
     def confirm(prompt: str, kind: str = "confirm",
                 always: bool = False) -> bool:
         from . import trace as _trace
-        pid = _cancel.new_prompt_id()
         if kind == "handoff":
             options = [done_option(prompt), CANCEL]
         else:
@@ -80,55 +118,36 @@ def make(state, wait_for_choice, token, turn, cfg, clock=time.monotonic):
             if always:
                 options.append(ALWAYS)
             options.append(NO)
-        # the card is a state in the action stream: the awaiting entry
-        # goes first so a stream-driven surface never sees a card whose
-        # entry doesn't exist yet
-        aid = _state.action_add(state, kind, prompt,
-                                status="awaiting", options=options,
-                                prompt_id=pid)
-        state.transition("awaiting_choice", choices=list(options),
-                         prompt_id=pid,
-                         confirm={"prompt_id": pid, "prompt": prompt,
-                                  "timeout_s": secs, "kind": kind})
         start = clock()
-        pick = _UNSET
-        try:
-            pick = wait_for_choice(secs, prompt_id=pid,
-                                   options=list(options))
-        finally:
-            if not token.cancelled:
-                state.transition("acting", choices=[], prompt_id="",
-                                 confirm=None)
-                if pick is _UNSET:
-                    # the waiter died without an answer — don't leave a
-                    # dead awaiting row parked in the stream
-                    _state.action_set(state, aid, status="cancelled",
-                                      reason="error")
+        aid, pid, pick = park_prompt(
+            state, wait_for_choice, token, kind, prompt, options, secs,
+            confirm_blob={"prompt": prompt, "timeout_s": secs,
+                          "kind": kind})
         if token.cancelled:
             _state.action_set(state, aid, status="cancelled",
                               reason="interrupted")
             token.check()
         if pick == options[0]:
-            confirm.last = "yes"
+            confirm.last = YES
             _state.action_set(state, aid, status="done")
         elif always and pick == ALWAYS:
-            confirm.last = "always"
+            confirm.last = ALWAYS
             _state.action_set(state, aid, status="done",
-                              reason="always")
+                              reason=ALWAYS)
         elif not pick and clock() - start >= secs:
-            confirm.last = "timeout"
+            confirm.last = TIMEOUT
             _state.action_set(state, aid, status="cancelled",
-                              reason="timeout")
+                              reason=TIMEOUT)
             _trace.emit(turn, "confirm_timeout", "act",
                         {"prompt_id": pid, "timeout_s": secs})
         else:
-            confirm.last = "no"
+            confirm.last = NO
             _state.action_set(state, aid, status="cancelled",
                               reason="denied")
-        return confirm.last in ("yes", "always")
+        return confirm.last in (YES, ALWAYS)
 
     confirm.last = ""
-    confirm.rich = True   # policy._ask may pass kind=/always=
+    confirm.rich = True   # policy.ask may pass kind=/always=
     return confirm
 
 
@@ -156,32 +175,17 @@ def make_ask(state, wait_for_choice, token, turn, cfg,
     def ask(question: str, options: list | None = None) -> str | None:
         from . import trace as _trace
         opts = [str(o)[:80] for o in (options or []) if str(o).strip()][:6]
-        pid = _cancel.new_prompt_id()
-        aid = _state.action_add(state, "question", question,
-                                status="awaiting", options=opts or None,
-                                prompt_id=pid)
-        state.transition("awaiting_choice", choices=list(opts),
-                         prompt_id=pid,
-                         confirm={"prompt_id": pid, "prompt": question,
-                                  "timeout_s": secs,
-                                  "kind": "question"})
         try:
             from . import speech
             speech.speak(question, cfg)   # gated by voice.enabled
         except Exception:
             pass
         start = clock()
-        pick = _UNSET
-        try:
-            pick = wait_for_choice(secs, prompt_id=pid,
-                                   options=opts or None)
-        finally:
-            if not token.cancelled:
-                state.transition("acting", choices=[], prompt_id="",
-                                 confirm=None)
-                if pick is _UNSET:
-                    _state.action_set(state, aid, status="cancelled",
-                                      reason="error")
+        aid, pid, pick = park_prompt(
+            state, wait_for_choice, token, "question", question,
+            opts or None, secs,
+            confirm_blob={"prompt": question, "timeout_s": secs,
+                          "kind": "question"})
         if token.cancelled:
             _state.action_set(state, aid, status="cancelled",
                               reason="interrupted")
@@ -194,7 +198,7 @@ def make_ask(state, wait_for_choice, token, turn, cfg,
             _trace.emit(turn, "ask_timeout", "act",
                         {"prompt_id": pid, "timeout_s": secs})
         _state.action_set(state, aid, status="cancelled",
-                          reason="timeout")
+                          reason=TIMEOUT)
         return None
 
     ask.rich = True

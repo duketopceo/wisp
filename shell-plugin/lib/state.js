@@ -241,6 +241,13 @@ function copy(o) { var r = {}; for (var k in o) r[k] = o[k]; return r }
 function build(prev, raw, source, nowMs, changed) {
   var v = copy(prev)
   var n = normalize(raw)
+  // a diff that left actions/choices alone carries the same raw array —
+  // reuse the normalized copy so QML var bindings see an identical value
+  // and don't re-render the run card / chips on every unrelated diff
+  if (prev.raw) {
+    if (raw.actions === prev.raw.actions) n.actions = prev.actions
+    if (raw.choices === prev.raw.choices) n.choices = prev.choices
+  }
   // a diff that dropped `choices` while the same confirm prompt is still
   // pending must not blank the picks the card already snapshotted
   if (n.confirm !== null && prev.confirm !== null

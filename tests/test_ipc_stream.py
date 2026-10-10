@@ -81,7 +81,7 @@ class SubscribeTest(StreamCase):
         self.assertEqual(seqs[0], snap["seq"] + 1)
 
     def test_action_diffs_ride_the_same_stream(self):
-        # U2: the lifecycle stream is just another diff field — a
+        # the lifecycle stream is just another diff field — a
         # mutation fans out as the whole capped list, in seq order
         self.serve()
         f = self.open()

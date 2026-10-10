@@ -306,8 +306,10 @@ class InsertChainTest(unittest.TestCase):
              mock.patch.object(tools, "run", return_value="KEY") as kr, \
              mock.patch.object(dictate.time, "sleep"):
             self.assertTrue(dictate._paste("hello", {}))
-        self.assertEqual(runs[0], ["wl-copy"])
-        self.assertIn(["wl-paste", "--no-newline"], runs)
+        # the clip is captured BEFORE wl-copy overwrites it — reading
+        # after the write would "restore" the dictated text itself
+        self.assertEqual(runs[0], ["wl-paste", "--no-newline"])
+        self.assertEqual(runs[1], ["wl-copy"])
         kr.assert_called_once_with("key", "ctrl+v", {})
         self.assertEqual(runs[-1], ["wl-copy"])      # clip restored
 

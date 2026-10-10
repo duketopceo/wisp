@@ -91,11 +91,11 @@ def resolve_backend(cfg: dict | None, op: str) -> str | None:
     if b is None:
         return None
     m = mode(cfg)
+    from . import pointer
     pin = str(((cfg or {}).get("pointer") or {}).get("backend") or "")
     # "auto"/""/unknown pins resolve the auto order — only an explicit
     # backend pin beats the delivery=pointer escalation below
-    auto_pin = pin.strip().lower() not in (
-        "cua", "hyprcursor", "ydotool", "wlrctl", "none")
+    auto_pin = pin.strip().lower() not in pointer.NAMES + ("none",)
     if m == "pointer" and op == "click" and b == "cua" and auto_pin:
         # force the escalation: prefer a real-pointer backend; when
         # none exists cua stays (marked background in the audit). An

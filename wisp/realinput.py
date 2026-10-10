@@ -119,19 +119,24 @@ class Watch:
                     os.set_blocking(fd, False)   # injected fds may block
                 except OSError:
                     pass
-            self.mode = "evdev"
             self._thread = threading.Thread(target=self._evdev_loop,
                                             daemon=True)
+            mode = "evdev"
         else:
             # degrade: only stay live when the cursor can be read
-            self.mode = "drift" if self._cursor_pos() is not None \
-                else "off"
-            if self.mode == "off":
-                return self.mode
+            mode = "drift" if self._cursor_pos() is not None else "off"
+            if mode == "off":
+                return mode
             self._thread = threading.Thread(target=self._drift_loop,
                                             daemon=True)
-        self._thread.start()
-        return self.mode
+        try:
+            self._thread.start()
+        except Exception:
+            return "off"
+        # publish mode only after the reader is actually alive — a dead
+        # thread must not masquerade as a live watch
+        self.mode = mode
+        return mode
 
     def begin(self) -> None:
         """Per-run reset: disarm, drain any input backlog buffered
@@ -205,24 +210,29 @@ class Watch:
                     if self._armed.is_set():
                         self._yield.set()
                         return
+        except Exception:
+            self.mode = "off"   # dead reader must not claim a live watch
         finally:
             sel.close()
 
     def _drift_loop(self) -> None:
-        while not self._stop.is_set():
-            # sleep while nothing is driving; poll while armed
-            if not self._armed.is_set():
-                self._armed.wait(0.5)
-                continue
-            exp = self._expected
-            if exp is not None:
-                pos = self._cursor_pos()
-                if pos is not None and (
-                        abs(pos[0] - exp[0]) > self._drift_px
-                        or abs(pos[1] - exp[1]) > self._drift_px):
-                    self._yield.set()
-                    return
-            self._stop.wait(self._poll_s)
+        try:
+            while not self._stop.is_set():
+                # sleep while nothing is driving; poll while armed
+                if not self._armed.is_set():
+                    self._armed.wait(0.5)
+                    continue
+                exp = self._expected
+                if exp is not None:
+                    pos = self._cursor_pos()
+                    if pos is not None and (
+                            abs(pos[0] - exp[0]) > self._drift_px
+                            or abs(pos[1] - exp[1]) > self._drift_px):
+                        self._yield.set()
+                        return
+                self._stop.wait(self._poll_s)
+        except Exception:
+            self.mode = "off"
 
 
 # -- process-level watch ------------------------------------------------

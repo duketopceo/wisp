@@ -51,6 +51,19 @@ BUSY = frozenset({"transcribing", "deciding", "acting"})
 COALESCED = frozenset({"level"})
 
 
+def result_status(result: str) -> str:
+    """Result-string prefix -> action lifecycle status, shared by the
+    route dispatcher and the act loop so prefix sets can't drift.
+    Refusals/denials the gates turned away are `cancelled` (the reason
+    field says which); real failures are `failed`."""
+    if result.startswith(("INTERRUPTED", "SKIP", "BLOCKED",
+                          "NO_ANSWER")):
+        return "cancelled"
+    if result.startswith(("ERROR", "REFUS", "FAIL", "ABORT", "STALL")):
+        return "failed"
+    return "done"
+
+
 class State:
     """Mutable daemon state with atomic state.json publication.
 
@@ -89,6 +102,7 @@ class State:
         self.spend = {}         # {today_usd, cap_usd, ...} from ledger.py
         self.started_at = _now()
         self.heartbeat_at = None
+        self._last_blob = None  # last written state.json body
         self.meta = {"seq": 0, "updated_at": self.started_at,
                      "contract_version": CONTRACT_VERSION, "turn_id": None}
         self._bus = None  # set by StateBus: all writes route through it
@@ -196,6 +210,9 @@ class State:
         prompt_id = str(kw.get("prompt_id") or "")
         if prompt_id:
             entry["prompt_id"] = prompt_id[:80]
+        delivery = str(kw.get("delivery") or "")
+        if delivery:
+            entry["delivery"] = delivery[:24]
         self.actions.append(entry)
         if len(self.actions) > ACTIONS_CAP:
             del self.actions[:len(self.actions) - ACTIONS_CAP]

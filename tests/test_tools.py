@@ -209,7 +209,7 @@ class TestAgents(unittest.TestCase):
             self.assertIn("ori opencode", rec["cmd"])
 
     def test_spawn_missing_ori(self):
-        # U6: a missing configured runtime is an explicit error naming it
+        # a missing configured runtime is an explicit error naming it
         with mock.patch.object(agents.shutil, "which", return_value=None):
             out = agents.spawn("task", {})
         self.assertIn("not on PATH", out)

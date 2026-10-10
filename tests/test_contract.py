@@ -114,7 +114,7 @@ class BusWriterOutput(unittest.TestCase):
         assert isinstance(d["actions"], list)
 
     def test_action_entries_match_the_schema(self):
-        # U2: lifecycle entries carry the full v2 shape; transitions
+        # lifecycle entries carry the full v2 shape; transitions
         # mutate the same entry in place, keyed by id
         import tempfile
         f = pathlib.Path(tempfile.mkdtemp()) / "state.json"

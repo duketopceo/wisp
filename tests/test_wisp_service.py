@@ -112,7 +112,7 @@ class TestSingleReader(unittest.TestCase):
 
 
     def test_management_app_ratchet_is_zero(self):
-        # W26: the management app reads state only through the service
+        # the management app reads state only through the service
         app = (ROOT / "shells" / "debug" / "shell.qml").read_text()
         code = re.sub(r"(?m)^\s*//.*$", "", app)
         self.assertEqual(len(re.findall(r"state\.json|stateFile", code)), 0)

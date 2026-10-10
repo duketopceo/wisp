@@ -57,6 +57,16 @@ def _frontmatter(text: str) -> dict:
     return meta
 
 
+def _header(f) -> str | None:
+    """Just enough of a SKILL.md for _frontmatter — no whole-body read.
+    None when unreadable (same contract as the old try/except sites)."""
+    try:
+        with open(f, encoding="utf-8", errors="replace") as fh:
+            return fh.read(4096)
+    except OSError:
+        return None
+
+
 INDEX_BUDGET = 2400  # chars — skill list stays a hint, not a wall
 
 
@@ -79,10 +89,10 @@ def index() -> list:
         f = d / "SKILL.md"
         if not f.is_file():
             continue
-        try:
-            meta = _frontmatter(f.read_text())
-        except OSError:
+        head = _header(f)
+        if head is None:
             continue
+        meta = _frontmatter(head)
         out.append({"name": meta.get("name", d.name),
                     "description": meta.get("description", ""),
                     "tool": bool(meta.get("tool"))})
@@ -198,10 +208,8 @@ def _skill_meta(name: str) -> dict | None:
     # slug the suffix — the name comes from a model tool call and must
     # never resolve outside SKILLS_DIR
     f = SKILLS_DIR / _slug(name[6:]) / "SKILL.md"
-    try:
-        return _frontmatter(f.read_text())
-    except OSError:
-        return None
+    head = _header(f)
+    return _frontmatter(head) if head is not None else None
 
 
 def tier_of(name: str) -> str:
@@ -323,10 +331,10 @@ def register_tools() -> None:
         f = d / "SKILL.md"
         if not f.is_file():
             continue
-        try:
-            meta = _frontmatter(f.read_text())
-        except OSError:
+        head = _header(f)
+        if head is None:
             continue
+        meta = _frontmatter(head)
         if not meta.get("tool"):
             continue
         name = f"skill_{_slug(d.name)}"

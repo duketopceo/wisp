@@ -407,7 +407,7 @@ def bank_text() -> str:
 
 
 # ---------------------------------------------------------------------
-# U7: verdict stream + failure buckets
+# verdict stream + failure buckets
 # ---------------------------------------------------------------------
 
 def record_verdict(rec: dict, path=None) -> None:

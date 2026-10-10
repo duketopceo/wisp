@@ -126,7 +126,7 @@ def verdict(task: str, steps: list, outcome: str, cfg: dict,
         except Exception as e:
             errs.append(f"jev: {e}")
     try:
-        v = _brain_verdict(state, cfg, evidence)
+        v = _brain_verdict(state, cfg, evidence, nsteps=len(steps))
         v["fallback_from"] = "jev" if errs else None
         return v
     except Exception as e:
@@ -199,7 +199,7 @@ def _from_answers(resp: dict, nsteps: int, by: str) -> dict:
 
 
 def _brain_verdict(state: str, cfg: dict,
-                   evidence: dict | None) -> dict:
+                   evidence: dict | None, nsteps: int = 0) -> dict:
     """Cheap brain.chat fallback emitting the same verdict schema."""
     from . import brain
     user = state
@@ -213,7 +213,7 @@ def _brain_verdict(state: str, cfg: dict,
                       cfg, timeout=30)
     txt = resp.get("content", "") if isinstance(resp, dict) \
         else str(resp)
-    v = _parse_verdict_json(txt)
+    v = _parse_verdict_json(txt, nsteps)
     v["by"] = "brain"
     v["judged"] = True
     v["raw"] = {"content": txt[:400]}
@@ -256,16 +256,18 @@ def _norm_verdict(d: dict, nsteps: int) -> dict:
             "waste": waste if waste in _WASTES else "none"}
 
 
-def _parse_verdict_json(text: str) -> dict:
+def _parse_verdict_json(text: str, nsteps: int = 0) -> dict:
     """Strict parse of the brain judge's reply: JSON object first, then
     a regex rescue for the two load-bearing keys. Raises ValueError when
-    no verdict is recoverable — the caller marks the run unjudged."""
+    no verdict is recoverable — the caller marks the run unjudged.
+    nsteps clamps first_fault to the real step range (0 → unknown)."""
+    cap = nsteps if nsteps > 0 else 10_000
     m = re.search(r"\{[^{}]*\}", text or "", re.S)
     if m:
         try:
             d = json.loads(m.group(0))
             if "success" in d:
-                return _norm_verdict(d, 10_000)
+                return _norm_verdict(d, cap)
         except json.JSONDecodeError:
             pass
     succ = re.search(r'"?success"?\s*:\s*"?(\w+)"?', text or "")
@@ -279,7 +281,7 @@ def _parse_verdict_json(text: str) -> dict:
     eff = re.search(r'"?efficiency"?\s*:\s*([\d.]+)', text or "")
     if eff:
         d["efficiency"] = float(eff.group(1))
-    return _norm_verdict(d, 10_000)
+    return _norm_verdict(d, cap)
 
 
 def describe(v: dict) -> str:

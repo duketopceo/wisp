@@ -304,17 +304,14 @@ timeout_ms = "500"
 # base_url = "http://127.0.0.1:8080/v1"
 # vision = "true"
 # tools = "true"
-#
 # [brain.uitars]
 # kind = "openai_compat"   # UI-TARS-7B on llama-server :8081 — emits
 # base_url = "http://127.0.0.1:8081/v1"   # 'Action: click(x,y)' text
 # vision = "true"                          # instead of tool_calls
 # tools = "false"
 # action_text = "true"
-#
 # Jev can also run locally: point WISP_JEV_ENDPOINT at a jev-shim
 # (e.g. http://127.0.0.1:8931/decisions → llama-jev qwen3-4b :8091).
-#
 # Offline trajectory reviewer (`wispd review run`): point it at a
 # slower decider-class model — it reads step logs, not pixels.
 # [brain]

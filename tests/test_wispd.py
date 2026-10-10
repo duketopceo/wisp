@@ -80,7 +80,7 @@ class TestExecute(unittest.TestCase):
         self.assertEqual(out, "LAUNCHED")
 
     def test_unhandled_action_falls_back_to_act_loop(self):
-        # U4: an actionable turn with no usable route/action no longer
+        # an actionable turn with no usable route/action no longer
         # dead-ends on SKIP — the act loop gets the transcript
         from wisp import act
         with mock.patch.object(act, "run_act_loop",
@@ -115,7 +115,7 @@ class TestExecute(unittest.TestCase):
             self.assertIn("not installed", out)
 
     def test_dictation_route_types_transcript(self):
-        # U6: execute delegates to dictate.run; raw mode inserts the
+        # execute delegates to dictate.run; raw mode inserts the
         # stripped transcript via the type_text fallback chain
         from wisp import dictate, tools
         ans = {"route": {"choice": "dictation"},

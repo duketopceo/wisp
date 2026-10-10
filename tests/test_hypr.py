@@ -28,7 +28,7 @@ FIXTURE = json.loads((pathlib.Path(__file__).parent / "fixtures"
 INJECT = '"); hl.dsp.exec_cmd("rm -rf ~'
 
 
-# FakeHypr / ok_handler live in tests/fakes/hypr.py (W5) and are
+# FakeHypr / ok_handler live in tests/fakes/hypr.py and are
 # re-exported here for the tests below and test_pointer_precedence.
 
 

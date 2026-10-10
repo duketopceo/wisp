@@ -19,10 +19,8 @@ import base64
 import json
 import re
 import time
-import urllib.error
-import urllib.request
 
-from . import bgwriter, cancel, config, cua_safety, grounding, ledger, \
+from . import bgwriter, cancel, cua_safety, grounding, ledger, \
     policy, realinput, tools
 from . import delivery as _delivery
 from . import state as _state
@@ -113,6 +111,17 @@ def _name_arg(call: dict) -> tuple:
     return name, arg
 
 
+def _reply(messages: list, call: dict, name: str, result: str) -> None:
+    """Append a tool result: action-text calls are plain user messages,
+    real tool_calls need the tool_call_id link."""
+    if call.get("_at"):
+        messages.append({"role": "user", "content": result})
+    else:
+        messages.append({"role": "tool",
+                         "tool_call_id": call.get("id", name),
+                         "content": result})
+
+
 def run_act_loop(task: str, cfg: dict, state=None,
                  harness: dict | None = None, confirm=None,
                  initial_image: str | None = None,
@@ -135,14 +144,17 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 f"capable provider)")
     system = SYSTEM
     from . import trajectories, context as _ctx, action_stats as _ast
+    traj_recs = trajectories._read_all()  # one parse feeds both blocks
+    traj_labs = trajectories._labels()
     focus = _ctx.snapshot(cfg)
     if focus:
         system += "\n\n" + focus
         app_key = _ctx.focused_app()
-        stats_blk = _ast.block_for(app_key)
+        stats_blk = _ast.block_for(app_key, records=traj_recs)
         if stats_blk:
             system += "\n" + stats_blk
-    prior = trajectories.context_for(task, cfg=cfg)
+    prior = trajectories.context_for(task, cfg=cfg, records=traj_recs,
+                                     labels=traj_labs)
     if prior:
         system += "\n\n" + prior
     from . import train as _train
@@ -152,7 +164,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
         system += "\n\n" + hint
     from . import goals as _goals
     goal_txt = _goals.context_text()
-    # U4: a follow-up turn sees the previous turn's outcome, not just
+    # a follow-up turn sees the previous turn's outcome, not just
     # the open goal — corrections already carry the failed attempt, so
     # this is the general "previous turn did X" context
     prev_txt = _prev_turn()
@@ -221,6 +233,10 @@ def run_act_loop(task: str, cfg: dict, state=None,
     # caption names it so the model reads the shot as the verify pass
     dirty_step = ""
 
+    def _user_interrupted() -> bool:
+        return bool(interrupted and interrupted()) \
+            or realinput.yielded()
+
     def stopped() -> bool:
         return cancel.is_cancelled() or _user_interrupted()
 
@@ -234,7 +250,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
             return f"budget: spend >${max_usd:g}"
         return ""
 
-    # U5: exclusive drive with instant takeover — while a pointer-delivery
+    # exclusive drive with instant takeover — while a pointer-delivery
     # op is in flight, real input (physical mouse/keys; the injectors are
     # filtered out of the watch) must win immediately, same as the user's
     # own interrupt. Mode is logged for the run's audit trail.
@@ -245,10 +261,6 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     {"mode": watch_mode})
     except Exception:
         pass
-
-    def _user_interrupted() -> bool:
-        return bool(interrupted and interrupted()) \
-            or realinput.yielded()
 
     guard = cua_safety.Guard(cfg, state=state,
                            interrupted=_user_interrupted)
@@ -340,13 +352,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
                         {"tool": name, "arg": arg, "result": result,
                          "reply": (msg.get("content") or "")[:500]})
                     _publish(state, task, steps)
-                    if call.get("_at"):
-                        messages.append({"role": "user", "content": result})
-                    else:
-                        messages.append(
-                            {"role": "tool",
-                             "tool_call_id": call.get("id", name),
-                             "content": result})
+                    _reply(messages, call, name, result)
                     continue
                 # lifecycle stream: queued when the model proposes the call,
                 # in_flight while gates/dispatch run, terminal on the result;
@@ -407,13 +413,13 @@ def run_act_loop(task: str, cfg: dict, state=None,
                         served_cached = True
                     else:
                         try:
-                            # W13: resolve the point BEFORE the guard so the
+                            # resolve the point BEFORE the guard so the
                             # audit records x,y (not just len) for name
                             # targets
                             tool_arg, tgt, result = _aim(
                                 name, arg, cfg, guard, state)
                             if result is None:
-                                # W9: kill/deny/rate/dry-run/audit around
+                                # kill/deny/rate/dry-run/audit around
                                 # dispatch
                                 result = guard.run(
                                     name, tool_arg,
@@ -435,7 +441,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 # the stream entry keeps the raw result — the verify line
                 # below is model-facing feedback (step record + tool
                 # result), not stream copy. `delivery` records the channel
-                # the call actually used (U5); a gated/cached step records
+                # the call actually used; a gated/cached step records
                 # the mode it would have used.
                 d = _delivery.planned(name, cfg) \
                     if refused is not None or served_cached \
@@ -464,12 +470,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 # a failure — don't burn the error budget on it.
                 errors = errors + 1 if result.startswith(("ERROR", "SKIP",
                                                           "REFUS")) else 0
-                if call.get("_at"):
-                    messages.append({"role": "user", "content": result})
-                else:
-                    messages.append({"role": "tool",
-                                     "tool_call_id": call.get("id", name),
-                                     "content": result})
+                _reply(messages, call, name, result)
                 if name == "screenshot" and vision \
                         and result.startswith("SHOT ") \
                         and not served_cached:
@@ -486,7 +487,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
         _record_traj(task, harness, steps, out, cfg)
         return out
     finally:
-        # U5: disarm the yield watch — armed/yielded must
+        # disarm the yield watch — armed/yielded must
         # never outlive the run they armed for (a stale
         # yield would poison the next real-pointer call)
         realinput.finish()
@@ -565,14 +566,10 @@ def _aimed_done(state, name: str, tgt, result: str,
 
 
 def _tool_status(result: str) -> str:
-    """Map a tool-call result string onto the action lifecycle: calls
-    the gates turned away are `cancelled` (deny, timeout, disabled —
-    the reason field says which), real failures are `failed`."""
-    if result.startswith(("SKIP", "BLOCKED", "NO_ANSWER")):
-        return "cancelled"
-    if result.startswith(("ERROR", "REFUS", "FAIL", "ABORT", "STALL")):
-        return "failed"
-    return "done"
+    """Map a tool-call result string onto the action lifecycle — the
+    shared classifier (an INTERRUPTED at dispatch level is a cancelled
+    step here too)."""
+    return _state.result_status(result)
 
 
 def _publish(state, task: str, steps: list) -> None:
@@ -738,7 +735,7 @@ _AT_NUM_RE = re.compile(r"-?\d+")
 
 # action-text gesture names -> the blocked tool name whose dispatch
 # returns a legible refusal (desktop-scope real-pointer input is off,
-# U5 — see system.BLOCKED_INPUT). UI-TARS emits e.g. left_double /
+# see system.BLOCKED_INPUT). UI-TARS emits e.g. left_double /
 # right_single / left_click_drag; they must not silently map to click.
 _AT_BLOCKED = {
     "left_double": "double_click", "right_double": "double_click",
@@ -839,7 +836,7 @@ def _png_dims(b64: str) -> tuple | None:
     """(w,h) from a base64 PNG's IHDR — no decoder needed."""
     import struct
     try:
-        raw = base64.b64decode(b64)[:26]
+        raw = base64.b64decode(b64[:40])[:26]
         if raw[:8] == b"\x89PNG\r\n\x1a\n" and raw[12:16] == b"IHDR":
             return struct.unpack(">II", raw[16:24])
     except Exception:

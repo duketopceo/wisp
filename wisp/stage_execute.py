@@ -39,6 +39,13 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
     instead of asking which one. `ask` is the in-loop question channel
     (U4) forwarded to every act-loop dispatch."""
     from . import agents, tools
+
+    def _run_act(task: str) -> str:
+        from . import act
+        return act.run_act_loop(task, cfg, state=state, harness=harness,
+                                confirm=confirm, initial_image=initial_image,
+                                interrupted=interrupted, ask=ask)
+
     route = answers.get("route", {}).get("choice")
     action = answers.get("action", {}).get("choice")
     app = answers.get("app", {}).get("choice")
@@ -64,16 +71,12 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
     if route == "agent":
         return agents.spawn(detail or app or "unnamed task", cfg)
     if route == "act":
-        from . import act
-        return act.run_act_loop(detail, cfg, state=state,
-                                harness=harness, confirm=confirm,
-                                initial_image=initial_image,
-                                interrupted=interrupted, ask=ask)
+        return _run_act(detail)
     if route == "dictation":
         # type the spoken words; a leading dictate keyword is a command
         # prefix, not content — strip it. A correction prefix
         # ('[previous attempt: ...]') is metadata, never dictated.
-        # U6: dictate.run picks the mode (spoken token > per-app
+        # dictate.run picks the mode (spoken token > per-app
         # profile > [dictation] mode), maybe rewrites through the
         # brain, guards terminals and inserts.
         body = re.sub(r"^\[previous attempt:[^\]]*\]\s*", "", detail)
@@ -82,16 +85,12 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
         return dictate.run(text_to_paste, cfg, state=state,
                            confirm=confirm)
     if route == "learn":
-        from . import act
         prompt = ("Author a reusable skill for this request using the "
                   "skill_manage and skill_view tools. If a skill on this "
                   "topic already exists, view it and fold improvements "
                   "in with edit; otherwise create it. Keep the SKILL.md "
                   "body concise and procedural. Request: " + detail)
-        return act.run_act_loop(prompt, cfg, state=state,
-                                harness=harness, confirm=confirm,
-                                initial_image=initial_image,
-                                interrupted=interrupted, ask=ask)
+        return _run_act(prompt)
     if route == "tool":
         tool_name = answers.get("tool", {}).get("choice", "")
         if tool_name == "launch":
@@ -107,11 +106,7 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
             # transcript, and executing it verbatim turns every
             # misroute into `sh -c "<your sentence>"`. The act loop's
             # model composes a real argv from the request instead.
-            from . import act
-            return act.run_act_loop(detail, cfg, state=state,
-                                    harness=harness, confirm=confirm,
-                                    initial_image=initial_image,
-                                    interrupted=interrupted, ask=ask)
+            return _run_act(detail)
         if tier == "mutating" and risk > threshold:
             return f"BLOCKED (tool {tool_name!r} needs confirmation)"
         if tier == "safe" or risk <= threshold:
@@ -129,22 +124,13 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
     # request still has the transcript — hand it to the act loop
     # rather than returning a dead SKIP. (Jev's decision path itself
     # is untouched; this only rescues the dispatch.)
-    from . import act
-    return act.run_act_loop(detail or app or "continue the task", cfg,
-                            state=state, harness=harness,
-                            confirm=confirm, initial_image=initial_image,
-                            interrupted=interrupted, ask=ask)
+    return _run_act(detail or app or "continue the task")
 
 
 def _dispatch_status(result: str) -> str:
-    """Route-level entry resolution from the dispatch result string."""
-    if result.startswith("INTERRUPTED"):
-        return "cancelled"
-    if result.startswith(("BLOCKED", "SKIP")):
-        return "cancelled"
-    if result.startswith(("ERROR", "ABORTED", "STALLED", "FAIL")):
-        return "failed"
-    return "done"
+    """Route-level entry resolution from the dispatch result string —
+    the shared classifier."""
+    return _state.result_status(result)
 
 
 def execute_stage(ctx) -> None:
@@ -159,7 +145,7 @@ def execute_stage(ctx) -> None:
         from . import confirm as _confirm
         confirm = _confirm.make(state, ctx.wait_for_choice, token,
                                 ctx.turn, cfg)
-        # U4: the act loop's ask_user rides the same broker — the
+        # the act loop's ask_user rides the same broker — the
         # question card is the confirm card inverted (prompt IS the
         # payload, picks only when the model offered them)
         ask = _confirm.make_ask(state, ctx.wait_for_choice, token,

@@ -37,7 +37,7 @@ import time
 from datetime import datetime, timezone
 
 from . import cancel as _cancel
-from . import config, platform
+from . import config, platform, cua_safety
 
 FILE = config.DATA_DIR / "dictation.json"
 
@@ -45,8 +45,10 @@ MODES = ("raw", "cleanup", "compose")
 DEFAULT_MODE = "cleanup"
 
 # substring match on the focused window class, lowercase; the
-# configurable dictation.terminal_classes csv extends it
-TERMINALS = ("foot", "alacritty", "kitty", "ghostty", "wezterm")
+# configurable dictation.terminal_classes csv extends it — the
+# canonical list lives with the safety layer so the same terminals
+# that can't be CUA-driven can't be dictation-injected either
+TERMINALS = cua_safety.TERMINALS
 
 # leading spoken tokens that pick a mode per call — 'dictate raw ...'
 # bypasses the brain. Kept to raw/verbatim on purpose: cleanup is the
@@ -66,13 +68,8 @@ _TYPED_MAX = 300       # chars: wtype char-typing gets slow and drops
                        # glyphs on big bodies — longer text paste-first
 
 
-def _csv(v) -> list:
-    return [s.strip().lower() for s in str(v or "").split(",")
-            if s.strip()]
-
-
-def _truthy(v) -> bool:
-    return str(v or "").strip().lower() in ("1", "true", "yes", "on")
+_csv = cua_safety._csv
+_truthy = cua_safety._truthy
 
 
 def settings(cfg: dict | None) -> dict:
@@ -222,10 +219,10 @@ def apply_corrections(text: str, corr: dict | None) -> str:
     return text
 
 
-def _seen(cls: str, path=None) -> None:
+def _seen(cls: str, path=None, data: dict | None = None) -> None:
     """`profiles_seen` bookkeeping: which apps get dictated into and
     how often — the evidence a future profile suggestion reads."""
-    data = _read(path)
+    data = _read(path) if data is None else data
     rec = data["profiles_seen"].setdefault(cls or "?", {"n": 0})
     rec["n"] = int(rec.get("n") or 0) + 1
     rec["last"] = datetime.now(timezone.utc).isoformat()
@@ -343,6 +340,7 @@ def _paste(text: str, cfg: dict) -> bool:
     import shutil
     if not shutil.which("wl-copy"):
         return False
+    prior = _clip_get()
     try:
         r = _cancel.run(["wl-copy"], input=text.encode(),
                         capture_output=True, timeout=10)
@@ -350,7 +348,6 @@ def _paste(text: str, cfg: dict) -> bool:
         return False
     if r.returncode != 0:
         return False
-    prior = _clip_get()
     from . import tools
     ok = tools.run("key", "ctrl+v", cfg).startswith("KEY")
     if prior is not None:
@@ -410,7 +407,7 @@ def _send_ok(profile: dict, confirm, app: str, text: str) -> bool:
         return False
     from . import policy
     prompt = f"send in {app or 'the app'}? {text[:80]}".strip()
-    ok, _last = policy._ask(confirm, prompt[:160])
+    ok, _last = policy.ask(confirm, prompt[:160])
     return ok
 
 
@@ -426,7 +423,8 @@ def run(text: str, cfg: dict, state=None, confirm=None,
     cls = win.get("class") or ""
     profile = profile_for(cls, cfg)
     mode, text = pick_mode(text, cfg, profile, mode)
-    corr = corrections()
+    data = _read()
+    corr = dict(data["corrections"])
     out = rewrite(mode, text, cfg, win, profile, corr)
     if mode != "raw":
         out = apply_corrections(out, corr)
@@ -440,7 +438,7 @@ def run(text: str, cfg: dict, state=None, confirm=None,
         return "REFUSED (denylisted command)"
     send = _send_ok(profile, confirm, cls, out)
     if terminal and not send:
-        # KTD7: typed newlines ARE Return presses at a shell — spoken
+        # typed newlines ARE Return presses at a shell — spoken
         # text must never execute; the confirmed send path keeps them
         out = collapse_newlines(out)
     via, err = insert(out, cfg)
@@ -450,7 +448,7 @@ def run(text: str, cfg: dict, state=None, confirm=None,
     if send:
         from . import tools
         sent = tools.run("key", "enter", cfg).startswith("KEY")
-    _seen(cls)
+    _seen(cls, data=data)
     tag = "DICTATED" if via == "wordink" else "INSERTED"
     if via == "paste":
         tag += " (paste)"

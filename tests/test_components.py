@@ -26,7 +26,7 @@ EXPECTED = ["Answer", "AgentRow", "AgentsTab", "BarActions", "BarMark", "BarPill
             "HealthSection", "Icon", "Mark", "MemoryTab", "NowTab", "OverlayLayer",
             "PanelTab", "Pill", "RunCard", "SettingsTab", "StatusLine", "StepRow",
             "StopControl", "Transcript",
-            # management app views (W26)
+            # management app views
             "AuditView", "BindsView", "HealthView", "SpendView"]
 
 FORBIDDEN = [

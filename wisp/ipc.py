@@ -83,8 +83,7 @@ class Daemon:
 
     def start(self) -> None:
         self._sock_file.parent.mkdir(parents=True, exist_ok=True)
-        if self._sock_file.exists():
-            self._sock_file.unlink()
+        self._sock_file.unlink(missing_ok=True)
         if _use_tcp():
             srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             srv.bind(("127.0.0.1", 0))
