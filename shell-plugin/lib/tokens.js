@@ -34,6 +34,7 @@ var EMBER_URGENT_DE = 10.0
 var EMBER_L = { dark: [0.70, 0.85], light: [0.45, 0.60] }
 var MIX_STEP = 0.05
 var L_STEP = 0.01
+var STATE_FLOOR = 4.5 // state colors also carry text (WCAG 1.4.3)
 
 // --- color math -----------------------------------------------------------
 
@@ -249,9 +250,9 @@ function derive(colors, shell, source) {
       emberCore: withLightness(ember, eL + 0.1),
       emberWick: withLightness(ember, eL - 0.1),
       emberHalo: halo,
-      needsYou: liftUntil(colors.yellow || b.urgent, canvas, 3.0),
-      fail: liftUntil(b.urgent, canvas, 3.0),
-      ok: liftUntil(colors.green || accent, canvas, 3.0),
+      needsYou: liftUntil(colors.yellow || b.urgent, canvas, STATE_FLOOR),
+      fail: liftUntil(b.urgent, canvas, STATE_FLOOR),
+      ok: liftUntil(colors.green || accent, canvas, STATE_FLOOR),
       selection: colors.selection || over(accent, SELECTION_ALPHA, canvas)
     }
   }
