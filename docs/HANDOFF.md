@@ -1,44 +1,46 @@
-# Handoff — machine migration (omarchy-macbook-m1 → omarchy-max)
+# Handoff — current (2026-10-11)
 
-Written 2026-09-19 during migration off the M1 MacBook. Branch: `feat/dim-assistant`.
+Short checklist for someone picking up Wisp on a live Omarchy box or
+continuing toward the v1.0 gate in `ROADMAP.md`. The September 2025
+M1→max migration note is archived at
+`docs/archive/HANDOFF-2026-09-19-migration.md`.
 
-## Where things stand
+## Shipped since that migration (do not re-open as "coming soon")
 
-The 8-unit plan (`docs/plans/2026-09-18-001-feat-dim-autonomous-assistant-plan.md`)
-is fully implemented: resident `wispd` daemon + Unix-socket IPC, Jev routing
-v2 (launch/tool/agent/answer/clarify), risk-tiered toolbelt, `ori opencode`
-named agents, Omarchy Quickshell plugin (bar icon + dim overlay + choices),
-weekly human-gated learning loop, generic install. 54/54 tests pass.
+- Resident `wispd`, IPC contract v1, push stream, `wispd <group> <verb>` CLI.
+- Computer use: pointer backends, cua-driver, safety policy, grounding chain
+  (`docs/CUA.md`).
+- Ember surfaces: bar mark + **in-bar live pill** (replaced the corner orb and
+  on-demand console, PR #109), companion overlay (listening pill, answer
+  bubble, ghost cursor), four-tab Panel, confirm card, keyboard submap.
+- Pipeline split: `wisp/stage_{capture,route,execute,speak}.py` (W30).
+- Act tools: DOM `click`/`fill` by element id (#107), label-grounded legend +
+  recipe distillation (#108), voice answers to pending prompts and spoken
+  interrupt (#110).
 
-## Live state on the M1 (must be redone on omarchy-max)
+## Machine setup (still manual)
 
-- `wispd install` + `systemctl --user enable --now wispd`
-- `Super+D` bind lives in `~/.config/hypr/bindings.lua` **and** the
-  machine stash `~/.local/share/machine/<host>/bindings.lua` (sync-watch
-  reverts ~/.config edits not in the stash)
-- Plugin enabled via `omarchy shell setPluginEnabled io.github.duketopceo.wisp`
-  and already placed in the bar `center` layout in `~/.config/omarchy/shell.json`
-- `whisper.cpp` at `~/src/whisper.cpp`; model `ggml-small.en.bin` must be
-  downloaded (`bash models/download-ggml-model.sh small.en`) — the
-  `for-tests-*.bin` files are stubs, not real models
-- Secrets: `OPENROUTER_API_KEY` in `~/.config/wisp/.env`
-- `harness.json` regenerates via `wispd harness` (mines dayflow if present,
-  else generic .desktop/PATH catalog)
+- `python3 wispd install` then `systemctl --user enable --now wispd`
+- Hold `Super+D` bind from install (or `wispd trigger start` / `stop`)
+- Plugin `io.github.duketopceo.wisp` enabled in Omarchy shell layout
+- Local whisper.cpp model + optional loopback brains (`wispd health`)
+- Secrets in `~/.config/wisp/.env` (never committed)
 
-## Known issues / next tasks
+## Verify on a fresh session
 
-All Wave-2+3 units shipped; the items below are genuinely open:
+```sh
+wispd doctor
+wispd status --json
+wispd trigger          # one full talk cycle without the hotkey
+wispd trace show --tail 5
+python3 -m unittest discover -s tests -q
+```
 
-- **Point grounding**: the model mis-grounds raw pixel coords on large
-  screenshots — pick a better-vision answer model via `[brain] default`
-  or shrink the shot before prompting (accuracy knob, not a bug).
-- **Streaming STT/TTS**: batch today; streaming voice: coming soon.
-- **Literal computer-use clicks**: Wisp points but doesn't click —
-  coming soon behind the risk gate.
-- **File/PDF attach context**: coming soon.
-- **GNOME Wayland window ops**: platform has no general window API —
-  wm ops answer `SKIP` there by design, not a stub.
-- **Windows workspaces**: virtual-desktop API needs COM — coming soon.
+## Genuinely open (see ROADMAP for evidence gates)
 
-Everything else in this doc's history shipped; see git log and
-docs/plans/units/ for per-unit status.
+- v1.0 soak: ≥50 labelled runs per route, fresh-box install ≤10 min,
+  learning loop exercised twice.
+- Warm/streaming STT (W12), contract-freeze housekeeping (W31).
+- Platform residuals: GNOME/KDE window ops degrade by design; Windows
+  workspaces need COM; streaming TTS remains sentence-chunked batch.
+- Grounding accuracy is a model/config knob, not a missing feature.

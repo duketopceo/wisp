@@ -16,6 +16,24 @@ restart) or the Settings tab in the GUI. Every key has a default.
 |-----|---------|---------|
 | `submap` | `"true"` | register the Wisp keyboard submap while a turn acts or waits |
 
+### Voice answers during a parked or running turn (#110)
+
+While `ctl["busy"]` is set (a turn is deciding, acting, or parked on
+`awaiting_choice`), a normal `listen` does **not** start a new turn. Hold
+`Super+D` (or send `listen` with `phase: start`, then release with
+`phase: stop` / a second toggle):
+
+- With a pending prompt: the daemon records a **mini-capture** tagged
+  `mini: choice`, transcribes it, and maps speech to an option via
+  `wisp/voicepick.py` (yes/no, ordinals, label overlap). Mapped picks
+  call the same `choice` broker as a chip click; unmapped speech leaves
+  the card up and TTS says "didn't catch that".
+- With no pending prompt but a turn in flight: `mini: stop` — spoken
+  stop / wait / never mind / cancel sets `interrupt` like `wispd interrupt`.
+
+The running turn keeps its status surface; mini-capture never calls
+`begin_turn`. See `docs/IPC_CONTRACT.md` for reply shapes and trace events.
+
 While a turn is `acting` or `awaiting_choice`, `wispd` registers and enters
 a Hyprland submap named `wisp` and leaves it on every other status:
 
@@ -47,7 +65,7 @@ take focus, so `Esc` stays reachable while cua acts. Design notes:
 
 | key | default | meaning |
 |-----|---------|---------|
-| `seconds` | `60` | max capture per toggle press — SUPER+D starts, SUPER+D again stops; this is only the safety ceiling |
+| `seconds` | `60` | max capture per press — hold `Super+D` (release to send) or `wispd trigger start` then `stop`; bare `wispd trigger` toggles; this is only the safety ceiling |
 | `whisper_model` | `"ggml-small.en.bin"` | ggml model file name |
 
 ## [stt] — speech-to-text
@@ -340,13 +358,14 @@ the Ember tokens from `wisp/theme.py`.
 daemon run|install|harness     status  stop  interrupt  trigger [start|stop]
 watch [topic ...]              choice [pick] [--prompt-id ID] [--index N]
 doctor  health [start [--run]]  latency [--since 24h]  spend  binds  onboard
-cua status|test|log|enable|disable      notify test
+cua status|test|log|kill|resume|enable|disable   notify test
 task list|status|cancel|run    memory edit|write    suggest list
 label report|set               context
 train stats|history|bank|rebuild        review list|run|approve|reject
 learn weekly|fails             skills list|import  recipes draft|approve
 trace show|digest              eval route
-config show|set                theme show|set|check|css
+config show|set|keys           theme show|set|check|css
+batch status|submit-learn|poll|cancel
 connect list|add               sync  inventory  tui  completion bash|zsh|fish
 ```
 
