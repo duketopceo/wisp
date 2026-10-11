@@ -292,3 +292,9 @@ quickshell plugin: components, lib, Panel, Companion), `shells/` (the
 management app), `scripts/` (harness, snapshot and asset tools), `docs/`
 (install, config, IPC contract, CUA, plans). The plan of record is
 `docs/plans/2026-10-04-0100-feat-wisp-unified-plan.md`.
+
+## License
+
+AGPL-3.0. Free to use and modify, including privately. If you host or distribute a modified version, you must publish your source under the same license. See [`LICENSE`](LICENSE).
+
+Releases up to and including v0.9.0 were published under the MIT License and remain available under MIT. Icons and artwork in `assets/` stay CC0 (see `assets/LICENSE`), and the bundled test fonts keep their own license (`tests/qml/fonts/LICENSE-Liberation`).
