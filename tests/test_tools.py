@@ -206,7 +206,9 @@ class TestAgents(unittest.TestCase):
             with mock.patch.object(agents.shutil, "which",
                                    return_value="/usr/bin/ori"), \
                  mock.patch.object(agents.subprocess, "Popen",
-                                   return_value=proc):
+                                   return_value=proc), \
+                 mock.patch.object(agents, "_proc_stat",
+                                   return_value=("S", "99")):
                 out = agents.spawn("fix the tests in wisp", {},
                                    tasks_file=tf, log_dir=ld)
             self.assertIn("SPAWNED", out)
@@ -230,7 +232,9 @@ class TestAgents(unittest.TestCase):
             with mock.patch.object(agents.shutil, "which",
                                    return_value="/usr/bin/ori"), \
                  mock.patch.object(agents.subprocess, "Popen",
-                                   return_value=proc):
+                                   return_value=proc), \
+                 mock.patch.object(agents, "_proc_stat",
+                                   return_value=("S", "99")):
                 agents.spawn("fix-x", {}, tasks_file=tf,
                              log_dir=pathlib.Path(td))
             recs = [json.loads(l) for l in tf.read_text().splitlines()]
