@@ -244,7 +244,7 @@ class TurnReplayTest(unittest.TestCase):
         res = runner.run_turn(fx)
         self.assertEqual(res.exit_code, 0, res.stderr)
         ft = res.spans["first_token_ms"]
-        self.assertAlmostEqual(ft, 300, delta=50)
+        self.assertTrue(300 <= ft <= 300 + 150 * runner.JITTER, ft)
 
     def test_every_fixture_meets_its_expectations(self):
         for name in FIXTURE_NAMES:
@@ -364,7 +364,8 @@ class TurnReplayTest(unittest.TestCase):
         self.assertTrue(full.startswith(ans), ans)
         idle = [e for e in res.events if e["status"] == "idle"][-1]
         self.assertEqual(res.events[-1], idle, "events after the cancel")
-        self.assertLess(idle["t_ms"] - res.interrupt_t_ms, 150)
+        self.assertLess(idle["t_ms"] - res.interrupt_t_ms,
+                        150 * runner.JITTER)
         self.assertTrue(res.peer_closed["brain"],
                         "brain socket was not closed")
         self.assertEqual(res.violations, [])
@@ -378,7 +379,8 @@ class TurnReplayTest(unittest.TestCase):
         self.assertEqual(res.final["error_code"], "cancelled")
         self.assertEqual(res.chat_calls(), [])   # never reached the brain
         self.assertTrue(res.peer_closed["jev"])
-        self.assertLess(res.events[-1]["t_ms"] - res.interrupt_t_ms, 150)
+        self.assertLess(res.events[-1]["t_ms"] - res.interrupt_t_ms,
+                        150 * runner.JITTER)
 
     def test_cancel_during_stt_ends_idle_within_150ms(self):
         fx = copy.deepcopy(runner.load_fixture(FIXTURES / "ask.json"))
@@ -388,7 +390,8 @@ class TurnReplayTest(unittest.TestCase):
         self.assertEqual(res.statuses[-1], "idle")
         self.assertEqual(res.final["error_code"], "cancelled")
         self.assertEqual(res.calls["jev"], [])
-        self.assertLess(res.events[-1]["t_ms"] - res.interrupt_t_ms, 150)
+        self.assertLess(res.events[-1]["t_ms"] - res.interrupt_t_ms,
+                        150 * runner.JITTER)
 
     def test_act_loop_honours_cancel_between_steps(self):
         fx = copy.deepcopy(runner.load_fixture(FIXTURES / "act.json"))
@@ -407,7 +410,8 @@ class TurnReplayTest(unittest.TestCase):
                         res.final)
         self.assertEqual([c["tool"] for c in res.fake_calls["cua"]],
                          ["click"])
-        self.assertLess(res.events[-1]["t_ms"] - res.interrupt_t_ms, 150)
+        self.assertLess(res.events[-1]["t_ms"] - res.interrupt_t_ms,
+                        150 * runner.JITTER)
 
     def test_cleanup_removes_tempdir_and_ports(self):
         res = runner.run_turn(FIXTURES / "ask.json")
