@@ -73,6 +73,19 @@ Rectangle {
       font.family: root.service.fontFamily
       font.pixelSize: M.font.answer
     }
+    Text {
+      // the thing being approved (e.g. the dictation about to send) —
+      // approving blind is no approval; daemon caps detail at 4k
+      visible: root.card !== null && root.card.detail !== ""
+      width: parent.width
+      text: root.card ? root.card.detail : ""
+      wrapMode: Text.Wrap
+      maximumLineCount: Cursor.BUBBLE_LINES - 4
+      elide: Text.ElideRight
+      color: root.tk.inkMuted
+      font.family: root.service.fontFamily
+      font.pixelSize: M.font.caption
+    }
     Row {
       visible: root.card !== null && !root.question
       spacing: M.spacing.md

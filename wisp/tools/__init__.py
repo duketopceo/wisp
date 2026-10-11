@@ -157,6 +157,11 @@ EXTERN = frozenset({"agent_spawn", "task_status", "task_cancel",
                     "memory", "recall", "skill_manage", "skill_view",
                     "ask_user"})
 
+# loop-internal backchannels the model can call inside a run but that
+# have no route-level executor — Jev must never route to them (run()
+# could only answer SKIP)
+LOOP_ONLY = frozenset({"ask_user"})
+
 
 def get(name: str):
     return REGISTRY.get(name)
@@ -173,8 +178,11 @@ def meta_of(name: str) -> dict:
 
 
 def describe() -> dict:
-    """Criteria text for Jev's tool question."""
-    return {name: e[2] for name, e in REGISTRY.items()}
+    """Criteria text for Jev's tool question — routable tools only;
+    LOOP_ONLY entries are advertised in tool_schemas but can't be
+    dispatched as a route."""
+    return {name: e[2] for name, e in REGISTRY.items()
+            if name not in LOOP_ONLY}
 
 
 def tool_schemas() -> list:

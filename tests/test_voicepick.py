@@ -70,7 +70,14 @@ class MapPickTest(unittest.TestCase):
         self.assertEqual(self.pick("yes", self.TRIPLE), 0)
         self.assertEqual(self.pick("no", self.TRIPLE), 2)
         self.assertEqual(self.pick("always", self.TRIPLE), 1)
-        self.assertEqual(self.pick("the second one", self.TRIPLE), 1)
+        # the session wildcard never binds by ordinal/digit — an
+        # incidental "second" must not widen one approval into every
+        # gated call; the card stays up
+        self.assertIsNone(self.pick("the second one", self.TRIPLE))
+        self.assertIsNone(self.pick("2", self.TRIPLE))
+        # nor by label overlap — a stray "always" mid-sentence is not a
+        # grant
+        self.assertIsNone(self.pick("always delete it", self.TRIPLE))
 
     def test_handoff_done_cancel(self):
         self.assertEqual(self.pick("done", self.HANDOFF), 0)

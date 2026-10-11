@@ -104,10 +104,20 @@ def _name_arg(call: dict) -> tuple:
     """(tool name, arg) from one provider tool_call object."""
     fn = call.get("function", {})
     name = fn.get("name", "")
-    try:
-        arg = json.loads(fn.get("arguments") or "{}").get("arg", "")
-    except json.JSONDecodeError:
-        arg = ""
+    raw = fn.get("arguments")
+    arg = ""
+    # providers emit arguments as a JSON string or an object — anything
+    # else (a list, a bare scalar, broken JSON) leaves arg empty so the
+    # call becomes a tool error instead of crashing the run
+    if isinstance(raw, dict):
+        arg = str(raw.get("arg", ""))
+    elif isinstance(raw, str):
+        try:
+            parsed = json.loads(raw or "{}")
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, dict):
+            arg = str(parsed.get("arg", ""))
     return name, arg
 
 
@@ -220,6 +230,16 @@ def run_act_loop(task: str, cfg: dict, state=None,
     # total can't trip a fresh run)
     spend0 = ledger.session_totals().get("cost", 0.0) \
         if max_usd > 0 else 0.0
+    # parked prompt cards share the run's wall-clock bound — the
+    # factories read _run_deadline and cap each card's wait at it, so a
+    # question can't outlast act_max_seconds
+    if max_seconds > 0:
+        for _fn in (confirm, ask):
+            if callable(_fn):
+                try:
+                    _fn._run_deadline = t0 + max_seconds
+                except (AttributeError, TypeError):
+                    pass
     bgwriter.configure(cfg)
     # trigger-time image counts as the current observation; a mutating
     # step flips this and forces a fresh screenshot before the next
@@ -259,7 +279,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
         from . import trace as _trace
         _trace.emit(_trace.current(), "yield_watch", "cua",
                     {"mode": watch_mode})
-    except Exception:
+    except (ImportError, AttributeError, TypeError):
         pass
 
     guard = cua_safety.Guard(cfg, state=state,
@@ -344,12 +364,14 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     # spoken answer comes back as this call's result. No
                     # gate — it's a question, not an action.
                     try:
-                        result = _ask_user(state, ask, arg)
+                        result, shown = _ask_user(state, ask, arg)
                     except cancel.Cancelled:
                         _goals.record_steps(steps)
                         return "INTERRUPTED (user)"
+                    # the raw answer is model-facing only — the stream,
+                    # state.json and trajectories get the redacted form
                     steps.append(
-                        {"tool": name, "arg": arg, "result": result,
+                        {"tool": name, "arg": arg, "result": shown,
                          "reply": (msg.get("content") or "")[:500]})
                     _publish(state, task, steps)
                     _reply(messages, call, name, result)
@@ -456,7 +478,8 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     if not served_cached:
                         last_shot = result
                 elif name in _SCREEN_CHANGING and not result.startswith(
-                        ("ERROR", "SKIP", "REFUS", "DRYRUN")):
+                        ("ERROR", "SKIP", "REFUS", "DRYRUN", "FAIL",
+                         "BLOCKED")):
                     screen_dirty = True
                     dirty_step = f"{name} {arg}".strip()[:60]
                 step = {"tool": name, "arg": arg, "result": result,
@@ -468,8 +491,8 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 _publish_guide(state, name, arg, result)
                 # GUIDE() is a user-handoff (guide mode / no backend), not
                 # a failure — don't burn the error budget on it.
-                errors = errors + 1 if result.startswith(("ERROR", "SKIP",
-                                                          "REFUS")) else 0
+                errors = errors + 1 if result.startswith(
+                    ("ERROR", "SKIP", "REFUS", "FAIL", "BLOCKED")) else 0
                 _reply(messages, call, name, result)
                 if name == "screenshot" and vision \
                         and result.startswith("SHOT ") \
@@ -542,7 +565,8 @@ def _announce(state, tgt, name: str = "", cfg: dict | None = None,
         from . import platform
         w = platform.active_window() or {}
         win = w.get("title") or w.get("class") or ""
-    except Exception:
+    except (ImportError, AttributeError, OSError, RuntimeError,
+            TypeError):
         pass
     # the aim carries the delivery the call would use — a visible
     # "pointer" aim is the escalation the user sees before it lands
@@ -625,7 +649,8 @@ def _prev_turn() -> str:
         from . import session
         last = session.tail(1)
         txt = session.as_text(last) if last else ""
-    except Exception:
+    except (ImportError, AttributeError, OSError, TypeError,
+            ValueError):
         return ""
     return f"[previous turn]\n{txt[:400]}" if txt else ""
 
@@ -637,13 +662,18 @@ def _parse_ask(arg: str) -> tuple:
     return q, [p for p in parts[1:] if p][:6]
 
 
-def _ask_user(state, ask, arg: str) -> str:
+def _ask_user(state, ask, arg: str) -> tuple:
     """Run the model's ask_user call: the question parks on the turn's
     ask channel (`confirm.make_ask` — a `question` card on the same
     prompt broker the confirm card uses) and the pick/typed/spoken
     answer comes back as the tool result. NO_ANSWER when no channel is
-    wired or the question lapsed."""
+    wired or the question lapsed. Returns (model-facing result, redacted
+    result for the stream/step record) — a free-text answer can carry
+    secrets, so it never reaches state.json or trajectories."""
     q, opts = _parse_ask(arg)
+    if not q:
+        return ("SKIP (ask_user needs a question)",
+                "SKIP (ask_user needs a question)")
     aid = _state.action_add(state, "tool", "ask_user", target=arg,
                             status="in_flight")
     answer = ask(q, opts or None) if callable(ask) else None
@@ -651,9 +681,10 @@ def _ask_user(state, ask, arg: str) -> str:
               "NO_ANSWER (no usable reply — the question lapsed or "
               "no answer channel is wired; proceed on your best "
               "judgment or report the block)")
+    shown = (f"USER ANSWERED ({len(answer)} chars)" if answer else result)
     _state.action_set(state, aid, status=_tool_status(result),
-                      reason=result)
-    return result
+                      reason=shown)
+    return result, shown
 
 
 def _verify_hint(name: str, arg: str, result: str, cfg: dict) -> str:
@@ -702,7 +733,8 @@ def _app(harness: dict | None) -> str:
     try:
         from . import platform
         return platform.active_window().get("class", "")
-    except Exception:
+    except (ImportError, AttributeError, OSError, RuntimeError,
+            TypeError):
         return ""
 
 
@@ -828,7 +860,7 @@ def _publish_guide(state, name: str, arg: str, result: str) -> None:
             "mode": "drive" if result.startswith(("CLICKED", "MOVED"))
                     else "guide",
             "seq": len(state.steps or []) + 1})
-    except Exception:
+    except (ImportError, AttributeError, TypeError, ValueError):
         pass
 
 
@@ -839,7 +871,7 @@ def _png_dims(b64: str) -> tuple | None:
         raw = base64.b64decode(b64[:40])[:26]
         if raw[:8] == b"\x89PNG\r\n\x1a\n" and raw[12:16] == b"IHDR":
             return struct.unpack(">II", raw[16:24])
-    except Exception:
+    except (ValueError, TypeError, struct.error):
         pass
     return None
 

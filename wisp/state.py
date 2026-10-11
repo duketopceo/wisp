@@ -27,7 +27,7 @@ def _goal_snapshot():
         from . import goals
         g = goals.snapshot()
         return g["text"][:160] if g else None
-    except Exception:
+    except (ImportError, AttributeError, KeyError, TypeError):
         return None
 
 
@@ -507,7 +507,7 @@ class StateBus:
             trace.emit(turn_id, "stale_publish", "state",
                        {"current": self._turn,
                         "fields": sorted(fields)[:12]})
-        except Exception:
+        except (ImportError, AttributeError, TypeError):
             pass
 
     # -- action stream --------------------------------------------------

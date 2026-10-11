@@ -105,11 +105,16 @@ def gate(name: str, arg: str, cfg: dict, confirm,
     decision = decide(name, arg, cfg)
     if decision == "run":
         return None
-    if decision == "handoff":
-        return _handoff(name, arg, confirm)
     app = _focus_app(state)
     confirmed = getattr(state, "confirmed", None)
     grants = confirmed if isinstance(confirmed, set) else frozenset()
+    if decision == "handoff":
+        if ctx is not None and (name, app) in ctx["declined"]:
+            return f"SKIPPED ({name} declined by user)"
+        out = _handoff(name, arg, confirm)
+        if ctx is not None and out.endswith("declined by user)"):
+            ctx["declined"].add((name, app))
+        return out
     if (name, app) in grants or ALWAYS_GRANT in grants:
         return None
     if ctx is not None and (name, app) in ctx["declined"]:
@@ -122,6 +127,11 @@ def gate(name: str, arg: str, cfg: dict, confirm,
         and (ctx is None or (n, app) not in ctx["declined"])
         and preempted(n, a, cfg) is None
         and decide(n, a, cfg) == "confirm"]
+    # the card consents only to the steps it names — drop from the tail
+    # until every remaining item fits; overflow calls keep their own
+    # checkpoint when the loop reaches them
+    while len(items) > 1 and len(checkpoint_prompt(items)) > 220:
+        items.pop()
     ok, last = ask(confirm, checkpoint_prompt(items))
     if ok:
         if isinstance(confirmed, set):
@@ -146,7 +156,7 @@ def checkpoint_prompt(items: list) -> str:
         n, a = items[0] if items else ("step", "")
         return f"run {n}: {a or '(no arg)'}?"
     steps = " · ".join(f"{n} {a}".strip()[:60] for n, a in items)
-    return f"run these {len(items)} steps: {steps[:200]}?"
+    return f"run these {len(items)} steps: {steps}?"
 
 
 _UNDO = {
@@ -196,6 +206,14 @@ _MCP_T3 = ("oauth", "login", "signin", "sign_in", "credential",
 _MCP_READ = ("list", "get", "read", "search", "fetch", "query",
              "describe", "find", "status", "show", "tabs", "poll",
              "snapshot", "inspect")
+# a mutating verb ANYWHERE in the tool name keeps the call at T2 —
+# 'find_and_replace' must not read as 'find'
+_MCP_WRITE = ("delete", "remove", "purge", "create", "update", "write",
+              "send", "post", "put", "set", "move", "rename", "execute",
+              "run", "submit", "replace", "close", "modify", "drop",
+              "insert", "add", "new", "edit", "open", "click", "fill",
+              "navigate", "unlock", "charge", "buy", "pay", "import",
+              "export", "save", "delete_all", "destroy", "approve")
 
 
 def _mcp_tier(arg: str) -> str:
@@ -206,25 +224,27 @@ def _mcp_tier(arg: str) -> str:
     if any(h in probe for h in _MCP_T3):
         return "T3"
     tool = parts[1].lower().split("/")[-1]  # strata '<category>/<action>'
-    if re.split(r"[_.\s]", tool, maxsplit=1)[0] in _MCP_READ:
-        action = _mcp_action(parts)
-        if not action \
-                or re.split(r"[_.\s]", action, maxsplit=1)[0] \
-                in _MCP_READ:
-            return "T0"
+    tokens = [t for t in re.split(r"[_.\-/\s]+", tool) if t]
+    if any(t in _MCP_WRITE for t in tokens):
+        return "T2"
+    if tokens and tokens[0] in _MCP_READ:
+        if len(parts) < 3:
+            return "T0"  # read-named tool invoked with no args
+        try:
+            payload = json.loads(parts[2])
+        except ValueError:
+            payload = None
+        if isinstance(payload, dict) and not payload:
+            return "T0"  # read-named tool, empty payload
+        # fail closed: T0 needs a positively read `action`; args whose
+        # verb lives in another key ({"sql"}, {"operation"}) or a
+        # non-object tail stay T2
+        if isinstance(payload, dict):
+            action = str(payload.get("action", "")).lower()
+            if action and re.split(r"[_.\s]", action, maxsplit=1)[0] \
+                    in _MCP_READ:
+                return "T0"
     return "T2"
-
-
-def _mcp_action(parts: list) -> str:
-    """The `action` field of a JSON args tail — browseros-style tools
-    carry their verb there ('tabs {"action":"close"}')."""
-    if len(parts) < 3:
-        return ""
-    try:
-        a = json.loads(parts[2])
-    except ValueError:
-        return ""
-    return str(a.get("action", "")).lower() if isinstance(a, dict) else ""
 
 
 def _focus_app(state) -> str:
@@ -234,12 +254,18 @@ def _focus_app(state) -> str:
     return focus.get("app", "") if isinstance(focus, dict) else ""
 
 
-def ask(confirm, prompt: str, kind: str = "confirm") -> tuple:
+def ask(confirm, prompt: str, kind: str = "confirm",
+        detail: str = "") -> tuple:
     """Call the confirm callable. Rich ones (wisp/confirm.make) take
     `kind` and offer the "always" session grant; plain doubles take just
-    the prompt. Returns (ok, confirm.last)."""
+    the prompt. `detail` is body the card renders under the ask — the
+    thing being approved (a dictation preview); plain doubles ignore
+    it. Returns (ok, confirm.last)."""
     if getattr(confirm, "rich", False):
-        ok = confirm(prompt, kind=kind, always=kind == "confirm")
+        kw = {"kind": kind, "always": kind == "confirm"}
+        if detail:
+            kw["detail"] = detail
+        ok = confirm(prompt, **kw)
     else:
         ok = confirm(prompt)
     return bool(ok), str(getattr(confirm, "last", "") or "")

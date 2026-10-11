@@ -59,11 +59,15 @@ def done_option(prompt: str) -> str:
 
 def park_prompt(state, wait_for_choice, token, kind: str, label: str,
                 options, secs: float, confirm_blob=None,
-                clear_confirm: bool = True) -> tuple:
+                clear_confirm: bool = True, deadline=None) -> tuple:
     """The shared prompt-card lifecycle: publish the awaiting stream
     entry + `awaiting_choice` (and `confirm`, when confirm_blob is
     given), park on the broker, then restore `acting` unless the turn
     was cancelled (the turn unwinds to idle itself).
+
+    `deadline` (monotonic timestamp) caps the wait at the enclosing
+    run's wall-clock bound — a parked card must not outlast
+    act_max_seconds; the loop's next budget check then aborts.
 
     Returns (aid, pid, pick). pick is _UNSET when the waiter died
     without an answer — the awaiting row is resolved 'error' on the
@@ -79,6 +83,8 @@ def park_prompt(state, wait_for_choice, token, kind: str, label: str,
         confirm_blob["prompt_id"] = pid
         fields["confirm"] = confirm_blob
     state.transition("awaiting_choice", **fields)
+    if deadline is not None:
+        secs = min(secs, max(MIN_TIMEOUT, deadline - time.monotonic()))
     pick = _UNSET
     try:
         pick = wait_for_choice(secs, prompt_id=pid, options=opts)
@@ -109,7 +115,7 @@ def make(state, wait_for_choice, token, turn, cfg, clock=time.monotonic):
     secs = timeout_s(cfg)
 
     def confirm(prompt: str, kind: str = "confirm",
-                always: bool = False) -> bool:
+                always: bool = False, detail: str = "") -> bool:
         from . import trace as _trace
         if kind == "handoff":
             options = [done_option(prompt), CANCEL]
@@ -118,11 +124,16 @@ def make(state, wait_for_choice, token, turn, cfg, clock=time.monotonic):
             if always:
                 options.append(ALWAYS)
             options.append(NO)
+        blob = {"prompt": prompt, "timeout_s": secs, "kind": kind}
+        if detail:
+            # body the card shows under the ask — e.g. the dictation
+            # being approved; the option labels stay the short prompt
+            blob["detail"] = str(detail)[:4000]
         start = clock()
         aid, pid, pick = park_prompt(
             state, wait_for_choice, token, kind, prompt, options, secs,
-            confirm_blob={"prompt": prompt, "timeout_s": secs,
-                          "kind": kind})
+            confirm_blob=blob,
+            deadline=getattr(confirm, "_run_deadline", None))
         if token.cancelled:
             _state.action_set(state, aid, status="cancelled",
                               reason="interrupted")
@@ -178,27 +189,36 @@ def make_ask(state, wait_for_choice, token, turn, cfg,
         try:
             from . import speech
             speech.speak(question, cfg)   # gated by voice.enabled
-        except Exception:
-            pass
+        except Exception as e:
+            _trace.emit(turn, "speak_failed", "confirm",
+                        {"err": str(e)[:120]})
         start = clock()
         aid, pid, pick = park_prompt(
             state, wait_for_choice, token, "question", question,
             opts or None, secs,
             confirm_blob={"prompt": question, "timeout_s": secs,
-                          "kind": "question"})
+                          "kind": "question"},
+            deadline=getattr(ask, "_run_deadline", None))
         if token.cancelled:
             _state.action_set(state, aid, status="cancelled",
                               reason="interrupted")
             token.check()
         if pick:
-            _state.action_set(state, aid, status="done",
-                              reason=str(pick)[:120])
+            # option picks can echo the offered text; a free-form
+            # answer is user-typed content (a name, a credential) —
+            # it redacts to a length, never verbatim into the stream
+            known = opts is not None and str(pick) in opts
+            _state.action_set(
+                state, aid, status="done",
+                reason=str(pick)[:120] if known
+                else f"answered ({len(str(pick))} chars)")
             return str(pick)
-        if clock() - start >= secs:
+        reason = TIMEOUT if clock() - start >= secs else "dismissed"
+        if reason == TIMEOUT:
             _trace.emit(turn, "ask_timeout", "act",
                         {"prompt_id": pid, "timeout_s": secs})
         _state.action_set(state, aid, status="cancelled",
-                          reason=TIMEOUT)
+                          reason=reason)
         return None
 
     ask.rich = True

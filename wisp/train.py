@@ -545,10 +545,3 @@ def rebuild_buckets(path=None, records=None) -> dict:
     except OSError:
         pass
     return b
-
-
-def load_buckets(path=None) -> dict:
-    try:
-        return json.loads((path or BUCKETS_FILE).read_text())
-    except (OSError, json.JSONDecodeError):
-        return {}

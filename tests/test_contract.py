@@ -34,7 +34,8 @@ class CommandSurface(unittest.TestCase):
         def handler(cmd):
             c = cmd.get("cmd")
             if c in ("status", "listen", "choice", "task_status",
-                     "task_cancel", "stop"):
+                     "task_cancel", "suggestions", "dictate_correct",
+                     "stop"):
                 return {"ok": True, "state": st.snapshot()} \
                     if c == "status" else {"ok": True}
             return {"ok": False, "error": f"unknown cmd {c!r}"}
@@ -52,7 +53,8 @@ class StateFileShape(unittest.TestCase):
     KEYS = {"status", "transcript", "answer", "result", "choices",
             "actions", "level", "tasks", "error", "started_at"}
     STATUSES = {"idle", "listening", "transcribing", "deciding",
-                "awaiting_choice", "acting", "speaking", "done", "error"}
+                "awaiting_choice", "acting", "speaking", "suggestion",
+                "done", "error"}
 
     def test_snapshot_has_contract_keys(self):
         f = pathlib.Path("/tmp/wisp-ct-state2.json")

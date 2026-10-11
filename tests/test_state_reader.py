@@ -473,6 +473,7 @@ class TestConfirmCard(unittest.TestCase):
     def test_confirm_maps_and_clamps(self):
         c = self.pending()["confirm"]
         self.assertEqual(c, {"promptId": "p7", "prompt": "run close: w1?",
+                             "detail": "",
                              "timeoutS": 120, "kind": "confirm",
                              "options": ["run close: w1? — yes", "no"],
                              "allow": "run close: w1? — yes",

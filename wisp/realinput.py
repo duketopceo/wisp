@@ -27,6 +27,7 @@ import os
 import re
 import selectors
 import threading
+from pathlib import Path
 
 from . import cancel as _cancel
 from . import delivery as _delivery
@@ -64,7 +65,7 @@ def real_devices(input_dir: str = INPUT_DIR) -> list:
         if not _EVENT_RE.match(e):
             continue
         try:
-            fd = os.open(os.path.join(input_dir, e),
+            fd = os.open(Path(input_dir) / e,
                          os.O_RDONLY | os.O_NONBLOCK)
         except OSError:
             continue
@@ -81,7 +82,7 @@ def _hypr_cursor_pos():
         from . import hypr
         p = hypr.query("cursorpos")
         return int(p["x"]), int(p["y"])
-    except Exception:
+    except (ImportError, RuntimeError, KeyError, TypeError, ValueError):
         return None
 
 
@@ -131,7 +132,7 @@ class Watch:
                                             daemon=True)
         try:
             self._thread.start()
-        except Exception:
+        except RuntimeError:
             return "off"
         # publish mode only after the reader is actually alive — a dead
         # thread must not masquerade as a live watch
@@ -202,14 +203,31 @@ class Watch:
                 sel.register(fd, selectors.EVENT_READ)
             while not self._stop.is_set():
                 for key, _ev in sel.select(0.2):
+                    # a dead fd (unplugged device, closed pipe) reports
+                    # ready every pass — drop it or select spins forever
                     try:
-                        if not os.read(key.fd, 4096):
-                            continue
+                        dead = not os.read(key.fd, 4096)
                     except OSError:
+                        dead = True
+                    if dead:
+                        try:
+                            sel.unregister(key.fd)
+                        except (KeyError, ValueError):
+                            pass
+                        try:
+                            os.close(key.fd)
+                        except OSError:
+                            pass
+                        if key.fd in self._fds:
+                            self._fds.remove(key.fd)
+                        if not self._fds:
+                            self.mode = "off"
+                            return
                         continue
                     if self._armed.is_set():
+                        # flag it and keep reading — the thread is the
+                        # only sensor; it must outlive the yield
                         self._yield.set()
-                        return
         except Exception:
             self.mode = "off"   # dead reader must not claim a live watch
         finally:
@@ -228,8 +246,9 @@ class Watch:
                     if pos is not None and (
                             abs(pos[0] - exp[0]) > self._drift_px
                             or abs(pos[1] - exp[1]) > self._drift_px):
+                        # flag it and keep polling — the thread is the
+                        # only sensor; it must outlive the yield
                         self._yield.set()
-                        return
                 self._stop.wait(self._poll_s)
         except Exception:
             self.mode = "off"

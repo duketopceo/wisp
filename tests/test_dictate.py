@@ -12,7 +12,7 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from wisp import dictate, tools  # noqa: E402
+from wisp import cua_safety, dictate, tools  # noqa: E402
 from wisp.tools import system as _sys  # noqa: E402
 
 
@@ -44,9 +44,17 @@ class RunTest(unittest.TestCase):
         self.inserted.clear()
         self.keys.clear()
 
-        def fake_insert(t, c):
+        def fake_insert(t, c, guard=None):
             self.inserted.append(t)
             return "typed", ""
+
+        # a real Guard over hermetic inputs — the dictation route's
+        # key/type calls go through the same gate the act loop uses
+        guard = cua_safety.Guard(
+            cfg, state=_state(cls, title),
+            window=lambda: {"app": cls, "title": title},
+            audit_path=pathlib.Path(self.td) / "cua.jsonl",
+            kill_path=pathlib.Path(self.td) / "cua.kill")
 
         if isinstance(chat, Exception):
             chat_fn = mock.Mock(side_effect=chat)
@@ -62,7 +70,7 @@ class RunTest(unittest.TestCase):
              mock.patch.object(tools, "run",
                                side_effect=self._keyspy):
             return dictate.run(text, cfg, state=_state(cls, title),
-                               confirm=confirm, mode=mode)
+                               confirm=confirm, mode=mode, guard=guard)
 
     # -- modes ----------------------------------------------------------
 
@@ -291,7 +299,7 @@ class InsertChainTest(unittest.TestCase):
                                return_value=True) as p:
             via, _ = dictate.insert("hi", {})
         self.assertEqual(via, "paste")
-        p.assert_called_once_with("hi", {})
+        p.assert_called_once_with("hi", {}, None)
 
     def test_paste_chords_ctrl_v_and_restores_the_clip(self):
         runs = []
@@ -316,6 +324,23 @@ class InsertChainTest(unittest.TestCase):
     def test_paste_fails_without_wl_copy(self):
         with mock.patch("shutil.which", return_value=None):
             self.assertFalse(dictate._paste("hi", {}))
+
+    def test_guard_refusal_stops_typed_and_paste(self):
+        # the CUA kill switch gates dictation's keystrokes too — a
+        # refused type never falls through to the paste path
+        g = cua_safety.Guard({"cua": {"kill_switch": "true"}},
+                             window=lambda: {"app": "chromium",
+                                             "title": ""},
+                             audit_path=pathlib.Path(self.td) / "c.jsonl",
+                             kill_path=pathlib.Path(self.td) / "c.kill")
+        with mock.patch.dict("sys.modules", {"wordink": None}), \
+             mock.patch.object(tools, "run") as r, \
+             mock.patch.object(dictate, "_paste") as p:
+            via, err = dictate.insert("hi", {}, g)
+        self.assertEqual(via, "")
+        self.assertIn("REFUSED", err)
+        r.assert_not_called()
+        p.assert_not_called()
 
     def test_nothing_landed_reports_the_typer_reason(self):
         with mock.patch.dict("sys.modules", {"wordink": None}), \

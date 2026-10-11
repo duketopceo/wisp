@@ -24,6 +24,7 @@ future tray apps). Shells MUST only depend on this document.
 | `status` | — | `{ok, state}` | `state` = full state.json snapshot |
 | `listen` | `phase?: start\|stop`, `t0?: int` (client wall-clock ns of the keypress; additive, optional) | `{ok}` or `{ok:false,error:"busy"}` | starts a listen cycle async; kills in-flight TTS (barge-in) |
 | `choice` | `pick: string`, optional `prompt_id: string`, optional `index: int` | `{ok}` or `{ok:false, error}`; `{ok, result}` for `suggestion:` picks | resolves the pending choice/confirm; see Prompt ids |
+| `suggestions` | — | `{ok, suggestions: [...]}` | pending routine suggestions (suggestions.jsonl backlog) |
 | `task_status` | `name: string` | `{ok, result: string}` | named-agent status |
 | `task_cancel` | `name: string` | `{ok, result: string}` | cancel named agent |
 | `agent` | `task: string` | `{ok, result: string}` | spawn a background task via `[brain] agent_runtime`; `result` is `SPAWNED …`/`SKIP …` |
@@ -33,12 +34,8 @@ future tray apps). Shells MUST only depend on this document.
 | `interrupt` | — | `{ok}` | cancels the in-flight turn only — daemon stays up; see Cancellation |
 | `config` | `set: {"section.key": "val"}` (optional) | `{ok, config}` | read config; with `set`, writes config.toml preserving comments/order and live-reloads |
 | `label` | `label: correct\|incorrect` | `{ok, result}` | tag the most recent decision (soak intent-match + trajectory join) |
-| `dictate_correct` | `{"heard","meant"}` | `{ok, result}` | record a personal dictation correction → `dictation.json` (U6); cleanup/compose prompts carry the table |
+| `dictate_correct` | `{"heard","meant"}` | `{ok, result}` or `{ok:false, error, result}` | record a personal dictation correction → `dictation.json` (U6); cleanup/compose prompts carry the table |
 | `context` | — | `{ok, result}` | focused app, `[windows]` workspace map, inventory counts |
-| `inventory` | — | `{ok, result}` | rescan local terrain → `inventory.json` |
-| `connect` | `service` or `list` | `{ok, result, json?}` | OAuth connector flow via BrowserOS Strata; `list` returns the catalog (add `--json` for machine-readable) |
-| `recipes` | `approve <name>` optional | `{ok, result}` | list draft recipe-* proposals; `approve` installs as a skill |
-| `tele` / `fails` | — | `{ok, result}` | decision telemetry / recent failures |
 | `learn` | — | `{ok, result}` | weekly learning proposals (human-gated) |
 | `harness` | — | `{ok, result}` | regenerate the app harness catalog |
 | unknown/malformed | — | `{ok:false, error}` | — |
@@ -48,11 +45,16 @@ the **last** dot, so nested sections work — `brain.ollama.base_url` →
 `[brain.ollama] base_url`. The daemon returns `{ok:false}` if any key
 lacks a section. Shells may offer a settings page on top of this command.
 
+The CLI also exposes verbs that run **locally** with no daemon
+round-trip — they are not IPC commands and are absent from the table:
+`connect` (OAuth via BrowserOS Strata), `inventory`, `recipes`,
+`tele`, `fails`, `subscribe`'s client side (`wispd watch`).
+
 ## state.json (atomically rewritten, tmp+rename)
 
 ```json
 {
-  "status": "idle|listening|transcribing|deciding|awaiting_choice|acting|speaking|done|error",
+  "status": "idle|listening|transcribing|deciding|awaiting_choice|acting|speaking|suggestion|done|error",
   "transcript": "string",
   "answer": "string",
   "result": "string",
@@ -127,7 +129,10 @@ prompt is pending or `prompt_id` is not the pending one (the pending
 prompt keeps waiting); `{ok:false, error:"not_offered"}` for a `pick`
 not in `choices`; `{ok:false, error:"bad_index"}` for an `index` out of
 range. A `choice` without `prompt_id` is accepted only while a prompt is
-pending (exactly one ever is) — this keeps current shells working. An
+pending (exactly one ever is) — this keeps current shells working — with
+one exception: resolving the wildcard `always` pick REQUIRES the live
+`prompt_id` (`{ok:false, error:"prompt_id_required"}` otherwise), so a
+session-wide grant can only come from a client that saw the card. An
 empty `pick` dismisses the prompt like a timeout. The core also refuses
 an unoffered pick that reaches the turn by another path (trace
 `choice_rejected`) and falls back to its safe auto-pick.
@@ -163,6 +168,10 @@ the tool never runs), or `"question"` (U4: the act loop's `ask_user` —
 the agent asked mid-task instead of guessing). A `confirm` card's
 `choices` may carry a middle `"always"` pick (U3 session grant):
 first option is still the allow pick, last is still the deny.
+`detail` (additive, optional) is the body the card renders under the
+ask — the thing being approved, e.g. the dictation text an
+`auto_send` profile is about to send. Absent when the ask needs no
+payload preview; shells should render it elided after `prompt`.
 
 Question card (additive; U4): a `confirm` block with `kind:"question"`
 means the running agent asked the user something (`prompt` is the
@@ -171,9 +180,12 @@ and the usual `choice` pick/index rules apply; when it did not,
 `choices` is empty and ANY non-empty `pick` resolves the card — a
 typed `wispd choice "the answer"` or a free-form spoken reply resolves
 it verbatim (voice answers are offered as picks when no options are
-pending, and mapped onto options when they are). No reply inside
-`timeout_s` lapses the question (`cancelled`, reason `timeout`) and
-the model receives a `NO_ANSWER` tool result rather than a stuck turn.
+pending, and mapped onto options when they are). A free-form answer is
+user-typed content — possibly a credential — so the stream and trace
+record only `(answer)` / `answered (N chars)`, never the text; the
+verbatim answer reaches the model only. No reply inside `timeout_s`
+lapses the question (`cancelled`, reason `timeout`) and the model
+receives a `NO_ANSWER` tool result rather than a stuck turn.
 
 Action stream (additive; U2): `actions` is the unified lifecycle log —
 one entry per dispatch, tool call, prompt, pick, interrupt, label and
@@ -186,8 +198,9 @@ entries also carry `options` (the offered picks) and `prompt_id`.
 `status` is a closed set: `queued`, `in_flight`, `awaiting`, `done`,
 `failed`, `cancelled` — shells must map unknown values to `done`.
 `kind` is an open set (`route`, `tool`, `confirm`, `handoff`,
-`clarify`, `choice`, `interrupt`, `label`, `suggestion`, `question`
-today); render entries generically and ignore unknown kinds' extras.
+`clarify`, `choice`, `interrupt`, `label`, `suggestion`, `question`,
+`act`, `dictation` today); render entries generically and ignore
+unknown kinds' extras.
 `target` is the
 truncated arg (tool) or key (suggestion); `reason` is the terminal or
 waiting context — a result string for tools, `denied` / `timeout` /

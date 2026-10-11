@@ -357,6 +357,53 @@ class Loop(unittest.TestCase):
             r = act.run_act_loop("check it", self.cfg)
         assert r == "ASK_USER which account?"
 
+    def test_non_dict_arguments_are_tool_errors_not_crashes(self):
+        # providers emit `arguments` as a JSON string OR an object —
+        # a list, a bare scalar, or a non-{arg} object must leave the
+        # arg empty and the call a normal tool error, never crash the
+        # run
+        shapes = [
+            {"arg": "discord"},                       # already an object
+            [1, 2],                                   # a list
+            "42",                                     # bare scalar
+            {"cmd": "discord"},                       # dict, no arg key
+        ]
+        for raw in shapes:
+            call = {"id": "c1", "type": "function",
+                    "function": {"name": "launch", "arguments": raw}}
+            replies = [_msg(calls=[call]), _msg(content="ok")]
+            with mock.patch.object(act, "_post", side_effect=replies), \
+                 mock.patch.object(tools, "run",
+                                   return_value="LAUNCHED") as run:
+                r = act.run_act_loop("open it", self.cfg)
+            self.assertTrue(r.startswith("ACTED"), (raw, r))
+            # the object form dispatches with its arg; the rest fall to
+            # an empty arg (launch "" — a tool-level error result, not
+            # an exception)
+            self.assertEqual(run.call_args[0][0], "launch")
+
+    def test_blocked_results_burn_the_error_budget(self):
+        # a tool that can never dispatch (BLOCKED is the CUA guard's
+        # refusal) must abort like any other repeated failure —
+        # before the fix only ERROR/SKIP/REFUS counted, so a blocked
+        # model could spin the full step budget
+        replies = [_msg(calls=[_call("click", "10,20")])] * 20
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run",
+                               return_value="BLOCKED (input outside "
+                                            "scope)"):
+            r = act.run_act_loop("click forever", self.cfg,
+                                 initial_image="aGk=")
+        assert r.startswith("ABORTED (repeated failures)"), r
+
+    def test_failed_results_burn_the_error_budget(self):
+        replies = [_msg(calls=[_call("launch", "x")])] * 20
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run",
+                               return_value="FAIL (hyprctl died)"):
+            r = act.run_act_loop("launch forever", self.cfg)
+        assert r.startswith("ABORTED (repeated failures)"), r
+
     def test_confirm_once_per_tool_and_app(self):
         # one yes covers the rest of the (tool, app) session
         from wisp.state import State
@@ -647,6 +694,49 @@ class AskUser(unittest.TestCase):
         self.assertIn("USER ANSWERED: purple monkey",
                       tool_msgs[-1]["content"])
         self.assertIsNone(self._questions()[-1].get("options"))
+
+    def test_answer_is_redacted_from_the_stream_and_steps(self):
+        # a free-text answer can carry secrets — the model sees it
+        # verbatim, but the action stream, step record and state.json
+        # only get a redacted form
+        secret = "hunter2-the-password"
+        seen = []
+
+        def post(messages, cfg):
+            seen.append([dict(m) for m in messages])
+            return (_msg(calls=[_call("ask_user", "api key?")])
+                    if len(seen) == 1 else _msg(content="stored"))
+
+        self._offer(pick=secret)
+        from wisp import goals
+        with mock.patch.object(goals, "record_steps") as rec, \
+             mock.patch.object(act, "_post", side_effect=post):
+            act.run_act_loop("store it", self.cfg, state=self.st,
+                             ask=self.ask, initial_image="aGk=")
+        # model-facing tool result keeps the verbatim answer
+        tool_msgs = [m for m in seen[-1] if m.get("role") == "tool"]
+        self.assertIn(f"USER ANSWERED: {secret}", tool_msgs[-1]["content"])
+        # the persistent surfaces never see it
+        snap = self.st.snapshot()
+        self.assertNotIn(secret, json.dumps(snap))
+        t = [a for a in snap["actions"]
+             if a["label"] == "ask_user"][-1]
+        self.assertEqual(t["status"], "done")
+        self.assertIn("chars", t["reason"])
+        # the step record (what trajectories persist) is redacted too
+        self.assertTrue(rec.called)
+        for c in rec.call_args_list:
+            self.assertNotIn(secret, json.dumps(c.args[0]))
+
+    def test_empty_ask_user_skips_legibly(self):
+        replies = [_msg(calls=[_call("ask_user", "")]),
+                   _msg(content="guessed")]
+        with mock.patch.object(act, "_post", side_effect=replies):
+            r = act.run_act_loop("t", self.cfg, state=self.st,
+                                 ask=self.ask, initial_image="aGk=")
+        self.assertTrue(r.startswith("ACTED"), r)
+        # no parked card was ever published for an empty question
+        self.assertEqual(self._questions(), [])
 
     def test_unanswered_question_lapses_to_no_answer(self):
         # the waiter returning nothing on the deadline → the question

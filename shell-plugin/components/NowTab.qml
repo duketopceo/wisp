@@ -41,6 +41,14 @@ Column {
     && service.lastAction.verb === "label"
     && service.lastAction.at >= service.view.changedAtMs
     ? service.lastAction : null
+  // a refused choice/interrupt/trigger needs its own nudge — without it
+  // a stale pick closes the panel looking like it went through
+  readonly property var actionNack: service.lastAction
+    && service.lastAction.pending === false
+    && service.lastAction.ok === false
+    && service.lastAction.verb !== "label"
+    && service.lastAction.at >= service.view.changedAtMs
+    ? service.lastAction : null
 
   spacing: M.spacing.xl
   width: 340
@@ -124,6 +132,17 @@ Column {
         onClicked: root.choose(modelData)
       }
     }
+  }
+
+  Text {
+    visible: root.actionNack !== null
+    width: parent.width
+    text: root.actionNack !== null && root.actionNack.message !== ""
+      ? root.actionNack.message : root.service.ui("ui.err.unknown")
+    wrapMode: Text.Wrap
+    color: root.tk.fail
+    font.family: root.service.fontFamily
+    font.pixelSize: M.font.label
   }
 
   Text {

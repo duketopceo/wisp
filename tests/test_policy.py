@@ -141,11 +141,31 @@ class TierRefinements(unittest.TestCase):
             self.assertEqual(policy.tier_of("mcp_call", arg), "T3", arg)
 
     def test_mcp_t3_needs_only_the_tool_name_not_the_args(self):
-        # a "payment history" lookup must not pause the run — hints
-        # bind the server+tool names, not the JSON body
+        # a "payment history" lookup must not pause the run for a
+        # handoff — hints bind the server+tool names, not the JSON
+        # body. But a read-named tool carrying a payload the policy
+        # can't prove is a read (a verb keyed elsewhere than `action`)
+        # fails closed to T2 — never T3, never a silent T0.
         self.assertEqual(
             policy.tier_of("mcp_call",
-                           "bank list_tx {\"of\":\"payments\"}"), "T0")
+                           "bank list_tx {\"of\":\"payments\"}"), "T2")
+        # the same lookup IS T0 when the verb is positively read
+        self.assertEqual(
+            policy.tier_of(
+                "mcp_call",
+                "bank list_tx {\"action\":\"list\",\"of\":\"payments\"}"),
+            "T0")
+
+    def test_mcp_fail_closed_shapes(self):
+        # the findings that started this: mutating verbs hidden in
+        # non-`action` keys, compound tool names, non-object tails —
+        # all stay at the declared T2 instead of slipping to T0
+        for arg in ("db query {\"sql\":\"DELETE FROM t\"}",
+                    "db query {\"operation\":\"drop\"}",
+                    "server find_and_replace {}",
+                    "server get_record [1,2]",
+                    "server get_record notjson"):
+            self.assertEqual(policy.tier_of("mcp_call", arg), "T2", arg)
 
     def test_skill_manage_list_is_t0(self):
         self.assertEqual(policy.tier_of("skill_manage", "list"), "T0")

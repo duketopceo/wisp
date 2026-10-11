@@ -424,7 +424,10 @@ class YieldMidDrive(_Iso):
             t = pathlib.Path(td)
             fifo = t / "event0"
             os.mkfifo(fifo)
-            rfd = os.open(fifo, os.O_RDONLY | os.O_NONBLOCK)
+            # O_RDWR: a read-only fifo with no writer EOFs instantly —
+            # the reader (correctly) reaps EOF'd fds as unplugged
+            # devices. A held-writer fd stays live like a real evdev node.
+            rfd = os.open(fifo, os.O_RDWR | os.O_NONBLOCK)
             watch = realinput.Watch(devices=[rfd], poll_s=0.01)
             watch.start()
             log = t / "calls.log"

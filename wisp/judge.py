@@ -297,8 +297,3 @@ def describe(v: dict) -> str:
     by_txt = f" by={by}" if by in ("brain", "none", "oracle") else ""
     return (f"judge:{s}{e_txt} waste={v.get('waste', '?')}"
             f"{fc_txt}{ff_txt}{by_txt}")
-
-
-def load_json(raw: str) -> dict:
-    """Defensive parse for tests/CLI."""
-    return json.loads(raw)

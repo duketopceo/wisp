@@ -537,7 +537,7 @@ def _provider_up(cfg: dict) -> bool:
         import urllib.request
         urllib.request.urlopen(f"{base}/models", timeout=3)
         return True
-    except Exception:
+    except OSError:
         return False
 
 

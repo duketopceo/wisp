@@ -69,6 +69,7 @@ function normalizeConfirm(c, choices) {
   var t = Number(c.timeout_s)
   var opts = arr(choices)
   return { promptId: str(c.prompt_id), prompt: str(c.prompt),
+    detail: str(c.detail),
     timeoutS: isFinite(t) && t > 0 ? t : 0,
     kind: str(c.kind) || "confirm",
     options: opts,
@@ -126,6 +127,7 @@ function confirmFromActions(actions, confirm, promptId) {
       var opts = a.options || []
       return { promptId: a.promptId,
         prompt: a.label || (confirm ? confirm.prompt : ""),
+        detail: confirm ? confirm.detail : "",
         timeoutS: confirm !== null ? confirm.timeoutS : 0,
         kind: "confirm",
         options: opts.length > 0 ? opts : (confirm ? confirm.options : []),
@@ -161,6 +163,10 @@ function acceptChoice(view, pick, promptId) {
   if (!promptId || view.promptId !== promptId) return false
   if (view.status !== "awaiting_choice") return false
   if (view.choices.indexOf(pick) >= 0) return true
+  // the card snapshots its offers with the prompt — validate against
+  // them when a diff already emptied the live choices array
+  if (view.confirm && view.confirm.promptId === promptId
+      && view.confirm.options.indexOf(pick) >= 0) return true
   // a question card with no offered picks resolves on ANY non-empty
   // pick (docs/IPC_CONTRACT.md "Question card"): the typed or spoken
   // answer goes through verbatim. The card is the live prompt only when
@@ -254,6 +260,8 @@ function build(prev, raw, source, nowMs, changed) {
       && n.confirm.promptId === prev.confirm.promptId) {
     if (n.confirm.allow === "") n.confirm.allow = prev.confirm.allow
     if (n.confirm.deny === "") n.confirm.deny = prev.confirm.deny
+    if (n.confirm.options.length === 0) n.confirm.options = prev.confirm.options
+    if (n.confirm.middle.length === 0) n.confirm.middle = prev.confirm.middle
   }
   for (var k in n) v[k] = n[k]
   v.raw = raw

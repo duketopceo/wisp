@@ -33,6 +33,7 @@ eats a dictation — the raw transcript is inserted instead.
 import fnmatch
 import json
 import re
+import subprocess
 import time
 from datetime import datetime, timezone
 
@@ -175,7 +176,7 @@ def pick_mode(text: str, cfg: dict | None, profile: dict | None = None,
 def _read(path=None) -> dict:
     try:
         data = json.loads((path or FILE).read_text())
-    except Exception:
+    except (OSError, ValueError):
         data = {}
     if not isinstance(data, dict):
         data = {}
@@ -284,7 +285,7 @@ def _session_tail() -> str:
     try:
         from . import session
         return session.as_text(session.tail(4))[:1200]
-    except Exception:
+    except (ImportError, AttributeError, OSError, TypeError):
         return ""
 
 
@@ -311,7 +312,7 @@ def rewrite(mode: str, text: str, cfg: dict, win: dict, profile: dict,
             from . import trace
             trace.emit(trace.current(), "dictate_fallback", "brain",
                        {"mode": mode, "err": str(e)[:120]})
-        except Exception:
+        except (ImportError, AttributeError, TypeError):
             pass
         return text
     return out or text
@@ -327,13 +328,23 @@ def _clip_get() -> str | None:
     try:
         r = _cancel.run(["wl-paste", "--no-newline"],
                         capture_output=True, timeout=5)
-    except Exception:
+    except (OSError, subprocess.SubprocessError):
         return None
     return r.stdout.decode("utf-8", "replace") if r.returncode == 0 \
         else None
 
 
-def _paste(text: str, cfg: dict) -> bool:
+def _input(guard, name: str, arg: str, cfg: dict) -> str:
+    """Dictation's own key/type calls pass through the same CUA gate
+    the act loop uses — the kill switch, deny lists, rate cap and
+    audit apply to a dictated paste the same as a model-driven type."""
+    from . import tools
+    if guard is None:
+        return tools.run(name, arg, cfg)
+    return guard.run(name, arg, lambda: tools.run(name, arg, cfg))
+
+
+def _paste(text: str, cfg: dict, guard=None) -> bool:
     """Clipboard-paste insert (the WordInk approach): wl-copy the text,
     chord ctrl+v through the key tool, then restore the user's clip —
     the paste must not destroy what they had."""
@@ -344,23 +355,22 @@ def _paste(text: str, cfg: dict) -> bool:
     try:
         r = _cancel.run(["wl-copy"], input=text.encode(),
                         capture_output=True, timeout=10)
-    except Exception:
+    except (OSError, subprocess.SubprocessError):
         return False
     if r.returncode != 0:
         return False
-    from . import tools
-    ok = tools.run("key", "ctrl+v", cfg).startswith("KEY")
+    ok = _input(guard, "key", "ctrl+v", cfg).startswith("KEY")
     if prior is not None:
         time.sleep(_PASTE_DELAY_S)
         try:
             _cancel.run(["wl-copy"], input=prior.encode(),
                         capture_output=True, timeout=5)
-        except Exception:
+        except (OSError, subprocess.SubprocessError):
             pass
     return ok
 
 
-def insert(text: str, cfg: dict) -> tuple:
+def insert(text: str, cfg: dict, guard=None) -> tuple:
     """wordink TextInserter -> type_text -> clipboard paste; long text
     (> _TYPED_MAX) skips the typer — the plan's wtype-short/paste-long
     split. -> (via, err): 'wordink' | 'typed' | 'paste' | '' with the
@@ -371,15 +381,17 @@ def insert(text: str, cfg: dict) -> tuple:
         import wordink
         if wordink.TextInserter().insert_text(text):
             return "wordink", ""
-    except Exception:
+    except (ImportError, AttributeError, OSError, TypeError,
+            RuntimeError):
         pass
     out = ""
     if len(text) <= _TYPED_MAX:
-        from . import tools
-        out = tools.run("type_text", text, cfg)
+        out = _input(guard, "type_text", text, cfg)
         if out.startswith("TYPED"):
             return "typed", ""
-    if _paste(text, cfg):
+        if out.startswith(("REFUSED", "DRYRUN")):
+            return "", out
+    if _paste(text, cfg, guard):
         return "paste", ""
     return "", out or "SKIP (no insert path — wtype/wl-copy missing)"
 
@@ -400,22 +412,37 @@ def _maybe_correction(text: str) -> str | None:
     return None
 
 
+_PREVIEW = 620      # what fits the confirm card (~10 wrapped lines)
+
+
 def _send_ok(profile: dict, confirm, app: str, text: str) -> bool:
     """auto_send's T2 gate (U3): the profile declared intent to send,
-    the confirm card still decides — denied/absent means draft-only."""
+    the confirm card still decides — denied/absent means draft-only.
+    The card previews the actual text being sent: all of it when it
+    fits, head+tail with the hidden count when it doesn't — approving
+    a send the user can't see is no approval."""
     if not _truthy(profile.get("auto_send")) or confirm is None:
         return False
     from . import policy
-    prompt = f"send in {app or 'the app'}? {text[:80]}".strip()
-    ok, _last = policy.ask(confirm, prompt[:160])
+    preview = text.strip()
+    if len(preview) > _PREVIEW:
+        hidden = len(preview) - _PREVIEW
+        preview = (f"{preview[:_PREVIEW - 160].rstrip()}\n"
+                   f"[… {hidden} more chars …]\n"
+                   f"{preview[-140:].lstrip()}")
+    ok, _last = policy.ask(confirm, f"send in {app or 'the app'}?",
+                           detail=preview)
     return ok
 
 
 def run(text: str, cfg: dict, state=None, confirm=None,
-        mode: str | None = None) -> str:
+        mode: str | None = None, guard=None) -> str:
     """The dictation dispatch: pick the mode, maybe rewrite, guard
     terminals, insert, maybe send. -> the result string the action
-    stream records (DICTATED / INSERTED / SKIP / BLOCKED shapes)."""
+    stream records (DICTATED / INSERTED / SKIP / BLOCKED shapes).
+    `guard` is the turn's cua_safety.Guard when there is one; absent it
+    dictation builds its own so injected keystrokes stay under the
+    kill switch, deny lists and audit either way."""
     cor = _maybe_correction(text)
     if cor is not None:
         return cor
@@ -436,18 +463,20 @@ def run(text: str, cfg: dict, state=None, confirm=None,
         # refuse before any card — a denylisted command never reaches
         # the shell, typed or pasted
         return "REFUSED (denylisted command)"
+    if guard is None:
+        from . import cua_safety
+        guard = cua_safety.Guard(cfg, state=state)
     send = _send_ok(profile, confirm, cls, out)
     if terminal and not send:
         # typed newlines ARE Return presses at a shell — spoken
         # text must never execute; the confirmed send path keeps them
         out = collapse_newlines(out)
-    via, err = insert(out, cfg)
+    via, err = insert(out, cfg, guard)
     if not via:
         return err or "SKIP (no insert path — wtype/wl-copy missing)"
     sent = False
     if send:
-        from . import tools
-        sent = tools.run("key", "enter", cfg).startswith("KEY")
+        sent = _input(guard, "key", "enter", cfg).startswith("KEY")
     _seen(cls, data=data)
     tag = "DICTATED" if via == "wordink" else "INSERTED"
     if via == "paste":

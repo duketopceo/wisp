@@ -17,6 +17,12 @@ class TestRegistry(unittest.TestCase):
     def test_all_registered_tools_describable(self):
         desc = tools.describe()
         for name in tools.REGISTRY:
+            if name in tools.LOOP_ONLY:
+                # loop-internal tools (ask_user) are advertised to the
+                # model in tool_schemas but must not be route targets —
+                # Jev can't dispatch them, only the act loop can
+                self.assertNotIn(name, desc)
+                continue
             self.assertIn(name, desc)
 
     def test_unknown_tool_skips(self):

@@ -72,19 +72,31 @@ def map_pick(text: str, options) -> int | None:
             return len(options) - 1
         if _said(t, _AFFIRM):
             return 0
+    # the 'always' session wildcard never binds by ordinal or overlap —
+    # an incidental 'second'/'two' or a stray 'always' in speech must not
+    # widen one approval into every gated call. Only the bare word said
+    # alone grants it.
+    always_i = next((i for i, o in enumerate(options)
+                     if _label(o) == "always"), None)
+    if always_i is not None and t == "always":
+        return always_i
     # ordinals and digits bind before label overlap
     for w in t.split():
         if w in _ORDINALS:
             i = _ORDINALS[w]
-            return i - 1 if i <= len(options) else None
+            j = i - 1
+            return j if j < len(options) and j != always_i else None
         if _NUM.match(w):
             i = int(w)
-            return i - 1 if 1 <= i <= len(options) else None
+            j = i - 1
+            return j if 0 <= j < len(options) and j != always_i else None
     # word overlap on labels — longest matched word wins; <3 chars never
     # bind ('it', 'go' would hit everything)
     best = None
     ws = set(t.split())
     for i, opt in enumerate(options):
+        if i == always_i:
+            continue
         for w in _label(opt).split():
             if len(w) >= 3 and w in ws:
                 if best is None or len(w) > best[0]:
