@@ -9,7 +9,8 @@ It keeps the conversation open across utterances, so "check the build",
 
 Pipeline: push-to-talk, PipeWire capture, whisper.cpp, Jev routing, then
 one of launch, tool, agent, act, dictate, answer or clarify. The result
-shows up as an orb, a cursor bubble, a listening pill and a panel.
+shows up as the bar mark and live pill, a cursor bubble, a bottom-center
+listening pill on the overlay, and the Panel.
 
 Status: v0.9 shipped; v1.0 is a verification milestone (a labelled soak,
 a fresh-box install and the learning loop; see `ROADMAP.md`). Linux
@@ -25,7 +26,7 @@ through the real state reducer, with no compositor and no mock-ups) by
 `scripts/ui/readme_media.py`. Live screen recordings are still to do; see
 [Media](#media).
 
-![The companion: orb states, listening pill, confirm card, act console](assets/readme/companion.png)
+![Companion overlay: listening pill, answer bubble, confirm card, ghost cursor (goldens predate the in-bar live pill — see Surfaces)](assets/readme/companion.png)
 
 ![The panel: Now, Agents, Memory and Settings tabs](assets/readme/panel.png)
 
@@ -65,19 +66,20 @@ notes are in `docs/INSTALL.md`; every config key is in `docs/CONFIG.md`.
 
 ## Surfaces
 
-- **Companion**: a small orb in the corner of the screen with a mode
-  badge and goal line. While you speak, a bottom-center pill shows
-  `listening`. Answers appear in a bubble next to your cursor and stream
-  in as they are written, with `good` and `wrong` buttons that label the
-  run. While Wisp acts, a console lists the steps and a stop control.
-  A ghost cursor shows where Wisp is about to click without moving your
-  real pointer.
+- **Bar mark and live pill**: one glyph in the Omarchy bar for state at a
+  glance, plus an in-bar pill that grows while Wisp works — status word,
+  mic-level meter while listening, and the same vocabulary as the overlay.
+  Click toggles talk, middle-click stops the turn, right-click opens the
+  Panel.
+- **Companion overlay**: transient surfaces only (no corner orb): a
+  bottom-center pill while you speak, answers in a bubble next to your
+  cursor (with `good` and `wrong` label buttons), confirm/choice chips on
+  the pill, and a ghost cursor for act steps. Step detail lives in the
+  Panel Now tab, not a separate console window.
 - **Panel**: opened from the bar. Four tabs: Now (the current turn and
   steps), Agents (background tasks), Memory (skills and recent
   decisions) and Settings (health, spend caps, pointer and cua safety,
   connectors). A first-run card sits on top until setup is finished.
-- **Bar mark**: one glyph in the Omarchy bar that shows the state at a
-  glance (idle, listening, working, needs your ok, error, offline).
 - **Desktop entry**: "Wisp" in the app menu, with Listen, Stop and Panel
   actions. No tray icon is shipped (see `docs/INSTALL.md`).
 - **Management app and TUI**: Health, Spend, Audit and Binds views over
@@ -90,7 +92,8 @@ Every surface reads one state stream from the daemon
 
 | Keys | What happens |
 |---|---|
-| `Super+D` (hold) | listen; release to send. `wispd trigger` toggles instead |
+| `Super+D` (hold) | listen; release to send. `wispd trigger start` / `stop` does the same; bare `wispd trigger` toggles |
+| `Super+D` (hold) while a choice/confirm waits or a turn runs | speak your pick ("yes", "the second one", an option label) or say stop / wait / never mind to interrupt — same IPC path as `wispd choice` / `interrupt` |
 | `Esc` while Wisp acts or waits | stop the turn |
 | `Enter` on a confirm card | pick option 1 (the yes) |
 | `1` to `9` on a choice | pick that option |
@@ -111,7 +114,8 @@ What a turn can do:
   your runtime (`opencode`, `codex`, `claude` or `devin`; `auto` probes
   `PATH`). `wispd task list` shows status and a live log tail.
 - **Tools**: launch, focus and close apps, switch workspace, notify,
-  screenshot, pointer, typing, a guarded shell, file search, and
+  screenshot, pointer, typing, a guarded shell, file search, DOM-mode
+  `fill` and click-by-id, X compose helpers (`post` / `post_send`), and
   `mcp_call` to any configured MCP server. `wispd connect <service>`
   connects OAuth services through the local BrowserOS gateway.
 - **Goal memory**: utterances that share the focused app or the running
@@ -220,7 +224,7 @@ verbs and examples. Add `--json` for machine-readable output.
 | `wispd spend` | usage today and the caps |
 | `wispd binds` | the hotkey and its Hyprland binds |
 | `wispd onboard` | guided first run |
-| `wispd trace` | turn trace and daily digest |
+| `wispd trace show` / `trace digest` | turn trace and local digest |
 | `wispd cua status` | whether the cua pointer backend is usable |
 | `wispd cua kill` / `wispd cua resume` | arm or clear the kill switch |
 | `wispd cua log` | the driver journal, or the audit log |
@@ -270,8 +274,8 @@ Live screen recordings are a to-do that needs a person at the desktop.
 Record these, each under 20 seconds, and put the files in
 `assets/readme/`:
 
-1. Hold `Super+D`, say "open the terminal on workspace 2": pill, orb, answer bubble.
-2. "Turn on night light": the act console steps and the ghost cursor aim, click and done.
+1. Hold `Super+D`, say "open the terminal on workspace 2": bar pill, listening pill, answer bubble.
+2. "Turn on night light": Panel Now steps and the ghost cursor aim, click and done.
 3. A risky step: the confirm card, then `Esc` stopping a turn.
 4. Panel tour: Now, Agents, Memory, Settings, plus the first-run card.
 5. `wispd doctor` and `wispd onboard` in a terminal on a fresh install.
@@ -286,8 +290,10 @@ python3 scripts/assets/gen_copy.py --check     # copy table up to date
 python3 scripts/assets/gen_settings.py --check # settings table up to date
 ```
 
-Layout: `wispd` (entry), `wisp/` (config, ipc, state, pipeline, routing,
-act, cua, grounding, ledger, learn, tools), `shell-plugin/` (the
+Layout: `wispd` (entry), `wisp/` (config, ipc, state,
+`pipeline.py` orchestrator + `stage_{capture,route,execute,speak}.py`,
+routing, act, cua, grounding, ledger, learn, voicepick, tools),
+`shell-plugin/` (the
 quickshell plugin: components, lib, Panel, Companion), `shells/` (the
 management app), `scripts/` (harness, snapshot and asset tools), `docs/`
 (install, config, IPC contract, CUA, plans). The plan of record is

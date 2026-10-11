@@ -212,8 +212,9 @@ first option of a confirm (the yes), and `1` to `9` pick that option.
 `Esc` runs `wisp/fastkey.py`, which sends the same IPC `interrupt` as
 `wispd interrupt` in about 20 ms. The pointer backends never take focus,
 so `Esc` stays reachable while cua acts. The agent's own `key` steps run
-outside the submap, so a scripted `Esc` cannot stop its own turn. The stop
-control on the console and `wispd interrupt` do the same thing.
+outside the submap, so a scripted `Esc` cannot stop its own turn. Middle-click on the bar mark, `wispd interrupt`, and spoken stop / wait /
+never mind (hold `Super+D` during an act turn) all send the same
+`interrupt` IPC.
 
 ## Config keys
 

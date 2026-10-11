@@ -92,6 +92,8 @@ states:
   palette — it must read as "not your cursor" at a glance.
 - Cards auto-collapse; nothing on screen persists that isn't earning
   its place.
-- The bar glyph is a single orb-color dot — no text in the bar.
+- The bar glyph is a single state-colored mark; the live pill beside it
+  may show a short status word while Wisp is busy (no persistent chrome
+  at idle).
 - Light theme exists for daytime/bright-wallpaper setups; the daemon's
   surfaces are the only themed surface, Omarchy chrome stays untouched.
