@@ -164,6 +164,10 @@ class TestJsParity(unittest.TestCase):
                "BLOCKED (risk=0.90 > 0.5)", "BLOCKED (a \u2014 b)",
                "BLOCKED (window is locked)", "ASK_USER which account?",
                "SKIPPED (shell disabled \u2014 set allow_shell=true)",
+               "SKIPPED (close declined by user)",
+               "SKIPPED (mcp_call handoff timed out)",
+               "SKIPPED (mcp_call needs a human \u2014 no handoff channel)",
+               "HANDED_OFF (mcp_call done by the user)",
                "SKIP (rc=3)", "ERROR (boom)", "ABORTED (user)",
                "Opened Firefox.", ""]
     PICKS = ["app:firefox", "app:none", "action:launch", "action:new_thing",

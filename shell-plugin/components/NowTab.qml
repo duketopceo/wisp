@@ -1,6 +1,8 @@
-// Panel Now tab: goal, what was heard, the answer, the step list, choice
-// chips, stop, and the yes/no label row. Reads everything from `service`;
-// actions leave as signals (the Panel wires them to the service).
+// Panel Now tab: the run card first (U8 — intent, live step, interrupt,
+// terminal summary), then goal, what was heard, the answer, the step
+// list, choice chips, stop, and the yes/no label row. Reads everything
+// from `service`; actions leave as signals (the Panel wires them to the
+// service).
 import QtQuick
 import "../lib/metrics.js" as M
 import "../lib/steps.js" as Steps
@@ -14,12 +16,39 @@ Column {
   signal labelClicked(string verdict)
 
   readonly property var tk: service ? service.tokens : ({})
+  readonly property var run: service ? service.run : ({
+    present: false, active: false, question: null, key: "" })
+  // a terminal card hides on its own "hide"; a new run (new key) shows
+  // again — the dismissal dies with the run it was for
+  property string dismissedRun: ""
+  readonly property bool runShown: run.present
+    && (run.active || dismissedRun !== run.key)
   readonly property bool asking: service.result.indexOf("ASK_USER") === 0
   readonly property bool idle: service.transcript === "" && service.answer === ""
     && service.result === "" && service.steps.length === 0
     && service.choices.length === 0 && service.error === ""
+    && !runShown
+  // the step/action display is the lifecycle stream when a v2 daemon
+  // feeds it; `steps` is the same list on older cores
+  readonly property var stepRows: service.actions.length > 0
+    ? Steps.actionRows(service.actions, service.status, service.promptId)
+    : Steps.rows(service.steps, service.busy)
   readonly property bool judgeable: !service.busy && service.status !== "offline"
     && (service.result !== "" || service.transcript !== "")
+  // The label verdict's ack: service.lastAction while a label click is
+  // the newest event (a state change after it ends the row's moment).
+  readonly property var labelAck: service.lastAction
+    && service.lastAction.verb === "label"
+    && service.lastAction.at >= service.view.changedAtMs
+    ? service.lastAction : null
+  // a refused choice/interrupt/trigger needs its own nudge — without it
+  // a stale pick closes the panel looking like it went through
+  readonly property var actionNack: service.lastAction
+    && service.lastAction.pending === false
+    && service.lastAction.ok === false
+    && service.lastAction.verb !== "label"
+    && service.lastAction.at >= service.view.changedAtMs
+    ? service.lastAction : null
 
   spacing: M.spacing.xl
   width: 340
@@ -29,6 +58,16 @@ Column {
     service: root.service
     tab: "now"
     width: parent.width
+  }
+
+  RunCard {
+    visible: root.runShown
+    width: parent.width
+    service: root.service
+    onChoose: function (pick) { root.choose(pick) }
+    onAnswer: function (text) { root.choose(text) }
+    onStopClicked: root.stopClicked()
+    onDismissed: root.dismissedRun = root.run.key
   }
 
   Text {
@@ -65,10 +104,10 @@ Column {
   }
 
   Column {
-    visible: root.service.steps.length > 0
+    visible: root.stepRows.length > 0
     width: parent.width
     Repeater {
-      model: Steps.rows(root.service.steps, root.service.busy)
+      model: root.stepRows
       delegate: StepRow {
         width: root.width
         service: root.service
@@ -80,7 +119,8 @@ Column {
   }
 
   Flow {
-    visible: root.service.choices.length > 0
+    // a live question carries its picks inside the run card
+    visible: root.service.choices.length > 0 && root.run.question === null
     width: parent.width
     spacing: M.spacing.lg
     Repeater {
@@ -95,6 +135,17 @@ Column {
   }
 
   Text {
+    visible: root.actionNack !== null
+    width: parent.width
+    text: root.actionNack !== null && root.actionNack.message !== ""
+      ? root.actionNack.message : root.service.ui("ui.err.unknown")
+    wrapMode: Text.Wrap
+    color: root.tk.fail
+    font.family: root.service.fontFamily
+    font.pixelSize: M.font.label
+  }
+
+  Text {
     visible: root.service.error !== "" || root.service.status === "error"
     width: parent.width
     text: root.service.errorMessage + (root.service.errorHint !== "" ? ". " + root.service.errorHint : "")
@@ -104,13 +155,22 @@ Column {
     font.pixelSize: M.font.label
   }
 
-  StopControl {
-    service: root.service
-    onClicked: root.stopClicked()
+  // the run card owns its interrupt while a run is non-terminal; this
+  // stop stays for busy turns that have no run yet (listening through
+  // deciding) and for speaking
+  Item {
+    width: parent.width
+    visible: !root.run.active
+    implicitHeight: stop.visible ? stop.implicitHeight : 0
+    StopControl {
+      id: stop
+      service: root.service
+      onClicked: root.stopClicked()
+    }
   }
 
   Row {
-    visible: root.judgeable
+    visible: root.judgeable && root.labelAck === null
     spacing: M.spacing.lg
     Text {
       anchors.verticalCenter: parent.verticalCenter
@@ -129,5 +189,16 @@ Column {
       label: root.service.ui("ui.now.no")
       onClicked: root.labelClicked("incorrect")
     }
+  }
+
+  Text {
+    visible: root.labelAck !== null
+    width: parent.width
+    text: root.labelAck !== null && !root.labelAck.pending && root.labelAck.message !== ""
+      ? root.labelAck.message : root.service.ui("ui.noted")
+    wrapMode: Text.Wrap
+    color: root.labelAck !== null && root.labelAck.ok === false ? root.tk.fail : root.tk.inkMuted
+    font.family: root.service.fontFamily
+    font.pixelSize: M.font.label
   }
 }

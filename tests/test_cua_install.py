@@ -112,7 +112,8 @@ class Installer(unittest.TestCase):
         self.assertIn("Slice=session.slice", unit)
         self.assertIn("MemoryMax=512M", unit)
         link = self.r.home / ".local/bin/cua-driver"
-        self.assertEqual(os.path.realpath(link), str(self.r.binary))
+        self.assertEqual(os.path.realpath(link),
+                         os.path.realpath(str(self.r.binary)))
         calls = self.r.calls()
         self.assertTrue(any(c.startswith("curl") for c in calls))
         self.assertIn("systemctl --user daemon-reload", calls)

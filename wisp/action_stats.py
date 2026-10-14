@@ -24,10 +24,10 @@ def _load(path=None) -> list:
         return []
 
 
-def stats(path=None) -> dict:
+def stats(path=None, records: list | None = None) -> dict:
     """{app: {tool: [ok, n]}}"""
     out = {}
-    for t in _load(path):
+    for t in (_load(path) if records is None else records):
         app = (t.get("app") or "_unknown").lower()
         for s in t.get("steps") or []:
             tool = s.get("tool", "?")
@@ -38,11 +38,12 @@ def stats(path=None) -> dict:
     return out
 
 
-def block_for(app: str, path=None) -> str:
+def block_for(app: str, path=None, records: list | None = None) -> str:
     """'[what works in godot] click 4/5, launch 3/3; suspect: shell 0/4'
     — empty string when the app is unrecorded."""
     app = (app or "_unknown").lower()
-    tools = stats(path).get(app) or stats(path).get("_unknown")
+    by_app = stats(path, records=records)
+    tools = by_app.get(app) or by_app.get("_unknown")
     if not tools:
         return ""
     good, suspect = [], []

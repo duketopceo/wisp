@@ -14,7 +14,7 @@ class TestTcpTransport(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             sock = Path(td) / "wispd.sock"
             with mock.patch.object(ipc, "_TCP", True):
-                d = ipc.Daemon(lambda c: {"ok": True,
+                d = ipc.Daemon(lambda c, peer=None: {"ok": True,
                                           "echo": c.get("cmd")},
                                sock_file=sock)
                 d.start()

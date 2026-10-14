@@ -21,6 +21,12 @@ text is never written: only its length and a salted hash (per-process
 salt, so repeats correlate within a run but cannot be dictionary-
 reversed). Click targets that are not coordinates (names) are never
 written either. Audit failures never break an action.
+
+U5: every record also carries `delivery` — the channel the call used
+("background" | "pointer" | "guide"), stamped by the tool/dispatch
+layer or `delivery.planned` for calls refused before a backend ran.
+`Guard.last_delivery` exposes the same value to the act loop after
+each `run` (guarded or not) for step/stream recording.
 """
 import collections
 import hashlib
@@ -32,6 +38,7 @@ import threading
 import time
 
 from . import cancel, config
+from . import delivery as _delivery
 
 # input tools this layer gates. move is gated (kill/deny/dry-run) but not
 # counted: it is idempotent and never changes state.
@@ -191,6 +198,7 @@ class Guard:
             else kill_default_path()
         self.turn = turn or _turn_id()
         self.turn_count = 0
+        self.last_delivery = ""
 
     # -- scope ---------------------------------------------------------
     def applies(self, name: str) -> bool:
@@ -250,31 +258,49 @@ class Guard:
 
     # -- the single entry point ----------------------------------------
     def run(self, name: str, arg: str, runner) -> str:
+        _delivery.clear()
+        self.last_delivery = ""
         if not self.applies(name):
-            return runner()
+            try:
+                return runner()
+            finally:
+                self.last_delivery = self._delivered(name)
         self._stopped()
         w = self._window() or {}
         app, title = (w.get("app") or "").lower(), w.get("title") or ""
         t0 = time.monotonic()
         why = self.check(name, app, title)
         if why:
-            self._audit(name, arg, app, "deny", f"REFUSED ({why})", t0)
+            self.last_delivery = _delivery.planned(name, self.cfg)
+            self._audit(name, arg, app, "deny", f"REFUSED ({why})", t0,
+                        self.last_delivery)
             return f"REFUSED ({why})"
         if name in COUNTED:
             self.limiter.record(app or "?")
             self.turn_count += 1
         if self.s["dry_run"]:
             msg = f"DRYRUN would {name} {_describe(name, arg)}"
-            self._audit(name, arg, app, "dry_run", msg, t0)
+            self.last_delivery = _delivery.planned(name, self.cfg)
+            self._audit(name, arg, app, "dry_run", msg, t0,
+                        self.last_delivery)
             return msg
         try:
             result = runner()
         except cancel.Cancelled:
-            self._audit(name, arg, app, "cancelled", "CANCELLED", t0)
+            self._audit(name, arg, app, "cancelled", "CANCELLED", t0,
+                        self._delivered(name))
             raise
-        self._audit(name, arg, app, "allow", result, t0)
+        self.last_delivery = self._delivered(name)
+        self._audit(name, arg, app, "allow", result, t0,
+                    self.last_delivery)
         self._stopped()   # a stop that landed mid-call ends the turn now
         return result
+
+    def _delivered(self, name: str) -> str:
+        """The delivery the dispatch actually used (its stamp), else
+        the mode it would have used — for refusals that never reached
+        a backend."""
+        return _delivery.last() or _delivery.planned(name, self.cfg)
 
     def _stopped(self) -> None:
         cancel.check()
@@ -282,7 +308,8 @@ class Guard:
             raise cancel.Cancelled()
 
     # -- audit ---------------------------------------------------------
-    def _audit(self, name, arg, app, decision, result, t0) -> None:
+    def _audit(self, name, arg, app, decision, result, t0,
+               delivery="") -> None:
         if not self.s["audit"]:
             return
         rec = {"ts": round(time.time(), 3), "turn": self.turn, "tool": name,
@@ -290,6 +317,8 @@ class Guard:
                "dry_run": self.s["dry_run"],
                "result": _verb(result),
                "ms": int((time.monotonic() - t0) * 1000)}
+        if delivery:
+            rec["delivery"] = delivery
         arg = arg or ""
         m = _XY.match(arg)
         if name in ("click", "move", "scroll") and m:

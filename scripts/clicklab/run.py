@@ -11,6 +11,14 @@ Usage:
         [--suite NAME] [--seed S] [--dom] [--only SUBSTR]
         [--page index.html|apps.html] [--teach]
         [--models "provider:model,provider:model"]
+        [--adaptive] [--no-judge]
+
+`--adaptive` (or `[clicklab] adaptive = "true"`): instead of marching
+through the suite, each run's verdict feeds the rolling failure buckets
+and the NEXT task is synthesized against the hottest bucket — same
+skill, varied surface — until --tasks N (default 12) or the budget cap.
+The verdict judge is `[clicklab] judge`: jev (default, brain fallback),
+brain, or off — `--no-judge` is the same as off.
 """
 import json
 import sys
@@ -272,8 +280,9 @@ def distill():
     another model run."""
     from wisp import config, tools, train
     seed = int(_flag("--seed", "0"))
+    cfg = config.load_config()
     bank = train.load_bank()
-    cands = train.distill_candidates(bank)
+    cands = train.distill_candidates(bank, train.promote_after(cfg))
     if "--dry-run" in sys.argv or not cands:
         for e in cands:
             print(f"[distill] {e['task'][:60]!r} streak={e['streak']} "
@@ -284,7 +293,6 @@ def distill():
         return
     serve()
     cdp = _flag("--cdp")
-    cfg = config.load_config()
     cfg.setdefault("screen", {})
 
     def _open(page_name: str):
@@ -358,7 +366,7 @@ def distill():
 
 
 def main():
-    from wisp import act, config, judge, train
+    from wisp import config, train
     if "--replay" in sys.argv:
         replay(_flag("--replay"))
         return
@@ -400,6 +408,8 @@ def main():
 
     cfg = config.load_config()
     cfg.setdefault("screen", {})
+    if "--no-judge" in sys.argv:
+        cfg.setdefault("clicklab", {})["judge"] = "off"
     if dom:
         # DOM-schematic mode: screenshots are synthesized from element
         # rects — works with the panel powered off (lid closed)
@@ -471,10 +481,15 @@ def main():
         if not _provider_up(mcfg):
             print(f"[clicklab] SKIP {spec} — provider unreachable")
             continue
-        results.extend(
-            _run_suite(mcfg, tasks, page, dom, suite_name, spec,
-                       model, len(tasks), teach=teach,
-                       apps_page=page_name == "apps.html"))
+        if _adaptive_on(mcfg):
+            results.extend(
+                _run_adaptive(mcfg, suite, page, dom, suite_name, spec,
+                              model, teach, page_name, seed))
+        else:
+            results.extend(
+                _run_suite(mcfg, tasks, page, dom, suite_name, spec,
+                           model, len(tasks), teach=teach,
+                           apps_page=page_name == "apps.html"))
 
     # parallel-worker attribution: hammer-parallel.sh passes --worker
     # and --sandbox-id so records can be grouped per CubeVM worker
@@ -488,6 +503,13 @@ def main():
         for r in results:
             f.write(json.dumps(r) + "\n")
     print(f"[clicklab] results appended to {OUT}")
+    b = train.rebuild_buckets()
+    if b.get("fails"):
+        cells = sorted(b["cells"].items(), key=lambda kv: -kv[1])[:3]
+        print(f"[clicklab] buckets: {b['fails']} fails "
+              f"({b['unjudged']} unjudged) — "
+              + ", ".join(f"{k}×{v}" for k, v in cells)
+              + f" → {train.BUCKETS_FILE}")
 
 
 def _stamp(results: list, worker, sandbox_id):
@@ -515,98 +537,187 @@ def _provider_up(cfg: dict) -> bool:
         import urllib.request
         urllib.request.urlopen(f"{base}/models", timeout=3)
         return True
-    except Exception:
+    except OSError:
         return False
+
+
+def _evidence(page, cfg, dom) -> dict:
+    """Post-run judge evidence: the scoreboard/DOM state dump always;
+    a final screenshot only for vision providers outside DOM mode."""
+    evd = {}
+    try:
+        out = ev(page, "return JSON.stringify(window.__score||{})"
+                       ".slice(0,1500)")
+        m = re.search(r"\{.*\}", out, re.S)
+        if m:
+            evd["state"] = m.group(0)
+    except Exception:
+        pass
+    if not dom:
+        try:
+            from wisp import brain as _b, tools as _t
+            if _b.supports_vision(cfg):
+                shot = _t.run("screenshot", "", cfg)
+                if shot.startswith("SHOT "):
+                    import base64
+                    evd["image"] = base64.b64encode(pathlib.Path(
+                        shot[5:].strip()).read_bytes()).decode()
+        except Exception:
+            pass
+    return evd
+
+
+def _run_task(cfg, page, dom, teach, apps_page, task, expr, oracle_len,
+              suite_name, spec, model, i, total, meta=None) -> dict:
+    """One task: reset the board, run the act loop, oracle-check, judge,
+    fold into the skill bank + verdict stream. `meta` (adaptive pick
+    info) lands on the record so synthesized tasks are attributable."""
+    from wisp import act, judge, ledger, train
+    # reset the scoreboard per task — cumulative state would let a
+    # repeat pass on a previous task's leftovers. The apps page
+    # keeps board/app state in __score so a reload is the cleanest
+    # reset; index.html resets in place.
+    if apps_page:
+        ev(page, "location.reload();'reloading'")
+        time.sleep(1.5)
+    else:
+        ev(page, "window.__score={events:[],counts:{},"
+                 "scroll_top:0,typed:{},lastClick:null};"
+                 "document.querySelectorAll('input,textarea')"
+                 ".forEach(e=>e.value='');"
+                 "var sc=document.getElementById('scroller');"
+                 "if(sc)sc.scrollTop=0;"
+                 "document.activeElement.blur();'r'")
+    if not dom:
+        focus_browseros()
+    ask = ("Teach the user as you go — briefly say what you are "
+           "doing and why before each action, then do it: " + task
+           if teach else task)
+    t0 = time.time()
+    run_steps: list = []
+    ledger.reset_session()
+    verdict = act.run_act_loop(ask, cfg,
+                               confirm=lambda p: True,
+                               steps_out=run_steps)
+    usage = ledger.session_totals()
+    ms = int((time.time() - t0) * 1000)
+    ok = check(page, expr)
+    # The judge (Jev, brain fallback, or the oracle alone per
+    # [clicklab] judge) reconciles what the scoreboard can't see:
+    # efficiency, waste kind, failure class — and whether the agent's
+    # claimed outcome is real. Ground truth still wins on success.
+    j = judge.verdict(task, run_steps, verdict, cfg, verified=ok,
+                      evidence=_evidence(page, cfg, dom))
+    # indices of steps that actually executed (not error/skip/refuse)
+    nonerr = [n for n, s in enumerate(run_steps)
+              if not str(s.get("result", "")).startswith(
+                  ("ERROR", "SKIP", "REFUS"))]
+    # first-fault fallback when the judge didn't name one: verified
+    # fails fault at the last executed step, clean passes at none.
+    if j.get("first_fault", -1) < 0 and ok is False:
+        j["first_fault"] = nonerr[-1] if nonerr else -1
+    # Objective efficiency when the suite carries an oracle:
+    # minimal-steps / executed-steps, capped at 1.0. Jev's verdict
+    # stays on the record for disagreement auditing; `efficiency`
+    # resolves to the oracle when present.
+    actual = len(nonerr)
+    eff_obj = (min(1.0, oracle_len / max(actual, 1))
+               if oracle_len else None)
+    eff = eff_obj if eff_obj is not None else j.get("efficiency")
+    rec = {"i": i, "task": task, "suite": suite_name,
+           "teach": teach or None,
+           "check": expr, "verdict": verdict,
+           "verified": ok, "judge": j, "surface": "browser-dom",
+           "model": model, "provider": spec,
+           "efficiency": eff, "oracle_len": oracle_len or None,
+           "actual_len": actual,
+           "flake": train.classify_flake(
+               {"verified": ok, "judge": j, "steps": run_steps,
+                "verdict": verdict}),
+           "cost_usd": usage["cost"],
+           "tokens": {"prompt": usage["prompt_tokens"],
+                      "completion": usage["completion_tokens"],
+                      "calls": usage["calls"]},
+           "steps": run_steps[:24], "ms": ms, "ts": time.time()}
+    if meta:
+        rec["adaptive"] = meta
+    entry = train.update_bank(rec, cfg=cfg)
+    if entry.get("changed"):
+        print(f"    [bank] {entry['status'].upper()}: "
+              f"{entry['task'][:60]}")
+    train.record_verdict(rec)
+    src = f" [{meta['source']}]" if meta and meta.get("source") \
+        != "suite" else ""
+    print(f"[{i}/{total}] {'PASS' if ok else 'FAIL'}{src} "
+          f"({ms}ms) {task}\n    {verdict[:140]}\n    "
+          f"{judge.describe(j)}",
+          flush=True)
+    return rec
+
+
+def _blocked(cfg) -> bool:
+    from wisp import ledger
+    if ledger.status(cfg)["blocked"]:
+        print(f"[clicklab] BUDGET CAP reached "
+              f"(${ledger.totals()['today_usd']:.2f} spent today) "
+              "— stopping")
+        return True
+    return False
+
+
+def _adaptive_on(cfg: dict) -> bool:
+    return "--adaptive" in sys.argv \
+        or cfg.get("clicklab", {}).get("adaptive") == "true"
+
+
+def _run_adaptive(cfg, suite, page, dom, suite_name, spec, model,
+                  teach, page_name, seed) -> list:
+    """Adaptive mode (U7): the task list is synthesized on the fly —
+    each pick aims at the hottest failure bucket (same skill, varied
+    surface) instead of marching through a fixed suite."""
+    sys.path.insert(0, str(pathlib.Path(__file__).parent))
+    import adaptive as _ad
+    import random as _rnd
+    from wisp import ledger, train
+    ledger.ACTIVE = True
+    cap = int(_flag("--tasks", "12"))
+    rng = _rnd.Random(seed or int(time.time()))
+    history = train._load_jsonl(train.RESULTS)[-200:]
+    done = []
+    print(f"[clicklab] adaptive: cap {cap}, brain={spec}, "
+          f"{len(history)} prior runs seed the buckets")
+
+    def one(task, expr, olen, meta):
+        rec = _run_task(cfg, page, dom, teach,
+                        apps_page=page_name == "apps.html",
+                        task=task, expr=expr, oracle_len=olen,
+                        suite_name=suite_name, spec=spec, model=model,
+                        i=len(done) + 1, total=cap, meta=meta)
+        done.append(rec)
+        time.sleep(0.5)
+        return rec
+
+    _ad.run_adaptive(one, suite, cap, rng=rng, page=page_name,
+                     history=history, halt=lambda: _blocked(cfg))
+    hits = sum(1 for r in done if r["verified"])
+    spent = sum(r.get("cost_usd") or 0 for r in done)
+    print(f"[clicklab:{model}] adaptive {hits}/{len(done)} verified "
+          f"(${spent:.4f} this run)")
+    return done
 
 
 def _run_suite(cfg, tasks, page, dom, suite_name, spec, model,
                total, teach=False, apps_page=False) -> list:
-    from wisp import act, judge, ledger, train
+    from wisp import ledger
     ledger.ACTIVE = True  # record every call in the one usage ledger
     print(f"[clicklab] {total} tasks, brain={spec}")
     results = []
     for i, (task, expr, oracle_len) in enumerate(tasks, 1):
-        if ledger.status(cfg)["blocked"]:
-            print(f"[clicklab] BUDGET CAP reached "
-                  f"(${ledger.totals()['today_usd']:.2f} spent today) "
-                  f"— stopping")
+        if _blocked(cfg):
             break
-        # reset the scoreboard per task — cumulative state would let a
-        # repeat pass on a previous task's leftovers. The apps page
-        # keeps board/app state in __score so a reload is the cleanest
-        # reset; index.html resets in place.
-        if apps_page:
-            ev(page, "location.reload();'reloading'")
-            time.sleep(1.5)
-        else:
-            ev(page, "window.__score={events:[],counts:{},"
-                     "scroll_top:0,typed:{},lastClick:null};"
-                     "document.querySelectorAll('input,textarea')"
-                     ".forEach(e=>e.value='');"
-                     "var sc=document.getElementById('scroller');"
-                     "if(sc)sc.scrollTop=0;"
-                     "document.activeElement.blur();'r'")
-        if not dom:
-            focus_browseros()
-        ask = ("Teach the user as you go — briefly say what you are "
-               "doing and why before each action, then do it: " + task
-               if teach else task)
-        t0 = time.time()
-        run_steps: list = []
-        ledger.reset_session()
-        verdict = act.run_act_loop(ask, cfg,
-                                   confirm=lambda p: True,
-                                   steps_out=run_steps)
-        usage = ledger.session_totals()
-        ms = int((time.time() - t0) * 1000)
-        ok = check(page, expr)
-        # Jev judges what the scoreboard can't: efficiency, waste kind,
-        # and whether the agent's claimed outcome is real. Ground truth
-        # still wins on success — the judge reconciles, not overrides.
-        j = judge.verdict(task, run_steps, verdict, cfg,
-                          verified=ok) if "--no-judge" not in sys.argv \
-            else {"success": ok, "efficiency": None, "waste": "none",
-                  "first_fault": -1}
-        # indices of steps that actually executed (not error/skip/refuse)
-        nonerr = [i for i, s in enumerate(run_steps)
-                  if not str(s.get("result", "")).startswith(
-                      ("ERROR", "SKIP", "REFUS"))]
-        # first-fault fallback when the judge didn't name one: verified
-        # fails fault at the last executed step, clean passes at none.
-        if j.get("first_fault", -1) < 0 and ok is False:
-            j["first_fault"] = nonerr[-1] if nonerr else -1
-        # Objective efficiency when the suite carries an oracle:
-        # minimal-steps / executed-steps, capped at 1.0. Jev's verdict
-        # stays on the record for disagreement auditing; `efficiency`
-        # resolves to the oracle when present.
-        actual = len(nonerr)
-        eff_obj = (min(1.0, oracle_len / max(actual, 1))
-                   if oracle_len else None)
-        eff = eff_obj if eff_obj is not None else j.get("efficiency")
-        rec = {"i": i, "task": task, "suite": suite_name,
-               "teach": teach or None,
-               "check": expr, "verdict": verdict,
-               "verified": ok, "judge": j, "surface": "browser-dom",
-               "model": model, "provider": spec,
-               "efficiency": eff, "oracle_len": oracle_len or None,
-               "actual_len": actual,
-               "flake": train.classify_flake(
-                   {"verified": ok, "judge": j, "steps": run_steps,
-                    "verdict": verdict}),
-               "cost_usd": usage["cost"],
-               "tokens": {"prompt": usage["prompt_tokens"],
-                          "completion": usage["completion_tokens"],
-                          "calls": usage["calls"]},
-               "steps": run_steps[:24], "ms": ms, "ts": time.time()}
-        results.append(rec)
-        entry = train.update_bank(rec)
-        if entry.get("changed"):
-            print(f"    [bank] {entry['status'].upper()}: "
-                  f"{entry['task'][:60]}")
-        print(f"[{i}/{len(tasks)}] {'PASS' if ok else 'FAIL'} "
-              f"({ms}ms) {task}\n    {verdict[:140]}\n    "
-              f"{judge.describe(j)}",
-              flush=True)
+        results.append(_run_task(cfg, page, dom, teach, apps_page,
+                                 task, expr, oracle_len, suite_name,
+                                 spec, model, i, len(tasks)))
         time.sleep(0.5)
     hits = sum(1 for r in results if r["verified"])
     spent = sum(r.get("cost_usd") or 0 for r in results)

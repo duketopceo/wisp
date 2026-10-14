@@ -185,15 +185,17 @@ def _choice_args(p):
 @command("choice", "Answer a pending prompt from the keyboard or a script",
          ["wispd choice app:kitty",
           "wispd choice --prompt-id p1 --index 2"],
-         {"pick": "str"}, args=_choice_args)
+         {"pick": "str", "result": "str"}, args=_choice_args)
 def choice(ctx, a):
     msg = {"cmd": "choice", "pick": a.pick}
     if a.prompt_id:
         msg["prompt_id"] = a.prompt_id
     if a.index is not None:
         msg["index"] = a.index
-    ctx.expect_ok(ctx.send(msg))
-    return ctx.emit({"pick": a.pick})
+    reply = ctx.expect_ok(ctx.send(msg))
+    # the daemon's own words for picks it resolves locally (suggestion:
+    # cards) — "" for a plain broker offer, which has nothing to say
+    return ctx.emit({"pick": a.pick, "result": reply.get("result") or ""})
 
 
 @command("tui", "Open the terminal UI",

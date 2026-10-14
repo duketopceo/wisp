@@ -76,14 +76,40 @@ _CUES = ("no", "nope", "wrong", "that's wrong", "didn't work",
          "didnt work", "actually", "instead", "not that", "try again")
 
 
+def _last_jsonl(path, window: int = 65536) -> dict | None:
+    """Last record only — tail-read so correction_context stays O(1)
+    on unbounded decision/label logs."""
+    try:
+        with path.open("rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(max(0, size - window))
+            lines = f.read().decode("utf-8", "replace").splitlines()
+        if size > window:
+            lines = lines[1:]  # partial first line
+        for line in reversed(lines):
+            line = line.strip()
+            if line:
+                try:
+                    return json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+        # nothing parsed — the last record may exceed the window;
+        # fall back to the full read rather than return a stale row
+        if size > window:
+            recs = _read_jsonl(path)
+            return recs[-1] if recs else None
+    except OSError:
+        pass
+    return None
+
+
 def _last_decision(decisions_file=config.DECISIONS) -> dict | None:
-    recs = _read_jsonl(decisions_file)
-    return recs[-1] if recs else None
+    return _last_jsonl(decisions_file)
 
 
 def _last_label(labels_file=LABELS_FILE) -> dict | None:
-    recs = _read_jsonl(labels_file)
-    return recs[-1] if recs else None
+    return _last_jsonl(labels_file)
 
 
 def correction_context(text: str, cfg: dict) -> dict | None:

@@ -18,7 +18,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import fakes  # noqa: E402
 from fakes import FakeHypr, ok_handler  # noqa: E402
 
-from wisp import platform  # noqa: E402
+from wisp import platform, realinput  # noqa: E402
 from wisp.tools import system  # noqa: E402
 
 CFG = {"pointer": {"mode": "drive", "backend": "auto"}}
@@ -70,7 +70,16 @@ class Rig:
         self.td.cleanup()
 
 
-class TestPrecedence(unittest.TestCase):
+class _Iso(unittest.TestCase):
+    """Isolate the module-level realinput watch — other
+    suites may leave it armed/yielded; pointer dispatches must
+    see _WATCH absent unless the test installs one."""
+
+    def setUp(self):
+        realinput._stop_for_test()
+
+
+class TestPrecedence(_Iso):
     def test_backend_selection(self):
         with Rig(True):
             self.assertEqual(platform.pointer_backend(CFG), "cua")
@@ -121,7 +130,7 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class TestHyprHealthRegistry(unittest.TestCase):
+class TestHyprHealthRegistry(_Iso):
     """wispd registers hypr health on the U7 HealthRegistry."""
 
     def _wispd(self):

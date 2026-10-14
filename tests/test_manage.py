@@ -405,6 +405,14 @@ class TestQmllint(unittest.TestCase):
                            capture_output=True, text=True)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
 
+    def test_wisp_service_has_no_name_collisions(self):
+        # qs.Commons stays unresolved standalone — only the duplicated-name
+        # class is gated here (a `run` property once shadowed the run()
+        # action method, making every click throw).
+        p = subprocess.run([QMLLINT, str(ROOT / "shell-plugin" / "WispService.qml")],
+                           capture_output=True, text=True)
+        self.assertNotIn("duplicated-name", p.stdout + p.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

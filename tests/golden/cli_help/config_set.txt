@@ -31,10 +31,16 @@ Settings (value, default, range):
                                default false; true or false
   cua.confirm                  Confirm risky actions (tier) or every action (always)
                                default tier; tier, always
+  cua.delivery                 Input delivery: auto = background where possible, pointer escalation otherwise; background never touches the real cursor; pointer prefers it
+                               default auto; auto, background, pointer
   cua.max_clicks_per_min       Most clicks allowed in one minute
                                default 30; 1 to 600
   cua.max_per_turn             Most actions allowed in one turn
                                default 12; 1 to 200
+  agent.autonomy               Confirm policy: autonomous runs reversible steps free, guided asks on them too, always_ask confirms everything
+                               default autonomous; autonomous, guided, always_ask
+  dictation.mode               Dictate mode: raw is verbatim, cleanup fixes grammar, compose writes the finished text from your idea
+                               default cleanup; raw, cleanup, compose
   cua.timeout_ms               Per call timeout for the cua driver in ms
                                default 800; 50 to 60000
   audio.seconds                Longest recording for one turn in seconds
@@ -55,10 +61,20 @@ Settings (value, default, range):
                                default 2; 0 to 20
   agents.act_max_parse_misses  Unparseable action replies tolerated in action text mode
                                default 1; 0 to 10
+  agents.act_max_seconds       Wall-clock seconds one act run may take before it aborts (0 disables)
+                               default 600; 0 to 86400
+  agents.act_max_usd           Per-run cap on model spend in USD added during the run (0 disables)
+                               default 0; 0 to 100000, blank for no cap
   agents.writer_queue_max      Trajectory and recall writes held in memory before the oldest is dropped
                                default 256; 1 to 100000
   stt.provider                 Speech to text: local whisper.cpp or an API
                                default local; local, openai
+  clicklab.adaptive            Adaptive clicklab: each verdict steers the next synthesized task at the hottest failure bucket
+                               default false; true or false
+  clicklab.promote_after       Verified successes a clicklab recipe needs before it graduates
+                               default 3; 1 to 20
+  clicklab.judge               Run verdict judge: jev decisions call (brain fallback), brain only, or off (scoreboard alone)
+                               default jev; jev, brain, off
 
 Examples:
   wispd config set audio.seconds 30
