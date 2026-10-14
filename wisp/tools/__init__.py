@@ -51,7 +51,11 @@ SHELL_DENYLIST = ("rm -rf /", "rm -rf ~", "rm -rf $HOME", "mkfs",
 TEXT_INPUT = {"type_text", "key"}
 
 REGISTRY = {
-    "launch": (desktop.launch, "safe", "open an application",
+    "launch": (desktop.launch, "safe",
+               "open an application by its inventory name (see [env] "
+               "apps=), or a domain/URL like 'gmail.com' in the "
+               "default browser — prefer a domain over guessing an "
+               "uninstalled native client",
                {"tier": "T0", "reversible": True, "external": False}),
     "focus": (desktop.focus, "safe", "focus a window by class",
               {"tier": "T0", "reversible": True, "external": False}),

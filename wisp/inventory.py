@@ -231,7 +231,16 @@ def summary(cfg: dict | None = None) -> str:
         return ""
     parts = []
     if inv.get("apps"):
-        parts.append(f"apps({len(inv['apps'])})")
+        apps = inv["apps"]
+        # names the model can actually `launch`, most-used first —
+        # a bare count leaves it guessing app names that SKIP
+        top = (inv.get("dayflow") or {}).get("top_apps") or []
+        lead = [a for a in top if a in apps]
+        names = lead + sorted(n for n in apps if n not in lead)
+        names = names[:40]
+        parts.append("apps=" + ",".join(names)
+                     + (f"+{len(apps) - len(names)}"
+                        if len(apps) > len(names) else ""))
     cli = inv.get("cli_tools") or {}
     if cli:
         # notable dev/agent tools first, then other user bins
