@@ -58,6 +58,7 @@
       "acting",
       "awaiting_choice",
       "acting",
+      "speaking",
       "done"
     ],
     "cua_calls": [],

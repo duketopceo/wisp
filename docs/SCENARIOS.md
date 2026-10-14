@@ -49,6 +49,7 @@ table to list every fixture.
 | `notify_quiet_hours` | notify paths | Same turn inside [notify] quiet hours (22:00-07:00, fixed clock 23:30 via notify_now): the toast is suppressed, nothing reaches notify-send. |
 | `notify_success_toast` | notify paths | Answer turn with the notify fake installed: one success toast reaches notify-send. |
 | `offline_all` | offline daemon | Every model endpoint is down (STT, Jev, brain): the turn ends in a clean error, nothing leaves loopback. |
+| `router_act` | act router | `[brain] router = act`: every turn enters the conversational act loop directly — zero Jev calls (jev_calls = 0), the act brain answers or acts. |
 | `stale_choice` | stale choice | The chooser returns a pick that was never offered (stale prompt). U9: it is rejected (choice_rejected in the trace) and the turn falls back to the safe auto-pick. |
 | `stt_failure` | STT failure | Whisper answers 500: the turn ends in error before routing; Jev and the brain are never called. |
 

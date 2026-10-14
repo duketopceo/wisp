@@ -52,10 +52,10 @@ TEXT_INPUT = {"type_text", "key"}
 
 REGISTRY = {
     "launch": (desktop.launch, "safe",
-               "open an application by its inventory name (see [env] "
-               "apps=), or a domain/URL like 'gmail.com' in the "
-               "default browser — prefer a domain over guessing an "
-               "uninstalled native client",
+               "open an application — any installed app name works "
+               "(see [env] apps=); a role like 'mail'/'files' opens "
+               "the user's default handler (see [env] defaults=); a "
+               "domain/URL like 'gmail.com' opens in the browser",
                {"tier": "T0", "reversible": True, "external": False}),
     "focus": (desktop.focus, "safe", "focus a window by class",
               {"tier": "T0", "reversible": True, "external": False}),
