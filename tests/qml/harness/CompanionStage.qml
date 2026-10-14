@@ -10,7 +10,6 @@ Item {
   id: root
 
   property var service: null
-  property var pointer: null
   property bool bubbleDismissed: false
   property real refreshHz: 60
 
@@ -20,7 +19,6 @@ Item {
   OverlayLayer {
     anchors.fill: parent
     service: root.service
-    pointer: root.pointer
     refreshHz: root.refreshHz
     bubbleDismissed: root.bubbleDismissed
   }
