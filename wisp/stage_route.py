@@ -387,8 +387,11 @@ def route_stage(ctx) -> bool:
     pl, state, sp, cfg, text = _pl(), ctx.state, ctx.sp, ctx.cfg, ctx.text
     turn, token, model = ctx.turn, ctx.token, ctx.model
     harness, context = ctx.harness, ctx.context
-    # router: jev (default) | chat (transcript straight to answer
-    # brain) | off (always clarify via choices) — Rust parity
+    # router: jev (default) | act (every turn straight to the
+    # conversational agent loop — no decision hop, the loop's brain
+    # decides answer-vs-work with the trigger screenshot) |
+    # chat (transcript straight to answer brain) | off (always
+    # clarify via choices) — Rust parity
     sp.record("context", sp.mark_ns("stt"))
     route_start = sp.now()
     route_meta = None
@@ -399,6 +402,8 @@ def route_stage(ctx) -> bool:
         # explicit agent mode — skip Jev, straight to the
         # computer-use loop with the trigger screenshot
         ctx.detail = agent_m.group(1).strip()
+        resp = {"answers": {"route": {"choice": "act"}}}
+    elif router == "act":
         resp = {"answers": {"route": {"choice": "act"}}}
     elif router == "chat":
         resp = {"answers": {"route": {"choice": "answer"}}}
