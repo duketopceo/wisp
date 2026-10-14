@@ -93,7 +93,7 @@ Every routed turn appends Jev vs heuristic vs final route to `route_ab.jsonl`; r
 
 | key | default | meaning |
 |-----|---------|---------|
-| `router` | `"jev"` | `jev` (decision API) / `chat` (straight to answer brain) / `off` (clarify) |
+| `router` | `"jev"` | `jev` (decision API) / `act` (every turn straight to the agent loop — the loop's brain decides answer-vs-work; no decision hop) / `chat` (straight to answer brain) / `off` (clarify) |
 | `default` | `"openrouter:<answer_model>"` | `name:model` selecting a `[brain.<name>]` provider |
 | `fallback` | `""` | comma-separated `name:model` chain tried after `default` (e.g. `"mlx:ornith, ollama:ornith"`) |
 | `allow_paid` | `false` | allow paid fallback entries (OpenRouter, or `paid = "true"` on the section); the U10 cap hook (`brain.budget_ok`, see `[budget]`) also applies; at a cap fallbacks are skipped, the primary runs unless `[budget] gate_primary` |

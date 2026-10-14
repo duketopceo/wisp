@@ -1,0 +1,37 @@
+{
+  "name": "router_act",
+  "description": "router=act: every turn goes straight to the agent loop — Jev is never called (jev_calls 0), the brain answers without tool calls, the ACTED payload is spoken (answer field populated, speaking state reached).",
+  "scenario": "act router, conversational reply",
+  "audio": "ask.wav",
+  "config": {
+    "brain": {
+      "router": "act"
+    }
+  },
+  "endpoints": {
+    "whisper": {
+      "transcript": "what window is focused"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "content": "The focused window is a terminal."
+        }
+      ]
+    }
+  },
+  "expect": {
+    "jev_calls": 0,
+    "brain_calls": 1,
+    "result_prefix": "ACTED (0 steps)",
+    "answer": "The focused window is a terminal.",
+    "statuses": ["listening", "transcribing", "deciding", "acting", "speaking", "done"]
+  }
+}
