@@ -110,6 +110,26 @@ class TestToolExec(unittest.TestCase):
         self.assertIn("chromium", out)
         ex.assert_called_once_with("chromium")
 
+    def test_launch_domain_opens_in_browser(self):
+        self._hypr_up()
+        cfg = {"apps": {}, "agent": {}}
+        with mock.patch.object(tools.desktop.shutil, "which",
+                               return_value="/usr/bin/xdg-open"), \
+             mock.patch.object(tools.desktop, "_exec_detached") as ex:
+            out = tools.desktop.launch("gmail.com", cfg)
+        self.assertIn("OPENED https://gmail.com", out)
+        ex.assert_called_once_with("xdg-open https://gmail.com")
+
+    def test_launch_unknown_noun_still_skips(self):
+        self._hypr_up()
+        cfg = {"apps": {}, "agent": {}}
+        with mock.patch.object(tools.desktop.shutil, "which",
+                               return_value="/usr/bin/xdg-open"), \
+             mock.patch.object(tools.desktop, "_exec_detached") as ex:
+            out = tools.desktop.launch("thunderbird", cfg)
+        self.assertIn("SKIP (unknown app 'thunderbird')", out)
+        ex.assert_not_called()
+
     def test_notify_runs(self):
         with mock.patch.object(tools.system, "notify") as n:
             self.assertEqual(tools.run("notify", "hi", {}), "NOTIFIED")
