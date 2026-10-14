@@ -171,6 +171,12 @@ Column {
     delegate: Field { def: modelData }
   }
 
+  Group { text: root.service.ui("ui.settings.agent") }
+  Repeater {
+    model: S.group("agent")
+    delegate: Field { def: modelData }
+  }
+
   Column {
     width: parent.width
     spacing: M.spacing.sm

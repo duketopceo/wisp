@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """IPC tests: unix-socket server + client round-trips and failure modes."""
 import json
+import os
 import pathlib
 import socket
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
@@ -14,7 +16,8 @@ from wisp import ipc, state  # noqa: E402
 
 def make_server(td, handler=None):
     sock = pathlib.Path(td) / "wispd.sock"
-    srv = ipc.Daemon(handler or (lambda cmd: {"ok": True, "echo": cmd}),
+    srv = ipc.Daemon(handler or (lambda cmd, peer=None:
+                                 {"ok": True, "echo": cmd}),
                      sock_file=sock)
     srv.start()
     return srv, sock
@@ -53,7 +56,7 @@ class TestIpc(unittest.TestCase):
         self.assertIn("malformed", resp["error"])
 
     def test_handler_exception_returns_error(self):
-        def boom(cmd):
+        def boom(cmd, peer=None):
             raise ValueError("nope")
         with tempfile.TemporaryDirectory() as td:
             srv, sock = make_server(td, boom)
@@ -74,6 +77,55 @@ class TestIpc(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             self.assertFalse(
                 ipc.alive(sock_file=pathlib.Path(td) / "wispd.sock"))
+
+
+class TestPeerCred(unittest.TestCase):
+    """SO_PEERCRED attribution (U1): the handler sees {pid, uid} for a
+    Unix-socket peer and None where credentials cannot exist — TCP,
+    non-Linux, or a lookup failure — never a serve error."""
+
+    def capture(self):
+        got = {}
+        def h(cmd, peer=None):
+            got["peer"] = peer
+            return {"ok": True}
+        return got, h
+
+    def test_unix_peer_is_attributed(self):
+        got, h = self.capture()
+        with tempfile.TemporaryDirectory() as td:
+            srv, sock = make_server(td, h)
+            try:
+                ipc.send({"cmd": "status"}, sock_file=sock)
+            finally:
+                srv.stop()
+        if ipc._TCP or not hasattr(socket, "SO_PEERCRED"):
+            self.assertIsNone(got["peer"])
+        else:  # same-process client -> our own pid/uid
+            self.assertEqual(got["peer"],
+                             {"pid": os.getpid(), "uid": os.getuid()})
+
+    def test_tcp_peer_is_none(self):
+        got, h = self.capture()
+        with tempfile.TemporaryDirectory() as td:
+            sock = pathlib.Path(td) / "wispd.sock"
+            with mock.patch.object(ipc, "_TCP", True):
+                srv = ipc.Daemon(h, sock_file=sock)
+                srv.start()
+                try:
+                    ipc.send({"cmd": "status"}, sock_file=sock)
+                finally:
+                    srv.stop()
+        self.assertIsNone(got["peer"])
+
+    def test_cred_lookup_failure_is_none_not_an_error(self):
+        bad = mock.Mock()
+        bad.family = socket.AF_UNIX
+        bad.getsockopt.side_effect = OSError("nope")
+        self.assertIsNone(ipc._peer_cred(bad))
+        inet = mock.Mock()
+        inet.family = socket.AF_INET
+        self.assertIsNone(ipc._peer_cred(inet))
 
 
 class TestState(unittest.TestCase):

@@ -28,3 +28,40 @@ function rows(steps, busy) {
     out.push(parse(list[i], i === list.length - 1, busy === true))
   return out
 }
+
+// Action stream entries (state.actions, contract v2) -> StepRow models.
+// The daemon's lifecycle status maps onto the row states. `status` is
+// the daemon status — open states (queued/in_flight/awaiting) read
+// cancelled once the daemon settles (idle/done/error/offline), since an
+// unresolved entry at rest is dead, not pending. `livePromptId` scopes
+// awaiting rows: one carrying a different live prompt is stale even
+// while another prompt waits. Only the tail shows (the stream is a
+// 50-entry log; the tab is a glance).
+var ACTION_STATE = { queued: "pending", in_flight: "running",
+  awaiting: "confirm", done: "done", failed: "failed",
+  cancelled: "cancelled" }
+var SETTLED = ["idle", "done", "error", "offline"]
+var OPEN = { queued: true, in_flight: true, awaiting: true }
+var ACTION_ROWS_MAX = 8
+
+function actionRows(actions, status, livePromptId) {
+  var list = Array.isArray(actions) ? actions : []
+  var tail = list.slice(Math.max(0, list.length - ACTION_ROWS_MAX))
+  var settled = SETTLED.indexOf(String(status)) >= 0
+  var out = []
+  for (var i = 0; i < tail.length; i++) {
+    var a = tail[i]
+    if (typeof a !== "object" || a === null) a = {}
+    var state = ACTION_STATE[a.status] || "done"
+    var stale = settled
+    if (!stale && a.status === "awaiting" && a.promptId
+        && livePromptId && a.promptId !== livePromptId)
+      stale = true
+    if (stale && OPEN[a.status]) state = "cancelled"
+    var text = String(a.label === undefined ? "" : a.label)
+    if (a.target) text += " " + a.target
+    out.push({ text: text, state: state,
+      raw: a.reason ? text + " -> " + a.reason : text })
+  }
+  return out
+}

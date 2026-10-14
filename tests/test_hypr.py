@@ -20,7 +20,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from fakes.hypr import FakeHypr, ok_handler  # noqa: E402,F401
-from wisp import hypr, platform  # noqa: E402
+from wisp import hypr, platform, realinput  # noqa: E402
 from wisp.tools import desktop
 
 FIXTURE = json.loads((pathlib.Path(__file__).parent / "fixtures"
@@ -28,7 +28,7 @@ FIXTURE = json.loads((pathlib.Path(__file__).parent / "fixtures"
 INJECT = '"); hl.dsp.exec_cmd("rm -rf ~'
 
 
-# FakeHypr / ok_handler live in tests/fakes/hypr.py (W5) and are
+# FakeHypr / ok_handler live in tests/fakes/hypr.py and are
 # re-exported here for the tests below and test_pointer_precedence.
 
 
@@ -256,6 +256,11 @@ class TestTransport(unittest.TestCase):
 
 
 class TestProbeAndTools(unittest.TestCase):
+    def setUp(self):
+        # a leftover armed+yielded realinput watch (module-level
+        # state) must not fail the pointer dispatch below
+        realinput._stop_for_test()
+
     def test_probe_ok(self):
         with FakeHypr() as f:
             self.assertTrue(hypr.probe())

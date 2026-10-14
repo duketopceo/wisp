@@ -1,9 +1,14 @@
 """Pointer backend registry (W8).
 
-One `Backend` per injector, in auto order: cua (background virtual
-pointer, no focus steal) > hyprcursor (Hyprland cursor move + ydotool
-click) > ydotool > wlrctl > guide (never drives; the ghost cursor shows
-the target and the user clicks). `Registry(cfg).select()` returns the
+One `Backend` per injector, in auto order: cua (zwlr_virtual_pointer —
+clicks ride a separate agent cursor, no real-pointer move, no focus
+steal; `move_cursor(scope:"desktop")` DOES drive the real OS pointer)
+> hyprcursor (Hyprland cursor move + ydotool click) > ydotool > wlrctl
+> guide (never drives; the ghost cursor shows the target and the user
+clicks). U5: every dispatch reports the delivery it actually used —
+`backend_delivery` in wisp/delivery.py is the truth table — and any
+real-pointer dispatch arms the realinput yield watch so user input
+takes the pointer back mid-call. `Registry(cfg).select()` returns the
 backend that `[pointer] backend` resolves to:
 
   auto (default, or any unknown value)  first available in auto order
@@ -30,8 +35,10 @@ import subprocess
 
 from . import cancel as _cancel
 from . import cua as _cua
+from . import delivery as _delivery
 from . import hypr
 from . import platform
+from . import realinput
 
 NAMES = ("cua", "hyprcursor", "ydotool", "wlrctl", "guide")
 _ARGV_TIMEOUT_S = 10
@@ -42,6 +49,7 @@ class Outcome:
     ok: bool
     backend: str | None = None   # who performed (or last attempted) it
     error: str = ""              # cua_code or short reason when not ok
+    delivery: str = ""           # "background"|"pointer"|"guide" (U5)
 
 
 class Backend:
@@ -77,6 +85,9 @@ class Backend:
 
 class CuaBackend(Backend):
     name = "cua"
+    # "background" holds for CLICK only (virtual-pointer clicks never
+    # move the user cursor); move_cursor(scope:"desktop") is a
+    # real-pointer drive — see delivery.backend_delivery.
     capabilities = frozenset({"background", "no_focus_steal"})
     coordinate_space = "desktop"
 
@@ -119,6 +130,7 @@ class CuaBackend(Backend):
 def _run_argv(cmds: list) -> bool:
     from .pipeline import hypr_env
     for c in cmds:
+        realinput.check()   # a human grabbed the pointer mid-sequence
         try:
             r = _cancel.run(c, capture_output=True, env=hypr_env(),
                             timeout=_ARGV_TIMEOUT_S)
@@ -227,48 +239,66 @@ class Registry:
         return self.select()
 
     def move(self, x: int, y: int, backend: str | None = None) -> Outcome:
-        _cancel.check()
+        _cancel.check(); realinput.check()
         b = self._pick(backend)
         if b is None:
-            return Outcome(False, None, "no_backend")
+            return Outcome(False, None, "no_backend", "guide")
+        # every move path drives the real cursor (cua's scope:desktop
+        # move included) — arm the yield watch before touching it
+        realinput.arm()
         if b.name == "cua":
             if b.move(x, y):
-                return Outcome(True, "cua")
+                realinput.expect(x, y)
+                return Outcome(True, "cua", delivery="pointer")
             err = b.last_error
-            _cancel.check()
+            _cancel.check(); realinput.check()
             return self._move_fallback(x, y, err)
         if platform.uses_hypr() and hypr.run_lua(hypr.cursor_move(x, y)):
-            return Outcome(True, "hypr")
-        _cancel.check()
-        return Outcome(b.move(x, y), b.name)
+            realinput.expect(x, y)
+            return Outcome(True, "hypr", delivery="pointer")
+        _cancel.check(); realinput.check()
+        ok = b.move(x, y)
+        if ok:
+            realinput.expect(x, y)
+        return Outcome(ok, b.name, delivery="pointer")
 
     def _move_fallback(self, x, y, err: str) -> Outcome:
         """cua move failed: hypr eval (on Hyprland), then the next
         backend in auto order."""
         if platform.uses_hypr() and hypr.run_lua(hypr.cursor_move(x, y)):
-            return Outcome(True, "hypr")
-        _cancel.check()
+            realinput.expect(x, y)
+            return Outcome(True, "hypr", delivery="pointer")
+        _cancel.check(); realinput.check()
         nxt = self.select(exclude=("cua",))
         if nxt is not None and nxt.move(x, y):
-            return Outcome(True, nxt.name)
-        return Outcome(False, nxt.name if nxt else "cua", err)
+            realinput.expect(x, y)
+            return Outcome(True, nxt.name, delivery="pointer")
+        return Outcome(False, nxt.name if nxt else "cua", err, "pointer")
 
     def click(self, x: int, y: int, backend: str | None = None) -> Outcome:
-        _cancel.check()
+        _cancel.check(); realinput.check()
         b = self._pick(backend)
         if b is None:
-            return Outcome(False, None, "no_backend")
+            return Outcome(False, None, "no_backend", "guide")
+        d = _delivery.backend_delivery(b.name, "click")
+        if d == "pointer":
+            realinput.arm()
         ok = b.click(x, y)
+        if ok and d == "pointer":
+            realinput.expect(x, y)
         return Outcome(ok, b.name,
                        "" if ok else getattr(b, "last_error", "")
-                       or "click_failed")
+                       or "click_failed", d)
 
     def scroll(self, dx: int, dy: int) -> Outcome:
-        _cancel.check()
+        _cancel.check(); realinput.check()
         b = self.select()
         if b is None or "scroll" not in b.capabilities:
-            return Outcome(False, b.name if b else None, "unsupported")
-        return Outcome(b.scroll(dx, dy), b.name)
+            return Outcome(False, b.name if b else None, "unsupported",
+                           "guide" if b is None else "background")
+        # wheel scrolls inject axis events at the focused surface —
+        # the pointer never moves
+        return Outcome(b.scroll(dx, dy), b.name, delivery="background")
 
     def health(self) -> list:
         return [b.health() for b in self._b.values()]

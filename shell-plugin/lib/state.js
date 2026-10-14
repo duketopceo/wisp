@@ -10,7 +10,7 @@
 
 // Highest contract_version this reader understands; a newer daemon is
 // still read (additive fields) but flagged contractNewer.
-var CONTRACT_VERSION = 1
+var CONTRACT_VERSION = 2
 var STALE_AFTER_MS = 20000  // above the W3 bus heartbeat (15 s) so long turns never flag stale between beats
 var STATUSES = ["idle", "listening", "transcribing", "deciding",
   "awaiting_choice", "acting", "speaking", "suggestion", "done", "error"]
@@ -22,6 +22,11 @@ var ERROR_CODES = ["jev_down", "brain_down", "stt_down", "ground_down",
 var TOPICS = ["state", "health", "tasks", "events"]
 var CUA_PHASES = ["aim", "click", "done"]
 var META_KEYS = ["seq", "updated_at", "turn_id"]
+// action stream (contract v2): statuses are a closed set — anything
+// else renders done; kinds are open and render generically
+var ACTION_STATUSES = ["queued", "in_flight", "awaiting", "done",
+  "failed", "cancelled"]
+var ACTIONS_CAP = 50
 
 function subscribeRequest() { return { cmd: "subscribe", topics: TOPICS } }
 
@@ -35,7 +40,8 @@ function backoffMs(attempt) {
 function initial() {
   return {
     status: "offline", rawStatus: "offline", transcript: "", answer: "",
-    result: "", choices: [], promptId: "", confirm: null, points: [], steps: [],
+    result: "", choices: [], promptId: "", confirm: null, points: [],
+    steps: [], actions: [],
     suggestion: null, guide: null, focus: {}, goal: "", goalStatus: "",
     level: 0, tasks: {}, error: "", errorCode: "", health: {}, spend: {},
     startedAt: "", turnId: "", seq: null, contractVersion: 1,
@@ -50,23 +56,129 @@ function isObj(x) { return x !== null && typeof x === "object" && !Array.isArray
 function str(x) { return typeof x === "string" ? x : "" }
 function arr(x) { return Array.isArray(x) ? x : [] }
 
-// state.confirm (additive, W25): {prompt_id, prompt, timeout_s} while a
-// confirm waits. Anything without a prompt id is not a card.
-function normalizeConfirm(c) {
+// state.confirm (additive, W25): {prompt_id, prompt, timeout_s, kind}
+// while a confirm waits. Anything without a prompt id is not a card.
+// `allow` and `deny` snapshot the offered picks *with the card* — a
+// diff that empties `choices` after the card published must not change
+// what a click sends (allow is the first offer, deny the last). `kind`
+// is "confirm" on older cores, "handoff" for a T3 user-takes-over card,
+// "question" for the act loop's ask_user (U4 — options carries the
+// offered picks verbatim; empty means free-text).
+function normalizeConfirm(c, choices) {
   if (!isObj(c) || !str(c.prompt_id)) return null
   var t = Number(c.timeout_s)
+  var opts = arr(choices)
   return { promptId: str(c.prompt_id), prompt: str(c.prompt),
-    timeoutS: isFinite(t) && t > 0 ? t : 0 }
+    detail: str(c.detail),
+    timeoutS: isFinite(t) && t > 0 ? t : 0,
+    kind: str(c.kind) || "confirm",
+    options: opts,
+    allow: opts.length > 0 ? opts[0] : "",
+    deny: opts.length > 0 ? opts[opts.length - 1] : "",
+    // picks between allow and deny — U3's "always" session grant
+    middle: opts.length > 2 ? opts.slice(1, -1) : [] }
+}
+
+// state.actions (additive, U2): the unified lifecycle stream — one
+// {id, kind, label, status, target, reason, undo_ref, at} entry per
+// dispatch, tool call, prompt, pick, interrupt, label and suggestion.
+// Awaiting prompt entries also carry `options` and `prompt_id`; input
+// entries carry `delivery` (U5: background|pointer|guide). Unknown
+// kinds pass through; an unknown status reads as done; non-objects are
+// dropped. Capped at the last ACTIONS_CAP like the daemon's list.
+function normalizeActions(list) {
+  var out = []
+  var items = arr(list)
+  for (var i = 0; i < items.length; i++) {
+    var a = items[i]
+    if (!isObj(a)) continue
+    var st = str(a.status)
+    if (ACTION_STATUSES.indexOf(st) < 0) st = "done"
+    var e = { id: str(a.id), kind: str(a.kind) || "action",
+      label: str(a.label), status: st, target: str(a.target),
+      reason: str(a.reason), undoRef: a.undo_ref === undefined
+        || a.undo_ref === null ? null : a.undo_ref, at: str(a.at) }
+    var opts = arr(a.options).filter(function (c) {
+      return typeof c === "string" })
+    if (opts.length > 0) e.options = opts
+    var pid = str(a.prompt_id)
+    if (pid !== "") e.promptId = pid
+    var dlv = str(a.delivery)
+    if (dlv !== "") e.delivery = dlv
+    out.push(e)
+  }
+  return out.length > ACTIONS_CAP ? out.slice(out.length - ACTIONS_CAP)
+    : out
+}
+
+// The card is a state IN the stream: the newest awaiting entry of kind
+// confirm — but only while it is the live prompt (its prompt_id equals
+// the top-level one). A prompt that ended without its entry resolving
+// (a stale-turn drop, an older daemon) closes the card with prompt_id
+// rather than parking a dead card. Other awaiting kinds (clarify
+// choices, suggestion cards, act-loop questions) stay in the list —
+// only a confirm demotes to the card path. `confirm` still publishes
+// for old daemons and supplies the timeout seconds the entry lacks.
+function confirmFromActions(actions, confirm, promptId) {
+  for (var i = actions.length - 1; i >= 0; i--) {
+    var a = actions[i]
+    if (a.kind === "confirm" && a.status === "awaiting"
+        && str(a.promptId) !== "" && a.promptId === promptId) {
+      var opts = a.options || []
+      return { promptId: a.promptId,
+        prompt: a.label || (confirm ? confirm.prompt : ""),
+        detail: confirm ? confirm.detail : "",
+        timeoutS: confirm !== null ? confirm.timeoutS : 0,
+        kind: "confirm",
+        options: opts.length > 0 ? opts : (confirm ? confirm.options : []),
+        allow: opts.length > 0 ? opts[0] : (confirm ? confirm.allow : ""),
+        deny: opts.length > 0 ? opts[opts.length - 1]
+          : (confirm ? confirm.deny : ""),
+        middle: opts.length > 2 ? opts.slice(1, -1)
+          : (confirm ? confirm.middle : []) }
+    }
+  }
+  return confirm
 }
 
 // UI-side prompt id guard: a reply goes to the daemon only when it names
-// the prompt the view currently shows and picks one of its choices. A
-// click on a card that has already been answered, timed out or replaced
-// is dropped here (the daemon refuses it too: stale_prompt).
+// the prompt the view currently shows and picks one of its choices, or
+// when it is a suggestion-card pick. Suggestions carry no prompt id and
+// the daemon resolves them before the prompt broker (wispd): a bare
+// `suggestion:<act>` pick passes only while a suggestion card is live
+// and offers it; a fully keyed `suggestion:<act>:<key>` pick passes at
+// any time — the key addresses a row in suggestions.jsonl and a stale
+// key ends in a safe SKIP server-side. Any other reply for a prompt
+// that was answered, timed out or replaced is dropped here (the daemon
+// refuses a stale id as well: stale_prompt).
 function acceptChoice(view, pick, promptId) {
-  if (!view || !promptId || view.promptId !== promptId) return false
+  if (!view || typeof pick !== "string" || pick === "") return false
+  if (pick.indexOf("suggestion:") === 0) {
+    var rest = pick.slice("suggestion:".length)
+    var sep = rest.indexOf(":")
+    if (sep > 0 && rest.slice(sep + 1) !== "") return true  // keyed pick
+    return view.status === "suggestion"
+        && view.choices.indexOf(pick) >= 0
+  }
+  if (!promptId || view.promptId !== promptId) return false
   if (view.status !== "awaiting_choice") return false
-  return view.choices.indexOf(pick) >= 0
+  if (view.choices.indexOf(pick) >= 0) return true
+  // the card snapshots its offers with the prompt — validate against
+  // them when a diff already emptied the live choices array
+  if (view.confirm && view.confirm.promptId === promptId
+      && view.confirm.options.indexOf(pick) >= 0) return true
+  // a question card with no offered picks resolves on ANY non-empty
+  // pick (docs/IPC_CONTRACT.md "Question card"): the typed or spoken
+  // answer goes through verbatim. The card is the live prompt only when
+  // the confirm block or an awaiting stream entry says `question`.
+  if (view.choices.length !== 0) return false
+  if (view.confirm && view.confirm.kind === "question") return true
+  for (var i = view.actions.length - 1; i >= 0; i--) {
+    var a = view.actions[i]
+    if (a.kind === "question" && a.status === "awaiting"
+        && a.promptId === promptId) return true
+  }
+  return false
 }
 
 // Raw snapshot object -> view fields (defaults, clamps, closed sets).
@@ -84,12 +196,15 @@ function normalize(raw) {
   var cv = Number(raw.contract_version)
   if (!isFinite(cv) || cv < 1) cv = 1
   var choices = arr(raw.choices).filter(function (c) { return typeof c === "string" })
-  var confirm = normalizeConfirm(raw.confirm)
+  var actions = normalizeActions(raw.actions)
+  var confirm = confirmFromActions(
+    actions, normalizeConfirm(raw.confirm, choices), str(raw.prompt_id))
   return {
     status: status, rawStatus: st, transcript: str(raw.transcript),
     answer: str(raw.answer), result: str(raw.result), choices: choices,
     promptId: str(raw.prompt_id), confirm: confirm, points: arr(raw.points),
-    steps: arr(raw.steps), suggestion: isObj(raw.suggestion) ? raw.suggestion : null,
+    steps: arr(raw.steps), actions: actions,
+    suggestion: isObj(raw.suggestion) ? raw.suggestion : null,
     guide: isObj(raw.guide) ? raw.guide : null,
     focus: isObj(raw.focus) ? raw.focus : {},
     goal: goalText, goalStatus: goalStatus, level: Math.max(0, Math.min(1, lv)),
@@ -104,10 +219,12 @@ function normalize(raw) {
 }
 
 // cua.target stream event (docs/IPC_CONTRACT.md "cua.target"): data is
-// {x, y, window, label, confidence, phase}. x and y are screen pixels
-// (finite numbers), window and label strings, confidence 0..1, phase one
-// of CUA_PHASES (default "aim"). Returns the normalized target, null for
-// the explicit clear (x and y both null), or undefined when malformed
+// {x, y, window, label, confidence, phase, delivery}. x and y are
+// screen pixels (finite numbers), window and label strings, confidence
+// 0..1, phase one of CUA_PHASES (default "aim"), delivery the channel
+// the aim would use ("background"|"pointer"|"guide", U5 — "" when the
+// event predates it). Returns the normalized target, null for the
+// explicit clear (x and y both null), or undefined when malformed
 // (the event is ignored and the current target stays).
 function normalizeTarget(d) {
   if (!isObj(d)) return undefined
@@ -118,7 +235,8 @@ function normalizeTarget(d) {
   var c = Number(d.confidence)
   var phase = CUA_PHASES.indexOf(d.phase) >= 0 ? d.phase : "aim"
   return { x: x, y: y, window: str(d.window), label: str(d.label),
-    confidence: isFinite(c) ? Math.max(0, Math.min(1, c)) : 1, phase: phase }
+    confidence: isFinite(c) ? Math.max(0, Math.min(1, c)) : 1,
+    phase: phase, delivery: str(d.delivery) }
 }
 
 // Statuses in which a target may be shown; anything else drops it.
@@ -129,6 +247,22 @@ function copy(o) { var r = {}; for (var k in o) r[k] = o[k]; return r }
 function build(prev, raw, source, nowMs, changed) {
   var v = copy(prev)
   var n = normalize(raw)
+  // a diff that left actions/choices alone carries the same raw array —
+  // reuse the normalized copy so QML var bindings see an identical value
+  // and don't re-render the run card / chips on every unrelated diff
+  if (prev.raw) {
+    if (raw.actions === prev.raw.actions) n.actions = prev.actions
+    if (raw.choices === prev.raw.choices) n.choices = prev.choices
+  }
+  // a diff that dropped `choices` while the same confirm prompt is still
+  // pending must not blank the picks the card already snapshotted
+  if (n.confirm !== null && prev.confirm !== null
+      && n.confirm.promptId === prev.confirm.promptId) {
+    if (n.confirm.allow === "") n.confirm.allow = prev.confirm.allow
+    if (n.confirm.deny === "") n.confirm.deny = prev.confirm.deny
+    if (n.confirm.options.length === 0) n.confirm.options = prev.confirm.options
+    if (n.confirm.middle.length === 0) n.confirm.middle = prev.confirm.middle
+  }
   for (var k in n) v[k] = n[k]
   v.raw = raw
   v.connection = source
@@ -269,4 +403,61 @@ function isStale(view, nowMs, afterMs) {
   if (BUSY.indexOf(view.status) < 0) return false
   var limit = afterMs === undefined ? STALE_AFTER_MS : afterMs
   return nowMs - view.changedAtMs > limit
+}
+
+// First line of `text` that parses as a JSON reply object carrying an
+// `ok` field — the CLI's `--json` envelope ({"ok":bool,"data"/"error"})
+// or a raw daemon reply ({"ok":bool,"error":"..."}). Null when nothing
+// parseable arrived.
+function _jsonReply(text) {
+  var lines = String(text || "").split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var l = lines[i].replace(/^\s+|\s+$/g, "")
+    if (l === "") continue
+    try {
+      var o = JSON.parse(l)
+      if (isObj(o) && o.ok !== undefined) return o
+    } catch (e) {}
+  }
+  return null
+}
+
+// One-shot action subprocess (wispd choice/label/interrupt/trigger
+// --json, or a systemctl call) -> {ok, error, text}. `error` is the
+// typed daemon or CLI code without the E_ prefix (stale_prompt, busy,
+// not_offered — "" when nothing typed arrived); `text` is the human
+// line (the result on success, the message on a refusal). Nonzero exit
+// with no parseable output still reports the first stderr line so a
+// failure is never silent.
+function actionResult(exitCode, stdout, stderr) {
+  var code = Number(exitCode)
+  if (!isFinite(code)) code = 1
+  var env = _jsonReply(stdout)
+  if (env !== null) {
+    if (env.ok === false) {
+      var eobj = isObj(env.error) ? env.error : {}
+      var raw = typeof env.error === "string" ? env.error : ""
+      var ec = str(eobj.code || raw)
+      return { ok: false, error: ec.replace(/^E_/, "").toLowerCase(),
+               text: str(eobj.message) || raw || ec }
+    }
+    var d = isObj(env.data) ? env.data : env
+    return { ok: true, error: "",
+             text: str(d.result) || str(d.text) || str(d.sent) }
+  }
+  var m = /E_([A-Z_]+):?[ \t]*([^\n]*)/.exec(String(stderr || ""))
+  if (m !== null)
+    return { ok: false, error: m[1].toLowerCase(), text: str(m[2]) }
+  var w = /(?:^|\n)[ \t]*wispd:[ \t]*([^\n]+)/.exec(String(stderr || ""))
+  if (w !== null) {
+    var t = str(w[1])
+    return { ok: false,
+             error: ERROR_CODES.indexOf(t) >= 0 ? t : "", text: t }
+  }
+  if (code !== 0) {
+    var l = str(String(stderr || "").split("\n")[0])
+    return { ok: false, error: "", text: l !== "" ? l : "exit " + code }
+  }
+  return { ok: true, error: "",
+           text: str(String(stdout || "").split("\n")[0]) }
 }

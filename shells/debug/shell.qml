@@ -45,16 +45,22 @@ FloatingWindow {
                                "health", "spend", "audit", "binds",
                                "settings"]
 
+  // every action goes through the service's serial runner: a click lands
+  // in lastAction (queued, running, done or refused), never a busy-drop
+  // or a reply nobody reads
   function wispd(args) {
-    if (cmdProc.running) return;
-    cmdProc.command = [svc.wispd].concat(args);
-    cmdProc.running = true;
+    svc.run([svc.wispd].concat(args).concat(["--json"]), "task");
   }
   function svcCtl(args) {
-    if (svcProc.running) return;
-    svcProc.command =
-        ["systemctl", "--user"].concat(args).concat(["wispd"]);
-    svcProc.running = true;
+    svc.run(["systemctl", "--user"].concat(args).concat(["wispd"]),
+            "daemon");
+  }
+  // lastAction -> one visible line: the verb while it runs, then the
+  // daemon's reply or a refusal message (never an empty ack)
+  function actionText(a) {
+    if (a === null || a === undefined) return "";
+    if (a.pending) return a.verb + "…";
+    return a.message || svc.ui("ui.noted");
   }
   // a task is {status, task, ...}; older daemons publish just the status
   function taskOf(name) {
@@ -156,10 +162,8 @@ FloatingWindow {
       }
     }
   }
-  Process { id: cmdProc; command: [svc.wispd] }
-  Process { id: svcProc
-            command: ["systemctl", "--user", "status", "wispd"] }
-  Process { id: writeProc; command: [svc.wispd] }
+  // (cmdProc / svcProc / writeProc retired with U1: all actions run
+  // through svc.run so their replies land in svc.lastAction)
 
   // ── design tokens ──────────────────────────────────────────────
   // Omarchy theme tokens come from the service (lib/tokens.js over the
@@ -290,6 +294,19 @@ FloatingWindow {
                         onClicked: win.tab = index }
           }
         }
+
+        // action ack in the shared sidebar: whichever tab a click came
+        // from, its terminal state shows here
+        Text {
+          visible: svc.lastAction !== null
+          width: parent.width
+          topPadding: 16
+          text: win.actionText(svc.lastAction)
+          color: svc.lastAction !== null && svc.lastAction.ok === false
+                 ? err : faint
+          font.pixelSize: 11; font.family: mono
+          wrapMode: Text.WordWrap
+        }
       }
     }
 
@@ -357,9 +374,9 @@ FloatingWindow {
             Btn { label: "Talk"; primary: true
                   onClicked: svc.trigger() }
             Btn { label: "Restart daemon"
-                  onClicked: win.svc(["restart"]) }
+                  onClicked: win.svcCtl(["restart"]) }
             Btn { label: "Stop"
-                  onClicked: win.svc(["stop"]) }
+                  onClicked: win.svcCtl(["stop"]) }
           }
 
           Text {
@@ -533,12 +550,9 @@ FloatingWindow {
                 }
                 Btn {
                   label: "Save"
-                  onClicked: {
-                    writeProc.command =
-                        [svc.wispd, "memory", "write", modelData[0],
-                         Qt.btoa(edit.text)];
-                    writeProc.running = true;
-                  }
+                  onClicked: svc.run(
+                    [svc.wispd, "memory", "write", modelData[0],
+                     Qt.btoa(edit.text), "--json"], "memory")
                 }
               }
               Rectangle {

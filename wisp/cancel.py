@@ -307,6 +307,12 @@ class PromptBroker:
         def wait(timeout, prompt_id=None, options=None):
             pid = prompt_id or new_prompt_id()
             with self._cv:
+                if self._pending is not None:
+                    # single slot: a second concurrent waiter would
+                    # overwrite the parked prompt and the two turns
+                    # would cross-deliver each other's picks — refuse
+                    # instead of corrupting both
+                    return None
                 self._pending = {"id": pid,
                                  "options": None if options is None
                                  else list(options)}
@@ -343,6 +349,13 @@ class PromptBroker:
                 pick = ""           # dismiss: same as no answer
             elif opts is not None and pick not in opts:
                 return no("not_offered")
+            if pick == "always" and not prompt_id:
+                # the wildcard grant (confirm.ALWAYS -> the session's
+                # ("*","*") key) must come from a client that read the
+                # live card's id — any same-UID process can send a bare
+                # "always" pick, but it can't mint a session-wide grant
+                # without seeing the published prompt id first
+                return no("prompt_id_required")
             self._pick = pick
             self._cv.notify_all()
             return {"ok": True}

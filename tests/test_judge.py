@@ -48,12 +48,18 @@ class JudgeTest(unittest.TestCase):
         self.assertAlmostEqual(v["efficiency"], 0.34)
 
     def test_jev_failure_returns_unknowns(self):
+        # a Jev failure falls through to the brain fallback — both
+        # have to be down for the run to go unjudged
         with mock.patch("wisp.pipeline.ask_jev",
+                        side_effect=RuntimeError("offline")), \
+             mock.patch("wisp.brain.chat",
                         side_effect=RuntimeError("offline")):
             v = judge.verdict("t", [], "x", self.cfg)
         self.assertIsNone(v["success"])
         self.assertIsNone(v["efficiency"])
         self.assertEqual(v["waste"], "judge_error")
+        self.assertEqual(v["by"], "none")
+        self.assertFalse(v["judged"])
 
     def test_out_of_range_waste_normalized(self):
         with mock.patch("wisp.pipeline.ask_jev",
@@ -114,6 +120,8 @@ class FirstFault(unittest.TestCase):
 
     def test_judge_error_carries_minus_one(self):
         with mock.patch("wisp.pipeline.ask_jev",
+                        side_effect=RuntimeError("x")), \
+             mock.patch("wisp.brain.chat",
                         side_effect=RuntimeError("x")):
             v = judge.verdict("t", self.steps, "x", self.cfg)
         self.assertEqual(v["first_fault"], -1)

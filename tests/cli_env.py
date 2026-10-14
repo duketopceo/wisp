@@ -106,7 +106,7 @@ class CliEnv:
         self._td.cleanup()
 
     def start_daemon(self, handler=canned):
-        def h(cmd):
+        def h(cmd, peer=None):
             # t0 is a wall-clock stamp: not part of the transcript
             self.ipc.append({k: v for k, v in cmd.items() if k != "t0"})
             return handler(cmd)

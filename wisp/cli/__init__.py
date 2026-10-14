@@ -18,15 +18,15 @@ def load_groups():
         return
     _LOADED = True
     from . import (agents, batchcmd, core, cua, diagnose,  # noqa: F401
-                   learning, settings)
+                   dictate, learning, settings)
     registry.SECTIONS[:] = [
         ("Daemon", ["daemon", "status", "stop", "interrupt", "trigger",
                     "watch", "choice", "tui"]),
         ("Diagnose", ["doctor", "health", "latency", "spend", "binds",
                       "onboard", "trace"]),
         ("Pointer and notifications", ["cua", "notify"]),
-        ("Agents and memory", ["task", "memory", "suggest", "label",
-                               "context"]),
+        ("Agents and memory", ["task", "memory", "dictate", "suggest",
+                               "label", "context"]),
         ("Learning", ["train", "review", "learn", "skills", "recipes",
                       "eval", "batch"]),
         ("Settings", ["config", "theme", "connect", "sync", "inventory",
@@ -102,6 +102,8 @@ ALIASES = {
     "config": _grp("config", "show"),
     "theme": _theme,
     "connect": _connect,
+    "dictate": _grp("dictate", "correct", "list"),
+    "dictate-correct": _to("dictate", "correct"),
     "models": _to("health"),
 }
 # Aliases whose old output shape differs from the new command's.

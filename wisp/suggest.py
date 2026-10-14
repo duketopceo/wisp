@@ -19,6 +19,7 @@ import time
 from datetime import datetime, timezone
 
 from . import config, sense
+from . import state as _state
 
 SUGGESTIONS_FILE = config.DATA_DIR / "suggestions.jsonl"
 NEVER_FILE = config.CFG_DIR / "never.json"
@@ -146,7 +147,6 @@ def mine(cfg: dict, state=None, log=None) -> list:
     """One mining pass → new suggestions (also publishes the top one to
     state for the orb card). Empty list = nothing worth asking."""
     log = log or (lambda m: None)
-    from . import state as _state
     bus = state if isinstance(state, _state.StateBus) else None
     # the turn that is current NOW: if a new turn begins while the model
     # is thinking, the publish below is dropped by the bus, not shown
@@ -202,6 +202,11 @@ def mine(cfg: dict, state=None, log=None) -> list:
                      "suggestion:never"],
             result=f"suggestion: {top.get('title', '')}")
         try:
+            # the card is also a stream entry, resolved by kind when the
+            # user's pick lands in resolve_pick
+            _state.action_add(state, "suggestion", top.get("title", ""),
+                              status="awaiting", options=card["choices"],
+                              target=top["key"], turn=turn_id)
             if bus is not None:
                 bus.publish(turn_id, status="suggestion", **card)
             else:
@@ -223,14 +228,22 @@ def resolve_pick(pick: str, cfg: dict, state=None, log=None) -> str:
     if kind == "never":
         if key:
             suppress(key)
+        _state.action_resolve(state, "suggestion", status="cancelled",
+                              reason="never")
         return "OK (never suggest that again)"
     if kind == "automate":
         rec = _find_suggestion(key)
         if not rec:
+            _state.action_resolve(state, "suggestion", status="cancelled",
+                                  reason="expired")
             return "SKIP (suggestion expired)"
         _mark(key, "accepted")
+        _state.action_resolve(state, "suggestion", status="done",
+                              reason="accepted")
         return ("RUN " + rec["routine"])  # caller runs the act loop
     _mark(key, "snoozed")
+    _state.action_resolve(state, "suggestion", status="cancelled",
+                          reason="snoozed")
     return "OK (snoozed)"
 
 

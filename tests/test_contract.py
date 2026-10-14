@@ -34,7 +34,8 @@ class CommandSurface(unittest.TestCase):
         def handler(cmd):
             c = cmd.get("cmd")
             if c in ("status", "listen", "choice", "task_status",
-                     "task_cancel", "stop"):
+                     "task_cancel", "suggestions", "dictate_correct",
+                     "stop"):
                 return {"ok": True, "state": st.snapshot()} \
                     if c == "status" else {"ok": True}
             return {"ok": False, "error": f"unknown cmd {c!r}"}
@@ -50,9 +51,10 @@ class CommandSurface(unittest.TestCase):
 
 class StateFileShape(unittest.TestCase):
     KEYS = {"status", "transcript", "answer", "result", "choices",
-            "level", "tasks", "error", "started_at"}
+            "actions", "level", "tasks", "error", "started_at"}
     STATUSES = {"idle", "listening", "transcribing", "deciding",
-                "awaiting_choice", "acting", "speaking", "done", "error"}
+                "awaiting_choice", "acting", "speaking", "suggestion",
+                "done", "error"}
 
     def test_snapshot_has_contract_keys(self):
         f = pathlib.Path("/tmp/wisp-ct-state2.json")
@@ -62,6 +64,7 @@ class StateFileShape(unittest.TestCase):
         assert self.KEYS <= set(s), f"missing: {self.KEYS - set(s)}"
         assert s["status"] in self.STATUSES
         assert isinstance(s["choices"], list)
+        assert isinstance(s["actions"], list)
         assert isinstance(s["tasks"], dict)
         assert isinstance(s["level"], (int, float))
 
@@ -79,7 +82,7 @@ class StateFileShape(unittest.TestCase):
         f.unlink(missing_ok=True)
         st = state.State(state_file=f)
         s = st.snapshot()
-        assert s["contract_version"] == state.CONTRACT_VERSION == 1
+        assert s["contract_version"] == state.CONTRACT_VERSION == 2
         assert isinstance(s["seq"], int)
         assert "turn_id" in s and "updated_at" in s
 
@@ -102,14 +105,37 @@ class BusWriterOutput(unittest.TestCase):
             bus.close()
         assert StateFileShape.KEYS <= set(d), StateFileShape.KEYS - set(d)
         assert d["status"] in self.STATUSES
-        assert d["contract_version"] == 1
+        assert d["contract_version"] == 2
         assert d["turn_id"] == t
         assert isinstance(d["seq"], int) and d["seq"] >= 3
         assert d["updated_at"].endswith("+00:00")
         # additive only: nothing from the v1 document is renamed away
         for k in ("points", "steps", "guide", "focus", "goal",
-                  "transcript", "answer", "choices"):
+                  "transcript", "answer", "choices", "actions"):
             assert k in d, k
+        assert isinstance(d["actions"], list)
+
+    def test_action_entries_match_the_schema(self):
+        # lifecycle entries carry the full v2 shape; transitions
+        # mutate the same entry in place, keyed by id
+        import tempfile
+        f = pathlib.Path(tempfile.mkdtemp()) / "state.json"
+        bus = state.StateBus(state_file=f)
+        try:
+            t = bus.begin_turn()
+            aid = bus.action_add("tool", "click", turn=t, status="queued",
+                                 target="1,2")
+            bus.action_set(aid, turn=t, status="done", reason="CLICKED")
+            d = json.loads(f.read_text())
+        finally:
+            bus.close()
+        assert len(d["actions"]) == 1
+        a = d["actions"][0]
+        for k in ("id", "kind", "label", "status", "target", "reason",
+                  "undo_ref", "at"):
+            assert k in a, k
+        assert (a["status"], a["reason"]) == ("done", "CLICKED")
+        assert a["status"] in state.ACTION_STATUSES
 
     def test_seq_is_strictly_increasing_across_writes(self):
         import tempfile
@@ -137,8 +163,8 @@ class PushStreamContract(unittest.TestCase):
         import tempfile
         td = pathlib.Path(tempfile.mkdtemp())
         bus = state.StateBus(state_file=td / "state.json")
-        srv = ipc.Daemon(lambda c: {"ok": True}, sock_file=td / "s.sock",
-                         bus=bus)
+        srv = ipc.Daemon(lambda c, peer=None: {"ok": True},
+                         sock_file=td / "s.sock", bus=bus)
         srv.start()
         try:
             it = ipc.subscribe(sock_file=td / "s.sock", timeout=3)

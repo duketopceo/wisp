@@ -691,9 +691,12 @@ def ground_target(target: str, cfg: dict | None = None, *, capture=None,
 # --------------------------------------------------------------- events
 
 def emit_target(state, phase: str | None, target: Target | None = None,
-                *, window: str = "", label: str = "") -> None:
+                *, window: str = "", label: str = "",
+                delivery: str = "") -> None:
     """W21 `cua.target` event (compositor-global px). phase None clears
-    (`x`/`y` null). Never raises; a state without emit_event is a no-op."""
+    (`x`/`y` null). `delivery` (U5) names the channel the aim would /
+    did use so the overlay can show when it escalates to the real
+    pointer. Never raises; a state without emit_event is a no-op."""
     fn = getattr(state, "emit_event", None)
     if not callable(fn):
         return
@@ -704,6 +707,7 @@ def emit_target(state, phase: str | None, target: Target | None = None,
         fn("cua.target", x=target.x, y=target.y,
            window=window or target.window or "",
            label=label or target.label or "",
-           confidence=target.confidence, phase=phase)
+           confidence=target.confidence, phase=phase,
+           delivery=delivery)
     except Exception:
         pass

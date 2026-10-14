@@ -126,8 +126,10 @@ def _cua_rows(row, cfg: dict, probe=None) -> None:
         row("cua version", f"{v} (pin {pin})",
             st != "version_mismatch")
     s = cua_safety.settings(cfg)
+    from .. import delivery as _del
     modes = ["KILL SWITCH ON" if r["kill"] else "kill off",
              "dry-run on" if s["dry_run"] else "dry-run off",
+             f"delivery {_del.mode(cfg)}",
              f"{s['per_min']}/min, {s['per_turn']}/turn"]
     row("cua safety", ("safety on, " if s["safety"] else "SAFETY OFF, ")
         + ", ".join(modes), s["safety"])

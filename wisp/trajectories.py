@@ -124,12 +124,14 @@ def _fmt_steps(steps: list, limit: int = 8) -> str:
                       for s in steps[:limit])
 
 
-def context_for(task: str, app: str = "", cfg: dict | None = None) -> str:
+def context_for(task: str, app: str = "", cfg: dict | None = None,
+                records: list | None = None,
+                labels: dict | None = None) -> str:
     """Episodic context block for the act system prompt, or ''."""
     if (cfg or {}).get("traj", {}).get("enabled", "true") != "true":
         return ""
     k = int((cfg or {}).get("traj", {}).get("max_inject", "3"))
-    priors = similar(task, app, k=k)
+    priors = similar(task, app, k=k, records=records, labels=labels)
     if not priors:
         return ""
     lines = ["Prior attempts at this or similar tasks:"]

@@ -28,8 +28,8 @@ class StreamCase(unittest.TestCase):
         self.srv = None
 
     def serve(self, **kw):
-        self.srv = ipc.Daemon(lambda c: {"ok": True}, sock_file=self.sock,
-                              bus=self.bus, **kw)
+        self.srv = ipc.Daemon(lambda c, peer=None: {"ok": True},
+                              sock_file=self.sock, bus=self.bus, **kw)
         self.srv.start()
         self.addCleanup(self.srv.stop)
         return self.srv
@@ -66,7 +66,7 @@ class SubscribeTest(StreamCase):
         hello, snap = self.line(f), self.line(f)
         self.assertEqual(hello["type"], "hello")
         self.assertTrue(hello["ok"])
-        self.assertEqual(hello["contract_version"], 1)
+        self.assertEqual(hello["contract_version"], 2)
         self.assertEqual(snap["type"], "snapshot")
         self.assertEqual(snap["state"]["status"], "idle")
         self.wait_subs(1)
@@ -79,6 +79,31 @@ class SubscribeTest(StreamCase):
         seqs = [e["seq"] for e in evs]
         self.assertEqual(seqs, sorted(seqs))
         self.assertEqual(seqs[0], snap["seq"] + 1)
+
+    def test_action_diffs_ride_the_same_stream(self):
+        # the lifecycle stream is just another diff field — a
+        # mutation fans out as the whole capped list, in seq order
+        self.serve()
+        f = self.open()
+        self.line(f)
+        snap = self.line(f)
+        self.assertEqual(snap["state"]["actions"], [])
+        self.assertEqual(snap["state"]["contract_version"], 2)
+        self.wait_subs(1)
+        t = self.bus.begin_turn()
+        aid = self.bus.action_add("confirm", "run?", turn=t,
+                                  status="awaiting",
+                                  options=["y", "n"], prompt_id="p1")
+        self.bus.action_set(aid, turn=t, status="done", reason="yes")
+        evs = [self.line(f), self.line(f)]
+        self.assertEqual(evs[0]["diff"]["actions"][-1]["status"],
+                         "awaiting")
+        self.assertEqual(evs[0]["diff"]["actions"][-1]["prompt_id"],
+                         "p1")
+        self.assertEqual((evs[1]["diff"]["actions"][-1]["id"],
+                          evs[1]["diff"]["actions"][-1]["status"]),
+                         (aid, "done"))
+        self.assertEqual(evs[1]["seq"], evs[0]["seq"] + 1)
 
     def test_two_subscribers_see_identical_streams(self):
         self.serve()
@@ -134,7 +159,8 @@ class SubscribeTest(StreamCase):
         self.assertEqual(self.bus.subscriber_count(), 0)
 
     def test_no_bus_replies_error(self):
-        srv = ipc.Daemon(lambda c: {"ok": True}, sock_file=self.sock)
+        srv = ipc.Daemon(lambda c, peer=None: {"ok": True},
+                         sock_file=self.sock)
         srv.start()
         self.addCleanup(srv.stop)
         f = self.open()

@@ -181,7 +181,8 @@ def _signal(rec: dict, sig: int) -> None:
             pass
 
 
-def _reap_expired(cfg: dict, tasks_file=config.TASKS_FILE) -> list:
+def _reap_expired(cfg: dict, tasks_file=config.TASKS_FILE,
+                  recs: list | None = None) -> list:
     """SIGTERM running tasks past [agent] task_timeout_s — the runaway
     guardrail. Returns names of reaped tasks."""
     timeout = int(cfg.get("agent", {}).get("task_timeout_s", "1800"))
@@ -189,7 +190,7 @@ def _reap_expired(cfg: dict, tasks_file=config.TASKS_FILE) -> list:
         return []
     now = datetime.now(timezone.utc)
     reaped = []
-    for rec in _latest(tasks_file):
+    for rec in (recs if recs is not None else _latest(tasks_file)):
         if rec.get("status") != "running" \
                 or not _alive(rec.get("pid", -1), rec.get("pstart", "")):
             continue
@@ -265,8 +266,7 @@ _PROCS: list = []
 def _reap() -> None:
     """Collect exited agent children — otherwise they sit as zombies
     under the daemon until restart."""
-    for p in _PROCS:
-        p.poll()
+    _PROCS[:] = [p for p in _PROCS if p.poll() is None]
 
 
 _RUNTIMES = {  # [brain] agent_runtime → argv template, {task}/{model}
@@ -337,18 +337,23 @@ def reap(cfg: dict) -> None:
 
 
 def tasks(tasks_file=config.TASKS_FILE,
-          log_dir=config.TASK_LOGS) -> dict:
+          log_dir=config.TASK_LOGS, recs: list | None = None) -> dict:
     """name -> {status, task, ts, tail} for state.json publication —
     `tail` is the log's last non-empty line so the panel/orb shows live
-    progress on long-running agents."""
+    progress on long-running agents. Only running tasks get a tail read
+    — finished logs never change."""
     _reap()
+    if recs is None:
+        recs = _latest(tasks_file)
     out = {}
-    for rec in _latest(tasks_file):
+    for rec in recs:
+        status = _state_of(rec)
         out[rec["name"]] = {
-            "status": _state_of(rec),
+            "status": status,
             "task": rec.get("task", ""),
             "ts": rec.get("ts", ""),
-            "tail": _tail(log_dir / f"{rec['id']}.log"),
+            "tail": _tail(log_dir / f"{rec['id']}.log")
+            if status == "running" else "",
         }
     return out
 
@@ -367,12 +372,15 @@ def finished(prev: dict, cur: dict) -> list:
 KILL_GRACE_S = 10.0
 
 
-def _tick(cfg: dict, tasks_file, log_dir, kill_grace_s: float) -> dict:
+def _tick(cfg: dict, tasks_file, log_dir, kill_grace_s: float,
+          recs: list | None = None) -> dict:
     """One reaper pass; returns the fresh `tasks()` snapshot."""
     _reap()
     now = datetime.now(timezone.utc)
     stamp = now.isoformat()
-    for rec in _latest(tasks_file):
+    if recs is None:
+        recs = _latest(tasks_file)
+    for rec in recs:
         pid, pstart = rec.get("pid", -1), rec.get("pstart", "")
         alive = _alive(pid, pstart)
         status = rec.get("status")
@@ -390,7 +398,8 @@ def _tick(cfg: dict, tasks_file, log_dir, kill_grace_s: float) -> dict:
                 since = kill_grace_s
             if since >= kill_grace_s:
                 _signal(rec, signal.SIGKILL)
-    _reap_expired(cfg, tasks_file)
+    _reap_expired(cfg, tasks_file, recs=recs)
+    # this pass appended status records — the snapshot must re-merge
     return tasks(tasks_file, log_dir)
 
 
@@ -407,11 +416,21 @@ def _tick_events(cfg, tasks_file, log_dir, kill_grace_s) -> tuple:
     registry status was `running` before the pass and is not after —
     judged on the raw record, since `tasks()` already reads a dead
     unclosed task as exited."""
-    was_running = {r["name"] for r in _latest(tasks_file)
+    recs = _latest(tasks_file)
+    was_running = {r["name"] for r in recs
                    if r.get("status") == "running"}
-    cur = _tick(cfg, tasks_file, log_dir, kill_grace_s)
-    done = [{"name": n, **cur[n]} for n in cur
-            if n in was_running and cur[n]["status"] != "running"]
+    cur = _tick(cfg, tasks_file, log_dir, kill_grace_s, recs=recs)
+    # a just-finished task's tail is its final output — read it for the
+    # event even though tasks() only tails running tasks
+    done = []
+    for n in cur:
+        if n in was_running and cur[n]["status"] != "running":
+            entry = {"name": n, **cur[n]}
+            if not entry["tail"]:
+                rec = _find(n, tasks_file)
+                if rec is not None:
+                    entry["tail"] = _tail(log_dir / f"{rec['id']}.log")
+            done.append(entry)
     return cur, done
 
 

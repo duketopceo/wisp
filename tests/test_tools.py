@@ -17,6 +17,12 @@ class TestRegistry(unittest.TestCase):
     def test_all_registered_tools_describable(self):
         desc = tools.describe()
         for name in tools.REGISTRY:
+            if name in tools.LOOP_ONLY:
+                # loop-internal tools (ask_user) are advertised to the
+                # model in tool_schemas but must not be route targets —
+                # Jev can't dispatch them, only the act loop can
+                self.assertNotIn(name, desc)
+                continue
             self.assertIn(name, desc)
 
     def test_unknown_tool_skips(self):
@@ -170,7 +176,8 @@ class TestRouteDispatch(unittest.TestCase):
         self.assertEqual(out, "ACTED x")
         a.assert_called_once_with("rm -rf /", mock.ANY, state=None,
                                   harness=None, confirm=None,
-                                  initial_image=None, interrupted=None)
+                                  initial_image=None, interrupted=None,
+                                  ask=None)
 
     def test_risk_blocks_before_route(self):
         out = pipeline.execute(
@@ -199,7 +206,9 @@ class TestAgents(unittest.TestCase):
             with mock.patch.object(agents.shutil, "which",
                                    return_value="/usr/bin/ori"), \
                  mock.patch.object(agents.subprocess, "Popen",
-                                   return_value=proc):
+                                   return_value=proc), \
+                 mock.patch.object(agents, "_proc_stat",
+                                   return_value=("S", "99")):
                 out = agents.spawn("fix the tests in wisp", {},
                                    tasks_file=tf, log_dir=ld)
             self.assertIn("SPAWNED", out)
@@ -208,7 +217,7 @@ class TestAgents(unittest.TestCase):
             self.assertIn("ori opencode", rec["cmd"])
 
     def test_spawn_missing_ori(self):
-        # U6: a missing configured runtime is an explicit error naming it
+        # a missing configured runtime is an explicit error naming it
         with mock.patch.object(agents.shutil, "which", return_value=None):
             out = agents.spawn("task", {})
         self.assertIn("not on PATH", out)
@@ -223,7 +232,9 @@ class TestAgents(unittest.TestCase):
             with mock.patch.object(agents.shutil, "which",
                                    return_value="/usr/bin/ori"), \
                  mock.patch.object(agents.subprocess, "Popen",
-                                   return_value=proc):
+                                   return_value=proc), \
+                 mock.patch.object(agents, "_proc_stat",
+                                   return_value=("S", "99")):
                 agents.spawn("fix-x", {}, tasks_file=tf,
                              log_dir=pathlib.Path(td))
             recs = [json.loads(l) for l in tf.read_text().splitlines()]

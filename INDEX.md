@@ -19,6 +19,7 @@ routing → guarded actions. Python reference daemon + Rust parity core
 |---|---|
 | `pipeline.py` | listen cycle: record → whisper → Jev route → execute; context assembly, timing, decisions log |
 | `act.py` | bounded tool-call loop (≤8 steps, ≤2 consecutive errors) for `act`/`learn` routes |
+| `dictate.py` | LLM-aware dictation (U6) — raw/cleanup/compose modes, `[dictation.profiles.*]` per-app style, terminal newline guard, `dictation.json` corrections, wordink→type→paste insert |
 | `config.py` | config.toml flat parser/writer, paths, API key, harness load |
 | `ipc.py` | unix-socket server + client (newline-delimited JSON) |
 | `state.py` | atomic `state.json` writer |

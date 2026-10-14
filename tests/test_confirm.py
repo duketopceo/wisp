@@ -184,6 +184,135 @@ class TestConfirmTimeout(ConfirmBase):
         self.assertTrue(self.out.get("cancelled"))  # token.check() raised
 
 
+class TestConfirmActionStream(ConfirmBase):
+    """U2: the confirm card is a state in the action stream — an
+    `awaiting` entry carrying the offered picks, transitioned on the
+    same answer path the card resolves."""
+
+    def last_entry(self, kind="confirm"):
+        return [a for a in self.st.snapshot()["actions"]
+                if a["kind"] == kind][-1]
+
+    def test_pending_confirm_publishes_an_awaiting_entry(self):
+        th = self.run_confirm()
+        pid = self.broker.pending_id
+        e = self.last_entry()
+        self.assertEqual(e["status"], "awaiting")
+        self.assertEqual(e["label"], "run click: save?")
+        self.assertEqual(e["prompt_id"], pid)
+        self.assertEqual(e["options"], ["run click: save? — yes", "no"])
+        self.broker.offer(pick="no", prompt_id=pid)
+        self.wait_done(th)
+
+    def test_yes_transitions_the_entry_to_done(self):
+        th = self.run_confirm()
+        pid = self.broker.pending_id
+        e = self.last_entry()
+        self.broker.offer(index=1, prompt_id=pid)
+        self.wait_done(th)
+        self.assertTrue(self.out["ok"])
+        done = self.last_entry()
+        self.assertEqual(done["id"], e["id"])  # same entry, not a new row
+        self.assertEqual(done["status"], "done")
+
+    def test_no_transitions_to_cancelled_denied(self):
+        th = self.run_confirm()
+        self.broker.offer(pick="no", prompt_id=self.broker.pending_id)
+        self.wait_done(th)
+        e = self.last_entry()
+        self.assertEqual(e["status"], "cancelled")
+        self.assertEqual(e["reason"], "denied")
+
+    def test_timeout_transitions_to_cancelled_timeout(self):
+        th = self.run_confirm()
+        self.clock.t += 500
+        self.wait_done(th)
+        e = self.last_entry()
+        self.assertEqual(e["status"], "cancelled")
+        self.assertEqual(e["reason"], "timeout")
+
+    def test_interrupt_transitions_to_cancelled_interrupted(self):
+        th = self.run_confirm()
+        self.token.cancel()
+        self.wait_done(th)
+        e = self.last_entry()
+        self.assertEqual(e["status"], "cancelled")
+        self.assertEqual(e["reason"], "interrupted")
+
+
+class TestHandoffAndAlways(ConfirmBase):
+    """U3: kind="handoff" swaps the card to done/cancel (the user takes
+    the step, wisp never runs it) and carries the kind through
+    state.confirm + the stream entry; always=True adds the session
+    grant pick."""
+
+    def run_kind(self, prompt="needs you: sign in", kind="confirm",
+                 always=False):
+        def go():
+            try:
+                self.out["ok"] = self.ask(prompt, kind=kind,
+                                          always=always)
+            except cancel.Cancelled:
+                self.out["cancelled"] = True
+        th = threading.Thread(target=go, daemon=True)
+        th.start()
+        self.addCleanup(th.join, 2)
+        for _ in range(400):
+            if self.broker.pending_id:
+                return th
+            time.sleep(0.005)
+        self.fail("confirm never became pending")
+
+    def test_handoff_card_options_and_state(self):
+        th = self.run_kind(kind="handoff")
+        snap = self.st.snapshot()
+        self.assertEqual(snap["confirm"]["kind"], "handoff")
+        self.assertEqual(snap["choices"],
+                         ["needs you: sign in — done", "cancel"])
+        e = [a for a in snap["actions"] if a["kind"] == "handoff"][-1]
+        self.assertEqual(e["status"], "awaiting")
+        self.assertEqual(e["options"], snap["choices"])
+        self.broker.offer(index=2, prompt_id=self.broker.pending_id)
+        self.wait_done(th)
+        self.assertFalse(self.out["ok"])     # cancel -> the step skipped
+        self.assertEqual(self.ask.last, "no")
+
+    def test_handoff_done_is_a_yes(self):
+        th = self.run_kind(kind="handoff")
+        self.broker.offer(index=1, prompt_id=self.broker.pending_id)
+        self.wait_done(th)
+        self.assertTrue(self.out["ok"])
+        self.assertEqual(self.ask.last, "yes")
+        e = [a for a in self.st.snapshot()["actions"]
+             if a["kind"] == "handoff"][-1]
+        self.assertEqual(e["status"], "done")
+
+    def test_always_adds_the_grant_pick(self):
+        th = self.run_kind(always=True)
+        snap = self.st.snapshot()
+        self.assertEqual(snap["choices"],
+                         ["needs you: sign in — yes", "always", "no"])
+        self.broker.offer(pick="always",
+                          prompt_id=self.broker.pending_id)
+        self.wait_done(th)
+        self.assertTrue(self.out["ok"])
+        self.assertEqual(self.ask.last, "always")
+        e = [a for a in self.st.snapshot()["actions"]
+             if a["kind"] == "confirm"][-1]
+        self.assertEqual(e["status"], "done")
+        self.assertEqual(e["reason"], "always")
+
+    def test_rich_marker_and_default_kind(self):
+        self.assertTrue(self.ask.rich)
+        th = self.run_kind()                 # no kwargs -> plain confirm
+        snap = self.st.snapshot()
+        self.assertEqual(snap["confirm"]["kind"], "confirm")
+        self.assertEqual(snap["choices"],
+                         ["needs you: sign in — yes", "no"])
+        self.broker.offer(pick="no", prompt_id=self.broker.pending_id)
+        self.wait_done(th)
+
+
 class TestDenyResult(unittest.TestCase):
     def gate(self, last):
         def ask(prompt):

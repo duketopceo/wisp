@@ -27,16 +27,41 @@ def _goal_snapshot():
         from . import goals
         g = goals.snapshot()
         return g["text"][:160] if g else None
-    except Exception:
+    except (ImportError, AttributeError, KeyError, TypeError):
         return None
 
 
-CONTRACT_VERSION = 1
+CONTRACT_VERSION = 2
+# Unified action lifecycle stream (contract v2, additive `actions`
+# field): one entry per tool call, prompt, pick, interrupt, label and
+# suggestion; the shell renders it wherever `steps` used to appear.
+# Statuses are a closed set so every reader maps them the same way;
+# kinds are an open set (route|tool|confirm|clarify|choice|interrupt|
+# label|suggestion|question today) and render generically.
+ACTION_STATUSES = frozenset(
+    {"queued", "in_flight", "awaiting", "done", "failed", "cancelled"})
+ACTIONS_CAP = 50
+ACTION_FIELDS = frozenset({"id", "kind", "label", "status", "target",
+                           "reason", "undo_ref", "at", "options",
+                           "prompt_id", "delivery"})
 # statuses where the model is working and the UI would otherwise sit
 # silent; the bus heartbeat runs only here
 BUSY = frozenset({"transcribing", "deciding", "acting"})
 # fields that arrive at audio/token rate and are rate-limited by the bus
 COALESCED = frozenset({"level"})
+
+
+def result_status(result: str) -> str:
+    """Result-string prefix -> action lifecycle status, shared by the
+    route dispatcher and the act loop so prefix sets can't drift.
+    Refusals/denials the gates turned away are `cancelled` (the reason
+    field says which); real failures are `failed`."""
+    if result.startswith(("INTERRUPTED", "SKIP", "BLOCKED",
+                          "NO_ANSWER")):
+        return "cancelled"
+    if result.startswith(("ERROR", "REFUS", "FAIL", "ABORT", "STALL")):
+        return "failed"
+    return "done"
 
 
 class State:
@@ -55,9 +80,13 @@ class State:
         self.result = ""
         self.choices = []
         self.prompt_id = ""    # id of the offered choices/confirm (U9)
-        self.confirm = None    # {prompt_id, prompt, timeout_s} while a confirm waits (W25)
+        self.confirm = None    # {prompt_id, prompt, timeout_s, kind} while a confirm waits (W25; kind U3)
         self.points = []
         self.steps = []
+        # unified lifecycle stream — survives turns (unlike `steps`),
+        # capped at the last ACTIONS_CAP entries; entries mutate by id
+        self.actions = []
+        self._action_seq = 0
         self.suggestion = None
         self.guide = None  # {x, y, label, seq, mode} — ghost cursor target
         self.focus = {}  # {app, title} — focused window at turn start
@@ -73,6 +102,7 @@ class State:
         self.spend = {}         # {today_usd, cap_usd, ...} from ledger.py
         self.started_at = _now()
         self.heartbeat_at = None
+        self._last_blob = None  # last written state.json body
         self.meta = {"seq": 0, "updated_at": self.started_at,
                      "contract_version": CONTRACT_VERSION, "turn_id": None}
         self._bus = None  # set by StateBus: all writes route through it
@@ -123,6 +153,86 @@ class State:
             self.history = self.history[-keep:]
             self._write_locked()
 
+    # -- action stream -------------------------------------------------
+    # Every surface that publishes lifecycle events holds one of State,
+    # TurnState or StateBus; all three expose the same action_add /
+    # action_set / action_resolve so emitters never care which they got.
+    # `turn` binds the write to a turn on the bus; a bare State ignores
+    # it (no turns exist without a bus).
+
+    def action_add(self, kind: str, label: str, turn: str | None = None,
+                   **kw) -> str:
+        """Append an action entry; returns its id ("" when the write was
+        dropped — a stale turn on the bus)."""
+        if self._bus is not None:
+            return self._bus.action_add(kind, label, turn=turn, **kw)
+        with self._lock:
+            entry = self._add_action_locked(kind, label, **kw)
+            self._write_locked()
+            return entry["id"]
+
+    def action_set(self, action_id: str, turn: str | None = None,
+                   **fields) -> None:
+        """Patch one entry by id (status transitions, reason, ...)."""
+        if self._bus is not None:
+            self._bus.action_set(action_id, turn=turn, **fields)
+            return
+        with self._lock:
+            self._set_action_locked(action_id, fields)
+            self._write_locked()
+
+    def action_resolve(self, kind: str, turn: str | None = None,
+                       **fields) -> None:
+        """Patch the newest `awaiting` entry of `kind` — the card the
+        user just answered (suggestions resolve by kind, not id)."""
+        if self._bus is not None:
+            self._bus.action_resolve(kind, turn=turn, **fields)
+            return
+        with self._lock:
+            self._resolve_action_locked(kind, fields)
+            self._write_locked()
+
+    def _add_action_locked(self, kind, label, **kw) -> dict:
+        self._action_seq += 1
+        status = kw.get("status", "queued")
+        entry = {"id": f"a{self._action_seq}",
+                 "kind": str(kind)[:40] or "action",
+                 "label": str(label)[:120],
+                 "status": status if status in ACTION_STATUSES
+                 else "queued",
+                 "target": str(kw.get("target") or "")[:160],
+                 "reason": str(kw.get("reason") or "")[:200],
+                 "undo_ref": kw.get("undo_ref"),
+                 "at": _now()}
+        options = kw.get("options")
+        if options:
+            entry["options"] = [str(o)[:120] for o in list(options)][:8]
+        prompt_id = str(kw.get("prompt_id") or "")
+        if prompt_id:
+            entry["prompt_id"] = prompt_id[:80]
+        delivery = str(kw.get("delivery") or "")
+        if delivery:
+            entry["delivery"] = delivery[:24]
+        self.actions.append(entry)
+        if len(self.actions) > ACTIONS_CAP:
+            del self.actions[:len(self.actions) - ACTIONS_CAP]
+        return entry
+
+    def _set_action_locked(self, action_id, fields) -> bool:
+        for entry in reversed(self.actions):
+            if entry.get("id") == action_id:
+                _merge_action(entry, fields)
+                return True
+        return False
+
+    def _resolve_action_locked(self, kind, fields) -> bool:
+        for entry in reversed(self.actions):
+            if entry.get("kind") == kind \
+                    and entry.get("status") == "awaiting":
+                _merge_action(entry, fields)
+                return True
+        return False
+
     def _write_locked(self) -> None:
         if self._bus is not None:
             return  # the bus is the only writer once attached
@@ -147,6 +257,7 @@ class State:
             "confirm": dict(self.confirm) if self.confirm else None,
             "points": list(self.points),
             "steps": list(self.steps),
+            "actions": [dict(a) for a in self.actions],
             "suggestion": self.suggestion,
             "guide": self.guide,
             "focus": dict(self.focus),
@@ -162,6 +273,23 @@ class State:
             "heartbeat_at": self.heartbeat_at,
             **self.meta,
         }
+
+
+def _merge_action(entry: dict, fields: dict) -> None:
+    """Patch an action-stream entry in place. `id` and unknown keys are
+    ignored; `status` only moves inside the closed set."""
+    for k, v in fields.items():
+        if k == "id" or k not in ACTION_FIELDS:
+            continue
+        if k == "status":
+            if v in ACTION_STATUSES:
+                entry["status"] = v
+        elif k == "options" and v is not None:
+            entry["options"] = [str(o)[:120] for o in list(v)][:8]
+        elif isinstance(v, str):
+            entry[k] = v[:200]
+        else:
+            entry[k] = v
 
 
 def atomic_write(path, blob: str) -> None:
@@ -257,6 +385,18 @@ class TurnState:
 
     def push_history(self, turn: dict, keep: int = 20) -> None:
         self._bus.state.push_history(turn, keep)
+
+    def action_add(self, kind: str, label: str, **kw) -> str:
+        kw.pop("turn", None)  # the facade always writes its own turn
+        return self._bus.action_add(kind, label, turn=self.turn_id, **kw)
+
+    def action_set(self, action_id: str, **fields) -> None:
+        fields.pop("turn", None)
+        self._bus.action_set(action_id, turn=self.turn_id, **fields)
+
+    def action_resolve(self, kind: str, **fields) -> None:
+        fields.pop("turn", None)
+        self._bus.action_resolve(kind, turn=self.turn_id, **fields)
 
     def emit_event(self, event: str, **data) -> None:
         """Named one-off event (e.g. `cua.target`), dropped once a newer
@@ -367,8 +507,53 @@ class StateBus:
             trace.emit(turn_id, "stale_publish", "state",
                        {"current": self._turn,
                         "fields": sorted(fields)[:12]})
-        except Exception:
+        except (ImportError, AttributeError, TypeError):
             pass
+
+    # -- action stream --------------------------------------------------
+
+    def publish_action(self, turn_id, op) -> bool:
+        """Run `op(state)` — an action-stream mutation — inside a
+        publish: the same turn-staleness check `publish` makes, one
+        write, one fan-out. `actions` diffs carry the whole (capped)
+        list so a subscriber just replaces it. Returns False when
+        dropped as stale (the op never ran)."""
+        with self._lock:
+            if turn_id is not None and turn_id != self._turn:
+                self._drop(turn_id, {"actions": True})
+                return False
+            with self.state._lock:
+                before = [dict(a) for a in self.state.actions]
+                op(self.state)
+                after = [dict(a) for a in self.state.actions]
+            if before == after:
+                return True
+            self._pending_diff["actions"] = after
+            self._dirty = True
+            if not self._paused:
+                self._write_locked()
+            return True
+
+    def action_add(self, kind: str, label: str, turn: str | None = None,
+                   **kw) -> str:
+        """Append an action entry; the new id, or "" when the write was
+        stale-dropped (the entry never landed)."""
+        box = {}
+
+        def op(s: State) -> None:
+            box["id"] = s._add_action_locked(kind, label, **kw)["id"]
+
+        return box.get("id", "") if self.publish_action(turn, op) else ""
+
+    def action_set(self, action_id: str, turn: str | None = None,
+                   **fields) -> None:
+        self.publish_action(
+            turn, lambda s: s._set_action_locked(action_id, fields))
+
+    def action_resolve(self, kind: str, turn: str | None = None,
+                       **fields) -> None:
+        self.publish_action(
+            turn, lambda s: s._resolve_action_locked(kind, fields))
 
     # -- writing (call under _lock) -------------------------------------
 
@@ -492,6 +677,49 @@ class StateBus:
 
 
 _META_KEYS = frozenset({"seq", "updated_at", "contract_version", "turn_id"})
+
+
+# -- guarded emit API --------------------------------------------------
+# Emitters hold whatever state surface the caller gave them — a
+# TurnState, the bus, a bare State, a Mock or None — so these go through
+# getattr+try instead of trusting the method to exist.
+
+
+def action_add(state, kind: str, label: str, **kw) -> str:
+    """Append an action-stream entry; the new id, or "" when the
+    surface can't take actions (None, a mock, an older harness)."""
+    fn = getattr(state, "action_add", None)
+    if not callable(fn):
+        return ""
+    try:
+        out = fn(kind, label, **kw)
+    except Exception:
+        return ""
+    return out if isinstance(out, str) else ""
+
+
+def action_set(state, action_id: str, **fields) -> None:
+    """Patch an entry by id; a "" id (dropped or unemitted) is a no-op."""
+    if not action_id:
+        return
+    fn = getattr(state, "action_set", None)
+    if not callable(fn):
+        return
+    try:
+        fn(action_id, **fields)
+    except Exception:
+        pass
+
+
+def action_resolve(state, kind: str, **fields) -> None:
+    """Patch the newest awaiting entry of `kind` (suggestion picks)."""
+    fn = getattr(state, "action_resolve", None)
+    if not callable(fn):
+        return
+    try:
+        fn(kind, **fields)
+    except Exception:
+        pass
 
 
 def _new_turn_id() -> str:

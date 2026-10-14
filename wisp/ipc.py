@@ -18,6 +18,7 @@ Transport per OS (mirrors rs/wispd/src/ipc.rs):
 """
 import json
 import socket
+import struct
 import threading
 import time
 
@@ -41,8 +42,26 @@ def _use_tcp() -> bool:
         return False
 
 
+def _peer_cred(conn: socket.socket) -> dict | None:
+    """{pid, uid} of the connecting peer via SO_PEERCRED on the accepted
+    socket (Linux AF_UNIX). None on TCP or non-Linux transports and on
+    any failure — attribution is best-effort, never a serve error."""
+    try:
+        if conn.family != socket.AF_UNIX \
+                or not hasattr(socket, "SO_PEERCRED"):
+            return None
+        creds = conn.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED,
+                                struct.calcsize("3i"))
+        pid, uid, _gid = struct.unpack("3i", creds)
+        return {"pid": pid, "uid": uid}
+    except (OSError, struct.error):
+        return None
+
+
 class Daemon:
-    """IPC server. `handler(cmd_dict) -> dict` supplies the responses.
+    """IPC server. `handler(cmd_dict, peer) -> dict` supplies the
+    responses; `peer` is the connecting client's credentials
+    ({pid, uid}, or None when unattributable — TCP, non-Linux).
 
     `bus` (a StateBus) enables `subscribe`. `sub_queue` bounds each
     subscriber's queue, `ping_s` is the idle keep-alive interval (also
@@ -64,8 +83,7 @@ class Daemon:
 
     def start(self) -> None:
         self._sock_file.parent.mkdir(parents=True, exist_ok=True)
-        if self._sock_file.exists():
-            self._sock_file.unlink()
+        self._sock_file.unlink(missing_ok=True)
         if _use_tcp():
             srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             srv.bind(("127.0.0.1", 0))
@@ -112,6 +130,7 @@ class Daemon:
     def _serve(self, conn: socket.socket) -> None:
         try:
             conn.settimeout(_TIMEOUT)
+            peer = _peer_cred(conn)
             data = b""
             while not data.endswith(b"\n"):
                 chunk = conn.recv(65536)
@@ -127,7 +146,7 @@ class Daemon:
                     self._stream(conn, cmd)
                     return
                 try:
-                    resp = self._handler(cmd)
+                    resp = self._handler(cmd, peer)
                 except Exception as e:
                     resp = {"ok": False, "error": str(e)}
             conn.sendall(json.dumps(resp).encode() + b"\n")

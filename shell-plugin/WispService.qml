@@ -7,6 +7,7 @@ import "lib/copy.js" as Copy
 import "lib/tokens.js" as Tokens
 import "lib/motion.js" as Motion
 import "lib/settings.js" as Settings
+import "lib/run.js" as Run
 
 // WispService: the one reader of wispd state for every surface (Companion,
 // Panel, bar widget). Surfaces bind to this object (shell.serviceFor(
@@ -48,6 +49,10 @@ Item {
   property var confirm: null
   property var points: []
   property var steps: []
+  // unified lifecycle stream (contract v2): [{id, kind, label, status,
+  // target, reason, undoRef, at, options?, promptId?}]. Supersedes
+  // `steps` where a v2 daemon feeds it; `steps` stays for older cores.
+  property var actions: []
   property var suggestion: null
   property var guide: null
   // cua.target stream event (docs/IPC_CONTRACT.md): where a CUA click
@@ -71,6 +76,19 @@ Item {
   property bool stale: false
   property bool contractNewer: false
   readonly property bool busy: Reader.BUSY.indexOf(status) >= 0
+  // The newest run in the action stream (U8): intent, step cursor,
+  // in-flight step, outcome + mutation count, live ask_user question.
+  // {present, active, intent, key, steps, current, outcome, durationS,
+  // mutations, undoRefs, question} — lib/run.js; surfaces show nothing
+  // when present is false (empty stream, daemon restart).
+  readonly property var run: Run.card(actions, status, promptId, stale,
+    goal !== "" ? goal : transcript, Date.now())
+  // The last one-shot action through runAction(): {verb, pending, ok,
+  // message, at} — pending while the subprocess is in flight, then the
+  // terminal outcome (daemon refusal text or typed error code mapped
+  // to copy). A local refusal (stale pick, full queue) lands here too,
+  // so no click is ever silent.
+  property var lastAction: null
 
   // --- copy (wisp/copy.py via lib/copy.js) ----------------------------
   readonly property string statusWord: Copy.statusWord(status)
@@ -118,21 +136,35 @@ Item {
   function ui(key) { return Copy.string(key); }
   function pickLabel(pick) { return Copy.pickLabel(pick); }
 
-  // Reply to the prompt the card shows. Dropped here when the id is not
-  // the pending prompt's (answered, timed out or replaced meanwhile); the
-  // daemon refuses a stale id as well.
+  // Reply to the prompt the card shows (or a suggestion-card pick, which
+  // needs no prompt id — the daemon resolves those before the broker).
+  // A pick the view refuses — answered, timed out, replaced or never
+  // offered — still reaches a terminal state: the "that question
+  // expired" nudge in lastAction instead of a silent drop.
   function sendChoice(pick, pid) {
-    if (!Reader.acceptChoice(root.view, pick, pid)) return false;
+    if (!Reader.acceptChoice(root.view, pick, pid)) {
+      root.lastAction = { verb: "choice", pending: false, ok: false,
+        message: Copy.errorMessage("stale_prompt"), at: Date.now() };
+      return false;
+    }
     var cmd = [wispd, "choice", pick];
-    cmd = cmd.concat(["--prompt-id", pid]);
-    run(cmd);
-    return true;
+    if (pid) cmd = cmd.concat(["--prompt-id", pid]);
+    return runAction(cmd.concat(["--json"]), "choice");
   }
   // Bar action while offline: start the user service (no daemon to ask).
-  function startDaemon() { run(["systemctl", "--user", "start", "wispd.service"]); }
-  function interrupt() { run([wispd, "interrupt"]); }
-  function trigger() { run([wispd, "trigger"]); }
-  function label(verdict) { run([wispd, "label", verdict]); }
+  function startDaemon() { return runAction(["systemctl", "--user", "start", "wispd.service"], "daemon"); }
+  // Interrupt never rides the action queue — an emergency stop that
+  // waits for 8 pending picks is no stop at all.
+  property bool stopPending: false
+  function interrupt() {
+    if (stopProc.running) return true;
+    stopPending = true;
+    stopProc.command = [wispd, "interrupt", "--json"];
+    stopProc.running = true;
+    return true;
+  }
+  function trigger() { return runAction([wispd, "trigger", "--json"], "trigger"); }
+  function label(verdict) { return runAction([wispd, "label", "set", verdict, "--json"], "label"); }
 
   // Read the settings inputs once (config, cua status, spend by model).
   function loadSettings() {
@@ -177,10 +209,50 @@ Item {
   // --- internals --------------------------------------------------------
   property int attempt: 0
   property bool refused: false
+  // Actions through runAction() are serial: while one subprocess is in flight
+  // the next commands queue in click order (8 deep — the daemon sees
+  // what the user clicked). A click past the cap refuses loudly via
+  // lastAction; nothing is dropped silently.
+  property var actionQueue: []
+  property string actionVerb: ""
 
-  function run(cmd) {
+  function _launch(cmd, verb) {
+    root.actionVerb = verb || "";
+    root.lastAction = { verb: root.actionVerb, pending: true,
+                        ok: false, message: "", at: Date.now() };
     actionProc.command = cmd;
     actionProc.running = true;
+  }
+
+  function runAction(cmd, verb) {
+    if (actionProc.running) {
+      if (actionQueue.length >= 8) {
+        root.lastAction = { verb: verb || "", pending: false, ok: false,
+          message: Copy.errorMessage("busy"), at: Date.now() };
+        return false;
+      }
+      actionQueue = actionQueue.concat([{ cmd: cmd, verb: verb || "" }]);
+      return true;
+    }
+    _launch(cmd, verb);
+    return true;
+  }
+
+  function finishAction(code) {
+    if (!root.lastAction || root.lastAction.pending !== true) return;
+    var r = Reader.actionResult(code, actionOut.text, actionErr.text);
+    var msg = r.text;
+    if (Reader.ERROR_CODES.indexOf(r.error) >= 0)
+      msg = Copy.errorMessage(r.error);
+    if (msg === "")
+      msg = r.ok ? Copy.string("ui.noted") : Copy.errorMessage("internal");
+    root.lastAction = { verb: root.actionVerb, pending: false,
+                        ok: r.ok, message: msg, at: Date.now() };
+    if (root.actionQueue.length > 0) {
+      var nxt = root.actionQueue[0];
+      root.actionQueue = root.actionQueue.slice(1);
+      _launch(nxt.cmd, nxt.verb);
+    }
   }
 
   function adopt(r) {
@@ -198,6 +270,7 @@ Item {
     root.confirm = v.confirm;
     root.points = v.points;
     root.steps = v.steps;
+    root.actions = v.actions;
     root.suggestion = v.suggestion;
     root.guide = v.guide;
     root.cuaTarget = v.cuaTarget;
@@ -413,9 +486,49 @@ Item {
     }
   }
 
+  // The one action subprocess (see run/lastAction): stdout+stderr are
+  // collected so a daemon refusal or a spawn failure reaches the
+  // surfaces as a typed result, never silence.
   Process {
     id: actionProc
     command: [root.wispd, "status"]
+    stdout: StdioCollector { id: actionOut }
+    stderr: StdioCollector { id: actionErr }
+    onExited: function (code, status) { root.finishAction(code); }
+    // A spawn failure emits runningChanged without exited — resolve the
+    // pending action (and drain the queue) instead of pending forever.
+    onRunningChanged: {
+      if (!actionProc.running) root.finishAction(127);
+    }
+  }
+
+  // The preempt lane for interrupt(): a second Process so the stop
+  // command reaches the daemon while actionProc is mid-flight.
+  Process {
+    id: stopProc
+    command: [root.wispd, "interrupt", "--json"]
+    stdout: StdioCollector { id: stopOut }
+    stderr: StdioCollector { id: stopErr }
+    onExited: function (code) {
+      root.stopPending = false;
+      var r = Reader.actionResult(code, stopOut.text, stopErr.text);
+      var msg = r.text;
+      if (Reader.ERROR_CODES.indexOf(r.error) >= 0)
+        msg = Copy.errorMessage(r.error);
+      root.lastAction = { verb: "interrupt", pending: false,
+                          ok: r.ok, message: msg ||
+                          (r.ok ? Copy.string("ui.noted")
+                           : Copy.errorMessage("internal")),
+                          at: Date.now() };
+    }
+    // spawn failure: running flips false without exited
+    onRunningChanged: {
+      if (!stopProc.running && root.stopPending) {
+        root.stopPending = false;
+        root.lastAction = { verb: "interrupt", pending: false, ok: false,
+                            message: Copy.errorMessage("internal"), at: Date.now() };
+      }
+    }
   }
 
   Component.onCompleted: stateView.reload()

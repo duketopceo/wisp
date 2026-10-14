@@ -44,6 +44,9 @@ TestCase {
       ["blocked", "blocked", "needsYou"],
       ["stale", "reconnecting", "muted"],
       ["confirm", "your call", "needsYou"],
+      ["run_active", "working", "ember"],
+      ["run_done", "done", "ok"],
+      ["run_question", "your call", "needsYou"],
       ["offline", "offline", "muted"]
     ];
   }

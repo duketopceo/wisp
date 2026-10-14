@@ -92,7 +92,7 @@ class ExpectationKeysTest(unittest.TestCase):
         r = self._res(expect={"stop_within_ms": 150}, events=ev,
                       interrupt_fired=True, interrupt_t_ms=600)
         self.assertEqual(runner.check_expectations(r), [])
-        r.interrupt_t_ms = 400
+        r.interrupt_t_ms = 100  # 540ms late — over-bound even w/ CI jitter
         self.assertTrue(runner.check_expectations(r))
 
 
@@ -108,7 +108,7 @@ class CorpusRunTest(unittest.TestCase):
             if problems:
                 bad[p.stem] = problems
         self.assertEqual(bad, {})
-        self.assertLess(time.monotonic() - t0, 20.0)
+        self.assertLess(time.monotonic() - t0, 20.0 * runner.JITTER)
 
 
 if __name__ == "__main__":

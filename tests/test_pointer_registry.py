@@ -16,7 +16,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import fakes  # noqa: E402
 from fakes import FakeHypr, ok_handler  # noqa: E402
 
-from wisp import cancel, platform, pointer  # noqa: E402
+from wisp import cancel, platform, pointer, realinput  # noqa: E402
 from wisp.tools import system  # noqa: E402
 
 DRIVE = {"pointer": {"mode": "drive", "backend": "auto"}}
@@ -24,6 +24,16 @@ DRIVE = {"pointer": {"mode": "drive", "backend": "auto"}}
 
 def pin(name):
     return {"pointer": {"mode": "drive", "backend": name}}
+
+
+class _Iso(unittest.TestCase):
+    """The module-level realinput watch is shared state: other
+    suites (or a live drift watch on this box) may leave it armed
+    and yielded — Registry dispatches must see it absent unless a
+    test installs one."""
+
+    def setUp(self):
+        realinput._stop_for_test()
 
 
 class Rig:
@@ -89,7 +99,7 @@ def expected_auto(live):
     return None
 
 
-class TestAutoOrder(unittest.TestCase):
+class TestAutoOrder(_Iso):
     def test_every_subset(self):
         names = ("cua", "hyprctl", "ydotool", "wlrctl")
         for r in range(len(names) + 1):
@@ -123,7 +133,7 @@ class TestAutoOrder(unittest.TestCase):
                              "cua")
 
 
-class TestPin(unittest.TestCase):
+class TestPin(_Iso):
     def test_pin_wins_over_live_cua(self):
         with Rig():
             self.assertEqual(
@@ -165,7 +175,7 @@ class TestPin(unittest.TestCase):
             self.assertEqual(r.cua.calls, [])
 
 
-class TestCuaConfig(unittest.TestCase):
+class TestCuaConfig(_Iso):
     def test_timeout_from_cfg_clamped(self):
         def t(v):
             return pointer.Registry({"cua": {"timeout_ms": v}}) \
@@ -184,7 +194,7 @@ class TestCuaConfig(unittest.TestCase):
         self.assertIn("[cua]", config.DEFAULT_CONFIG)
 
 
-class TestMetadata(unittest.TestCase):
+class TestMetadata(_Iso):
     def test_capabilities_and_space(self):
         reg = pointer.Registry({})
         cua = reg.get("cua")
@@ -207,7 +217,7 @@ class TestMetadata(unittest.TestCase):
             self.assertTrue(h["detail"])
 
 
-class TestMoveFallthrough(unittest.TestCase):
+class TestMoveFallthrough(_Iso):
     CUA_FAIL = {"tools": {"default": {"ok": False,
                                       "error": "E_CUA_REFUSED"}}}
 
@@ -249,7 +259,7 @@ class TestMoveFallthrough(unittest.TestCase):
             self.assertEqual(r.cua.tools(), ["move_cursor"])
 
 
-class TestClickNoRetry(unittest.TestCase):
+class TestClickNoRetry(_Iso):
     def test_failed_cua_click_not_retried(self):
         with Rig(cua_script=TestMoveFallthrough.CUA_FAIL) as r:
             out = pointer.Registry(DRIVE).click(5, 6)
@@ -298,7 +308,7 @@ class TestClickNoRetry(unittest.TestCase):
             self.assertIn("mousemove", r.shell()[0])
 
 
-class TestCancel(unittest.TestCase):
+class TestCancel(_Iso):
     def test_cancelled_token_raises_and_calls_nothing(self):
         with Rig() as r:
             tok = cancel.CancelToken()
@@ -326,7 +336,7 @@ class TestCancel(unittest.TestCase):
             self.assertEqual(r.shell(), [])
 
 
-class TestCoordinates(unittest.TestCase):
+class TestCoordinates(_Iso):
     def test_scale2_coordinates_pass_through_unchanged(self):
         # logical == desktop frame: registry never rescales
         with Rig() as r:
@@ -339,7 +349,7 @@ class TestCoordinates(unittest.TestCase):
             self.assertIn("-x 1728 -y 1080", r.shell()[0])
 
 
-class TestGuideFallback(unittest.TestCase):
+class TestGuideFallback(_Iso):
     def test_no_backend_degrades_to_guide(self):
         with Rig((), hypr=False):
             self.assertIsNone(pointer.Registry(DRIVE).select())
@@ -357,7 +367,7 @@ class TestGuideFallback(unittest.TestCase):
 DRIVE_MODE = {"pointer": {"mode": "drive", "backend": "auto"}}
 
 
-class TestShims(unittest.TestCase):
+class TestShims(_Iso):
     def test_pointer_cmds_unchanged(self):
         import json
         c = platform.pointer_cmds(100, 200, "cua", click=True)[0]

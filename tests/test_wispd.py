@@ -79,9 +79,16 @@ class TestExecute(unittest.TestCase):
                 self.cfg)
         self.assertEqual(out, "LAUNCHED")
 
-    def test_skips_non_launch(self):
-        out = pipeline.execute(self.answers(action="bogus"), self.cfg)
-        self.assertTrue(out.startswith("SKIP"))
+    def test_unhandled_action_falls_back_to_act_loop(self):
+        # an actionable turn with no usable route/action no longer
+        # dead-ends on SKIP — the act loop gets the transcript
+        from wisp import act
+        with mock.patch.object(act, "run_act_loop",
+                               return_value="ACTED (1 steps): ok") as r:
+            out = pipeline.execute(self.answers(action="bogus"),
+                                   self.cfg, detail="do the thing")
+        self.assertEqual(out, "ACTED (1 steps): ok")
+        r.assert_called_once()
 
     def test_close_dispatches_tool(self):
         from wisp import tools
@@ -108,26 +115,41 @@ class TestExecute(unittest.TestCase):
             self.assertIn("not installed", out)
 
     def test_dictation_route_types_transcript(self):
-        from wisp import tools
+        # execute delegates to dictate.run; raw mode inserts the
+        # stripped transcript via the type_text fallback chain
+        from wisp import dictate, tools
         ans = {"route": {"choice": "dictation"},
                "action": {"choice": ""}, "app": {"choice": "none"},
                "risk": {"score": 1.0}}
-        with mock.patch.object(tools, "run", return_value="TYPED") as r:
-            out = pipeline.execute(ans, self.cfg,
-                                   detail="dictate hello there")
-        self.assertEqual(out, "TYPED")
-        r.assert_called_once_with("type_text", "hello there", self.cfg)
+        cfg = dict(self.cfg, dictation={"mode": "raw"})
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(dictate, "FILE",
+                               pathlib.Path(td) / "d.json"), \
+             mock.patch.object(dictate.platform, "active_window",
+                               return_value={}), \
+             mock.patch.dict("sys.modules", {"wordink": None}), \
+             mock.patch.object(tools, "run", return_value="TYPED") as r:
+            out = pipeline.execute(ans, cfg, detail="dictate hello there")
+        self.assertEqual(out, "INSERTED: hello there")
+        r.assert_called_once_with("type_text", "hello there", cfg)
 
     def test_dictation_not_risk_gated(self):
         # dictation is self-confirming: transcript is the user's own
         # instruction — high Jev risk score must not block it
-        from wisp import tools
+        from wisp import dictate, tools
         ans = {"route": {"choice": "dictation"},
                "action": {"choice": ""}, "app": {"choice": "none"},
                "risk": {"score": 2.0}}
-        with mock.patch.object(tools, "run", return_value="TYPED") as r:
-            out = pipeline.execute(ans, self.cfg, detail="dictate x")
-        self.assertEqual(out, "TYPED")
+        cfg = dict(self.cfg, dictation={"mode": "raw"})
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(dictate, "FILE",
+                               pathlib.Path(td) / "d.json"), \
+             mock.patch.object(dictate.platform, "active_window",
+                               return_value={}), \
+             mock.patch.dict("sys.modules", {"wordink": None}), \
+             mock.patch.object(tools, "run", return_value="TYPED") as r:
+            out = pipeline.execute(ans, cfg, detail="dictate x")
+        self.assertEqual(out, "INSERTED: x")
         r.assert_called_once()
 
     def test_dictation_text_strips_prefix(self):
@@ -367,6 +389,242 @@ class TestListenSpans(unittest.TestCase):
             self.w.cmd_trigger({}, "start")
         self.assertIsInstance(sent["t0"], int)
         self.assertGreater(sent["t0"], 1_600_000_000_000_000_000)
+
+
+class TestHandlerActionStream(unittest.TestCase):
+    """U2: command-line surfaces are stream events too — a pick, a
+    spoken-style interrupt, a label verdict each land as a terminal
+    entry, so the shell log explains what the daemon did."""
+
+    def setUp(self):
+        import importlib.machinery
+        import importlib.util
+        import threading
+        path = str(pathlib.Path(__file__).resolve().parent.parent / "wispd")
+        loader = importlib.machinery.SourceFileLoader("wispd_mod", path)
+        spec = importlib.util.spec_from_loader("wispd_mod", loader)
+        self.w = importlib.util.module_from_spec(spec)
+        loader.exec_module(self.w)
+        import tempfile
+        from wisp import state as state_mod, cancel
+        self.bus = state_mod.StateBus(
+            state_file=pathlib.Path(tempfile.mkdtemp()) / "state.json")
+        self.addCleanup(self.bus.close)
+        self.cancel = cancel
+        self.threading = threading
+
+    def handle(self, ctl=None):
+        c = {"stop": self.threading.Event(),
+             "busy": self.threading.Event(),
+             "interrupt": self.threading.Event(),
+             "choice_event": self.threading.Event(),
+             "choice_pick": ""}
+        if ctl:
+            c.update(ctl)
+        return self.w._handler(self.bus, {}, c)
+
+    def actions(self, kind=None):
+        acts = self.bus.snapshot()["actions"]
+        return acts if kind is None else \
+            [a for a in acts if a["kind"] == kind]
+
+    def test_a_resolved_pick_lands_done(self):
+        broker = self.cancel.PromptBroker()
+        out_box = {}
+
+        def wait():
+            out_box["pick"] = broker.waiter()(5, prompt_id="p1",
+                                              options=["yes", "no"])
+        th = self.threading.Thread(target=wait, daemon=True)
+        th.start()
+        for _ in range(100):
+            if broker.pending_id:
+                break
+            import time
+            time.sleep(0.01)
+        r = self.handle({"broker": broker})(
+            {"cmd": "choice", "pick": "yes", "prompt_id": "p1"})
+        self.assertTrue(r["ok"])
+        th.join(2)
+        e = self.actions("choice")[-1]
+        self.assertEqual(e["status"], "done")
+        self.assertEqual(e["label"], "yes")
+
+    def test_a_stale_pick_is_a_visible_failed_event(self):
+        broker = self.cancel.PromptBroker()  # nothing pending
+        r = self.handle({"broker": broker})(
+            {"cmd": "choice", "pick": "yes", "prompt_id": "p9"})
+        self.assertFalse(r["ok"])
+        e = self.actions("choice")[-1]
+        self.assertEqual(e["status"], "failed")
+        self.assertEqual(e["reason"], "stale_prompt")
+
+    def test_bad_index_records_the_refusal(self):
+        broker = self.cancel.PromptBroker()
+        r = self.handle({"broker": broker})(
+            {"cmd": "choice", "index": "bogus"})
+        self.assertEqual(r["error"], "bad_index")
+        self.assertEqual(self.actions("choice")[-1]["reason"],
+                         "bad_index")
+
+    def test_interrupt_lands_as_a_done_event(self):
+        with mock.patch.object(self.w.speech, "stop"):
+            r = self.handle()({"cmd": "interrupt"})
+        self.assertTrue(r["ok"])
+        e = self.actions("interrupt")[-1]
+        self.assertEqual(e["status"], "done")
+
+    def test_label_lands_with_its_result(self):
+        with mock.patch("wisp.learn.label_last",
+                        return_value="labeled correct: t1") as lab:
+            r = self.handle()({"cmd": "label", "label": "correct"})
+        lab.assert_called_once()
+        self.assertTrue(r["ok"])
+        e = self.actions("label")[-1]
+        self.assertEqual((e["status"], e["reason"]),
+                         ("done", "labeled correct: t1"))
+
+    def test_label_refusal_is_failed_not_silent(self):
+        with mock.patch("wisp.learn.label_last",
+                        return_value="SKIP (no completed turn)"):
+            r = self.handle()({"cmd": "label", "label": "wrong"})
+        self.assertTrue(r["ok"])  # command ran; the outcome failed
+        self.assertEqual(self.actions("label")[-1]["status"], "failed")
+
+    def test_suggestion_pick_resolves_the_card_entry(self):
+        # the card's stream entry resolves by kind when the pick lands
+        self.bus.action_add("suggestion", "try x", status="awaiting",
+                            options=["suggestion:not now",
+                                     "suggestion:never"])
+        with mock.patch("wisp.suggest._mark"):  # keep the run test-only
+            r = self.handle()({"cmd": "choice",
+                               "pick": "suggestion:not now"})
+        self.assertTrue(r["ok"])
+        e = self.actions("suggestion")[-1]
+        self.assertEqual((e["status"], e["reason"]),
+                         ("cancelled", "snoozed"))
+
+    def test_index_pick_records_the_option_not_dismiss(self):
+        # an index pick resolved against the pending options lands in
+        # the stream as the picked label, never "(dismiss)"
+        broker = self.cancel.PromptBroker()
+        out_box = {}
+
+        def wait():
+            out_box["pick"] = broker.waiter()(
+                5, prompt_id="p1", options=["alpha", "beta", "gamma"])
+        th = self.threading.Thread(target=wait, daemon=True)
+        th.start()
+        for _ in range(200):
+            if broker.pending_id == "p1":
+                break
+            import time
+            time.sleep(0.005)
+        r = self.handle({"broker": broker})(
+            {"cmd": "choice", "prompt_id": "p1", "index": 2})
+        self.assertTrue(r["ok"])
+        th.join(2)
+        e = self.actions("choice")[-1]
+        self.assertEqual((e["status"], e["label"]), ("done", "beta"))
+
+    def test_dictate_correct_failure_carries_an_error_key(self):
+        # contract: an ok:false reply must also carry `error` — shells
+        # read it for the refusal toast
+        with mock.patch("wisp.dictate.add_correction",
+                        return_value="SKIP (heard and meant are empty)"):
+            r = self.handle()({"cmd": "dictate_correct",
+                               "heard": "", "meant": ""})
+        self.assertFalse(r["ok"])
+        self.assertIn("SKIP", r["error"])
+        e = self.actions("dictation")[-1]
+        self.assertEqual(e["status"], "failed")
+
+    def test_dictate_correct_ok_has_no_error_payload(self):
+        with mock.patch("wisp.dictate.add_correction",
+                        return_value="learned: teh -> the"):
+            r = self.handle()({"cmd": "dictate_correct",
+                               "heard": "teh", "meant": "the"})
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["error"], "")
+
+
+class TestSuggestionRun(unittest.TestCase):
+    """_run_suggestion: interrupt edge-detection (a stale shared latch
+    must not abort the run; a mid-run stop still cancels), terminal
+    transitions clear the prompt surface, busy always releases."""
+
+    def setUp(self):
+        import importlib.machinery
+        import importlib.util
+        import threading
+        path = str(pathlib.Path(__file__).resolve().parent.parent / "wispd")
+        loader = importlib.machinery.SourceFileLoader("wispd_sug", path)
+        spec = importlib.util.spec_from_loader("wispd_sug", loader)
+        self.w = importlib.util.module_from_spec(spec)
+        loader.exec_module(self.w)
+        import tempfile
+        from wisp import state as state_mod, cancel
+        self.bus = state_mod.StateBus(
+            state_file=pathlib.Path(tempfile.mkdtemp()) / "state.json")
+        self.addCleanup(self.bus.close)
+        self.ctl = {"stop": threading.Event(), "busy": threading.Event(),
+                    "interrupt": threading.Event(),
+                    "choice_event": threading.Event(), "choice_pick": "",
+                    "broker": cancel.PromptBroker(),
+                    "rec_lock": threading.Lock(),
+                    "token": cancel.CancelToken()}
+
+    def _run(self):
+        self.w._run_suggestion(self.bus, {"agent": {}}, self.ctl, "do x")
+
+    def test_stale_interrupt_latch_does_not_abort_the_run(self):
+        # a leftover `interrupt` from a previous turn's stop is a level,
+        # not an edge — the suggestion run must still execute
+        self.w._interrupt(self.ctl)          # stale latch + seq bump
+        with mock.patch("wisp.act.run_act_loop",
+                        return_value="ACTED (1 steps): ok") as run:
+            self._run()
+        run.assert_called_once()
+        self.assertEqual(self.bus.status, "done")
+        e = [a for a in self.bus.snapshot()["actions"]
+             if a["kind"] == "route"][-1]
+        self.assertEqual(e["status"], "done")
+
+    def test_interrupt_during_the_run_cancels_it(self):
+        # an interrupt ARRIVING mid-run (seq edge) cancels the run's
+        # token — observed through `interrupted=`
+        seen = {}
+
+        def fake_loop(*a, **kw):
+            seen["interrupted"] = kw.get("interrupted")
+            self.w._interrupt(self.ctl)      # the edge mid-run
+            import time
+            time.sleep(0.3)                  # let the bridge thread fire
+            return "INTERRUPTED (user)" if seen["interrupted"]() \
+                else "ACTED (0 steps): missed the stop"
+
+        with mock.patch("wisp.act.run_act_loop", side_effect=fake_loop):
+            self._run()
+        self.assertEqual(self.bus.result, "INTERRUPTED (user)")
+
+    def test_prompt_surface_cleared_on_terminal(self):
+        # a parked card's fields can't outlive the run — choices,
+        # prompt_id and confirm are cleared on the done transition
+        with mock.patch("wisp.act.run_act_loop",
+                        return_value="ACTED (1 steps): ok"):
+            self._run()
+        snap = self.bus.snapshot()
+        self.assertEqual(snap["choices"], [])
+        self.assertEqual(snap["prompt_id"], "")
+        self.assertIsNone(snap["confirm"])
+
+    def test_busy_releases_even_on_error(self):
+        self.ctl["busy"].set()   # dispatch set it before spawning
+        with mock.patch("wisp.act.run_act_loop",
+                        side_effect=RuntimeError("boom")):
+            self._run()
+        self.assertFalse(self.ctl["busy"].is_set())
+        self.assertEqual(self.bus.status, "error")
 
 
 if __name__ == "__main__":

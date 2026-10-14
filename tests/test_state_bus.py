@@ -260,5 +260,106 @@ class LegacyShimTest(BusCase):
         self.assertEqual(self.disk()["seq"], bus.snapshot()["seq"])
 
 
+class ActionStreamTest(BusCase):
+    """U2: the lifecycle stream rides the same publisher — one mutation
+    is one write, one diff, and the same stale-turn rule `publish`
+    makes for every other field."""
+
+    def test_add_set_and_resolve_land_in_one_entry(self):
+        bus = self.make()
+        t = bus.begin_turn()
+        aid = bus.action_add("confirm", "run close?", turn=t,
+                             status="awaiting", options=["y", "n"],
+                             prompt_id="p1")
+        self.assertTrue(aid)
+        bus.action_set(aid, turn=t, status="done", reason="yes")
+        acts = bus.snapshot()["actions"]
+        self.assertEqual(len(acts), 1)
+        self.assertEqual(acts[0]["status"], "done")
+        self.assertEqual(acts[0]["reason"], "yes")
+        self.assertEqual(acts[0]["options"], ["y", "n"])
+        self.assertEqual(self.disk()["actions"][0]["id"], aid)
+
+    def test_subscriber_gets_the_whole_capped_list_as_diff(self):
+        bus = self.make()
+        sub = bus.subscribe()
+        t = bus.begin_turn()
+        aid = bus.action_add("tool", "click", turn=t, status="queued",
+                             target="1,2")
+        ev = sub.get(timeout=2)
+        while "actions" not in ev.get("diff", {}):
+            ev = sub.get(timeout=2)
+        self.assertEqual(ev["diff"]["actions"],
+                         bus.snapshot()["actions"])
+        bus.action_set(aid, turn=t, status="done")
+        ev = sub.get(timeout=2)
+        while "actions" not in ev.get("diff", {}):
+            ev = sub.get(timeout=2)
+        self.assertEqual(ev["diff"]["actions"][-1]["status"], "done")
+
+    def test_stale_turn_action_writes_are_dropped(self):
+        bus = self.make()
+        t1, t2 = bus.begin_turn(), bus.begin_turn()
+        self.assertEqual(bus.action_add("tool", "x", turn=t1), "")
+        aid = bus.action_add("tool", "x", turn=t2)
+        self.assertTrue(aid)
+        bus.action_set(aid, turn=t1, status="failed")   # stale -> no-op
+        self.assertEqual(bus.snapshot()["actions"][-1]["status"],
+                         "queued")
+
+    def test_turn_state_facade_scopes_actions_to_its_turn(self):
+        bus = self.make()
+        t1 = bus.begin_turn()
+        h1 = bus.turn(t1)
+        aid = h1.action_add("tool", "click", status="queued")
+        self.assertTrue(aid)
+        bus.begin_turn()                                # t1 now stale
+        h1.action_set(aid, status="done")               # dropped
+        self.assertEqual(bus.snapshot()["actions"][-1]["status"],
+                         "queued")
+
+    def test_resolve_patches_the_newest_awaiting_of_a_kind(self):
+        bus = self.make()
+        bus.action_add("suggestion", "old", status="done")
+        bus.action_add("suggestion", "newer", status="awaiting")
+        bus.action_resolve("suggestion", status="done", reason="picked")
+        acts = bus.snapshot()["actions"]
+        self.assertEqual((acts[0]["status"], acts[1]["status"]),
+                         ("done", "done"))
+        self.assertEqual(acts[1]["reason"], "picked")
+
+    def test_stream_caps_at_fifty_and_ids_do_not_repeat(self):
+        bus = self.make()
+        ids = [bus.action_add("tool", f"t{i}") for i in range(60)]
+        acts = bus.snapshot()["actions"]
+        self.assertEqual(len(acts), 50)
+        self.assertEqual(acts[0]["id"], ids[10])
+        self.assertEqual(len({a["id"] for a in acts}), 50)
+
+    def test_daemon_level_actions_need_no_turn(self):
+        bus = self.make()
+        aid = bus.action_add("interrupt", "interrupt", status="done")
+        self.assertTrue(aid)
+        bus.action_set(aid, reason="spoken stop")
+        self.assertEqual(bus.snapshot()["actions"][0]["reason"],
+                         "spoken stop")
+
+    def test_module_helpers_dispatch_on_the_object(self):
+        bus = self.make()
+        t = bus.begin_turn()
+        aid = state_mod.action_add(bus, "choice", "yes", status="done",
+                                   turn=t)
+        self.assertTrue(aid)
+        state_mod.action_set(bus, aid, reason="vocal", turn=t)
+        self.assertEqual(bus.snapshot()["actions"][0]["reason"],
+                         "vocal")
+        # a bare State works too (no bus, no turns)
+        st = state_mod.State(pathlib.Path(self.td) / "bare.json",
+                             write_initial=False)
+        aid = state_mod.action_add(st, "tool", "x")
+        state_mod.action_set(st, aid, status="done")
+        self.assertEqual(st.snapshot()["actions"][0]["status"], "done")
+
+
 if __name__ == "__main__":
     unittest.main()
