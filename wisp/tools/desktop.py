@@ -8,11 +8,30 @@ from .. import hypr
 
 
 def _resolve_apps(cfg: dict, harness: dict | None) -> dict:
+    """Learned apps (cfg/harness) win; every other installed app still
+    resolves through the generic .desktop catalog so 'launch cadcraft'
+    works before dayflow has ever seen it."""
     apps = dict(cfg.get("apps", {}))
     if harness:
         apps.update({n: a["launch"] for n, a in harness.get("apps", {}).items()
                      if a.get("launch")})
+    from . import adapters
+    for n, a in adapters.generic_catalog().items():
+        if a.get("launch"):
+            apps.setdefault(n, a["launch"])
     return apps
+
+
+def _lookup(apps: dict, app: str) -> str:
+    """Exact hit, else normalized ('cad craft'/'CADCraft' → cadcraft)."""
+    hit = apps.get(app)
+    if hit:
+        return hit
+    want = re.sub(r"[\s._-]+", "", app.lower())
+    if not want:
+        return ""
+    norm = {re.sub(r"[\s._-]+", "", k.lower()): v for k, v in apps.items()}
+    return norm.get(want, "")
 
 
 def _wm_down() -> str | None:
@@ -71,22 +90,32 @@ def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
             return down
         _exec_detached("browseros")
         return "LAUNCHED browser -> browseros"
-    binname = apps.get(app)
+    binname = _lookup(apps, app)
     if not binname:
-        # not an inventory name — a URL/domain still opens via the
-        # default browser (webmail and web apps the inventory can't
-        # know); bare nouns stay SKIP so nothing arbitrary execs
-        cand = app.strip()
-        if re.match(r"^(https?://)?[\w][\w.-]*\.[a-zA-Z]{2,}(/\S*)?$",
-                    cand) and shutil.which("xdg-open"):
-            url = cand if cand.startswith(("http://", "https://")) \
-                else "https://" + cand
-            down = _wm_down()
-            if down:
-                return down
-            _exec_detached(f"xdg-open {shlex.quote(url)}")
-            return f"OPENED {url} -> default browser"
-        return f"SKIP (unknown app {app!r})"
+        # role words ('mail', 'files', 'editor') resolve through the
+        # user's configured default handler — 'open mail' opens THEIR
+        # mail app, not a guessed client
+        from .. import inventory
+        role = inventory.defaults().get(app.strip().lower())
+        if role:
+            binname = _lookup(apps, role)
+            if binname:
+                app = role
+        if not binname:
+            # a URL/domain still opens via the default browser (webmail
+            # and web apps the inventory can't know); bare nouns stay
+            # SKIP so nothing arbitrary execs
+            cand = app.strip()
+            if re.match(r"^(https?://)?[\w][\w.-]*\.[a-zA-Z]{2,}(/\S*)?$",
+                        cand) and shutil.which("xdg-open"):
+                url = cand if cand.startswith(("http://", "https://")) \
+                    else "https://" + cand
+                down = _wm_down()
+                if down:
+                    return down
+                _exec_detached(f"xdg-open {shlex.quote(url)}")
+                return f"OPENED {url} -> default browser"
+            return f"SKIP (unknown app {app!r})"
     binary = binname.split()[0]
     if not _on_path(binary):
         # terminal: fall back to the desktop's configured default
