@@ -43,10 +43,13 @@ class TestRegistry(unittest.TestCase):
 class TestToolExec(unittest.TestCase):
     def _hypr_up(self):
         """Pin a Hyprland host with a live socket: launch execs through
-        Hyprland, and CI runners have none."""
+        Hyprland, and CI runners have none. _find_window is stubbed off
+        — launch tests exercise the exec path, not live clients."""
         for p in (mock.patch.dict(os.environ, {"WISP_OS": "linux",
                                                "WISP_DESKTOP": "hyprland"}),
-                  mock.patch.object(hypr, "available", return_value=True)):
+                  mock.patch.object(hypr, "available", return_value=True),
+                  mock.patch.object(tools.desktop, "_find_window",
+                                    return_value=None)):
             p.start()
             self.addCleanup(p.stop)
 
@@ -128,6 +131,20 @@ class TestToolExec(unittest.TestCase):
              mock.patch.object(tools.desktop, "_exec_detached") as ex:
             out = tools.desktop.launch("thunderbird", cfg)
         self.assertIn("SKIP (unknown app 'thunderbird')", out)
+        ex.assert_not_called()
+
+    def test_launch_running_app_focuses_instead(self):
+        self._hypr_up()
+        cfg = {"apps": {"foot": "foot"}, "agent": {}}
+        win = {"address": "0xabc", "class": "foot", "title": "zsh"}
+        with mock.patch.object(tools.desktop, "_find_window",
+                               return_value=win), \
+             mock.patch("wisp.platform._try",
+                        return_value=True) as tr, \
+             mock.patch.object(tools.desktop, "_exec_detached") as ex:
+            out = tools.desktop.launch("foot", cfg)
+        self.assertIn("FOCUSED foot", out)
+        self.assertIn("already running", out)
         ex.assert_not_called()
 
     def test_notify_runs(self):

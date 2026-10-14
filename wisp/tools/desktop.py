@@ -117,6 +117,14 @@ def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
                 return f"OPENED {url} -> default browser"
             return f"SKIP (unknown app {app!r})"
     binary = binname.split()[0]
+    # already running -> 'open X' means focus it, not spawn a twin
+    from .. import platform
+    win = _find_window(app)
+    if win:
+        if platform._try([hypr.LuaCmd(hypr.focus_window(
+                f"address:{win['address']}"))]):
+            return (f"FOCUSED {app} -> {win.get('class', '')} "
+                    "(already running)")
     if not _on_path(binary):
         # terminal: fall back to the desktop's configured default
         # (xdg-terminal-exec) — e.g. ghostty isn't packaged on Asahi
@@ -131,6 +139,39 @@ def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
     return f"LAUNCHED {app} -> {binname}"
 
 
+def _norm(s: str) -> str:
+    return re.sub(r"[\s._:—–-]+", "", (s or "").lower())
+
+
+def _find_window(name: str) -> dict | None:
+    """Normalized scan of live clients — 'filmcraft' hits class
+    ai.storyteller.filmcraft and title 'FilmCraft'. Returns the client."""
+    from .. import platform
+    if not platform.uses_hypr():
+        return None
+    want = _norm(name)
+    if not want:
+        return None
+    try:
+        clients = hypr.query("clients")
+    except Exception:
+        return None
+    if not isinstance(clients, list):
+        return None
+    best = None
+    for c in clients:
+        keys = [c.get("class", ""), c.get("initialClass", ""),
+                c.get("title", ""), c.get("initialTitle", "")]
+        norms = [_norm(k) for k in keys]
+        if want in norms:            # exact field match wins
+            return c
+        # substring ('film' hits filmcraft) — keep the first contender
+        if best is None and any(want in n or n in want
+                                for n in norms if n):
+            best = c
+    return best
+
+
 def focus(classname: str) -> str:
     from .. import platform
     down = _wm_down()
@@ -142,6 +183,13 @@ def focus(classname: str) -> str:
                 f"{platform.missing_deps_hint()})")
     if platform._try(cmds):
         return f"FOCUSED {classname}"
+    # class regex missed (case, vendor-prefixed stems like
+    # ai.storyteller.filmcraft) — normalized scan, then focus by address
+    hit = _find_window(classname)
+    if hit and hit.get("address") and platform._try(
+            [hypr.LuaCmd(hypr.focus_window(
+                f"address:{hit['address']}"))]):
+        return f"FOCUSED {classname} -> {hit.get('class', hit['address'])}"
     return f"SKIP (no window matching class {classname!r})"
 
 
