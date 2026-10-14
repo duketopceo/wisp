@@ -69,23 +69,6 @@ TestCase {
     compare(Cur.BEACON_HOLD_MS, 8000)
   }
 
-  function test_bubble_flips_and_never_covers_pointer() {
-    var size = { w: 300, h: 100 }, screen = { w: 1920, h: 1080 }
-    var p = Cur.bubblePlace({ x: 500, y: 300 }, size, screen)
-    compare(p.x, 518); compare(p.y, 318); compare(p.side, "right")
-    var r = Cur.bubblePlace({ x: 1900, y: 300 }, size, screen)
-    verify(r.x + size.w < 1900)
-    verify(r.side.indexOf("left") === 0)
-    var b = Cur.bubblePlace({ x: 500, y: 1070 }, size, screen)
-    verify(b.y + size.h < 1070)
-    var corner = Cur.bubblePlace({ x: 1915, y: 1075 }, size, screen)
-    var inside = 1915 >= corner.x && 1915 <= corner.x + size.w && 1075 >= corner.y && 1075 <= corner.y + size.h
-    verify(!inside)
-    // tiny screen: stays on screen
-    var t = Cur.bubblePlace({ x: 50, y: 50 }, size, { w: 320, h: 240 })
-    verify(t.x >= 0 && t.y >= 0 && t.x + size.w <= 320 && t.y + size.h <= 240)
-  }
-
   function test_dwell_and_answer_limits() {
     compare(Cur.dwellMs("one two three"), 9120)
     compare(Cur.dwellMs(""), 9000)

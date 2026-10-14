@@ -93,7 +93,7 @@ class InventorySummary(unittest.TestCase):
         from wisp import inventory
         with mock.patch.object(inventory, "load", return_value=inv):
             out = inventory.summary({})
-        self.assertIn("apps(2)", out)
+        self.assertIn("apps=firefox,godot", out)
         self.assertIn("cli=", out)
         self.assertIn("git", out)
         self.assertIn("omarchy_plugins=wisp", out)

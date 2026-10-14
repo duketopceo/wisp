@@ -1,5 +1,6 @@
 """Desktop tools: app launch/focus/close and Hyprland workspace ops."""
 import re
+import shlex
 import shutil
 
 from .. import config
@@ -72,6 +73,19 @@ def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
         return "LAUNCHED browser -> browseros"
     binname = apps.get(app)
     if not binname:
+        # not an inventory name — a URL/domain still opens via the
+        # default browser (webmail and web apps the inventory can't
+        # know); bare nouns stay SKIP so nothing arbitrary execs
+        cand = app.strip()
+        if re.match(r"^(https?://)?[\w][\w.-]*\.[a-zA-Z]{2,}(/\S*)?$",
+                    cand) and shutil.which("xdg-open"):
+            url = cand if cand.startswith(("http://", "https://")) \
+                else "https://" + cand
+            down = _wm_down()
+            if down:
+                return down
+            _exec_detached(f"xdg-open {shlex.quote(url)}")
+            return f"OPENED {url} -> default browser"
         return f"SKIP (unknown app {app!r})"
     binary = binname.split()[0]
     if not _on_path(binary):

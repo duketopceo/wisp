@@ -77,25 +77,8 @@ function beacons(points, max) {
 var BEACON_HOLD_MS = 8000
 var BEACON_LAND_MS = 280
 
-// Bubble placement: right and below the pointer (the rider offset), flip
-// left or above at screen edges, never covering the pointer hotspot.
-// pointer {x,y}, size {w,h}, screen {w,h}. Returns { x, y, side }.
-var RIDER = 18
-function bubblePlace(pointer, size, screen, margin) {
-  var m = margin === undefined ? 8 : margin
-  var x = pointer.x + RIDER, y = pointer.y + RIDER, side = "right"
-  if (x + size.w > screen.w - m) { x = pointer.x - RIDER - size.w; side = "left" }
-  if (y + size.h > screen.h - m) { y = pointer.y - RIDER - size.h; side = side === "left" ? "left-above" : "above" }
-  x = Math.max(m, Math.min(x, screen.w - m - size.w))
-  y = Math.max(m, Math.min(y, screen.h - m - size.h))
-  // clamping may slide the box back over the pointer: push it off
-  if (pointer.x >= x && pointer.x <= x + size.w && pointer.y >= y && pointer.y <= y + size.h) {
-    if (pointer.y + RIDER + size.h <= screen.h - m) y = pointer.y + RIDER
-    else y = Math.max(m, pointer.y - RIDER - size.h)
-    side = side + "+"
-  }
-  return { x: x, y: y, side: side }
-}
+// The bubble's spot is fixed (OverlayLayer: top-center under the bar) —
+// no pointer-follow placement anymore.
 
 // Bubble dwell after the answer finishes: 9 s plus 40 ms per word.
 function dwellMs(text) {

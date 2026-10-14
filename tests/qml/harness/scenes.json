@@ -308,13 +308,6 @@
    "answer": {
     "_state": "done"
    },
-   "answer_pointer": {
-    "_state": "done",
-    "pointer": {
-     "x": 420,
-     "y": 300
-    }
-   },
    "awaiting_choice": {
     "_state": "awaiting_choice"
    },

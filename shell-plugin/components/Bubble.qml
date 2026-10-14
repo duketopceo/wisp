@@ -21,13 +21,8 @@ Rectangle {
   // reply to the confirm card: the pick and the prompt id the card shows
   signal confirmChosen(string pick, string promptId)
 
-  // cursor placement: pass the pointer and screen size (both {x,y} / {w,h})
-  // and bind x, y to `place`; it flips left or above at screen edges and
-  // never covers the pointer hotspot. Null when either is unset.
-  property var pointer: null
-  property var screen: null
-  readonly property var place: (pointer && screen)
-    ? Cursor.bubblePlace(pointer, { w: width, h: height }, screen) : null
+  // the bubble's spot lives on the host (OverlayLayer pins it
+  // top-center under the bar) — the card itself just sizes and draws
   // answer width is 60 columns of the answer face
   FontMetrics { id: fm; font.family: service.fontFamily; font.pixelSize: M.font.answer }
 
