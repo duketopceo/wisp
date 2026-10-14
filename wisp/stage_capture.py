@@ -258,7 +258,18 @@ def capture_screen() -> pathlib.Path | None:
         config.RUN_DIR.mkdir(parents=True, exist_ok=True)
         r = _cancel.run(cmd, capture_output=True,
                         timeout=10, env=_pl().hypr_env())
-        return out if r.returncode == 0 and out.exists() else None
+        if r.returncode == 0 and out.exists():
+            # same normalize as the screenshot tool: logical-size image
+            # + coord grid, so model x,y maps 1:1 and HiDPI pixels don't
+            # double-map — also ~4x smaller on the wire (raw 3456x2160
+            # PNG was the biggest single payload in the first act call)
+            try:
+                from .tools.system import _normalize_shot
+                _normalize_shot(out)
+            except Exception:
+                pass
+            return out
+        return None
     except Exception:
         return None
 
