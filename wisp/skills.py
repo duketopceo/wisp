@@ -281,6 +281,208 @@ def seed() -> None:
             shutil.copytree(d, dst)
         except OSError:
             pass
+    apps_src = src / "apps"
+    if apps_src.is_dir():
+        for d in sorted(apps_src.iterdir()):
+            f = d / "SKILL.md"
+            if not f.is_file():
+                continue
+            dst = SKILLS_DIR / "apps" / d.name
+            if (dst / "SKILL.md").exists():
+                continue
+            try:
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(d, dst)
+            except OSError:
+                pass
+
+
+APP_SKILL_BUDGET = 1600  # chars (~400 tokens) cap for one matched app skill
+
+
+def _list_field(raw) -> list[str]:
+    """Parse a frontmatter list field (`a, b` or `[a, b]`) into normalized
+    lowercase items."""
+    if not raw:
+        return []
+    if isinstance(raw, (list, tuple, set)):
+        items = [str(x) for x in raw]
+    else:
+        s = str(raw).strip()
+        if s.startswith("[") and s.endswith("]"):
+            s = s[1:-1]
+        items = re.split(r"[,\s]+", s) if "," in s else s.split()
+    out: list[str] = []
+    for item in items:
+        tok = item.strip().strip("'\"").lower()
+        if tok and tok not in out:
+            out.append(tok)
+    return out
+
+
+def _norm_host(url_or_host: str | None) -> str:
+    """Normalize a URL or host string to a bare lowercase hostname without
+    `www.` or port."""
+    if not url_or_host:
+        return ""
+    s = str(url_or_host).strip().lower()
+    if "://" in s:
+        s = s.split("://", 1)[1]
+    s = s.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+    if "@" in s:
+        s = s.rsplit("@", 1)[1]
+    if ":" in s:
+        s = s.split(":", 1)[0]
+    if s.startswith("www."):
+        s = s[4:]
+    return s.strip(".")
+
+
+def _strip_frontmatter(text: str) -> str:
+    m = re.match(r"^---\n.*?\n---\n", text, re.S)
+    return text[m.end():].strip() if m else text.strip()
+
+
+def _host_score(target_host: str, candidate_host: str) -> int:
+    cand = _norm_host(candidate_host)
+    if not target_host or not cand:
+        return 0
+    if target_host == cand:
+        return 3
+    if target_host.endswith("." + cand):
+        return 2
+    return 0
+
+
+def _class_score(target_cls: str, candidate_cls: str) -> int:
+    cand = (candidate_cls or "").strip().lower()
+    if not target_cls or not cand:
+        return 0
+    if target_cls == cand:
+        return 3
+    parts = [p for p in re.split(r"[._\-/\s]+", target_cls) if p]
+    if cand in parts or target_cls.endswith("." + cand):
+        return 2
+    return 0
+
+
+def _iter_skill_files(skills_dir: Path | str | None = None) -> list[Path]:
+    """Collect candidate SKILL.md paths. When `skills_dir` is given, scan
+    `skills_dir/apps/*/SKILL.md` and `skills_dir/*/SKILL.md` only. When
+    `skills_dir` is None, scan `SKILLS_DIR` plus bundled `skills_seed/apps`."""
+    roots: list[Path] = []
+    if skills_dir is not None:
+        base = Path(skills_dir)
+        roots.extend([base / "apps", base])
+    else:
+        roots.extend([SKILLS_DIR / "apps", SKILLS_DIR, _seed_dir() / "apps", _seed_dir()])
+    seen_names: set[str] = set()
+    files: list[Path] = []
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for d in sorted(root.iterdir()):
+            if not d.is_dir() or d.name == "apps":
+                continue
+            f = d / "SKILL.md"
+            if not f.is_file():
+                continue
+            key = d.name.lower()
+            if key in seen_names:
+                continue
+            seen_names.add(key)
+            files.append(f)
+    return files
+
+
+def match_app_skill_info(
+    window_class: str,
+    url_host: str | None = None,
+    skills_dir: Path | str | None = None,
+    budget_chars: int = APP_SKILL_BUDGET,
+) -> dict | None:
+    """Match at most one app skill by `url_hosts` or `app_classes` frontmatter.
+    Browser `url_host` match always takes precedence over `window_class` match.
+    Returns metadata dict with truncated `body`, or None when nothing matches."""
+    target_cls = (window_class or "").strip().lower()
+    target_host = _norm_host(url_host)
+    if not target_cls and not target_host:
+        return None
+    cap = APP_SKILL_BUDGET if budget_chars is None else int(budget_chars)
+    if cap <= 0:
+        raise ValueError(f"app skill budget must be positive, got {budget_chars!r}")
+
+    best_host: tuple[int, str, dict] | None = None
+    best_cls: tuple[int, str, dict] | None = None
+
+    for f in _iter_skill_files(skills_dir):
+        try:
+            text = f.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        meta = _frontmatter(text)
+        name = meta.get("name", f.parent.name)
+        hosts = _list_field(meta.get("url_hosts") or meta.get("hosts"))
+        classes = _list_field(meta.get("app_classes") or meta.get("classes"))
+        body = _strip_frontmatter(text)[:cap]
+
+        if target_host and hosts:
+            hscore = max((_host_score(target_host, h) for h in hosts), default=0)
+            if hscore > 0:
+                entry = {
+                    "name": name,
+                    "description": meta.get("description", ""),
+                    "matched_by": "url_host",
+                    "body": body,
+                    "path": str(f),
+                }
+                if best_host is None or hscore > best_host[0]:
+                    best_host = (hscore, name, entry)
+
+        if target_cls and classes:
+            cscore = max((_class_score(target_cls, c) for c in classes), default=0)
+            if cscore > 0:
+                entry = {
+                    "name": name,
+                    "description": meta.get("description", ""),
+                    "matched_by": "window_class",
+                    "body": body,
+                    "path": str(f),
+                }
+                if best_cls is None or cscore > best_cls[0]:
+                    best_cls = (cscore, name, entry)
+
+    if best_host is not None:
+        return best_host[2]
+    if best_cls is not None:
+        return best_cls[2]
+    return None
+
+
+def match_app_skill(
+    window_class: str,
+    url_host: str | None = None,
+    skills_dir: Path | str | None = None,
+    budget_chars: int = APP_SKILL_BUDGET,
+    max_chars: int | None = None,
+    token_budget: int | None = None,
+) -> str:
+    """Return at most one matched app skill body within the char/token budget.
+    Browser `url_host` match takes precedence over `window_class` match.
+    Returns `""` when no skill matches."""
+    if max_chars is not None:
+        cap = int(max_chars)
+    elif token_budget is not None:
+        cap = int(token_budget) * 4
+    else:
+        cap = int(budget_chars)
+    info = match_app_skill_info(
+        window_class=window_class,
+        url_host=url_host,
+        skills_dir=skills_dir,
+        budget_chars=cap,
+    )
+    return info["body"] if info else ""
 
 
 def import_dir(src: str, preview: bool = False) -> str:
