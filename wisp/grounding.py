@@ -676,8 +676,19 @@ def ground_target(target: str, cfg: dict | None = None, *, capture=None,
                 w, h = best.size or (shot.width, shot.height)
                 x, y = x * shot.width / w, y * shot.height / h
             gx, gy = convert(x, y, best.frame, mons, output)
+            from . import trace as _trace
+            _trace.emit(_trace.current(), "ground", "act",
+                        {"target": name, "src": best.source,
+                         "conf": round(best.confidence, 3),
+                         "x": gx, "y": gy, "tried": tried,
+                         "down": down})
             return Target(gx, gy, "global", round(best.confidence, 3),
                           best.source, best.label or name, best.window)
+    from . import trace as _trace
+    _trace.emit(_trace.current(), "ground_refused", "act",
+                {"target": name, "tried": tried, "down": down,
+                 "best": (f"{best.source} {best.confidence:.2f}"
+                          if best is not None else None)})
     if best is not None:
         raise GroundRefused("ground_failed", "low_confidence",
                             f"{best.source} {best.confidence:.2f} < "
