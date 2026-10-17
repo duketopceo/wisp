@@ -13,9 +13,9 @@ The Oct 9 parity plan (U1–U8) covered the agent loop, background delivery,
 autonomy tiers and dictation. PRs #116 and #118 landed the loop and the
 act-router mode. This plan covers what HeyClicky does that wisp still does
 not: step-by-step walkthroughs that advance on the user's real click,
-draw-on-screen targets, two-stage element grounding, an app-keyed skill
-library, scheduled routines, suggestion etiquette, and a fast/deep model
-split on OpenRouter. It also records the architecture teardown of the MIT
+draw-on-screen targets, two-stage element grounding, scheduled routines, suggestion etiquette, and a fast/deep model
+split on OpenRouter, plus an app-keyed skill library (a feature HeyClicky
+removed in v1.0.49; kept as wisp's own choice). It also records the architecture teardown of the MIT
 predecessor so the borrowed mechanics have a source.
 
 Unit IDs here are `H1`–`H9`. They never renumber. The Oct 9 plan keeps
@@ -73,8 +73,11 @@ From the changelog, in order of product weight:
 2. **Draw on screen.** Target rings, arrows, highlights in a hand-drawn
    style. Highlights fade in about two seconds; drawings clear when speech
    stops. The user can also draw a region to scope a question.
-3. **App skills.** Injected skill files for about 89 apps with browser-site
-   matching, plus roughly 100 community skills.
+3. **App skills (former feature).** HeyClicky once injected skill files for
+   about 89 apps with browser-site matching, plus roughly 100 community
+   skills. Its changelog (v1.0.49) says Skills were paused and removed "for
+   now", so this is history, not a current competitor feature. H4 stays as
+   wisp's own design choice.
 4. **Named agents ("Clickys") and routines.** Persistent personas with their
    own memory, chat and file folder. Routines are scheduled runs; results
    land quietly with an unread dot; missed runs wait; pause after three
