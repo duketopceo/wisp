@@ -202,16 +202,19 @@ def run_act_loop(task: str, cfg: dict, state=None,
         shot = tools.run("screenshot", "", cfg, harness)
         if shot.startswith("SHOT "):
             import pathlib as _pl
-            try:
-                initial_image = base64.b64encode(
-                    _pl.Path(shot[5:].strip()).read_bytes()).decode()
-            except OSError:
-                pass
+            from .tools.system import model_image
+            initial_image = model_image(_pl.Path(shot[5:].strip()))
     if initial_image:
         # screen at trigger — the model sees the app, no "what app" ask.
         # Name the pixel space: models click more accurately when they
         # know the image's true dimensions.
-        dims = _png_dims(initial_image)
+        if initial_image.startswith("data:"):
+            url = initial_image
+            b64 = url.split(",", 1)[1]
+        else:
+            url = f"data:image/png;base64,{initial_image}"
+            b64 = initial_image
+        dims = _img_dims(b64)
         cap = ""
         if dims:
             cap = (f"[screen image: {dims[0]}x{dims[1]} px — "
@@ -224,9 +227,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
                         "center (x,y)")
             cap += "]\n\n"
         user_msg = [{"type": "text", "text": cap + user_msg},
-                    {"type": "image_url",
-                     "image_url": {"url": f"data:image/png;base64,"
-                                          f"{initial_image}"}}]
+                    {"type": "image_url", "image_url": {"url": url}}]
     messages = [{"role": "system", "content": system},
                 {"role": "user", "content": user_msg}]
     steps = steps_out if steps_out is not None else []
@@ -879,15 +880,30 @@ def _publish_guide(state, name: str, arg: str, result: str) -> None:
         pass
 
 
-def _png_dims(b64: str) -> tuple | None:
-    """(w,h) from a base64 PNG's IHDR — no decoder needed."""
+def _img_dims(b64: str) -> tuple | None:
+    """(w,h) from a base64 PNG IHDR or JPEG SOF — no decoder needed."""
     import struct
     try:
-        raw = base64.b64decode(b64[:40])[:26]
-        if raw[:8] == b"\x89PNG\r\n\x1a\n" and raw[12:16] == b"IHDR":
-            return struct.unpack(">II", raw[16:24])
-    except (ValueError, TypeError, struct.error):
-        pass
+        raw = base64.b64decode(b64[:520])
+    except (ValueError, TypeError):
+        return None
+    if raw[:8] == b"\x89PNG\r\n\x1a\n" and raw[12:16] == b"IHDR":
+        return struct.unpack(">II", raw[16:24])
+    if raw[:2] == b"\xff\xd8":          # JPEG: scan segments for SOF
+        i = 2
+        while i + 9 < len(raw):
+            if raw[i] != 0xFF:
+                i += 1
+                continue
+            m = raw[i + 1]
+            if m in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7,
+                     0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF):
+                h, w = struct.unpack(">HH", raw[i + 5:i + 9])
+                return w, h
+            if m in (0xD8, 0xD9) or 0xD0 <= m <= 0xD7:
+                i += 2
+                continue
+            i += 2 + struct.unpack(">H", raw[i + 2:i + 4])[0]
     return None
 
 
@@ -898,13 +914,12 @@ def _attach_image(messages: list, path: str, cfg: dict | None = None,
     most MAX_IMAGES image parts in the window (oldest dropped). `why`
     prefaces the caption when a re-observe exists to VERIFY the last
     mutating step rather than to plan the next one (U4)."""
-    import pathlib
-    try:
-        b64 = base64.b64encode(
-            pathlib.Path(path).read_bytes()).decode()
-    except OSError:
+    from .tools.system import model_image
+    url = model_image(path)
+    if not url:
         return
-    dims = _png_dims(b64)
+    b64 = url.split(",", 1)[1]
+    dims = _img_dims(b64)
     # drop oldest image parts beyond the cap
     kept = 0
     for m in reversed(messages):
@@ -929,5 +944,4 @@ def _attach_image(messages: list, path: str, cfg: dict | None = None,
     caption += "):" if dims else ":"
     messages.append({"role": "user", "content": [
         {"type": "text", "text": caption},
-        {"type": "image_url",
-         "image_url": {"url": f"data:image/png;base64,{b64}"}}]})
+        {"type": "image_url", "image_url": {"url": url}}]})
