@@ -259,6 +259,19 @@ def _normalize_shot(path, output: str | None = None) -> None:
     if not w or not h:
         return
     points.SHOT_ORIGIN = (x, y)
+    import os as _os
+    import time as _time
+    t0 = _time.monotonic()
+    in_bytes = in_w = in_h = 0
+    try:
+        with open(path, "rb") as f:
+            head = f.read(26)
+        if head[:8] == b"\x89PNG\r\n\x1a\n":
+            import struct
+            in_w, in_h = struct.unpack(">II", head[16:24])
+        in_bytes = _os.path.getsize(path)
+    except OSError:
+        pass
     try:
         draw = " ".join(
             [f"line {gx},0 {gx},{h}" for gx in range(100, w, 100)]
@@ -271,6 +284,13 @@ def _normalize_shot(path, output: str | None = None) -> None:
              "-fill", "rgba(255,80,80,0.9)", "-pointsize", "12",
              "-draw", draw, str(path)],
             capture_output=True, timeout=15)
+        from .. import trace as _trace
+        _trace.emit(_trace.current(), "shot_normalize", "act",
+                    {"in": f"{in_w}x{in_h}", "in_kb": in_bytes // 1024,
+                     "out": f"{w}x{h}",
+                     "out_kb": _os.path.getsize(path) // 1024,
+                     "origin": [x, y]},
+                    ms=round((_time.monotonic() - t0) * 1000))
     except (OSError, subprocess.SubprocessError):
         pass
 

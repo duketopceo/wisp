@@ -394,6 +394,7 @@ def context_stage(ctx) -> None:
             ctx.shot_b64 = pl.turn_screenshot(cfg, speculative)
         _trace.emit(turn, "screen_capture", "act",
                     {"captured": bool(ctx.shot_b64),
+                     "img_kb": len(ctx.shot_b64 or "") * 3 // 4096,
                      "speculative": bool(speculative)})
     wins = speculative.take("windows") if speculative else None
     if wins:
