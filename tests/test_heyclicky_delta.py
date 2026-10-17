@@ -1,5 +1,6 @@
 """HeyClicky teardown delta tests: H1 walkthrough, H2 drawing tags,
-H3 pointing resolution, H6 suggestion etiquette, H8 volatile memory.
+H3 pointing resolution, H4 app skills, H5 routines, H6 suggestion etiquette,
+H7 conversation grants, H8 volatile memory, H9 talk/deep lanes.
 
 Reference functions prefixed `clicky_` are literal Python translations of
 farzaa/clicky (MIT) Swift source, used as the oracle for changed-input
@@ -15,7 +16,18 @@ import unittest
 from datetime import date
 from unittest import mock
 
-from wisp import grounding, memory, points, suggest_policy, walkthrough
+from wisp import (
+    cancel,
+    conversation_grants,
+    grounding,
+    lanes,
+    memory,
+    points,
+    routines,
+    skills,
+    suggest_policy,
+    walkthrough,
+)
 
 
 # ------------------------------------------------------------ clicky oracle
@@ -487,6 +499,332 @@ class TestVolatileMemory(unittest.TestCase):
         self.assertTrue(memory.run("volatile|remove|on call|")
                         .startswith("OK"))
         self.assertEqual(memory.volatile_snapshot(), "")
+
+
+# ------------------------------------------------------------------ H4
+
+class TestAppSkills(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.skills_dir = pathlib.Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _write_skill(self, slug: str, app_classes: str = "",
+                     url_hosts: str = "", body: str = "skill body"):
+        d = self.skills_dir / "apps" / slug
+        d.mkdir(parents=True, exist_ok=True)
+        lines = ["---", f"name: {slug}", f"description: {slug} notes"]
+        if app_classes:
+            lines.append(f"app_classes: {app_classes}")
+        if url_hosts:
+            lines.append(f"url_hosts: {url_hosts}")
+        lines.extend(["---", f"# {slug}", "", body])
+        (d / "SKILL.md").write_text("\n".join(lines) + "\n")
+
+    def test_window_class_match_and_unknown_app_returns_empty(self):
+        self._write_skill("chromium", app_classes="chromium, google-chrome",
+                          body="Ctrl+L focuses omnibox")
+        self._write_skill("gimp", app_classes="gimp, org.gimp.gimp",
+                          body="Ctrl+Shift+E exports")
+        matched = skills.match_app_skill("chromium", skills_dir=self.skills_dir)
+        self.assertIn("# chromium", matched)
+        self.assertIn("Ctrl+L focuses omnibox", matched)
+        self.assertEqual(
+            skills.match_app_skill("unknown-app-xyz", skills_dir=self.skills_dir),
+            "",
+        )
+
+    def test_url_host_takes_precedence_over_window_class(self):
+        self._write_skill("chromium", app_classes="chromium",
+                          body="generic browser notes")
+        self._write_skill("github", url_hosts="github.com, gist.github.com",
+                          body="press T to find file")
+        # Browser on github.com -> github skill wins over chromium class
+        matched = skills.match_app_skill(
+            "chromium",
+            url_host="https://www.github.com/duketopceo/wisp/pulls",
+            skills_dir=self.skills_dir,
+        )
+        self.assertIn("# github", matched)
+        self.assertNotIn("generic browser notes", matched)
+        # Browser on unindexed site -> falls back to chromium class skill
+        fallback = skills.match_app_skill(
+            "chromium",
+            url_host="https://example.org/docs",
+            skills_dir=self.skills_dir,
+        )
+        self.assertIn("# chromium", fallback)
+
+    def test_token_and_char_budget_respected(self):
+        long_body = "A" * 2000
+        self._write_skill("nvim", app_classes="nvim", body=long_body)
+        capped = skills.match_app_skill(
+            "nvim", skills_dir=self.skills_dir, budget_chars=120
+        )
+        self.assertLessEqual(len(capped), 120)
+        tok_capped = skills.match_app_skill(
+            "nvim", skills_dir=self.skills_dir, token_budget=25
+        )
+        self.assertLessEqual(len(tok_capped), 100)
+
+    def test_seed_app_skills_present_and_matchable(self):
+        expected = (
+            "hyprland", "chromium", "firefox", "nvim", "vscode", "gimp",
+            "libreoffice", "obsidian", "kitty", "spotify", "thunderbird",
+            "steam", "nautilus", "1password",
+        )
+        seed_apps = skills._seed_dir() / "apps"
+        for name in expected:
+            with self.subTest(seed=name):
+                self.assertTrue((seed_apps / name / "SKILL.md").is_file())
+        body = skills.match_app_skill("firefox")
+        self.assertIn("# firefox", body)
+
+
+# ------------------------------------------------------------------ H5
+
+class TestRoutines(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.store_path = pathlib.Path(self.tmp.name) / "routines.json"
+        self.store = routines.RoutineStore(self.store_path)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_generate_systemd_units_includes_persistent_and_exec(self):
+        r = routines.Routine(
+            id="inbox-digest",
+            name="Inbox Digest",
+            task="summarize unread messages",
+            schedule="*-*-* 08:00:00",
+        )
+        units = routines.generate_systemd_units(r)
+        svc, tmr = units
+        self.assertEqual(svc, units["service"])
+        self.assertEqual(tmr, units["timer"])
+        self.assertIn("[Unit]", svc)
+        self.assertIn("[Service]", svc)
+        self.assertIn("Type=oneshot", svc)
+        self.assertIn("wispd agents run inbox-digest", svc)
+        self.assertIn("[Timer]", tmr)
+        self.assertIn("OnCalendar=*-*-* 08:00:00", tmr)
+        self.assertIn("Persistent=true", tmr)
+        self.assertIn("[Install]", tmr)
+        self.assertIn("WantedBy=timers.target", tmr)
+
+    def test_first_opt_in_gate_refusal_creates_nothing(self):
+        prompts = []
+        created = self.store.create(
+            "Morning check",
+            task="check PRs",
+            schedule="daily",
+            confirm_fn=lambda p: (prompts.append(p), False)[1],
+        )
+        self.assertIsNone(created)
+        self.assertEqual(len(prompts), 1)
+        self.assertEqual(self.store.list(), [])
+        self.assertFalse(self.store.has_opted_in())
+
+    def test_first_opt_in_gate_approves_then_subsequent_skips_prompt(self):
+        prompts = []
+        r1 = self.store.create(
+            "Morning check",
+            task="check PRs",
+            schedule="daily",
+            confirm_fn=lambda p: (prompts.append(p), True)[1],
+        )
+        self.assertIsNotNone(r1)
+        self.assertEqual(len(prompts), 1)
+        self.assertTrue(self.store.has_opted_in())
+        # Second routine does not need to prompt again
+        r2 = self.store.create("Evening check", task="check CI", schedule="daily")
+        self.assertIsNotNone(r2)
+        self.assertEqual(len(self.store.list()), 2)
+
+    def test_quiet_completion_sets_unread_and_never_speaks(self):
+        self.store.create("Digest", task="run digest", opt_in=True)
+        out = routines.record_routine_outcome("digest", ok=True, store=self.store)
+        self.assertTrue(out["ok"])
+        self.assertTrue(out["unread"])
+        self.assertFalse(out["speak"])
+        self.assertFalse(out["paused"])
+        loaded = self.store.get("digest")
+        self.assertTrue(loaded.unread)
+        self.store.mark_read("digest")
+        self.assertFalse(self.store.get("digest").unread)
+
+    def test_auto_pauses_after_three_consecutive_failures(self):
+        self.store.create("Flaky check", task="check feed", opt_in=True)
+        r1 = routines.record_routine_outcome("flaky-check", ok=False, store=self.store)
+        self.assertFalse(r1["paused"])
+        self.assertEqual(r1["consecutive_failures"], 1)
+        r2 = routines.record_routine_outcome("flaky-check", ok=False, store=self.store)
+        self.assertFalse(r2["paused"])
+        self.assertEqual(r2["consecutive_failures"], 2)
+        r3 = routines.record_routine_outcome("flaky-check", ok=False, store=self.store)
+        self.assertTrue(r3["paused"])
+        self.assertTrue(r3["auto_paused"])
+        self.assertTrue(r3["notify_user_once"])
+        self.assertEqual(r3["consecutive_failures"], 3)
+        # Subsequent failure while already paused does not notify a second time
+        r4 = routines.record_routine_outcome("flaky-check", ok=False, store=self.store)
+        self.assertTrue(r4["paused"])
+        self.assertFalse(r4["notify_user_once"])
+
+
+# ------------------------------------------------------------------ H7
+
+class TestConversationGrants(unittest.TestCase):
+    def test_hard_stop_kinds_constant(self):
+        self.assertEqual(
+            conversation_grants.HARD_STOP_KINDS,
+            frozenset({"purchase", "send", "delete", "payment"}),
+        )
+
+    def test_parse_voice_grant_reply(self):
+        parse = conversation_grants.parse_voice_grant_reply
+        for phrase in ("allow once", "just once", "once", "yes", "go ahead", "sure"):
+            with self.subTest(phrase=phrase):
+                self.assertEqual(parse(phrase), "allow_once")
+        for phrase in ("always", "always allow", "every time", "for this app"):
+            with self.subTest(phrase=phrase):
+                self.assertEqual(parse(phrase), "always")
+        for phrase in ("not now", "no", "nope", "cancel", "deny", "never", "don't allow"):
+            with self.subTest(phrase=phrase):
+                self.assertEqual(parse(phrase), "not_now")
+        self.assertIsNone(parse(""))
+        self.assertIsNone(parse("what time is it"))
+
+    def test_grant_scoping_by_conversation_and_app_class(self):
+        mgr = conversation_grants.ConversationGrantManager()
+        s_chr = conversation_grants.GrantScope("conv-1", "chromium")
+        s_gimp = conversation_grants.GrantScope("conv-1", "gimp")
+        s_conv2_chr = conversation_grants.GrantScope("conv-2", "chromium")
+        s_conv2_kitty = conversation_grants.GrantScope("conv-2", "kitty")
+
+        # allow_once permits exactly one action in (conv-1, gimp)
+        mgr.record_decision(s_gimp, "allow_once")
+        self.assertFalse(mgr.is_granted(s_chr))
+        self.assertTrue(mgr.authorize(s_gimp, "click"))
+        self.assertFalse(mgr.is_granted(s_gimp))
+
+        # always persists across turns for the app_class, not other apps
+        mgr.record_decision(s_chr, "always")
+        self.assertTrue(mgr.is_granted(s_chr))
+        self.assertTrue(mgr.is_granted(s_conv2_chr))
+        self.assertFalse(mgr.is_granted(s_conv2_kitty))
+
+    def test_hard_stop_cannot_be_bypassed_by_always(self):
+        mgr = conversation_grants.ConversationGrantManager()
+        scope = conversation_grants.GrantScope("conv-1", "chromium")
+        mgr.record_decision(scope, "always")
+        self.assertTrue(mgr.is_granted(scope, action_kind="click"))
+
+        for kind in conversation_grants.HARD_STOP_KINDS:
+            with self.subTest(kind=kind):
+                self.assertFalse(mgr.is_granted(scope, action_kind=kind))
+                prompts = []
+                allowed = mgr.authorize(
+                    scope,
+                    action_kind=kind,
+                    prompt_fn=lambda sc, k: (prompts.append((sc, k)), "allow once")[1],
+                )
+                self.assertTrue(allowed)
+                self.assertEqual(len(prompts), 1)
+                # Still not granted for the next hard-stop action
+                self.assertFalse(mgr.is_granted(scope, action_kind=kind))
+
+    def test_five_step_conversation_prompts_once_with_always(self):
+        mgr = conversation_grants.ConversationGrantManager()
+        scope = conversation_grants.GrantScope("conv-42", "libreoffice")
+        prompts = 0
+
+        def prompt_fn(_sc, _kind):
+            nonlocal prompts
+            prompts += 1
+            return "always"
+
+        for step in ("click", "type_text", "click", "scroll", "key"):
+            self.assertTrue(mgr.authorize(scope, action_kind=step, prompt_fn=prompt_fn))
+        self.assertEqual(prompts, 1)
+        self.assertEqual(sum(1 for e in mgr.audit_log if e["prompted"]), 1)
+
+
+# ------------------------------------------------------------------ H9
+
+class TestLanes(unittest.TestCase):
+    def test_talk_lane_budget_and_selection_table(self):
+        talk = lanes.select_lane(mode="talk", needs_tools=False, is_walkthrough_verify=False)
+        self.assertEqual(talk, "talk")
+        self.assertEqual(talk.name, "talk")
+        self.assertEqual(talk.first_token_budget_ms, 1500)
+        self.assertAlmostEqual(talk.first_token_s, 1.5)
+        self.assertTrue(talk.streaming)
+        self.assertTrue(talk.vision)
+
+        # Walkthrough verification always selects talk lane when tools not needed
+        wt_verify = lanes.select_lane(
+            mode="act", needs_tools=False, is_walkthrough_verify=True
+        )
+        self.assertEqual(wt_verify.name, "talk")
+        self.assertEqual(wt_verify.first_token_budget_ms, 1500)
+
+        # Needs tools or agent/act mode -> deep lane
+        deep_tools = lanes.select_lane(
+            mode="talk", needs_tools=True, is_walkthrough_verify=False
+        )
+        self.assertEqual(deep_tools, "deep")
+        self.assertEqual(deep_tools.name, "deep")
+        self.assertTrue(deep_tools.supports_tools)
+
+        deep_act = lanes.select_lane(
+            mode="act", needs_tools=False, is_walkthrough_verify=False
+        )
+        self.assertEqual(deep_act.name, "deep")
+
+    def test_lane_ledger_records_per_lane_spend_and_latency(self):
+        led = lanes.LaneLedger()
+        led.record("talk", usd=0.0012, latency_ms=820, tokens_in=300, tokens_out=40)
+        led.record("talk", usd=0.0008, latency_ms=1180, tokens_in=250, tokens_out=30)
+        led.record("deep", usd=0.0250, latency_ms=2600, tokens_in=2000, tokens_out=400)
+
+        summary = led.summary()
+        self.assertEqual(summary["talk"]["calls"], 2)
+        self.assertAlmostEqual(summary["talk"]["usd"], 0.0020)
+        self.assertEqual(summary["talk"]["within_budget_count"], 2)
+        self.assertLessEqual(summary["talk"]["p50_ms"], 1500)
+
+        self.assertEqual(summary["deep"]["calls"], 1)
+        self.assertAlmostEqual(summary["deep"]["usd"], 0.0250)
+        self.assertEqual(summary["deep"]["p50_ms"], 2600.0)
+        self.assertAlmostEqual(summary["total_usd"], 0.0270)
+
+    def test_barge_in_controller_cancels_tts_and_stream(self):
+        tok = cancel.CancelToken()
+        tts_stopped = []
+        stream_closed = []
+        speaker = mock.Mock()
+
+        ctrl = lanes.BargeInController(
+            stream_token=tok,
+            tts_stop=lambda: tts_stopped.append(True),
+            speaker=speaker,
+            stream_close=lambda: stream_closed.append(True),
+        )
+        self.assertFalse(ctrl.is_cancelled)
+        res = ctrl.barge_in("user_spoke")
+        self.assertTrue(res["cancelled"])
+        self.assertTrue(res["tts_cancelled"])
+        self.assertTrue(res["stream_cancelled"])
+        self.assertTrue(tok.cancelled)
+        self.assertTrue(ctrl.tts_token.cancelled)
+        self.assertEqual(tts_stopped, [True])
+        self.assertEqual(stream_closed, [True])
+        speaker.stop.assert_called_once()
+        self.assertTrue(ctrl.is_cancelled)
 
 
 if __name__ == "__main__":
