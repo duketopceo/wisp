@@ -408,7 +408,9 @@ def match_app_skill_info(
     target_host = _norm_host(url_host)
     if not target_cls and not target_host:
         return None
-    cap = max(1, int(budget_chars)) if budget_chars else APP_SKILL_BUDGET
+    cap = APP_SKILL_BUDGET if budget_chars is None else int(budget_chars)
+    if cap <= 0:
+        raise ValueError(f"app skill budget must be positive, got {budget_chars!r}")
 
     best_host: tuple[int, str, dict] | None = None
     best_cls: tuple[int, str, dict] | None = None

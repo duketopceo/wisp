@@ -12,9 +12,12 @@ on user barge-in.
 from __future__ import annotations
 
 import dataclasses
+import logging
 from typing import Callable
 
 from . import cancel
+
+_log = logging.getLogger(__name__)
 
 TALK_LANE = "talk"
 DEEP_LANE = "deep"
@@ -347,29 +350,35 @@ class BargeInController:
     def barge_in(self, reason: str = "user_speech") -> dict:
         """Cancel both TTS output and the in-flight LLM stream immediately."""
         self.stream_token.cancel()
+        stream_ok = True
         if self._stream_close is not None:
             try:
                 self._stream_close()
-            except Exception:
-                pass
-        self.stream_cancelled = True
+            except Exception as exc:
+                stream_ok = False
+                _log.warning("barge-in: stream close failed: %r", exc)
+        self.stream_cancelled = stream_ok
 
         self.tts_token.cancel()
+        tts_ok = True
         if self._tts_stop is not None:
             try:
                 self._tts_stop()
-            except Exception:
-                pass
+            except Exception as exc:
+                tts_ok = False
+                _log.warning("barge-in: tts stop failed: %r", exc)
         if self._speaker is not None:
             for attr in ("stop", "cancel", "terminate", "kill"):
                 fn = getattr(self._speaker, attr, None)
                 if callable(fn):
                     try:
                         fn()
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        tts_ok = False
+                        _log.warning("barge-in: speaker.%s failed: %r",
+                                     attr, exc)
                     break
-        self.tts_cancelled = True
+        self.tts_cancelled = tts_ok
 
         self.barge_in_count += 1
         self.last_reason = reason
@@ -392,6 +401,9 @@ class BargeInController:
         )
 
     def reset(self) -> None:
+        # A closer belongs to the stream it was attached for; a new turn
+        # must attach its own, never inherit the dead one.
+        self._stream_close = None
         self.stream_token = cancel.CancelToken()
         self.tts_token = cancel.CancelToken()
         self.tts_cancelled = False

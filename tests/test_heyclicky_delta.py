@@ -698,6 +698,14 @@ class TestConversationGrants(unittest.TestCase):
         self.assertIsNone(parse(""))
         self.assertIsNone(parse("what time is it"))
 
+    def test_parse_curly_apostrophe_denial_and_negated_always(self):
+        parse = conversation_grants.parse_voice_grant_reply
+        self.assertEqual(parse("don\u2019t allow"), "not_now")
+        self.assertEqual(parse("not always, just this once"), "allow_once")
+        self.assertEqual(parse("not always"), "not_now")
+        self.assertEqual(parse("always, just this once"), "allow_once")
+        self.assertEqual(parse("always"), "always")
+
     def test_grant_scoping_by_conversation_and_app_class(self):
         mgr = conversation_grants.ConversationGrantManager()
         s_chr = conversation_grants.GrantScope("conv-1", "chromium")
@@ -711,10 +719,11 @@ class TestConversationGrants(unittest.TestCase):
         self.assertTrue(mgr.authorize(s_gimp, "click"))
         self.assertFalse(mgr.is_granted(s_gimp))
 
-        # always persists across turns for the app_class, not other apps
+        # always persists across turns for this conversation + app_class,
+        # not other apps and not other conversations
         mgr.record_decision(s_chr, "always")
         self.assertTrue(mgr.is_granted(s_chr))
-        self.assertTrue(mgr.is_granted(s_conv2_chr))
+        self.assertFalse(mgr.is_granted(s_conv2_chr))
         self.assertFalse(mgr.is_granted(s_conv2_kitty))
 
     def test_hard_stop_cannot_be_bypassed_by_always(self):
@@ -825,6 +834,171 @@ class TestLanes(unittest.TestCase):
         self.assertEqual(stream_closed, [True])
         speaker.stop.assert_called_once()
         self.assertTrue(ctrl.is_cancelled)
+
+
+class TestReviewRegressions(unittest.TestCase):
+    """Regressions for PR #124 review findings."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.d = pathlib.Path(self.tmp.name)
+        self.p = [mock.patch.object(memory, "MEMORY_FILE", self.d / "MEMORY.md"),
+                  mock.patch.object(memory, "USER_FILE", self.d / "USER.md"),
+                  mock.patch.object(memory, "VOLATILE_FILE",
+                                    self.d / "VOLATILE.md")]
+        for p in self.p:
+            p.start()
+
+    def tearDown(self):
+        for p in self.p:
+            p.stop()
+        self.tmp.cleanup()
+
+    # memory
+    def test_volatile_write_enforces_line_cap(self):
+        body = "\n".join(f"- f{i} | until: 2099-01-01" for i in range(41))
+        self.assertTrue(memory.edit("volatile", "write", new=body).startswith("FAIL"))
+
+    def test_context_read_persists_expiry_compaction(self):
+        (self.d / "VOLATILE.md").write_text(
+            "# Volatile\n- old | until: 2000-01-01\n- new | until: 2099-01-01\n")
+        memory.volatile_snapshot()
+        self.assertNotIn("old", (self.d / "VOLATILE.md").read_text())
+
+    def test_multiline_fact_is_folded_to_one_line(self):
+        self.assertTrue(memory.add_volatile("one\ntwo", today="2026-10-16")
+                        .startswith("OK"))
+        got = memory.load_volatile(today="2026-10-16")
+        self.assertEqual([e.text for e in got], ["one two"])
+
+    def test_past_expiry_does_not_delete_live_entry(self):
+        memory.add_volatile("keep me", today="2026-10-16")
+        r = memory.add_volatile("keep me", until="2026-10-01", today="2026-10-16")
+        self.assertTrue(r.startswith("FAIL"))
+        self.assertEqual(len(memory.load_volatile(today="2026-10-16")), 1)
+
+    def test_cap_eviction_of_new_fact_reports_failure(self):
+        for i in range(3):
+            memory.add_volatile(f"f{i}", until="2026-12-31", today="2026-10-16",
+                                max_lines=3)
+        r = memory.add_volatile("soon", until="2026-10-20", today="2026-10-16",
+                                max_lines=3)
+        self.assertTrue(r.startswith("FAIL"))
+        self.assertEqual(len(memory.load_volatile(today="2026-10-16",
+                                                  max_lines=3)), 3)
+
+    def test_promote_not_fooled_by_substring_memory_match(self):
+        memory.edit("memory", "add", new="not on call this week")
+        memory.add_volatile("on call this week", today="2026-10-16")
+        r = memory.promote_volatile_entry("on call this week", today="2026-10-16")
+        self.assertTrue(r.startswith("OK"))
+        mem = (self.d / "MEMORY.md").read_text().splitlines()
+        self.assertIn("- on call this week", mem)
+
+    # points
+    def test_bad_monitor_scale_falls_back_to_one(self):
+        for bad in (-2, "auto", float("nan"), 0, None):
+            self.assertEqual(points._scale_of({"scale": bad}), 1.0)
+        self.assertEqual(points._scale_of({"scale": 2}), 2.0)
+
+    def test_points_json_label_screen_suffix_matches_point_tag(self):
+        _, d = points.extract_drawings(
+            '[POINTS:[{"x":1,"y":2,"label":"terminal:screen2"}]]')
+        self.assertEqual(d[0]["label"], "terminal")
+        self.assertEqual(d[0]["screen"], 2)
+
+    # suggest policy
+    def test_expired_pause_does_not_disable_later_backoff(self):
+        r = suggest_policy.evaluate_suggestion_etiquette(
+            local_hour=12, paused_until_day="2026-10-23",
+            dismissal_streak_days=3, current_day="2026-10-26")
+        self.assertEqual(r["reason"], "dismissal_streak")
+
+    def test_default_hour_and_day_share_one_clock(self):
+        with mock.patch.object(suggest_policy, "datetime") as dt:
+            dt.now.return_value = __import__("datetime").datetime(
+                2026, 10, 16, 3, 0)
+            r = suggest_policy.evaluate_suggestion_etiquette()
+        self.assertEqual(r["reason"], "before_6am")
+
+    # walkthrough
+    def test_loading_markers_need_word_boundaries(self):
+        for t in ("Downloading", "Uploading", "Opening Hours.pdf",
+                  "Connecting Devices"):
+            self.assertFalse(walkthrough.is_loading_state(_win(title=t), _win(title=t)), t)
+        self.assertTrue(walkthrough.is_loading_state(_win(title="Loading"), _win(title="Loading")))
+
+    def test_window_only_snapshot_can_reach_prompt_stuck(self):
+        wt = walkthrough.Walkthrough("t", steps=["a"])
+        wt.issue_step(now=0)
+        w = {"title": "Settings", "class": "gnome-control-center"}
+        self.assertEqual(wt.observe(w, dict(w), elapsed_s=30)["action"],
+                         "prompt_stuck")
+
+    def test_same_text_different_label_steps_are_distinct(self):
+        wt = walkthrough.Walkthrough("t", steps=[])
+        a = walkthrough.Step("click here", label="Save")
+        b = walkthrough.Step("click here", label="Cancel")
+        wt.mark_done(a) if hasattr(wt, "mark_done") else None
+        self.assertFalse(wt.has_completed(b))
+
+    # grants
+    def test_always_does_not_cross_conversations(self):
+        m = conversation_grants.ConversationGrantManager()
+        m.record_decision(conversation_grants.GrantScope("c1", "chromium"), "always")
+        self.assertFalse(m.is_granted(conversation_grants.GrantScope("c2", "chromium")))
+
+    # lanes
+    def test_barge_in_reports_failed_close_and_reset_clears_closer(self):
+        def boom():
+            raise RuntimeError("x")
+        c = lanes.BargeInController(stream_close=boom)
+        with self.assertLogs("wisp.lanes", level="WARNING"):
+            r = c.barge_in()
+        self.assertFalse(r["stream_cancelled"])
+        c.reset()
+        self.assertIsNone(c._stream_close)
+
+    # routines
+    def test_unit_text_rejects_injection(self):
+        r = routines.Routine(id="r", name="a\rb%h", task="t", schedule="daily")
+        u = routines.generate_systemd_units(r)
+        self.assertNotIn("\r", u.service)
+        self.assertIn("%%h", u.service)
+        bad = routines.Routine(id="r", name="n", task="t", schedule="daily\\")
+        with self.assertRaises(ValueError):
+            routines.generate_systemd_units(bad)
+        with self.assertRaises(ValueError):
+            routines.generate_systemd_units(r, wispd_bin="x\nExecStart=evil")
+
+    def test_corrupt_store_is_moved_aside_not_overwritten(self):
+        path = self.d / "routines.json"
+        path.write_text("{not json")
+        st = routines.RoutineStore(path)
+        self.assertEqual(st.list(), [])
+        self.assertTrue(list(self.d.glob("routines.json.corrupt-*")))
+
+    def test_confirm_fn_does_not_reprompt_after_opt_in(self):
+        st = routines.RoutineStore(self.d / "r.json")
+        st.set_opted_in(True)
+        calls = []
+        ok = routines.require_first_opt_ingate(
+            confirm_fn=lambda p: calls.append(p) or True, store=st)
+        self.assertTrue(ok)
+        self.assertEqual(calls, [])
+
+    def test_outcome_for_unknown_routine_writes_nothing(self):
+        st = routines.RoutineStore(self.d / "r.json")
+        out = routines.record_routine_outcome("ghost", ok=True, store=st)
+        self.assertEqual(out["error"], "unknown_routine")
+        self.assertFalse(st.has_opted_in())
+        self.assertFalse((self.d / "r.json").exists())
+
+    # skills
+    def test_non_positive_app_skill_budget_rejected(self):
+        for bad in (0, -5):
+            with self.assertRaises(ValueError):
+                skills.match_app_skill_info("chromium", budget_chars=bad)
 
 
 if __name__ == "__main__":

@@ -88,15 +88,30 @@ def extract(text: str) -> tuple[str, list[dict]]:
 extract_points = extract
 
 
-def _add(points: list, x, y, label, screen: int | None = None) -> None:
-    if len(points) >= MAX_POINTS:
-        return
+def _scale_of(m: dict) -> float:
+    """A monitor's scale, or 1.0 unless it is a finite positive number."""
+    try:
+        v = float(m.get("scale", 1) or 1)
+    except (TypeError, ValueError):
+        return 1.0
+    return v if math.isfinite(v) and v > 0 else 1.0
+
+
+def _split_screen_label(label, screen: int | None = None):
+    """Move a trailing `:screenN` out of `label` -> (label, screen)."""
     lbl = str(label).strip()
     if screen is None and lbl:
         m = re.search(r":screen(\d+)\s*$", lbl)
         if m:
             screen = int(m.group(1))
             lbl = lbl[:m.start()].strip()
+    return lbl, screen
+
+
+def _add(points: list, x, y, label, screen: int | None = None) -> None:
+    if len(points) >= MAX_POINTS:
+        return
+    lbl, screen = _split_screen_label(label, screen)
     item = {"x": int(x), "y": int(y), "label": lbl[:MAX_LABEL]}
     if screen is not None:
         item["screen"] = int(screen)
@@ -111,7 +126,7 @@ _DRAW_TAG_RE = re.compile(
 def _map_px_point(x: int, y: int, mons: list[dict]) -> tuple[int, int, float]:
     """Map one screenshot-pixel (x, y) to (logical_x, logical_y, scale)."""
     for m in reversed(mons):
-        s = float(m.get("scale", 1) or 1)
+        s = _scale_of(m)
         ox, oy = m.get("x", 0) * s, m.get("y", 0) * s
         if (ox <= x < ox + m.get("width", 0)
                 and oy <= y < oy + m.get("height", 0)):
@@ -184,14 +199,17 @@ def extract_drawings(text: str,
                     if len(drawings) < MAX_DRAWINGS:
                         px = int(p.get("x"))
                         py = int(p.get("y"))
-                        lbl = str(p.get("label", "")).strip()[:MAX_LABEL]
-                        drawings.append({
+                        lbl, scr = _split_screen_label(p.get("label", ""))
+                        item = {
                             "kind": "point",
                             "type": "point",
                             "x": px,
                             "y": py,
-                            "label": lbl,
-                        })
+                            "label": lbl[:MAX_LABEL],
+                        }
+                        if scr is not None:
+                            item["screen"] = scr
+                        drawings.append(item)
             except (json.JSONDecodeError, KeyError, TypeError,
                     ValueError, AttributeError):
                 pass
@@ -215,11 +233,7 @@ def extract_drawings(text: str,
                         try:
                             px, py = int(xy[0].strip()), int(xy[1].strip())
                             lbl = label.strip()
-                            screen = None
-                            sm = re.search(r":screen(\d+)\s*$", lbl)
-                            if sm:
-                                screen = int(sm.group(1))
-                                lbl = lbl[:sm.start()].strip()
+                            lbl, screen = _split_screen_label(lbl)
                             item = {
                                 "kind": "point",
                                 "type": "point",
@@ -317,9 +331,9 @@ def logical_bbox(mons: list[dict]) -> tuple:
     x0 = min(m.get("x", 0) for m in mons)
     y0 = min(m.get("y", 0) for m in mons)
     x1 = max(m.get("x", 0) + m.get("width", 0)
-             / float(m.get("scale", 1) or 1) for m in mons)
+             / _scale_of(m) for m in mons)
     y1 = max(m.get("y", 0) + m.get("height", 0)
-             / float(m.get("scale", 1) or 1) for m in mons)
+             / _scale_of(m) for m in mons)
     return int(x0), int(y0), round(x1 - x0), round(y1 - y0)
 
 
@@ -329,7 +343,7 @@ def img_space_is_logical() -> bool:
     When True, model-emitted image pixels are already logical coords."""
     if shutil.which("magick"):
         return True
-    return all(float(m.get("scale", 1) or 1) == 1.0
+    return all(_scale_of(m) == 1.0
                for m in monitors())
 
 
@@ -359,7 +373,7 @@ def to_logical(points_px: list[dict], mons: list[dict]) -> list[dict]:
         placed = False
         # grim draws outputs in order — on overlap the LAST wins
         for m in reversed(mons):
-            s = float(m.get("scale", 1) or 1)
+            s = _scale_of(m)
             ox, oy = m.get("x", 0) * s, m.get("y", 0) * s
             if (ox <= x < ox + m.get("width", 0)
                     and oy <= y < oy + m.get("height", 0)):

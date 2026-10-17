@@ -89,6 +89,11 @@ def edit(target: str, op: str, old: str = "", new: str = "") -> str:
             return "OK (volatile replace)"
         if op == "write":
             body = new or old
+            n_lines = sum(1 for l in body.splitlines()
+                          if l.strip() and not l.strip().startswith("#"))
+            if n_lines > VOLATILE_MAX_LINES:
+                return (f"FAIL (over line cap ({n_lines} lines > "
+                        f"{VOLATILE_MAX_LINES}))")
             lines = _VOLATILE_HEAD.splitlines() + (
                 [""] + body.splitlines() if body.strip() else []
             )
@@ -218,12 +223,15 @@ def snapshot() -> str:
     return "\n\n".join(parts)
 
 
-def volatile_snapshot(today=None, path=None) -> str:
-    """`[recent]` block of live (unexpired) VOLATILE.md lines, or ""."""
+def volatile_snapshot(today=None, path=None, persist: bool = True) -> str:
+    """`[recent]` block of live (unexpired) VOLATILE.md lines, or "".
+
+    Expired entries are also removed from disk (persist=True) so they do not
+    linger when nothing else edits the file."""
     target = path or VOLATILE_FILE
     if not target.exists():
         return ""
-    entries = load_volatile(today=today, path=target, persist=False)
+    entries = load_volatile(today=today, path=target, persist=persist)
     if not entries:
         return ""
     return "[recent]\n" + "\n".join(
@@ -388,6 +396,8 @@ def add_volatile(
     expiry compaction and char/line budgets."""
     target_path = path or VOLATILE_FILE
     cur = _coerce_date(today)
+    # A fact is one file line: fold any embedded newlines/tabs into spaces.
+    text = " ".join((text or "").split())
     parsed = parse_volatile_line(text)
     if parsed is not None:
         fact = parsed.text
@@ -413,10 +423,17 @@ def add_volatile(
         max_lines=max_lines,
         persist=False,
     )
+    # Reject a past expiry before touching any existing entry.
+    if until_str < cur.isoformat():
+        return f"FAIL (expiry {until_str} is in the past)"
     # Deduplicate existing entry with same text (case-insensitive)
     entries = [e for e in entries if e.text.lower() != fact.lower()]
-    if until_str >= cur.isoformat():
-        entries.append(VolatileEntry(text=fact, until=until_str))
+    new_entry = VolatileEntry(text=fact, until=until_str)
+    entries.append(new_entry)
+    capped = _enforce_volatile_caps(
+        entries, budget_chars=budget_chars, max_lines=max_lines)
+    if not any(e is new_entry for e in capped):
+        return "FAIL (volatile caps would evict this fact; nothing saved)"
     _write_volatile_entries(
         entries,
         path=target_path,
@@ -443,9 +460,19 @@ def promote_volatile_entry(
     if not matched:
         return f"FAIL (no volatile line containing {q!r})"
     chosen = matched[0]
-    res = edit("memory", "add", "", chosen.text)
-    if res.startswith("FAIL"):
-        return res
+    # Exact-equivalent check only: a substring match in an unrelated memory
+    # bullet must not cause the volatile fact to be dropped unpromoted.
+    mem_lines = _load(MEMORY_FILE, _MEMORY_HEAD).splitlines()
+    want = chosen.text.strip().lstrip("- ").strip().lower()
+    known = any(l.strip().startswith("-")
+                and l.strip().lstrip("- ").strip().lower() == want
+                for l in mem_lines)
+    if not known:
+        mem_lines.append(f"- {chosen.text.strip().lstrip('- ').strip()}")
+        err = _save(MEMORY_FILE, "\n".join(mem_lines).rstrip() + "\n",
+                    MEMORY_BUDGET)
+        if err:
+            return f"FAIL ({err})"
     remaining = [e for e in entries if e is not chosen]
     _write_volatile_entries(remaining, path=target_path)
     return f"OK (promoted to memory: {chosen.text})"

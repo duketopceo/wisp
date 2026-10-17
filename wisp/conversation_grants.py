@@ -102,8 +102,26 @@ _ALLOW_ONCE_WORDS = frozenset(
 )
 
 
+_APOSTROPHES = str.maketrans({"\u2019": "'", "\u2018": "'", "\u02bc": "'",
+                              "\u2032": "'", "`": "'"})
+_NEGATED_ALWAYS = re.compile(r"\b(?:not|never|no|isn't|don't)\s+always\b")
+_ONE_TIME_PHRASES = (
+    "just once",
+    "this once",
+    "just this once",
+    "this time",
+    "one time",
+    "once only",
+    "allow once",
+    "only once",
+)
+
+
 def _norm(text: str | None) -> str:
-    return " ".join(_NONWORD.sub(" ", (text or "").lower()).split())
+    # Curly apostrophes become ASCII first, so "don\u2019t" stays "don't"
+    # instead of splitting into "don t" and losing the denial.
+    lowered = (text or "").translate(_APOSTROPHES).lower()
+    return " ".join(_NONWORD.sub(" ", lowered).split())
 
 
 def parse_voice_grant_reply(spoken_text: str | None) -> str | None:
@@ -126,6 +144,15 @@ def parse_voice_grant_reply(spoken_text: str | None) -> str | None:
             return NOT_NOW
     if words & _NOT_NOW_WORDS:
         return NOT_NOW
+
+    # An explicit one-time limit, or a negated "always", must never become
+    # a persistent grant ("not always, just this once").
+    if _NEGATED_ALWAYS.search(t):
+        if any(p in t for p in _ONE_TIME_PHRASES):
+            return ALLOW_ONCE
+        return NOT_NOW
+    if any(p in t for p in _ONE_TIME_PHRASES):
+        return ALLOW_ONCE
 
     for phrase in _ALWAYS_PHRASES:
         if phrase in t:
@@ -189,9 +216,10 @@ class ConversationGrantManager:
       - `'allow_once'`: permits a single non-hard-stop action in the exact
         `GrantScope(conversation_id, app_class)` (or approves a single
         prompted step without persisting a future grant).
-      - `'always'`: persists for `app_class` (and `(conversation_id, app_class)`)
+      - `'always'`: persists for the exact `(conversation_id, app_class)` scope
         across non-hard-stop steps so subsequent computer-use steps in that
-        app do not re-prompt.
+        app, in that conversation, do not re-prompt. It never carries over to
+        another conversation.
       - `'not_now'`: denies the step and records no grant.
       - Any action whose kind is in `HARD_STOP_KINDS` (`purchase`, `send`,
         `delete`, `payment`) NEVER bypasses confirmation, even when an
@@ -200,7 +228,6 @@ class ConversationGrantManager:
 
     def __init__(self) -> None:
         self._always_scopes: set[GrantScope] = set()
-        self._always_apps: set[str] = set()
         self._once_counts: dict[GrantScope, int] = {}
         self.audit_log: list[dict] = []
 
@@ -232,8 +259,6 @@ class ConversationGrantManager:
         hard = is_hard_stop(action_kind)
         if norm == ALWAYS and not hard:
             self._always_scopes.add(sc)
-            if sc.app_class:
-                self._always_apps.add(sc.app_class)
         elif norm == ALLOW_ONCE and not hard:
             self._once_counts[sc] = self._once_counts.get(sc, 0) + 1
         elif norm == NOT_NOW:
@@ -255,8 +280,6 @@ class ConversationGrantManager:
             return False
         sc = self._coerce_scope(scope, app_class)
         if sc in self._always_scopes:
-            return True
-        if sc.app_class and sc.app_class in self._always_apps:
             return True
         rem = self._once_counts.get(sc, 0)
         if rem > 0:
@@ -314,8 +337,6 @@ class ConversationGrantManager:
 
         if decision == ALWAYS and not hard:
             self._always_scopes.add(sc)
-            if sc.app_class:
-                self._always_apps.add(sc.app_class)
 
         allowed = decision in (ALLOW_ONCE, ALWAYS)
         self.audit_log.append(

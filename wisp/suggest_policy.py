@@ -56,7 +56,7 @@ def format_declined_reasons_prompt(
 
 
 def evaluate_suggestion_etiquette(
-    local_hour: int = 12,
+    local_hour: int | None = None,
     in_call: bool = False,
     screen_sharing: bool = False,
     fullscreen: bool = False,
@@ -70,7 +70,7 @@ def evaluate_suggestion_etiquette(
     Rules:
     1. If `paused_until_day` is in the future (`current_day < paused_until_day`),
        remain paused (`action="pause"`, `allow=False`, `reason="paused_backoff"`).
-    2. If `dismissal_streak_days >= 3` (and not resuming from an expired pause),
+    2. If `dismissal_streak_days >= 3` (except on the day a pause expires),
        pause for 7 days (`paused_until_day = current_day + 7 days`,
        `action="pause"`, `allow=False`, `reason="dismissal_streak"`).
     3. Block before 6am local (`0 <= local_hour < 6`, `action="block"`,
@@ -81,7 +81,12 @@ def evaluate_suggestion_etiquette(
 
     Always includes `declined_prompt` built from `declined_reasons`.
     """
-    cur = _parse_day(current_day) or date.today()
+    # Both local inputs come from one clock reading when omitted, so the
+    # hour gate and the backoff date can never disagree.
+    now = datetime.now()
+    if local_hour is None:
+        local_hour = now.hour
+    cur = _parse_day(current_day) or now.date()
     paused_until = _parse_day(paused_until_day)
     prompt_addon = format_declined_reasons_prompt(declined_reasons)
 
@@ -96,9 +101,10 @@ def evaluate_suggestion_etiquette(
             "declined_prompt": prompt_addon,
         }
 
-    # A pause that just expired resumes suggestions; the caller resets the
-    # streak, so a stale streak count must not immediately re-pause.
-    pause_just_expired = paused_until is not None and cur >= paused_until
+    # Only the day a pause expires resumes suggestions despite the stale
+    # streak (the caller resets it). Any later day evaluates the streak
+    # normally, so a fresh 3-day streak starts a new pause.
+    pause_just_expired = paused_until is not None and cur == paused_until
     if int(dismissal_streak_days or 0) >= DISMISSAL_STREAK_LIMIT and not pause_just_expired:
         until = (cur + timedelta(days=PAUSE_DAYS)).isoformat()
         return {

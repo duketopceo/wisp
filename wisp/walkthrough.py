@@ -9,6 +9,7 @@ looping, Esc cancel that clears state, and a window-state diff helper.
 from __future__ import annotations
 
 import dataclasses
+import re
 from typing import Iterable
 
 MAX_STEPS = 15
@@ -24,6 +25,24 @@ LOADING_MARKERS = (
     "saving...",
     "buffering",
 )
+
+
+_LOADING_RES = tuple(
+    re.compile(r"(?<![\w])" + re.escape(m.rstrip(".")) + r"(?![\w])")
+    for m in LOADING_MARKERS
+)
+# A marker only counts as "still loading" when it is the whole title, ends
+# it, is followed by an ellipsis, or is followed by a title separator. That
+# keeps "Downloading", "Opening Hours.pdf" and "Connecting Devices" out.
+_LOADING_TAIL = re.compile(r"^(?:\s*$|\.{2,}|\u2026|\s+[-\u2013\u2014|:])")
+
+
+def _title_is_loading(title: str) -> bool:
+    for rx in _LOADING_RES:
+        for m in rx.finditer(title):
+            if _LOADING_TAIL.match(title[m.end():]):
+                return True
+    return False
 
 
 def _norm_key(text: str) -> str:
@@ -56,12 +75,14 @@ def is_loading_state(window: dict | None = None,
     elif isinstance(tree, dict):
         title = str(tree.get("title") or tree.get("name") or "").lower()
 
-    if title and any(m in title for m in LOADING_MARKERS):
+    if title and _title_is_loading(title):
         return True
 
     if isinstance(tree, dict):
         els = tree.get("elements")
-        if els is None or (isinstance(els, list) and len(els) == 0):
+        # Only an explicit empty list is an empty tree; a window-only
+        # snapshot (no "elements" key) says nothing about loading.
+        if isinstance(els, list) and len(els) == 0:
             return True
     elif tree is None and window is None:
         return True
@@ -206,11 +227,11 @@ class Walkthrough:
 
     def has_completed(self, step: Step | dict | str) -> bool:
         s = self._coerce_step(step)
-        return s.key in self._done_keys or s.text in self.done_log
+        return s.key in self._done_keys
 
     def has_failed(self, step: Step | dict | str) -> bool:
         s = self._coerce_step(step)
-        return s.key in self._failed_keys or s.text in self.failed_log
+        return s.key in self._failed_keys
 
     def issue_step(
         self,

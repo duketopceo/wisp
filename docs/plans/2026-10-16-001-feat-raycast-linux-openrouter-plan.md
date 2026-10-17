@@ -115,8 +115,10 @@ each on a real install.
   AI extensions can be loaded by `rayd` even if Vicinae never runs them
   natively. Internally every tool is exposed as an MCP tool.
 - **D4.** Permissions: Ask, Auto, Always Allow, stored per tool; shell
-  tools always preview the command. Auto uses a cheap classifier call for
-  read-only detection; unknown → Ask.
+  tools always preview the command. Auto uses deterministic per-operation
+  rules in the `rayd` runner; the classifier is advisory and cannot
+  authorize a call. Only known read-only operations run automatically.
+  Unknown, mutating, or conflicting results → Ask.
 - **D5.** Screen awareness on Hyprland: `hyprctl activewindow`, `grim`
   window crop, `wl-paste` selection; sent as image plus text to a vision
   model. No element-level "Send Element to AI" in v1.

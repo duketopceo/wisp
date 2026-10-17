@@ -14,6 +14,10 @@ Models HeyClicky's scheduled routines on top of systemd user timers:
 from __future__ import annotations
 
 import dataclasses
+import logging
+import os
+import re
+import tempfile
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -22,6 +26,25 @@ from . import config, util
 
 MAX_CONSECUTIVE_FAILURES = 3
 DEFAULT_ROUTINES_FILE = config.DATA_DIR / "routines.json"
+
+
+_log = logging.getLogger(__name__)
+_CTRL_RE = re.compile(r"[\x00-\x1f\x7f]")
+_BIN_RE = re.compile(r"^[A-Za-z0-9_./+@-]+$")
+
+
+def _unit_value(value: str, field: str, *, escape_percent: bool = False) -> str:
+    """Make `value` safe as a single systemd unit-file value.
+
+    Control characters (CR, LF, NUL, ...) become spaces. A trailing backslash
+    (a systemd line continuation) is rejected, never silently fixed. `%` is
+    escaped to `%%` where systemd would expand specifiers."""
+    v = _CTRL_RE.sub(" ", str(value or "")).strip()
+    if v.endswith("\\"):
+        raise ValueError(f"{field}: trailing backslash is not allowed in a unit value")
+    if escape_percent:
+        v = v.replace("%", "%%")
+    return v
 
 
 def _slug(text: str) -> str:
@@ -118,8 +141,12 @@ def generate_systemd_units(
     """
     r = Routine.from_dict(routine)
     rid = _slug(r.id)
-    desc = (r.name or r.task or rid).replace("\n", " ").strip()
-    sched = (r.schedule or "daily").replace("\n", " ").strip()
+    if not _BIN_RE.match(str(wispd_bin or "")):
+        raise ValueError(f"wispd_bin: unsafe executable name {wispd_bin!r}")
+    desc = _unit_value(r.name or r.task or rid, "name",
+                       escape_percent=True) or rid
+    sched = _unit_value(r.schedule or "daily", "schedule",
+                        escape_percent=True) or "daily"
     service_name = f"wisp-routine-{rid}.service"
     timer_name = f"wisp-routine-{rid}.timer"
 
@@ -166,7 +193,23 @@ class RoutineStore:
     def _read_raw(self) -> dict:
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        except FileNotFoundError:
+            return {"opt_in_granted": False, "routines": {}}
+        except OSError:
+            # Exists but unreadable: refuse to treat it as empty (the next
+            # write would destroy it).
+            raise
+        except ValueError:
+            # Corrupt JSON: keep the evidence aside instead of letting the
+            # next save overwrite it with an empty store.
+            aside = self.path.with_name(
+                self.path.name + f".corrupt-{int(datetime.now().timestamp())}")
+            try:
+                os.replace(self.path, aside)
+                _log.warning("routines store unparseable; moved to %s", aside)
+            except OSError:
+                _log.warning("routines store unparseable at %s", self.path)
+                raise
             return {"opt_in_granted": False, "routines": {}}
         if isinstance(data, list):
             routines = {
@@ -193,10 +236,21 @@ class RoutineStore:
 
     def _write_raw(self, payload: dict) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(
-            json.dumps(payload, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
+        text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+        fd, tmp = tempfile.mkstemp(
+            dir=self.path.parent, prefix=self.path.name + ".", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(text)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp, self.path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
 
     def has_opted_in(self) -> bool:
         raw = self._read_raw()
@@ -328,12 +382,14 @@ def require_first_opt_ingate(
     - On approval, persists `opt_in_granted=True` in `store` (when given).
     - On refusal, writes nothing to `store` and returns False.
     """
-    if store is not None and store.has_opted_in() and opt_in is None and confirm_fn is None:
-        return True
-
     if callable(opt_in) and confirm_fn is None:
         confirm_fn = opt_in
         opt_in = None
+
+    # Only an explicit opt_in value overrides an existing opt-in; passing a
+    # confirm_fn must not re-prompt someone who already opted in.
+    if store is not None and store.has_opted_in() and opt_in is None:
+        return True
 
     if opt_in is not None:
         allowed = _interpret_opt_in(opt_in)
@@ -382,7 +438,20 @@ def record_routine_outcome(
     st = store if store is not None else RoutineStore(path=path)
     r = st.get(routine_id)
     if r is None:
-        r = Routine(id=routine_id, name=routine_id, task=routine_id)
+        # Never create a routine (or an implicit opt-in) from an outcome.
+        return {
+            "id": routine_id,
+            "ok": bool(ok),
+            "error": "unknown_routine",
+            "unread": False,
+            "paused": False,
+            "enabled": False,
+            "consecutive_failures": 0,
+            "auto_paused": False,
+            "notify_user_once": False,
+            "speak": False,
+            "routine": None,
+        }
 
     r.last_run_ts = datetime.now(timezone.utc).isoformat()
     auto_paused = False
