@@ -275,12 +275,34 @@ def capture_screen() -> pathlib.Path | None:
 
 
 def _png_b64(png: pathlib.Path | None) -> str | None:
+    """Shot file → data URL (JPEG when magick transcodes, else PNG)."""
     if not png:
         return None
     try:
-        return base64.b64encode(png.read_bytes()).decode()
+        from .tools.system import model_image
+        return model_image(png)
     finally:
         png.unlink(missing_ok=True)
+
+
+def _qa_needs_no_screen(text: str) -> bool:
+    """Question-shaped utterance with no screen referent → the shot is
+    dead payload. Referent tokens (this/that/screen/open/it...) or a
+    non-question verb keep the image; over ~120 chars keeps it too
+    (long asks are rarely pure trivia)."""
+    t = " ".join((text or "").lower().split())
+    if not t or len(t) > 120:
+        return False
+    _Q = ("what", "who", "when", "where", "why", "how", "which",
+          "is ", "are ", "do ", "does ", "can ", "could ", "would ",
+          "define ", "translate ", "spell ", "convert ")
+    if not t.startswith(_Q):
+        return False
+    _REF = ("this", "that", "screen", "window", "open", "file",
+            "folder", "here", "error", "dialog", "button", "click",
+            "these", "those", " it ", "my ", " the app", "app ",
+            "code", "desktop", "monitor")
+    return not any(r in t for r in _REF)
 
 
 def turn_screenshot(cfg: dict, speculative=None) -> str | None:
@@ -390,11 +412,17 @@ def context_stage(ctx) -> None:
     # asking which one.
     ctx.shot_b64 = None
     if cfg.get("agent", {}).get("screenshots", "true") == "true":
-        with sp.timed("screenshot"):
-            ctx.shot_b64 = pl.turn_screenshot(cfg, speculative)
+        # pure Q&A doesn't need the screen — dropping the image saves
+        # ~700KB of payload + the transcode on "what time is it" turns.
+        # Conservative: any referent token keeps the shot.
+        qa_skip = _qa_needs_no_screen(text)
+        if not qa_skip:
+            with sp.timed("screenshot"):
+                ctx.shot_b64 = pl.turn_screenshot(cfg, speculative)
         _trace.emit(turn, "screen_capture", "act",
                     {"captured": bool(ctx.shot_b64),
                      "img_kb": len(ctx.shot_b64 or "") * 3 // 4096,
+                     "qa_skip": qa_skip,
                      "speculative": bool(speculative)})
     wins = speculative.take("windows") if speculative else None
     if wins:

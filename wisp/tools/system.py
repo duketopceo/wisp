@@ -295,6 +295,39 @@ def _normalize_shot(path, output: str | None = None) -> None:
         pass
 
 
+def model_image(path) -> str | None:
+    """Screenshot file → data URL for model transport. JPEG q85 when
+    magick exists (~7-10x smaller than PNG — click coordinates are
+    geometric, lossless pixels buy nothing); PNG passthrough without
+    it. The on-disk shot stays PNG for debug."""
+    import base64 as _b64
+    import os as _os
+    import time as _time
+    from .. import trace as _trace
+    magick = shutil.which("magick")
+    if magick:
+        tmp = f"{path}.jpg"
+        t0 = _time.monotonic()
+        try:
+            _cancel.run([magick, str(path), "-quality", "85", tmp],
+                        capture_output=True, timeout=15)
+            jpg = pathlib.Path(tmp).read_bytes()
+            _os.unlink(tmp)
+            _trace.emit(_trace.current(), "shot_compress", "act",
+                        {"png_kb": _os.path.getsize(path) // 1024,
+                         "jpeg_kb": len(jpg) // 1024},
+                        ms=round((_time.monotonic() - t0) * 1000))
+            return ("data:image/jpeg;base64,"
+                    + _b64.b64encode(jpg).decode())
+        except (OSError, subprocess.SubprocessError):
+            pass
+    try:
+        return ("data:image/png;base64," + _b64.b64encode(
+            pathlib.Path(path).read_bytes()).decode())
+    except OSError:
+        return None
+
+
 def _dom_eval(cfg: dict, code: str) -> str:
     """Evaluate JS on the configured DOM page; returns the returned
     string value or an error description."""
