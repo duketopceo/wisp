@@ -83,9 +83,24 @@ SYSTEM = ("You are Wisp's hands on a Linux desktop (Hyprland). Complete "
 def _post(messages: list, cfg: dict) -> dict:
     """Chat call through the configured brain provider with toolbelt
     schemas (U6). Returns the provider message object."""
-    from . import brain
-    return brain.chat(messages, cfg,
-                      tools=tools.tool_schemas(), timeout=60)["raw"]
+    from . import brain, trace as _trace
+    t0 = time.monotonic()
+    res = brain.chat(messages, cfg,
+                     tools=tools.tool_schemas(), timeout=60)
+    raw = res["raw"]
+    img = sum(len(p.get("image_url", {}).get("url", ""))
+              for m in messages if isinstance(m.get("content"), list)
+              for p in m["content"]
+              if p.get("type") == "image_url")
+    _trace.emit(_trace.current(), "llm_call", "act",
+                {"brain": res.get("provider"),
+                 "fallback_from": res.get("fallback_from"),
+                 "msgs": len(messages), "img_kb": img // 1024,
+                 "tools_out": [_name_arg(c)[0]
+                               for c in raw.get("tool_calls") or []],
+                 "reply": (raw.get("content") or "")[:200]},
+                ms=round((time.monotonic() - t0) * 1000))
+    return raw
 
 
 def _gate(name: str, arg: str, cfg: dict, confirm,
