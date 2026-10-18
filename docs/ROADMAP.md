@@ -1,0 +1,74 @@
+# Roadmap
+
+Where wisp stands and what happens next. Dates are commit-era labels,
+not promises. See `docs/plans/` for the full plan history and
+`docs/research/heyclicky-features.md` for the competitor teardown this
+roadmap tracks against.
+
+## Shipped (current master)
+
+- **Conversational act loop** — tools + follow-ups + goal memory;
+  `router = "act"` skips the Jev decision hop (route ~480ms → ~25ms)
+- **Real-app launch** — every installed `.desktop` app launchable by
+  normalized spoken name (incl. all 12 `ai.storyteller.*` Craft debug
+  builds); `mimeapps.list` defaults resolve role words; running apps
+  focus instead of re-spawning
+- **Debug spine** — `trace.jsonl`: spans per stage, `screen_capture`
+  (img_kb, qa_skip), `shot_normalize`, `shot_compress`, `llm_call`
+  (img_kb/tools_out/ms), `tool_call`/`tool_result`, `ground(_refused)`
+- **Fast shots** — logical-px normalize + grid overlay, JPEG q85
+  transport (~10x payload cut), Q&A turns skip the shot entirely
+- **Safety** — risk-tier gating, denylist preempt (keyring prompts
+  refused mid-drill), real-input instant takeover
+- **Surface** — bar pill top-center (own spot), ghost cursor, beacons,
+  ACTED replies spoken
+
+## In flight
+
+- **PR #124 — HeyClicky delta units H1–H9**: walkthrough state machine
+  (paced teach-me mode), draw-on-screen overlay (circles/arrows/labels),
+  two-stage element grounding, app-keyed skills, routines, suggestion
+  etiquette, per-conversation grants, volatile memory, talk/deep lanes.
+  The detailed spec is `docs/plans/2026-10-16-001-*-heyclicky-*.md`.
+- Older open: #115 docs sweep (draft), #114 contrast+roadmap UI,
+  #113 Argus reviewer, #112 panel scroll/browser-auth fix.
+
+## Next — the Craft-app proving ground
+
+The `ai.storyteller.*` suite (FilmCraft, CADCraft, DeckCraft, …) is the
+training arena: local debug builds, deterministic UIs, no user data.
+
+1. **Drill harness** — bounded tasks per app (`open → dismiss modal →
+   expand bin → scrub`), each scored pass/fail by observable state, not
+   vibes. Reuse clicklab's candidate→verified→graduated recipe flow.
+2. **Control-channel verifier** — FilmCraft already exposes a JSON-lines
+   `--control` server with automation ids and `ui.screenshot`. Wire it
+   as ground truth for "did the action land" — a signal HeyClicky can't
+   get from outside an app. Same pattern to the other craft apps.
+3. **Aim accuracy** — first live click missed by ~70px. Iterate:
+   grounding two-stage (H3) + verify-by-control + trajectory replay
+   until click/scroll/type are reliably good.
+4. **Drawn annotations** — the #124 walkthrough overlay is the teaching
+   UX gap vs HeyClicky (they draw on the real UI; we beacon).
+
+## Then
+
+- **UI-TARS reliability** — grounding provider chain runs without it
+  today (llamas down = vision-only); keep it up or drop it from the
+  chain deliberately
+- **CUA session auto-recovery** — detect empty `list_windows`/epoch
+  mismatch, re-handshake without a manual restart
+- **Per-app memory** — save learned behavior by app (`cadcraft` knows
+  its shortcuts; browser knows its tabs) — H4 groundwork
+- **Trajectory → training** — decisions/trajectories/trace are the
+  corpus; the loop is run → score → correct → rerun, not longer soaks
+- **App preference policy** — installed ≠ preferred (firefox installed
+  but unused); a blocklist or preference weight so defaults always win
+
+## Not doing
+
+- No slow decision-model hops on the hot path — speed comes from
+  skipping stages, not adding them
+- No arbitrary exec on unknown nouns — unknown stays SKIP
+- No blanket confirm prompts — risk tiers and boundaries, or it's a
+  router not an agent
