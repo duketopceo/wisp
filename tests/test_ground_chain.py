@@ -16,7 +16,12 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent
                        / "scripts" / "clicklab"))
 from wisp import act, cua_safety, grounding as g  # noqa: E402
-from PIL import Image  # noqa: E402
+try:
+    from PIL import Image  # noqa: E402
+except ImportError:
+    Image = None
+
+_need_pil = unittest.skipUnless(Image, "PIL not installed")
 
 EDP = {"name": "eDP-1", "x": 0, "y": 0, "width": 3456, "height": 2160,
        "scale": 2.0}
@@ -136,6 +141,7 @@ def chat(text, lp=None):
     return {"choices": [ch]}
 
 
+@_need_pil
 class Providers(unittest.TestCase):
     def ctx(self, cfg=None, cua=None, timeout=1.0):
         cfg = cfg or {}
@@ -266,6 +272,7 @@ TREE = {"elements": [
     {"role": "button", "label": "Volume", "frame": [10, 10, 20, 20]}]}
 
 
+@_need_pil
 class A11y(unittest.TestCase):
     def ctx(self, cua, target="night light", cfg=None):
         cfg = cfg or {}
@@ -358,6 +365,7 @@ def prov(name, results, log=None, fast=True):
     return {"fn": fn, "fast": fast}
 
 
+@_need_pil
 class Chain(unittest.TestCase):
     def test_a11y_preferred_over_pixels(self):
         log = []
@@ -445,6 +453,7 @@ class Chain(unittest.TestCase):
             run("   ")
 
 
+@_need_pil
 class Confidence(unittest.TestCase):
     def test_low_then_reobserve_then_refuse(self):
         log = []
@@ -499,6 +508,7 @@ class Confidence(unittest.TestCase):
                             monitors=[EDP], providers={})
 
 
+@_need_pil
 class Budget(unittest.TestCase):
     def test_fast_providers_share_1200ms_budget(self):
         clock = Clock()
