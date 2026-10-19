@@ -75,4 +75,12 @@ TestCase {
     compare(Cur.BUBBLE_COLS, 60)
     compare(Cur.BUBBLE_LINES, 12)
   }
+
+  function test_pill_visibility() {
+    compare(Co.pillVisible("awaiting_choice"), true)
+    compare(Co.pillVisible("listening"), true)
+    compare(Co.pillVisible("transcribing"), true)
+    compare(Co.pillVisible("acting"), false)
+    compare(Co.pillVisible("idle"), false)
+  }
 }

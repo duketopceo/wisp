@@ -18,6 +18,32 @@ from . import config
 WISP_MCP = config.HOME / ".config/wisp/mcp.json"
 POLL_S, WAIT_S = 5, 240
 
+# Browsers that may carry the OAuth flow, preference order. Launching the
+# binary while the browser runs opens a tab in the existing profile — the
+# user's logged-in session. xdg-open/open are deliberately absent: the
+# system default can be a chooser (Junction) or the BrowserOS agent
+# browser, and an OAuth flow there authenticates the wrong profile.
+_PERSONAL_BROWSERS = (
+    "chromium", "firefox", "google-chrome-stable", "brave",
+    "zen-browser", "vivaldi-stable", "microsoft-edge-stable",
+)
+# hyprctl client `class` -> binaries that class can map to.
+_CLASS_TO_BINS = {
+    "chromium": ("chromium",),
+    "chromium-browser": ("chromium",),
+    "firefox": ("firefox",),
+    "google-chrome": ("google-chrome-stable", "google-chrome"),
+    "google-chrome-stable": ("google-chrome-stable", "google-chrome"),
+    "chrome": ("google-chrome-stable", "google-chrome"),
+    "brave": ("brave", "brave-browser"),
+    "brave-browser": ("brave", "brave-browser"),
+    "zen": ("zen-browser", "zen"),
+    "zen-browser": ("zen-browser", "zen"),
+    "vivaldi": ("vivaldi", "vivaldi-stable"),
+    "vivaldi-stable": ("vivaldi", "vivaldi-stable"),
+    "microsoft-edge": ("microsoft-edge-stable", "microsoft-edge"),
+}
+
 # user-facing alias -> (connector enum name, strata action name)
 _ALIASES = {}
 
@@ -136,6 +162,70 @@ def register(name: str) -> None:
     WISP_MCP.write_text(json.dumps(data, indent=1) + "\n")
 
 
+def _running_browser_bins() -> list:
+    """Binaries of personal browsers with a live window, focused first.
+
+    Reads hyprctl client classes; agent browsers (browseros*) and
+    choosers (Junction) are not in the map, so they never win."""
+    import shutil
+    import subprocess
+    if not shutil.which("hyprctl"):
+        return []
+    classes = []
+    try:
+        act = subprocess.run(["hyprctl", "activewindow", "-j"],
+                             capture_output=True, text=True, timeout=3)
+        cls = str(json.loads(act.stdout or "{}").get("class", "")).lower()
+        if cls:
+            classes.append(cls)
+        out = subprocess.run(["hyprctl", "clients", "-j"],
+                             capture_output=True, text=True, timeout=3)
+        for c in json.loads(out.stdout or "[]"):
+            cls = str(c.get("class", "")).lower() if isinstance(c, dict) else ""
+            if cls and cls not in classes:
+                classes.append(cls)
+    except Exception:
+        pass
+    found = []
+    for cls in classes:
+        # chrome-<app>__-Default windows are Chrome PWAs — same profile
+        key = "chrome" if cls.startswith("chrome-") else cls
+        for b in _CLASS_TO_BINS.get(key, ()):
+            if shutil.which(b) and b not in found:
+                found.append(b)
+    return found
+
+
+def _open_auth_url(url: str) -> str:
+    """Open the OAuth URL for the user. Returns 'browser' | 'clipboard'
+    | 'failed'. Never xdg-open (see _PERSONAL_BROWSERS)."""
+    import os
+    import shutil
+    import subprocess
+    cand = []
+    env = (os.environ.get("BROWSER") or "").split(":")[0].strip()
+    if env and "xdg" not in env and "junction" not in env.lower() \
+            and "browseros" not in env.lower():
+        cand.append(env)
+    cand.extend(_running_browser_bins())
+    cand.extend(_PERSONAL_BROWSERS)
+    for b in cand:
+        if shutil.which(b):
+            subprocess.Popen([b, url])
+            return "browser"
+    if shutil.which("wl-copy"):
+        try:
+            subprocess.run(["wl-copy"], input=url.encode(), timeout=3)
+            if shutil.which("notify-send"):
+                subprocess.Popen(
+                    ["notify-send", "-a", "wisp", "wisp connect",
+                     "Sign-in link copied — paste it in your browser"])
+            return "clipboard"
+        except Exception:
+            pass
+    return "failed"
+
+
 def connect(name: str, cfg: dict,
             wait_s: int = WAIT_S) -> str:
     """Full connect flow. Returns a human-readable result string."""
@@ -151,14 +241,8 @@ def connect(name: str, cfg: dict,
         return (f"AUTH_NEEDED {canon[0]} — gateway returned no authUrl. "
                 f"raw: {st['raw'][:200]}")
     url = st["auth_url"]
-    import subprocess, shutil
-    opened = False
-    for opener in ("xdg-open", "open"):
-        if shutil.which(opener):
-            subprocess.Popen([opener, url])
-            opened = True
-            break
-    if not opened:
+    where = _open_auth_url(url)
+    if where == "failed":
         return f"OPEN_THIS {canon[0]}: {url}"
     deadline = time.time() + wait_s
     while time.time() < deadline:

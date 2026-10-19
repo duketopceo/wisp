@@ -69,6 +69,107 @@ class Register(unittest.TestCase):
         self.assertEqual(names, sorted(names, key=str.lower))
 
 
+class OpenAuthUrl(unittest.TestCase):
+    """OAuth URL opens in a personal browser — never xdg-open/chooser/
+    agent browser — and never dies silently."""
+    URL = "https://auth.example/x?token=redacted"
+
+    def _run(self, *, which, hyprctl=None, env_browser="", popen=None):
+        """which: dict name->path|None. hyprctl: fake clients JSON or None
+        (hyprctl absent). popen: collects Popen argv."""
+        import subprocess as _sp
+        pops = []
+        runs = []
+
+        def fake_which(b):
+            return which.get(b)
+
+        def fake_popen(argv, **kw):
+            pops.append(argv)
+            return mock.Mock()
+
+        def fake_run(argv, **kw):
+            runs.append(argv)
+            if isinstance(argv, list) and argv[:2] == ["hyprctl", "clients"]:
+                return mock.Mock(stdout=json.dumps(hyprctl or []))
+            if isinstance(argv, list) and argv[:2] == ["hyprctl", "activewindow"]:
+                return mock.Mock(stdout="{}")
+            return mock.Mock(stdout="")
+
+        import os
+        with mock.patch.dict(os.environ, {"BROWSER": env_browser}), \
+             mock.patch("shutil.which", side_effect=fake_which), \
+             mock.patch("subprocess.Popen", side_effect=fake_popen), \
+             mock.patch("subprocess.run", side_effect=fake_run):
+            out = mcpauth._open_auth_url(self.URL)
+        return out, pops, runs
+
+    def test_running_browser_wins(self):
+        # chromium running (class chromium-browser) + xdg-open present:
+        # must pick chromium directly, never the chooser/xdg path.
+        out, pops, _ = self._run(
+            which={"hyprctl": "/x/hyprctl", "chromium": "/x/chromium",
+                   "xdg-open": "/x/xdg-open", "firefox": "/x/firefox"},
+            hyprctl=[{"class": "chromium-browser"},
+                     {"class": "browseros-neo"},
+                     {"class": "foot"}])
+        self.assertEqual(out, "browser")
+        self.assertEqual(pops, [["chromium", self.URL]])
+
+    def test_focused_browser_preferred_over_first_installed(self):
+        out, pops, _ = self._run(
+            which={"hyprctl": "/x/hyprctl", "firefox": "/x/firefox",
+                   "chromium": "/x/chromium"},
+            hyprctl=[{"class": "firefox"}, {"class": "chromium"}])
+        # focused first: activewindow returns {} so order is client order;
+        # firefox is a client and sorts before the not-running default list
+        self.assertEqual(out, "browser")
+        self.assertEqual(pops[0][0], "firefox")
+
+    def test_browseros_running_alone_falls_to_installed_personal(self):
+        out, pops, _ = self._run(
+            which={"hyprctl": "/x/hyprctl", "chromium": "/x/chromium",
+                   "browseros": "/x/browseros"},
+            hyprctl=[{"class": "browseros-neo"}])
+        self.assertEqual(out, "browser")
+        self.assertEqual(pops, [["chromium", self.URL]])
+
+    def test_browser_env_override(self):
+        out, pops, _ = self._run(
+            which={"hyprctl": "/x/hyprctl", "firefox": "/x/firefox"},
+            hyprctl=[], env_browser="firefox")
+        self.assertEqual(out, "browser")
+        self.assertEqual(pops, [["firefox", self.URL]])
+
+    def test_browser_env_chooser_rejected(self):
+        out, pops, _ = self._run(
+            which={"hyprctl": "/x/hyprctl", "firefox": "/x/firefox"},
+            hyprctl=[], env_browser="junction")
+        self.assertEqual(out, "browser")
+        self.assertEqual(pops, [["firefox", self.URL]])
+
+    def test_no_browser_copies_url(self):
+        out, pops, runs = self._run(
+            which={"wl-copy": "/x/wl-copy"}, hyprctl=None)
+        self.assertEqual(out, "clipboard")
+        self.assertEqual(pops, [])
+        self.assertTrue(any(r == ["wl-copy"] for r in runs))
+
+    def test_nothing_available_fails_loud(self):
+        out, pops, runs = self._run(which={}, hyprctl=None)
+        self.assertEqual(out, "failed")
+        self.assertEqual(pops, [])
+
+    def test_never_calls_xdg_open(self):
+        out, pops, runs = self._run(
+            which={"xdg-open": "/x/xdg-open", "open": "/x/open"},
+            hyprctl=None)
+        self.assertEqual(out, "failed")
+        for call in pops + runs:
+            self.assertNotIn("xdg-open", call)
+            self.assertNotIn("open", call[0])
+
+
 class StrataRoute(unittest.TestCase):
     def test_strata_dispatch_to_execute_action(self):
         spec = {"via": "strata", "service": "github"}
