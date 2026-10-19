@@ -226,6 +226,9 @@ U1 is the critical path and is mostly the owner's time. U2 to U5 are the agent-e
   3. Owner runs two learning cycles a week apart and records clarify rate before and after.
   4. When all three boxes carry evidence and the gate set is green, tag `v1.0.0` and file the Omarchy marketplace verify request.
 - **Test scenarios:** Test expectation: none -- measurement and release; the gate set below is the test.
+- **Difficulty:** easy to start, slow to finish: it is measurement, not code; the soak window sets the date.
+- **Feasibility:** needs the owner's labelled runs (0 of 50 per route), a clean VM and two learning cycles a week apart; nothing a bot can do for them.
+- **Simpler alternative:** relax the gate to one route with 50 labels and tag `v1.0.0-rc` first; no code to delete.
 - **Verification:** the gate set is green (`python -m unittest discover -s tests`, `python scripts/ui/snap.py check`, `python scripts/assets/gen_copy.py --check`, `python scripts/assets/gen_settings.py --check`) and the release workflow builds all five archives.
 
 ### U2. Plan, issue and doc hygiene
@@ -237,6 +240,9 @@ U1 is the critical path and is mostly the owner's time. U2 to U5 are the agent-e
 - **Files:** modify `docs/plans/2026-10-04-0100-feat-wisp-unified-plan.md` (header and the W30 and W33 rows with merge evidence), `ROADMAP.md` (the "Still open" sentence), `docs/plans/2026-10-04-1800-feat-cua-driver-and-parallel-training-plan.md` (pointer to this plan); issue comments or closure for #17, #18, #6 with a link to the unit that owns each.
 - **Approach:** update rows from `git log` and merged PR evidence only; do not close an issue whose work is not done (#17 stays open until U1 tags; #6 stays open until U9 decides); point the child plan headers at `docs/plans/2026-10-05-001-feat-wisp-full-roadmap-plan.md`.
 - **Test scenarios:** `python -m unittest tests.test_docs_lint` still passes after the `ROADMAP.md` edit; a grep for "W30" and "W33" in the unified plan shows done with evidence.
+- **Difficulty:** easy: edits to plan headers, `ROADMAP.md` and issue state.
+- **Feasibility:** none technical; needs owner agreement on which drafts close.
+- **Simpler alternative:** fold the stale plan status tables into one generated table checked by `tests/test_docs_lint.py` instead of hand-edited headers.
 - **Verification:** doc-lint test; a reviewer can follow every status claim to a PR or commit.
 
 ### U3. Apply and verify reliability fixes on the machine
@@ -256,6 +262,9 @@ U1 is the critical path and is mostly the owner's time. U2 to U5 are the agent-e
   - Under induced pressure (a bounded allocation test run by the owner, never in CI), `systemd-oomd` does not select the llama units; `journalctl --user -u systemd-oomd` shows no kill of them.
   - Stopping :8080 yields a typed health error, a brain fallback to OpenRouter within the watch's 60 s window, and a ledger row; restarting it returns to local.
   - If a doctor check is added: a unit fixture in `app.slice` makes it fail (extend `tests/test_svc.py`).
+- **Difficulty:** easy: unit-file edits plus one drill on this machine.
+- **Feasibility:** machine-only and cannot be verified in CI; a reboot or oomd pressure is needed to prove it; touches the owner's running services, so it needs a go-ahead.
+- **Simpler alternative:** move only `llama-*.service` to `session.slice` (one drop-in each) and skip the broader `ManagedOOMPreference` rework.
 - **Verification:** the observables above, pasted into the PR or a comment; no paid call beyond one short fallback turn billed through the ledger, and none from tests.
 
 ### U4. Spend ledger and cost-cap hardening
@@ -274,6 +283,9 @@ U1 is the critical path and is mostly the owner's time. U2 to U5 are the agent-e
   - A paid fallback call over the cap is refused (fail closed) and the refusal is recorded; a local call over the cap proceeds.
   - An arena batch where every run is refused exits non-zero and prints the cause.
   - A default-config test asserts no Anthropic or premium model id appears in shipped defaults.
+- **Difficulty:** medium: touches `wisp/ledger.py`, `wisp/budgets.json` and the config generator, so migration of live configs matters.
+- **Feasibility:** depends on the owner's on-disk config; the `orch` marker rule lives outside this repo.
+- **Simpler alternative:** delete the deprecated `[brain] daily_cap_usd` path and warn once instead of keeping two cap mechanisms.
 - **Verification:** `python -m unittest discover -s tests`; `wispd spend` shows the same totals as `usage.jsonl`.
 
 ### U5. Ember UI finish
@@ -285,6 +297,9 @@ U1 is the critical path and is mostly the owner's time. U2 to U5 are the agent-e
 - **Files:** per the Ember plan: `wisp/config.py`, `wisp/settings_schema.py`, `wisp/cli/replay.py`, `shell-plugin/WispService.qml`, `shell-plugin/Companion.qml`, `shell-plugin/components/{CursorFeed,Earcons,Creature,OverlayLayer}.qml`, `scripts/assets/make_earcons.py`, `assets/sound/`.
 - **Approach:** execute the Ember plan's open units as four small PRs (motion wiring; replay; earcons; pointer feed and rider), then the QA pass. The live multi-theme step is the owner's.
 - **Test scenarios:** per Ember plan unit; the cross-cutting ones are zero `hyprctl` forks during a replayed acting turn and motion modes changing the creature within one second.
+- **Difficulty:** medium: each remaining Ember unit is small but needs a live Hyprland session for the measurements.
+- **Feasibility:** live multi-theme pass and recordings need the owner's desktop; earcons need a decision on defaults.
+- **Simpler alternative:** ship `[ui] motion` wiring and `wispd replay` and defer earcons (U8) and the fork-free pointer rider (U13) to U11.
 - **Verification:** snapshot check and QML lib tests on a machine with the Qt runner (the `snap.py check` run in this environment skipped because the runner or PIL was missing), plus the measurement record in the U20 PR.
 
 ### U6. CUA wiring tail
@@ -296,6 +311,9 @@ U1 is the critical path and is mostly the owner's time. U2 to U5 are the agent-e
 - **Files:** per the CUA plan: `wisp/cua.py`, `wisp/pointer.py`, `wisp/tools/system.py`, the Companion bridge in `shell-plugin/`, `scripts/clicklab/run.py`.
 - **Approach:** follow the CUA plan's A1 to A5 in order, one PR each; settle A6 with the owner before building. Keep every action behind `wisp/cua_safety.py` (deny/allow, rate limits, kill switch, dry-run, audit).
 - **Test scenarios:** the plan's own; plus a safety regression: a denied action never reaches the driver, and the kill switch stops an in-flight sequence (existing `tests/test_cua_safety.py` extended).
+- **Difficulty:** hard: spans cua-driver, grounding, safety and the ghost cursor.
+- **Feasibility:** depends on the upstream cua-driver and on a desktop with a live driver; CI only has fakes.
+- **Simpler alternative:** finish A1 and A2 (typed client, pointer cleanup) and drop A6 `browser_*` eval; defer A3 to A5 until a trajectory is wanted.
 - **Verification:** unit tests with the cua fakes (no live driver in CI); one live trajectory recorded and replayed locally.
 
 ### U7. Training scale-out and gauntlet follow-through
@@ -307,6 +325,9 @@ U1 is the critical path and is mostly the owner's time. U2 to U5 are the agent-e
 - **Files:** `scripts/clicklab/{run.py,cube.py,synthesize.py,arena.py}`, a new `scripts/clicklab/hammer-parallel.sh`, `docs/research/cube-parallel-arena.md` as input.
 - **Approach:** fix B1 first (it is a prerequisite bug); then parallel local, then CubeVM; every model call routes through `orch` and `arena_policy`, results aggregate per model and suite, and recipe promotion stays human-gated (`wispd recipes approve`).
 - **Test scenarios:** two parallel workers never share a profile or port; an aggregation over a fixture result set is deterministic; a run whose every task is refused fails loudly; spend per batch is bounded by the daily cap (ledger assertion with a stubbed price table).
+- **Difficulty:** hard: parallel-safe clicklab and a CubeVM arena at scale.
+- **Feasibility:** CubeVM capacity on this ARM host, model spend on the `orchestral-eval-v3` key (cap $50/mo), and flaky live sites.
+- **Simpler alternative:** do B1 and B2 only (parallel clicklab and `hammer-parallel.sh`); skip B4 until B3 reports show a need.
 - **Verification:** local fake-model run in CI; one live bounded run billed to the orchestral key, with the `usage.jsonl` delta recorded.
 
 ### U8. Warm STT
@@ -318,6 +339,9 @@ U1 is the critical path and is mostly the owner's time. U2 to U5 are the agent-e
 - **Files:** create `wisp/stt.py` (engine seam), benchmark script under `scripts/`, tests with fixture WAVs from `scripts/make_fixture_wavs.py`; modify `wisp/stage_capture.py`, `wisp/config.py` (`[stt]` keys), `docs/CONFIG.md`, `docs/baselines/latency-harness.json`.
 - **Approach:** benchmark warm whisper.cpp, Parakeet and the hosted option on the fixture corpus plus the owner's real recordings (local only); pick one; implement a resident engine with a model-warm health row; keep the hosted provider as an opt-in fallback behind the ledger.
 - **Test scenarios:** engine seam returns identical `Transcript` shapes across fakes; a cold start falls back and is logged; p50 and p90 are computed by the existing `wispd latency` harness from real traces.
+- **Difficulty:** medium: engine swap behind `wisp/speech.py`.
+- **Feasibility:** accuracy and latency on Asahi CPU/Vulkan are unmeasured; engine choice waits on OQ1; model licence per engine.
+- **Simpler alternative:** keep whisper resident (a warm process) rather than adding a second engine; measure first.
 - **Verification:** before and after latency table from real traces; no paid STT call in tests.
 
 ### U9. Contract freeze and Rust parity decision
@@ -329,6 +353,9 @@ U1 is the critical path and is mostly the owner's time. U2 to U5 are the agent-e
 - **Files:** `docs/IPC_CONTRACT.md`, `wisp/state.py`, `rs/wispd/`, `tests/test_contract.py`.
 - **Approach:** decide scope (OQ2); mark every command and field `shared` or `py-only`; make the Rust core pass the shared-subset golden tests; document the version bump rule.
 - **Test scenarios:** a contract test fails when a Python field is neither implemented in Rust nor marked `py-only`; the Rust build and test job passes on ubuntu and macOS.
+- **Difficulty:** medium: freezing a contract is a decision more than code.
+- **Feasibility:** depends on OQ2 (is the Rust core in scope); a freeze limits later IPC changes.
+- **Simpler alternative:** declare the Python core the contract owner, mark the Rust `rs/wispd` crate `py-only`, and drop parity tests rather than chase them.
 - **Verification:** CI `rust` job green; contract doc and tests agree.
 
 ### U10. Packaging and distribution
@@ -340,6 +367,9 @@ U1 is the critical path and is mostly the owner's time. U2 to U5 are the agent-e
 - **Files:** `.github/workflows/release.yml`, `docs/INSTALL.md`, `docs/MACOS.md`, `docs/WINDOWS.md`, `scripts/units/`, tray item if pursued.
 - **Approach:** after the tag: marketplace verify request, a tray item where the host supports SNI, checksum and provenance for release archives, and a documented support level per platform; macOS menu-bar and signing wait for demand.
 - **Test scenarios:** the release workflow's archive smoke test runs the binary's `--version` and `doctor` on each platform; install docs are followed in the U1 VM run.
+- **Difficulty:** medium: five-platform archives exist; the tray item and marketplace listing are the new work.
+- **Feasibility:** marketplace acceptance is third-party; a tray needs a desktop-specific host (see `docs/INSTALL.md` and `docs/MACOS.md`); signing and licence checks per platform.
+- **Simpler alternative:** publish the archives with checksums only and skip the tray item until asked.
 - **Verification:** published release with checksums; marketplace request filed.
 
 ### U11. Ember ceiling items
@@ -351,6 +381,9 @@ U1 is the critical path and is mostly the owner's time. U2 to U5 are the agent-e
 - **Files:** `shell-plugin/components/*`, `assets/`.
 - **Approach:** pick items by soak feedback; each gets its own small plan before work. No paid APIs, no generated imagery.
 - **Test scenarios:** per item, with offscreen snapshots on two themes.
+- **Difficulty:** hard in aggregate, each item is small to medium: shader, motion and multi-monitor work.
+- **Feasibility:** needs a settled core (U5), real multi-monitor hardware to test, and per-theme earcon authoring.
+- **Simpler alternative:** pick the two items users notice (edge docking, panel Ask field) and cut the rest.
 - **Verification:** the Ember plan's verification contract.
 
 ### U12. Generalization: adapters and federation
@@ -362,6 +395,9 @@ U1 is the critical path and is mostly the owner's time. U2 to U5 are the agent-e
 - **Files:** `scripts/clicklab/`, `wisp/skills`-related modules, new adapter directory decided in the unit's own plan.
 - **Approach:** write a child plan when U7 is done; keep human gating on recipe promotion and the spend rules of KTD1.
 - **Test scenarios:** defined in the child plan.
+- **Difficulty:** hard: new adapters per site/app and recipe auto-promotion.
+- **Feasibility:** third-party site changes break adapters; Godot or OBS APIs; federation has no spec yet.
+- **Simpler alternative:** keep the browser fixtures and one Tier-1 adapter; drop federation plumbing until a second user exists.
 - **Verification:** defined in the child plan.
 
 ---

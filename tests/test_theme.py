@@ -95,12 +95,14 @@ class TestContrast(unittest.TestCase):
         self.assertLess(
             theme.contrast(colors["muted"], colors["background"]), 4.5)
 
-    def test_state_colors_meet_3_to_1(self):
+    def test_state_colors_meet_text_floor(self):
         for name in LIGHT + DARK:
             t = fixture(name)["tokens"]
-            for k in ("needsYou", "fail", "ok", "ember"):
+            for k in ("needsYou", "fail", "ok"):
                 self.assertGreaterEqual(
-                    theme.contrast(t[k], t["canvas"]), 3.0, (name, k))
+                    theme.contrast(t[k], t["canvas"]), 4.5, (name, k))
+            self.assertGreaterEqual(
+                theme.contrast(t["ember"], t["canvas"]), 3.0, name)
 
     def test_ember_halo_separates_creature(self):
         for name in LIGHT + DARK:
@@ -140,7 +142,7 @@ class TestFallbacksAndParsing(unittest.TestCase):
         t = res["tokens"]
         self.assertEqual(res["source"], "omarchy")
         self.assertEqual(res["mode"], "dark")        # inferred from canvas
-        self.assertEqual(t["fail"], "#d75f5f")
+        self.assertEqual(t["fail"], "#da6262")
         self.assertEqual(t["needsYou"], t["fail"])    # no yellow -> urgent
         self.assertEqual(t["ok"], t["accent"])        # no green -> accent
         self.assertEqual(t["raised"], theme.over("#d0d0d0", 0.06, "#202020"))
@@ -166,8 +168,10 @@ class TestFallbacksAndParsing(unittest.TestCase):
         res = theme.derive({"color0": "#111111", "color7": "#eeeeee",
                             "color4": "#3366cc", "color1": "#cc3333"})
         t = res["tokens"]
-        self.assertEqual((t["canvas"], t["ink"], t["accent"], t["fail"]),
-                         ("#111111", "#eeeeee", "#3366cc", "#cc3333"))
+        self.assertEqual((t["canvas"], t["ink"], t["accent"]),
+                         ("#111111", "#eeeeee", "#3366cc"))
+        # color1 is lifted to the 4.5:1 state floor, not passed through
+        self.assertGreaterEqual(theme.contrast(t["fail"], t["canvas"]), 4.5)
 
     def test_every_token_is_opaque_hex(self):
         for name in LIGHT + DARK:
