@@ -1,7 +1,13 @@
 # Wisp Roadmap
 
 State: **v0.9 released. The unified plan (W1 to W29, W32) has landed on master; the v1.0 gate (W34) is the soak, a clean-box install and the learning loop.**
-Last updated: 2026-10-04. Plan of record: `docs/plans/2026-10-04-0100-feat-wisp-unified-plan.md`.
+Last updated: 2026-10-11. Plan of record: `docs/plans/2026-10-04-0100-feat-wisp-unified-plan.md`.
+
+**Since 2026-10-05 (master):** act-efficiency wave (#106 — observe elision,
+`fill`, X compose tools, recipe tooling); DOM click-by-id (#107);
+label-grounded legend + recipe distillation (#108); bar live-activities pill
+replaces the corner orb and console (#109); voice answers to pending
+prompts and spoken interrupt (#110).
 
 ## Plans
 
@@ -18,8 +24,8 @@ Progress on the v1.0 gates:
 
 - ✅ U10 merged (PR #31); release CI verified — `v0.9.0` published all
   five platform archives; linux-aarch64 artifact runs the live daemon.
-- ✅ Visible surface: bar glyph, companion orb, app menu, GUI — verified.
-- ✅ Run labeling landed: `wispd label correct|incorrect` + orb ✓/✗ →
+- ✅ Visible surface: bar glyph + live pill, companion overlay, app menu, GUI — verified.
+- ✅ Run labeling landed: `wispd label set correct|incorrect` + bubble ✓/✗ →
   `labels.jsonl`; `wispd label` prints the per-route intent-match report.
 - 🔄 Soak: label every run; fix top failure mode weekly; re-measure.
   Current: 0/1 labeled (0%) — gate needs ≥50 labeled runs per route.
@@ -35,8 +41,8 @@ four-tab Panel, bar mark, confirm card, ghost cursor, keyboard submap with Esc
 stop, management app and TUI, first-run card, desktop entry); the backend core
 (push stream, one spend ledger with caps, Jev deadline and heuristic router,
 batch lane, opt-in GlitchTip reporting, oomd-safe units, `wispd onboard`, the
-`wispd <group> <verb>` CLI). Still open: W12 warm STT, W30 pipeline refactor,
-W31 contract freeze, and the gate below.
+`wispd <group> <verb>` CLI). Still open: W12 warm STT, W31 contract-freeze housekeeping, and the gate below.
+(W30 pipeline stage split landed on master.)
 
 ## v1.0 gate checklist (W34)
 
@@ -84,7 +90,7 @@ Shipped beyond the v1.0 gates (post-roadmap work, live on master):
 
 - ✅ Proactive companion (2026-09-30): sense collector reads dayflow +
   hyprctl window deltas into `activity.jsonl`; Jev-gated suggestion
-  miner → orb "an idea" cards (automate / not now / never, approval-only);
+  miner → suggestion cards (automate / not now / never, approval-only);
   `agent_runtime=auto` probing + `wispd doctor`; seeded `dayflow-bridge`
   + `self-checkup` skills; GUI Activity tab; `wispd tui`; task caps,
   timeout reaper, PID-reuse pinning, daily model-call budget.
@@ -127,7 +133,7 @@ Shipped beyond the v1.0 gates (post-roadmap work, live on master):
 
 ## Where it is
 
-- Pipeline shipped: `Super+D` → PipeWire capture → whisper.cpp (`ggml-small.en`) → Jev routing (`launch | tool | agent | act | dictate | answer | clarify`) → Talk answers w/ `[POINT]` cursor / guarded act loop / agent runtimes (opencode/codex/claude/devin) / `mcp_call` → companion orb, cursor bubble, pill, and panel.
+- Pipeline shipped: hold `Super+D` → PipeWire capture → whisper.cpp (`ggml-small.en`) → Jev routing (`launch | tool | agent | act | dictate | answer | clarify`) → Talk answers w/ `[POINT]` cursor / guarded act loop / agent runtimes (opencode/codex/claude/devin) / `mcp_call` → bar mark + live pill, overlay (pill, bubble, ghost cursor), and Panel.
 - Units U1–U9 merged: resident daemon, spoken answers (U4), dictation + orb states (U5), semantic recall via sqlite-vec + RRF (U5c), dev trace `trace.jsonl` (U5e), pluggable brain providers — OpenRouter / openai-compat / Ollama / MLX (U6), macOS adapter (U7), Windows adapter (U8), generic-Linux adapter (U9).
 - U10 merged (PR #31); release CI verified end-to-end.
 - Session memory, weekly human-gated learning loop (`wispd learn`), and answer-route with optional screenshot context all work in code.
@@ -150,7 +156,7 @@ Definition of done — all required, no substitutes:
 3. **Failure budget:** no more than 1 in 20 triggers ends in silence, a wrong
    action, or a daemon crash.
 4. **Visible surface, always:** ✦ status glyph live in the Omarchy bar,
-   companion orb on screen while listening, `Wisp` in the app menu, and
+   bar live pill on screen while listening, `Wisp` in the app menu, and
    the management GUI openable from both — verified after a fresh login,
    not just when launched by hand.
 5. **Fresh-box install ≤ 10 minutes** on a clean Omarchy VM, following only

@@ -1,7 +1,7 @@
 # Installing Wisp
 
 Wisp is a resident voice assistant: a `wispd` daemon plus a
-push-to-talk trigger, a shell plugin (orb + overlay), and a management
+push-to-talk trigger, a shell plugin (bar mark + live pill + overlay), and a management
 app.
 
 ## From a release tarball/zip
@@ -60,15 +60,15 @@ Faster/cloud: set `stt.provider = "openai"`, `stt.base_url` to Groq
 
 ## Per-OS notes
 
-- **Linux/Omarchy (Hyprland)**: fully wired — `SUPER+D` talks, orb in
-  the bar, overlay, hyprctl window ops.
+- **Linux/Omarchy (Hyprland)**: fully wired — hold `SUPER+D` to talk,
+  bar mark + live pill, companion overlay, hyprctl window ops.
 - **Linux GNOME/KDE/X11**: runs via the desktop adapter; window ops
   degrade where the platform has no API (documented in
   `docs/LINUX.md`). Bind `wispd trigger` through your DE's shortcut
   settings.
 - **macOS**: `wispd install` writes the launchd plist; bind `wispd
-  listen` via SKHD/Raycast. Grant Screen Recording + Accessibility.
-  See `docs/MACOS.md`.
+  trigger` (or `trigger start` / `stop` for hold-to-talk) via SKHD/Raycast.
+  Grant Screen Recording + Accessibility. See `docs/MACOS.md`.
 - **Windows**: `wispd install` registers the logon task; bind via a
   hotkey tool to `wispd.exe trigger`. See `docs/WINDOWS.md`.
 
@@ -120,7 +120,7 @@ the same `E_BAD_CONFIG` message from the CLI, the Panel and the daemon.
 ```sh
 wispd status          # daemon + state
 wispd trigger         # run one listen cycle without the hotkey
-wispd trace --tail    # the dev trace — every turn's stages + timings
+wispd trace show --tail 20   # recent dev trace events (stages + timings)
 ```
 
 ## Uninstall

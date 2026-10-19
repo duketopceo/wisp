@@ -22,7 +22,7 @@ future tray apps). Shells MUST only depend on this document.
 | cmd | extra fields | reply | effect |
 |---|---|---|---|
 | `status` | — | `{ok, state}` | `state` = full state.json snapshot |
-| `listen` | `phase?: start\|stop`, `t0?: int` (client wall-clock ns of the keypress; additive, optional) | `{ok}` or `{ok:false,error:"busy"}` | starts a listen cycle async; kills in-flight TTS (barge-in) |
+| `listen` | `phase?: start\|stop`, `t0?: int` (client wall-clock ns of the keypress; additive, optional) | see below | capture + pipeline async on idle; **mini-capture** while a turn is busy; kills in-flight TTS on a new turn (barge-in) |
 | `choice` | `pick: string`, optional `prompt_id: string`, optional `index: int` | `{ok}` or `{ok:false, error}`; `{ok, result}` for `suggestion:` picks | resolves the pending choice/confirm; see Prompt ids |
 | `suggestions` | — | `{ok, suggestions: [...]}` | pending routine suggestions (suggestions.jsonl backlog) |
 | `task_status` | `name: string` | `{ok, result: string}` | named-agent status |
@@ -39,6 +39,33 @@ future tray apps). Shells MUST only depend on this document.
 | `learn` | — | `{ok, result}` | weekly learning proposals (human-gated) |
 | `harness` | — | `{ok, result}` | regenerate the app harness catalog |
 | unknown/malformed | — | `{ok:false, error}` | — |
+
+### `listen` replies (additive; #110)
+
+When no turn owns the daemon (`busy` clear), the first press returns
+`{ok:true, recording:true}` and starts capture; release runs the full
+listen pipeline (`{ok:true, stopped:true}` on success). A second press
+while already recording stops capture the same way. `phase: start` /
+`phase: stop` mirror hold-to-talk; empty `phase` toggles.
+
+While a turn is busy (`deciding`, `acting`, or parked on
+`awaiting_choice`):
+
+- Press (no recorder yet): `{ok:true, recording:true, mini:"choice"|"stop"}`
+  — starts a short mini-capture. `mini:"choice"` when a prompt is pending;
+  `"stop"` when only interruption applies.
+- Press while mini-capture already open: `{ok:true, recording:true}`.
+- Release after mini-capture: transcribe, then:
+  - mapped choice → `{ok:true}` (same as `choice` applied);
+  - unmapped choice → `{ok:true, heard:<text>, mapped:false}`;
+  - spoken stop → `{ok:true, result:"interrupted", heard:<text>}`;
+  - non-stop interjection with no prompt → `{ok:true, heard:<text>, mapped:false}`;
+  - STT failure → `{ok:false, error:"stt_down"}`.
+- Starting a full turn while the daemon is busy with a normal (non-mini)
+  capture still returns `{ok:false, error:"busy"}`.
+
+Trace (Python core, `trace.jsonl`): `choice_voice` (mapped or not),
+`interrupt_voice`, `interjection_dropped`.
 
 `config` keys are `section.key` (e.g. `agent.answer_model`); split is on
 the **last** dot, so nested sections work — `brain.ollama.base_url` →
@@ -341,13 +368,14 @@ running to not-running transition publishes the new `tasks` and one
 - `trace.jsonl` — full-fidelity dev trace (`[debug] trace`, default on):
   one event per line `{ts, turn, step, kind, ms, data}` covering
   listen_start/record/transcribe/decision/dispatch/tool_call/
-  tool_result/brain_call/answer/speak/points/ipc/error, plus `kind=span`
+  tool_result/brain_call/answer/speak/points/ipc/error,
+  choice_voice/interrupt_voice/interjection_dropped, plus `kind=span`
   events (`step` = press, release, stt, context, route, first_token,
   first_step, tts_start, done, and sub-spans screenshot/hyprctl/memory/
   goal; `ms` = duration, `data.offset_ms` from the keypress,
-  `data.t0_source` client|daemon). `wispd trace`
-  `--tail N --turn <id> --kind <k>` on both cores; Python core adds
-  `--latency [--since 24h]` (p50/p90 per budget path). Rotates at 10 MB;
+  `data.t0_source` client|daemon). `wispd trace show --tail N --turn
+  <id> --kind <k>` on both cores; Python core adds `trace show --latency
+  --since 24h` (p50/p90 per budget path). Rotates at 10 MB;
   never logs secrets.
 - `recall.db` — sqlite-vec/FTS5 long-term recall.
 
