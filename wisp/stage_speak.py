@@ -49,7 +49,9 @@ def ask_chat(transcript: str, cfg: dict, session_text: str = "",
         user_content = [
             {"type": "text", "text": transcript},
             {"type": "image_url",
-             "image_url": {"url": f"data:image/png;base64,{image_b64}"}},
+             "image_url": {"url": image_b64
+                           if image_b64.startswith("data:")
+                           else f"data:image/png;base64,{image_b64}"}},
         ]
     messages = [{"role": "system", "content": system}]
     from . import memory
@@ -117,8 +119,47 @@ def speak_stage(ctx) -> int:
     if result == "ANSWERED":
         _answer(ctx)
     else:
-        ctx.state.transition("done", result=result)
+        payload = _spoken_payload(result)
+        if payload:
+            _speak_result(ctx, payload)
+        else:
+            ctx.state.transition("done", result=result)
     return _finish(ctx)
+
+
+def _spoken_payload(result: str) -> str:
+    """User-facing text inside a terminal act result: the model's final
+    reply for ACTED; empty for INTERRUPTED/other prefixes (already
+    announced by the interrupt itself, or machine-only status)."""
+    m = re.match(r"^ACTED(?:\s*\([^)]*\))?\s*:\s*(.*)$", result, re.DOTALL)
+    return m.group(1).strip() if m else ""
+
+
+def _speak_result(ctx, payload: str) -> None:
+    """Speak a finished act result like an answer — strip point tags
+    into annotations, publish `speaking`, TTS the payload."""
+    from . import points as _points
+    from . import trace as _trace
+    pl, state, cfg, sp = _pl(), ctx.state, ctx.cfg, ctx.sp
+    reply, raw = _points.extract(payload)
+    ctx.reply = reply
+    pts = []
+    if raw:
+        _mons = _points.monitors()
+        if _points.img_space_is_logical():
+            pts = _points.canvas_to_logical(raw, _mons)
+        else:
+            pts = _points.to_logical(raw, _mons)
+        _trace.emit(ctx.turn, "points", "act", {"points": pts})
+    state.transition("speaking", result=ctx.result,
+                     answer=reply, points=pts)
+    tts_start = sp.now()
+    proc = speech.speak(reply, cfg)
+    if proc is not None:
+        speech.on_exit(proc, pl._end_speaking(state))
+    else:
+        state.transition("done", result=ctx.result)
+    sp.record("tts_start", tts_start)
 
 
 def _ask_user(ctx) -> int:

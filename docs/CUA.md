@@ -30,7 +30,7 @@ guides otherwise.
 
 | Order | Backend | Notes |
 |---|---|---|
-| 1 | `cua` | background virtual pointer through `cua-driver`; no focus steal |
+| 1 | `cua` | virtual-pointer click through `cua-driver`; the real cursor does not move |
 | 2 | `hyprcursor` | Hyprland cursor move plus a `ydotool` click |
 | 3 | `ydotool` | needs `ydotoold` |
 | 4 | `wlrctl` | wlroots virtual pointer |
@@ -53,6 +53,67 @@ Two rules never change:
 A cancelled turn raises before any call and during one. It is never a
 failure to fall back from. Coordinates are logical Hyprland desktop
 coordinates; no backend rescales them.
+
+## Delivery: background, pointer, guide
+
+`wisp/delivery.py` names the channel an action actually takes.
+HeyClicky's `delivery_mode: "background"` maps honestly onto Wayland:
+background where a real mechanism exists, pointer escalation where it
+does not. Three channels are recorded:
+
+- `background`: the action lands without moving or fighting your real
+  pointer.
+- `pointer`: the action drives the real OS cursor.
+- `guide`: nothing is injected; the ghost cursor points and you click.
+
+The truth table (`delivery.backend_delivery`):
+
+| Op | `cua` | `hyprcursor` | `ydotool` | `wlrctl` | `guide` |
+|---|---|---|---|---|---|
+| click | background | pointer | pointer | pointer | guide |
+| move | pointer (`scope:"desktop"` moves the real cursor) | pointer | pointer | pointer | guide |
+| scroll | background | pointer | pointer | pointer | guide |
+| type, key, fill, DOM ops | background | — | — | — | guide |
+
+`[cua] delivery` picks the policy:
+
+- `auto` (default): each op takes its natural channel — cua clicks are
+  background; if no cua backend is up the click escalates to a pointer
+  backend.
+- `background`: refuse to silently drive the real pointer. A click with
+  no cua backend guides instead of injecting through ydotool.
+- `pointer`: prefer a real-pointer backend for clicks even when cua is
+  up (`hyprcursor` first in auto order). An explicit
+  `[pointer] backend` pin is more specific than this policy: pinning
+  `ydotool` under `delivery = "auto"` still clicks through ydotool.
+
+Actual delivery is additive metadata: it lands in the `cua.jsonl`
+audit line, on the action entries in the state stream
+(`docs/IPC_CONTRACT.md`), on `cua.target` aim events, and on the act
+loop's step records.
+
+**Instant takeover.** Before anything touches the real pointer the run
+arms a real-input watch (`wisp/realinput.py`). Any physical input —
+your click, key, or scroll — cancels the pointer sequence between
+commands; the act loop reports `INTERRUPTED (user)`. The watch reads
+`/dev/input/event*` directly (injected devices such as ydotool's
+virtual input are filtered out). With no readable event devices it
+falls back to watching cursor drift: the watch predicts where the
+injected drive will leave the cursor and yields only when the cursor
+moves somewhere else. With neither mechanism available the watch is
+`off` and pointer actions run without takeover detection. Stale input
+from before the arm is drained, so an old keypress cannot cancel a new
+action.
+
+**Blocked scopes.** Gestures that would fight you for the pointer or
+have no safe path on native Wayland are refused outright — they return
+`BLOCKED (...)`, never inject, and are never counted against the click
+rate limit: `drag` and every drag/swipe/drag-and-drop variant, double
+and triple click (`click{count:2,3}` included), right and middle click
+(the virtual pointer is left-button-only on Wayland), and
+`mouse_button_down`/`up` hold paths. Use single left `click`, `move`,
+`scroll`, `type` and `key`; multi-step "select text" flows should be
+`click` plus `key` chords.
 
 ## cua-driver: install and health
 
@@ -128,7 +189,8 @@ prints `SAFETY OFF` when it is.
 **Audit.** One JSON line per call in
 `$XDG_STATE_HOME/wisp/cua.jsonl` (`~/.local/state/wisp/cua.jsonl`):
 `ts`, `turn`, `tool`, `app`, `decision` (allow, deny, dry_run, cancelled),
-`dry_run`, the first word of the result, and `ms`. Coordinate targets add
+`dry_run`, the first word of the result, `delivery` (background, pointer
+or guide), and `ms`. Coordinate targets add
 `x` and `y`; named keys and chords add `key`; typed text adds only `len`
 and `sha`, a 12 hex digit hash with a per-process salt, so repeats match
 within a run but cannot be looked up in a dictionary. Typed text, target
@@ -188,7 +250,7 @@ exactly. `[ground] uitars_coords` is `px` or `rel1000` for UI-TARS output.
 
 **Ghost cursor.** For every click or move the act loop emits a
 `cua.target` event (`docs/IPC_CONTRACT.md`) on the push stream:
-`{x, y, window, label, confidence, phase}`. `phase` is `aim` once the
+`{x, y, window, label, confidence, phase, delivery}`. `phase` is `aim` once the
 point is resolved (the ghost travels there and parks, with a label such
 as "night light"), `click` (one ripple at the tip) and `done` (the click
 landed; the ghost dims and returns). A failed, refused or dry-run click
@@ -232,6 +294,7 @@ All under `[cua]` unless noted. Defaults are in `docs/CONFIG.md`.
 | `[cua] max_per_turn` | `12` | cap per act run |
 | `[cua] dry_run` | `false` | plan and log without acting |
 | `[cua] kill_switch` | `false` | refuse everything |
+| `[cua] delivery` | `auto` | `auto`, `background` or `pointer` |
 | `[cua] confirm` | `tier` | `tier` or `always` |
 | `[cua] audit` | `true` | write `cua.jsonl` |
 | `[ground] providers` | `a11y,uitars,jev` | chain order |
@@ -254,7 +317,7 @@ pointer:
   ok    pointer mode     drive
   ok    cua driver       running
   ok    cua version      0.33.1 (pin 0.33.1)
-  ok    cua safety       safety on, kill off, dry-run off, 30/min, 12/turn
+  ok    cua safety       safety on, kill off, dry-run off, delivery auto, 30/min, 12/turn
   ok    cua audit log    /home/you/.local/state/wisp/cua.jsonl (649KB)
 ```
 

@@ -28,6 +28,7 @@ Pointer and notifications:
 Agents and memory:
   task         Background agents: list, status, cancel, run
   memory       Edit the MEMORY and USER notes
+  dictate      Dictation modes and personal corrections
   suggest      Suggestions mined from your activity
   label        Label the last turn to measure routing accuracy
   context      Print what the daemon sees right now

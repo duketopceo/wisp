@@ -127,6 +127,73 @@ class Shot:
 
 
 # ---------------------------------------------------------- frame math
+#
+# Aspect-matched pointing resolution table and coordinate scaling ported
+# from farzaa/clicky `leanring-buddy/ElementLocationDetector.swift` (MIT).
+# Source: https://github.com/farzaa/clicky
+
+POINTING_RESOLUTIONS: tuple[tuple[int, int], ...] = (
+    (1024, 768),   # 4:3   = 1.333 (legacy displays)
+    (1280, 800),   # 16:10 = 1.600 (MacBook Air/Pro, 16:10 panels)
+    (1366, 768),   # ~16:9 = 1.779 (external monitors, ultrawide fallback)
+)
+
+
+def pick_pointing_resolution(width: int, height: int) -> tuple[int, int]:
+    """Pick the pointing resolution from `POINTING_RESOLUTIONS` whose aspect
+    ratio is closest to `(width, height)`, defaulting to (1280, 800)."""
+    try:
+        w = int(width)
+        h = int(height)
+    except (TypeError, ValueError):
+        return (1280, 800)
+    if w <= 0 or h <= 0:
+        return (1280, 800)
+    display_ratio = float(w) / float(max(1, h))
+    best_w, best_h = 1280, 800
+    smallest_diff = float("inf")
+    for rw, rh in POINTING_RESOLUTIONS:
+        ratio = float(rw) / float(rh)
+        diff = abs(display_ratio - ratio)
+        if diff < smallest_diff:
+            smallest_diff = diff
+            best_w, best_h = rw, rh
+    return (best_w, best_h)
+
+
+def scale_point_from_resolution(
+    px: float,
+    py: float,
+    res_w: int,
+    res_h: int,
+    disp_w: int,
+    disp_h: int,
+    flip_y: bool = False,
+) -> tuple[int, int]:
+    """Clamp `(px, py)` to `[0..res_w, 0..res_h]`, scale into
+    `[0..disp_w, 0..disp_h]`, optionally flip Y origin (macOS AppKit
+    bottom-left vs top-left), and clamp to display bounds.
+
+    Mirrors `ElementLocationDetector.detectElementLocation` (lines 103-118)
+    from farzaa/clicky (MIT).
+    """
+    rw = max(1.0, float(res_w))
+    rh = max(1.0, float(res_h))
+    dw = max(0.0, float(disp_w))
+    dh = max(0.0, float(disp_h))
+
+    clamped_x = max(0.0, min(float(px), rw))
+    clamped_y = max(0.0, min(float(py), rh))
+
+    scaled_x = (clamped_x / rw) * dw
+    scaled_y = (clamped_y / rh) * dh
+    if flip_y:
+        scaled_y = dh - scaled_y
+
+    scaled_x = max(0.0, min(scaled_x, dw))
+    scaled_y = max(0.0, min(scaled_y, dh))
+    return int(round(scaled_x)), int(round(scaled_y))
+
 
 def _scale(m: dict) -> float:
     try:
@@ -676,8 +743,19 @@ def ground_target(target: str, cfg: dict | None = None, *, capture=None,
                 w, h = best.size or (shot.width, shot.height)
                 x, y = x * shot.width / w, y * shot.height / h
             gx, gy = convert(x, y, best.frame, mons, output)
+            from . import trace as _trace
+            _trace.emit(_trace.current(), "ground", "act",
+                        {"target": name, "src": best.source,
+                         "conf": round(best.confidence, 3),
+                         "x": gx, "y": gy, "tried": tried,
+                         "down": down})
             return Target(gx, gy, "global", round(best.confidence, 3),
                           best.source, best.label or name, best.window)
+    from . import trace as _trace
+    _trace.emit(_trace.current(), "ground_refused", "act",
+                {"target": name, "tried": tried, "down": down,
+                 "best": (f"{best.source} {best.confidence:.2f}"
+                          if best is not None else None)})
     if best is not None:
         raise GroundRefused("ground_failed", "low_confidence",
                             f"{best.source} {best.confidence:.2f} < "
@@ -691,9 +769,12 @@ def ground_target(target: str, cfg: dict | None = None, *, capture=None,
 # --------------------------------------------------------------- events
 
 def emit_target(state, phase: str | None, target: Target | None = None,
-                *, window: str = "", label: str = "") -> None:
+                *, window: str = "", label: str = "",
+                delivery: str = "") -> None:
     """W21 `cua.target` event (compositor-global px). phase None clears
-    (`x`/`y` null). Never raises; a state without emit_event is a no-op."""
+    (`x`/`y` null). `delivery` (U5) names the channel the aim would /
+    did use so the overlay can show when it escalates to the real
+    pointer. Never raises; a state without emit_event is a no-op."""
     fn = getattr(state, "emit_event", None)
     if not callable(fn):
         return
@@ -704,6 +785,7 @@ def emit_target(state, phase: str | None, target: Target | None = None,
         fn("cua.target", x=target.x, y=target.y,
            window=window or target.window or "",
            label=label or target.label or "",
-           confidence=target.confidence, phase=phase)
+           confidence=target.confidence, phase=phase,
+           delivery=delivery)
     except Exception:
         pass

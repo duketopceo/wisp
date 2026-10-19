@@ -1,4 +1,4 @@
-# Wisp IPC + State Contract v1
+# Wisp IPC + State Contract v2
 
 The stable boundary between `wispd` (any implementation — Python
 reference or `wispd-rs`) and UI shells (Omarchy quickshell plugin,
@@ -23,7 +23,8 @@ future tray apps). Shells MUST only depend on this document.
 |---|---|---|---|
 | `status` | — | `{ok, state}` | `state` = full state.json snapshot |
 | `listen` | `phase?: start\|stop`, `t0?: int` (client wall-clock ns of the keypress; additive, optional) | see below | capture + pipeline async on idle; **mini-capture** while a turn is busy; kills in-flight TTS on a new turn (barge-in) |
-| `choice` | `pick: string`, optional `prompt_id: string`, optional `index: int` | `{ok}` or `{ok:false, error}` | resolves the pending choice/confirm; see Prompt ids |
+| `choice` | `pick: string`, optional `prompt_id: string`, optional `index: int` | `{ok}` or `{ok:false, error}`; `{ok, result}` for `suggestion:` picks | resolves the pending choice/confirm; see Prompt ids |
+| `suggestions` | — | `{ok, suggestions: [...]}` | pending routine suggestions (suggestions.jsonl backlog) |
 | `task_status` | `name: string` | `{ok, result: string}` | named-agent status |
 | `task_cancel` | `name: string` | `{ok, result: string}` | cancel named agent |
 | `agent` | `task: string` | `{ok, result: string}` | spawn a background task via `[brain] agent_runtime`; `result` is `SPAWNED …`/`SKIP …` |
@@ -33,11 +34,8 @@ future tray apps). Shells MUST only depend on this document.
 | `interrupt` | — | `{ok}` | cancels the in-flight turn only — daemon stays up; see Cancellation |
 | `config` | `set: {"section.key": "val"}` (optional) | `{ok, config}` | read config; with `set`, writes config.toml preserving comments/order and live-reloads |
 | `label` | `label: correct\|incorrect` | `{ok, result}` | tag the most recent decision (soak intent-match + trajectory join) |
+| `dictate_correct` | `{"heard","meant"}` | `{ok, result}` or `{ok:false, error, result}` | record a personal dictation correction → `dictation.json` (U6); cleanup/compose prompts carry the table |
 | `context` | — | `{ok, result}` | focused app, `[windows]` workspace map, inventory counts |
-| `inventory` | — | `{ok, result}` | rescan local terrain → `inventory.json` |
-| `connect` | `service` or `list` | `{ok, result, json?}` | OAuth connector flow via BrowserOS Strata; `list` returns the catalog (add `--json` for machine-readable) |
-| `recipes` | `approve <name>` optional | `{ok, result}` | list draft recipe-* proposals; `approve` installs as a skill |
-| `tele` / `fails` | — | `{ok, result}` | decision telemetry / recent failures |
 | `learn` | — | `{ok, result}` | weekly learning proposals (human-gated) |
 | `harness` | — | `{ok, result}` | regenerate the app harness catalog |
 | unknown/malformed | — | `{ok:false, error}` | — |
@@ -74,19 +72,28 @@ the **last** dot, so nested sections work — `brain.ollama.base_url` →
 `[brain.ollama] base_url`. The daemon returns `{ok:false}` if any key
 lacks a section. Shells may offer a settings page on top of this command.
 
+The CLI also exposes verbs that run **locally** with no daemon
+round-trip — they are not IPC commands and are absent from the table:
+`connect` (OAuth via BrowserOS Strata), `inventory`, `recipes`,
+`tele`, `fails`, `subscribe`'s client side (`wispd watch`).
+
 ## state.json (atomically rewritten, tmp+rename)
 
 ```json
 {
-  "status": "idle|listening|transcribing|deciding|awaiting_choice|acting|speaking|done|error",
+  "status": "idle|listening|transcribing|deciding|awaiting_choice|acting|speaking|suggestion|done|error",
   "transcript": "string",
   "answer": "string",
   "result": "string",
   "choices": ["string"],
   "prompt_id": "string — id of the offered choices/confirm; \"\" when none",
-  "confirm": "null, or {prompt_id, prompt, timeout_s} while a confirm card waits (additive, W25)",
+  "confirm": "null, or {prompt_id, prompt, timeout_s, kind} while a confirm card waits (additive, W25; kind \"confirm\"|\"handoff\" added U3)",
   "points": [{"x": 0, "y": 0, "label": "string", "step": 1}],
   "steps": ["tool arg → result", "…"],
+  "actions": [{"id": "a3", "kind": "tool", "label": "click",
+               "status": "in_flight", "target": "640,360",
+               "reason": "", "undo_ref": null, "delivery": "background",
+               "at": "ISO-8601"}],
   "guide": {"x": 0, "y": 0, "label": "string", "mode": "guide|drive", "seq": 1},
   "focus": {"app": "string", "title": "string"},
   "goal": {"text": "string", "status": "open|done|failed"},
@@ -101,7 +108,7 @@ lacks a section. Shells may offer a settings page on top of this command.
   "turn_id": "string — turn that produced this write",
   "seq": 0,
   "updated_at": "ISO-8601",
-  "contract_version": 1,
+  "contract_version": 2,
   "heartbeat_at": "ISO-8601|null — refreshed every 15 s while transcribing/deciding/acting"
 }
 ```
@@ -149,10 +156,20 @@ prompt is pending or `prompt_id` is not the pending one (the pending
 prompt keeps waiting); `{ok:false, error:"not_offered"}` for a `pick`
 not in `choices`; `{ok:false, error:"bad_index"}` for an `index` out of
 range. A `choice` without `prompt_id` is accepted only while a prompt is
-pending (exactly one ever is) — this keeps current shells working. An
+pending (exactly one ever is) — this keeps current shells working — with
+one exception: resolving the wildcard `always` pick REQUIRES the live
+`prompt_id` (`{ok:false, error:"prompt_id_required"}` otherwise), so a
+session-wide grant can only come from a client that saw the card. An
 empty `pick` dismisses the prompt like a timeout. The core also refuses
 an unoffered pick that reaches the turn by another path (trace
 `choice_rejected`) and falls back to its safe auto-pick.
+
+A `pick` beginning `suggestion:` needs no `prompt_id`: the daemon
+resolves it before the broker (`suggestion:<act>` for the live card,
+`suggestion:<act>:<key>` for a pending suggestions.jsonl row) and
+replies `{ok:true, result}` — `result` is the daemon's own words for
+the surface ack (`automating`, `OK (snoozed)`, `SKIP (suggestion
+expired)`, `OK (never suggest that again)`).
 
 Cancellation (additive; U9): `interrupt` cancels the current turn at
 whatever stage it is in — the whisper child and tool subprocesses are
@@ -166,12 +183,68 @@ completed sentence while the answer streams (state still goes
 `speaking` → `done` when the last sentence ends).
 
 Confirm card (additive; W25): while a confirm waits the core also
-publishes `confirm = {prompt_id, prompt, timeout_s}` (`null` otherwise,
-cleared with `choices`). `confirm.prompt_id` equals `prompt_id`; the
-card's replies use it, and a reply with any other id is `stale_prompt`.
-No reply within `timeout_s` (`[agent] confirm_timeout`, default 120,
-clamped 5 to 600) resolves as deny: the daemon owns the deadline, the
-step result is `SKIPPED (<tool> confirmation timed out)`.
+publishes `confirm = {prompt_id, prompt, timeout_s, kind}` (`null`
+otherwise, cleared with `choices`). `confirm.prompt_id` equals
+`prompt_id`; the card's replies use it, and a reply with any other id is
+`stale_prompt`. No reply within `timeout_s` (`[agent] confirm_timeout`,
+default 120, clamped 5 to 600) resolves as deny: the daemon owns the
+deadline, the step result is `SKIPPED (<tool> confirmation timed out)`.
+`kind` is `"confirm"` (absent on older cores), `"handoff"` (U3: a T3
+step the user must do themselves — options read `… — done` / `cancel`,
+the tool never runs), or `"question"` (U4: the act loop's `ask_user` —
+the agent asked mid-task instead of guessing). A `confirm` card's
+`choices` may carry a middle `"always"` pick (U3 session grant):
+first option is still the allow pick, last is still the deny.
+`detail` (additive, optional) is the body the card renders under the
+ask — the thing being approved, e.g. the dictation text an
+`auto_send` profile is about to send. Absent when the ask needs no
+payload preview; shells should render it elided after `prompt`.
+
+Question card (additive; U4): a `confirm` block with `kind:"question"`
+means the running agent asked the user something (`prompt` is the
+question text). When the model offered picks, `choices` carries them
+and the usual `choice` pick/index rules apply; when it did not,
+`choices` is empty and ANY non-empty `pick` resolves the card — a
+typed `wispd choice "the answer"` or a free-form spoken reply resolves
+it verbatim (voice answers are offered as picks when no options are
+pending, and mapped onto options when they are). A free-form answer is
+user-typed content — possibly a credential — so the stream and trace
+record only `(answer)` / `answered (N chars)`, never the text; the
+verbatim answer reaches the model only. No reply inside `timeout_s`
+lapses the question (`cancelled`, reason `timeout`) and the model
+receives a `NO_ANSWER` tool result rather than a stuck turn.
+
+Action stream (additive; U2): `actions` is the unified lifecycle log —
+one entry per dispatch, tool call, prompt, pick, interrupt, label and
+suggestion, newest last, capped at the most recent 50. Entry shape:
+`{id, kind, label, status, target, reason, undo_ref, at}` plus the
+additive `delivery` (U5 — `background` | `pointer` | `guide`, `""` when
+no input channel applies); prompt
+entries also carry `options` (the offered picks) and `prompt_id`.
+`id` is a per-boot `a<N>` counter — unique within one daemon run.
+`status` is a closed set: `queued`, `in_flight`, `awaiting`, `done`,
+`failed`, `cancelled` — shells must map unknown values to `done`.
+`kind` is an open set (`route`, `tool`, `confirm`, `handoff`,
+`clarify`, `choice`, `interrupt`, `label`, `suggestion`, `question`,
+`act`, `dictation` today); render entries generically and ignore
+unknown kinds' extras.
+`target` is the
+truncated arg (tool) or key (suggestion); `reason` is the terminal or
+waiting context — a result string for tools, `denied` / `timeout` /
+`interrupted` on `cancelled` prompts, `never` / `snoozed` / `expired` /
+`accepted` on suggestions. `undo_ref` carries a short undo hint on
+reversible (T1) tool entries (`"undo in the app"`, `"switch back"`),
+else `null`.
+`at` is the ISO-8601 entry-creation time. Entries mutate in place by
+`id`: the whole capped list ships in each diff, so subscribers replace
+it wholesale. The newest `awaiting` entry of kind `confirm` IS the
+confirm card while its `prompt_id` equals the top-level `prompt_id`
+(supersedes `confirm` in newer shells; `confirm` still publishes for
+compatibility and supplies `timeout_s`). An `awaiting` entry whose
+prompt already ended is stale — render it cancelled, don't keep the
+card. The list is daemon-lifetime — it is not cleared per turn and not
+persisted across restarts. `steps` still publishes the per-turn step
+strings for older shells.
 
 Confirmation gate: when a mutating/shell action needs approval, the
 core transitions to `awaiting_choice` with `choices` = e.g.
@@ -203,7 +276,7 @@ unaffected, and `state.json` is still written on every change.
 
 Lines, in order:
 
-1. `{"type":"hello","ok":true,"contract_version":1,"topics":[...]}`.
+1. `{"type":"hello","ok":true,"contract_version":2,"topics":[...]}`.
    On refusal (`unknown topic`, no bus) `{"type":"hello","ok":false,
    "error":"..."}` and the daemon closes.
 2. `{"type":"snapshot","seq":N,"state":{...}}`, the full state.json
@@ -237,7 +310,9 @@ class (may be empty); `label` string, a short element name such as
 "night light" (may be empty); `confidence` number 0..1 from the grounding
 model (default 1); `phase` one of `aim` (default; the ghost travels to the
 point and parks), `click` (one ripple at the tip), `done` (the click
-landed; the ghost dims and returns). `{"x":null,"y":null}` clears.
+landed; the ghost dims and returns); `delivery` string — `background`,
+`pointer` or `guide`, the input channel the aim would take (`""` on
+older cores; additive, U5). `{"x":null,"y":null}` clears.
 
 Reader rules (`shell-plugin/lib/state.js`, `view.cuaTarget`): the event
 is applied only while `status` is `acting`, `deciding` or

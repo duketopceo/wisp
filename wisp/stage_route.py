@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 
 from . import cancel as _cancel
 from . import config
+from . import state as _state
 
 
 def _pl():
@@ -361,20 +362,20 @@ def _ask_prompt(state, wait_for_choice, token, options: list,
     return the pick — or None when none came, the turn was cancelled or
     the pick was not one of the offered options (`choice_rejected`)."""
     from . import trace as _trace
-    pid = _cancel.new_prompt_id()
-    state.transition("awaiting_choice", choices=list(options),
-                     prompt_id=pid)
-    try:
-        pick = wait_for_choice(timeout, prompt_id=pid,
-                               options=list(options))
-    finally:
-        if not token.cancelled:
-            state.transition("acting", choices=[], prompt_id="")
+    from . import confirm as _confirm
+    aid, pid, pick = _confirm.park_prompt(
+        state, wait_for_choice, token, kind,
+        ", ".join(options) or "clarify", list(options), timeout)
     if pick and pick not in options:
+        _state.action_set(state, aid, status="failed", reason="rejected")
         _trace.emit(turn, "choice_rejected", "act",
                     {"kind": kind, "pick": pick, "prompt_id": pid,
                      "offered": list(options)})
         return None
+    _state.action_set(
+        state, aid,
+        status="done" if pick else "cancelled",
+        reason=pick or ("interrupted" if token.cancelled else "timeout"))
     return pick
 
 
@@ -386,8 +387,11 @@ def route_stage(ctx) -> bool:
     pl, state, sp, cfg, text = _pl(), ctx.state, ctx.sp, ctx.cfg, ctx.text
     turn, token, model = ctx.turn, ctx.token, ctx.model
     harness, context = ctx.harness, ctx.context
-    # router: jev (default) | chat (transcript straight to answer
-    # brain) | off (always clarify via choices) — Rust parity
+    # router: jev (default) | act (every turn straight to the
+    # conversational agent loop — no decision hop, the loop's brain
+    # decides answer-vs-work with the trigger screenshot) |
+    # chat (transcript straight to answer brain) | off (always
+    # clarify via choices) — Rust parity
     sp.record("context", sp.mark_ns("stt"))
     route_start = sp.now()
     route_meta = None
@@ -398,6 +402,8 @@ def route_stage(ctx) -> bool:
         # explicit agent mode — skip Jev, straight to the
         # computer-use loop with the trigger screenshot
         ctx.detail = agent_m.group(1).strip()
+        resp = {"answers": {"route": {"choice": "act"}}}
+    elif router == "act":
         resp = {"answers": {"route": {"choice": "act"}}}
     elif router == "chat":
         resp = {"answers": {"route": {"choice": "answer"}}}

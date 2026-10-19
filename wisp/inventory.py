@@ -188,6 +188,51 @@ def _dayflow() -> dict:
     return out
 
 
+MIMEAPPS = pathlib.Path.home() / ".config/mimeapps.list"
+
+# role -> the association that answers it; values land in inv["defaults"]
+# so the agent opens the user's real default, not a guessed app
+_ROLE_MIMES = {
+    "browser": "x-scheme-handler/https",
+    "mail": "x-scheme-handler/mailto",
+    "files": "inode/directory",
+    "editor": "text/plain",
+    "images": "image/png",
+    "music": "audio/mpeg",
+    "video": "video/mp4",
+    "pdf": "application/pdf",
+    "calendar": "x-scheme-handler/webcal",
+}
+
+
+def _app_label(desktop_id: str) -> str:
+    """'re.sonny.Junction.desktop' -> 'junction'."""
+    return desktop_id.removesuffix(".desktop").rsplit(".", 1)[-1].lower()
+
+
+def defaults() -> dict:
+    """Configured default handlers — 'mail' means THEIR mail app."""
+    out = {}
+    try:
+        in_defaults = False
+        for line in MIMEAPPS.read_text().splitlines():
+            line = line.strip()
+            if line.startswith("["):
+                in_defaults = line == "[Default Applications]"
+                continue
+            if not in_defaults or "=" not in line:
+                continue
+            mime, _, ids = line.partition("=")
+            for role, want in _ROLE_MIMES.items():
+                if mime == want and role not in out:
+                    first = ids.split(";")[0].strip()
+                    if first:
+                        out[role] = _app_label(first)
+    except OSError:
+        pass
+    return out
+
+
 def scan(cfg: dict | None = None) -> dict:
     """Full passthrough — write inventory.json and return it."""
     inv = {"generated": time.strftime("%Y-%m-%dT%H:%M:%SZ",
@@ -197,6 +242,13 @@ def scan(cfg: dict | None = None) -> dict:
                              .get("apps", {}).keys())
     except (OSError, ValueError):
         inv["apps"] = []
+    # union in the installed catalog — apps are launchable via the
+    # .desktop fallback even before dayflow logs them, so the env line
+    # should name them (a name the model can't see is a name it guesses)
+    from .tools import adapters
+    inv["apps"] = sorted(set(inv["apps"])
+                       | set(adapters.generic_catalog()))
+    inv["defaults"] = defaults()
     inv["cli_tools"] = _cli_tools()
     inv["mcp"] = _mcp_servers()
     inv["omarchy"] = _omarchy()
@@ -231,7 +283,19 @@ def summary(cfg: dict | None = None) -> str:
         return ""
     parts = []
     if inv.get("apps"):
-        parts.append(f"apps({len(inv['apps'])})")
+        apps = inv["apps"]
+        # names the model can actually `launch`, most-used first —
+        # a bare count leaves it guessing app names that SKIP
+        top = (inv.get("dayflow") or {}).get("top_apps") or []
+        lead = [a for a in top if a in apps]
+        names = lead + sorted(n for n in apps if n not in lead)
+        names = names[:40]
+        parts.append("apps=" + ",".join(names)
+                     + (f"+{len(apps) - len(names)}"
+                        if len(apps) > len(names) else ""))
+    if inv.get("defaults"):
+        parts.append("defaults=" + ",".join(
+            f"{r}:{a}" for r, a in sorted(inv["defaults"].items())))
     cli = inv.get("cli_tools") or {}
     if cli:
         # notable dev/agent tools first, then other user bins

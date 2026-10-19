@@ -1,5 +1,6 @@
 // One step of a turn: state icon plus the humanized step text. States:
-// pending, running (2px ember tick), done, failed, confirm (needs your ok).
+// pending, running (2px ember tick), done, failed, cancelled, confirm
+// (needs your ok).
 // The raw tool string stays on `raw` for a tooltip or details view.
 import QtQuick
 import "../lib/metrics.js" as M
@@ -18,6 +19,7 @@ Item {
     running: { icon: "act", token: "ember" },
     done: { icon: "check", token: "ok" },
     failed: { icon: "cross", token: "fail" },
+    cancelled: { icon: "cross", token: "inkMuted" },
     confirm: { icon: "warning", token: "needsYou" }
   })
   readonly property var mine: look[state] || look.done

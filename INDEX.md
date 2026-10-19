@@ -32,6 +32,7 @@ Common CLI groups (full tree: `wispd --help`): `daemon`, `status`, `stop`,
 | `stage_speak.py` | Stream + speak answers, close turn |
 | `stage_ctx.py` | Per-turn context bag passed between stages |
 | `act.py` | Bounded tool-call loop (defaults: ≤8 steps via `[agents] act_max_steps`, ≤2 consecutive errors) |
+| `dictate.py` | LLM-aware dictation (U6) — raw/cleanup/compose modes, `[dictation.profiles.*]` per-app style, terminal newline guard, `dictation.json` corrections, wordink→type→paste insert |
 | `voicepick.py` | Map spoken utterances to pending choice/confirm options or stop words |
 | `config.py` | config.toml flat parser/writer, paths, API key, harness load |
 | `ipc.py` | unix-socket server + client (newline-delimited JSON) |

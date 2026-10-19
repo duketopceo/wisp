@@ -24,9 +24,9 @@ FIXTURE_SERVICE = ROOT / "tests" / "qml" / "harness" / "FixtureService.qml"
 EXPECTED = ["Answer", "AgentRow", "AgentsTab", "BarActions", "BarMark", "BarPill", "Beacon", "Bubble", "Chip",
             "Creature", "EmptyState", "FirstRunCard", "GhostCursor",
             "HealthSection", "Icon", "Mark", "MemoryTab", "NowTab", "OverlayLayer",
-            "PanelTab", "Pill", "SettingsTab", "StatusLine", "StepRow",
+            "PanelTab", "Pill", "RunCard", "SettingsTab", "StatusLine", "StepRow",
             "StopControl", "Transcript",
-            # management app views (W26)
+            # management app views
             "AuditView", "BindsView", "HealthView", "SpendView"]
 
 FORBIDDEN = [
@@ -175,7 +175,8 @@ class TestServiceSurface(unittest.TestCase):
         real = service_members((PLUGIN / "WispService.qml").read_text())
         fix = service_members(FIXTURE_SERVICE.read_text())
         mirrored = {"status", "transcript", "answer", "result", "choices",
-                    "promptId", "points", "steps", "suggestion", "goal",
+                    "promptId", "points", "steps", "actions", "suggestion",
+                    "goal",
                     "level", "tasks", "error", "errorCode", "health",
                     "offline", "stale", "tokens", "motionMode", "fontFamily",
                     "statusWord", "statusTone", "resultView", "notice",
@@ -263,6 +264,58 @@ class TestPureLibs(unittest.TestCase):
                          [])
         r = self.call("Steps.rows([null, 5], false)", Steps="steps")
         self.assertEqual(len(r), 2)
+
+    def test_action_rows_map_the_lifecycle(self):
+        # stream statuses -> row states; live daemon keeps open states
+        rows = self.call(
+            "Steps.actionRows(["
+            " {label:'route', status:'done', target:'act'},"
+            " {label:'click', status:'in_flight'},"
+            " {label:'run close?', status:'awaiting'},"
+            " {label:'type', status:'failed', reason:'ERROR x'},"
+            " {label:'launch', status:'cancelled', reason:'denied'},"
+            " {label:'click', status:'queued'}], 'acting')",
+            Steps="steps")
+        self.assertEqual([r["state"] for r in rows],
+                         ["done", "running", "confirm", "failed",
+                          "cancelled", "pending"])
+        self.assertEqual(rows[0]["text"], "route act")
+        self.assertEqual(rows[4]["raw"], "launch -> denied")
+        self.assertEqual(rows[1]["text"], "click")
+
+    def test_action_rows_stale_open_states_read_cancelled(self):
+        # the turn ended but an entry never resolved — show it stopped,
+        # not forever-running/queued
+        rows = self.call(
+            "Steps.actionRows([{label:'click', status:'in_flight'},"
+            " {label:'click', status:'queued'},"
+            " {label:'run?', status:'awaiting'},"
+            " {label:'ok', status:'done'}], 'done')", Steps="steps")
+        self.assertEqual([r["state"] for r in rows],
+                         ["cancelled", "cancelled", "cancelled", "done"])
+        # and an awaiting row for a prompt that isn't the live one is
+        # stale even while another prompt waits
+        rows = self.call(
+            "Steps.actionRows(["
+            " {label:'old?', status:'awaiting', promptId:'p6'},"
+            " {label:'live?', status:'awaiting', promptId:'p7'}],"
+            " 'awaiting_choice', 'p7')", Steps="steps")
+        self.assertEqual([r["state"] for r in rows],
+                         ["cancelled", "confirm"])
+
+    def test_action_rows_tail_and_junk(self):
+        # the tab shows the last 8 of the 50-entry stream
+        entries = ", ".join(f"{{label:'a{i}',status:'done'}}"
+                            for i in range(1, 11))
+        rows = self.call(f"Steps.actionRows([{entries}], 'acting')",
+                         Steps="steps")
+        self.assertEqual(len(rows), 8)
+        self.assertEqual(rows[0]["text"], "a3")
+        self.assertEqual(self.call("Steps.actionRows(null, 'acting')",
+                                   Steps="steps"), [])
+        r = self.call("Steps.actionRows([null, 5, {label:'x'}], 'idle')",
+                      Steps="steps")
+        self.assertEqual(len(r), 3)
 
     def test_every_status_has_a_mark_and_token(self):
         statuses = ["idle", "listening", "transcribing", "deciding",

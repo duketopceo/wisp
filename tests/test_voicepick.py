@@ -60,6 +60,31 @@ class MapPickTest(unittest.TestCase):
     def test_ordinal_works_on_confirm_cards_too(self):
         self.assertEqual(self.pick("the first option"), 0)
 
+    # -- U3 card shapes ---------------------------------------------
+    TRIPLE = ["run close: w1 — yes", "always", "no"]
+    HANDOFF = ["needs you: sign in — done", "cancel"]
+
+    def test_three_option_confirm_card(self):
+        # the U3 session-grant middle pick: yes/no still map to the
+        # ends, "always" binds the middle by label
+        self.assertEqual(self.pick("yes", self.TRIPLE), 0)
+        self.assertEqual(self.pick("no", self.TRIPLE), 2)
+        self.assertEqual(self.pick("always", self.TRIPLE), 1)
+        # the session wildcard never binds by ordinal/digit — an
+        # incidental "second" must not widen one approval into every
+        # gated call; the card stays up
+        self.assertIsNone(self.pick("the second one", self.TRIPLE))
+        self.assertIsNone(self.pick("2", self.TRIPLE))
+        # nor by label overlap — a stray "always" mid-sentence is not a
+        # grant
+        self.assertIsNone(self.pick("always delete it", self.TRIPLE))
+
+    def test_handoff_done_cancel(self):
+        self.assertEqual(self.pick("done", self.HANDOFF), 0)
+        self.assertEqual(self.pick("yes", self.HANDOFF), 0)
+        self.assertEqual(self.pick("cancel", self.HANDOFF), 1)
+        self.assertEqual(self.pick("no", self.HANDOFF), 1)
+
     # -- label overlap ----------------------------------------------
     def test_option_text_overlap(self):
         self.assertEqual(self.pick("open firefox", self.APPS), 0)
