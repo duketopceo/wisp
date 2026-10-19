@@ -5,7 +5,7 @@
 // regenerate. lib/settings.js builds on this table.
 
 // every key the daemon validates, in schema order
-var KEYS = ["budget.daily_usd", "budget.monthly_usd", "budget.gate_primary", "pointer.mode", "pointer.backend", "cua.dry_run", "cua.kill_switch", "cua.confirm", "cua.max_clicks_per_min", "cua.max_per_turn", "cua.timeout_ms", "audio.seconds", "agent.screenshots", "ui.theme", "brain.router", "brain.allow_paid", "keys.submap", "agents.act_max_steps", "agents.act_max_errors", "agents.act_max_parse_misses", "agents.writer_queue_max", "stt.provider"]
+var KEYS = ["budget.daily_usd", "budget.monthly_usd", "budget.gate_primary", "pointer.mode", "pointer.backend", "cua.dry_run", "cua.kill_switch", "cua.confirm", "cua.delivery", "cua.max_clicks_per_min", "cua.max_per_turn", "agent.autonomy", "dictation.mode", "cua.timeout_ms", "audio.seconds", "agent.screenshots", "ui.theme", "brain.router", "brain.allow_paid", "keys.submap", "agents.act_max_steps", "agents.act_max_errors", "agents.act_max_parse_misses", "agents.act_max_seconds", "agents.act_max_usd", "agents.writer_queue_max", "stt.provider", "clicklab.adaptive", "clicklab.promote_after", "clicklab.judge"]
 
 // keys the Panel edits: kind usd, int, bool or choice
 var FIELDS = [
@@ -15,8 +15,11 @@ var FIELDS = [
   {"key": "cua.dry_run", "group": "cua", "kind": "bool", "label": "ui.set.dry_run", "widget": "toggle"},
   {"key": "cua.kill_switch", "group": "cua", "kind": "bool", "label": "ui.set.kill", "widget": "toggle"},
   {"key": "cua.confirm", "group": "cua", "kind": "choice", "label": "ui.set.confirm", "widget": "choice", "options": ["tier", "always"]},
+  {"key": "cua.delivery", "group": "cua", "kind": "choice", "label": "ui.set.delivery", "widget": "choice", "options": ["auto", "background", "pointer"]},
   {"key": "cua.max_clicks_per_min", "group": "cua", "kind": "int", "label": "ui.set.clicks", "widget": "number", "min": 1, "max": 600},
-  {"key": "cua.max_per_turn", "group": "cua", "kind": "int", "label": "ui.set.per_turn", "widget": "number", "min": 1, "max": 200}
+  {"key": "cua.max_per_turn", "group": "cua", "kind": "int", "label": "ui.set.per_turn", "widget": "number", "min": 1, "max": 200},
+  {"key": "agent.autonomy", "group": "agent", "kind": "choice", "label": "ui.set.autonomy", "widget": "choice", "options": ["autonomous", "guided", "always_ask"]},
+  {"key": "dictation.mode", "group": "dictation", "kind": "choice", "label": "ui.set.dictation", "widget": "choice", "options": ["raw", "cleanup", "compose"]}
 ]
 
 // characters a config value may not contain (as a regex source)

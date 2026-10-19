@@ -263,7 +263,9 @@ class TestNotify(unittest.TestCase):
             stop.set()
             wd.join()
             gaps = [b - a for a, b in zip(stamps, stamps[1:])]
-            self.assertTrue(all(g < 0.3 for g in gaps), gaps)
+            # ~0.25s interval + scheduler jitter — assert the cadence
+            # is running, not that the runner is a realtime kernel
+            self.assertTrue(all(g < 0.5 for g in gaps), gaps)
 
     def test_no_ping_when_unhealthy(self):
         with shorttmp.TemporaryDirectory() as td:
@@ -278,6 +280,8 @@ class TestNotify(unittest.TestCase):
             stop.set()
             wd.join()
 
+    @unittest.skipIf(sys.platform != "linux",
+                     "abstract socket namespace is Linux-only")
     def test_abstract_socket(self):
         s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
         name = f"\0wisp-test-{os.getpid()}"

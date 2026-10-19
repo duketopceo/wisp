@@ -4,7 +4,7 @@ import unittest
 from unittest import mock
 
 from wisp.tools import system
-from wisp import platform
+from wisp import platform, realinput
 
 
 GUIDE_CFG = {"pointer": {"mode": "guide", "backend": "auto"}}
@@ -12,7 +12,16 @@ DRIVE_CFG = {"pointer": {"mode": "drive", "backend": "auto"}}
 AUTO = {"pointer": {"mode": "auto", "backend": "auto"}}
 
 
-class PointerTest(unittest.TestCase):
+class _Iso(unittest.TestCase):
+    """Isolate the module-level realinput watch — other
+    suites may leave it armed/yielded; pointer dispatches must
+    see _WATCH absent unless the test installs one."""
+
+    def setUp(self):
+        realinput._stop_for_test()
+
+
+class PointerTest(_Iso):
 
     def test_parse_xy_screenshot(self):
         # legacy path: raw physical px (no magick to normalize)
@@ -118,7 +127,7 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class CuaBackend(unittest.TestCase):
+class CuaBackend(_Iso):
     def test_explicit_cua_without_daemon_returns_none(self):
         cfg = {"pointer": {"mode": "drive", "backend": "cua"}}
         with mock.patch.object(platform, "_cua_live", return_value=False):

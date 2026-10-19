@@ -77,6 +77,10 @@ confidence_ambiguous = 0.8
 # runaway guards: max simultaneous agent tasks + per-task lifetime
 max_concurrent = 3
 task_timeout_s = 1800
+# autonomy mode for the act loop's confirm policy (wisp/policy.py):
+# autonomous runs reversible steps free and batch-confirms irreversible
+# ones; guided confirms reversible steps too; always_ask confirms all
+autonomy = "autonomous"
 
 [sense]
 # Passive activity sense + proactive suggestions. Off by default —
@@ -127,6 +131,16 @@ dry_run = "false"
 kill_switch = "false"
 confirm = "tier"
 audit = "true"
+# Input delivery policy (wisp/delivery.py, U5): "auto" takes each op's
+# natural channel — background where a no-cursor path exists (DOM/JS
+# dispatch, cua virtual-pointer clicks, typing, wheel scrolls, Hyprland
+# window ops), real-pointer escalation for pixel clicks/moves on
+# ydotool-class backends. "background" never touches the real cursor —
+# a pointer-only op degrades to the ghost cursor instead of injecting.
+# "pointer" prefers the real pointer (auto order skips the
+# background-only cua backend for clicks). The actual channel is
+# recorded per call in the audit log and action stream.
+delivery = "auto"
 
 [ground]
 # UI grounding adapter (wisp/grounding.py, W13): click/move target name ->
@@ -155,6 +169,8 @@ max_inject = 3
 act_max_steps = 12
 act_max_errors = 2          # consecutive failed tool calls tolerated
 act_max_parse_misses = 1    # unparseable replies in action-text mode
+act_max_seconds = 600       # wall-clock bound per run; 0 disables
+act_max_usd = 0             # per-run model-spend cap; 0 disables
 writer_queue_max = 256      # background trajectory/recall writes queued
 
 [dev]
@@ -180,6 +196,25 @@ key_env = "GROQ_API_KEY"
 # vocabulary priming — project names, jargon; whisper.cpp --prompt /
 # `prompt` param on the openai provider (huge accuracy win on names)
 prompt = "Wisp, wispd, Omarchy, Hyprland, Jev, OpenRouter, dayflow, omaseal, omarchy plugins, RetroArch, Steam, Discord, VS Code, Kubernetes, k8s, Tailscale, Waybar, Quickshell"
+
+[dictation]
+# what `dictate` does with the transcript: raw (verbatim), cleanup
+# (grammar/spelling pass, words preserved), compose (ramble -> finished
+# text in the focused app's genre). "dictate raw ..." overrides per
+# call; "write an email ..." phrasing triggers compose.
+mode = "cleanup"
+# extra window classes that count as terminals for the newline guard
+# (comma list; built-ins: foot, alacritty, kitty, ghostty, wezterm)
+# terminal_classes = "cool-retro-term"
+# model override for the cleanup/compose pass, "provider:model" like
+# [brain] default — falls back to the brain chain when unset
+# model = ""
+# per-app profiles (VoiceInk-style Power Mode, thin): one section per
+# class pattern, matched *pattern* against the focused window class
+# [dictation.profiles.chromium]
+# mode = "compose"
+# style = "professional email"
+# auto_send = false          # true asks before pressing Return
 
 [recall]
 # semantic recall via embeddings: "none" = FTS5 only (zero keys needed).
@@ -269,17 +304,14 @@ timeout_ms = "500"
 # base_url = "http://127.0.0.1:8080/v1"
 # vision = "true"
 # tools = "true"
-#
 # [brain.uitars]
 # kind = "openai_compat"   # UI-TARS-7B on llama-server :8081 — emits
 # base_url = "http://127.0.0.1:8081/v1"   # 'Action: click(x,y)' text
 # vision = "true"                          # instead of tool_calls
 # tools = "false"
 # action_text = "true"
-#
 # Jev can also run locally: point WISP_JEV_ENDPOINT at a jev-shim
 # (e.g. http://127.0.0.1:8931/decisions → llama-jev qwen3-4b :8091).
-#
 # Offline trajectory reviewer (`wispd review run`): point it at a
 # slower decider-class model — it reads step logs, not pixels.
 # [brain]
@@ -297,6 +329,17 @@ shadow = ""
 # Jev is an accelerator, never a gate: past this many ms the heuristic
 # router decides and the turn goes on (route_ab.jsonl keeps both).
 # deadline_ms = 400
+
+[clicklab]
+# the training arena (scripts/clicklab): adaptive = each run's verdict
+# steers the next synthesized task at the hottest failure bucket
+# (same skill, varied surface); judge picks the run grader — "jev"
+# (decisions endpoint, brain fallback), "brain" only, or "off" (the
+# scoreboard alone); promote_after = verified successes a recipe needs
+# before it graduates into the skill bank.
+adaptive = "false"
+promote_after = "3"
+judge = "jev"
 
 [debug]
 # full-fidelity event stream to ~/.local/share/wisp/trace.jsonl —
@@ -398,17 +441,22 @@ def _default_cfg_dict() -> dict:
             "session_turns": "8", "screenshots": "true",
             "risk_threshold": "9",
             "confidence_instant": "0.95", "confidence_ambiguous": "0.8",
+            "autonomy": "autonomous",
         },
         "voice": {"enabled": "false"},
+        "dictation": {"mode": "cleanup"},
         "pointer": {"mode": "guide", "backend": "auto"},
         "cua": {"timeout_ms": "800", "safety": "true", "allow": "",
                 "deny": "", "max_clicks_per_min": "30",
                 "max_per_turn": "12", "dry_run": "false",
                 "kill_switch": "false", "confirm": "tier",
-                "audit": "true"},
+                "audit": "true", "delivery": "auto"},
         "traj": {"enabled": "true", "max_inject": "3"},
+        "clicklab": {"adaptive": "false", "promote_after": "3",
+                     "judge": "jev"},
         "agents": {"act_max_steps": "12", "act_max_errors": "2",
-                   "act_max_parse_misses": "1",
+                   "act_max_parse_misses": "1", "act_max_seconds": "600",
+                   "act_max_usd": "0",
                    "writer_queue_max": "256"},
         "dev": {"refine": "true"},
         "ui": {"theme": "dark"},

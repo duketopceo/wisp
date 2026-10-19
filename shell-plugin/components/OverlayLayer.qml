@@ -14,9 +14,8 @@ Item {
   id: root
 
   property var service: null
-  // real pointer {x,y} in layer coordinates, or null (bubble then floats
-  // above the bottom edge)
-  property var pointer: null
+  // height of the top bar the bubble parks under (Style.bar.sizeVertical)
+  property real barHeight: 28
   property real originX: 0
   property real originY: 0
   property real gap: 5
@@ -28,7 +27,9 @@ Item {
   signal moreClicked()
   signal verdict(string verdict)
 
-  // a confirm card replaces the pill (it carries the question and the chips)
+  // a confirm card replaces the pill (it carries the question and the
+  // chips); on a v2 daemon the card is the stream's awaiting confirm
+  // entry, normalized into service.confirm
   readonly property bool pillShown: service !== null && Companion.pillVisible(service.status) && service.confirm === null
   readonly property bool bubbleShown: service !== null && bubble.has && !bubbleDismissed
   readonly property bool bubbleHovered: bubbleHover.hovered
@@ -49,16 +50,15 @@ Item {
     onChoose: function (pick, index) { root.choose(pick, index); }
   }
 
-  // answer at the pointer; before the pointer is known it floats above
-  // the bottom edge, clear of the listening pill
+  // the bubble's own spot: top-center, parked just under the bar — one
+  // fixed place for asks/answers instead of chasing the pointer
   Item {
     id: bubbleHost
     visible: root.bubbleShown
     width: bubbleCol.implicitWidth
     height: bubbleCol.implicitHeight
-    readonly property var spot: bubble.place
-    x: spot ? spot.x : root.width - root.gap - width
-    y: spot ? spot.y : root.height - root.gap - M.size.creatureListening - M.spacing.lg - height
+    x: Math.round((root.width - width) / 2)
+    y: root.gap + root.barHeight + M.spacing.lg
 
     HoverHandler { id: bubbleHover }
 
@@ -69,8 +69,6 @@ Item {
       Bubble {
         id: bubble
         service: root.service
-        pointer: root.pointer
-        screen: ({ w: root.width, h: root.height })
         onMoreClicked: root.moreClicked()
         onConfirmChosen: function (pick, promptId) { root.confirmChosen(pick, promptId); }
       }
@@ -88,6 +86,21 @@ Item {
           label: root.service.ui("ui.label.wrong")
           onClicked: root.verdict("incorrect")
         }
+      }
+
+      // the verdict's ack ("noted", or the daemon's own reply such as
+      // "nothing to label") once the chips fold away
+      Text {
+        visible: root.labeled
+        text: {
+          var a = root.service.lastAction;
+          return a && a.verb === "label" && !a.pending && a.message !== ""
+            ? a.message : root.service.ui("ui.noted");
+        }
+        color: root.service.lastAction && root.service.lastAction.ok === false
+          ? root.tk.fail : root.tk.inkMuted
+        font.family: root.service.fontFamily
+        font.pixelSize: M.font.label
       }
     }
   }

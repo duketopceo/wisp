@@ -12,9 +12,10 @@ import shutil
 
 from .. import config
 
+# user entries shadow system entries (XDG_DATA_HOME precedes XDG_DATA_DIRS)
 DESKTOP_DIRS = [
-    pathlib.Path("/usr/share/applications"),
     config.HOME / ".local" / "share" / "applications",
+    pathlib.Path("/usr/share/applications"),
 ]
 
 # macOS ships no .desktop entries; the equivalent catalog is the .app
@@ -96,10 +97,15 @@ def _linux_catalog() -> dict:
             if not entry:
                 continue
             name, cmd = entry
-            if name in apps or not shutil.which(cmd.split()[0]):
+            if not shutil.which(cmd.split()[0]):
                 continue
-            apps[name] = {"launch": cmd,
-                          "cues": f"the {name} application"}
+            entry_v = {"launch": cmd, "cues": f"the {name} application"}
+            apps.setdefault(name, entry_v)
+            # reverse-DNS stems (ai.storyteller.cadcraft) hide the name
+            # people actually say — also key the last segment
+            short = f.stem.lower().rsplit(".", 1)[-1]
+            if short and short != name:
+                apps.setdefault(short, entry_v)
     # PATH binaries the user clearly launches by name
     for b in ("ghostty", "kitty", "alacritty", "chromium", "firefox",
               "code", "nautilus", "spotify", "discord", "slack"):

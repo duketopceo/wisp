@@ -66,10 +66,11 @@ class SkillsTest(unittest.TestCase):
         try:
             skills.register_tools()
             self.assertIn("skill_echoer", tools.REGISTRY)
-            fn, tier, desc = tools.REGISTRY["skill_echoer"]
+            fn, tier, desc, meta = tools.REGISTRY["skill_echoer"]
             # tool: scripts run bash — `tier: safe` can't be
             # self-declared; floor is mutating (confirm-gated)
             self.assertEqual(tier, "mutating")
+            self.assertEqual(meta["tier"], "T2")
             self.assertIn("SKILL:hi", fn("hi"))
         finally:
             tools.REGISTRY.clear()

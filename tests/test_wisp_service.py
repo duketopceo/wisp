@@ -21,14 +21,15 @@ PLUGIN = ROOT / "shell-plugin"
 SRC = (PLUGIN / "WispService.qml").read_text()
 
 PROPS = ["view", "status", "rawStatus", "transcript", "answer", "result",
-         "choices", "promptId", "points", "steps", "suggestion", "guide",
+         "choices", "promptId", "points", "steps", "actions",
+         "suggestion", "guide",
          "windowFocus", "goal", "goalStatus", "level", "tasks", "error",
          "errorCode", "health", "turnId", "seq", "contractVersion",
          "connection", "offline", "stale", "contractNewer",
          "statusWord", "statusTone", "resultView", "errorMessage",
          "errorHint", "notice", "tokens", "tokenSource", "themeMode",
          "motionMode", "staleAfterMs", "streamEnabled", "motionConfig",
-         "animationsEnabled", "shell", "manifest"]
+         "animationsEnabled", "shell", "manifest", "lastAction"]
 SIGNALS = ["stateApplied", "turnChanged"]
 FUNCTIONS = ["ui", "pickLabel", "sendChoice", "interrupt", "trigger",
              "label", "refresh", "reconnect"]
@@ -111,7 +112,7 @@ class TestSingleReader(unittest.TestCase):
 
 
     def test_management_app_ratchet_is_zero(self):
-        # W26: the management app reads state only through the service
+        # the management app reads state only through the service
         app = (ROOT / "shells" / "debug" / "shell.qml").read_text()
         code = re.sub(r"(?m)^\s*//.*$", "", app)
         self.assertEqual(len(re.findall(r"state\.json|stateFile", code)), 0)
@@ -124,6 +125,65 @@ class TestManifest(unittest.TestCase):
         m = json.loads((PLUGIN / "manifest.json").read_text())
         self.assertEqual(m["entryPoints"]["service"], "WispService.qml")
         self.assertIn("service", m["kinds"])
+
+
+class TestActionLifecycle(unittest.TestCase):
+    """U1: every surface action produces ack + terminal state. The action
+    subprocess collects both streams, exit code lands in lastAction via
+    Reader.actionResult, concurrent clicks queue (bounded, a full queue
+    refuses loudly), and no path is a silent drop."""
+
+    def test_action_process_collects_output_and_reports_exit(self):
+        m = re.search(r"Process\s*\{\s*id:\s*actionProc(.*?)\n\s*\}",
+                      SRC, re.S)
+        self.assertIsNotNone(m, "actionProc not found")
+        body = m.group(1)
+        self.assertIn("stdout: StdioCollector", body)
+        self.assertIn("stderr: StdioCollector", body)
+        self.assertIn("onExited", body)
+        self.assertIn("finishAction", body)
+
+    def test_actions_are_serial_with_a_visible_busy_cap(self):
+        self.assertIn("actionQueue", SRC)
+        self.assertIn("actionProc.running", SRC)
+        # a full queue refuses through lastAction, not a silent drop
+        self.assertRegex(SRC, r'Copy\.errorMessage\("busy"\)')
+
+    def test_exit_result_normalizes_through_the_reducer(self):
+        self.assertIn("Reader.actionResult", SRC)
+        self.assertIn("Copy.errorMessage", SRC)
+        # empty success still acks ("noted"), never an empty string
+        self.assertIn('Copy.string("ui.noted")', SRC)
+
+    def test_local_choice_refusal_reaches_last_action(self):
+        self.assertIn("Reader.acceptChoice", SRC)
+        self.assertIn('Copy.errorMessage("stale_prompt")', SRC)
+        # --prompt-id is conditional (suggestion picks carry none)
+        self.assertRegex(SRC, r"if\s*\(pid\)\s*cmd\s*=\s*cmd\.concat")
+
+    def test_confirm_card_uses_snapshotted_picks(self):
+        bubble = (PLUGIN / "components" / "Bubble.qml").read_text()
+        self.assertIn("root.card.allow", bubble)
+        self.assertIn("root.card.deny", bubble)
+        # no live choice-array reads inside click handlers
+        self.assertNotRegex(bubble, r"onClicked[^\n]*service\.choices\[")
+
+    def test_label_click_renders_an_ack(self):
+        now = (PLUGIN / "components" / "NowTab.qml").read_text()
+        overlay = (PLUGIN / "components" / "OverlayLayer.qml").read_text()
+        self.assertIn("lastAction", now)
+        self.assertIn("ui.noted", now)
+        self.assertIn("lastAction", overlay)
+
+    def test_debug_shell_calls_existing_service_entrypoints(self):
+        app = (ROOT / "shells" / "debug" / "shell.qml").read_text()
+        # the window exposes svcCtl(); a call to win.svc(...) never existed
+        self.assertNotRegex(app, r"\bwin\.svc\s*\(")
+        self.assertIn('win.svcCtl(["restart"])', app)
+        self.assertIn('win.svcCtl(["stop"])', app)
+        # suggestion buttons take the same ack path as every other action
+        self.assertIn("suggestion:automate:", app)
+        self.assertIn("lastAction", app)
 
 
 QMLLINT = shutil.which("qmllint") or (
