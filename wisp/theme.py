@@ -49,15 +49,16 @@ TOKENS = ("canvas", "raised", "keyline", "keylineStrong", "ink", "inkMuted",
           "needsYou", "fail", "ok", "selection")
 
 # Contrast floors (DESIGN-v2 section 7 / plan R15): text 4.5, state-carrying
-# non-text 3.0. Each row is (foreground token, background token, minimum).
+# non-text 3.0. The state colors (needsYou, fail, ok) also color text (status
+# lines, labels), so they take the text floor. Each row is (foreground token, background token, minimum).
 CHECKS = (
     ("ink", "canvas", 4.5),
     ("inkMuted", "canvas", 4.5),
     ("ember", "canvas", 3.0),
     ("emberHalo", "ember", 3.0),
-    ("needsYou", "canvas", 3.0),
-    ("fail", "canvas", 3.0),
-    ("ok", "canvas", 3.0),
+    ("needsYou", "canvas", 4.5),
+    ("fail", "canvas", 4.5),
+    ("ok", "canvas", 4.5),
 )
 
 # Omarchy Color.qml defaults, used when colors.toml omits a base key.
@@ -71,6 +72,7 @@ _EMBER_URGENT_DE = 10.0        # CIE76 deltaE
 _EMBER_L = {"dark": (0.70, 0.85), "light": (0.45, 0.60)}
 _MIX_STEP = 0.05               # inkMuted mix-toward-ink step
 _L_STEP = 0.01                 # state-color OKLCH lightness step
+_STATE_FLOOR = 4.5             # state colors also carry text (WCAG 1.4.3)
 
 
 # --- color math (sRGB <-> OKLab, WCAG contrast) --------------------------
@@ -314,9 +316,10 @@ def derive(colors: dict, shell=None, source: str = "omarchy") -> dict:
         "emberWick": with_lightness(ember, eL - 0.1),
         "emberHalo": halo,
         "needsYou": _lift_until(colors.get("yellow") or b["urgent"],
-                                canvas, 3.0),
-        "fail": _lift_until(b["urgent"], canvas, 3.0),
-        "ok": _lift_until(colors.get("green") or accent, canvas, 3.0),
+                                canvas, _STATE_FLOOR),
+        "fail": _lift_until(b["urgent"], canvas, _STATE_FLOOR),
+        "ok": _lift_until(colors.get("green") or accent, canvas,
+                          _STATE_FLOOR),
         "selection": (colors.get("selection")
                       or over(accent, _SELECTION_ALPHA, canvas)),
     }

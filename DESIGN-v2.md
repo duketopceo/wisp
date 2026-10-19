@@ -748,7 +748,8 @@ persistent process.
 
 - Contrast: text >= 4.5:1 against `canvas` (computed at theme load; if
   `muted` fails, `inkMuted` mixes toward `ink` until it passes). Current
-  failures to fix: `faint` 2.76:1, idle orb 2.14:1. Non-text indicators
+  failures to fix: `faint` 2.76:1, idle orb 2.14:1. Status tokens `needsYou`, `fail` and `ok` also color text, so they are lifted to 4.5:1
+  (wisp/theme.py `_STATE_FLOOR`; Flexoki Light was 3.11, 4.21 and 3.04). Non-text indicators
   (Wisp, ghost, beacons, chip borders that carry state) >= 3:1 via the
   `emberHalo` keyline.
 - Never hue alone: every state also differs in tempo/shape (5.5), icon
