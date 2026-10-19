@@ -17,6 +17,12 @@ class TestRegistry(unittest.TestCase):
     def test_all_registered_tools_describable(self):
         desc = tools.describe()
         for name in tools.REGISTRY:
+            if name in tools.LOOP_ONLY:
+                # loop-internal tools (ask_user) are advertised to the
+                # model in tool_schemas but must not be route targets —
+                # Jev can't dispatch them, only the act loop can
+                self.assertNotIn(name, desc)
+                continue
             self.assertIn(name, desc)
 
     def test_unknown_tool_skips(self):
@@ -37,10 +43,13 @@ class TestRegistry(unittest.TestCase):
 class TestToolExec(unittest.TestCase):
     def _hypr_up(self):
         """Pin a Hyprland host with a live socket: launch execs through
-        Hyprland, and CI runners have none."""
+        Hyprland, and CI runners have none. _find_window is stubbed off
+        — launch tests exercise the exec path, not live clients."""
         for p in (mock.patch.dict(os.environ, {"WISP_OS": "linux",
                                                "WISP_DESKTOP": "hyprland"}),
-                  mock.patch.object(hypr, "available", return_value=True)):
+                  mock.patch.object(hypr, "available", return_value=True),
+                  mock.patch.object(tools.desktop, "_find_window",
+                                    return_value=None)):
             p.start()
             self.addCleanup(p.stop)
 
@@ -103,6 +112,40 @@ class TestToolExec(unittest.TestCase):
             out = tools.desktop.launch("browser", cfg)
         self.assertIn("chromium", out)
         ex.assert_called_once_with("chromium")
+
+    def test_launch_domain_opens_in_browser(self):
+        self._hypr_up()
+        cfg = {"apps": {}, "agent": {}}
+        with mock.patch.object(tools.desktop.shutil, "which",
+                               return_value="/usr/bin/xdg-open"), \
+             mock.patch.object(tools.desktop, "_exec_detached") as ex:
+            out = tools.desktop.launch("gmail.com", cfg)
+        self.assertIn("OPENED https://gmail.com", out)
+        ex.assert_called_once_with("xdg-open https://gmail.com")
+
+    def test_launch_unknown_noun_still_skips(self):
+        self._hypr_up()
+        cfg = {"apps": {}, "agent": {}}
+        with mock.patch.object(tools.desktop.shutil, "which",
+                               return_value="/usr/bin/xdg-open"), \
+             mock.patch.object(tools.desktop, "_exec_detached") as ex:
+            out = tools.desktop.launch("thunderbird", cfg)
+        self.assertIn("SKIP (unknown app 'thunderbird')", out)
+        ex.assert_not_called()
+
+    def test_launch_running_app_focuses_instead(self):
+        self._hypr_up()
+        cfg = {"apps": {"foot": "foot"}, "agent": {}}
+        win = {"address": "0xabc", "class": "foot", "title": "zsh"}
+        with mock.patch.object(tools.desktop, "_find_window",
+                               return_value=win), \
+             mock.patch("wisp.platform._try",
+                        return_value=True) as tr, \
+             mock.patch.object(tools.desktop, "_exec_detached") as ex:
+            out = tools.desktop.launch("foot", cfg)
+        self.assertIn("FOCUSED foot", out)
+        self.assertIn("already running", out)
+        ex.assert_not_called()
 
     def test_notify_runs(self):
         with mock.patch.object(tools.system, "notify") as n:
@@ -170,7 +213,8 @@ class TestRouteDispatch(unittest.TestCase):
         self.assertEqual(out, "ACTED x")
         a.assert_called_once_with("rm -rf /", mock.ANY, state=None,
                                   harness=None, confirm=None,
-                                  initial_image=None, interrupted=None)
+                                  initial_image=None, interrupted=None,
+                                  ask=None)
 
     def test_risk_blocks_before_route(self):
         out = pipeline.execute(
@@ -199,7 +243,9 @@ class TestAgents(unittest.TestCase):
             with mock.patch.object(agents.shutil, "which",
                                    return_value="/usr/bin/ori"), \
                  mock.patch.object(agents.subprocess, "Popen",
-                                   return_value=proc):
+                                   return_value=proc), \
+                 mock.patch.object(agents, "_proc_stat",
+                                   return_value=("S", "99")):
                 out = agents.spawn("fix the tests in wisp", {},
                                    tasks_file=tf, log_dir=ld)
             self.assertIn("SPAWNED", out)
@@ -208,7 +254,7 @@ class TestAgents(unittest.TestCase):
             self.assertIn("ori opencode", rec["cmd"])
 
     def test_spawn_missing_ori(self):
-        # U6: a missing configured runtime is an explicit error naming it
+        # a missing configured runtime is an explicit error naming it
         with mock.patch.object(agents.shutil, "which", return_value=None):
             out = agents.spawn("task", {})
         self.assertIn("not on PATH", out)
@@ -223,7 +269,9 @@ class TestAgents(unittest.TestCase):
             with mock.patch.object(agents.shutil, "which",
                                    return_value="/usr/bin/ori"), \
                  mock.patch.object(agents.subprocess, "Popen",
-                                   return_value=proc):
+                                   return_value=proc), \
+                 mock.patch.object(agents, "_proc_stat",
+                                   return_value=("S", "99")):
                 agents.spawn("fix-x", {}, tasks_file=tf,
                              log_dir=pathlib.Path(td))
             recs = [json.loads(l) for l in tf.read_text().splitlines()]

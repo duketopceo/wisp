@@ -69,23 +69,6 @@ TestCase {
     compare(Cur.BEACON_HOLD_MS, 8000)
   }
 
-  function test_bubble_flips_and_never_covers_pointer() {
-    var size = { w: 300, h: 100 }, screen = { w: 1920, h: 1080 }
-    var p = Cur.bubblePlace({ x: 500, y: 300 }, size, screen)
-    compare(p.x, 518); compare(p.y, 318); compare(p.side, "right")
-    var r = Cur.bubblePlace({ x: 1900, y: 300 }, size, screen)
-    verify(r.x + size.w < 1900)
-    verify(r.side.indexOf("left") === 0)
-    var b = Cur.bubblePlace({ x: 500, y: 1070 }, size, screen)
-    verify(b.y + size.h < 1070)
-    var corner = Cur.bubblePlace({ x: 1915, y: 1075 }, size, screen)
-    var inside = 1915 >= corner.x && 1915 <= corner.x + size.w && 1075 >= corner.y && 1075 <= corner.y + size.h
-    verify(!inside)
-    // tiny screen: stays on screen
-    var t = Cur.bubblePlace({ x: 50, y: 50 }, size, { w: 320, h: 240 })
-    verify(t.x >= 0 && t.y >= 0 && t.x + size.w <= 320 && t.y + size.h <= 240)
-  }
-
   function test_dwell_and_answer_limits() {
     compare(Cur.dwellMs("one two three"), 9120)
     compare(Cur.dwellMs(""), 9000)
@@ -93,29 +76,11 @@ TestCase {
     compare(Cur.BUBBLE_LINES, 12)
   }
 
-  function test_console_opens_only_when_asked_or_choosing() {
-    compare(Co.consoleOpen("listening", false, false), false)
-    compare(Co.consoleOpen("deciding", false, false), false)
-    compare(Co.consoleOpen("acting", false, false), false)
-    compare(Co.consoleOpen("awaiting_choice", true, false), true)
-    compare(Co.consoleOpen("acting", true, false), true)
-    compare(Co.consoleOpen("idle", false, true), true)
-    compare(Co.userToggle(true), false)
-  }
-
-  function test_corner_and_pill_visibility() {
-    compare(Co.cornerVisible(false, false), true)
-    compare(Co.cornerVisible(true, false), false)
-    compare(Co.cornerVisible(false, true), false)
+  function test_pill_visibility() {
     compare(Co.pillVisible("awaiting_choice"), true)
     compare(Co.pillVisible("listening"), true)
+    compare(Co.pillVisible("transcribing"), true)
+    compare(Co.pillVisible("acting"), false)
     compare(Co.pillVisible("idle"), false)
-  }
-
-  function test_input_region_is_the_creature_only() {
-    var r = Co.inputRegion(40, false, 100)
-    compare(r.w, 40); compare(r.h, 40)
-    compare(Co.inputRegion(20, false, 0).w, 28)
-    compare(Co.inputRegion(40, true, 100).w, 140)
   }
 }

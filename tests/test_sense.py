@@ -180,6 +180,9 @@ class TestSuggest(unittest.TestCase):
         self.assertIn("never", out)
         self.assertIn("abc",
                       suggest.NEVER_FILE.read_text())
+        # the card's stream entry resolves on the same call
+        st.action_resolve.assert_called_once_with(
+            "suggestion", status="cancelled", reason="never")
 
     def test_resolve_automate_returns_routine(self):
         self.sug.write_text(json.dumps(

@@ -2,7 +2,7 @@
 name = "wispd"
 version = "1.0.0"
 edition = "2021"
-license = "Apache-2.0"
+license = "AGPL-3.0-only"
 description = "Wisp — cross-platform AI companion core daemon (Hey Clicky clone, BYO brain)"
 
 [dependencies]

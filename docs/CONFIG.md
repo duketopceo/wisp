@@ -82,6 +82,7 @@ Every routed turn appends Jev vs heuristic vs final route to `route_ab.jsonl`; r
 | `confidence_instant` | `0.95` | auto-accept cutoff |
 | `confidence_ambiguous` | `0.8` | ask-choice cutoff |
 | `allow_shell` | `false` | allow free-form shell tool (commands also pass a built-in denylist that is not configurable) |
+| `autonomy` | `"autonomous"` | act-loop confirm policy (wisp/policy.py): `autonomous` runs reversible (T1) steps free and batch-confirms irreversible (T2) ones; `guided` confirms T1 steps too; `always_ask` confirms every tool call. Human-only (T3) steps hand off under every mode |
 | `max_concurrent` | `3` | most background agent tasks at once |
 | `task_timeout_s` | `1800` | lifetime of one background task |
 | `goal_ttl_s` | `600` | seconds an open goal accepts follow-up utterances |
@@ -92,7 +93,7 @@ Every routed turn appends Jev vs heuristic vs final route to `route_ab.jsonl`; r
 
 | key | default | meaning |
 |-----|---------|---------|
-| `router` | `"jev"` | `jev` (decision API) / `chat` (straight to answer brain) / `off` (clarify) |
+| `router` | `"jev"` | `jev` (decision API) / `act` (every turn straight to the agent loop — the loop's brain decides answer-vs-work; no decision hop) / `chat` (straight to answer brain) / `off` (clarify) |
 | `default` | `"openrouter:<answer_model>"` | `name:model` selecting a `[brain.<name>]` provider |
 | `fallback` | `""` | comma-separated `name:model` chain tried after `default` (e.g. `"mlx:ornith, ollama:ornith"`) |
 | `allow_paid` | `false` | allow paid fallback entries (OpenRouter, or `paid = "true"` on the section); the U10 cap hook (`brain.budget_ok`, see `[budget]`) also applies; at a cap fallbacks are skipped, the primary runs unless `[budget] gate_primary` |
@@ -173,6 +174,8 @@ and `wispd models` show current health.
 | `act_max_steps` | tool-call bound for the act loop (default 12) |
 | `act_max_errors` | consecutive tool errors before the act loop gives up (0 to 20) (default 2) |
 | `act_max_parse_misses` | unparseable model steps tolerated before the act loop stops (0 to 10) (default 1) |
+| `act_max_seconds` | wall-clock bound for one act run; the abort publishes a `failed` action entry with reason `budget` (0 disables, default 600) |
+| `act_max_usd` | per-run cap on model spend added during the run (0 disables, default 0) |
 | `writer_queue_max` | background writer queue for trajectory and recall writes; oldest dropped and counted when full (default 256) |
 
 ## [mcp]
@@ -187,6 +190,42 @@ and `wispd models` show current health.
 |-----|---------|---------|
 | `provider` | `"none"` | `none` (FTS5 keyword search) or `openai` (embeddings + RRF fusion) |
 | `base_url` / `model` / `key_env` | openrouter | embedding endpoint + model + key env |
+
+## [dictation] — LLM-aware dictation (U6)
+
+| key | default | meaning |
+|-----|---------|---------|
+| `mode` | `"cleanup"` | what `dictate` does: `raw` verbatim, `cleanup` fixes grammar/spelling without changing your words, `compose` turns the ramble into finished text for the focused app's genre |
+| `terminal_classes` | `""` | extra window classes that count as terminals for the newline guard (comma list; built-ins: foot, alacritty, kitty, ghostty, wezterm) |
+| `model` | `""` | `provider:model` override for the cleanup/compose pass; empty = the `[brain]` chain |
+
+Per-app profiles (VoiceInk Power Mode, thin): a `[dictation.profiles.
+<pattern>]` section matched `*pattern*` against the focused window
+class, longest match winning — `mode`, `style` (a free-text style hint
+folded into the rewrite prompt) and `auto_send` (`true` asks before
+pressing Return after the insert). Spoken overrides: `dictate raw ...`
+skips the rewrite for that call; "write an email ..." intent words
+trigger compose. Into a terminal-class window every mode collapses
+newlines unless a confirmed send is armed. Personal corrections live in
+`~/.local/share/wisp/dictation.json` — `wispd dictate correct` records
+one, `wispd dictate list` shows them.
+
+## [clicklab] — adaptive training arena (U7)
+
+The arena (`scripts/clicklab/run.py`, `wisp/train.py`, `wisp/judge.py`)
+runs golden tasks against the lab pages, judges each run, and keeps a
+skill bank of proven recipes plus a rolling failure-bucket summary.
+
+| key | default | meaning |
+|-----|---------|---------|
+| `adaptive` | `"false"` | `--adaptive` / `true`: the task list is synthesized on the fly — each verdict steers the next task at the hottest failure bucket (same skill, varied surface) until `--tasks` or the budget cap |
+| `promote_after` | `"3"` | verified successes a recipe needs to graduate into the bank; a post-promotion failure demotes it |
+| `judge` | `"jev"` | run grader: `jev` (decisions endpoint, brain.chat fallback), `brain` (skip Jev), `off` (scoreboard alone; `--no-judge` is the same) |
+
+Every run appends to `clicklab.jsonl`, mirrors the verdict onto
+`verdicts.jsonl`, and refolds `buckets.json` (counts by failure class x
+task skill x surface). When every judge is down the verdict is
+`judged: false` — unjudged runs never count toward promotion.
 
 ## [voice] — text-to-speech
 
@@ -228,11 +267,12 @@ rate limit, dry run, dispatch. Refusals read `REFUSED (...)`.
 | `max_per_turn` | `12` | cap on the same calls in one act run |
 | `dry_run` | `false` | log what would happen and return `DRYRUN ...`; no driver, ydotool or hyprctl call. Deny, kill and rate checks still apply |
 | `kill_switch` | `false` | refuse everything. The runtime file `$XDG_RUNTIME_DIR/wisp/cua.kill` does the same without a config edit (`cua_safety.kill()` / `resume()`) |
+| `delivery` | `auto` | input delivery policy (`wisp/delivery.py`, U5): `auto` uses each op's natural channel — background where the backend offers one (cua click/scroll, type, key), real pointer otherwise; `background` refuses to silently drive the real pointer and guides instead; `pointer` prefers a real-pointer backend for clicks even when cua is up. An explicit `[pointer] backend` pin outranks the policy |
 | `confirm` | `tier` | `tier` keeps the tool tiers; `always` makes click/move/scroll/type/key ask once per (tool, focused app) per session |
 | `audit` | `true` | append one JSON line per call to `$XDG_STATE_HOME/wisp/cua.jsonl` |
 
 Audit line: `ts, turn, tool, app, decision (allow|deny|dry_run|cancelled),
-dry_run, result (first word only), ms`, plus `x`/`y` for coordinate
+dry_run, result (first word only), delivery, ms`, plus `x`/`y` for coordinate
 targets, `key` for named keys and chords, and `len` + `sha` (12 hex of a
 per-process salted hash) for typed text. Typed text, target names,
 screenshots and result text are never written.

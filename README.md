@@ -227,6 +227,7 @@ verbs and examples. Add `--json` for machine-readable output.
 | `wispd notify test` | send one test notification |
 | `wispd task list` | background agents |
 | `wispd memory edit` | edit the MEMORY and USER notes |
+| `wispd dictate correct` / `wispd dictate list` | teach a heard->meant dictation correction, or show them |
 | `wispd suggest list` | suggestions mined from your activity |
 | `wispd label set` / `wispd label report` | label a run, or the per-route report |
 | `wispd context` | what the daemon sees right now |
@@ -253,7 +254,8 @@ Local, never committed:
 
 - `~/.local/share/wisp/`: `session.jsonl`, `decisions.jsonl`,
   `labels.jsonl`, `trajectories.jsonl`, `usage.jsonl` (the spend
-  ledger), `inventory.json`, `corrections.jsonl`, `tasks.jsonl`,
+  ledger), `inventory.json`, `corrections.jsonl`, `dictation.json`
+  (dictate corrections + per-app counts), `tasks.jsonl`,
   `skillbank.json`, `proposals/`, `onboard.json`
 - `~/.local/state/wisp/cua.jsonl`: the cua audit log
 - `~/.config/wisp/`: `config.toml`, `.env`, `mcp.json`
@@ -292,3 +294,9 @@ quickshell plugin: components, lib, Panel, Companion), `shells/` (the
 management app), `scripts/` (harness, snapshot and asset tools), `docs/`
 (install, config, IPC contract, CUA, plans). The plan of record is
 `docs/plans/2026-10-04-0100-feat-wisp-unified-plan.md`.
+
+## License
+
+AGPL-3.0. Free to use and modify, including privately. If you host or distribute a modified version, you must publish your source under the same license. See [`LICENSE`](LICENSE).
+
+Releases up to and including v0.9.0 were published under the MIT License and remain available under MIT. Icons and artwork in `assets/` stay CC0 (see `assets/LICENSE`), and the bundled test fonts keep their own license (`tests/qml/fonts/LICENSE-Liberation`).

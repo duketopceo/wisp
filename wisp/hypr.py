@@ -209,8 +209,13 @@ def _cmd(cmd) -> str:
         if isinstance(cmd, (list, tuple)) else str(cmd)
 
 
+def focus_window(filt: str) -> str:
+    """Focus by any window filter — 'class:^foot', 'address:0x…'."""
+    return f"hl.dispatch(hl.dsp.focus({{window = {lua_str(filt)}}}))"
+
+
 def focus_class(cls: str) -> str:
-    return f"hl.dispatch(hl.dsp.focus({{window = {lua_str('class:^' + cls)}}}))"
+    return focus_window("class:^" + cls)
 
 
 def close_window(cls: str = "") -> str:

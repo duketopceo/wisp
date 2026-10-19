@@ -190,8 +190,7 @@ Panel {
           width: col.width - 2 * col.padding
           service: col.svc
           onChoose: function (pick) {
-            col.svc.sendChoice(pick, col.svc.promptId)
-            wisp.close()
+            if (col.svc.sendChoice(pick, col.svc.promptId)) wisp.close()
           }
           onStopClicked: col.svc.interrupt()
           onLabelClicked: function (verdict) { col.svc.label(verdict) }

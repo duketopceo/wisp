@@ -1,7 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
-import Quickshell.Io
 import Quickshell.Wayland
 import qs.Commons
 import "components"
@@ -26,9 +25,6 @@ Item {
 
   property bool bubbleDismissed: false
   property bool labeled: false
-  // real pointer in layer coordinates, read once when an answer arrives
-  property var pointer: null
-  property int pointerRequest: 0
 
   // plugin contract: the shell calls these for reasons that are not ours
   // (rescan, panel sweep); an overlay with nothing persistent has nothing
@@ -60,14 +56,10 @@ Item {
     function onConfirmChanged() {
       if (root.svc.confirm === null) return;
       root.bubbleDismissed = false;
-      root.pointer = null;
-      root.pointerRequest += 1;
     }
     function onAnswerChanged() {
       if (root.svc.answer === "") return;
       root.bubbleDismissed = false;
-      root.pointer = null;
-      root.pointerRequest += 1;
     }
   }
 
@@ -89,24 +81,6 @@ Item {
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
-      // One read of the real pointer per answer, no loop: the bubble opens
-      // where the user is already looking and stays there.
-      Process {
-        id: cursorProc
-        command: ["hyprctl", "cursorpos"]
-        running: false
-        stdout: SplitParser {
-          onRead: function (data) {
-            var m = /(-?\d+)[, ]+(-?\d+)/.exec(data);
-            if (m) root.pointer = { x: +m[1] - win.screen.x, y: +m[2] - win.screen.y };
-          }
-        }
-      }
-      Connections {
-        target: root
-        function onPointerRequestChanged() { cursorProc.running = true; }
-      }
-
       // Bubble dwell: 9 s plus 40 ms per word, paused while hovered. A
       // confirm card ignores it: the daemon's own deadline ends the card.
       Timer {
@@ -119,7 +93,7 @@ Item {
         id: layer
         anchors.fill: parent
         service: root.svc
-        pointer: root.pointer
+        barHeight: Style.bar.sizeVertical
         originX: win.screen.x
         originY: win.screen.y
         gap: Style.gapsOut

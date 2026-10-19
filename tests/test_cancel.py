@@ -484,6 +484,47 @@ class PromptIdTest(unittest.TestCase):
         self.assertIsNone(out["pick"])
         self.assertLess(out["t"] - t, 0.3)
 
+    def test_second_waiter_is_refused_not_overwritten(self):
+        # the broker is single-slot: a second concurrent wait must
+        # fail fast instead of overwriting the parked prompt and
+        # cross-delivering picks between two turns
+        b = cancel.PromptBroker()
+        th, out = self._wait_in_thread(b, prompt_id="p1")
+        pick = b.waiter()(0.05, prompt_id="p9", options=self.OPTS)
+        self.assertIsNone(pick)          # refused immediately
+        self.assertEqual(b.pending_id, "p1")  # the parked prompt stands
+        b.offer(pick="app:discord", prompt_id="p1")
+        th.join(2)
+        self.assertEqual(out["pick"], "app:discord")
+
+    def test_always_pick_requires_the_prompt_id(self):
+        # the wildcard grant is only resolvable by a client that read
+        # the live card — a bare same-UID 'always' pick can't mint a
+        # session-wide ("*","*") approval
+        b = cancel.PromptBroker()
+        opts = ["close it — yes", "always", "no"]
+        th, out = self._wait_in_thread(b, options=opts)
+        r = b.offer(pick="always")          # no prompt_id
+        self.assertEqual((r["ok"], r["error"]),
+                         (False, "prompt_id_required"))
+        self.assertTrue(th.is_alive())      # the card stays up
+        r = b.offer(pick="always", prompt_id="p1")
+        self.assertEqual(r, {"ok": True})
+        th.join(2)
+        self.assertEqual(out["pick"], "always")
+
+    def test_always_by_index_also_requires_the_prompt_id(self):
+        b = cancel.PromptBroker()
+        opts = ["close it — yes", "always", "no"]
+        th, out = self._wait_in_thread(b, options=opts)
+        r = b.offer(index=2)                # bare index pick of always
+        self.assertEqual((r["ok"], r["error"]),
+                         (False, "prompt_id_required"))
+        r = b.offer(index=2, prompt_id="p1")
+        self.assertEqual(r, {"ok": True})
+        th.join(2)
+        self.assertEqual(out["pick"], "always")
+
 
 class WispdWiringTest(unittest.TestCase):
     def setUp(self):
@@ -540,6 +581,41 @@ class WispdWiringTest(unittest.TestCase):
                           "prompt_id": "p3"})
         self.assertEqual(f([]), {"cmd": "choice", "pick": ""})
         self.assertIsNone(f(["--index", "two"]))
+
+    def test_suggestion_pick_resolves_before_the_broker(self):
+        """suggestion: picks carry no prompt_id — the daemon resolves
+        them locally (never reaches the prompt broker), and the reply
+        carries the daemon's own words for the surface ack (U1)."""
+        from wisp import suggest
+        with tempfile.TemporaryDirectory() as td:
+            with mock.patch.object(
+                    suggest, "SUGGESTIONS_FILE",
+                    pathlib.Path(td) / "suggestions.jsonl"), \
+                 mock.patch.object(
+                    suggest, "NEVER_FILE", pathlib.Path(td) / "never.json"):
+                r = self.handle({"cmd": "choice",
+                                 "pick": "suggestion:never:k9"})
+                self.assertTrue(r["ok"])
+                self.assertIn("never suggest", r["result"])
+                # no live suggestion record -> the act reports a SKIP
+                # instead of guessing at a routine
+                r = self.handle({"cmd": "choice",
+                                 "pick": "suggestion:automate:missing"})
+                self.assertTrue(r["ok"])
+                self.assertIn("SKIP", r["result"])
+        self.assertFalse(self.ctl["broker"].pending_id)  # broker untouched
+
+    def test_ipc_log_line_carries_peer_attribution(self):
+        """ipc._serve hands SO_PEERCRED {pid, uid} to the handler; the
+        dlog line attributes the command when it has them (U1)."""
+        with mock.patch.object(self.w, "dlog") as dl:
+            self.handle({"cmd": "bogus-cmd"}, {"pid": 4321, "uid": 1000})
+            self.handle({"cmd": "bogus-cmd"})
+        with_peer = dl.call_args_list[0][0][0]
+        without = dl.call_args_list[1][0][0]
+        self.assertIn("ipc bogus-cmd", with_peer)
+        self.assertIn("peer=4321:1000", with_peer)
+        self.assertNotIn("peer=", without)
 
 
 class SentenceSpeakerTest(unittest.TestCase):

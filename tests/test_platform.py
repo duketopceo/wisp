@@ -263,8 +263,8 @@ class TestDefaultApps(unittest.TestCase):
 
     def test_macos_defaults_are_which_able(self):
         import shutil
-        if sys.platform == "win32":
-            self.skipTest("shutil.which('open') only available on Unix")
+        if sys.platform != "darwin":
+            self.skipTest("macOS app defaults only resolve on macOS")
         with _with_os("macos"):
             apps = config._default_apps()
         for name, value in apps.items():

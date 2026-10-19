@@ -108,12 +108,28 @@ FIELDS = (
     _f("cua.confirm", "choice", "tier",
        "Confirm risky actions (tier) or every action (always)",
        choices=("tier", "always"), panel=True, label="ui.set.confirm"),
+    _f("cua.delivery", "choice", "auto",
+       "Input delivery: auto = background where possible, pointer "
+       "escalation otherwise; background never touches the real "
+       "cursor; pointer prefers it",
+       choices=("auto", "background", "pointer"),
+       panel=True, label="ui.set.delivery"),
     _f("cua.max_clicks_per_min", "int", "30",
        "Most clicks allowed in one minute", min=1, max=600,
        panel=True, label="ui.set.clicks"),
     _f("cua.max_per_turn", "int", "12",
        "Most actions allowed in one turn", min=1, max=200,
        panel=True, label="ui.set.per_turn"),
+    _f("agent.autonomy", "choice", "autonomous",
+       "Confirm policy: autonomous runs reversible steps free, guided "
+       "asks on them too, always_ask confirms everything",
+       choices=("autonomous", "guided", "always_ask"),
+       panel=True, label="ui.set.autonomy"),
+    _f("dictation.mode", "choice", "cleanup",
+       "Dictate mode: raw is verbatim, cleanup fixes grammar, "
+       "compose writes the finished text from your idea",
+       choices=("raw", "cleanup", "compose"),
+       panel=True, label="ui.set.dictation"),
     _f("cua.timeout_ms", "int", "800",
        "Per call timeout for the cua driver in ms",
        min=50, max=60000),
@@ -140,6 +156,13 @@ FIELDS = (
     _f("agents.act_max_parse_misses", "int", "1",
        "Unparseable action replies tolerated in action text mode",
        min=0, max=10),
+    _f("agents.act_max_seconds", "int", "600",
+       "Wall-clock seconds one act run may take before it aborts "
+       "(0 disables)",
+       min=0, max=86400),
+    _f("agents.act_max_usd", "usd", "0",
+       "Per-run cap on model spend in USD added during the run "
+       "(0 disables)"),
     _f("agents.writer_queue_max", "int", "256",
        "Trajectory and recall writes held in memory before the oldest "
        "is dropped",
@@ -147,6 +170,16 @@ FIELDS = (
     _f("stt.provider", "choice", "local",
        "Speech to text: local whisper.cpp or an API",
        choices=("local", "openai")),
+    _f("clicklab.adaptive", "bool", "false",
+       "Adaptive clicklab: each verdict steers the next synthesized "
+       "task at the hottest failure bucket"),
+    _f("clicklab.promote_after", "int", "3",
+       "Verified successes a clicklab recipe needs before it graduates",
+       min=1, max=20),
+    _f("clicklab.judge", "choice", "jev",
+       "Run verdict judge: jev decisions call (brain fallback), "
+       "brain only, or off (scoreboard alone)",
+       choices=("jev", "brain", "off")),
 )
 
 _BY_KEY = {f.key: f for f in FIELDS}
