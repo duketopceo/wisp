@@ -191,7 +191,9 @@ theme = "dark"
 provider = "local"
 base_url = "https://api.groq.com/openai/v1"
 model = "whisper-large-v3-turbo"
-# name of the env var / .env key holding the API key
+# env var / .env key holding the API key — comma list tries sources in
+# order, e.g. "omaseal://groq/default,GROQ_API_KEY" (keyring first,
+# plain env/.env fallback so non-omaseal installs still work)
 key_env = "GROQ_API_KEY"
 # vocabulary priming — project names, jargon; whisper.cpp --prompt /
 # `prompt` param on the openai provider (huge accuracy win on names)
@@ -500,26 +502,33 @@ def whisper_model(cfg: dict) -> pathlib.Path:
 
 
 def load_env_key(name: str) -> str:
-    """Resolve a secret: omaseal:// ref, .env file, then environment."""
-    if name.startswith("omaseal://"):
-        ref = name[len("omaseal://"):].split("/", 1)
-        if len(ref) == 2:
-            try:
-                r = subprocess.run(
-                    ["omaseal", "get", ref[0], ref[1]],
-                    capture_output=True, text=True, timeout=10)
-                if r.returncode == 0:
-                    return r.stdout.strip()
-            except (OSError, subprocess.SubprocessError):
-                pass
-        return ""
-    v = os.environ.get(name, "")
-    if v:
-        return v
-    if ENV_FILE.exists():
-        for line in ENV_FILE.read_text().splitlines():
-            if line.startswith(f"{name}="):
-                return line.split("=", 1)[1].strip()
+    """Resolve a secret. `name` may be a comma-separated list of
+    sources tried in order — `omaseal://svc/acct` refs and plain env
+    var names (also looked up in .env) — so an omaseal user can keep
+    `omaseal://groq/default,GROQ_API_KEY` and a non-omaseal install
+    still resolves the same key. "" when nothing yields a value."""
+    for cand in (c.strip() for c in str(name).split(",")):
+        if not cand:
+            continue
+        if cand.startswith("omaseal://"):
+            ref = cand[len("omaseal://"):].split("/", 1)
+            if len(ref) == 2:
+                try:
+                    r = subprocess.run(
+                        ["omaseal", "get", ref[0], ref[1]],
+                        capture_output=True, text=True, timeout=10)
+                    if r.returncode == 0 and r.stdout.strip():
+                        return r.stdout.strip()
+                except (OSError, subprocess.SubprocessError):
+                    pass
+            continue
+        v = os.environ.get(cand, "")
+        if v:
+            return v
+        if ENV_FILE.exists():
+            for line in ENV_FILE.read_text().splitlines():
+                if line.startswith(f"{cand}="):
+                    return line.split("=", 1)[1].strip()
     return ""
 
 
