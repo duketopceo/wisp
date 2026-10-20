@@ -330,3 +330,52 @@ class TestClientsOffLinux(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestLoadEnvKey(unittest.TestCase):
+    """key_env may be a comma list of sources tried in order —
+    omaseal:// refs and env/.env names — so keyring users and plain
+    installs resolve the same secret."""
+
+    def test_env_direct(self):
+        with mock.patch.dict(os.environ, {"GROQ_API_KEY": "k1"}):
+            self.assertEqual(config.load_env_key("GROQ_API_KEY"), "k1")
+
+    def test_list_falls_through_dead_omaseal(self):
+        def dead(cmd, **_):
+            return mock.Mock(returncode=1, stdout="")
+        with mock.patch.dict(os.environ, {"GROQ_API_KEY": "k2"}), \
+                mock.patch("subprocess.run", side_effect=dead):
+            self.assertEqual(config.load_env_key(
+                "omaseal://groq/default,GROQ_API_KEY"), "k2")
+
+    def test_list_omaseal_wins_when_alive(self):
+        def ok(cmd, **_):
+            return mock.Mock(returncode=0, stdout="ring-key\n")
+        with mock.patch.dict(os.environ, {"GROQ_API_KEY": "env-key"}), \
+                mock.patch("subprocess.run", side_effect=ok):
+            self.assertEqual(config.load_env_key(
+                "omaseal://groq/default,GROQ_API_KEY"), "ring-key")
+
+    def test_omaseal_binary_absent_falls_through(self):
+        with mock.patch.dict(os.environ, {"GROQ_API_KEY": "k3"}), \
+                mock.patch("subprocess.run",
+                           side_effect=FileNotFoundError):
+            self.assertEqual(config.load_env_key(
+                "omaseal://groq/default,GROQ_API_KEY"), "k3")
+
+    def test_dotenv_fallback(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            envf = Path(td) / ".env"
+            envf.write_text("GROQ_API_KEY=from-file\n")
+            with mock.patch.dict(os.environ, {}, clear=True), \
+                    mock.patch.object(config, "ENV_FILE", envf):
+                self.assertEqual(config.load_env_key("GROQ_API_KEY"),
+                                 "from-file")
+
+    def test_all_miss_returns_empty(self):
+        with mock.patch.dict(os.environ, {}, clear=True), \
+                mock.patch.object(config, "ENV_FILE",
+                                  Path("/nonexistent/.env")):
+            self.assertEqual(config.load_env_key("NOPE_API_KEY"), "")
