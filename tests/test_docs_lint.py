@@ -212,7 +212,7 @@ DOTTED = re.compile(r"wispd config set\s+([a-z_]+)\.([a-z_]+)\b")
 HEAD = re.compile(r"^##+\s+\[([\w.<>]+)\]")
 ROW = re.compile(r"^\|\s*`([a-z_][\w]*)`(?:\s*/\s*`([a-z_][\w]*)`)?\s*\|")
 # sections whose keys are user-defined
-OPEN_SECTIONS = {"apps", "health.units", "mcp", "env"}
+OPEN_SECTIONS = {"apps", "health.units", "mcp", "env", "control"}
 
 
 def config_refs(path):

@@ -7,6 +7,23 @@ from unittest import mock
 sys.path.insert(0, ".")
 from wisp import act, session, tools  # noqa: E402
 
+# U4: every run_act_loop call in this file reaches the real cua-driver
+# when it's live — that starts a real recording, and the turn-end pack
+# write would touch ~/.local/share/wisp/packs + shots/. The loop's own
+# behavior is under test here; the pack seam is stubbed module-wide
+# (packs.write has its own suite).
+_WRITE_PACK = None
+
+
+def setUpModule():
+    global _WRITE_PACK
+    _WRITE_PACK = mock.patch.object(act, "_write_pack")
+    _WRITE_PACK.start()
+
+
+def tearDownModule():
+    _WRITE_PACK.stop()
+
 
 def _msg(content=None, calls=None):
     # _post returns the provider message object (U6 provider seam)

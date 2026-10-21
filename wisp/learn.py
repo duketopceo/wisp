@@ -305,3 +305,80 @@ def apply_overrides(criteria: dict, path=OVERRIDES_FILE) -> dict:
         else:
             merged[name] = f"user-corrected: {cue}"
     return merged
+
+
+# ---------------------------------------------------------------------
+# verdict-weighted trajectory evidence (U6 — R2a symmetric down-weight,
+# R5 real-outcome scoring)
+# ---------------------------------------------------------------------
+#
+# Every mutating act step now carries a verdict the ladder produced
+# (landed|missed|refused|unverifiable|suppressed|not_recorded) plus the
+# rung that minted it (verify_source) and a corroboration flag. Learning
+# consumes verdicts, not dispatch success — "CLICKED" that missed must
+# never read as a success. The canonical mapping lives here so every
+# consumer (action_stats, trajectories, the bank fold) agrees:
+#
+#   landed/missed, two+ rungs or judge-confirmed -> full weight
+#   landed/missed, one rung only ("_solo")       -> SOLO_WEIGHT (R2a:
+#       a lone pixel diff does not prove either direction)
+#   refused/unverifiable/suppressed/not_recorded -> 0 — no outcome
+#       evidence; neither failure nor success
+#   no verdict at all (pre-U6 rows, read-only tools) -> "legacy" — the
+#       dispatch-only era; counted separately, NEVER as landed.
+
+LEGACY = "legacy"
+SOLO_WEIGHT = 0.5
+_OUTCOME = ("landed", "missed")
+_NO_SIGNAL = frozenset(
+    {"refused", "unverifiable", "suppressed", "not_recorded"})
+BUCKETS = _OUTCOME + tuple(b + "_solo" for b in _OUTCOME) \
+    + tuple(sorted(_NO_SIGNAL)) + (LEGACY,)
+
+
+def _corroborated(step: dict):
+    """The step's corroboration flag: persisted rows carry it flat,
+    in-memory act steps carry the ladder's `verify` dict."""
+    corr = step.get("corroborated")
+    if corr is None:
+        vd = step.get("verify")
+        if isinstance(vd, dict):
+            corr = vd.get("corroborated")
+    return corr
+
+
+def step_bucket(step: dict) -> str:
+    """Canonical evidence bucket for one trajectory step:
+    landed|missed split by corroboration (`_solo` = single rung),
+    refused|unverifiable|suppressed|not_recorded pass through, anything
+    without verdict data is `legacy`."""
+    v = str(step.get("verdict") or "").strip().lower()
+    if v in _OUTCOME:
+        return v if _corroborated(step) is True else v + "_solo"
+    if v in _NO_SIGNAL:
+        return v
+    return LEGACY
+
+
+def step_weight(step: dict) -> float:
+    """Learning credit for a step: corroborated outcome verdicts count
+    fully; single-source weigh SOLO_WEIGHT (R2a down-weight, symmetric);
+    no-signal buckets and legacy weigh 0 — they are not failure OR
+    success evidence."""
+    b = step_bucket(step)
+    if b in _OUTCOME:
+        return 1.0
+    if b.endswith("_solo"):
+        return SOLO_WEIGHT
+    return 0.0
+
+
+def terminal_evidence(steps: list) -> tuple:
+    """(bucket, weight) of the LAST outcome-bearing step — the run's
+    verified tail. (None, 0.0) when nothing produced a landed/missed
+    verdict: the tail's truth is then unknown, NOT a failure."""
+    for s in reversed(steps or []):
+        b = step_bucket(s)
+        if b in _OUTCOME or b.endswith("_solo"):
+            return b, step_weight(s)
+    return None, 0.0

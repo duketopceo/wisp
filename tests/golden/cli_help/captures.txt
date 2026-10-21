@@ -1,0 +1,21 @@
+usage: wispd captures [-h] [--full] [--json] [--quiet] [--no-color] [turn]
+
+List capture packs, or show one pack's manifest
+
+positional arguments:
+  turn         pack turn id to show (default: list packs)
+
+options:
+  -h, --help   show this help message and exit
+  --full       include transcript lines and AT-SPI state dumps (sensitive:
+               utterances, window text)
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd captures
+  wispd captures t-1a2b3c --full
+  wispd captures --json

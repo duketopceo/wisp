@@ -144,10 +144,12 @@ delivery = "auto"
 
 [ground]
 # UI grounding adapter (wisp/grounding.py, W13): click/move target name ->
-# screen point. Chain order; a11y = cua get_window_state tree (when the
-# driver is up), uitars = local llama-server (loopback only, screenshots
-# never leave the box), jev = the Decision-Agent patch fallback.
-providers = "a11y,uitars,jev"
+# screen point. Chain order; control = the app's own control channel
+# (wisp/control.py — apps registered under [control], FilmCraft first),
+# a11y = cua get_window_state tree (when the driver is up), uitars =
+# local llama-server (loopback only, screenshots never leave the box),
+# jev = the Decision-Agent patch fallback.
+providers = "control,a11y,uitars,jev"
 # candidates below this are re-observed once, then refused (never clicked)
 min_confidence = "0.5"
 # shared budget for the fast providers (P7: act first step 1.2 s)
@@ -158,11 +160,36 @@ fallback_timeout_ms = "5000"
 # uitars_coords = "px"                    # px | rel1000
 # a11y_frame = "global"                   # global | window (element frames)
 
+# Per-app control channels (wisp/control.py, U3/KTD3): apps exposing a
+# JSON-lines control port get ground-truth grounding + a corroborating
+# verify rung. FilmCraft is built in at 127.0.0.1:9876 (launch it with
+# `--control 9876`). Add another app's channel under [control]:
+# [control]
+#   myapp = "127.0.0.1:9877"            # host:port — loopback only
+# or a table for port + optional host + class/title match patterns:
+# [control.myapp]
+# port = "9877"                         # host defaults to 127.0.0.1
+# match = "myapp,My App"                # default: the app key
+# connect_timeout_s / read_timeout_s under [control] bound the socket.
+
 [traj]
 # episodic memory for the act loop: every run is recorded and similar
 # prior runs (paths + wrong branches) are injected as context.
 enabled = true
 max_inject = 3
+
+[packs]
+# Capture packs (wisp/packs.py, U4): one packs/<turn>/ dir per recorded
+# act turn — manifest.json, frame PNGs, contact.png. Mode 0700;
+# keyboard args persist only as a salted-HMAC hash. Retention keeps the
+# newest `keep` packs AND drops any older than keep_days — both bounds
+# apply, 0 disables that axis. The pack writer is also shots/'s pruning
+# owner: the screenshot tool's files age out on the same count+age
+# policy via shots_keep/shots_keep_days (set 0/0 to keep them forever).
+keep = "200"
+keep_days = "30"
+shots_keep = "100"
+shots_keep_days = "30"
 
 [agents]
 # coding-agent runtime overrides ([agent] is the Jev router section)
@@ -454,6 +481,8 @@ def _default_cfg_dict() -> dict:
                 "kill_switch": "false", "confirm": "tier",
                 "audit": "true", "delivery": "auto"},
         "traj": {"enabled": "true", "max_inject": "3"},
+        "packs": {"keep": "200", "keep_days": "30",
+                  "shots_keep": "100", "shots_keep_days": "30"},
         "clicklab": {"adaptive": "false", "promote_after": "3",
                      "judge": "jev"},
         "agents": {"act_max_steps": "12", "act_max_errors": "2",

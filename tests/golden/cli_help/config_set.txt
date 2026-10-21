@@ -75,6 +75,14 @@ Settings (value, default, range):
                                default 3; 1 to 20
   clicklab.judge               Run verdict judge: jev decisions call (brain fallback), brain only, or off (scoreboard alone)
                                default jev; jev, brain, off
+  packs.keep                   Newest capture packs retained under packs/ (0 disables the count bound)
+                               default 200; 0 to 100000
+  packs.keep_days              Days a capture pack is kept (0 disables the age bound)
+                               default 30; 0 to 3650
+  packs.shots_keep             Newest screenshots kept under shots/ (the pack writer owns its pruning; 0 disables the count bound)
+                               default 100; 0 to 100000
+  packs.shots_keep_days        Days a shots/ screenshot is kept (0 disables the age bound)
+                               default 30; 0 to 3650
 
 Examples:
   wispd config set audio.seconds 30

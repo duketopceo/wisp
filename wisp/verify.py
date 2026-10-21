@@ -349,14 +349,16 @@ def visible_deny(cfg, clients=None, monitors=None):
 
 
 def suppress(turn_dir, why: str) -> dict:
-    """Delete every frame PNG in the action's turn dir — quarantine is
-    secure deletion, not retention. The deletion is itself recorded:
+    """Delete every frame image in the action's turn dir — quarantine is
+    secure deletion, not retention (PNG before/after frames AND the
+    JPEG a cua zoom writes, U5). The deletion is itself recorded:
     evidence.json gains the driver's `privacy_suppressed` convention
     for the pack-write re-check (U4)."""
     d = pathlib.Path(turn_dir)
     deleted = []
     try:
-        for p in sorted(d.glob("*.png")):
+        for p in sorted({*d.glob("*.png"), *d.glob("*.jpg"),
+                         *d.glob("*.jpeg")}):
             try:
                 p.unlink()
                 deleted.append(p.name)
@@ -607,6 +609,13 @@ def verdict(step: dict, *, name: str = "", arg: str = "",
             vd = _mk("refused", "action_truth", False, evidence,
                      str(truth.get("refusal") or "dispatch refused"))
         else:
+            # U3: importing control registers its diff rung — absent
+            # channel/snapshot it just abstains; a broken import must
+            # never take the ladder down
+            try:
+                from . import control as _ctl  # noqa: F401
+            except Exception:
+                pass
             vd = _ladder(step, claim, tdir, after_path, cfg,
                          rungs=rungs, judge=judge, monitors=monitors)
     if claim:

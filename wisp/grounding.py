@@ -5,6 +5,8 @@ Extends the Decision-Agent grounding engine (#77: Clef/Jev `noul`
 probabilistic centering, kept below as the vision-LLM fallback) into a
 provider chain with one typed result:
 
+    control app control channel `ui.elements` (FilmCraft first; exact,
+            no pixels — wisp/control.py, U3/KTD3)
     a11y    cua `get_window_state` element tree (exact, no pixels)
     uitars  local UI-TARS on llama-server 127.0.0.1:8081 (loopback only)
     jev     #77's noul patch grounding (existing default; slow fallback)
@@ -252,7 +254,7 @@ def settings(cfg: dict | None) -> dict:
         url = url[:-3]
     return {
         "providers": [p.strip() for p in str(
-            gc.get("providers", "a11y,uitars,jev")).split(",")
+            gc.get("providers", "control,a11y,uitars,jev")).split(",")
             if p.strip()],
         "min_conf": _f(gc.get("min_confidence"), 0.5),
         "budget": _f(gc.get("budget_ms"), 1200.0) / 1000.0,
@@ -463,6 +465,87 @@ def _a11y(ctx) -> Candidate | None:
                      rect=(x, y, w, h))
 
 
+# ------------------------------------------------- control channel (U3)
+
+def _control(ctx) -> Candidate | None:
+    """Per-app control channel (KTD3): the app's own widget registry —
+    `ui.elements` id/label/rect — ahead of the vision providers when
+    the focused app ships a channel (FilmCraft: `--control 9876`,
+    registered in wisp/control.py).
+
+    Channel rects are window-local points translated against the app's
+    live compositor window bounds; a rect whose center can't be placed
+    inside those bounds is dropped — the channel is unauthenticated
+    loopback and a squatting process must not redirect a click outside
+    the app's window. Dispatch stays on the standard cua pixel path.
+    """
+    from . import control as _ctl
+    from . import trace as _trace
+    win = _ctl.focused_window(cua=ctx.cua)
+    if win is None:
+        raise Skip("no focused window")
+    ep = _ctl.AppControlRegistry(ctx.cfg).match(win)
+    if ep is None:
+        raise Skip("focused app has no control channel")
+    st = _ctl.settings(ctx.cfg)
+    try:
+        with _ctl.ControlClient(
+                ep.host, ep.port,
+                connect_s=min(ctx.timeout, st["connect_s"]),
+                read_s=max(0.3, min(ctx.timeout + 0.5,
+                                    st["read_s"]))) as cli:
+            els = cli.elements()
+            try:
+                insp = cli.inspect()
+            except _ctl.ControlError:
+                insp = {}      # elements alone still ground + snapshot
+    except _ctl.ControlError as e:
+        # absent channel degrades to the generic lane; a STALLED or
+        # garbage one reports down so tried==down reads ground_down
+        if e.code == "down":
+            raise Skip(f"control channel unreachable: {e}") from None
+        raise ProviderDown(f"control channel {e.code}") from None
+    # match the target against element id/label, a11y-style scoring
+    want = ctx.target.strip().casefold()
+    score = 0.0
+    cands = []
+    for el in els:
+        keys = [n.casefold() for n in (el.get("id"), el.get("label"))
+                if n]
+        if not keys:
+            continue
+        sc = 1.0 if want in keys else (
+            0.85 if any(want in n or n in want for n in keys) else 0.0)
+        if sc > score:
+            cands, score = [el], sc
+        elif sc == score and sc > 0:
+            cands.append(el)
+    # validate each top-scored rect against compositor bounds; the
+    # first that lands inside the app's window grounds the click
+    el = grect = None
+    ppt = (insp.get("pixelsPerPoint") if isinstance(insp, dict)
+           else None)
+    for cand_el in cands:
+        grect = _ctl.resolve_rect(cand_el.get("rect"), win, ppt=ppt,
+                                  slack=st["slack_px"])
+        if grect is not None:
+            el = cand_el
+            break
+    hit = {"id": el["id"], "label": el.get("label", ""),
+           "rect": list(el["rect"])} if el is not None else None
+    # the pre-dispatch snapshot for verify's control rung — recorded
+    # whether or not the target matched (a miss still leaves usable
+    # before-state for the diff)
+    _ctl.note_before(_trace.current(), ep.app, insp, els, hit=hit)
+    if el is None:
+        return None
+    cx, cy = grect[0] + grect[2] / 2.0, grect[1] + grect[3] / 2.0
+    conf = score if len(cands) == 1 else 0.4    # ambiguous tie -> low
+    return Candidate(cx, cy, conf, "control", frame="global",
+                     label=el.get("label") or el["id"],
+                     window=win.get("title") or "", rect=grect)
+
+
 # ------------------------------------------------- Jev (vision fallback)
 
 def _prob(v) -> float:
@@ -623,6 +706,7 @@ def ground_element(
 # ---------------------------------------------------------------- chain
 
 PROVIDERS = {
+    "control": {"fn": _control, "fast": True},
     "a11y": {"fn": _a11y, "fast": True},
     "uitars": {"fn": _uitars, "fast": True},
     "jev": {"fn": _jev, "fast": False},

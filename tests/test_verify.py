@@ -517,6 +517,9 @@ class Loop(LadderCase):
             mock.patch.object(act.realinput, "begin",
                               return_value="off"),
             mock.patch.object(act, "_record_traj"),
+            # U4: keep durable packs off the real store — these tests
+            # cover the verdict ladder, packs.write has its own suite
+            mock.patch.object(act, "_write_pack"),
             mock.patch.object(platform, "_cua_live", return_value=True),
             mock.patch.object(cua_safety, "audit_default_path",
                               return_value=t / "cua.jsonl"),
