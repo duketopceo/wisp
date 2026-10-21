@@ -47,7 +47,7 @@ Every recorded act turn produces one durable capture pack:
 |---|---|
 | `~/.local/share/wisp/rec/<turn>/` | transient per-action recording — `turn-NNNNN/` dirs with `action.json` + frame PNGs, mode `0700`. In-flight only: the pack write deletes it, and daemon start discards orphans |
 | `~/.local/share/wisp/packs/<turn>/` | the durable pack, mode `0700`: `manifest.json` (schema `wisp-capture-pack/v1` — transcript with timestamps, actions + verdicts, frame index, suppression events), the frame PNGs, `contact.png` |
-| `~/.local/share/wisp/pack.salt` | per-install HMAC salt, mode `0600` — typed text (`type_text`/`key` args) persists only as `len` + salted SHA-256 |
+| `~/.local/share/wisp/pack.salt` | per-install HMAC salt, mode `0600` — typed text (`type_text`/`key` args, `fill` values, `post_send` bodies) persists only as `len` + salted SHA-256 |
 | `~/.local/share/wisp/shots/` | the screenshot tool's files — pruned by the pack writer under the same count+age policy, on their own keys |
 
 Retention (`[packs]` in config.toml): `packs.keep` newest packs AND
@@ -82,11 +82,13 @@ before the recorder stops (late renders land as `landed`).
 (FilmCraft: `filmcraft --control 9876`, `ui.elements`/`ui.inspect`/
 `ui.screenshot`) — channel rects are validated against compositor
 bounds, grounding prefers it over a11y/UI-TARS/Jev
-(`ground.chain = control,a11y,uitars,jev`). `observe` is the safe
+(`ground.providers = control,a11y,uitars,jev`). `observe` is the safe
 read-only capture tool: deny-gated, channel-first, cua `zoom`
-fallback, mints `turn-9NNNN` dirs under the turn's `rec/` root;
-`pin:N` in click/move args resolves to the last observe frame's
-numbered pin.
+fallback, mints `turn-9NNNN` dirs under the turn's `rec/` root. Its
+arg is a control-channel panel name, or `x1,y1,x2,y2` to crop a
+window-local region through the zoom lane; the frame comes back as
+the next observation (inspect only — its pixels are not the click
+coordinate space).
 
 ## Known failure modes → recovery
 

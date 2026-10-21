@@ -76,22 +76,16 @@ _TURN_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _CTRL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 _MAX_TEXT = 1000
 # tools whose arg is typed keyboard input — the wisp toolbelt names and
-# the driver-side names a recorded action.json can carry
+# the driver-side names a recorded action.json can carry. fill's value
+# and post_send's body are the same privacy class as typed text.
 _KEYBOARD_TOOLS = {
     "type_text", "type", "input_text", "send_text", "send_keys",
-    "key", "keys", "hotkey", "press",
+    "key", "keys", "hotkey", "press", "fill", "post_send",
 }
 # arg fields that stay cleartext even on a keyboard action (routing
 # metadata, never typed content)
 _BENIGN_ARGS = {"session", "scope", "x", "y", "ms", "ts", "epoch"}
 _CONTACT_MAX = 24          # frames in one montage
-
-
-def _f(v, default: float) -> float:
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return default
 
 
 def _num(v, default: int) -> int:
@@ -191,11 +185,39 @@ def _redact_args(tool: str, args, salt: bytes):
 
 def _manifest_arg(tool: str, arg, salt: bytes):
     """The step record's `arg` for the manifest action list — keyboard
-    tools get the salted-hash form, everything else the cleaned text."""
+    tools get the salted-hash form, everything else the cleaned text.
+    `fill '<id> <value>'` keeps the field id (routing metadata) and
+    hashes only the typed value."""
     text = "" if arg is None else str(arg)
+    if tool == "fill" and text:
+        head, sep, tail = text.partition("=")
+        if not sep:
+            head, _, tail = text.partition(" ")
+        if tail:
+            return {"target": _clean(head.strip()),
+                    "value": _redacted(tail.strip(), salt)}
     if tool in _KEYBOARD_TOOLS and text:
         return _redacted(text, salt)
     return _clean(text)
+
+
+# `FILLED <element-id>=<typed-value>` — the fill tool's result echo
+# carries the typed value itself
+_FILLED_RE = re.compile(r"^(FILLED\s+\S+)=", re.S)
+
+
+def _manifest_result(tool: str, result, salt: bytes):
+    """The step result for the manifest — a keyboard-bearing tool's
+    echo can carry the typed value itself (`FILLED <id>=<text>`):
+    keep the tool's own prefix, never the payload."""
+    text = _clean(result or "")[:300]
+    if tool in _KEYBOARD_TOOLS:
+        m = _FILLED_RE.match(text)
+        if m:
+            return m.group(1)          # FILLED <id> — the value dies
+        if "=" in text:
+            return _redacted(text, salt)
+    return text
 
 
 def _redacted_action(src: pathlib.Path, salt: bytes) -> dict:
@@ -250,15 +272,27 @@ def _frame_kind(name: str) -> str:
     return "meta"
 
 
+def _suppressed_out(name: str, kind: str) -> bool:
+    """Files a suppressed dir must never promote — frames plus the
+    text evidence a deny interval can smear into (AT-SPI dumps,
+    control-channel snapshots)."""
+    return kind in ("frame", "observe", "state") \
+        or name.startswith("control_")
+
+
 def _collect_frames(pack: pathlib.Path, dirs: list,
                     salt: bytes) -> tuple:
     """Copy each turn dir's evidence into the pack; returns the frame
-    index and the ordered PNG list for the contact sheet."""
+    index and the ordered PNG list for the contact sheet. Dirs flagged
+    privacy_suppressed by the mid-loop re-check copy no evidence at
+    all — images AND the state/control JSON a suppression missed."""
     index, pngs = [], []
     for d in dirs:
         dst = pack / d.name
         dst.mkdir(mode=0o700, exist_ok=True)
         entry = {"dir": d.name, "bytes": 0, "files": []}
+        suppressed = bool((_json(d / "evidence.json") or {})
+                          .get("privacy_suppressed"))
         try:
             files = sorted(d.iterdir())
         except OSError:
@@ -270,12 +304,14 @@ def _collect_frames(pack: pathlib.Path, dirs: list,
             if kind == "meta" and src.name != "action.json" \
                     and src.suffix not in (".json", ".jsonl"):
                 continue    # non-JSON strays stay transient
+            if suppressed and _suppressed_out(src.name, kind):
+                continue    # deny-interval evidence never promotes
             out = dst / src.name
             try:
                 if src.name == "action.json":
                     # never link the driver's copy: it holds cleartext
                     out.write_text(json.dumps(
-                        _redacted_action(src, salt),
+                        _deep_clean(_redacted_action(src, salt)),
                         separators=(",", ":")))
                     os.chmod(out, 0o600)
                 elif kind == "meta" and src.suffix == ".json":
@@ -286,7 +322,7 @@ def _collect_frames(pack: pathlib.Path, dirs: list,
                         _link_or_copy(src, out)
                     else:
                         out.write_text(json.dumps(
-                            red, separators=(",", ":")))
+                            _deep_clean(red), separators=(",", ":")))
                         os.chmod(out, 0o600)
                 else:
                     _link_or_copy(src, out)
@@ -300,6 +336,34 @@ def _collect_frames(pack: pathlib.Path, dirs: list,
                 pngs.append(out)
         index.append(entry)
     return index, pngs
+
+
+def _purge_suppressed(pack: pathlib.Path, dirs: list) -> dict:
+    """Close the suppress→collect TOCTOU: a deny-interval straggler
+    landing between the re-check and the copy is re-deleted at the
+    rec/ source AND dropped from the pack copy it just made. Returns
+    {dir_name: {deleted names}} for the index fixup."""
+    out = {}
+    for d in dirs:
+        evj = _json(d / "evidence.json") or {}
+        if not evj.get("privacy_suppressed"):
+            continue
+        verify.suppress(d, (evj.get("suppression") or {}).get("reason")
+                        or "deny interval (loop-stage)")
+        pd = pack / d.name
+        try:
+            files = sorted(pd.iterdir())
+        except OSError:
+            continue
+        for p in files:
+            if not _suppressed_out(p.name, _frame_kind(p.name)):
+                continue
+            try:
+                p.unlink()
+                out.setdefault(d.name, set()).add(p.name)
+            except OSError:
+                pass
+    return out
 
 
 # ------------------------------------------------------- contact sheet
@@ -411,7 +475,8 @@ def _actions_index(pack: pathlib.Path, steps: list,
             if s.get(k):
                 a[k] = s[k]
         if s.get("result"):
-            a["result"] = _clean(s["result"])[:300]
+            a["result"] = _manifest_result(
+                s.get("tool") or "", s["result"], salt)
         if tdir:
             aj = _json(pack / a["turn_dir"] / "action.json") or {}
             ts = record._action_ts(aj)
@@ -497,7 +562,16 @@ def write(turn: str, steps: list, cfg: dict | None = None, *,
                       session=session, clients=clients,
                       monitors=monitors, root=root, rec_root=rec_root,
                       clean_rec=clean_rec, contact=contact)
-    except Exception:
+    except Exception as e:
+        # never raise into turn teardown, but never silent either —
+        # a failed pack write is a real evidence gap worth a trace row
+        try:
+            from . import trace as _trace
+            _trace.emit(str(turn or "") or _trace.current(),
+                        "pack_unavailable", "rec",
+                        {"detail": str(e)[:200]})
+        except Exception:
+            pass
         return None
 
 
@@ -525,6 +599,19 @@ def _write(turn, steps, cfg, *, rec_dir, recorded, transcript, session,
     _mk_0700(pack)
 
     index, pngs = _collect_frames(pack, dirs, salt)
+    purged = _purge_suppressed(pack, dirs)
+    if purged:
+        # frames landing between the recheck and the copy were just
+        # deleted — keep the index and contact list honest after them
+        for e in index:
+            drop = purged.get(e["dir"], set())
+            if not drop:
+                continue
+            kept = [f for f in e["files"] if f["name"] not in drop]
+            e["bytes"] -= sum(f["bytes"] for f in e["files"]
+                              if f["name"] in drop)
+            e["files"] = kept
+        pngs = [p for p in pngs if p.exists()]
     actions, verdicts, stamps = _actions_index(pack, steps or [], salt)
     t0 = min(stamps) if stamps else None
     lines = _transcript(transcript, now, t0)
@@ -664,24 +751,6 @@ def _evict(root, keep: int, keep_days: int, now: float,
     return out
 
 
-def prune(cfg: dict | None = None, *, now: float | None = None,
-          root=None, rec_root=None) -> dict:
-    """Enforce [packs] keep + keep_days on packs/."""
-    st = settings(cfg)
-    rr = rec_root if rec_root is not None else record.REC_DIR
-    return _evict(root or PACKS_DIR, st["keep"], st["keep_days"],
-                  now or time.time(), rec_root=rr)
-
-
-def prune_shots(cfg: dict | None = None, *, now: float | None = None,
-                root=None) -> dict:
-    """shots/ retention — this module is the declared owner (see module
-    docstring): the same count+age policy as packs, on its own keys."""
-    st = settings(cfg)
-    return _evict(root or SHOTS_DIR, st["shots_keep"],
-                  st["shots_keep_days"], now or time.time())
-
-
 _MAINT_GAP_S = 120.0   # write-path sweep cadence — off the turn's
                        # teardown path; daemon-start + periodic passes
                        # still keep retention enforced
@@ -738,6 +807,7 @@ def list_packs(root=None) -> list:
 
 
 def manifest(turn: str, *, full: bool = False, root=None) -> dict | None:
+    full = full is True   # closed bool — a truthy non-bool never opens
     """One pack's manifest for IPC. Without `full` the transcript lines
     and the *_state.json file entries (AT-SPI dumps — same sensitivity
     class as transcript text) are stripped; the files stay on disk."""
@@ -774,7 +844,9 @@ def captures_response(cmd: dict, root=None) -> dict:
     if turn:
         if not _TURN_ID_RE.match(turn):
             return {"ok": False, "error": "bad_turn"}
-        m = manifest(turn, full=bool(cmd.get("full")), root=root)
+        # strict bool — a truthy string ("false") must not open the
+        # gated transcript/state fields
+        m = manifest(turn, full=cmd.get("full") is True, root=root)
         if m is None:
             return {"ok": False, "error": "no_such_pack"}
         return {"ok": True, "manifest": m}

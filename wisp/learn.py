@@ -358,19 +358,6 @@ def step_bucket(step: dict) -> str:
     return LEGACY
 
 
-def step_weight(step: dict) -> float:
-    """Learning credit for a step: corroborated outcome verdicts count
-    fully; single-source weigh SOLO_WEIGHT (R2a down-weight, symmetric);
-    no-signal buckets and legacy weigh 0 — they are not failure OR
-    success evidence."""
-    b = step_bucket(step)
-    if b in _OUTCOME:
-        return 1.0
-    if b.endswith("_solo"):
-        return SOLO_WEIGHT
-    return 0.0
-
-
 def terminal_evidence(steps: list) -> tuple:
     """(bucket, weight) of the LAST outcome-bearing step — the run's
     verified tail. (None, 0.0) when nothing produced a landed/missed

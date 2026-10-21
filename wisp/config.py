@@ -191,6 +191,23 @@ keep_days = "30"
 shots_keep = "100"
 shots_keep_days = "30"
 
+[verify]
+# Verify ladder (wisp/verify.py, U2): each recorded action's verdict.
+# The pixel rung masks a region_px square around the click point and
+# diffs before/after at pixel_eps per-channel sensitivity —
+# >=pixel_landed_min changed votes landed, <=pixel_missed_max votes
+# missed, between them abstains to the judge. frame_wait_s bounds the
+# wait for the driver's frames. The VLM judge resolves disagreements
+# and bare 'effect' claims; vlm names a 'provider:model' endpoint
+# (empty = primary brain), judge_timeout_s bounds it.
+# vlm = ""
+judge_timeout_s = "20"
+pixel_landed_min = "0.02"
+pixel_missed_max = "0.001"
+pixel_eps = "16"
+region_px = "96"
+frame_wait_s = "0.5"
+
 [agents]
 # coding-agent runtime overrides ([agent] is the Jev router section)
 act_max_steps = 12
@@ -483,6 +500,9 @@ def _default_cfg_dict() -> dict:
         "traj": {"enabled": "true", "max_inject": "3"},
         "packs": {"keep": "200", "keep_days": "30",
                   "shots_keep": "100", "shots_keep_days": "30"},
+        "verify": {"judge_timeout_s": "20", "pixel_landed_min": "0.02",
+                   "pixel_missed_max": "0.001", "pixel_eps": "16",
+                   "region_px": "96", "frame_wait_s": "0.5"},
         "clicklab": {"adaptive": "false", "promote_after": "3",
                      "judge": "jev"},
         "agents": {"act_max_steps": "12", "act_max_errors": "2",

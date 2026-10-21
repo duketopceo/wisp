@@ -190,10 +190,10 @@ class RunRecording:
 
     The driver keeps ONE recording at a time daemon-wide and
     `stop_recording` is unconditional: each act turn's recorder steals
-    the singleton (its `rec/<turn>` dirs are the per-turn evidence the
-    row's `turn_dirs` cite) and stops it at turn end, so `rearm()` runs
-    after every task to keep covering the gaps. Never raises — a down
-    driver just means the run went unrecorded.
+    the singleton (its `rec/<turn>` dirs fold into `packs/<turn>` —
+    the durable evidence the row's `packs` cite) and stops it at turn
+    end, so `rearm()` runs after every task to keep covering the gaps.
+    Never raises — a down driver just means the run went unrecorded.
 
     Boundary: `start()` is called after run bring-up, so page focus and
     the --dom origin-probe click stay unrecorded by design (they're
@@ -244,13 +244,14 @@ class RunRecording:
 
     def row_fields(self, run_steps: list) -> dict:
         """Recording refs folded into a clicklab.jsonl row: the run's
-        outer dir + session label, plus the turn dirs the act loop
-        attributed to this task's cua dispatches."""
+        outer dir + session label, plus the durable packs/<turn> dirs
+        this task's turn folded into (rec/ intermediates are gone by
+        row time — the pack is the citation that survives)."""
         f = {"rec_dir": str(self.dir), "rec_session": self.label}
-        dirs = sorted({str(s["turn_dir"]) for s in run_steps
-                       if s.get("turn_dir")})
-        if dirs:
-            f["turn_dirs"] = dirs
+        packs = sorted({s["pack"] for s in run_steps
+                        if s.get("pack")})
+        if packs:
+            f["packs"] = packs
         return f
 
     def stop(self) -> None:
@@ -698,7 +699,7 @@ def _run_task(cfg, page, dom, teach, apps_page, task, expr, oracle_len,
     """One task: reset the board, run the act loop, oracle-check, judge,
     fold into the skill bank + verdict stream. `meta` (adaptive pick
     info) lands on the record so synthesized tasks are attributable."""
-    from wisp import act, judge, ledger, train
+    from wisp import act, judge, ledger, train, trace
     # reset the scoreboard per task — cumulative state would let a
     # repeat pass on a previous task's leftovers. The apps page
     # keeps board/app state in __score so a reload is the cleanest
@@ -722,9 +723,17 @@ def _run_task(cfg, page, dom, teach, apps_page, task, expr, oracle_len,
     t0 = time.time()
     run_steps: list = []
     ledger.reset_session()
-    verdict = act.run_act_loop(ask, cfg,
-                               confirm=lambda p: True,
-                               steps_out=run_steps)
+    # F13: run_act_loop reads its turn id off trace.current(); an
+    # unbound "sys" is refused by packs._write (daemon traffic is
+    # never packed) and its rec dir is swept mid-run — a fresh id per
+    # task makes the turn's evidence pack (and cite) durably.
+    trace.new_turn()
+    try:
+        verdict = act.run_act_loop(ask, cfg,
+                                   confirm=lambda p: True,
+                                   steps_out=run_steps)
+    finally:
+        trace.set_turn("sys")
     if recording is not None:
         # the act turn's recorder stopped the driver's (global)
         # recording at loop exit — re-arm the run's outer wrap so

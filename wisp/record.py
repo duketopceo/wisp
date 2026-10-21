@@ -42,7 +42,9 @@ MATCH_WAIT_S = 1.5        # the turn dir can lag the dispatch reply
 MATCH_POLL_S = 0.05
 _TS_SKEW_S = 2.0          # tolerate a couple seconds of clock skew
 _TURN_RE = re.compile(r"^turn-\d{5}$")
-_TS_KEYS = ("ts", "epoch", "epoch_s", "timestamp", "time", "wall_s")
+# epoch-second keys the driver is known to write in action.json
+_TS_KEYS = ("ts", "epoch")
+_MS_KEYS = ("ms", "mono_ms", "mono")   # driver-side monotonic millis
 
 
 def _client(client=None, timeout_s: float = CTRL_TIMEOUT_S) -> cua.Cua:
@@ -57,23 +59,6 @@ def mint(client=None) -> dict:
     expired/ended label. The label is daemon-global, so one-shot
     `cua-driver call` transports all share it."""
     return _client(client).call("start_session", {"session": SESSION},
-                                strict=False, timeout=CTRL_TIMEOUT_S)
-
-
-def start_recording(output_dir, client=None) -> dict:
-    """Mint the label, then start a session-filtered recording into
-    `output_dir` (video off — screenshots + accessibility state are
-    the cheap evidence; video is megabytes per second)."""
-    c = _client(client)
-    mint(c)
-    return c.call("start_recording",
-                  {"session": SESSION, "output_dir": str(output_dir)},
-                  strict=False, timeout=CTRL_TIMEOUT_S)
-
-
-def stop_recording(client=None) -> dict:
-    return _client(client).call("stop_recording",
-                                {"session": SESSION},
                                 strict=False, timeout=CTRL_TIMEOUT_S)
 
 
@@ -99,6 +84,17 @@ def _action_ts(action: dict) -> float | None:
         v = action.get(k)
         if isinstance(v, (int, float)) and not isinstance(v, bool):
             return v / 1000.0 if v > 1e11 else float(v)
+    return None
+
+
+def _action_ms(action: dict) -> float | None:
+    """Driver-side monotonic milliseconds — same host, same monotonic
+    clock as `time.monotonic()` in this process, so it is the honest
+    this-dispatch watermark _scan compares `since_mono` against."""
+    for k in _MS_KEYS:
+        v = action.get(k)
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            return float(v)
     return None
 
 
@@ -189,16 +185,29 @@ class Recorder:
         to idle-expire; the mint revives an ended/expired label, and the
         re-issued start_recording re-arms a recording the dead session
         took down (the re-issue is harmless when one is already live —
-        REFUSED just means keep going). Never raises."""
+        REFUSED just means keep going). Never raises. The mint gets one
+        bounded retry (F19): a transient transport hiccup must not mark
+        the recorder dead for the rest of the turn; a real outage still
+        does."""
         if not self.active:
             return
         if time.monotonic() - self._touched < RENEW_AFTER_S:
             return
-        try:
-            self._mint()
-        except Exception as e:
+        err = None
+        for attempt in range(2):            # mint + one bounded retry
+            try:
+                self._mint()
+                err = None
+                break
+            except _cancel.Cancelled:
+                raise                       # user interrupt: never retry
+            except Exception as e:
+                err = e
+                if attempt == 0:
+                    time.sleep(0.2)
+        if err is not None:
             self._dead = True
-            self._unavailable("keepalive", e)
+            self._unavailable("keepalive", err)
             return
         try:
             self.client.call(
@@ -228,19 +237,24 @@ class Recorder:
     # -- attribution ---------------------------------------------------
     def match_turn(self, cua_tool: str, x=None, y=None,
                    since: float = 0.0, wait_s: float = MATCH_WAIT_S,
-                   poll_s: float = MATCH_POLL_S):
+                   poll_s: float = MATCH_POLL_S, since_mono=None):
         """(dir, action.json dict) for the action this step dispatched.
 
         The dir can lag the dispatch reply, so poll briefly. A dir
         matches on tool name + x/y (when both sides carry them) + an
         epoch ts no older than `since`; each dir is claimed at most
         once so a repeated identical call can't re-attribute it.
+        `since_mono` (dispatch-time time.monotonic()) is the F11
+        watermark: a dir whose driver-side monotonic `ms` predates
+        this dispatch was written for an EARLIER action — tool+coords
+        matching must never attribute it to this one (e.g. a dir that
+        landed too late for its own step's bounded wait).
         """
         if not self.active:
             return None
         deadline = time.monotonic() + wait_s
         while True:
-            hit = self._scan(cua_tool, x, y, since)
+            hit = self._scan(cua_tool, x, y, since, since_mono)
             if hit is not None:
                 self._claimed.add(str(hit[0]))
                 return hit
@@ -248,7 +262,7 @@ class Recorder:
                 return None
             time.sleep(poll_s)
 
-    def _scan(self, cua_tool, x, y, since):
+    def _scan(self, cua_tool, x, y, since, since_mono=None):
         try:
             dirs = sorted(d for d in self.dir.iterdir()
                           if d.is_dir() and _TURN_RE.match(d.name))
@@ -267,6 +281,11 @@ class Recorder:
             ts = _action_ts(a)
             if ts is not None and ts < since - _TS_SKEW_S:
                 continue
+            if since_mono is not None:
+                ms = _action_ms(a)
+                if ms is not None \
+                        and ms < since_mono * 1000.0 - _TS_SKEW_S * 1000.0:
+                    continue    # F11: written for an earlier dispatch
             return d, a
         return None
 

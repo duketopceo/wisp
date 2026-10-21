@@ -240,9 +240,13 @@ def _fold(e: dict | None, rec: dict, needed: int = GRAD_STREAK) -> dict:
     e["changed"] = e["status"] != prev
     if ok and rec.get("steps"):
         e["steps"] = rec["steps"][:24]
-        # U6: clicklab rows carry the run's recording dir + per-step
-        # turn dirs — stash them with the banked steps so a graduated
+        # U6: clicklab rows carry the run's recording dir + the task's
+        # pack dirs — stash them with the banked steps so a graduated
         # recipe's replay/diff bundle points at real turn evidence.
+        # (rec/ turn dirs are transient — deleted at pack write — so
+        # the row cites packs/<turn>, not them.)
+        if rec.get("packs"):
+            e["packs"] = list(rec["packs"])[:24]
         if rec.get("turn_dirs"):
             e["turn_dirs"] = list(rec["turn_dirs"])[:24]
         if rec.get("rec_dir"):

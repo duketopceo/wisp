@@ -679,6 +679,68 @@ class Rung(unittest.TestCase):
         self.assertIn("control", verify.RUNGS)
         self.assertIs(verify.RUNGS["control"], control.verify_rung)
 
+    # -- F5: a (turn, app) snapshot is single-use and bound to the
+    # dispatch it was stashed for ------------------------------
+
+    def test_snapshot_from_earlier_action_abstains(self):
+        # the snap's monotonic stamp predates this step's aim_mono —
+        # it was written for a previous dispatch and must not serve
+        srv = CtrlServer(lambda m, p, c: ok(ELEMENTS if m == "ui.elements"
+                                            else INSPECT))
+        self.addCleanup(srv.close)
+        cfg = {"control": {"filmcraft": f"127.0.0.1:{srv.port}"}}
+        ctx = self._ctx(cfg=cfg)
+        control.note_before(ctx.turn_dir.parent.name, "filmcraft",
+                            INSPECT, ELEMENTS)
+        # this dispatch's aim opened a full second AFTER the snap was
+        # stashed — i.e. the snap belongs to a previous action
+        key = (ctx.turn_dir.parent.name, "filmcraft")
+        ctx.step["aim_mono"] = control._BEFORE[key]["at"] + 1.0
+        self.assertEqual(self._rung(ctx)["vote"], "abstain")
+
+    def test_snapshot_inside_the_aim_window_serves(self):
+        # note_before ran after aim_mono — the real ordering — so the
+        # fresh snap votes normally
+        srv = CtrlServer(lambda m, p, c: ok(ELEMENTS if m == "ui.elements"
+                                            else INSPECT))
+        self.addCleanup(srv.close)
+        cfg = {"control": {"filmcraft": f"127.0.0.1:{srv.port}"}}
+        ctx = self._ctx(cfg=cfg)
+        ctx.step["aim_mono"] = time.monotonic()
+        control.note_before(ctx.turn_dir.parent.name, "filmcraft",
+                            INSPECT, ELEMENTS)
+        self.assertEqual(self._rung(ctx)["vote"], "missed")
+
+    def test_snapshot_is_consumed_on_use(self):
+        srv = CtrlServer(lambda m, p, c: ok(ELEMENTS if m == "ui.elements"
+                                            else INSPECT))
+        self.addCleanup(srv.close)
+        cfg = {"control": {"filmcraft": f"127.0.0.1:{srv.port}"}}
+        ctx = self._ctx(cfg=cfg)
+        control.note_before(ctx.turn_dir.parent.name, "filmcraft",
+                            INSPECT, ELEMENTS)
+        first = self._rung(ctx)
+        self.assertEqual(first["vote"], "missed")
+        # a second rung (re-verify, retry) finds nothing — the snap
+        # was popped, so a later action can never inherit it
+        second = self._rung(ctx)
+        self.assertEqual(second["vote"], "abstain")
+        self.assertIn("snapshot", second["detail"])
+
+    def test_expired_snapshot_abstains(self):
+        srv = CtrlServer(lambda m, p, c: ok(ELEMENTS if m == "ui.elements"
+                                            else INSPECT))
+        self.addCleanup(srv.close)
+        cfg = {"control": {"filmcraft": f"127.0.0.1:{srv.port}"}}
+        ctx = self._ctx(cfg=cfg)
+        control.note_before(ctx.turn_dir.parent.name, "filmcraft",
+                            INSPECT, ELEMENTS)
+        # age the snap past the TTL directly — a parked turn's snap
+        # must never reach a re-dispatch's verify
+        key = (ctx.turn_dir.parent.name, "filmcraft")
+        control._BEFORE[key]["at"] -= control._BEFORE_TTL_S + 1
+        self.assertEqual(self._rung(ctx)["vote"], "abstain")
+
     def test_control_vote_never_sole_sources(self):
         # through the ladder: control votes landed alone -> landed but
         # corroborated False (R2a reconcile already in verify.py)

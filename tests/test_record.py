@@ -65,6 +65,7 @@ class FakeDriver:
         self.mints = 0
         self.starts = 0
         self.stops = 0
+        self.fail_mints = 0     # N start_session calls fail before OK
 
     def run(self, argv, **kw):
         # same contract as the real cancel.run — a cancelled bound
@@ -79,6 +80,9 @@ class FakeDriver:
         self.argv.append((tool, args))
         if tool == "start_session":
             self.mints += 1
+            if self.fail_mints:
+                self.fail_mints -= 1
+                raise OSError("cua-driver: transient mint failure")
             return self._done({"active": True, "revived": False,
                                "session": args.get("session")})
         if tool == "start_recording":
@@ -98,7 +102,7 @@ class FakeDriver:
             ["cua-driver"], rc,
             stdout=json.dumps(result).encode(), stderr=b"")
 
-    def action(self, tool, x=None, y=None, ts=None):
+    def action(self, tool, x=None, y=None, ts=None, ms=None):
         """Write `turn-NNNNN/action.json` under the live rec dir — what
         the real driver does per dispatched action (tool, args,
         action_truth, monotonic ms + epoch ts)."""
@@ -117,7 +121,8 @@ class FakeDriver:
                 "transport": "linux_wayland_virtual_pointer",
                 "refusal": None},
             "ts": time.time() if ts is None else ts,
-            "ms": int(time.monotonic() * 1000)}))
+            "ms": (int(time.monotonic() * 1000)
+                   if ms is None else ms)}))
         return d
 
 
@@ -198,13 +203,35 @@ class TestSessionLabel(RecCase):
         c = cua.Cua()
         c.click(10, 20)
         c.move_cursor(1, 2)
-        c.zoom(1, 0, 0, 5, 5)
-        c.verify_state(1, 2, [{"window": {"exists": True}}])
+        # generic call() is the seam zoom/verify_state wrappers were:
+        # the label rides the same way
+        c.call("zoom", {"window_id": 1, "x1": 0, "y1": 0,
+                        "x2": 5, "y2": 5})
+        c.call("verify_state", {"pid": 1, "window_id": 2,
+                                "expect": [{"window": {"exists": True}}]})
         tools_ = [t for t, _ in self.driver.argv]
         self.assertEqual(tools_, ["click", "move_cursor", "zoom",
                                   "verify_state"])
         for _, args in self.driver.argv:
             self.assertEqual(args["session"], "wisp")
+
+    def test_default_session_resolves_at_call_time(self):
+        # F14: the session= default is a sentinel resolved at call
+        # time — rebinding cua.SESSION after the client exists (what
+        # clicklab does per run) must change the label every later
+        # call sends
+        c = cua.Cua()
+        try:
+            cua.SESSION = "clicklab-x"
+            c.click(1, 2)
+        finally:
+            cua.SESSION = "wisp"
+        tool, args = self.driver.argv[-1]
+        self.assertEqual(tool, "click")
+        self.assertEqual(args["session"], "clicklab-x")
+        # session=None still sends a sessionless call
+        c.call("list_monitors", session=None)
+        self.assertNotIn("session", self.driver.argv[-1][1])
 
     def test_pointer_cmds_cua_argv_carries_session(self):
         cmds = platform.pointer_cmds(100, 200, "cua", click=True)
@@ -515,6 +542,55 @@ class TestRecorderDirect(RecCase):
         hit = rec.match_turn("click", 7, 8, since=time.time() - 1,
                              wait_s=0.1)
         self.assertIsNone(hit)
+        rec.stop()
+
+    def test_mono_watermark_rejects_predispatch_dir(self):
+        # F11: same tool+coords and a fresh epoch ts — within the 2 s
+        # skew window `since` can't exclude it. Only the driver-side
+        # monotonic stamp exposes it as an earlier dispatch's dir
+        # (e.g. one that landed after its own step's wait lapsed).
+        rec = record.begin("t-mono")
+        wm = time.monotonic()
+        self.driver.action("click", 7, 8,
+                           ms=int((wm - 10) * 1000))
+        hit = rec.match_turn("click", 7, 8, since=time.time() - 60,
+                             since_mono=wm, wait_s=0.1)
+        self.assertIsNone(hit)
+        rec.stop()
+
+    def test_mono_watermark_admits_post_dispatch_dir(self):
+        rec = record.begin("t-mono2")
+        wm = time.monotonic()
+        self.driver.action("click", 7, 8)   # ms stamps after wm
+        hit = rec.match_turn("click", 7, 8, since=time.time() - 1,
+                             since_mono=wm, wait_s=0.2)
+        self.assertIsNotNone(hit)
+        rec.stop()
+
+    def test_ensure_retries_a_failed_mint(self):
+        # F19: one transient mint failure must not latch _dead — the
+        # bounded retry revives the session and the recorder stays live
+        rec = record.begin("t-ensure")
+        self.assertEqual(self.driver.mints, 1)
+        rec._touched = 0          # force the renewal window
+        self.driver.fail_mints = 1
+        rec.ensure()
+        self.assertTrue(rec.active)
+        self.assertEqual(self.driver.mints, 3)      # mint + fail + retry
+        self.assertEqual(self.driver.starts, 2)     # re-armed recording
+        rec.stop()
+
+    def test_ensure_dead_after_retry_exhausted(self):
+        # F19: a real outage still marks the recorder dead after the
+        # one bounded retry, and the gap is traced
+        rec = record.begin("t-ensure2")
+        rec._touched = 0
+        self.driver.fail_mints = 10
+        rec.ensure()
+        self.assertFalse(rec.active)
+        evs = [e for e in self.trace_events("record_unavailable")
+               if e["data"].get("why") == "keepalive"]
+        self.assertTrue(evs)
         rec.stop()
 
 

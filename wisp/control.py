@@ -486,15 +486,6 @@ class AppControlRegistry:
                     best = (pat, ep)       # longest pattern wins ties
         return best[1] if best else None
 
-    def connect(self, win: dict | None, **kw) -> "ControlClient | None":
-        """Client for the matched app's channel, or None without a
-        registry hit. Connection failures raise ControlError — the
-        caller decides Skip vs abstain."""
-        ep = self.match(win)
-        if ep is None:
-            return None
-        return ControlClient(ep.host, ep.port, **kw)
-
 
 # -------------------------------------------------- focused window bounds
 
@@ -680,9 +671,14 @@ def resolve_rect(rect, win: dict, *, ppt=None, mons=None,
 # time; the verify rung diffs it against a fresh read after dispatch.
 # Keyed by (turn, app): the rung recovers the turn id from the recorded
 # turn dir's parent (`rec/<turn>/turn-NNNNN`), falling back to the
-# trace context. Bounded — stale entries evict oldest-first.
+# trace context. Bounded — stale entries evict oldest-first. F5: a
+# snapshot is single-use (popped on read), carries a monotonic stamp
+# the rung compares to the step's aim watermark, and expires on a TTL
+# so a previous action's before-state can never serve a later action.
 
 _BEFORE: dict = {}
+_BEFORE_TTL_S = 120.0          # a snap this old can only be stale
+_BEFORE_GRACE_S = 0.5          # clock-slop slack on the aim watermark
 
 
 def _turn_id() -> str:
@@ -712,10 +708,23 @@ def note_before(turn: str, app: str, inspect: dict, elements: list,
         _BEFORE.pop(next(iter(_BEFORE)))
 
 
-def _pending(turn: str, app: str):
-    snap = _BEFORE.get((turn, app))
+def _pending(turn: str, app: str, step=None):
+    """Pop the pending (turn, app) before-snapshot — single-use, so a
+    snapshot can never be served to two verifies. Returns None when no
+    snap exists, when it aged past _BEFORE_TTL_S, or when it predates
+    the step's `aim_mono` watermark (F5: a snap stashed for an earlier
+    action is not this action's before-state)."""
+    snap = _BEFORE.pop((turn, app), None)
     if snap is None:
-        snap = _BEFORE.get((_turn_id(), app))
+        snap = _BEFORE.pop((_turn_id(), app), None)
+    if snap is None:
+        return None
+    at = snap.get("at")
+    if at is None or time.monotonic() - at > _BEFORE_TTL_S:
+        return None             # expired — never serve stale state
+    aim = (step or {}).get("aim_mono")
+    if aim is not None and at < aim - _BEFORE_GRACE_S:
+        return None             # belongs to an earlier dispatch
     return snap
 
 
@@ -807,7 +816,8 @@ def verify_rung(ctx) -> dict:
     if ch is None:
         return _abstain("no control channel for the focused app")
     ep, _win = ch
-    snap = _pending(tdir.parent.name, ep.app)
+    snap = _pending(tdir.parent.name, ep.app,
+                    step=getattr(ctx, "step", None))
     if snap is None:
         return _abstain("no pre-dispatch snapshot")
     st = settings(getattr(ctx, "cfg", None))

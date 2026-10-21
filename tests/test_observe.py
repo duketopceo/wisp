@@ -7,9 +7,7 @@ boundary). The verify path's visible deny gate runs BEFORE any
 capture — a deny-listed or unreadable surface means no frame, no
 rec dir, no pack entry. A captured frame lands in a minted
 `turn-9NNNN/` dir with driver-shaped action.json + evidence.json so
-packs.write indexes it with kind:"observe". `pin:N` click/move args
-resolve the overlay's numbered beacons — the same indexing
-shell-plugin/lib/cursor.js beacons() draws.
+packs.write indexes it with kind:"observe".
 """
 import base64
 import json
@@ -261,6 +259,71 @@ class TestChannel(ObserveCase):
         self.assertEqual(out["path"], frame)
         self.assertEqual(frame.read_bytes(), PNG)
 
+    def test_channel_written_non_image_is_deleted(self):
+        # F3: the app writes into our evidence dir but its bytes stay
+        # untrusted — a non-image payload is unlinked, then the reply's
+        # inline image is tried instead
+        def h(method, params):
+            pathlib.Path(params["path"]).write_bytes(
+                b"definitely not an image, just text")
+            return ok({"image": base64.b64encode(PNG).decode()})
+        srv = CtrlServer(h)
+        self.addCleanup(srv.close)
+        cfg = {"control": {"filmcraft": f"127.0.0.1:{srv.port}"}}
+        out = observe.capture("", cfg, rec_dir=self.rec, win=WIN_FC,
+                              clients=CLIENTS_OK, monitors=MONS)
+        frame = self.rec / "turn-90000" / "observe.png"
+        self.assertEqual(frame.read_bytes(), PNG)   # inline fallback
+        self.assertTrue(out["result"].startswith("SHOT "))
+
+    def test_channel_written_non_image_without_inline_dies(self):
+        def h(method, params):
+            pathlib.Path(params["path"]).write_bytes(b"not an image")
+            return ok({})
+        srv = CtrlServer(h)
+        self.addCleanup(srv.close)
+        cfg = {"control": {"filmcraft": f"127.0.0.1:{srv.port}"}}
+        out = observe.capture("", cfg, rec_dir=self.rec, win=WIN_FC,
+                              clients=CLIENTS_OK, monitors=MONS)
+        self.assertIsNone(out["path"])
+        self.assertEqual(out["source"], None)
+        # the hostile file never survived in the evidence dir
+        self.assertFalse(
+            (self.rec / "turn-90000" / "observe.png").exists())
+
+    def test_channel_written_oversize_is_deleted(self):
+        # F4: an app-written file over IMG_CAP is not evidence
+        def h(method, params):
+            pathlib.Path(params["path"]).write_bytes(
+                PNG + b"\x00" * (observe.IMG_CAP + 1))
+            return ok({})
+        srv = CtrlServer(h)
+        self.addCleanup(srv.close)
+        cfg = {"control": {"filmcraft": f"127.0.0.1:{srv.port}"}}
+        out = observe.capture("", cfg, rec_dir=self.rec, win=WIN_FC,
+                              clients=CLIENTS_OK, monitors=MONS)
+        self.assertIsNone(out["path"])
+        self.assertFalse(
+            (self.rec / "turn-90000" / "observe.png").exists())
+
+    def test_channel_written_symlink_is_deleted(self):
+        # a symlink target is NOT a regular file — the channel cannot
+        # alias evidence to bytes it doesn't own
+        def h(method, params):
+            p = pathlib.Path(params["path"])
+            real = p.parent / "real.png"
+            real.write_bytes(PNG)
+            p.symlink_to(real)
+            return ok({})
+        srv = CtrlServer(h)
+        self.addCleanup(srv.close)
+        cfg = {"control": {"filmcraft": f"127.0.0.1:{srv.port}"}}
+        out = observe.capture("", cfg, rec_dir=self.rec, win=WIN_FC,
+                              clients=CLIENTS_OK, monitors=MONS)
+        self.assertIsNone(out["path"])
+        p = self.rec / "turn-90000" / "observe.png"
+        self.assertFalse(p.exists() or p.is_symlink())
+
 
 class TestZoom(ObserveCase):
     """Lane 2: no channel on the focused app -> cua zoom crop."""
@@ -459,96 +522,88 @@ class TestPackLinkage(ObserveCase):
                          pathlib.Path(observe.SHOTS_DIR))
 
 
-class TestPins(unittest.TestCase):
-    """`pin:N` resolves the numbered overlay beacons — cursor.js
-    beacons() indexing: step>=1 when present, else position; at most
-    8; malformed points dropped."""
+class TestPathConfinement(ObserveCase):
+    """F4: a reply's file-path image key is only honored when the
+    resolved real path sits inside the minted evidence dir — it can
+    never become a read of an arbitrary host path."""
 
-    def _state(self, points):
-        return SimpleNamespace(
-            points=points,
-            emit_event=lambda *a, **k: None,
-            confirmed=set(), focus={})
+    def _zoom_fake(self, reply):
+        return FakeCua({
+            "list_windows": {"windows": [
+                {"pid": 777, "window_id": 7, "title": "shell",
+                 "class": "foot",
+                 "frame": {"x": 10, "y": 10, "w": 700, "h": 500}}]},
+            "get_window_state": {
+                "window_bounds": {"x": 10, "y": 10, "w": 700, "h": 500},
+                "screenshot": {"width": 700, "height": 500}},
+            "zoom": reply})
 
-    def test_index_by_order_and_step(self):
-        state = self._state([
-            {"x": 10, "y": 20, "label": "a"},
-            {"x": 30, "y": 40, "step": 5, "label": "b"},
-            {"x": 50, "y": 60},
-            {"x": None, "y": 1},                 # malformed: dropped
-            {"x": float("nan"), "y": 2},         # non-finite: dropped
-        ])
-        beacons = act._pin_beacons(state)
-        self.assertEqual([b["index"] for b in beacons], [1, 5, 3])
-        self.assertEqual((beacons[1]["x"], beacons[1]["y"]), (30, 40))
+    def _cap(self, fake):
+        return observe.capture(
+            "", {}, rec_dir=self.rec, win=WIN_FOOT,
+            clients=[{"class": "foot", "mapped": True,
+                      "workspace": {"id": 1}}],
+            monitors=MONS, cua_client=fake)
 
-    def test_aim_resolves_pin_to_logical(self):
-        state = self._state([
-            {"x": 10, "y": 20, "label": "a"},
-            {"x": 30, "y": 40, "step": 5, "label": "b"},
-        ])
-        arg, tgt, res = act._aim("click", "pin:5", {},
-                                 mock.Mock(), state)
-        self.assertIsNone(res)
-        self.assertEqual(arg, "30,40@logical")
-        self.assertEqual((tgt.x, tgt.y, tgt.source), (30, 40, "pin"))
-        self.assertEqual(tgt.label, "b")
+    def test_path_key_outside_the_evidence_dir_refused(self):
+        # a hostile reply points at a host file — outside root => the
+        # key is ignored entirely (no read, no frame)
+        secret = pathlib.Path(self.td.name) / "secret.png"
+        secret.write_bytes(PNG)
+        fake = self._zoom_fake({"path": str(secret)})
+        out = self._cap(fake)
+        self.assertIsNone(out["path"])
+        self.assertFalse(
+            (self.rec / "turn-90000" / "observe.jpg").exists())
 
-    def test_unresolved_pin_refuses(self):
-        state = self._state([{"x": 10, "y": 20}])
-        arg, tgt, res = act._aim("click", "pin:9", {},
-                                 mock.Mock(), state)
-        self.assertIsNone(tgt)
-        self.assertTrue(res.startswith("REFUSED"))
-        self.assertIn("pin:9", res)
-        # no pins at all -> same refusal
-        arg, tgt, res = act._aim("click", "pin:1", {},
-                                 mock.Mock(), self._state([]))
-        self.assertTrue(res.startswith("REFUSED"))
+    def test_path_key_escape_via_dotdot_refused(self):
+        fake = self._zoom_fake(
+            {"path": str(self.rec / ".." / "escape.png")})
+        (pathlib.Path(self.td.name) / "escape.png").write_bytes(PNG)
+        out = self._cap(fake)
+        self.assertIsNone(out["path"])
 
-    def test_cap_at_eight_beacons(self):
-        state = self._state(
-            [{"x": i * 10, "y": i} for i in range(1, 12)])
-        beacons = act._pin_beacons(state)
-        self.assertEqual(len(beacons), act._PIN_MAX)
+    def test_path_key_inside_the_evidence_dir_serves(self):
+        # the reply is computed at call time: it points at a file it
+        # just wrote inside the freshly-minted evidence dir
+        def zoom(args):
+            d = max(self.rec.glob("turn-9*"))
+            (d / "channel-wrote.png").write_bytes(PNG)
+            return {"path": str(d / "channel-wrote.png")}
+        fake = FakeCua({
+            "list_windows": {"windows": [
+                {"pid": 777, "window_id": 7, "title": "shell",
+                 "class": "foot",
+                 "frame": {"x": 10, "y": 10, "w": 700, "h": 500}}]},
+            "get_window_state": {
+                "window_bounds": {"x": 10, "y": 10, "w": 700, "h": 500},
+                "screenshot": {"width": 700, "height": 500}},
+            "zoom": zoom})
+        out = self._cap(fake)
+        self.assertIsNotNone(out["path"])
+        self.assertEqual(out["path"].read_bytes(), PNG)
 
-    def test_string_step_coerces_like_number(self):
-        # cursor.js Number(p.step): "4" -> 4, "" / "x" / bool / <1 -> order
-        state = self._state([
-            {"x": 1, "y": 1, "step": "4"},
-            {"x": 2, "y": 2, "step": "junk"},
-            {"x": 3, "y": 3, "step": True},
-            {"x": 4, "y": 4, "step": 0.5},
-            {"x": 5, "y": 5, "step": 2.9},     # floor(2.9) -> 2
-        ])
-        beacons = act._pin_beacons(state)
-        self.assertEqual([b["index"] for b in beacons], [4, 2, 3, 4, 2])
+    def test_symlink_path_key_never_serves(self):
+        # inside-root name aliased to outside bytes — resolve() moves
+        # it out of root, so it is refused
+        outside = pathlib.Path(self.td.name) / "outside.png"
+        outside.write_bytes(PNG)
 
-    def test_pin_dispatch_through_the_loop(self):
-        calls = []
-
-        def fake_run(name, arg, cfg, harness=None):
-            calls.append((name, arg))
-            return "CLICKED(30,40) something" if name == "click" \
-                else "ok"
-        state = self._state([{"x": 10, "y": 20, "label": "a"},
-                             {"x": 30, "y": 40}])
-        replies = [
-            {"role": "assistant", "content": "",
-             "tool_calls": [{"id": "c1", "type": "function",
-                             "function": {"name": "click",
-                                          "arguments": json.dumps(
-                                              {"arg": "pin:2"})}}]},
-            {"role": "assistant", "content": "done it"},
-        ]
-        with mock.patch.object(act, "_post", side_effect=replies), \
-                mock.patch.object(act, "_write_pack"), \
-                mock.patch.object(tools, "run", side_effect=fake_run):
-            out = act.run_act_loop("click the second pin",
-                                   {"agent": {}}, state=state,
-                                   initial_image="aGk=")
-        self.assertTrue(out.startswith("ACTED"), out)
-        self.assertIn(("click", "30,40@logical"), calls)
+        def zoom(args):
+            d = max(self.rec.glob("turn-9*"))
+            (d / "alias.png").symlink_to(outside)
+            return {"path": str(d / "alias.png")}
+        fake = FakeCua({
+            "list_windows": {"windows": [
+                {"pid": 777, "window_id": 7, "title": "shell",
+                 "class": "foot",
+                 "frame": {"x": 10, "y": 10, "w": 700, "h": 500}}]},
+            "get_window_state": {
+                "window_bounds": {"x": 10, "y": 10, "w": 700, "h": 500},
+                "screenshot": {"width": 700, "height": 500}},
+            "zoom": zoom})
+        out = self._cap(fake)
+        self.assertIsNone(out["path"])
 
 
 class TestToolWiring(unittest.TestCase):

@@ -1115,3 +1115,35 @@ class ActionText(unittest.TestCase):
                "brain.plain": {"tools": "false"}}
         r = act.run_act_loop("click it", cfg)
         self.assertTrue(r.startswith("SKIP"))
+
+
+class TrajOrdering(unittest.TestCase):
+    """F1: the trajectory snapshot lands AFTER _terminal_verify — a
+    verdict flipped at the terminal re-check must reach the
+    trajectory, not the pre-verify one."""
+
+    def test_traj_snapshots_post_verify_steps(self):
+        seen = []
+
+        def verify(steps, cfg):
+            seen.append("verify")
+            steps[-1]["verdict"] = "missed"   # the flipped verdict
+
+        def traj(task, harness, steps, out, cfg, recorder):
+            seen.append("traj")
+            seen.append(steps[-1].get("verdict"))
+
+        cfg = {"agent": {},
+               "brain": {"default": "uitars:m"},
+               "brain.uitars": {"action_text": "true", "tools": "false"}}
+        replies = [_msg(content="Action: click(10, 20)"),
+                   _msg(content="DONE")]
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run", return_value="CLICKED"), \
+             mock.patch.object(act, "_terminal_verify",
+                               side_effect=verify), \
+             mock.patch.object(act, "_record_traj",
+                               side_effect=traj):
+            r = act.run_act_loop("click it", cfg)
+        self.assertTrue(r.startswith("ACTED"))
+        self.assertEqual(seen, ["verify", "traj", "missed"])

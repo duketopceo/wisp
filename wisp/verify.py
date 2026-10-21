@@ -121,11 +121,6 @@ def register_rung(name: str, fn) -> None:
     RUNGS[str(name)] = fn
 
 
-def unregister_rung(name: str) -> None:
-    if name != "pixel":
-        RUNGS.pop(name, None)
-
-
 def _wait_file(path, seconds: float) -> bool:
     """The driver's after.png can lag its action.json — a short poll
     before abstaining (the same race match_turn's bounded wait covers
@@ -249,13 +244,21 @@ def postcondition(name: str, arg: str = "", tool_arg: str = "",
     pixel rung abstains on and only the judge can score."""
     st = settings(cfg)
     rect = getattr(tgt, "rect", None) if tgt is not None else None
-    if rect:
+    # F12: an element rect only enters the claim from a provider whose
+    # geometry we trust (the a11y tree). The control channel is
+    # UNAUTHENTICATED loopback — letting its rect set the pixel rung's
+    # diff box would let the channel corroborate itself, so a control
+    # lane target falls through to the neutral point-region claim (its
+    # x,y center was already validated against compositor bounds).
+    rect_src = getattr(tgt, "source", "") if tgt is not None else ""
+    if rect and rect_src != "control":
         try:
             r = [int(round(float(v))) for v in list(rect)[:4]]
         except (TypeError, ValueError):
             r = []
         if len(r) == 4:
             return {"kind": "element", "tool": name, "rect": r,
+                    "rect_src": rect_src or "grounded",
                     "label": getattr(tgt, "label", "") or ""}
     pt = None
     if tgt is not None:
@@ -352,14 +355,17 @@ def visible_deny(cfg, clients=None, monitors=None):
 def suppress(turn_dir, why: str) -> dict:
     """Delete every frame image in the action's turn dir — quarantine is
     secure deletion, not retention (PNG before/after frames AND the
-    JPEG a cua zoom writes, U5). The deletion is itself recorded:
+    JPEG a cua zoom writes, U5) — plus the text evidence a deny
+    interval can smear into: *_state.json AT-SPI dumps and control_*.json
+    channel snapshots (F10). The deletion is itself recorded:
     evidence.json gains the driver's `privacy_suppressed` convention
     for the pack-write re-check (U4)."""
     d = pathlib.Path(turn_dir)
     deleted = []
     try:
         for p in sorted({*d.glob("*.png"), *d.glob("*.jpg"),
-                         *d.glob("*.jpeg")}):
+                         *d.glob("*.jpeg"), *d.glob("*_state.json"),
+                         *d.glob("control_*.json")}):
             try:
                 p.unlink()
                 deleted.append(p.name)
@@ -622,6 +628,14 @@ def verdict(step: dict, *, name: str = "", arg: str = "",
         if str(truth.get("effect") or "").lower() == "refused":
             vd = _mk("refused", "action_truth", False, evidence,
                      str(truth.get("refusal") or "dispatch refused"))
+        elif _is_move(name or step.get("tool")):
+            # F7: a cursor reposition has no postcondition the pixel or
+            # state rungs can score — the pointer arriving IS the whole
+            # effect. Scoring it minted a corroborated 'missed' on
+            # every move (region around the dest unchanged); abstain.
+            vd = _mk("unverifiable", "none", False, evidence,
+                     "cursor move: position-only action, no "
+                     "postcondition to score")
         else:
             # U3: importing control registers its diff rung — absent
             # channel/snapshot it just abstains; a broken import must
@@ -636,6 +650,16 @@ def verdict(step: dict, *, name: str = "", arg: str = "",
         vd["claim"] = claim
     _emit(turn, step, vd, terminal)
     return vd
+
+
+# position-only tools — nothing to postcondition but the pointer
+# arriving, which no rung can score from frames
+_MOVE_TOOLS = frozenset({"move", "move_cursor", "mousemove",
+                         "pointer_move"})
+
+
+def _is_move(name) -> bool:
+    return str(name or "").strip().lower() in _MOVE_TOOLS
 
 
 def _capture(path) -> bool:
@@ -672,6 +696,11 @@ def terminal_verdict(step: dict, *, cfg: dict | None = None,
     tdir = pathlib.Path(str(tdir))
     if claim is None:
         claim = (step.get("verify") or {}).get("claim")
+    # keep the caller's client/monitor FORM for the inner verdict:
+    # None re-resolves fresh at terminal time, a callable re-invokes,
+    # an explicit list is honored as the caller's fixture (F6 — the
+    # final deny check must not run on the T0 window list)
+    orig_clients, orig_monitors = clients, monitors
     # one snapshot feeds both gates — the capture-path R9 check BEFORE
     # a frame is written, then verdict()'s post-dispatch re-check
     if clients is None:
@@ -680,6 +709,9 @@ def terminal_verdict(step: dict, *, cfg: dict | None = None,
         monitors = _resolve(None, _monitors)
     vd = _privacy_gate(cfg, tdir, str(tdir), clients, monitors)
     if vd is None:
+        if _is_move(step.get("tool")):
+            return None    # F7: a position-only step has nothing to
+                           # re-score — keep the mid-loop abstention
         cap = capture or _capture
         shot = tdir / "after_terminal.png"
         try:
@@ -689,8 +721,9 @@ def terminal_verdict(step: dict, *, cfg: dict | None = None,
         if not ok:
             return None
         return verdict(step, claim=claim, after_path=shot, cfg=cfg,
-                       terminal=True, turn=turn, clients=clients,
-                       monitors=monitors, rungs=rungs, judge=judge)
+                       terminal=True, turn=turn,
+                       clients=orig_clients, monitors=orig_monitors,
+                       rungs=rungs, judge=judge)
     if claim:
         vd["claim"] = claim
     _emit(turn, step, vd, True)
