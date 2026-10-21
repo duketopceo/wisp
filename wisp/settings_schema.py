@@ -180,6 +180,20 @@ FIELDS = (
        "Run verdict judge: jev decisions call (brain fallback), "
        "brain only, or off (scoreboard alone)",
        choices=("jev", "brain", "off")),
+    _f("packs.keep", "int", "200",
+       "Newest capture packs retained under packs/ (0 disables the "
+       "count bound)",
+       min=0, max=100000),
+    _f("packs.keep_days", "int", "30",
+       "Days a capture pack is kept (0 disables the age bound)",
+       min=0, max=3650),
+    _f("packs.shots_keep", "int", "100",
+       "Newest screenshots kept under shots/ (the pack writer owns "
+       "its pruning; 0 disables the count bound)",
+       min=0, max=100000),
+    _f("packs.shots_keep_days", "int", "30",
+       "Days a shots/ screenshot is kept (0 disables the age bound)",
+       min=0, max=3650),
 )
 
 _BY_KEY = {f.key: f for f in FIELDS}

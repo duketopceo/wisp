@@ -20,6 +20,7 @@ Diagnose:
   binds        Show the push-to-talk hotkey and its Hyprland binds
   onboard      Walk through first-run setup (every step skippable)
   trace        Turn trace and daily digest
+  captures     List capture packs, or show one pack's manifest
 
 Pointer and notifications:
   cua          The cua-driver pointer backend: status, test, log, kill, enable
@@ -55,5 +56,4 @@ Global options:
   --quiet      print nothing on success
   --no-color   plain output (also NO_COLOR, or not a tty)
 
-Exit codes: 0 ok, 1 failure, 2 usage, 3 daemon not running, 4 unhealthy dependency.
-Old command names (tasks, task_status, models, ...) still work for one release.
+Exit codes: 0 ok, 1 failure, 2 usage, 3 daemon not running, 4 unhealthy dependency. Old command names (tasks, task_status, models, ...) still work for one release.

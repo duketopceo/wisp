@@ -70,6 +70,14 @@ REGISTRY = {
     "screenshot": (system.screenshot, "safe",
                    "capture the screen to a file",
                    {"tier": "T0", "reversible": True, "external": False}),
+    "observe": (None, "safe",
+                "capture a frame of the focused app to inspect — the "
+                "app's control channel when it ships one, else a "
+                "window-cropped capture; the image comes back as the "
+                "next observation (inspect only — its pixels are not "
+                "the click coordinate space)",
+                {"tier": "T0", "reversible": True,
+                 "external": False}),  # wired in wisp/observe.py (U5)
     "type_text": (system.type_text, "interactive",
                   "type text into the focused window",
                   {"tier": "T1", "reversible": True, "external": False}),
@@ -159,7 +167,7 @@ REGISTRY = {
 # loop, not here); tool_schemas must not drop them.
 EXTERN = frozenset({"agent_spawn", "task_status", "task_cancel",
                     "memory", "recall", "skill_manage", "skill_view",
-                    "ask_user"})
+                    "ask_user", "observe"})
 
 # loop-internal backchannels the model can call inside a run but that
 # have no route-level executor — Jev must never route to them (run()
@@ -265,6 +273,9 @@ def _run_inner(name: str, arg: str, cfg: dict,
     if name == "skill_view":
         from .. import skills
         return skills.run_view(arg)
+    if name == "observe":
+        from .. import observe as _obs
+        return _obs.observe(arg, cfg)
     if name.startswith("skill_"):
         from .. import skills
         out = skills.run_tool(name, arg)

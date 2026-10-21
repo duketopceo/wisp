@@ -39,6 +39,33 @@ wispd trace --latency --since 24h  # p50/p90 per stage
 
 `wispd doctor` — health check (integrations, skills, data files).
 
+## Capture packs
+
+Every recorded act turn produces one durable capture pack:
+
+| Path | What |
+|---|---|
+| `~/.local/share/wisp/rec/<turn>/` | transient per-action recording — `turn-NNNNN/` dirs with `action.json` + frame PNGs, mode `0700`. In-flight only: the pack write deletes it, and daemon start discards orphans |
+| `~/.local/share/wisp/packs/<turn>/` | the durable pack, mode `0700`: `manifest.json` (schema `wisp-capture-pack/v1` — transcript with timestamps, actions + verdicts, frame index, suppression events), the frame PNGs, `contact.png` |
+| `~/.local/share/wisp/pack.salt` | per-install HMAC salt, mode `0600` — typed text (`type_text`/`key` args) persists only as `len` + salted SHA-256 |
+| `~/.local/share/wisp/shots/` | the screenshot tool's files — pruned by the pack writer under the same count+age policy, on their own keys |
+
+Retention (`[packs]` in config.toml): `packs.keep` newest packs AND
+`packs.keep_days` max age both apply (0 disables an axis);
+`packs.shots_keep` / `packs.shots_keep_days` bound shots/.
+
+Privacy: a deny-listed window (password manager, polkit prompt …)
+visible at pack-write — or a window list that can't be read at all —
+suppresses the whole turn: every frame is deleted and the deletion is
+recorded in the manifest (`privacy_suppressed: true`).
+
+```
+wispd captures                 # pack list (metadata only)
+wispd captures <turn>          # one manifest, transcript gated out
+wispd captures <turn> --full   # transcript lines + AT-SPI state dumps
+wispd captures --json          # machine-readable
+```
+
 ## Known failure modes → recovery
 
 | Symptom | Cause | Fix |

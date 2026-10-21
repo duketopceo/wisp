@@ -17,6 +17,8 @@ caller.
 """
 import base64
 import json
+import math
+import pathlib
 import re
 import time
 
@@ -46,6 +48,11 @@ SYSTEM = ("You are Wisp's hands on a Linux desktop (Hyprland). Complete "
           "needs on-screen targets; click/move take 'x,y' in that "
           "screenshot's pixels or a target name (e.g. 'monitor icon in menu bar') "
           "which automatically grounds via Clef/Jev noul probabilistic centering. "
+          "'pin:N' targets resolve the numbered overlay beacons the "
+          "user sees; call observe for a cropped frame of the focused "
+          "app to inspect (control-channel when the app ships one, "
+          "else a window-crop capture — inspect only, its pixels are "
+          "not the click coordinate space). "
           "Never click twice off the same screenshot "
           "— after anything that changes the screen (click, key, type, "
           "launch, focus, workspace, shell), re-screenshot before the "
@@ -316,7 +323,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
             if why:
                 _goals.record_steps(steps)
                 out = _budget_abort(state, task, steps, why)
-                _record_traj(task, harness, steps, out, cfg)
+                _record_traj(task, harness, steps, out, cfg, recorder)
                 return out
             if stopped():
                 _goals.record_steps(steps)
@@ -335,7 +342,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
                         _goals.record_steps(steps)
                         out = (f"STALLED (unparseable action replies): "
                                f"{_last(steps)}")
-                        _record_traj(task, harness, steps, out, cfg)
+                        _record_traj(task, harness, steps, out, cfg, recorder)
                         return out
                     messages.append(
                         {"role": "user",
@@ -350,7 +357,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     _goals.record_steps(steps)
                     _goals.close("done")
                     out = f"ACTED ({len(steps)} steps): {text}"
-                    _record_traj(task, harness, steps, out, cfg)
+                    _record_traj(task, harness, steps, out, cfg, recorder)
                     return out
                 calls = [{"id": f"at-{len(steps)}-{i}", "_at": True,
                           "function": {"name": n,
@@ -368,7 +375,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     return "ASK_USER " + text[9:].strip()
                 _goals.close("done")
                 out = f"ACTED ({len(steps)} steps): {text or 'done'}"
-                _record_traj(task, harness, steps, out, cfg)
+                _record_traj(task, harness, steps, out, cfg, recorder)
                 return out
             messages.append(msg)
             for ci, call in enumerate(calls):
@@ -380,7 +387,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 if why:
                     _goals.record_steps(steps)
                     out = _budget_abort(state, task, steps, why)
-                    _record_traj(task, harness, steps, out, cfg)
+                    _record_traj(task, harness, steps, out, cfg, recorder)
                     return out
                 if name == "ask_user":
                     # U4 conversational backchannel: the question parks on
@@ -519,6 +526,13 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     dirty_step = f"{name} {arg}".strip()[:60]
                 step = {"tool": name, "arg": arg, "result": result,
                         "reply": (msg.get("content") or "")[:500]}
+                if name == "observe":
+                    # U5: a SHOT under a turn-9NNNN dir is the pack's
+                    # frame-index linkage; a shots/-resident frame is a
+                    # context-less capture and links nothing
+                    odir = _observe_dir(result)
+                    if odir:
+                        step["turn_dir"] = odir
                 if d:
                     step["delivery"] = d
                 _record_step(step, name, tool_arg, dispatched_at,
@@ -543,20 +557,21 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 errors = errors + 1 if result.startswith(
                     ("ERROR", "SKIP", "REFUS", "FAIL", "BLOCKED")) else 0
                 _reply(messages, call, name, result)
-                if name == "screenshot" and vision \
+                if name in ("screenshot", "observe") and vision \
                         and result.startswith("SHOT ") \
                         and not served_cached:
-                    _attach_image(messages, result[5:].strip(), cfg)
+                    _attach_image(messages, result[5:].strip(), cfg,
+                                  coords=name == "screenshot")
                 if errors > max_errors:
                     _goals.record_steps(steps)
                     out = f"ABORTED (repeated failures): {_last(steps)}"
-                    _record_traj(task, harness, steps, out, cfg)
+                    _record_traj(task, harness, steps, out, cfg, recorder)
                     return out
                 if len(steps) >= max_steps:
                     break
         out = _budget_abort(state, task, steps, f"max {max_steps} steps")
         _goals.record_steps(steps)
-        _record_traj(task, harness, steps, out, cfg)
+        _record_traj(task, harness, steps, out, cfg, recorder)
         return out
     finally:
         # R3: re-verify the turn's last recorded mutation with a fresh
@@ -568,12 +583,40 @@ def run_act_loop(task: str, cfg: dict, state=None,
         except Exception:
             pass
         # stop the turn's recording on EVERY exit — normal return,
-        # interrupt, error, budget abort (U1)
+        # interrupt, error, budget abort (U1). `active` is read BEFORE
+        # stop() clears it: the pack writer needs to know this turn was
+        # ever recorded (a recorded-but-zero-action turn still packs a
+        # transcript; an unrecorded one leaves nothing durable).
+        was_recorded = recorder.active
         recorder.stop()
+        # U4: fold rec/<turn>/ into the durable packs/<turn>/ —
+        # manifest + frames + redaction + deny re-check + retention.
+        # packs.write never raises; the belt-suspenders try keeps a
+        # bug in the artifact path from escaping run teardown.
+        try:
+            _write_pack(recorder, task, steps, cfg, was_recorded,
+                        locals().get("out"))
+        except Exception:
+            pass
         # disarm the yield watch — armed/yielded must
         # never outlive the run they armed for (a stale
         # yield would poison the next real-pointer call)
         realinput.finish()
+
+
+_OBSERVE_DIR_RE = re.compile(r"turn-\d{5}")
+
+
+def _observe_dir(result: str) -> str | None:
+    """SHOT <rec/<turn>/turn-9NNNN/observe.*> -> its turn dir for the
+    step record (the pack's frame-index linkage); a shots/-resident
+    frame is a context-less capture and links nothing."""
+    if not result.startswith("SHOT "):
+        return None
+    parent = pathlib.Path(result[5:].strip()).parent
+    if _OBSERVE_DIR_RE.fullmatch(parent.name):
+        return str(parent)
+    return None
 
 
 def _aim(name: str, arg: str, cfg: dict, guard, state):
@@ -581,9 +624,10 @@ def _aim(name: str, arg: str, cfg: dict, guard, state):
     the W21 `cua.target` aim. Returns (tool_arg, Target|None, refusal).
     A name target is grounded (UI-TARS / a11y / vision fallback, one
     re-observe on low confidence, then refused); explicit coordinates
-    pass through unchanged. DOM mode and non-pointer tools are untouched,
-    and a call the guard would refuse anyway never ships a screenshot to
-    a model."""
+    pass through unchanged; `pin:N` resolves the numbered overlay
+    beacon the user sees (U5 — same indexing cursor.js draws). DOM
+    mode and non-pointer tools are untouched, and a call the guard
+    would refuse anyway never ships a screenshot to a model."""
     if name not in ("click", "move") or \
             (cfg or {}).get("screen", {}).get("dom_page"):
         return arg, None, None
@@ -601,6 +645,23 @@ def _aim(name: str, arg: str, cfg: dict, guard, state):
                                label="")
         _announce(state, tgt, name=name, cfg=cfg)
         return arg, tgt, None
+    pm = _PIN_ARG.match(arg or "")
+    if pm is not None:
+        # numbered overlay beacon — deterministic, needs no grounding
+        # model round-trip and no screenshot
+        n = int(pm.group(1))
+        pin = _pin_at(state, n)
+        if pin is None:
+            return arg, None, (f"REFUSED (pin:{n} resolves to no "
+                               "overlay beacon — nothing is pinned "
+                               "with that index)")
+        tgt = grounding.Target(int(round(pin["x"])),
+                               int(round(pin["y"])), "global", 1.0,
+                               "pin",
+                               label=str(pin.get("label") or ""))
+        _announce(state, tgt, name=name, cfg=cfg,
+                  label=tgt.label or f"pin:{n}")
+        return f"{tgt.x},{tgt.y}@logical", tgt, None
     if guard.preflight(name):
         return arg, None, None       # guard.run refuses + audits it
     try:
@@ -614,6 +675,63 @@ def _aim(name: str, arg: str, cfg: dict, guard, state):
 
 
 _XY_ARG = re.compile(r"^\s*-?\d+\s*,\s*-?\d+\s*(@logical)?\s*$")
+_PIN_ARG = re.compile(r"^\s*pin\s*:?\s*(\d+)\s*$", re.I)
+_PIN_MAX = 8     # cursor.js beacons() cap — the overlay draws no more
+
+
+def _pin_beacons(state) -> list:
+    """state.points -> numbered beacons, mirroring shell-plugin/
+    lib/cursor.js beacons(): index = floor(step) when step >= 1 else
+    the point's surviving position; malformed points dropped; at most
+    _PIN_MAX. state.points hold compositor-logical coords published at
+    point time — the same numbering the user reads off the drawn
+    beacon resolves `pin:N` here, so the index is stable to act time."""
+    pts = getattr(state, "points", None)
+    if not isinstance(pts, (list, tuple)):
+        return []
+    out = []
+    for p in pts:
+        if not isinstance(p, dict):
+            continue
+        x, y = p.get("x"), p.get("y")
+        if not isinstance(x, (int, float)) \
+                or not isinstance(y, (int, float)) \
+                or isinstance(x, bool) or isinstance(y, bool) \
+                or not (math.isfinite(x) and math.isfinite(y)):
+            continue
+        s = _pin_step(p.get("step"))
+        out.append({"x": x, "y": y,
+                    "index": s if s is not None else len(out) + 1,
+                    "label": str(p.get("label") or "")})
+    return out[:_PIN_MAX]
+
+
+def _pin_step(s) -> int | None:
+    """Number(p.step), cursor.js semantics: numbers and numeric
+    strings coerce, anything <1 or NaN falls back to order. (A bool
+    is Number()'d to 0/1 in JS; treated as absent here — a point has
+    no business carrying one.)"""
+    if isinstance(s, bool):
+        return None
+    if isinstance(s, (int, float)):
+        v = s
+    elif isinstance(s, str):
+        try:
+            v = float(s.strip())
+        except ValueError:
+            return None
+    else:
+        return None
+    if not math.isfinite(v) or v < 1:
+        return None
+    return int(v)         # floor for positives — index space is >= 1
+
+
+def _pin_at(state, n: int) -> dict | None:
+    for b in _pin_beacons(state):
+        if b["index"] == n:
+            return b
+    return None
 
 
 def _announce(state, tgt, name: str = "", cfg: dict | None = None,
@@ -852,6 +970,10 @@ def _run_verify(step: dict, name: str, arg: str, tool_arg: str, tgt,
     `not_recorded` seed stands) or the turn is being cancelled. Never
     raises into the loop; a broken ladder degrades to `unverifiable`,
     never to `landed`."""
+    if name == "observe":
+        # an observe frame is model-facing evidence, not a mutation —
+        # the rungs have nothing to score (U5)
+        return None
     if not step.get("turn_dir"):
         return None
     try:
@@ -894,17 +1016,47 @@ def _terminal_verify(steps: list, cfg: dict | None) -> None:
 
 
 def _record_traj(task: str, harness: dict | None, steps: list, out: str,
-                 cfg: dict | None) -> None:
+                 cfg: dict | None, recorder=None) -> None:
     """Hand the run's trajectory to the background writer: the step list
     is copied (the caller reuses it), and the active-window lookup, the
-    rotation check and the append all happen off the turn's hot path."""
+    rotation check and the append all happen off the turn's hot path.
+    `pack` is the deterministic packs/<turn> link — the pack write runs
+    later in the finally, so the ref is by name, not existence."""
     from . import trajectories
     snap = [dict(s) for s in steps]
     record = trajectories.record     # bound now: patches stay honoured
+    pack = (f"packs/{recorder.turn}"
+            if recorder is not None and recorder.active else None)
 
     def write():
-        record(task, _app(harness), snap, out, surface=_surface(cfg))
+        record(task, _app(harness), snap, out, surface=_surface(cfg),
+               pack=pack)
     bgwriter.submit(write)
+
+
+def _write_pack(recorder, task: str, steps: list, cfg: dict | None,
+                was_recorded: bool, out) -> None:
+    """Turn-end hand-off to packs.write (U4): assemble the transcript
+    lines — the user utterance, any parked ask_user questions, the
+    spoken result — and pass the recorder's dir/session. packs.write
+    owns the artifact (manifest, frames, redaction, deny re-check,
+    rec/ + retention cleanup); this wrapper is the tests' patch seam,
+    mirroring _record_traj."""
+    from . import packs
+    now = time.time()
+    transcript = []
+    if task:
+        transcript.append({"role": "user", "text": task})
+    for s in steps:
+        if s.get("tool") == "ask_user" and s.get("arg"):
+            transcript.append({"ts": now, "role": "wisp",
+                               "text": s["arg"]})
+    if isinstance(out, str) and out.strip():
+        transcript.append({"ts": now, "role": "wisp", "text": out})
+    packs.write(recorder.turn, steps, cfg=cfg,
+                rec_dir=recorder.dir, recorded=was_recorded,
+                transcript=transcript,
+                session=getattr(recorder, "session", "wisp") or "wisp")
 
 
 def _app(harness: dict | None) -> str:
@@ -1071,12 +1223,15 @@ def _img_dims(b64: str) -> tuple | None:
 
 
 def _attach_image(messages: list, path: str, cfg: dict | None = None,
-                  why: str = "") -> None:
+                  why: str = "", coords: bool = True) -> None:
     """Feed the screenshot back as an image part on a follow-up user
     message — the model can't act on a screen it can't see. Keeps at
     most MAX_IMAGES image parts in the window (oldest dropped). `why`
     prefaces the caption when a re-observe exists to VERIFY the last
-    mutating step rather than to plan the next one (U4)."""
+    mutating step rather than to plan the next one (U4). `coords`
+    marks whether the frame's pixels are the click/move space — an
+    observe capture is a cropped inspect-only view, never a click
+    space (U5)."""
     from .tools.system import model_image
     url = model_image(path)
     if not url:
@@ -1094,10 +1249,17 @@ def _attach_image(messages: list, path: str, cfg: dict | None = None,
                 if kept >= MAX_IMAGES:
                     m["content"] = [p for p in c
                                     if p.get("type") != "image_url"]
-    caption = (f"{why} — " if why else "") + (
-        f"current screen ({dims[0]}x{dims[1]} px — click/move "
-        "x,y use these pixels" if dims else "current screen")
-    if dims and (cfg or {}).get("screen", {}).get("dom_page"):
+    caption = (f"{why} — " if why else "")
+    if coords:
+        caption += (f"current screen ({dims[0]}x{dims[1]} px — "
+                    "click/move x,y use these pixels"
+                    if dims else "current screen")
+    else:
+        caption += (f"observed frame ({dims[0]}x{dims[1]} px — inspect "
+                    "only; click/move do NOT use these pixels"
+                    if dims else "observed frame")
+    if dims and coords \
+            and (cfg or {}).get("screen", {}).get("dom_page"):
         els = (cfg or {})["screen"].get("dom_els") or []
         if els:
             caption += "; elements: " + "; ".join(els)

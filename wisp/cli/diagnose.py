@@ -481,3 +481,50 @@ def onboard(ctx, a):
     raise CliError("E_NOT_READY", f"{len(todo)} setup step"
                    f"{'s' if len(todo) != 1 else ''} still to do.",
                    todo[0]["try"] or "wispd onboard", data=st)
+
+
+# -- captures -------------------------------------------------------------
+
+def _captures_args(p):
+    p.add_argument("turn", nargs="?", default="",
+                   help="pack turn id to show (default: list packs)")
+    p.add_argument("--full", action="store_true",
+                   help="include transcript lines and AT-SPI state "
+                        "dumps (sensitive: utterances, window text)")
+
+
+def _verdict_str(v: dict) -> str:
+    return " ".join(f"{k}:{n}" for k, n in sorted(v.items())) or "-"
+
+
+@command("captures",
+         "List capture packs, or show one pack's manifest",
+         ["wispd captures", "wispd captures t-1a2b3c --full",
+          "wispd captures --json"],
+         {"packs": "list", "manifest": "dict|null"},
+         args=_captures_args)
+def captures(ctx, a):
+    # read-only over IPC; the daemon never scrapes pack dirs for this —
+    # packs.captures_response serves metadata, and transcript/state-dump
+    # text only under --full (untrusted-data gate, KTD4)
+    reply = ctx.expect_ok(ctx.send(
+        {"cmd": "captures", "turn": a.turn, "full": a.full}))
+    if a.turn:
+        m = reply.get("manifest") or {}
+        return ctx.emit({"packs": [], "manifest": m},
+                        json.dumps(m, indent=2, ensure_ascii=False))
+    rows = reply.get("packs") or []
+    data = {"packs": rows, "manifest": None}
+    if not rows:
+        return ctx.emit(data, "[]")
+    text = ctx.table(
+        ["turn", "time", "actions", "verdicts", "frames", "suppr"],
+        [[r.get("turn") or "",
+          datetime.datetime.fromtimestamp(
+              r.get("ts") or 0).strftime("%m-%d %H:%M"),
+          str(r.get("actions") or 0),
+          _verdict_str(r.get("verdicts") or {}),
+          str(r.get("frames") or 0),
+          "yes" if r.get("suppressed") else ""]
+         for r in rows])
+    return ctx.emit(data, text)
