@@ -136,6 +136,9 @@ def _cua_rows(row, cfg: dict, probe=None) -> None:
     ap = cua_safety.audit_default_path()
     row("cua audit log", f"{ap} ({ap.stat().st_size // 1024}KB)"
         if ap.exists() else f"{ap} (empty)")
+    from .. import record as _rec
+    pr = _rec.probe(cfg)
+    row("turn recording", pr["detail"], pr["ok"] or pr["skipped"])
 
 
 @command("doctor", "Check every dependency wisp needs",

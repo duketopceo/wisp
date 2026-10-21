@@ -662,6 +662,13 @@ def run_daemon(cfg: dict) -> int:
            "broker": cancel.PromptBroker(), "token": None,
            "rec": None, "rec_lock": threading.Lock()}
     _DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL = st, cfg, ctl
+    # U1: rec/<turn>/ dirs left by a dead run are orphans — the turn
+    # never reached pack-write, so they're discarded, never promoted
+    from wisp import record as _record
+    _dropped = _record.sweep_orphans()
+    if _dropped:
+        dlog("rec: discarded orphan turn dir(s): "
+             + ", ".join(_dropped[:8]))
     from wisp import ledger as _ledger
     _ledger.attach(st, cfg)  # publishes `spend` on the state stream
     if cfg.get("health", {}).get("enabled", "true") == "true":
