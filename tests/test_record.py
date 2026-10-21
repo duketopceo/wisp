@@ -27,6 +27,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from wisp import act, cancel, cua, cua_safety, platform, realinput, \
     record, tools  # noqa: E402
 from wisp import trace as _trace  # noqa: E402
+import wisp.verify as verify  # noqa: E402
 
 
 def _msg(content=None, calls=None):
@@ -146,6 +147,10 @@ class RecCase(unittest.TestCase):
                               return_value=t / "cua.jsonl"),
             mock.patch.object(cua_safety, "kill_default_path",
                               return_value=t / "cua.kill"),
+            # U2: the verify ladder queries the real compositor before
+            # any frame read — keep these tests off the live session
+            mock.patch.object(verify, "_clients", return_value=[]),
+            mock.patch.object(verify, "_monitors", return_value=[]),
         ]
         for p in self._patchers:
             p.start()
@@ -324,7 +329,12 @@ class TestAttribution(RecCase):
             self.assertEqual(s["route"], "global_input")
             self.assertEqual(s["transport"],
                              "linux_wayland_virtual_pointer")
-            self.assertNotIn("verdict", s)
+            # U2: a recorded step now carries the ladder's verdict —
+            # this fake writes no frames and the cfg brain has no
+            # vision, so abstention -> judge-unavailable -> unverifiable
+            self.assertEqual(s["verdict"], "unverifiable")
+            self.assertEqual(s["verify"]["verdict"], "unverifiable")
+            self.assertFalse(s["verify"]["corroborated"])
         evs = self.trace_events("record_turn")
         self.assertEqual(len(evs), 3)
         self.assertTrue(evs[1]["data"]["turn_dir"]

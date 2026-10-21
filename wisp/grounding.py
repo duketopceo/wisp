@@ -75,6 +75,7 @@ class Candidate:
     size: tuple | None = None      # (w, h) of the image the model saw
     label: str = ""
     window: str = ""
+    rect: tuple | None = None      # element bounds (x,y,w,h) in `frame`
 
 
 @dataclasses.dataclass(frozen=True)
@@ -86,6 +87,7 @@ class Target:
     source: str
     label: str = ""
     window: str = ""
+    rect: tuple | None = None      # element bounds (x,y,w,h) in `frame`
 
 
 class Shot:
@@ -457,7 +459,8 @@ def _a11y(ctx) -> Candidate | None:
     conf = score if len(set(best)) == 1 else 0.4   # ambiguous -> low
     return Candidate(x + w / 2.0, y + h / 2.0, conf, "a11y", frame="global",
                      label=ctx.target,
-                     window=str(win.get("title") or win.get("name") or ""))
+                     window=str(win.get("title") or win.get("name") or ""),
+                     rect=(x, y, w, h))
 
 
 # ------------------------------------------------- Jev (vision fallback)
@@ -749,8 +752,14 @@ def ground_target(target: str, cfg: dict | None = None, *, capture=None,
                          "conf": round(best.confidence, 3),
                          "x": gx, "y": gy, "tried": tried,
                          "down": down})
+            # an element rect the a11y lane resolved rides along so the
+            # verify ladder can crop its masked diff to the real bounds
+            # instead of a point box (shot-frame rects stay None)
+            rect = best.rect if best.frame in ("global", "logical") \
+                else None
             return Target(gx, gy, "global", round(best.confidence, 3),
-                          best.source, best.label or name, best.window)
+                          best.source, best.label or name, best.window,
+                          rect)
     from . import trace as _trace
     _trace.emit(_trace.current(), "ground_refused", "act",
                 {"target": name, "tried": tried, "down": down,
