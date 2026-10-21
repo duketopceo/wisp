@@ -158,7 +158,7 @@ def _via_channel(ep, panel: str, dst_dir, base: str):
         return None
     p = dst_dir / f"{base}.png"
     try:
-        if p.is_file() and p.stat().st_size > 0:
+        if p.stat().st_size > 0:
             try:
                 os.chmod(p, 0o600)
             except OSError:
@@ -301,7 +301,7 @@ def _write_meta(d, source: str, arg: str) -> None:
     try:
         (d / "action.json").write_text(json.dumps({
             "tool": "observe",
-            "args": {"session": "wisp",
+            "args": {"session": record.SESSION,
                      **({"arg": arg} if arg else {})},
             "action_truth": {"effect": "delivered",
                              "route": f"observe:{source}",
@@ -344,15 +344,16 @@ def _turn_dir(rec_dir) -> pathlib.Path | None:
     for i in range(OBSERVE_BASE, OBSERVE_BASE + OBSERVE_MAX):
         d = root / f"turn-{i:05d}"
         try:
-            if not d.exists():
-                d.mkdir(mode=0o700, parents=True)
-                try:
-                    os.chmod(d, 0o700)
-                except OSError:
-                    pass
-                return d
+            d.mkdir(mode=0o700, parents=True)
+        except FileExistsError:
+            continue            # a racing lane minted it first
         except OSError:
             return None
+        try:
+            os.chmod(d, 0o700)
+        except OSError:
+            pass
+        return d
     return None
 
 
@@ -411,17 +412,27 @@ def _rec_dir():
 
 def _cua_client():
     try:
-        from .pipeline import hypr_env
-        return cua.Cua(timeout_s=_STATE_TIMEOUT_S, env=hypr_env())
+        return record._client(timeout_s=_STATE_TIMEOUT_S)
     except Exception:
         return None
 
 
 # --------------------------------------------------------- reply data
 
+_IMG_MAGIC = (b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff",
+              b"GIF8", b"BM", b"RIFF")
+
+
+def _looks_image(data: bytes) -> bool:
+    """Untrusted-reply payload must actually BE an image — a hostile
+    or broken channel naming ~/.ssh/id_rsa must not smuggle file
+    bytes into the model conversation (or the pack)."""
+    return data.startswith(_IMG_MAGIC)
+
+
 def _image_bytes(res) -> bytes | None:
     """A base64/inline or file-referenced image out of an untrusted
-    reply dict — capped at IMG_CAP bytes."""
+    reply dict — capped at IMG_CAP bytes, image magic required."""
     if not isinstance(res, dict):
         return None
     for k in _B64_KEYS:
@@ -439,16 +450,18 @@ def _image_bytes(res) -> bytes | None:
                 data = base64.b64decode(v, validate=True)
             except (ValueError, TypeError):
                 continue
-            if 0 < len(data) <= IMG_CAP:
+            if 0 < len(data) <= IMG_CAP and _looks_image(data):
                 return data
     for k in _PATH_KEYS:
         v = res.get(k)
         if isinstance(v, str) and v:
             try:
                 with open(v, "rb") as f:
-                    return f.read(IMG_CAP)
+                    data = f.read(IMG_CAP)
             except OSError:
-                pass
+                continue
+            if _looks_image(data):
+                return data
     return None
 
 

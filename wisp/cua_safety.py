@@ -177,11 +177,14 @@ def _match(app: str, title: str, s: dict) -> str:
     return ""
 
 
-def deny_match(app: str, title: str = "", cfg: dict | None = None) -> bool:
+def deny_match(app: str, title: str = "", cfg: dict | None = None,
+               s: dict | None = None) -> bool:
     """Is `app`/`title` on the deny list? — Guard's policy evaluated
     for any window, not just the focused one. verify's suppression
-    check runs it over every mapped client on a visible workspace."""
-    return bool(_match((app or "").lower(), title or "", settings(cfg)))
+    check runs it over every mapped client on a visible workspace;
+    `s` is a precomputed settings() for that per-client loop."""
+    return bool(_match((app or "").lower(), title or "",
+                       s or settings(cfg)))
 
 
 def _live_window(state=None) -> dict:

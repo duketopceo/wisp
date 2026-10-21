@@ -536,7 +536,8 @@ def _control(ctx) -> Candidate | None:
     # the pre-dispatch snapshot for verify's control rung — recorded
     # whether or not the target matched (a miss still leaves usable
     # before-state for the diff)
-    _ctl.note_before(_trace.current(), ep.app, insp, els, hit=hit)
+    _ctl.note_before(_trace.current(), ep.app, insp, els, hit=hit,
+                     cap=st["element_cap"])
     if el is None:
         return None
     cx, cy = grect[0] + grect[2] / 2.0, grect[1] + grect[3] / 2.0

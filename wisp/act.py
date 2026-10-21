@@ -298,6 +298,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
     # filtered out of the watch) must win immediately, same as the user's
     # own interrupt. Mode is logged for the run's audit trail.
     watch_mode = realinput.begin(cfg)
+    out = None                  # the finally's pack call reads it
     try:
         from . import trace as _trace
         _trace.emit(_trace.current(), "yield_watch", "cua",
@@ -514,7 +515,6 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 if d:
                     kw["delivery"] = d
                 _state.action_set(state, aid, **kw)
-                result += _verify_hint(name, arg, result, cfg)
                 if name == "screenshot" and result.startswith("SHOT "):
                     screen_dirty = False
                     if not served_cached:
@@ -537,6 +537,14 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     step["delivery"] = d
                 _record_step(step, name, tool_arg, dispatched_at,
                              recorder, cfg)
+                if not step.get("turn_dir"):
+                    # a recorded step's real verdict speaks below —
+                    # the generic nudge is only for mutations with no
+                    # evidence trail (DOM/keyboard/hypr lanes)
+                    hint = _verify_hint(name, arg, result, cfg)
+                    if hint:
+                        result += hint
+                        step["result"] = result
                 # U2: the cheap-first ladder runs only when a turn dir
                 # attributed (cua-dispatched + recorded). The verdict
                 # lands on the step record AND the tool_result the model
@@ -594,17 +602,13 @@ def run_act_loop(task: str, cfg: dict, state=None,
         # packs.write never raises; the belt-suspenders try keeps a
         # bug in the artifact path from escaping run teardown.
         try:
-            _write_pack(recorder, task, steps, cfg, was_recorded,
-                        locals().get("out"))
+            _write_pack(recorder, task, steps, cfg, was_recorded, out)
         except Exception:
             pass
         # disarm the yield watch — armed/yielded must
         # never outlive the run they armed for (a stale
         # yield would poison the next real-pointer call)
         realinput.finish()
-
-
-_OBSERVE_DIR_RE = re.compile(r"turn-\d{5}")
 
 
 def _observe_dir(result: str) -> str | None:
@@ -614,7 +618,8 @@ def _observe_dir(result: str) -> str | None:
     if not result.startswith("SHOT "):
         return None
     parent = pathlib.Path(result[5:].strip()).parent
-    if _OBSERVE_DIR_RE.fullmatch(parent.name):
+    from . import record
+    if record._TURN_RE.match(parent.name):
         return str(parent)
     return None
 

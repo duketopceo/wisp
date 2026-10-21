@@ -188,8 +188,8 @@ def _diff_pil(before, after, rect, eps: int):
             if x1 - x0 <= 0 or y1 - y0 <= 0:
                 return None
             d = ImageChops.difference(
-                a.convert("RGB").crop((x0, y0, x1, y1)),
-                b.convert("RGB").crop((x0, y0, x1, y1)))
+                a.crop((x0, y0, x1, y1)).convert("RGB"),
+                b.crop((x0, y0, x1, y1)).convert("RGB"))
         # a change in ANY channel counts: per-pixel max across bands so
         # a hue-only flip still registers
         mx = None
@@ -333,6 +333,7 @@ def visible_deny(cfg, clients=None, monitors=None):
                 ws = m.get("activeWorkspace")
                 if isinstance(ws, dict) and ws.get("id") is not None:
                     vis.add(ws["id"])
+    s = cua_safety.settings(cfg)
     for c in listing:
         if not isinstance(c, dict):
             continue
@@ -343,7 +344,7 @@ def visible_deny(cfg, clients=None, monitors=None):
                 and ws.get("id") is not None and ws["id"] not in vis:
             continue    # on a workspace no monitor is showing
         if cua_safety.deny_match(c.get("class") or "",
-                                 c.get("title") or "", cfg):
+                                 c.get("title") or "", cfg, s=s):
             return c, True
     return None, True
 
@@ -566,6 +567,26 @@ def _emit(turn, step, vd: dict, terminal: bool) -> None:
         pass
 
 
+def _privacy_gate(cfg, tdir, evidence: str, clients, monitors):
+    """R9 post-dispatch deny-surface re-check — runs before any frame
+    is read so a dialog the click just spawned deletes the evidence.
+    Verdict dict on suppression, None when the surface is clean."""
+    off, readable = visible_deny(cfg, clients=clients,
+                               monitors=monitors)
+    if not readable:
+        suppress(tdir, "compositor window list unreadable")
+        return _mk("suppressed", "privacy", False, evidence,
+                   "window list unreadable — capture suppressed "
+                   "(fail-safe)")
+    if off is not None:
+        cls = off.get("class") or "?"
+        suppress(tdir, f"deny-listed surface visible: {cls}")
+        return _mk("suppressed", "privacy", False, evidence,
+                   f"deny-listed surface {cls!r} on a visible workspace "
+                   "— frames deleted")
+    return None
+
+
 def verdict(step: dict, *, name: str = "", arg: str = "",
             tool_arg: str = "", tgt=None, claim: dict | None = None,
             after_path=None, cfg: dict | None = None,
@@ -588,22 +609,15 @@ def verdict(step: dict, *, name: str = "", arg: str = "",
             arg or step.get("arg", ""),
             tool_arg or step.get("arg", ""), tgt, cfg)
     evidence = str(tdir)
-    # R9 before ANY frame is read: the post-dispatch re-check catches
-    # the credential dialog the click just spawned
-    off, readable = visible_deny(cfg, clients=clients,
-                               monitors=monitors)
-    if not readable:
-        suppress(tdir, "compositor window list unreadable")
-        vd = _mk("suppressed", "privacy", False, evidence,
-                 "window list unreadable — capture suppressed "
-                 "(fail-safe)")
-    elif off is not None:
-        cls = off.get("class") or "?"
-        suppress(tdir, f"deny-listed surface visible: {cls}")
-        vd = _mk("suppressed", "privacy", False, evidence,
-                 f"deny-listed surface {cls!r} on a visible workspace "
-                 "— frames deleted")
-    else:
+    # one compositor snapshot feeds the deny gate AND the rungs —
+    # resolve only the absent case: a caller's callable/list must reach
+    # the gate untouched (a failing callable IS the unreadable signal)
+    if clients is None:
+        clients = _resolve(None, _clients)
+    if monitors is None:
+        monitors = _resolve(None, _monitors)
+    vd = _privacy_gate(cfg, tdir, evidence, clients, monitors)
+    if vd is None:
         truth = step.get("action_truth") or {}
         if str(truth.get("effect") or "").lower() == "refused":
             vd = _mk("refused", "action_truth", False, evidence,
@@ -658,21 +672,14 @@ def terminal_verdict(step: dict, *, cfg: dict | None = None,
     tdir = pathlib.Path(str(tdir))
     if claim is None:
         claim = (step.get("verify") or {}).get("claim")
-    # the capture path gets its own R9 check BEFORE a frame is written
-    off, readable = visible_deny(cfg, clients=clients,
-                               monitors=monitors)
-    if not readable:
-        suppress(tdir, "compositor window list unreadable")
-        vd = _mk("suppressed", "privacy", False, str(tdir),
-                 "window list unreadable — capture suppressed "
-                 "(fail-safe)")
-    elif off is not None:
-        cls = off.get("class") or "?"
-        suppress(tdir, f"deny-listed surface visible: {cls}")
-        vd = _mk("suppressed", "privacy", False, str(tdir),
-                 f"deny-listed surface {cls!r} on a visible workspace "
-                 "— frames deleted")
-    else:
+    # one snapshot feeds both gates — the capture-path R9 check BEFORE
+    # a frame is written, then verdict()'s post-dispatch re-check
+    if clients is None:
+        clients = _resolve(None, _clients)
+    if monitors is None:
+        monitors = _resolve(None, _monitors)
+    vd = _privacy_gate(cfg, tdir, str(tdir), clients, monitors)
+    if vd is None:
         cap = capture or _capture
         shot = tdir / "after_terminal.png"
         try:
