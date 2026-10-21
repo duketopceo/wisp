@@ -52,7 +52,10 @@
       "click"
     ],
     "cua_calls": [
-      "click"
+      "start_session",
+      "start_recording",
+      "click",
+      "stop_recording"
     ],
     "result_prefix": "ACTED"
   },

@@ -416,7 +416,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 # the arg actually dispatched and its wall-clock stamp —
                 # the recorder attributes a step to its turn dir on
                 # tool+args+ts (U1); None = never reached dispatch
-                tool_arg, dispatched_at = arg, None
+                tool_arg, dispatched_at, tgt = arg, None, None
                 if refused is None:
                     _state.action_set(state, aid, status="in_flight")
                     # soak fix: re-observe — a mutating step invalidates the
@@ -452,7 +452,6 @@ def run_act_loop(task: str, cfg: dict, state=None,
                         # a failed observe leaves the screen dirty AND the
                         # cached shot ineligible — a stale DOM digest is
                         # worse than no digest
-                    tgt = None
                     if (name == "screenshot" and not screen_dirty
                             and last_shot
                             and (cfg or {}).get("screen", {}).get(
@@ -524,6 +523,18 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     step["delivery"] = d
                 _record_step(step, name, tool_arg, dispatched_at,
                              recorder, cfg)
+                # U2: the cheap-first ladder runs only when a turn dir
+                # attributed (cua-dispatched + recorded). The verdict
+                # lands on the step record AND the tool_result the model
+                # reads — a `missed` surfaces as feedback; the loop does
+                # not re-dispatch on it.
+                vd = _run_verify(step, name, arg, tool_arg, tgt, cfg)
+                if vd is not None:
+                    step["verdict"] = vd["verdict"]
+                    step["verify"] = vd
+                    result += " — verify " + json.dumps(
+                        vd, separators=(",", ":"), sort_keys=True)
+                    step["result"] = result
                 steps.append(step)
                 _publish(state, task, steps)
                 _publish_guide(state, name, arg, result)
@@ -548,6 +559,14 @@ def run_act_loop(task: str, cfg: dict, state=None,
         _record_traj(task, harness, steps, out, cfg)
         return out
     finally:
+        # R3: re-verify the turn's last recorded mutation with a fresh
+        # after-frame BEFORE the result speaks — the driver's after.png
+        # can predate the effect rendering (the FilmCraft ~70px miss sat
+        # behind exactly this gap). Skipped when the turn was cancelled.
+        try:
+            _terminal_verify(steps, cfg)
+        except Exception:
+            pass
         # stop the turn's recording on EVERY exit — normal return,
         # interrupt, error, budget abort (U1)
         recorder.stop()
@@ -822,6 +841,56 @@ def _rec_turn(name: str, step: dict) -> None:
             "verdict": step.get("verdict")})
     except Exception:
         pass
+
+
+def _run_verify(step: dict, name: str, arg: str, tool_arg: str, tgt,
+                cfg: dict | None) -> dict | None:
+    """The U2 ladder for one step: privacy re-check, action_truth gate,
+    registered rungs, VLM judge on ambiguity. Returns the verdict dict.
+
+    None when the step wasn't recorded (no turn_dir — the U1
+    `not_recorded` seed stands) or the turn is being cancelled. Never
+    raises into the loop; a broken ladder degrades to `unverifiable`,
+    never to `landed`."""
+    if not step.get("turn_dir"):
+        return None
+    try:
+        from . import verify as _verify
+        return _verify.verdict(step, name=name, arg=arg,
+                               tool_arg=tool_arg, tgt=tgt, cfg=cfg)
+    except cancel.Cancelled:
+        return None
+    except Exception as e:
+        return {"verdict": "unverifiable", "source": "none",
+                "corroborated": False,
+                "evidence": str(step["turn_dir"]),
+                "detail": f"verify error: {e}"[:200]}
+
+
+def _terminal_verify(steps: list, cfg: dict | None) -> None:
+    """R3 terminal after-frame: the last recorded mutation that reached
+    the rungs (landed/missed/unverifiable — a refused or suppressed
+    step keeps its verdict) gets one more capture + ladder pass, so a
+    late-rendered effect is scored on settled pixels."""
+    if cancel.is_cancelled():
+        return
+    last = next(
+        (s for s in reversed(steps)
+         if isinstance(s.get("verify"), dict)
+         and s["verify"].get("verdict")
+         not in ("suppressed", "refused")), None)
+    if last is None:
+        return
+    try:
+        from . import verify as _verify
+        vd = _verify.terminal_verdict(last, cfg=cfg)
+    except cancel.Cancelled:
+        return
+    except Exception:
+        return
+    if vd is not None:
+        last["verdict"] = vd["verdict"]
+        last["verify"] = vd
 
 
 def _record_traj(task: str, harness: dict | None, steps: list, out: str,

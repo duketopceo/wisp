@@ -56,7 +56,11 @@
   },
   "expect": {
     "result_prefix": "ACTED",
-    "cua_calls": [],
+    "cua_calls": [
+      "start_session",
+      "start_recording",
+      "stop_recording"
+    ],
     "steps_contain": [
       "REFUSED (app 1password is denied)"
     ],

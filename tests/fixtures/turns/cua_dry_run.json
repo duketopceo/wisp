@@ -51,7 +51,11 @@
     }
   },
   "expect": {
-    "cua_calls": [],
+    "cua_calls": [
+      "start_session",
+      "start_recording",
+      "stop_recording"
+    ],
     "steps_contain": [
       "DRYRUN would click at 10,20"
     ],
