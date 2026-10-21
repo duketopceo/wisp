@@ -32,7 +32,8 @@ def _step(tool="click", result="CLICKED(10,20)", **kw):
 
 
 class TestStepBuckets(unittest.TestCase):
-    """learn.step_bucket / step_weight — the shared evidence policy."""
+    """learn.step_bucket / terminal_evidence — the shared evidence
+    policy (the old step_weight wrapper folded into it)."""
 
     def test_verdict_buckets(self):
         self.assertEqual(learn.step_bucket(
@@ -66,15 +67,22 @@ class TestStepBuckets(unittest.TestCase):
             learn.step_bucket(_step(verdict="bogus")), "legacy")
 
     def test_weights(self):
-        self.assertEqual(learn.step_weight(
-            _step(verdict="landed", corroborated=True)), 1.0)
-        self.assertEqual(learn.step_weight(
-            _step(verdict="missed", corroborated=False)),
-            learn.SOLO_WEIGHT)
+        # the bucket -> weight mapping lives in terminal_evidence:
+        # corroborated outcomes weigh 1.0, a solo rung SOLO_WEIGHT,
+        # no-signal buckets and legacy weigh nothing
+        _, w = learn.terminal_evidence(
+            [_step(verdict="landed", corroborated=True)])
+        self.assertEqual(w, 1.0)
+        b, w = learn.terminal_evidence(
+            [_step(verdict="missed", corroborated=False)])
+        self.assertEqual((b, w), ("missed_solo", learn.SOLO_WEIGHT))
         for v in ("refused", "unverifiable", "suppressed",
                   "not_recorded"):
-            self.assertEqual(learn.step_weight(_step(verdict=v)), 0.0)
-        self.assertEqual(learn.step_weight(_step()), 0.0)
+            self.assertEqual(
+                learn.terminal_evidence([_step(verdict=v)]),
+                (None, 0.0))
+        self.assertEqual(learn.terminal_evidence([_step()]),
+                         (None, 0.0))
 
     def test_terminal_evidence_picks_last_outcome(self):
         steps = [_step(verdict="landed", corroborated=True),
@@ -124,7 +132,8 @@ class TestTrajectoryFields(unittest.TestCase):
         self.assertEqual(steps[0]["verdict"], "landed")
         self.assertEqual(steps[0]["verify_source"], "pixel+control")
         self.assertIs(steps[0]["corroborated"], True)
-        self.assertEqual(steps[0]["turn_dir"], turn)
+        # F15: only the evidence dir NAME persists — never the path
+        self.assertEqual(steps[0]["turn_dir"], "turn-00001")
         # the non-cua tool keeps its explicit not_recorded + null dir
         self.assertEqual(steps[1]["verdict"], "not_recorded")
         self.assertIsNone(steps[1]["turn_dir"])
@@ -143,8 +152,8 @@ class TestTrajectoryFields(unittest.TestCase):
         self.assertEqual(s["verdict"], "missed")
         self.assertEqual(s["verify_source"], "pixel")
         self.assertIs(s["corroborated"], False)
-        self.assertEqual(s["pack"], "/packs/t2")
-        self.assertEqual(r["pack"], "/packs/t2")
+        self.assertEqual(s["pack"], "t2")          # F15: basename only
+        self.assertEqual(r["pack"], "t2")
 
     def test_pack_kwarg_stamps_steps_lacking_one(self):
         T.record("t", "app", [
@@ -154,9 +163,9 @@ class TestTrajectoryFields(unittest.TestCase):
                   turn_dir="/rec/t3/turn-00002", pack="/packs/other"),
         ], "ACTED", pack="/packs/t3")
         steps = self._rows()[0]["steps"]
-        self.assertEqual(steps[0]["pack"], "/packs/t3")
+        self.assertEqual(steps[0]["pack"], "t3")
         # a step's own pack ref wins over the record-level stamp
-        self.assertEqual(steps[1]["pack"], "/packs/other")
+        self.assertEqual(steps[1]["pack"], "other")
 
     def test_old_records_parse_unchanged(self):
         self.file.write_text(json.dumps({
@@ -170,7 +179,7 @@ class TestTrajectoryFields(unittest.TestCase):
         s = rows[0]["steps"][0]
         self.assertNotIn("verdict", s)
         self.assertEqual(learn.step_bucket(s), "legacy")
-        self.assertEqual(learn.step_weight(s), 0.0)
+        self.assertEqual(learn.terminal_evidence([s]), (None, 0.0))
 
     def test_old_style_record_call_still_works(self):
         # pre-U6 call shape: no verdict fields anywhere
@@ -405,28 +414,31 @@ class TestClicklabRecording(unittest.TestCase):
         finally:
             rec.stop()
 
-    def test_row_fields_cite_turn_dirs(self):
+    def test_row_fields_cite_packs(self):
+        # F13: rec/ turn dirs are deleted at pack write — the row must
+        # cite the durable packs/<turn> dirs instead
         self.rec.start()
         f = self.rec.row_fields([
-            _step(turn_dir="/rec/t1/turn-00002"),
-            _step(turn_dir="/rec/t1/turn-00001"),
-            _step(turn_dir=None),          # not_recorded step
-            _step(),                        # read-only
+            _step(pack="packs/t-def", turn_dir="/rec/t-def/turn-00002"),
+            _step(pack="packs/t-def", turn_dir="/rec/t-def/turn-00001"),
+            _step(turn_dir="/rec/t-def/turn-00003"),  # unpacked step
+            _step(),                                 # read-only
         ])
         self.assertEqual(f["rec_dir"], str(self.dir / "r-test"))
         self.assertEqual(f["rec_session"], "clicklab-r-test")
-        self.assertEqual(f["turn_dirs"],
-                         ["/rec/t1/turn-00001", "/rec/t1/turn-00002"])
+        self.assertEqual(f["packs"], ["packs/t-def"])
+        self.assertNotIn("turn_dirs", f)
 
     def test_row_fields_empty_run(self):
         f = self.rec.row_fields([_step()])
+        self.assertNotIn("packs", f)
         self.assertNotIn("turn_dirs", f)
 
 
 class TestBankFold(unittest.TestCase):
     """The clicklab.jsonl bank fold stashes the run's evidence refs."""
 
-    def test_update_bank_stashes_turn_dirs(self):
+    def test_update_bank_stashes_evidence_refs(self):
         with tempfile.TemporaryDirectory() as td:
             bank = pathlib.Path(td) / "skillbank.json"
             rec = {"task": "click alpha", "surface": "browser-dom",
@@ -435,11 +447,10 @@ class TestBankFold(unittest.TestCase):
                    "efficiency": 0.95,
                    "steps": [{"tool": "click", "arg": "1,2"}],
                    "rec_dir": "/x/clicklab-rec/r1",
-                   "turn_dirs": ["/x/clicklab-rec/r1/turn-00001"],
+                   "packs": ["packs/t-abc123"],
                    "ts": 1.0}
             e = train.update_bank(rec, path=bank)
-            self.assertEqual(e["turn_dirs"],
-                             ["/x/clicklab-rec/r1/turn-00001"])
+            self.assertEqual(e["packs"], ["packs/t-abc123"])
             self.assertEqual(e["rec_dir"], "/x/clicklab-rec/r1")
 
 

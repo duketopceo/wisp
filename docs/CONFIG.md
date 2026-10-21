@@ -361,8 +361,8 @@ match = "myapp,My App"       # window class/title patterns; default: the app key
 | `[control.<app>] port` | — | control port for app `<app>` |
 | `[control.<app>] host` | `127.0.0.1` | channel host (loopback only) |
 | `[control.<app>] match` | app key | class/title patterns that select this app's channel |
-| `[control] connect_timeout_s` | `1.5` | connect deadline |
-| `[control] read_timeout_s` | `3` | read deadline per call |
+| `[control] connect_timeout_s` | `0.4` | connect deadline |
+| `[control] read_timeout_s` | `3.5` | read deadline per call |
 | `[control] rect_slack_px` | `8` | tolerance when validating channel rects against compositor bounds |
 | `[control] element_cap` | `1024` | max elements accepted from one `ui.elements` reply |
 
@@ -420,6 +420,25 @@ deleted at pack-write.
 
 Both bounds apply together; pruning runs after each pack write and at
 daemon start.
+
+## [verify] — action-verdict ladder (U2)
+
+Every recorded act action earns a verdict (`landed`/`missed`/
+`refused`/`suppressed`/`unverifiable`/`not_recorded`). The cheap
+rungs vote first — a masked pixel diff of the driver's before/after
+frames at the predicted region, plus the app's control-channel diff
+when it ships one (see [control]); disagreement or mutual abstention
+escalates to a VLM judge.
+
+| key | default | meaning |
+|-----|---------|---------|
+| `vlm` | (empty) | `provider:model` endpoint for the judge; empty uses the primary brain |
+| `judge_timeout_s` | `20` | seconds the judge may take before the step lands unverifiable |
+| `pixel_landed_min` | `0.02` | changed-fraction threshold for a `landed` vote |
+| `pixel_missed_max` | `0.001` | changed-fraction floor for a `missed` vote (between the two: abstain) |
+| `pixel_eps` | `16` | per-channel pixel difference counted as a change |
+| `region_px` | `96` | side of the square pixel region diffed around a click point |
+| `frame_wait_s` | `0.5` | bound on waiting for the driver's before/after frames |
 
 ## [debug]
 

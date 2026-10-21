@@ -194,6 +194,18 @@ FIELDS = (
     _f("packs.shots_keep_days", "int", "30",
        "Days a shots/ screenshot is kept (0 disables the age bound)",
        min=0, max=3650),
+    _f("verify.judge_timeout_s", "int", "20",
+       "Seconds the verify VLM judge may take before the step lands "
+       "unverifiable",
+       min=1, max=300),
+    _f("verify.pixel_eps", "int", "16",
+       "Per-channel pixel difference the verify masked diff counts as "
+       "a change",
+       min=1, max=255),
+    _f("verify.region_px", "int", "96",
+       "Side of the square pixel region the verify diff inspects "
+       "around a click point",
+       min=8, max=1024),
 )
 
 _BY_KEY = {f.key: f for f in FIELDS}

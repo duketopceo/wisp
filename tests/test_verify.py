@@ -423,7 +423,148 @@ class Postcondition(unittest.TestCase):
         c = verify.postcondition("click", "menu icon", "menu icon",
                                  None)
         self.assertEqual(c["kind"], "effect")
-        self.assertNotIn("rect", c)
+
+    def test_control_rect_never_enters_the_claim(self):
+        # F12: the unauthenticated channel's own rect must not set the
+        # pixel rung's diff box — a control target degrades to the
+        # neutral point-region claim (its x,y was compositor-validated)
+        tgt = SimpleNamespace(x=140, y=130, rect=(100, 100, 80, 60),
+                              label="Apply", source="control")
+        c = verify.postcondition("click", "Apply", "140,130@logical",
+                                 tgt)
+        self.assertEqual(c["kind"], "region")
+        self.assertNotEqual(c["rect"][:2], [100, 100])
+        self.assertEqual(c["point"], [140, 130])
+        # an a11y rect still enters as an element claim, provenance-tagged
+        tgt2 = SimpleNamespace(x=50, y=60, rect=(40, 50, 20, 12),
+                               label="OK", source="a11y")
+        c2 = verify.postcondition("click", "OK", "50,60@logical", tgt2)
+        self.assertEqual(c2["kind"], "element")
+        self.assertEqual(c2["rect_src"], "a11y")
+
+
+class MoveAbstain(LadderCase):
+    """F7: a cursor move is position-only — scoring the destination
+    region minted a corroborated 'missed' on every move."""
+
+    def test_move_abstains_not_missed(self):
+        d = _turn_dir(self.root)
+        self.frames(d, changed=False)   # unchanged region = "missed"
+        s = _step(d, name="move", arg="30,40@logical")
+        vd = call(s)
+        self.assertEqual(vd["verdict"], "unverifiable")
+        self.assertEqual(vd["source"], "none")
+        self.assertFalse(vd["corroborated"])
+
+    def test_move_still_scores_a_refusal(self):
+        # a refused move keeps the action_truth verdict — abstention
+        # only covers the no-evidence case
+        d = _turn_dir(self.root, effect="refused")
+        s = _step(d, name="move", effect="refused")
+        vd = call(s)
+        self.assertEqual(vd["verdict"], "refused")
+
+    def test_terminal_skips_the_move_capture(self):
+        d = _turn_dir(self.root)
+        self.frames(d, changed=False)
+        s = _step(d, name="move")
+        s["verify"] = call(s)
+        called = []
+
+        def cap(path):
+            called.append(path)
+            return True
+        out = verify.terminal_verdict(s, cfg={}, capture=cap,
+                                      clients=[], monitors=MONS)
+        self.assertIsNone(out)            # recorded abstention stands
+        self.assertEqual(called, [])
+
+    def test_driver_named_move_abstains_too(self):
+        d = _turn_dir(self.root)
+        self.frames(d, changed=False)
+        s = _step(d, name="move_cursor")
+        vd = call(s)
+        self.assertEqual(vd["verdict"], "unverifiable")
+
+
+class SuppressJson(LadderCase):
+    """F10: suppression deletes the text evidence too — *_state.json
+    dumps and control_*.json channel snapshots."""
+
+    def test_state_and_control_json_die_with_frames(self):
+        d = _turn_dir(self.root)
+        self.frames(d, changed=True)
+        (d / "before_state.json").write_text('{"tree": "text"}')
+        (d / "control_before.json").write_text('{"inspect": {}}')
+        (d / "control_after.json").write_text('{"inspect": {}}')
+        clients = [{"class": "gcr-prompter", "title": "Password",
+                    "mapped": True, "workspace": {"id": 1}}]
+        vd = call(_step(d), clients=clients)
+        self.assertEqual(vd["verdict"], "suppressed")
+        self.assertEqual(list(d.glob("*.png")), [])
+        self.assertFalse((d / "before_state.json").exists())
+        self.assertFalse((d / "control_before.json").exists())
+        self.assertFalse((d / "control_after.json").exists())
+        ev = json.loads((d / "evidence.json").read_text())
+        self.assertIn("control_before.json",
+                      ev["suppression"]["deleted_frames"])
+        # evidence.json itself survives — it IS the suppression record
+        self.assertTrue(ev["privacy_suppressed"])
+
+
+class TerminalFreshClients(LadderCase):
+    """F6: terminal_verdict re-resolves the compositor lists for the
+    inner verdict — the T0 snapshot must not gate the final check."""
+
+    def test_inner_verdict_reruns_a_callable(self):
+        d = _turn_dir(self.root)
+        self.frames(d, changed=False)
+        s = _step(d)
+        s["verify"] = call(s)
+        calls = []
+
+        def clients_fn():
+            calls.append(1)
+            if len(calls) == 1:
+                return []          # clean at the outer (T0) gate
+            return [{"class": "gcr-prompter", "title": "x",
+                     "mapped": True, "workspace": {"id": 1}}]
+
+        def cap(path):
+            _write_png(path, blocks=[(60, 60, 150, 150)])
+            return True
+        vd = verify.terminal_verdict(s, cfg={}, capture=cap,
+                                     clients=clients_fn,
+                                     monitors=MONS)
+        # the callable ran at the outer gate AND inside verdict() —
+        # the deny surface spawned between them still suppresses
+        self.assertGreaterEqual(len(calls), 2)
+        self.assertEqual(vd["verdict"], "suppressed")
+
+    def test_inner_verdict_ignores_stale_outer_list(self):
+        # outer gate reads the T0 list (clean); the inner verdict gets
+        # the CALLABLE back, not that list — a deny surface that
+        # appeared after T0 is still caught at terminal time
+        d = _turn_dir(self.root)
+        self.frames(d, changed=False)
+        s = _step(d)
+        s["verify"] = call(s)
+        spawned = {"visible": False}
+
+        def clients_fn():
+            if spawned["visible"]:
+                return [{"class": "gcr-prompter", "title": "x",
+                         "mapped": True, "workspace": {"id": 1}}]
+            return []
+
+        def cap(path):
+            spawned["visible"] = True      # appears post-capture
+            _write_png(path, blocks=[(60, 60, 150, 150)])
+            return True
+        vd = verify.terminal_verdict(s, cfg={}, capture=cap,
+                                     clients=clients_fn,
+                                     monitors=MONS)
+        self.assertEqual(vd["verdict"], "suppressed")
 
 
 class FakeDriver:

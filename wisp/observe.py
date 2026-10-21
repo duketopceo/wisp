@@ -32,6 +32,7 @@ import json
 import os
 import pathlib
 import re
+import stat
 import time
 from datetime import datetime
 
@@ -157,17 +158,41 @@ def _via_channel(ep, panel: str, dst_dir, base: str):
     except control.ControlError:
         return None
     p = dst_dir / f"{base}.png"
+    # the app wrote into our evidence dir but its bytes stay untrusted:
+    # a regular, in-cap file with image magic only — anything else is
+    # deleted outright so a hostile channel can't leave non-image
+    # content where the pack will pick it up (F3/F4)
+    if _valid_frame_file(p):
+        try:
+            os.chmod(p, 0o600)
+        except OSError:
+            pass
+        return p
     try:
-        if p.stat().st_size > 0:
-            try:
-                os.chmod(p, 0o600)
-            except OSError:
-                pass
-            return p
+        p.unlink()
     except OSError:
         pass
-    data = _image_bytes(res)
+    data = _image_bytes(res, dst_dir)
     return _write_frame(dst_dir, base, data) if data else None
+
+
+def _valid_frame_file(p: pathlib.Path) -> bool:
+    """A channel-written frame: an existing regular file (never a
+    symlink — the channel could point it anywhere), non-empty, at most
+    IMG_CAP bytes, and real image magic."""
+    try:
+        st = p.lstat()
+    except OSError:
+        return False
+    if not stat.S_ISREG(st.st_mode):   # lstat: symlinks fail here too
+        return False
+    if st.st_size <= 0 or st.st_size > IMG_CAP:
+        return False
+    try:
+        with p.open("rb") as f:
+            return _looks_image(f.read(16))
+    except OSError:
+        return False
 
 
 def _via_zoom(c, win, region, dst_dir, base: str):
@@ -211,7 +236,7 @@ def _via_zoom(c, win, region, dst_dir, base: str):
                              session=record.SESSION)
             except Exception:
                 res = None
-    data = _image_bytes(res)
+    data = _image_bytes(res, dst_dir)
     return _write_frame(dst_dir, base, data) if data else None
 
 
@@ -430,15 +455,18 @@ def _looks_image(data: bytes) -> bool:
     return data.startswith(_IMG_MAGIC)
 
 
-def _image_bytes(res) -> bytes | None:
+def _image_bytes(res, root=None) -> bytes | None:
     """A base64/inline or file-referenced image out of an untrusted
-    reply dict — capped at IMG_CAP bytes, image magic required."""
+    reply dict — capped at IMG_CAP bytes, image magic required. A
+    file-referenced image is only honored when `root` is given AND the
+    resolved real path sits inside it: a reply key must never become
+    a read of an arbitrary host path (F4)."""
     if not isinstance(res, dict):
         return None
     for k in _B64_KEYS:
         v = res.get(k)
         if isinstance(v, dict):
-            data = _image_bytes(v)
+            data = _image_bytes(v, root)
             if data:
                 return data
         elif isinstance(v, str) and v:
@@ -452,16 +480,30 @@ def _image_bytes(res) -> bytes | None:
                 continue
             if 0 < len(data) <= IMG_CAP and _looks_image(data):
                 return data
+    if root is None:
+        return None
+    try:
+        root_r = pathlib.Path(root).resolve()
+    except OSError:
+        return None
     for k in _PATH_KEYS:
         v = res.get(k)
-        if isinstance(v, str) and v:
-            try:
-                with open(v, "rb") as f:
-                    data = f.read(IMG_CAP)
-            except OSError:
-                continue
-            if _looks_image(data):
-                return data
+        if not (isinstance(v, str) and v):
+            continue
+        try:
+            rp = pathlib.Path(v).resolve()
+        except (OSError, RuntimeError):
+            continue
+        if not rp.is_relative_to(root_r):
+            continue            # outside the evidence dir: refuse
+        if not _valid_frame_file(rp):
+            continue
+        try:
+            data = rp.read_bytes()
+        except OSError:
+            continue
+        if 0 < len(data) <= IMG_CAP and _looks_image(data):
+            return data
     return None
 
 

@@ -14,6 +14,7 @@ proposals/; `wispd recipes approve` installs it (human-gated, same
 contract as learn.py criteria proposals).
 """
 import json
+import pathlib
 import re
 from datetime import datetime, timezone
 
@@ -51,10 +52,14 @@ def _step_out(s: dict, pack=None) -> dict:
     if corr is not None:
         out["corroborated"] = bool(corr)
     if "turn_dir" in s:          # explicit null persists — the step
-        out["turn_dir"] = s.get("turn_dir")   # was recording-eligible
+        td = s.get("turn_dir")   # was recording-eligible
+        # F15: persist the evidence dir NAME, never the absolute rec/
+        # path — a trajectory is durable training data and a host path
+        # would leak the machine's $HOME layout
+        out["turn_dir"] = pathlib.Path(str(td)).name if td else None
     p = s.get("pack") or pack
     if p:
-        out["pack"] = str(p)
+        out["pack"] = pathlib.Path(str(p)).name
     return out
 
 
@@ -70,7 +75,7 @@ def record(task: str, app: str, steps: list, outcome: str,
            "steps": [_step_out(s, pack=pack) for s in steps],
            "outcome": outcome[:200], "ref": ref}
     if pack:
-        rec["pack"] = str(pack)
+        rec["pack"] = pathlib.Path(str(pack)).name   # F15: name only
     try:
         FILE.parent.mkdir(parents=True, exist_ok=True)
         try:

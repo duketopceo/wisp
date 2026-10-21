@@ -71,11 +71,13 @@ REGISTRY = {
                    "capture the screen to a file",
                    {"tier": "T0", "reversible": True, "external": False}),
     "observe": (None, "safe",
-                "capture a frame of the focused app to inspect — the "
-                "app's control channel when it ships one, else a "
-                "window-cropped capture; the image comes back as the "
-                "next observation (inspect only — its pixels are not "
-                "the click coordinate space)",
+                "capture a frame of the focused app to inspect — arg: "
+                "a control-channel panel name, or 'x1,y1,x2,y2' to "
+                "crop a window-local region; the app's control channel "
+                "when it ships one, else a window-cropped capture; "
+                "the image comes back as the next observation "
+                "(inspect only — its pixels are not the click "
+                "coordinate space)",
                 {"tier": "T0", "reversible": True,
                  "external": False}),  # wired in wisp/observe.py (U5)
     "type_text": (system.type_text, "interactive",

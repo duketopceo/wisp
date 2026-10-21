@@ -17,7 +17,6 @@ caller.
 """
 import base64
 import json
-import math
 import pathlib
 import re
 import time
@@ -48,8 +47,7 @@ SYSTEM = ("You are Wisp's hands on a Linux desktop (Hyprland). Complete "
           "needs on-screen targets; click/move take 'x,y' in that "
           "screenshot's pixels or a target name (e.g. 'monitor icon in menu bar') "
           "which automatically grounds via Clef/Jev noul probabilistic centering. "
-          "'pin:N' targets resolve the numbered overlay beacons the "
-          "user sees; call observe for a cropped frame of the focused "
+          "Call observe for a cropped frame of the focused "
           "app to inspect (control-channel when the app ships one, "
           "else a window-crop capture — inspect only, its pixels are "
           "not the click coordinate space). "
@@ -299,6 +297,11 @@ def run_act_loop(task: str, cfg: dict, state=None,
     # own interrupt. Mode is logged for the run's audit trail.
     watch_mode = realinput.begin(cfg)
     out = None                  # the finally's pack call reads it
+    # F1: the trajectory snapshot must land AFTER _terminal_verify —
+    # each exit that used to call _record_traj now just flags it, and
+    # the finally snapshots the post-verify steps so trajectories and
+    # pack manifests agree on the final verdicts
+    want_traj = False
     try:
         from . import trace as _trace
         _trace.emit(_trace.current(), "yield_watch", "cua",
@@ -324,7 +327,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
             if why:
                 _goals.record_steps(steps)
                 out = _budget_abort(state, task, steps, why)
-                _record_traj(task, harness, steps, out, cfg, recorder)
+                want_traj = True
                 return out
             if stopped():
                 _goals.record_steps(steps)
@@ -343,7 +346,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
                         _goals.record_steps(steps)
                         out = (f"STALLED (unparseable action replies): "
                                f"{_last(steps)}")
-                        _record_traj(task, harness, steps, out, cfg, recorder)
+                        want_traj = True
                         return out
                     messages.append(
                         {"role": "user",
@@ -358,7 +361,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     _goals.record_steps(steps)
                     _goals.close("done")
                     out = f"ACTED ({len(steps)} steps): {text}"
-                    _record_traj(task, harness, steps, out, cfg, recorder)
+                    want_traj = True
                     return out
                 calls = [{"id": f"at-{len(steps)}-{i}", "_at": True,
                           "function": {"name": n,
@@ -376,7 +379,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     return "ASK_USER " + text[9:].strip()
                 _goals.close("done")
                 out = f"ACTED ({len(steps)} steps): {text or 'done'}"
-                _record_traj(task, harness, steps, out, cfg, recorder)
+                want_traj = True
                 return out
             messages.append(msg)
             for ci, call in enumerate(calls):
@@ -388,7 +391,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 if why:
                     _goals.record_steps(steps)
                     out = _budget_abort(state, task, steps, why)
-                    _record_traj(task, harness, steps, out, cfg, recorder)
+                    want_traj = True
                     return out
                 if name == "ask_user":
                     # U4 conversational backchannel: the question parks on
@@ -423,8 +426,12 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 served_cached = False
                 # the arg actually dispatched and its wall-clock stamp —
                 # the recorder attributes a step to its turn dir on
-                # tool+args+ts (U1); None = never reached dispatch
-                tool_arg, dispatched_at, tgt = arg, None, None
+                # tool+args+ts (U1); None = never reached dispatch.
+                # aim_mono is the F5 watermark: control._BEFORE snaps
+                # are monotonic-stamped at aim time and a verify rung
+                # only accepts one stamped after this dispatch began
+                tool_arg, dispatched_at, tgt, aim_mono, dispatch_mono = \
+                    arg, None, None, None, None
                 if refused is None:
                     _state.action_set(state, aid, status="in_flight")
                     # soak fix: re-observe — a mutating step invalidates the
@@ -473,6 +480,11 @@ def run_act_loop(task: str, cfg: dict, state=None,
                             # resolve the point BEFORE the guard so the
                             # audit records x,y (not just len) for name
                             # targets
+                            # F5: the aim window opens BEFORE grounding
+                            # runs — a control before-snap taken inside
+                            # _aim is stamped >= this mark; anything
+                            # older belongs to a previous action
+                            aim_mono = time.monotonic()
                             tool_arg, tgt, result = _aim(
                                 name, arg, cfg, guard, state)
                             if result is None:
@@ -482,8 +494,9 @@ def run_act_loop(task: str, cfg: dict, state=None,
                                 recorder.ensure()
 
                                 def _dispatch():
-                                    nonlocal dispatched_at
+                                    nonlocal dispatched_at, dispatch_mono
                                     dispatched_at = time.time()
+                                    dispatch_mono = time.monotonic()
                                     return tools.run(name, tool_arg, cfg,
                                                      harness)
                                 # kill/deny/rate/dry-run/audit around
@@ -526,6 +539,12 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     dirty_step = f"{name} {arg}".strip()[:60]
                 step = {"tool": name, "arg": arg, "result": result,
                         "reply": (msg.get("content") or "")[:500]}
+                if aim_mono is not None:
+                    # F5: the control rung rejects pre-dispatch
+                    # snapshots older than this dispatch's aim —
+                    # a (turn, app) snap from an earlier action can
+                    # never serve a later action's verify
+                    step["aim_mono"] = aim_mono
                 if name == "observe":
                     # U5: a SHOT under a turn-9NNNN dir is the pack's
                     # frame-index linkage; a shots/-resident frame is a
@@ -536,7 +555,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 if d:
                     step["delivery"] = d
                 _record_step(step, name, tool_arg, dispatched_at,
-                             recorder, cfg)
+                             recorder, cfg, mono=dispatch_mono)
                 if not step.get("turn_dir"):
                     # a recorded step's real verdict speaks below —
                     # the generic nudge is only for mutations with no
@@ -573,13 +592,13 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 if errors > max_errors:
                     _goals.record_steps(steps)
                     out = f"ABORTED (repeated failures): {_last(steps)}"
-                    _record_traj(task, harness, steps, out, cfg, recorder)
+                    want_traj = True
                     return out
                 if len(steps) >= max_steps:
                     break
         out = _budget_abort(state, task, steps, f"max {max_steps} steps")
         _goals.record_steps(steps)
-        _record_traj(task, harness, steps, out, cfg, recorder)
+        want_traj = True
         return out
     finally:
         # R3: re-verify the turn's last recorded mutation with a fresh
@@ -588,6 +607,14 @@ def run_act_loop(task: str, cfg: dict, state=None,
         # behind exactly this gap). Skipped when the turn was cancelled.
         try:
             _terminal_verify(steps, cfg)
+        except Exception:
+            pass
+        # F1: snapshot the trajectory AFTER the terminal re-verify so
+        # a flipped verdict lands in both the trajectory and the pack
+        # manifest — recording before verify persisted the stale one
+        try:
+            if want_traj and out is not None:
+                _record_traj(task, harness, steps, out, cfg, recorder)
         except Exception:
             pass
         # stop the turn's recording on EVERY exit — normal return,
@@ -629,10 +656,9 @@ def _aim(name: str, arg: str, cfg: dict, guard, state):
     the W21 `cua.target` aim. Returns (tool_arg, Target|None, refusal).
     A name target is grounded (UI-TARS / a11y / vision fallback, one
     re-observe on low confidence, then refused); explicit coordinates
-    pass through unchanged; `pin:N` resolves the numbered overlay
-    beacon the user sees (U5 — same indexing cursor.js draws). DOM
-    mode and non-pointer tools are untouched, and a call the guard
-    would refuse anyway never ships a screenshot to a model."""
+    pass through unchanged. DOM mode and non-pointer tools are
+    untouched, and a call the guard would refuse anyway never ships a
+    screenshot to a model."""
     if name not in ("click", "move") or \
             (cfg or {}).get("screen", {}).get("dom_page"):
         return arg, None, None
@@ -650,23 +676,6 @@ def _aim(name: str, arg: str, cfg: dict, guard, state):
                                label="")
         _announce(state, tgt, name=name, cfg=cfg)
         return arg, tgt, None
-    pm = _PIN_ARG.match(arg or "")
-    if pm is not None:
-        # numbered overlay beacon — deterministic, needs no grounding
-        # model round-trip and no screenshot
-        n = int(pm.group(1))
-        pin = _pin_at(state, n)
-        if pin is None:
-            return arg, None, (f"REFUSED (pin:{n} resolves to no "
-                               "overlay beacon — nothing is pinned "
-                               "with that index)")
-        tgt = grounding.Target(int(round(pin["x"])),
-                               int(round(pin["y"])), "global", 1.0,
-                               "pin",
-                               label=str(pin.get("label") or ""))
-        _announce(state, tgt, name=name, cfg=cfg,
-                  label=tgt.label or f"pin:{n}")
-        return f"{tgt.x},{tgt.y}@logical", tgt, None
     if guard.preflight(name):
         return arg, None, None       # guard.run refuses + audits it
     try:
@@ -680,63 +689,6 @@ def _aim(name: str, arg: str, cfg: dict, guard, state):
 
 
 _XY_ARG = re.compile(r"^\s*-?\d+\s*,\s*-?\d+\s*(@logical)?\s*$")
-_PIN_ARG = re.compile(r"^\s*pin\s*:?\s*(\d+)\s*$", re.I)
-_PIN_MAX = 8     # cursor.js beacons() cap — the overlay draws no more
-
-
-def _pin_beacons(state) -> list:
-    """state.points -> numbered beacons, mirroring shell-plugin/
-    lib/cursor.js beacons(): index = floor(step) when step >= 1 else
-    the point's surviving position; malformed points dropped; at most
-    _PIN_MAX. state.points hold compositor-logical coords published at
-    point time — the same numbering the user reads off the drawn
-    beacon resolves `pin:N` here, so the index is stable to act time."""
-    pts = getattr(state, "points", None)
-    if not isinstance(pts, (list, tuple)):
-        return []
-    out = []
-    for p in pts:
-        if not isinstance(p, dict):
-            continue
-        x, y = p.get("x"), p.get("y")
-        if not isinstance(x, (int, float)) \
-                or not isinstance(y, (int, float)) \
-                or isinstance(x, bool) or isinstance(y, bool) \
-                or not (math.isfinite(x) and math.isfinite(y)):
-            continue
-        s = _pin_step(p.get("step"))
-        out.append({"x": x, "y": y,
-                    "index": s if s is not None else len(out) + 1,
-                    "label": str(p.get("label") or "")})
-    return out[:_PIN_MAX]
-
-
-def _pin_step(s) -> int | None:
-    """Number(p.step), cursor.js semantics: numbers and numeric
-    strings coerce, anything <1 or NaN falls back to order. (A bool
-    is Number()'d to 0/1 in JS; treated as absent here — a point has
-    no business carrying one.)"""
-    if isinstance(s, bool):
-        return None
-    if isinstance(s, (int, float)):
-        v = s
-    elif isinstance(s, str):
-        try:
-            v = float(s.strip())
-        except ValueError:
-            return None
-    else:
-        return None
-    if not math.isfinite(v) or v < 1:
-        return None
-    return int(v)         # floor for positives — index space is >= 1
-
-
-def _pin_at(state, n: int) -> dict | None:
-    for b in _pin_beacons(state):
-        if b["index"] == n:
-            return b
-    return None
 
 
 def _announce(state, tgt, name: str = "", cfg: dict | None = None,
@@ -903,12 +855,14 @@ _CUA_TOOLS = {"click": "click", "move": "move_cursor"}
 
 # mutating tools a step record must seed with `not_recorded` when no
 # turn dir attributed — _SCREEN_CHANGING plus scroll (a wheel-axis
-# injection that never dirties the "needs re-observe" flag)
-_RECORD_SEED = _SCREEN_CHANGING | {"scroll"}
+# injection that never dirties the "needs re-observe" flag) and
+# mcp_call (an external mutation with no cua evidence — it belongs on
+# the manifest's action list like every other unrecorded mutation)
+_RECORD_SEED = _SCREEN_CHANGING | {"scroll", "mcp_call"}
 
 
 def _record_step(step: dict, name: str, tool_arg: str, dispatched_at,
-                 rec, cfg: dict | None) -> None:
+                 rec, cfg: dict | None, mono=None) -> None:
     """Recording linkage for a mutating step (U1).
 
     A cua-dispatched call attaches its `turn-NNNNN` dir plus the
@@ -936,7 +890,8 @@ def _record_step(step: dict, name: str, tool_arg: str, dispatched_at,
                 xy = _sys._parse_xy(tool_arg)
                 hit = rec.match_turn(_CUA_TOOLS[name],
                                      *(xy or (None, None)),
-                                     since=dispatched_at)
+                                     since=dispatched_at,
+                                     since_mono=mono)
         except Exception:
             hit = None
         if hit:

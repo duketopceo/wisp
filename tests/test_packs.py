@@ -414,7 +414,7 @@ class TestRetention(PackCase):
         t0 = time.time()
         for i, turn in enumerate(("t-1", "t-2", "t-3")):
             self._pack(turn, ts=t0 + i)
-        r = packs.prune(cfg)
+        r = packs.maintenance(cfg)["packs"]
         self.assertEqual(r["removed"], ["t-1"])
         self.assertTrue((self.store / "t-2").exists())
         self.assertTrue((self.store / "t-3").exists())
@@ -424,7 +424,7 @@ class TestRetention(PackCase):
         now = time.time()
         self._pack("t-old", ts=now - 9 * 86400)
         self._pack("t-new", ts=now)
-        r = packs.prune(cfg, now=now)
+        r = packs.maintenance(cfg, now=now)["packs"]
         self.assertEqual(r["removed"], ["t-old"])
         self.assertTrue((self.store / "t-new").exists())
 
@@ -436,7 +436,7 @@ class TestRetention(PackCase):
         stale = self.rec / "t-1"
         stale.mkdir(parents=True)
         (stale / "turn-00001").mkdir()
-        r = packs.prune(cfg)
+        r = packs.maintenance(cfg)["packs"]
         self.assertEqual(r["removed"], ["t-1"])
         self.assertFalse(stale.exists())
 
@@ -447,12 +447,13 @@ class TestRetention(PackCase):
             f.write_bytes(b"x")
             os.utime(f, (time.time() + i, time.time() + i))
         cfg = {"packs": {"shots_keep": "2", "shots_keep_days": "0"}}
-        r = packs.prune_shots(cfg)
+        r = packs.maintenance(cfg)["shots"]
         self.assertEqual(len(r["removed"]), 1)
         self.assertEqual(len(list(self.shots.iterdir())), 2)
         # zero disables: nothing is ever silently deleted
-        r = packs.prune_shots(
-            {"packs": {"shots_keep": "0", "shots_keep_days": "0"}})
+        r = packs.maintenance(
+            {"packs": {"shots_keep": "0", "shots_keep_days": "0"}},
+            )["shots"]
         self.assertEqual(r["removed"], [])
 
     def test_maintenance_runs_both_stores(self):
@@ -552,6 +553,126 @@ class TestCaptures(PackCase):
             code, out, err = env.run(["captures"])
             self.assertEqual(code, 0, err)
             self.assertIn("[]", out)
+
+
+class TestKeyboardRedaction(PackCase):
+    """F2: fill/post_send carry typed content — same privacy class as
+    type_text; args and result echoes must never reach the pack."""
+
+    def test_fill_arg_and_result_redact(self):
+        rec_dir = self.rec / "t-p1"
+        _turn_dir(rec_dir, 1, tool="fill",
+                  args={"text": "s3cret p@ssphrase"})
+        steps = [{"tool": "fill", "arg": "login-pw s3cret p@ssphrase",
+                  "result": "FILLED login-pw=s3cret p@ssphrase",
+                  "turn_dir": str(rec_dir / "turn-00001"),
+                  "verdict": "not_recorded"}]
+        self.write(steps=steps, rec_dir=rec_dir)
+        a = self.manifest()["actions"][0]
+        # the field id stays (routing metadata); the value is hashed
+        self.assertEqual(a["arg"]["target"], "login-pw")
+        self.assertTrue(a["arg"]["value"]["redacted"])
+        self.assertEqual(a["arg"]["value"]["len"],
+                         len("s3cret p@ssphrase"))
+        # the FILLED echo keeps the tool prefix, never the value
+        self.assertEqual(a["result"], "FILLED login-pw")
+        for p in self.store.rglob("*"):
+            if p.is_file() and p.suffix != ".png":
+                self.assertNotIn(b"s3cret", p.read_bytes(), str(p))
+                self.assertNotIn(b"p@ssphrase", p.read_bytes(), str(p))
+
+    def test_post_send_arg_fully_redacted(self):
+        rec_dir = self.rec / "t-p1"
+        _turn_dir(rec_dir, 1, tool="post_send",
+                  args={"text": "my hot take draft"})
+        steps = [{"tool": "post_send", "arg": "my hot take draft",
+                  "result": "OPENED compose via xdg-open — press Post",
+                  "turn_dir": str(rec_dir / "turn-00001"),
+                  "verdict": "not_recorded"}]
+        self.write(steps=steps, rec_dir=rec_dir)
+        a = self.manifest()["actions"][0]
+        self.assertTrue(a["arg"]["redacted"])
+        self.assertEqual(a["arg"]["len"], len("my hot take draft"))
+        # the result has no typed payload to strip — passes through
+        self.assertIn("OPENED compose", a["result"])
+        for p in self.store.rglob("*"):
+            if p.is_file() and p.suffix != ".png":
+                self.assertNotIn(b"hot take", p.read_bytes(), str(p))
+
+
+class TestSuppressionFiles(PackCase):
+    """F10/F23: suppression deletes the JSON evidence too, and the
+    pack never promotes it — even when it lands after the re-check."""
+
+    def _suppressed_dir(self, rec_dir, seq=1):
+        d = _turn_dir(rec_dir, seq)
+        (d / "before_state.json").write_text(
+            json.dumps({"atspi": "window text dump"}))
+        (d / "control_before.json").write_text(
+            json.dumps({"inspect": {"window": "text"}}))
+        (d / "control_after.json").write_text(
+            json.dumps({"inspect": {"window": "more text"}}))
+        (d / "evidence.json").write_text(json.dumps({
+            "privacy_suppressed": True,
+            "suppression": {"reason": "deny interval",
+                            "ts": 1.0, "deleted_frames": []}}))
+        return d
+
+    def test_suppressed_dir_drops_state_and_control_json(self):
+        rec_dir = self.rec / "t-p1"
+        d1 = self._suppressed_dir(rec_dir)
+        self.write(steps=[_step(d1, verdict="suppressed")],
+                   rec_dir=rec_dir, clean_rec=False)
+        pack_d = self.store / "t-p1" / "turn-00001"
+        # images, state dumps and channel snapshots never promote —
+        # action.json + evidence.json do (they carry the record)
+        names = {p.name for p in pack_d.iterdir()}
+        self.assertEqual(names, {"action.json", "evidence.json"})
+        # the rec/ source was re-swept too (F23 straggler close)
+        self.assertFalse(list(d1.glob("*.png")))
+        self.assertFalse((d1 / "control_before.json").exists())
+        self.assertFalse((d1 / "before_state.json").exists())
+
+    def test_straggler_in_suppressed_dir_still_dropped(self):
+        rec_dir = self.rec / "t-p1"
+        d1 = self._suppressed_dir(rec_dir)
+        self.write(steps=[_step(d1, verdict="suppressed")],
+                   rec_dir=rec_dir, clean_rec=False)
+        m = self.manifest()
+        # the frame index records no promoted evidence files
+        entry = m["frames"][0]
+        self.assertEqual(
+            {f["name"] for f in entry["files"]},
+            {"action.json", "evidence.json"})
+
+    def test_pack_write_failure_signals_not_silent(self):
+        # F20: a failed write returns None like an empty turn but must
+        # leave a pack_unavailable trace row — the evidence gap is real
+        rec_dir = self.rec / "t-p1"
+        _turn_dir(rec_dir, 1)
+        with mock.patch.object(packs, "_write",
+                               side_effect=OSError("disk full")):
+            out = self.write(steps=[], rec_dir=rec_dir)
+        self.assertIsNone(out)
+        evs = [e for e in _trace.read(path=self.trace_file, tail=50)
+               if e["step"] == "pack_unavailable"]
+        self.assertTrue(evs)
+        self.assertIn("disk full", evs[0]["data"]["detail"])
+
+    def test_full_gate_is_strict_bool(self):
+        # F24: full:"false"/full:1 from a wire client never opens the
+        # gated transcript — only JSON true does
+        rec_dir = self.rec / "t-p1"
+        d1 = _turn_dir(rec_dir, 1)
+        self.write(steps=[_step(d1)], rec_dir=rec_dir)
+        for bad in ("false", "true", 1, "yes"):
+            r = packs.captures_response(
+                {"cmd": "captures", "turn": "t-p1", "full": bad})
+            self.assertEqual(r["manifest"]["transcript"], [], bad)
+        r = packs.captures_response(
+            {"cmd": "captures", "turn": "t-p1", "full": True})
+        self.assertEqual(r["manifest"]["transcript"][0]["text"],
+                         "do it")
 
 
 class TestActLoopPack(PackCase):
