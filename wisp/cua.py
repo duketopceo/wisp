@@ -29,6 +29,13 @@ from . import errors_codes
 BIN = "cua-driver"
 CLICK_TIMEOUT_S = 0.8
 
+# Stable session label sent on every call (U1). The daemon keys
+# session-filtered recording and the ~300 s idle TTL to it; one label
+# shared across one-shot `call` transports is what makes turn-scoped
+# recording work. `start_session` is idempotent, so the label is cheap
+# to re-mint after an idle expiry.
+SESSION = "wisp"
+
 DOWN = "E_CUA_DOWN"
 TIMEOUT = "E_CUA_TIMEOUT"
 REFUSED = "E_CUA_REFUSED"
@@ -77,13 +84,21 @@ class Cua:
 
     # -- generic call --------------------------------------------------
     def call(self, tool: str, args: dict | None = None, *,
-             timeout: float | None = None, strict: bool = True) -> dict:
+             timeout: float | None = None, strict: bool = True,
+             session: str | None = SESSION) -> dict:
         """Invoke one driver tool. `strict` demands a JSON-object reply
         on success (E_CUA_PROTOCOL otherwise); non-strict trusts the
-        exit code (action tools may print plain text)."""
+        exit code (action tools may print plain text). `session` adds
+        the stable wisp label to the args — every call refreshes its
+        idle TTL and session-filtered recording attributes the action.
+        An explicit `"session"` key already in `args` wins; pass
+        session=None to send a sessionless call (read-only probes)."""
         if not isinstance(tool, str) or not _TOOL.match(tool):
             raise ValueError(f"bad cua tool name {tool!r}")
-        argv = [self.binary, "call", tool, json.dumps(args or {})]
+        payload = dict(args or {})
+        if session:
+            payload.setdefault("session", session)
+        argv = [self.binary, "call", tool, json.dumps(payload)]
         try:
             r = _cancel.run(argv, capture_output=True, env=self.env,
                             timeout=self.timeout_s if timeout is None
@@ -115,14 +130,46 @@ class Cua:
         return val
 
     # -- typed actions -------------------------------------------------
-    def click(self, x, y) -> dict:
+    def click(self, x, y, *, session: str | None = SESSION) -> dict:
         return self.call("click", {
             "x": int(x), "y": int(y), "coordinate_frame": "desktop",
-            "scope": "desktop"}, strict=False)
+            "scope": "desktop"}, strict=False, session=session)
 
-    def move_cursor(self, x, y) -> dict:
+    def move_cursor(self, x, y, *, session: str | None = SESSION) -> dict:
         return self.call("move_cursor", {
-            "x": int(x), "y": int(y), "scope": "desktop"}, strict=False)
+            "x": int(x), "y": int(y), "scope": "desktop"},
+            strict=False, session=session)
+
+    def zoom(self, window_id: int, x1: int, y1: int, x2: int, y2: int, *,
+             pid: int | None = None, timeout: float = 5.0,
+             session: str | None = SESSION) -> dict:
+        """`zoom{window_id, x1,y1,x2,y2, pid?}` — cropped region view."""
+        args = {"window_id": int(window_id), "x1": int(x1),
+                "y1": int(y1), "x2": int(x2), "y2": int(y2)}
+        if pid is not None:
+            args["pid"] = int(pid)
+        return self.call("zoom", args, timeout=timeout, session=session)
+
+    def verify_state(self, pid: int, window_id: int, expect: list, *,
+                     timeout_ms: int | None = None,
+                     stable_samples: int | None = None,
+                     include_screenshot: bool | None = None,
+                     timeout: float = 12.0,
+                     session: str | None = SESSION) -> dict:
+        """`verify_state{pid, window_id, expect[], timeout_ms≤10s,
+        stable_samples≤5, include_screenshot}` — cheap-first state
+        check. strict: a non-object reply is PROTOCOL, never a silent
+        pass — unknown must not read as verified."""
+        args = {"pid": int(pid), "window_id": int(window_id),
+                "expect": list(expect)}
+        if timeout_ms is not None:
+            args["timeout_ms"] = min(int(timeout_ms), 10000)
+        if stable_samples is not None:
+            args["stable_samples"] = min(int(stable_samples), 5)
+        if include_screenshot is not None:
+            args["include_screenshot"] = bool(include_screenshot)
+        return self.call("verify_state", args, timeout=timeout,
+                         session=session)
 
     # -- read-only window tools (spike: present in cua-driver 0.33) ----
     def list_windows(self, timeout: float = 3.0) -> dict:

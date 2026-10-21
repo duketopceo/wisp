@@ -302,6 +302,14 @@ def run_act_loop(task: str, cfg: dict, state=None,
                            interrupted=_user_interrupted)
     gate_ctx = policy.gate_ctx()   # per-run declines (U3)
 
+    # U1: turn-scoped recording — the cua driver writes one
+    # rec/<turn>/turn-NNNNN dir per dispatched action; _record_step
+    # attributes each mutating cua dispatch to its dir and attaches the
+    # action_truth for the verdict path. A down/absent daemon records
+    # nothing and never fails the run.
+    from . import record as _rec
+    recorder = _rec.begin(_trace.current())
+
     try:
         while len(steps) < max_steps:
             why = budget_hit()
@@ -405,6 +413,10 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     batch=[_name_arg(c) for c in calls[ci + 1:]],
                     ctx=gate_ctx)
                 served_cached = False
+                # the arg actually dispatched and its wall-clock stamp —
+                # the recorder attributes a step to its turn dir on
+                # tool+args+ts (U1); None = never reached dispatch
+                tool_arg, dispatched_at = arg, None
                 if refused is None:
                     _state.action_set(state, aid, status="in_flight")
                     # soak fix: re-observe — a mutating step invalidates the
@@ -457,12 +469,20 @@ def run_act_loop(task: str, cfg: dict, state=None,
                             tool_arg, tgt, result = _aim(
                                 name, arg, cfg, guard, state)
                             if result is None:
+                                # the session label idles out at ~300 s
+                                # — re-mint before a dispatch that went
+                                # stale (parked card, slow model reply)
+                                recorder.ensure()
+
+                                def _dispatch():
+                                    nonlocal dispatched_at
+                                    dispatched_at = time.time()
+                                    return tools.run(name, tool_arg, cfg,
+                                                     harness)
                                 # kill/deny/rate/dry-run/audit around
                                 # dispatch
                                 result = guard.run(
-                                    name, tool_arg,
-                                    lambda: tools.run(name, tool_arg, cfg,
-                                                      harness))
+                                    name, tool_arg, _dispatch)
                             _aimed_done(state, name, tgt, result,
                                         guard.last_delivery)
                         except cancel.Cancelled:
@@ -502,6 +522,8 @@ def run_act_loop(task: str, cfg: dict, state=None,
                         "reply": (msg.get("content") or "")[:500]}
                 if d:
                     step["delivery"] = d
+                _record_step(step, name, tool_arg, dispatched_at,
+                             recorder, cfg)
                 steps.append(step)
                 _publish(state, task, steps)
                 _publish_guide(state, name, arg, result)
@@ -526,6 +548,9 @@ def run_act_loop(task: str, cfg: dict, state=None,
         _record_traj(task, harness, steps, out, cfg)
         return out
     finally:
+        # stop the turn's recording on EVERY exit — normal return,
+        # interrupt, error, budget abort (U1)
+        recorder.stop()
         # disarm the yield watch — armed/yielded must
         # never outlive the run they armed for (a stale
         # yield would poison the next real-pointer call)
@@ -728,6 +753,75 @@ def _verify_hint(name: str, arg: str, result: str, cfg: dict) -> str:
                 "next screenshot before planning the next pointer "
                 "action")
     return ""
+
+
+# act-loop tool name -> the driver tool recorded in a turn dir's
+# action.json (U1 — the only tools dispatched through cua today)
+_CUA_TOOLS = {"click": "click", "move": "move_cursor"}
+
+# mutating tools a step record must seed with `not_recorded` when no
+# turn dir attributed — _SCREEN_CHANGING plus scroll (a wheel-axis
+# injection that never dirties the "needs re-observe" flag)
+_RECORD_SEED = _SCREEN_CHANGING | {"scroll"}
+
+
+def _record_step(step: dict, name: str, tool_arg: str, dispatched_at,
+                 rec, cfg: dict | None) -> None:
+    """Recording linkage for a mutating step (U1).
+
+    A cua-dispatched call attaches its `turn-NNNNN` dir plus the
+    driver's `action_truth` (effect/route/transport) — the evidence
+    the verdict path scores. Every other mutating call gets
+    `turn_dir: null` + verdict seed `not_recorded` — DOM clicks, wtype/
+    ydotool typing, hypr window ops never reached the cua daemon, so
+    there is nothing to attribute. Read-only tools get neither field:
+    the driver doesn't record them. Never raises."""
+    if name not in _RECORD_SEED:
+        return
+    step["turn_dir"] = None
+    step["verdict"] = "not_recorded"
+    hit = None
+    if rec is not None and rec.active and dispatched_at is not None \
+            and name in _CUA_TOOLS \
+            and not (cfg or {}).get("screen", {}).get("dom_page") \
+            and (cfg or {}).get("pointer", {}).get("mode") == "drive":
+        try:
+            # planned backend == actual backend on the dispatch path —
+            # a recorded dir exists only when the driver saw the call
+            if _delivery.resolve_backend(cfg, name) == "cua":
+                rec.touch()   # the dispatch itself slid the idle TTL
+                from .tools import system as _sys
+                xy = _sys._parse_xy(tool_arg)
+                hit = rec.match_turn(_CUA_TOOLS[name],
+                                     *(xy or (None, None)),
+                                     since=dispatched_at)
+        except Exception:
+            hit = None
+        if hit:
+            d, action = hit
+            truth = action.get("action_truth") or {}
+            step["turn_dir"] = str(d)
+            step["action_truth"] = truth
+            step["route"] = truth.get("route")
+            step["transport"] = truth.get("transport")
+            step.pop("verdict", None)
+    _rec_turn(name, step)
+
+
+def _rec_turn(name: str, step: dict) -> None:
+    """`record_turn` trace event for a mutating step — best-effort,
+    never breaks a turn."""
+    from . import trace as _trace
+    truth = step.get("action_truth") or {}
+    try:
+        _trace.emit(_trace.current(), "record_turn", "rec", {
+            "tool": name, "turn_dir": step.get("turn_dir"),
+            "effect": truth.get("effect"),
+            "route": truth.get("route"),
+            "transport": truth.get("transport"),
+            "verdict": step.get("verdict")})
+    except Exception:
+        pass
 
 
 def _record_traj(task: str, harness: dict | None, steps: list, out: str,
