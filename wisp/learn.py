@@ -332,8 +332,6 @@ SOLO_WEIGHT = 0.5
 _OUTCOME = ("landed", "missed")
 _NO_SIGNAL = frozenset(
     {"refused", "unverifiable", "suppressed", "not_recorded"})
-BUCKETS = _OUTCOME + tuple(b + "_solo" for b in _OUTCOME) \
-    + tuple(sorted(_NO_SIGNAL)) + (LEGACY,)
 
 
 def _corroborated(step: dict):
@@ -380,5 +378,5 @@ def terminal_evidence(steps: list) -> tuple:
     for s in reversed(steps or []):
         b = step_bucket(s)
         if b in _OUTCOME or b.endswith("_solo"):
-            return b, step_weight(s)
+            return b, 1.0 if b in _OUTCOME else SOLO_WEIGHT
     return None, 0.0

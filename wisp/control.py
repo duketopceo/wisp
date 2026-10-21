@@ -67,7 +67,7 @@ _MISSING = object()
 _VOLATILE = frozenset({
     "fps", "audioclock", "dropped", "shown", "preroll"})
 
-_LOOPBACK = ("127.0.0.1", "localhost", "::1", "[::1]")
+_LOOPBACK = ("127.0.0.1", "localhost", "::1")
 
 
 class ControlError(Exception):
@@ -138,12 +138,12 @@ def _bounded(v, depth=0, _b=None):
     return _clean(v)
 
 
-def _elements(res) -> list:
+def _elements(res, cap: int = ELEMENT_CAP) -> list:
     """ui.elements reply -> [{id,label,rect}] — bounded, sanitized,
     malformed entries dropped (never an exception)."""
     raw = res.get("elements") if isinstance(res, dict) else res
     out = []
-    for el in (raw[:ELEMENT_CAP] if isinstance(raw, list) else []):
+    for el in (raw[:cap] if isinstance(raw, list) else []):
         if not isinstance(el, dict):
             continue
         rect = _rect(el.get("rect"))
@@ -173,9 +173,10 @@ class ControlClient:
 
     def __init__(self, host: str = "127.0.0.1", port: int = 9876, *,
                  connect_s: float = CONNECT_S, read_s: float = READ_S,
-                 max_line: int = MAX_LINE, max_skip: int = MAX_SKIP):
+                 max_line: int = MAX_LINE, max_skip: int = MAX_SKIP,
+                 element_cap: int = ELEMENT_CAP):
         host = str(host or "").strip("[]")
-        if host.lower() not in ("127.0.0.1", "localhost", "::1"):
+        if host.lower() not in _LOOPBACK:
             raise ValueError(f"control host must be loopback, got "
                              f"{host!r}")
         port = int(port)
@@ -186,6 +187,7 @@ class ControlClient:
         self.read_s = max(0.1, min(float(read_s), 60.0))
         self.max_line = int(max_line)
         self.max_skip = int(max_skip)
+        self.element_cap = int(element_cap)
         self.malformed = 0
         self._sock = None
         self._buf = b""
@@ -338,7 +340,7 @@ class ControlClient:
         """`ui.elements {prefix?}` -> sanitized [{id,label,rect}]."""
         params = {"prefix": _clean(prefix, 128)} if prefix else None
         return _elements(self.call("ui.elements", params,
-                                   sanitize=None))
+                                   sanitize=None), self.element_cap)
 
     def inspect(self) -> dict:
         """`ui.inspect` -> sanitized UI state dict."""
@@ -497,8 +499,8 @@ class AppControlRegistry:
 # -------------------------------------------------- focused window bounds
 
 def _clients():
-    from . import hypr
-    return hypr.query("clients")
+    from . import verify
+    return verify._clients()
 
 
 def _activewindow():
@@ -507,13 +509,10 @@ def _activewindow():
 
 
 def _resolve(v, fn):
-    """list|dict|callable|None -> value or None on any failure."""
-    try:
-        if callable(v):
-            return v()
-        return fn() if v is None else v
-    except Exception:
-        return None
+    """list|dict|callable|None -> value or None on any failure —
+    verify's resolver, kept as a local seam for patching."""
+    from . import verify
+    return verify._resolve(v, fn)
 
 
 def _client_bounds(c: dict):
@@ -551,13 +550,11 @@ def _cua_bounds(cua, win: dict):
             continue
         if pid is not None and w.get("pid") != pid:
             continue
+        fb = w.get("frame") or w.get("bounds") or {}
         b = _client_bounds({
-            "x": (w.get("frame") or w.get("bounds") or {}).get("x"),
-            "y": (w.get("frame") or w.get("bounds") or {}).get("y"),
-            "w": (w.get("frame") or w.get("bounds") or {})
-                 .get("width", (w.get("frame") or {}).get("w")),
-            "h": (w.get("frame") or w.get("bounds") or {})
-                 .get("height", (w.get("frame") or {}).get("h"))})
+            "x": fb.get("x"), "y": fb.get("y"),
+            "w": fb.get("width", fb.get("w")),
+            "h": fb.get("height", fb.get("h"))})
         if b is None:
             continue
         if pid is not None:
@@ -697,7 +694,8 @@ def _turn_id() -> str:
 
 
 def note_before(turn: str, app: str, inspect: dict, elements: list,
-                hit: dict | None = None) -> None:
+                hit: dict | None = None,
+                cap: int = ELEMENT_CAP) -> None:
     """Stash the pre-dispatch channel state for (turn, app). Called by
     the grounding provider on every successful channel read — a
     grounding MISS still records usable before-state for the rung."""
@@ -708,7 +706,7 @@ def note_before(turn: str, app: str, inspect: dict, elements: list,
         "inspect": inspect if isinstance(inspect, dict) else {},
         # re-normalize: stored rects must be tuples like a fresh
         # after-read, or the element diff reads everything as moved
-        "elements": _elements(list(elements or [])[:ELEMENT_CAP]),
+        "elements": _elements(list(elements or [])[:cap], cap),
         "hit": hit}
     while len(_BEFORE) > PENDING_CAP:
         _BEFORE.pop(next(iter(_BEFORE)))
@@ -724,7 +722,8 @@ def _pending(turn: str, app: str):
 # ------------------------------------------------------------- the rung
 
 def _abstain(detail: str) -> dict:
-    return {"vote": "abstain", "detail": str(detail)[:120]}
+    from . import verify
+    return verify._abstain(detail)
 
 
 def _flat(v, prefix: str = "", out: dict | None = None,
@@ -815,7 +814,8 @@ def verify_rung(ctx) -> dict:
     try:
         with ControlClient(ep.host, ep.port,
                            connect_s=min(st["connect_s"], 1.0),
-                           read_s=st["read_s"]) as c:
+                           read_s=st["read_s"],
+                           element_cap=st["element_cap"]) as c:
             after = {"inspect": c.inspect(), "elements": c.elements()}
     except ControlError as e:
         return _abstain(f"channel {e.code}: {_clean(e)[:80]}")

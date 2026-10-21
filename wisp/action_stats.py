@@ -14,23 +14,17 @@ separately) | refused | unverifiable | suppressed | not_recorded |
 legacy. Rows from before verdicts existed are `legacy`: counted, but
 never minted `landed`.
 """
-import json
 from collections import Counter
 
 from . import config
 
 TRAJECTORIES = config.DATA_DIR / "trajectories.jsonl"
 _FAIL = ("FAIL", "ERROR", "REFUSED", "SKIPPED", "BLOCKED", "denied")
-_NO_SIGNAL = ("refused", "unverifiable", "suppressed", "not_recorded")
 
 
 def _load(path=None) -> list:
-    p = path or TRAJECTORIES
-    try:
-        return [json.loads(l) for l in p.read_text().splitlines()
-                if l.strip()]
-    except OSError:
-        return []
+    from . import learn
+    return learn._read_jsonl(path or TRAJECTORIES)
 
 
 def stats(path=None, records: list | None = None) -> dict:
@@ -78,7 +72,7 @@ def block_for(app: str, path=None, records: list | None = None) -> str:
         missed = b.get("missed", 0) + b.get("missed_solo", 0)
         vd = landed + missed
         legacy = b.get("legacy", 0)
-        nosig = sum(b.get(k, 0) for k in _NO_SIGNAL)
+        nosig = sum(b.get(k, 0) for k in learn._NO_SIGNAL)
         if vd:
             solo = b.get("landed_solo", 0) + b.get("missed_solo", 0)
             ok_w = b.get("landed", 0) + solo_w * b.get("landed_solo", 0)

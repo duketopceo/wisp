@@ -133,11 +133,7 @@ def _deep_clean(obj):
 
 
 def _json(path) -> dict | None:
-    try:
-        d = json.loads(pathlib.Path(path).read_text())
-        return d if isinstance(d, dict) else None
-    except (OSError, ValueError):
-        return None
+    return record._read_action(pathlib.Path(path))
 
 
 def _mk_0700(path: pathlib.Path) -> None:
@@ -386,10 +382,6 @@ def _contact_sheet(pngs: list, out: pathlib.Path,
 
 # --------------------------------------------------------------- write
 
-def _action_ts(action: dict):
-    return record._action_ts(action)
-
-
 def _actions_index(pack: pathlib.Path, steps: list,
                    salt: bytes) -> tuple:
     """Manifest action list from the step records: verdict, evidence
@@ -422,7 +414,7 @@ def _actions_index(pack: pathlib.Path, steps: list,
             a["result"] = _clean(s["result"])[:300]
         if tdir:
             aj = _json(pack / a["turn_dir"] / "action.json") or {}
-            ts = _action_ts(aj)
+            ts = record._action_ts(aj)
             if ts is not None:
                 a["ts"] = ts
                 stamps.append(ts)
@@ -575,7 +567,7 @@ def _write(turn, steps, cfg, *, rec_dir, recorded, transcript, session,
         rr = pathlib.Path(rec_root) if rec_root \
             else pathlib.Path(record.REC_DIR)
         _clean_rec(rr)
-    maintenance(cfg, rec_root=rec_root)
+    maintenance(cfg, rec_root=rec_root, min_gap=_MAINT_GAP_S)
     return pack
 
 
@@ -690,10 +682,22 @@ def prune_shots(cfg: dict | None = None, *, now: float | None = None,
                   st["shots_keep_days"], now or time.time())
 
 
+_MAINT_GAP_S = 120.0   # write-path sweep cadence — off the turn's
+                       # teardown path; daemon-start + periodic passes
+                       # still keep retention enforced
+_maint_at = 0.0
+
+
 def maintenance(cfg: dict | None = None, *, now: float | None = None,
-                rec_root=None) -> dict:
+                rec_root=None, min_gap: float = 0.0) -> dict:
     """One retention pass over every store this module owns — called
-    after each pack write and once at daemon start."""
+    after each pack write and once at daemon start. `min_gap`
+    throttles back-to-back calls (the per-turn write path); direct
+    calls default to always running."""
+    global _maint_at
+    if min_gap > 0 and time.monotonic() - _maint_at < min_gap:
+        return {}
+    _maint_at = time.monotonic()
     st = settings(cfg)
     rr = rec_root if rec_root is not None else record.REC_DIR
     return {

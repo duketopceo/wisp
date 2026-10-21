@@ -174,9 +174,8 @@ CLICKLAB_REC = OUT.parent / "clicklab-rec"
 def _cua_client():
     """The cua-driver `call` client the recording wrap drives; kept
     injectable so tests can fake the boundary offline."""
-    from wisp import cua, record
-    from wisp.pipeline import hypr_env
-    return cua.Cua(timeout_s=record.CTRL_TIMEOUT_S, env=hypr_env())
+    from wisp import record
+    return record._client(timeout_s=record.CTRL_TIMEOUT_S)
 
 
 class RunRecording:
@@ -269,36 +268,44 @@ class RunRecording:
 
 
 def _dsp(expr: str):
-    import subprocess
-    subprocess.run(["hyprctl", "dispatch", expr], capture_output=True)
+    from wisp import hypr
+    try:
+        hypr.request("dispatch " + expr)
+    except Exception:
+        pass
+
+
+def _lab_client():
+    """The clicklab window's compositor client dict, or None."""
+    from wisp import hypr
+    try:
+        clients = hypr.query("clients")
+    except Exception:
+        return None
+    return next((c for c in (clients or [])
+                 if "clicklab" in c.get("title", "").lower()), None)
 
 
 def focus_browseros():
     """Raise the clicklab window on its own workspace."""
-    import subprocess, json as _j
-    r = subprocess.run(["hyprctl", "clients", "-j"],
-                       capture_output=True, text=True)
-    try:
-        addr = next(c["address"] for c in _j.loads(r.stdout)
-                    if "clicklab" in c.get("title", "").lower())
-        _dsp(f'hl.dsp.focus({{monitor="eDP-1"}})')
-        _dsp(f'hl.dsp.focus({{workspace={LAB_WS}}})')
-        _dsp(f'hl.dsp.window.move({{window="address:{addr}",'
-             f' workspace={LAB_WS}, follow=true}})')
-        return addr
-    except (StopIteration, _j.JSONDecodeError):
+    win = _lab_client()
+    if win is None:
         return None
+    addr = win.get("address")
+    if not addr:
+        return None
+    _dsp('hl.dsp.focus({monitor="eDP-1"})')
+    _dsp(f'hl.dsp.focus({{workspace={LAB_WS}}})')
+    _dsp(f'hl.dsp.window.move({{window="address:{addr}",'
+         f' workspace={LAB_WS}, follow=true}})')
+    return addr
 
 
 def calibrate_dom_origin(page: int, cfg: dict):
     """Inject one probe click inside the lab window; the page echoes
     clientX/Y → viewport origin in logical coords. Stored as
     cfg.screen.dom_origin for _dom_shot/_parse_xy."""
-    import subprocess, json as _j
-    r = subprocess.run(["hyprctl", "clients", "-j"],
-                       capture_output=True, text=True)
-    win = next((c for c in _j.loads(r.stdout)
-                if "clicklab" in c.get("title", "").lower()), None)
+    win = _lab_client()
     if not win:
         print("[clicklab] WARN: lab window not found, origin=0,0")
         cfg["screen"]["dom_origin"] = [0, 0]

@@ -31,11 +31,8 @@ DEMOTE_EFFICIENCY = 0.5  # a graduated pattern scoring below this drops
 
 
 def _load_jsonl(path) -> list:
-    try:
-        return [json.loads(l) for l in path.read_text().splitlines()
-                if l.strip()]
-    except OSError:
-        return []
+    from . import learn
+    return learn._read_jsonl(path)
 
 
 def load_bank(path=None) -> dict:

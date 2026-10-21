@@ -73,7 +73,11 @@ def record(task: str, app: str, steps: list, outcome: str,
         rec["pack"] = str(pack)
     try:
         FILE.parent.mkdir(parents=True, exist_ok=True)
-        if FILE.exists() and FILE.stat().st_size > MAX_BYTES:
+        try:
+            size = FILE.stat().st_size
+        except OSError:
+            size = 0
+        if size > MAX_BYTES:
             FILE.replace(FILE.with_suffix(".jsonl.1"))
         with FILE.open("a") as f:
             f.write(json.dumps(rec) + "\n")
@@ -82,20 +86,8 @@ def record(task: str, app: str, steps: list, outcome: str,
 
 
 def _read_all(path=None) -> list:
-    path = path or FILE
-    try:
-        lines = path.read_text().splitlines()
-    except OSError:
-        return []
-    out = []
-    for ln in lines:
-        if not ln.strip():
-            continue
-        try:
-            out.append(json.loads(ln))
-        except ValueError:
-            continue
-    return out
+    from . import learn
+    return learn._read_jsonl(path or FILE)
 
 
 def _labels() -> dict:

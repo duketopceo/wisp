@@ -363,8 +363,8 @@ match = "myapp,My App"       # window class/title patterns; default: the app key
 | `[control.<app>] match` | app key | class/title patterns that select this app's channel |
 | `[control] connect_timeout_s` | `1.5` | connect deadline |
 | `[control] read_timeout_s` | `3` | read deadline per call |
-| `[control] rect_slack_px` | `4` | tolerance when validating channel rects against compositor bounds |
-| `[control] element_cap` | — | max elements accepted from one `ui.elements` reply |
+| `[control] rect_slack_px` | `8` | tolerance when validating channel rects against compositor bounds |
+| `[control] element_cap` | `1024` | max elements accepted from one `ui.elements` reply |
 
 ## [report]: opt-in error reporting (W16)
 
