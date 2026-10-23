@@ -160,6 +160,33 @@ class Limiter:
 _LIMITER = Limiter()
 
 
+def _match(app: str, title: str, s: dict) -> str:
+    """Deny reason or '' — the class/title policy Guard._denied applies
+    to the focused window, shared with deny_match so the same rules can
+    be asked of ANY compositor client (R9 capture suppression)."""
+    names = list(s["deny"])
+    if s["deny_builtin"]:
+        names += BUILTIN_DENY_APPS
+    hay = app.lower()
+    for n in names:
+        if n and n in hay:
+            return f"app {app or '?'} is denied"
+    if s["deny_builtin"] and any(t in hay for t in TERMINALS) \
+            and "sudo" in (title or "").lower():
+        return "terminal running sudo is denied"
+    return ""
+
+
+def deny_match(app: str, title: str = "", cfg: dict | None = None,
+               s: dict | None = None) -> bool:
+    """Is `app`/`title` on the deny list? — Guard's policy evaluated
+    for any window, not just the focused one. verify's suppression
+    check runs it over every mapped client on a visible workspace;
+    `s` is a precomputed settings() for that per-client loop."""
+    return bool(_match((app or "").lower(), title or "",
+                       s or settings(cfg)))
+
+
 def _live_window(state=None) -> dict:
     try:
         from . import platform
@@ -213,17 +240,7 @@ class Guard:
         return self.s["kill"] or self.kill_path.exists()
 
     def _denied(self, app: str, title: str) -> str:
-        names = list(self.s["deny"])
-        if self.s["deny_builtin"]:
-            names += BUILTIN_DENY_APPS
-        hay = app.lower()
-        for n in names:
-            if n and n in hay:
-                return f"app {app or '?'} is denied"
-        if self.s["deny_builtin"] and any(t in hay for t in TERMINALS) \
-                and "sudo" in (title or "").lower():
-            return "terminal running sudo is denied"
-        return ""
+        return _match(app, title, self.s)
 
     def check(self, name: str, app: str, title: str) -> str:
         """Refusal reason, or '' when allowed (rate counted separately

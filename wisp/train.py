@@ -31,11 +31,8 @@ DEMOTE_EFFICIENCY = 0.5  # a graduated pattern scoring below this drops
 
 
 def _load_jsonl(path) -> list:
-    try:
-        return [json.loads(l) for l in path.read_text().splitlines()
-                if l.strip()]
-    except OSError:
-        return []
+    from . import learn
+    return learn._read_jsonl(path)
 
 
 def load_bank(path=None) -> dict:
@@ -243,6 +240,17 @@ def _fold(e: dict | None, rec: dict, needed: int = GRAD_STREAK) -> dict:
     e["changed"] = e["status"] != prev
     if ok and rec.get("steps"):
         e["steps"] = rec["steps"][:24]
+        # U6: clicklab rows carry the run's recording dir + the task's
+        # pack dirs — stash them with the banked steps so a graduated
+        # recipe's replay/diff bundle points at real turn evidence.
+        # (rec/ turn dirs are transient — deleted at pack write — so
+        # the row cites packs/<turn>, not them.)
+        if rec.get("packs"):
+            e["packs"] = list(rec["packs"])[:24]
+        if rec.get("turn_dirs"):
+            e["turn_dirs"] = list(rec["turn_dirs"])[:24]
+        if rec.get("rec_dir"):
+            e["rec_dir"] = rec["rec_dir"]
     if rec.get("check"):
         e["check"] = rec["check"]
     if rec.get("suite"):

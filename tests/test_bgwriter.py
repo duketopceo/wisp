@@ -8,6 +8,20 @@ from unittest import mock
 sys.path.insert(0, ".")
 from wisp import act, bgwriter, pipeline  # noqa: E402
 
+# U4: the unfaked loop call below reaches a live cua-driver's
+# recording + pack write; the pack seam is stubbed module-wide
+_WRITE_PACK = None
+
+
+def setUpModule():
+    global _WRITE_PACK
+    _WRITE_PACK = mock.patch.object(act, "_write_pack")
+    _WRITE_PACK.start()
+
+
+def tearDownModule():
+    _WRITE_PACK.stop()
+
 
 class Writer(unittest.TestCase):
     def setUp(self):

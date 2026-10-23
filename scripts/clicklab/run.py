@@ -164,38 +164,149 @@ def check(page, expr: str) -> bool:
 
 LAB_WS = 97
 
+# U6: the run's cua recording root — session-filtered turn evidence
+# under `clicklab-rec/<run-id>/`. Deliberately NOT `rec/`: wispd's
+# startup orphan sweep discards every dir there whose turn never
+# reached pack-write, which is all of a drill harness's.
+CLICKLAB_REC = OUT.parent / "clicklab-rec"
+
+
+def _cua_client():
+    """The cua-driver `call` client the recording wrap drives; kept
+    injectable so tests can fake the boundary offline."""
+    from wisp import record
+    return record._client(timeout_s=record.CTRL_TIMEOUT_S)
+
+
+class RunRecording:
+    """Wrap the clicklab run in session-filtered cua recording.
+
+    The process's cua session label becomes `clicklab-<run_id>` —
+    `wisp.cua.SESSION` + `wisp.record.SESSION` are both rebound — so
+    every dispatched call and the act loop's own per-turn recorder ride
+    the run label. The outer `start_recording` then covers any cua
+    dispatch made between act turns (focus repairs, adaptive probes)
+    into `<CLICKLAB_REC>/<run_id>/`.
+
+    The driver keeps ONE recording at a time daemon-wide and
+    `stop_recording` is unconditional: each act turn's recorder steals
+    the singleton (its `rec/<turn>` dirs fold into `packs/<turn>` —
+    the durable evidence the row's `packs` cite) and stops it at turn
+    end, so `rearm()` runs after every task to keep covering the gaps.
+    Never raises — a down driver just means the run went unrecorded.
+
+    Boundary: `start()` is called after run bring-up, so page focus and
+    the --dom origin-probe click stay unrecorded by design (they're
+    environment, not drill evidence). `replay`/`distill` run before it
+    too — they remain the unrecorded regression harness.
+    """
+
+    def __init__(self, run_id: str, root=None, client=None):
+        self.run_id = run_id
+        self.label = f"clicklab-{run_id}"
+        root = pathlib.Path(root) if root else CLICKLAB_REC
+        self.dir = root / run_id
+        self._client = client
+        self.active = False
+        self._orig = None          # (cua.SESSION, record.SESSION)
+
+    def start(self) -> "RunRecording":
+        try:
+            self.dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+            os.chmod(self.dir, 0o700)
+        except OSError as e:
+            print(f"[clicklab] rec dir failed: {e}")
+            return self
+        from wisp import cua, record
+        self._orig = (cua.SESSION, record.SESSION)
+        cua.SESSION = self.label
+        record.SESSION = self.label
+        return self.rearm()
+
+    def rearm(self) -> "RunRecording":
+        """(Re)issue start_session + start_recording — needed after
+        each task because the act turn's recorder ends the global
+        recording when its own stop fires."""
+        try:
+            c = self._client or _cua_client()
+            c.call("start_session", {"session": self.label},
+                   strict=False, timeout=5.0)
+            c.call("start_recording",
+                   {"session": self.label,
+                    "output_dir": str(self.dir),
+                    "include_accessibility_tree": False},
+                   strict=False, timeout=5.0)
+            self.active = True
+        except Exception as e:
+            print(f"[clicklab] recording unavailable: {e}")
+            self.active = False
+        return self
+
+    def row_fields(self, run_steps: list) -> dict:
+        """Recording refs folded into a clicklab.jsonl row: the run's
+        outer dir + session label, plus the durable packs/<turn> dirs
+        this task's turn folded into (rec/ intermediates are gone by
+        row time — the pack is the citation that survives)."""
+        f = {"rec_dir": str(self.dir), "rec_session": self.label}
+        packs = sorted({s["pack"] for s in run_steps
+                        if s.get("pack")})
+        if packs:
+            f["packs"] = packs
+        return f
+
+    def stop(self) -> None:
+        try:
+            c = self._client or _cua_client()
+            c.call("stop_recording", {"session": self.label},
+                   strict=False, timeout=5.0)
+        except Exception:
+            pass
+        self.active = False
+        if self._orig:
+            from wisp import cua, record
+            cua.SESSION, record.SESSION = self._orig
+            self._orig = None
+
 
 def _dsp(expr: str):
-    import subprocess
-    subprocess.run(["hyprctl", "dispatch", expr], capture_output=True)
+    from wisp import hypr
+    try:
+        hypr.request("dispatch " + expr)
+    except Exception:
+        pass
+
+
+def _lab_client():
+    """The clicklab window's compositor client dict, or None."""
+    from wisp import hypr
+    try:
+        clients = hypr.query("clients")
+    except Exception:
+        return None
+    return next((c for c in (clients or [])
+                 if "clicklab" in c.get("title", "").lower()), None)
 
 
 def focus_browseros():
     """Raise the clicklab window on its own workspace."""
-    import subprocess, json as _j
-    r = subprocess.run(["hyprctl", "clients", "-j"],
-                       capture_output=True, text=True)
-    try:
-        addr = next(c["address"] for c in _j.loads(r.stdout)
-                    if "clicklab" in c.get("title", "").lower())
-        _dsp(f'hl.dsp.focus({{monitor="eDP-1"}})')
-        _dsp(f'hl.dsp.focus({{workspace={LAB_WS}}})')
-        _dsp(f'hl.dsp.window.move({{window="address:{addr}",'
-             f' workspace={LAB_WS}, follow=true}})')
-        return addr
-    except (StopIteration, _j.JSONDecodeError):
+    win = _lab_client()
+    if win is None:
         return None
+    addr = win.get("address")
+    if not addr:
+        return None
+    _dsp('hl.dsp.focus({monitor="eDP-1"})')
+    _dsp(f'hl.dsp.focus({{workspace={LAB_WS}}})')
+    _dsp(f'hl.dsp.window.move({{window="address:{addr}",'
+         f' workspace={LAB_WS}, follow=true}})')
+    return addr
 
 
 def calibrate_dom_origin(page: int, cfg: dict):
     """Inject one probe click inside the lab window; the page echoes
     clientX/Y → viewport origin in logical coords. Stored as
     cfg.screen.dom_origin for _dom_shot/_parse_xy."""
-    import subprocess, json as _j
-    r = subprocess.run(["hyprctl", "clients", "-j"],
-                       capture_output=True, text=True)
-    win = next((c for c in _j.loads(r.stdout)
-                if "clicklab" in c.get("title", "").lower()), None)
+    win = _lab_client()
     if not win:
         print("[clicklab] WARN: lab window not found, origin=0,0")
         cfg["screen"]["dom_origin"] = [0, 0]
@@ -230,7 +341,10 @@ def replay(match: str):
     """Re-run a graduated recipe's banked steps — no model, $0 — and
     re-check the ground truth on a fresh layout seed. Candidates are
     skipped unless --all is passed; a recipe must earn replay via the
-    streak, not just exist in the bank."""
+    streak, not just exist in the bank.
+
+    This is the regression harness for banked recipes — deliberately
+    not wired into the act loop as a tool and not session-recorded."""
     from wisp import config, tools, train
     seed = int(_flag("--seed", "0"))
     bank = train.load_bank()
@@ -468,28 +582,40 @@ def main():
         arena_policy.gate(specs)
     except arena_policy.PolicyError as e:
         raise SystemExit(f"[clicklab] refused: {e}")
+    # U6: wrap the run in session-filtered cua recording under the
+    # `clicklab-<run>` session label — every cua dispatch from here on
+    # (the act loop's included) rides it, so the run produces the same
+    # turn evidence an act turn gets. A down driver just skips it.
+    run_id = _flag("--run-id") or (
+        time.strftime("%Y%m%d-%H%M%S") + f"-{os.getpid()}")
+    recording = RunRecording(run_id).start()
     results = []
-    for spec in specs:
-        if ":" not in spec:
-            print(f"[clicklab] bad --models spec '{spec}' — want "
-                  "provider:model; skipping")
-            continue
-        import copy as _copy
-        mcfg = _copy.deepcopy(cfg)
-        mcfg.setdefault("brain", {})["default"] = spec
-        model = spec.split(":", 1)[1]
-        if not _provider_up(mcfg):
-            print(f"[clicklab] SKIP {spec} — provider unreachable")
-            continue
-        if _adaptive_on(mcfg):
-            results.extend(
-                _run_adaptive(mcfg, suite, page, dom, suite_name, spec,
-                              model, teach, page_name, seed))
-        else:
-            results.extend(
-                _run_suite(mcfg, tasks, page, dom, suite_name, spec,
-                           model, len(tasks), teach=teach,
-                           apps_page=page_name == "apps.html"))
+    try:
+        for spec in specs:
+            if ":" not in spec:
+                print(f"[clicklab] bad --models spec '{spec}' — want "
+                      "provider:model; skipping")
+                continue
+            import copy as _copy
+            mcfg = _copy.deepcopy(cfg)
+            mcfg.setdefault("brain", {})["default"] = spec
+            model = spec.split(":", 1)[1]
+            if not _provider_up(mcfg):
+                print(f"[clicklab] SKIP {spec} — provider unreachable")
+                continue
+            if _adaptive_on(mcfg):
+                results.extend(
+                    _run_adaptive(mcfg, suite, page, dom, suite_name,
+                                  spec, model, teach, page_name, seed,
+                                  recording=recording))
+            else:
+                results.extend(
+                    _run_suite(mcfg, tasks, page, dom, suite_name, spec,
+                               model, len(tasks), teach=teach,
+                               apps_page=page_name == "apps.html",
+                               recording=recording))
+    finally:
+        recording.stop()
 
     # parallel-worker attribution: hammer-parallel.sh passes --worker
     # and --sandbox-id so records can be grouped per CubeVM worker
@@ -568,11 +694,12 @@ def _evidence(page, cfg, dom) -> dict:
 
 
 def _run_task(cfg, page, dom, teach, apps_page, task, expr, oracle_len,
-              suite_name, spec, model, i, total, meta=None) -> dict:
+              suite_name, spec, model, i, total, meta=None,
+              recording=None) -> dict:
     """One task: reset the board, run the act loop, oracle-check, judge,
     fold into the skill bank + verdict stream. `meta` (adaptive pick
     info) lands on the record so synthesized tasks are attributable."""
-    from wisp import act, judge, ledger, train
+    from wisp import act, judge, ledger, train, trace
     # reset the scoreboard per task — cumulative state would let a
     # repeat pass on a previous task's leftovers. The apps page
     # keeps board/app state in __score so a reload is the cleanest
@@ -596,9 +723,22 @@ def _run_task(cfg, page, dom, teach, apps_page, task, expr, oracle_len,
     t0 = time.time()
     run_steps: list = []
     ledger.reset_session()
-    verdict = act.run_act_loop(ask, cfg,
-                               confirm=lambda p: True,
-                               steps_out=run_steps)
+    # F13: run_act_loop reads its turn id off trace.current(); an
+    # unbound "sys" is refused by packs._write (daemon traffic is
+    # never packed) and its rec dir is swept mid-run — a fresh id per
+    # task makes the turn's evidence pack (and cite) durably.
+    trace.new_turn()
+    try:
+        verdict = act.run_act_loop(ask, cfg,
+                                   confirm=lambda p: True,
+                                   steps_out=run_steps)
+    finally:
+        trace.set_turn("sys")
+    if recording is not None:
+        # the act turn's recorder stopped the driver's (global)
+        # recording at loop exit — re-arm the run's outer wrap so
+        # out-of-turn dispatches keep landing in the run dir
+        recording.rearm()
     usage = ledger.session_totals()
     ms = int((time.time() - t0) * 1000)
     ok = check(page, expr)
@@ -641,6 +781,10 @@ def _run_task(cfg, page, dom, teach, apps_page, task, expr, oracle_len,
            "steps": run_steps[:24], "ms": ms, "ts": time.time()}
     if meta:
         rec["adaptive"] = meta
+    if recording is not None:
+        # U6: the run's session-filtered rec dir + this task's
+        # attributed turn dirs — the row's evidence pointers
+        rec.update(recording.row_fields(run_steps))
     entry = train.update_bank(rec, cfg=cfg)
     if entry.get("changed"):
         print(f"    [bank] {entry['status'].upper()}: "
@@ -671,7 +815,7 @@ def _adaptive_on(cfg: dict) -> bool:
 
 
 def _run_adaptive(cfg, suite, page, dom, suite_name, spec, model,
-                  teach, page_name, seed) -> list:
+                  teach, page_name, seed, recording=None) -> list:
     """Adaptive mode (U7): the task list is synthesized on the fly —
     each pick aims at the hottest failure bucket (same skill, varied
     surface) instead of marching through a fixed suite."""
@@ -692,7 +836,8 @@ def _run_adaptive(cfg, suite, page, dom, suite_name, spec, model,
                         apps_page=page_name == "apps.html",
                         task=task, expr=expr, oracle_len=olen,
                         suite_name=suite_name, spec=spec, model=model,
-                        i=len(done) + 1, total=cap, meta=meta)
+                        i=len(done) + 1, total=cap, meta=meta,
+                        recording=recording)
         done.append(rec)
         time.sleep(0.5)
         return rec
@@ -707,7 +852,8 @@ def _run_adaptive(cfg, suite, page, dom, suite_name, spec, model,
 
 
 def _run_suite(cfg, tasks, page, dom, suite_name, spec, model,
-               total, teach=False, apps_page=False) -> list:
+               total, teach=False, apps_page=False,
+               recording=None) -> list:
     from wisp import ledger
     ledger.ACTIVE = True  # record every call in the one usage ledger
     print(f"[clicklab] {total} tasks, brain={spec}")
@@ -717,7 +863,8 @@ def _run_suite(cfg, tasks, page, dom, suite_name, spec, model,
             break
         results.append(_run_task(cfg, page, dom, teach, apps_page,
                                  task, expr, oracle_len, suite_name,
-                                 spec, model, i, len(tasks)))
+                                 spec, model, i, len(tasks),
+                                 recording=recording))
         time.sleep(0.5)
     hits = sum(1 for r in results if r["verified"])
     spent = sum(r.get("cost_usd") or 0 for r in results)

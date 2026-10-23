@@ -629,13 +629,18 @@ def pointer_cmds(x: int, y: int, backend: str,
     clicking. Logical = Hyprland compositor coords."""
     if backend == "cua":
         import json as _json
+        from . import cua as _c
+        # raw `call` argv bypasses the Cua client — carry the session
+        # label explicitly so these dispatches record under "wisp" too
         if click:
             return [["cua-driver", "call", "click",
                      _json.dumps({"x": x, "y": y,
                                   "coordinate_frame": "desktop",
-                                  "scope": "desktop"})]]
+                                  "scope": "desktop",
+                                  "session": _c.SESSION})]]
         return [["cua-driver", "call", "move_cursor",
-                 _json.dumps({"x": x, "y": y, "scope": "desktop"})]]
+                 _json.dumps({"x": x, "y": y, "scope": "desktop",
+                              "session": _c.SESSION})]]
     if backend == "hyprcursor":
         cmds = [["hyprctl", "dispatch",
                  f"hl.dsp.cursor.move({{x={x},y={y}}})"]]

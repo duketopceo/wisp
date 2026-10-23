@@ -17,6 +17,7 @@ caller.
 """
 import base64
 import json
+import pathlib
 import re
 import time
 
@@ -46,6 +47,10 @@ SYSTEM = ("You are Wisp's hands on a Linux desktop (Hyprland). Complete "
           "needs on-screen targets; click/move take 'x,y' in that "
           "screenshot's pixels or a target name (e.g. 'monitor icon in menu bar') "
           "which automatically grounds via Clef/Jev noul probabilistic centering. "
+          "Call observe for a cropped frame of the focused "
+          "app to inspect (control-channel when the app ships one, "
+          "else a window-crop capture — inspect only, its pixels are "
+          "not the click coordinate space). "
           "Never click twice off the same screenshot "
           "— after anything that changes the screen (click, key, type, "
           "launch, focus, workspace, shell), re-screenshot before the "
@@ -291,6 +296,12 @@ def run_act_loop(task: str, cfg: dict, state=None,
     # filtered out of the watch) must win immediately, same as the user's
     # own interrupt. Mode is logged for the run's audit trail.
     watch_mode = realinput.begin(cfg)
+    out = None                  # the finally's pack call reads it
+    # F1: the trajectory snapshot must land AFTER _terminal_verify —
+    # each exit that used to call _record_traj now just flags it, and
+    # the finally snapshots the post-verify steps so trajectories and
+    # pack manifests agree on the final verdicts
+    want_traj = False
     try:
         from . import trace as _trace
         _trace.emit(_trace.current(), "yield_watch", "cua",
@@ -302,13 +313,21 @@ def run_act_loop(task: str, cfg: dict, state=None,
                            interrupted=_user_interrupted)
     gate_ctx = policy.gate_ctx()   # per-run declines (U3)
 
+    # U1: turn-scoped recording — the cua driver writes one
+    # rec/<turn>/turn-NNNNN dir per dispatched action; _record_step
+    # attributes each mutating cua dispatch to its dir and attaches the
+    # action_truth for the verdict path. A down/absent daemon records
+    # nothing and never fails the run.
+    from . import record as _rec
+    recorder = _rec.begin(_trace.current())
+
     try:
         while len(steps) < max_steps:
             why = budget_hit()
             if why:
                 _goals.record_steps(steps)
                 out = _budget_abort(state, task, steps, why)
-                _record_traj(task, harness, steps, out, cfg)
+                want_traj = True
                 return out
             if stopped():
                 _goals.record_steps(steps)
@@ -327,7 +346,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
                         _goals.record_steps(steps)
                         out = (f"STALLED (unparseable action replies): "
                                f"{_last(steps)}")
-                        _record_traj(task, harness, steps, out, cfg)
+                        want_traj = True
                         return out
                     messages.append(
                         {"role": "user",
@@ -342,7 +361,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     _goals.record_steps(steps)
                     _goals.close("done")
                     out = f"ACTED ({len(steps)} steps): {text}"
-                    _record_traj(task, harness, steps, out, cfg)
+                    want_traj = True
                     return out
                 calls = [{"id": f"at-{len(steps)}-{i}", "_at": True,
                           "function": {"name": n,
@@ -360,7 +379,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     return "ASK_USER " + text[9:].strip()
                 _goals.close("done")
                 out = f"ACTED ({len(steps)} steps): {text or 'done'}"
-                _record_traj(task, harness, steps, out, cfg)
+                want_traj = True
                 return out
             messages.append(msg)
             for ci, call in enumerate(calls):
@@ -372,7 +391,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 if why:
                     _goals.record_steps(steps)
                     out = _budget_abort(state, task, steps, why)
-                    _record_traj(task, harness, steps, out, cfg)
+                    want_traj = True
                     return out
                 if name == "ask_user":
                     # U4 conversational backchannel: the question parks on
@@ -405,6 +424,14 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     batch=[_name_arg(c) for c in calls[ci + 1:]],
                     ctx=gate_ctx)
                 served_cached = False
+                # the arg actually dispatched and its wall-clock stamp —
+                # the recorder attributes a step to its turn dir on
+                # tool+args+ts (U1); None = never reached dispatch.
+                # aim_mono is the F5 watermark: control._BEFORE snaps
+                # are monotonic-stamped at aim time and a verify rung
+                # only accepts one stamped after this dispatch began
+                tool_arg, dispatched_at, tgt, aim_mono, dispatch_mono = \
+                    arg, None, None, None, None
                 if refused is None:
                     _state.action_set(state, aid, status="in_flight")
                     # soak fix: re-observe — a mutating step invalidates the
@@ -440,7 +467,6 @@ def run_act_loop(task: str, cfg: dict, state=None,
                         # a failed observe leaves the screen dirty AND the
                         # cached shot ineligible — a stale DOM digest is
                         # worse than no digest
-                    tgt = None
                     if (name == "screenshot" and not screen_dirty
                             and last_shot
                             and (cfg or {}).get("screen", {}).get(
@@ -454,15 +480,29 @@ def run_act_loop(task: str, cfg: dict, state=None,
                             # resolve the point BEFORE the guard so the
                             # audit records x,y (not just len) for name
                             # targets
+                            # F5: the aim window opens BEFORE grounding
+                            # runs — a control before-snap taken inside
+                            # _aim is stamped >= this mark; anything
+                            # older belongs to a previous action
+                            aim_mono = time.monotonic()
                             tool_arg, tgt, result = _aim(
                                 name, arg, cfg, guard, state)
                             if result is None:
+                                # the session label idles out at ~300 s
+                                # — re-mint before a dispatch that went
+                                # stale (parked card, slow model reply)
+                                recorder.ensure()
+
+                                def _dispatch():
+                                    nonlocal dispatched_at, dispatch_mono
+                                    dispatched_at = time.time()
+                                    dispatch_mono = time.monotonic()
+                                    return tools.run(name, tool_arg, cfg,
+                                                     harness)
                                 # kill/deny/rate/dry-run/audit around
                                 # dispatch
                                 result = guard.run(
-                                    name, tool_arg,
-                                    lambda: tools.run(name, tool_arg, cfg,
-                                                      harness))
+                                    name, tool_arg, _dispatch)
                             _aimed_done(state, name, tgt, result,
                                         guard.last_delivery)
                         except cancel.Cancelled:
@@ -488,7 +528,6 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 if d:
                     kw["delivery"] = d
                 _state.action_set(state, aid, **kw)
-                result += _verify_hint(name, arg, result, cfg)
                 if name == "screenshot" and result.startswith("SHOT "):
                     screen_dirty = False
                     if not served_cached:
@@ -500,8 +539,43 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     dirty_step = f"{name} {arg}".strip()[:60]
                 step = {"tool": name, "arg": arg, "result": result,
                         "reply": (msg.get("content") or "")[:500]}
+                if aim_mono is not None:
+                    # F5: the control rung rejects pre-dispatch
+                    # snapshots older than this dispatch's aim —
+                    # a (turn, app) snap from an earlier action can
+                    # never serve a later action's verify
+                    step["aim_mono"] = aim_mono
+                if name == "observe":
+                    # U5: a SHOT under a turn-9NNNN dir is the pack's
+                    # frame-index linkage; a shots/-resident frame is a
+                    # context-less capture and links nothing
+                    odir = _observe_dir(result)
+                    if odir:
+                        step["turn_dir"] = odir
                 if d:
                     step["delivery"] = d
+                _record_step(step, name, tool_arg, dispatched_at,
+                             recorder, cfg, mono=dispatch_mono)
+                if not step.get("turn_dir"):
+                    # a recorded step's real verdict speaks below —
+                    # the generic nudge is only for mutations with no
+                    # evidence trail (DOM/keyboard/hypr lanes)
+                    hint = _verify_hint(name, arg, result, cfg)
+                    if hint:
+                        result += hint
+                        step["result"] = result
+                # U2: the cheap-first ladder runs only when a turn dir
+                # attributed (cua-dispatched + recorded). The verdict
+                # lands on the step record AND the tool_result the model
+                # reads — a `missed` surfaces as feedback; the loop does
+                # not re-dispatch on it.
+                vd = _run_verify(step, name, arg, tool_arg, tgt, cfg)
+                if vd is not None:
+                    step["verdict"] = vd["verdict"]
+                    step["verify"] = vd
+                    result += " — verify " + json.dumps(
+                        vd, separators=(",", ":"), sort_keys=True)
+                    step["result"] = result
                 steps.append(step)
                 _publish(state, task, steps)
                 _publish_guide(state, name, arg, result)
@@ -510,26 +584,71 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 errors = errors + 1 if result.startswith(
                     ("ERROR", "SKIP", "REFUS", "FAIL", "BLOCKED")) else 0
                 _reply(messages, call, name, result)
-                if name == "screenshot" and vision \
+                if name in ("screenshot", "observe") and vision \
                         and result.startswith("SHOT ") \
                         and not served_cached:
-                    _attach_image(messages, result[5:].strip(), cfg)
+                    _attach_image(messages, result[5:].strip(), cfg,
+                                  coords=name == "screenshot")
                 if errors > max_errors:
                     _goals.record_steps(steps)
                     out = f"ABORTED (repeated failures): {_last(steps)}"
-                    _record_traj(task, harness, steps, out, cfg)
+                    want_traj = True
                     return out
                 if len(steps) >= max_steps:
                     break
         out = _budget_abort(state, task, steps, f"max {max_steps} steps")
         _goals.record_steps(steps)
-        _record_traj(task, harness, steps, out, cfg)
+        want_traj = True
         return out
     finally:
+        # R3: re-verify the turn's last recorded mutation with a fresh
+        # after-frame BEFORE the result speaks — the driver's after.png
+        # can predate the effect rendering (the FilmCraft ~70px miss sat
+        # behind exactly this gap). Skipped when the turn was cancelled.
+        try:
+            _terminal_verify(steps, cfg)
+        except Exception:
+            pass
+        # F1: snapshot the trajectory AFTER the terminal re-verify so
+        # a flipped verdict lands in both the trajectory and the pack
+        # manifest — recording before verify persisted the stale one
+        try:
+            if want_traj and out is not None:
+                _record_traj(task, harness, steps, out, cfg, recorder)
+        except Exception:
+            pass
+        # stop the turn's recording on EVERY exit — normal return,
+        # interrupt, error, budget abort (U1). `active` is read BEFORE
+        # stop() clears it: the pack writer needs to know this turn was
+        # ever recorded (a recorded-but-zero-action turn still packs a
+        # transcript; an unrecorded one leaves nothing durable).
+        was_recorded = recorder.active
+        recorder.stop()
+        # U4: fold rec/<turn>/ into the durable packs/<turn>/ —
+        # manifest + frames + redaction + deny re-check + retention.
+        # packs.write never raises; the belt-suspenders try keeps a
+        # bug in the artifact path from escaping run teardown.
+        try:
+            _write_pack(recorder, task, steps, cfg, was_recorded, out)
+        except Exception:
+            pass
         # disarm the yield watch — armed/yielded must
         # never outlive the run they armed for (a stale
         # yield would poison the next real-pointer call)
         realinput.finish()
+
+
+def _observe_dir(result: str) -> str | None:
+    """SHOT <rec/<turn>/turn-9NNNN/observe.*> -> its turn dir for the
+    step record (the pack's frame-index linkage); a shots/-resident
+    frame is a context-less capture and links nothing."""
+    if not result.startswith("SHOT "):
+        return None
+    parent = pathlib.Path(result[5:].strip()).parent
+    from . import record
+    if record._TURN_RE.match(parent.name):
+        return str(parent)
+    return None
 
 
 def _aim(name: str, arg: str, cfg: dict, guard, state):
@@ -537,9 +656,9 @@ def _aim(name: str, arg: str, cfg: dict, guard, state):
     the W21 `cua.target` aim. Returns (tool_arg, Target|None, refusal).
     A name target is grounded (UI-TARS / a11y / vision fallback, one
     re-observe on low confidence, then refused); explicit coordinates
-    pass through unchanged. DOM mode and non-pointer tools are untouched,
-    and a call the guard would refuse anyway never ships a screenshot to
-    a model."""
+    pass through unchanged. DOM mode and non-pointer tools are
+    untouched, and a call the guard would refuse anyway never ships a
+    screenshot to a model."""
     if name not in ("click", "move") or \
             (cfg or {}).get("screen", {}).get("dom_page"):
         return arg, None, None
@@ -730,18 +849,174 @@ def _verify_hint(name: str, arg: str, result: str, cfg: dict) -> str:
     return ""
 
 
+# act-loop tool name -> the driver tool recorded in a turn dir's
+# action.json (U1 — the only tools dispatched through cua today)
+_CUA_TOOLS = {"click": "click", "move": "move_cursor"}
+
+# mutating tools a step record must seed with `not_recorded` when no
+# turn dir attributed — _SCREEN_CHANGING plus scroll (a wheel-axis
+# injection that never dirties the "needs re-observe" flag) and
+# mcp_call (an external mutation with no cua evidence — it belongs on
+# the manifest's action list like every other unrecorded mutation)
+_RECORD_SEED = _SCREEN_CHANGING | {"scroll", "mcp_call"}
+
+
+def _record_step(step: dict, name: str, tool_arg: str, dispatched_at,
+                 rec, cfg: dict | None, mono=None) -> None:
+    """Recording linkage for a mutating step (U1).
+
+    A cua-dispatched call attaches its `turn-NNNNN` dir plus the
+    driver's `action_truth` (effect/route/transport) — the evidence
+    the verdict path scores. Every other mutating call gets
+    `turn_dir: null` + verdict seed `not_recorded` — DOM clicks, wtype/
+    ydotool typing, hypr window ops never reached the cua daemon, so
+    there is nothing to attribute. Read-only tools get neither field:
+    the driver doesn't record them. Never raises."""
+    if name not in _RECORD_SEED:
+        return
+    step["turn_dir"] = None
+    step["verdict"] = "not_recorded"
+    hit = None
+    if rec is not None and rec.active and dispatched_at is not None \
+            and name in _CUA_TOOLS \
+            and not (cfg or {}).get("screen", {}).get("dom_page") \
+            and (cfg or {}).get("pointer", {}).get("mode") == "drive":
+        try:
+            # planned backend == actual backend on the dispatch path —
+            # a recorded dir exists only when the driver saw the call
+            if _delivery.resolve_backend(cfg, name) == "cua":
+                rec.touch()   # the dispatch itself slid the idle TTL
+                from .tools import system as _sys
+                xy = _sys._parse_xy(tool_arg)
+                hit = rec.match_turn(_CUA_TOOLS[name],
+                                     *(xy or (None, None)),
+                                     since=dispatched_at,
+                                     since_mono=mono)
+        except Exception:
+            hit = None
+        if hit:
+            d, action = hit
+            truth = action.get("action_truth") or {}
+            step["turn_dir"] = str(d)
+            step["action_truth"] = truth
+            step["route"] = truth.get("route")
+            step["transport"] = truth.get("transport")
+            step.pop("verdict", None)
+    _rec_turn(name, step)
+
+
+def _rec_turn(name: str, step: dict) -> None:
+    """`record_turn` trace event for a mutating step — best-effort,
+    never breaks a turn."""
+    from . import trace as _trace
+    truth = step.get("action_truth") or {}
+    try:
+        _trace.emit(_trace.current(), "record_turn", "rec", {
+            "tool": name, "turn_dir": step.get("turn_dir"),
+            "effect": truth.get("effect"),
+            "route": truth.get("route"),
+            "transport": truth.get("transport"),
+            "verdict": step.get("verdict")})
+    except Exception:
+        pass
+
+
+def _run_verify(step: dict, name: str, arg: str, tool_arg: str, tgt,
+                cfg: dict | None) -> dict | None:
+    """The U2 ladder for one step: privacy re-check, action_truth gate,
+    registered rungs, VLM judge on ambiguity. Returns the verdict dict.
+
+    None when the step wasn't recorded (no turn_dir — the U1
+    `not_recorded` seed stands) or the turn is being cancelled. Never
+    raises into the loop; a broken ladder degrades to `unverifiable`,
+    never to `landed`."""
+    if name == "observe":
+        # an observe frame is model-facing evidence, not a mutation —
+        # the rungs have nothing to score (U5)
+        return None
+    if not step.get("turn_dir"):
+        return None
+    try:
+        from . import verify as _verify
+        return _verify.verdict(step, name=name, arg=arg,
+                               tool_arg=tool_arg, tgt=tgt, cfg=cfg)
+    except cancel.Cancelled:
+        return None
+    except Exception as e:
+        return {"verdict": "unverifiable", "source": "none",
+                "corroborated": False,
+                "evidence": str(step["turn_dir"]),
+                "detail": f"verify error: {e}"[:200]}
+
+
+def _terminal_verify(steps: list, cfg: dict | None) -> None:
+    """R3 terminal after-frame: the last recorded mutation that reached
+    the rungs (landed/missed/unverifiable — a refused or suppressed
+    step keeps its verdict) gets one more capture + ladder pass, so a
+    late-rendered effect is scored on settled pixels."""
+    if cancel.is_cancelled():
+        return
+    last = next(
+        (s for s in reversed(steps)
+         if isinstance(s.get("verify"), dict)
+         and s["verify"].get("verdict")
+         not in ("suppressed", "refused")), None)
+    if last is None:
+        return
+    try:
+        from . import verify as _verify
+        vd = _verify.terminal_verdict(last, cfg=cfg)
+    except cancel.Cancelled:
+        return
+    except Exception:
+        return
+    if vd is not None:
+        last["verdict"] = vd["verdict"]
+        last["verify"] = vd
+
+
 def _record_traj(task: str, harness: dict | None, steps: list, out: str,
-                 cfg: dict | None) -> None:
+                 cfg: dict | None, recorder=None) -> None:
     """Hand the run's trajectory to the background writer: the step list
     is copied (the caller reuses it), and the active-window lookup, the
-    rotation check and the append all happen off the turn's hot path."""
+    rotation check and the append all happen off the turn's hot path.
+    `pack` is the deterministic packs/<turn> link — the pack write runs
+    later in the finally, so the ref is by name, not existence."""
     from . import trajectories
     snap = [dict(s) for s in steps]
     record = trajectories.record     # bound now: patches stay honoured
+    pack = (f"packs/{recorder.turn}"
+            if recorder is not None and recorder.active else None)
 
     def write():
-        record(task, _app(harness), snap, out, surface=_surface(cfg))
+        record(task, _app(harness), snap, out, surface=_surface(cfg),
+               pack=pack)
     bgwriter.submit(write)
+
+
+def _write_pack(recorder, task: str, steps: list, cfg: dict | None,
+                was_recorded: bool, out) -> None:
+    """Turn-end hand-off to packs.write (U4): assemble the transcript
+    lines — the user utterance, any parked ask_user questions, the
+    spoken result — and pass the recorder's dir/session. packs.write
+    owns the artifact (manifest, frames, redaction, deny re-check,
+    rec/ + retention cleanup); this wrapper is the tests' patch seam,
+    mirroring _record_traj."""
+    from . import packs
+    now = time.time()
+    transcript = []
+    if task:
+        transcript.append({"role": "user", "text": task})
+    for s in steps:
+        if s.get("tool") == "ask_user" and s.get("arg"):
+            transcript.append({"ts": now, "role": "wisp",
+                               "text": s["arg"]})
+    if isinstance(out, str) and out.strip():
+        transcript.append({"ts": now, "role": "wisp", "text": out})
+    packs.write(recorder.turn, steps, cfg=cfg,
+                rec_dir=recorder.dir, recorded=was_recorded,
+                transcript=transcript,
+                session=getattr(recorder, "session", "wisp") or "wisp")
 
 
 def _app(harness: dict | None) -> str:
@@ -908,12 +1183,15 @@ def _img_dims(b64: str) -> tuple | None:
 
 
 def _attach_image(messages: list, path: str, cfg: dict | None = None,
-                  why: str = "") -> None:
+                  why: str = "", coords: bool = True) -> None:
     """Feed the screenshot back as an image part on a follow-up user
     message — the model can't act on a screen it can't see. Keeps at
     most MAX_IMAGES image parts in the window (oldest dropped). `why`
     prefaces the caption when a re-observe exists to VERIFY the last
-    mutating step rather than to plan the next one (U4)."""
+    mutating step rather than to plan the next one (U4). `coords`
+    marks whether the frame's pixels are the click/move space — an
+    observe capture is a cropped inspect-only view, never a click
+    space (U5)."""
     from .tools.system import model_image
     url = model_image(path)
     if not url:
@@ -931,10 +1209,17 @@ def _attach_image(messages: list, path: str, cfg: dict | None = None,
                 if kept >= MAX_IMAGES:
                     m["content"] = [p for p in c
                                     if p.get("type") != "image_url"]
-    caption = (f"{why} — " if why else "") + (
-        f"current screen ({dims[0]}x{dims[1]} px — click/move "
-        "x,y use these pixels" if dims else "current screen")
-    if dims and (cfg or {}).get("screen", {}).get("dom_page"):
+    caption = (f"{why} — " if why else "")
+    if coords:
+        caption += (f"current screen ({dims[0]}x{dims[1]} px — "
+                    "click/move x,y use these pixels"
+                    if dims else "current screen")
+    else:
+        caption += (f"observed frame ({dims[0]}x{dims[1]} px — inspect "
+                    "only; click/move do NOT use these pixels"
+                    if dims else "observed frame")
+    if dims and coords \
+            and (cfg or {}).get("screen", {}).get("dom_page"):
         els = (cfg or {})["screen"].get("dom_els") or []
         if els:
             caption += "; elements: " + "; ".join(els)

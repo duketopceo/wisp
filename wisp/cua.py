@@ -29,6 +29,19 @@ from . import errors_codes
 BIN = "cua-driver"
 CLICK_TIMEOUT_S = 0.8
 
+# Stable session label sent on every call (U1). The daemon keys
+# session-filtered recording and the ~300 s idle TTL to it; one label
+# shared across one-shot `call` transports is what makes turn-scoped
+# recording work. `start_session` is idempotent, so the label is cheap
+# to re-mint after an idle expiry.
+SESSION = "wisp"
+
+# session kwarg sentinel (F14): a `session=SESSION` default binds the
+# value at DEFINITION time — a test/consumer re-pointing cua.SESSION
+# would still send the stale label. _UNSET resolves the live module
+# value at call time; None stays the explicit sessionless-call escape.
+_UNSET = object()
+
 DOWN = "E_CUA_DOWN"
 TIMEOUT = "E_CUA_TIMEOUT"
 REFUSED = "E_CUA_REFUSED"
@@ -73,13 +86,25 @@ class Cua:
 
     # -- generic call --------------------------------------------------
     def call(self, tool: str, args: dict | None = None, *,
-             timeout: float | None = None, strict: bool = True) -> dict:
+             timeout: float | None = None, strict: bool = True,
+             session=_UNSET) -> dict:
         """Invoke one driver tool. `strict` demands a JSON-object reply
         on success (E_CUA_PROTOCOL otherwise); non-strict trusts the
-        exit code (action tools may print plain text)."""
+        exit code (action tools may print plain text). `session` adds
+        the stable wisp label to the args — every call refreshes its
+        idle TTL and session-filtered recording attributes the action.
+        An explicit `"session"` key already in `args` wins; pass
+        session=None to send a sessionless call (read-only probes).
+        Omitted (the _UNSET sentinel) resolves SESSION at call time —
+        never a definition-time binding (F14)."""
         if not isinstance(tool, str) or not _TOOL.match(tool):
             raise ValueError(f"bad cua tool name {tool!r}")
-        argv = [self.binary, "call", tool, json.dumps(args or {})]
+        payload = dict(args or {})
+        if session is _UNSET:
+            session = SESSION
+        if session:
+            payload.setdefault("session", session)
+        argv = [self.binary, "call", tool, json.dumps(payload)]
         try:
             r = _cancel.run(argv, capture_output=True, env=self.env,
                             timeout=self.timeout_s if timeout is None
@@ -111,14 +136,15 @@ class Cua:
         return val
 
     # -- typed actions -------------------------------------------------
-    def click(self, x, y) -> dict:
+    def click(self, x, y, *, session=_UNSET) -> dict:
         return self.call("click", {
             "x": int(x), "y": int(y), "coordinate_frame": "desktop",
-            "scope": "desktop"}, strict=False)
+            "scope": "desktop"}, strict=False, session=session)
 
-    def move_cursor(self, x, y) -> dict:
+    def move_cursor(self, x, y, *, session=_UNSET) -> dict:
         return self.call("move_cursor", {
-            "x": int(x), "y": int(y), "scope": "desktop"}, strict=False)
+            "x": int(x), "y": int(y), "scope": "desktop"},
+            strict=False, session=session)
 
     # -- read-only window tools (spike: present in cua-driver 0.33) ----
     def list_windows(self, timeout: float = 3.0) -> dict:

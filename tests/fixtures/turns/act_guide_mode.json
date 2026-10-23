@@ -48,7 +48,11 @@
     }
   },
   "expect": {
-    "cua_calls": [],
+    "cua_calls": [
+      "start_session",
+      "start_recording",
+      "stop_recording"
+    ],
     "steps_contain": [
       "GUIDE(10,20)"
     ],

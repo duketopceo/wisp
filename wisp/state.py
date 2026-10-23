@@ -127,6 +127,12 @@ class State:
         if status is not None and status not in ("acting", "awaiting_choice") \
                 and "guide" not in fields:
             self.guide = None
+        # speak-reply point annotations only live while speaking —
+        # any other status clears them so a later turn can never
+        # read the previous turn's beacons
+        if status is not None and status != "speaking" \
+                and "points" not in fields:
+            self.points = []
         for k, v in fields.items():
             if hasattr(self, k):
                 setattr(self, k, v)

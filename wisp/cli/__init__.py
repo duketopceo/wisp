@@ -23,7 +23,7 @@ def load_groups():
         ("Daemon", ["daemon", "status", "stop", "interrupt", "trigger",
                     "watch", "choice", "tui"]),
         ("Diagnose", ["doctor", "health", "latency", "spend", "binds",
-                      "onboard", "trace"]),
+                      "onboard", "trace", "captures"]),
         ("Pointer and notifications", ["cua", "notify"]),
         ("Agents and memory", ["task", "memory", "dictate", "suggest",
                                "label", "context"]),
