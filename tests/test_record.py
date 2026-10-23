@@ -572,7 +572,9 @@ class TestRecorderDirect(RecCase):
         # bounded retry revives the session and the recorder stays live
         rec = record.begin("t-ensure")
         self.assertEqual(self.driver.mints, 1)
-        rec._touched = 0          # force the renewal window
+        # force the renewal window — _touched = 0 only works when the
+        # host's monotonic clock (uptime) already exceeds RENEW_AFTER_S
+        rec._touched = time.monotonic() - record.RENEW_AFTER_S - 1
         self.driver.fail_mints = 1
         rec.ensure()
         self.assertTrue(rec.active)
@@ -584,7 +586,7 @@ class TestRecorderDirect(RecCase):
         # F19: a real outage still marks the recorder dead after the
         # one bounded retry, and the gap is traced
         rec = record.begin("t-ensure2")
-        rec._touched = 0
+        rec._touched = time.monotonic() - record.RENEW_AFTER_S - 1
         self.driver.fail_mints = 10
         rec.ensure()
         self.assertFalse(rec.active)
