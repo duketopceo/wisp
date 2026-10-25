@@ -387,9 +387,9 @@ def route_stage(ctx) -> bool:
     pl, state, sp, cfg, text = _pl(), ctx.state, ctx.sp, ctx.cfg, ctx.text
     turn, token, model = ctx.turn, ctx.token, ctx.model
     harness, context = ctx.harness, ctx.context
-    # router: act (default) | jev (decision API) | act (every turn straight to the
-    # conversational agent loop — no decision hop, the loop's brain
-    # decides answer-vs-work with the trigger screenshot) |
+    # router: act (default; every turn straight to the conversational
+    # agent loop — no decision hop, the loop's brain decides
+    # answer-vs-work with the trigger screenshot) | jev (decision API) |
     # chat (transcript straight to answer brain) | off (always
     # clarify via choices) — Rust parity
     sp.record("context", sp.mark_ns("stt"))

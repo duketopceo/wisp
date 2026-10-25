@@ -225,9 +225,9 @@ def _check_mic(cfg, p):
 
 def _check_models(cfg, p):
     if not config.local_enabled(cfg):
-        return _res("models", "ok", "local models off; brain is "
-                    + ((cfg or {}).get("brain", {}) or {}).get(
-                        "default", "openrouter"))
+        brain = cfg.get("brain", {}).get("default")
+        return _res("models", "ok", "local models off"
+                    + (f"; brain is {brain}" if brain else ""))
     up = {name: bool(p.fetch(url)) for name, url in LADDER}
     detail = ", ".join(f"{n} {'up' if up[n] else 'down'}" for n, _ in LADDER)
     if any(up[b] for b in _BRAINS):
