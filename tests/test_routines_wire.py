@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
 from cli_env import CliEnv  # noqa: E402
-from wisp import agents, routines  # noqa: E402
+from wisp import agents, route, routines, stage_execute  # noqa: E402
 
 
 class RoutinesWireU3Test(unittest.TestCase):
@@ -170,6 +170,120 @@ class RoutinesWireU3Test(unittest.TestCase):
         snap = agents.tasks(self.tf, self.logs)
         self.assertTrue(snap["daily-brief"]["unread"])
         self.assertEqual(snap["daily-brief"]["routine_id"], "daily-brief")
+
+
+class VoiceTaughtRoutinesU4Test(unittest.TestCase):
+    def setUp(self):
+        self.td = pathlib.Path(tempfile.mkdtemp())
+        self.store_path = self.td / "routines.json"
+        self.store = routines.RoutineStore(self.store_path)
+        self.unit_dir = self.td / "systemd"
+        self.cfg = {"agent": {"risk_threshold": "9"}}
+
+    def test_teach_intent_with_explicit_schedule_confirms_and_creates_units(self):
+        # Pre-grant opt-in so we isolate the T2 creation confirm card
+        self.store.set_opted_in(True)
+        cards = []
+
+        def confirm(prompt, detail="", **kw):
+            cards.append((prompt, detail, kw))
+            return True
+
+        confirm.rich = True
+        out = routines.teach_routine(
+            "Save this as my morning standup routine every day at 9am to summarize open PRs",
+            self.cfg,
+            store=self.store,
+            confirm=confirm,
+            unit_dir=self.unit_dir,
+        )
+        self.assertTrue(out["ok"], out)
+        self.assertEqual(out["status"], "created")
+        self.assertEqual(len(cards), 1)
+        prompt, detail, _ = cards[0]
+        self.assertIn("morning standup", prompt)
+        self.assertIn("*-*-* 09:00:00", prompt)
+        self.assertIn("summarize open PRs", prompt)
+        self.assertIn("Routine: morning standup", detail)
+        self.assertIn("Schedule: *-*-* 09:00:00", detail)
+        self.assertIn("Task: summarize open PRs", detail)
+
+        saved = self.store.get("morning-standup")
+        self.assertIsNotNone(saved)
+        self.assertEqual(saved.schedule, "*-*-* 09:00:00")
+        self.assertEqual(saved.task, "summarize open PRs")
+        self.assertTrue((self.unit_dir / "wisp-routine-morning-standup.service").is_file())
+        self.assertTrue((self.unit_dir / "wisp-routine-morning-standup.timer").is_file())
+
+    def test_first_ever_routine_fires_opt_in_gate_before_create(self):
+        self.assertFalse(self.store.has_opted_in())
+        prompts = []
+
+        # 1) Decline at the first-run opt-in gate -> nothing persisted
+        res_declined = routines.teach_routine(
+            "Save this as my inbox check routine every hour to check unread mail",
+            self.cfg,
+            store=self.store,
+            confirm=lambda p, **kw: (prompts.append(p), False)[1],
+            unit_dir=self.unit_dir,
+        )
+        self.assertFalse(res_declined["ok"])
+        self.assertEqual(res_declined["status"], "opt_in_declined")
+        self.assertEqual(len(prompts), 1)
+        self.assertIn("Allow scheduled routine", prompts[0])
+        self.assertEqual(self.store.list(), [])
+        self.assertFalse(self.store.has_opted_in())
+
+        # 2) Approve opt-in gate + approve T2 creation card -> routine created
+        prompts.clear()
+        res_ok = routines.teach_routine(
+            "Save this as my inbox check routine every hour to check unread mail",
+            self.cfg,
+            store=self.store,
+            confirm=lambda p, **kw: (prompts.append(p), True)[1],
+            unit_dir=self.unit_dir,
+        )
+        self.assertTrue(res_ok["ok"])
+        self.assertEqual(len(prompts), 2)
+        self.assertIn("Allow scheduled routine", prompts[0])
+        self.assertIn("Create routine 'inbox check' (hourly): check unread mail?", prompts[1])
+        self.assertTrue(self.store.has_opted_in())
+        self.assertIsNotNone(self.store.get("inbox-check"))
+
+    def test_ambiguous_schedule_triggers_clarification_and_persists_nothing(self):
+        self.store.set_opted_in(True)
+        asked = []
+
+        out = routines.teach_routine(
+            "Save this as my cleanup routine sometime around afternoon to archive logs",
+            self.cfg,
+            store=self.store,
+            confirm=lambda p, **kw: True,
+            ask=lambda q: (asked.append(q), None)[1],
+            unit_dir=self.unit_dir,
+        )
+        self.assertFalse(out["ok"])
+        self.assertEqual(out["status"], "clarification_needed")
+        self.assertEqual(len(asked), 1)
+        self.assertIn("cleanup", asked[0])
+        self.assertEqual(self.store.list(), [])
+        self.assertFalse(self.unit_dir.exists())
+
+    def test_route_and_stage_execute_wire_teach_intent_to_routine_store(self):
+        h = route.heuristic("Save this as my pr digest routine every hour to check PRs")
+        self.assertEqual(h["route"], "learn")
+
+        self.store.set_opted_in(True)
+        with mock.patch.object(routines, "DEFAULT_ROUTINES_FILE", self.store_path), \
+             mock.patch.object(routines.config, "HOME", self.td):
+            res = stage_execute.execute(
+                {"route": {"choice": "learn"}, "risk": {"score": 1}},
+                self.cfg,
+                detail="Save this as my pr digest routine every hour to check PRs",
+                confirm=lambda p, **kw: True,
+            )
+        self.assertIn("CREATED routine pr-digest", res)
+        self.assertIsNotNone(self.store.get("pr-digest"))
 
 
 if __name__ == "__main__":
