@@ -229,7 +229,8 @@ class Daemon:
                 if isinstance(cmd, dict) and cmd.get("cmd") == "subscribe":
                     refused = check_peer_authz(cmd, peer)
                     if refused is not None:
-                        conn.sendall(json.dumps(refused).encode() + b"\n")
+                        hello_err = {"type": "hello", **refused}
+                        conn.sendall(json.dumps(hello_err).encode() + b"\n")
                         return
                     self._stream(conn, cmd)
                     return

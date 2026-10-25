@@ -176,17 +176,15 @@ class IpcAuthzTest(unittest.TestCase):
         # Reparented helper (double-fork / env -i / systemd-run subprocess):
         # ppid is 1 and env is empty, but cgroup path stays inside the
         # registered task scope `wisp-task-parent-task.scope`.
+        unmarked_proc = self._spawn_sleeper()
         reparented_peer = {
-            "pid": p_reparent_pid if False else parent.pid,
+            "pid": unmarked_proc.pid,
             "uid": os.getuid(),
             "ppid": 1,
             "env": {},
             "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/"
                       "app.slice/wisp-task-parent-task.scope\n",
         }
-        # Even when we point at an unmarked process PID whose ppid=1 and env={}
-        unmarked_proc = self._spawn_sleeper()
-        reparented_peer["pid"] = unmarked_proc.pid
         info = agents.classify_peer(reparented_peer, tasks_file=self.tf)
         self.assertTrue(info["marked"])
         self.assertTrue(info["verified"])
