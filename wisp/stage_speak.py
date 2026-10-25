@@ -94,7 +94,11 @@ def _end_speaking(state):
 
 
 def _close_paper(state) -> None:
-    """Drop the live plan strip when the turn finishes (U2)."""
+    """Drop the live plan strip when the turn finishes (U2).
+
+    Paper is an output surface — I/O / bus failures must not fail the
+    speak path. Unexpected bugs still propagate.
+    """
     try:
         from . import note as _note
         bus = getattr(state, "_bus", None) or state
@@ -102,12 +106,16 @@ def _close_paper(state) -> None:
         if turn is None and hasattr(bus, "current_turn"):
             turn = bus.current_turn()
         _note.close_live(bus, turn_id=turn, state=state)
-    except Exception:
+    except (OSError, TypeError, AttributeError, ValueError, KeyError):
         pass
 
 
 def _publish_paper(state, text: str, turn: str | None = None) -> None:
-    """If `text` carries paper markup, rewrite note.md + state.note."""
+    """If `text` carries paper markup, rewrite note.md + state.note.
+
+    Same failure policy as `_close_paper`: surface I/O cannot take down
+    the turn.
+    """
     try:
         from . import note as _note
         if not _note.looks_like_paper(text):
@@ -118,7 +126,7 @@ def _publish_paper(state, text: str, turn: str | None = None) -> None:
             tid = bus.current_turn()
         _note.publish_from_text(text, bus=bus, turn_id=tid,
                                 conv_id=tid or "current")
-    except Exception:
+    except (OSError, TypeError, AttributeError, ValueError, KeyError):
         pass
 
 
