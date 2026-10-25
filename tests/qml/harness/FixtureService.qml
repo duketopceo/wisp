@@ -34,6 +34,7 @@ Item {
   property var suggestion: null
   property var guide: null
   property var cuaTarget: null
+  property var note: null
   property string goal: ""
   property string goalStatus: ""
   property real level: 0
