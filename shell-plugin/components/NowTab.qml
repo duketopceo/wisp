@@ -27,7 +27,10 @@ Column {
   readonly property bool idle: service.transcript === "" && service.answer === ""
     && service.result === "" && service.steps.length === 0
     && service.choices.length === 0 && service.error === ""
+    && !(service.note && service.note.rendered)
     && !runShown
+  readonly property string noteBody: service.note && service.note.rendered
+    ? service.note.rendered : ""
   // the step/action display is the lifecycle stream when a v2 daemon
   // feeds it; `steps` is the same list on older cores
   readonly property var stepRows: service.actions.length > 0
@@ -90,6 +93,18 @@ Column {
     service: root.service
     width: parent.width
     maxLines: 8
+  }
+
+  // paper surface (gap-closure U2): rendered note (plan strip + tiles /
+  // letter). Plan markers clear from `rendered` when the note closes.
+  Text {
+    visible: root.noteBody !== ""
+    width: parent.width
+    text: root.noteBody
+    wrapMode: Text.Wrap
+    color: root.tk.ink
+    font.family: root.service.fontFamily
+    font.pixelSize: M.font.body
   }
 
   Text {

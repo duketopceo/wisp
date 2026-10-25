@@ -1,0 +1,22 @@
+usage: wispd note [-h] [--raw] [--tail] [--json] [--quiet] [--no-color] [conv]
+
+Show or follow the live paper (note.md)
+
+positional arguments:
+  conv         conversation id (default: current / daemon)
+
+options:
+  -h, --help   show this help message and exit
+  --raw        print the verbatim note.md file
+  --tail, -f   follow note_changed events from the daemon
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd note
+  wispd note --raw
+  wispd note --tail
+  wispd note agent-42

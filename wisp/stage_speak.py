@@ -85,11 +85,69 @@ def _publish_delta(state, partial: str) -> None:
 
 
 def _end_speaking(state):
-    """Flip speaking → done when TTS exits (only if nothing moved on)."""
+    """Flip speaking → done when TTS exits (only if nothing moved on).
+
+    Capture bus/turn at arm time: if a newer turn owns the bus by the
+    time TTS exits, skip close+done so we don't clear its paper.
+    """
+    bus = getattr(state, "_bus", None)
+    turn = getattr(state, "turn_id", None)
+
     def cb():
+        if bus is not None and turn is not None \
+                and hasattr(bus, "current_turn") \
+                and bus.current_turn() != turn:
+            return
         if state.status == "speaking":
+            _close_paper(state, bus=bus, turn=turn)
             state.transition("done")
     return cb
+
+
+def _close_paper(state, *, bus=None, turn=None) -> None:
+    """Drop the live plan strip when the turn finishes (U2).
+
+    Paper is an output surface — I/O / bus failures must not fail the
+    speak path. Unexpected bugs still propagate. Sync failures from the
+    note writer also land here as OSError (no durable success claimed).
+    """
+    try:
+        from . import note as _note
+        bus = bus if bus is not None else (getattr(state, "_bus", None)
+                                           or state)
+        if turn is None:
+            turn = getattr(state, "turn_id", None)
+        if turn is None and hasattr(bus, "current_turn"):
+            turn = bus.current_turn()
+        if bus is not None and turn is not None \
+                and hasattr(bus, "current_turn") \
+                and bus.current_turn() != turn:
+            return
+        _note.close_live(bus, turn_id=turn, state=state)
+    except (ImportError, OSError, TypeError, AttributeError, ValueError,
+            KeyError):
+        pass
+
+
+def _publish_paper(state, text: str, turn: str | None = None) -> None:
+    """If `text` carries paper markup, rewrite note.md + state.note.
+
+    Uses a conversation-stable note id (not the turn id) so `wispd note`
+    keeps resolving the same file across turns. Same failure policy as
+    `_close_paper`: surface I/O / sync errors cannot take down the turn.
+    """
+    try:
+        from . import note as _note
+        if not _note.looks_like_paper(text):
+            return
+        bus = getattr(state, "_bus", None) or state
+        tid = turn
+        if tid is None and hasattr(bus, "current_turn"):
+            tid = bus.current_turn()
+        _note.publish_from_text(text, bus=bus, turn_id=tid, state=state)
+    except (ImportError, OSError, TypeError, AttributeError, ValueError,
+            KeyError):
+        pass
 
 
 def answer_text(transcript: str) -> str:
@@ -123,6 +181,7 @@ def speak_stage(ctx) -> int:
         if payload:
             _speak_result(ctx, payload)
         else:
+            _close_paper(ctx.state)
             ctx.state.transition("done", result=result)
     return _finish(ctx)
 
@@ -151,6 +210,7 @@ def _speak_result(ctx, payload: str) -> None:
         else:
             pts = _points.to_logical(raw, _mons)
         _trace.emit(ctx.turn, "points", "act", {"points": pts})
+    _publish_paper(state, payload, ctx.turn)
     state.transition("speaking", result=ctx.result,
                      answer=reply, points=pts)
     tts_start = sp.now()
@@ -158,6 +218,7 @@ def _speak_result(ctx, payload: str) -> None:
     if proc is not None:
         speech.on_exit(proc, pl._end_speaking(state))
     else:
+        _close_paper(state)
         state.transition("done", result=ctx.result)
     sp.record("tts_start", tts_start)
 
@@ -235,6 +296,9 @@ def _answer(ctx) -> None:
         # canned answer the user would mistake for a real one
         from . import errors_codes as _errors
         raise _errors.classify(e, "brain_down") from e
+    # paper before point extraction so `::` / plan markers land in
+    # note.md even when the spoken reply is the letter body only
+    _publish_paper(state, reply, turn)
     ctx.reply = reply
     if reply:
         from . import points as _points
@@ -268,6 +332,7 @@ def _answer(ctx) -> None:
                  "streamed": speaker.started},
                 round((time.monotonic() - _t) * 1000))
     if proc is None:
+        _close_paper(state)
         state.transition("done")
 
 

@@ -90,6 +90,9 @@ class State:
         self.suggestion = None
         self.guide = None  # {x, y, label, seq, mode} — ghost cursor target
         self.focus = {}  # {app, title} — focused window at turn start
+        # paper surface (gap-closure U1): live note payload or None
+        # {conv_id, path, raw, objects, plan, closed, rendered}
+        self.note = None
         self.confirmed = set()  # (tool, app) approved this session
         self.pending = None
         self.level = 0.0
@@ -267,6 +270,8 @@ class State:
             "suggestion": self.suggestion,
             "guide": self.guide,
             "focus": dict(self.focus),
+            "note": dict(self.note) if isinstance(self.note, dict)
+            else self.note,
             "goal": _goal_snapshot(),
             "level": self.level,
             "tasks": dict(self.tasks),
