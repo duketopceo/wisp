@@ -85,7 +85,7 @@ def _needed_paths(text: str, home) -> list:
 
 
 def install_units(home, dry_run: bool = False, names=None,
-                  now=None, local: bool = True) -> list:
+                  now=None, local: bool = False) -> list:
     """Install the templates under `home`. Returns one dict per unit:
     {name, path, action: new|unchanged|update|skip, backup, reason}.
     An `update` first copies the old file to `<unit>.bak-<stamp>`.

@@ -165,7 +165,7 @@ class TestInstall(unittest.TestCase):
         with Env() as e:
             stub_systemctl(e.bin)
             e.fake_exes()
-            acts = svc.install_units(e.home)
+            acts = svc.install_units(e.home, local=True)
             self.assertEqual({a["name"] for a in acts}, set(ALL))
             self.assertTrue(all(a["action"] == "new" for a in acts), acts)
             for n in ALL:
@@ -176,7 +176,7 @@ class TestInstall(unittest.TestCase):
             e.calls().clear()
             before = {p.name for p in e.unit_dir.iterdir()}
             n_calls = len(e.calls())
-            acts = svc.install_units(e.home)
+            acts = svc.install_units(e.home, local=True)
             self.assertTrue(all(a["action"] == "unchanged" for a in acts))
             self.assertEqual({p.name for p in e.unit_dir.iterdir()}, before)
             self.assertEqual(len(e.calls()), n_calls)   # no reload
@@ -188,7 +188,7 @@ class TestInstall(unittest.TestCase):
             e.unit_dir.mkdir(parents=True)
             live = e.unit_dir / "llama-local.service"
             live.write_text("[Service]\nExecStart=/mine\n")
-            acts = {a["name"]: a for a in svc.install_units(e.home)}
+            acts = {a["name"]: a for a in svc.install_units(e.home, local=True)}
             a = acts["llama-local"]
             self.assertEqual(a["action"], "update")
             bak = pathlib.Path(a["backup"])
@@ -197,7 +197,7 @@ class TestInstall(unittest.TestCase):
             self.assertEqual(live.read_text(),
                              svc.render("llama-local", e.home))
             # second run: nothing to back up again
-            again = {a["name"]: a for a in svc.install_units(e.home)}
+            again = {a["name"]: a for a in svc.install_units(e.home, local=True)}
             self.assertEqual(again["llama-local"]["action"], "unchanged")
             self.assertEqual(len(list(e.unit_dir.glob(
                 "llama-local.service.bak-*"))), 1)
@@ -209,7 +209,7 @@ class TestInstall(unittest.TestCase):
             e.unit_dir.mkdir(parents=True)
             live = e.unit_dir / "wispd.service"
             live.write_text("old\n")
-            acts = svc.install_units(e.home, dry_run=True)
+            acts = svc.install_units(e.home, dry_run=True, local=True)
             self.assertEqual({a["name"]: a["action"] for a in acts}[
                 "wispd"], "update")
             self.assertEqual(live.read_text(), "old\n")
@@ -220,7 +220,7 @@ class TestInstall(unittest.TestCase):
     def test_skips_units_whose_program_is_missing(self):
         with Env() as e:
             stub_systemctl(e.bin)
-            acts = {a["name"]: a for a in svc.install_units(e.home)}
+            acts = {a["name"]: a for a in svc.install_units(e.home, local=True)}
             self.assertEqual(acts["llama-local"]["action"], "skip")
             self.assertEqual(acts["wispd"]["action"], "new")
             self.assertFalse((e.unit_dir / "llama-local.service").exists())
@@ -260,7 +260,7 @@ class TestInstall(unittest.TestCase):
         with Env() as e:
             stub_systemctl(e.bin)
             e.fake_exes()
-            svc.install_units(e.home)
+            svc.install_units(e.home, local=True)
             verbs = {c[1] for c in e.calls() if len(c) > 1}
             self.assertEqual(verbs, {"daemon-reload"})
 
