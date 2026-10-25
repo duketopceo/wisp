@@ -627,7 +627,9 @@ class SentenceSpeakerTest(unittest.TestCase):
         script = self.dir / "fake-tts"
         script.write_text(
             "#!/bin/sh\n"
-            f'printf "%s|%s\\n" "$(date +%s.%N)" "$1" >> {self.log}\n'
+            # macOS date(1) has no %N; keep timestamps dumb — ordering
+            # tests only need monotonic speak order, not wall-clock ns.
+            f'printf "0|%s\\n" "$1" >> {self.log}\n'
             f'echo $$ >> {self.dir}/pids\n'
             f'exec sleep "${{FAKE_TTS_SLEEP:-0.05}}"\n')
         script.chmod(script.stat().st_mode | stat.S_IXUSR)
@@ -645,6 +647,17 @@ class SentenceSpeakerTest(unittest.TestCase):
         while time.monotonic() < end and len(self._spoken()) < n:
             time.sleep(0.01)
         return self._spoken()
+
+    def _wait_pids(self, n=1, timeout=3):
+        p = self.dir / "pids"
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            if p.exists():
+                ids = [x for x in p.read_text().split() if x.strip()]
+                if len(ids) >= n:
+                    return [int(x) for x in ids]
+            time.sleep(0.01)
+        self.fail(f"expected {n} TTS pid(s) in {p} within {timeout}s")
 
     def test_first_sentence_starts_before_the_stream_ends(self):
         sp = speech.SentenceSpeaker(self.cfg)
@@ -691,8 +704,8 @@ class SentenceSpeakerTest(unittest.TestCase):
         tok = cancel.CancelToken()
         sp = speech.SentenceSpeaker(self.cfg, token=tok)
         sp.feed("First one. Second one. Third one. ")
-        self._wait_spoken(1)
-        pids = [int(p) for p in (self.dir / "pids").read_text().split()]
+        self.assertGreaterEqual(len(self._wait_spoken(1, timeout=5)), 1)
+        pids = self._wait_pids(1, timeout=5)
         t = time.monotonic()
         tok.cancel()
         for _ in range(100):
@@ -709,8 +722,8 @@ class SentenceSpeakerTest(unittest.TestCase):
         self.addCleanup(os.environ.pop, "FAKE_TTS_SLEEP", None)
         sp = speech.SentenceSpeaker(self.cfg)
         sp.feed("First one. Second one. ")
-        self._wait_spoken(1)
-        pid = int((self.dir / "pids").read_text().split()[0])
+        self.assertGreaterEqual(len(self._wait_spoken(1, timeout=5)), 1)
+        pid = self._wait_pids(1, timeout=5)[0]
         speech.stop()
         time.sleep(0.2)
         self.assertFalse(_alive(pid))
