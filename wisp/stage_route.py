@@ -422,7 +422,8 @@ def route_stage(ctx) -> bool:
                 {"model": model, "answers": answers,
                  "latency_ms": resp.get("latency_ms"),
                  **({"route_source": route_meta["source"],
-                     "jev_status": route_meta["jev_status"]}
+                     "jev_status": route_meta["jev_status"],
+                     "route_lane": route_meta.get("route_lane")}
                     if route_meta else {})},
                 sp.ms["context"] + sp.ms["route"])
     # transcript rescue: "open discord" with app=none shouldn't
@@ -438,6 +439,8 @@ def route_stage(ctx) -> bool:
             and complex_launch(text):
         answers["route"]["choice"] = "act"
     if route_meta:
+        ctx.route_lane = route_meta.get("route_lane") or route_meta.get(
+            "source")
         _route.log_ab(route_meta, text, turn,
                       answers.get("route", {}).get("choice"))
     # clarify only gates routes that truly need a named target —

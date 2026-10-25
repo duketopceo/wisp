@@ -285,10 +285,14 @@ def _finish(ctx) -> int:
     pl.notify(result, "success", spoken=True,
               **pl._toast_ctx(state, ctx.turn, cfg))
     sp.record("done", sp.rel0)
-    pl.log_decision({"ts": datetime.now(timezone.utc).isoformat(),
-                     "turn": ctx.turn,
-                     "transcript": text, "answers": answers,
-                     "result": result,
-                     "timing_ms": sp.legacy_timing(),
-                     "corrected": bool(answers.get("corrected_by_user"))})
+    rec = {"ts": datetime.now(timezone.utc).isoformat(),
+           "turn": ctx.turn,
+           "transcript": text, "answers": answers,
+           "result": result,
+           "timing_ms": sp.legacy_timing(),
+           "corrected": bool(answers.get("corrected_by_user"))}
+    lane = getattr(ctx, "route_lane", None)
+    if lane:
+        rec["route_lane"] = lane
+    pl.log_decision(rec)
     return 0
