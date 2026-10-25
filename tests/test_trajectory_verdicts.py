@@ -451,7 +451,31 @@ class TestBankFold(unittest.TestCase):
                    "ts": 1.0}
             e = train.update_bank(rec, path=bank)
             self.assertEqual(e["packs"], ["packs/t-abc123"])
-            self.assertEqual(e["rec_dir"], "/x/clicklab-rec/r1")
+            self.assertEqual(e["rec_dir"], "r1")
+
+    def test_update_bank_drops_stale_evidence_refs(self):
+        with tempfile.TemporaryDirectory() as td:
+            bank = pathlib.Path(td) / "skillbank.json"
+            first = {"task": "click alpha", "surface": "browser-dom",
+                     "verified": True, "judge": {"success": True,
+                                                 "efficiency": 0.95},
+                     "efficiency": 0.95,
+                     "steps": [{"tool": "click", "arg": "1,2"}],
+                     "rec_dir": "/x/clicklab-rec/r1",
+                     "packs": ["packs/t-abc123"],
+                     "turn_dirs": ["turn-00001"],
+                     "ts": 1.0}
+            train.update_bank(first, path=bank)
+            second = {"task": "click alpha", "surface": "browser-dom",
+                      "verified": True, "judge": {"success": True,
+                                                  "efficiency": 0.95},
+                      "efficiency": 0.95,
+                      "steps": [{"tool": "click", "arg": "3,4"}],
+                      "ts": 2.0}
+            e = train.update_bank(second, path=bank)
+            self.assertNotIn("packs", e)
+            self.assertNotIn("turn_dirs", e)
+            self.assertNotIn("rec_dir", e)
 
 
 if __name__ == "__main__":

@@ -47,8 +47,9 @@ Every recorded act turn produces one durable capture pack:
 |---|---|
 | `~/.local/share/wisp/rec/<turn>/` | transient per-action recording — `turn-NNNNN/` dirs with `action.json` + frame PNGs, mode `0700`. In-flight only: the pack write deletes it, and daemon start discards orphans |
 | `~/.local/share/wisp/packs/<turn>/` | the durable pack, mode `0700`: `manifest.json` (schema `wisp-capture-pack/v1` — transcript with timestamps, actions + verdicts, frame index, suppression events), the frame PNGs, `contact.png` |
-| `~/.local/share/wisp/pack.salt` | per-install HMAC salt, mode `0600` — typed text (`type_text`/`key` args, `fill` values, `post_send` bodies) persists only as `len` + salted SHA-256 |
 | `~/.local/share/wisp/shots/` | the screenshot tool's files — pruned by the pack writer under the same count+age policy, on their own keys |
+
+Typed text in packs (`type_text`/`key` args, `fill` values, `post_send` bodies) is stored only as `len` + an in-process salted SHA-256 (same salt as the cua audit path — never written to disk).
 
 Retention (`[packs]` in config.toml): `packs.keep` newest packs AND
 `packs.keep_days` max age both apply (0 disables an axis);

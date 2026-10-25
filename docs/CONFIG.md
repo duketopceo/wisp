@@ -435,7 +435,7 @@ escalates to a VLM judge.
 | `vlm` | (empty) | `provider:model` endpoint for the judge; empty uses the primary brain |
 | `judge_timeout_s` | `20` | seconds the judge may take before the step lands unverifiable |
 | `pixel_landed_min` | `0.02` | changed-fraction threshold for a `landed` vote |
-| `pixel_missed_max` | `0.001` | changed-fraction floor for a `missed` vote (between the two: abstain) |
+| `pixel_missed_max` | `0.001` | changed-fraction ceiling for a `missed` vote (between the two: abstain) |
 | `pixel_eps` | `16` | per-channel pixel difference counted as a change |
 | `region_px` | `96` | side of the square pixel region diffed around a click point |
 | `frame_wait_s` | `0.5` | bound on waiting for the driver's before/after frames |
