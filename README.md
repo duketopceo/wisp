@@ -218,6 +218,7 @@ verbs and examples. Add `--json` for machine-readable output.
 | `wispd choice <pick>` | answer a pending prompt |
 | `wispd watch` | follow the push stream as NDJSON |
 | `wispd tui` | terminal dashboard |
+| `wispd note` | show or follow the live paper (`note.md`) |
 | `wispd doctor` | check every dependency |
 | `wispd health` | local model endpoint health |
 | `wispd latency` | p50 and p90 per budget path |

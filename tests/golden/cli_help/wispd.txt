@@ -11,6 +11,7 @@ Daemon:
   watch        Follow the daemon push stream as NDJSON
   choice       Answer a pending prompt from the keyboard or a script
   tui          Open the terminal UI
+  note         Show or follow the live paper (note.md)
 
 Diagnose:
   doctor       Check every dependency wisp needs
