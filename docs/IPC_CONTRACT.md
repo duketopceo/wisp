@@ -96,7 +96,7 @@ round-trip — they are not IPC commands and are absent from the table:
                "at": "ISO-8601"}],
   "guide": {"x": 0, "y": 0, "label": "string", "mode": "guide|drive", "seq": 1},
   "focus": {"app": "string", "title": "string"},
-  "note": "null, or {conv_id, path, raw, objects, plan, closed, rendered} — live paper surface (additive, gap-closure U1); plan clears when closed",
+  "note": "null, or {conv_id, path, raw, objects, plan, closed, rendered} — live paper surface (additive, gap-closure U1); when closed, plan is []",
   "goal": {"text": "string", "status": "open|done|failed"},
   "level": 0.0,
   "tasks": {"name": "running|done|failed|cancelled"},
@@ -302,7 +302,7 @@ Lines, in order:
    - `{"type":"event","name":"note_changed","data":{conv_id,path,raw,
      objects,plan,closed,rendered}}` (topic `events`; gap-closure U1):
      the conversation paper was rewritten. `objects` is the parsed `::`
-     list; `plan` is the live `{now}`/`{pick}`/`{needs}` strip (empty
+     list; `plan` is the live `{now}`/`{pick}`/`{needs}` strip (`[]`
      when `closed`); `rendered` is the text form for CLI/panel. Additive
      — older clients ignore it.
    - `{"type":"ping"}` after 15 s with nothing to send (all topics; a

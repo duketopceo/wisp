@@ -85,26 +85,44 @@ def _publish_delta(state, partial: str) -> None:
 
 
 def _end_speaking(state):
-    """Flip speaking → done when TTS exits (only if nothing moved on)."""
+    """Flip speaking → done when TTS exits (only if nothing moved on).
+
+    Capture bus/turn at arm time: if a newer turn owns the bus by the
+    time TTS exits, skip close+done so we don't clear its paper.
+    """
+    bus = getattr(state, "_bus", None)
+    turn = getattr(state, "turn_id", None)
+
     def cb():
+        if bus is not None and turn is not None \
+                and hasattr(bus, "current_turn") \
+                and bus.current_turn() != turn:
+            return
         if state.status == "speaking":
-            _close_paper(state)
+            _close_paper(state, bus=bus, turn=turn)
             state.transition("done")
     return cb
 
 
-def _close_paper(state) -> None:
+def _close_paper(state, *, bus=None, turn=None) -> None:
     """Drop the live plan strip when the turn finishes (U2).
 
     Paper is an output surface — I/O / bus failures must not fail the
-    speak path. Unexpected bugs still propagate.
+    speak path. Unexpected bugs still propagate. Sync failures from the
+    note writer also land here as OSError (no durable success claimed).
     """
     try:
         from . import note as _note
-        bus = getattr(state, "_bus", None) or state
-        turn = getattr(state, "turn_id", None)
+        bus = bus if bus is not None else (getattr(state, "_bus", None)
+                                           or state)
+        if turn is None:
+            turn = getattr(state, "turn_id", None)
         if turn is None and hasattr(bus, "current_turn"):
             turn = bus.current_turn()
+        if bus is not None and turn is not None \
+                and hasattr(bus, "current_turn") \
+                and bus.current_turn() != turn:
+            return
         _note.close_live(bus, turn_id=turn, state=state)
     except (ImportError, OSError, TypeError, AttributeError, ValueError,
             KeyError):
@@ -114,8 +132,9 @@ def _close_paper(state) -> None:
 def _publish_paper(state, text: str, turn: str | None = None) -> None:
     """If `text` carries paper markup, rewrite note.md + state.note.
 
-    Same failure policy as `_close_paper`: surface I/O cannot take down
-    the turn.
+    Uses a conversation-stable note id (not the turn id) so `wispd note`
+    keeps resolving the same file across turns. Same failure policy as
+    `_close_paper`: surface I/O / sync errors cannot take down the turn.
     """
     try:
         from . import note as _note
@@ -125,8 +144,7 @@ def _publish_paper(state, text: str, turn: str | None = None) -> None:
         tid = turn
         if tid is None and hasattr(bus, "current_turn"):
             tid = bus.current_turn()
-        _note.publish_from_text(text, bus=bus, turn_id=tid,
-                                conv_id=tid or "current")
+        _note.publish_from_text(text, bus=bus, turn_id=tid, state=state)
     except (ImportError, OSError, TypeError, AttributeError, ValueError,
             KeyError):
         pass

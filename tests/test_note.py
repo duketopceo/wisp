@@ -133,13 +133,45 @@ class TestNotePad(unittest.TestCase):
 class TestHelpers(unittest.TestCase):
     def test_looks_like_paper(self):
         self.assertTrue(note.looks_like_paper("::tiles\n- a\n::"))
+        self.assertTrue(note.looks_like_paper(":::letter\nhi\n:::"))
         self.assertTrue(note.looks_like_paper("{now} x"))
         self.assertFalse(note.looks_like_paper("just a sentence"))
+        # C++ / URLs must not trip the paper detector
+        self.assertFalse(note.looks_like_paper("use std::vector here"))
+        self.assertFalse(note.looks_like_paper("see Foo::bar"))
 
     def test_spoken_text_prefers_letter(self):
         parsed = note.parse(
             "{now} X\n::tiles\n- a\n::\n:::letter\nHello there.\n:::")
         self.assertEqual(note.spoken_text(parsed), "Hello there.")
+
+    def test_live_conv_id_is_stable_not_turn(self):
+        self.assertEqual(note.live_conv_id(), "current")
+        self.assertEqual(note.live_conv_id(conv_id="agent-1"), "agent-1")
+
+    def test_close_live_skips_already_closed(self):
+        root = Path(tempfile.mkdtemp())
+        bus = state_mod.StateBus(
+            state_mod.State(state_file=root / "s.json", write_initial=False),
+            autostart=False)
+        turn = bus.current_turn()
+        pad = note.NotePad("current", bus=bus, turn_id=turn, root=root)
+        pad.set("{now} A\n:::letter\nx\n:::")
+        first = pad.close()
+        self.assertTrue(first["closed"])
+        self.assertEqual(first["plan"], [])
+        sub = bus.subscribe(topics=["events"])
+        while sub.get(0.01) is not None:
+            pass
+        again = note.close_live(bus, turn_id=turn, root=root, state=bus)
+        self.assertTrue(again["closed"])
+        self.assertEqual(again["plan"], [])
+        # no second note_changed
+        dup = []
+        while (ev := sub.get(0.05)) is not None:
+            if ev.get("name") == "note_changed":
+                dup.append(ev)
+        self.assertEqual(dup, [])
 
 
 if __name__ == "__main__":

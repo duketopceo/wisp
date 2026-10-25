@@ -66,13 +66,16 @@ class TestTurnLifecycle(unittest.TestCase):
         bus.publish(turn, status="acting")
         payload = note.publish_from_text(
             "{now} Clicking send\n::tiles\n- Send\n::\n:::letter\nok\n:::",
-            bus=bus, turn_id=turn, conv_id=turn, root=self.root)
+            bus=bus, turn_id=turn, root=self.root)
         self.assertIsNotNone(payload)
         live = bus.snapshot()["note"]
+        # conversation-stable default — not the turn id
+        self.assertEqual(live["conv_id"], "current")
         self.assertFalse(live["closed"])
         self.assertEqual(live["plan"][0]["marker"], "now")
         self.assertIn("[now]", live["rendered"])
         self.assertIn("• Send", live["rendered"])
+        self.assertTrue((self.root / "current.md").exists())
 
         closed = note.close_live(bus, turn_id=turn, root=self.root,
                                  state=bus)

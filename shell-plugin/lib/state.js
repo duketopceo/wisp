@@ -227,13 +227,17 @@ function normalize(raw) {
 function normalizeNote(n) {
   if (n === null || n === undefined) return null
   if (!isObj(n)) return null
+  var closed = !!n.closed
+  // Missing conv_id must stay null — never coerce to the string
+  // "undefined" / "" that QML would treat as a real id.
+  var conv = n.conv_id
   return {
-    convId: str(n.conv_id),
+    convId: typeof conv === "string" && conv !== "" ? conv : null,
     path: str(n.path),
     raw: str(n.raw),
     objects: arr(n.objects),
-    plan: arr(n.plan),
-    closed: !!n.closed,
+    plan: closed ? [] : arr(n.plan),
+    closed: closed,
     rendered: str(n.rendered)
   }
 }
