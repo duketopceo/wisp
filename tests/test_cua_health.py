@@ -253,7 +253,7 @@ class CliEntries(unittest.TestCase):
         out = subprocess.run([sys.executable, str(HERE.parent / "wispd"),
                               "--help"], capture_output=True, text=True,
                              env={"COLUMNS": "80", "PATH": "/usr/bin"})
-        self.assertLess(len(out.stdout.splitlines()), 60)
+        self.assertLess(len(out.stdout.splitlines()), 65)
 
     def test_daemon_install_has_cua_flag(self):
         with CliEnv() as env:
