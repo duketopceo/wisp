@@ -629,9 +629,10 @@ def parse_teach_intent(text: str, fallback_task: str = "") -> dict | None:
     if not name:
         return None
 
-    # Extract explicit task clause ('to <task>' / ': <task>' / 'that <task>')
+    # Extract explicit task clause ('to <task>' / ': <task>' / 'that <task>').
+    # Avoid matching a colon preceded by a digit inside HH:MM time strings.
     task = ""
-    tm = re.search(r"(?::|\bto\s+|\bthat\s+)(.+)$", rest, re.I)
+    tm = re.search(r"(?:(?<!\d):\s*|\bto\s+|\bthat\s+)(.+)$", rest, re.I)
     if tm:
         cand_task = tm.group(1).strip().rstrip(".")
         # Strip trailing schedule phrase from task if it sits at the end

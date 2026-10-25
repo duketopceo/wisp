@@ -160,11 +160,14 @@ def classify_peer(peer: dict | None, tasks_file=config.TASKS_FILE) -> dict:
         and r.get("status") == "running" and r.get("id")
     }
 
-    # Walk pid -> ppid ancestry (bounded to 32 hops, cycle-safe).
+    # Walk pid -> ppid ancestry when registered tasks exist (or custom ppid
+    # override is supplied); with an empty registry only `pid` itself can
+    # carry a spoofed marker, avoiding a full /proc ancestry walk per poll.
     chain: list[int] = []
     seen: set[int] = set()
     cur = pid
-    while cur > 1 and cur not in seen and len(chain) < 32:
+    max_hops = 32 if (recs or "ppid" in peer) else 1
+    while cur > 1 and cur not in seen and len(chain) < max_hops:
         seen.add(cur)
         chain.append(cur)
         if cur == pid and isinstance(peer.get("ppid"), int):
@@ -394,12 +397,14 @@ def _reap_expired(cfg: dict, tasks_file=config.TASKS_FILE,
 
 
 _SHIM_CODE = (
-    "import signal,subprocess,sys;"
-    "ef=sys.argv[1];"
+    "import pathlib,signal,subprocess,sys;"
+    "ef=pathlib.Path(sys.argv[1]);"
     "p=subprocess.Popen(sys.argv[2:]);"
     "signal.signal(signal.SIGTERM,lambda s,f:p.terminate());"
     "rc=p.wait();"
-    "open(ef,'w').write(str(rc)+'\\n');"
+    "tmp=ef.with_suffix('.tmp');"
+    "tmp.write_text(f'{rc}\\n');"
+    "tmp.replace(ef);"
     "sys.exit(rc if rc>=0 else 128-rc)"
 )
 _EXEC_EXTS = frozenset({
@@ -866,12 +871,8 @@ def artifacts(name: str, tasks_file=config.TASKS_FILE,
     if out_dir.is_dir():
         for p in sorted(out_dir.rglob("*")):
             try:
-                if p.is_symlink():
-                    real = p.resolve()
-                    inside = (real == out_real or out_real in real.parents)
-                else:
-                    real = p.resolve()
-                    inside = (real == out_real or out_real in real.parents)
+                real = p.resolve()
+                inside = (real == out_real or out_real in real.parents)
                 if not real.is_file():
                     continue
                 st = real.stat()

@@ -215,6 +215,12 @@ class VoiceTaughtRoutinesU4Test(unittest.TestCase):
         self.assertTrue((self.unit_dir / "wisp-routine-morning-standup.service").is_file())
         self.assertTrue((self.unit_dir / "wisp-routine-morning-standup.timer").is_file())
 
+        # Colon time ('9:30am') must not split the task on ':30am'
+        parsed_colon = routines.parse_teach_intent(
+            "Save this as my triage routine every day at 9:30am to triage issues")
+        self.assertEqual(parsed_colon["schedule"], "*-*-* 09:30:00")
+        self.assertEqual(parsed_colon["task"], "triage issues")
+
     def test_first_ever_routine_fires_opt_in_gate_before_create(self):
         self.assertFalse(self.store.has_opted_in())
         prompts = []
