@@ -212,6 +212,16 @@ def _route_args(p):
     p.add_argument("--replay", action="store_true",
                    help="replay logged decisions through candidate "
                         "models on OpenRouter (paid, orchestral key)")
+    p.add_argument("--decisions", action="store_true",
+                   help="with --replay: use /api/alpha/decisions "
+                        "(decision models, default list)")
+    p.add_argument("--models", nargs="+", default=None,
+                   help="with --replay: model id(s) to score")
+    p.add_argument("--out", default="", metavar="PATH",
+                   help="write full per-case JSON (includes transcripts)")
+    p.add_argument("--route-only", action="store_true",
+                   help="with --decisions: skip joint clarify/risky "
+                        "questions")
 
 
 _ROUTE_SCHEMA = {"turns": "int", "jev_answered": "int", "agreed": "int",
@@ -223,12 +233,20 @@ _ROUTE_SCHEMA = {"turns": "int", "jev_answered": "int", "agreed": "int",
 
 @command("eval route", "Jev vs heuristic route agreement and latency",
          ["wispd eval route", "wispd eval route 100 --json",
-          "wispd eval route --replay 50"], _ROUTE_SCHEMA,
+          "wispd eval route --replay 50",
+          "wispd eval route --replay --decisions --out replay.json"],
+         _ROUTE_SCHEMA,
          args=_route_args)
 def eval_route(ctx, a):
     if a.replay:
         from .. import evalroute
-        return _text(ctx, evalroute.run(ctx.cfg, limit=a.limit))
+        if a.decisions:
+            return _text(ctx, evalroute.run_decisions(
+                ctx.cfg, models=a.models, limit=a.limit,
+                joint=not a.route_only,
+                out_path=a.out or None))
+        return _text(ctx, evalroute.run(
+            ctx.cfg, models=a.models, limit=a.limit))
     from .. import route
     rep = route.ab_report(route.load_ab(a.limit))
     return ctx.emit(rep, route.ab_text(rep))

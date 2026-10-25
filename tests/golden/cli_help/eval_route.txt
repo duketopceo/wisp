@@ -1,22 +1,32 @@
-usage: wispd eval route [-h] [--replay] [--json] [--quiet] [--no-color]
+usage: wispd eval route [-h] [--replay] [--decisions]
+                        [--models MODELS [MODELS ...]] [--out PATH]
+                        [--route-only] [--json] [--quiet] [--no-color]
                         [limit]
 
 Jev vs heuristic route agreement and latency
 
 positional arguments:
-  limit        turns to read (default all)
+  limit                     turns to read (default all)
 
 options:
-  -h, --help   show this help message and exit
-  --replay     replay logged decisions through candidate models on OpenRouter
-               (paid, orchestral key)
+  -h, --help                show this help message and exit
+  --replay                  replay logged decisions through candidate models
+                            on OpenRouter (paid, orchestral key)
+  --decisions               with --replay: use /api/alpha/decisions (decision
+                            models, default list)
+  --models MODELS [MODELS ...]
+                            with --replay: model id(s) to score
+  --out PATH                write full per-case JSON (includes transcripts)
+  --route-only              with --decisions: skip joint clarify/risky
+                            questions
 
 global options:
-  --json       machine-readable output (one JSON object)
-  --quiet, -q  print nothing on success
-  --no-color   plain output (also NO_COLOR, or not a tty)
+  --json                    machine-readable output (one JSON object)
+  --quiet, -q               print nothing on success
+  --no-color                plain output (also NO_COLOR, or not a tty)
 
 Examples:
   wispd eval route
   wispd eval route 100 --json
   wispd eval route --replay 50
+  wispd eval route --replay --decisions --out replay.json

@@ -118,6 +118,59 @@ class DeadlineTest(RouteBase):
                                  "answer")
 
 
+class FlashLaneTest(RouteBase):
+    FLASH_CFG = {"jev": {"flash_decider": "true", "flash_deadline_ms": "220",
+                         "deadline_ms": "400"}}
+
+    def test_off_by_default_uses_jev(self):
+        self.jev(dict(ANSWER, latency_ms=80))
+        _, meta = self.decide(cfg={})
+        self.assertEqual(meta["source"], "jev")
+        self.assertIsNone(meta.get("flash_status"))
+
+    def test_high_confidence_flash_accepted(self):
+        flash = {"answers": {"route": {"choice": "answer", "confidence": 0.92}}}
+        with mock.patch.object(route, "_decisions_call",
+                               return_value=flash):
+            resp, meta = self.decide(cfg=self.FLASH_CFG)
+        self.assertEqual(meta["source"], "flash")
+        self.assertEqual(meta["route_lane"], "flash")
+        self.assertEqual(resp["answers"]["route"]["choice"], "answer")
+        self.assertEqual(meta["flash_status"], "ok")
+
+    def test_low_confidence_hands_off_to_jev(self):
+        flash = {"answers": {"route": {"choice": "act", "confidence": 0.5}}}
+        self.jev(dict(ANSWER, latency_ms=80))
+        with mock.patch.object(route, "_decisions_call",
+                               return_value=flash):
+            resp, meta = self.decide(cfg=self.FLASH_CFG)
+        self.assertEqual(meta["source"], "jev")
+        self.assertEqual(meta["flash_status"], "low_confidence")
+        self.assertEqual(resp["answers"]["route"]["choice"], "answer")
+
+    def test_flash_error_hands_off_to_jev(self):
+        self.jev(dict(ANSWER, latency_ms=80))
+        with mock.patch.object(route, "_decisions_call",
+                               side_effect=OSError("down")):
+            resp, meta = self.decide(cfg=self.FLASH_CFG)
+        self.assertEqual(meta["source"], "jev")
+        self.assertEqual(meta["flash_status"], "error")
+
+    def test_deadline_respected_with_flash(self):
+        self.jev(dict(ANSWER, latency_ms=2000))
+
+        def slow_flash(*a, **k):
+            time.sleep(0.25)
+            return {"answers": {"route": {"choice": "act", "confidence": 0.5}}}
+
+        t0 = time.monotonic()
+        with mock.patch.object(route, "_decisions_call", side_effect=slow_flash):
+            _, meta = self.decide("open firefox", cfg=self.FLASH_CFG)
+        took = (time.monotonic() - t0) * 1000
+        self.assertLess(took, 700)
+        self.assertGreaterEqual(took, 350)
+
+
 class GateTest(RouteBase):
     def test_bare_launch_overrides_jev_and_logs_disagreement(self):
         self.jev(ANSWER)

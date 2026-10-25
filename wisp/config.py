@@ -37,13 +37,13 @@ CHAT_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 # Second deciders, run alongside the primary purely to record agreement.
 # Selected with `[jev] shadow = "<name>"`; the primary still decides every
 # turn — a shadow never changes what the agent does, it only creates the
-# labeled-comparison data the v1.0 accuracy gate needs. Perplexity's model
-# is multimodal (state may carry images) and BYOK, so it needs its own key.
+# labeled-comparison data the v1.0 accuracy gate needs. The pplx shadow
+# uses OpenRouter (same key as Jev) — no separate Perplexity key.
 SHADOW_PROVIDERS = {
     "pplx": {
-        "endpoint": "https://api.perplexity.ai/v1/decisions",
-        "model": "pplx-decider-v1-27b",
-        "key_env": "PERPLEXITY_API_KEY",
+        "endpoint": "https://openrouter.ai/api/alpha/decisions",
+        "model": "perplexity/pplx-decider-v1.2",
+        "key_env": "OPENROUTER_API_KEY",
     },
 }
 
@@ -369,9 +369,13 @@ timeout_ms = "500"
 # PRIMARY still decides — a shadow never changes what Wisp does, it only
 # accumulates the agreement data the soak needs. Both answers land in
 # shadow.jsonl, keyed by the same turn id decisions.jsonl carries. "" = off.
-# Known values: "pplx" (Perplexity pplx-decider-v1-27b; needs
-# PERPLEXITY_API_KEY in .env or the environment).
+# Known values: "pplx" (perplexity/pplx-decider-v1.2 on OpenRouter).
 shadow = ""
+# Optional runtime route lane: flash decider before Jev (default off).
+# flash_decider = false
+# flash_model = "perplexity/pplx-decider-flash-v1.2"
+# flash_confidence = 0.7
+# flash_deadline_ms = 220   # sub-budget of deadline_ms; rest goes to Jev
 # Jev is an accelerator, never a gate: past this many ms the heuristic
 # router decides and the turn goes on (route_ab.jsonl keeps both).
 # deadline_ms = 400

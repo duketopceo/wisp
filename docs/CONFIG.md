@@ -83,9 +83,19 @@ take focus, so `Esc` stays reachable while cua acts. Design notes:
 | key | default | meaning |
 |-----|---------|---------|
 | `deadline_ms` | `400` | Jev gets this long to route; past it, on an error, or on a malformed reply the heuristic router decides and the turn goes on |
-| `shadow` | `""` | second decider logged to `shadow.jsonl` (`pplx`); never changes what Wisp does |
+| `shadow` | `""` | second decider logged to `shadow.jsonl` (`pplx` → `perplexity/pplx-decider-v1.2` on OpenRouter); never changes what Wisp does |
+| `flash_decider` | `false` | when `true`, try `flash_model` for the route first (OpenRouter decisions); low confidence, error, or timeout falls through to Jev then heuristic within the same `deadline_ms` |
+| `flash_model` | `perplexity/pplx-decider-flash-v1.2` | decision model for the flash lane (non-flash v1.2 is too slow for the 400 ms budget) |
+| `flash_confidence` | `0.7` | accept the flash route at or above this confidence; below it, hand off to Jev |
+| `flash_deadline_ms` | `220` | sub-budget for the flash call; the remainder of `deadline_ms` is left for Jev |
 
-Every routed turn appends Jev vs heuristic vs final route to `route_ab.jsonl`; read it with `wispd eval route`.
+Every routed turn appends Jev vs heuristic vs final route to `route_ab.jsonl`; read it with `wispd eval route`. Decisions logged to `decisions.jsonl` include an optional `route_lane` field (`flash`, `jev`, or `heuristic`).
+
+Replay logged decisions through decision models (paid, orchestral key):
+
+```bash
+wispd eval route --replay --decisions [--models perplexity/pplx-decider-v1.2 typesafe/jev-1.13] [--out replay.json] [limit]
+```
 
 ## [agent] — routing + action policy
 

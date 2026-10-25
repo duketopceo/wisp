@@ -246,9 +246,9 @@ class ShadowConfigTest(unittest.TestCase):
 
     def test_pplx_spec_is_complete(self):
         spec = config.SHADOW_PROVIDERS["pplx"]
-        self.assertEqual(spec["model"], "pplx-decider-v1-27b")
-        self.assertTrue(spec["endpoint"].startswith("https://"))
-        self.assertEqual(spec["key_env"], "PERPLEXITY_API_KEY")
+        self.assertEqual(spec["model"], "perplexity/pplx-decider-v1.2")
+        self.assertIn("openrouter.ai", spec["endpoint"])
+        self.assertEqual(spec["key_env"], "OPENROUTER_API_KEY")
 
 
 if __name__ == "__main__":
