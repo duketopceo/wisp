@@ -80,17 +80,18 @@ def summarize(series: dict) -> dict:
     return out
 
 
-def check(series: dict) -> list:
+def check(series: dict, *, budget_scale: float = 1.0) -> list:
     """Regressions: p50 over the budget, or p90 over 1.5x the budget."""
     bad = []
     for pid, row in summarize(series).items():
-        if row["p50"] > row["budget_p50_ms"]:
+        budget = row["budget_p50_ms"] * budget_scale
+        if row["p50"] > budget:
             bad.append(f"{pid} p50 {row['p50']} ms > budget "
-                       f"{row['budget_p50_ms']} ms")
-        if row["p90"] > row["budget_p50_ms"] * telemetry.P90_FACTOR:
+                       f"{budget:g} ms")
+        if row["p90"] > budget * telemetry.P90_FACTOR:
             bad.append(f"{pid} p90 {row['p90']} ms > "
                        f"{telemetry.P90_FACTOR}x budget "
-                       f"{row['budget_p50_ms']} ms")
+                       f"{budget:g} ms")
     return bad
 
 

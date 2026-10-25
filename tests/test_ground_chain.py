@@ -21,6 +21,20 @@ try:
 except ImportError:
     Image = None
 
+# U4: unfaked loop calls reach a live cua-driver's recording + pack
+# write; the pack seam is stubbed module-wide (its suite is elsewhere)
+_WRITE_PACK = None
+
+
+def setUpModule():
+    global _WRITE_PACK
+    _WRITE_PACK = mock.patch.object(act, "_write_pack")
+    _WRITE_PACK.start()
+
+
+def tearDownModule():
+    _WRITE_PACK.stop()
+
 _need_pil = unittest.skipUnless(Image, "PIL not installed")
 
 EDP = {"name": "eDP-1", "x": 0, "y": 0, "width": 3456, "height": 2160,

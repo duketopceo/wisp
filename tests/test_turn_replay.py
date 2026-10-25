@@ -411,8 +411,9 @@ class TurnReplayTest(unittest.TestCase):
         self.assertTrue(res.interrupt_fired)
         self.assertTrue(res.final["result"].startswith("INTERRUPTED"),
                         res.final)
-        self.assertEqual([c["tool"] for c in res.fake_calls["cua"]],
-                         ["click"])
+        tools = [c["tool"] for c in res.fake_calls["cua"]]
+        self.assertEqual(tools[:2], ["start_session", "start_recording"])
+        self.assertIn("click", tools)
         self.assertLess(res.events[-1]["t_ms"] - res.interrupt_t_ms,
                         150 * runner.JITTER)
 

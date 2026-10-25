@@ -225,6 +225,7 @@ verbs and examples. Add `--json` for machine-readable output.
 | `wispd binds` | the hotkey and its Hyprland binds |
 | `wispd onboard` | guided first run |
 | `wispd trace show` / `trace digest` | turn trace and local digest |
+| `wispd captures [turn] [--full]` | capture-pack list or one pack's manifest |
 | `wispd cua status` | whether the cua pointer backend is usable |
 | `wispd cua kill` / `wispd cua resume` | arm or clear the kill switch |
 | `wispd cua log` | the driver journal, or the audit log |
@@ -260,7 +261,9 @@ Local, never committed:
   `labels.jsonl`, `trajectories.jsonl`, `usage.jsonl` (the spend
   ledger), `inventory.json`, `corrections.jsonl`, `dictation.json`
   (dictate corrections + per-app counts), `tasks.jsonl`,
-  `skillbank.json`, `proposals/`, `onboard.json`
+  `skillbank.json`, `proposals/`, `onboard.json`,
+  `packs/<turn>/` (durable capture packs — `wispd captures`),
+  `rec/<turn>/` (transient in-flight recording), `pack.salt`
 - `~/.local/state/wisp/cua.jsonl`: the cua audit log
 - `~/.config/wisp/`: `config.toml`, `.env`, `mcp.json`
 - `$XDG_RUNTIME_DIR/wisp/`: `state.json` and the `wispd.sock` socket
