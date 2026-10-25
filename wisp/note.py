@@ -353,7 +353,7 @@ class NotePad:
             return
         try:
             bus.emit_event("note_changed", **payload)
-        except Exception:
+        except (OSError, TypeError, AttributeError, ValueError, KeyError):
             pass
         # Prefer turn-scoped publish so a stale turn cannot overwrite;
         # fall back to daemon-level when no turn id is bound.
@@ -365,7 +365,7 @@ class NotePad:
             elif hasattr(bus, "transition"):
                 # bare State (tests) — merge into snapshot
                 bus.transition(getattr(bus, "status", "idle"), note=payload)
-        except Exception:
+        except (OSError, TypeError, AttributeError, ValueError, KeyError):
             pass
 
 
