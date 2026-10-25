@@ -10,6 +10,7 @@ import base64
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -70,7 +71,21 @@ class CliEnv:
             "WISP_OS": "linux", "WISP_JEV_ENDPOINT":
             "http://127.0.0.1:9/x", "NO_COLOR": "1", "COLUMNS": "80",
             "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONIOENCODING": "utf-8",
+            # UTF-8 mode: file I/O and stdio default to utf-8 — the
+            # wisp config/ledgers carry non-ASCII (arrows, dashes).
+            "PYTHONUTF8": "1",
         }
+        if os.name == "nt":
+            # Winsock init and home resolution die without these
+            # (WinError 10106 / RuntimeError home); PATH stays shim-only.
+            for k in ("SystemRoot", "WINDIR", "COMSPEC", "APPDATA",
+                      "LOCALAPPDATA", "TEMP", "TMP", "HOMEDRIVE",
+                      "HOMEPATH", "PATHEXT"):
+                v = os.environ.get(k)
+                if v is not None:
+                    self.env[k] = v
+            self.env["USERPROFILE"] = str(self.home)
         self.env.update(extra_env or {})
         (self.home / "run").mkdir()
         (self.home / "run").chmod(0o700)
@@ -85,6 +100,21 @@ class CliEnv:
                      + str(self.calls) + "\"\n" + body + "\nexit "
                      + str(code) + "\n")
         f.chmod(0o755)
+        if os.name == "nt":
+            # .cmd is the executable form on Windows. A non-empty body
+            # is POSIX shell: run it through bash (Git Bash) when found,
+            # else the shim just logs and exits.
+            if body and (bash := shutil.which("bash")):
+                (self.home / "bin" / f"{name}.sh").write_text(
+                    body + "\nexit " + str(code) + "\n")
+                (self.home / "bin" / f"{name}.cmd").write_text(
+                    "@echo " + name + " %* >> \"" + str(self.calls)
+                    + "\"\r\n@\"" + bash + "\" \"%~dp0" + name
+                    + ".sh\" %*\r\n@exit /b %errorlevel%\r\n")
+            else:
+                (self.home / "bin" / f"{name}.cmd").write_text(
+                    "@echo " + name + " %* >> \"" + str(self.calls)
+                    + "\"\r\n@exit /b " + str(code) + "\r\n")
 
     def shim_calls(self) -> list:
         try:
@@ -134,6 +164,7 @@ class CliEnv:
             timeout: int = 60):
         p = subprocess.run([sys.executable, str(ROOT / exe), *argv],
                            env=self.env, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace",
                            timeout=timeout, input=stdin)
         out = p.stdout.replace(str(self.home), "<HOME>")
         err = p.stderr.replace(str(self.home), "<HOME>")

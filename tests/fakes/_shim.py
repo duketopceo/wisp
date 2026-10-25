@@ -3,7 +3,6 @@
 Dispatches on the tool name: cua-driver, hyprctl, notify-send,
 systemctl. Config: ``<name>.json`` beside this file. Calls: appended to
 ``calls.jsonl`` (one write per line, O_APPEND)."""
-import fcntl
 import json
 import os
 import pathlib
@@ -11,7 +10,41 @@ import socket
 import sys
 import time
 
+try:
+    import fcntl
+
+    def _lock_ex(fh):
+        fcntl.flock(fh, fcntl.LOCK_EX)
+
+    def _lock_un(fh):
+        fcntl.flock(fh, fcntl.LOCK_UN)
+except ImportError:
+    # Windows: byte-0 region lock stands in for flock.
+    import msvcrt
+
+    def _lock_ex(fh):
+        fh.seek(0)
+        msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
+
+    def _lock_un(fh):
+        fh.seek(0)
+        msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+
 DIR = pathlib.Path(__file__).resolve().parent
+
+
+def _connect_stream(path, timeout=None):
+    """Connect to a fake stream endpoint: AF_UNIX where it exists;
+    on hosts without it (Windows) the endpoint file holds a TCP
+    loopback port instead (see fakes/sockutil.py)."""
+    if hasattr(socket, "AF_UNIX"):
+        s = socket.socket(socket.AF_UNIX)
+        if timeout is not None:
+            s.settimeout(timeout)
+        s.connect(str(path))
+        return s
+    port = int(pathlib.Path(path).read_text().strip())
+    return socket.create_connection(("127.0.0.1", port), timeout)
 
 
 def _cfg(name: str) -> dict:
@@ -41,7 +74,7 @@ class _Locked:
 
     def __enter__(self):
         self.fh = open(str(self.path) + ".lock", "w")
-        fcntl.flock(self.fh, fcntl.LOCK_EX)
+        _lock_ex(self.fh)
         try:
             self.data = json.loads(self.path.read_text())
         except (OSError, ValueError):
@@ -50,7 +83,7 @@ class _Locked:
 
     def __exit__(self, *exc):
         self.path.write_text(json.dumps(self.data))
-        fcntl.flock(self.fh, fcntl.LOCK_UN)
+        _lock_un(self.fh)
         self.fh.close()
 
 
@@ -71,10 +104,8 @@ def cua_driver(argv: list) -> int:
         return 2
     sock = cfg.get("socket") or os.path.expanduser(
         "~/.cache/cua-driver/cua-driver.sock")
-    s = socket.socket(socket.AF_UNIX)
-    s.settimeout(float(cfg.get("connect_timeout", 5)))
     try:
-        s.connect(sock)
+        s = _connect_stream(sock, float(cfg.get("connect_timeout", 5)))
     except OSError as e:
         sys.stderr.write(f"E_CUA_DOWN: cannot reach daemon at {sock}: "
                          f"{e}\n")
@@ -115,10 +146,8 @@ def hyprctl(argv: list) -> int:
     else:
         req = " ".join(args)
     _log("hyprctl", argv, request=req)
-    s = socket.socket(socket.AF_UNIX)
-    s.settimeout(5)
     try:
-        s.connect(path)
+        s = _connect_stream(path, 5)
         s.sendall(req.encode())
         data = b""
         while True:
@@ -453,3 +482,9 @@ TOOLS = {"cua-driver": cua_driver, "hyprctl": hyprctl,
 
 def main(name: str) -> int:
     return TOOLS[name](sys.argv[1:])
+
+
+if __name__ == "__main__":
+    # Windows entry: the .cmd launcher runs this file directly with the
+    # tool name as argv[1] (the shebang launcher imports main() instead).
+    sys.exit(TOOLS[sys.argv[1]](sys.argv[2:]))

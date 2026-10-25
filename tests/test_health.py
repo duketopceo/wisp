@@ -683,7 +683,7 @@ class WispdModelsTest(unittest.TestCase):
             "[brain]\nrouter = \"jev\"\ndefault = \"openrouter:x\"\n"
             "[health.units]\njev = \"llama-jev,jev-shim\"\n")
         env = {"PATH": os.environ.get("PATH", ""), "HOME": td,
-               "XDG_CONFIG_HOME": str(pathlib.Path(td) / "config"),
+               "USERPROFILE": td, "XDG_CONFIG_HOME": str(pathlib.Path(td) / "config"),
                "XDG_DATA_HOME": str(pathlib.Path(td) / "data"),
                "XDG_STATE_HOME": str(pathlib.Path(td) / "state"),
                "XDG_RUNTIME_DIR": td, "WISP_OS": "linux",

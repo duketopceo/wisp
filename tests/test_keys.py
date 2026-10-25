@@ -12,6 +12,7 @@ import sys
 import tempfile
 import threading
 import time
+import socket
 import unittest
 from unittest import mock
 
@@ -87,6 +88,8 @@ class TestGeneration(unittest.TestCase):
         self.assertEqual(lua.count("hl.bind("), 11)  # esc, return, 1..9
 
 
+@unittest.skipUnless(hasattr(socket, "AF_UNIX"),
+                     "hypr eval needs the unix Hyprland socket")
 class TestRegistry(unittest.TestCase):
     def setUp(self):
         hypr.reset_binds()
@@ -127,6 +130,8 @@ class TestRegistry(unittest.TestCase):
         self.assertEqual(hypr.active_submaps(), {})
 
 
+@unittest.skipUnless(hasattr(socket, "AF_UNIX"),
+                     "hypr eval needs the unix Hyprland socket")
 class TestKeysController(unittest.TestCase):
     def setUp(self):
         hypr.reset_binds()
@@ -286,6 +291,8 @@ class TestEscStopsWithinBudget(unittest.TestCase):
         self.assertIsNotNone(m, define)
         return shlex.split(m.group(1).replace('\\"', '"'))
 
+    @unittest.skipUnless(hasattr(socket, "AF_UNIX"),
+                         "hypr eval needs the unix Hyprland socket")
     def test_esc_cancels_the_turn_within_150ms(self):
         import importlib.machinery
         import importlib.util
@@ -326,6 +333,8 @@ class TestEscStopsWithinBudget(unittest.TestCase):
         self.assertIsNotNone(child.poll())
         self.assertTrue(ctl["interrupt"].is_set())
 
+    @unittest.skipUnless(hasattr(socket, "AF_UNIX"),
+                         "fastkey speaks AF_UNIX to the daemon")
     def test_fastkey_choice_sends_index(self):
         got = []
         srv = ipc.Daemon(lambda c, peer=None: got.append(c)
@@ -337,6 +346,8 @@ class TestEscStopsWithinBudget(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(got, [{"cmd": "choice", "pick": "", "index": 2}])
 
+    @unittest.skipUnless(hasattr(socket, "AF_UNIX"),
+                         "fastkey speaks AF_UNIX to the daemon")
     def test_fastkey_exits_nonzero_without_a_daemon(self):
         r = subprocess.run(keys.runner_for(self.td / "none.sock")
                            + ["interrupt"], capture_output=True, timeout=5)

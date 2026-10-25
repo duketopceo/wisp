@@ -37,6 +37,15 @@ def _which(b: str) -> bool:
     return shutil.which(b) is not None
 
 
+def resolve_exe(argv0):
+    """Bare command name -> PATHEXT-resolved path on Windows, where
+    CreateProcess finds only .exe and .cmd/.bat tools are invisible.
+    Pass-through elsewhere or when argv0 is already a path."""
+    if os.name == "nt" and argv0 and os.sep not in str(argv0):
+        return shutil.which(str(argv0)) or argv0
+    return argv0
+
+
 def desktop() -> str:
     """Linux compositor: 'hyprland'|'gnome'|'kde'|'x11'|'unknown'.
     `WISP_DESKTOP` env override mirrors the Rust core (tests,
@@ -606,11 +615,18 @@ def active_window() -> dict:
 
 
 def _cua_live() -> bool:
-    """cua-driver daemon reachable on its socket (Wayland backend
-    enabled server-side via CUA_DRIVER_RS_ENABLE_WAYLAND)."""
+    """cua-driver reachable. Linux: binary on PATH plus the daemon
+    socket (Wayland backend enabled server-side via
+    CUA_DRIVER_RS_ENABLE_WAYLAND). Windows/macOS: the driver runs as
+    a service/app (no unix socket), so binary on PATH is enough —
+    a dead daemon surfaces as E_CUA_DOWN at call time."""
     import os
-    return _which("cua-driver") and os.path.exists(
-        os.path.expanduser("~/.cache/cua-driver/cua-driver.sock"))
+    if not _which("cua-driver"):
+        return False
+    if current() == "linux":
+        return os.path.exists(
+            os.path.expanduser("~/.cache/cua-driver/cua-driver.sock"))
+    return True
 
 
 def pointer_backend(cfg: dict | None = None,

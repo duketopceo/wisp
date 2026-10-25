@@ -66,6 +66,8 @@ def default_socket() -> pathlib.Path:
 
 
 def _connect(path) -> bool:
+    if not hasattr(socket, "AF_UNIX"):
+        return False
     s = socket.socket(socket.AF_UNIX)
     s.settimeout(0.5)
     try:

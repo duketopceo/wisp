@@ -146,8 +146,13 @@ class FakeServer:
         """True (and remembered in ``peer_closed``) when the client has
         closed its end of the connection."""
         import socket as _s
+        import select
         try:
-            data = h.connection.recv(1, _s.MSG_PEEK | _s.MSG_DONTWAIT)
+            # MSG_DONTWAIT does not exist on Windows — readiness via
+            # select() is the portable non-blocking probe.
+            if not select.select([h.connection], [], [], 0)[0]:
+                return False
+            data = h.connection.recv(1, _s.MSG_PEEK)
             gone = data == b""
         except BlockingIOError:
             gone = False

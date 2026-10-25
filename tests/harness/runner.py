@@ -84,13 +84,15 @@ class NetworkGuard:
                        "getaddrinfo": orig_gai,
                        "gethostbyname": orig_ghbn}
 
+        af_unix = getattr(socket, "AF_UNIX", None)  # absent on Windows
+
         def connect(sock, address):
-            if sock.family != socket.AF_UNIX:
+            if af_unix is None or sock.family != af_unix:
                 guard._check("connect", address[0])
             return orig_connect(sock, address)
 
         def connect_ex(sock, address):
-            if sock.family != socket.AF_UNIX:
+            if af_unix is None or sock.family != af_unix:
                 guard._check("connect", address[0])
             return orig_connect_ex(sock, address)
 
@@ -337,7 +339,19 @@ def child_env(tmp: pathlib.Path, fs: FakeSet) -> dict:
         "OPENROUTER_API_KEY": "fake-openrouter-key",
         "PYTHONPATH": str(ROOT),
         "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUTF8": "1",
     }
+    if os.name == "nt":
+        # Winsock init and home resolution die without these
+        # (WinError 10106); PATH still stays fake-bin-only.
+        for k in ("SystemRoot", "WINDIR", "COMSPEC", "APPDATA",
+                  "LOCALAPPDATA", "TEMP", "TMP", "HOMEDRIVE", "HOMEPATH",
+                  "PATHEXT"):
+            v = os.environ.get(k)
+            if v is not None:
+                env[k] = v
+        env["USERPROFILE"] = str(tmp / "home")
     env.update(fs.env())
     return env
 

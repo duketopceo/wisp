@@ -158,7 +158,8 @@ def notify(msg: str, environ=None) -> bool:
         finally:
             s.close()
         return True
-    except OSError:
+    except (OSError, AttributeError):
+        # AttributeError covers hosts without AF_UNIX (Windows).
         return False
 
 
@@ -203,6 +204,8 @@ class Watchdog(threading.Thread):
 
 def _run(argv: list, timeout: float = 5.0):
     try:
+        from . import platform as _platform
+        argv[0] = _platform.resolve_exe(argv[0])
         r = subprocess.run(argv, capture_output=True, text=True,
                            timeout=timeout)
         return r.stdout

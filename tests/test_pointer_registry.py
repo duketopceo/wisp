@@ -4,6 +4,7 @@ coordinate pass-through, guide fallback. All fakes (W5)."""
 import itertools
 import os
 import pathlib
+import socket
 import stat
 import sys
 import tempfile
@@ -52,18 +53,29 @@ class Rig:
                 p.write_text(f'#!/bin/sh\necho "{n} $*" >> "{self.log}"\n'
                              'exit 0\n')
                 p.chmod(p.stat().st_mode | stat.S_IXUSR)
+                if os.name == "nt":
+                    (self.bins.path / f"{n}.cmd").write_text(
+                        f'@echo {n} %* >> "{self.log}"\r\n'
+                        '@exit /b 0\r\n')
         if "hyprctl" in self.live:
             p = self.bins.path / "hyprctl"
             p.write_text('#!/bin/sh\nexit 0\n')
             p.chmod(p.stat().st_mode | stat.S_IXUSR)
+            if os.name == "nt":
+                (self.bins.path / "hyprctl.cmd").write_text(
+                    '@exit /b 0\r\n')
         script = dict(cua_script or {})
         script["mode"] = "live" if "cua" in self.live else "absent"
         self.cua = fakes.FakeCua(t, self.bins, script)
         self.hypr = FakeHypr(ok_handler) if hypr else None
-        self.env = mock.patch.dict(os.environ, {
+        env = {
             "HOME": self.td.name, "PATH": str(self.bins.path),
             "WISP_OS": "linux",
-            "WISP_DESKTOP": "hyprland" if hypr else "x11"})
+            "WISP_DESKTOP": "hyprland" if hypr else "x11"}
+        if os.name == "nt":
+            # expanduser("~") reads USERPROFILE on Windows, not HOME
+            env["USERPROFILE"] = self.td.name
+        self.env = mock.patch.dict(os.environ, env)
 
     def shell(self):
         return self.log.read_text().splitlines() if self.log.exists() \
@@ -118,8 +130,14 @@ class TestAutoOrder(_Iso):
                          ["cua", "hyprcursor", "ydotool", "wlrctl",
                           "guide"])
 
-    def test_non_linux_is_none(self):
+    def test_non_linux_cua_only(self):
+        # Off-Linux only cua-driver is eligible — the Linux injectors
+        # are skipped and guide mode (None) applies when cua is absent.
         with Rig():
+            with mock.patch.dict(os.environ, {"WISP_OS": "macos"}):
+                self.assertEqual(
+                    pointer.Registry(DRIVE).select().name, "cua")
+        with Rig(live=()):
             with mock.patch.dict(os.environ, {"WISP_OS": "macos"}):
                 self.assertIsNone(pointer.Registry(DRIVE).select())
 
@@ -221,6 +239,8 @@ class TestMoveFallthrough(_Iso):
     CUA_FAIL = {"tools": {"default": {"ok": False,
                                       "error": "E_CUA_REFUSED"}}}
 
+    @unittest.skipUnless(hasattr(socket, "AF_UNIX"),
+                         "hypr eval needs the unix Hyprland socket")
     def test_failed_cua_move_falls_to_hypr_eval(self):
         with Rig(cua_script=self.CUA_FAIL) as r:
             out = pointer.Registry(DRIVE).move(5, 6)
@@ -245,6 +265,8 @@ class TestMoveFallthrough(_Iso):
             out = pointer.Registry(DRIVE).move(5, 6)
             self.assertFalse(out.ok)
 
+    @unittest.skipUnless(hasattr(socket, "AF_UNIX"),
+                         "hypr eval needs the unix Hyprland socket")
     def test_non_cua_move_uses_hypr_eval_on_hyprland(self):
         with Rig(("ydotool",)) as r:
             out = pointer.Registry(DRIVE).move(5, 6)
@@ -288,7 +310,8 @@ class TestClickNoRetry(_Iso):
         ydo.write_text(f'#!/bin/sh\necho y >> "{log}"\n')
         ydo.chmod(0o755)
         with mock.patch.dict(os.environ, {
-                "HOME": td.name, "PATH": str(bins.path),
+                "HOME": td.name, "USERPROFILE": td.name,
+                "PATH": str(bins.path),
                 "WISP_OS": "linux", "WISP_DESKTOP": "x11"}):
             cua.start()
             try:

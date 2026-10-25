@@ -29,6 +29,8 @@ from unittest import mock
 
 import shorttmp  # tests/ is on sys.path (unittest discover -s tests)
 
+from . import sockutil
+
 FIXTURE = json.loads((pathlib.Path(__file__).resolve().parent.parent
                       / "fixtures" / "hypr_probe.json").read_text())
 
@@ -89,8 +91,7 @@ class FakeHypr:
         return ok_handler(r)
 
     def _listen(self, name):
-        s = socket.socket(socket.AF_UNIX)
-        s.bind(str(self.dir / name))
+        s = sockutil.bind_stream(self.dir / name)
         s.listen(8)
         s.settimeout(0.05)
         return s

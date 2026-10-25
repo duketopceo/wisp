@@ -56,11 +56,21 @@ class FakeNotify:
                 if s["kind"] == "NotificationClosed"]
 
     def _push(self, kind: str, args: list) -> None:
-        import fcntl
+        try:
+            import fcntl
+
+            def _lock(lk):
+                fcntl.flock(lk, fcntl.LOCK_EX)
+        except ImportError:
+            import msvcrt
+
+            def _lock(lk):
+                lk.seek(0)
+                msvcrt.locking(lk.fileno(), msvcrt.LK_LOCK, 1)
         import json
         p = self.bins.state_file(self.CFG)
         with open(str(p) + ".lock", "w") as lk:
-            fcntl.flock(lk, fcntl.LOCK_EX)
+            _lock(lk)
             st = self._state() or {"next": 1, "live": {}, "signals": []}
             st["signals"].append({"kind": kind, "args": args, "at": 0})
             p.write_text(json.dumps(st))

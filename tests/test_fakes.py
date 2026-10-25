@@ -33,12 +33,26 @@ class Sandbox:
 
     def env(self, **extra):
         e = {"PATH": str(self.bins.path), "HOME": str(self.home),
-             "XDG_RUNTIME_DIR": str(self.run)}
+             "USERPROFILE": str(self.home), "XDG_RUNTIME_DIR": str(self.run)}
+        if os.name == "nt":
+            # shim children need Winsock + PATHEXT like any spawned env
+            for k in ("SystemRoot", "WINDIR", "COMSPEC", "APPDATA",
+                      "LOCALAPPDATA", "TEMP", "TMP", "HOMEDRIVE",
+                      "HOMEPATH", "PATHEXT"):
+                v = os.environ.get(k)
+                if v is not None:
+                    e[k] = v
+            e.setdefault("PYTHONUTF8", "1")
+            e.setdefault("PYTHONIOENCODING", "utf-8")
         e.update(extra)
         return e
 
     def sh(self, *argv, env=None, timeout=10):
-        return subprocess.run(list(argv), capture_output=True, text=True,
+        argv = list(argv)
+        if os.name == "nt" and argv:
+            argv[0] = shutil.which(str(argv[0]),
+                                   path=self.env()["PATH"]) or argv[0]
+        return subprocess.run(argv, capture_output=True, text=True,
                               env=env or self.env(), timeout=timeout)
 
     def close(self):
@@ -126,6 +140,8 @@ class HyprTest(unittest.TestCase):
         self.assertTrue((self.sb.run / "hypr" / h.sig
                          / ".socket2.sock").exists())
 
+    @unittest.skipUnless(hasattr(socket, "AF_UNIX"),
+                         "wisp.hypr uses AF_UNIX")
     def test_wisp_hypr_module_talks_to_it(self):
         from wisp import hypr
         h = self.make()
@@ -156,9 +172,8 @@ class HyprTest(unittest.TestCase):
 
     def test_event_stream_emit_reaches_connected_client(self):
         h = self.make(hold_events=True)
-        s = socket.socket(socket.AF_UNIX)
-        s.settimeout(3)
-        s.connect(str(self.sb.run / "hypr" / h.sig / ".socket2.sock"))
+        s = fakes.sockutil.connect_stream(
+            self.sb.run / "hypr" / h.sig / ".socket2.sock", 3)
         h.wait_event_clients(1)
         h.emit("activewindow>>kitty,~")
         self.assertEqual(s.recv(4096), b"activewindow>>kitty,~\n")
@@ -166,9 +181,8 @@ class HyprTest(unittest.TestCase):
 
     def test_scripted_events_sent_on_connect(self):
         h = self.make(events=["workspace>>2", "openwindow>>a,2,foot,x"])
-        s = socket.socket(socket.AF_UNIX)
-        s.settimeout(3)
-        s.connect(str(self.sb.run / "hypr" / h.sig / ".socket2.sock"))
+        s = fakes.sockutil.connect_stream(
+            self.sb.run / "hypr" / h.sig / ".socket2.sock", 3)
         data = b""
         while data.count(b"\n") < 2:
             chunk = s.recv(4096)
@@ -181,9 +195,8 @@ class HyprTest(unittest.TestCase):
 
     def test_hang_reply(self):
         h = self.make(hang=["j/clients"])
-        s = socket.socket(socket.AF_UNIX)
-        s.settimeout(0.3)
-        s.connect(str(self.sb.run / "hypr" / h.sig / ".socket.sock"))
+        s = fakes.sockutil.connect_stream(
+            self.sb.run / "hypr" / h.sig / ".socket.sock", 0.3)
         s.sendall(b"j/clients")
         with self.assertRaises(socket.timeout):
             s.recv(10)
@@ -306,7 +319,9 @@ class GdbusNotifyTest(unittest.TestCase):
     def test_monitor_prints_action_invoked(self):
         self.n.script(auto_invoke={"action": "yes", "delay_ms": 50})
         self.notify("A", "b", actions="['yes', 'Allow']")
-        p = subprocess.Popen(["gdbus", "monitor", "--session", "--dest",
+        gdbus = shutil.which("gdbus", path=self.sb.env()["PATH"]) \
+            or "gdbus"
+        p = subprocess.Popen([gdbus, "monitor", "--session", "--dest",
                               "org.freedesktop.Notifications"],
                              stdout=subprocess.PIPE, text=True,
                              env=self.sb.env())
@@ -320,7 +335,9 @@ class GdbusNotifyTest(unittest.TestCase):
         self.notify("A", "b", actions="['yes', 'Allow']")
         self.n.invoke(1, "yes")
         self.n.close(1, reason=2)
-        p = subprocess.Popen(["gdbus", "monitor", "--session"],
+        gdbus = shutil.which("gdbus", path=self.sb.env()["PATH"]) \
+            or "gdbus"
+        p = subprocess.Popen([gdbus, "monitor", "--session"],
                              stdout=subprocess.PIPE, text=True,
                              env=self.sb.env())
         self.addCleanup(p.kill)
@@ -405,19 +422,22 @@ class GuardTest(unittest.TestCase):
                 with self.assertRaises(fakes.LeakViolation):
                     s.bind(("0.0.0.0", 0))
                 s.close()
-                u = socket.socket(socket.AF_UNIX)
-                with self.assertRaises(fakes.LeakViolation):
-                    u.bind("/tmp/wisp-leak-test.sock")
-                u.close()
-                ok = socket.socket(socket.AF_UNIX)
-                ok.bind(os.path.join(d, "fine.sock"))
-                ok.close()
+                unix_violations = 0
+                if hasattr(socket, "AF_UNIX"):
+                    u = socket.socket(socket.AF_UNIX)
+                    with self.assertRaises(fakes.LeakViolation):
+                        u.bind("/tmp/wisp-leak-test.sock")
+                    u.close()
+                    ok = socket.socket(socket.AF_UNIX)
+                    ok.bind(os.path.join(d, "fine.sock"))
+                    ok.close()
+                    unix_violations = 1
                 lo = socket.socket()
                 lo.bind(("127.0.0.1", 0))
                 lo.close()
             finally:
                 g.uninstall()
-            self.assertEqual(len(g.violations), 2)
+            self.assertEqual(len(g.violations), 1 + unix_violations)
         self.assertFalse(os.path.exists("/tmp/wisp-leak-test.sock"))
 
     def test_uninstall_restores_socket(self):

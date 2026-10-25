@@ -42,8 +42,16 @@ Missing tools degrade to `SKIP (… — hint)`; nothing panics.
 
 ## Deps
 
-- `powershell` (always present), `sox` for mic capture + level meter
-  (`winget install sox` or bundled in U10 installer)
+- `powershell` (always present; `pwsh` also accepted everywhere the
+  seam shells out) — `sox` for mic capture + level meter
+- Install mic support: `winget install --id ChrisBagwell.SoX -e`.
+  The package is portable — winget appends its dir to the *user*
+  `PATH`, so open a fresh shell before `wispd doctor` sees it.
+  Verify with `sox --version` and
+  `python -c "from wisp import platform as p; print(p.record_cmd(...))"`.
+- No mic yet? Point `[stt]` at an OpenAI-compatible endpoint instead
+  (Groq `whisper-large-v3-turbo` verified on Windows) — STT works
+  without whisper.cpp, but capture still needs sox.
 - `BurntToast` module optional for rich notifications
 
 ## Service / hotkey

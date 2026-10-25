@@ -31,6 +31,13 @@ INJECT = '"); hl.dsp.exec_cmd("rm -rf ~'
 # FakeHypr / ok_handler live in tests/fakes/hypr.py and are
 # re-exported here for the tests below and test_pointer_precedence.
 
+# Hyprland only exists on Linux — the socket tests need AF_UNIX, which
+# Windows Python lacks. Skip (don't fail) there; the pure-builder
+# classes below still run everywhere.
+needs_unix = unittest.skipUnless(
+    hasattr(socket, "AF_UNIX"),
+    "Hyprland socket tests need AF_UNIX (absent on Windows)")
+
 
 # --- tiny Lua string-literal tokenizer: proves payloads stay inside one
 # literal. Returns (skeleton-with-literals-masked, [decoded literals]).
@@ -175,6 +182,7 @@ class TestBuilders(unittest.TestCase):
             self.assertNotIn("dispatch ", flat.replace("hl.dispatch(", ""))
 
 
+@needs_unix
 class TestTransport(unittest.TestCase):
     def test_query_parses_json(self):
         with FakeHypr() as f:
@@ -255,6 +263,7 @@ class TestTransport(unittest.TestCase):
         popen.assert_not_called()
 
 
+@needs_unix
 class TestProbeAndTools(unittest.TestCase):
     def setUp(self):
         # a leftover armed+yielded realinput watch (module-level
@@ -346,6 +355,7 @@ class TestProbeAndTools(unittest.TestCase):
         run.assert_not_called()
 
 
+@needs_unix
 class TestEvents(unittest.TestCase):
     def test_parse_event(self):
         self.assertEqual(hypr.parse_event("workspace>>2"), ("workspace", "2"))
@@ -380,6 +390,7 @@ class TestEvents(unittest.TestCase):
             self.assertEqual(list(it), [])
 
 
+@needs_unix
 class TestBindRegistry(unittest.TestCase):
     def binds_handler(self, extra=None):
         def h(r):

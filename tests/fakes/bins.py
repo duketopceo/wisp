@@ -30,13 +30,23 @@ class BinDir:
 
     def install(self, name: str, cfg: dict | None = None) -> pathlib.Path:
         p = self.path / name
-        p.write_text(
-            f"#!{sys.executable}\n"
-            "import sys\n"
-            f"sys.path.insert(0, {str(self.path)!r})\n"
-            "import _shim\n"
-            f"sys.exit(_shim.main({name!r}))\n")
-        p.chmod(p.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP)
+        if os.name == "nt":
+            # No shebang exec on Windows: a .cmd file is what
+            # shutil.which + subprocess resolve for the bare name —
+            # and no extensionless sibling, which would win exact-name
+            # resolution first and then fail to execute.
+            p = self.path / f"{name}.cmd"
+            p.write_text(
+                f'@"{sys.executable}" "{self.path}\\_shim.py"'
+                f" {name} %*\r\n")
+        else:
+            p.write_text(
+                f"#!{sys.executable}\n"
+                "import sys\n"
+                f"sys.path.insert(0, {str(self.path)!r})\n"
+                "import _shim\n"
+                f"sys.exit(_shim.main({name!r}))\n")
+            p.chmod(p.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP)
         self.configure(name, cfg or {})
         if name not in self._names:
             self._names.append(name)

@@ -82,6 +82,10 @@ def cua_test(ctx, a):
     check("socket present", sock.exists(), str(sock))
     conn = False
     if sock.exists():
+        if not hasattr(socket, "AF_UNIX"):
+            check("socket accepts connections", False,
+                  "no AF_UNIX on this OS")
+            return None
         s = socket.socket(socket.AF_UNIX)
         s.settimeout(2)
         try:
@@ -132,6 +136,8 @@ def cua_log(ctx, a):
         raise CliError("E_UNHEALTHY", "journalctl is not available.",
                        "wispd cua status")
     try:
+        from .. import platform as _platform
+        cmd[0] = _platform.resolve_exe(cmd[0])
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
     except (OSError, subprocess.TimeoutExpired) as e:
         raise CliError("E_FAILED", f"Reading the journal failed ({e}).",

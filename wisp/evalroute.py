@@ -108,7 +108,9 @@ def _eval_key() -> str:
     omaseal, fall back to the configured OpenRouter key."""
     import subprocess
     try:
-        r = subprocess.run(["omaseal", "get", "openrouter", "orchestral"],
+        from . import platform as _platform
+        r = subprocess.run([_platform.resolve_exe("omaseal"), "get",
+                            "openrouter", "orchestral"],
                            capture_output=True, text=True, timeout=10)
         if r.returncode == 0 and r.stdout.strip():
             return r.stdout.strip()

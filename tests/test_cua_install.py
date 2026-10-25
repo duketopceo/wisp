@@ -66,7 +66,7 @@ class Rig:
             f"CUA_SHA256_X86_64={sha}\n"
             f"CUA_BIN_SHA256_X86_64={bsha}\n")
         self.env = {"PATH": f"{self.bin}:/usr/bin:/bin",
-                    "HOME": str(self.home), "STUB_LOG": str(self.log),
+                    "HOME": str(self.home), "USERPROFILE": str(self.home), "STUB_LOG": str(self.log),
                     "STUB_PAYLOAD": str(t / "payload"),
                     "CUA_PIN_FILE": str(self.pin), "TMPDIR": str(t)}
 
@@ -93,6 +93,8 @@ class Rig:
         self.td.cleanup()
 
 
+@unittest.skipIf(os.name == "nt",
+                 "installer is a POSIX shell script + systemd units")
 class Installer(unittest.TestCase):
     def setUp(self):
         self.r = Rig()
@@ -207,6 +209,8 @@ class Installer(unittest.TestCase):
         self.assertEqual(p.returncode, 2)
 
 
+@unittest.skipIf(os.name == "nt",
+                 "shipped installer is a POSIX shell script")
 class Shipped(unittest.TestCase):
     def test_pin_has_version_and_both_arches(self):
         t = PIN.read_text()
