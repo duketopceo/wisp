@@ -229,13 +229,24 @@ class RunRecording:
         recording when its own stop fires."""
         try:
             c = self._client or _cua_client()
-            c.call("start_session", {"session": self.label},
-                   strict=False, timeout=5.0)
-            c.call("start_recording",
-                   {"session": self.label,
-                    "output_dir": str(self.dir),
-                    "include_accessibility_tree": False},
-                   strict=False, timeout=5.0)
+            # strict=False softens empty/non-JSON replies on exit 0;
+            # non-zero exits still raise. Explicit failure markers
+            # (ok:false / recording:false) must not arm the wrap.
+            sess = c.call("start_session", {"session": self.label},
+                          strict=False, timeout=5.0)
+            if isinstance(sess, dict) and sess.get("ok") is False:
+                raise RuntimeError(
+                    sess.get("error") or "start_session refused")
+            rec = c.call("start_recording",
+                         {"session": self.label,
+                          "output_dir": str(self.dir),
+                          "include_accessibility_tree": False},
+                         strict=False, timeout=5.0)
+            if isinstance(rec, dict) and (
+                    rec.get("ok") is False
+                    or rec.get("recording") is False):
+                raise RuntimeError(
+                    rec.get("error") or "start_recording inactive")
             self.active = True
         except Exception as e:
             print(f"[clicklab] recording unavailable: {e}")
