@@ -408,7 +408,7 @@ def close_live(bus=None, *, turn_id: str | None = None,
         try:
             snap = state.snapshot() if hasattr(state, "snapshot") \
                 else getattr(state, "note", None)
-        except Exception:
+        except (OSError, TypeError, AttributeError, ValueError, KeyError):
             snap = getattr(state, "note", None)
         if isinstance(snap, dict) and "note" in snap:
             snap = snap.get("note")
@@ -416,7 +416,7 @@ def close_live(bus=None, *, turn_id: str | None = None,
             and hasattr(bus, "snapshot"):
         try:
             snap = (bus.snapshot() or {}).get("note")
-        except Exception:
+        except (OSError, TypeError, AttributeError, ValueError, KeyError):
             snap = None
     if not isinstance(snap, dict):
         # still try closing from disk if a conv id is known
