@@ -143,7 +143,7 @@ class TestHelp(unittest.TestCase):
                            capture_output=True, text=True, timeout=30,
                            env=dict(os.environ, COLUMNS="80"))
         self.assertEqual(p.returncode, 0)
-        self.assertLess(len(p.stdout.splitlines()), 60)
+        self.assertLess(len(p.stdout.splitlines()), 65)
         for word in ("--json", "--quiet", "--no-color", "doctor",
                      "completion"):
             self.assertIn(word, p.stdout)

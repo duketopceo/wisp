@@ -42,7 +42,8 @@ function initial() {
     status: "offline", rawStatus: "offline", transcript: "", answer: "",
     result: "", choices: [], promptId: "", confirm: null, points: [],
     steps: [], actions: [],
-    suggestion: null, guide: null, focus: {}, goal: "", goalStatus: "",
+    suggestion: null, guide: null, focus: {}, note: null,
+    goal: "", goalStatus: "",
     level: 0, tasks: {}, error: "", errorCode: "", health: {}, spend: {},
     startedAt: "", turnId: "", seq: null, contractVersion: 1,
     updatedAt: "", heartbeatAt: "",
@@ -207,6 +208,7 @@ function normalize(raw) {
     suggestion: isObj(raw.suggestion) ? raw.suggestion : null,
     guide: isObj(raw.guide) ? raw.guide : null,
     focus: isObj(raw.focus) ? raw.focus : {},
+    note: normalizeNote(raw.note),
     goal: goalText, goalStatus: goalStatus, level: Math.max(0, Math.min(1, lv)),
     tasks: isObj(raw.tasks) ? raw.tasks : {}, error: str(raw.error),
     errorCode: code, health: isObj(raw.health) ? raw.health : {},
@@ -215,6 +217,24 @@ function normalize(raw) {
     seq: raw.seq === undefined || raw.seq === null || !isFinite(seq) ? null : seq,
     contractVersion: cv, updatedAt: str(raw.updated_at),
     heartbeatAt: str(raw.heartbeat_at)
+  }
+}
+
+// state.note (additive, gap-closure U1): live paper payload
+// {conv_id, path, raw, objects, plan, closed, rendered}. Null/absent
+// means no paper yet; malformed objects degrade to null so older cores
+// stay quiet.
+function normalizeNote(n) {
+  if (n === null || n === undefined) return null
+  if (!isObj(n)) return null
+  return {
+    convId: str(n.conv_id),
+    path: str(n.path),
+    raw: str(n.raw),
+    objects: arr(n.objects),
+    plan: arr(n.plan),
+    closed: !!n.closed,
+    rendered: str(n.rendered)
   }
 }
 

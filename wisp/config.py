@@ -26,6 +26,11 @@ SOCK_FILE = RUN_DIR / "wispd.sock"
 SESSION_FILE = DATA_DIR / "session.jsonl"
 TASKS_FILE = DATA_DIR / "tasks.jsonl"
 TASK_LOGS = DATA_DIR / "tasks"
+# Paper notes live under XDG_STATE_HOME (see wisp.note.notes_dir); this
+# constant is the default Linux path for docs/callers that need a Path.
+NOTES_DIR = pathlib.Path(
+    os.environ.get("XDG_STATE_HOME",
+                   str(pathlib.Path.home() / ".local" / "state"))) / "wisp" / "notes"
 HARNESS_FILE = CFG_DIR / "harness.json"
 WHISPER_HOME = HOME / "src" / "whisper.cpp"
 WHISPER_BIN = WHISPER_HOME / "build" / "bin" / "whisper-cli"

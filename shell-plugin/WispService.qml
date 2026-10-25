@@ -55,6 +55,9 @@ Item {
   property var actions: []
   property var suggestion: null
   property var guide: null
+  // paper surface (gap-closure U1): live note payload or null
+  // {convId, path, raw, objects, plan, closed, rendered}
+  property var note: null
   // cua.target stream event (docs/IPC_CONTRACT.md): where a CUA click
   // will land, or null. Drives GhostCursor; nothing renders when null.
   property var cuaTarget: null
@@ -273,6 +276,7 @@ Item {
     root.actions = v.actions;
     root.suggestion = v.suggestion;
     root.guide = v.guide;
+    root.note = v.note;
     root.cuaTarget = v.cuaTarget;
     root.windowFocus = v.focus;
     root.goal = v.goal;

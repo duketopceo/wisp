@@ -84,9 +84,19 @@ Item {
         objectName: "word"
         width: Math.min(implicitWidth, 160)
         elide: Text.ElideRight
-        // a live run's intent echo replaces the generic status word
-        text: root.runActive && root.run.intent !== ""
-          ? root.run.intent : root.view.word
+        // a live run's intent echo replaces the generic status word;
+        // a live paper plan marker is the next-best ambient signal
+        text: {
+          if (root.runActive && root.run.intent !== "")
+            return root.run.intent
+          var n = root.service ? root.service.note : null
+          if (n && !n.closed && n.plan && n.plan.length > 0) {
+            var step = n.plan[0]
+            var body = (step.text || "").trim()
+            if (body !== "") return body
+          }
+          return root.view.word
+        }
         color: root.tk[M.toneToken(root.view.tone)]
         font.family: root.service ? root.service.fontFamily : ""
         font.pixelSize: M.font.label

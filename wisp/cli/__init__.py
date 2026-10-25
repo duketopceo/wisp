@@ -18,10 +18,10 @@ def load_groups():
         return
     _LOADED = True
     from . import (agents, batchcmd, core, cua, diagnose,  # noqa: F401
-                   dictate, learning, settings)
+                   dictate, learning, note, settings)
     registry.SECTIONS[:] = [
         ("Daemon", ["daemon", "status", "stop", "interrupt", "trigger",
-                    "watch", "choice", "tui"]),
+                    "watch", "choice", "tui", "note"]),
         ("Diagnose", ["doctor", "health", "latency", "spend", "binds",
                       "onboard", "trace"]),
         ("Pointer and notifications", ["cua", "notify"]),
