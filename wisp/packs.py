@@ -16,15 +16,11 @@ At turn end the act loop calls `write()`, which folds the transient
 
 Invariants (plan stop conditions):
 
-- packs/ and rec/ are mode 0700; manifest.json and the salt file 0600.
+- packs/ and rec/ are mode 0700; manifest.json is 0600.
 - Keyboard-bearing args (type_text/key text) never persist as
   plaintext in a pack — pack copies carry length + an HMAC-SHA256
-  salted hash. The salt is a per-install random file
-  (~/.local/share/wisp/pack.salt, 0600): repeats correlate within a
-  store but cannot be dictionary-reversed, and the salt never leaves
-  the install (unlike cua_safety's per-process salt, pack copies are
-  durable — a fixed source salt would make typed-text hashes
-  dictionary-attackable at rest).
+  salted hash using the same in-process salt as cua_safety (never
+  written to disk).
 - Privacy: the pack-write re-checks deny-surface visibility
   (verify.visible_deny). A visible deny-listed surface — or an
   unreadable window list — suppresses the whole turn: every frame PNG
@@ -36,10 +32,8 @@ Invariants (plan stop conditions):
   survives the turn.
 - Retention: [packs] keep (count) AND keep_days (age) bound packs/;
   an evicted pack's rec/<turn> intermediates go with it. rec/ is
-  transient — after a pack write the turn's own dir is removed and
-  siblings are swept too (act runs serialize on the daemon's busy
-  lock, so no sibling can be mid-turn; the daemon-start orphan sweep
-  in record.sweep_orphans covers crashes anyway).
+  transient — after a pack write only that turn's dir is removed;
+  stale siblings are handled by record.sweep_orphans on daemon start.
 - shots/ (the screenshot tool's working dir, tools/system.py) has an
   explicit pruning owner: THIS module, on the same count+age policy
   via [packs] shots_keep / shots_keep_days. The policy is declared in
@@ -63,11 +57,10 @@ import shutil
 import time
 from datetime import datetime, timezone
 
-from . import config, record, verify
+from . import config, cua_safety, record, verify
 
 SCHEMA = "wisp-capture-pack/v1"
 PACKS_DIR = config.DATA_DIR / "packs"
-SALT_FILE = config.DATA_DIR / "pack.salt"
 SHOTS_DIR = config.DATA_DIR / "shots"
 
 _TURN_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -138,26 +131,9 @@ def _mk_0700(path: pathlib.Path) -> None:
 # ---------------------------------------------------------- redaction
 
 def _salt() -> bytes:
-    """Per-install HMAC salt for typed-text redaction — created once at
-    ~/.local/share/wisp/pack.salt (0600). Falls back to a throwaway
-    salt rather than ever writing plaintext."""
-    p = pathlib.Path(SALT_FILE)
-    try:
-        data = p.read_bytes()
-        if len(data) >= 16:
-            return data
-    except OSError:
-        pass
-    data = os.urandom(32)
-    try:
-        p.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, "wb") as f:
-            f.write(data)
-        os.chmod(p, 0o600)
-    except OSError:
-        pass
-    return data
+    """In-process HMAC salt for typed-text redaction — shared with
+    cua_safety so pack hashes never persist a separate salt file."""
+    return cua_safety._SALT
 
 
 def _redacted(text: str, salt: bytes) -> dict:
@@ -190,12 +166,15 @@ def _manifest_arg(tool: str, arg, salt: bytes):
     hashes only the typed value."""
     text = "" if arg is None else str(arg)
     if tool == "fill" and text:
-        head, sep, tail = text.partition("=")
-        if not sep:
-            head, _, tail = text.partition(" ")
-        if tail:
-            return {"target": _clean(head.strip()),
-                    "value": _redacted(tail.strip(), salt)}
+        eq = text.find("=")
+        sp = text.find(" ")
+        cut = min(x for x in (eq, sp) if x >= 0) if eq >= 0 or sp >= 0 \
+            else -1
+        if cut >= 0:
+            head, tail = text[:cut], text[cut + 1:]
+            if tail.strip():
+                return {"target": _clean(head.strip()),
+                        "value": _redacted(tail.strip(), salt)}
     if tool in _KEYBOARD_TOOLS and text:
         return _redacted(text, salt)
     return _clean(text)
@@ -203,7 +182,7 @@ def _manifest_arg(tool: str, arg, salt: bytes):
 
 # `FILLED <element-id>=<typed-value>` — the fill tool's result echo
 # carries the typed value itself
-_FILLED_RE = re.compile(r"^(FILLED\s+\S+)=", re.S)
+_FILLED_RE = re.compile(r"^(FILLED\s+[^=]+)=", re.S)
 
 
 def _manifest_result(tool: str, result, salt: bytes):
@@ -648,33 +627,14 @@ def _write(turn, steps, cfg, *, rec_dir, recorded, transcript, session,
             s["pack"] = f"packs/{turn}"
 
     if clean_rec:
-        # rec/ is transient and in-flight-only: the just-packed turn's
-        # intermediates are in the pack now, and the busy lock means no
-        # sibling act run can be mid-turn — sweep them all
-        rr = pathlib.Path(rec_root) if rec_root \
-            else pathlib.Path(record.REC_DIR)
-        _clean_rec(rr)
+        td = pathlib.Path(rec_dir) if rec_dir else None
+        if td is not None and td.is_dir() and not td.is_symlink():
+            try:
+                shutil.rmtree(td)
+            except OSError:
+                pass
     maintenance(cfg, rec_root=rec_root, min_gap=_MAINT_GAP_S)
     return pack
-
-
-def _clean_rec(rec_root: pathlib.Path) -> list:
-    """Remove every leftover rec/<turn>/ dir — stale intermediates,
-    never promoted."""
-    gone = []
-    try:
-        kids = sorted(rec_root.iterdir())
-    except OSError:
-        return gone
-    for p in kids:
-        if not p.is_dir() or p.is_symlink():
-            continue
-        try:
-            shutil.rmtree(p)
-            gone.append(p.name)
-        except OSError:
-            pass
-    return gone
 
 
 def _emit_pack(turn: str, manifest: dict) -> None:

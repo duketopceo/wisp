@@ -622,7 +622,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
         # stop() clears it: the pack writer needs to know this turn was
         # ever recorded (a recorded-but-zero-action turn still packs a
         # transcript; an unrecorded one leaves nothing durable).
-        was_recorded = recorder.active
+        was_recorded = recorder.started
         recorder.stop()
         # U4: fold rec/<turn>/ into the durable packs/<turn>/ —
         # manifest + frames + redaction + deny re-check + retention.
@@ -950,18 +950,22 @@ def _run_verify(step: dict, name: str, arg: str, tool_arg: str, tgt,
 
 
 def _terminal_verify(steps: list, cfg: dict | None) -> None:
-    """R3 terminal after-frame: the last recorded mutation that reached
-    the rungs (landed/missed/unverifiable — a refused or suppressed
-    step keeps its verdict) gets one more capture + ladder pass, so a
-    late-rendered effect is scored on settled pixels."""
+    """R3 terminal after-frame: the turn's final mutating step that was
+    recorded gets one more capture + ladder pass, so a late-rendered
+    effect is scored on settled pixels. If that final mutation was never
+    recorded, abstain — do not re-score an earlier step with a later
+    keystroke's frame."""
     if cancel.is_cancelled():
         return
-    last = next(
-        (s for s in reversed(steps)
-         if isinstance(s.get("verify"), dict)
-         and s["verify"].get("verdict")
-         not in ("suppressed", "refused")), None)
+    last = next((s for s in reversed(steps)
+                 if s.get("tool") in _RECORD_SEED), None)
     if last is None:
+        return
+    if not last.get("turn_dir") or last.get("verdict") == "not_recorded":
+        return
+    vd0 = last.get("verify") if isinstance(last.get("verify"), dict) \
+        else {}
+    if vd0.get("verdict") in ("suppressed", "refused"):
         return
     try:
         from . import verify as _verify
@@ -986,7 +990,7 @@ def _record_traj(task: str, harness: dict | None, steps: list, out: str,
     snap = [dict(s) for s in steps]
     record = trajectories.record     # bound now: patches stay honoured
     pack = (f"packs/{recorder.turn}"
-            if recorder is not None and recorder.active else None)
+            if recorder is not None and recorder.started else None)
 
     def write():
         record(task, _app(harness), snap, out, surface=_surface(cfg),

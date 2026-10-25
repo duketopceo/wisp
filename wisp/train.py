@@ -13,6 +13,7 @@ aim the next task at the model's weakest skill.
 """
 import hashlib
 import json
+import pathlib
 import re
 from datetime import datetime, timezone
 
@@ -247,10 +248,16 @@ def _fold(e: dict | None, rec: dict, needed: int = GRAD_STREAK) -> dict:
         # the row cites packs/<turn>, not them.)
         if rec.get("packs"):
             e["packs"] = list(rec["packs"])[:24]
+        else:
+            e.pop("packs", None)
         if rec.get("turn_dirs"):
             e["turn_dirs"] = list(rec["turn_dirs"])[:24]
+        else:
+            e.pop("turn_dirs", None)
         if rec.get("rec_dir"):
-            e["rec_dir"] = rec["rec_dir"]
+            e["rec_dir"] = pathlib.Path(str(rec["rec_dir"])).name
+        else:
+            e.pop("rec_dir", None)
     if rec.get("check"):
         e["check"] = rec["check"]
     if rec.get("suite"):

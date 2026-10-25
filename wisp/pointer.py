@@ -219,8 +219,11 @@ class Registry:
     def select(self, exclude: tuple = ()) -> Backend | None:
         """The driving backend to use, or None (guide mode)."""
         auto = [b for b in self._b.values() if b.drives]
+        cua = self._b.get("cua")
         if exclude:
             if platform.current() != "linux":
+                if cua and cua.name not in exclude and cua.available():
+                    return cua
                 return None
             return next((b for b in auto
                          if b.name not in exclude and b.available()), None)
@@ -228,8 +231,10 @@ class Registry:
         if want in self._b and self._b[want].drives:
             b = self._b[want]
             return b if b.available() else None
-        if want == "none" or platform.current() != "linux":
+        if want == "none":
             return None
+        if platform.current() != "linux":
+            return cua if cua and cua.available() else None
         return next((b for b in auto if b.available()), None)
 
     # -- actions -------------------------------------------------------

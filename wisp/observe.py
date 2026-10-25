@@ -32,6 +32,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import stat
 import time
 from datetime import datetime
@@ -305,6 +306,17 @@ def _frame_ok(frame, dst_dir, source: str, arg: str) -> dict:
     is_turn = dst_dir is not None \
         and bool(record._TURN_RE.match(dst_dir.name))
     if is_turn:
+        keep = pathlib.Path(frame).name
+        for p in list(dst_dir.iterdir()):
+            if p.name == keep:
+                continue
+            try:
+                if p.is_dir():
+                    shutil.rmtree(p)
+                else:
+                    p.unlink()
+            except OSError:
+                pass
         _write_meta(dst_dir, source, arg)
     return {"result": f"SHOT {frame}", "path": frame,
             "turn_dir": dst_dir if is_turn else None,
@@ -383,13 +395,12 @@ def _turn_dir(rec_dir) -> pathlib.Path | None:
 
 
 def _drop_if_empty(d) -> None:
-    """A minted-but-unused turn dir must not leave an empty artifact
-    in the pack — drop it, and the rec/<turn>/ parent when it also
-    went empty; a dir the app half-wrote keeps its files."""
+    """A minted turn dir that never produced a validated frame must not
+    promote to a pack — remove it outright (even when a hostile channel
+    left junk files), then drop the rec/<turn>/ parent when empty."""
     try:
-        if d is not None and record._TURN_RE.match(d.name) \
-                and not any(d.iterdir()):
-            d.rmdir()
+        if d is not None and record._TURN_RE.match(d.name):
+            shutil.rmtree(d, ignore_errors=True)
             try:
                 d.parent.rmdir()
             except OSError:

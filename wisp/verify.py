@@ -447,11 +447,6 @@ def _parse_judge(text: str) -> dict:
                         "detail": str(d.get("reason") or "")[:200]}
         except (json.JSONDecodeError, AttributeError):
             pass
-    v = re.search(
-        r'"?verdict"?\s*:\s*"?(landed|missed|unverifiable)',
-        text or "")
-    if v:
-        return {"verdict": v.group(1), "detail": ""}
     return {"verdict": "unverifiable",
             "detail": "judge reply unparseable"}
 

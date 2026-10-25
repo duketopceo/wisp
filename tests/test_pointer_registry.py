@@ -118,8 +118,14 @@ class TestAutoOrder(_Iso):
                          ["cua", "hyprcursor", "ydotool", "wlrctl",
                           "guide"])
 
-    def test_non_linux_is_none(self):
-        with Rig():
+    def test_non_linux_auto_is_cua_when_live(self):
+        with Rig(live=("cua",)):
+            with mock.patch.dict(os.environ, {"WISP_OS": "macos"}):
+                self.assertEqual(pointer.Registry(DRIVE).select().name,
+                                 "cua")
+
+    def test_non_linux_auto_is_none_without_cua(self):
+        with Rig(live=(), hypr=False):
             with mock.patch.dict(os.environ, {"WISP_OS": "macos"}):
                 self.assertIsNone(pointer.Registry(DRIVE).select())
 

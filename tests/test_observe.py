@@ -179,7 +179,6 @@ class ObserveCase(unittest.TestCase):
         self._patchers = [
             mock.patch.object(record, "REC_DIR", self.rec_root),
             mock.patch.object(packs, "PACKS_DIR", self.store),
-            mock.patch.object(packs, "SALT_FILE", t / "pack.salt"),
             mock.patch.object(packs, "SHOTS_DIR", t / "shots"),
             mock.patch.object(observe, "SHOTS_DIR", t / "shots"),
             mock.patch.object(_trace, "TRACE_FILE", t / "trace.jsonl"),

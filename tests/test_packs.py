@@ -117,13 +117,11 @@ class PackCase(unittest.TestCase):
         t = pathlib.Path(self.td.name)
         self.rec = t / "rec"
         self.store = t / "packs"
-        self.salt_file = t / "pack.salt"
         self.shots = t / "shots"
         self.trace_file = t / "trace.jsonl"
         self._patchers = [
             mock.patch.object(record, "REC_DIR", self.rec),
             mock.patch.object(packs, "PACKS_DIR", self.store),
-            mock.patch.object(packs, "SALT_FILE", self.salt_file),
             mock.patch.object(packs, "SHOTS_DIR", self.shots),
             mock.patch.object(_trace, "TRACE_FILE", self.trace_file),
             mock.patch.object(_trace, "_enabled", True),
@@ -227,7 +225,7 @@ class TestWrite(PackCase):
         self.assertIsNone(m["contact"]["file"])
         self.assertIn("no contact backend", m["contact"]["note"])
 
-    def test_permissions_0700_and_salt_0600(self):
+    def test_permissions_0700_and_manifest_0600(self):
         rec_dir = self.rec / "t-p1"
         d1 = _turn_dir(rec_dir, 1)
         self.write(steps=[_step(d1)], rec_dir=rec_dir)
@@ -235,8 +233,6 @@ class TestWrite(PackCase):
         self.assertEqual(_mode(self.store / "t-p1"), 0o700)
         self.assertEqual(
             _mode(self.store / "t-p1" / "manifest.json"), 0o600)
-        self.assertEqual(_mode(self.salt_file), 0o600)
-        self.assertEqual(len(self.salt_file.read_bytes()), 32)
 
     def test_unrecorded_turn_writes_nothing(self):
         self.assertIsNone(self.write(steps=[], rec_dir=self.rec / "t-x",
@@ -558,6 +554,22 @@ class TestCaptures(PackCase):
 class TestKeyboardRedaction(PackCase):
     """F2: fill/post_send carry typed content — same privacy class as
     type_text; args and result echoes must never reach the pack."""
+
+    def test_fill_value_with_equals_never_leaks_plaintext(self):
+        rec_dir = self.rec / "t-eq"
+        steps = [{"tool": "fill", "arg": "login-pw abc=def",
+                  "result": "FILLED login-pw=abc=def",
+                  "turn_dir": str(rec_dir / "turn-00001"),
+                  "verdict": "not_recorded"}]
+        _turn_dir(rec_dir, 1, tool="fill", args={"text": "abc=def"})
+        self.write(steps=steps, rec_dir=rec_dir, turn="t-eq")
+        a = self.manifest("t-eq")["actions"][0]
+        self.assertEqual(a["arg"]["target"], "login-pw")
+        self.assertTrue(a["arg"]["value"]["redacted"])
+        for p in self.store.rglob("*"):
+            if p.is_file() and p.suffix != ".png":
+                body = p.read_bytes()
+                self.assertNotIn(b"abc", body, str(p))
 
     def test_fill_arg_and_result_redact(self):
         rec_dir = self.rec / "t-p1"
