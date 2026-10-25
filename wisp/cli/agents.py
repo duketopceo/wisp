@@ -47,6 +47,61 @@ def task_status(ctx, a):
     return _result(ctx, {"cmd": "task_status", "name": a.name})
 
 
+@command("task output", "Print a background agent's log output",
+         ["wispd task output fix-bug"],
+         {"name": "str", "status": "str", "exit_code": "int|null",
+          "output": "str"}, args=_name_arg)
+def task_output(ctx, a):
+    from .. import agents
+    try:
+        r = ctx.send({"cmd": "task_output", "name": a.name})
+    except CliError as e:
+        if e.code != "E_DAEMON_DOWN":
+            raise
+        r = agents.output(a.name)
+    if not r.get("ok"):
+        raise CliError("E_NOT_FOUND", f"No task named {a.name!r}.",
+                       "wispd task list")
+    data = {
+        "name": r.get("name", a.name),
+        "status": r.get("status", ""),
+        "exit_code": r.get("exit_code"),
+        "output": r.get("output", ""),
+    }
+    return ctx.emit(data, data["output"].rstrip("\n"))
+
+
+@command("task artifacts", "List files in a task's output workspace",
+         ["wispd task artifacts fix-bug"],
+         {"name": "str", "out_dir": "str", "delivered": "bool",
+          "deliverables": "list", "artifacts": "list"}, args=_name_arg)
+def task_artifacts(ctx, a):
+    from .. import agents
+    try:
+        r = ctx.send({"cmd": "task_artifacts", "name": a.name})
+    except CliError as e:
+        if e.code != "E_DAEMON_DOWN":
+            raise
+        r = agents.artifacts(a.name)
+    if not r.get("ok"):
+        raise CliError("E_NOT_FOUND", f"No task named {a.name!r}.",
+                       "wispd task list")
+    data = {
+        "name": r.get("name", a.name),
+        "out_dir": r.get("out_dir", ""),
+        "delivered": bool(r.get("delivered", False)),
+        "deliverables": list(r.get("deliverables") or []),
+        "artifacts": list(r.get("artifacts") or []),
+    }
+    lines = []
+    for d in data["deliverables"]:
+        flag = f" ({d['flag_reason']})" if d.get("flagged") else ""
+        lines.append(f"{d.get('status', '?'):<10} {d.get('declared', '')}{flag}")
+    for f in data["artifacts"]:
+        lines.append(f"file       {f.get('name', '')} ({f.get('size', 0)}B)")
+    return ctx.emit(data, "\n".join(lines) if lines else "no artifacts")
+
+
 @command("task cancel", "Cancel a running agent",
          ["wispd task cancel fix-bug"], {"result": "str"}, args=_name_arg)
 def task_cancel(ctx, a):
