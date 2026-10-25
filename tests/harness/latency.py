@@ -57,6 +57,9 @@ def samples(res, offline: bool = False) -> dict:
 
 def measure(runs: int = 3, suite=SUITE) -> dict:
     """{path id: [ms, ...]} over `runs` passes of the suite."""
+    # One throwaway turn — cold import/JIT on loaded CI runners can make the
+    # first P4 sample an order of magnitude slower than steady state.
+    runner.run_turn(suite[0][0])
     series: dict = {}
     for _ in range(runs):
         for name, flags in suite:
