@@ -114,10 +114,32 @@ def _text_arg(dest, help_):
     return add
 
 
+def _task_run_args(p):
+    p.add_argument("--routine", dest="routine", default="",
+                   help="run a scheduled routine by id")
+    p.add_argument("task", nargs="*", help="what the agent should do")
+
+
 @command("task run", "Spawn a background agent for a task",
-         ["wispd task run fix the flaky login test"], {"result": "str"},
-         args=_text_arg("task", "what the agent should do"))
+         ["wispd task run fix the flaky login test",
+          "wispd task run --routine inbox-digest"], {"result": "str"},
+         args=_task_run_args)
 def task_run(ctx, a):
+    rid = (getattr(a, "routine", "") or "").strip()
+    if rid:
+        try:
+            r = ctx.send({"cmd": "agent", "routine_id": rid})
+        except CliError as e:
+            if e.code != "E_DAEMON_DOWN":
+                raise
+            from .. import routines
+            r = routines.run_routine(rid, ctx.cfg)
+        if not r.get("ok"):
+            msg = r.get("result") or r.get("error") or "Routine did not run."
+            raise CliError("E_FAILED", msg, "wispd task list",
+                           data={"result": msg})
+        res = r.get("result") or ""
+        return ctx.emit({"result": res}, res)
     return _result(ctx, {"cmd": "agent", "task": " ".join(a.task)})
 
 

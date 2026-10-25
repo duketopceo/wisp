@@ -11,6 +11,7 @@ Item {
   property string state: "queued"
   property real seconds: 0
   property string line: ""
+  property bool unread: false
 
   readonly property var tk: service ? service.tokens : ({})
   readonly property var tokenFor: ({ queued: "inkMuted", running: "ember",
@@ -36,9 +37,18 @@ Item {
     Row {
       width: parent.width
       spacing: M.spacing.lg
+      Rectangle {
+        id: unreadDot
+        visible: root.unread
+        width: M.spacing.sm
+        height: M.spacing.sm
+        radius: M.spacing.xs
+        anchors.verticalCenter: title.verticalCenter
+        color: root.tk.ember
+      }
       Text {
         id: title
-        width: parent.width - stateWord.implicitWidth - clock.implicitWidth - 2 * M.spacing.lg
+        width: parent.width - stateWord.implicitWidth - clock.implicitWidth - (root.unread ? unreadDot.width + M.spacing.lg : 0) - 2 * M.spacing.lg
         text: root.name
         elide: Text.ElideRight
         color: root.tk.ink
