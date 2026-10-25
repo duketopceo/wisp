@@ -102,7 +102,7 @@ Shipped beyond the v1.0 gates (post-roadmap work, live on master):
   alongside `ubuntu-latest` so a Linux-only assumption fails the build.
   `docs/MACOS.md` records what is verified and what is not.
 - ✅ Shadow decider (2026-10-02): `[jev] shadow = "pplx"` has a second
-  decision model (Perplexity `pplx-decider-v1-27b`) answer the same
+  decision model (`perplexity/pplx-decider-v1.2` on OpenRouter) answer the same
   questions on every routed turn, in a background thread, logging both
   answers to `shadow.jsonl` under the same trace turn id that
   `decisions.jsonl` carries. The primary still decides and the turn never

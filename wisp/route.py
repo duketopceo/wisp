@@ -21,6 +21,9 @@ from datetime import datetime, timezone
 from . import config
 
 DEFAULT_DEADLINE_MS = 400
+DEFAULT_FLASH_DEADLINE_MS = 220
+DEFAULT_FLASH_CONFIDENCE = 0.7
+DEFAULT_FLASH_MODEL = "perplexity/pplx-decider-flash-v1.2"
 ROUTES = ("launch", "tool", "agent", "learn", "act", "dictation",
           "answer", "clarify")
 
@@ -143,6 +146,103 @@ def deadline_ms(cfg: dict | None) -> int:
         return DEFAULT_DEADLINE_MS
 
 
+def _jev_cfg(cfg: dict | None) -> dict:
+    return (cfg or {}).get("jev") or {}
+
+
+def flash_enabled(cfg: dict | None) -> bool:
+    return str(_jev_cfg(cfg).get("flash_decider", "")).lower() in \
+        ("true", "1", "yes")
+
+
+def flash_confidence_threshold(cfg: dict | None) -> float:
+    try:
+        return float(_jev_cfg(cfg).get("flash_confidence",
+                                       DEFAULT_FLASH_CONFIDENCE))
+    except (TypeError, ValueError):
+        return DEFAULT_FLASH_CONFIDENCE
+
+
+def flash_model(cfg: dict | None) -> str:
+    return str(_jev_cfg(cfg).get("flash_model") or DEFAULT_FLASH_MODEL)
+
+
+def flash_deadline_ms(cfg: dict | None, total_ms: int) -> int:
+    """Sub-budget for the flash lane; the remainder is left for Jev.
+
+    Default 220 ms: flash p50 is ~240 ms so many turns accept early; the
+    ~180 ms left gives Jev a median shot before the 400 ms wall."""
+    try:
+        fb = int(_jev_cfg(cfg).get("flash_deadline_ms",
+                                    DEFAULT_FLASH_DEADLINE_MS))
+    except (TypeError, ValueError):
+        fb = DEFAULT_FLASH_DEADLINE_MS
+    fb = max(50, fb)
+    return min(fb, max(total_ms - 80, 50))
+
+
+def _decisions_call(text: str, model: str, questions: dict, context: str,
+                    cfg: dict | None, timeout: float) -> dict:
+    """One OpenRouter /alpha/decisions call (injectable via tests)."""
+    state_txt = f"{context}\n\nThe user said: \"{text}\"" \
+        if context else f'The user said: "{text}"'
+    payload = {"model": model, "state": state_txt, "questions": questions}
+    headers = {"Content-Type": "application/json",
+               "HTTP-Referer": "https://github.com/duketopceo/wisp",
+               "X-Title": "Wisp"}
+    endpoint = config.JEV_ENDPOINT
+    from . import stage_route as _sr
+    if _sr._jev_is_local(endpoint):
+        key = config.load_env_key("OPENROUTER_API_KEY")
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
+    else:
+        headers["Authorization"] = f"Bearer {config.load_api_key()}"
+    req = urllib.request.Request(
+        endpoint, data=json.dumps(payload).encode(), headers=headers,
+        method="POST")
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read())
+
+
+def _try_flash_lane(text: str, context: str, cfg: dict,
+                    budget_s: float) -> dict:
+    """-> {ok, status, ms, route?, resp?, confidence?}. Never raises."""
+    from . import pipeline
+    t0 = time.monotonic()
+    out = {"ok": False, "status": "skipped", "ms": 0}
+    if budget_s <= 0:
+        out["status"] = "no_budget"
+        return out
+    q = {"route": pipeline.JEV_QUESTIONS["route"]}
+    try:
+        resp = _decisions_call(text, flash_model(cfg), q, context, cfg,
+                                 budget_s)
+        out["ms"] = round((time.monotonic() - t0) * 1000)
+        route = jev_route(resp)
+        if route is None:
+            out["status"] = "malformed"
+            return out
+        conf = float(((resp.get("answers") or {}).get("route") or {})
+                     .get("confidence") or 0)
+        out["route"] = route
+        out["confidence"] = conf
+        out["resp"] = resp
+        if conf < flash_confidence_threshold(cfg):
+            out["status"] = "low_confidence"
+            return out
+        out["ok"] = True
+        out["status"] = "ok"
+        return out
+    except Exception as e:                            # noqa: BLE001
+        from . import cancel as _cancel
+        if isinstance(e, _cancel.Cancelled):
+            raise
+        out["ms"] = round((time.monotonic() - t0) * 1000)
+        out["status"] = "error"
+        return out
+
+
 def jev_route(resp) -> str | None:
     """The route a Jev reply picked, or None when the reply is not a
     usable decision. A legacy reply with only an `action` choice is
@@ -177,6 +277,22 @@ def _ask(box: dict, done: threading.Event, args: tuple) -> None:
     done.set()
 
 
+def _finish_from_jev(resp, meta, h):
+    """Shared tail: bare-launch override or keep Jev's answer."""
+    jr = meta["jev_route"]
+    eff = _effective(resp, jr)
+    meta["agree"] = eff == h["route"]
+    if h["bare_launch"] and eff != "launch":
+        meta["override"] = True
+        meta["source"] = "heuristic"
+        meta["route_lane"] = "heuristic"
+        return {"answers": heuristic_answers(h),
+                "latency_ms": resp.get("latency_ms", 0)}, meta
+    meta["source"] = "jev"
+    meta["route_lane"] = "jev"
+    return resp, meta
+
+
 def decide(text: str, model: str, questions: dict, context: str,
            cfg: dict, apps: dict | None = None, spans=None):
     """-> (resp, meta). `resp` is a Jev-shaped {"answers": ...}; `meta`
@@ -188,6 +304,38 @@ def decide(text: str, model: str, questions: dict, context: str,
     h = heuristic(text, apps)
     if spans is not None:
         spans.record("route_heuristic", spans.now() - int(h["ms"] * 1e6))
+    meta = {"deadline_ms": dl, "jev_ms": None, "jev_route": None,
+            "jev_code": None, "heuristic": h, "override": False,
+            "agree": None, "flash_ms": None, "flash_status": None,
+            "route_lane": None}
+
+    if flash_enabled(cfg):
+        fb_ms = flash_deadline_ms(cfg, dl)
+        flash = _try_flash_lane(text, context, cfg, fb_ms / 1000)
+        meta["flash_ms"] = flash.get("ms")
+        meta["flash_status"] = flash.get("status")
+        if flash.get("ok"):
+            resp = flash["resp"]
+            meta["jev_route"] = flash["route"]
+            meta["jev_status"] = "ok"
+            meta["agree"] = flash["route"] == h["route"]
+            if h["bare_launch"] and flash["route"] != "launch":
+                meta["override"] = True
+                meta["source"] = "heuristic"
+                meta["route_lane"] = "heuristic"
+                return {"answers": heuristic_answers(h),
+                        "latency_ms": 0}, meta
+            meta["source"] = "flash"
+            meta["route_lane"] = "flash"
+            if spans is not None:
+                spans.record("route_flash", spans.now()
+                             - int(flash["ms"] * 1e6), status="ok")
+            return resp, meta
+        if spans is not None and flash.get("ms"):
+            spans.record("route_flash", spans.now()
+                         - int(flash["ms"] * 1e6),
+                         status=flash.get("status"))
+
     box: dict = {}
     done = threading.Event()
     threading.Thread(target=_ask, daemon=True, name="jev-ask",
@@ -197,9 +345,7 @@ def decide(text: str, model: str, questions: dict, context: str,
     finished = done.wait(remaining)
     jev_ms = box.get("ms") if finished else round(
         (time.monotonic() - t_start) * 1000)
-    meta = {"deadline_ms": dl, "jev_ms": jev_ms, "jev_route": None,
-            "jev_code": None, "heuristic": h, "override": False,
-            "agree": None}
+    meta["jev_ms"] = jev_ms
     resp = box.get("resp")
     if not finished:
         meta["jev_status"] = "timeout"
@@ -216,21 +362,13 @@ def decide(text: str, model: str, questions: dict, context: str,
         meta["jev_status"] = "ok"
     if spans is not None:
         spans.record("route_jev", spans.now() - int(jev_ms * 1e6),
-                     status=meta["jev_status"])
-    if meta["jev_status"] != "ok":
+                     status=meta.get("jev_status"))
+    if meta.get("jev_status") != "ok":
         meta["source"] = "heuristic"
+        meta["route_lane"] = "heuristic"
         return {"answers": heuristic_answers(h), "latency_ms": 0}, meta
-    jr = jev_route(resp)
-    meta["jev_route"] = jr
-    eff = _effective(resp, jr)
-    meta["agree"] = eff == h["route"]
-    if h["bare_launch"] and eff != "launch":
-        meta["override"] = True
-        meta["source"] = "heuristic"
-        return {"answers": heuristic_answers(h),
-                "latency_ms": resp.get("latency_ms", 0)}, meta
-    meta["source"] = "jev"
-    return resp, meta
+    meta["jev_route"] = jev_route(resp)
+    return _finish_from_jev(resp, meta, h)
 
 
 # -- A/B log ------------------------------------------------------------

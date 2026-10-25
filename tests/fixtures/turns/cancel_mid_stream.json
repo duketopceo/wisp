@@ -34,7 +34,7 @@
       ]
     }
   },
-  "interrupt_after_ms": 450,
+  "interrupt_after_ms": 500,
   "expect": {
     "statuses": [
       "listening",
