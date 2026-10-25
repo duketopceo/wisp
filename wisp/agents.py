@@ -947,8 +947,30 @@ def finished(prev: dict, cur: dict) -> list:
 KILL_GRACE_S = 10.0
 
 
+def _record_routine_for_task(rec: dict, final_status: str, delivered: bool,
+                             routines_store=None) -> dict | None:
+    """Record a finished task's outcome in `RoutineStore` when `routine_id`
+    is present on `rec` (U3)."""
+    rid = rec.get("routine_id")
+    if not rid:
+        return None
+    from . import routines
+    ok = (final_status == "done") and bool(delivered)
+    outcome = routines.record_routine_outcome(rid, ok=ok, store=routines_store)
+    return {
+        "id": outcome.get("id", rid),
+        "ok": bool(outcome.get("ok")),
+        "unread": bool(outcome.get("unread")),
+        "paused": bool(outcome.get("paused")),
+        "auto_paused": bool(outcome.get("auto_paused")),
+        "notify_user_once": bool(outcome.get("notify_user_once")),
+        "consecutive_failures": int(outcome.get("consecutive_failures", 0)),
+        "speak": False,
+    }
+
+
 def _tick(cfg: dict, tasks_file, log_dir, kill_grace_s: float,
-          recs: list | None = None) -> dict:
+          recs: list | None = None, routines_store=None) -> dict:
     """One reaper pass; returns the fresh `tasks()` snapshot."""
     _reap()
     now = datetime.now(timezone.utc)
@@ -985,6 +1007,15 @@ def _tick(cfg: dict, tasks_file, log_dir, kill_grace_s: float,
                 close_rec["delivered"] = dinfo["delivered"]
                 close_rec["deliverables"] = dinfo["deliverables"]
                 close_rec["open_actions"] = dinfo["open_actions"]
+            if rec.get("routine_id") and not rec.get("routine_recorded"):
+                rout = _record_routine_for_task(
+                    rec, final_status, dinfo["delivered"],
+                    routines_store=routines_store)
+                if rout is not None:
+                    close_rec["routine_id"] = rec["routine_id"]
+                    close_rec["routine_recorded"] = True
+                    close_rec["routine_outcome"] = rout
+                    close_rec["unread"] = rout["unread"]
             _log_line(close_rec, tasks_file)
         elif status in ("cancelled", "timed_out") and alive:
             # SIGTERM was sent when the record was closed; an ignorer
@@ -1003,13 +1034,16 @@ def _tick(cfg: dict, tasks_file, log_dir, kill_grace_s: float,
 
 def reap_tick(cfg: dict, tasks_file=config.TASKS_FILE,
               log_dir=config.TASK_LOGS,
-              kill_grace_s: float = KILL_GRACE_S) -> list:
+              kill_grace_s: float = KILL_GRACE_S,
+              routines_store=None) -> list:
     """One reaper pass. Returns the tasks that went running -> not
     running during it (`finished()` shape)."""
-    return _tick_events(cfg, tasks_file, log_dir, kill_grace_s)[1]
+    return _tick_events(cfg, tasks_file, log_dir, kill_grace_s,
+                        routines_store=routines_store)[1]
 
 
-def _tick_events(cfg, tasks_file, log_dir, kill_grace_s) -> tuple:
+def _tick_events(cfg, tasks_file, log_dir, kill_grace_s,
+                 routines_store=None) -> tuple:
     """(tasks snapshot, finished list). A task is `finished` when its
     registry status was `running` before the pass and is not after —
     judged on the raw record, since `tasks()` already reads a dead
@@ -1017,7 +1051,8 @@ def _tick_events(cfg, tasks_file, log_dir, kill_grace_s) -> tuple:
     recs = _latest(tasks_file)
     was_running = {r["name"] for r in recs
                    if r.get("status") == "running"}
-    cur = _tick(cfg, tasks_file, log_dir, kill_grace_s, recs=recs)
+    cur = _tick(cfg, tasks_file, log_dir, kill_grace_s, recs=recs,
+                routines_store=routines_store)
     # a just-finished task's tail is its final output — read it for the
     # event even though tasks() only tails running tasks
     done = []
@@ -1035,6 +1070,49 @@ def _tick_events(cfg, tasks_file, log_dir, kill_grace_s) -> tuple:
                         entry[k] = rec[k]
             done.append(entry)
     return cur, done
+
+
+def reconcile_routines(cfg: dict, tasks_file=config.TASKS_FILE,
+                       log_dir=config.TASK_LOGS, routines_store=None,
+                       on_finished=None) -> list:
+    """Reconcile any daemon-down fallback routine runs on daemon start (U3).
+
+    Runs one reaper pass (closing dead `running` tasks and recording their
+    routine outcomes) and also reconciles any already-closed routine task
+    whose outcome was not yet written to `RoutineStore`."""
+    _, done = _tick_events(cfg, tasks_file, log_dir, KILL_GRACE_S,
+                           routines_store=routines_store)
+    seen = {t["name"] for t in done}
+    for rec in _latest(tasks_file):
+        if (rec.get("routine_id") and not rec.get("routine_recorded")
+                and _state_of(rec) != "running"
+                and rec.get("name") not in seen):
+            st_now = _state_of(rec)
+            delivered = bool(rec.get("delivered", st_now == "done"))
+            rout = _record_routine_for_task(
+                rec, st_now, delivered, routines_store=routines_store)
+            if rout is not None:
+                _log_line({
+                    "id": rec["id"],
+                    "name": rec["name"],
+                    "routine_id": rec["routine_id"],
+                    "routine_recorded": True,
+                    "routine_outcome": rout,
+                    "unread": rout["unread"],
+                }, tasks_file)
+                entry = {
+                    "name": rec["name"],
+                    "status": st_now,
+                    "tail": _tail(log_dir / f"{rec['id']}.log"),
+                    "routine_id": rec["routine_id"],
+                    "routine_outcome": rout,
+                    "unread": rout["unread"],
+                }
+                done.append(entry)
+    if on_finished:
+        for t in done:
+            on_finished(t)
+    return done
 
 
 def start_reaper(cfg: dict, bus, stop: threading.Event,

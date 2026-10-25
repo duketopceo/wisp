@@ -487,3 +487,46 @@ def record_routine_outcome(
         "speak": False,
         "routine": r,
     }
+
+
+def run_routine(
+    routine_id: str,
+    cfg: dict | None = None,
+    *,
+    store: RoutineStore | None = None,
+    path: Path | str | None = None,
+    tasks_file=None,
+    log_dir=None,
+) -> dict:
+    """Load `routine_id` from `RoutineStore` and spawn it via `agents.spawn`
+    with `routine_id` provenance (U3). Used by both the daemon `agent` handler
+    and the daemon-down CLI fallback."""
+    from . import agents
+    st = store if store is not None else RoutineStore(path=path)
+    r = st.get(routine_id)
+    if r is None:
+        msg = f"SKIP (unknown routine {routine_id!r})"
+        return {"ok": False, "error": "unknown_routine", "result": msg,
+                "routine_id": routine_id}
+    if r.paused or not r.enabled:
+        msg = f"SKIP (routine {r.id!r} is paused)"
+        return {"ok": False, "error": "routine_paused", "result": msg,
+                "routine_id": r.id}
+    tf = tasks_file if tasks_file is not None else config.TASKS_FILE
+    ld = log_dir if log_dir is not None else config.TASK_LOGS
+    out = agents.spawn(
+        r.task,
+        cfg or {},
+        tasks_file=tf,
+        log_dir=ld,
+        spawned_by=f"routine:{r.id}",
+        routine_id=r.id,
+        name_hint=r.id,
+    )
+    ok = out.startswith("SPAWNED")
+    return {
+        "ok": ok,
+        "routine_id": r.id,
+        "result": out,
+        "error": "" if ok else out,
+    }

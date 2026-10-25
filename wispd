@@ -726,6 +726,10 @@ def run_daemon(cfg: dict) -> int:
 
     def _agent_done(t: dict) -> None:
         _agents.notify_done(t)
+    try:
+        _agents.reconcile_routines(cfg, on_finished=_agent_done)
+    except Exception as e:
+        dlog(f"routines: startup reconcile failed: {e}")
     _agents.start_reaper(cfg, st, ctl["stop"], on_finished=_agent_done)
     dlog(f"wispd up — socket {config.SOCK_FILE} "
          f"log {config.DATA_DIR / 'wispd.log'}")
