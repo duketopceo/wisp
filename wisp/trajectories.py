@@ -53,10 +53,18 @@ def record(task: str, app: str, steps: list, outcome: str,
 def _read_all(path=None) -> list:
     path = path or FILE
     try:
-        return [json.loads(l) for l in path.read_text().splitlines()
-                if l.strip()]
+        lines = path.read_text().splitlines()
     except OSError:
         return []
+    out = []
+    for ln in lines:
+        if not ln.strip():
+            continue
+        try:
+            out.append(json.loads(ln))
+        except ValueError:
+            continue
+    return out
 
 
 def _labels() -> dict:
