@@ -496,6 +496,7 @@ def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
     env = dict(os.environ)
     env["WISP_TASK_ID"] = name
     env["WISP_OUT_DIR"] = str(out_dir)
+    spawn_ts = datetime.now(timezone.utc).isoformat()
     try:
         with log.open("ab") as lf:
             proc = subprocess.Popen(
@@ -519,7 +520,7 @@ def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
         "out_dir": str(out_dir),
         "shimmed": True,
         "refused_count": 0,
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": spawn_ts,
     }
     if routine_id:
         rec["routine_id"] = routine_id
@@ -657,10 +658,11 @@ def verify_deliverables(rec: dict, finished_ts: datetime | None = None,
     tid = rec.get("id") or rec.get("name") or "task"
     out_dir = pathlib.Path(rec.get("out_dir") or (log_dir / tid / "out"))
     task_dir = out_dir.parent
+    out_lex = pathlib.Path(os.path.normpath(str(out_dir.absolute())))
     try:
         out_real = out_dir.resolve()
     except OSError:
-        out_real = out_dir.absolute()
+        out_real = out_lex
 
     started_str = rec.get("started") or rec.get("ts") or ""
     started_epoch = 0.0
@@ -689,7 +691,9 @@ def verify_deliverables(rec: dict, finished_ts: datetime | None = None,
             cand = out_dir / p
 
         cand_lex = pathlib.Path(os.path.normpath(str(cand.absolute())))
-        lexical_inside = (cand_lex == out_real or out_real in cand_lex.parents)
+        lexical_inside = (cand_lex == out_lex or out_lex in cand_lex.parents
+                          or cand_lex == out_real
+                          or out_real in cand_lex.parents)
         try:
             cand_real = cand.resolve()
         except OSError:

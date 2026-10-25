@@ -26,6 +26,8 @@ def _iso(sec_offset: float = 0.0) -> str:
 class TaskDeliveryTest(unittest.TestCase):
     def setUp(self):
         self.td = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(
+            self.td, ignore_errors=True))
         self.tf = self.td / "tasks.jsonl"
         self.logs = self.td / "tasks"
         self.logs.mkdir()
@@ -228,6 +230,50 @@ class TaskDeliveryTest(unittest.TestCase):
         self.assertEqual(ev[0]["status"], "done")
         self.assertEqual(ev[0]["exit_code"], 0)
         self.assertTrue(ev[0]["delivered"])
+
+    def test_symlinked_parent_dir_and_slow_pstart_preserve_delivery_truth(self):
+        # Simulate macOS /var -> /private/var (symlinked parent root) and a
+        # slow _pstart(pid) that finishes after the child writes its output.
+        real_root = self.td / "private_var"
+        real_root.mkdir()
+        sym_root = self.td / "var"
+        sym_root.symlink_to(real_root)
+        sym_logs = sym_root / "tasks"
+        sym_logs.mkdir()
+        sym_tf = sym_root / "tasks.jsonl"
+
+        orig_pstart = agents._pstart
+
+        def slow_pstart(pid: int) -> str:
+            time.sleep(0.15)
+            return orig_pstart(pid)
+
+        with mock.patch.object(agents, "_pstart", side_effect=slow_pstart), \
+             mock.patch.object(
+                 agents, "_runtime_cmd",
+                 return_value=[
+                     sys.executable, "-c",
+                     "import os,pathlib;"
+                     "p=pathlib.Path(os.environ['WISP_OUT_DIR'])/'fast.txt';"
+                     "p.write_text('ok\\n')",
+                 ]):
+            res = agents.spawn(
+                "fast macos child", self.cfg,
+                tasks_file=sym_tf, log_dir=sym_logs,
+                delivers=["out/fast.txt"])
+        self.assertTrue(res.startswith("SPAWNED"), res)
+        rec = agents._find("fast-macos-child", sym_tf)
+        deadline = time.monotonic() + 5.0
+        while agents._alive(rec["pid"], rec.get("pstart", "")) \
+                and time.monotonic() < deadline:
+            time.sleep(0.05)
+
+        ev = agents.reap_tick(self.cfg, tasks_file=sym_tf, log_dir=sym_logs)
+        self.assertEqual(len(ev), 1)
+        self.assertEqual(ev[0]["status"], "done")
+        self.assertTrue(ev[0]["delivered"])
+        self.assertTrue(ev[0]["deliverables"][0]["openable"])
+        self.assertFalse(ev[0]["deliverables"][0]["flagged"])
 
 
 if __name__ == "__main__":

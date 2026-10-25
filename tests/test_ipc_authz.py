@@ -1,19 +1,24 @@
 """U1: IPC read/mutate command split + marked-peer refusal (R2, R13, KTD2)."""
+import contextlib
 import importlib.machinery
 import importlib.util
 import json
 import os
 import pathlib
+import shutil
+import socket
 import subprocess
 import sys
-import tempfile
 import threading
 import unittest
 from datetime import datetime, timezone
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
 
+import shorttmp  # noqa: E402
 from wisp import agents, config, ipc, mcpauth, state as state_mod  # noqa: E402
 
 
@@ -35,7 +40,8 @@ def _now_iso() -> str:
 
 class IpcAuthzTest(unittest.TestCase):
     def setUp(self):
-        self.td = pathlib.Path(tempfile.mkdtemp())
+        self.td = pathlib.Path(shorttmp.mkdtemp())
+        self.addCleanup(lambda: shutil.rmtree(self.td, ignore_errors=True))
         self.tf = self.td / "tasks.jsonl"
         self.sock = self.td / "wispd.sock"
         self.st = state_mod.StateBus()
@@ -262,12 +268,21 @@ class IpcAuthzTest(unittest.TestCase):
         self.assertTrue(c_ok["ok"])
 
         # Register current process as a running task -> SO_PEERCRED marks it
+        # (on macOS where SO_PEERCRED is absent, supply peer cred via patch).
         self._register_task("self-task", os.getpid())
-        r_read = ipc.send({"cmd": "captures"}, sock_file=self.sock)
-        self.assertTrue(r_read["ok"])
-        r_mut = ipc.send({"cmd": "choice", "pick": "yes"}, sock_file=self.sock)
-        self.assertFalse(r_mut["ok"])
-        self.assertEqual(r_mut["error"], "marked_peer_refused")
+        cred_ctx = (
+            contextlib.nullcontext()
+            if hasattr(socket, "SO_PEERCRED")
+            else mock.patch.object(
+                ipc, "_peer_cred",
+                return_value={"pid": os.getpid(), "uid": os.getuid()})
+        )
+        with cred_ctx:
+            r_read = ipc.send({"cmd": "captures"}, sock_file=self.sock)
+            self.assertTrue(r_read["ok"])
+            r_mut = ipc.send({"cmd": "choice", "pick": "yes"}, sock_file=self.sock)
+            self.assertFalse(r_mut["ok"])
+            self.assertEqual(r_mut["error"], "marked_peer_refused")
 
 
 if __name__ == "__main__":
