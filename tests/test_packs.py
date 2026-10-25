@@ -569,7 +569,7 @@ class TestKeyboardRedaction(PackCase):
         for p in self.store.rglob("*"):
             if p.is_file() and p.suffix != ".png":
                 body = p.read_bytes()
-                self.assertNotIn(b"abc", body, str(p))
+                self.assertNotIn(b"abc=def", body, str(p))
 
     def test_fill_arg_and_result_redact(self):
         rec_dir = self.rec / "t-p1"

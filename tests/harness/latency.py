@@ -7,7 +7,6 @@ these numbers bound the CODE overhead of a path, not model latency: a
 live baseline is still needed for real STT / Jev / brain / UI-TARS time.
 """
 import json
-import os
 import pathlib
 import sys
 
@@ -78,13 +77,11 @@ def summarize(series: dict) -> dict:
     return out
 
 
-def check(series: dict) -> list:
+def check(series: dict, *, budget_scale: float = 1.0) -> list:
     """Regressions: p50 over the budget, or p90 over 1.5x the budget."""
-    jitter = 2.0 if os.environ.get("CI") or os.environ.get(
-        "GITHUB_ACTIONS") else 1.0
     bad = []
     for pid, row in summarize(series).items():
-        budget = row["budget_p50_ms"] * jitter
+        budget = row["budget_p50_ms"] * budget_scale
         if row["p50"] > budget:
             bad.append(f"{pid} p50 {row['p50']} ms > budget "
                        f"{budget:g} ms")
