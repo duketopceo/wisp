@@ -36,6 +36,8 @@ _CLOSE_BLOCK_RE = re.compile(r"^:::\s*$")
 _CLOSE_LINE_RE = re.compile(r"^::\s*$")
 _ATTR_RE = re.compile(r"([A-Za-z_][\w-]*)\s*=\s*([^,\]]+)")
 _SAFE_CONV = re.compile(r"[^A-Za-z0-9._-]+")
+# Line-start `::tiles` / `:::letter` only — not `std::vector` / `Foo::bar`.
+_PAPER_HINT_RE = re.compile(r"^:{2,3}[A-Za-z_]", re.M)
 
 
 def notes_dir(root: pathlib.Path | None = None) -> pathlib.Path:
@@ -205,12 +207,15 @@ def parse(text: str) -> dict:
 
 
 def looks_like_paper(text: str) -> bool:
-    """True when `text` carries paper markup worth writing to a note."""
+    """True when `text` carries paper markup worth writing to a note.
+
+    Colon openers must begin a line and an identifier (`::tiles`,
+    `:::letter`); bare `::` inside speech (`std::vector`) is ignored.
+    Plan markers stay unanchored — they appear in prose and block bodies.
+    """
     if not text:
         return False
-    if "::" in text:
-        return True
-    return bool(_PLAN_RE.search(text))
+    return bool(_PAPER_HINT_RE.search(text) or _PLAN_RE.search(text))
 
 
 def render_text(parsed: dict | None, *, include_plan: bool | None = None,
@@ -330,16 +335,10 @@ class NotePad:
     def _write(self, text: str, *, closed: bool) -> dict:
         parsed = parse(text)
         with self._lock:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
             data = text if text.endswith("\n") or text == "" else text + "\n"
-            # whole-file rewrite + fsync (durable artifact for routines)
-            with open(self.path, "w", encoding="utf-8") as f:
-                f.write(data)
-                f.flush()
-                try:
-                    os.fsync(f.fileno())
-                except OSError:
-                    pass
+            # Atomic rewrite: temp + 0600 + fsync; failures propagate so
+            # callers never publish a note_changed for a non-durable write.
+            _atomic_write_text(self.path, data)
             self._parsed = parsed
             self._closed = closed
             payload = _payload(self.conv_id, self.path, parsed,
@@ -369,6 +368,86 @@ class NotePad:
             pass
 
 
+def _atomic_write_text(path: pathlib.Path, data: str) -> None:
+    """Write `data` via unique temp file, mode 0o600, fsync file + dir.
+
+    File fsync / replace failures propagate — callers must not treat a
+    failed sync as a durable success. Directory fsync is best-effort on
+    platforms that cannot open a directory fd (Windows).
+    """
+    path = pathlib.Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(
+        f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            fd = -1  # fdopen owns it
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+    except Exception:
+        if fd >= 0:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+    os.replace(tmp, path)
+    # Durability of the directory entry itself.
+    try:
+        dir_fd = os.open(str(path.parent), os.O_RDONLY)
+    except OSError:
+        if os.name == "nt":
+            return  # replace already committed the name
+        raise
+    try:
+        os.fsync(dir_fd)
+    finally:
+        os.close(dir_fd)
+
+
+def _note_snap(bus=None, state=None) -> dict | None:
+    """Live `state.note` payload, or None."""
+    for src in (state, bus):
+        if src is None:
+            continue
+        try:
+            n = getattr(src, "note", None)
+            if isinstance(n, dict) and ("conv_id" in n or "objects" in n):
+                return n
+            if hasattr(src, "snapshot"):
+                full = src.snapshot() or {}
+                n = full.get("note") if isinstance(full, dict) else None
+                if isinstance(n, dict):
+                    return n
+        except (OSError, TypeError, AttributeError, ValueError, KeyError):
+            continue
+    return None
+
+
+def live_conv_id(bus=None, state=None,
+                 conv_id: str | None = None) -> str:
+    """Conversation-stable note id for the live paper.
+
+    Prefer an explicit id, then the open note already on the bus/state,
+    else the resolvable default `current` (what bare `wispd note` reads).
+    Never use a turn id — turns change every PTT press.
+    """
+    if conv_id:
+        return safe_conv_id(conv_id)
+    snap = _note_snap(bus, state)
+    if isinstance(snap, dict):
+        cid = snap.get("conv_id")
+        if cid and not snap.get("closed"):
+            return safe_conv_id(cid)
+    return "current"
+
+
 def current_note(*, root: pathlib.Path | None = None,
                  conv_id: str | None = None) -> dict | None:
     """Load + parse a note from disk (no bus publish)."""
@@ -385,16 +464,18 @@ def current_note(*, root: pathlib.Path | None = None,
 
 def publish_from_text(text: str, *, bus=None, turn_id: str | None = None,
                       conv_id: str | None = None,
-                      root: pathlib.Path | None = None) -> dict | None:
+                      root: pathlib.Path | None = None,
+                      state=None) -> dict | None:
     """Write a paper when `text` carries markup; else return None.
 
     Callers (speak stage, agent note ops) use this to keep the file,
-    `note_changed` event, and state.note field in sync.
+    `note_changed` event, and state.note field in sync. `turn_id` is
+    only for bus staleness — the file key is conversation-stable.
     """
     if not looks_like_paper(text):
         return None
-    pad = NotePad(conv_id or (turn_id or "current"), bus=bus,
-                  turn_id=turn_id, root=root)
+    cid = live_conv_id(bus, state, conv_id)
+    pad = NotePad(cid, bus=bus, turn_id=turn_id, root=root)
     return pad.set(text)
 
 
@@ -403,26 +484,15 @@ def close_live(bus=None, *, turn_id: str | None = None,
                root: pathlib.Path | None = None,
                state=None) -> dict | None:
     """Clear the live plan strip at turn end. No-op when no note."""
-    snap = None
-    if state is not None:
-        try:
-            snap = state.snapshot() if hasattr(state, "snapshot") \
-                else getattr(state, "note", None)
-        except (OSError, TypeError, AttributeError, ValueError, KeyError):
-            snap = getattr(state, "note", None)
-        if isinstance(snap, dict) and "note" in snap:
-            snap = snap.get("note")
-    if not isinstance(snap, dict) and bus is not None \
-            and hasattr(bus, "snapshot"):
-        try:
-            snap = (bus.snapshot() or {}).get("note")
-        except (OSError, TypeError, AttributeError, ValueError, KeyError):
-            snap = None
-    if not isinstance(snap, dict):
-        # still try closing from disk if a conv id is known
-        if conv_id is None and turn_id is None:
-            return None
-    cid = conv_id or (snap or {}).get("conv_id") or turn_id or "current"
+    snap = _note_snap(bus, state)
+    if isinstance(snap, dict) and snap.get("closed"):
+        # Already closed — do not republish a duplicate note_changed.
+        return snap
+    if not isinstance(snap, dict) and conv_id is None:
+        # No live note and no explicit conv — nothing to close.
+        return None
+    cid = live_conv_id(bus, state, conv_id or (
+        snap.get("conv_id") if isinstance(snap, dict) else None))
     pad = NotePad(cid, bus=bus or state, turn_id=turn_id, root=root)
     if not pad.path.exists() and not isinstance(snap, dict):
         return None
