@@ -68,7 +68,20 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
     if gated and risk > threshold:
         return f"BLOCKED (risk={risk:.2f} > {threshold})"
 
+    if route == "routine":
+        from . import routines
+        fallback = ""
+        if state is not None and getattr(state, "goal", ""):
+            fallback = str(getattr(state, "goal", "") or "")
+        out = routines.teach_routine(
+            detail, cfg, confirm=confirm, ask=ask, fallback_task=fallback)
+        return out["result"]
     if route == "agent":
+        from . import routines
+        if routines.parse_teach_intent(detail) is not None:
+            out = routines.teach_routine(
+                detail, cfg, confirm=confirm, ask=ask)
+            return out["result"]
         return agents.spawn(detail or app or "unnamed task", cfg)
     if route == "act":
         return _run_act(detail)
@@ -85,6 +98,14 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
         return dictate.run(text_to_paste, cfg, state=state,
                            confirm=confirm)
     if route == "learn":
+        from . import routines
+        if routines.parse_teach_intent(detail) is not None:
+            fallback = ""
+            if state is not None and getattr(state, "goal", ""):
+                fallback = str(getattr(state, "goal", "") or "")
+            out = routines.teach_routine(
+                detail, cfg, confirm=confirm, ask=ask, fallback_task=fallback)
+            return out["result"]
         prompt = ("Author a reusable skill for this request using the "
                   "skill_manage and skill_view tools. If a skill on this "
                   "topic already exists, view it and fold improvements "
