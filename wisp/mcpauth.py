@@ -227,8 +227,29 @@ def _open_auth_url(url: str) -> str:
 
 
 def connect(name: str, cfg: dict,
-            wait_s: int = WAIT_S) -> str:
-    """Full connect flow. Returns a human-readable result string."""
+            wait_s: int = WAIT_S,
+            peer: dict | None = None,
+            tasks_file=None) -> str:
+    """Full connect flow. Returns a human-readable result string.
+
+    U1/R2: OAuth granting is human-only. Invocations from inside a marked
+    spawned-agent scope (or carrying WISP_TASK_ID) refuse before touching
+    the gateway or browser.
+    """
+    import os
+    from . import agents
+    tf = tasks_file if tasks_file is not None else config.TASKS_FILE
+    eff_peer = peer if peer is not None else {
+        "pid": os.getpid(),
+        "uid": os.getuid() if hasattr(os, "getuid") else 0,
+    }
+    info = agents.classify_peer(eff_peer, tasks_file=tf)
+    if info.get("marked"):
+        tid = info.get("task_id")
+        if tid:
+            agents.record_refusal(tid, "connect", tasks_file=tf)
+        return ("REFUSED (connect is human-only; marked agent peer "
+                "cannot grant OAuth)")
     canon = _canonical(name)
     if not canon:
         known = ", ".join(sorted({v[0] for v in _ALIASES.values()}))

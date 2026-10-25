@@ -29,6 +29,86 @@ from . import state as _state
 _TIMEOUT = 10
 _TCP = _plat.current() == "windows"
 
+# U1 (KTD2, R2): IPC read vs mutating command split.
+# Marked peers (processes inside a spawned-agent task scope or carrying a
+# registry-verified WISP_TASK_ID ancestry) receive read-class IPC only.
+# Classification is deny-by-default: any command not in READ_CMDS is
+# treated as mutating and refused for marked peers.
+READ_CMDS = frozenset({
+    "status", "task_status", "context", "subscribe", "captures",
+    "suggestions", "task_output", "task_artifacts",
+})
+MUTATING_CMDS = frozenset({
+    "agent", "task_cancel", "choice", "config", "memory", "stop",
+    "interrupt", "listen", "label", "dictate_correct", "learn", "harness",
+})
+SAFETY_CONFIG_KEYS = frozenset({
+    "agent.allow_shell", "agent.autonomy", "agent.risk_threshold",
+    "budget.daily_usd", "budget.monthly_usd", "budget.gate_primary",
+    "agents.act_max_usd", "pointer.mode",
+})
+
+
+def is_safety_config_key(key: str) -> bool:
+    """True when `key` lowers or alters a safety/autonomy/spend guard."""
+    k = str(key or "").strip()
+    return k in SAFETY_CONFIG_KEYS or k.startswith("cua.")
+
+
+def classify_cmd(cmd_name: str | None) -> str:
+    """'read' for READ_CMDS; 'mutating' for everything else (deny-by-default)."""
+    return "read" if cmd_name in READ_CMDS else "mutating"
+
+
+def check_peer_authz(cmd: dict | None, peer: dict | None,
+                     tasks_file=None) -> dict | None:
+    """Return None when `peer` is allowed to run `cmd`, or a refusal reply
+    dict (`error='marked_peer_refused'`) when `peer` is a marked spawned
+    agent (or a spoofed WISP_TASK_ID holder) attempting a disallowed call."""
+    if not isinstance(cmd, dict):
+        return None
+    from . import agents
+    tf = tasks_file if tasks_file is not None else config.TASKS_FILE
+    info = agents.classify_peer(peer, tasks_file=tf)
+    if not info.get("marked"):
+        return None
+    c = cmd.get("cmd")
+    if info.get("spoofed"):
+        return {
+            "ok": False,
+            "error": "marked_peer_refused",
+            "reason": info.get("reason") or "unregistered_task_id",
+            "cmd": c,
+        }
+    # `config set` on safety keys refuses marked peers outright with a
+    # specific reason even if command classes ever change.
+    if c == "config":
+        set_fields = cmd.get("set") or {}
+        if isinstance(set_fields, dict) and any(
+                is_safety_config_key(k) for k in set_fields):
+            tid = info.get("task_id")
+            if tid:
+                agents.record_refusal(tid, "config", tasks_file=tf)
+            return {
+                "ok": False,
+                "error": "marked_peer_refused",
+                "reason": "safety_key",
+                "cmd": c,
+                "task_id": tid,
+            }
+    if classify_cmd(c) == "read":
+        return None
+    tid = info.get("task_id")
+    if tid:
+        agents.record_refusal(tid, str(c or "unknown"), tasks_file=tf)
+    return {
+        "ok": False,
+        "error": "marked_peer_refused",
+        "reason": "mutating_cmd",
+        "cmd": c,
+        "task_id": tid,
+    }
+
 
 def _use_tcp() -> bool:
     """TCP loopback on Windows, AF_UNIX elsewhere. Read dynamically
@@ -143,6 +223,10 @@ class Daemon:
                 resp = {"ok": False, "error": "malformed json"}
             else:
                 if isinstance(cmd, dict) and cmd.get("cmd") == "subscribe":
+                    refused = check_peer_authz(cmd, peer)
+                    if refused is not None:
+                        conn.sendall(json.dumps(refused).encode() + b"\n")
+                        return
                     self._stream(conn, cmd)
                     return
                 try:
