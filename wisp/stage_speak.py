@@ -106,7 +106,8 @@ def _close_paper(state) -> None:
         if turn is None and hasattr(bus, "current_turn"):
             turn = bus.current_turn()
         _note.close_live(bus, turn_id=turn, state=state)
-    except (OSError, TypeError, AttributeError, ValueError, KeyError):
+    except (ImportError, OSError, TypeError, AttributeError, ValueError,
+            KeyError):
         pass
 
 
@@ -126,7 +127,8 @@ def _publish_paper(state, text: str, turn: str | None = None) -> None:
             tid = bus.current_turn()
         _note.publish_from_text(text, bus=bus, turn_id=tid,
                                 conv_id=tid or "current")
-    except (OSError, TypeError, AttributeError, ValueError, KeyError):
+    except (ImportError, OSError, TypeError, AttributeError, ValueError,
+            KeyError):
         pass
 
 

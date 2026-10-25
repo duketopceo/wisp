@@ -253,7 +253,12 @@ class CliEntries(unittest.TestCase):
         out = subprocess.run([sys.executable, str(HERE.parent / "wispd"),
                               "--help"], capture_output=True, text=True,
                              env={"COLUMNS": "80", "PATH": "/usr/bin"})
-        self.assertLess(len(out.stdout.splitlines()), 65)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        # Prefer content checks over a soft line-count bump: globals and
+        # the cua group must stay on the top-level help surface.
+        self.assertIn("--json", out.stdout)
+        self.assertIn("cua", out.stdout)
+        self.assertLessEqual(len(out.stdout.splitlines()), 60)
 
     def test_daemon_install_has_cua_flag(self):
         with CliEnv() as env:

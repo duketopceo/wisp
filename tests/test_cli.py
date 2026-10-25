@@ -143,9 +143,9 @@ class TestHelp(unittest.TestCase):
                            capture_output=True, text=True, timeout=30,
                            env=dict(os.environ, COLUMNS="80"))
         self.assertEqual(p.returncode, 0)
-        self.assertLess(len(p.stdout.splitlines()), 65)
+        self.assertLessEqual(len(p.stdout.splitlines()), 60)
         for word in ("--json", "--quiet", "--no-color", "doctor",
-                     "completion"):
+                     "completion", "note"):
             self.assertIn(word, p.stdout)
 
     def test_no_emoji_or_em_dash_in_cli_strings(self):
