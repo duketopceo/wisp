@@ -85,11 +85,12 @@ def _needed_paths(text: str, home) -> list:
 
 
 def install_units(home, dry_run: bool = False, names=None,
-                  now=None) -> list:
+                  now=None, local: bool = True) -> list:
     """Install the templates under `home`. Returns one dict per unit:
     {name, path, action: new|unchanged|update|skip, backup, reason}.
     An `update` first copies the old file to `<unit>.bak-<stamp>`.
-    Dry-run computes the same plan and writes nothing."""
+    Dry-run computes the same plan and writes nothing. local=False
+    skips the llama/jev-shim units ([local] enabled is off)."""
     home = pathlib.Path(home)
     udir = home / ".config" / "systemd" / "user"
     stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(now))
@@ -100,6 +101,9 @@ def install_units(home, dry_run: bool = False, names=None,
         a = {"name": n, "path": str(dst), "action": "new",
              "backup": None, "reason": ""}
         acts.append(a)
+        if not local and n in LLAMA:
+            a["action"], a["reason"] = "skip", "[local] enabled is off"
+            continue
         missing = [] if n in ALWAYS_INSTALL else \
             [x for x in _needed_paths(text, home)
              if not pathlib.Path(x).exists()]

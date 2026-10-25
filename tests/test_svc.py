@@ -225,6 +225,37 @@ class TestInstall(unittest.TestCase):
             self.assertEqual(acts["wispd"]["action"], "new")
             self.assertFalse((e.unit_dir / "llama-local.service").exists())
 
+    def test_local_off_skips_llama_units(self):
+        with Env() as e:
+            stub_systemctl(e.bin)
+            e.fake_exes()
+            acts = {a["name"]: a
+                    for a in svc.install_units(e.home, local=False)}
+            for n in svc.LLAMA:
+                self.assertEqual(acts[n]["action"], "skip")
+                self.assertIn("[local]", acts[n]["reason"])
+            self.assertEqual(acts["wispd"]["action"], "new")
+
+    def test_full_install_skips_llama_units_by_default(self):
+        import importlib.machinery
+        import importlib.util
+        from wisp import config
+        root = pathlib.Path(__file__).resolve().parent.parent
+        loader = importlib.machinery.SourceFileLoader(
+            "wispd_svc", str(root / "wispd"))
+        spec = importlib.util.spec_from_loader("wispd_svc", loader)
+        w = importlib.util.module_from_spec(spec)
+        loader.exec_module(w)
+        with Env() as e:
+            stub_systemctl(e.bin)
+            e.fake_exes()
+            with mock.patch.object(config, "HOME", e.home), \
+                 mock.patch("wisp.platform.current", return_value="linux"):
+                w.install_files()
+            for n in svc.LLAMA:
+                self.assertFalse((e.unit_dir / f"{n}.service").exists(), n)
+            self.assertTrue((e.unit_dir / "wispd.service").exists())
+
     def test_never_enables_or_restarts(self):
         with Env() as e:
             stub_systemctl(e.bin)

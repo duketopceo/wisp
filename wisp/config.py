@@ -331,6 +331,13 @@ base_url = "http://localhost:8080/v1"
 vision = "false"
 tools = "false"
 
+[local]
+# Local model servers (llama.cpp / ollama / UI-TARS) are opt-in. Off:
+# onboarding skips the local ladder, grounding drops the uitars
+# provider, and `wispd install --units` skips the llama/jev-shim units.
+# Brains still come from [brain]; OpenRouter is the default.
+enabled = "false"
+
 [health]
 # probes of LOCAL endpoints (Jev, brain chain, optional extras); remote
 # endpoints are never probed. Results ride state.json `health`.
@@ -526,6 +533,7 @@ def _default_cfg_dict() -> dict:
             "fallback": "", "allow_paid": "false", "first_token_s": "3",
         },
         "budget": {"monthly_usd": "160.00", "gate_primary": "false"},
+        "local": {"enabled": "false"},
         "health": {"enabled": "true", "interval_s": "30",
                    "press_stale_s": "10", "timeout_ms": "500"},
         "apps": _default_apps(),
@@ -552,6 +560,12 @@ def load_config() -> dict:
         CFG_FILE.write_text(DEFAULT_CONFIG + _apps_toml(), encoding="utf-8")
         cfg = _default_cfg_dict()
     return cfg
+
+
+def local_enabled(cfg: dict | None) -> bool:
+    """[local] enabled — local model servers are opt-in (default off)."""
+    v = ((cfg or {}).get("local", {}) or {}).get("enabled", "false")
+    return str(v).strip().lower() == "true"
 
 
 def whisper_model(cfg: dict) -> pathlib.Path:
