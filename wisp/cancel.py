@@ -262,8 +262,11 @@ def run(argv, *, input=None, capture_output=False, timeout=None,
         check=False, **kw):
     """`subprocess.run` that the current turn can kill. Raises
     `Cancelled` if the turn was cancelled while the child ran."""
-    argv = list(argv)
-    if argv:
+    # shell=True passes a command STRING; list() would split it into
+    # characters. Only argv sequences get exe resolution.
+    if not isinstance(argv, (str, bytes)):
+        argv = list(argv)
+    if argv and not isinstance(argv, (str, bytes)):
         # CreateProcess only resolves bare names to .exe — .cmd/.bat
         # tools (fake bins, user installs) need PATHEXT resolution.
         from . import platform as _platform
