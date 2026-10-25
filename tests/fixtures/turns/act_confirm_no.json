@@ -61,7 +61,11 @@
       "speaking",
       "done"
     ],
-    "cua_calls": [],
+    "cua_calls": [
+      "start_session",
+      "start_recording",
+      "stop_recording"
+    ],
     "steps_contain": [
       "SKIPPED (click declined by user)"
     ]

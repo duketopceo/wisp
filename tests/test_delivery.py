@@ -23,6 +23,21 @@ from wisp import act, cancel, cua_safety, delivery, pointer, realinput, \
     tools  # noqa: E402
 from wisp.tools import system  # noqa: E402
 
+# U4: unfaked loop calls reach a live cua-driver's recording + pack
+# write; the pack seam is stubbed module-wide (its suite is elsewhere)
+_WRITE_PACK = None
+
+
+def setUpModule():
+    global _WRITE_PACK
+    _WRITE_PACK = mock.patch.object(act, "_write_pack")
+    _WRITE_PACK.start()
+
+
+def tearDownModule():
+    _WRITE_PACK.stop()
+
+
 DRIVE = {"pointer": {"mode": "drive", "backend": "auto"}}
 
 

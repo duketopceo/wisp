@@ -325,7 +325,7 @@ Resources: wispd under 250 MB RSS and 3% idle CPU; cua-driver
 |-----|---------|---------|
 | `[pointer] mode` | `guide` | `guide`: Wisp points with the ghost cursor, you click. `drive`: inject real input through the backend. `auto`: drive when a backend exists, guide otherwise |
 | `[pointer] backend` | `auto` | `auto`, `cua`, `hyprcursor`, `ydotool`, `wlrctl` or `none`. A named backend is used alone; if it is unavailable Wisp guides |
-| `[ground] providers` | `a11y,uitars,jev` | grounding chain order: cua accessibility tree, local UI-TARS, vision fallback |
+| `[ground] providers` | `control,a11y,uitars,jev` | grounding chain order: app control channel, cua accessibility tree, local UI-TARS, vision fallback |
 | `[ground] min_confidence` | `0.5` | candidates below this are re-observed once, then refused |
 | `[ground] budget_ms` | `1200` | shared budget for the fast providers |
 | `[ground] fallback_timeout_ms` | `5000` | timeout for the vision fallback |
@@ -334,6 +334,37 @@ Resources: wispd under 250 MB RSS and 3% idle CPU; cua-driver
 | `[ground] a11y_frame` | `global` | `global` or `window`, the frame of accessibility element boxes |
 
 The whole path is in `docs/CUA.md`.
+
+## [control]: per-app control channels (U3)
+
+Apps exposing a JSON-lines control channel get ground-truth grounding
+(`ui.elements` automation ids) and a corroborating verify rung
+(`ui.inspect`/`ui.elements` before-after diffs). FilmCraft is built in
+at `127.0.0.1:9876` — launch it with `--control 9876`. Channels are
+loopback-only; channel-reported rects are validated against live
+compositor window bounds, never trusted alone.
+
+Add an app either as a scalar or a table:
+
+```toml
+[control]
+myapp = "127.0.0.1:9877"     # host:port — loopback only
+
+[control.myapp]
+port = "9877"                # host defaults to 127.0.0.1
+match = "myapp,My App"       # window class/title patterns; default: the app key
+```
+
+| key | default | meaning |
+|-----|---------|---------|
+| `[control] <app>` | — | `host:port` scalar for app `<app>` |
+| `[control.<app>] port` | — | control port for app `<app>` |
+| `[control.<app>] host` | `127.0.0.1` | channel host (loopback only) |
+| `[control.<app>] match` | app key | class/title patterns that select this app's channel |
+| `[control] connect_timeout_s` | `0.4` | connect deadline |
+| `[control] read_timeout_s` | `3.5` | read deadline per call |
+| `[control] rect_slack_px` | `8` | tolerance when validating channel rects against compositor bounds |
+| `[control] element_cap` | `1024` | max elements accepted from one `ui.elements` reply |
 
 ## [report]: opt-in error reporting (W16)
 
@@ -373,6 +404,42 @@ Off by default. Local sources only (Hyprland window changes, the dayflow journal
 | `[ui] theme` | `dark` | `dark` or `light`; `wispd theme <name>` swaps live |
 | `[apps]` | per OS | name to launch command map Jev resolves "open the terminal" against (`browser`, `terminal`, `files`, `vscode`, `music`, `settings`, `browser_new_tab`) |
 
+## [packs] — capture-pack retention (U4)
+
+Every recorded act turn is folded into `~/.local/share/wisp/packs/<turn>/`
+(`manifest.json`, frame PNGs, `contact.png`, mode `0700`; `wispd captures`
+serves them over IPC). The transient `rec/<turn>/` intermediates are
+deleted at pack-write.
+
+| key | default | meaning |
+|-----|---------|---------|
+| `keep` | `200` | newest packs retained (0 disables the count bound) |
+| `keep_days` | `30` | days a pack is kept (0 disables the age bound) |
+| `shots_keep` | `100` | newest files kept under `shots/` — the pack writer owns that pruning (0 disables) |
+| `shots_keep_days` | `30` | days a `shots/` screenshot is kept (0 disables) |
+
+Both bounds apply together; pruning runs after each pack write and at
+daemon start.
+
+## [verify] — action-verdict ladder (U2)
+
+Every recorded act action earns a verdict (`landed`/`missed`/
+`refused`/`suppressed`/`unverifiable`/`not_recorded`). The cheap
+rungs vote first — a masked pixel diff of the driver's before/after
+frames at the predicted region, plus the app's control-channel diff
+when it ships one (see [control]); disagreement or mutual abstention
+escalates to a VLM judge.
+
+| key | default | meaning |
+|-----|---------|---------|
+| `vlm` | (empty) | `provider:model` endpoint for the judge; empty uses the primary brain |
+| `judge_timeout_s` | `20` | seconds the judge may take before the step lands unverifiable |
+| `pixel_landed_min` | `0.02` | changed-fraction threshold for a `landed` vote |
+| `pixel_missed_max` | `0.001` | changed-fraction ceiling for a `missed` vote (between the two: abstain) |
+| `pixel_eps` | `16` | per-channel pixel difference counted as a change |
+| `region_px` | `96` | side of the square pixel region diffed around a click point |
+| `frame_wait_s` | `0.5` | bound on waiting for the driver's before/after frames |
+
 ## [debug]
 
 | key | meaning |
@@ -403,7 +470,7 @@ task list|status|cancel|run    memory edit|write    suggest list
 label report|set               context
 train stats|history|bank|rebuild        review list|run|approve|reject
 learn weekly|fails             skills list|import  recipes draft|approve
-trace show|digest              eval route
+trace show|digest              eval route  captures [turn] [--full]
 config show|set|keys           theme show|set|check|css
 batch status|submit-learn|poll|cancel
 connect list|add               sync  inventory  tui  completion bash|zsh|fish

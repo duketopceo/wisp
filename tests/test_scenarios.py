@@ -108,7 +108,9 @@ class CorpusRunTest(unittest.TestCase):
             if problems:
                 bad[p.stem] = problems
         self.assertEqual(bad, {})
-        self.assertLess(time.monotonic() - t0, 20.0 * runner.JITTER)
+        # budget was 20s pre-recording; start/stop_recording + session mint
+        # add ~3 fake-cua calls per act turn
+        self.assertLess(time.monotonic() - t0, 24.0 * runner.JITTER)
 
 
 if __name__ == "__main__":

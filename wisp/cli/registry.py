@@ -222,9 +222,9 @@ def top_help(cmds) -> str:
               "  --no-color   plain output (also NO_COLOR, or not a tty)",
               "",
               "Exit codes: 0 ok, 1 failure, 2 usage, 3 daemon not "
-              "running, 4 unhealthy dependency.",
-              "Old command names (tasks, task_status, models, ...) still "
-              "work for one release."]
+              "running, 4 unhealthy dependency. Old command names "
+              "(tasks, task_status, models, ...) still work for one "
+              "release."]
     return "\n".join(lines) + "\n"
 
 

@@ -14,6 +14,7 @@ proposals/; `wispd recipes approve` installs it (human-gated, same
 contract as learn.py criteria proposals).
 """
 import json
+import pathlib
 import re
 from datetime import datetime, timezone
 
@@ -29,20 +30,59 @@ def _tokens(text: str) -> set:
     return set(_WORDS.findall((text or "").lower()))
 
 
+def _step_out(s: dict, pack=None) -> dict:
+    """The persisted form of one step — tool/arg/result plus the U6
+    verdict fields (R5) when the step carries them: `verdict`,
+    `verify_source` (the rung that minted it), `corroborated`,
+    `turn_dir`, `pack`. In-memory steps get source/corroboration from
+    the ladder's `verify` dict; old rows and read-only steps simply
+    have none of these keys."""
+    out = {"tool": s.get("tool"), "arg": s.get("arg", "")[:80],
+           "result": s.get("result", "")[:80]}
+    vd = s.get("verify")
+    vd = vd if isinstance(vd, dict) else {}
+    if s.get("verdict") is not None:
+        out["verdict"] = str(s["verdict"])[:24]
+    src = s.get("verify_source") or vd.get("source")
+    if src:
+        out["verify_source"] = str(src)[:24]
+    corr = s.get("corroborated")
+    if corr is None:
+        corr = vd.get("corroborated")
+    if corr is not None:
+        out["corroborated"] = bool(corr)
+    if "turn_dir" in s:          # explicit null persists — the step
+        td = s.get("turn_dir")   # was recording-eligible
+        # F15: persist the evidence dir NAME, never the absolute rec/
+        # path — a trajectory is durable training data and a host path
+        # would leak the machine's $HOME layout
+        out["turn_dir"] = pathlib.Path(str(td)).name if td else None
+    p = s.get("pack") or pack
+    if p:
+        out["pack"] = pathlib.Path(str(p)).name
+    return out
+
+
 def record(task: str, app: str, steps: list, outcome: str,
-           ref: str = "", surface: str = "") -> None:
+           ref: str = "", surface: str = "", pack=None) -> None:
     """Append one act-run trajectory. Rotates FILE at MAX_BYTES.
     `surface` tags the interaction substrate (browser-dom, desktop) so
-    per-surface training stats and skills stay separate."""
+    per-surface training stats and skills stay separate. `pack` is the
+    turn's capture-pack dir when U4 wrote one — stamped onto each step
+    that doesn't already name its own."""
     rec = {"ts": datetime.now(timezone.utc).isoformat(),
            "task": task, "app": app, "surface": surface,
-           "steps": [{"tool": s.get("tool"), "arg": s.get("arg", "")[:80],
-                      "result": s.get("result", "")[:80]}
-                     for s in steps],
+           "steps": [_step_out(s, pack=pack) for s in steps],
            "outcome": outcome[:200], "ref": ref}
+    if pack:
+        rec["pack"] = pathlib.Path(str(pack)).name   # F15: name only
     try:
         FILE.parent.mkdir(parents=True, exist_ok=True)
-        if FILE.exists() and FILE.stat().st_size > MAX_BYTES:
+        try:
+            size = FILE.stat().st_size
+        except OSError:
+            size = 0
+        if size > MAX_BYTES:
             FILE.replace(FILE.with_suffix(".jsonl.1"))
         with FILE.open("a") as f:
             f.write(json.dumps(rec) + "\n")
@@ -51,20 +91,8 @@ def record(task: str, app: str, steps: list, outcome: str,
 
 
 def _read_all(path=None) -> list:
-    path = path or FILE
-    try:
-        lines = path.read_text().splitlines()
-    except OSError:
-        return []
-    out = []
-    for ln in lines:
-        if not ln.strip():
-            continue
-        try:
-            out.append(json.loads(ln))
-        except ValueError:
-            continue
-    return out
+    from . import learn
+    return learn._read_jsonl(path or FILE)
 
 
 def _labels() -> dict:
@@ -118,13 +146,29 @@ def similar(task: str, app: str = "", k: int = 3,
             continue
         r = dict(r)
         out = r.get("outcome", "")
-        r["failed"] = out.startswith(("ABORTED", "SKIP", "ERROR"))
+        r["outcome_failed"] = out.startswith(("ABORTED", "SKIP", "ERROR"))
+        # U6: the step verdicts outrank the outcome string — a run that
+        # reported ACTED but whose last action corroborated-missed is a
+        # failed branch (the FilmCraft ~70px miss); a single-source
+        # terminal miss only makes it suspect (R2a down-weight).
+        # not_recorded/legacy tails say nothing — outcome still governs.
+        tb, _w = _terminal(r)
+        r["verified_miss"] = tb == "missed"
+        r["suspect_miss"] = tb == "missed_solo"
+        r["failed"] = r["outcome_failed"] or r["verified_miss"]
         lab = (labs.get(r.get("ts")) or labs.get(r.get("ref") or "")
                or labs.get("task:" + r.get("task", ""), ""))
         r["corrected"] = lab == "incorrect"
         scored.append((score, r))
     scored.sort(key=lambda s: -s[0])
     return [r for _, r in scored[:k]]
+
+
+def _terminal(rec: dict) -> tuple:
+    """(bucket, weight) of the run's last outcome-bearing verdict —
+    learn.terminal_evidence, shared policy."""
+    from . import learn
+    return learn.terminal_evidence(rec.get("steps") or [])
 
 
 def _fmt_steps(steps: list, limit: int = 8) -> str:
@@ -146,9 +190,16 @@ def context_for(task: str, app: str = "", cfg: dict | None = None,
     for r in priors:
         steps = _fmt_steps(r.get("steps", []))
         if r["failed"] or r["corrected"]:
+            why = r['outcome'][:60]
+            if r.get("verified_miss") and not r.get("outcome_failed"):
+                why = f"reported {why} but last action verified missed"
             lines.append(
-                f"- FAILED run ({r['outcome'][:60]}): {steps or 'no steps'}"
+                f"- FAILED run ({why}): {steps or 'no steps'}"
                 " — do not repeat this branch")
+        elif r.get("suspect_miss"):
+            lines.append(
+                f"- prior success: {steps or 'no steps'} — caution:"
+                " final action missed (single-source, unverified)")
         else:
             lines.append(f"- prior success: {steps or 'no steps'}")
     return "\n".join(lines)
@@ -181,13 +232,21 @@ def propose_recipes(out_dir=None) -> list:
             continue
         if _lab(r) == "incorrect":
             continue  # user says it failed even if it reported ACTED
+        # a corroborated terminal miss is label-grade failure evidence
+        # even under an ACTED outcome — never distill it as a success.
+        # (single-source misses and not_recorded tails stay eligible:
+        # weak/absent evidence, not a failure.)
+        if _terminal(r)[0] == "missed":
+            continue
         key = _task_key(r)
         prior_bad = [p for p in recs[:i]
                      if p.get("app") == key[0]
                      and _related(_task_key(p)[1], key[1])
                      and (p.get("outcome", "").startswith(
                           ("ABORTED", "SKIP", "ERROR"))
-                          or _lab(p) == "incorrect")]
+                          or _lab(p) == "incorrect"
+                          or (_lab(p) != "correct"
+                              and _terminal(p)[0] == "missed"))]
         # graduation: a labeled-correct multi-step success drafts even
         # with no prior failures — the user confirmed the workflow
         verified = (_lab(r) == "correct"

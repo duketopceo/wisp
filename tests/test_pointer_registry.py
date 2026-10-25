@@ -397,7 +397,7 @@ class TestShims(_Iso):
         self.assertEqual(c[:3], ["cua-driver", "call", "click"])
         self.assertEqual(json.loads(c[3]), {
             "x": 100, "y": 200, "coordinate_frame": "desktop",
-            "scope": "desktop"})
+            "scope": "desktop", "session": "wisp"})
         self.assertEqual(platform.pointer_cmds(1, 2, "wlrctl", True),
                          [["wlrctl", "pointer", "move", "1", "2"],
                           ["wlrctl", "pointer", "click", "left"]])

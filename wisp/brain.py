@@ -190,6 +190,13 @@ def _chat_one(p: dict, messages: list, tools, timeout) -> dict:
         body["tool_choice"] = "auto"
     resp = _post(f"{base}/chat/completions", _headers(p), body, timeout)
     msg = (resp.get("choices") or [{}])[0].get("message", {})
+    if not msg.get("content") and not msg.get("tool_calls"):
+        # empty assistant message = upstream flake (observed ~2/3 calls on
+        # gemini-2.5-flash with image+tools): retry once before the caller
+        # mistakes it for a clean "done"
+        time.sleep(0.05)
+        resp = _post(f"{base}/chat/completions", _headers(p), body, timeout)
+        msg = (resp.get("choices") or [{}])[0].get("message", {})
     return {"content": msg.get("content", ""), "raw": msg,
             "usage": ledger.usage_of(resp)}
 

@@ -45,14 +45,15 @@ class TestCall(unittest.TestCase):
             self.assertEqual(e.cua.calls[0]["tool"], "click")
             self.assertEqual(e.cua.calls[0]["args"], {
                 "x": 100, "y": 200, "coordinate_frame": "desktop",
-                "scope": "desktop"})
+                "scope": "desktop", "session": "wisp"})
 
     def test_move_cursor_args(self):
         with Env() as e:
             cua.Cua().move_cursor(5, 6)
             self.assertEqual(e.cua.calls[0]["tool"], "move_cursor")
             self.assertEqual(e.cua.calls[0]["args"],
-                             {"x": 5, "y": 6, "scope": "desktop"})
+                             {"x": 5, "y": 6, "scope": "desktop",
+                              "session": "wisp"})
 
     def test_argv_only_no_shell_injection(self):
         # a hostile string is one JSON argv element, never shell text
@@ -61,7 +62,8 @@ class TestCall(unittest.TestCase):
             cua.Cua().call("get_window_state", {"title": evil})
             argv = e.bins.calls("cua-driver")[0]["argv"]
             self.assertEqual(argv[:2], ["call", "get_window_state"])
-            self.assertEqual(json.loads(argv[2]), {"title": evil})
+            self.assertEqual(json.loads(argv[2]),
+                             {"title": evil, "session": "wisp"})
             self.assertEqual(len(argv), 3)
             self.assertFalse(pathlib.Path("pwned").exists())
 
@@ -87,7 +89,8 @@ class TestCall(unittest.TestCase):
             self.assertEqual(e.cua.tools(),
                              ["list_windows", "get_window_state"])
             self.assertEqual(e.cua.calls[1]["args"],
-                             {"pid": 844, "window_id": 6123})
+                             {"pid": 844, "window_id": 6123,
+                              "session": "wisp"})
 
 
 class TestErrors(unittest.TestCase):

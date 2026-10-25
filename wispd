@@ -357,6 +357,11 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
                 return {"ok": True, "result": _ctx.snapshot(cfg)}
             except Exception as e:
                 return {"ok": False, "error": str(e)}
+        if c == "captures":
+            # U4: read-only over the peer-cred'd socket — pack list or
+            # one manifest; transcript/state-dump text only via --full
+            from wisp import packs
+            return packs.captures_response(cmd)
         if c == "stop":
             speech.stop()
             ctl["stop"].set()
@@ -662,6 +667,24 @@ def run_daemon(cfg: dict) -> int:
            "broker": cancel.PromptBroker(), "token": None,
            "rec": None, "rec_lock": threading.Lock()}
     _DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL = st, cfg, ctl
+    # U1: rec/<turn>/ dirs left by a dead run are orphans — the turn
+    # never reached pack-write, so they're discarded, never promoted
+    from wisp import record as _record
+    _dropped = _record.sweep_orphans()
+    if _dropped:
+        dlog("rec: discarded orphan turn dir(s): "
+             + ", ".join(_dropped[:8]))
+    # U4: packs/+shots/ retention also runs at start — a box that sat
+    # idle otherwise keeps everything until the next pack write
+    try:
+        from wisp import packs as _packs
+        _gone = _packs.maintenance(cfg)
+        for _kind in ("packs", "shots"):
+            _r = (_gone.get(_kind) or {}).get("removed") or []
+            if _r:
+                dlog(f"{_kind}: pruned " + ", ".join(_r[:8]))
+    except Exception as e:
+        dlog(f"packs: maintenance failed: {e}")
     from wisp import ledger as _ledger
     _ledger.attach(st, cfg)  # publishes `spend` on the state stream
     if cfg.get("health", {}).get("enabled", "true") == "true":

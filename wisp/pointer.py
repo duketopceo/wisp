@@ -111,20 +111,23 @@ class CuaBackend(Backend):
     def unavailable_hint(self) -> str:
         return "cua-driver not on PATH or its socket is missing"
 
-    def _do(self, fn, x, y) -> bool:
+    def _do(self, fn, x, y, **kw) -> bool:
         self.last_error = ""
         try:
-            fn(x, y)
+            fn(x, y, **kw)
             return True
         except _cua.CuaError as e:
             self.last_error = e.cua_code
             return False
 
+    # every cua-bound dispatch carries the stable "wisp" session label
+    # (U1 — session-filtered turn recording attributes by it)
     def move(self, x, y) -> bool:
-        return self._do(self.client.move_cursor, x, y)
+        return self._do(self.client.move_cursor, x, y,
+                        session=_cua.SESSION)
 
     def click(self, x, y) -> bool:
-        return self._do(self.client.click, x, y)
+        return self._do(self.client.click, x, y, session=_cua.SESSION)
 
 
 def _run_argv(cmds: list) -> bool:

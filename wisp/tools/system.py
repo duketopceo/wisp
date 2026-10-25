@@ -322,8 +322,10 @@ def model_image(path) -> str | None:
         except (OSError, subprocess.SubprocessError):
             pass
     try:
-        return ("data:image/png;base64," + _b64.b64encode(
-            pathlib.Path(path).read_bytes()).decode())
+        raw = pathlib.Path(path).read_bytes()
+        mime = "image/jpeg" if raw[:2] == b"\xff\xd8" \
+            else "image/png"
+        return f"data:{mime};base64," + _b64.b64encode(raw).decode()
     except OSError:
         return None
 

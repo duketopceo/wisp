@@ -31,8 +31,11 @@ class CuaTurnTest(unittest.TestCase):
         self.assertEqual(runner.check_expectations(res), [])
         self.assertEqual(res.violations, [])
         calls = res.fake_calls["cua"]
-        self.assertEqual([c["tool"] for c in calls], ["click"])
-        self.assertEqual((calls[0]["args"]["x"], calls[0]["args"]["y"]),
+        self.assertEqual([c["tool"] for c in calls],
+                         ["start_session", "start_recording", "click",
+                          "stop_recording"])
+        click = next(c for c in calls if c["tool"] == "click")
+        self.assertEqual((click["args"]["x"], click["args"]["y"]),
                          (10, 20))
 
     def test_cua_stale_click_fails_without_retry(self):
@@ -49,7 +52,8 @@ class CuaTurnTest(unittest.TestCase):
         res = runner.run_turn(fx)
         self.assertEqual(res.exit_code, 0, res.stderr)
         self.assertEqual([c["tool"] for c in res.fake_calls["cua"]],
-                         ["click"])
+                         ["start_session", "start_recording", "click",
+                          "stop_recording"])
         # the tool result the brain saw on its next call
         self.assertIn("SKIP (click failed via cua)",
                       json.dumps(res.chat_calls()[1]["body"]))
