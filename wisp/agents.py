@@ -8,6 +8,7 @@ start reconciles dead pids.
 import json
 import os
 import pathlib
+import re
 import shutil
 import signal
 import subprocess
@@ -16,6 +17,13 @@ import threading
 from datetime import datetime, timezone
 
 from . import config, util
+
+SCOPE_PREFIX = "wisp-task-"
+_SCOPE_RE = re.compile(r"\bwisp-task-([A-Za-z0-9_.-]+?)\.scope\b")
+
+
+def _scope_unit(task_id: str) -> str:
+    return f"{SCOPE_PREFIX}{task_id}.scope"
 
 
 def _slug(text: str) -> str:
@@ -66,6 +74,182 @@ def _pstart(pid: int) -> str:
     pid fails this check before we signal anything."""
     st = _proc_stat(pid)
     return st[1] if st else ""
+
+
+def _proc_ppid(pid: int) -> int:
+    """Parent PID of `pid`, or 0 when unreadable."""
+    if pid <= 1:
+        return 0
+    try:
+        stat = pathlib.Path(f"/proc/{pid}/stat").read_text()
+        tail = stat.rsplit(")", 1)[-1].split()
+        return int(tail[1])
+    except (OSError, IndexError, ValueError):
+        pass
+    if sys.platform == "win32" or pathlib.Path("/proc/self").exists():
+        return 0
+    try:
+        out = subprocess.run(["ps", "-o", "ppid=", "-p", str(pid)],
+                             capture_output=True, text=True,
+                             timeout=2).stdout.strip()
+        return int(out) if out else 0
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return 0
+
+
+def _proc_cgroup(pid: int) -> str:
+    """Raw `/proc/<pid>/cgroup` content on Linux, or '' when unavailable."""
+    if pid <= 0:
+        return ""
+    try:
+        return pathlib.Path(f"/proc/{pid}/cgroup").read_text(errors="replace")
+    except OSError:
+        return ""
+
+
+def _proc_environ(pid: int) -> dict[str, str]:
+    """Environment dict for `pid` (live `os.environ` for self, `/proc/<pid>/environ`
+    for other same-uid processes on Linux)."""
+    if pid <= 0:
+        return {}
+    if pid == os.getpid():
+        return dict(os.environ)
+    try:
+        raw = pathlib.Path(f"/proc/{pid}/environ").read_bytes()
+    except OSError:
+        return {}
+    env: dict[str, str] = {}
+    for item in raw.split(b"\x00"):
+        if not item or b"=" not in item:
+            continue
+        k, v = item.split(b"=", 1)
+        env[k.decode(errors="replace")] = v.decode(errors="replace")
+    return env
+
+
+def classify_peer(peer: dict | None, tasks_file=config.TASKS_FILE) -> dict:
+    """Classify a connecting IPC peer (`{pid, uid}`) against the task registry.
+
+    Returns `{marked, verified, spoofed, task_id, reason}`:
+      - cgroup scope (`wisp-task-<id>.scope`) verified against `tasks_file`
+        catches spawned agents and any reparented (`double-fork`, `env -i`,
+        `systemd-run`) descendants;
+      - ppid ancestry walk against registered task PIDs + `WISP_TASK_ID`
+        env marker is the non-systemd fallback;
+      - a process carrying `WISP_TASK_ID` (or a `wisp-task-*.scope` cgroup)
+        that is NOT in the task registry is flagged `spoofed=True` and
+        refused (marker is verified against registry, never env alone).
+    """
+    unmarked = {"marked": False, "verified": False, "spoofed": False,
+                "task_id": None, "reason": ""}
+    if not isinstance(peer, dict) or peer.get("pid") is None:
+        return unmarked
+    try:
+        pid = int(peer["pid"])
+    except (TypeError, ValueError):
+        return unmarked
+    if pid <= 0:
+        return unmarked
+
+    recs = _latest(tasks_file)
+    by_id = {r["id"]: r for r in recs if r.get("id")}
+    by_scope = {r["scope"]: r for r in recs if r.get("scope") and r.get("id")}
+    by_pid = {
+        int(r["pid"]): r for r in recs
+        if isinstance(r.get("pid"), int) and r.get("pid") > 0
+        and r.get("status") == "running" and r.get("id")
+    }
+
+    # Walk pid -> ppid ancestry (bounded to 32 hops, cycle-safe).
+    chain: list[int] = []
+    seen: set[int] = set()
+    cur = pid
+    while cur > 1 and cur not in seen and len(chain) < 32:
+        seen.add(cur)
+        chain.append(cur)
+        if cur == pid and isinstance(peer.get("ppid"), int):
+            cur = int(peer["ppid"])
+        else:
+            cur = _proc_ppid(cur)
+
+    # 1. Cgroup scope check (survives double-fork / setsid / env -i).
+    for p in chain:
+        cg = (str(peer["cgroup"])
+              if p == pid and peer.get("cgroup") is not None
+              else _proc_cgroup(p))
+        if not cg:
+            continue
+        for scope_name, rec in by_scope.items():
+            if scope_name in cg:
+                return {"marked": True, "verified": True, "spoofed": False,
+                        "task_id": rec["id"], "reason": "cgroup_scope"}
+        m = _SCOPE_RE.search(cg)
+        if m:
+            tid = m.group(1)
+            rec = by_id.get(tid)
+            if rec is not None:
+                return {"marked": True, "verified": True, "spoofed": False,
+                        "task_id": rec["id"], "reason": "cgroup_scope"}
+            return {"marked": True, "verified": False, "spoofed": True,
+                    "task_id": None, "reason": "unregistered_scope"}
+
+    # 2. Direct PID or ancestor PID match against running task records.
+    for p in chain:
+        rec = by_pid.get(p)
+        if rec is not None:
+            rec_pstart = rec.get("pstart", "")
+            actual_pstart = _pstart(p)
+            if not rec_pstart or not actual_pstart or rec_pstart == actual_pstart:
+                return {
+                    "marked": True, "verified": True, "spoofed": False,
+                    "task_id": rec["id"],
+                    "reason": "task_pid" if p == pid else "task_ancestry",
+                }
+
+    # 3. Environment marker `WISP_TASK_ID` along ancestry, verified against
+    # the registry (never trusted from env alone).
+    for p in chain:
+        env = (peer["env"]
+               if p == pid and isinstance(peer.get("env"), dict)
+               else _proc_environ(p))
+        tid = str((env or {}).get("WISP_TASK_ID") or "").strip()
+        if not tid:
+            continue
+        rec = by_id.get(tid)
+        if rec is not None and rec.get("status") == "running":
+            rpid = int(rec.get("pid") or -1)
+            rpstart = rec.get("pstart", "")
+            if rpid in seen or (rpid > 0 and _alive(rpid, rpstart)):
+                return {"marked": True, "verified": True, "spoofed": False,
+                        "task_id": rec["id"], "reason": "env_verified"}
+        return {"marked": True, "verified": False, "spoofed": True,
+                "task_id": None, "reason": "unregistered_task_id"}
+
+    return unmarked
+
+
+def is_marked_peer(peer: dict | None, tasks_file=config.TASKS_FILE) -> bool:
+    return bool(classify_peer(peer, tasks_file=tasks_file).get("marked"))
+
+
+def record_refusal(task_id: str, cmd: str,
+                   tasks_file=config.TASKS_FILE) -> int:
+    """Increment `refused_count` for `task_id` in `tasks.jsonl` and return
+    the updated count. Preserves existing status/ts fields on merge."""
+    rec = _find(task_id, tasks_file)
+    if not rec:
+        return 0
+    count = int(rec.get("refused_count") or 0) + 1
+    cmds = list(rec.get("refused_cmds") or [])
+    if cmd:
+        cmds.append(str(cmd))
+    _log_line({
+        "id": rec["id"],
+        "name": rec["name"],
+        "refused_count": count,
+        "refused_cmds": cmds,
+    }, tasks_file)
+    return count
 
 
 def _alive(pid: int, pstart: str = "") -> bool:
@@ -213,6 +397,30 @@ def _reap_expired(cfg: dict, tasks_file=config.TASKS_FILE,
     return reaped
 
 
+def _systemd_scope_enabled(cfg: dict) -> bool:
+    """Whether `spawn` wraps the child in `systemd-run --user --scope`."""
+    opt = str((cfg.get("agents") or {}).get("systemd_scope", "")).strip().lower()
+    if opt == "false":
+        return False
+    srun = str(shutil.which("systemd-run") or "")
+    if not srun.endswith("systemd-run"):
+        return False
+    if opt == "true" or os.environ.get("WISP_USE_SYSTEMD_SCOPE") == "1":
+        return True
+    if "unittest" in sys.modules:
+        return False
+    xdg_rt = os.environ.get("XDG_RUNTIME_DIR", "")
+    return bool(sys.platform.startswith("linux") and xdg_rt
+                and (pathlib.Path(xdg_rt) / "systemd" / "private").exists())
+
+
+def wrap_systemd_scope(cmd: list[str], task_id: str) -> list[str]:
+    """Wrap `cmd` in a transient user scope `wisp-task-<task_id>.scope`."""
+    unit = _scope_unit(task_id)
+    return ["systemd-run", "--user", "--scope", "--quiet", "--collect",
+            f"--unit={unit}", "--", *cmd]
+
+
 def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
           log_dir=config.TASK_LOGS, cwd: str | None = None) -> str:
     task = task.strip()
@@ -243,12 +451,17 @@ def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
                     + "/".join(_AUTO_ORDER) + "; detected: none)")
         return (f"SKIP (agent runtime {rt!r} not on PATH — detected: "
                 + (", ".join(detect_runtimes()) or "none") + ")")
+    scope = _scope_unit(name)
+    exec_cmd = wrap_systemd_scope(cmd, name) if _systemd_scope_enabled(cfg) else cmd
+    env = dict(os.environ)
+    env["WISP_TASK_ID"] = name
     try:
         with log.open("ab") as lf:
             proc = subprocess.Popen(
-                cmd, stdout=lf, stderr=subprocess.STDOUT,
+                exec_cmd, stdout=lf, stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL,
                 cwd=cwd or str(config.HOME),
+                env=env,
                 start_new_session=True)
     except OSError as e:
         return f"SKIP (agent spawn failed: {e})"
@@ -256,7 +469,9 @@ def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
     _log_line({
         "id": name, "name": name, "task": task, "pid": proc.pid,
         "pstart": _pstart(proc.pid),
+        "scope": scope,
         "cmd": " ".join(cmd), "status": "running",
+        "refused_count": 0,
         "ts": datetime.now(timezone.utc).isoformat(),
     }, tasks_file)
     return f"SPAWNED {name} (pid {proc.pid})"
