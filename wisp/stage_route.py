@@ -387,7 +387,7 @@ def route_stage(ctx) -> bool:
     pl, state, sp, cfg, text = _pl(), ctx.state, ctx.sp, ctx.cfg, ctx.text
     turn, token, model = ctx.turn, ctx.token, ctx.model
     harness, context = ctx.harness, ctx.context
-    # router: jev (default) | act (every turn straight to the
+    # router: act (default) | jev (decision API) | act (every turn straight to the
     # conversational agent loop — no decision hop, the loop's brain
     # decides answer-vs-work with the trigger screenshot) |
     # chat (transcript straight to answer brain) | off (always
@@ -395,7 +395,7 @@ def route_stage(ctx) -> bool:
     sp.record("context", sp.mark_ns("stt"))
     route_start = sp.now()
     route_meta = None
-    router = cfg.get("brain", {}).get("router", "jev")
+    router = cfg.get("brain", {}).get("router", "act")
     agent_m = re.match(r"^\s*wisp\s+agent[:,.\s-]+(.*)$", text,
                        re.IGNORECASE)
     if agent_m and agent_m.group(1).strip():

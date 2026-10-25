@@ -214,7 +214,7 @@ region_px = "96"
 frame_wait_s = "0.5"
 
 [agents]
-# coding-agent runtime overrides ([agent] is the Jev router section)
+# coding-agent runtime overrides (the router key lives in [brain])
 act_max_steps = 12
 act_max_errors = 2          # consecutive failed tool calls tolerated
 act_max_parse_misses = 1    # unparseable replies in action-text mode
@@ -287,9 +287,10 @@ monthly_usd = "160.00"
 gate_primary = "false"
 
 [brain]
-# router: "jev" (typed decisions), "chat" (transcript+screen straight
-# to the answer brain), or "off" (always clarify via choices)
-router = "jev"
+# router: "act" (every turn straight to the agent loop — default),
+# "jev" (typed decisions), "chat" (transcript+screen straight to the
+# answer brain), or "off" (always clarify via choices)
+router = "act"
 # answer provider as "name:model" — named sections below or any
 # [brain.<name>] table you add (kind: openai_compat | ollama)
 default = "openrouter:meta-llama/llama-4-maverick"
@@ -528,7 +529,7 @@ def _default_cfg_dict() -> dict:
         "dev": {"refine": "true"},
         "ui": {"theme": "dark"},
         "brain": {
-            "router": "jev", "agent_runtime": "auto",
+            "router": "act", "agent_runtime": "auto",
             "default": "openrouter:meta-llama/llama-4-maverick",
             "fallback": "", "allow_paid": "false", "first_token_s": "3",
         },
