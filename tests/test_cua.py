@@ -24,7 +24,7 @@ class Env:
         self.bins = fakes.BinDir(t / "bin")
         self.cua = fakes.FakeCua(t, self.bins, script or {})
         self.env = mock.patch.dict(os.environ, {
-            "HOME": self.td.name, "PATH": str(self.bins.path)})
+            "HOME": self.td.name, "USERPROFILE": self.td.name, "PATH": str(self.bins.path)})
 
     def __enter__(self):
         self.cua.start()

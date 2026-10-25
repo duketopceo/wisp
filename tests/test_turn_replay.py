@@ -244,7 +244,10 @@ class TurnReplayTest(unittest.TestCase):
         res = runner.run_turn(fx)
         self.assertEqual(res.exit_code, 0, res.stderr)
         ft = res.spans["first_token_ms"]
-        self.assertTrue(300 <= ft <= 300 + 150 * runner.JITTER, ft)
+        # lower slack: the fake's time.sleep(0.3) can end a few ms early
+        # (Windows waitable-timer granularity) — the bound is about
+        # tracking the scripted latency, not scheduling precision
+        self.assertTrue(300 - 30 <= ft <= 300 + 150 * runner.JITTER, ft)
 
     def test_every_fixture_meets_its_expectations(self):
         for name in FIXTURE_NAMES:

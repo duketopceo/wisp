@@ -169,16 +169,18 @@ def _running_browser_bins() -> list:
     choosers (Junction) are not in the map, so they never win."""
     import shutil
     import subprocess
+    from . import platform as _platform
     if not shutil.which("hyprctl"):
         return []
+    hyprctl = _platform.resolve_exe("hyprctl")
     classes = []
     try:
-        act = subprocess.run(["hyprctl", "activewindow", "-j"],
+        act = subprocess.run([hyprctl, "activewindow", "-j"],
                              capture_output=True, text=True, timeout=3)
         cls = str(json.loads(act.stdout or "{}").get("class", "")).lower()
         if cls:
             classes.append(cls)
-        out = subprocess.run(["hyprctl", "clients", "-j"],
+        out = subprocess.run([hyprctl, "clients", "-j"],
                              capture_output=True, text=True, timeout=3)
         for c in json.loads(out.stdout or "[]"):
             cls = str(c.get("class", "")).lower() if isinstance(c, dict) else ""
@@ -202,6 +204,7 @@ def _open_auth_url(url: str) -> str:
     import os
     import shutil
     import subprocess
+    from . import platform as _platform
     cand = []
     env = (os.environ.get("BROWSER") or "").split(":")[0].strip()
     if env and "xdg" not in env and "junction" not in env.lower() \
@@ -211,14 +214,16 @@ def _open_auth_url(url: str) -> str:
     cand.extend(_PERSONAL_BROWSERS)
     for b in cand:
         if shutil.which(b):
-            subprocess.Popen([b, url])
+            subprocess.Popen([_platform.resolve_exe(b), url])
             return "browser"
     if shutil.which("wl-copy"):
         try:
-            subprocess.run(["wl-copy"], input=url.encode(), timeout=3)
+            subprocess.run([_platform.resolve_exe("wl-copy")],
+                           input=url.encode(), timeout=3)
             if shutil.which("notify-send"):
                 subprocess.Popen(
-                    ["notify-send", "-a", "wisp", "wisp connect",
+                    [_platform.resolve_exe("notify-send"), "-a", "wisp",
+                     "wisp connect",
                      "Sign-in link copied — paste it in your browser"])
             return "clipboard"
         except Exception:

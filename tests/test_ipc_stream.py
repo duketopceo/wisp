@@ -35,9 +35,14 @@ class StreamCase(unittest.TestCase):
         return self.srv
 
     def open(self, topics=None, **extra):
-        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        if hasattr(socket, "AF_UNIX"):
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            s.connect(str(self.sock))
+        else:
+            # Windows: the daemon serves TCP loopback, port in the file.
+            s = socket.create_connection(
+                ("127.0.0.1", int(self.sock.read_text().strip())), 5)
         s.settimeout(5)
-        s.connect(str(self.sock))
         msg = {"cmd": "subscribe", **extra}
         if topics is not None:
             msg["topics"] = topics
@@ -239,9 +244,13 @@ class BackpressureTest(StreamCase):
 
     def test_stuck_socket_dropped_by_send_timeout(self):
         self.serve(send_timeout=0.2)
-        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        if hasattr(socket, "AF_UNIX"):
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            s.connect(str(self.sock))
+        else:
+            s = socket.create_connection(
+                ("127.0.0.1", int(self.sock.read_text().strip())), 5)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024)
-        s.connect(str(self.sock))
         s.sendall(b'{"cmd":"subscribe"}\n')
         self.addCleanup(s.close)
         self.wait_subs(1)

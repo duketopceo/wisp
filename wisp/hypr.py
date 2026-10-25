@@ -73,6 +73,11 @@ def _path(name: str) -> str:
 
 def request(msg: str, timeout: float = TIMEOUT_S) -> str:
     """One request, one reply (Hyprland closes after replying)."""
+    if not hasattr(socket, "AF_UNIX"):
+        # Windows Python has no AF_UNIX — Hyprland can't exist here;
+        # report unavailable (probe() maps this to False) instead of
+        # raising AttributeError.
+        raise HyprError("unavailable", "no AF_UNIX on this OS")
     deadline = time.monotonic() + timeout
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
@@ -482,6 +487,8 @@ def parse_event(line: str):
 def events(stop: threading.Event | None = None, poll: float = 0.5):
     """Yield (name, data) from .socket2.sock until it closes or `stop`
     is set. Lines may arrive split across or batched within reads."""
+    if not hasattr(socket, "AF_UNIX"):
+        return
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
         try:

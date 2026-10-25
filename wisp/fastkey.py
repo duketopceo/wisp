@@ -31,6 +31,8 @@ def main(argv: list) -> int:
     cmd = build(argv[2:])
     if cmd is None:
         return 2
+    if not hasattr(socket, "AF_UNIX"):
+        return 2
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.settimeout(2)
     try:

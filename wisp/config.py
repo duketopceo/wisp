@@ -514,8 +514,10 @@ def load_env_key(name: str) -> str:
             ref = cand[len("omaseal://"):].split("/", 1)
             if len(ref) == 2:
                 try:
+                    from . import platform as _platform
                     r = subprocess.run(
-                        ["omaseal", "get", ref[0], ref[1]],
+                        [_platform.resolve_exe("omaseal"), "get",
+                         ref[0], ref[1]],
                         capture_output=True, text=True, timeout=10)
                     if r.returncode == 0 and r.stdout.strip():
                         return r.stdout.strip()
@@ -572,8 +574,9 @@ def set_config(section: str, key: str, value: str) -> None:
                              "[A-Za-z0-9_.-]+ / [A-Za-z0-9_-]+")
     CFG_DIR.mkdir(parents=True, exist_ok=True)
     if not CFG_FILE.exists():
-        CFG_FILE.write_text(DEFAULT_CONFIG + _apps_toml())
-    lines = CFG_FILE.read_text().splitlines()
+        CFG_FILE.write_text(DEFAULT_CONFIG + _apps_toml(),
+                            encoding="utf-8")
+    lines = CFG_FILE.read_text(encoding="utf-8").splitlines()
     cur_section = None
     section_start = section_end = None
     written = False
@@ -598,5 +601,5 @@ def set_config(section: str, key: str, value: str) -> None:
             at = section_end if section_end is not None else len(lines)
             lines.insert(at, f'{key} = "{value}"')
     tmp = CFG_FILE.with_suffix(".toml.tmp")
-    tmp.write_text("\n".join(lines) + "\n")
+    tmp.write_text("\n".join(lines) + "\n", encoding="utf-8")
     tmp.replace(CFG_FILE)  # atomic — a crash can't truncate the config
