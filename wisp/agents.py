@@ -360,7 +360,11 @@ def _signal(rec: dict, sig: int) -> None:
     if not _alive(pid, rec.get("pstart", "")):
         return
     try:
-        os.killpg(pid, sig)
+        if os.name == "nt":
+            # no process groups — signal the task process itself
+            os.kill(pid, sig)
+        else:
+            os.killpg(pid, sig)
     except (ProcessLookupError, PermissionError):
         try:
             os.kill(pid, sig)

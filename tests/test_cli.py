@@ -7,6 +7,7 @@ import os
 import pathlib
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -41,6 +42,11 @@ class TestAliasParity(unittest.TestCase):
     recorded from the pre-W19 sys.argv wispd (stdout, exit, IPC)."""
 
     def _check(self, name, argv, daemon, seed):
+        # 'models' goldens capture a refused loopback probe (jev_down);
+        # on Windows the filtered SYN times out instead — same health
+        # behaviour, different socket verdict.
+        if os.name == "nt" and name == "models":
+            self.skipTest("loopback refusal vs timeout is host-specific")
         want = GOLDEN[name]
         with CliEnv(daemon=daemon) as env:
             if seed:
@@ -389,6 +395,8 @@ class TestNewCommands(unittest.TestCase):
             self.assertTrue(all("try" in s and "ok" in s
                                 for s in j["steps"]))
 
+    @unittest.skipUnless(hasattr(socket, "AF_UNIX"),
+                         "cua socket probe needs AF_UNIX")
     def test_cua_status_with_fake_driver_and_socket(self):
         with CliEnv() as env:
             env.shim("cua-driver")
@@ -471,13 +479,24 @@ class TestNewCommands(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             f = pathlib.Path(d) / "c.bash"
             f.write_text(bash)
-            r = subprocess.run(["bash", "-n", str(f)],
+            fp = f.as_posix()  # bash needs forward slashes on Windows
+            bash = shutil.which("bash") or "bash"
+            if os.name == "nt":
+                if "system32" in bash.lower():
+                    # WSL: C:/x -> /mnt/c/x
+                    fp = re.sub(r"^([A-Za-z]):/", lambda m: "/mnt/"
+                                + m.group(1).lower() + "/", fp)
+                else:
+                    # msys/Git Bash: C:/x -> /c/x
+                    fp = re.sub(r"^([A-Za-z]):/", lambda m: "/"
+                                + m.group(1).lower() + "/", fp)
+            r = subprocess.run([bash, "-n", fp],
                                capture_output=True, text=True)
             self.assertEqual(r.returncode, 0, r.stderr)
             # loads and completes
             r = subprocess.run(
-                ["bash", "-c",
-                 f"source {f}; COMP_WORDS=(wispd cu); COMP_CWORD=1; "
+                [bash, "-c",
+                 f"source {fp}; COMP_WORDS=(wispd cu); COMP_CWORD=1; "
                  "_wispd; echo ${COMPREPLY[@]}"],
                 capture_output=True, text=True)
             self.assertIn("cua", r.stdout)

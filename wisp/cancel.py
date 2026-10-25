@@ -30,6 +30,10 @@ import threading
 import time
 import urllib.request
 
+# SIGKILL does not exist on Windows — TerminateProcess is the
+# equivalent there either way.
+_SIGKILL = getattr(signal, "SIGKILL", signal.SIGTERM)
+
 from . import errors_codes
 
 _ORIG_URLOPEN = urllib.request.urlopen
@@ -45,25 +49,105 @@ class Cancelled(errors_codes.WispError):
 
 def _signal_proc(proc, sig) -> None:
     try:
+        if os.name == "nt":
+            # No process groups or signals: TerminateProcess is the
+            # only lever (console-ctrl events excepted, which reach it
+            # through send_signal anyway).
+            if sig in (signal.SIGTERM, getattr(signal, "SIGKILL", sig)):
+                proc.terminate()
+            else:
+                proc.send_signal(sig)
+            return
         # a child we started in its own session leads its group: take
         # the whole tree (sh -c "a | b") with it
         if os.getpgid(proc.pid) == proc.pid != os.getpgrp():
             os.killpg(proc.pid, sig)
         else:
             proc.send_signal(sig)
-    except (ProcessLookupError, PermissionError, OSError):
+    except (ProcessLookupError, PermissionError, OSError,
+            AttributeError):
         pass
+
+
+def _assign_job(proc) -> None:
+    """Windows: put the child in a KILL_ON_JOB_CLOSE job so one
+    TerminateJobObject drops the whole tree (.cmd wrappers included)
+    — instantly, and also if we die ourselves. Stores the handle on
+    the proc for _kill."""
+    try:
+        import ctypes
+        k32 = ctypes.windll.kernel32
+
+        class _LIMIT(ctypes.Structure):
+            _fields_ = [("t", ctypes.c_int64 * 2),
+                        ("LimitFlags", ctypes.c_uint32),
+                        ("rest", ctypes.c_byte * 124)]
+        job = k32.CreateJobObjectW(None, None)
+        if not job:
+            return
+        info = _LIMIT()
+        info.LimitFlags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        # 9 = JobObjectExtendedLimitInformation
+        if not k32.SetInformationJobObject(
+                job, 9, ctypes.byref(info), ctypes.sizeof(info)):
+            k32.CloseHandle(job)
+            return
+        if k32.AssignProcessToJobObject(job, proc._handle):
+            proc._wisp_job = job
+        else:
+            k32.CloseHandle(job)
+    except Exception:
+        pass
+
+
+def _taskkill_tree(proc) -> None:
+    """taskkill /T — fallback tree kill on Windows. Absolute path: the
+    child env may carry a stripped-down PATH."""
+    try:
+        tk = os.path.join(
+            os.environ.get("SystemRoot", r"C:\Windows"),
+            "System32", "taskkill.exe")
+        subprocess.run([tk, "/F", "/T", "/PID", str(proc.pid)],
+                       capture_output=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        try:
+            proc.kill()
+        except Exception:
+            pass
 
 
 def _kill(proc) -> None:
     """SIGTERM now; SIGKILL and reap in the background if it lingers."""
+    if os.name == "nt":
+        # TerminateJobObject drops the whole tree in one call — the
+        # only instant tree kill on Windows (taskkill is the fallback).
+        job = getattr(proc, "_wisp_job", None)
+        if job is not None:
+            try:
+                import ctypes
+                k32 = ctypes.windll.kernel32
+                k32.TerminateJobObject(job, 1)
+                k32.CloseHandle(job)
+            except Exception:
+                pass
+            proc._wisp_job = None
+        else:
+            _taskkill_tree(proc)
+
+        def reap():
+            try:
+                proc.wait(timeout=2)
+            except Exception:
+                pass
+        threading.Thread(target=reap, daemon=True).start()
+        return
     _signal_proc(proc, signal.SIGTERM)
 
     def reap():
         try:
             proc.wait(timeout=0.5)
         except subprocess.TimeoutExpired:
-            _signal_proc(proc, signal.SIGKILL)
+            _signal_proc(proc, _SIGKILL)
             try:
                 proc.wait(timeout=2)
             except Exception:
@@ -178,6 +262,14 @@ def run(argv, *, input=None, capture_output=False, timeout=None,
         check=False, **kw):
     """`subprocess.run` that the current turn can kill. Raises
     `Cancelled` if the turn was cancelled while the child ran."""
+    # shell=True string form must stay a string — list("echo hi")
+    # char-splits to ['e',…] and execs `e` (rc=127). Sequence argv
+    # only: copy + resolve bare names via PATHEXT for Windows .cmd/.bat.
+    if not isinstance(argv, (str, bytes)):
+        argv = list(argv)
+        if argv:
+            from . import platform as _platform
+            argv[0] = _platform.resolve_exe(argv[0])
     tok = _CURRENT
     if tok is None:
         return subprocess.run(argv, input=input,
@@ -190,12 +282,14 @@ def run(argv, *, input=None, capture_output=False, timeout=None,
         kw["stdin"] = subprocess.PIPE
     kw.setdefault("start_new_session", True)
     proc = subprocess.Popen(argv, **kw)
+    if os.name == "nt":
+        _assign_job(proc)
     tok.register_pid(proc)
     try:
         try:
             out, err = proc.communicate(input=input, timeout=timeout)
         except subprocess.TimeoutExpired as e:
-            _signal_proc(proc, signal.SIGKILL)
+            _signal_proc(proc, _SIGKILL)
             proc.communicate()
             raise subprocess.TimeoutExpired(argv, timeout, e.output,
                                             e.stderr) from None

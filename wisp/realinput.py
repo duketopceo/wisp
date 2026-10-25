@@ -22,12 +22,18 @@ clicks, typing, cua virtual-pointer clicks) never yield on the user's
 own input. `begin()` resets per act run; `check()` raises
 `cancel.Cancelled`, the same unwind as a user interrupt.
 """
-import fcntl
 import os
 import re
 import selectors
 import threading
 from pathlib import Path
+
+try:
+    import fcntl
+except ImportError:
+    # Windows: no evdev — real_devices() finds no /dev/input and the
+    # watch falls through to the drift path or "off", per the docstring.
+    fcntl = None
 
 from . import cancel as _cancel
 from . import delivery as _delivery
@@ -47,6 +53,8 @@ _EVIOCGNAME = (2 << 30) | (256 << 16) | (ord("E") << 8) | 0x06
 
 
 def _device_name(fd) -> str:
+    if fcntl is None:
+        return ""
     try:
         raw = fcntl.ioctl(fd, _EVIOCGNAME, bytes(256))
     except OSError:

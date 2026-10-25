@@ -116,6 +116,10 @@ def _use_tcp() -> bool:
     while the patched `ipc._TCP` module flag still forces TCP on."""
     if _TCP:
         return True
+    if not hasattr(socket, "AF_UNIX"):
+        # Host Python can't build unix sockets at all (Windows), even
+        # when callers pretend WISP_OS=linux — TCP or nothing.
+        return True
     try:
         return _plat.current() == "windows"
     except Exception:
@@ -127,7 +131,7 @@ def _peer_cred(conn: socket.socket) -> dict | None:
     socket (Linux AF_UNIX). None on TCP or non-Linux transports and on
     any failure — attribution is best-effort, never a serve error."""
     try:
-        if conn.family != socket.AF_UNIX \
+        if conn.family != getattr(socket, "AF_UNIX", None) \
                 or not hasattr(socket, "SO_PEERCRED"):
             return None
         creds = conn.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED,
@@ -287,7 +291,7 @@ class Daemon:
 
 
 def _connect(sock_file, timeout: float) -> socket.socket:
-    if _TCP:
+    if _use_tcp():
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.settimeout(timeout)
         try:

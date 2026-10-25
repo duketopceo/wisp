@@ -32,9 +32,11 @@ class ReaperCase(unittest.TestCase):
         self.addCleanup(self._kill)
 
     def _kill(self):
+        kill = getattr(os, "killpg", None) or (lambda pid, sig:
+                                               os.kill(pid, sig))
         for p in self.procs:
             try:
-                os.killpg(p.pid, signal.SIGKILL)
+                kill(p.pid, getattr(signal, "SIGKILL", signal.SIGTERM))
             except OSError:
                 pass
             p.wait()
@@ -90,7 +92,7 @@ class ReaperTest(ReaperCase):
         stranger = self.spawn_real()
         self.write(self.rec(pid=stranger.pid, pstart="999999999",
                             ts=iso(99999)))
-        with mock.patch.object(agents.os, "killpg") as kg, \
+        with mock.patch.object(agents.os, "killpg", create=True) as kg, \
                 mock.patch.object(agents.os, "kill") as k:
             ev = self.tick()
         kg.assert_not_called()
@@ -110,6 +112,9 @@ class ReaperTest(ReaperCase):
         self.assertEqual(self.statuses(), {"t1": "timed_out"})
 
     def test_sigterm_ignorer_escalates_to_sigkill_after_grace(self):
+        if os.name == "nt":
+            self.skipTest("Windows SIGTERM (TerminateProcess) is "
+                          "uncatchable — nothing to ignore")
         script = ("import signal,time;"
                   "signal.signal(signal.SIGTERM, signal.SIG_IGN);"
                   "print('r',flush=True);time.sleep(60)")

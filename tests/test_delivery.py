@@ -73,7 +73,7 @@ class Rig:
         self.cua = fakes.FakeCua(t, self.bins, script)
         self.hypr = FakeHypr(ok_handler) if hypr else None
         self.env = mock.patch.dict(os.environ, {
-            "HOME": self.td.name, "PATH": str(self.bins.path),
+            "HOME": self.td.name, "USERPROFILE": self.td.name, "PATH": str(self.bins.path),
             "WISP_OS": "linux",
             "WISP_DESKTOP": "hyprland" if hypr else "x11"})
 

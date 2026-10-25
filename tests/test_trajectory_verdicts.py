@@ -414,6 +414,22 @@ class TestClicklabRecording(unittest.TestCase):
         finally:
             rec.stop()
 
+    def test_rearm_inactive_reply_stays_inert(self):
+        # strict=False can return a soft failure without raising —
+        # recording:false must not arm the wrap.
+        class SoftFail:
+            def call(self, tool, *a, **k):
+                if tool == "start_recording":
+                    return {"recording": False}
+                return {"ok": True}
+        rec = clicklab.RunRecording("r-soft", root=self.dir,
+                                    client=SoftFail())
+        rec.start()
+        try:
+            self.assertFalse(rec.active)
+        finally:
+            rec.stop()
+
     def test_row_fields_cite_packs(self):
         # F13: rec/ turn dirs are deleted at pack write — the row must
         # cite the durable packs/<turn> dirs instead

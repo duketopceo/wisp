@@ -39,7 +39,7 @@ class LeakGuard:
         self._orig = orig
 
         def bind(sock, address):
-            if sock.family == socket.AF_UNIX:
+            if sock.family == getattr(socket, "AF_UNIX", -1):
                 if isinstance(address, (bytes, bytearray)) and \
                         address[:1] == b"\0":
                     guard._fail(f"abstract unix socket {address!r}")

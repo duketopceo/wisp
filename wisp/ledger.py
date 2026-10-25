@@ -36,13 +36,32 @@ publishes `spend` ({today_usd, cap_usd, ...}) on the state stream, and
 `budget_exceeded` while a cap is reached.
 """
 import datetime as _dt
-import fcntl
 import json
 import os
 import logging
 import threading
 
 from . import config
+
+if os.name == "nt":
+    import msvcrt
+
+    def _lock_append(fd) -> None:
+        # one-byte region lock at offset 0 — every writer agrees on it
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+
+    def _unlock(fd) -> None:
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+else:
+    import fcntl
+
+    def _lock_append(fd) -> None:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+
+    def _unlock(fd) -> None:
+        pass  # closing the fd drops the flock
 
 log = logging.getLogger(__name__)
 
@@ -105,10 +124,13 @@ def record(provider: str, model: str, tokens_in: int, tokens_out: int,
     with _LOCK:
         fd = os.open(target, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX)
-            os.write(fd, line)
+            _lock_append(fd)
+            try:
+                os.write(fd, line)
+            finally:
+                _unlock(fd)
         finally:
-            os.close(fd)  # closing drops the flock
+            os.close(fd)  # closing drops the lock either way
     return row
 
 

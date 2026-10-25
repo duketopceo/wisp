@@ -24,6 +24,8 @@ import socket
 import threading
 import time
 
+from . import sockutil
+
 
 class FakeCua:
     def __init__(self, home, bins, script: dict | None = None):
@@ -45,8 +47,7 @@ class FakeCua:
             return self
         self.bins.install("cua-driver", {})
         self.sock_path.parent.mkdir(parents=True, exist_ok=True)
-        srv = socket.socket(socket.AF_UNIX)
-        srv.bind(str(self.sock_path))
+        srv = sockutil.bind_stream(self.sock_path)
         if self.mode == "stale":
             srv.close()  # file stays behind, nobody accepts
             return self

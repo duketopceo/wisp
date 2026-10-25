@@ -10,8 +10,10 @@ Behaviour: one toast per turn (replace-id), 60 s dedupe, quiet hours,
 urgency from typed error codes, buttons only when the server advertises
 `actions`, never blocks the caller, no toast for cancel or stale turns.
 """
+import os
 import queue
 import re
+import shutil
 import subprocess
 import threading
 import time
@@ -80,6 +82,9 @@ def in_quiet(spec: str, now: datetime) -> bool:
 
 def _run(argv, timeout=2.0):
     try:
+        if argv:
+            from . import platform as _platform
+            argv = [_platform.resolve_exe(argv[0]), *argv[1:]]
         p = subprocess.run(argv, capture_output=True, text=True,
                            timeout=timeout)
         return p.returncode, p.stdout
