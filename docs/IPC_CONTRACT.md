@@ -358,8 +358,25 @@ subscriber never delays state.json writes or other subscribers.
 
 `wispd watch [topic ...]` prints this stream (reconnecting forever).
 
-Agent reaper (core behaviour behind the `tasks` field): every 5 s the
-daemon closes tasks whose process is gone (`exited`), SIGTERMs tasks past
+Agent reaper (core behaviour behind the `tasks` field; U2): every 5 s the
+daemon closes tasks whose process is gone, SIGTERMs tasks past
+`[agent] task_timeout_s` (`timed_out`), and escalates to SIGKILL after 10 s.
+Every spawn path wraps the child in an exit-code shim (`tasks/<id>.exit`)
+and creates an output workspace at `tasks/<id>/out/`. At reap time:
+
+- Exit code `0` transitions the task to `done`; non-zero exit or signal/kill
+  transitions to `failed` (`exited` only for legacy unshimmed records with
+  no exit-code evidence).
+- Each path declared in `delivers[]` is verified on disk (regular file,
+  non-empty, `mtime` within the task's run window) and recorded as
+  `delivered` or `missing` in `deliverables[]`; `delivered: bool` is true
+  only when the task exited `0` and every declared deliverable passed.
+- Paths outside `out_dir`, symlinks escaping `out_dir`, and executable /
+  `.desktop` files are flagged (`flagged: true`, `openable: false`) and
+  never offered as notification `open` actions.
+- `task_finished` push events and `_agent_done` notifications report facts
+  (`"claims <file> — not on disk"` when `delivered: false`) and include
+  `refused_count` when mutating IPC commands were blocked under U1.
 `[agent] task_timeout_s` (`timed_out`), SIGKILLs a cancelled or timed-out
 process that ignored SIGTERM for 10 s, and never signals a pid whose
 start-time differs from the one recorded at spawn (PID reuse). Each

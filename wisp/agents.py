@@ -393,6 +393,30 @@ def _reap_expired(cfg: dict, tasks_file=config.TASKS_FILE,
     return reaped
 
 
+_SHIM_CODE = (
+    "import signal,subprocess,sys;"
+    "ef=sys.argv[1];"
+    "p=subprocess.Popen(sys.argv[2:]);"
+    "signal.signal(signal.SIGTERM,lambda s,f:p.terminate());"
+    "rc=p.wait();"
+    "open(ef,'w').write(str(rc)+'\\n');"
+    "sys.exit(rc if rc>=0 else 128-rc)"
+)
+_EXEC_EXTS = frozenset({
+    ".desktop", ".sh", ".bash", ".zsh", ".appimage", ".exe", ".bat", ".cmd",
+})
+
+
+def _exit_file(log_dir: pathlib.Path, task_id: str) -> pathlib.Path:
+    return log_dir / f"{task_id}.exit"
+
+
+def _wrap_exit_shim(cmd: list[str], exit_file: pathlib.Path) -> list[str]:
+    """Wrap `cmd` so the child's exit code is persisted to `exit_file`
+    regardless of whether the daemon holds the Popen handle."""
+    return [sys.executable, "-c", _SHIM_CODE, str(exit_file), *cmd]
+
+
 def _systemd_scope_enabled(cfg: dict) -> bool:
     """Whether `spawn` wraps the child in `systemd-run --user --scope`."""
     opt = str((cfg.get("agents") or {}).get("systemd_scope", "")).strip().lower()
@@ -418,7 +442,12 @@ def wrap_systemd_scope(cmd: list[str], task_id: str) -> list[str]:
 
 
 def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
-          log_dir=config.TASK_LOGS, cwd: str | None = None) -> str:
+          log_dir=config.TASK_LOGS, cwd: str | None = None, *,
+          delivers: list[str] | None = None,
+          spawned_by: str = "user",
+          depth: int = 0,
+          routine_id: str | None = None,
+          name_hint: str | None = None) -> str:
     task = task.strip()
     if not task:
         return "SKIP (empty agent task)"
@@ -428,7 +457,7 @@ def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
     if len(_running(tasks_file)) >= cap:
         return (f"SKIP (agent limit: {cap} already running — "
                 "cancel one or raise [agent] max_concurrent)")
-    name = _slug(task)
+    name = _slug(name_hint or task)
     base, i = name, 2
     existing = {r.get("name") for r in _records(tasks_file)}
     while name in existing:
@@ -436,6 +465,10 @@ def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
         i += 1
     log_dir.mkdir(parents=True, exist_ok=True)
     log = log_dir / f"{name}.log"
+    out_dir = log_dir / name / "out"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    exit_f = _exit_file(log_dir, name)
+    exit_f.unlink(missing_ok=True)
     # [agents] model — distinct from [agent] model (that's the Jev
     # router); empty unless the user sets an agent-model override
     model = cfg.get("agents", {}).get("model", "")
@@ -448,40 +481,64 @@ def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
         return (f"SKIP (agent runtime {rt!r} not on PATH — detected: "
                 + (", ".join(detect_runtimes()) or "none") + ")")
     scope = _scope_unit(name)
-    exec_cmd = wrap_systemd_scope(cmd, name) if _systemd_scope_enabled(cfg) else cmd
+    shimmed_cmd = _wrap_exit_shim(cmd, exit_f)
+    exec_cmd = (wrap_systemd_scope(shimmed_cmd, name)
+                if _systemd_scope_enabled(cfg) else shimmed_cmd)
     env = dict(os.environ)
     env["WISP_TASK_ID"] = name
+    env["WISP_OUT_DIR"] = str(out_dir)
     try:
         with log.open("ab") as lf:
             proc = subprocess.Popen(
                 exec_cmd, stdout=lf, stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL,
-                cwd=cwd or str(config.HOME),
+                cwd=cwd or str(out_dir),
                 env=env,
                 start_new_session=True)
     except OSError as e:
         return f"SKIP (agent spawn failed: {e})"
     _PROCS.append(proc)  # keep the handle so _reap can collect zombies
-    _log_line({
+    rec = {
         "id": name, "name": name, "task": task, "pid": proc.pid,
         "pstart": _pstart(proc.pid),
         "scope": scope,
         "cmd": " ".join(cmd), "status": "running",
+        "exit_code": None,
+        "delivers": list(delivers or []),
+        "spawned_by": spawned_by,
+        "depth": int(depth),
+        "out_dir": str(out_dir),
+        "shimmed": True,
         "refused_count": 0,
         "ts": datetime.now(timezone.utc).isoformat(),
-    }, tasks_file)
+    }
+    if routine_id:
+        rec["routine_id"] = routine_id
+    _log_line(rec, tasks_file)
     return f"SPAWNED {name} (pid {proc.pid})"
 
 
 # Daemon-spawned children — held so exited ones can be reaped (Popen
 # objects keep the zombie until wait/poll is called on them).
 _PROCS: list = []
+_EXIT_CODES: dict[int, int] = {}
 
 
 def _reap() -> None:
     """Collect exited agent children — otherwise they sit as zombies
-    under the daemon until restart."""
-    _PROCS[:] = [p for p in _PROCS if p.poll() is None]
+    under the daemon until restart. Retains each child's returncode in
+    `_EXIT_CODES` so `_tick` can record `done` (0) vs `failed`."""
+    still: list = []
+    for p in _PROCS:
+        rc = p.poll()
+        if rc is None:
+            still.append(p)
+        else:
+            try:
+                _EXIT_CODES[int(p.pid)] = int(rc)
+            except (TypeError, ValueError):
+                pass
+    _PROCS[:] = still
 
 
 _RUNTIMES = {  # [brain] agent_runtime → argv template, {task}/{model}
@@ -551,9 +608,297 @@ def reap(cfg: dict) -> None:
     _reap_expired(cfg)
 
 
+def _resolve_exit_code(rec: dict, log_dir: pathlib.Path,
+                       pid_reused: bool = False) -> int | None:
+    """Resolve a finished task's integer exit code from disk shim, `_EXIT_CODES`,
+    or record field. Returns None when no exit-code evidence exists (legacy
+    manual records or a recycled PID)."""
+    tid = rec.get("id") or rec.get("name") or ""
+    if tid:
+        ef = _exit_file(log_dir, tid)
+        if ef.is_file():
+            try:
+                return int(ef.read_text().strip().splitlines()[-1])
+            except (OSError, ValueError, IndexError):
+                pass
+    pid = rec.get("pid", -1)
+    if not pid_reused and isinstance(pid, int) and pid in _EXIT_CODES:
+        return _EXIT_CODES.pop(pid)
+    if rec.get("exit_code") is not None:
+        try:
+            return int(rec["exit_code"])
+        except (TypeError, ValueError):
+            pass
+    if rec.get("shimmed") and not pid_reused:
+        # Shimmed child died without writing .exit -> uncatchable signal
+        return -int(signal.SIGKILL)
+    return None
+
+
+def verify_deliverables(rec: dict, finished_ts: datetime | None = None,
+                        log_dir=config.TASK_LOGS,
+                        final_status: str = "done") -> dict:
+    """Verify declared `delivers` files on disk at reap time (U2, R1, KTD3).
+
+    Each item must exist as a regular file, be non-empty, and have an `mtime`
+    inside the task's run window. Paths outside `out_dir`, symlinks escaping
+    `out_dir`, and executable/`.desktop` files are recorded with `flagged=True`
+    and `openable=False` (never offered as a notification open action).
+    """
+    tid = rec.get("id") or rec.get("name") or "task"
+    out_dir = pathlib.Path(rec.get("out_dir") or (log_dir / tid / "out"))
+    task_dir = out_dir.parent
+    try:
+        out_real = out_dir.resolve()
+    except OSError:
+        out_real = out_dir.absolute()
+
+    started_str = rec.get("started") or rec.get("ts") or ""
+    started_epoch = 0.0
+    if started_str:
+        try:
+            started_epoch = datetime.fromisoformat(started_str).timestamp()
+        except ValueError:
+            started_epoch = 0.0
+    fin_epoch = (finished_ts.timestamp()
+                 if finished_ts is not None
+                 else datetime.now(timezone.utc).timestamp())
+
+    declared_list = list(rec.get("delivers") or [])
+    deliverables: list[dict] = []
+
+    for decl in declared_list:
+        decl_str = str(decl).strip()
+        if not decl_str:
+            continue
+        p = pathlib.Path(decl_str)
+        if p.is_absolute():
+            cand = p
+        elif p.parts and p.parts[0] == "out":
+            cand = task_dir / p
+        else:
+            cand = out_dir / p
+
+        cand_lex = pathlib.Path(os.path.normpath(str(cand.absolute())))
+        lexical_inside = (cand_lex == out_real or out_real in cand_lex.parents)
+        try:
+            cand_real = cand.resolve()
+        except OSError:
+            cand_real = cand_lex
+        resolved_inside = (cand_real == out_real
+                           or out_real in cand_real.parents)
+
+        exists_reg = False
+        size = 0
+        mtime = 0.0
+        is_exec = False
+        try:
+            if cand.exists() and cand_real.is_file():
+                st = cand_real.stat()
+                exists_reg = True
+                size = int(st.st_size)
+                mtime = float(st.st_mtime)
+                ext = cand_real.suffix.lower()
+                is_exec = bool(st.st_mode & 0o111) or ext in _EXEC_EXTS
+        except OSError:
+            exists_reg = False
+
+        if not lexical_inside:
+            flagged, flag_reason = True, "outside_out_dir"
+        elif not resolved_inside:
+            flagged, flag_reason = True, "symlink_escape"
+        elif is_exec:
+            flagged, flag_reason = True, "executable"
+        else:
+            flagged, flag_reason = False, ""
+
+        if not exists_reg:
+            item_status, reason = "missing", "not_found"
+        elif size <= 0:
+            item_status, reason = "missing", "empty"
+        elif started_epoch > 0 and mtime < started_epoch:
+            item_status, reason = "missing", "stale_mtime"
+        elif fin_epoch > 0 and mtime > fin_epoch + 10.0:
+            item_status, reason = "missing", "future_mtime"
+        else:
+            item_status, reason = "delivered", ""
+
+        openable = (item_status == "delivered" and not flagged
+                    and lexical_inside and resolved_inside and not is_exec)
+        deliverables.append({
+            "declared": decl_str,
+            "name": p.name or decl_str,
+            "path": str(cand_real if exists_reg else cand),
+            "status": item_status,
+            "flagged": flagged,
+            "flag_reason": flag_reason,
+            "openable": openable,
+            "reason": reason,
+        })
+
+    if deliverables:
+        delivered = (final_status == "done"
+                     and all(d["status"] == "delivered" for d in deliverables))
+    else:
+        delivered = (final_status == "done")
+
+    return {
+        "delivered": delivered,
+        "deliverables": deliverables,
+        "open_actions": [d["path"] for d in deliverables if d["openable"]],
+        "out_dir": str(out_dir),
+    }
+
+
+def build_done_notification(t: dict) -> dict:
+    """Build the honest completion notification + safe open actions for `t`."""
+    name = t.get("name", "task")
+    status = t.get("status", "exited")
+    deliverables = list(t.get("deliverables") or [])
+    missing = [d.get("name") or d.get("declared", "?")
+               for d in deliverables if d.get("status") != "delivered"]
+    present = [d.get("name") or d.get("declared", "?")
+               for d in deliverables if d.get("status") == "delivered"]
+    open_actions = [d["path"] for d in deliverables if d.get("openable")]
+    refused = int(t.get("refused_count") or 0)
+
+    if missing:
+        msg = f"wisp agent '{name}' claims {', '.join(missing)} — not on disk"
+    elif status == "done" and present:
+        msg = f"wisp agent '{name}' done — delivered {', '.join(present)}"
+    else:
+        tail = (t.get("tail") or "")[:80]
+        msg = f"wisp agent '{name}' {status}" + (f" — {tail}" if tail else "")
+
+    if refused > 0:
+        word = "command" if refused == 1 else "commands"
+        msg += f" — {refused} {word} refused (mutation blocked)"
+
+    delivered = bool(t.get("delivered",
+                           status == "done" and not missing))
+    return {
+        "message": msg,
+        "open_actions": open_actions,
+        "delivered": delivered,
+    }
+
+
+def notify_done(t: dict, notify_fn=None) -> dict:
+    """Format and send the completion notification for a reaped task."""
+    info = build_done_notification(t)
+    # U3: routine runs are quiet on success and only notify on the 3-failure
+    # auto-pause transition (`notify_user_once=True`).
+    rout = t.get("routine_outcome")
+    if isinstance(rout, dict):
+        if rout.get("ok"):
+            info["notified"] = False
+            return info
+        if not rout.get("notify_user_once"):
+            info["notified"] = False
+            return info
+        rid = rout.get("id") or t.get("routine_id") or t.get("name", "routine")
+        info["message"] = (
+            f"wisp routine '{rid}' paused after "
+            f"{rout.get('consecutive_failures', 3)} consecutive failures"
+        )
+    if notify_fn is None:
+        from .tools import system as _sys
+        notify_fn = _sys.notify_tool
+    notify_fn(info["message"])
+    info["notified"] = True
+    return info
+
+
+def output(name: str, tasks_file=config.TASKS_FILE,
+           log_dir=config.TASK_LOGS, max_bytes: int = 65536) -> dict:
+    """IPC/CLI read: log output and exit status for task `name` (U2)."""
+    _reap()
+    rec = _find(name, tasks_file)
+    if not rec:
+        return {"ok": False, "error": f"no task {name!r}", "name": name,
+                "status": "", "exit_code": None, "output": ""}
+    log = log_dir / f"{rec['id']}.log"
+    text = ""
+    try:
+        with log.open("rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - max_bytes))
+            text = f.read().decode(errors="replace")
+    except OSError:
+        text = ""
+    return {
+        "ok": True,
+        "name": rec["name"],
+        "status": _state_of(rec),
+        "exit_code": rec.get("exit_code"),
+        "output": text,
+    }
+
+
+def artifacts(name: str, tasks_file=config.TASKS_FILE,
+              log_dir=config.TASK_LOGS) -> dict:
+    """IPC/CLI read: workspace files + deliverable status for `name` (U2)."""
+    _reap()
+    rec = _find(name, tasks_file)
+    if not rec:
+        return {"ok": False, "error": f"no task {name!r}", "name": name,
+                "out_dir": "", "delivered": False, "deliverables": [],
+                "artifacts": []}
+    tid = rec.get("id") or rec["name"]
+    out_dir = pathlib.Path(rec.get("out_dir") or (log_dir / tid / "out"))
+    try:
+        out_real = out_dir.resolve()
+    except OSError:
+        out_real = out_dir.absolute()
+    st_now = _state_of(rec)
+    dinfo = verify_deliverables(
+        rec, log_dir=log_dir,
+        final_status="done" if st_now == "done" else st_now)
+    deliverables = rec.get("deliverables")
+    if deliverables is None:
+        deliverables = dinfo["deliverables"]
+    delivered = rec.get("delivered")
+    if delivered is None:
+        delivered = dinfo["delivered"]
+
+    files: list[dict] = []
+    if out_dir.is_dir():
+        for p in sorted(out_dir.rglob("*")):
+            try:
+                if p.is_symlink():
+                    real = p.resolve()
+                    inside = (real == out_real or out_real in real.parents)
+                else:
+                    real = p.resolve()
+                    inside = (real == out_real or out_real in real.parents)
+                if not real.is_file():
+                    continue
+                st = real.stat()
+                is_exec = (bool(st.st_mode & 0o111)
+                           or real.suffix.lower() in _EXEC_EXTS)
+                files.append({
+                    "name": str(p.relative_to(out_dir)),
+                    "path": str(real),
+                    "size": int(st.st_size),
+                    "openable": bool(inside and not p.is_symlink()
+                                     and not is_exec and st.st_size > 0),
+                })
+            except OSError:
+                continue
+    return {
+        "ok": True,
+        "name": rec["name"],
+        "out_dir": str(out_dir),
+        "delivered": bool(delivered),
+        "deliverables": list(deliverables),
+        "artifacts": files,
+    }
+
+
 def tasks(tasks_file=config.TASKS_FILE,
           log_dir=config.TASK_LOGS, recs: list | None = None) -> dict:
-    """name -> {status, task, ts, tail} for state.json publication —
+    """name -> {status, task, ts, tail, ...} for state.json publication —
     `tail` is the log's last non-empty line so the panel/orb shows live
     progress on long-running agents. Only running tasks get a tail read
     — finished logs never change."""
@@ -563,13 +908,28 @@ def tasks(tasks_file=config.TASKS_FILE,
     out = {}
     for rec in recs:
         status = _state_of(rec)
-        out[rec["name"]] = {
+        entry = {
             "status": status,
             "task": rec.get("task", ""),
             "ts": rec.get("ts", ""),
             "tail": _tail(log_dir / f"{rec['id']}.log")
             if status == "running" else "",
         }
+        if "exit_code" in rec:
+            entry["exit_code"] = rec.get("exit_code")
+        if "delivered" in rec:
+            entry["delivered"] = rec.get("delivered")
+        if "deliverables" in rec:
+            entry["deliverables"] = rec.get("deliverables")
+        if "out_dir" in rec:
+            entry["out_dir"] = rec.get("out_dir")
+        if rec.get("refused_count"):
+            entry["refused_count"] = rec.get("refused_count")
+        if rec.get("routine_id"):
+            entry["routine_id"] = rec.get("routine_id")
+        if "unread" in rec:
+            entry["unread"] = bool(rec.get("unread"))
+        out[rec["name"]] = entry
     return out
 
 
@@ -601,8 +961,31 @@ def _tick(cfg: dict, tasks_file, log_dir, kill_grace_s: float,
         status = rec.get("status")
         if status == "running" and not alive:
             # process gone, or its pid now belongs to someone else
-            _log_line({"id": rec["id"], "name": rec["name"],
-                       "status": "exited", "ts": stamp}, tasks_file)
+            st = _proc_stat(pid) if pid > 0 else None
+            pid_reused = bool(st and st[0] != "Z"
+                              and pstart and st[1] != pstart)
+            ec = _resolve_exit_code(rec, log_dir, pid_reused=pid_reused)
+            if ec is not None:
+                final_status = "done" if ec == 0 else "failed"
+            else:
+                final_status = "exited"
+            dinfo = verify_deliverables(
+                rec, finished_ts=now, log_dir=log_dir,
+                final_status=final_status)
+            close_rec = {
+                "id": rec["id"],
+                "name": rec["name"],
+                "status": final_status,
+                "ts": stamp,
+            }
+            if ec is not None:
+                close_rec["exit_code"] = ec
+                close_rec["delivered"] = dinfo["delivered"]
+            if rec.get("delivers") or dinfo["deliverables"]:
+                close_rec["delivered"] = dinfo["delivered"]
+                close_rec["deliverables"] = dinfo["deliverables"]
+                close_rec["open_actions"] = dinfo["open_actions"]
+            _log_line(close_rec, tasks_file)
         elif status in ("cancelled", "timed_out") and alive:
             # SIGTERM was sent when the record was closed; an ignorer
             # gets SIGKILL once the grace period is over
@@ -641,10 +1024,15 @@ def _tick_events(cfg, tasks_file, log_dir, kill_grace_s) -> tuple:
     for n in cur:
         if n in was_running and cur[n]["status"] != "running":
             entry = {"name": n, **cur[n]}
-            if not entry["tail"]:
-                rec = _find(n, tasks_file)
-                if rec is not None:
+            rec = _find(n, tasks_file)
+            if rec is not None:
+                if not entry["tail"]:
                     entry["tail"] = _tail(log_dir / f"{rec['id']}.log")
+                for k in ("exit_code", "delivered", "deliverables",
+                          "open_actions", "out_dir", "refused_count",
+                          "routine_id", "routine_outcome", "unread"):
+                    if k in rec and k not in entry:
+                        entry[k] = rec[k]
             done.append(entry)
     return cur, done
 
@@ -665,8 +1053,13 @@ def start_reaper(cfg: dict, bus, stop: threading.Event,
                                          kill_grace_s)
                 bus.publish(None, tasks=cur)
                 for t in done:
-                    bus.emit_event("task_finished", name=t["name"],
-                                   status=t["status"], tail=t["tail"])
+                    ev_kw = {"name": t["name"], "status": t["status"],
+                             "tail": t["tail"]}
+                    for k in ("exit_code", "delivered", "deliverables",
+                              "open_actions", "refused_count", "routine_id"):
+                        if k in t:
+                            ev_kw[k] = t[k]
+                    bus.emit_event("task_finished", **ev_kw)
                     if on_finished:
                         on_finished(t)
             except Exception:
