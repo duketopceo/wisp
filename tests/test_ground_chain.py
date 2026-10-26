@@ -1,5 +1,5 @@
 """W13 grounding adapter: provider chain, frame math, confidence policy,
-cua.target events, audit coordinates, P7 timeout plumbing, clicklab
+cua.target events, audit coordinates, P7 timeout plumbing,
 offline suite. Everything faked: no network, no live cua-driver/hyprctl."""
 import base64
 import io
@@ -13,8 +13,6 @@ import unittest
 from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent
-                       / "scripts" / "clicklab"))
 from wisp import act, cua_safety, grounding as g  # noqa: E402
 try:
     from PIL import Image  # noqa: E402
@@ -626,7 +624,6 @@ def run_loop(arg, tool_result, ground, state, mode="drive", name="click",
                                            "title": "Doc"}),
         mock.patch("wisp.trajectories.context_for", return_value=""),
         mock.patch("wisp.trajectories.record"),
-        mock.patch("wisp.train.hint_for", return_value=""),
         mock.patch("wisp.goals.context_text", return_value=""),
         mock.patch("wisp.goals.record_steps"),
         mock.patch("wisp.goals.close"),
@@ -770,31 +767,6 @@ class SystemResolve(unittest.TestCase):
                                side_effect=g.GroundRefused("ground_failed",
                                                            "not_found")):
             self.assertIsNone(system._resolve_target_xy("night light", {}))
-
-
-class ClicklabSuite(unittest.TestCase):
-    def test_offline_suite_matches_recorded_outputs(self):
-        import arena
-        fx = (pathlib.Path(__file__).parent / "fixtures" / "ground"
-              / "recorded.json")
-        r = arena.ground_offline(fx)
-        self.assertEqual(r["cases"], 4)
-        self.assertEqual(r["uitars"]["hits"], 3)
-        self.assertEqual(r["baseline"]["hits"], 3)
-        self.assertTrue(r["ok"])                  # not lower than current
-        self.assertEqual(r["uitars"]["misses"], ["search field"])
-
-    def test_suite_fails_when_uitars_regresses(self):
-        import arena
-        fx = json.loads((pathlib.Path(__file__).parent / "fixtures"
-                         / "ground" / "recorded.json").read_text())
-        for c in fx["cases"]:
-            c["recorded"]["uitars"]["text"] = "nope"
-        with tempfile.TemporaryDirectory() as td:
-            p = pathlib.Path(td) / "f.json"
-            p.write_text(json.dumps(fx))
-            r = arena.ground_offline(p)
-        self.assertFalse(r["ok"])
 
 
 if __name__ == "__main__":

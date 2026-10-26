@@ -22,9 +22,6 @@ FakeWhisper  script["transcript"]         -> {"text": ...} on both
              /audio/transcriptions (OpenAI shape) and /inference
              (whisper-server shape)
 FakeUiTars   FakeBrain with a grounding-style default response
-FakeBatch    provisional OpenRouter-batch shape (U11 reconciles it):
-             POST /batches -> {"id"}; GET /batches/<id> walks
-             script["statuses"], then returns script["results"]
 
 ``calls`` records every request (path, method, parsed body, monotonic
 arrival time) so tests can assert on what the pipeline sent.
@@ -282,31 +279,6 @@ class FakeUiTars(FakeBrain):
         super().__init__(script)
 
 
-class FakeBatch(FakeServer):
-    """Provisional OpenRouter Batch API (shape reconciled in U11)."""
-
-    def __init__(self, script: dict | None = None):
-        super().__init__(script)
-        self._polls: dict = {}
-
-    def serve(self, h, method, body, n):
-        path = h.path.split("?")[0].rstrip("/")
-        if method == "POST" and path.endswith("/batches"):
-            bid = f"batch_{len(self._polls) + 1}"
-            self._polls[bid] = 0
-            return self.respond(h, 200, {"id": bid,
-                                         "status": "validating"})
-        bid = path.rsplit("/", 1)[-1]
-        sts = self.script.get("statuses") or ["completed"]
-        i = self._polls.get(bid, 0)
-        self._polls[bid] = i + 1
-        st = sts[min(i, len(sts) - 1)]
-        out = {"id": bid, "status": st}
-        if st == "completed":
-            out["results"] = self.script.get("results", [])
-        self.respond(h, 200, out)
-
-
 KINDS = {"jev": FakeJev, "brain": FakeBrain, "brain2": FakeBrain,
          "whisper": FakeWhisper,
-         "uitars": FakeUiTars, "openrouter_batch": FakeBatch}
+         "uitars": FakeUiTars}

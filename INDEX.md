@@ -43,29 +43,26 @@ Common CLI groups (full tree: `wispd --help`): `daemon`, `status`, `stop`,
 | `skills.py` | `skills/*/SKILL.md` — `skill_manage`/`skill_view`, `skill_<name>` toolbelt |
 | `speech.py` | TTS with barge-in — kills on new `listen` / `stop` |
 | `trace.py` | dev trace — `trace.jsonl`; `wispd trace show|digest` |
-| `learn.py` | corrections → weekly human-gated criteria proposals |
+| `learn.py` | label store, correction and retry context, fails report |
 | `brain.py` | pluggable answer providers — `[brain] default = "name:model"` tables |
 | `agents.py` | background task registry; `[brain] agent_runtime` |
 | `goals.py` | cross-utterance goal continuity — `goal_ttl_s` |
-| `trajectories.py` | episodic act memory — `similar()`, `propose_recipes()` |
+| `trajectories.py` | episodic act memory — `similar()`, `context_for()` |
 | `context.py` | prompt context — app, windows, inventory, act context modes |
 | `inventory.py` | local-terrain scanner → `inventory.json` |
 | `mcpauth.py` | OAuth via BrowserOS Strata — `wispd connect` |
 | `telemetry.py` | decision telemetry + trace digest helpers |
 | `action_stats.py` | per-app tool outcome stats for act prompting |
-| `judge.py` | Jev-as-judge verdicts for act runs |
-| `train.py` | training arena — `skillbank.json`, label-grounded legend distillation |
 | `points.py` | `[POINT:x,y:label]` → ghost-cursor points |
 | `sense.py` | opt-in activity collector → `activity.jsonl` |
 | `suggest.py` | Jev-gated suggestion miner → approval cards |
-| `evalroute.py` | Jev vs heuristic route experiments |
 | `theme.py` | GUI theme/table helpers |
 | `tui.py` | `wispd tui` terminal surface |
 | `vocab.py` | Whisper prompt vocab from MEMORY + inventory |
 | `platform.py` | OS/desktop adapter seam |
 | `cua.py`, `cua_safety.py`, `grounding.py`, `pointer.py` | computer-use stack |
 | `cancel.py` | turn cancel + `PromptBroker` for choices |
-| `health.py`, `ledger.py`, `batch.py`, `hypr.py`, `onboard.py`, … | ops, spend, binds, setup |
+| `health.py`, `ledger.py`, `hypr.py`, `onboard.py`, … | ops, spend, binds, setup |
 | `tools/` | toolbelt registry + `desktop.py`/`system.py`/`social.py`/… |
 | `cli/` | argparse registry (`registry.py`) and command modules |
 
@@ -94,7 +91,7 @@ Mirror of `wisp/`: `main.rs` (IPC dispatch), `ipc.rs`, `state.rs`,
 
 `~/.config/wisp/` config.toml + .env + harness.json ·
 `~/.local/share/wisp/` session/decisions/corrections/tasks.jsonl,
-recall.db, MEMORY.md, USER.md, skills/, proposals/ ·
+recall.db, MEMORY.md, USER.md, skills/ ·
 `$XDG_RUNTIME_DIR/wisp/` state.json + wispd.sock ·
 daemon: `systemctl --user wispd` (runs `~/.local/opt/wisp/wispd`);
 `~/.local/bin/wispd` symlinks there.

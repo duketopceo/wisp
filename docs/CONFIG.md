@@ -89,13 +89,7 @@ take focus, so `Esc` stays reachable while cua acts. Design notes:
 | `flash_confidence` | `0.7` | accept the flash route at or above this confidence; below it, hand off to Jev |
 | `flash_deadline_ms` | `220` | sub-budget for the flash call; the remainder of `deadline_ms` is left for Jev |
 
-Every routed turn appends Jev vs heuristic vs final route to `route_ab.jsonl`; read it with `wispd eval route`. Decisions logged to `decisions.jsonl` include an optional `route_lane` field (`flash`, `jev`, or `heuristic`).
-
-Replay logged decisions through decision models (paid, orchestral key):
-
-```bash
-wispd eval route --replay --decisions [--models perplexity/pplx-decider-v1.2 typesafe/jev-1.13] [--out replay.json] [limit]
-```
+Every routed turn appends Jev vs heuristic vs final route to `route_ab.jsonl`. Decisions logged to `decisions.jsonl` include an optional `route_lane` field (`flash`, `jev`, or `heuristic`).
 
 ## [agent] — routing + action policy
 
@@ -168,8 +162,7 @@ table; an unlisted paid model is priced high so it cannot look free.
 Rows from the old `~/.local/share/wisp/spend.jsonl` writer
 (`{ts, model, cost, prompt_tokens, completion_tokens}`) are still read
 and counted as paid openrouter rows (source `spend.jsonl`); nothing
-writes that file any more. The clicklab lab records per-task `cost_usd`
-and tokens from the same ledger and aborts at the daily cap. Inspect
+writes that file any more. Inspect
 with `wispd spend`.
 
 ## [local] — local model servers (opt-in)
@@ -243,23 +236,6 @@ trigger compose. Into a terminal-class window every mode collapses
 newlines unless a confirmed send is armed. Personal corrections live in
 `~/.local/share/wisp/dictation.json` — `wispd dictate correct` records
 one, `wispd dictate list` shows them.
-
-## [clicklab] — adaptive training arena (U7)
-
-The arena (`scripts/clicklab/run.py`, `wisp/train.py`, `wisp/judge.py`)
-runs golden tasks against the lab pages, judges each run, and keeps a
-skill bank of proven recipes plus a rolling failure-bucket summary.
-
-| key | default | meaning |
-|-----|---------|---------|
-| `adaptive` | `"false"` | `--adaptive` / `true`: the task list is synthesized on the fly — each verdict steers the next task at the hottest failure bucket (same skill, varied surface) until `--tasks` or the budget cap |
-| `promote_after` | `"3"` | verified successes a recipe needs to graduate into the bank; a post-promotion failure demotes it |
-| `judge` | `"jev"` | run grader: `jev` (decisions endpoint, brain.chat fallback), `brain` (skip Jev), `off` (scoreboard alone; `--no-judge` is the same) |
-
-Every run appends to `clicklab.jsonl`, mirrors the verdict onto
-`verdicts.jsonl`, and refolds `buckets.json` (counts by failure class x
-task skill x surface). When every judge is down the verdict is
-`judged: false` — unjudged runs never count toward promotion.
 
 ## [voice] — text-to-speech
 
@@ -483,11 +459,9 @@ doctor  health [start [--run]]  latency [--since 24h]  spend  binds  onboard
 cua status|test|log|kill|resume|enable|disable   notify test
 task list|status|cancel|run    memory edit|write    suggest list
 label report|set               context
-train stats|history|bank|rebuild        review list|run|approve|reject
-learn weekly|fails             skills list|import  recipes draft|approve
-trace show|digest              eval route  captures [turn] [--full]
+learn fails                    skills list|import
+trace show|digest              captures [turn] [--full]
 config show|set|keys           theme show|set|check|css
-batch status|submit-learn|poll|cancel
 connect list|add               sync  inventory  tui  completion bash|zsh|fish
 ```
 

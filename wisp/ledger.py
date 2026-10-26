@@ -327,7 +327,7 @@ def usage_of(resp: dict) -> dict:
 
 
 def reset_session() -> None:
-    """Zero the in-process counters (clicklab calls this per task)."""
+    """Zero the in-process counters (tests call this between cases)."""
     for k in _SESSION:
         _SESSION[k] = 0
 

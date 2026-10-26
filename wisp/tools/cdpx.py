@@ -1,6 +1,6 @@
 """Minimal Chrome DevTools Protocol client — stdlib only, no deps.
 
-Clicklab DOM mode needs exactly one primitive: Runtime.evaluate on a
+DOM mode needs exactly one primitive: Runtime.evaluate on a
 page target inside a remote/sandboxed chromium (e.g. a CubeVM guest).
 This module speaks just enough CDP over a raw websocket to do that —
 Target.createTarget/attachToTarget(flatten) + Runtime.evaluate — plus

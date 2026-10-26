@@ -35,7 +35,7 @@ future tray apps). Shells MUST only depend on this document.
 | `captures` | `turn_id?: string`, `full?: bool`, `limit?: int` | `{ok, packs}` or `{ok, manifest}` | read capture-pack list or manifest |
 | `task_output` | `name: string` | `{ok, name, status, exit_code, output}` | read named-agent log output (U2) |
 | `task_artifacts` | `name: string` | `{ok, name, out_dir, delivered, deliverables, artifacts}` | read named-agent output workspace + deliverable verification (U2) |
-| `learn` | — | `{ok, result}` | weekly learning proposals (human-gated) |
+| `learn` | — | `{ok, result}` | no-op; weekly proposals were removed |
 | `harness` | — | `{ok, result}` | regenerate the app harness catalog |
 | unknown/malformed | — | `{ok:false, error}` | — |
 
@@ -394,7 +394,7 @@ and creates an output workspace at `tasks/<id>/out/`. At reap time:
 - `labels.jsonl` — human labels (`correct`/`incorrect`) keyed to the
   decision ts; joined to trajectories via the decision's transcript.
 - `trajectories.jsonl` — episodic act-loop memory (task, app, steps,
-  outcome); feeds `context_for()` and `propose_recipes()`.
+  outcome); feeds `context_for()`.
 - goal state — in-memory only (`wisp/goals.py`, `goal_ttl_s` TTL, lost
   on restart); not a file.
 - `inventory.json` — scanned local terrain (apps, cli_tools, mcp

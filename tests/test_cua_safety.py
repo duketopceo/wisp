@@ -370,7 +370,6 @@ class ActWiring(unittest.TestCase):
                 mock.patch("wisp.trajectories.context_for",
                            return_value=""), \
                 mock.patch("wisp.trajectories.record"), \
-                mock.patch("wisp.train.hint_for", return_value=""), \
                 mock.patch("wisp.goals.context_text", return_value=""), \
                 mock.patch("wisp.goals.record_steps"), \
                 mock.patch("wisp.goals.close"), \

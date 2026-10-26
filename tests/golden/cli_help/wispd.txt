@@ -36,13 +36,8 @@ Agents and memory:
   context      Print what the daemon sees right now
 
 Learning:
-  train        Training arena stats, history and the skill bank
-  review       Staged reviewer proposals
-  learn        Weekly corrections and failure log
+  learn        Failure log
   skills       Installed skills
-  recipes      Recipes drafted from past runs
-  eval         Route agreement and candidate-router replay
-  batch        Offline OpenRouter batch jobs (cheap models, capped)
 
 Settings:
   config       Show or change config.toml (live, no restart)
