@@ -79,6 +79,11 @@ class TestSchemaShape(unittest.TestCase):
         self.assertEqual(S.problem("brain.router", "act"), "")
         self.assertEqual(S.problem("brain.router", "bogus"), "choice")
 
+    def test_local_enabled_is_a_validated_bool(self):
+        self.assertEqual(S.field("local.enabled").default, "false")
+        self.assertEqual(S.problem("local.enabled", "true"), "")
+        self.assertEqual(S.problem("local.enabled", "tru"), "choice")
+
     def test_keys_submap_is_a_daemon_only_bool(self):
         f = S.field("keys.submap")
         self.assertFalse(f.panel)
