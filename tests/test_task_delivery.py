@@ -275,6 +275,52 @@ class TaskDeliveryTest(unittest.TestCase):
         self.assertTrue(ev[0]["deliverables"][0]["openable"])
         self.assertFalse(ev[0]["deliverables"][0]["flagged"])
 
+    def test_exit_code_cache_is_consumed_on_every_reap_path(self):
+        self._write_rec("shim-done", exit_code=0)
+        agents._EXIT_CODES[999999] = 7
+        self.addCleanup(agents._EXIT_CODES.pop, 999999, None)
+        rec = agents._find("shim-done", self.tf)
+        # .exit file wins, but the stale cache entry must not survive it
+        self.assertEqual(agents._resolve_exit_code(rec, self.logs), 0)
+        self.assertNotIn(999999, agents._EXIT_CODES)
+
+    def test_exit_code_cache_not_consumed_when_pid_reused(self):
+        self._write_rec("reused", exit_code=None, shimmed=False)
+        agents._EXIT_CODES[999999] = 7
+        self.addCleanup(agents._EXIT_CODES.pop, 999999, None)
+        rec = agents._find("reused", self.tf)
+        self.assertIsNone(
+            agents._resolve_exit_code(rec, self.logs, pid_reused=True))
+        self.assertEqual(agents._EXIT_CODES.get(999999), 7)
+
+    def test_timed_out_routine_run_records_outcome_while_daemon_runs(self):
+        from wisp import routines
+        store = routines.RoutineStore(self.td / "routines.json")
+        store.create(routines.Routine(
+            id="hung", name="Hung", task="t", schedule="hourly"),
+            opt_in=True)
+        for run_no in (1, 2, 3):
+            tname = f"hung-{run_no}"
+            (self.logs / tname / "out").mkdir(parents=True, exist_ok=True)
+            agents._log_line({
+                "id": tname, "name": tname, "task": "t", "pid": 999999,
+                "pstart": "1", "status": "running", "routine_id": "hung",
+                "shimmed": True, "ts": _iso(-5.0),
+                "out_dir": str(self.logs / tname / "out"),
+            }, self.tf)
+            # as _reap_expired / cancel leave it: closed, never recorded
+            agents._log_line({"id": tname, "name": tname,
+                              "status": "timed_out", "ts": _iso(-1.0)},
+                             self.tf)
+            agents.reap_tick(self.cfg, tasks_file=self.tf,
+                             log_dir=self.logs, routines_store=store)
+            # idempotent: a second pass must not double-count
+            agents.reap_tick(self.cfg, tasks_file=self.tf,
+                             log_dir=self.logs, routines_store=store)
+        r = store.get("hung")
+        self.assertTrue(r.paused)
+        self.assertEqual(r.consecutive_failures, 3)
+
 
 if __name__ == "__main__":
     unittest.main()

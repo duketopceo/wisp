@@ -507,6 +507,7 @@ def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
                 start_new_session=True)
     except OSError as e:
         return f"SKIP (agent spawn failed: {e})"
+    _EXIT_CODES.pop(proc.pid, None)  # drop a stale code from a prior pid owner
     _PROCS.append(proc)  # keep the handle so _reap can collect zombies
     rec = {
         "id": name, "name": name, "task": task, "pid": proc.pid,
@@ -624,6 +625,13 @@ def _resolve_exit_code(rec: dict, log_dir: pathlib.Path,
     or record field. Returns None when no exit-code evidence exists (legacy
     manual records or a recycled PID)."""
     tid = rec.get("id") or rec.get("name") or ""
+    pid = rec.get("pid", -1)
+    # Consume the cached code up front so no path (incl. the .exit file
+    # one) leaves a stale entry for a later task that reuses the pid. A
+    # recycled pid's entry is not ours to take.
+    cached = None
+    if not pid_reused and isinstance(pid, int):
+        cached = _EXIT_CODES.pop(pid, None)
     if tid:
         ef = _exit_file(log_dir, tid)
         if ef.is_file():
@@ -631,9 +639,8 @@ def _resolve_exit_code(rec: dict, log_dir: pathlib.Path,
                 return int(ef.read_text().strip().splitlines()[-1])
             except (OSError, ValueError, IndexError):
                 pass
-    pid = rec.get("pid", -1)
-    if not pid_reused and isinstance(pid, int) and pid in _EXIT_CODES:
-        return _EXIT_CODES.pop(pid)
+    if cached is not None:
+        return cached
     if rec.get("exit_code") is not None:
         try:
             return int(rec["exit_code"])
@@ -1026,6 +1033,22 @@ def _tick(cfg: dict, tasks_file, log_dir, kill_grace_s: float,
                     close_rec["routine_outcome"] = rout
                     close_rec["unread"] = rout["unread"]
             _log_line(close_rec, tasks_file)
+        elif (status in ("cancelled", "timed_out") and not alive
+              and rec.get("routine_id") and not rec.get("routine_recorded")):
+            # closed by cancel/_reap_expired: the run never reached the
+            # `running and not alive` branch, so record its (failed)
+            # outcome here or a hung routine never auto-pauses (R3).
+            rout = _record_routine_for_task(
+                rec, status, False, routines_store=routines_store)
+            if rout is not None:
+                _log_line({
+                    "id": rec["id"], "name": rec["name"],
+                    "routine_id": rec["routine_id"],
+                    "routine_recorded": True,
+                    "routine_outcome": rout,
+                    "unread": rout["unread"],
+                    "ts": stamp,
+                }, tasks_file)
         elif status in ("cancelled", "timed_out") and alive:
             # SIGTERM was sent when the record was closed; an ignorer
             # gets SIGKILL once the grace period is over

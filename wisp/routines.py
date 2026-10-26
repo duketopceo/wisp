@@ -660,9 +660,12 @@ def install_systemd_units(
     routine: Routine | dict,
     unit_dir: Path | str | None = None,
     wispd_bin: str = "wispd",
+    activate: bool = False,
 ) -> SystemdUnits:
     """Write the `.service` and `.timer` unit files for `routine` into
-    `unit_dir` (default `~/.config/systemd/user`)."""
+    `unit_dir` (default `~/.config/systemd/user`). With `activate`, also
+    `daemon-reload` and `enable --now` the timer; the result then carries
+    `scheduled` (bool) and, on failure, `schedule_error`."""
     units = generate_systemd_units(routine, wispd_bin=wispd_bin)
     target_dir = (Path(unit_dir)
                   if unit_dir is not None
@@ -674,7 +677,33 @@ def install_systemd_units(
     tmr_path.write_text(units.timer, encoding="utf-8")
     units["service_path"] = str(svc_path)
     units["timer_path"] = str(tmr_path)
+    if activate:
+        err = _activate_timer(units.timer_name)
+        units["scheduled"] = not err
+        if err:
+            units["schedule_error"] = err
     return units
+
+
+def _activate_timer(timer_name: str) -> str:
+    """Reload the user manager and enable+start `timer_name`; returns ''
+    on success or a short reason."""
+    import shutil
+    import subprocess
+    sc = shutil.which("systemctl")
+    if not sc:
+        return "systemctl not available"
+    for args in (["--user", "daemon-reload"],
+                 ["--user", "enable", "--now", timer_name]):
+        try:
+            r = subprocess.run([sc, *args], capture_output=True, text=True,
+                               timeout=30)
+        except (OSError, subprocess.SubprocessError) as e:
+            return f"systemctl {args[1]} failed: {e}"
+        if r.returncode != 0:
+            detail = (r.stderr or r.stdout or "").strip()[:120]
+            return f"systemctl {args[1]} failed: {detail}"
+    return ""
 
 
 def teach_routine(
@@ -688,6 +717,7 @@ def teach_routine(
     fallback_task: str = "",
     unit_dir: Path | str | None = None,
     install_units: bool = True,
+    activate_units: bool | None = None,
 ) -> dict:
     """Create a voice-taught Routine through the T2 confirm broker (U4, R4).
 
@@ -809,8 +839,21 @@ def teach_routine(
     if needs_opt_in:
         st.set_opted_in(True)
     saved = st.save(candidate)
-    units = (install_systemd_units(saved, unit_dir=unit_dir)
+    # Only the real user unit dir is on systemd's search path; a custom
+    # `unit_dir` is written but not enabled unless asked.
+    activate = (unit_dir is None) if activate_units is None else activate_units
+    units = (install_systemd_units(saved, unit_dir=unit_dir, activate=activate)
              if install_units else generate_systemd_units(saved))
+    if install_units and activate and not units.get("scheduled", True):
+        return {
+            "ok": True,
+            "status": "created_unscheduled",
+            "routine": saved,
+            "units": units,
+            "result": (f"CREATED routine {saved.id} ({saved.schedule}): "
+                       f"{saved.task} — NOT SCHEDULED "
+                       f"({units.get('schedule_error')})"),
+        }
     return {
         "ok": True,
         "status": "created",

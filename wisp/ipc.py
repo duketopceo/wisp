@@ -44,7 +44,6 @@ MUTATING_CMDS = frozenset({
 })
 SAFETY_CONFIG_KEYS = frozenset({
     "agent.allow_shell", "agent.autonomy", "agent.risk_threshold",
-    "budget.daily_usd", "budget.monthly_usd", "budget.gate_primary",
     "agents.act_max_usd", "pointer.mode",
 })
 
@@ -52,7 +51,8 @@ SAFETY_CONFIG_KEYS = frozenset({
 def is_safety_config_key(key: str) -> bool:
     """True when `key` lowers or alters a safety/autonomy/spend guard."""
     k = str(key or "").strip()
-    return k in SAFETY_CONFIG_KEYS or k.startswith("cua.")
+    return (k in SAFETY_CONFIG_KEYS or k.startswith("cua.")
+            or k.startswith("budget."))
 
 
 def classify_cmd(cmd_name: str | None) -> str:
@@ -96,6 +96,19 @@ def check_peer_authz(cmd: dict | None, peer: dict | None,
                 "cmd": c,
                 "task_id": tid,
             }
+    if c == "captures" and cmd.get("full") is True:
+        # `full` opens transcript/state-dump fields (the user's speech):
+        # not a plain read for a marked peer.
+        tid = info.get("task_id")
+        if tid:
+            agents.record_refusal(tid, "captures", tasks_file=tf)
+        return {
+            "ok": False,
+            "error": "marked_peer_refused",
+            "reason": "gated_read",
+            "cmd": c,
+            "task_id": tid,
+        }
     if classify_cmd(c) == "read":
         return None
     tid = info.get("task_id")

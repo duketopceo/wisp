@@ -312,5 +312,53 @@ class VoiceTaughtRoutinesU4Test(unittest.TestCase):
             ("act", "tidy downloads"))
 
 
+class RoutineUnitActivationTest(unittest.TestCase):
+    def setUp(self):
+        self.td = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(
+            self.td, ignore_errors=True))
+        self.units = self.td / "units"
+        self.bindir = self.td / "bin"
+        self.bindir.mkdir()
+        self.calls = self.td / "calls.txt"
+        self.routine = routines.Routine(
+            id="nightly", name="Nightly", task="t", schedule="daily")
+
+    def _stub_systemctl(self, rc: int = 0):
+        sc = self.bindir / "systemctl"
+        sc.write_text(f'#!/bin/sh\necho "$@" >> {self.calls}\nexit {rc}\n')
+        sc.chmod(0o755)
+
+    def test_install_reloads_and_enables_timer(self):
+        self._stub_systemctl()
+        with mock.patch.dict("os.environ", {"PATH": str(self.bindir)}):
+            units = routines.install_systemd_units(
+                self.routine, unit_dir=self.units, activate=True)
+        self.assertTrue(units["scheduled"], units)
+        calls = self.calls.read_text().splitlines()
+        self.assertEqual(calls[0], "--user daemon-reload")
+        self.assertEqual(
+            calls[1], "--user enable --now wisp-routine-nightly.timer")
+
+    def test_install_reports_unscheduled_without_systemctl(self):
+        with mock.patch.dict("os.environ", {"PATH": str(self.bindir)}):
+            units = routines.install_systemd_units(
+                self.routine, unit_dir=self.units, activate=True)
+        self.assertFalse(units["scheduled"])
+        self.assertIn("systemctl", units["schedule_error"])
+
+    def test_teach_routine_reports_created_but_unscheduled(self):
+        store = routines.RoutineStore(self.td / "routines.json")
+        store.set_opted_in(True)
+        with mock.patch.dict("os.environ", {"PATH": str(self.bindir)}):
+            out = routines.teach_routine(
+                "Save this as my nightly routine every day at 9am to sync",
+                {}, store=store, confirm=lambda *a, **k: True,
+                unit_dir=self.units, activate_units=True)
+        self.assertEqual(out["status"], "created_unscheduled", out)
+        self.assertIn("NOT SCHEDULED", out["result"])
+        self.assertIsNotNone(store.get("nightly"))
+
+
 if __name__ == "__main__":
     unittest.main()

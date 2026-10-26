@@ -40,6 +40,9 @@ def _now_iso() -> str:
 
 class IpcAuthzTest(unittest.TestCase):
     def setUp(self):
+        if agents._SCOPE_RE.search(agents._proc_cgroup(os.getpid())):
+            self.skipTest("test process runs inside a wisp-task scope; "
+                          "sleepers would inherit the cgroup mark")
         self.td = pathlib.Path(shorttmp.mkdtemp())
         self.addCleanup(lambda: shutil.rmtree(self.td, ignore_errors=True))
         self.tf = self.td / "tasks.jsonl"
@@ -79,7 +82,9 @@ class IpcAuthzTest(unittest.TestCase):
     def _spawn_sleeper(self) -> subprocess.Popen:
         p = subprocess.Popen(
             [sys.executable, "-c", "import time; time.sleep(60)"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            env={k: v for k, v in os.environ.items()
+                 if k != "WISP_TASK_ID"})
         self.procs.append(p)
         return p
 
@@ -219,6 +224,10 @@ class IpcAuthzTest(unittest.TestCase):
         self.assertEqual(cua_resp["error"], "marked_peer_refused")
         self.assertEqual(cua_resp["reason"], "safety_key")
 
+        budget_resp = self.handle(
+            {"cmd": "config", "set": {"budget.some_future_cap": "1"}}, peer)
+        self.assertEqual(budget_resp["reason"], "safety_key")
+
         theme_resp = self.handle(
             {"cmd": "config", "set": {"ui.theme": "light"}}, peer)
         self.assertFalse(theme_resp["ok"])
@@ -245,6 +254,39 @@ class IpcAuthzTest(unittest.TestCase):
             self.assertFalse(resp["ok"])
             self.assertEqual(resp["error"], "marked_peer_refused")
             self.assertEqual(resp["reason"], "unregistered_task_id")
+
+    def test_captures_full_refused_for_marked_peer(self):
+        p = self._spawn_sleeper()
+        self._register_task("cap-task", p.pid)
+        peer = {"pid": p.pid, "uid": os.getuid()}
+        resp = self.handle(
+            {"cmd": "captures", "turn_id": "t1", "full": True}, peer)
+        self.assertFalse(resp["ok"])
+        self.assertEqual(resp["error"], "marked_peer_refused")
+        self.assertEqual(resp["reason"], "gated_read")
+        self.assertEqual(agents._find("cap-task", self.tf)["refused_count"], 1)
+        plain = self.handle({"cmd": "captures"}, peer)
+        self.assertTrue(plain["ok"], plain)
+
+    def test_subscribe_refused_for_spoofed_peer(self):
+        spoof = {"pid": os.getpid(), "uid": os.getuid(),
+                 "env": {"WISP_TASK_ID": "spoofed-task-999"}}
+        srv = ipc.Daemon(self.handle, sock_file=self.sock, bus=self.st)
+        srv.start()
+        self.addCleanup(srv.stop)
+        with mock.patch.object(ipc, "_peer_cred", return_value=spoof), \
+                mock.patch.object(ipc.config, "TASKS_FILE", self.tf):
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self.addCleanup(s.close)
+            s.settimeout(5)
+            s.connect(str(self.sock))
+            s.sendall(b'{"cmd":"subscribe"}\n')
+            line = s.makefile().readline()
+        hello = json.loads(line)
+        self.assertEqual(hello["type"], "hello")
+        self.assertFalse(hello["ok"])
+        self.assertEqual(hello["error"], "marked_peer_refused")
+        self.assertEqual(hello["reason"], "unregistered_task_id")
 
     def test_local_connect_verb_refuses_marked_peer(self):
         p = self._spawn_sleeper()
