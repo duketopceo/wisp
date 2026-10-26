@@ -314,58 +314,5 @@ def _row(jev, heur, final, status="ok", ms=90, source="jev", t="x"):
             "override": source == "heuristic" and status == "ok"}
 
 
-class EvalRouteCliTest(unittest.TestCase):
-    ROWS = [
-        _row("answer", "answer", "answer", t="a"),
-        _row("launch", "launch", "launch", ms=120, t="b"),
-        _row("answer", "launch", "launch", source="heuristic", t="c"),
-        _row(None, "answer", "answer", status="timeout", ms=400,
-             source="heuristic", t="d"),
-    ]
-
-    def test_text_report(self):
-        with CliEnv() as env:
-            _seed(env, self.ROWS)
-            code, out, err = env.run(["eval", "route"])
-        self.assertEqual(code, 0, err)
-        self.assertIn("4 turns", out)
-        self.assertIn("agree", out)
-        self.assertIn("timeout", out)
-        self.assertIn("answer -> launch", out)      # the disagreement
-
-    def test_json_report(self):
-        with CliEnv() as env:
-            _seed(env, self.ROWS)
-            code, out, err = env.run(["eval", "route", "--json"])
-        self.assertEqual(code, 0, err)
-        d = json.loads(out)
-        d = d.get("data", d)
-        self.assertEqual(d["turns"], 4)
-        self.assertEqual(d["jev_answered"], 3)
-        self.assertEqual(d["agreed"], 2)
-        self.assertAlmostEqual(d["agreement"], 2 / 3, places=3)
-        self.assertEqual(d["overrides"], 1)
-        self.assertEqual(d["jev_status"], {"ok": 3, "timeout": 1})
-        self.assertEqual(d["final_source"], {"jev": 2, "heuristic": 2})
-        self.assertIn("p50", d["jev_ms"])
-        self.assertEqual(len(d["disagreements"]), 1)
-        self.assertEqual(d["disagreements"][0]["jev"], "answer")
-        self.assertEqual(d["disagreements"][0]["heuristic"], "launch")
-
-    def test_limit_takes_latest(self):
-        with CliEnv() as env:
-            _seed(env, self.ROWS)
-            code, out, _ = env.run(["eval", "route", "2", "--json"])
-        d = json.loads(out)
-        d = d.get("data", d)
-        self.assertEqual(d["turns"], 2)
-
-    def test_empty_log(self):
-        with CliEnv() as env:
-            code, out, _ = env.run(["eval", "route"])
-        self.assertEqual(code, 0)
-        self.assertIn("no routed turns", out)
-
-
 if __name__ == "__main__":
     unittest.main()

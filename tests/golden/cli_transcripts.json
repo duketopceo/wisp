@@ -166,14 +166,6 @@
   "ipc": [],
   "stdout": "nothing to label\n"
  },
- "label_report": {
-  "argv": [
-   "label"
-  ],
-  "code": 0,
-  "ipc": [],
-  "stdout": "no labels yet \u2014 use `wispd label correct|incorrect`\n"
- },
  "label_set": {
   "argv": [
    "label",
@@ -197,7 +189,7 @@
   ],
   "code": 0,
   "ipc": [],
-  "stdout": "no corrections this week \u2014 nothing to propose\n"
+  "stdout": "no failures logged\n"
  },
  "memory": {
   "argv": [
@@ -236,32 +228,6 @@
   "code": 0,
   "ipc": [],
   "stdout": "DOWN jev              jev_down\n"
- },
- "recipes": {
-  "argv": [
-   "recipes"
-  ],
-  "code": 0,
-  "ipc": [],
-  "stdout": ""
- },
- "recipes_approve_bad": {
-  "argv": [
-   "recipes",
-   "approve",
-   "nope"
-  ],
-  "code": 2,
-  "ipc": [],
-  "stdout": ""
- },
- "review": {
-  "argv": [
-   "review"
-  ],
-  "code": 0,
-  "ipc": [],
-  "stdout": "nothing staged \u2014 run `wispd review run` after a batch\n"
  },
  "skills": {
   "argv": [
@@ -324,7 +290,7 @@
     "cmd": "suggestions"
    }
   ],
-  "stdout": "[new] Open notes \u2014 3 times\n"
+  "stdout": "[new] Open notes — 3 times\n"
  },
  "task_cancel": {
   "argv": [
@@ -423,32 +389,6 @@
   "code": 0,
   "ipc": [],
   "stdout": ""
- },
- "train": {
-  "argv": [
-   "train"
-  ],
-  "code": 0,
-  "ipc": [],
-  "stdout": "runs: 0\n"
- },
- "train_bank": {
-  "argv": [
-   "train",
-   "bank"
-  ],
-  "code": 0,
-  "ipc": [],
-  "stdout": "skill bank empty \u2014 run the arena first\n"
- },
- "train_history": {
-  "argv": [
-   "train",
-   "history"
-  ],
-  "code": 0,
-  "ipc": [],
-  "stdout": "no runs yet\n"
  },
  "trigger": {
   "argv": [

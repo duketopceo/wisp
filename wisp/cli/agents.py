@@ -179,14 +179,6 @@ def suggest_list(ctx, a):
     return ctx.emit({"suggestions": sugg}, text if sugg else None)
 
 
-@command("label report", "Per-route accuracy report from your labels",
-         ["wispd label report"], {"text": "str"})
-def label_report(ctx, a):
-    from .. import learn
-    text = learn.soak_stats()
-    return ctx.emit({"text": text}, text)
-
-
 def _label_args(p):
     p.add_argument("label", help="correct or incorrect: was the last route "
                    "right?")

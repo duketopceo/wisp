@@ -228,6 +228,12 @@ writer_queue_max = 256      # background trajectory/recall writes queued
 # failed attempt as context; pairs are measured via wispd fails.
 refine = true
 
+[eval]
+# `wispd eval` gate: the first-time-correct fraction (0-1) the owner
+# requires over at least gate_min_turns labelled turns. Unset on purpose.
+# gate_rate = 0.6
+gate_min_turns = 50
+
 [ui]
 # orb/overlay theme: dark | light (wispd theme <name> swaps live)
 theme = "dark"
@@ -356,8 +362,7 @@ timeout_ms = "500"
 # uitars = "llama-uitars"
 
 # Local GPU models via llama.cpp Vulkan servers (uncomment to use).
-# `wispd` reads these like any other brain provider; the clicklab
-# matrix takes them as `--models llama_local:ornith,uitars:ui-tars`.
+# `wispd` reads these like any other brain provider.
 # [brain.llama_local]
 # kind = "openai_compat"   # Ornith-35B + mmproj on llama-server :8080
 # base_url = "http://127.0.0.1:8080/v1"
@@ -371,10 +376,6 @@ timeout_ms = "500"
 # action_text = "true"
 # Jev can also run locally: point WISP_JEV_ENDPOINT at a jev-shim
 # (e.g. http://127.0.0.1:8931/decisions → llama-jev qwen3-4b :8091).
-# Offline trajectory reviewer (`wispd review run`): point it at a
-# slower decider-class model — it reads step logs, not pixels.
-# [brain]
-# reviewer = "llama_local:ornith"   # or any configured provider
 
 [jev]
 # Shadow decider: a second decision model answers the same questions on
@@ -392,17 +393,6 @@ shadow = ""
 # Jev is an accelerator, never a gate: past this many ms the heuristic
 # router decides and the turn goes on (route_ab.jsonl keeps both).
 # deadline_ms = 400
-
-[clicklab]
-# the training arena (scripts/clicklab): adaptive = each run's verdict
-# steers the next synthesized task at the hottest failure bucket
-# (same skill, varied surface); judge picks the run grader — "jev"
-# (decisions endpoint, brain fallback), "brain" only, or "off" (the
-# scoreboard alone); promote_after = verified successes a recipe needs
-# before it graduates into the skill bank.
-adaptive = "false"
-promote_after = "3"
-judge = "jev"
 
 [debug]
 # full-fidelity event stream to ~/.local/share/wisp/trace.jsonl —
@@ -489,13 +479,12 @@ def _default_cfg_dict() -> dict:
         "verify": {"judge_timeout_s": "20", "pixel_landed_min": "0.02",
                    "pixel_missed_max": "0.001", "pixel_eps": "16",
                    "region_px": "96", "frame_wait_s": "0.5"},
-        "clicklab": {"adaptive": "false", "promote_after": "3",
-                     "judge": "jev"},
         "agents": {"act_max_steps": "12", "act_max_errors": "2",
                    "act_max_parse_misses": "1", "act_max_seconds": "600",
                    "act_max_usd": "0",
                    "writer_queue_max": "256"},
         "dev": {"refine": "true"},
+        "eval": {"gate_min_turns": "50"},
         "ui": {"theme": "dark"},
         "brain": {
             "router": "act", "agent_runtime": "auto",

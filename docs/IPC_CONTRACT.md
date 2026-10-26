@@ -29,13 +29,13 @@ future tray apps). Shells MUST only depend on this document.
 | `stop` | — | `{ok}` | daemon exits, socket removed; kills in-flight TTS |
 | `interrupt` | — | `{ok}` | cancels the in-flight turn only — daemon stays up; see Cancellation |
 | `config` | `set: {"section.key": "val"}` (optional) | `{ok, config}` | read config; with `set`, writes config.toml preserving comments/order and live-reloads |
-| `label` | `label: correct\|incorrect` | `{ok, result}` | tag the most recent decision (soak intent-match + trajectory join) |
+| `label` | `label: correct\|incorrect` | `{ok, result}` | tag the most recent decision (read by `wispd eval` and the trajectory join) |
 | `dictate_correct` | `{"heard","meant"}` | `{ok, result}` or `{ok:false, error, result}` | record a personal dictation correction → `dictation.json` (U6); cleanup/compose prompts carry the table |
 | `context` | — | `{ok, result}` | focused app, `[windows]` workspace map, inventory counts |
 | `captures` | `turn_id?: string`, `full?: bool`, `limit?: int` | `{ok, packs}` or `{ok, manifest}` | read capture-pack list or manifest |
 | `task_output` | `name: string` | `{ok, name, status, exit_code, output}` | read named-agent log output (U2) |
 | `task_artifacts` | `name: string` | `{ok, name, out_dir, delivered, deliverables, artifacts}` | read named-agent output workspace + deliverable verification (U2) |
-| `learn` | — | `{ok, result}` | weekly learning proposals (human-gated) |
+| `learn` | — | `{ok, result}` | no-op; weekly proposals were removed |
 | `harness` | — | `{ok, result}` | regenerate the app harness catalog |
 | unknown/malformed | — | `{ok:false, error}` | — |
 
@@ -394,7 +394,7 @@ and creates an output workspace at `tasks/<id>/out/`. At reap time:
 - `labels.jsonl` — human labels (`correct`/`incorrect`) keyed to the
   decision ts; joined to trajectories via the decision's transcript.
 - `trajectories.jsonl` — episodic act-loop memory (task, app, steps,
-  outcome); feeds `context_for()` and `propose_recipes()`.
+  outcome); feeds `context_for()`.
 - goal state — in-memory only (`wisp/goals.py`, `goal_ttl_s` TTL, lost
   on restart); not a file.
 - `inventory.json` — scanned local terrain (apps, cli_tools, mcp

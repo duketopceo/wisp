@@ -114,22 +114,13 @@ class FakeServersTest(unittest.TestCase):
         self.assertEqual(json.loads(a)["text"], "hello world")
         self.assertEqual(json.loads(b)["text"], "hello world")
 
-    def test_uitars_and_batch(self):
+    def test_uitars(self):
         with fakes.FakeUiTars({"responses": [
                 {"content": "click(start_box='(10,20)')"}]}) as srv:
             _, b = _req(srv.url, "/v1/chat/completions", "POST",
                         {"messages": []})
         self.assertIn("click", json.loads(b)["choices"][0]["message"]
                       ["content"])
-        with fakes.FakeBatch({"statuses": ["in_progress", "completed"],
-                              "results": [{"custom_id": "a",
-                                           "content": "ok"}]}) as srv:
-            _, sub = _req(srv.url, "/batches", "POST", {"requests": []})
-            bid = json.loads(sub)["id"]
-            _, p1 = _req(srv.url, f"/batches/{bid}")
-            _, p2 = _req(srv.url, f"/batches/{bid}")
-        self.assertEqual(json.loads(p1)["status"], "in_progress")
-        self.assertEqual(json.loads(p2)["status"], "completed")
 
 
 class GuardTest(unittest.TestCase):

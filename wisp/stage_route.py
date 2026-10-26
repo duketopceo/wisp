@@ -92,7 +92,6 @@ def build_questions(harness: dict | None) -> dict:
     from . import tools
     q = json.loads(json.dumps(_pl().JEV_QUESTIONS))
     q["tool"]["criteria"] = tools.describe()
-    from . import learn
     # harness apps augment the defaults (terminal/files/...), never
     # replace them — otherwise "open the terminal" has no candidate
     criteria = dict(q["app"]["criteria"])
@@ -103,7 +102,7 @@ def build_questions(harness: dict | None) -> dict:
                if a.get("seen", 0) >= 5 else "")
             for name, a in harness["apps"].items()
         })
-    q["app"]["criteria"] = learn.apply_overrides(criteria)
+    q["app"]["criteria"] = criteria
     return q
 
 

@@ -76,11 +76,11 @@ class TestAliasParity(unittest.TestCase):
     def test_alias_table_covers_old_command_names(self):
         old = {"daemon", "install", "trigger", "status", "interrupt",
                "watch", "subscribe", "stop", "choice", "label", "tasks",
-               "train", "review", "learn", "config", "harness",
+               "learn", "config", "harness",
                "inventory", "connect", "context", "task_status",
                "task_cancel", "memory-write", "agent", "memory", "trace",
                "doctor", "models", "tui", "skills", "suggestions",
-               "theme", "fails", "tele", "eval", "sync", "recipes"}
+               "theme", "fails", "tele", "sync"}
         known = set(cli.ALIASES) | {c.split()[0] for c in
                                     registry.commands()}
         self.assertEqual(old - known, set())
@@ -219,7 +219,7 @@ class TestJson(unittest.TestCase):
     MATRIX = [
         (["status"], True), (["stop"], True), (["interrupt"], True),
         (["choice", "a"], True), (["context"], True),
-        (["label", "set", "correct"], True), (["label", "report"], False),
+        (["label", "set", "correct"], True), (["eval"], False),
         (["task", "list"], False), (["task", "status", "a"], True),
         (["task", "cancel", "a"], True), (["task", "run", "x"], True),
         (["memory", "edit", "a|b|c|d"], True),
@@ -229,9 +229,8 @@ class TestJson(unittest.TestCase):
         (["memory", "write", "user", cli_env.B64], True),
         (["suggest", "list"], True), (["config", "show"], True),
         (["config", "set", "audio.seconds", "30"], True),
-        (["train", "stats"], False), (["review", "list"], False),
-        (["learn", "weekly"], False), (["learn", "fails"], False),
-        (["skills", "list"], False), (["recipes", "draft"], False),
+        (["learn", "fails"], False),
+        (["skills", "list"], False),
         (["trace", "digest"], False), (["trace", "show"], False),
         (["theme", "show"], False), (["theme", "set", "light"], False),
         (["health"], False), (["latency"], False), (["spend"], False),

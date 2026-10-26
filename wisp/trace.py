@@ -215,7 +215,7 @@ class Spans:
 
     def legacy_timing(self) -> dict:
         """The pre-U1 aggregate keys, derived from spans, for
-        decisions.jsonl consumers (`evalroute`, `tele`)."""
+        decisions.jsonl consumers (`tele`)."""
         m = self.ms
         out = {"record_ms": m.get("record", 0)}
         if "stt" in m:

@@ -172,16 +172,6 @@ FIELDS = (
     _f("stt.provider", "choice", "local",
        "Speech to text: local whisper.cpp or an API",
        choices=("local", "openai")),
-    _f("clicklab.adaptive", "bool", "false",
-       "Adaptive clicklab: each verdict steers the next synthesized "
-       "task at the hottest failure bucket"),
-    _f("clicklab.promote_after", "int", "3",
-       "Verified successes a clicklab recipe needs before it graduates",
-       min=1, max=20),
-    _f("clicklab.judge", "choice", "jev",
-       "Run verdict judge: jev decisions call (brain fallback), "
-       "brain only, or off (scoreboard alone)",
-       choices=("jev", "brain", "off")),
     _f("packs.keep", "int", "200",
        "Newest capture packs retained under packs/ (0 disables the "
        "count bound)",

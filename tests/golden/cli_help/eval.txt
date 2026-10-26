@@ -1,6 +1,6 @@
-usage: wispd label report [-h] [--json] [--quiet] [--no-color]
+usage: wispd eval [-h] [--json] [--quiet] [--no-color]
 
-Per-route accuracy report from your labels
+End-to-end eval: first-time-correct rate per turn kind
 
 options:
   -h, --help   show this help message and exit
@@ -11,4 +11,5 @@ global options:
   --no-color   plain output (also NO_COLOR, or not a tty)
 
 Examples:
-  wispd label report
+  wispd eval
+  wispd eval --json

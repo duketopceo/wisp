@@ -17,7 +17,7 @@ def load_groups():
     if _LOADED:
         return
     _LOADED = True
-    from . import (agents, batchcmd, core, cua, diagnose,  # noqa: F401
+    from . import (agents, core, cua, diagnose,  # noqa: F401
                    dictate, learning, note, settings)
     registry.SECTIONS[:] = [
         ("Daemon", ["daemon", "status", "stop", "interrupt", "trigger",
@@ -27,8 +27,7 @@ def load_groups():
         ("Pointer and notifications", ["cua", "notify"]),
         ("Agents and memory", ["task", "memory", "dictate", "suggest",
                                "label", "context"]),
-        ("Learning", ["train", "review", "learn", "skills", "recipes",
-                      "eval", "batch"]),
+        ("Learning", ["learn", "eval", "skills"]),
         ("Settings", ["config", "theme", "connect", "sync", "inventory",
                       "completion"]),
     ]
@@ -49,6 +48,11 @@ def _grp(group, default, bare=None):
             return [group] + rest
         return [group, default] + rest
     return fn
+
+
+def _label(rest):
+    """Bare `wispd label` shows the eval; `wispd label <outcome>` sets."""
+    return ["eval"] if not rest else _grp("label", "set")(rest)
 
 
 def _to(*tokens):
@@ -93,7 +97,7 @@ ALIASES = {
     "install": _to("daemon", "install"),
     "harness": _to("daemon", "harness"),
     "subscribe": _to("watch"),
-    "label": _grp("label", "set", "report"),
+    "label": _label,
     "tasks": _to("task", "list"),
     "task_status": _to("task", "status"),
     "task_cancel": _to("task", "cancel"),
@@ -103,13 +107,10 @@ ALIASES = {
     "memory-write": _to("memory", "write"),
     "suggestions": _to("suggest", "list"),
     "fails": _to("learn", "fails"),
-    "learn": _grp("learn", "weekly"),
+    "learn": _grp("learn", "fails"),
     "tele": _to("trace", "digest"),
     "trace": _grp("trace", "show"),
-    "train": _grp("train", "stats"),
-    "review": _grp("review", "list"),
     "skills": _grp("skills", "list"),
-    "recipes": _grp("recipes", "draft"),
     "config": _grp("config", "show"),
     "theme": _theme,
     "connect": _connect,

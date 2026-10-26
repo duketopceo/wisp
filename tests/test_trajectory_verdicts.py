@@ -1,13 +1,10 @@
-"""U6 — verdicts into trajectories and drills.
+"""U6 — verdicts into trajectories.
 
 Trajectory step records carry the verify ladder's verdict fields
 (`verdict`, `verify_source`, `corroborated`, `turn_dir`, `pack`);
 `action_stats` buckets landed/missed/solo/refused/unverifiable/
 suppressed/not_recorded instead of crediting dispatch; `learn` owns the
-corroboration weighting the consumers share; clicklab wraps its runs in
-a `clicklab-<run>` session-labeled cua recording.
-
-The cua boundary is faked — nothing here touches a live daemon.
+corroboration weighting the consumers share.
 """
 import json
 import pathlib
@@ -18,11 +15,8 @@ from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "scripts" / "clicklab"))
 
-from wisp import action_stats, cua, learn, record, train, \
-    trajectories as T  # noqa: E402
-import run as clicklab  # noqa: E402
+from wisp import action_stats, learn, trajectories as T  # noqa: E402
 
 
 def _step(tool="click", result="CLICKED(10,20)", **kw):
@@ -261,16 +255,14 @@ class TestActionStats(unittest.TestCase):
 
 
 class TestLearnConsumers(unittest.TestCase):
-    """trajectories.similar/propose_recipes apply the verdict policy."""
+    """trajectories.similar/context_for apply the verdict policy."""
 
     def setUp(self):
         self.dir = pathlib.Path(tempfile.mkdtemp())
         self.file = self.dir / "trajectories.jsonl"
         self.labels = self.dir / "labels.jsonl"
-        self.proposals = self.dir / "proposals"
         mock.patch.object(T, "FILE", self.file).start()
         mock.patch.object(learn, "LABELS_FILE", self.labels).start()
-        mock.patch.object(learn, "PROPOSALS_DIR", self.proposals).start()
         self.addCleanup(mock.patch.stopall)
 
     def _rec(self, steps, outcome="ACTED (2 steps): done",
@@ -326,172 +318,6 @@ class TestLearnConsumers(unittest.TestCase):
                             records=[rec], labels={})
         self.assertIn("caution", ctx)
         self.assertNotIn("FAILED run", ctx)
-
-    def test_no_recipe_from_corroborated_miss(self):
-        # the run claims ACTED but verification corroborated the miss —
-        # it is failure evidence, not a workflow to distill
-        rec = self._rec([
-            _step(verdict="landed", corroborated=True),
-            _step(verdict="landed", corroborated=True),
-            _step(verdict="missed", corroborated=True)])
-        self.file.write_text(json.dumps(rec) + "\n")
-        self.assertEqual(T.propose_recipes(out_dir=self.proposals), [])
-
-    def test_corroborated_miss_counts_as_prior_bad(self):
-        bad = self._rec([
-            _step(verdict="missed", corroborated=True)],
-            outcome="ACTED", ts="2026-01-01T00:00:00+00:00")
-        good = self._rec([_step(verdict="landed", corroborated=True)
-                          for _ in range(3)],
-                         ts="2026-01-02T00:00:00+00:00")
-        self.file.write_text("".join(json.dumps(r) + "\n"
-                                     for r in (bad, good)))
-        out = T.propose_recipes(out_dir=self.proposals)
-        self.assertEqual(len(out), 1)
-
-
-class _FakeCuaClient:
-    """cua.Cua stand-in: records (tool, args) call pairs, answers {}."""
-
-    def __init__(self):
-        self.calls = []
-
-    def call(self, tool, args=None, **kw):
-        self.calls.append((tool, dict(args or {})))
-        return {}
-
-
-class TestClicklabRecording(unittest.TestCase):
-    """The run wrap: session label `clicklab-<run>`, recording into the
-    run dir, act-turn evidence refs on the row — fake cua boundary."""
-
-    def setUp(self):
-        self.dir = pathlib.Path(tempfile.mkdtemp())
-        self.client = _FakeCuaClient()
-        self.rec = clicklab.RunRecording("r-test", root=self.dir,
-                                         client=self.client)
-        self.addCleanup(self.rec.stop)   # restores labels if still set
-
-    def test_session_label_and_output_dir(self):
-        self.rec.start()
-        kinds = [t for t, _ in self.client.calls]
-        self.assertEqual(kinds[:2], ["start_session", "start_recording"])
-        sess = dict(self.client.calls)["start_recording"]["session"]
-        self.assertEqual(sess, "clicklab-r-test")
-        self.assertEqual(
-            dict(self.client.calls)["start_recording"]["output_dir"],
-            str(self.dir / "r-test"))
-
-    def test_process_labels_relabeled_and_restored(self):
-        orig = cua.SESSION
-        self.rec.start()
-        self.assertEqual(cua.SESSION, "clicklab-r-test")
-        self.assertEqual(record.SESSION, "clicklab-r-test")
-        self.rec.stop()
-        self.assertEqual(cua.SESSION, orig)
-        self.assertEqual(record.SESSION, orig)
-        self.assertIn(("stop_recording",
-                       {"session": "clicklab-r-test"}),
-                      self.client.calls)
-
-    def test_rearm_reissues_start_recording(self):
-        self.rec.start()
-        n = sum(1 for t, _ in self.client.calls
-                if t == "start_recording")
-        self.rec.rearm()
-        self.assertEqual(sum(1 for t, _ in self.client.calls
-                             if t == "start_recording"), n + 1)
-
-    def test_start_failure_is_inert(self):
-        class Down:
-            def call(self, *a, **k):
-                raise OSError("daemon down")
-        rec = clicklab.RunRecording("r-down", root=self.dir,
-                                    client=Down())
-        rec.start()
-        try:
-            self.assertFalse(rec.active)          # never raises
-        finally:
-            rec.stop()
-
-    def test_rearm_inactive_reply_stays_inert(self):
-        # strict=False can return a soft failure without raising —
-        # recording:false must not arm the wrap.
-        class SoftFail:
-            def call(self, tool, *a, **k):
-                if tool == "start_recording":
-                    return {"recording": False}
-                return {"ok": True}
-        rec = clicklab.RunRecording("r-soft", root=self.dir,
-                                    client=SoftFail())
-        rec.start()
-        try:
-            self.assertFalse(rec.active)
-        finally:
-            rec.stop()
-
-    def test_row_fields_cite_packs(self):
-        # F13: rec/ turn dirs are deleted at pack write — the row must
-        # cite the durable packs/<turn> dirs instead
-        self.rec.start()
-        f = self.rec.row_fields([
-            _step(pack="packs/t-def", turn_dir="/rec/t-def/turn-00002"),
-            _step(pack="packs/t-def", turn_dir="/rec/t-def/turn-00001"),
-            _step(turn_dir="/rec/t-def/turn-00003"),  # unpacked step
-            _step(),                                 # read-only
-        ])
-        self.assertEqual(f["rec_dir"], str(self.dir / "r-test"))
-        self.assertEqual(f["rec_session"], "clicklab-r-test")
-        self.assertEqual(f["packs"], ["packs/t-def"])
-        self.assertNotIn("turn_dirs", f)
-
-    def test_row_fields_empty_run(self):
-        f = self.rec.row_fields([_step()])
-        self.assertNotIn("packs", f)
-        self.assertNotIn("turn_dirs", f)
-
-
-class TestBankFold(unittest.TestCase):
-    """The clicklab.jsonl bank fold stashes the run's evidence refs."""
-
-    def test_update_bank_stashes_evidence_refs(self):
-        with tempfile.TemporaryDirectory() as td:
-            bank = pathlib.Path(td) / "skillbank.json"
-            rec = {"task": "click alpha", "surface": "browser-dom",
-                   "verified": True, "judge": {"success": True,
-                                               "efficiency": 0.95},
-                   "efficiency": 0.95,
-                   "steps": [{"tool": "click", "arg": "1,2"}],
-                   "rec_dir": "/x/clicklab-rec/r1",
-                   "packs": ["packs/t-abc123"],
-                   "ts": 1.0}
-            e = train.update_bank(rec, path=bank)
-            self.assertEqual(e["packs"], ["packs/t-abc123"])
-            self.assertEqual(e["rec_dir"], "r1")
-
-    def test_update_bank_drops_stale_evidence_refs(self):
-        with tempfile.TemporaryDirectory() as td:
-            bank = pathlib.Path(td) / "skillbank.json"
-            first = {"task": "click alpha", "surface": "browser-dom",
-                     "verified": True, "judge": {"success": True,
-                                                 "efficiency": 0.95},
-                     "efficiency": 0.95,
-                     "steps": [{"tool": "click", "arg": "1,2"}],
-                     "rec_dir": "/x/clicklab-rec/r1",
-                     "packs": ["packs/t-abc123"],
-                     "turn_dirs": ["turn-00001"],
-                     "ts": 1.0}
-            train.update_bank(first, path=bank)
-            second = {"task": "click alpha", "surface": "browser-dom",
-                      "verified": True, "judge": {"success": True,
-                                                  "efficiency": 0.95},
-                      "efficiency": 0.95,
-                      "steps": [{"tool": "click", "arg": "3,4"}],
-                      "ts": 2.0}
-            e = train.update_bank(second, path=bank)
-            self.assertNotIn("packs", e)
-            self.assertNotIn("turn_dirs", e)
-            self.assertNotIn("rec_dir", e)
 
 
 if __name__ == "__main__":

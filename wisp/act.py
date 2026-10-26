@@ -187,11 +187,6 @@ def run_act_loop(task: str, cfg: dict, state=None,
                                      labels=traj_labs)
     if prior:
         system += "\n\n" + prior
-    from . import train as _train
-    hint = _train.hint_for(task, _surface(cfg),
-                           model=brain.provider(cfg).get("model", ""))
-    if hint:
-        system += "\n\n" + hint
     from . import goals as _goals
     goal_txt = _goals.context_text()
     # a follow-up turn sees the previous turn's outcome, not just

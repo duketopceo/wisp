@@ -10,7 +10,7 @@ an app that exists in the catalog ("open firefox"), so a compound
 request ("open firefox and go to github") keeps Jev's act route.
 
 Every routed turn appends one record to route_ab.jsonl (Jev vs heuristic
-vs final, latencies, agreement) for `wispd eval route`.
+vs final, latencies, agreement).
 """
 import json
 import re
@@ -424,7 +424,7 @@ def _pct(vals: list, q: float):
 
 
 def ab_report(rows: list, show: int = 10) -> dict:
-    """Summarise route A/B records (what `wispd eval route` prints)."""
+    """Summarise route A/B records (the A/B report text)."""
     jev = [r.get("jev") or {} for r in rows]
     answered = [r for r in rows if (r.get("jev") or {}).get("route")]
     agreed = [r for r in answered if r.get("agree")]
