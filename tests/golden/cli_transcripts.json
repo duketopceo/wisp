@@ -166,14 +166,6 @@
   "ipc": [],
   "stdout": "nothing to label\n"
  },
- "label_report": {
-  "argv": [
-   "label"
-  ],
-  "code": 0,
-  "ipc": [],
-  "stdout": "no labels yet — use `wispd label correct|incorrect`\n"
- },
  "label_set": {
   "argv": [
    "label",

@@ -228,6 +228,12 @@ writer_queue_max = 256      # background trajectory/recall writes queued
 # failed attempt as context; pairs are measured via wispd fails.
 refine = true
 
+[eval]
+# `wispd eval` gate: the first-time-correct fraction (0-1) the owner
+# requires over at least gate_min_turns labelled turns. Unset on purpose.
+# gate_rate = 0.6
+gate_min_turns = 50
+
 [ui]
 # orb/overlay theme: dark | light (wispd theme <name> swaps live)
 theme = "dark"
@@ -478,6 +484,7 @@ def _default_cfg_dict() -> dict:
                    "act_max_usd": "0",
                    "writer_queue_max": "256"},
         "dev": {"refine": "true"},
+        "eval": {"gate_min_turns": "50"},
         "ui": {"theme": "dark"},
         "brain": {
             "router": "act", "agent_runtime": "auto",

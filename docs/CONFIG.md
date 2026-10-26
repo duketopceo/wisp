@@ -386,13 +386,15 @@ Off by default. Local sources only (Hyprland window changes, the dayflow journal
 | `max_calls_per_day` | `48` | cap on mining model calls |
 | `model` | `openrouter:google/gemini-2.5-flash` | `provider:model` for mining; a local one costs nothing |
 
-## [traj], [dev], [ui] and [apps]
+## [traj], [dev], [eval], [ui] and [apps]
 
 | key | default | meaning |
 |-----|---------|---------|
 | `[traj] enabled` | `true` | record act-loop runs and inject similar past runs as context |
 | `[traj] max_inject` | `3` | most prior runs injected |
 | `[dev] refine` | `true` | a labelled-bad turn or a correction ("no", "instead") retries with the failed attempt as context |
+| `[eval] gate_rate` | unset | first-time-correct fraction (0 to 1) `wispd eval` must reach for PASS, for example `0.6`; unset prints "gate not set" and no PASS or FAIL |
+| `[eval] gate_min_turns` | `50` | labelled turns required before the gate can pass; fewer is FAIL with "needs N more labelled turns" |
 | `[ui] theme` | `dark` | `dark` or `light`; `wispd theme <name>` swaps live |
 | `[apps]` | per OS | name to launch command map Jev resolves "open the terminal" against (`browser`, `terminal`, `files`, `vscode`, `music`, `settings`, `browser_new_tab`) |
 
@@ -458,8 +460,8 @@ watch [topic ...]              choice [pick] [--prompt-id ID] [--index N]
 doctor  health [start [--run]]  latency [--since 24h]  spend  binds  onboard
 cua status|test|log|kill|resume|enable|disable   notify test
 task list|status|cancel|run    memory edit|write    suggest list
-label report|set               context
-learn fails                    skills list|import
+label set                     context
+learn fails  eval [--json]      skills list|import
 trace show|digest              captures [turn] [--full]
 config show|set|keys           theme show|set|check|css
 connect list|add               sync  inventory  tui  completion bash|zsh|fish

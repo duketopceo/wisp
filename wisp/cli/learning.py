@@ -21,6 +21,15 @@ def learn_fails(ctx, a):
     return _text(ctx, learn.fails())
 
 
+@command("eval", "End-to-end eval: first-time-correct rate per turn kind",
+         ["wispd eval", "wispd eval --json"],
+         {"kinds": "dict", "total": "dict", "gate": "dict"})
+def eval_cmd(ctx, a):
+    from .. import config, learn
+    rep = learn.eval_report(config.load_config())
+    return ctx.emit(rep, learn.eval_text(rep))
+
+
 @command("skills list", "List installed skills",
          ["wispd skills list"], {"skills": "list"})
 def skills_list(ctx, a):

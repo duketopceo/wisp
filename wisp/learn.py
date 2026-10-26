@@ -14,7 +14,7 @@ LABELS_FILE = config.DATA_DIR / "labels.jsonl"
 
 def label_last(label: str, note: str = "") -> str:
     """Tag the most recent decisions.jsonl turn correct/incorrect —
-    the soak's intent-match metric reads labels.jsonl keyed by `ref`."""
+    `wispd eval` reads labels.jsonl keyed by `ref`."""
     label = {"ok": "correct", "good": "correct",
              "bad": "incorrect"}.get(label, label)
     if label not in ("correct", "incorrect"):
@@ -41,30 +41,115 @@ def label_last(label: str, note: str = "") -> str:
     return f"labeled {label}: {ref}"
 
 
-def soak_stats() -> str:
-    """Per-route intent-match from labels.jsonl joined to
-    decisions.jsonl on ts — the v1.0 soak metric (≥85% per route)."""
-    decs = {d.get("ts"): d for d in _read_jsonl(config.DECISIONS)}
-    by_ref = {}
-    for lab in _read_jsonl(LABELS_FILE):
+# Result-string prefix -> turn kind. These are exactly the prefixes the
+# dispatch emits: ANSWERED (stage_execute answer route), ACTED (act loop),
+# LAUNCHED (tools/desktop launch), DICTATED / INSERTED / TYPED
+# (dictate.run's insert paths), SPAWNED (agents.spawn). Anything else
+# (BLOCKED, SKIP, ERROR, ABORTED, CANCELLED, INTERRUPTED, tool results
+# like SHOT/CLOSED/FOCUSED, or an unknown/missing decision) is "other".
+# Keyed on the result, never the router, so it works under any router.
+_KIND_PREFIXES = (
+    ("ANSWERED", "answer"), ("ACTED", "act"), ("LAUNCHED", "launch"),
+    ("DICTATED", "dictate"), ("INSERTED", "dictate"),
+    ("TYPED", "dictate"), ("SPAWNED", "agent"),
+)
+KINDS = ("answer", "act", "launch", "dictate", "agent", "other")
+
+
+def turn_kind(result: str) -> str:
+    """Map a decisions.jsonl `result` string to a turn kind (see the
+    prefix table above)."""
+    for prefix, kind in _KIND_PREFIXES:
+        if (result or "").startswith(prefix):
+            return kind
+    return "other"
+
+
+def _tally(rows: dict, kind: str, label: str) -> None:
+    r = rows.setdefault(kind, {"labelled": 0, "correct": 0,
+                               "incorrect": 0, "corrected": 0})
+    r["labelled"] += 1
+    if label == "correct":
+        r["correct"] += 1
+    elif label == "corrected-by-retry":
+        r["corrected"] += 1
+    else:
+        r["incorrect"] += 1
+
+
+def _rate(r: dict):
+    return r["correct"] / r["labelled"] if r["labelled"] else None
+
+
+def eval_report(cfg: dict | None = None, decisions_file=None,
+                labels_file=None) -> dict:
+    """End-to-end outcome eval: labels.jsonl joined to decisions.jsonl
+    on `ref` == decision `ts`. A turn's outcome is its latest label
+    (correct | incorrect | corrected-by-retry; the last counts as not
+    right first time). Returns per-kind and total counts plus the gate
+    state from `[eval] gate_rate` / `gate_min_turns`."""
+    decs = {d.get("ts"): d for d in _read_jsonl(
+        decisions_file or config.DECISIONS)}
+    latest = {}
+    for lab in _read_jsonl(labels_file or LABELS_FILE):
         if lab.get("ref"):
-            by_ref[lab["ref"]] = lab.get("label", "")
-    per_route = {}
-    for ref, lab in by_ref.items():
-        route = ((decs.get(ref) or {}).get("answers", {})
-                 .get("route", {}) or {}).get("choice", "?")
-        ok, tot = per_route.get(route, (0, 0))
-        per_route[route] = (ok + (lab == "correct"), tot + 1)
-    if not per_route:
-        return "no labels yet — use `wispd label correct|incorrect`"
-    lines, (ok_all, tot_all) = [], (0, 0)
-    for route, (ok, tot) in sorted(per_route.items()):
-        lines.append(f"  {route:<10} {ok}/{tot} correct "
-                     f"({100 * ok / tot:.0f}%)")
-        ok_all, tot_all = ok_all + ok, tot_all + tot
-    lines.append(f"  {'total':<10} {ok_all}/{tot_all} "
-                 f"({100 * ok_all / tot_all:.0f}%) — gate: 85%")
-    return "soak intent-match:\n" + "\n".join(lines)
+            latest[lab["ref"]] = lab.get("label", "")
+    rows, total = {}, {"labelled": 0, "correct": 0, "incorrect": 0,
+                       "corrected": 0}
+    for ref, label in latest.items():
+        kind = turn_kind((decs.get(ref) or {}).get("result", ""))
+        _tally(rows, kind, label)
+    for r in rows.values():
+        for k in ("labelled", "correct", "incorrect", "corrected"):
+            total[k] += r[k]
+    for r in rows.values():
+        r["rate"] = _rate(r)
+    total["rate"] = _rate(total)
+    kinds = {k: rows[k] for k in KINDS if k in rows}
+
+    ecfg = (cfg or {}).get("eval", {}) or {}
+    try:
+        min_turns = int(ecfg.get("gate_min_turns", 50))
+    except (TypeError, ValueError):
+        min_turns = 50
+    raw = str(ecfg.get("gate_rate", "") or "").strip()
+    try:
+        gate_rate = float(raw) if raw else None
+    except ValueError:
+        gate_rate = None
+    gate = {"rate": gate_rate, "min_turns": min_turns,
+            "status": "unset", "needs": 0}
+    if gate_rate is not None:
+        gate["needs"] = max(0, min_turns - total["labelled"])
+        ok = gate["needs"] == 0 and (total["rate"] or 0) >= gate_rate
+        gate["status"] = "PASS" if ok else "FAIL"
+    return {"kinds": kinds, "total": total, "gate": gate}
+
+
+def eval_text(rep: dict) -> str:
+    """Render eval_report for the terminal."""
+    if not rep["total"]["labelled"]:
+        return "no labels yet — use `wispd label set correct|incorrect`"
+
+    def row(name, r):
+        pct = "-" if r["rate"] is None else f"{100 * r['rate']:.0f}%"
+        return (f"  {name:<8} {r['labelled']:>5} {r['correct']:>8} "
+                f"{r['incorrect']:>9} {r['corrected']:>9} {pct:>6}")
+    lines = ["end-to-end eval (latest label per turn):",
+             f"  {'kind':<8} {'turns':>5} {'correct':>8} "
+             f"{'incorrect':>9} {'retried':>9} {'rate':>6}"]
+    lines += [row(k, r) for k, r in rep["kinds"].items()]
+    lines.append(row("total", rep["total"]))
+    g = rep["gate"]
+    if g["status"] == "unset":
+        lines.append("gate not set — set [eval] gate_rate to enable")
+    else:
+        msg = (f"gate {g['status']}: needs {100 * g['rate']:.0f}% over "
+               f"{g['min_turns']}+ turns")
+        if g["needs"]:
+            msg += f" — needs {g['needs']} more labelled turns"
+        lines.append(msg)
+    return "\n".join(lines)
 
 
 _CUES = ("no", "nope", "wrong", "that's wrong", "didn't work",

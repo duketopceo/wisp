@@ -219,7 +219,7 @@ class TestJson(unittest.TestCase):
     MATRIX = [
         (["status"], True), (["stop"], True), (["interrupt"], True),
         (["choice", "a"], True), (["context"], True),
-        (["label", "set", "correct"], True), (["label", "report"], False),
+        (["label", "set", "correct"], True), (["eval"], False),
         (["task", "list"], False), (["task", "status", "a"], True),
         (["task", "cancel", "a"], True), (["task", "run", "x"], True),
         (["memory", "edit", "a|b|c|d"], True),

@@ -186,7 +186,6 @@ SCENARIOS = [
     ("choice_bad_index", ["choice", "--index", "x"], None, True, False),
     ("label_set", ["label", "correct", "was", "right"],
      ["label", "set", "correct", "was", "right"], True, False),
-    ("label_report", ["label"], ["label", "report"], False, False),
     ("label_offline", ["label", "correct"],
      ["label", "set", "correct"], False, False),
     ("context", ["context"], None, True, False),

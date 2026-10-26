@@ -181,8 +181,9 @@ router decides and the turn goes on. Provider sections and flags are in
 ## Learning
 
 Every run can be labelled (`wispd label set correct|incorrect`, or the
-`good` and `wrong` buttons). Labels measure routing accuracy
-(`wispd label report`). `wispd learn fails` lists logged failures.
+`good` and `wrong` buttons). `wispd eval` scores the labels
+by turn kind (answer, act, launch, dictate, agent) and checks the
+`[eval]` gate. `wispd learn fails` lists logged failures.
 
 ## Privacy
 
@@ -228,7 +229,7 @@ verbs and examples. Add `--json` for machine-readable output.
 | `wispd memory edit` | edit the MEMORY and USER notes |
 | `wispd dictate correct` / `wispd dictate list` | teach a heard->meant dictation correction, or show them |
 | `wispd suggest list` | suggestions mined from your activity |
-| `wispd label set` / `wispd label report` | label a run, or the per-route report |
+| `wispd label set` / `wispd eval` | label a run, or score your labels by turn kind |
 | `wispd context` | what the daemon sees right now |
 | `wispd learn fails` | logged failures |
 | `wispd skills list` | installed skills |

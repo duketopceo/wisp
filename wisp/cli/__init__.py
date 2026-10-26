@@ -27,7 +27,7 @@ def load_groups():
         ("Pointer and notifications", ["cua", "notify"]),
         ("Agents and memory", ["task", "memory", "dictate", "suggest",
                                "label", "context"]),
-        ("Learning", ["learn", "skills"]),
+        ("Learning", ["learn", "eval", "skills"]),
         ("Settings", ["config", "theme", "connect", "sync", "inventory",
                       "completion"]),
     ]
@@ -92,7 +92,7 @@ ALIASES = {
     "install": _to("daemon", "install"),
     "harness": _to("daemon", "harness"),
     "subscribe": _to("watch"),
-    "label": _grp("label", "set", "report"),
+    "label": _grp("label", "set"),
     "tasks": _to("task", "list"),
     "task_status": _to("task", "status"),
     "task_cancel": _to("task", "cancel"),

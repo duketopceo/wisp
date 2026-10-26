@@ -37,6 +37,7 @@ Agents and memory:
 
 Learning:
   learn        Failure log
+  eval         End-to-end eval: first-time-correct rate per turn kind
   skills       Installed skills
 
 Settings:
