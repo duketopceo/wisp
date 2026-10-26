@@ -1,8 +1,8 @@
 # Roadmap
 
 Where wisp stands and what happens next. The plan of record is
-`docs/plans/2026-10-25-1625-feat-wisp-heyclicky-linux-roadmap-plan.md`;
-the top-level `ROADMAP.md` lists its phases. `docs/research/heyclicky-features.md`
+`docs/plans/2026-10-26-0031-feat-wisp-v1-roadmap-plan.md`;
+the top-level `ROADMAP.md` lists its phases in order. `docs/research/heyclicky-features.md`
 and `docs/research/2026-10-25-*.md` hold the competitor and state research
 it builds on.
 

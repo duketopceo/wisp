@@ -1,7 +1,7 @@
 # Wisp Roadmap
 
-State: **v0.9 released. Wisp is being cut down to HeyClicky for Linux, then made to work end to end on OpenRouter alone.**
-Last updated: 2026-10-25. Plan of record: `docs/plans/2026-10-25-1625-feat-wisp-heyclicky-linux-roadmap-plan.md`.
+State: **Phases 1–4 are on `master`. Next: put `master` on the desktop, make install and speech-to-text hosted by default, then fix act turns.**
+Last updated: 2026-10-26. Plan of record: `docs/plans/2026-10-26-0031-feat-wisp-v1-roadmap-plan.md`.
 
 ## Product target
 
@@ -9,37 +9,48 @@ A push-to-talk voice companion for Hyprland/Omarchy. You hold the hotkey and spe
 
 Fixed decisions:
 
-- Local model servers are opt-in and off (`[local] enabled`). OpenRouter is the default backend.
-- Linux only. No Windows or macOS port work.
-- The training/eval stack goes. One end-to-end eval replaces it as the v1 gate.
-- The Rust core in `rs/` is frozen: it stays in the tree with no parity requirement.
+- Hosted models only. Local model servers are opt-in and off (`[local] enabled`).
+- Linux only.
+- One end-to-end eval (`wispd eval`) is the v1 gate.
+- The Rust core in `rs/` is frozen.
+- No decision model on the routing path: turns go to the act loop, and the regex heuristic becomes a fast path in Phase 5.
 
-## Phases
+## Shipped
 
-Each phase is one PR. The plan of record holds the detail, dependencies and sizes.
+1. OpenRouter-only defaults and the act router (#139).
+2. Agent safety and routines: IPC read/mutate split, truthful task outcomes, CLI and voice-taught routines (#141).
+3. Linux-only code, CI and releases (#143).
+4. Training stack removed; `wispd eval` added (#144).
 
-1. Local models opt-in, act router as the default, unwired lane/grant modules deleted, research docs on master, this roadmap.
-2. Salvage the agent substrate from closed PR #138: IPC read/mutate split, truthful task outcomes, CLI and voice-taught routines.
-3. Remove Windows/macOS code, tests, CI targets and docs.
-4. Remove the training/eval stack and build the end-to-end eval on the turn-replay harness.
-5. Remove the Jev decision router and its decisions endpoint.
-6. Hosted speech-to-text as the default, a clean-box install, and redeploys from git.
-7. Wire the HeyClicky core: walkthrough overlay, drawing, pointing in sync with speech, label-first snapping, per-app history, sensitive-window suppression, streaming speech-to-text.
-8. Agent hardening: scrubbed spawn environment, deferred auth, journaled organize with undo, skills export.
-9. Act quality fixes driven by the labelled failures.
+Also: CI flake root causes (#142).
+
+## Next, in order
+
+Each is one PR, planned when it starts.
+
+1. **Redeploy** — install `master` to the desktop and restart `wispd`, so new labels measure current code.
+2. **Phase 6 · Hosted install** — hosted speech-to-text default, onboarding asks for keys, `wispd install` redeploys from a git ref, clean-box check.
+3. **Phase 9 · Act quality** — fix the top act failures from `wispd eval` (default-app resolution, wrong-coordinate clicks, launch-instead-of-navigate).
+4. **Phase 7 · HeyClicky surfaces** — pointing timed to speech, drawing overlay, walkthroughs with label-first snapping, per-app history, sensitive-window skip, streaming speech-to-text, barge-in.
+5. **Phase 5 · Router fast path** — remove the Jev router and its shadow/replay/A-B tooling; the heuristic routes unambiguous launches and questions directly, everything else goes to act.
+6. **Phase 8 · Agent hardening** — scrub Wisp-held credentials from spawned agents' environment.
 
 ## v1.0 gate
 
-- [ ] At least 50 labelled end-to-end turns on an OpenRouter-only config, scored by `wispd eval`, at a correct rate the owner sets.
-- [ ] `wispd onboard` and `wispd doctor` pass on a clean Omarchy box with no local services and no `~/src/whisper.cpp`.
-- [ ] Every module under `wisp/` has a production caller or is gone.
+- [ ] `wispd eval` passes `[eval] gate_rate` over at least 50 labelled turns.
+- [ ] `wispd onboard` and `wispd doctor` pass on a clean Omarchy box with hosted keys only.
 - [ ] Tag `v1.0.0`.
 
-Current state (`wispd eval`, 2026-10-26): 19 labelled turns, 32% right first time — act 27% (3 of 11), answer 0 of 2, launch 1 of 2; 8 turns needed a retry.
+Tally (`wispd eval`, 2026-10-26): 19 labelled turns, 6 right first time (32%) — act 3/11 (7 retried), answer 0/2, launch 1/2, other 2/4. Gate not set.
+
+## Open decisions
+
+- **Pass rate.** Recommended: `gate_rate = "60%"` now, raised after Phase 9.
+- **Clacky extras.** Recommended: keep streaming speech-to-text and barge-in; drop journaled organize, skills export and deferred auth for v1.
 
 ## Not doing
 
 - Local-first operation, local model ladders or backend toggles.
 - Model training, distillation or per-route soak tooling.
 - Cross-platform ports.
-- Rebasing onto clacky's codebase. Wisp takes its patterns, not its code.
+- A decision model (Jev or pplx) in front of routing.
