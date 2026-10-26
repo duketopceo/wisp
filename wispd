@@ -887,9 +887,14 @@ def install_bind(cfg: dict) -> None:
         print("removed dead bind from hyprland.conf (not sourced under Lua)")
 
     bindings = config.HOME / ".config" / "hypr" / "bindings.lua"
+    if not bindings.parent.is_dir():
+        print("no ~/.config/hypr, skipped the hotkey bind")
+        return
     text = bindings.read_text() if bindings.exists() else ""
     target_combo = f"{mod} + {key.upper()}"
-    conflicts = [l.strip() for l in text.splitlines() if target_combo in l.upper() and "wisp-trigger" not in l]
+    conflicts = [l.strip() for l in text.splitlines()
+                 if target_combo in l.upper() and "wisp-trigger" not in l
+                 and not l.lstrip().startswith("--")]
     if conflicts:
         print(f"⚠️  WARNING: Hotkey {target_combo} is already in use in {bindings}:")
         for c in conflicts[:2]:
