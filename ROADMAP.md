@@ -30,12 +30,12 @@ Each phase is one PR. The plan of record holds the detail, dependencies and size
 
 ## v1.0 gate
 
-- [ ] At least 50 labelled end-to-end turns on an OpenRouter-only config, scored by the Phase 4 eval, at a correct rate the owner sets.
+- [ ] At least 50 labelled end-to-end turns on an OpenRouter-only config, scored by `wispd eval`, at a correct rate the owner sets.
 - [ ] `wispd onboard` and `wispd doctor` pass on a clean Omarchy box with no local services and no `~/src/whisper.cpp`.
 - [ ] Every module under `wisp/` has a production caller or is gone.
 - [ ] Tag `v1.0.0`.
 
-Current hand labels: 14 correct, 22 incorrect and 8 corrected by retry, out of 44 turns.
+Current state (`wispd eval`, 2026-10-26): 19 labelled turns, 32% right first time — act 27% (3 of 11), answer 0 of 2, launch 1 of 2; 8 turns needed a retry.
 
 ## Not doing
 

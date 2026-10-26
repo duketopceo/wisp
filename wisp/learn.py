@@ -1,25 +1,21 @@
-"""Weekly learning loop: corrections -> staged criteria proposals.
+"""Learning helpers: the correct/incorrect label store, correction and
+retry context, the fails report, and verdict-weighted trajectory evidence.
 
-Every clarify-widget pick is logged to corrections.jsonl by the pipeline.
-`weekly()` aggregates a week of corrections plus low-confidence decisions
-into a human-reviewable proposal; `approve()` merges approved criteria
-overrides into ~/.config/wisp/criteria_overrides.json, which
-build_questions applies on top of the catalog. Nothing auto-applies —
-the loop is human-gated by design.
+Every clarify-widget pick is logged to corrections.jsonl by the pipeline
+(`record_correction`); recall re-indexes that file on rebuild.
 """
 import json
-from datetime import datetime, timedelta, timezone
+import math
+from datetime import datetime, timezone
 
 from . import config
 
-OVERRIDES_FILE = config.CFG_DIR / "criteria_overrides.json"
-PROPOSALS_DIR = config.DATA_DIR / "proposals"
 LABELS_FILE = config.DATA_DIR / "labels.jsonl"
 
 
 def label_last(label: str, note: str = "") -> str:
     """Tag the most recent decisions.jsonl turn correct/incorrect —
-    the soak's intent-match metric reads labels.jsonl keyed by `ref`."""
+    `wispd eval` reads labels.jsonl keyed by `ref`."""
     label = {"ok": "correct", "good": "correct",
              "bad": "incorrect"}.get(label, label)
     if label not in ("correct", "incorrect"):
@@ -46,30 +42,132 @@ def label_last(label: str, note: str = "") -> str:
     return f"labeled {label}: {ref}"
 
 
-def soak_stats() -> str:
-    """Per-route intent-match from labels.jsonl joined to
-    decisions.jsonl on ts — the v1.0 soak metric (≥85% per route)."""
-    decs = {d.get("ts"): d for d in _read_jsonl(config.DECISIONS)}
-    by_ref = {}
-    for lab in _read_jsonl(LABELS_FILE):
-        if lab.get("ref"):
-            by_ref[lab["ref"]] = lab.get("label", "")
-    per_route = {}
-    for ref, lab in by_ref.items():
-        route = ((decs.get(ref) or {}).get("answers", {})
-                 .get("route", {}) or {}).get("choice", "?")
-        ok, tot = per_route.get(route, (0, 0))
-        per_route[route] = (ok + (lab == "correct"), tot + 1)
-    if not per_route:
-        return "no labels yet — use `wispd label correct|incorrect`"
-    lines, (ok_all, tot_all) = [], (0, 0)
-    for route, (ok, tot) in sorted(per_route.items()):
-        lines.append(f"  {route:<10} {ok}/{tot} correct "
-                     f"({100 * ok / tot:.0f}%)")
-        ok_all, tot_all = ok_all + ok, tot_all + tot
-    lines.append(f"  {'total':<10} {ok_all}/{tot_all} "
-                 f"({100 * ok_all / tot_all:.0f}%) — gate: 85%")
-    return "soak intent-match:\n" + "\n".join(lines)
+# Result-string prefix -> turn kind. These are exactly the prefixes the
+# dispatch emits: ANSWERED (stage_execute answer route), ACTED (act loop),
+# LAUNCHED (tools/desktop launch), DICTATED / INSERTED / TYPED
+# (dictate.run's insert paths), SPAWNED (agents.spawn). Anything else
+# (BLOCKED, SKIP, ERROR, ABORTED, CANCELLED, INTERRUPTED, tool results
+# like SHOT/CLOSED/FOCUSED, or an unknown/missing decision) is "other".
+# Keyed on the result, never the router, so it works under any router.
+_KIND_PREFIXES = (
+    ("ANSWERED", "answer"), ("ACTED", "act"), ("LAUNCHED", "launch"),
+    ("DICTATED", "dictate"), ("INSERTED", "dictate"),
+    ("TYPED", "dictate"), ("CORRECTED", "dictate"), ("SPAWNED", "agent"),
+)
+KINDS = ("answer", "act", "launch", "dictate", "agent", "other")
+
+
+def turn_kind(result: str) -> str:
+    """Map a decisions.jsonl `result` string to a turn kind (see the
+    prefix table above)."""
+    if not isinstance(result, str):
+        return "other"
+    for prefix, kind in _KIND_PREFIXES:
+        if result.startswith(prefix):
+            return kind
+    return "other"
+
+
+def _tally(rows: dict, kind: str, label: str) -> None:
+    r = rows.setdefault(kind, {"labelled": 0, "correct": 0,
+                               "incorrect": 0, "corrected": 0})
+    r["labelled"] += 1
+    if label == "correct":
+        r["correct"] += 1
+    elif label == "corrected-by-retry":
+        r["corrected"] += 1
+    else:
+        r["incorrect"] += 1
+
+
+def _rate(r: dict):
+    return r["correct"] / r["labelled"] if r["labelled"] else None
+
+
+def eval_report(cfg: dict | None = None, decisions_file=None,
+                labels_file=None) -> dict:
+    """End-to-end outcome eval: labels.jsonl joined to decisions.jsonl
+    on `ref` == decision `ts`. A turn's outcome is its latest label
+    (correct | incorrect | corrected-by-retry; the last counts as not
+    right first time). Returns per-kind and total counts plus the gate
+    state from `[eval] gate_rate` / `gate_min_turns`."""
+    decs = {d.get("ts"): d for d in _read_jsonl(
+        decisions_file or config.DECISIONS)}
+    latest = {}
+    for lab in _read_jsonl(labels_file or LABELS_FILE):
+        ref, label = lab.get("ref"), lab.get("label", "")
+        if ref and isinstance(ref, str) and isinstance(label, str):
+            latest[ref] = label
+    rows, total = {}, {"labelled": 0, "correct": 0, "incorrect": 0,
+                       "corrected": 0}
+    for ref, label in latest.items():
+        kind = turn_kind((decs.get(ref) or {}).get("result", ""))
+        _tally(rows, kind, label)
+    for r in rows.values():
+        for k in ("labelled", "correct", "incorrect", "corrected"):
+            total[k] += r[k]
+    for r in rows.values():
+        r["rate"] = _rate(r)
+    total["rate"] = _rate(total)
+    kinds = {k: rows[k] for k in KINDS if k in rows}
+
+    ecfg = (cfg or {}).get("eval", {}) or {}
+    try:
+        min_turns = max(1, int(ecfg.get("gate_min_turns", 50)))
+    except (TypeError, ValueError):
+        min_turns = 50
+    rawv = ecfg.get("gate_rate", "")
+    raw = "" if rawv is None else str(rawv).strip()
+    gate_rate, invalid = None, False
+    if raw:
+        try:
+            if isinstance(rawv, bool):
+                raise ValueError(raw)
+            gate_rate = (float(raw[:-1]) / 100 if raw.endswith("%")
+                         else float(raw))
+            if not (math.isfinite(gate_rate) and 0 <= gate_rate <= 1):
+                raise ValueError(raw)
+        except ValueError:
+            gate_rate, invalid = None, True
+    gate = {"rate": gate_rate, "min_turns": min_turns,
+            "status": "unset", "needs": 0}
+    if invalid:
+        gate["status"] = "invalid"
+        gate["value"] = raw
+    elif gate_rate is not None:
+        gate["needs"] = max(0, min_turns - total["labelled"])
+        ok = gate["needs"] == 0 and (total["rate"] or 0) >= gate_rate
+        gate["status"] = "PASS" if ok else "FAIL"
+    return {"kinds": kinds, "total": total, "gate": gate}
+
+
+def eval_text(rep: dict) -> str:
+    """Render eval_report for the terminal."""
+    if not rep["total"]["labelled"]:
+        return "no labels yet — use `wispd label set correct|incorrect`"
+
+    def row(name, r):
+        pct = "-" if r["rate"] is None else f"{100 * r['rate']:.0f}%"
+        return (f"  {name:<8} {r['labelled']:>5} {r['correct']:>8} "
+                f"{r['incorrect']:>9} {r['corrected']:>9} {pct:>6}")
+    lines = ["end-to-end eval (latest label per turn):",
+             f"  {'kind':<8} {'turns':>5} {'correct':>8} "
+             f"{'incorrect':>9} {'retried':>9} {'rate':>6}"]
+    lines += [row(k, r) for k, r in rep["kinds"].items()]
+    lines.append(row("total", rep["total"]))
+    g = rep["gate"]
+    if g["status"] == "invalid":
+        lines.append(f"gate invalid: [eval] gate_rate {g['value']!r} is not "
+                     "a number in 0..1 or a percentage like '60%'")
+    elif g["status"] == "unset":
+        lines.append("gate not set — set [eval] gate_rate to enable")
+    else:
+        msg = (f"gate {g['status']}: needs {100 * g['rate']:.0f}% over "
+               f"{g['min_turns']}+ turns")
+        if g["needs"]:
+            msg += f" — needs {g['needs']} more labelled turns"
+        lines.append(msg)
+    return "\n".join(lines)
 
 
 _CUES = ("no", "nope", "wrong", "that's wrong", "didn't work",
@@ -198,19 +296,23 @@ def fails(n: int = 10, decisions_file=config.DECISIONS,
     return "fails (recent first):\n" + "\n".join(rows)
 
 
-def load_overrides(path=OVERRIDES_FILE) -> dict:
-    try:
-        return json.loads(path.read_text())
-    except Exception:
-        return {}
-
-
 def _read_jsonl(path) -> list:
     try:
-        return [json.loads(l) for l in path.read_text().splitlines()
-                if l.strip()]
+        lines = path.read_text(encoding="utf-8",
+                               errors="replace").splitlines()
     except OSError:
         return []
+    out = []
+    for l in lines:
+        if not l.strip():
+            continue
+        try:
+            v = json.loads(l)
+        except ValueError:
+            continue
+        if isinstance(v, dict):
+            out.append(v)
+    return out
 
 
 def record_correction(transcript: str, picked: str, answers: dict,
@@ -229,82 +331,6 @@ def record_correction(transcript: str, picked: str, answers: dict,
             }) + "\n")
     except OSError:
         pass
-
-
-def recent(days: int = 7, corrections_file=config.CORRECTIONS) -> list:
-    """Corrections from the last `days` that carry a pick."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    out = []
-    for rec in _read_jsonl(corrections_file):
-        try:
-            ts = datetime.fromisoformat(rec["ts"])
-        except (KeyError, ValueError):
-            continue
-        if ts >= cutoff and rec.get("picked"):
-            out.append(rec)
-    return out
-
-
-def weekly(days: int = 7, corrections_file=config.CORRECTIONS,
-           decisions_file=config.DECISIONS,
-           out_dir=PROPOSALS_DIR) -> str | None:
-    """Aggregate the last `days` of corrections into a proposal file.
-    Returns the proposal path, or None when there is nothing to propose."""
-    recent_recs = recent(days, corrections_file)
-    if not recent_recs:
-        return None
-    return _write_weekly(recent_recs, days, out_dir)
-
-
-def _write_weekly(recent, days, out_dir):
-    counts = {}
-    for rec in recent:
-        key = rec["picked"]
-        counts[key] = counts.get(key, 0) + 1
-
-    iso_year, iso_week, _ = datetime.now(timezone.utc).isocalendar()
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out = out_dir / f"{iso_year}-W{iso_week:02d}.md"
-    lines = [
-        f"# Wisp learning proposal — {iso_year}-W{iso_week:02d}",
-        "",
-        f"{len(recent)} corrections in the last {days} days.",
-        "",
-        "## Picks",
-        "",
-    ]
-    for rec in recent:
-        lines.append(
-            f"- heard {rec.get('heard')!r} → picked `{rec.get('picked')}`"
-            f" (jev said app={rec.get('jev_said', {}).get('app')})")
-    lines += ["", "## Suggested criteria emphasis", ""]
-    for pick, n in sorted(counts.items(), key=lambda kv: -kv[1]):
-        kind, _, value = pick.partition(":")
-        lines.append(
-            f"- `{value}` chosen {n}x — strengthen its criteria text or "
-            f"add the heard phrases as cues (approve to apply)")
-    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return str(out)
-
-
-def approve(overrides: dict, path=OVERRIDES_FILE) -> None:
-    """Merge human-approved criteria overrides (never auto-applied)."""
-    cur = load_overrides(path)
-    cur.setdefault("app", {}).update(overrides.get("app", {}))
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(cur, indent=2))
-
-
-def apply_overrides(criteria: dict, path=OVERRIDES_FILE) -> dict:
-    """build_questions hook: overlay approved criteria text onto a catalog."""
-    o = load_overrides(path).get("app", {})
-    merged = dict(criteria)
-    for name, cue in o.items():
-        if name in merged:
-            merged[name] = f"{merged[name]} | user-corrected: {cue}"
-        else:
-            merged[name] = f"user-corrected: {cue}"
-    return merged
 
 
 # ---------------------------------------------------------------------

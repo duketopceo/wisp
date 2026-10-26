@@ -158,8 +158,6 @@ and reset by local date:
   Wisp does not go dumb mid-task, unless `[budget] gate_primary = "true"`,
   which stops the primary too.
 - Local models are recorded at zero cost and never gated.
-- Offline batch jobs (`wispd batch`) use cheap models and count against
-  the same caps.
 
 ## Local models
 
@@ -183,11 +181,9 @@ router decides and the turn goes on. Provider sections and flags are in
 ## Learning
 
 Every run can be labelled (`wispd label set correct|incorrect`, or the
-`good` and `wrong` buttons). Labels measure routing accuracy
-(`wispd label report`). A verified multi-step run becomes a `recipe-*`
-skill proposal; `wispd recipes approve <name>` installs it. The weekly
-`wispd learn weekly` stages a criteria proposal from your corrections.
-Everything is staged for you to approve; nothing installs itself.
+`good` and `wrong` buttons). `wispd eval` scores the labels
+by turn kind (answer, act, launch, dictate, agent) and checks the
+`[eval]` gate. `wispd learn fails` lists logged failures.
 
 ## Privacy
 
@@ -233,15 +229,10 @@ verbs and examples. Add `--json` for machine-readable output.
 | `wispd memory edit` | edit the MEMORY and USER notes |
 | `wispd dictate correct` / `wispd dictate list` | teach a heard->meant dictation correction, or show them |
 | `wispd suggest list` | suggestions mined from your activity |
-| `wispd label set` / `wispd label report` | label a run, or the per-route report |
+| `wispd label set` / `wispd eval` | label a run, or score your labels by turn kind |
 | `wispd context` | what the daemon sees right now |
-| `wispd train stats` | training arena stats and skill bank |
-| `wispd review list` | staged reviewer proposals |
-| `wispd learn weekly` | draft a proposal from this week |
+| `wispd learn fails` | logged failures |
 | `wispd skills list` | installed skills |
-| `wispd recipes draft` | draft recipes from past runs |
-| `wispd eval route` | Jev against the heuristic router |
-| `wispd batch status` | offline batch jobs |
 | `wispd config show` / `wispd config set` | read or change config live |
 | `wispd theme` | pick the theme or audit contrast |
 | `wispd connect <service>` | connect an outside service |
@@ -260,7 +251,7 @@ Local, never committed:
   `labels.jsonl`, `trajectories.jsonl`, `usage.jsonl` (the spend
   ledger), `inventory.json`, `corrections.jsonl`, `dictation.json`
   (dictate corrections + per-app counts), `tasks.jsonl`,
-  `skillbank.json`, `proposals/`, `onboard.json`,
+  `onboard.json`,
   `packs/<turn>/` (durable capture packs — `wispd captures`),
   `rec/<turn>/` (transient in-flight recording), `pack.salt`
 - `~/.local/state/wisp/cua.jsonl`: the cua audit log

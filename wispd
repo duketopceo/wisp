@@ -333,10 +333,9 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
                 else "done", reason=result)
             return {"ok": True, "result": result}
         if c == "learn":
-            from wisp import learn
-            p = learn.weekly(7)
-            return {"ok": True,
-                    "result": p if p else "nothing to propose"}
+            # weekly proposals were removed; the verb stays in the IPC
+            # contract as a no-op
+            return {"ok": True, "result": "nothing to propose"}
         if c == "harness":
             try:
                 rc = rebuild_harness()

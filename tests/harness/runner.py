@@ -316,7 +316,7 @@ def _build_fakes(fx: dict) -> dict:
     live = {}
     for name in ("jev", "brain", "whisper"):
         live[name] = fakes.KINDS[name](dict(eps.get(name, {})))
-    for name in ("brain2", "uitars", "openrouter_batch"):
+    for name in ("brain2", "uitars"):
         if name in eps:
             live[name] = fakes.KINDS[name](dict(eps[name]))
     return live

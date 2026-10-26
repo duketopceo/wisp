@@ -1,18 +1,11 @@
-"""Learning and telemetry: train, review, learn, skills, recipes, trace,
-eval."""
-import datetime
+"""Learning and telemetry: learn, skills, trace."""
 import io
 
-from .. import config
-from .registry import CliError, GROUPS, command
+from .registry import GROUPS, command
 
-GROUPS["train"] = "Training arena stats, history and the skill bank"
-GROUPS["review"] = "Staged reviewer proposals"
-GROUPS["learn"] = "Weekly corrections and failure log"
+GROUPS["learn"] = "Failure log"
 GROUPS["skills"] = "Installed skills"
-GROUPS["recipes"] = "Recipes drafted from past runs"
 GROUPS["trace"] = "Turn trace and daily digest"
-GROUPS["eval"] = "Route agreement and candidate-router replay"
 
 _TEXT = {"text": "str"}
 
@@ -21,91 +14,20 @@ def _text(ctx, s):
     return ctx.emit({"text": s}, s)
 
 
-@command("train stats", "Arena run counts and pass rates",
-         ["wispd train stats"], _TEXT)
-def train_stats(ctx, a):
-    from .. import train
-    return _text(ctx, train.stats_text())
-
-
-@command("train history", "Recent arena runs",
-         ["wispd train history"], _TEXT)
-def train_history(ctx, a):
-    from .. import train
-    return _text(ctx, train.history_text())
-
-
-@command("train bank", "Patterns in the skill bank",
-         ["wispd train bank"], _TEXT)
-def train_bank(ctx, a):
-    from .. import train
-    return _text(ctx, train.bank_text())
-
-
-@command("train rebuild", "Rebuild the skill bank from every logged run",
-         ["wispd train rebuild"], _TEXT)
-def train_rebuild(ctx, a):
-    from .. import train
-    return _text(ctx, f"rebuilt skill bank — {len(train.replay_all())}"
-                      " patterns")
-
-
-@command("review list", "List staged reviewer proposals",
-         ["wispd review list"], _TEXT)
-def review_list(ctx, a):
-    from .. import review
-    return _text(ctx, review.list_text())
-
-
-def _run_args(p):
-    p.add_argument("n", nargs="?", type=int, default=10,
-                   help="runs to review (default 10)")
-
-
-@command("review run", "Run the reviewer over the latest runs",
-         ["wispd review run 20"], _TEXT, args=_run_args)
-def review_run(ctx, a):
-    from .. import review
-    r = review.run(ctx.cfg, limit=a.n)
-    lines = [f"reviewed {r['reviewed']} → {r['proposed']} proposals"
-             + (f", {r['skipped']} skipped" if r["skipped"] else "")]
-    lines += [f"  - {n}" for n in r["notes"][:5]]
-    return _text(ctx, "\n".join(lines))
-
-
-def _idx_args(p):
-    p.add_argument("n", nargs="?", type=int, default=0,
-                   help="proposal number from `review list`")
-
-
-@command("review approve", "Approve a proposal into the skill bank",
-         ["wispd review approve 3"], _TEXT, args=_idx_args)
-def review_approve(ctx, a):
-    from .. import review
-    return _text(ctx, review.approve(a.n))
-
-
-@command("review reject", "Reject a staged proposal",
-         ["wispd review reject 3"], _TEXT, args=_idx_args)
-def review_reject(ctx, a):
-    from .. import review
-    return _text(ctx, review.reject(a.n))
-
-
-@command("learn weekly", "Draft a proposal from this week's corrections",
-         ["wispd learn weekly"], _TEXT)
-def learn_weekly(ctx, a):
-    from .. import learn
-    out = learn.weekly()
-    return _text(ctx, out if out
-                 else "no corrections this week — nothing to propose")
-
-
 @command("learn fails", "Show logged failures",
          ["wispd learn fails"], _TEXT)
 def learn_fails(ctx, a):
     from .. import learn
     return _text(ctx, learn.fails())
+
+
+@command("eval", "End-to-end eval: first-time-correct rate per turn kind",
+         ["wispd eval", "wispd eval --json"],
+         {"kinds": "dict", "total": "dict", "gate": "dict"})
+def eval_cmd(ctx, a):
+    from .. import config, learn
+    rep = learn.eval_report(config.load_config())
+    return ctx.emit(rep, learn.eval_text(rep))
 
 
 @command("skills list", "List installed skills",
@@ -131,39 +53,6 @@ def _import_args(p):
 def skills_import(ctx, a):
     from .. import skills
     return _text(ctx, skills.import_dir(a.dir, preview=a.list))
-
-
-@command("recipes draft", "Draft recipes from past runs",
-         ["wispd recipes draft"], {"drafted": "list"})
-def recipes_draft(ctx, a):
-    from .. import trajectories
-    out = [str(p) for p in trajectories.propose_recipes()]
-    return ctx.emit({"drafted": out},
-                    "\n".join(f"drafted {p}" for p in out) or None)
-
-
-def _approve_args(p):
-    p.add_argument("name", help="recipe-... name from `recipes draft`")
-
-
-@command("recipes approve", "Install a drafted recipe as a skill",
-         ["wispd recipes approve recipe-open-notes"], {"installed": "str"},
-         args=_approve_args)
-def recipes_approve(ctx, a):
-    from .. import skills as sk
-    src = config.DATA_DIR / "proposals" / f"{a.name}.md"
-    if not a.name.startswith("recipe-") or not src.exists():
-        raise CliError("E_USAGE", "That is not a drafted recipe.",
-                       "wispd recipes draft")
-    dest = sk.SKILLS_DIR / a.name
-    dest.mkdir(parents=True, exist_ok=True)
-    body = src.read_text()
-    body += ("\n<!-- approved by wispd recipes approve "
-             f"{datetime.datetime.now(datetime.timezone.utc).isoformat()}"
-             " — human-gated install -->\n")
-    (dest / "SKILL.md").write_text(body)
-    sk.write_index_json()
-    return ctx.emit({"installed": a.name}, f"installed {a.name}")
 
 
 def _show_args(p):
@@ -204,52 +93,6 @@ def _hours_args(p):
 def trace_digest(ctx, a):
     from .. import telemetry
     return _text(ctx, telemetry.text(a.hours))
-
-
-def _route_args(p):
-    p.add_argument("limit", nargs="?", type=int, default=0,
-                   help="turns to read (default all)")
-    p.add_argument("--replay", action="store_true",
-                   help="replay logged decisions through candidate "
-                        "models on OpenRouter (paid, orchestral key)")
-    p.add_argument("--decisions", action="store_true",
-                   help="with --replay: use /api/alpha/decisions "
-                        "(decision models, default list)")
-    p.add_argument("--models", nargs="+", default=None,
-                   help="with --replay: model id(s) to score")
-    p.add_argument("--out", default="", metavar="PATH",
-                   help="write full per-case JSON (includes transcripts)")
-    p.add_argument("--route-only", action="store_true",
-                   help="with --decisions: skip joint clarify/risky "
-                        "questions")
-
-
-_ROUTE_SCHEMA = {"turns": "int", "jev_answered": "int", "agreed": "int",
-                 "agreement": "float|null", "overrides": "int",
-                 "jev_status": "dict", "final_source": "dict",
-                 "jev_ms": "dict", "heuristic_ms": "dict",
-                 "disagreements": "list"}
-
-
-@command("eval route", "Jev vs heuristic route agreement and latency",
-         ["wispd eval route", "wispd eval route 100 --json",
-          "wispd eval route --replay 50",
-          "wispd eval route --replay --decisions --out replay.json"],
-         _ROUTE_SCHEMA,
-         args=_route_args)
-def eval_route(ctx, a):
-    if a.replay:
-        from .. import evalroute
-        if a.decisions:
-            return _text(ctx, evalroute.run_decisions(
-                ctx.cfg, models=a.models, limit=a.limit,
-                joint=not a.route_only,
-                out_path=a.out or None))
-        return _text(ctx, evalroute.run(
-            ctx.cfg, models=a.models, limit=a.limit))
-    from .. import route
-    rep = route.ab_report(route.load_ab(a.limit))
-    return ctx.emit(rep, route.ab_text(rep))
 
 
 def _capture(ctx, fn):
