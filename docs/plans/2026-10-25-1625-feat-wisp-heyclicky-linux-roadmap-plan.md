@@ -9,6 +9,8 @@ execution: code
 
 # Wisp HeyClicky-for-Linux Roadmap - Plan
 
+> Superseded for every unshipped phase by `docs/plans/2026-10-26-0031-feat-wisp-v1-roadmap-plan.md`. Phases 1–4 shipped as #139, #141, #143 and #144; this plan remains their record.
+
 ## Goal Capsule
 
 - **Objective:** On a Linux (Hyprland/Omarchy) desktop with only an OpenRouter key, a user holds the hotkey, speaks, and Wisp answers by voice while pointing and drawing on screen, walks them through multi-step tasks, and runs background agents and routines — with no local model servers and no dormant code claiming features that do not run.
