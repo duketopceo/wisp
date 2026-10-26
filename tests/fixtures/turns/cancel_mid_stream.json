@@ -34,7 +34,7 @@
       ]
     }
   },
-  "interrupt_after_ms": 500,
+  "interrupt_after_first_delta_ms": 100,
   "expect": {
     "statuses": [
       "listening",

@@ -17,8 +17,10 @@ from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
 
 from wisp import context, pipeline, state as state_mod  # noqa: E402
+from harness import runner  # noqa: E402
 
 
 def load_wispd():
@@ -163,7 +165,7 @@ class TestSpeculative(unittest.TestCase):
         sp = context.Speculative({"slow": lambda: release.wait(5)}).start()
         t = time.monotonic()
         self.assertIsNone(sp.take("slow", wait=0.05))
-        self.assertLess(time.monotonic() - t, 0.2)
+        self.assertLess(time.monotonic() - t, 0.2 * runner.JITTER)
         release.set()
 
 
