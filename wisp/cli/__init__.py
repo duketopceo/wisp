@@ -50,6 +50,11 @@ def _grp(group, default, bare=None):
     return fn
 
 
+def _label(rest):
+    """Bare `wispd label` shows the eval; `wispd label <outcome>` sets."""
+    return ["eval"] if not rest else _grp("label", "set")(rest)
+
+
 def _to(*tokens):
     return lambda rest: list(tokens) + rest
 
@@ -92,7 +97,7 @@ ALIASES = {
     "install": _to("daemon", "install"),
     "harness": _to("daemon", "harness"),
     "subscribe": _to("watch"),
-    "label": _grp("label", "set"),
+    "label": _label,
     "tasks": _to("task", "list"),
     "task_status": _to("task", "status"),
     "task_cancel": _to("task", "cancel"),

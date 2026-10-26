@@ -198,5 +198,42 @@ class TestEvalCli(EvalBase):
         self.assertIn("answer", out)
 
 
+class TestEvalMalformedInput(EvalBase):
+    def test_non_string_result_counts_as_other(self):
+        with self.decs.open("a") as f:
+            f.write(json.dumps({"ts": "N1", "result": 7}) + "\n")
+            f.write(json.dumps({"ts": "N2", "result": True}) + "\n")
+        self.lab("N1", "correct")
+        self.lab("N2", "incorrect")
+        r = self.report()
+        self.assertEqual(r["kinds"]["other"]["labelled"], 2)
+
+    def test_malformed_ref_and_label_rows_are_skipped(self):
+        self.dec("G1", "ANSWERED")
+        self.lab("G1", "correct")
+        with self.labs.open("a") as f:
+            f.write(json.dumps({"ref": ["x"], "label": "correct"}) + "\n")
+            f.write(json.dumps({"ref": "G1", "label": 5}) + "\n")
+        r = self.report()
+        self.assertEqual(r["total"]["labelled"], 1)
+        self.assertEqual(r["total"]["correct"], 1)
+
+    def test_undecodable_bytes_are_skipped(self):
+        self.dec("U1", "ANSWERED")
+        self.lab("U1", "correct")
+        with self.labs.open("ab") as f:
+            f.write(b"\xff\xfe not utf-8\n")
+        r = self.report()
+        self.assertEqual(r["total"]["labelled"], 1)
+
+
+class TestBareLabelAlias(unittest.TestCase):
+    def test_bare_label_shows_the_eval(self):
+        from wisp import cli
+        self.assertEqual(cli.ALIASES["label"]([]), ["eval"])
+        self.assertEqual(cli.ALIASES["label"](["correct"]),
+                         ["label", "set", "correct"])
+
+
 if __name__ == "__main__":
     unittest.main()

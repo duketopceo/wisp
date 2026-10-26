@@ -60,8 +60,10 @@ KINDS = ("answer", "act", "launch", "dictate", "agent", "other")
 def turn_kind(result: str) -> str:
     """Map a decisions.jsonl `result` string to a turn kind (see the
     prefix table above)."""
+    if not isinstance(result, str):
+        return "other"
     for prefix, kind in _KIND_PREFIXES:
-        if (result or "").startswith(prefix):
+        if result.startswith(prefix):
             return kind
     return "other"
 
@@ -93,8 +95,9 @@ def eval_report(cfg: dict | None = None, decisions_file=None,
         decisions_file or config.DECISIONS)}
     latest = {}
     for lab in _read_jsonl(labels_file or LABELS_FILE):
-        if lab.get("ref"):
-            latest[lab["ref"]] = lab.get("label", "")
+        ref, label = lab.get("ref"), lab.get("label", "")
+        if ref and isinstance(ref, str) and isinstance(label, str):
+            latest[ref] = label
     rows, total = {}, {"labelled": 0, "correct": 0, "incorrect": 0,
                        "corrected": 0}
     for ref, label in latest.items():
@@ -295,7 +298,8 @@ def fails(n: int = 10, decisions_file=config.DECISIONS,
 
 def _read_jsonl(path) -> list:
     try:
-        lines = path.read_text().splitlines()
+        lines = path.read_text(encoding="utf-8",
+                               errors="replace").splitlines()
     except OSError:
         return []
     out = []
