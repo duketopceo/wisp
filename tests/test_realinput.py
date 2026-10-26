@@ -76,6 +76,9 @@ class EvdevWatch(unittest.TestCase):
         os.close(self._opened.pop(0))      # writer gone → read EOFs
         self.assertTrue(_wait_for(lambda: w.mode == "off"))
         self.assertEqual(w._fds, [])
+        # mode flips before the thread returns (sel.close() runs in its
+        # finally): synchronize on exit, don't race it
+        w._thread.join(timeout=2)
         self.assertFalse(w._thread.is_alive())
 
     def test_one_dead_fd_leaves_the_rest_watching(self):

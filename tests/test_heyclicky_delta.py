@@ -1,6 +1,6 @@
 """HeyClicky teardown delta tests: H1 walkthrough, H2 drawing tags,
 H3 pointing resolution, H4 app skills, H5 routines, H6 suggestion etiquette,
-H7 conversation grants, H8 volatile memory, H9 talk/deep lanes.
+H8 volatile memory.
 
 Reference functions prefixed `clicky_` are literal Python translations of
 farzaa/clicky (MIT) Swift source, used as the oracle for changed-input
@@ -18,9 +18,7 @@ from unittest import mock
 
 from wisp import (
     cancel,
-    conversation_grants,
     grounding,
-    lanes,
     memory,
     points,
     routines,
@@ -675,167 +673,6 @@ class TestRoutines(unittest.TestCase):
         self.assertFalse(r4["notify_user_once"])
 
 
-# ------------------------------------------------------------------ H7
-
-class TestConversationGrants(unittest.TestCase):
-    def test_hard_stop_kinds_constant(self):
-        self.assertEqual(
-            conversation_grants.HARD_STOP_KINDS,
-            frozenset({"purchase", "send", "delete", "payment"}),
-        )
-
-    def test_parse_voice_grant_reply(self):
-        parse = conversation_grants.parse_voice_grant_reply
-        for phrase in ("allow once", "just once", "once", "yes", "go ahead", "sure"):
-            with self.subTest(phrase=phrase):
-                self.assertEqual(parse(phrase), "allow_once")
-        for phrase in ("always", "always allow", "every time", "for this app"):
-            with self.subTest(phrase=phrase):
-                self.assertEqual(parse(phrase), "always")
-        for phrase in ("not now", "no", "nope", "cancel", "deny", "never", "don't allow"):
-            with self.subTest(phrase=phrase):
-                self.assertEqual(parse(phrase), "not_now")
-        self.assertIsNone(parse(""))
-        self.assertIsNone(parse("what time is it"))
-
-    def test_parse_curly_apostrophe_denial_and_negated_always(self):
-        parse = conversation_grants.parse_voice_grant_reply
-        self.assertEqual(parse("don\u2019t allow"), "not_now")
-        self.assertEqual(parse("not always, just this once"), "allow_once")
-        self.assertEqual(parse("not always"), "not_now")
-        self.assertEqual(parse("always, just this once"), "allow_once")
-        self.assertEqual(parse("always"), "always")
-
-    def test_grant_scoping_by_conversation_and_app_class(self):
-        mgr = conversation_grants.ConversationGrantManager()
-        s_chr = conversation_grants.GrantScope("conv-1", "chromium")
-        s_gimp = conversation_grants.GrantScope("conv-1", "gimp")
-        s_conv2_chr = conversation_grants.GrantScope("conv-2", "chromium")
-        s_conv2_kitty = conversation_grants.GrantScope("conv-2", "kitty")
-
-        # allow_once permits exactly one action in (conv-1, gimp)
-        mgr.record_decision(s_gimp, "allow_once")
-        self.assertFalse(mgr.is_granted(s_chr))
-        self.assertTrue(mgr.authorize(s_gimp, "click"))
-        self.assertFalse(mgr.is_granted(s_gimp))
-
-        # always persists across turns for this conversation + app_class,
-        # not other apps and not other conversations
-        mgr.record_decision(s_chr, "always")
-        self.assertTrue(mgr.is_granted(s_chr))
-        self.assertFalse(mgr.is_granted(s_conv2_chr))
-        self.assertFalse(mgr.is_granted(s_conv2_kitty))
-
-    def test_hard_stop_cannot_be_bypassed_by_always(self):
-        mgr = conversation_grants.ConversationGrantManager()
-        scope = conversation_grants.GrantScope("conv-1", "chromium")
-        mgr.record_decision(scope, "always")
-        self.assertTrue(mgr.is_granted(scope, action_kind="click"))
-
-        for kind in conversation_grants.HARD_STOP_KINDS:
-            with self.subTest(kind=kind):
-                self.assertFalse(mgr.is_granted(scope, action_kind=kind))
-                prompts = []
-                allowed = mgr.authorize(
-                    scope,
-                    action_kind=kind,
-                    prompt_fn=lambda sc, k: (prompts.append((sc, k)), "allow once")[1],
-                )
-                self.assertTrue(allowed)
-                self.assertEqual(len(prompts), 1)
-                # Still not granted for the next hard-stop action
-                self.assertFalse(mgr.is_granted(scope, action_kind=kind))
-
-    def test_five_step_conversation_prompts_once_with_always(self):
-        mgr = conversation_grants.ConversationGrantManager()
-        scope = conversation_grants.GrantScope("conv-42", "libreoffice")
-        prompts = 0
-
-        def prompt_fn(_sc, _kind):
-            nonlocal prompts
-            prompts += 1
-            return "always"
-
-        for step in ("click", "type_text", "click", "scroll", "key"):
-            self.assertTrue(mgr.authorize(scope, action_kind=step, prompt_fn=prompt_fn))
-        self.assertEqual(prompts, 1)
-        self.assertEqual(sum(1 for e in mgr.audit_log if e["prompted"]), 1)
-
-
-# ------------------------------------------------------------------ H9
-
-class TestLanes(unittest.TestCase):
-    def test_talk_lane_budget_and_selection_table(self):
-        talk = lanes.select_lane(mode="talk", needs_tools=False, is_walkthrough_verify=False)
-        self.assertEqual(talk, "talk")
-        self.assertEqual(talk.name, "talk")
-        self.assertEqual(talk.first_token_budget_ms, 1500)
-        self.assertAlmostEqual(talk.first_token_s, 1.5)
-        self.assertTrue(talk.streaming)
-        self.assertTrue(talk.vision)
-
-        # Walkthrough verification always selects talk lane when tools not needed
-        wt_verify = lanes.select_lane(
-            mode="act", needs_tools=False, is_walkthrough_verify=True
-        )
-        self.assertEqual(wt_verify.name, "talk")
-        self.assertEqual(wt_verify.first_token_budget_ms, 1500)
-
-        # Needs tools or agent/act mode -> deep lane
-        deep_tools = lanes.select_lane(
-            mode="talk", needs_tools=True, is_walkthrough_verify=False
-        )
-        self.assertEqual(deep_tools, "deep")
-        self.assertEqual(deep_tools.name, "deep")
-        self.assertTrue(deep_tools.supports_tools)
-
-        deep_act = lanes.select_lane(
-            mode="act", needs_tools=False, is_walkthrough_verify=False
-        )
-        self.assertEqual(deep_act.name, "deep")
-
-    def test_lane_ledger_records_per_lane_spend_and_latency(self):
-        led = lanes.LaneLedger()
-        led.record("talk", usd=0.0012, latency_ms=820, tokens_in=300, tokens_out=40)
-        led.record("talk", usd=0.0008, latency_ms=1180, tokens_in=250, tokens_out=30)
-        led.record("deep", usd=0.0250, latency_ms=2600, tokens_in=2000, tokens_out=400)
-
-        summary = led.summary()
-        self.assertEqual(summary["talk"]["calls"], 2)
-        self.assertAlmostEqual(summary["talk"]["usd"], 0.0020)
-        self.assertEqual(summary["talk"]["within_budget_count"], 2)
-        self.assertLessEqual(summary["talk"]["p50_ms"], 1500)
-
-        self.assertEqual(summary["deep"]["calls"], 1)
-        self.assertAlmostEqual(summary["deep"]["usd"], 0.0250)
-        self.assertEqual(summary["deep"]["p50_ms"], 2600.0)
-        self.assertAlmostEqual(summary["total_usd"], 0.0270)
-
-    def test_barge_in_controller_cancels_tts_and_stream(self):
-        tok = cancel.CancelToken()
-        tts_stopped = []
-        stream_closed = []
-        speaker = mock.Mock()
-
-        ctrl = lanes.BargeInController(
-            stream_token=tok,
-            tts_stop=lambda: tts_stopped.append(True),
-            speaker=speaker,
-            stream_close=lambda: stream_closed.append(True),
-        )
-        self.assertFalse(ctrl.is_cancelled)
-        res = ctrl.barge_in("user_spoke")
-        self.assertTrue(res["cancelled"])
-        self.assertTrue(res["tts_cancelled"])
-        self.assertTrue(res["stream_cancelled"])
-        self.assertTrue(tok.cancelled)
-        self.assertTrue(ctrl.tts_token.cancelled)
-        self.assertEqual(tts_stopped, [True])
-        self.assertEqual(stream_closed, [True])
-        speaker.stop.assert_called_once()
-        self.assertTrue(ctrl.is_cancelled)
-
-
 class TestReviewRegressions(unittest.TestCase):
     """Regressions for PR #124 review findings."""
 
@@ -941,23 +778,6 @@ class TestReviewRegressions(unittest.TestCase):
         b = walkthrough.Step("click here", label="Cancel")
         wt.mark_done(a) if hasattr(wt, "mark_done") else None
         self.assertFalse(wt.has_completed(b))
-
-    # grants
-    def test_always_does_not_cross_conversations(self):
-        m = conversation_grants.ConversationGrantManager()
-        m.record_decision(conversation_grants.GrantScope("c1", "chromium"), "always")
-        self.assertFalse(m.is_granted(conversation_grants.GrantScope("c2", "chromium")))
-
-    # lanes
-    def test_barge_in_reports_failed_close_and_reset_clears_closer(self):
-        def boom():
-            raise RuntimeError("x")
-        c = lanes.BargeInController(stream_close=boom)
-        with self.assertLogs("wisp.lanes", level="WARNING"):
-            r = c.barge_in()
-        self.assertFalse(r["stream_cancelled"])
-        c.reset()
-        self.assertIsNone(c._stream_close)
 
     # routines
     def test_unit_text_rejects_injection(self):

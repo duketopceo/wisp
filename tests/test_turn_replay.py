@@ -24,7 +24,7 @@ from harness import fakes, runner  # noqa: E402
 from wisp import errors_codes  # noqa: E402
 
 FIXTURES = ROOT / "tests" / "fixtures" / "turns"
-FIXTURE_NAMES = ["ask", "act", "router_act", "choose", "jev_down", "jev_slow", "brain_down", "brain_fallback",
+FIXTURE_NAMES = ["ask", "act", "router_act", "router_act_default", "choose", "jev_down", "jev_slow", "brain_down", "brain_fallback",
                  "cancel_mid_stream", "stale_choice"]
 
 
@@ -400,9 +400,16 @@ class TurnReplayTest(unittest.TestCase):
         fx = copy.deepcopy(runner.load_fixture(FIXTURES / "act.json"))
         for r in fx["endpoints"]["brain"]["responses"]:
             r["latency_ms"] = 200
-        fx["interrupt_after_ms"] = 100
+        # the stop lands 50 ms after step one's tool is done, inside the
+        # 200 ms brain wait for step two — keyed on the finished step, not
+        # wall clock, so it can neither fire early nor land mid-tool
+        fx["interrupt_after_step_done_ms"] = 50
         res = runner.run_turn(fx)
+        self.assertTrue(res.interrupt_fired)
         self.assertTrue(res.final["result"].startswith("INTERRUPTED"))
+        # step two never ran: its brain reply was cancelled, so no third
+        # brain call follows (an uncancelled run makes three)
+        self.assertEqual(len(res.chat_calls()), 2)
 
     def test_cancel_mid_act_ends_within_150ms_of_stop(self):
         # W9: the stop lands while a (hanging) fake cua click is in
