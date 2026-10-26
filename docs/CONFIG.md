@@ -121,7 +121,7 @@ wispd eval route --replay --decisions [--models perplexity/pplx-decider-v1.2 typ
 
 | key | default | meaning |
 |-----|---------|---------|
-| `router` | `"jev"` | `jev` (decision API) / `act` (every turn straight to the agent loop — the loop's brain decides answer-vs-work; no decision hop) / `chat` (straight to answer brain) / `off` (clarify) |
+| `router` | `"act"` | `act` (default: every turn straight to the agent loop — the loop's brain decides answer-vs-work; no decision hop) / `jev` (decision API) / `chat` (straight to answer brain) / `off` (clarify) |
 | `default` | `"openrouter:<answer_model>"` | `name:model` selecting a `[brain.<name>]` provider |
 | `fallback` | `""` | comma-separated `name:model` chain tried after `default` (e.g. `"mlx:ornith, ollama:ornith"`) |
 | `allow_paid` | `false` | allow paid fallback entries (OpenRouter, or `paid = "true"` on the section); the U10 cap hook (`brain.budget_ok`, see `[budget]`) also applies; at a cap fallbacks are skipped, the primary runs unless `[budget] gate_primary` |
@@ -171,6 +171,12 @@ and counted as paid openrouter rows (source `spend.jsonl`); nothing
 writes that file any more. The clicklab lab records per-task `cost_usd`
 and tokens from the same ledger and aborts at the daily cap. Inspect
 with `wispd spend`.
+
+## [local] — local model servers (opt-in)
+
+| key | default | meaning |
+|-----|---------|---------|
+| `enabled` | `false` | allow local model servers (llama.cpp Ornith, UI-TARS, jev-shim, ollama). Off: `wispd onboard` skips the local ladder, `[ground] providers` drops `uitars`, and `wispd install --units` skips the llama/jev-shim units. OpenRouter stays the brain either way |
 
 ## [health] — endpoint probes (U7)
 
@@ -335,7 +341,7 @@ Resources: wispd under 250 MB RSS and 3% idle CPU; cua-driver
 |-----|---------|---------|
 | `[pointer] mode` | `guide` | `guide`: Wisp points with the ghost cursor, you click. `drive`: inject real input through the backend. `auto`: drive when a backend exists, guide otherwise |
 | `[pointer] backend` | `auto` | `auto`, `cua`, `hyprcursor`, `ydotool`, `wlrctl` or `none`. A named backend is used alone; if it is unavailable Wisp guides |
-| `[ground] providers` | `control,a11y,uitars,jev` | grounding chain order: app control channel, cua accessibility tree, local UI-TARS, vision fallback |
+| `[ground] providers` | `control,a11y,uitars,jev` | grounding chain order: app control channel, cua accessibility tree, local UI-TARS, vision fallback. `uitars` is dropped unless `[local] enabled = true` |
 | `[ground] min_confidence` | `0.5` | candidates below this are re-observed once, then refused |
 | `[ground] budget_ms` | `1200` | shared budget for the fast providers |
 | `[ground] fallback_timeout_ms` | `5000` | timeout for the vision fallback |

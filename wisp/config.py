@@ -214,7 +214,7 @@ region_px = "96"
 frame_wait_s = "0.5"
 
 [agents]
-# coding-agent runtime overrides ([agent] is the Jev router section)
+# coding-agent runtime overrides (the router key lives in [brain])
 act_max_steps = 12
 act_max_errors = 2          # consecutive failed tool calls tolerated
 act_max_parse_misses = 1    # unparseable replies in action-text mode
@@ -287,9 +287,10 @@ monthly_usd = "160.00"
 gate_primary = "false"
 
 [brain]
-# router: "jev" (typed decisions), "chat" (transcript+screen straight
-# to the answer brain), or "off" (always clarify via choices)
-router = "jev"
+# router: "act" (every turn straight to the agent loop — default),
+# "jev" (typed decisions), "chat" (transcript+screen straight to the
+# answer brain), or "off" (always clarify via choices)
+router = "act"
 # answer provider as "name:model" — named sections below or any
 # [brain.<name>] table you add (kind: openai_compat | ollama)
 default = "openrouter:meta-llama/llama-4-maverick"
@@ -330,6 +331,13 @@ kind = "openai_compat"   # mlx-lm server, probed on /v1/models
 base_url = "http://localhost:8080/v1"
 vision = "false"
 tools = "false"
+
+[local]
+# Local model servers (llama.cpp / ollama / UI-TARS) are opt-in. Off:
+# onboarding skips the local ladder, grounding drops the uitars
+# provider, and `wispd install --units` skips the llama/jev-shim units.
+# Brains still come from [brain]; OpenRouter is the default.
+enabled = "false"
 
 [health]
 # probes of LOCAL endpoints (Jev, brain chain, optional extras); remote
@@ -521,11 +529,12 @@ def _default_cfg_dict() -> dict:
         "dev": {"refine": "true"},
         "ui": {"theme": "dark"},
         "brain": {
-            "router": "jev", "agent_runtime": "auto",
+            "router": "act", "agent_runtime": "auto",
             "default": "openrouter:meta-llama/llama-4-maverick",
             "fallback": "", "allow_paid": "false", "first_token_s": "3",
         },
         "budget": {"monthly_usd": "160.00", "gate_primary": "false"},
+        "local": {"enabled": "false"},
         "health": {"enabled": "true", "interval_s": "30",
                    "press_stale_s": "10", "timeout_ms": "500"},
         "apps": _default_apps(),
@@ -552,6 +561,12 @@ def load_config() -> dict:
         CFG_FILE.write_text(DEFAULT_CONFIG + _apps_toml(), encoding="utf-8")
         cfg = _default_cfg_dict()
     return cfg
+
+
+def local_enabled(cfg: dict | None) -> bool:
+    """[local] enabled — local model servers are opt-in (default off)."""
+    v = ((cfg or {}).get("local", {}) or {}).get("enabled", "false")
+    return str(v).strip().lower() == "true"
 
 
 def whisper_model(cfg: dict) -> pathlib.Path:

@@ -39,6 +39,7 @@ TABLE = [
     ("budget.daily_usd", "1e3", "number"),
     ("budget.daily_usd", "999999", "range"),
     ("budget.monthly_usd", "5#", "chars"),
+    ("brain.router", "act", ""),
     ("pointer.mode", "drive", ""),
     ("pointer.mode", "fly", "choice"),
     ("cua.dry_run", "true", ""),
@@ -73,6 +74,15 @@ class TestSchemaShape(unittest.TestCase):
             self.assertTrue(f.description, f.key)
             self.assertIn(f.kind, ("usd", "int", "bool", "choice"), f.key)
             self.assertIn(f.widget, ("number", "toggle", "choice"), f.key)
+
+    def test_router_accepts_act_and_rejects_unknown(self):
+        self.assertEqual(S.problem("brain.router", "act"), "")
+        self.assertEqual(S.problem("brain.router", "bogus"), "choice")
+
+    def test_local_enabled_is_a_validated_bool(self):
+        self.assertEqual(S.field("local.enabled").default, "false")
+        self.assertEqual(S.problem("local.enabled", "true"), "")
+        self.assertEqual(S.problem("local.enabled", "tru"), "choice")
 
     def test_keys_submap_is_a_daemon_only_bool(self):
         f = S.field("keys.submap")
