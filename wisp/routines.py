@@ -487,3 +487,377 @@ def record_routine_outcome(
         "speak": False,
         "routine": r,
     }
+
+
+def run_routine(
+    routine_id: str,
+    cfg: dict | None = None,
+    *,
+    store: RoutineStore | None = None,
+    path: Path | str | None = None,
+    tasks_file=None,
+    log_dir=None,
+) -> dict:
+    """Load `routine_id` from `RoutineStore` and spawn it via `agents.spawn`
+    with `routine_id` provenance (U3). Used by both the daemon `agent` handler
+    and the daemon-down CLI fallback."""
+    from . import agents
+    st = store if store is not None else RoutineStore(path=path)
+    r = st.get(routine_id)
+    if r is None:
+        msg = f"SKIP (unknown routine {routine_id!r})"
+        return {"ok": False, "error": "unknown_routine", "result": msg,
+                "routine_id": routine_id}
+    if r.paused or not r.enabled:
+        msg = f"SKIP (routine {r.id!r} is paused)"
+        return {"ok": False, "error": "routine_paused", "result": msg,
+                "routine_id": r.id}
+    tf = tasks_file if tasks_file is not None else config.TASKS_FILE
+    ld = log_dir if log_dir is not None else config.TASK_LOGS
+    out = agents.spawn(
+        r.task,
+        cfg or {},
+        tasks_file=tf,
+        log_dir=ld,
+        spawned_by=f"routine:{r.id}",
+        routine_id=r.id,
+        name_hint=r.id,
+    )
+    ok = out.startswith("SPAWNED")
+    return {
+        "ok": ok,
+        "routine_id": r.id,
+        "result": out,
+        "error": "" if ok else out,
+    }
+
+
+# ------------------------------------------------ U4: voice-taught routines
+
+_AMBIGUOUS_SCHED_RE = re.compile(
+    r"\b(?:sometime|sometimes|whenever|around|maybe|later|soon|"
+    r"occasionally|periodically|every\s+so\s+often|now\s+and\s+then|"
+    r"ish|approx|approximately)\b",
+    re.I,
+)
+_EXACT_CAL_RE = re.compile(
+    r"^\*-\*-\*\s+(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$"
+)
+_TIME_AT_RE = re.compile(
+    r"\b(?:(?:every\s+(?:day|morning|evening|night)|daily)\s+at\s+"
+    r"|at\s+)(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?"
+    r"(?:\s+(?:every\s+(?:day|morning|evening|night)|daily))?\b",
+    re.I,
+)
+_TEACH_RE = re.compile(
+    r"^\s*(?:please\s+)?"
+    r"(?:save\s+(?:this\s+)?as\s+(?:my|a)\s+"
+    r"(?:routine\s+(?:called|named)\s+|(?P<name1>.+?)\s+routine\b)"
+    r"|create\s+a\s+routine\s+(?:called|named)\s+"
+    r"|make\s+this\s+(?:my|a)\s+(?P<name2>.+?)\s+routine\b)"
+    r"(?P<rest>.*)$",
+    re.I,
+)
+
+
+def parse_schedule(text: str) -> str | None:
+    """Conservative schedule parser (U4, R4).
+
+    Accepts explicit patterns ('every hour', 'hourly', 'every day at 9am',
+    'daily', 'weekly', 'monthly', or '*-*-* HH:MM:SS'). Returns None when the
+    schedule is missing or contains ambiguous qualifiers.
+    """
+    raw = (text or "").strip()
+    if not raw or _AMBIGUOUS_SCHED_RE.search(raw):
+        return None
+    low = raw.lower().strip(".!? ")
+    if low in ("hourly", "daily", "weekly", "monthly"):
+        return low
+    if _EXACT_CAL_RE.match(raw):
+        parts = raw.split()
+        hms = parts[1] if len(parts[1].split(":")) == 3 else parts[1] + ":00"
+        return f"*-*-* {hms}"
+    if re.search(r"\bevery\s+hour\b|\bhourly\b", low):
+        return "hourly"
+    m = _TIME_AT_RE.search(low)
+    if m and re.search(r"\b(?:every\s+(?:day|morning|evening|night)|daily)\b", low):
+        hh = int(m.group(1))
+        mm = int(m.group(2) or 0)
+        ampm = (m.group(3) or "").replace(".", "").lower()
+        if mm > 59 or hh > 23 or (ampm and (hh < 1 or hh > 12)):
+            return None
+        if ampm == "am":
+            hh = 0 if hh == 12 else hh
+        elif ampm == "pm":
+            hh = hh if hh == 12 else hh + 12
+        elif "evening" in low or "night" in low:
+            if 1 <= hh <= 11:
+                hh += 12
+        return f"*-*-* {hh:02d}:{mm:02d}:00"
+    if re.search(r"\bevery\s+week\b|\bweekly\b", low):
+        return "weekly"
+    if re.search(r"\bevery\s+month\b|\bmonthly\b", low):
+        return "monthly"
+    if re.search(r"\bevery\s+day\b|\bdaily\b", low) and " at " not in low:
+        return "daily"
+    return None
+
+
+def parse_teach_intent(text: str, fallback_task: str = "") -> dict | None:
+    """Parse a voice-taught routine utterance like
+    'Save this as my morning check routine every day at 9am to check PRs'."""
+    raw = (text or "").strip()
+    if not raw:
+        return None
+    m = _TEACH_RE.match(raw)
+    if not m:
+        return None
+    name = (m.group("name1") or m.group("name2") or "").strip(" '\",.:;-")
+    rest = (m.group("rest") or "").strip()
+    if not name:
+        # 'save this as a routine called <name> ...'
+        m_name = re.match(
+            r"^['\"]?([A-Za-z0-9 _-]+?)['\"]?"
+            r"(?=\s+(?:every|hourly|daily|weekly|monthly|at|to|that|sometime|"
+            r"whenever|around|maybe)\b|[.:,]|$)(.*)$",
+            rest,
+            re.I,
+        )
+        if m_name:
+            name = m_name.group(1).strip(" '\",.:;-")
+            rest = (m_name.group(2) or "").strip()
+    if not name:
+        return None
+
+    # Extract explicit task clause ('to <task>' / ': <task>' / 'that <task>').
+    # Avoid matching a colon preceded by a digit inside HH:MM time strings.
+    task = ""
+    tm = re.search(r"(?:(?<!\d):\s*|\bto\s+|\bthat\s+)(.+)$", rest, re.I)
+    if tm:
+        cand_task = tm.group(1).strip().rstrip(".")
+        # Strip trailing schedule phrase from task if it sits at the end
+        cand_task = re.sub(
+            r"\s+\b(?:every\s+(?:hour|day|morning|evening|night|week|month)"
+            r"(?:\s+at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?"
+            r"|hourly|daily|weekly|monthly)\s*$",
+            "",
+            cand_task,
+            flags=re.I,
+        ).strip()
+        if cand_task:
+            task = cand_task
+
+    sched = parse_schedule(rest) or parse_schedule(raw)
+    return {
+        "name": name,
+        "task": task or fallback_task.strip() or name,
+        "schedule": sched,
+        "raw": raw,
+    }
+
+
+def install_systemd_units(
+    routine: Routine | dict,
+    unit_dir: Path | str | None = None,
+    wispd_bin: str = "wispd",
+    activate: bool = False,
+) -> SystemdUnits:
+    """Write the `.service` and `.timer` unit files for `routine` into
+    `unit_dir` (default `~/.config/systemd/user`). With `activate`, also
+    `daemon-reload` and `enable --now` the timer; the result then carries
+    `scheduled` (bool) and, on failure, `schedule_error`."""
+    units = generate_systemd_units(routine, wispd_bin=wispd_bin)
+    target_dir = (Path(unit_dir)
+                  if unit_dir is not None
+                  else config.HOME / ".config" / "systemd" / "user")
+    target_dir.mkdir(parents=True, exist_ok=True)
+    svc_path = target_dir / units.service_name
+    tmr_path = target_dir / units.timer_name
+    svc_path.write_text(units.service, encoding="utf-8")
+    tmr_path.write_text(units.timer, encoding="utf-8")
+    units["service_path"] = str(svc_path)
+    units["timer_path"] = str(tmr_path)
+    if activate:
+        err = _activate_timer(units.timer_name)
+        units["scheduled"] = not err
+        if err:
+            units["schedule_error"] = err
+    return units
+
+
+def _activate_timer(timer_name: str) -> str:
+    """Reload the user manager and enable+start `timer_name`; returns ''
+    on success or a short reason."""
+    import shutil
+    import subprocess
+    sc = shutil.which("systemctl")
+    if not sc:
+        return "systemctl not available"
+    for args in (["--user", "daemon-reload"],
+                 ["--user", "enable", "--now", timer_name]):
+        try:
+            r = subprocess.run([sc, *args], capture_output=True, text=True,
+                               timeout=30)
+        except (OSError, subprocess.SubprocessError) as e:
+            return f"systemctl {args[1]} failed: {e}"
+        if r.returncode != 0:
+            detail = (r.stderr or r.stdout or "").strip()[:120]
+            return f"systemctl {args[1]} failed: {detail}"
+    return ""
+
+
+def teach_routine(
+    text_or_spec: str | dict,
+    cfg: dict | None = None,
+    *,
+    store: RoutineStore | None = None,
+    path: Path | str | None = None,
+    confirm=None,
+    ask=None,
+    fallback_task: str = "",
+    unit_dir: Path | str | None = None,
+    install_units: bool = True,
+    activate_units: bool | None = None,
+) -> dict:
+    """Create a voice-taught Routine through the T2 confirm broker (U4, R4).
+
+    1. Parses `name`, `task`, and conservative `schedule`.
+    2. If the schedule is missing or ambiguous, raises a clarification card
+       (`ask` or `confirm(kind='question')`); if still ambiguous, returns
+       `status='clarification_needed'` without persisting anything.
+    3. Honors `require_first_opt_ingate` before creating the first routine.
+    4. Presents a T2 confirm card naming `name`, `schedule`, and `task` before
+       persisting to `RoutineStore` and writing the systemd units.
+    """
+    st = store if store is not None else RoutineStore(path=path)
+    if isinstance(text_or_spec, dict):
+        name = str(text_or_spec.get("name") or "").strip()
+        task = str(text_or_spec.get("task") or fallback_task or name).strip()
+        raw_sched = str(text_or_spec.get("schedule") or "").strip()
+        sched = parse_schedule(raw_sched)
+    else:
+        parsed = parse_teach_intent(str(text_or_spec), fallback_task=fallback_task)
+        if parsed is None:
+            return {
+                "ok": False,
+                "status": "not_teach_intent",
+                "routine": None,
+                "units": None,
+                "result": "SKIP (not a routine teach request)",
+            }
+        name = parsed["name"]
+        task = parsed["task"]
+        sched = parsed["schedule"]
+
+    if not name:
+        return {
+            "ok": False,
+            "status": "invalid_name",
+            "routine": None,
+            "units": None,
+            "result": "SKIP (routine name missing)",
+        }
+
+    # Ambiguous or missing schedule -> ask once via clarification card.
+    if sched is None:
+        clarify_q = (
+            f"When should routine '{name}' run? "
+            "(for example: 'every day at 9am' or 'every hour')"
+        )
+        reply = None
+        if callable(ask):
+            reply = ask(clarify_q)
+        elif callable(confirm):
+            if getattr(confirm, "rich", False):
+                confirm(clarify_q, kind="question")
+            else:
+                confirm(clarify_q)
+        if isinstance(reply, str):
+            sched = parse_schedule(reply)
+        if sched is None:
+            return {
+                "ok": False,
+                "status": "clarification_needed",
+                "routine": None,
+                "units": None,
+                "result": (f"CLARIFY (schedule for routine {name!r} is "
+                           "ambiguous; specify e.g. 'every day at 9am')"),
+            }
+
+    candidate = Routine(name=name, task=task, schedule=sched)
+
+    # First-run opt-in gate before any routine or timer is installed.
+    needs_opt_in = not st.has_opted_in()
+    if needs_opt_in:
+        if not callable(confirm):
+            return {
+                "ok": False,
+                "status": "opt_in_declined",
+                "routine": None,
+                "units": None,
+                "result": f"SKIPPED (routine {name!r} requires first-run opt-in)",
+            }
+        if not require_first_opt_ingate(
+            store=None,
+            confirm_fn=lambda p: confirm(p),
+            routine=candidate,
+        ):
+            return {
+                "ok": False,
+                "status": "opt_in_declined",
+                "routine": None,
+                "units": None,
+                "result": f"SKIPPED (routine {name!r} opt-in declined)",
+            }
+
+    # T2 confirmation card showing name + schedule + task text.
+    if not callable(confirm):
+        return {
+            "ok": False,
+            "status": "confirm_declined",
+            "routine": None,
+            "units": None,
+            "result": f"BLOCKED (routine {name!r} needs confirmation)",
+        }
+    prompt = f"Create routine '{candidate.name}' ({candidate.schedule}): {candidate.task}?"
+    detail = (f"Routine: {candidate.name}\n"
+              f"Schedule: {candidate.schedule}\n"
+              f"Task: {candidate.task}")
+    if getattr(confirm, "rich", False):
+        approved = _interpret_opt_in(confirm(prompt, detail=detail))
+    else:
+        approved = _interpret_opt_in(confirm(prompt))
+    if not approved:
+        return {
+            "ok": False,
+            "status": "confirm_declined",
+            "routine": None,
+            "units": None,
+            "result": f"SKIPPED (routine {candidate.name!r} not confirmed)",
+        }
+
+    if needs_opt_in:
+        st.set_opted_in(True)
+    saved = st.save(candidate)
+    # Only the real user unit dir is on systemd's search path; a custom
+    # `unit_dir` is written but not enabled unless asked.
+    activate = (unit_dir is None) if activate_units is None else activate_units
+    units = (install_systemd_units(saved, unit_dir=unit_dir, activate=activate)
+             if install_units else generate_systemd_units(saved))
+    if install_units and activate and not units.get("scheduled", True):
+        return {
+            "ok": True,
+            "status": "created_unscheduled",
+            "routine": saved,
+            "units": units,
+            "result": (f"CREATED routine {saved.id} ({saved.schedule}): "
+                       f"{saved.task} — NOT SCHEDULED "
+                       f"({units.get('schedule_error')})"),
+        }
+    return {
+        "ok": True,
+        "status": "created",
+        "routine": saved,
+        "units": units,
+        "result": f"CREATED routine {saved.id} ({saved.schedule}): {saved.task}",
+    }

@@ -151,6 +151,34 @@ class ReaperTest(ReaperCase):
         self.assertEqual(agents.tasks(self.tf, self.logs)["t1"]["task"],
                          "do t1")
 
+    def test_exit_zero_transitions_to_done_and_nonzero_or_sigkill_to_failed(self):
+        p_ok = self.spawn_real("import sys; sys.exit(0)")
+        p_fail = self.spawn_real("import sys; sys.exit(1)")
+        p_kill = self.spawn_real("import time; time.sleep(60)")
+        os.kill(p_kill.pid, signal.SIGKILL)
+        agents._PROCS.extend([p_ok, p_fail, p_kill])
+        p_ok.wait(timeout=5)
+        p_fail.wait(timeout=5)
+        p_kill.wait(timeout=5)
+
+        self.write(
+            self.rec(name="ok-task", pid=p_ok.pid, pstart="1"),
+            self.rec(name="fail-task", pid=p_fail.pid, pstart="1"),
+            self.rec(name="kill-task", pid=p_kill.pid, pstart="1"),
+        )
+        ev = {e["name"]: e for e in self.tick()}
+        self.assertEqual(ev["ok-task"]["status"], "done")
+        self.assertEqual(ev["ok-task"]["exit_code"], 0)
+        self.assertTrue(ev["ok-task"]["delivered"])
+
+        self.assertEqual(ev["fail-task"]["status"], "failed")
+        self.assertEqual(ev["fail-task"]["exit_code"], 1)
+        self.assertFalse(ev["fail-task"]["delivered"])
+
+        self.assertEqual(ev["kill-task"]["status"], "failed")
+        self.assertEqual(ev["kill-task"]["exit_code"], -signal.SIGKILL)
+        self.assertFalse(ev["kill-task"]["delivered"])
+
 
 class ReaperThreadTest(ReaperCase):
     def test_thread_publishes_tasks_and_events_then_stops(self):
