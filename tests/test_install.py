@@ -94,6 +94,27 @@ class InstallRefTest(unittest.TestCase):
         unit = e.home / ".config" / "systemd" / "user" / "wispd.service"
         self.assertIn("# from-ref-v1", unit.read_text())
 
+    def test_relative_repo_is_recorded_absolute(self):
+        e = self.env()
+        rel = os.path.relpath(self.repo, e.home)
+        p = subprocess.run([sys.executable, str(cli_env.ROOT / "wispd"),
+                            "install", "--ref", "v1", "--repo", rel],
+                           env=e.env, cwd=e.home, capture_output=True,
+                           text=True, timeout=60)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        rec = json.loads((self.opt(e) / "deploy.json").read_text())
+        self.assertEqual(rec["repo"], str(self.repo.resolve()))
+
+    def test_failed_unit_install_does_not_record_the_deploy(self):
+        git(self.repo, "rm", "-q", "scripts/units/wispd.service")
+        git(self.repo, "commit", "-q", "-m", "no units")
+        git(self.repo, "tag", "nounits")
+        e = self.env()
+        code, out, err = e.run(["install", "--ref", "nounits", "--repo",
+                                str(self.repo)])
+        self.assertNotEqual(code, 0)
+        self.assertFalse((self.opt(e) / "deploy.json").exists())
+
     def test_uncommitted_and_later_changes_are_not_installed(self):
         (self.repo / "wisp" / "marker.py").write_text("VERSION = 'dirty'\n")
         (self.repo / "wisp" / "extra.py").write_text("x = 1\n")

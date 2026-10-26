@@ -848,15 +848,16 @@ def install_files(dry_run: bool = False, cfg: dict | None = None,
     trigger.chmod(0o755)
     print(f"installed {trigger}")
     from wisp import deploy as _deploy, svc
-    d = deploy or {"repo": src, "ref": None,
-                   "commit": _deploy.head_commit(src)}
-    _deploy.write(d["repo"], d["ref"], d["commit"])
-    print(f"recorded deploy {(d['commit'] or 'unknown')[:12]}")
     # templates come from the tree being installed: the installed copy has
     # no scripts/, and an exported ref must not get this checkout's units
     acts = svc.install_units(config.HOME, local=config.local_enabled(cfg),
                              units_dir=src / "scripts" / "units")
     print(svc.describe(acts))
+    # recorded last, so a failed install never claims its commit
+    d = deploy or {"repo": src, "ref": None,
+                   "commit": _deploy.head_commit(src)}
+    _deploy.write(d["repo"], d["ref"], d["commit"])
+    print(f"recorded deploy {(d['commit'] or 'unknown')[:12]}")
     print("units installed, not restarted; apply with systemctl --user "
           "restart <unit>")
 

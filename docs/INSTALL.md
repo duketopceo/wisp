@@ -60,7 +60,8 @@ from anywhere.
 
 ```
 OPENROUTER_API_KEY=sk-or-...
-GROQ_API_KEY=gsk-...        # hosted speech-to-text (the default)
+# hosted speech-to-text (the default)
+GROQ_API_KEY=gsk-...
 ```
 
 Env vars take precedence over `.env` — handy for testing.

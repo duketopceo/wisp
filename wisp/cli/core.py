@@ -74,6 +74,8 @@ def _export_ref(a, tmp):
     """Unpack --ref of the source repo into `tmp`; (repo, commit)."""
     from .. import deploy
     repo = a.repo or (deploy.read() or {}).get("repo")
+    if repo:
+        repo = str(pathlib.Path(repo).expanduser().resolve())
     if not repo:
         raise CliError("E_USAGE", "No source repo is recorded for --ref.",
                        "wispd install --ref <git-ref> --repo <path>")

@@ -371,11 +371,12 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
                 return res
         if first_failed is None:
             first_failed = p["name"]
+    # a missing key outranks a capped fallback: it names the fix
+    if missing and not errored:
+        raise missing
     if capped and not errored:
         raise errors_codes.WispError("budget_exceeded",
                                      "; ".join(failures))
-    if missing and not errored:
-        raise missing
     raise errors_codes.WispError("brain_down", "; ".join(failures))
 
 

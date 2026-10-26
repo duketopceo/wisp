@@ -93,6 +93,16 @@ class TestKeyMissing(_NoKeys):
         self.assertEqual(cm.exception.code, "key_missing")
         self.assertIn("OPENROUTER_API_KEY", cm.exception.public)
 
+    def test_missing_primary_key_wins_over_a_capped_fallback(self):
+        cfg = {"brain": {"default": "openrouter:m",
+                         "fallback": "openrouter:m2", "allow_paid": "true"}}
+        with mock.patch.object(brain, "HEALTH", None), \
+                mock.patch.object(brain, "budget_ok",
+                                  side_effect=lambda cfg, primary: primary):
+            with self.assertRaises(errors_codes.WispError) as cm:
+                brain.chat([{"role": "user", "content": "hi"}], cfg)
+        self.assertEqual(cm.exception.code, "key_missing")
+
     def test_keyless_local_brain_is_not_asked_for_a_key(self):
         p = brain.provider({"brain": {"default": "ollama:m"}})
         self.assertEqual(brain._headers(p).get("Authorization"), None)

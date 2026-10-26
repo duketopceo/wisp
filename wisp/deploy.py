@@ -7,6 +7,7 @@ tree and index are never touched.
 """
 import io
 import json
+import os
 import pathlib
 import subprocess
 import tarfile
@@ -38,7 +39,9 @@ def write(repo, ref, commit) -> None:
            "time": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
     p = record_path()
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(rec, indent=1) + "\n")
+    tmp = p.with_name(f".{p.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(rec, indent=1) + "\n")
+    os.replace(tmp, p)  # `status` never reads a half-written record
 
 
 def _git(repo, *args) -> subprocess.CompletedProcess:
