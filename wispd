@@ -49,12 +49,13 @@ def dlog(msg: str) -> None:
     print(line, flush=True)
 
 
-def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
+def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
+             tasks_file=None) -> callable:
     def handle(cmd: dict, peer: dict | None = None) -> dict:
         c = cmd.get("cmd")
         _t0 = time.monotonic()
         from wisp import trace as _trace
-        out = _dispatch(c, cmd)
+        out = _dispatch(c, cmd, peer)
         # peer is the connecting client's SO_PEERCRED attribution
         # ({pid, uid}) from ipc._serve — None over TCP or on direct calls
         who = ""
@@ -68,7 +69,10 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
                         round((time.monotonic() - _t0) * 1000))
         return out
 
-    def _dispatch(c: str, cmd: dict) -> dict:
+    def _dispatch(c: str, cmd: dict, peer: dict | None = None) -> dict:
+        refused = ipc.check_peer_authz(cmd, peer, tasks_file=tasks_file)
+        if refused is not None:
+            return refused
         if c == "status":
             from wisp import agents
             agents.reap(cfg)  # zombie + timeout watchdog on each poll
@@ -275,13 +279,28 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict) -> callable:
         if c == "task_status":
             from wisp import agents
             return {"ok": True, "result": agents.status(cmd.get("name", ""))}
+        if c == "task_output":
+            from wisp import agents
+            return agents.output(cmd.get("name", ""))
+        if c == "task_artifacts":
+            from wisp import agents
+            return agents.artifacts(cmd.get("name", ""))
         if c == "task_cancel":
             from wisp import agents
             return {"ok": True, "result": agents.cancel(cmd.get("name", ""))}
         if c == "agent":
             from wisp import agents
-            return {"ok": True,
-                    "result": agents.spawn(cmd.get("task", ""), cfg)}
+            delivers = cmd.get("delivers")
+            rid = cmd.get("routine_id")
+            if rid:
+                from wisp import routines
+                return routines.run_routine(rid, cfg)
+            return {
+                "ok": True,
+                "result": agents.spawn(
+                    cmd.get("task", ""), cfg,
+                    delivers=delivers if isinstance(delivers, list) else None),
+            }
         if c == "memory":
             from wisp import memory
             if "body" in cmd:  # GUI whole-doc write — pipes/newlines safe
@@ -706,10 +725,11 @@ def run_daemon(cfg: dict) -> int:
     from wisp import agents as _agents
 
     def _agent_done(t: dict) -> None:
-        tail = (t.get("tail") or "")[:80]
-        from wisp.tools import system as _sys
-        _sys.notify_tool(f"wisp agent '{t['name']}' {t['status']}"
-                         + (f" — {tail}" if tail else ""))
+        _agents.notify_done(t)
+    try:
+        _agents.reconcile_routines(cfg, on_finished=_agent_done)
+    except Exception as e:
+        dlog(f"routines: startup reconcile failed: {e}")
     _agents.start_reaper(cfg, st, ctl["stop"], on_finished=_agent_done)
     dlog(f"wispd up — socket {config.SOCK_FILE} "
          f"log {config.DATA_DIR / 'wispd.log'}")

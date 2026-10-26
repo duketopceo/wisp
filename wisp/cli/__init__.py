@@ -67,6 +67,16 @@ def _theme(rest):
     return ["theme", "set"] + rest
 
 
+def _agents(rest):
+    if not rest:
+        return ["task", "list"]
+    if rest[0] == "run":
+        return ["task", "run", "--routine"] + rest[1:]
+    if rest[0] in _verbs("task") or rest[0] in ("-h", "--help"):
+        return ["task"] + rest
+    return ["task", "run", "--routine"] + rest
+
+
 def _connect(rest):
     if not rest or rest[0] == "--list":
         return ["connect", "list"] + rest[1:]
@@ -88,6 +98,7 @@ ALIASES = {
     "task_status": _to("task", "status"),
     "task_cancel": _to("task", "cancel"),
     "agent": _to("task", "run"),
+    "agents": _agents,
     "memory": _grp("memory", "edit"),
     "memory-write": _to("memory", "write"),
     "suggestions": _to("suggest", "list"),

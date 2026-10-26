@@ -28,6 +28,7 @@ Column {
       state: root.service.tasks[modelData].status || "queued"
       seconds: Number(root.service.tasks[modelData].seconds) || 0
       line: root.service.tasks[modelData].line || root.service.tasks[modelData].task || ""
+      unread: Boolean(root.service.tasks[modelData].unread)
     }
   }
 }
