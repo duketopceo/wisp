@@ -252,15 +252,16 @@ model = "whisper-large-v3-turbo"
 # plain env/.env fallback so non-omaseal installs still work)
 key_env = "GROQ_API_KEY"
 
+# vocabulary priming — project names, jargon; whisper.cpp --prompt /
+# `prompt` param on the openai provider (huge accuracy win on names)
+prompt = "Wisp, wispd, Omarchy, Hyprland, Jev, OpenRouter, dayflow, omaseal, omarchy plugins, RetroArch, Steam, Discord, VS Code, Kubernetes, k8s, Tailscale, Waybar, Quickshell"
+
 [web]
 # Web app a role opens when its default handler is a browser (a native
 # client such as thunderbird is launched as usual). No '#' in a URL: the
 # config parser reads it as a comment.
 mail = "https://mail.google.com"
 calendar = "https://calendar.google.com"
-# vocabulary priming — project names, jargon; whisper.cpp --prompt /
-# `prompt` param on the openai provider (huge accuracy win on names)
-prompt = "Wisp, wispd, Omarchy, Hyprland, Jev, OpenRouter, dayflow, omaseal, omarchy plugins, RetroArch, Steam, Discord, VS Code, Kubernetes, k8s, Tailscale, Waybar, Quickshell"
 
 [dictation]
 # what `dictate` does with the transcript: raw (verbatim), cleanup

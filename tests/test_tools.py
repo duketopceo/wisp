@@ -369,3 +369,18 @@ class TestAgents(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WebConfigTemplateTest(unittest.TestCase):
+    """The shipped template's [web] block must not swallow [stt] keys."""
+
+    def test_template_keeps_stt_prompt_in_stt(self):
+        import tempfile
+        from wisp import config
+        with tempfile.TemporaryDirectory() as td:
+            p = pathlib.Path(td) / "config.toml"
+            p.write_text(config.DEFAULT_CONFIG, encoding="utf-8")
+            with mock.patch.object(config, "CFG_FILE", p):
+                cfg = config.load_config()
+        self.assertIn("prompt", cfg["stt"])
+        self.assertEqual(set(cfg["web"]), {"mail", "calendar"})
