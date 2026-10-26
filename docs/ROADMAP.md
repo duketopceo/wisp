@@ -55,8 +55,8 @@ training arena: local debug builds, deterministic UIs, no user data.
   mismatch, re-handshake without a manual restart
 - **Per-app memory** — save learned behavior by app (`cadcraft` knows
   its shortcuts; browser knows its tabs) — H4 groundwork
-- **Trajectory → training** — decisions/trajectories/trace are the
-  corpus; the loop is run → score → correct → rerun, not longer soaks
+- **Trajectory feedback** — decisions/trajectories/trace feed act
+  hints; the loop is run → score → correct → rerun, not longer soaks
 - **App preference policy** — installed ≠ preferred (firefox installed
   but unused); a blocklist or preference weight so defaults always win
 

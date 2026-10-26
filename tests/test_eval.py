@@ -119,6 +119,54 @@ class TestEvalGate(EvalBase):
         self.assertIn("no labels yet", learn.eval_text(self.report()))
 
 
+class TestEvalHardening(EvalBase):
+    def test_bad_jsonl_lines_skipped(self):
+        self.bulk(3, 3)
+        with self.decs.open("a") as f:
+            f.write('{"ts": "trunc\n[1, 2]\n"str"\n')
+        with self.labs.open("a") as f:
+            f.write('{"ts": "x", "ref"\n42\n')
+        r = self.report()
+        self.assertEqual(r["total"]["labelled"], 3)
+
+    def test_gate_rate_percent_string(self):
+        self.bulk(50, 35)
+        g = self.report({"gate_rate": "60%"})["gate"]
+        self.assertEqual(g["status"], "PASS")
+        self.assertAlmostEqual(g["rate"], 0.6)
+
+    def test_gate_rate_float_value(self):
+        self.bulk(50, 35)
+        self.assertEqual(self.report({"gate_rate": 0.6})["gate"]["status"],
+                         "PASS")
+
+    def test_gate_rate_invalid(self):
+        self.bulk(60, 60)
+        for bad in ("abc", "60", "nan", "inf", "true", "-0.1", "150%"):
+            r = self.report({"gate_rate": bad})
+            self.assertEqual(r["gate"]["status"], "invalid", bad)
+            txt = learn.eval_text(r)
+            self.assertIn(repr(bad) if False else bad, txt)
+            self.assertIn("invalid", txt)
+            self.assertNotIn("PASS", txt)
+            self.assertNotIn("FAIL", txt)
+            self.assertIn('"status": "invalid"',
+                          json.dumps(r["gate"]))
+
+    def test_gate_min_turns_clamped(self):
+        self.bulk(5, 5)
+        g = self.report({"gate_rate": "0.5", "gate_min_turns": "0"})["gate"]
+        self.assertEqual(g["min_turns"], 1)
+        g = self.report({"gate_rate": "0.5", "gate_min_turns": "-9"})["gate"]
+        self.assertEqual(g["min_turns"], 1)
+        g = self.report({"gate_rate": "0.5", "gate_min_turns": "x"})["gate"]
+        self.assertEqual(g["min_turns"], 50)
+
+    def test_corrected_is_dictate(self):
+        self.assertEqual(learn.turn_kind("CORRECTED foo"), "dictate")
+        self.assertEqual(learn.turn_kind("OPENED x"), "other")
+
+
 class TestEvalCli(EvalBase):
     def run_cli(self, *argv):
         import io

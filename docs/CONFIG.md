@@ -513,7 +513,7 @@ These keep working for one release and map to the new commands:
 `install`, `harness`, `subscribe`, `tasks`, `task_status`, `task_cancel`,
 `agent <task>`, `memory-write`, `suggestions`, `fails`, `tele`, `models
 [start [--run]]`, `label correct|incorrect [note]`, `learn`, `trace
---tail/--latency`, `train|review|skills|recipes` with no verb, `config`
+--tail/--latency`, `skills` with no verb, `config`
 with no verb, `theme [name|--check|--css]`, `connect [--list|service]`,
 `daemon` with no verb. Output of the old forms is unchanged except that
 errors use the new `E_CODE` format and daemon-unreachable exits 3 (was 1);

@@ -5,6 +5,7 @@ Every clarify-widget pick is logged to corrections.jsonl by the pipeline
 (`record_correction`); recall re-indexes that file on rebuild.
 """
 import json
+import math
 from datetime import datetime, timezone
 
 from . import config
@@ -51,7 +52,7 @@ def label_last(label: str, note: str = "") -> str:
 _KIND_PREFIXES = (
     ("ANSWERED", "answer"), ("ACTED", "act"), ("LAUNCHED", "launch"),
     ("DICTATED", "dictate"), ("INSERTED", "dictate"),
-    ("TYPED", "dictate"), ("SPAWNED", "agent"),
+    ("TYPED", "dictate"), ("CORRECTED", "dictate"), ("SPAWNED", "agent"),
 )
 KINDS = ("answer", "act", "launch", "dictate", "agent", "other")
 
@@ -109,17 +110,28 @@ def eval_report(cfg: dict | None = None, decisions_file=None,
 
     ecfg = (cfg or {}).get("eval", {}) or {}
     try:
-        min_turns = int(ecfg.get("gate_min_turns", 50))
+        min_turns = max(1, int(ecfg.get("gate_min_turns", 50)))
     except (TypeError, ValueError):
         min_turns = 50
-    raw = str(ecfg.get("gate_rate", "") or "").strip()
-    try:
-        gate_rate = float(raw) if raw else None
-    except ValueError:
-        gate_rate = None
+    rawv = ecfg.get("gate_rate", "")
+    raw = "" if rawv is None else str(rawv).strip()
+    gate_rate, invalid = None, False
+    if raw:
+        try:
+            if isinstance(rawv, bool):
+                raise ValueError(raw)
+            gate_rate = (float(raw[:-1]) / 100 if raw.endswith("%")
+                         else float(raw))
+            if not (math.isfinite(gate_rate) and 0 <= gate_rate <= 1):
+                raise ValueError(raw)
+        except ValueError:
+            gate_rate, invalid = None, True
     gate = {"rate": gate_rate, "min_turns": min_turns,
             "status": "unset", "needs": 0}
-    if gate_rate is not None:
+    if invalid:
+        gate["status"] = "invalid"
+        gate["value"] = raw
+    elif gate_rate is not None:
         gate["needs"] = max(0, min_turns - total["labelled"])
         ok = gate["needs"] == 0 and (total["rate"] or 0) >= gate_rate
         gate["status"] = "PASS" if ok else "FAIL"
@@ -141,7 +153,10 @@ def eval_text(rep: dict) -> str:
     lines += [row(k, r) for k, r in rep["kinds"].items()]
     lines.append(row("total", rep["total"]))
     g = rep["gate"]
-    if g["status"] == "unset":
+    if g["status"] == "invalid":
+        lines.append(f"gate invalid: [eval] gate_rate {g['value']!r} is not "
+                     "a number in 0..1 or a percentage like '60%'")
+    elif g["status"] == "unset":
         lines.append("gate not set — set [eval] gate_rate to enable")
     else:
         msg = (f"gate {g['status']}: needs {100 * g['rate']:.0f}% over "
@@ -280,10 +295,20 @@ def fails(n: int = 10, decisions_file=config.DECISIONS,
 
 def _read_jsonl(path) -> list:
     try:
-        return [json.loads(l) for l in path.read_text().splitlines()
-                if l.strip()]
+        lines = path.read_text().splitlines()
     except OSError:
         return []
+    out = []
+    for l in lines:
+        if not l.strip():
+            continue
+        try:
+            v = json.loads(l)
+        except ValueError:
+            continue
+        if isinstance(v, dict):
+            out.append(v)
+    return out
 
 
 def record_correction(transcript: str, picked: str, answers: dict,
