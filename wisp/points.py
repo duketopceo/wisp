@@ -318,7 +318,7 @@ def strip_drawing_tags(text: str) -> str:
 
 def monitors() -> list[dict]:
     """[{x, y, width, height, scale}] via the platform adapter —
-    the Hyprland socket on Linux, system_profiler on macOS. Empty on failure."""
+    the Hyprland socket. Empty on failure."""
     from . import platform
     return platform.monitors()
 

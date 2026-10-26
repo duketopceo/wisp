@@ -38,13 +38,8 @@ class TestIpc(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             srv, sock = make_server(td)
             try:
-                if ipc._TCP:
-                    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    port = int(sock.read_text().strip())
-                    s.connect(("127.0.0.1", port))
-                else:
-                    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                    s.connect(str(sock))
+                s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                s.connect(str(sock))
                 s.settimeout(5)
                 s.sendall(b"not json\n")
                 data = s.recv(65536)
@@ -99,24 +94,11 @@ class TestPeerCred(unittest.TestCase):
                 ipc.send({"cmd": "status"}, sock_file=sock)
             finally:
                 srv.stop()
-        if ipc._TCP or not hasattr(socket, "SO_PEERCRED"):
+        if not hasattr(socket, "SO_PEERCRED"):
             self.assertIsNone(got["peer"])
         else:  # same-process client -> our own pid/uid
             self.assertEqual(got["peer"],
                              {"pid": os.getpid(), "uid": os.getuid()})
-
-    def test_tcp_peer_is_none(self):
-        got, h = self.capture()
-        with tempfile.TemporaryDirectory() as td:
-            sock = pathlib.Path(td) / "wispd.sock"
-            with mock.patch.object(ipc, "_TCP", True):
-                srv = ipc.Daemon(h, sock_file=sock)
-                srv.start()
-                try:
-                    ipc.send({"cmd": "status"}, sock_file=sock)
-                finally:
-                    srv.stop()
-        self.assertIsNone(got["peer"])
 
     def test_cred_lookup_failure_is_none_not_an_error(self):
         bad = mock.Mock()

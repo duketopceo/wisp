@@ -10,25 +10,15 @@ import socket
 import sys
 import time
 
-try:
-    import fcntl
+import fcntl
 
-    def _lock_ex(fh):
-        fcntl.flock(fh, fcntl.LOCK_EX)
 
-    def _lock_un(fh):
-        fcntl.flock(fh, fcntl.LOCK_UN)
-except ImportError:
-    # Windows: byte-0 region lock stands in for flock.
-    import msvcrt
+def _lock_ex(fh):
+    fcntl.flock(fh, fcntl.LOCK_EX)
 
-    def _lock_ex(fh):
-        fh.seek(0)
-        msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
 
-    def _lock_un(fh):
-        fh.seek(0)
-        msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+def _lock_un(fh):
+    fcntl.flock(fh, fcntl.LOCK_UN)
 
 DIR = pathlib.Path(__file__).resolve().parent
 

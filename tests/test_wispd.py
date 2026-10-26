@@ -44,16 +44,6 @@ class TestLoadConfig(unittest.TestCase):
             self.assertEqual(cfg["audio"]["whisper_model"],
                              "ggml-small.en.bin")
 
-    def test_default_config_written_for_host(self):
-        with tempfile.TemporaryDirectory() as td:
-            cfg_file = pathlib.Path(td) / "config.toml"
-            with _with_os("macos"), \
-                 mock.patch.object(config, "CFG_FILE", cfg_file), \
-                 mock.patch.object(config, "CFG_DIR", pathlib.Path(td)):
-                cfg = config.load_config()
-            self.assertEqual(cfg["apps"]["terminal"], "open -a 'Terminal'")
-            self.assertIn('[apps]', cfg_file.read_text())
-
 
 class TestExecute(unittest.TestCase):
     def setUp(self):

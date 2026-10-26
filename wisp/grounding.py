@@ -175,8 +175,8 @@ def scale_point_from_resolution(
     flip_y: bool = False,
 ) -> tuple[int, int]:
     """Clamp `(px, py)` to `[0..res_w, 0..res_h]`, scale into
-    `[0..disp_w, 0..disp_h]`, optionally flip Y origin (macOS AppKit
-    bottom-left vs top-left), and clamp to display bounds.
+    `[0..disp_w, 0..disp_h]`, optionally flip Y origin (bottom-left
+    vs top-left), and clamp to display bounds.
 
     Mirrors `ElementLocationDetector.detectElementLocation` (lines 103-118)
     from farzaa/clicky (MIT).

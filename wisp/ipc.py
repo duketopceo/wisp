@@ -10,11 +10,7 @@ stream"): hello, snapshot, then StateBus events until either side
 closes. Each subscriber has a bounded queue; one that cannot keep up is
 sent a final `overflow` event and dropped, never blocking the bus.
 
-Transport per OS (mirrors rs/wispd/src/ipc.rs):
-  linux/macos → AF_UNIX socket at SOCK_FILE
-  windows     → 127.0.0.1 TCP; the ephemeral port is written to
-                SOCK_FILE (a plain file) for client discovery. Same
-                protocol — fixture replay is identical.
+Transport: AF_UNIX socket at SOCK_FILE (mirrors rs/wispd/src/ipc.rs).
 """
 import json
 import socket
@@ -23,11 +19,9 @@ import threading
 import time
 
 from . import config
-from . import platform as _plat
 from . import state as _state
 
 _TIMEOUT = 10
-_TCP = _plat.current() == "windows"
 
 # U1 (KTD2, R2): IPC read vs mutating command split.
 # Marked peers (processes inside a spawned-agent task scope or carrying a
@@ -123,26 +117,10 @@ def check_peer_authz(cmd: dict | None, peer: dict | None,
     }
 
 
-def _use_tcp() -> bool:
-    """TCP loopback on Windows, AF_UNIX elsewhere. Read dynamically
-    (not just at import) so WISP_OS overrides and tests take effect,
-    while the patched `ipc._TCP` module flag still forces TCP on."""
-    if _TCP:
-        return True
-    if not hasattr(socket, "AF_UNIX"):
-        # Host Python can't build unix sockets at all (Windows), even
-        # when callers pretend WISP_OS=linux — TCP or nothing.
-        return True
-    try:
-        return _plat.current() == "windows"
-    except Exception:
-        return False
-
-
 def _peer_cred(conn: socket.socket) -> dict | None:
     """{pid, uid} of the connecting peer via SO_PEERCRED on the accepted
-    socket (Linux AF_UNIX). None on TCP or non-Linux transports and on
-    any failure — attribution is best-effort, never a serve error."""
+    socket (AF_UNIX). None on any failure — attribution is best-effort,
+    never a serve error."""
     try:
         if conn.family != getattr(socket, "AF_UNIX", None) \
                 or not hasattr(socket, "SO_PEERCRED"):
@@ -158,7 +136,7 @@ def _peer_cred(conn: socket.socket) -> dict | None:
 class Daemon:
     """IPC server. `handler(cmd_dict, peer) -> dict` supplies the
     responses; `peer` is the connecting client's credentials
-    ({pid, uid}, or None when unattributable — TCP, non-Linux).
+    ({pid, uid}, or None when unattributable).
 
     `bus` (a StateBus) enables `subscribe`. `sub_queue` bounds each
     subscriber's queue, `ping_s` is the idle keep-alive interval (also
@@ -181,17 +159,10 @@ class Daemon:
     def start(self) -> None:
         self._sock_file.parent.mkdir(parents=True, exist_ok=True)
         self._sock_file.unlink(missing_ok=True)
-        if _use_tcp():
-            srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            srv.bind(("127.0.0.1", 0))
-            srv.listen(8)
-            srv.settimeout(0.5)
-            self._sock_file.write_text(str(srv.getsockname()[1]))
-        else:
-            srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            srv.bind(str(self._sock_file))
-            srv.listen(8)
-            srv.settimeout(0.5)
+        srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        srv.bind(str(self._sock_file))
+        srv.listen(8)
+        srv.settimeout(0.5)
         self._server = srv
         self._running = True
         self._thread = threading.Thread(target=self._accept_loop, daemon=True)
@@ -304,16 +275,6 @@ class Daemon:
 
 
 def _connect(sock_file, timeout: float) -> socket.socket:
-    if _use_tcp():
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(timeout)
-        try:
-            port = int(sock_file.read_text().strip())
-            s.connect(("127.0.0.1", port))
-        except Exception:
-            s.close()
-            raise ConnectionError("no daemon (port file absent)")
-        return s
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.settimeout(timeout)
     try:
@@ -381,22 +342,10 @@ def send(cmd: dict, sock_file=config.SOCK_FILE, timeout: float = _TIMEOUT) -> di
     """Send one command to the daemon; returns its reply dict.
 
     Raises ConnectionError when the socket is absent/refused."""
-    tcp = _use_tcp()
-    if tcp:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(timeout)
-        try:
-            port = int(sock_file.read_text().strip())
-            s.connect(("127.0.0.1", port))
-        except Exception:
-            s.close()
-            raise ConnectionError("no daemon (port file absent)")
-    else:
-        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        s.settimeout(timeout)
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(timeout)
     try:
-        if not tcp:
-            s.connect(str(sock_file))
+        s.connect(str(sock_file))
         s.sendall(json.dumps(cmd).encode() + b"\n")
         data = b""
         while not data.endswith(b"\n"):

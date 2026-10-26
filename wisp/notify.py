@@ -3,7 +3,7 @@
 Linux talks to org.freedesktop.Notifications through `gdbus` (no new
 deps); the server is detected at runtime with GetServerInformation and
 GetCapabilities (read-only calls). Without gdbus or a server it falls
-back to `platform.notify_cmd` (notify-send / osascript / powershell),
+back to `platform.notify_cmd` (notify-send),
 which has no actions and no replace-id.
 
 Behaviour: one toast per turn (replace-id), 60 s dedupe, quiet hours,
@@ -111,13 +111,12 @@ def _monitor(secs: float):
 
 class Notifier:
     def __init__(self, runner=None, clock=None, now=None, cfg=None,
-                 sync=False, os_name=None, monitor=None):
+                 sync=False, monitor=None):
         self._run = runner or _run
         self._clock = clock or time.monotonic
         self._now = now or datetime.now
         self.cfg = cfg or {}
         self.sync = sync
-        self._os = os_name
         self._monitor = monitor or _monitor
         self._lock = threading.Lock()
         self._info = False  # False = not probed yet; None = no server
@@ -129,12 +128,6 @@ class Notifier:
     # -- config ------------------------------------------------------
     def _opt(self, key, default=""):
         return str(self.cfg.get("notify", {}).get(key, default))
-
-    def _os_name(self):
-        if self._os:
-            return self._os
-        from . import platform
-        return platform.current()
 
     # -- server detection --------------------------------------------
     def server(self):
@@ -228,7 +221,7 @@ class Notifier:
             pass  # a toast must never break a turn
 
     def _deliver_inner(self, msg, level, turn, actions):
-        info = self.server() if self._os_name() == "linux" else None
+        info = self.server()
         if info is None:
             from . import platform
             cmd = platform.notify_cmd(TITLE, msg)

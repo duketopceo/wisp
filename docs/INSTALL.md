@@ -31,8 +31,7 @@ python3 wispd install   # core files + service + plugin + menu entry
   service object, which stdlib Python and busctl cannot export, so no
   SNI item is shipped (W27).
 - Omarchy plugin `io.github.duketopceo.wisp` (Linux/Omarchy)
-- a service: `wispd.service` (systemd user, Linux),
-  `ai.wisp.wispd` launchd plist (macOS), Task Scheduler `Wisp` (Windows)
+- a service: `wispd.service` (systemd user)
 - the push-to-talk bind in `~/.config/hypr/bindings.lua` (Hyprland only)
 
 ## Secrets
@@ -66,11 +65,6 @@ Faster/cloud: set `stt.provider = "openai"`, `stt.base_url` to Groq
   degrade where the platform has no API (documented in
   `docs/LINUX.md`). Bind `wispd trigger` through your DE's shortcut
   settings.
-- **macOS**: `wispd install` writes the launchd plist; bind `wispd
-  trigger` (or `trigger start` / `stop` for hold-to-talk) via SKHD/Raycast.
-  Grant Screen Recording + Accessibility. See `docs/MACOS.md`.
-- **Windows**: `wispd install` registers the logon task; bind via a
-  hotkey tool to `wispd.exe trigger`. See `docs/WINDOWS.md`.
 
 ## First run
 

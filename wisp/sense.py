@@ -43,9 +43,7 @@ def _append(rec: dict, path=ACTIVITY_FILE) -> None:
 
 
 def _window() -> dict:
-    """Focused window via the platform seam — the Hyprland socket on Linux, System
-    Events on macOS, Win32 on Windows. Shelling hyprctl directly here
-    meant macOS recorded nothing, silently, forever."""
+    """Focused window via the platform seam — the Hyprland socket."""
     try:
         return platform.active_window()
     except Exception:

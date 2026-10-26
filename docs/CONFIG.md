@@ -466,7 +466,6 @@ escalates to a VLM judge.
 
 | var | effect |
 |-----|--------|
-| `WISP_OS` | force the OS adapter (`linux`/`macos`/`windows`) |
 | `WISP_DESKTOP` | force the Linux desktop table (`hyprland`/`gnome`/`kde`/`x11`) |
 | `XDG_*` | standard dir resolution for config/data/runtime |
 

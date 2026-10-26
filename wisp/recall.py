@@ -49,8 +49,7 @@ def _db(path=None) -> sqlite3.Connection:
 def vec_available() -> bool:
     """True only when sqlite-vec can actually be *loaded*.
 
-    Importing the module is not enough: some Python builds (GitHub's
-    macos-latest setup-python among them) ship a sqlite3 compiled without
+    Importing the module is not enough: some Python builds ship a sqlite3 compiled without
     loadable-extension support, so `enable_load_extension` is absent and
     every vector call silently degrades to FTS-only. Callers that assert
     vector behaviour must probe this rather than trust the import.

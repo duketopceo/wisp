@@ -28,12 +28,7 @@ import selectors
 import threading
 from pathlib import Path
 
-try:
-    import fcntl
-except ImportError:
-    # Windows: no evdev — real_devices() finds no /dev/input and the
-    # watch falls through to the drift path or "off", per the docstring.
-    fcntl = None
+import fcntl
 
 from . import cancel as _cancel
 from . import delivery as _delivery

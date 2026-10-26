@@ -112,9 +112,6 @@ class ReaperTest(ReaperCase):
         self.assertEqual(self.statuses(), {"t1": "timed_out"})
 
     def test_sigterm_ignorer_escalates_to_sigkill_after_grace(self):
-        if os.name == "nt":
-            self.skipTest("Windows SIGTERM (TerminateProcess) is "
-                          "uncatchable — nothing to ignore")
         script = ("import signal,time;"
                   "signal.signal(signal.SIGTERM, signal.SIG_IGN);"
                   "print('r',flush=True);time.sleep(60)")

@@ -1,7 +1,6 @@
 """Paper surface: per-conversation `note.md` with HeyClicky `::` markup.
 
-One note file per conversation under `$XDG_STATE_HOME/wisp/notes/<conv>.md`
-(or `%LOCALAPPDATA%/wisp/notes` on Windows). The agent rewrites the file in
+One note file per conversation under `$XDG_STATE_HOME/wisp/notes/<conv>.md`. The agent rewrites the file in
 place; each write parses the `::` grammar, fsyncs, and publishes a
 `note_changed` bus event plus a `note` field on state.json for the panel.
 
@@ -49,11 +48,7 @@ def notes_dir(root: pathlib.Path | None = None) -> pathlib.Path:
         return pathlib.Path(env)
     base = os.environ.get("XDG_STATE_HOME")
     if not base:
-        if os.name == "nt":
-            base = os.environ.get("LOCALAPPDATA") \
-                or str(pathlib.Path.home() / "AppData" / "Local")
-        else:
-            base = str(pathlib.Path.home() / ".local" / "state")
+        base = str(pathlib.Path.home() / ".local" / "state")
     return pathlib.Path(base) / "wisp" / "notes"
 
 
@@ -373,7 +368,7 @@ def _atomic_write_text(path: pathlib.Path, data: str) -> None:
 
     File fsync / replace failures propagate — callers must not treat a
     failed sync as a durable success. Directory fsync is best-effort on
-    platforms that cannot open a directory fd (Windows).
+    filesystems that cannot open a directory fd.
     """
     path = pathlib.Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -399,12 +394,7 @@ def _atomic_write_text(path: pathlib.Path, data: str) -> None:
         raise
     os.replace(tmp, path)
     # Durability of the directory entry itself.
-    try:
-        dir_fd = os.open(str(path.parent), os.O_RDONLY)
-    except OSError:
-        if os.name == "nt":
-            return  # replace already committed the name
-        raise
+    dir_fd = os.open(str(path.parent), os.O_RDONLY)
     try:
         os.fsync(dir_fd)
     finally:

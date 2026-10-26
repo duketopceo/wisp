@@ -219,18 +219,6 @@ class Registry:
     def select(self, exclude: tuple = ()) -> Backend | None:
         """The driving backend to use, or None (guide mode)."""
         auto = [b for b in self._b.values() if b.drives]
-        if platform.current() != "linux":
-            # hyprcursor/ydotool/wlrctl are Linux injectors; off-Linux
-            # only cua-driver is eligible, else guide mode (None).
-            cua = self._b["cua"]
-            if exclude and "cua" in exclude:
-                return None
-            want = self.pin
-            if want == "none":
-                return None
-            if want in self._b and self._b[want].drives:
-                return self._b[want] if self._b[want].available() else None
-            return cua if cua.available() else None
         if exclude:
             return next((b for b in auto
                          if b.name not in exclude and b.available()), None)
