@@ -93,10 +93,27 @@ class TestShippedDefaults(unittest.TestCase):
         self.assertIn('provider = "openai"', config.DEFAULT_CONFIG)
         self.assertNotIn('provider = "local"', config.DEFAULT_CONFIG)
         field = next(f for f in settings_schema.FIELDS
-                     if f.key == "stt.provider") \
-            if hasattr(settings_schema, "FIELDS") else None
-        if field is not None:
-            self.assertEqual(field.default, "openai")
+                     if f.key == "stt.provider")
+        self.assertEqual(field.default, "openai")
+
+
+class DoctorWhisperRowTest(unittest.TestCase):
+    """The whisper model is only a doctor requirement for local STT."""
+
+    def _row(self, cfg):
+        from wisp.cli import diagnose
+        with mock.patch.object(config, "whisper_model",
+                               return_value=pathlib.Path("/nonexistent/m.bin")), \
+                mock.patch.object(diagnose, "_cua_rows"):
+            secs = diagnose.doctor_sections(cfg)
+        return next(r for s in secs for r in s["rows"]
+                    if r["name"] == "whisper model")
+
+    def test_hosted_default_does_not_need_the_model(self):
+        self.assertTrue(self._row({})["ok"])
+
+    def test_local_provider_still_needs_the_model(self):
+        self.assertFalse(self._row({"stt": {"provider": "local"}})["ok"])
 
 
 if __name__ == "__main__":

@@ -38,6 +38,12 @@ def make_repo(root: pathlib.Path) -> pathlib.Path:
     (repo / "assets" / "desktop").mkdir(parents=True)
     shutil.copy2(cli_env.ROOT / "assets" / "desktop" / "wisp.desktop",
                  repo / "assets" / "desktop" / "wisp.desktop")
+    # the unit template differs from this checkout's, so a test can tell
+    # which tree the installed unit came from
+    (repo / "scripts" / "units").mkdir(parents=True)
+    (repo / "scripts" / "units" / "wispd.service").write_text(
+        (cli_env.ROOT / "scripts" / "units" / "wispd.service").read_text()
+        + "# from-ref-v1\n")
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "v1")
     git(repo, "tag", "v1")
@@ -79,6 +85,14 @@ class InstallRefTest(unittest.TestCase):
         self.assertEqual(rec["ref"], "v1")
         self.assertEqual(rec["repo"], str(self.repo))
         self.assertTrue(rec["time"])
+
+    def test_ref_installs_its_own_unit_templates(self):
+        e = self.env()
+        code, out, err = e.run(["install", "--ref", "v1", "--repo",
+                                str(self.repo)])
+        self.assertEqual(code, 0, err)
+        unit = e.home / ".config" / "systemd" / "user" / "wispd.service"
+        self.assertIn("# from-ref-v1", unit.read_text())
 
     def test_uncommitted_and_later_changes_are_not_installed(self):
         (self.repo / "wisp" / "marker.py").write_text("VERSION = 'dirty'\n")

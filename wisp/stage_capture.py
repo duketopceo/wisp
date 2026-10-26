@@ -203,16 +203,16 @@ def _transcribe_openai(wav: pathlib.Path, stt: dict,
     """OpenAI-compatible /audio/transcriptions — Groq, OpenAI, vLLM,
     Together, DeepInfra. Key comes from .env/env via stt.key_env."""
     from . import vocab
-    key = config.require_key(stt.get("key_env", "GROQ_API_KEY"))
-    base = stt.get("base_url", "https://api.groq.com/openai/v1") \
-        .rstrip("/")
+    stt = {**config.STT_DEFAULTS, **stt}
+    key = config.require_key(stt["key_env"])
+    base = stt["base_url"].rstrip("/")
     boundary = f"----wisp{int(time.monotonic() * 1000)}"
     audio = wav.read_bytes()
     body = b"\r\n".join([
         f"--{boundary}".encode(),
         b'Content-Disposition: form-data; name="model"',
         b"",
-        stt.get("model", "whisper-large-v3-turbo").encode(),
+        stt["model"].encode(),
         f"--{boundary}".encode(),
         b'Content-Disposition: form-data; name="prompt"',
         b"",

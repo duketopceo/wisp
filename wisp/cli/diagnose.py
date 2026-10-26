@@ -54,8 +54,10 @@ def doctor_sections(cfg: dict, cua_probe=None) -> list:
 
     row = section("stt / audio")
     wm = config.whisper_model(cfg)
-    row("whisper model", wm.name, wm.exists())
-    row("stt provider", cfg.get("stt", {}).get("provider", "local"))
+    stt = config.stt_settings(cfg)["provider"]
+    # whisper.cpp is opt-in; hosted STT needs no local model
+    row("whisper model", wm.name, stt != "local" or wm.exists())
+    row("stt provider", stt)
     for b in ("pw-record", "wtype", "grim"):
         row(b, shutil.which(b) or "not on PATH", bool(shutil.which(b)))
 

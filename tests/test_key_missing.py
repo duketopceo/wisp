@@ -33,8 +33,8 @@ class _NoKeys(unittest.TestCase):
 class TestKeyMissing(_NoKeys):
     def test_code_is_in_the_closed_set_with_copy(self):
         self.assertIn("key_missing", errors_codes.CODES)
-        self.assertIn("wispd onboard", errors_codes.human("key_missing")
-                      + " wispd onboard")
+        from wisp import copy as wcopy
+        self.assertIn("wispd onboard", wcopy.ERRORS["key_missing"][1])
 
     def test_stt_without_a_key_names_groq_and_onboard(self):
         wav = pathlib.Path(tempfile.mktemp(suffix=".wav"))
@@ -55,11 +55,9 @@ class TestKeyMissing(_NoKeys):
     def test_turn_error_is_published_as_key_missing_without_traceback(self):
         st = wstate.State(
             state_file=pathlib.Path(tempfile.mkdtemp()) / "state.json")
-        try:
+        with self.assertRaises(errors_codes.WispError) as cm:
             config.load_api_key()
-        except Exception as e:  # noqa: BLE001
-            exc = e
-        pipeline._publish_error(st, exc)
+        pipeline._publish_error(st, cm.exception)
         snap = st.snapshot()
         self.assertEqual(snap["error_code"], "key_missing")
         self.assertIn("OPENROUTER_API_KEY", snap["error"])
