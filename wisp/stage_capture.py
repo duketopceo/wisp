@@ -162,7 +162,8 @@ def _amplitude_sampler(seconds: int | None, state=None,
 
 
 def transcribe(wav: pathlib.Path, cfg: dict) -> str:
-    provider = cfg.get("stt", {}).get("provider", "local")
+    stt = config.stt_settings(cfg)
+    provider = stt["provider"]
     if provider == "wordink":
         try:
             import wordink
@@ -174,7 +175,7 @@ def transcribe(wav: pathlib.Path, cfg: dict) -> str:
         except Exception:
             pass
     if provider == "openai":
-        return _transcribe_openai(wav, cfg["stt"], cfg)
+        return _transcribe_openai(wav, stt, cfg)
     model = config.whisper_model(cfg)
     if not (config.WHISPER_BIN.exists() and model.exists()):
         raise RuntimeError(f"whisper.cpp missing: {config.WHISPER_BIN} / {model}")
@@ -377,7 +378,7 @@ def capture_stage(ctx) -> bool:
     token.check()
     sp.record("stt", sp.rel0)
     _trace.emit(ctx.turn, "transcribe", "stt",
-                {"provider": cfg.get("stt", {}).get("provider", "local"),
+                {"provider": config.stt_settings(cfg)["provider"],
                  "text": text}, sp.ms["stt"])
     state.transition("deciding", transcript=text)
     ctx.text = text

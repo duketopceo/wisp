@@ -81,7 +81,7 @@ def http_up(url: str, timeout: float = 0.5) -> bool:
 
 
 def _whisper_ok(cfg: dict) -> bool:
-    if cfg.get("stt", {}).get("provider", "local") != "local":
+    if config.stt_settings(cfg)["provider"] != "local":
         return True
     return config.whisper_model(cfg).exists()
 

@@ -40,22 +40,23 @@ python3 wispd install   # core files + service + plugin + menu entry
 
 ```
 OPENROUTER_API_KEY=sk-or-...
-GROQ_API_KEY=gsk-...        # only if stt.provider = "openai"
+GROQ_API_KEY=gsk-...        # hosted speech-to-text (the default)
 ```
 
 Env vars take precedence over `.env` — handy for testing.
 
 ## Speech-to-text
 
-Default is local whisper.cpp (free, private):
+Default is hosted: an OpenAI-compatible audio API, Groq
+(`https://api.groq.com/openai/v1`, `whisper-large-v3-turbo`) unless you
+change `stt.base_url`/`stt.model`; `stt.key_env` names the env var
+holding the key.
+
+Offline/private: set `stt.provider = "local"` for whisper.cpp:
 
 ```sh
 sh scripts/fetch_whisper.sh      # clones + builds whisper-cli, downloads ggml-small.en
 ```
-
-Faster/cloud: set `stt.provider = "openai"`, `stt.base_url` to Groq
-(`https://api.groq.com/openai/v1`) or any OpenAI-compatible audio API,
-`stt.key_env` to the env var name holding the key.
 
 ## Per-OS notes
 

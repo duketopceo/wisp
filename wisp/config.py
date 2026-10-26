@@ -239,11 +239,12 @@ gate_min_turns = 50
 theme = "dark"
 
 [stt]
-# Speech-to-text backend. "local" = whisper.cpp (default, offline).
-# "openai" = any OpenAI-compatible /audio/transcriptions endpoint —
-# Groq (base_url https://api.groq.com/openai/v1, model
-# whisper-large-v3-turbo), OpenAI, vLLM, Together, DeepInfra.
-provider = "local"
+# Speech-to-text backend. "openai" = any OpenAI-compatible
+# /audio/transcriptions endpoint (default) — Groq (base_url
+# https://api.groq.com/openai/v1, model whisper-large-v3-turbo),
+# OpenAI, vLLM, Together, DeepInfra. "local" = whisper.cpp (offline,
+# opt-in: sh scripts/fetch_whisper.sh).
+provider = "openai"
 base_url = "https://api.groq.com/openai/v1"
 model = "whisper-large-v3-turbo"
 # env var / .env key holding the API key — comma list tries sources in
@@ -530,6 +531,20 @@ def local_enabled(cfg: dict | None) -> bool:
 def whisper_model(cfg: dict) -> pathlib.Path:
     name = cfg.get("audio", {}).get("whisper_model", "ggml-small.en.bin")
     return WHISPER_HOME / "models" / name
+
+
+STT_DEFAULTS = {
+    "provider": "openai",
+    "base_url": "https://api.groq.com/openai/v1",
+    "model": "whisper-large-v3-turbo",
+    "key_env": "GROQ_API_KEY",
+}
+
+
+def stt_settings(cfg: dict | None) -> dict:
+    """[stt] with the hosted defaults filled in under whatever the user
+    set — load_config does not merge defaults into an existing file."""
+    return {**STT_DEFAULTS, **((cfg or {}).get("stt") or {})}
 
 
 def load_env_key(name: str) -> str:
