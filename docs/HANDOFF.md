@@ -41,6 +41,6 @@ python3 -m unittest discover -s tests -q
 - v1.0 soak: ≥50 labelled runs per route, fresh-box install ≤10 min,
   learning loop exercised twice.
 - Warm/streaming STT (W12), contract-freeze housekeeping (W31).
-- Platform residuals: GNOME/KDE window ops degrade by design; Windows
-  workspaces need COM; streaming TTS remains sentence-chunked batch.
+- Platform residuals: GNOME/KDE window ops degrade by design;
+  streaming TTS remains sentence-chunked batch.
 - Grounding accuracy is a model/config knob, not a missing feature.

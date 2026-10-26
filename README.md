@@ -14,9 +14,7 @@ listening pill on the overlay, and the Panel.
 
 Status: v0.9 shipped; v1.0 is a verification milestone (a labelled soak,
 a fresh-box install and the learning loop; see `ROADMAP.md`). Linux
-(Omarchy/Hyprland) is the primary platform. macOS is supported through
-the platform layer (`docs/MACOS.md`). Windows is scaffolded, not
-supported.
+(Omarchy/Hyprland) is the only supported platform.
 
 ## What it looks like
 

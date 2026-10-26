@@ -103,12 +103,9 @@ daemon: `systemctl --user wispd` (runs `~/.local/opt/wisp/wispd`);
 
 | Path | What |
 |---|---|
-| `wisp/platform.py` | OS adapter seam — per-OS command tables, runtime dirs |
+| `wisp/platform.py` | Linux platform shim — runtime dirs, command tables |
 | `rs/wispd/src/platform.rs` | Rust mirror |
-| `docs/MACOS.md` | macOS paths, permissions, hotkey |
-| `docs/WINDOWS.md` | Windows TCP transport, schtasks |
 | `docs/LINUX.md` | Generic Linux desktop matrix |
-| `tests/test_ipc_tcp.py` | TCP transport roundtrip |
 
 ## Plans
 
