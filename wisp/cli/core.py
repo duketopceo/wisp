@@ -3,7 +3,9 @@ tui, completion."""
 import contextlib
 import io
 import json
+import pathlib
 import sys
+import tempfile
 
 from . import registry
 from .registry import CliError, GROUPS, command
@@ -37,12 +39,19 @@ def _install_args(p):
     p.add_argument("--dry-run", action="store_true",
                    help="print the plan, change nothing "
                         "(also with --cua or --units)")
+    p.add_argument("--ref", metavar="GIT_REF",
+                   help="install this git ref (branch, tag or commit) "
+                        "of the source repo instead of the working tree")
+    p.add_argument("--repo", metavar="PATH",
+                   help="source repo for --ref (default: the repo of "
+                        "the last install)")
 
 
 @command("daemon install",
          "Install runtime files, the systemd unit and the hotkey bind",
          ["wispd daemon install", "wispd install --dry-run",
-          "wispd install --units --dry-run"],
+          "wispd install --units --dry-run",
+          "wispd install --ref origin/master --dry-run"],
          {"installed": "bool", "cua": "any", "units": "any"},
          args=_install_args)
 def daemon_install(ctx, a):
@@ -51,8 +60,36 @@ def daemon_install(ctx, a):
     if a.units:
         return _install_units(ctx, a)
 
+    if a.repo and not a.ref:
+        raise CliError("E_USAGE", "--repo only applies with --ref.",
+                       "wispd install --ref <git-ref> --repo <path>")
+    if a.ref:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, commit = _export_ref(a, tmp)
+            return _install(ctx, a, pathlib.Path(tmp), repo, commit)
+    return _install(ctx, a, None, None, None)
+
+
+def _export_ref(a, tmp):
+    """Unpack --ref of the source repo into `tmp`; (repo, commit)."""
+    from .. import deploy
+    repo = a.repo or (deploy.read() or {}).get("repo")
+    if not repo:
+        raise CliError("E_USAGE", "No source repo is recorded for --ref.",
+                       "wispd install --ref <git-ref> --repo <path>")
+    try:
+        return repo, deploy.export_ref(repo, a.ref, tmp)
+    except ValueError as e:
+        raise CliError("E_FAILED", str(e),
+                       "wispd install --ref <git-ref> --repo <path>")
+
+
+def _install(ctx, a, src, repo, commit):
     def go():
-        ctx.host.install_files(dry_run=a.dry_run, cfg=ctx.cfg)
+        ctx.host.install_files(
+            dry_run=a.dry_run, cfg=ctx.cfg, src=src,
+            deploy={"repo": repo, "ref": a.ref, "commit": commit}
+            if src else None)
         if not a.dry_run:
             ctx.host.install_bind(ctx.cfg)
         return 0
@@ -121,11 +158,16 @@ def daemon_harness(ctx, a):
 
 
 @command("status", "Show the daemon state (JSON)",
-         ["wispd status", "wispd status --json"], {"state": "dict"})
+         ["wispd status", "wispd status --json"],
+         {"state": "dict", "deploy": "dict"})
 def status(ctx, a):
+    from .. import deploy
     reply = ctx.expect_ok(ctx.send({"cmd": "status"}))
-    return ctx.emit({"state": reply.get("state", {})},
-                    json.dumps(reply, indent=2))
+    dep = deploy.summary()
+    text = json.dumps(reply, indent=2)
+    if dep["commit"] != "unknown":
+        text += f"\ndeployed: {dep['commit'][:12]} ({dep.get('time')})"
+    return ctx.emit({"state": reply.get("state", {}), "deploy": dep}, text)
 
 
 @command("stop", "Ask the daemon to shut down",
