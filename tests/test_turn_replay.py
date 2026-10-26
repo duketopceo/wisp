@@ -400,7 +400,7 @@ class TurnReplayTest(unittest.TestCase):
         fx = copy.deepcopy(runner.load_fixture(FIXTURES / "act.json"))
         for r in fx["endpoints"]["brain"]["responses"]:
             r["latency_ms"] = 200
-        fx["interrupt_after_ms"] = 100
+        fx["interrupt_after_in_flight_ms"] = 50   # cancel once a step is running, not on wall clock
         res = runner.run_turn(fx)
         self.assertTrue(res.final["result"].startswith("INTERRUPTED"))
 

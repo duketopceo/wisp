@@ -96,10 +96,14 @@ class ExpectationKeysTest(unittest.TestCase):
         self.assertTrue(runner.check_expectations(r))
 
 
+TURN_CAP_MS = 4000
+
+
 class CorpusRunTest(unittest.TestCase):
     def test_every_fixture_meets_its_expectations_under_20s(self):
         t0 = time.monotonic()
         bad = {}
+        slow = {}
         for p in FIXTURES:
             res = runner.run_turn(_load(p) | {"_dir": str(DIR)})
             problems = runner.check_expectations(res)
@@ -107,10 +111,19 @@ class CorpusRunTest(unittest.TestCase):
                 problems.append(f"network violations {res.violations}")
             if problems:
                 bad[p.stem] = problems
+            turn_ms = runner._spans(res).get("turn_ms")
+            if turn_ms is not None and turn_ms > TURN_CAP_MS * runner.JITTER:
+                slow[p.stem] = turn_ms
         self.assertEqual(bad, {})
-        # budget was 20s pre-recording; start/stop_recording + session mint
-        # add ~3 fake-cua calls per act turn
-        self.assertLess(time.monotonic() - t0, 24.0 * runner.JITTER)
+        self.assertEqual(
+            slow, {}, f"fixture turn exceeded {TURN_CAP_MS * runner.JITTER:.0f}"
+            " ms (per-turn latency, excludes child spawn)")
+        # Latency is bounded per turn (the harness's own turn_ms, which
+        # excludes child-process spawn), so it measures the product rather
+        # than how loaded the test machine is. Idle max is ~1.9 s (act
+        # turns: start/stop_recording + session mint); cap is ~2x that.
+        # The whole-corpus bound below is only a hang guard.
+        self.assertLess(time.monotonic() - t0, 60.0 * runner.JITTER)
 
 
 if __name__ == "__main__":

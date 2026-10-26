@@ -137,6 +137,37 @@ def main(spec_path: str) -> int:
         view = dict(sub.snapshot)
         stop_drain = threading.Event()
 
+        # -- interrupt (stands in for the user's stop) -----------------
+        # `interrupt_after_ms` is wall-clock from run_listen; under CPU
+        # load the pre-brain stages can outlast it, so the stop lands before
+        # the turn reaches the stage it means to cancel. The event-relative
+        # keys arm the timer when the drained view first shows that stage:
+        #   interrupt_after_first_delta_ms: answer first non-empty
+        #   interrupt_after_in_flight_ms:   first tool action in_flight
+        interrupt = threading.Event()
+        rel_delta = spec.get("interrupt_after_first_delta_ms")
+        rel_flight = spec.get("interrupt_after_in_flight_ms")
+        armed = {"done": False}
+
+        def fire():
+            out["interrupt_t"] = time.monotonic()
+            interrupt.set()
+            out["interrupt_fired"] = True
+
+        def arm_relative():
+            if armed["done"]:
+                return
+            if rel_delta is not None and view.get("answer"):
+                delay = rel_delta
+            elif rel_flight is not None and any(
+                    a.get("kind") == "tool" and a.get("status") == "in_flight"
+                    for a in view.get("actions") or []):
+                delay = rel_flight
+            else:
+                return
+            armed["done"] = True
+            threading.Timer(delay / 1000.0, fire).start()
+
         def drain():
             while True:
                 ev = sub.get(0.05)
@@ -147,6 +178,7 @@ def main(spec_path: str) -> int:
                 if ev.get("type") != "state":
                     continue
                 view.update(ev["diff"])
+                arm_relative()
                 bus_obs["event_seqs"].append(ev["seq"])
                 out["events"].append({
                     "t": time.monotonic(), "status": view["status"],
@@ -169,13 +201,8 @@ def main(spec_path: str) -> int:
                 time.sleep(chooser.get("delay_ms", 0) / 1000.0)
                 return chooser.get("pick")
 
-        interrupt = threading.Event()
         after = spec.get("interrupt_after_ms")
         if after is not None:
-            def fire():
-                out["interrupt_t"] = time.monotonic()
-                interrupt.set()
-                out["interrupt_fired"] = True
             threading.Timer(after / 1000.0, fire).start()
 
         code = pipeline.run_listen(cfg, st, wait_for_choice=wait,
