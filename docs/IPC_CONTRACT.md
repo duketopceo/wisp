@@ -48,7 +48,7 @@ future tray apps). Shells MUST only depend on this document.
 The daemon captures `SO_PEERCRED` (`{pid, uid}`) on every AF_UNIX connection and classifies IPC commands into two sets (**deny-by-default**):
 
 - **Read class (`READ_CMDS`):** `status`, `task_status`, `context`, `subscribe`, `captures`, `suggestions`, `task_output`, `task_artifacts`.
-- **Mutating class (`MUTATING_CMDS` + anything unlisted):** `agent`, `task_cancel`, `choice`, `config`, `memory`, `stop`, `interrupt`, `listen`, `label`, `dictate_correct`, `learn`, `harness`, and any unknown or future command not in `READ_CMDS`.
+- **Mutating class (`MUTATING_CMDS` + anything unlisted):** `agent`, `task_cancel`, `choice`, `config`, `memory`, `stop`, `interrupt`, `listen`, `label`, `dictate_correct`, `learn`, `harness`, and any unknown or future command not in `READ_CMDS`. `config` and `memory` are mutating as whole commands, so their get forms (`wispd config`, `wispd memory`) are refused for marked peers too: a `config` reply carries the full config, including key references.
 
 Every process spawned via `agent_spawn` is placed in a registered task scope (`wisp-task-<id>.scope` via `systemd-run --user --scope` on systemd hosts, recorded in `tasks.jsonl` alongside `WISP_TASK_ID` and root PID/start-time). On each request `_dispatch` checks the connecting peer:
 

@@ -291,6 +291,26 @@ class VoiceTaughtRoutinesU4Test(unittest.TestCase):
         self.assertIn("CREATED routine pr-digest", res)
         self.assertIsNotNone(self.store.get("pr-digest"))
 
+    def test_teach_intent_routes_to_learn_without_jev_under_every_router(self):
+        from wisp import stage_route
+        teach = "Save this as my pr digest routine every hour to check PRs"
+        for router in ("act", "jev", "chat"):
+            self.assertEqual(stage_route.fixed_route(teach, router),
+                             ("learn", teach), router)
+        self.assertEqual(stage_route.fixed_route(teach, "off"),
+                         ("clarify", None))
+
+    def test_fixed_route_keeps_existing_router_table(self):
+        from wisp import stage_route
+        self.assertEqual(stage_route.fixed_route("open firefox", "act"),
+                         ("act", None))
+        self.assertEqual(stage_route.fixed_route("what is this", "chat"),
+                         ("answer", None))
+        self.assertIsNone(stage_route.fixed_route("open firefox", "jev"))
+        self.assertEqual(
+            stage_route.fixed_route("wisp agent: tidy downloads", "jev"),
+            ("act", "tidy downloads"))
+
 
 if __name__ == "__main__":
     unittest.main()
