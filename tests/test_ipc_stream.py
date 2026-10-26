@@ -35,13 +35,8 @@ class StreamCase(unittest.TestCase):
         return self.srv
 
     def open(self, topics=None, **extra):
-        if hasattr(socket, "AF_UNIX"):
-            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            s.connect(str(self.sock))
-        else:
-            # Windows: the daemon serves TCP loopback, port in the file.
-            s = socket.create_connection(
-                ("127.0.0.1", int(self.sock.read_text().strip())), 5)
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.connect(str(self.sock))
         s.settimeout(5)
         msg = {"cmd": "subscribe", **extra}
         if topics is not None:
