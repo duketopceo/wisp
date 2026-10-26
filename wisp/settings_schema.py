@@ -169,9 +169,9 @@ FIELDS = (
        "Trajectory and recall writes held in memory before the oldest "
        "is dropped",
        min=1, max=100000),
-    _f("stt.provider", "choice", "local",
-       "Speech to text: local whisper.cpp or an API",
-       choices=("local", "openai")),
+    _f("stt.provider", "choice", "openai",
+       "Speech to text: an OpenAI-compatible API or local whisper.cpp",
+       choices=("openai", "local")),
     _f("packs.keep", "int", "200",
        "Newest capture packs retained under packs/ (0 disables the "
        "count bound)",
