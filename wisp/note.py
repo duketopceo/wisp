@@ -1,7 +1,6 @@
 """Paper surface: per-conversation `note.md` with HeyClicky `::` markup.
 
-One note file per conversation under `$XDG_STATE_HOME/wisp/notes/<conv>.md`
-. The agent rewrites the file in
+One note file per conversation under `$XDG_STATE_HOME/wisp/notes/<conv>.md`. The agent rewrites the file in
 place; each write parses the `::` grammar, fsyncs, and publishes a
 `note_changed` bus event plus a `note` field on state.json for the panel.
 
