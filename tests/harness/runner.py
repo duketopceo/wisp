@@ -397,6 +397,8 @@ def run_turn(fixture, timeout: float = 60.0) -> TurnResult:
                 fx.get("interrupt_after_first_delta_ms"),
             "interrupt_after_in_flight_ms":
                 fx.get("interrupt_after_in_flight_ms"),
+            "interrupt_after_step_done_ms":
+                fx.get("interrupt_after_step_done_ms"),
             "result": str(tmp / "result.json"),
         }
         spec_path = tmp / "spec.json"

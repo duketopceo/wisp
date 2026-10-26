@@ -144,9 +144,11 @@ def main(spec_path: str) -> int:
         # keys arm the timer when the drained view first shows that stage:
         #   interrupt_after_first_delta_ms: answer first non-empty
         #   interrupt_after_in_flight_ms:   first tool action in_flight
+        #   interrupt_after_step_done_ms:   first tool action done
         interrupt = threading.Event()
         rel_delta = spec.get("interrupt_after_first_delta_ms")
         rel_flight = spec.get("interrupt_after_in_flight_ms")
+        rel_done = spec.get("interrupt_after_step_done_ms")
         armed = {"done": False}
         timers = []
 
@@ -161,15 +163,19 @@ def main(spec_path: str) -> int:
             timers.append(t)
             t.start()
 
+        def tool_status_seen(status):
+            return any(a.get("kind") == "tool" and a.get("status") == status
+                       for a in view.get("actions") or [])
+
         def arm_relative():
             if armed["done"]:
                 return
             if rel_delta is not None and view.get("answer"):
                 delay = rel_delta
-            elif rel_flight is not None and any(
-                    a.get("kind") == "tool" and a.get("status") == "in_flight"
-                    for a in view.get("actions") or []):
+            elif rel_flight is not None and tool_status_seen("in_flight"):
                 delay = rel_flight
+            elif rel_done is not None and tool_status_seen("done"):
+                delay = rel_done
             else:
                 return
             armed["done"] = True
@@ -210,7 +216,8 @@ def main(spec_path: str) -> int:
 
         after = spec.get("interrupt_after_ms")
         if after is not None and (rel_delta is not None
-                                  or rel_flight is not None):
+                                  or rel_flight is not None
+                                  or rel_done is not None):
             raise ValueError("interrupt_after_ms cannot be combined with "
                              "an event-relative interrupt key")
         if after is not None:
