@@ -32,9 +32,27 @@ future tray apps). Shells MUST only depend on this document.
 | `label` | `label: correct\|incorrect` | `{ok, result}` | tag the most recent decision (soak intent-match + trajectory join) |
 | `dictate_correct` | `{"heard","meant"}` | `{ok, result}` or `{ok:false, error, result}` | record a personal dictation correction → `dictation.json` (U6); cleanup/compose prompts carry the table |
 | `context` | — | `{ok, result}` | focused app, `[windows]` workspace map, inventory counts |
+| `captures` | `turn_id?: string`, `full?: bool`, `limit?: int` | `{ok, packs}` or `{ok, manifest}` | read capture-pack list or manifest |
+| `task_output` | `name: string` | `{ok, name, status, exit_code, output}` | read named-agent log output (U2) |
+| `task_artifacts` | `name: string` | `{ok, name, out_dir, delivered, deliverables, artifacts}` | read named-agent output workspace + deliverable verification (U2) |
 | `learn` | — | `{ok, result}` | weekly learning proposals (human-gated) |
 | `harness` | — | `{ok, result}` | regenerate the app harness catalog |
 | unknown/malformed | — | `{ok:false, error}` | — |
+
+### Command authorization & marked-peer boundary (U1, R2)
+
+The daemon captures `SO_PEERCRED` (`{pid, uid}`) on every AF_UNIX connection and classifies IPC commands into two sets (**deny-by-default**):
+
+- **Read class (`READ_CMDS`):** `status`, `task_status`, `context`, `subscribe`, `captures`, `suggestions`, `task_output`, `task_artifacts`. `captures` with `full: true` (transcript/state-dump fields) is refused for marked peers with `"reason": "gated_read"`.
+- **Mutating class (`MUTATING_CMDS` + anything unlisted):** `agent`, `task_cancel`, `choice`, `config`, `memory`, `stop`, `interrupt`, `listen`, `label`, `dictate_correct`, `learn`, `harness`, and any unknown or future command not in `READ_CMDS`. `config` and `memory` are mutating as whole commands, so their get forms (`wispd config`, `wispd memory`) are refused for marked peers too: a `config` reply carries the full config, including key references.
+
+Every process spawned via `agent_spawn` is placed in a registered task scope (`wisp-task-<id>.scope` via `systemd-run --user --scope` on systemd hosts, recorded in `tasks.jsonl` alongside `WISP_TASK_ID` and root PID/start-time). On each request `_dispatch` checks the connecting peer:
+
+1. **Marked peer (verified against `tasks.jsonl` via cgroup scope, PID/ancestry, or `WISP_TASK_ID`):** allowed `READ_CMDS` only. Any mutating or unlisted command is refused with `{"ok": false, "error": "marked_peer_refused", "reason": "mutating_cmd"|"safety_key"|"gated_read", "cmd": <cmd>, "task_id": <id>}`, and `refused_count` is incremented on the task record in `tasks.jsonl`. `config set` on safety-lowering keys (`agent.allow_shell`, `agent.autonomy`, `agent.risk_threshold`, `cua.*`, any `budget.*` key, `agents.act_max_usd`, `pointer.mode`) refuses marked peers with `"reason": "safety_key"`.
+2. **Spoofed marker (a `wisp-task-*.scope` cgroup matching no task record in `tasks.jsonl` (any status), or a `WISP_TASK_ID` not matching a running task):** refused on all commands with `{"ok": false, "error": "marked_peer_refused", "reason": "unregistered_task_id"|"unregistered_scope"}`.
+3. **Unmarked same-uid peer (normal CLI, shell widgets):** all commands pass. Arbitrary unmarked local processes and direct file writes to `config.toml`/`routines.json`/`MEMORY.md` remain outside the IPC split by design.
+4. **Non-systemd fallback limitation:** on hosts without a user systemd session, marking falls back to `WISP_TASK_ID` + `ppid` ancestry walk; a child that both clears its environment and reparents via double-fork/`setsid` can escape ancestry marking on those hosts (cgroup scope marking on Linux/systemd closes that escape).
+5. **Local-only `connect` verb:** `wispd connect` refuses when invoked from a marked peer so OAuth granting stays human-only.
 
 ### `listen` replies (additive; #110)
 
@@ -343,13 +361,28 @@ subscriber never delays state.json writes or other subscribers.
 
 `wispd watch [topic ...]` prints this stream (reconnecting forever).
 
-Agent reaper (core behaviour behind the `tasks` field): every 5 s the
-daemon closes tasks whose process is gone (`exited`), SIGTERMs tasks past
-`[agent] task_timeout_s` (`timed_out`), SIGKILLs a cancelled or timed-out
-process that ignored SIGTERM for 10 s, and never signals a pid whose
-start-time differs from the one recorded at spawn (PID reuse). Each
-running to not-running transition publishes the new `tasks` and one
-`task_finished` event.
+Agent reaper (core behaviour behind the `tasks` field; U2): every 5 s the
+daemon closes tasks whose process is gone, SIGTERMs tasks past
+`[agent] task_timeout_s` (`timed_out`), and escalates to SIGKILL after 10 s.
+Every spawn path wraps the child in an exit-code shim (`tasks/<id>.exit`)
+and creates an output workspace at `tasks/<id>/out/`. At reap time:
+
+- Exit code `0` transitions the task to `done`; non-zero exit or signal/kill
+  transitions to `failed` (`exited` only for legacy unshimmed records with
+  no exit-code evidence).
+- Each path declared in `delivers[]` is verified on disk (regular file,
+  non-empty, `mtime` within the task's run window) and recorded as
+  `delivered` or `missing` in `deliverables[]`; `delivered: bool` is true
+  only when the task exited `0` and every declared deliverable passed.
+- Paths outside `out_dir`, symlinks escaping `out_dir`, and executable /
+  `.desktop` files are flagged (`flagged: true`, `openable: false`) and
+  never offered as notification `open` actions.
+- `task_finished` push events and `_agent_done` notifications report facts
+  (`"claims <file> — not on disk"` when `delivered: false`) and include
+  `refused_count` when mutating IPC commands were blocked under U1.
+- The reaper never signals a pid whose start-time differs from the one
+  recorded at spawn (PID reuse). Each running to not-running transition
+  publishes the new `tasks` and one `task_finished` event.
 
 ## Data files (shared by both cores, never versioned differently)
 

@@ -379,6 +379,29 @@ def _ask_prompt(state, wait_for_choice, token, options: list,
     return pick
 
 
+def fixed_route(text: str, router: str):
+    """Routes decided without the Jev hop, as (choice, detail); None
+    means ask route.decide. An explicit 'wisp agent ...' prefix wins,
+    then router off; a voice-taught routine utterance goes to learn
+    under every other router, so it still works when router = act."""
+    from . import routines
+    agent_m = re.match(r"^\s*wisp\s+agent[:,.\s-]+(.*)$", text,
+                       re.IGNORECASE)
+    if agent_m and agent_m.group(1).strip():
+        # explicit agent mode — skip Jev, straight to the
+        # computer-use loop with the trigger screenshot
+        return "act", agent_m.group(1).strip()
+    if router == "off":
+        return "clarify", None
+    if routines.parse_teach_intent(text) is not None:
+        return "learn", text
+    if router == "act":
+        return "act", None
+    if router == "chat":
+        return "answer", None
+    return None
+
+
 def route_stage(ctx) -> bool:
     """Decide the route. False when the turn ended here (low confidence
     and no pick): it is already finished."""
@@ -396,19 +419,12 @@ def route_stage(ctx) -> bool:
     route_start = sp.now()
     route_meta = None
     router = cfg.get("brain", {}).get("router", "act")
-    agent_m = re.match(r"^\s*wisp\s+agent[:,.\s-]+(.*)$", text,
-                       re.IGNORECASE)
-    if agent_m and agent_m.group(1).strip():
-        # explicit agent mode — skip Jev, straight to the
-        # computer-use loop with the trigger screenshot
-        ctx.detail = agent_m.group(1).strip()
-        resp = {"answers": {"route": {"choice": "act"}}}
-    elif router == "act":
-        resp = {"answers": {"route": {"choice": "act"}}}
-    elif router == "chat":
-        resp = {"answers": {"route": {"choice": "answer"}}}
-    elif router == "off":
-        resp = {"answers": {"route": {"choice": "clarify"}}}
+    fixed = fixed_route(text, router)
+    if fixed:
+        choice, detail = fixed
+        if detail:
+            ctx.detail = detail
+        resp = {"answers": {"route": {"choice": choice}}}
     else:
         resp, route_meta = _route.decide(
             text, model, pl.build_questions(harness), context, cfg,

@@ -42,7 +42,8 @@ _AGENT = re.compile(
     r"^(?:have an agent|spawn (?:an? )?agent|delegate\b|agent[:,])", re.I)
 _LEARN = re.compile(
     r"^(?:learn (?:how|to|that)\b|remember (?:this|how|that)\b|"
-    r"add a skill\b)", re.I)
+    r"add a skill\b|save (?:this )?as (?:my |a )?.{0,40}?\broutine\b|"
+    r"create a routine\b)", re.I)
 _WH = re.compile(
     r"^(?:what|what's|whats|who|whom|whose|when|where|why|how|which|"
     r"is|are|am|was|were|do|does|did|should|tell me|explain|define|"
