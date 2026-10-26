@@ -12,6 +12,7 @@ import re
 import shutil
 import signal
 import subprocess
+import sys
 import threading
 from datetime import datetime, timezone
 
@@ -84,15 +85,6 @@ def _proc_ppid(pid: int) -> int:
         tail = stat.rsplit(")", 1)[-1].split()
         return int(tail[1])
     except (OSError, IndexError, ValueError):
-        pass
-    if sys.platform == "win32" or pathlib.Path("/proc/self").exists():
-        return 0
-    try:
-        out = subprocess.run(["ps", "-o", "ppid=", "-p", str(pid)],
-                             capture_output=True, text=True,
-                             timeout=2).stdout.strip()
-        return int(out) if out else 0
-    except (OSError, subprocess.SubprocessError, ValueError):
         return 0
 
 
