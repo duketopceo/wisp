@@ -30,6 +30,7 @@ table to list every fixture.
 | `act_confirm_no` | choose/confirm | [cua] confirm = always: the chooser answers no, the click is declined and cua-driver is never called. |
 | `act_confirm_yes` | choose/confirm | [cua] confirm = always: the click asks first; the scripted chooser answers yes and cua-driver is called once. |
 | `act_guide_mode` | guide mode | pointer.mode = guide: the click is a user hand-off (ghost cursor guide), no backend is invoked. |
+| `act_open_mail` | open mail in browser | Act route: 'open my email' makes one launch(mail) step. The launch stub returns the OPENED line the real launch gives when mail resolves to a browser (tests/test_tools.py proves that); the turn ends ACTED, never a focused-window success. |
 | `ask` | answer | Answer route: Jev routes to answer, brain streams a reply. Characterization baseline of today's pipeline. |
 | `brain_down` | brain down | Answer brain returns 500 and no fallback is configured: the turn ends in error with error_code brain_down (U7). No canned answer. |
 | `brain_fallback` | brain fallback | Primary answer brain returns 500; [brain] fallback names a second fake brain which answers. Trace records fallback_from (U7). |

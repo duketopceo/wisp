@@ -123,6 +123,81 @@ class TestToolExec(unittest.TestCase):
         self.assertIn("OPENED https://gmail.com", out)
         ex.assert_called_once_with("xdg-open https://gmail.com")
 
+    def _mail_launch(self, cfg, role_app="browseros", win=None,
+                     role="mail"):
+        """launch(role) with the owner's mimeapps shape: the role
+        resolves to role_app; the browser role resolves to browseros."""
+        defaults = {"mail": role_app, "calendar": role_app,
+                    "browser": "browseros"}
+        with mock.patch("wisp.inventory.defaults",
+                        return_value=defaults), \
+             mock.patch.object(tools.desktop, "_find_window",
+                               return_value=win), \
+             mock.patch.object(tools.desktop.shutil, "which",
+                               return_value="/x/bin"), \
+             mock.patch("wisp.platform._try", return_value=True), \
+             mock.patch.object(tools.desktop, "_exec_detached") as ex:
+            out = tools.desktop.launch(role, cfg)
+        return out, ex
+
+    def test_launch_mail_in_browser_opens_webmail(self):
+        self._hypr_up()
+        cfg = {"apps": {"browseros": "browseros"}, "agent": {}}
+        win = {"address": "0xabc", "class": "BrowserOS"}
+        out, ex = self._mail_launch(cfg, win=win)
+        self.assertEqual(
+            out, "OPENED https://mail.google.com -> browseros")
+        ex.assert_called_once_with("browseros https://mail.google.com")
+
+    def test_launch_mail_in_browser_without_window(self):
+        self._hypr_up()
+        cfg = {"apps": {"browseros": "browseros"}, "agent": {}}
+        out, ex = self._mail_launch(cfg)
+        self.assertEqual(
+            out, "OPENED https://mail.google.com -> browseros")
+        ex.assert_called_once_with("browseros https://mail.google.com")
+
+    def test_launch_mail_web_url_from_config(self):
+        self._hypr_up()
+        cfg = {"apps": {"browseros": "browseros"}, "agent": {},
+               "web": {"mail": "https://outlook.office.com/mail"}}
+        out, ex = self._mail_launch(cfg)
+        self.assertEqual(
+            out, "OPENED https://outlook.office.com/mail -> browseros")
+        ex.assert_called_once_with(
+            "browseros https://outlook.office.com/mail")
+
+    def test_launch_mail_empty_web_value_uses_default(self):
+        self._hypr_up()
+        cfg = {"apps": {"browseros": "browseros"}, "agent": {},
+               "web": {"mail": ""}}
+        out, ex = self._mail_launch(cfg)
+        ex.assert_called_once_with("browseros https://mail.google.com")
+
+    def test_launch_calendar_in_browser_opens_web_calendar(self):
+        self._hypr_up()
+        cfg = {"apps": {"browseros": "browseros"}, "agent": {}}
+        out, ex = self._mail_launch(cfg, role="calendar")
+        self.assertEqual(
+            out, "OPENED https://calendar.google.com -> browseros")
+        ex.assert_called_once_with(
+            "browseros https://calendar.google.com")
+
+    def test_launch_mail_native_client_unchanged(self):
+        self._hypr_up()
+        cfg = {"apps": {"thunderbird": "thunderbird"}, "agent": {}}
+        out, ex = self._mail_launch(cfg, role_app="thunderbird")
+        self.assertEqual(out, "LAUNCHED thunderbird -> thunderbird")
+        ex.assert_called_once_with("thunderbird")
+
+    def test_launch_mail_native_client_running_focuses(self):
+        self._hypr_up()
+        cfg = {"apps": {"thunderbird": "thunderbird"}, "agent": {}}
+        win = {"address": "0xdef", "class": "thunderbird"}
+        out, ex = self._mail_launch(cfg, role_app="thunderbird", win=win)
+        self.assertIn("FOCUSED thunderbird", out)
+        ex.assert_not_called()
+
     def test_launch_unknown_noun_still_skips(self):
         self._hypr_up()
         cfg = {"apps": {}, "agent": {}}

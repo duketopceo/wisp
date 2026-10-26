@@ -78,6 +78,15 @@ take focus, so `Esc` stays reachable while cua acts. Design notes:
 | `key_env` | `GROQ_API_KEY` | env var / `.env` key name holding the key |
 | `prompt` | `""` | vocab priming (names, jargon) |
 
+## [web] — role web apps
+
+| key | default | meaning |
+|-----|---------|---------|
+| `mail` | `"https://mail.google.com"` | URL `launch mail` opens when the default mail handler is a browser; a native client (Thunderbird, Geary) is launched as usual |
+| `calendar` | `"https://calendar.google.com"` | same, for the `calendar` role |
+
+An absent or empty key uses the default, so a config file without a `[web]` section works unchanged. Values cannot contain `#`: the config parser treats it as a comment.
+
 ## [jev] — routing deadline and shadow decider
 
 | key | default | meaning |
