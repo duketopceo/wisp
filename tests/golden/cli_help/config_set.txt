@@ -49,9 +49,11 @@ Settings (value, default, range):
                                default true; true or false
   ui.theme                     Fallback theme when the desktop theme is unreadable
                                default dark; dark, light
-  brain.router                 How a turn is routed: jev, chat or off
-                               default jev; jev, chat, off
+  brain.router                 How a turn is routed: act (straight to the act loop), jev, chat or off
+                               default act; act, jev, chat, off
   brain.allow_paid             Let the fallback chain use paid models
+                               default false; true or false
+  local.enabled                Allow local model servers (llama.cpp, UI-TARS, jev-shim, ollama)
                                default false; true or false
   keys.submap                  Esc stops, Enter confirms, number keys choose while a turn runs
                                default true; true or false

@@ -252,10 +252,11 @@ def settings(cfg: dict | None) -> dict:
     url = str(url).rstrip("/")
     if url.endswith("/v1"):
         url = url[:-3]
+    local = config.local_enabled(cfg)
     return {
         "providers": [p.strip() for p in str(
             gc.get("providers", "control,a11y,uitars,jev")).split(",")
-            if p.strip()],
+            if p.strip() and (local or p.strip() != "uitars")],
         "min_conf": _f(gc.get("min_confidence"), 0.5),
         "budget": _f(gc.get("budget_ms"), 1200.0) / 1000.0,
         "fallback": _f(gc.get("fallback_timeout_ms"), 5000.0) / 1000.0,

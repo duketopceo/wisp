@@ -1,9 +1,10 @@
 # Roadmap
 
-Where wisp stands and what happens next. Dates are commit-era labels,
-not promises. See `docs/plans/` for the full plan history and
-`docs/research/heyclicky-features.md` for the competitor teardown this
-roadmap tracks against.
+Where wisp stands and what happens next. The plan of record is
+`docs/plans/2026-10-25-1625-feat-wisp-heyclicky-linux-roadmap-plan.md`;
+the top-level `ROADMAP.md` lists its phases. `docs/research/heyclicky-features.md`
+and `docs/research/2026-10-25-*.md` hold the competitor and state research
+it builds on.
 
 ## Shipped (current master)
 
@@ -25,13 +26,10 @@ roadmap tracks against.
 
 ## In flight
 
-- **PR #124 — HeyClicky delta units H1–H9**: walkthrough state machine
-  (paced teach-me mode), draw-on-screen overlay (circles/arrows/labels),
-  two-stage element grounding, app-keyed skills, routines, suggestion
-  etiquette, per-conversation grants, volatile memory, talk/deep lanes.
-  The detailed spec is `docs/plans/2026-10-16-001-*-heyclicky-*.md`.
-- Older open: #115 docs sweep (draft), #114 contrast+roadmap UI,
-  #113 Argus reviewer, #112 panel scroll/browser-auth fix.
+- **HeyClicky delta units H1–H9 (merged as #124)**: most landed as
+  libraries without a production caller. The roadmap plan wires the
+  walkthrough, drawing and suggestion pieces (Phase 7) and deleted the
+  unused per-conversation grants and talk/deep lanes modules.
 
 ## Next — the Craft-app proving ground
 
@@ -40,7 +38,7 @@ training arena: local debug builds, deterministic UIs, no user data.
 
 1. **Drill harness** — bounded tasks per app (`open → dismiss modal →
    expand bin → scrub`), each scored pass/fail by observable state, not
-   vibes. Reuse clicklab's candidate→verified→graduated recipe flow.
+   vibes.
 2. **Control-channel verifier** — FilmCraft already exposes a JSON-lines
    `--control` server with automation ids and `ui.screenshot`. Wire it
    as ground truth for "did the action land" — a signal HeyClicky can't
@@ -53,9 +51,6 @@ training arena: local debug builds, deterministic UIs, no user data.
 
 ## Then
 
-- **UI-TARS reliability** — grounding provider chain runs without it
-  today (llamas down = vision-only); keep it up or drop it from the
-  chain deliberately
 - **CUA session auto-recovery** — detect empty `list_windows`/epoch
   mismatch, re-handshake without a manual restart
 - **Per-app memory** — save learned behavior by app (`cadcraft` knows
