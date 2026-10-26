@@ -81,12 +81,9 @@ class Cua:
 
     # -- availability (same contract as platform._cua_live) ------------
     def available(self) -> bool:
-        from . import platform as _platform
         if shutil.which(self.binary) is None:
             return False
-        if _platform.current() == "linux":
-            return os.path.exists(socket_path())
-        return True
+        return os.path.exists(socket_path())
 
     # -- generic call --------------------------------------------------
     def call(self, tool: str, args: dict | None = None, *,

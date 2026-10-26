@@ -159,7 +159,6 @@ def notify(msg: str, environ=None) -> bool:
             s.close()
         return True
     except (OSError, AttributeError):
-        # AttributeError covers hosts without AF_UNIX (Windows).
         return False
 
 

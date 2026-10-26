@@ -130,17 +130,6 @@ class TestAutoOrder(_Iso):
                          ["cua", "hyprcursor", "ydotool", "wlrctl",
                           "guide"])
 
-    def test_non_linux_cua_only(self):
-        # Off-Linux only cua-driver is eligible — the Linux injectors
-        # are skipped and guide mode (None) applies when cua is absent.
-        with Rig():
-            with mock.patch.dict(os.environ, {"WISP_OS": "macos"}):
-                self.assertEqual(
-                    pointer.Registry(DRIVE).select().name, "cua")
-        with Rig(live=()):
-            with mock.patch.dict(os.environ, {"WISP_OS": "macos"}):
-                self.assertIsNone(pointer.Registry(DRIVE).select())
-
     def test_backend_none_pin(self):
         with Rig():
             self.assertIsNone(pointer.Registry(pin("none")).select())

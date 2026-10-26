@@ -51,14 +51,7 @@ def _exec_detached(binname: str) -> bool:
 def _on_path(binary: str) -> bool:
     """Is this command's first token launchable?
 
-    Linux values are bare binaries, so a PATH probe is the right test.
-    macOS values are `open -a "<Name>"` and `open` is on PATH, so the
-    same probe works. Windows values are cmdlines handed to
-    `cmd /c start`, where the target is resolved by the shell rather
-    than PATH — probing would reject every one of them."""
-    from .. import platform
-    if platform.current() == "windows":
-        return True
+    Values are bare binaries, so a PATH probe is the right test."""
     return bool(shutil.which(binary)
                 or (config.HOME / ".local" / "bin" / binary).exists())
 
@@ -225,9 +218,6 @@ def clients() -> list:
     """Open windows, as Hyprland reports them. Hyprland-only: no other
     platform has an equivalent enumerator here, so return [] instead of
     raising on a host without Hyprland."""
-    from .. import platform
-    if platform.current() != "linux":
-        return []
     try:
         clients = hypr.query("clients")
     except hypr.HyprError:

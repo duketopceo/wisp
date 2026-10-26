@@ -50,7 +50,7 @@ def mk(bus=None, now=None, cfg=None, **kw):
     t = {"t": 1000.0}
     n = notify.Notifier(runner=bus, clock=lambda: t["t"],
                         now=now or (lambda: datetime(2026, 1, 1, 12, 0)),
-                        cfg=cfg or {}, sync=True, os_name="linux", **kw)
+                        cfg=cfg or {}, sync=True, **kw)
     return n, bus, t
 
 
@@ -67,20 +67,9 @@ class TestServer(unittest.TestCase):
     def test_absent_server_falls_back_to_notify_send(self):
         n, bus, _ = mk(FakeBus(absent=True))
         self.assertIsNone(n.server())
-        # the fallback argv comes from platform.notify_cmd, which keys
-        # off the host OS, not the Notifier's os_name: pin it
-        with mock.patch.dict(os.environ, {"WISP_OS": "linux"}):
-            self.assertEqual(n.send("hello"), "sent")
+        self.assertEqual(n.send("hello"), "sent")
         self.assertEqual(bus.calls[-1][0], "notify-send")
         self.assertIn("hello", bus.calls[-1])
-
-    def test_macos_path_unchanged(self):
-        bus = FakeBus()
-        n = notify.Notifier(runner=bus, sync=True, os_name="macos", cfg={})
-        with mock.patch.dict(os.environ, {"WISP_OS": "macos"}):
-            n.send("hi")
-        self.assertEqual(bus.calls[-1][0], "osascript")
-        self.assertFalse(bus.notifies())
 
 
 class TestSend(unittest.TestCase):
@@ -222,7 +211,7 @@ class TestNonBlocking(unittest.TestCase):
             gate.wait(2)
             calls.append(argv)
             return 1, ""
-        n = notify.Notifier(runner=slow, os_name="linux", cfg={})
+        n = notify.Notifier(runner=slow, cfg={})
         self.assertEqual(n.send("x"), "sent")
         self.assertEqual(calls, [])
         gate.set()
@@ -232,7 +221,7 @@ class TestNonBlocking(unittest.TestCase):
     def test_runner_exception_never_raises(self):
         def bad(argv, timeout=2.0):
             raise OSError("no gdbus")
-        n = notify.Notifier(runner=bad, os_name="linux", cfg={}, sync=True)
+        n = notify.Notifier(runner=bad, cfg={}, sync=True)
         n.send("x")
 
 

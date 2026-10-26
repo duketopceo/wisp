@@ -11,7 +11,6 @@ import pathlib
 import shutil
 import signal
 import subprocess
-import sys
 import threading
 from datetime import datetime, timezone
 
@@ -40,7 +39,7 @@ def _proc_stat(pid: int) -> tuple[str, str] | None:
     """(state letter, start-time token) for a pid, or None if unreadable.
 
     Linux reads /proc/<pid>/stat (state + field 22). Hosts without /proc
-    (macOS) fall back to `ps -o stat=,lstart=`; the start token is only
+    (non-procfs hosts) fall back to `ps -o stat=,lstart=`; the start token is only
     ever compared with one taken the same way on the same host."""
     try:
         stat = pathlib.Path(f"/proc/{pid}/stat").read_text()
@@ -48,7 +47,7 @@ def _proc_stat(pid: int) -> tuple[str, str] | None:
         return tail[0], tail[19]
     except (OSError, IndexError):
         pass
-    if sys.platform == "win32" or pathlib.Path("/proc/self").exists():
+    if pathlib.Path("/proc/self").exists():
         return None
     try:
         out = subprocess.run(["ps", "-o", "stat=,lstart=", "-p", str(pid)],
@@ -82,18 +81,6 @@ def _alive(pid: int, pstart: str = "") -> bool:
         if pstart and st[1] != pstart:
             return False
     try:
-        if sys.platform == "win32":
-            import ctypes
-            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-            SYNCHRONIZE = 0x00100000
-            handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, False, pid)
-            if not handle:
-                return False
-            exit_code = ctypes.c_ulong()
-            ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
-            ctypes.windll.kernel32.CloseHandle(handle)
-            STILL_ACTIVE = 259
-            return exit_code.value == STILL_ACTIVE
         os.kill(pid, 0)
         return True
     except (OSError, ProcessLookupError, PermissionError, OverflowError):
@@ -173,11 +160,7 @@ def _signal(rec: dict, sig: int) -> None:
     if not _alive(pid, rec.get("pstart", "")):
         return
     try:
-        if os.name == "nt":
-            # no process groups — signal the task process itself
-            os.kill(pid, sig)
-        else:
-            os.killpg(pid, sig)
+        os.killpg(pid, sig)
     except (ProcessLookupError, PermissionError):
         try:
             os.kill(pid, sig)

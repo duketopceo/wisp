@@ -1,18 +1,13 @@
-"""Platform seam — every OS-specific shell-out routes through here so
-macOS (U7) / Windows (U8) / generic-Linux (U9) adapters land without
-call-site edits. Commands are argv lists; the Linux table is
-byte-for-byte what the code did before this seam existed.
-
-Detection: ``sys.platform`` with a ``WISP_OS`` override (mirrors the
-Rust core) so adapters are unit-testable on any host.
+"""Platform seam — every OS-specific shell-out routes through here.
+Commands are argv lists. Wisp is Linux-only (Hyprland/Omarchy);
+`current()` stays as a constant shim so callers and tests that patch
+it keep working.
 """
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 from . import hypr
@@ -21,16 +16,8 @@ HOME = Path.home()
 
 
 def current() -> str:
-    """'linux' | 'macos' | 'windows' (WISP_OS wins — test/dev hook)."""
-    o = os.environ.get("WISP_OS", "")
-    if o in ("macos", "darwin"):
-        return "macos"
-    if o == "windows":
-        return "windows"
-    if o == "linux":
-        return "linux"
-    return {"darwin": "macos", "win32": "windows"}.get(
-        sys.platform, "linux")
+    """Always 'linux' — Wisp supports Linux only."""
+    return "linux"
 
 
 def _which(b: str) -> bool:
@@ -38,20 +25,14 @@ def _which(b: str) -> bool:
 
 
 def resolve_exe(argv0):
-    """Bare command name -> PATHEXT-resolved path on Windows, where
-    CreateProcess finds only .exe and .cmd/.bat tools are invisible.
-    Pass-through elsewhere or when argv0 is already a path."""
-    if os.name == "nt" and argv0 and os.sep not in str(argv0):
-        return shutil.which(str(argv0)) or argv0
+    """Pass-through (kept for existing callers)."""
     return argv0
 
 
 def desktop() -> str:
     """Linux compositor: 'hyprland'|'gnome'|'kde'|'x11'|'unknown'.
     `WISP_DESKTOP` env override mirrors the Rust core (tests,
-    forced fallbacks). Meaningless off-Linux → returns 'unknown'."""
-    if current() != "linux":
-        return "unknown"
+    forced fallbacks)."""
     d = os.environ.get("WISP_DESKTOP", "")
     if d in ("hyprland", "gnome", "kde", "x11"):
         return d
@@ -68,45 +49,10 @@ def desktop() -> str:
     return "unknown"
 
 
-def _ps(script: str) -> list:
-    b = _ps_bin() or "powershell"
-    return [b, "-NoProfile", "-NonInteractive",
-            "-Command", script]
-
-
-def _ps_bin() -> str | None:
-    """Windows shell: inbox powershell.exe or cross-platform pwsh."""
-    for b in ("powershell", "pwsh"):
-        if _which(b):
-            return b
-    return None
-
-
-def _sendkeys_escape(t: str) -> str:
-    out = []
-    for ch in t:
-        if ch in "{}+^%~()[]":
-            out.append("{" + ch + "}")
-        else:
-            out.append(ch)
-    return "".join(out)
-
-
 # ── runtime dirs ────────────────────────────────────────────────────
 
 def dirs() -> tuple[Path, Path, Path]:
-    """(config, data, runtime) — format/contents identical across
-    OSes, only the roots move. macOS: ~/Library/Application Support +
-    $TMPDIR socket dir."""
-    o = current()
-    if o == "macos":
-        base = HOME / "Library" / "Application Support" / "wisp"
-        tmp = Path(os.environ.get("TMPDIR", "/tmp")) / "wisp"
-        return base, base, tmp
-    if o == "windows":
-        return (HOME / "AppData" / "Roaming" / "wisp",
-                HOME / "AppData" / "Local" / "wisp",
-                Path(os.environ.get("TEMP", "/tmp")) / "wisp")
+    """(config, data, runtime)."""
     return (HOME / ".config" / "wisp",
             HOME / ".local" / "share" / "wisp",
             Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp"))
@@ -118,198 +64,90 @@ def dirs() -> tuple[Path, Path, Path]:
 def record_cmd(out: Path, seconds: float | None) -> list | None:
     """Mic capture → WAV at `out`. seconds=None → open-ended toggle
     capture (caller stops with SIGINT); with a value it self-terminates
-    after that many seconds. macOS: afrecord (brew sox fallback); None →
+    after that many seconds. None →
     caller reports 'no recorder found'."""
-    o = current()
-    if o == "linux":
-        if _which("pw-record"):
-            cmd = ["pw-record", "--rate", "16000", "--channels", "1",
-                   "--format", "s16"]
-            if seconds:
-                cmd += ["--sample-count", str(int(16000 * seconds))]
-            return cmd + [str(out)]
-        if _which("arecord"):
-            cmd = ["arecord", "-D", "default", "-r", "16000",
-                   "-c", "1", "-f", "S16_LE"]
-            if seconds:
-                cmd += ["-d", str(seconds)]
-            return cmd + [str(out)]
-        return None
-    if o == "macos":
-        if _which("afrecord"):
-            cmd = ["afrecord", "-f", "WAVE"]
-            if seconds:
-                cmd += ["-d", str(seconds)]
-            return cmd + [str(out)]
-        if _which("sox"):
-            cmd = ["sox", "-d", "-r", "16000", "-c", "1", str(out)]
-            if seconds:
-                cmd += ["trim", "0", str(seconds)]
-            return cmd
-        return None
-    if o == "windows":
-        if _which("sox"):
-            cmd = ["sox", "-t", "waveaudio", "-d", "-r", "16000",
-                   "-c", "1", str(out)]
-            if seconds:
-                cmd += ["trim", "0", str(seconds)]
-            return cmd
-        return None
+    if _which("pw-record"):
+        cmd = ["pw-record", "--rate", "16000", "--channels", "1",
+               "--format", "s16"]
+        if seconds:
+            cmd += ["--sample-count", str(int(16000 * seconds))]
+        return cmd + [str(out)]
+    if _which("arecord"):
+        cmd = ["arecord", "-D", "default", "-r", "16000",
+               "-c", "1", "-f", "S16_LE"]
+        if seconds:
+            cmd += ["-d", str(seconds)]
+        return cmd + [str(out)]
     return None
 
 
 def sampler_cmd(seconds: float | None) -> list | None:
     """Live mic level: unsigned-8 PCM (200 Hz mono) on stdout.
     seconds=None → unbounded (toggle mode; caller kills the proc).
-    macOS: sox only; None → level stays 0."""
-    o = current()
-    if o == "linux":
-        if _which("arecord"):
-            cmd = ["arecord", "-D", "default", "-f", "U8", "-r", "200",
-                   "-c", "1"]
-            if seconds:
-                cmd += ["-d", str(seconds)]
-            return cmd
-        return None
-    if o == "macos":
-        if _which("sox"):
-            cmd = ["sox", "-d", "-t", "u8", "-r", "200", "-c", "1", "-"]
-            if seconds:
-                cmd += ["trim", "0", str(seconds)]
-            return cmd
-        return None
-    if o == "windows":
-        if _which("sox"):
-            cmd = ["sox", "-t", "waveaudio", "-d", "-t", "u8",
-                   "-r", "200", "-c", "1", "-"]
-            if seconds:
-                cmd += ["trim", "0", str(seconds)]
-            return cmd
-        return None
+    None → level stays 0."""
+    if _which("arecord"):
+        cmd = ["arecord", "-D", "default", "-f", "U8", "-r", "200",
+               "-c", "1"]
+        if seconds:
+            cmd += ["-d", str(seconds)]
+        return cmd
     return None
 
 
 def screenshot_cmd(out: Path, output: str | None = None) -> list | None:
-    o = current()
-    if o == "linux":
-        dt = desktop()
-        order = {
-            "hyprland": ["grim", "gnome-screenshot", "spectacle",
-                         "maim"],
-            "gnome": ["gnome-screenshot", "spectacle", "grim", "maim"],
-            "kde": ["spectacle", "grim", "gnome-screenshot", "maim"],
-            "x11": ["maim", "grim"],
-        }.get(dt, ["grim", "gnome-screenshot", "spectacle", "maim"])
-        for b in order:
-            if _which(b):
-                if b == "gnome-screenshot":
-                    return [b, "-f", str(out)]
-                if b == "spectacle":
-                    return [b, "-b", "-n", "-o", str(out)]
-                cmd = [b, str(out)]
-                # grim captures every output; `-o` limits to one —
-                # needed for headless/virtual outputs and panels whose
-                # screencopy stalls when powered off (lid closed).
-                if output and b == "grim":
-                    cmd = [b, "-o", output, str(out)]
-                return cmd
-        return None
-    if o == "macos":
-        return (["screencapture", "-x", str(out)]
-                if _which("screencapture") else None)
-    if o == "windows":
-        if _ps_bin():
-            return _ps(
-                "Add-Type -AssemblyName System.Windows.Forms,"
-                "System.Drawing; $b=[System.Windows.Forms."
-                "SystemInformation]::VirtualScreen; "
-                "$bmp=New-Object System.Drawing.Bitmap $b.Width,"
-                "$b.Height; $g=[System.Drawing.Graphics]::FromImage"
-                "($bmp); $g.CopyFromScreen($b.Left,$b.Top,0,0,"
-                "$bmp.Size); $bmp.Save('{out}'); $g.Dispose(); "
-                "$bmp.Dispose()".format(out=str(out).replace(
-                    "'", "''")))
-        return None
+    dt = desktop()
+    order = {
+        "hyprland": ["grim", "gnome-screenshot", "spectacle",
+                     "maim"],
+        "gnome": ["gnome-screenshot", "spectacle", "grim", "maim"],
+        "kde": ["spectacle", "grim", "gnome-screenshot", "maim"],
+        "x11": ["maim", "grim"],
+    }.get(dt, ["grim", "gnome-screenshot", "spectacle", "maim"])
+    for b in order:
+        if _which(b):
+            if b == "gnome-screenshot":
+                return [b, "-f", str(out)]
+            if b == "spectacle":
+                return [b, "-b", "-n", "-o", str(out)]
+            cmd = [b, str(out)]
+            # grim captures every output; `-o` limits to one —
+            # needed for headless/virtual outputs and panels whose
+            # screencopy stalls when powered off (lid closed).
+            if output and b == "grim":
+                cmd = [b, "-o", output, str(out)]
+            return cmd
     return None
 
 
-def _osa_keystroke(text: str) -> list:
-    esc = text.replace("\\", "\\\\").replace('"', '\\"')
-    return ["osascript", "-e",
-            f'tell application "System Events" to keystroke "{esc}"']
-
-
 def type_text_cmd(text: str) -> list | None:
-    o = current()
-    if o == "linux":
-        order = {"hyprland": ["wtype", "ydotool"],
-                 "x11": ["xdotool"],
-                 }.get(desktop(), ["ydotool", "wtype", "xdotool"])
-        for b in order:
-            if _which(b):
-                if b == "wtype":
-                    return [b, "--", text]
-                if b == "ydotool":
-                    return [b, "type", "--", text]
-                return [b, "type", "--clearmodifiers", "--", text]
-        return None
-    if o == "macos":
-        return _osa_keystroke(text) if _which("osascript") else None
-    if o == "windows":
-        if _ps_bin():
-            return _ps(
-                "Add-Type -AssemblyName System.Windows.Forms; "
-                "[System.Windows.Forms.SendKeys]::SendWait("
-                f'"{_sendkeys_escape(text)}")')
-        return None
+    order = {"hyprland": ["wtype", "ydotool"],
+             "x11": ["xdotool"],
+             }.get(desktop(), ["ydotool", "wtype", "xdotool"])
+    for b in order:
+        if _which(b):
+            if b == "wtype":
+                return [b, "--", text]
+            if b == "ydotool":
+                return [b, "type", "--", text]
+            return [b, "type", "--clearmodifiers", "--", text]
     return None
 
 
 def tts_binary() -> str | None:
-    o = current()
-    if o == "linux":
-        for b in ("espeak-ng", "espeak"):
-            if _which(b):
-                return b
-        return None
-    if o == "macos":
-        return "say" if _which("say") else None
+    for b in ("espeak-ng", "espeak"):
+        if _which(b):
+            return b
     return None
 
 
 def tts_argv(msg: str) -> list | None:
-    """Builtin TTS argv for `msg` — used when voice.cmd is empty.
-    Windows speaks via PowerShell SAPI."""
-    if current() == "windows":
-        if not _ps_bin():
-            return None
-        esc = msg.replace("'", "''")
-        return _ps(
-            "Add-Type -AssemblyName System.Speech; "
-            "(New-Object System.Speech.Synthesis.SpeechSynthesizer)"
-            f".Speak('{esc}')")
+    """Builtin TTS argv for `msg` — used when voice.cmd is empty."""
     b = tts_binary()
     return [b, msg] if b else None
 
 
 def notify_cmd(title: str, body: str) -> list | None:
-    o = current()
-    if o == "linux":
-        return ["notify-send", title, body]
-    if o == "macos":
-        esc = lambda s: s.replace("\\", "\\\\").replace('"', '\\"')
-        return ["osascript", "-e",
-                f'display notification "{esc(body)}" with title '
-                f'"{esc(title)}"']
-    if o == "windows":
-        if not _ps_bin():
-            return None
-        e = lambda s: s.replace("'", "''")
-        return _ps(
-            "if (Get-Module -ListAvailable BurntToast) { "
-            f"New-BurntToastNotification -Text '{e(title)}',"
-            f"'{e(body)}' }} else {{ msg * '{e(title)}: {e(body)}' }}")
-    return None
+    return ["notify-send", title, body]
 
 
 # ── window management ───────────────────────────────────────────────
@@ -330,16 +168,14 @@ def _env(extra: dict | None = None) -> dict:
 
 def wm_ok(p: subprocess.CompletedProcess) -> bool:
     """Did a wm command work? Linux: 'ok' in stdout (Hyprland eval
-    convention) or clean exit for legacy dispatch; macOS: exit code."""
-    if current() == "linux":
-        out = p.stdout if isinstance(p.stdout, str) else ""
-        return "ok" in out or p.returncode == 0
-    return p.returncode == 0
+    convention) or clean exit for legacy dispatch."""
+    out = p.stdout if isinstance(p.stdout, str) else ""
+    return "ok" in out or p.returncode == 0
 
 
 def uses_hypr() -> bool:
     """Window ops on this host go through the Hyprland socket."""
-    return current() == "linux" and desktop() in ("hyprland", "unknown")
+    return desktop() in ("hyprland", "unknown")
 
 
 def _try(cmds: list, timeout: int = 8) -> bool:
@@ -361,272 +197,126 @@ def _try(cmds: list, timeout: int = 8) -> bool:
 
 
 def focus_cmds(cls: str) -> list[list]:
-    o = current()
-    if o == "linux":
-        dt = desktop()
-        if dt in ("hyprland", "unknown"):
-            return [hypr.LuaCmd(hypr.focus_class(cls))]
-        if dt == "kde":
-            if _which("kdotool"):
-                return [["sh", "-c",
-                         f"kdotool search --name '{cls}' "
-                         "windowactivate %@"]]
-            if _which("wmctrl"):
-                return [["wmctrl", "-a", cls]]
-            return []
-        if dt == "x11":
-            return [["wmctrl", "-a", cls]] if _which("wmctrl") else []
-        return []  # gnome wayland: no wm api
-    if o == "macos":
-        return [["open", "-a", cls]]
-    if o == "windows":
-        if _ps_bin():
-            return [_ps("(New-Object -ComObject WScript.Shell)"
-                        f".AppActivate('{cls}') | Out-Null")]
+    dt = desktop()
+    if dt in ("hyprland", "unknown"):
+        return [hypr.LuaCmd(hypr.focus_class(cls))]
+    if dt == "kde":
+        if _which("kdotool"):
+            return [["sh", "-c",
+                     f"kdotool search --name '{cls}' "
+                     "windowactivate %@"]]
+        if _which("wmctrl"):
+            return [["wmctrl", "-a", cls]]
         return []
-    return []
+    if dt == "x11":
+        return [["wmctrl", "-a", cls]] if _which("wmctrl") else []
+    return []  # gnome wayland: no wm api
 
 
 def close_cmds(cls: str) -> list[list]:
-    o = current()
-    if o == "linux":
-        dt = desktop()
-        if dt in ("hyprland", "unknown"):
-            return [hypr.LuaCmd(hypr.close_window(cls))]
-        if dt in ("kde", "x11"):
-            if not cls:
-                return ([["xdotool", "getactivewindow", "windowclose"]]
-                        if _which("xdotool") else [])
-            return ([["wmctrl", "-c", cls]]
-                    if _which("wmctrl") else [])
-        return []  # gnome wayland
-    if o == "macos":
-        return [["osascript", "-e",
-                 'tell application "System Events" to keystroke "w" '
-                 'using command down']]
-    if o == "windows":
-        if not _ps_bin():
-            return []
+    dt = desktop()
+    if dt in ("hyprland", "unknown"):
+        return [hypr.LuaCmd(hypr.close_window(cls))]
+    if dt in ("kde", "x11"):
         if not cls:
-            return [_ps("(New-Object -ComObject WScript.Shell)"
-                        ".SendKeys('%{F4}')")]
-        return [_ps(f"Get-Process -Name '{cls}' -ErrorAction "
-                    "SilentlyContinue | ForEach-Object { "
-                    "$_.CloseMainWindow() | Out-Null }")]
-    return []
+            return ([["xdotool", "getactivewindow", "windowclose"]]
+                    if _which("xdotool") else [])
+        return ([["wmctrl", "-c", cls]]
+                if _which("wmctrl") else [])
+    return []  # gnome wayland
 
 
 def workspace_cmds(n: int) -> list[list]:
-    o = current()
-    if o == "linux":
-        dt = desktop()
-        if dt in ("hyprland", "unknown"):
-            return [hypr.LuaCmd(hypr.focus_workspace(n))]
-        if dt == "kde":
-            return ([["qdbus", "org.kde.KWin", "/KWin",
-                      "setCurrentDesktop", str(n)]]
-                    if _which("qdbus") else [])
-        if dt == "x11":
-            return ([["wmctrl", "-s", str(n - 1)]]  # 0-based
-                    if _which("wmctrl") else [])
-        return []  # gnome wayland: no api
-    if o == "macos":
-        codes = [18, 19, 20, 21, 23, 22, 26, 28, 25]  # 1..=9 key codes
-        if 1 <= n <= 9:
-            return [["osascript", "-e",
-                     'tell application "System Events" to key code '
-                     f"{codes[n - 1]} using control down"]]
-        return []
-    return []
+    dt = desktop()
+    if dt in ("hyprland", "unknown"):
+        return [hypr.LuaCmd(hypr.focus_workspace(n))]
+    if dt == "kde":
+        return ([["qdbus", "org.kde.KWin", "/KWin",
+                  "setCurrentDesktop", str(n)]]
+                if _which("qdbus") else [])
+    if dt == "x11":
+        return ([["wmctrl", "-s", str(n - 1)]]  # 0-based
+                if _which("wmctrl") else [])
+    return []  # gnome wayland: no api
 
 
 def launch_exec_cmds(cmdline: str) -> list[list]:
-    o = current()
-    if o == "linux":
-        if desktop() in ("hyprland", "unknown"):
-            return [hypr.LuaCmd(hypr.exec_cmd(cmdline))]
-        return [["setsid", "sh", "-c", cmdline]]  # detached spawn
-    if o == "macos":
-        return [["sh", "-c", cmdline]]
-    if o == "windows":
-        return [["cmd", "/c", "start", "", "/b", cmdline]]
-    return []
+    if desktop() in ("hyprland", "unknown"):
+        return [hypr.LuaCmd(hypr.exec_cmd(cmdline))]
+    return [["setsid", "sh", "-c", cmdline]]  # detached spawn
 
 
 def monitors() -> list[dict]:
     """[{x,y,width,height,scale}] logical rects for point mapping."""
-    o = current()
-    if o == "linux":
-        dt = desktop()
-        if dt in ("hyprland", "unknown"):
-            try:
-                return hypr.query("monitors")
-            except hypr.HyprError:
-                return []
-        if dt in ("kde", "x11"):
-            # xrandr `NAME connected ... WxH+X+Y` (scale assumed 1)
-            if not _which("xrandr"):
-                return []
-            try:
-                p = subprocess.run(["xrandr", "--query"],
-                                   capture_output=True, text=True,
-                                   timeout=5)
-                mons = []
-                for line in p.stdout.splitlines():
-                    if " connected" not in line:
-                        continue
-                    for tok in line.split():
-                        if "x" in tok and "+" in tok:
-                            wh, _, xy = tok.partition("+")
-                            w, _, h = wh.partition("x")
-                            x, _, y = xy.partition("+")
-                            try:
-                                mons.append({
-                                    "x": int(x), "y": int(y),
-                                    "width": int(w),
-                                    "height": int(h), "scale": 1})
-                            except ValueError:
-                                pass
-                            break
-                return mons
-            except Exception:
-                return []
-        return []  # gnome wayland: no cheap CLI
-    if o == "macos":
-        # system_profiler: physical px; scale 2 inferred for Retina —
-        # approximation (AX/NSScreen is the precise path; residual).
+    dt = desktop()
+    if dt in ("hyprland", "unknown"):
         try:
-            import json
-            p = subprocess.run(
-                ["system_profiler", "SPDisplaysDataType", "-json"],
-                capture_output=True, text=True, timeout=8)
-            v = json.loads(p.stdout) if p.returncode == 0 else {}
-        except Exception:
+            return hypr.query("monitors")
+        except hypr.HyprError:
             return []
-        mons, x_off = [], 0
-        for gpu in v.get("SPDisplaysDataType", []):
-            for d in gpu.get("spdisplays_displays", []):
-                res = str(d.get("spdisplays_resolution", "0 x 0"))
-                try:
-                    w, h = [float(x) for x in res.split("x")[:2]]
-                except ValueError:
-                    w = h = 0.0
-                scale = 2.0 if "Yes" in str(
-                    d.get("spdisplays_retina", "")) else 1.0
-                mons.append({"x": x_off, "y": 0, "width": w,
-                             "height": h, "scale": scale})
-                x_off += int(w / scale)
-        return mons
-    if o == "windows":
-        if not _ps_bin():
+    if dt in ("kde", "x11"):
+        # xrandr `NAME connected ... WxH+X+Y` (scale assumed 1)
+        if not _which("xrandr"):
             return []
         try:
-            import json
-            p = subprocess.run(_ps(
-                "Add-Type -AssemblyName System.Windows.Forms; "
-                "[System.Windows.Forms.Screen]::AllScreens | "
-                "ForEach-Object { [PSCustomObject]@{ x=$_.Bounds.X; "
-                "y=$_.Bounds.Y; width=$_.Bounds.Width; "
-                "height=$_.Bounds.Height; scale=1 } } | "
-                "ConvertTo-Json -Compress"),
-                capture_output=True, text=True, timeout=8)
-            v = json.loads(p.stdout) if p.returncode == 0 else []
+            p = subprocess.run(["xrandr", "--query"],
+                               capture_output=True, text=True,
+                               timeout=5)
+            mons = []
+            for line in p.stdout.splitlines():
+                if " connected" not in line:
+                    continue
+                for tok in line.split():
+                    if "x" in tok and "+" in tok:
+                        wh, _, xy = tok.partition("+")
+                        w, _, h = wh.partition("x")
+                        x, _, y = xy.partition("+")
+                        try:
+                            mons.append({
+                                "x": int(x), "y": int(y),
+                                "width": int(w),
+                                "height": int(h), "scale": 1})
+                        except ValueError:
+                            pass
+                        break
+            return mons
         except Exception:
             return []
-        return v if isinstance(v, list) else [v]  # single screen = obj
-    return []
+    return []  # gnome wayland: no cheap CLI
 
 
 def supports_hotkey_install() -> bool:
     """Only Hyprland writes a bind in `wispd install` — GNOME/KDE use
-    the XDG GlobalShortcuts portal (tray app, U10); macOS is SKHD."""
-    return current() == "linux" and desktop() == "hyprland"
+    the XDG GlobalShortcuts portal (tray app, U10)."""
+    return desktop() == "hyprland"
 
 
 def missing_deps_hint() -> str:
-    return {"linux": "need pw-record/arecord + espeak; wm ops need Hyprland "
-                     "(hyprctl), KDE (kdotool/qdbus/wmctrl) or X11 "
-                     "(wmctrl/xdotool); typing: wtype or ydotool; "
-                     "shots: grim/gnome-screenshot/spectacle/maim",
-            "macos": "need screencapture/osascript + sox for mic (brew "
-                     "install sox — there is no afrecord on macOS); "
-                     "grant Screen Recording + Accessibility in System "
-                     "Settings",
-            "windows": "need powershell + sox (sox --waveaudio for mic); Accessibility n/a — toast via BurntToast optional"}[current()]
+    return ("need pw-record/arecord + espeak; wm ops need Hyprland "
+            "(hyprctl), KDE (kdotool/qdbus/wmctrl) or X11 "
+            "(wmctrl/xdotool); typing: wtype or ydotool; "
+            "shots: grim/gnome-screenshot/spectacle/maim")
 
 
 def active_window() -> dict:
     """Focused window as {"class","title"}; {} when unsupported/empty."""
-    o = current()
-    if o == "linux":
-        try:
-            w = hypr.query("activewindow")
-        except hypr.HyprError:
-            return {}
-        if not isinstance(w, dict):
-            return {}
-        return {"class": w.get("class", ""), "title": w.get("title", "")}
-    if o == "macos":
-        if not _which("osascript"):
-            return {}
-        script = (
-            'tell application "System Events" to set appName to '
-            'name of first process whose frontmost is true\n'
-            'tell application "System Events" to tell (first process '
-            'whose frontmost is true) to set winTitle to '
-            'name of front window\n'
-            'return appName & "\\n" & winTitle')
-        r = subprocess.run(["osascript", "-e", script],
-                           capture_output=True, text=True, timeout=5)
-        if r.returncode != 0 or not r.stdout.strip():
-            return {}
-        cls, _, title = r.stdout.strip().partition("\n")
-        return {"class": cls, "title": title}
-    if o == "windows":
-        ps = (
-            'Add-Type @"\nusing System;\nusing System.Text;\n'
-            'using System.Runtime.InteropServices;\n'
-            'public class FG {\n'
-            '  [DllImport("user32.dll")] public static extern IntPtr '
-            'GetForegroundWindow();\n'
-            '  [DllImport("user32.dll")] public static extern int '
-            'GetWindowText(IntPtr h, StringBuilder s, int n);\n'
-            '  [DllImport("user32.dll")] public static extern uint '
-            'GetWindowThreadProcessId(IntPtr h, out uint p);\n'
-            '}\n"@\n'
-            '$h=[FG]::GetForegroundWindow()\n'
-            '$sb=New-Object System.Text.StringBuilder 512\n'
-            '[void][FG]::GetWindowText($h,$sb,512)\n'
-            '$procId=0; [void][FG]::GetWindowThreadProcessId($h,[ref]$procId)\n'
-            '$p=Get-Process -Id $procId -ErrorAction SilentlyContinue\n'
-            '[PSCustomObject]@{class=($p.ProcessName);title=$sb.ToString()} '
-            '| ConvertTo-Json -Compress')
-        try:
-            r = subprocess.run(_ps(ps), capture_output=True, text=True,
-                               timeout=8)
-            if r.returncode != 0 or not r.stdout.strip():
-                return {}
-            w = json.loads(r.stdout)
-            return {"class": w.get("class") or "",
-                    "title": w.get("title") or ""}
-        except Exception:
-            return {}
-    return {}
+    try:
+        w = hypr.query("activewindow")
+    except hypr.HyprError:
+        return {}
+    if not isinstance(w, dict):
+        return {}
+    return {"class": w.get("class", ""), "title": w.get("title", "")}
 
 
 def _cua_live() -> bool:
     """cua-driver reachable. Linux: binary on PATH plus the daemon
     socket (Wayland backend enabled server-side via
-    CUA_DRIVER_RS_ENABLE_WAYLAND). Windows/macOS: the driver runs as
-    a service/app (no unix socket), so binary on PATH is enough —
-    a dead daemon surfaces as E_CUA_DOWN at call time."""
-    import os
+    CUA_DRIVER_RS_ENABLE_WAYLAND)."""
     if not _which("cua-driver"):
         return False
-    if current() == "linux":
-        return os.path.exists(
-            os.path.expanduser("~/.cache/cua-driver/cua-driver.sock"))
-    return True
+    return os.path.exists(
+        os.path.expanduser("~/.cache/cua-driver/cua-driver.sock"))
 
 
 def pointer_backend(cfg: dict | None = None,
