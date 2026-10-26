@@ -763,7 +763,7 @@ def cmd_trigger(cfg: dict, phase: str = "") -> int:
             st.close()
 
 
-def install_files(dry_run: bool = False) -> None:
+def install_files(dry_run: bool = False, cfg: dict | None = None) -> None:
     """Copy runtime files to the per-OS opt dir, write the trigger shim
     and service registration, and install the shell plugin directory
     (Linux/Omarchy only)."""
@@ -883,7 +883,7 @@ def install_files(dry_run: bool = False) -> None:
         print(f"installed {plist} (launchctl load to activate)")
         return
     from wisp import svc
-    acts = svc.install_units(config.HOME)
+    acts = svc.install_units(config.HOME, local=config.local_enabled(cfg))
     print(svc.describe(acts))
     print("units installed, not restarted; apply with systemctl --user "
           "restart <unit>")

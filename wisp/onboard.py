@@ -4,8 +4,9 @@ Five steps, in order: mic, models, cua (optional), notifications and
 keybinding (optional). Each is a read-only check plus, at most, one
 explicit side effect:
 
-  - models only probes the local ladder over loopback HTTP; it never
-    starts or stops a service (`wispd health start` stays a manual act),
+  - models only probes the local ladder over loopback HTTP, and only
+    when [local] enabled = "true"; it never starts or stops a service
+    (`wispd health start` stays a manual act),
   - notifications sends one test notification, and only when the caller
     passes confirm=True,
   - keybinding needs the W24 submap and is "na" while that is absent.
@@ -53,7 +54,7 @@ class Step:
 
 STEPS = (
     Step("mic", "microphone"),
-    Step("models", "local models"),
+    Step("models", "models"),
     Step("cua", "cua pointer driver", optional=True),
     Step("notifications", "notifications", confirm=True),
     Step("keybinding", "keybinding", optional=True),
@@ -223,6 +224,10 @@ def _check_mic(cfg, p):
 
 
 def _check_models(cfg, p):
+    if not config.local_enabled(cfg):
+        brain = cfg.get("brain", {}).get("default")
+        return _res("models", "ok", "local models off"
+                    + (f"; brain is {brain}" if brain else ""))
     up = {name: bool(p.fetch(url)) for name, url in LADDER}
     detail = ", ".join(f"{n} {'up' if up[n] else 'down'}" for n, _ in LADDER)
     if any(up[b] for b in _BRAINS):

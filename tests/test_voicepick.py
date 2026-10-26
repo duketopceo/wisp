@@ -305,7 +305,8 @@ class ContinuityTest(unittest.TestCase):
             return {"answers": {"route": {"choice": "answer"},
                                 "confidence": {"score": 0.9},
                                 "app": {"choice": ""}}}
-        cfg = {"audio": {"seconds": "0"}, "agent": {}}
+        cfg = {"audio": {"seconds": "0"}, "agent": {},
+               "brain": {"router": "jev"}}  # Jev path until Phase 5
         with mock.patch.object(trace, "TRACE_FILE", tf), \
              mock.patch.object(sess, "tail", return_value=turns), \
              mock.patch.object(pipeline, "transcribe",

@@ -1,0 +1,32 @@
+{
+  "name": "router_act_default",
+  "description": "No router configured: the default routes straight to the agent loop \u2014 Jev is never called (jev_calls 0), the brain answers without tool calls.",
+  "scenario": "default router, conversational reply",
+  "audio": "ask.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "what window is focused"
+    },
+    "brain": {
+      "responses": [
+        {
+          "content": "The focused window is a terminal."
+        }
+      ]
+    }
+  },
+  "expect": {
+    "jev_calls": 0,
+    "brain_calls": 1,
+    "result_prefix": "ACTED (0 steps)",
+    "answer": "The focused window is a terminal.",
+    "statuses": [
+      "listening",
+      "transcribing",
+      "deciding",
+      "acting",
+      "speaking",
+      "done"
+    ]
+  }
+}

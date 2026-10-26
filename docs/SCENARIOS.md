@@ -50,6 +50,7 @@ table to list every fixture.
 | `notify_success_toast` | notify paths | Answer turn with the notify fake installed: one success toast reaches notify-send. |
 | `offline_all` | offline daemon | Every model endpoint is down (STT, Jev, brain): the turn ends in a clean error, nothing leaves loopback. |
 | `router_act` | act router | `[brain] router = act`: every turn enters the conversational act loop directly — zero Jev calls (jev_calls = 0), the act brain answers or acts. |
+| `router_act_default` | default router | no `[brain] router` configured: the default routes straight to the act loop — zero Jev calls (jev_calls = 0). |
 | `stale_choice` | stale choice | The chooser returns a pick that was never offered (stale prompt). U9: it is rejected (choice_rejected in the trace) and the turn falls back to the safe auto-pick. |
 | `stt_failure` | STT failure | Whisper answers 500: the turn ends in error before routing; Jev and the brain are never called. |
 

@@ -361,8 +361,9 @@ def chain(cfg=None, provs=None, caps=None, mons=(EDP,), cua=None,
     kw = {}
     if clock:
         kw["clock"] = clock
+    cfg = {"local": {"enabled": "true"}, **(cfg or {})}
     return calls, (lambda target="night light": g.ground_target(
-        target, cfg or {}, capture=capture, monitors=list(mons),
+        target, cfg, capture=capture, monitors=list(mons),
         providers=provs, cua=cua, **kw))
 
 
@@ -413,6 +414,15 @@ class Chain(unittest.TestCase):
             run()
         self.assertEqual([n for n, _ in log][:2], ["jev", "uitars"])
         self.assertNotIn("a11y", [n for n, _ in log])
+
+    def test_local_off_drops_uitars(self):
+        self.assertEqual(g.settings({})["providers"],
+                         ["control", "a11y", "jev"])
+        self.assertEqual(g.settings(
+            {"ground": {"providers": "uitars,jev"}})["providers"], ["jev"])
+        self.assertEqual(g.settings(
+            {"local": {"enabled": "true"}})["providers"],
+            ["control", "a11y", "uitars", "jev"])
 
     def test_size_rescales_into_shot_frame(self):
         provs = {"uitars": prov("u", [cand(864, 540, 0.9, "uitars",

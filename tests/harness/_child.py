@@ -37,7 +37,7 @@ def main(spec_path: str) -> int:
                       "model": "fake", "key_env": "WISP_FAKE_STT_KEY",
                       "prompt": "static", "vocab_dynamic": "false"}
         cfg.setdefault("brain", {}).update({
-            "router": "jev", "default": "openai_compat:fake-model"})
+            "default": "openai_compat:fake-model"})
         cfg["brain.openai_compat"] = {
             "base_url": urls["brain_base"], "key_env": "",
             "vision": "false", "tools": "true"}

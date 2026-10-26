@@ -107,7 +107,7 @@ class OnboardCase(unittest.TestCase):
             p.start()
             self.addCleanup(p.stop)
         self.addCleanup(self._td.cleanup)
-        self.cfg = {}
+        self.cfg = {"local": {"enabled": "true"}}
         self.out = []
         self.progress = onboard.Progress()
 
@@ -150,6 +150,13 @@ class TestSteps(OnboardCase):
         self.assertEqual(ports, ["11434", "8080", "8081", "8091", "8931"])
         for _n, u in onboard.LADDER:
             self.assertTrue(u.startswith("http://127.0.0.1:"), u)
+
+    def test_models_local_off_probes_nothing_and_passes(self):
+        f = Fakes(up=set())
+        r = onboard.check("models", {}, f.probes())
+        self.assertEqual(f.fetched, [])
+        self.assertEqual(r["state"], "ok")
+        self.assertIn("local models off", r["detail"])
 
     def test_models_none_up_is_todo_with_the_manual_fix(self):
         r = onboard.check("models", self.cfg, Fakes(up=set()).probes())

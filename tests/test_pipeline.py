@@ -86,7 +86,8 @@ class TurnSpansTest(unittest.TestCase):
             return {"answers": {"route": {"choice": route},
                                 "confidence": {"score": 0.9},
                                 "app": {"choice": ""}}}
-        cfg = {"audio": {"seconds": "0"}, "agent": {}}
+        cfg = {"audio": {"seconds": "0"}, "agent": {},
+               "brain": {"router": "jev"}}  # Jev path until Phase 5
         from wisp import session as sess  # noqa: F811
         from wisp import memory as mem  # noqa: F811
         with mock.patch.object(trace, "TRACE_FILE", tf), \

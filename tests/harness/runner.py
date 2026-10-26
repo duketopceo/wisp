@@ -356,6 +356,16 @@ def child_env(tmp: pathlib.Path, fs: FakeSet) -> dict:
     return env
 
 
+def _pin_jev_router(fx: dict) -> dict:
+    """Fixtures that script Jev endpoint traffic and set no router keep
+    the old ``jev`` routing (the default is ``act``) until Phase 5."""
+    cfg = fx.get("config", {})
+    if "jev" in fx.get("endpoints", {}) and \
+            "router" not in cfg.get("brain", {}):
+        cfg = {**cfg, "brain": {**cfg.get("brain", {}), "router": "jev"}}
+    return cfg
+
+
 def run_turn(fixture, timeout: float = 60.0) -> TurnResult:
     fx = fixture if isinstance(fixture, dict) else load_fixture(fixture)
     wav = resolve_audio(fx)
@@ -388,7 +398,7 @@ def run_turn(fixture, timeout: float = 60.0) -> TurnResult:
             "real_notify": "notify" in fx.get("fakes", {}),
             "real_hypr": "hypr" in fx.get("fakes", {}),
             "urls": urls,
-            "config": fx.get("config", {}),
+            "config": _pin_jev_router(fx),
             "catalog": fx.get("catalog"),
             "chooser": fx.get("chooser"),
             "notify_now": fx.get("notify_now"),

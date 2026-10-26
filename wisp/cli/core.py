@@ -52,7 +52,7 @@ def daemon_install(ctx, a):
         return _install_units(ctx, a)
 
     def go():
-        ctx.host.install_files(dry_run=a.dry_run)
+        ctx.host.install_files(dry_run=a.dry_run, cfg=ctx.cfg)
         if not a.dry_run:
             ctx.host.install_bind(ctx.cfg)
         return 0
@@ -64,7 +64,8 @@ def _install_units(ctx, a):
     """Only the systemd units: back up changed ones, daemon-reload,
     never enable/start/restart. --dry-run writes nothing."""
     from .. import config as _cfgmod, svc
-    acts = svc.install_units(_cfgmod.HOME, dry_run=a.dry_run)
+    acts = svc.install_units(_cfgmod.HOME, dry_run=a.dry_run,
+                             local=_cfgmod.local_enabled(ctx.cfg))
     text = svc.describe(acts, a.dry_run)
     if not a.dry_run:
         text += ("\nunits installed, not restarted; apply with "

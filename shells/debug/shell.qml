@@ -778,7 +778,7 @@ FloatingWindow {
                 ["stt.model","model"],
                 ["stt.prompt","vocab prompt"]]],
               ["Brain",
-               "brain.router: jev routes via typed decisions; chat " +
+               "brain.router: act (default) goes straight to the act loop; jev routes via typed decisions; chat " +
                "sends transcript straight to the answer model; off " +
                "always asks. brain.default: provider:model for " +
                "answers. agent_runtime: opencode/codex/claude/devin.",
