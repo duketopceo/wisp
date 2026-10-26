@@ -148,11 +148,18 @@ def main(spec_path: str) -> int:
         rel_delta = spec.get("interrupt_after_first_delta_ms")
         rel_flight = spec.get("interrupt_after_in_flight_ms")
         armed = {"done": False}
+        timers = []
 
         def fire():
             out["interrupt_t"] = time.monotonic()
-            interrupt.set()
             out["interrupt_fired"] = True
+            interrupt.set()
+
+        def arm(ms):
+            t = threading.Timer(ms / 1000.0, fire)
+            t.daemon = True
+            timers.append(t)
+            t.start()
 
         def arm_relative():
             if armed["done"]:
@@ -166,7 +173,7 @@ def main(spec_path: str) -> int:
             else:
                 return
             armed["done"] = True
-            threading.Timer(delay / 1000.0, fire).start()
+            arm(delay)
 
         def drain():
             while True:
@@ -202,8 +209,12 @@ def main(spec_path: str) -> int:
                 return chooser.get("pick")
 
         after = spec.get("interrupt_after_ms")
+        if after is not None and (rel_delta is not None
+                                  or rel_flight is not None):
+            raise ValueError("interrupt_after_ms cannot be combined with "
+                             "an event-relative interrupt key")
         if after is not None:
-            threading.Timer(after / 1000.0, fire).start()
+            arm(after)
 
         code = pipeline.run_listen(cfg, st, wait_for_choice=wait,
                                    interrupted=interrupt.is_set)

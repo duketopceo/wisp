@@ -100,7 +100,7 @@ TURN_CAP_MS = 4000
 
 
 class CorpusRunTest(unittest.TestCase):
-    def test_every_fixture_meets_its_expectations_under_20s(self):
+    def test_every_fixture_meets_its_expectations_within_turn_cap(self):
         t0 = time.monotonic()
         bad = {}
         slow = {}
@@ -112,7 +112,8 @@ class CorpusRunTest(unittest.TestCase):
             if problems:
                 bad[p.stem] = problems
             turn_ms = runner._spans(res).get("turn_ms")
-            if turn_ms is not None and turn_ms > TURN_CAP_MS * runner.JITTER:
+            self.assertIsNotNone(turn_ms, f"{p.stem}: no state events")
+            if turn_ms > TURN_CAP_MS * runner.JITTER:
                 slow[p.stem] = turn_ms
         self.assertEqual(bad, {})
         self.assertEqual(

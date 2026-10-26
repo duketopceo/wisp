@@ -400,8 +400,12 @@ class TurnReplayTest(unittest.TestCase):
         fx = copy.deepcopy(runner.load_fixture(FIXTURES / "act.json"))
         for r in fx["endpoints"]["brain"]["responses"]:
             r["latency_ms"] = 200
-        fx["interrupt_after_in_flight_ms"] = 50   # cancel once a step is running, not on wall clock
+        # the stop lands 50 ms into the first running step, inside the
+        # 200 ms brain wait before the next one — keyed on the step, not
+        # wall clock, so a loaded machine cannot fire it before step one
+        fx["interrupt_after_in_flight_ms"] = 50
         res = runner.run_turn(fx)
+        self.assertTrue(res.interrupt_fired)
         self.assertTrue(res.final["result"].startswith("INTERRUPTED"))
 
     def test_cancel_mid_act_ends_within_150ms_of_stop(self):
