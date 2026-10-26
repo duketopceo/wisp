@@ -401,8 +401,8 @@ def _onboard_args(p):
                    help="print the checklist and exit 0 (the Panel card "
                    "reads this)")
     p.add_argument("--step", metavar="ID",
-                   help="run one step: mic, models, cua, notifications, "
-                   "keybinding")
+                   help="run one step: mic, models, keys, cua, "
+                   "notifications, keybinding")
     p.add_argument("--yes", action="store_true",
                    help="with --step notifications: send the test now")
     p.add_argument("--undo", metavar="ID", help="forget one recorded step")

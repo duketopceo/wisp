@@ -1,12 +1,15 @@
 """First-run onboarding (W28): `wispd onboard` and the Panel first-run card.
 
-Five steps, in order: mic, models, cua (optional), notifications and
-keybinding (optional). Each is a read-only check plus, at most, one
+Six steps, in order: mic, models, keys, cua (optional), notifications
+and keybinding (optional). Each is a read-only check plus, at most, one
 explicit side effect:
 
   - models only probes the local ladder over loopback HTTP, and only
     when [local] enabled = "true"; it never starts or stops a service
     (`wispd health start` stays a manual act),
+  - keys stores a key only when the walk is given one to store (never
+    printed), at the omaseal ref in the key's lookup list or in
+    ~/.config/wisp/.env,
   - notifications sends one test notification, and only when the caller
     passes confirm=True,
   - keybinding needs the W24 submap and is "na" while that is absent.
@@ -14,17 +17,19 @@ explicit side effect:
 Every step is skippable and reversible. A skip is not recorded and writes
 nothing (the step is offered again next run). Only a step that passed is
 recorded, in ~/.local/share/wisp/onboard.json, so a half finished run
-resumes where it stopped. Undo removes the record. Config is never edited.
+resumes where it stopped. Undo removes the record. config.toml is never edited.
 
 All probes are injected through `Probes`, so the tests run with fakes and
 never touch the network, services or notifications.
 """
 import dataclasses
 import datetime
+import getpass
 import json
 import os
 import pathlib
 import shutil
+import subprocess
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -55,6 +60,7 @@ class Step:
 STEPS = (
     Step("mic", "microphone"),
     Step("models", "models"),
+    Step("keys", "API keys"),
     Step("cua", "cua pointer driver", optional=True),
     Step("notifications", "notifications", confirm=True),
     Step("keybinding", "keybinding", optional=True),
@@ -84,6 +90,46 @@ def _whisper_ok(cfg: dict) -> bool:
     if config.stt_settings(cfg)["provider"] != "local":
         return True
     return config.whisper_model(cfg).exists()
+
+
+def _store_key(key_env: str, value: str) -> str:
+    """Store a key where config.load_env_key will find it and say where:
+    the omaseal ref in key_env when there is one and omaseal is on PATH,
+    else ~/.config/wisp/.env (0600). The value only ever travels on
+    omaseal's stdin or into the 0600 file. Raises ValueError for a value
+    that cannot be stored safely, OSError/RuntimeError when the store
+    itself failed."""
+    if not value or any(c.isspace() for c in value):
+        raise ValueError("a key cannot be empty or contain whitespace")
+    cands = [c.strip() for c in key_env.split(",") if c.strip()]
+    ref = next((c[len("omaseal://"):].split("/", 1) for c in cands
+                if c.startswith("omaseal://")), None)
+    exe = shutil.which("omaseal")
+    if ref and len(ref) == 2 and exe:
+        r = subprocess.run([exe, "set", ref[0], ref[1]], input=value,
+                           capture_output=True, text=True,
+                           timeout=config.OMASEAL_TIMEOUT_S)
+        if r.returncode != 0:
+            raise RuntimeError("omaseal could not store the key")
+        return f"omaseal {ref[0]}/{ref[1]}"
+    name = config.key_label(key_env)
+    if name.startswith("omaseal://"):
+        raise ValueError("omaseal is not installed and the key has no "
+                         "environment variable name to store under")
+    path = config.ENV_FILE
+    try:
+        lines = [ln for ln in path.read_text().splitlines()
+                 if not ln.startswith(f"{name}=")]
+    except FileNotFoundError:
+        lines = []
+    lines.append(f"{name}={value}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    os.replace(tmp, path)
+    return str(path)
 
 
 def _cua(cfg: dict) -> dict:
@@ -132,6 +178,9 @@ class Probes:
     notify_ready: object = lambda: _notify_cmd() is not None
     notify_send: object = _notify_send
     submap: object = _submap
+    key: object = config.load_env_key
+    store_key: object = _store_key
+    secret: object = getpass.getpass
 
 
 # -- progress -------------------------------------------------------------
@@ -235,6 +284,38 @@ def _check_models(cfg, p):
     return _res("models", "todo", detail, "wispd health start")
 
 
+def required_keys(cfg: dict) -> list:
+    """[(role, key_env)] the hosted setup needs: the brain's key when its
+    provider declares one, and the speech key when STT is hosted."""
+    from . import brain
+    out = []
+    env = brain.provider(cfg).get("key_env") or ""
+    if env:
+        out.append(("brain", env))
+    stt = config.stt_settings(cfg)
+    if stt["provider"] == "openai" and stt.get("key_env") \
+            and stt["key_env"] not in [e for _r, e in out]:
+        out.append(("speech", stt["key_env"]))
+    return out
+
+
+def _missing_keys(cfg, p) -> list:
+    return [(role, env) for role, env in required_keys(cfg)
+            if not p.key(env)]
+
+
+def _check_keys(cfg, p):
+    need = required_keys(cfg)
+    if not need:
+        return _res("keys", "ok", "no API keys needed")
+    miss = _missing_keys(cfg, p)
+    if not miss:
+        return _res("keys", "ok", "all API keys found")
+    return _res("keys", "todo", "missing " + ", ".join(
+        f"{config.key_label(e)} ({r})" for r, e in miss),
+        "wispd onboard")
+
+
 def _check_cua(cfg, p):
     r = p.cua(cfg) or {}
     state = r.get("state", "absent")
@@ -262,7 +343,8 @@ def _check_keybinding(cfg, p):
     return _res("keybinding", "ok", "keyboard submap is registered")
 
 
-_CHECKS = {"mic": _check_mic, "models": _check_models, "cua": _check_cua,
+_CHECKS = {"mic": _check_mic, "models": _check_models,
+           "keys": _check_keys, "cua": _check_cua,
            "notifications": _check_notifications,
            "keybinding": _check_keybinding}
 
@@ -345,6 +427,25 @@ def status(cfg: dict, probes: Probes, progress: Progress) -> dict:
 
 # -- the interactive walk -------------------------------------------------
 
+def _offer_keys(cfg: dict, probes: Probes, out):
+    """Ask for each missing key (hidden input, blank skips) and store it.
+    Never prints the value."""
+    for role, env in _missing_keys(cfg, probes):
+        label = config.key_label(env)
+        try:
+            value = probes.secret(f"  paste {label} ({role}), blank to "
+                                  "skip: ").strip()
+        except EOFError:
+            return
+        if not value:
+            continue
+        try:
+            out(f"  stored {label} in {probes.store_key(env, value)}")
+        except (ValueError, OSError, RuntimeError,
+                subprocess.SubprocessError) as e:
+            out(f"  not stored: {e}")
+
+
 def walk(cfg: dict, probes: Probes, progress: Progress, ask, out) -> dict:
     """Offer each unfinished step in turn. `ask(prompt)` returns the
     answer (EOFError quits); `out(line)` prints. y runs the step, s or n
@@ -379,6 +480,8 @@ def walk(cfg: dict, probes: Probes, progress: Progress, ask, out) -> dict:
         if not yes:
             res["skipped"].append(s.id)
             continue
+        if s.id == "keys":
+            _offer_keys(cfg, probes, out)
         got = run_step(s.id, cfg, probes, progress, confirm=True)
         if got["done"]:
             out(f"  ok: {got['detail']}")

@@ -13,7 +13,7 @@ from . import copy as _copy
 
 CODES = ("jev_down", "brain_down", "stt_down", "ground_down",
          "ground_failed", "timeout", "cancelled", "busy", "stale_prompt",
-         "restarted", "tool_failed", "budget_exceeded", "internal")
+         "restarted", "tool_failed", "budget_exceeded", "key_missing", "internal")
 
 # Safe fallback strings come from the shared copy table (wisp/copy.py
 # ERRORS), so state.json `error` can never disagree with what a surface

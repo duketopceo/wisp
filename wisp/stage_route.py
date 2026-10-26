@@ -133,6 +133,8 @@ def ask_jev(transcript: str, model: str, questions: dict,
     else:
         try:
             headers["Authorization"] = f"Bearer {config.load_api_key()}"
+        except _ec.WispError:
+            raise
         except RuntimeError as e:
             raise _ec.WispError("jev_down", str(e)) from None
     req = urllib.request.Request(

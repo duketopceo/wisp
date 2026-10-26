@@ -137,7 +137,8 @@ Error codes (additive, Python core; U7): when `status` is `error`,
 `error_code` is one of `jev_down`, `brain_down`, `stt_down`,
 `ground_down`, `ground_failed`, `timeout`, `cancelled`, `busy`,
 `stale_prompt`, `restarted`, `tool_failed`, `budget_exceeded`,
-`internal`. Shells render copy from the code and must treat unknown
+`key_missing` (a required API key did not resolve; `error` names it and
+`wispd onboard`), `internal`. Shells render copy from the code and must treat unknown
 codes as `internal`. `error_detail` is for logs and `wispd watch`, not
 for display. A turn that starts (`listening`) clears all three.
 

@@ -54,7 +54,7 @@ class ErrorCodesTest(unittest.TestCase):
             "jev_down", "brain_down", "stt_down", "ground_down",
             "ground_failed", "timeout", "cancelled", "busy",
             "stale_prompt", "restarted", "tool_failed",
-            "budget_exceeded", "internal"})
+            "budget_exceeded", "key_missing", "internal"})
 
     def test_every_code_has_human_safe_copy(self):
         for c in errors_codes.CODES:
@@ -354,13 +354,13 @@ class JevTest(HealthBase):
         # no Authorization header was needed or sent as "Bearer "+""
         self.assertEqual(len(jev.calls), 1)
 
-    def test_remote_endpoint_without_key_is_a_coded_error(self):
+    def test_remote_endpoint_without_key_is_key_missing(self):
         self._no_key()
         with mock.patch.object(config, "JEV_ENDPOINT",
                                "https://openrouter.ai/api/alpha/decisions"):
             with self.assertRaises(errors_codes.WispError) as cm:
                 pipeline.ask_jev("hi", "m", {})
-        self.assertEqual(cm.exception.code, "jev_down")
+        self.assertEqual(cm.exception.code, "key_missing")
         self.assertIn("OPENROUTER_API_KEY", cm.exception.detail)
 
     def test_http_503_is_jev_down_with_raw_detail(self):

@@ -547,6 +547,19 @@ def stt_settings(cfg: dict | None) -> dict:
     return {**STT_DEFAULTS, **((cfg or {}).get("stt") or {})}
 
 
+# a keyring that is locked or wedged must not hang a turn
+OMASEAL_TIMEOUT_S = 3
+
+
+def key_label(name: str) -> str:
+    """The name to show for a key_env list: its first plain env var
+    (GROQ_API_KEY for `omaseal://groq/default,GROQ_API_KEY`), else the
+    list itself."""
+    cands = [c.strip() for c in str(name).split(",") if c.strip()]
+    return next((c for c in cands if not c.startswith("omaseal://")),
+                str(name))
+
+
 def load_env_key(name: str) -> str:
     """Resolve a secret. `name` may be a comma-separated list of
     sources tried in order — `omaseal://svc/acct` refs and plain env
@@ -564,7 +577,8 @@ def load_env_key(name: str) -> str:
                     r = subprocess.run(
                         [_platform.resolve_exe("omaseal"), "get",
                          ref[0], ref[1]],
-                        capture_output=True, text=True, timeout=10)
+                        capture_output=True, text=True,
+                        timeout=OMASEAL_TIMEOUT_S)
                     if r.returncode == 0 and r.stdout.strip():
                         return r.stdout.strip()
                 except (OSError, subprocess.SubprocessError):
@@ -580,11 +594,21 @@ def load_env_key(name: str) -> str:
     return ""
 
 
-def load_api_key() -> str:
-    key = load_env_key("OPENROUTER_API_KEY")
+def require_key(name: str) -> str:
+    """load_env_key for a key a turn cannot go on without: a miss raises
+    the `key_missing` WispError naming the key and `wispd onboard`."""
+    key = load_env_key(name)
     if not key:
-        raise RuntimeError(f"No OPENROUTER_API_KEY in {ENV_FILE} or environment")
+        from . import errors_codes
+        label = key_label(name)
+        raise errors_codes.WispError(
+            "key_missing", f"no {label} in {ENV_FILE} or environment",
+            f"{label} is missing, run wispd onboard")
     return key
+
+
+def load_api_key() -> str:
+    return require_key("OPENROUTER_API_KEY")
 
 
 def load_harness() -> dict | None:

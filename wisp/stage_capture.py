@@ -203,10 +203,7 @@ def _transcribe_openai(wav: pathlib.Path, stt: dict,
     """OpenAI-compatible /audio/transcriptions — Groq, OpenAI, vLLM,
     Together, DeepInfra. Key comes from .env/env via stt.key_env."""
     from . import vocab
-    key = config.load_env_key(stt.get("key_env", "GROQ_API_KEY"))
-    if not key:
-        raise RuntimeError(
-            f"no {stt.get('key_env', 'GROQ_API_KEY')} in .env or environment")
+    key = config.require_key(stt.get("key_env", "GROQ_API_KEY"))
     base = stt.get("base_url", "https://api.groq.com/openai/v1") \
         .rstrip("/")
     boundary = f"----wisp{int(time.monotonic() * 1000)}"

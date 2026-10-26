@@ -32,7 +32,8 @@ class Fakes:
     """Injected probes that record every call."""
 
     def __init__(self, up=None, cua="running", notify="sent", submap=False,
-                 recorder=True, model=True, notifier=True):
+                 recorder=True, model=True, notifier=True, keys=None,
+                 secrets=()):
         self.up = set(LADDER_URLS if up is None else up)
         self.fetched = []
         self.sent = 0
@@ -42,6 +43,10 @@ class Fakes:
         self.recorder = recorder
         self.model = model
         self.notifier = notifier
+        self.keys = {"OPENROUTER_API_KEY", "GROQ_API_KEY"} \
+            if keys is None else set(keys)
+        self.secrets = list(secrets)
+        self.stored = []
 
     def probes(self):
         def fetch(url):
@@ -56,12 +61,24 @@ class Fakes:
             self.sent += 1
             return self.notify_result
 
+        def store(key_env, value):
+            self.stored.append((key_env, value))
+            self.keys.add(key_env)
+            return "fake store"
+
+        def secret(prompt):
+            if not self.secrets:
+                raise EOFError
+            return self.secrets.pop(0)
+
         return onboard.Probes(
             which=lambda n: "/usr/bin/" + n if self.recorder else None,
             whisper_ok=lambda cfg: self.model,
             fetch=fetch, cua=cua,
             notify_ready=lambda: self.notifier, notify_send=send,
-            submap=lambda: self.submap_present)
+            submap=lambda: self.submap_present,
+            key=lambda env: "k" if env in self.keys else "",
+            store_key=store, secret=secret)
 
 
 def tree(root):
@@ -121,8 +138,8 @@ class OnboardCase(unittest.TestCase):
 class TestSteps(OnboardCase):
     def test_step_order(self):
         self.assertEqual([s.id for s in onboard.STEPS],
-                         ["mic", "models", "cua", "notifications",
-                          "keybinding"])
+                         ["mic", "models", "keys", "cua",
+                          "notifications", "keybinding"])
         self.assertEqual([s.id for s in onboard.STEPS if s.optional],
                          ["cua", "keybinding"])
 
@@ -209,15 +226,15 @@ class TestFlow(OnboardCase):
         before = tree(self.home)
         self.assertEqual(before, {})
         f = Fakes()
-        res, ask = self.walk(f, "y", "y", "y", "y")
+        res, ask = self.walk(f, "y", "y", "y", "y", "y")
         done = json.loads(self.progress.path.read_text())["done"]
         self.assertEqual(sorted(done),
-                         ["cua", "mic", "models", "notifications"])
+                         ["cua", "keys", "mic", "models", "notifications"])
         self.assertEqual(f.sent, 1)
-        self.assertEqual(res["done"], ["mic", "models", "cua",
+        self.assertEqual(res["done"], ["mic", "models", "keys", "cua",
                                        "notifications"])
         self.assertEqual(res["na"], ["keybinding"])
-        self.assertEqual(len(ask.prompts), 4)  # no prompt for the na step
+        self.assertEqual(len(ask.prompts), 5)  # no prompt for the na step
         # only the progress file was written, no config
         self.assertEqual(sorted(tree(self.home)),
                          [".local/share/wisp/onboard.json"])
@@ -232,30 +249,30 @@ class TestFlow(OnboardCase):
         # a new process: fresh Progress object, same file
         self.progress = onboard.Progress()
         f2 = Fakes()
-        res, ask = self.walk(f2, "y", "y", "y")
+        res, ask = self.walk(f2, "y", "y", "y", "y")
         self.assertEqual(res["resumed"], ["mic"])
-        self.assertEqual(res["done"], ["mic", "models", "cua",
+        self.assertEqual(res["done"], ["mic", "models", "keys", "cua",
                                        "notifications"])
-        self.assertEqual(len(ask.prompts), 3)
+        self.assertEqual(len(ask.prompts), 4)
         self.assertFalse(any("mic" in p.lower() for p in ask.prompts))
         self.assertEqual(f2.sent, 1)
 
     def test_skip_writes_nothing_at_all(self):
         f = Fakes()
-        res, ask = self.walk(f, "s", "s", "s", "s")
+        res, ask = self.walk(f, "s", "s", "s", "s", "s")
         self.assertEqual(tree(self.home), {})
         self.assertEqual(sorted(res["skipped"]),
-                         ["cua", "mic", "models", "notifications"])
+                         ["cua", "keys", "mic", "models", "notifications"])
         self.assertEqual(res["done"], [])
         self.assertEqual(f.sent, 0)
         self.assertFalse(self.data.exists())
         self.assertFalse(self.cfgdir.exists())
 
     def test_skip_one_then_finish_the_rest(self):
-        res, _ = self.walk(Fakes(), "s", "y", "s", "n")
+        res, _ = self.walk(Fakes(), "s", "y", "s", "s", "n")
         self.assertEqual(res["done"], ["models"])
         self.assertEqual(sorted(res["skipped"]),
-                         ["cua", "mic", "notifications"])
+                         ["cua", "keys", "mic", "notifications"])
         # skipped steps are asked again next time
         self.progress = onboard.Progress()
         res, ask = self.walk(Fakes(), "q")
@@ -264,7 +281,7 @@ class TestFlow(OnboardCase):
 
     def test_a_failing_step_is_not_recorded_and_flow_continues(self):
         f = Fakes(up=set())
-        res, _ = self.walk(f, "y", "y", "y", "y")
+        res, _ = self.walk(f, "y", "y", "y", "y", "y")
         self.assertNotIn("models", res["done"])
         self.assertIn("models", res["failed"])
         self.assertIn("mic", res["done"])
@@ -275,8 +292,8 @@ class TestFlow(OnboardCase):
         self.assertEqual(tree(self.home), {})
 
     def test_every_step_is_reversible(self):
-        self.walk(Fakes(), "y", "y", "y", "y")
-        for sid in ("mic", "models", "cua", "notifications"):
+        self.walk(Fakes(), "y", "y", "y", "y", "y")
+        for sid in ("mic", "models", "keys", "cua", "notifications"):
             self.assertTrue(onboard.undo(sid, self.progress)["undone"], sid)
         self.assertEqual(json.loads(self.progress.path.read_text())["done"],
                          {})
@@ -298,14 +315,14 @@ class TestFlow(OnboardCase):
         self.assertTrue(st["finished"])
 
     def test_all_required_steps_done_finishes_the_run(self):
-        self.walk(Fakes(), "y", "y", "n", "y")
+        self.walk(Fakes(), "y", "y", "y", "n", "y")
         st = onboard.status(self.cfg, Fakes().probes(),
                             onboard.Progress())
         self.assertTrue(st["finished"])  # cua and keybinding are optional
 
     def test_single_steps_finish_setup_once_the_required_ones_pass(self):
         f = Fakes()
-        for sid in ("mic", "models"):
+        for sid in ("mic", "models", "keys"):
             onboard.run_step(sid, self.cfg, f.probes(), self.progress)
             self.assertFalse(self.progress.finished, sid)
         onboard.run_step("notifications", self.cfg, f.probes(),
@@ -325,23 +342,115 @@ class TestStatus(OnboardCase):
         self.walk(Fakes(), "y", "q")
         st = onboard.status(self.cfg, Fakes().probes(), onboard.Progress())
         self.assertEqual([s["id"] for s in st["steps"]],
-                         ["mic", "models", "cua", "notifications",
-                          "keybinding"])
+                         ["mic", "models", "keys", "cua",
+                          "notifications", "keybinding"])
         mic = st["steps"][0]
         self.assertEqual(mic["state"], "done")
         self.assertTrue(mic["done"] and mic["ok"])
         self.assertEqual(st["steps"][1]["state"], "todo")
-        self.assertEqual(st["steps"][4]["state"], "na")
+        self.assertEqual(st["steps"][5]["state"], "na")
         for s in st["steps"]:
             for k in ("id", "name", "optional", "state", "ok", "done",
                       "detail", "try"):
                 self.assertIn(k, s)
         self.assertEqual(st["done_count"], 1)
-        self.assertEqual(st["total"], 4)  # na steps do not count
+        self.assertEqual(st["total"], 5)  # na steps do not count
 
     def test_status_writes_nothing(self):
         onboard.status(self.cfg, Fakes().probes(), self.progress)
         self.assertEqual(tree(self.home), {})
+
+
+class TestKeys(OnboardCase):
+    def test_both_keys_resolve_is_ok(self):
+        r = onboard.check("keys", self.cfg, Fakes().probes())
+        self.assertEqual(r["state"], "ok")
+
+    def test_missing_stt_key_is_todo_naming_it(self):
+        f = Fakes(keys={"OPENROUTER_API_KEY"})
+        r = onboard.check("keys", self.cfg, f.probes())
+        self.assertEqual(r["state"], "todo")
+        self.assertIn("GROQ_API_KEY", r["detail"])
+        self.assertNotIn("OPENROUTER_API_KEY", r["detail"])
+
+    def test_local_stt_needs_only_the_brain_key(self):
+        cfg = {"stt": {"provider": "local"}}
+        self.assertEqual(onboard.required_keys(cfg),
+                         [("brain", "OPENROUTER_API_KEY")])
+
+    def test_walk_stores_a_pasted_key_and_never_prints_it(self):
+        f = Fakes(keys={"OPENROUTER_API_KEY"}, secrets=["gsk-secret-1"])
+        res, _ = self.walk(f, "s", "s", "y", "q")
+        self.assertEqual(f.stored, [("GROQ_API_KEY", "gsk-secret-1")])
+        self.assertIn("keys", res["done"])
+        self.assertNotIn("gsk-secret-1", "\n".join(self.out))
+        self.assertIn("GROQ_API_KEY", "\n".join(self.out))
+
+    def test_blank_paste_stores_nothing_and_leaves_the_step_todo(self):
+        f = Fakes(keys=set(), secrets=["", ""])
+        res, _ = self.walk(f, "s", "s", "y", "q")
+        self.assertEqual(f.stored, [])
+        self.assertIn("keys", res["failed"])
+
+
+class TestStoreKey(unittest.TestCase):
+    def setUp(self):
+        self._td = shorttmp.TemporaryDirectory()
+        self.addCleanup(self._td.cleanup)
+        self.tmp = pathlib.Path(self._td.name)
+        self.env = self.tmp / "cfg" / ".env"
+        p = mock.patch.object(config, "ENV_FILE", self.env)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def _no_omaseal(self):
+        p = mock.patch("shutil.which", return_value=None)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_without_omaseal_writes_env_file_0600_and_it_resolves(self):
+        self._no_omaseal()
+        where = onboard._store_key("GROQ_API_KEY", "gsk-abc")
+        self.assertEqual(where, str(self.env))
+        self.assertEqual(self.env.stat().st_mode & 0o777, 0o600)
+        with mock.patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(config.load_env_key("GROQ_API_KEY"), "gsk-abc")
+
+    def test_existing_0644_env_becomes_0600_and_keeps_other_keys(self):
+        self._no_omaseal()
+        self.env.parent.mkdir(parents=True)
+        self.env.write_text("OTHER=1\nGROQ_API_KEY=old\n")
+        self.env.chmod(0o644)
+        onboard._store_key("GROQ_API_KEY", "gsk-new")
+        self.assertEqual(self.env.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.env.read_text(),
+                         "OTHER=1\nGROQ_API_KEY=gsk-new\n")
+
+    def test_value_with_newline_or_space_is_refused_and_writes_nothing(self):
+        self._no_omaseal()
+        for bad in ("a\nb", "a b", "", "a\tb"):
+            with self.assertRaises(ValueError):
+                onboard._store_key("GROQ_API_KEY", bad)
+        self.assertFalse(self.env.exists())
+
+    def test_omaseal_ref_in_the_lookup_list_is_where_it_is_stored(self):
+        ring = self.tmp / "ring"
+        fake = self.tmp / "bin" / "omaseal"
+        fake.parent.mkdir()
+        fake.write_text(
+            '#!/bin/sh\ncase "$1" in\n'
+            f'set) cat > "{ring}.$2.$3" ;;\n'
+            f'get) cat "{ring}.$2.$3" ;;\nesac\n')
+        fake.chmod(0o755)
+        key_env = "omaseal://groq/default,GROQ_API_KEY"
+        with mock.patch.dict("os.environ",
+                             {"PATH": f"{fake.parent}:/usr/bin:/bin"}):
+            where = onboard._store_key(key_env, "gsk-ring")
+            self.assertEqual(where, "omaseal groq/default")
+            self.assertEqual(config.load_env_key(key_env), "gsk-ring")
+        self.assertFalse(self.env.exists())
+        self.assertEqual((self.tmp / "ring.groq.default").read_text(),
+                         "gsk-ring")
 
 
 class TestDefaultFetch(unittest.TestCase):
@@ -380,8 +489,8 @@ class TestCli(unittest.TestCase):
             d = json.loads(out)["data"]
             self.assertFalse(d["finished"])
             self.assertEqual([s["id"] for s in d["steps"]],
-                             ["mic", "models", "cua", "notifications",
-                              "keybinding"])
+                             ["mic", "models", "keys", "cua",
+                              "notifications", "keybinding"])
             self.assertEqual(tree(env.home / ".local"), {})
             # the text table must not create config.toml either
             c, out, err = env.run(["onboard", "--status"])
@@ -450,7 +559,7 @@ class TestCli(unittest.TestCase):
     def test_interactive_flow_over_stdin_skip_all_writes_nothing(self):
         with CliEnv() as env:
             c, out, err = env.run(["onboard", "--interactive"],
-                                  stdin="s\ns\ns\ns\ns\n")
+                                  stdin="s\ns\ns\ns\ns\ns\n")
             self.assertEqual(c, 0, err)
             self.assertEqual(tree(env.home / ".local"), {})
             self.assertEqual(tree(env.home / ".config"), {})
