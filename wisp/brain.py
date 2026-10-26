@@ -147,8 +147,7 @@ def _post(url: str, headers: dict, body: dict, timeout: float = 60) -> dict:
 
 
 def _headers(p: dict) -> dict:
-    key = config.load_env_key(p.get("key_env", "")) \
-        if p.get("key_env") else ""
+    key = config.require_key(p["key_env"]) if p.get("key_env") else ""
     headers = {}
     if key:
         headers["Authorization"] = f"Bearer {key}"
@@ -322,6 +321,7 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
     failures: list = []
     first_failed = None
     capped = errored = False
+    missing = None
     for i, p in enumerate(chain(cfg)):
         cancel.check()  # a cancelled turn never moves to the next brain
         if not p["base_url"]:
@@ -349,11 +349,15 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
                 if getattr(e, "committed", False) \
                         or isinstance(e, cancel.Cancelled):
                     raise
-                errored = True
                 failures.append(_describe(p, e))
-                if HEALTH is not None:
-                    HEALTH.report_failure(f"brain_{p['name']}",
-                                          "brain_down")
+                if getattr(e, "code", "") == "key_missing":
+                    # not an outage: the next entry may have its key
+                    missing = missing or e
+                else:
+                    errored = True
+                    if HEALTH is not None:
+                        HEALTH.report_failure(f"brain_{p['name']}",
+                                              "brain_down")
             else:
                 res["provider"] = p["name"]
                 res["fallback_from"] = first_failed
@@ -367,6 +371,9 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
                 return res
         if first_failed is None:
             first_failed = p["name"]
+    # a missing key outranks a capped fallback: it names the fix
+    if missing and not errored:
+        raise missing
     if capped and not errored:
         raise errors_codes.WispError("budget_exceeded",
                                      "; ".join(failures))

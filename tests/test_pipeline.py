@@ -15,7 +15,7 @@ class SttPromptTest(unittest.TestCase):
         import pathlib, tempfile
         wav = pathlib.Path(tempfile.mkdtemp()) / "a.wav"
         wav.write_bytes(b"x")
-        cfg = {"stt": {"prompt": "Omarchy, Wisp"}}
+        cfg = {"stt": {"provider": "local", "prompt": "Omarchy, Wisp"}}
         calls = {}
         def fake_run(argv, **kw):
             calls["argv"] = argv

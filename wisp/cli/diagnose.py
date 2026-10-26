@@ -54,8 +54,10 @@ def doctor_sections(cfg: dict, cua_probe=None) -> list:
 
     row = section("stt / audio")
     wm = config.whisper_model(cfg)
-    row("whisper model", wm.name, wm.exists())
-    row("stt provider", cfg.get("stt", {}).get("provider", "local"))
+    stt = config.stt_settings(cfg)["provider"]
+    # whisper.cpp is opt-in; hosted STT needs no local model
+    row("whisper model", wm.name, stt != "local" or wm.exists())
+    row("stt provider", stt)
     for b in ("pw-record", "wtype", "grim"):
         row(b, shutil.which(b) or "not on PATH", bool(shutil.which(b)))
 
@@ -401,8 +403,8 @@ def _onboard_args(p):
                    help="print the checklist and exit 0 (the Panel card "
                    "reads this)")
     p.add_argument("--step", metavar="ID",
-                   help="run one step: mic, models, cua, notifications, "
-                   "keybinding")
+                   help="run one step: mic, models, keys, cua, "
+                   "notifications, keybinding")
     p.add_argument("--yes", action="store_true",
                    help="with --step notifications: send the test now")
     p.add_argument("--undo", metavar="ID", help="forget one recorded step")

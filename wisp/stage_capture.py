@@ -162,7 +162,8 @@ def _amplitude_sampler(seconds: int | None, state=None,
 
 
 def transcribe(wav: pathlib.Path, cfg: dict) -> str:
-    provider = cfg.get("stt", {}).get("provider", "local")
+    stt = config.stt_settings(cfg)
+    provider = stt["provider"]
     if provider == "wordink":
         try:
             import wordink
@@ -174,7 +175,7 @@ def transcribe(wav: pathlib.Path, cfg: dict) -> str:
         except Exception:
             pass
     if provider == "openai":
-        return _transcribe_openai(wav, cfg["stt"], cfg)
+        return _transcribe_openai(wav, stt, cfg)
     model = config.whisper_model(cfg)
     if not (config.WHISPER_BIN.exists() and model.exists()):
         raise RuntimeError(f"whisper.cpp missing: {config.WHISPER_BIN} / {model}")
@@ -202,19 +203,16 @@ def _transcribe_openai(wav: pathlib.Path, stt: dict,
     """OpenAI-compatible /audio/transcriptions — Groq, OpenAI, vLLM,
     Together, DeepInfra. Key comes from .env/env via stt.key_env."""
     from . import vocab
-    key = config.load_env_key(stt.get("key_env", "GROQ_API_KEY"))
-    if not key:
-        raise RuntimeError(
-            f"no {stt.get('key_env', 'GROQ_API_KEY')} in .env or environment")
-    base = stt.get("base_url", "https://api.groq.com/openai/v1") \
-        .rstrip("/")
+    stt = {**config.STT_DEFAULTS, **stt}
+    key = config.require_key(stt["key_env"])
+    base = stt["base_url"].rstrip("/")
     boundary = f"----wisp{int(time.monotonic() * 1000)}"
     audio = wav.read_bytes()
     body = b"\r\n".join([
         f"--{boundary}".encode(),
         b'Content-Disposition: form-data; name="model"',
         b"",
-        stt.get("model", "whisper-large-v3-turbo").encode(),
+        stt["model"].encode(),
         f"--{boundary}".encode(),
         b'Content-Disposition: form-data; name="prompt"',
         b"",
@@ -377,7 +375,7 @@ def capture_stage(ctx) -> bool:
     token.check()
     sp.record("stt", sp.rel0)
     _trace.emit(ctx.turn, "transcribe", "stt",
-                {"provider": cfg.get("stt", {}).get("provider", "local"),
+                {"provider": config.stt_settings(cfg)["provider"],
                  "text": text}, sp.ms["stt"])
     state.transition("deciding", transcript=text)
     ctx.text = text

@@ -72,7 +72,7 @@ take focus, so `Esc` stays reachable while cua acts. Design notes:
 
 | key | default | meaning |
 |-----|---------|---------|
-| `provider` | `"local"` | `local` (whisper.cpp) or `openai` (compatible audio API) |
+| `provider` | `"openai"` | `openai` (compatible audio API, hosted Groq by default) or `local` (whisper.cpp) |
 | `base_url` | groq URL | endpoint for `openai` provider |
 | `model` | `whisper-large-v3-turbo` | STT model id |
 | `key_env` | `GROQ_API_KEY` | env var / `.env` key name holding the key |

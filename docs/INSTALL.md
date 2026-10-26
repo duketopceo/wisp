@@ -34,28 +34,50 @@ python3 wispd install   # core files + service + plugin + menu entry
 - a service: `wispd.service` (systemd user)
 - the push-to-talk bind in `~/.config/hypr/bindings.lua` (Hyprland only)
 
+## Deploying a git ref
+
+`wispd install --ref <git-ref>` installs that branch, tag or commit of
+the source repo instead of the working tree (uncommitted changes are not
+installed, and the checkout is not touched):
+
+```sh
+wispd install --ref origin/master --dry-run   # print the plan
+wispd install --ref origin/master
+wispd install --ref v1.2 --repo ~/src/wisp    # name the repo explicitly
+```
+
+The repo is `--repo`, else the one the last install came from. Every
+install writes `~/.local/opt/wisp/deploy.json` (repo, ref, commit,
+time); `wispd status` shows the deployed commit, or `unknown` when
+there is no record. The installed copy predates `--ref` until the first
+install that includes it, so run that one from a checkout
+(`python3 wispd install`); after that `wispd install --ref ...` works
+from anywhere.
+
 ## Secrets
 
 `~/.config/wisp/.env`:
 
 ```
 OPENROUTER_API_KEY=sk-or-...
-GROQ_API_KEY=gsk-...        # only if stt.provider = "openai"
+# hosted speech-to-text (the default)
+GROQ_API_KEY=gsk-...
 ```
 
 Env vars take precedence over `.env` — handy for testing.
 
 ## Speech-to-text
 
-Default is local whisper.cpp (free, private):
+Default is hosted: an OpenAI-compatible audio API, Groq
+(`https://api.groq.com/openai/v1`, `whisper-large-v3-turbo`) unless you
+change `stt.base_url`/`stt.model`; `stt.key_env` names the env var
+holding the key.
+
+Offline/private: set `stt.provider = "local"` for whisper.cpp:
 
 ```sh
 sh scripts/fetch_whisper.sh      # clones + builds whisper-cli, downloads ggml-small.en
 ```
-
-Faster/cloud: set `stt.provider = "openai"`, `stt.base_url` to Groq
-(`https://api.groq.com/openai/v1`) or any OpenAI-compatible audio API,
-`stt.key_env` to the env var name holding the key.
 
 ## Per-OS notes
 

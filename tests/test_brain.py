@@ -1,6 +1,7 @@
 """U6 brain providers — parsing, capability gating, wire shapes."""
 import io
 import json
+import os
 import pathlib
 import unittest
 import unittest.mock as mock
@@ -246,6 +247,10 @@ class SpendTest(unittest.TestCase):
         self.addCleanup(self._td.cleanup)
         self.dir = pathlib.Path(self._td.name)
         ledger.reset_session()
+        # brain now refuses a keyed provider with no key (key_missing)
+        k = mock.patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"})
+        k.start()
+        self.addCleanup(k.stop)
         p = mock.patch.object(ledger, "path",
                               lambda: self.dir / "usage.jsonl")
         p.start()

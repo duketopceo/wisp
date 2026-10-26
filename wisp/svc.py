@@ -32,9 +32,11 @@ def units_src() -> pathlib.Path:
         / "units"
 
 
-def render(name: str, home=None) -> str:
-    """Template text. Units use %h, so no per-user substitution."""
-    return (units_src() / f"{name}.service").read_text()
+def render(name: str, home=None, units_dir=None) -> str:
+    """Template text. Units use %h, so no per-user substitution.
+    `units_dir` overrides the templates' home (an exported ref's tree)."""
+    return (pathlib.Path(units_dir or units_src())
+            / f"{name}.service").read_text()
 
 
 # -- lint ---------------------------------------------------------------
@@ -85,7 +87,7 @@ def _needed_paths(text: str, home) -> list:
 
 
 def install_units(home, dry_run: bool = False, names=None,
-                  now=None, local: bool = False) -> list:
+                  now=None, local: bool = False, units_dir=None) -> list:
     """Install the templates under `home`. Returns one dict per unit:
     {name, path, action: new|unchanged|update|skip, backup, reason}.
     An `update` first copies the old file to `<unit>.bak-<stamp>`.
@@ -96,7 +98,6 @@ def install_units(home, dry_run: bool = False, names=None,
     stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(now))
     acts, wrote = [], False
     for n in names or UNIT_NAMES:
-        text = render(n, home)
         dst = udir / f"{n}.service"
         a = {"name": n, "path": str(dst), "action": "new",
              "backup": None, "reason": ""}
@@ -104,6 +105,7 @@ def install_units(home, dry_run: bool = False, names=None,
         if not local and n in LLAMA:
             a["action"], a["reason"] = "skip", "[local] enabled is off"
             continue
+        text = render(n, home, units_dir)
         missing = [] if n in ALWAYS_INSTALL else \
             [x for x in _needed_paths(text, home)
              if not pathlib.Path(x).exists()]

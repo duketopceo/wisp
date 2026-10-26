@@ -1,21 +1,25 @@
-usage: wispd daemon install [-h] [--cua] [--units] [--dry-run] [--json]
-                            [--quiet] [--no-color]
+usage: wispd daemon install [-h] [--cua] [--units] [--dry-run] [--ref GIT_REF]
+                            [--repo PATH] [--json] [--quiet] [--no-color]
 
 Install runtime files, the systemd unit and the hotkey bind
 
 options:
-  -h, --help   show this help message and exit
-  --cua        also install the pinned cua-driver (scripts/cua/install.sh)
-  --units      only install the systemd unit templates (scripts/units),
-               backing up changed ones
-  --dry-run    print the plan, change nothing (also with --cua or --units)
+  -h, --help     show this help message and exit
+  --cua          also install the pinned cua-driver (scripts/cua/install.sh)
+  --units        only install the systemd unit templates (scripts/units),
+                 backing up changed ones
+  --dry-run      print the plan, change nothing (also with --cua or --units)
+  --ref GIT_REF  install this git ref (branch, tag or commit) of the source
+                 repo instead of the working tree
+  --repo PATH    source repo for --ref (default: the repo of the last install)
 
 global options:
-  --json       machine-readable output (one JSON object)
-  --quiet, -q  print nothing on success
-  --no-color   plain output (also NO_COLOR, or not a tty)
+  --json         machine-readable output (one JSON object)
+  --quiet, -q    print nothing on success
+  --no-color     plain output (also NO_COLOR, or not a tty)
 
 Examples:
   wispd daemon install
   wispd install --dry-run
   wispd install --units --dry-run
+  wispd install --ref origin/master --dry-run

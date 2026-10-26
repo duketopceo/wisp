@@ -1,6 +1,7 @@
 """U1-U3: real answers, session memory, tiered screen context."""
 import base64
 import json
+import os
 import pathlib
 import tempfile
 import unittest
@@ -56,6 +57,12 @@ class TestSession(unittest.TestCase):
 
 
 class TestAskChat(unittest.TestCase):
+    def setUp(self):
+        # brain now refuses a keyed provider with no key (key_missing)
+        k = mock.patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"})
+        k.start()
+        self.addCleanup(k.stop)
+
     def _resp(self, content="real reply"):
         body = json.dumps({"choices": [{"message": {"content": content}}]})
         m = mock.Mock()

@@ -93,6 +93,8 @@ ERRORS = {
     "tool_failed": ("a step failed", "open details to see which one"),
     "budget_exceeded": ("today's model budget is used up",
                         "raise the budget in settings or wait until tomorrow"),
+    "key_missing": ("an api key is missing",
+                    "run wispd onboard to add it"),
     "internal": ("something went wrong", "open details, then try again"),
 }
 UNKNOWN_ERROR = "internal"

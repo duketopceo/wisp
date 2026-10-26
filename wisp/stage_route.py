@@ -131,10 +131,7 @@ def ask_jev(transcript: str, model: str, questions: dict,
         if key:
             headers["Authorization"] = f"Bearer {key}"
     else:
-        try:
-            headers["Authorization"] = f"Bearer {config.load_api_key()}"
-        except RuntimeError as e:
-            raise _ec.WispError("jev_down", str(e)) from None
+        headers["Authorization"] = f"Bearer {config.load_api_key()}"
     req = urllib.request.Request(
         endpoint, data=json.dumps(payload).encode(), headers=headers,
         method="POST")

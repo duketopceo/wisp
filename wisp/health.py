@@ -68,8 +68,8 @@ def endpoints(cfg: dict, jev_url: str | None = None) -> list:
     if h.get("uitars"):
         out.append(Endpoint("uitars", h["uitars"].rstrip("/") + "/v1/models",
                             "ground_down"))
-    stt = cfg.get("stt", {})
-    if stt.get("provider") == "openai" and _is_local(stt.get("base_url", "")):
+    stt = config.stt_settings(cfg)
+    if stt["provider"] == "openai" and _is_local(stt["base_url"]):
         out.append(Endpoint("stt", stt["base_url"].rstrip("/") + "/",
                             "stt_down"))
     return out
