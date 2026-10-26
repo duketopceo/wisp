@@ -43,10 +43,6 @@ class TestAliasParity(unittest.TestCase):
 
     def _check(self, name, argv, daemon, seed):
         # 'models' goldens capture a refused loopback probe (jev_down);
-        # on Windows the filtered SYN times out instead — same health
-        # behaviour, different socket verdict.
-        if os.name == "nt" and name == "models":
-            self.skipTest("loopback refusal vs timeout is host-specific")
         want = GOLDEN[name]
         with CliEnv(daemon=daemon) as env:
             if seed:
@@ -479,17 +475,8 @@ class TestNewCommands(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             f = pathlib.Path(d) / "c.bash"
             f.write_text(bash)
-            fp = f.as_posix()  # bash needs forward slashes on Windows
+            fp = f.as_posix()
             bash = shutil.which("bash") or "bash"
-            if os.name == "nt":
-                if "system32" in bash.lower():
-                    # WSL: C:/x -> /mnt/c/x
-                    fp = re.sub(r"^([A-Za-z]):/", lambda m: "/mnt/"
-                                + m.group(1).lower() + "/", fp)
-                else:
-                    # msys/Git Bash: C:/x -> /c/x
-                    fp = re.sub(r"^([A-Za-z]):/", lambda m: "/"
-                                + m.group(1).lower() + "/", fp)
             r = subprocess.run([bash, "-n", fp],
                                capture_output=True, text=True)
             self.assertEqual(r.returncode, 0, r.stderr)

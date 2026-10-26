@@ -12,7 +12,7 @@ and both are tested against tests/fixtures/themes/*/expected.json, so any
 change here must be mirrored there.
 
 The two Tokyo Night palettes (DARK, LIGHT) are only the fallback used when
-no Omarchy theme exists (generic Linux, macOS). `emit()` still writes the
+no Omarchy theme exists (generic Linux). `emit()` still writes the
 legacy theme.json the current QML surfaces read.
 """
 import json

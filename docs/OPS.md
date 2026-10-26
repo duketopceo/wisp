@@ -110,7 +110,7 @@ coordinate space).
 ```
 python3 wispd install            # from the source checkout, not PATH wispd
 systemctl --user restart wispd
-.venv/bin/python -m unittest discover -s tests   # 2200+; PIL/darwin-gated skips are normal
+.venv/bin/python -m unittest discover -s tests   # 2200+; PIL-gated skips are normal
 ```
 
 QML snapshots: `scripts/ui/snap.py` (check/update); golden drift across

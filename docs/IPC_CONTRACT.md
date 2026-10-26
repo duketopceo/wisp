@@ -8,10 +8,6 @@ future tray apps). Shells MUST only depend on this document.
 
 - Linux: unix domain socket at
   `$XDG_RUNTIME_DIR/wisp/wispd.sock` (fallback `/tmp/wisp/`).
-- macOS: unix domain socket at `$TMPDIR/wisp/wispd.sock`.
-- Windows: TCP loopback — daemon binds `127.0.0.1:<ephemeral>` and
-  writes the port to `%TEMP%\wisp\wispd.sock` as a plain text
-  file; clients read the port then connect. Identical framing.
 - Framing: one JSON object per connection, newline-terminated request
   and newline-terminated reply. Request: `{"cmd": <string>, ...}`.
 - Reply envelope: `{"ok": bool, ...}`; on failure `ok=false` plus

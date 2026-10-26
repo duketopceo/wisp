@@ -247,8 +247,7 @@ def active_window() -> dict:
 
 
 def capture_screen() -> pathlib.Path | None:
-    """Platform screenshot → RUN_DIR/screen.png. None on fail/denied
-    (macOS Screen Recording perm denial = empty PNG → caller skips)."""
+    """Platform screenshot → RUN_DIR/screen.png. None on fail."""
     from . import platform
     out = config.RUN_DIR / "screen.png"
     cmd = platform.screenshot_cmd(out)
