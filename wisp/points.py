@@ -33,35 +33,50 @@ MAX_DRAWINGS = 64
 MAX_LABEL = 80
 
 
-def extract(text: str) -> tuple[str, list[dict]]:
-    """Strip point tags from `text`; return (clean_text, points_px).
-    Points keep screenshot-pixel coords: [{x, y, label}]."""
-    points = []
+def extract_marked(text: str) -> tuple[str, list[tuple[int, dict]]]:
+    """Like `extract`, but also report where each tag sat: returns
+    (clean_text, [(offset, point_px)]). `offset` is the tag's character
+    position in clean_text; a [POINTS:[...]] list yields one mark per
+    point, all at the same offset."""
+    marks: list[tuple[int, dict]] = []
+    points: list[dict] = []
     clean = []
+    n = 0  # chars in `clean` so far
+
+    def keep(s: str) -> None:
+        nonlocal n
+        clean.append(s)
+        n += len(s)
+
+    def add(x, y, label) -> None:
+        before = len(points)
+        _add(points, x, y, label)
+        if len(points) > before:
+            marks.append((n, points[-1]))
+
     rest = text
     while True:
         i = rest.find("[POINT")
         if i < 0:
-            clean.append(rest)
+            keep(rest)
             break
-        clean.append(rest[:i])
+        keep(rest[:i])
         tag = rest[i:]
         # not a tag unless the next char is ':', ' ', ']' or 'S'
         nxt = tag[6:7]
         if nxt and nxt not in ": ]S":
-            clean.append(tag[:6])
+            keep(tag[:6])
             rest = tag[6:]
             continue
         if tag.startswith("[POINTS"):
             e = tag.find("]]")
             if e < 0:
-                clean.append(tag)  # unclosed — leave visible
+                keep(tag)  # unclosed — leave visible
                 break
             blob = tag[tag.find("[", 1):e + 1] if "[" in tag[1:e] else ""
             try:
                 for p in json.loads(blob):
-                    _add(points, p.get("x"), p.get("y"),
-                         p.get("label", ""))
+                    add(p.get("x"), p.get("y"), p.get("label", ""))
             except (json.JSONDecodeError, KeyError, TypeError,
                     ValueError, AttributeError):
                 pass
@@ -70,18 +85,53 @@ def extract(text: str) -> tuple[str, list[dict]]:
         # [POINT:x,y:label]
         e = tag.find("]")
         if e < 0:
-            clean.append(tag)  # unclosed — leave visible
+            keep(tag)  # unclosed — leave visible
             break
         body = tag[6:e].lstrip(": ")
         coords, _, label = body.partition(":")
         xy = coords.split(",")
         if len(xy) >= 2:
             try:
-                _add(points, int(xy[0]), int(xy[1]), label)
+                add(int(xy[0]), int(xy[1]), label)
             except (ValueError, TypeError):
                 pass
         rest = tag[e + 1:]
-    return "".join(clean).strip(), points
+    joined = "".join(clean)
+    out = joined.strip()
+    lead = len(joined) - len(joined.lstrip())
+    return out, [(min(max(o - lead, 0), len(out)), p) for o, p in marks]
+
+
+def extract(text: str) -> tuple[str, list[dict]]:
+    """Strip point tags from `text`; return (clean_text, points_px).
+    Points keep screenshot-pixel coords: [{x, y, label}]."""
+    clean, marks = extract_marked(text)
+    return clean, [p for _, p in marks]
+
+
+def strip_partial(text: str) -> str:
+    """Cut a still-open trailing point tag (or the start of one, like
+    "[POI") so streaming text never shows or speaks it. Closed tags and
+    text without a partial tag come back unchanged."""
+    pos = 0
+    while True:
+        i = text.find("[POINT", pos)
+        if i < 0:
+            break
+        tag = text[i:]
+        nxt = tag[6:7]
+        if nxt and nxt not in ": ]S":
+            pos = i + 6
+            continue
+        closer = "]]" if tag.startswith("[POINTS") else "]"
+        e = tag.find(closer)
+        if e < 0:
+            return text[:i]
+        pos = i + e + len(closer)
+    for n in range(min(5, len(text)), 0, -1):
+        if text.endswith("[POINT"[:n]):
+            return text[:-n]
+    return text
 
 
 # Backwards-compatible alias

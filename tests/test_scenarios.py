@@ -95,6 +95,19 @@ class ExpectationKeysTest(unittest.TestCase):
         r.interrupt_t_ms = 100  # 540ms late — over-bound even w/ CI jitter
         self.assertTrue(runner.check_expectations(r))
 
+    def test_points_growth_and_gap(self):
+        def ev(status, n, t):
+            return {"status": status, "points": [{}] * n, "t_ms": t}
+        ex = {"points_growth": [1, 2], "points_gap_ms_min": 200}
+        r = self._res(expect=ex, events=[
+            ev("speaking", 0, 10), ev("speaking", 1, 20),
+            ev("speaking", 2, 400), ev("done", 2, 500)])
+        self.assertEqual(runner.check_expectations(r), [])
+        r.events = [ev("speaking", 0, 10), ev("speaking", 2, 20)]
+        self.assertEqual(len(runner.check_expectations(r)), 2)
+        r.events = [ev("speaking", 1, 20), ev("speaking", 2, 100)]
+        self.assertEqual(len(runner.check_expectations(r)), 1)
+
 
 TURN_CAP_MS = 4000
 

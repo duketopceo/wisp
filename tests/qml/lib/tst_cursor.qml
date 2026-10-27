@@ -32,6 +32,31 @@ TestCase {
     compare(u.label, "not sure")
   }
 
+  function test_beacon_sync_appends_an_extension() {
+    var a = { x: 1, y: 2, label: "a", index: 1 }
+    var b = { x: 3, y: 4, label: "b", index: 2 }
+    var plan = Cur.beaconSync([a], [a, b])
+    compare(plan.kind, "append")
+    compare(plan.from, 1)
+    compare(Cur.beaconSync([], [a]).kind, "append")
+    compare(Cur.beaconSync([], [a]).from, 0)
+  }
+
+  function test_beacon_sync_resets_when_not_an_extension() {
+    var a = { x: 1, y: 2, label: "a", index: 1 }
+    var c = { x: 9, y: 9, label: "c", index: 1 }
+    compare(Cur.beaconSync([a], [c]).kind, "reset")
+    compare(Cur.beaconSync([a], [c, a]).kind, "reset")
+    compare(Cur.beaconSync([a, c], [a]).kind, "reset")
+  }
+
+  function test_beacon_sync_clears_when_emptied_and_idles_when_same() {
+    var a = { x: 1, y: 2, label: "a", index: 1 }
+    compare(Cur.beaconSync([a], []).kind, "reset")
+    compare(Cur.beaconSync([], []).kind, "none")
+    compare(Cur.beaconSync([a], [{ x: 1, y: 2, label: "a", index: 1 }]).kind, "none")
+  }
+
   function test_beacons_from_points() {
     var b = Cur.beacons([{ x: 1, y: 2, label: "a", step: 2 }, { x: 3, y: 4 }, null, { x: "z", y: 1 },
       { x: 5, y: 6, step: 3 }])

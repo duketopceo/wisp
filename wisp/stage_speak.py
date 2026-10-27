@@ -7,6 +7,7 @@ through `_pl()` at call time.
 """
 import json
 import re
+import threading
 import time
 from datetime import datetime, timezone
 
@@ -39,11 +40,15 @@ def ask_chat(transcript: str, cfg: dict, session_text: str = "",
         system += (
             " A screenshot of the user's screen is attached. Describe "
             "what is relevant to the question. When the user asks where "
-            "something is or where to click, point at it: append one or "
+            "something is or where to click, point at it with one or "
             "more tags like [POINT:x,y:label] using the screenshot's "
-            "pixel coordinates, or for a multi-step sequence "
-            "[POINTS:[{\"x\":x,\"y\":y,\"label\":\"step\"}]]. Keep the "
-            "spoken text free of the tags; they render as an overlay.")
+            "pixel coordinates. Put each tag inside the sentence that "
+            "talks about it, right after the words it points at and "
+            "before the sentence's final punctuation, e.g. \"Click Save "
+            "[POINT:812,40:Save] to keep it.\". For a multi-step "
+            "sequence, give each step its own sentence and tag, or end "
+            "with [POINTS:[{\"x\":x,\"y\":y,\"label\":\"step\"}]]. "
+            "The tags render as an overlay and are never spoken.")
     user_content = transcript
     if image_b64:
         user_content = [
@@ -251,29 +256,66 @@ def _ask_user(ctx) -> int:
     return 0
 
 
+def _publish_points(state, pts: list) -> None:
+    """Points-only publish (no status), turn-scoped like `_publish_delta`;
+    plain handles (tests, standalone State) just transition."""
+    from . import state as _state
+    if isinstance(state, _state.TurnState):
+        state._bus.publish(state.turn_id, points=list(pts))
+    else:
+        state.transition("speaking", points=list(pts))
+
+
 def _answer(ctx) -> None:
     """Answer route: stream the brain's reply into state while speaking
-    each finished sentence, then speak the tail. Sets ctx.reply."""
+    each finished sentence, then speak the tail. With voice on, each
+    point is published when the sentence holding its tag starts playing;
+    with voice off they all land with the `speaking` transition. Sets
+    ctx.reply."""
+    from . import points as _points
     from . import trace as _trace
     pl, state, cfg, sp, token = _pl(), ctx.state, ctx.cfg, ctx.sp, ctx.token
     text, result, turn = ctx.text, ctx.result, ctx.turn
-    pts = []
-    ctx.speaker = speaker = speech.SentenceSpeaker(cfg, token=token)
+    pts = []        # logical points fired so far (voice on)
+    plock = threading.Lock()  # one lock over append + publish: no reordering
+    _mons: list = []          # one monitors() lookup per turn
+
+    def _logical(raw):
+        if not _mons:
+            _mons.append(_points.monitors())
+        conv = _points.canvas_to_logical \
+            if _points.img_space_is_logical() else _points.to_logical
+        return conv(raw, _mons[0])
+
+    def _fire(raw):
+        # a sentence just started playing: grow the list, publish only
+        # if this turn is still the live, speaking one
+        with plock:
+            pts.extend(_logical(raw))
+            bus = getattr(state, "_bus", None)
+            if token.cancelled or (
+                    bus is not None and hasattr(bus, "current_turn")
+                    and bus.current_turn() != getattr(state, "turn_id",
+                                                      None)) \
+                    or state.status != "speaking":
+                return
+            _publish_points(state, pts)
+
+    ctx.speaker = speaker = speech.SentenceSpeaker(cfg, token=token,
+                                                   on_sentence=_fire)
 
     def _delta(acc):
         # stream the answer into state.json as it arrives — the
         # cursor bubble renders it live. Rate-limited by the
-        # bus (coalesced, latest wins); incomplete
-        # trailing [POINT…/markdown-ish brackets hidden so the
-        # bubble never flashes raw tags.
+        # bus (coalesced, latest wins); tags are stripped (and any
+        # still-open one hidden) so the bubble never flashes them.
         sp.fire("first_token")
         if token.cancelled:
             return  # a cancelled turn publishes no more deltas
-        partial = re.sub(r"\[[A-Za-z]*:?[^\]]*$", "", acc)
-        pl._publish_delta(state, partial)
+        clean, marks = _points.extract_marked(_points.strip_partial(acc))
+        pl._publish_delta(state, clean)
         # speak each completed sentence while the rest streams
-        from . import points as _pts
-        speaker.feed(_pts.extract(partial)[0])
+        speaker.feed(clean, marks)
 
     try:
         _t = time.monotonic()
@@ -300,28 +342,31 @@ def _answer(ctx) -> None:
     # note.md even when the spoken reply is the letter body only
     _publish_paper(state, reply, turn)
     ctx.reply = reply
+    marks = []
+    all_pts = []
     if reply:
-        from . import points as _points
-        reply, raw = _points.extract(reply)
+        reply, marks = _points.extract_marked(reply)
         ctx.reply = reply
-        if raw:
-            _mons = _points.monitors()
-            if _points.img_space_is_logical():
-                pts = _points.canvas_to_logical(raw, _mons)
-            else:
-                pts = _points.to_logical(raw, _mons)
-    if pts:
-        _trace.emit(turn, "points", "act", {"points": pts})
+        if marks:
+            with plock:
+                all_pts = _logical([p for _, p in marks])
+    if all_pts:
+        _trace.emit(turn, "points", "act", {"points": all_pts})
     token.check()
-    state.transition("speaking", result=result, answer=reply, points=pts)
     _t = time.monotonic()
     tts_start = sp.now()
-    if speaker.started:
-        # sentences already went out as they completed; queue
-        # the unspoken tail and flip to done when the last ends
-        speaker.finish(reply, on_done=pl._end_speaking(state))
+    if speaker.enabled:
+        # voice on: every sentence (a single-chunk reply included) goes
+        # through the speaker so its points fire as it starts playing;
+        # the transition publishes what has fired so far
+        with plock:
+            state.transition("speaking", result=result, answer=reply,
+                             points=list(pts))
+        speaker.finish(reply, on_done=pl._end_speaking(state), marks=marks)
         proc = True
     else:
+        state.transition("speaking", result=result, answer=reply,
+                         points=all_pts)
         proc = speech.speak(reply, cfg)
         if proc is not None:
             speech.on_exit(proc, pl._end_speaking(state))

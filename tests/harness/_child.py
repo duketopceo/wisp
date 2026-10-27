@@ -203,7 +203,8 @@ def main(spec_path: str) -> int:
                     "prompt_id": view.get("prompt_id", ""),
                     "error_code": view.get("error_code", ""),
                     "error_detail": view.get("error_detail", ""),
-                    "steps": len(view["steps"])})
+                    "steps": len(view["steps"]),
+                    "points": [dict(pt) for pt in view.get("points") or []]})
         drainer = threading.Thread(target=drain, daemon=True)
         drainer.start()
 
@@ -227,6 +228,12 @@ def main(spec_path: str) -> int:
         code = pipeline.run_listen(cfg, st, wait_for_choice=wait,
                                    interrupted=interrupt.is_set)
         out["exit_code"] = code
+        if cfg["voice"]["enabled"] == "true":
+            # run_listen returns while TTS is still playing; keep
+            # observing until the turn leaves `speaking` (bounded)
+            end = time.monotonic() + 5
+            while view["status"] == "speaking" and time.monotonic() < end:
+                time.sleep(0.02)
         time.sleep(0.2)            # let a coalesced tail flush
         stop_drain.set()
         drainer.join(timeout=2)
