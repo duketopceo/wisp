@@ -2,9 +2,8 @@ import QtQuick
 import QtTest
 import "../../../shell-plugin/lib/cursor.js" as Cur
 import "../../../shell-plugin/lib/companion.js" as Co
-import "../../../shell-plugin/lib/motion.js" as Motion
 
-// Ghost cursor, beacon, bubble geometry and companion surface rules.
+// Cursor target, beacon, bubble geometry and companion surface rules.
 TestCase {
   name: "cursor"
 
@@ -33,31 +32,6 @@ TestCase {
     compare(u.label, "not sure")
   }
 
-  function test_travel_duration_scales_and_caps() {
-    compare(Motion.travelMs(Cur.distance({ x: 0, y: 0 }, { x: 1000, y: 0 }), "full"), 520)
-    compare(Motion.travelMs(Cur.distance({ x: 0, y: 0 }, { x: 100, y: 0 }), "full"), 345)
-    compare(Motion.travelMs(1000, "reduced"), 140)
-    compare(Motion.travelMs(1000, "off"), 0)
-  }
-
-  function test_path_is_curved_and_hits_endpoints() {
-    var a = { x: 0, y: 500 }, b = { x: 400, y: 500 }
-    var s = Cur.pathPoint(a, b, 0), e = Cur.pathPoint(a, b, 1), m = Cur.pathPoint(a, b, 0.5)
-    compare(s.x, 0); compare(e.x, 400)
-    verify(m.y < 500)
-    var same = Cur.pathPoint(a, a, 0.5)
-    compare(same.x, 0); compare(same.y, 500)
-  }
-
-  function test_breadcrumbs_keep_last_three_and_skip_repeats() {
-    var l = []
-    for (var i = 0; i < 5; i++) l = Cur.pushCrumb(l, { x: i, y: 0 })
-    compare(l.length, 3)
-    compare(l[0].x, 2)
-    compare(Cur.pushCrumb(l, { x: 4, y: 0 }).length, 3)
-    compare(Cur.CRUMB_FADE_MS, 2000)
-  }
-
   function test_beacons_from_points() {
     var b = Cur.beacons([{ x: 1, y: 2, label: "a", step: 2 }, { x: 3, y: 4 }, null, { x: "z", y: 1 },
       { x: 5, y: 6, step: 3 }])
@@ -82,5 +56,43 @@ TestCase {
     compare(Co.pillVisible("transcribing"), true)
     compare(Co.pillVisible("acting"), false)
     compare(Co.pillVisible("idle"), false)
+  }
+
+  // buddy target precedence: cua.target (global, shifted by the screen
+  // origin) over a guide step (already layer coords) over the newest point
+  // while speaking
+  function test_buddy_target_shifts_cua_by_origin() {
+    var t = Co.buddyTarget({ cuaTarget: { x: 2000, y: 500, label: "Save", confidence: 1, phase: "aim" },
+      guide: { x: 10, y: 10, label: "g" }, status: "acting", points: [] },
+      { x: 1728, y: 0 }, "click", "unsure")
+    compare(t.x, 272)
+    compare(t.y, 500)
+    compare(t.visible, true)
+  }
+
+  function test_buddy_target_guide_is_not_shifted() {
+    var t = Co.buddyTarget({ cuaTarget: null, guide: { x: 40, y: 60, label: "next" },
+      status: "awaiting_choice", points: [] }, { x: 1728, y: 0 }, "click", "unsure")
+    compare(t.x, 40)
+    compare(t.y, 60)
+  }
+
+  function test_buddy_target_newest_point_only_while_speaking() {
+    var pts = [{ x: 1, y: 2, label: "a", step: 1 }, { x: 30, y: 40, label: "b", step: 2 }]
+    var t = Co.buddyTarget({ cuaTarget: null, guide: null, status: "speaking", points: pts },
+      { x: 0, y: 0 }, "click", "unsure")
+    compare(t.x, 30)
+    compare(t.label, "b")
+    compare(Co.buddyTarget({ cuaTarget: null, guide: null, status: "deciding", points: pts },
+      { x: 0, y: 0 }, "click", "unsure"), null)
+    compare(Co.buddyTarget(null, { x: 0, y: 0 }, "click", "unsure"), null)
+  }
+
+  // a following buddy hides while the pointer is on another screen; flight,
+  // hold and the tail do not depend on the pointer
+  function test_buddy_hidden_off_screen_only_while_following() {
+    compare(Co.buddyOffScreen("follow", null), true)
+    compare(Co.buddyOffScreen("follow", { x: 1, y: 1 }), false)
+    compare(Co.buddyOffScreen("held", null), false)
   }
 }

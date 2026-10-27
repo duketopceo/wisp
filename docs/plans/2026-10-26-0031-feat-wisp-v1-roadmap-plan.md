@@ -107,7 +107,7 @@ Order of work, top to bottom. Each row is one PR.
 | 1 | 0 · Redeploy | Install `master` to `~/.local/opt/wisp`, restart `wispd`, confirm a spoken turn; set `gate_rate` once Q1 is answered | R1 | S |
 | 2 | 6 · Hosted install | Hosted speech-to-text default (Q4), onboarding asks for keys, soft-fail on key lookup, `wispd install` redeploys from a git ref, clean-box check | R1, R2 | M |
 | 3 | 9 · Act quality | Fix the top act failure patterns from `wispd eval` and the labels; one replay fixture per pattern | R3, R4 | M |
-| 4 | 7 · HeyClicky surfaces | Single-stream pointing timed to speech, draw overlay, walkthrough with label-first snap, per-app history, sensitive-window skip, streaming STT, barge-in | R5–R8 | L |
+| 4 | 7 · HeyClicky surfaces | Clacky cursor buddy (see docs/plans/2026-10-26-2149-feat-clacky-cursor-buddy-plan.md), single-stream pointing timed to speech, draw overlay, walkthrough with label-first snap, per-app history, sensitive-window skip, streaming STT, barge-in | R5–R8 | L |
 | 5 | 5 · Router fast path | Remove Jev router, shadow, replay and route A/B; promote the heuristic to a fast path in front of act; resolve Q3 | R10 | M |
 | 6 | 8 · Agent hardening | Spawn-env scrub | R11 | S |
 

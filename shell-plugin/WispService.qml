@@ -59,7 +59,7 @@ Item {
   // {convId, path, raw, objects, plan, closed, rendered}
   property var note: null
   // cua.target stream event (docs/IPC_CONTRACT.md): where a CUA click
-  // will land, or null. Drives GhostCursor; nothing renders when null.
+  // will land, or null. Drives the cursor buddy; nothing renders when null.
   property var cuaTarget: null
   property var windowFocus: ({})
   property string goal: ""

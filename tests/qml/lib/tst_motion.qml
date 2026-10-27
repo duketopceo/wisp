@@ -14,14 +14,6 @@ TestCase {
     compare(Motion.resolveMode(undefined, undefined), "full")
   }
 
-  function test_travel_is_distance_scaled_and_capped() {
-    compare(Motion.travelMs(0, "full"), 320)
-    compare(Motion.travelMs(400, "full"), 420)
-    compare(Motion.travelMs(5000, "full"), 520)
-    compare(Motion.travelMs(400, "reduced"), Motion.duration.quick)
-    compare(Motion.travelMs(400, "off"), 0)
-  }
-
   function test_exit_is_shorter_than_enter() {
     compare(Motion.exitMs(220), 154)
     verify(Motion.exitMs(Motion.duration.state) < Motion.duration.state)

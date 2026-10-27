@@ -1,13 +1,14 @@
 .pragma library
 
-// Ghost cursor, beacon and bubble geometry (Ember U12, U13). Pure
+// Cursor target, beacon and bubble geometry (Ember U12, U13). Pure
 // functions over the reducer's `cuaTarget` and `points`: nothing here
-// reads the pointer, spawns a process or owns a timer. The ghost shows
-// where a CUA click will land while the real pointer stays put.
+// reads the pointer, spawns a process or owns a timer. The target shows
+// where a CUA click will land while the real pointer stays put; the buddy
+// (lib/buddy.js) flies there.
 
-// cua.target view for GhostCursor. `arrived` is set by the component when
-// its travel animation ends; `guideMode` parks the ghost (the label chip
-// stays, no loop runs). Returns { visible:false } when there is no target.
+// cua.target view for the buddy's target. `arrived` and `guideMode` pick
+// parked over traveling (the label chip stays). Returns { visible:false }
+// when there is no target.
 function ghostView(target, guideMode, arrived, clickLabel, unsureLabel) {
   if (!target) return { visible: false, state: "parked", x: 0, y: 0, label: "", unsure: false }
   var state
@@ -18,43 +19,6 @@ function ghostView(target, guideMode, arrived, clickLabel, unsureLabel) {
   var label = target.label !== "" ? (clickLabel + " " + target.label) : ""
   if (unsure && label === "") label = unsureLabel
   return { visible: true, state: state, x: target.x, y: target.y, label: label, unsure: unsure }
-}
-
-function distance(a, b) {
-  var dx = b.x - a.x, dy = b.y - a.y
-  return Math.sqrt(dx * dx + dy * dy)
-}
-
-// Travel time for a hop is Motion.travelMs(distance(from, to), mode)
-// (lib/motion.js: 320ms + 0.25ms/px capped at 520; reduced 140ms fade).
-
-// Point on the curved path at t in 0..1: a quadratic Bezier whose control
-// point sits 15% of the distance off the straight line, so the ghost
-// arcs instead of sliding. The bow always leans up (screen y smaller).
-function pathPoint(from, to, t) {
-  var d = distance(from, to)
-  var mx = (from.x + to.x) / 2, my = (from.y + to.y) / 2
-  var dx = to.x - from.x, dy = to.y - from.y
-  var nx = d === 0 ? 0 : -dy / d, ny = d === 0 ? 0 : dx / d
-  if (ny > 0) { nx = -nx; ny = -ny }
-  var cx = mx + nx * 0.15 * d, cy = my + ny * 0.15 * d
-  var u = 1 - t
-  return { x: u * u * from.x + 2 * u * t * cx + t * t * to.x,
-           y: u * u * from.y + 2 * u * t * cy + t * t * to.y }
-}
-
-// Last `max` breadcrumbs (newest last) fading over fadeMs: returns the new
-// list with an `age`-free shape; the component animates opacity.
-var CRUMBS = 3
-var CRUMB_FADE_MS = 2000
-function pushCrumb(list, pt, max) {
-  var out = (list || []).slice()
-  var last = out.length ? out[out.length - 1] : null
-  if (last && last.x === pt.x && last.y === pt.y) return out
-  out.push({ x: pt.x, y: pt.y })
-  var m = max === undefined ? CRUMBS : max
-  while (out.length > m) out.shift()
-  return out
 }
 
 // Beacons from state.points: [{x,y,label,step}] -> [{x,y,label,index}],
