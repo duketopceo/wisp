@@ -103,14 +103,13 @@ Item {
 
     // five bars, width 2, gap 2, centered on the pointer offset
     Repeater {
-      model: root.mode === "waveform" ? root.view.bars : []
+      model: root.mode === "waveform" ? 5 : 0
       delegate: Rectangle {
         required property int index
-        required property real modelData
         x: (index - 2) * 4 - 1
         y: -height / 2
         width: 2
-        height: modelData
+        height: root.view.bars[index]
         radius: 1
         color: root.tk.ember
       }

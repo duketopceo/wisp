@@ -114,6 +114,12 @@ function fly(n, toX, toY, dt) {
 
 function settle(n) { n.rot = REST_DEG; n.scale = 1 }
 
+// The tail is over: back at the pointer offset, following if a turn is live.
+function endTail(n, live) {
+  n.phase = live ? "follow" : "hidden"
+  n.x = n.ox; n.y = n.oy; n.vx = 0; n.vy = 0; settle(n)
+}
+
 function step(m, input, dt) {
   var n = init(m)
   var full = input.motion === "full"
@@ -172,12 +178,9 @@ function step(m, input, dt) {
       n.t += dt; n.labelT += dt
       if (n.t >= DWELL_S) {
         if (full) startReturn(n)
-        else { n.phase = live ? "follow" : "hidden"; n.x = n.ox; n.y = n.oy; n.vx = 0; n.vy = 0; settle(n) }
+        else endTail(n, live)
       }
-    } else if (fly(n, n.ox, n.oy, dt)) {
-      n.phase = live ? "follow" : "hidden"
-      n.x = n.ox; n.y = n.oy; n.vx = 0; n.vy = 0; settle(n)
-    }
+    } else if (fly(n, n.ox, n.oy, dt)) endTail(n, live)
   }
   n.clicking = (n.phase === "held") && !!tgt && tgt.state === "clicking"
   return n
@@ -226,8 +229,10 @@ function view(m, ctx) {
     rotation: m.rot, scale: m.scale, opacity: fade, mode: m.phase === "hidden" ? "hidden" : mode,
     clicking: m.clicking, label: lab,
     spinAngle: spinnerAngle(m.spinT, ctx.motion),
-    bars: waveHeights(m.level, m.wavePhase, ctx.motion) }
+    bars: mode === "waveform" ? waveHeights(m.level, m.wavePhase, ctx.motion) : IDLE_BARS }
 }
+
+var IDLE_BARS = [3, 3, 3, 3, 3]
 
 // Five bars, profile 0.4 0.7 1.0 0.7 0.4: h = 3 + level*10*profile plus a
 // 1.5 px sine wobble that only runs in full motion.
