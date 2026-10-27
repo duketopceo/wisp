@@ -251,9 +251,17 @@ model = "whisper-large-v3-turbo"
 # order, e.g. "omaseal://groq/default,GROQ_API_KEY" (keyring first,
 # plain env/.env fallback so non-omaseal installs still work)
 key_env = "GROQ_API_KEY"
+
 # vocabulary priming — project names, jargon; whisper.cpp --prompt /
 # `prompt` param on the openai provider (huge accuracy win on names)
 prompt = "Wisp, wispd, Omarchy, Hyprland, Jev, OpenRouter, dayflow, omaseal, omarchy plugins, RetroArch, Steam, Discord, VS Code, Kubernetes, k8s, Tailscale, Waybar, Quickshell"
+
+[web]
+# Web app a role opens when its default handler is a browser (a native
+# client such as thunderbird is launched as usual). No '#' in a URL: the
+# config parser reads it as a comment.
+mail = "https://mail.google.com"
+calendar = "https://calendar.google.com"
 
 [dictation]
 # what `dictate` does with the transcript: raw (verbatim), cleanup
@@ -545,6 +553,21 @@ def stt_settings(cfg: dict | None) -> dict:
     """[stt] with the hosted defaults filled in under whatever the user
     set — load_config does not merge defaults into an existing file."""
     return {**STT_DEFAULTS, **((cfg or {}).get("stt") or {})}
+
+
+WEB_DEFAULTS = {
+    "mail": "https://mail.google.com",
+    "calendar": "https://calendar.google.com",
+}
+
+
+def web_settings(cfg: dict | None) -> dict:
+    """[web] role URLs with the defaults under whatever the user set —
+    an empty value falls back too. load_config does not merge defaults
+    into an existing file."""
+    user = (cfg or {}).get("web") or {}
+    return {**WEB_DEFAULTS,
+            **{k: v for k, v in user.items() if str(v).strip()}}
 
 
 # a keyring that is locked or wedged must not hang a turn

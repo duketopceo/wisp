@@ -54,8 +54,10 @@ REGISTRY = {
     "launch": (desktop.launch, "safe",
                "open an application — any installed app name works "
                "(see [env] apps=); a role like 'mail'/'files' opens "
-               "the user's default handler (see [env] defaults=); a "
-               "domain/URL like 'gmail.com' opens in the browser",
+               "the user's default handler (see [env] defaults=), and "
+               "when that handler is a browser it opens the role's web "
+               "app (see [web]); a domain/URL like 'gmail.com' opens "
+               "in the browser",
                {"tier": "T0", "reversible": True, "external": False}),
     "focus": (desktop.focus, "safe", "focus a window by class",
               {"tier": "T0", "reversible": True, "external": False}),

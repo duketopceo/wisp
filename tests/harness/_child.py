@@ -78,7 +78,8 @@ def main(spec_path: str) -> int:
 
         def fake_launch(arg):
             out["launch_calls"].append(arg)
-            return f"LAUNCHED {arg} (replay stub)"
+            return (spec.get("launch_results") or {}).get(
+                arg, f"LAUNCHED {arg} (replay stub)")
         desc = tools.REGISTRY["launch"][2]
         tools.REGISTRY["launch"] = (fake_launch, "safe", desc)
 
