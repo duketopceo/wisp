@@ -246,3 +246,22 @@ function waveHeights(level, phase, motion) {
 function spinnerAngle(t, motion) {
   return motion === "full" ? (t / 0.8 * 360) % 360 : 0
 }
+
+// Hyprland `j/cursorpos` reply -> { x, y } in global pixels, or null for an
+// empty, garbled or incomplete reply (the buddy then keeps its last pointer).
+function parsePointer(text) {
+  var o
+  try { o = JSON.parse(String(text)) } catch (e) { return null }
+  if (!o || typeof o.x !== "number" || typeof o.y !== "number"
+      || !isFinite(o.x) || !isFinite(o.y)) return null
+  return { x: o.x, y: o.y }
+}
+
+// Global pointer -> layer coordinates of the screen rect { x, y, w, h }
+// the overlay window sits on; null when the pointer is on another screen.
+function layerPointer(ptr, rect) {
+  if (!ptr || !rect) return null
+  var x = ptr.x - rect.x, y = ptr.y - rect.y
+  if (x < 0 || y < 0 || x >= rect.w || y >= rect.h) return null
+  return { x: x, y: y }
+}

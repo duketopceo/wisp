@@ -209,4 +209,34 @@ TestCase {
     compare(Buddy.spinnerAngle(0.3, "reduced"), 0)
     compare(Buddy.spinnerAngle(0.3, "off"), 0)
   }
+
+  function test_parse_pointer() {
+    var p = Buddy.parsePointer('{"x":505,"y":863}')
+    compare(p.x, 505)
+    compare(p.y, 863)
+    p = Buddy.parsePointer('{\n    "x": -12,\n    "y": 40\n}\n')
+    compare(p.x, -12)
+    compare(p.y, 40)
+  }
+
+  function test_parse_pointer_garbage_is_null() {
+    compare(Buddy.parsePointer(""), null)
+    compare(Buddy.parsePointer("not json"), null)
+    compare(Buddy.parsePointer('{"x":5}'), null)
+    compare(Buddy.parsePointer('{"x":"a","y":1}'), null)
+    compare(Buddy.parsePointer("null"), null)
+    compare(Buddy.parsePointer(undefined), null)
+  }
+
+  function test_layer_pointer_on_and_off_screen() {
+    var a = { x: 0, y: 0, w: 1728, h: 1080 }
+    compare(Buddy.layerPointer({ x: 2000, y: 500 }, a), null)
+    var b = { x: 1728, y: 0, w: 3440, h: 1440 }
+    var p = Buddy.layerPointer({ x: 2000, y: 500 }, b)
+    compare(p.x, 272)
+    compare(p.y, 500)
+    compare(Buddy.layerPointer({ x: 1727, y: 500 }, b), null)
+    compare(Buddy.layerPointer({ x: 1728 + 3440, y: 500 }, b), null)
+    compare(Buddy.layerPointer(null, b), null)
+  }
 }

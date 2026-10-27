@@ -1,9 +1,11 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import Quickshell.Wayland
 import qs.Commons
 import "components"
+import "lib/buddy.js" as Buddy
 import "lib/cursor.js" as Cursor
 
 // Companion overlay for io.github.duketopceo.wisp.
@@ -45,6 +47,114 @@ Item {
       if (list[i].name === shellScreen.name && typeof rate === "number" && isFinite(rate)) return rate;
     }
     return 60;
+  }
+
+  // --- cursor buddy feed (U2) -------------------------------------------
+  // The pointer and the frame clock live here, not in components/ (which
+  // bans timers and sockets). Both run only while the buddy is wanted:
+  // a live status, or the model's post-turn dwell and return tail. The
+  // window's screen rect (global px) is handed in by the overlay wiring;
+  // the model and its view are in that screen's layer coordinates.
+  property var screenRect: ({ x: 0, y: 0, w: 0, h: 0 })
+  property var buddyModel: Buddy.init()
+  property var buddyView: Buddy.view(Buddy.init(), { screen: { w: 0, h: 0 }, motion: "off" })
+  property var pointerGlobal: null
+
+  readonly property string buddyStatus: svc ? svc.status : "offline"
+  readonly property string buddyMotion: svc ? svc.motionMode : "off"
+  readonly property bool buddyLive: Buddy.LIVE.indexOf(buddyStatus) >= 0
+  readonly property bool buddyWanted: buddyLive || buddyModel.phase !== "hidden"
+  readonly property bool buddyFull: buddyMotion === "full"
+  readonly property var pointerLayer: Buddy.layerPointer(pointerGlobal, screenRect)
+
+  // Where the buddy points, in layer coordinates: a cua.target (global),
+  // else a guide step (already layer), else the newest point while speaking.
+  readonly property var buddyTarget: {
+    if (!svc) return null;
+    var ox = screenRect.x, oy = screenRect.y;
+    var click = svc.ui("ui.target.click"), unsure = svc.ui("ui.target.unsure");
+    var t = svc.cuaTarget;
+    if (t) {
+      var v = Cursor.ghostView(t, false, false, click, unsure);
+      v.x -= ox; v.y -= oy;
+      return v;
+    }
+    var g = svc.guide;
+    if (g) {
+      return Cursor.ghostView({ x: g.x, y: g.y, label: g.label ? String(g.label) : "",
+        confidence: 1, phase: "aim" }, true, false, click, unsure);
+    }
+    if (svc.status === "speaking") {
+      var pts = Cursor.beacons(svc.points);
+      if (pts.length > 0) {
+        var p = pts[pts.length - 1];
+        return { visible: true, state: "parked", x: p.x, y: p.y, label: p.label, unsure: false };
+      }
+    }
+    return null;
+  }
+
+  function advance(dt) {
+    var m = Buddy.step(root.buddyModel, {
+      pointer: root.pointerLayer, status: root.buddyStatus,
+      level: root.svc ? root.svc.level : 0,
+      target: root.buddyTarget, motion: root.buddyMotion }, Math.min(dt, 0.25));
+    root.buddyModel = m;
+    var v = Buddy.view(m, { screen: { w: root.screenRect.w, h: root.screenRect.h },
+      motion: root.buddyMotion });
+    // pointer on another screen: the following buddy hides (R4)
+    if (m.phase === "follow" && root.pointerLayer === null) v.visible = false;
+    root.buddyView = v;
+  }
+
+  FrameAnimation {
+    running: root.buddyWanted && root.buddyFull
+    onTriggered: root.advance(frameTime)
+  }
+
+  // reduced and off motion snap, so no frame clock: a slow tick carries the
+  // entry delay and the dwell tail
+  Timer {
+    interval: 100
+    repeat: true
+    running: root.buddyWanted && !root.buddyFull
+    onTriggered: root.advance(0.1)
+  }
+
+  // Hyprland request socket, 30 Hz while a turn is live. One request per
+  // connect; the client closes first (no PeerClosedError flood).
+  Socket {
+    id: ptrSock
+    path: Quickshell.env("XDG_RUNTIME_DIR") + "/hypr/"
+      + Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE") + "/.socket.sock"
+    onConnectedChanged: {
+      if (!connected) return;
+      write("j/cursorpos");
+      flush();
+    }
+    parser: SplitParser {
+      splitMarker: ""
+      onRead: function (text) {
+        ptrSock.connected = false;
+        var p = Buddy.parsePointer(text);
+        if (p === null) return;
+        root.pointerGlobal = p;
+        if (!root.buddyFull) root.advance(0);
+      }
+    }
+  }
+
+  Timer {
+    interval: 33
+    repeat: true
+    running: root.buddyLive
+    // a request still open at the next tick never got its reply: drop it
+    onTriggered: ptrSock.connected = !ptrSock.connected
+    onRunningChanged: {
+      if (running) return;
+      ptrSock.connected = false;
+      root.pointerGlobal = null;
+    }
   }
 
   Connections {
