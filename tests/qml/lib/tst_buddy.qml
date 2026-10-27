@@ -266,4 +266,38 @@ TestCase {
     compare(Buddy.layerPointer({ x: 1728 + 3440, y: 500 }, b), null)
     compare(Buddy.layerPointer(null, b), null)
   }
+
+  // no pointer sample yet (pointer on another output, socket failing):
+  // a live target still gets the buddy, placed straight on it
+  function test_live_target_without_pointer_places_on_target() {
+    var r = run(Buddy.init(), inp("acting", null, aim(400, 300, "Save")), 0.6, 60)
+    var v = r.frames[r.frames.length - 1]
+    compare(r.m.phase, "held")
+    compare(v.visible, true)
+    near(v.x, 400, 0.01)
+    near(v.y, 300, 0.01)
+    compare(v.label.text, "Save")
+  }
+
+  // ...and with still no pointer to return to, the tail ends in place
+  // rather than flying back to a made-up spot
+  function test_release_without_pointer_hides_without_return_flight() {
+    var r = run(Buddy.init(), inp("acting", null, aim(400, 300, "Save")), 0.6, 60)
+    r = run(r.m, inp("done", null, null), 4.2, 60)
+    var flew = r.frames.some(function (v) { return v.phase === "returning" })
+    compare(flew, false)
+    compare(r.m.phase, "hidden")
+  }
+
+  // a second target in the same turn, still with no pointer, also lands
+  // directly rather than flying in from a made-up spot
+  function test_second_target_without_pointer_lands_directly() {
+    var r = run(Buddy.init(), inp("acting", null, aim(400, 300, "Save")), 0.6, 60)
+    r = run(r.m, inp("acting", null, null), 4.2, 60)
+    r = run(r.m, inp("acting", null, aim(900, 500, "Open")), 0.1, 60)
+    var flew = r.frames.some(function (v) { return v.phase === "flying" })
+    compare(flew, false)
+    near(r.m.x, 900, 0.01)
+    near(r.m.y, 500, 0.01)
+  }
 }
