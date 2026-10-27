@@ -21,7 +21,7 @@ PLUGIN = ROOT / "shell-plugin"
 COMP = PLUGIN / "components"
 FIXTURE_SERVICE = ROOT / "tests" / "qml" / "harness" / "FixtureService.qml"
 
-EXPECTED = ["Answer", "AgentRow", "AgentsTab", "BarActions", "BarMark", "BarPill", "Beacon", "Bubble", "Chip",
+EXPECTED = ["Answer", "AgentRow", "AgentsTab", "BarActions", "BarMark", "BarPill", "Beacon", "Bubble", "Buddy", "Chip",
             "Creature", "EmptyState", "FirstRunCard", "GhostCursor",
             "HealthSection", "Icon", "Mark", "MemoryTab", "NowTab", "OverlayLayer",
             "PanelTab", "Pill", "RunCard", "SettingsTab", "StatusLine", "StepRow",
@@ -148,6 +148,19 @@ class TestCompanionRules(unittest.TestCase):
         self.assertTrue((PLUGIN / "shaders" / m.group(1)).is_file())
         self.assertIn("GraphicsInfo.Software", src)
         self.assertIn("visible: !root.shaderOk", src)
+
+    def test_buddy_label_pill_text_meets_contrast_in_every_theme(self):
+        import json
+        import sys
+        sys.path.insert(0, str(ROOT))
+        from wisp import theme
+        fixtures = sorted((ROOT / "tests" / "fixtures" / "themes").glob(
+            "*/expected.json"))
+        self.assertTrue(fixtures)
+        for f in fixtures:
+            t = json.loads(f.read_text())["tokens"]
+            self.assertGreaterEqual(
+                theme.contrast(t["ink"], t["raised"]), 4.5, f.parent.name)
 
     def test_ghost_cursor_reads_the_target_from_the_service(self):
         src = code(COMP / "GhostCursor.qml")

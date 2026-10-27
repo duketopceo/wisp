@@ -248,6 +248,323 @@
   "pad": 12,
   "scale2": true
  },
+ "Buddy": {
+  "mode": "variant",
+  "pad": 12,
+  "scale2": true,
+  "variants": {
+   "clicking": {
+    "view": {
+     "bars": [
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "clicking": true,
+     "label": {
+      "scale": 1,
+      "text": "night light",
+      "visible": true,
+      "x": 50,
+      "y": 43
+     },
+     "mode": "triangle",
+     "opacity": 1,
+     "phase": "held",
+     "rotation": -35,
+     "scale": 1,
+     "spinAngle": 0,
+     "visible": true,
+     "x": 40,
+     "y": 36
+    }
+   },
+   "flying_mid_arc": {
+    "view": {
+     "bars": [
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "clicking": false,
+     "label": {
+      "scale": 1,
+      "text": "",
+      "visible": false,
+      "x": 0,
+      "y": 0
+     },
+     "mode": "triangle",
+     "opacity": 1,
+     "phase": "flying",
+     "rotation": 25,
+     "scale": 1.2,
+     "spinAngle": 0,
+     "visible": true,
+     "x": 80,
+     "y": 30
+    }
+   },
+   "follow_triangle": {
+    "view": {
+     "bars": [
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "clicking": false,
+     "label": {
+      "scale": 1,
+      "text": "",
+      "visible": false,
+      "x": 0,
+      "y": 0
+     },
+     "mode": "triangle",
+     "opacity": 1,
+     "phase": "follow",
+     "rotation": -35,
+     "scale": 1,
+     "spinAngle": 0,
+     "visible": true,
+     "x": 48,
+     "y": 48
+    }
+   },
+   "hidden": {
+    "view": {
+     "bars": [
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "clicking": false,
+     "label": {
+      "scale": 1,
+      "text": "",
+      "visible": false,
+      "x": 0,
+      "y": 0
+     },
+     "mode": "hidden",
+     "opacity": 0,
+     "phase": "hidden",
+     "rotation": -35,
+     "scale": 1,
+     "spinAngle": 0,
+     "visible": false,
+     "x": 48,
+     "y": 48
+    }
+   },
+   "label_flipped_right_edge": {
+    "view": {
+     "bars": [
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "clicking": false,
+     "label": {
+      "scale": 1,
+      "text": "night light",
+      "visible": true,
+      "x": 48,
+      "y": 43
+     },
+     "mode": "triangle",
+     "opacity": 1,
+     "phase": "held",
+     "rotation": -35,
+     "scale": 1,
+     "spinAngle": 0,
+     "visible": true,
+     "x": 140,
+     "y": 36
+    }
+   },
+   "motion_off": {
+    "motion": "off",
+    "view": {
+     "bars": [
+      5,
+      7,
+      9,
+      7,
+      5
+     ],
+     "clicking": false,
+     "label": {
+      "scale": 1,
+      "text": "",
+      "visible": false,
+      "x": 0,
+      "y": 0
+     },
+     "mode": "waveform",
+     "opacity": 1,
+     "phase": "follow",
+     "rotation": -35,
+     "scale": 1,
+     "spinAngle": 0,
+     "visible": true,
+     "x": 48,
+     "y": 48
+    }
+   },
+   "needs_you": {
+    "view": {
+     "bars": [
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "clicking": false,
+     "label": {
+      "scale": 1,
+      "text": "",
+      "visible": false,
+      "x": 0,
+      "y": 0
+     },
+     "mode": "triangleNeedsYou",
+     "opacity": 1,
+     "phase": "follow",
+     "rotation": -35,
+     "scale": 1,
+     "spinAngle": 0,
+     "visible": true,
+     "x": 48,
+     "y": 48
+    }
+   },
+   "parked_label": {
+    "view": {
+     "bars": [
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "clicking": false,
+     "label": {
+      "scale": 1,
+      "text": "night light",
+      "visible": true,
+      "x": 50,
+      "y": 43
+     },
+     "mode": "triangle",
+     "opacity": 1,
+     "phase": "held",
+     "rotation": -35,
+     "scale": 1,
+     "spinAngle": 0,
+     "visible": true,
+     "x": 40,
+     "y": 36
+    }
+   },
+   "spinner": {
+    "view": {
+     "bars": [
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "clicking": false,
+     "label": {
+      "scale": 1,
+      "text": "",
+      "visible": false,
+      "x": 0,
+      "y": 0
+     },
+     "mode": "spinner",
+     "opacity": 1,
+     "phase": "follow",
+     "rotation": -35,
+     "scale": 1,
+     "spinAngle": 40,
+     "visible": true,
+     "x": 48,
+     "y": 48
+    }
+   },
+   "waveform_level0": {
+    "view": {
+     "bars": [
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "clicking": false,
+     "label": {
+      "scale": 1,
+      "text": "",
+      "visible": false,
+      "x": 0,
+      "y": 0
+     },
+     "mode": "waveform",
+     "opacity": 1,
+     "phase": "follow",
+     "rotation": -35,
+     "scale": 1,
+     "spinAngle": 0,
+     "visible": true,
+     "x": 48,
+     "y": 48
+    }
+   },
+   "waveform_level1": {
+    "view": {
+     "bars": [
+      7,
+      10,
+      13,
+      10,
+      7
+     ],
+     "clicking": false,
+     "label": {
+      "scale": 1,
+      "text": "",
+      "visible": false,
+      "x": 0,
+      "y": 0
+     },
+     "mode": "waveform",
+     "opacity": 1,
+     "phase": "follow",
+     "rotation": -35,
+     "scale": 1,
+     "spinAngle": 0,
+     "visible": true,
+     "x": 48,
+     "y": 48
+    }
+   }
+  },
+  "width": 180
+ },
  "Chip": {
   "mode": "variant",
   "pad": 10,
