@@ -1,6 +1,7 @@
 // Buddy: the Wisp's on-screen form beside the owner's pointer, drawn from
-// the view object lib/buddy.js hands in (Clacky 0.2.0 look, MIT, Raynan
-// Wuyep; see THIRD_PARTY_NOTICES.md). A pure renderer: the host computes
+// the view object lib/buddy.js hands in (Clacky 0.2.0 look from
+// clacky/shell/ui/overlay.py, MIT, Raynan Wuyep; see
+// THIRD_PARTY_NOTICES.md). A pure renderer: the host computes
 // the view once per frame and nothing in here loops or animates on its
 // own. Modes: five-bar waveform (listening), arc spinner (transcribing,
 // deciding, acting), triangle (speaking) and triangle in the needsYou

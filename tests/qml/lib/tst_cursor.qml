@@ -2,9 +2,8 @@ import QtQuick
 import QtTest
 import "../../../shell-plugin/lib/cursor.js" as Cur
 import "../../../shell-plugin/lib/companion.js" as Co
-import "../../../shell-plugin/lib/motion.js" as Motion
 
-// Ghost cursor, beacon, bubble geometry and companion surface rules.
+// Cursor target, beacon, bubble geometry and companion surface rules.
 TestCase {
   name: "cursor"
 
@@ -31,31 +30,6 @@ TestCase {
     var u = Cur.ghostView(target({ label: "", confidence: 0.3 }), false, true, "click", "not sure")
     verify(u.unsure)
     compare(u.label, "not sure")
-  }
-
-  function test_travel_duration_scales_and_caps() {
-    compare(Motion.travelMs(Cur.distance({ x: 0, y: 0 }, { x: 1000, y: 0 }), "full"), 520)
-    compare(Motion.travelMs(Cur.distance({ x: 0, y: 0 }, { x: 100, y: 0 }), "full"), 345)
-    compare(Motion.travelMs(1000, "reduced"), 140)
-    compare(Motion.travelMs(1000, "off"), 0)
-  }
-
-  function test_path_is_curved_and_hits_endpoints() {
-    var a = { x: 0, y: 500 }, b = { x: 400, y: 500 }
-    var s = Cur.pathPoint(a, b, 0), e = Cur.pathPoint(a, b, 1), m = Cur.pathPoint(a, b, 0.5)
-    compare(s.x, 0); compare(e.x, 400)
-    verify(m.y < 500)
-    var same = Cur.pathPoint(a, a, 0.5)
-    compare(same.x, 0); compare(same.y, 500)
-  }
-
-  function test_breadcrumbs_keep_last_three_and_skip_repeats() {
-    var l = []
-    for (var i = 0; i < 5; i++) l = Cur.pushCrumb(l, { x: i, y: 0 })
-    compare(l.length, 3)
-    compare(l[0].x, 2)
-    compare(Cur.pushCrumb(l, { x: 4, y: 0 }).length, 3)
-    compare(Cur.CRUMB_FADE_MS, 2000)
   }
 
   function test_beacons_from_points() {

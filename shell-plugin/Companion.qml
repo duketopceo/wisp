@@ -12,7 +12,7 @@ import "lib/cursor.js" as Cursor
 // The corner creature/orb is gone (2026-10-07): a persistent bottom-right
 // window sat over user content; the live surface is the bar pill now.
 // One window remains — wisp-points, a transient overlay for the listening
-// pill, answer bubble, ghost cursor and beacons. Full-output, click-through
+// pill, answer bubble, cursor buddy and beacons. Full-output, click-through
 // except the interactive items: pill, bubble.
 Item {
   id: root
@@ -59,6 +59,8 @@ Item {
   property var buddyModel: Buddy.init()
   property var buddyView: Buddy.view(Buddy.init(), { screen: { w: 0, h: 0 }, motion: "off" })
   property var pointerGlobal: null
+  // the label pill's size, read back from the overlay so view() can flip it
+  property var buddyPill: ({ w: 0, h: 0 })
 
   readonly property string buddyStatus: svc ? svc.status : "offline"
   readonly property string buddyMotion: svc ? svc.motionMode : "off"
@@ -101,7 +103,7 @@ Item {
       target: root.buddyTarget, motion: root.buddyMotion }, Math.min(dt, 0.25));
     root.buddyModel = m;
     var v = Buddy.view(m, { screen: { w: root.screenRect.w, h: root.screenRect.h },
-      motion: root.buddyMotion });
+      motion: root.buddyMotion, pill: root.buddyPill.w > 0 ? root.buddyPill : undefined });
     // pointer on another screen: the following buddy hides (R4)
     if (m.phase === "follow" && root.pointerLayer === null) v.visible = false;
     root.buddyView = v;
@@ -199,13 +201,26 @@ Item {
         onTriggered: root.bubbleDismissed = true
       }
 
+      // this window's screen and the overlay's label pill size feed the
+      // buddy model at the root
+      Binding {
+        target: root
+        property: "screenRect"
+        value: ({ x: win.screen.x, y: win.screen.y, w: win.screen.width, h: win.screen.height })
+      }
+      Binding {
+        target: root
+        property: "buddyPill"
+        value: ({ w: layer.buddyPillWidth, h: layer.buddyPillHeight })
+      }
+
       OverlayLayer {
         id: layer
         anchors.fill: parent
         service: root.svc
         barHeight: Style.bar.sizeVertical
-        originX: win.screen.x
-        originY: win.screen.y
+        buddyView: root.buddyView
+        buddyWanted: root.buddyWanted
         gap: Style.gapsOut
         refreshHz: root.refreshOf(win.screen)
         bubbleDismissed: root.bubbleDismissed

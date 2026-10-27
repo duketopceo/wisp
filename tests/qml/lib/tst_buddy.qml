@@ -140,6 +140,33 @@ TestCase {
     verify(Buddy.view(m, { screen: screen, motion: "full" }).visible)
   }
 
+  function test_second_point_while_speaking_retargets_the_flight() {
+    var m = heldAt(800, 500)
+    var i = inp("speaking", undefined, aim(300, 200, "Second"))
+    m = Buddy.step(m, i, 1 / 60)
+    compare(m.phase, "flying")
+    near(m.tx, 300, 0.01); near(m.ty, 200, 0.01)
+    m = run(m, i, 1, 60).m
+    compare(m.phase, "held")
+    near(m.x, 300, 0.01); near(m.y, 200, 0.01)
+    compare(Buddy.view(m, { screen: screen, motion: "full" }).label.text, "Second")
+  }
+
+  function test_new_turn_mid_flight_follows_and_drops_the_label() {
+    var m = atPointer()
+    var fly = inp("speaking", undefined, aim(900, 600, "Old"))
+    m = run(m, fly, 0.2, 60).m
+    compare(m.phase, "flying")
+    // the turn ends while airborne, then a new turn starts
+    m = Buddy.step(m, inp("done", undefined, null), 1 / 60)
+    m = Buddy.step(m, inp("listening", { x: 50, y: 60 }), 1 / 60)
+    compare(m.phase, "follow")
+    var v = Buddy.view(m, { screen: screen, motion: "full" })
+    verify(!v.label.visible, "old label is gone")
+    var r = run(m, inp("listening", { x: 50, y: 60 }), 2, 60)
+    near(r.m.x, 85, 1); near(r.m.y, 85, 1)
+  }
+
   function test_idle_hides_immediately_when_following() {
     var m = Buddy.step(atPointer(), inp("idle"), 1 / 60)
     compare(m.phase, "hidden")

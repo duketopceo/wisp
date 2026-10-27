@@ -1,9 +1,9 @@
 // Overlay layer: the Overlay half of the Companion composition: listening
-// pill, answer bubble (with the good/wrong chips), beacons and the ghost
-// cursor. Window-free: the host window owns the layer and the input region
-// (it masks `pill` and `bubbleHost` when shown). `origin` is the output's
-// position in the compositor's global layout, so cua.target (global) lands
-// on the right pixel while pointer and points stay in layer coordinates.
+// pill, answer bubble (with the good/wrong chips), beacons and the cursor
+// buddy. Window-free: the host window owns the layer and the input region
+// (it masks `pill` and `bubbleHost` when shown; the buddy is click-through).
+// The host hands the buddy's view in layer coordinates, so pointer, targets
+// and points all land on the right pixel here.
 pragma ComponentBehavior: Bound
 import QtQuick
 import "../lib/metrics.js" as M
@@ -16,12 +16,15 @@ Item {
   property var service: null
   // height of the top bar the bubble parks under (Style.bar.sizeVertical)
   property real barHeight: 28
-  property real originX: 0
-  property real originY: 0
   property real gap: 5
   property real refreshHz: 60
   property bool bubbleDismissed: false
   property bool labeled: false
+  // lib/buddy.js view(), computed by the host once per frame (null keeps
+  // Buddy's own hidden view); wanted keeps the window mapped through the
+  // live turn and the dwell-and-return tail
+  property var buddyView: null
+  property bool buddyWanted: false
   signal choose(string pick, int index)
   signal confirmChosen(string pick, string promptId)
   signal moreClicked()
@@ -33,9 +36,12 @@ Item {
   readonly property bool pillShown: service !== null && Companion.pillVisible(service.status) && service.confirm === null
   readonly property bool bubbleShown: service !== null && bubble.has && !bubbleDismissed
   readonly property bool bubbleHovered: bubbleHover.hovered
-  readonly property bool ghostShown: ghost.shown
+  readonly property bool buddyShown: buddyWanted || (buddyView !== null && buddyView.visible)
+  // the label pill's size, read back so the host can flip it at screen edges
+  readonly property real buddyPillWidth: buddy.pillWidth
+  readonly property real buddyPillHeight: buddy.pillHeight
   readonly property var beacons: service ? Cursor.beacons(service.points) : []
-  readonly property bool shown: pillShown || bubbleShown || ghostShown || beacons.length > 0
+  readonly property bool shown: pillShown || bubbleShown || buddyShown || beacons.length > 0
   property alias pill: pill
   property alias bubbleHost: bubbleHost
 
@@ -117,25 +123,16 @@ Item {
     }
   }
 
-  // cua.target is global: shift the layer origin so the ghost lands on the
-  // right pixel. With no live target a guide step (state.guide, layer
-  // coordinates) parks the ghost.
-  Item {
-    x: -root.originX
-    y: -root.originY
+  Buddy {
+    id: buddy
+    anchors.fill: parent
+    service: root.service
+  }
 
-    GhostCursor {
-      id: ghost
-      service: root.service
-      placed: true
-      refreshHz: root.refreshHz
-      target: root.service.cuaTarget ? root.service.cuaTarget : guideTarget
-      readonly property var guide: root.service.guide
-      readonly property var guideTarget: guide ? {
-        x: guide.x + root.originX, y: guide.y + root.originY,
-        window: "", label: guide.label ? String(guide.label) : "",
-        confidence: 1, phase: "aim"
-      } : null
-    }
+  Binding {
+    target: buddy
+    property: "view"
+    value: root.buddyView
+    when: root.buddyView !== null
   }
 }

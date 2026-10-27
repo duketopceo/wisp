@@ -620,13 +620,65 @@
       "y": 260
      }
     },
-    "_state": "acting"
+    "_state": "acting",
+    "buddyView": {
+     "bars": [
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "clicking": false,
+     "label": {
+      "scale": 1,
+      "text": "night light",
+      "visible": true,
+      "x": 430,
+      "y": 267
+     },
+     "mode": "spinner",
+     "opacity": 1,
+     "phase": "held",
+     "rotation": -35,
+     "scale": 1,
+     "spinAngle": 90,
+     "visible": true,
+     "x": 420,
+     "y": 260
+    }
    },
    "answer": {
     "_state": "done"
    },
    "awaiting_choice": {
-    "_state": "awaiting_choice"
+    "_state": "awaiting_choice",
+    "buddyView": {
+     "bars": [
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "clicking": false,
+     "label": {
+      "scale": 1,
+      "text": "",
+      "visible": false,
+      "x": 0,
+      "y": 0
+     },
+     "mode": "triangleNeedsYou",
+     "opacity": 1,
+     "phase": "follow",
+     "rotation": -35,
+     "scale": 1,
+     "spinAngle": 0,
+     "visible": true,
+     "x": 675,
+     "y": 385
+    }
    },
    "blocked": {
     "_state": "blocked"
@@ -645,7 +697,33 @@
     "_state": "idle"
    },
    "listening": {
-    "_state": "listening"
+    "_state": "listening",
+    "buddyView": {
+     "bars": [
+      5,
+      8,
+      11,
+      8,
+      5
+     ],
+     "clicking": false,
+     "label": {
+      "scale": 1,
+      "text": "",
+      "visible": false,
+      "x": 0,
+      "y": 0
+     },
+     "mode": "waveform",
+     "opacity": 1,
+     "phase": "follow",
+     "rotation": -35,
+     "scale": 1,
+     "spinAngle": 0,
+     "visible": true,
+     "x": 675,
+     "y": 385
+    }
    },
    "long_answer": {
     "_state": "long_answer"
@@ -1087,87 +1165,6 @@
    }
   },
   "width": 360
- },
- "GhostCursor": {
-  "mode": "variant",
-  "on": "desktop",
-  "pad": 12,
-  "scale2": true,
-  "variants": {
-   "absent": {
-    "_state": "acting"
-   },
-   "clicking": {
-    "forceState": "clicking"
-   },
-   "parked": {
-    "forceLabel": "night light",
-    "forceState": "parked"
-   },
-   "reduced_parked": {
-    "forceLabel": "night light",
-    "forceState": "parked",
-    "motion": "reduced"
-   },
-   "returning": {
-    "forceState": "returning"
-   },
-   "target_aim": {
-    "_fixture": {
-     "target": {
-      "confidence": 0.92,
-      "label": "night light",
-      "phase": "aim",
-      "window": "Settings",
-      "x": 640,
-      "y": 360
-     }
-    },
-    "_state": "acting"
-   },
-   "target_click": {
-    "_fixture": {
-     "target": {
-      "confidence": 0.92,
-      "label": "night light",
-      "phase": "click",
-      "window": "Settings",
-      "x": 640,
-      "y": 360
-     }
-    },
-    "_state": "acting"
-   },
-   "target_done": {
-    "_fixture": {
-     "target": {
-      "confidence": 0.92,
-      "label": "night light",
-      "phase": "done",
-      "window": "Settings",
-      "x": 640,
-      "y": 360
-     }
-    },
-    "_state": "acting"
-   },
-   "target_unsure": {
-    "_fixture": {
-     "target": {
-      "confidence": 0.3,
-      "label": "",
-      "phase": "aim",
-      "window": "Settings",
-      "x": 640,
-      "y": 360
-     }
-    },
-    "_state": "acting"
-   },
-   "traveling": {
-    "forceState": "traveling"
-   }
-  }
  },
  "HealthSection": {
   "mode": "variant",
