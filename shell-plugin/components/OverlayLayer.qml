@@ -116,19 +116,20 @@ Item {
   // the ListModel only appends the new ones (rebuilds on a new turn).
   ListModel { id: beaconModel }
   property var beaconsSynced: []
-  onBeaconsChanged: {
+  // one path for every change, init included: Component.onCompleted runs it
+  // too, a no-op when the initial beacons were already synced
+  function syncBeacons() {
     var plan = Cursor.beaconSync(beaconsSynced, beacons);
     if (plan.kind === "none") return;
     if (plan.kind === "reset") beaconModel.clear();
     for (var i = plan.from; i < beacons.length; i++) beaconModel.append({ bx: beacons[i].x, by: beacons[i].y, step: beacons[i].index });
     beaconsSynced = beacons;
   }
-  Component.onCompleted: {
-    for (var i = 0; i < beacons.length; i++) beaconModel.append({ bx: beacons[i].x, by: beacons[i].y, step: beacons[i].index });
-    beaconsSynced = beacons;
-  }
+  onBeaconsChanged: syncBeacons()
+  Component.onCompleted: syncBeacons()
 
   Repeater {
+    objectName: "beaconRepeater"
     model: beaconModel
     delegate: Beacon {
       required property real bx

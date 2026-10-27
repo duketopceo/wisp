@@ -1,79 +1,94 @@
 import QtQuick
 import QtTest
-import "../../../shell-plugin/lib/cursor.js" as Cur
+import "../../../shell-plugin/components"
+import "../harness"
 
-// Why OverlayLayer feeds its beacon Repeater from a ListModel: a replaced
-// array model rebuilds every delegate, a ListModel append only adds one.
+// The REAL OverlayLayer's beacon wiring: the Repeater is fed by a ListModel
+// so a grown points list appends one delegate instead of rebuilding them all
+// (the pure plan lives in tst_cursor.qml). Also guards init seeding: created
+// with points, the model must hold each beacon once.
 TestCase {
   id: tc
   name: "beaconSync"
   when: windowShown
-  width: 100
-  height: 100
+  width: 400
+  height: 300
 
-  property int created: 0
-  property var arr: []
+  property var svc: null
+  property var overlay: null
 
-  ListModel { id: lm }
-
-  Item {
-    Repeater {
-      id: arrRep
-      model: tc.arr
-      delegate: Item {
-        required property var modelData
-        Component.onCompleted: tc.created++
-      }
-    }
-    Repeater {
-      id: lmRep
-      model: lm
-      delegate: Item {
-        required property real bx
-        Component.onCompleted: tc.created++
-      }
-    }
+  Component {
+    id: svcC
+    FixtureService {}
+  }
+  Component {
+    id: overlayC
+    OverlayLayer { width: 400; height: 300 }
   }
 
-  function apply(prev, next) {
-    var plan = Cur.beaconSync(prev, next)
-    if (plan.kind === "reset") lm.clear()
-    for (var i = plan.from; i < next.length; i++) lm.append({ bx: next[i].x })
+  function pt(x, y, step) { return { x: x, y: y, label: "", step: step } }
+
+  // theme tokens from the dark theme fixture, so the components resolve colors
+  function tokens() {
+    var x = new XMLHttpRequest()
+    x.open("GET", Qt.resolvedUrl("../../fixtures/themes/vantablack/expected.json"), false)
+    x.send()
+    return JSON.parse(x.responseText).tokens
   }
 
-  function test_replaced_array_rebuilds_all_delegates() {
-    arr = [{ x: 1 }]
+  function make(points) {
+    svc = createTemporaryObject(svcC, tc)
+    svc.tokens = tokens()
+    // assigned in JS: a property map would hand over a non-Array list
+    svc.points = points
+    overlay = createTemporaryObject(overlayC, tc, { service: svc })
     wait(20)
-    created = 0
-    arr = [{ x: 1 }, { x: 2 }]
-    wait(20)
-    compare(created, 2)
   }
 
-  function test_listmodel_append_creates_only_the_new_delegate() {
-    var a = { x: 1, y: 1, label: "", index: 1 }
-    var b = { x: 2, y: 2, label: "", index: 2 }
-    apply([], [a])
-    wait(20)
-    created = 0
-    apply([a], [a, b])
-    wait(20)
-    compare(lmRep.count, 2)
-    compare(created, 1)
+  // overlay first: it must not outlive the service its bindings read
+  function cleanup() {
+    if (overlay) overlay.destroy()
+    if (svc) svc.destroy()
+    wait(0)
+    overlay = null
+    svc = null
   }
 
-  function test_new_turn_rebuilds_and_empty_clears() {
-    var a = { x: 1, y: 1, label: "", index: 1 }
-    var c = { x: 9, y: 9, label: "", index: 1 }
-    apply([], [a])
+  function repeater() {
+    var d = overlay.data
+    for (var i = 0; i < d.length; i++)
+      if (d[i].objectName === "beaconRepeater") return d[i]
+    return null
+  }
+
+  function test_created_with_points_seeds_once() {
+    make([pt(10, 10, 1), pt(20, 20, 2)])
+    compare(repeater().count, 2)
+  }
+
+  function test_growth_appends_one_delegate() {
+    make([pt(10, 10, 1)])
+    compare(repeater().count, 1)
+    var first = repeater().itemAt(0)
+    svc.points = [pt(10, 10, 1), pt(20, 20, 2)]
     wait(20)
-    created = 0
-    apply([a], [c])
+    compare(repeater().count, 2)
+    verify(repeater().itemAt(0) === first)
+  }
+
+  function test_non_extension_rebuilds() {
+    make([pt(10, 10, 1)])
+    var first = repeater().itemAt(0)
+    svc.points = [pt(90, 90, 1)]
     wait(20)
-    compare(lmRep.count, 1)
-    compare(created, 1)
-    apply([c], [])
+    compare(repeater().count, 1)
+    verify(repeater().itemAt(0) !== first)
+  }
+
+  function test_emptied_clears() {
+    make([pt(10, 10, 1), pt(20, 20, 2)])
+    svc.points = []
     wait(20)
-    compare(lmRep.count, 0)
+    compare(repeater().count, 0)
   }
 }

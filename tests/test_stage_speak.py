@@ -130,14 +130,14 @@ class VoiceOnTimingTests(StageBase):
         self.assertEqual(self.shown(), [])  # cleared when done
 
     def test_single_chunk_reply_still_paces_points(self):
+        # voice on, whole reply in one go: still one publish per sentence,
+        # and point 2 only after sentence 1 was already speaking
         self.run_answer(self.cfg, REPLY)
-        # voice on: the first sentence's point is the most that can have
-        # landed before the second sentence starts playing
-        first = self.bus.state.points
-        self.assertLessEqual(len(first), 1)
         self.wait_done()
-        seen = [x for p in self.pubs for x in p[0]["points"]]
-        self.assertIn(P2, seen)
+        lists = [p[0]["points"] for p in self.pubs]
+        self.assertEqual([len(x) for x in lists], [1, 2])
+        self.assertEqual(lists[-1], [P1, P2])
+        self.assertGreaterEqual(len(self.pubs[1][1]), 1)
 
     def test_monitors_looked_up_once_per_turn(self):
         self.run_answer(self.cfg, REPLY,
