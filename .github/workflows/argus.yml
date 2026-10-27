@@ -41,7 +41,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: duketopceo/Argus
-          ref: d9d5ba640d56056aafa6c631fb6ca65ed3a01d22
+          ref: c701b2a8dd7f8a8eaa728ea1f5f4e4bb751a482f
           path: trusted-argus
           persist-credentials: false
       - name: Install trusted CLI dependencies
@@ -55,7 +55,7 @@ jobs:
 
       - name: Run published Argus action
         id: review
-        uses: duketopceo/Argus/action@d9d5ba640d56056aafa6c631fb6ca65ed3a01d22
+        uses: duketopceo/Argus/action@c701b2a8dd7f8a8eaa728ea1f5f4e4bb751a482f
         with:
           openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
           cli: ${{ steps.trusted-cli.outputs.cli }}

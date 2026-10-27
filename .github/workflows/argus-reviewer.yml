@@ -38,7 +38,7 @@ jobs:
       #          approval-token: ${{ steps.argus-app.outputs.token }}
       #          approval-evidence: 'npm test'   # command the approval stands on
       #          approval-check: 'test'          # check-run name, green on head SHA
-      - uses: duketopceo/Argus/action@d9d5ba640d56056aafa6c631fb6ca65ed3a01d22
+      - uses: duketopceo/Argus/action@c701b2a8dd7f8a8eaa728ea1f5f4e4bb751a482f
         with:
           openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
       # Per-path review rules also exist as an action input (a JSON
