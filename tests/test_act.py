@@ -115,6 +115,40 @@ class Loop(unittest.TestCase):
         run.assert_called_once()
         assert r.startswith("ACTED (1 steps)")
 
+    def test_narrated_next_step_is_nudged_back_into_loop(self):
+        # live run 2026-10-27: one click, then "Now I'm taking a
+        # screenshot…" with no tool call ended the turn as ACTED
+        replies = [_msg(calls=[_call("click", "61 267")]),
+                   _msg(content="I clicked the Capabilities button. Now "
+                                "I'm taking a screenshot to see if the "
+                                "settings are visible."),
+                   _msg(calls=[_call("screenshot")]),
+                   _msg(content="Settings are open.")]
+        with mock.patch.object(act, "_post", side_effect=replies) as post, \
+             mock.patch.object(tools, "run", return_value="ok") as run:
+            r = act.run_act_loop("open settings", self.cfg,
+                                 initial_image="aGk=")
+        run.assert_called_once()
+        self.assertEqual(post.call_count, 4)
+        self.assertTrue(r.startswith("ACTED ("), r)
+        self.assertIn("Settings are open", r)
+
+    def test_narration_nudges_are_bounded(self):
+        replies = [_msg(content="Let me take a screenshot.")] * 5
+        with mock.patch.object(act, "_post", side_effect=replies) as post:
+            r = act.run_act_loop("open settings", self.cfg)
+        self.assertEqual(post.call_count, act.MAX_INTENT_NUDGES + 1)
+        self.assertTrue(r.startswith("ACTED (0 steps)"), r)
+
+    def test_announces_next_step(self):
+        self.assertTrue(act._announces_next_step(
+            "Now I'm taking a screenshot to see if it opened."))
+        self.assertTrue(act._announces_next_step("Let me click Settings."))
+        self.assertFalse(act._announces_next_step("Opened Settings."))
+        self.assertFalse(act._announces_next_step("done deal"))
+        self.assertFalse(act._announces_next_step("ASK_USER: which one?"))
+        self.assertFalse(act._announces_next_step(""))
+
     def test_interrupt_stops_loop(self):
         replies = [_msg(calls=[_call("launch", "x")])] * 20
         with mock.patch.object(act, "_post", side_effect=replies), \
