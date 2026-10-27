@@ -158,6 +158,9 @@ function step(m, input, dt) {
       else spring(n, dt)
     }
     if (tlive && n.placed) startFlight(n, tgt, full)
+    // no pointer sample yet (pointer on another output, socket failing):
+    // there is nowhere to fly from, so land on the target directly
+    else if (tlive) { startFlight(n, tgt, false); n.placed = true }
   }
 
   if (n.phase === "flying") {
@@ -177,7 +180,8 @@ function step(m, input, dt) {
     else if (n.phase === "dwelling") {
       n.t += dt; n.labelT += dt
       if (n.t >= DWELL_S) {
-        if (full) startReturn(n)
+        // no pointer ever sampled: nothing to fly back to
+        if (full && n.hasPtr) startReturn(n)
         else endTail(n, live)
       }
     } else if (fly(n, n.ox, n.oy, dt)) endTail(n, live)
