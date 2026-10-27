@@ -149,6 +149,22 @@ class TestToolExec(unittest.TestCase):
             out, "OPENED https://mail.google.com -> browseros")
         ex.assert_called_once_with("browseros https://mail.google.com")
 
+    def test_launch_mail_in_browser_failed_exec_is_not_opened(self):
+        self._hypr_up()
+        cfg = {"apps": {"browseros": "browseros"}, "agent": {}}
+        defaults = {"mail": "browseros", "browser": "browseros"}
+        with mock.patch("wisp.inventory.defaults", return_value=defaults), \
+             mock.patch.object(tools.desktop, "_find_window",
+                               return_value=None), \
+             mock.patch.object(tools.desktop.shutil, "which",
+                               return_value="/x/bin"), \
+             mock.patch("wisp.platform._try", return_value=True), \
+             mock.patch.object(tools.desktop, "_exec_detached",
+                               return_value=False):
+            out = tools.desktop.launch("mail", cfg)
+        self.assertTrue(out.startswith("SKIP"), out)
+        self.assertIn("https://mail.google.com", out)
+
     def test_launch_mail_in_browser_without_window(self):
         self._hypr_up()
         cfg = {"apps": {"browseros": "browseros"}, "agent": {}}

@@ -108,7 +108,8 @@ def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
                 down = _wm_down()
                 if down:
                     return down
-                _exec_detached(f"{binname} {shlex.quote(url)}")
+                if not _exec_detached(f"{binname} {shlex.quote(url)}"):
+                    return f"SKIP (could not open {url} in {role})"
                 return f"OPENED {url} -> {role}"
             if binname:
                 app = role
