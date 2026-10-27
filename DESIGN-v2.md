@@ -578,7 +578,7 @@ screen.
 | `Transcript` | live, final | mic icon + `inkMuted`, never italic |
 | `Answer` | streaming (caret = ember block), final, truncated ("more" opens console) | |
 | `Beacon` | landing, holding, fading | A6 |
-| `GhostCursor` | traveling, clicking (ripple), parked (guide), returning | A5; carries the creature |
+| `Buddy` | follow (waveform, spinner, triangle, needs-you), flying, held (label pill), dwelling, returning, clicking (ripple) | A5 amendment 2026-10-26; replaces GhostCursor |
 | `ConfirmCard` (new) | pending, approved, denied | inline at cursor for risky tools; `needsYou` keyline; keys `y`/`n` via submap |
 | `PanelTab` | normal, hover, selected (accent underline, no fill) | 4 tabs |
 | `AgentRow` | queued, running (ember tick), done, failed, cancelled | elapsed time, last log line, "open log" |
