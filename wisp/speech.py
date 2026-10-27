@@ -110,11 +110,24 @@ class SentenceSpeaker:
     when voice is off). `stop()` — also called by speech.stop() and on
     cancel of the turn's token — kills the speaking child and drops the
     queue.
+
+    Points: `feed`/`finish` also take `marks` — (offset, point) pairs whose
+    offsets index the cleaned text. A mark rides with the sentence whose
+    span holds its offset and `on_sentence(points)` receives it when the
+    worker starts that sentence (before TTS spawns, so a failed spawn still
+    fires). A mark whose sentence was already dequeued fires at once;
+    `finish` fires every mark still unassigned with the tail (or at once
+    when there is none). `stop()` drops queued marks.
     """
 
-    def __init__(self, cfg: dict, token=None):
+    def __init__(self, cfg: dict, token=None, on_sentence=None):
         self._cfg = cfg
         self._token = token
+        self._on_sentence = on_sentence
+        self._plock = threading.Lock()   # marks/items: feed vs worker
+        self._items: list = []           # (span end, _Item) per sentence
+        self._pending: list = []         # marks past every queued sentence
+        self._seen = 0                   # marks already ingested
         self.enabled = cfg.get("voice", {}).get("enabled", "false") == "true"
         self.started = False
         self.spoken: list = []
@@ -132,36 +145,78 @@ class SentenceSpeaker:
                 token.register_close(self.stop)
 
     # -- producer side ---------------------------------------------
-    def feed(self, text: str) -> None:
+    def feed(self, text: str, marks=()) -> None:
         if not self.enabled or self._stopped.is_set():
             return
+        self._ingest(marks)
         while True:
             m = _SENTENCE.match(text, self._consumed)
             if not m:
                 return
             self._consumed = m.end()
             self._head = text[:self._consumed]
-            self._enqueue(m.group(1).strip())
+            self._enqueue(m.group(1).strip(), self._consumed)
 
-    def finish(self, full: str, on_done=None) -> None:
+    def finish(self, full: str, on_done=None, marks=()) -> None:
         if not self.enabled or self._stopped.is_set():
             if on_done and not self._stopped.is_set():
                 on_done()
             return
-        self.feed(full + " ")
+        self.feed(full + " ", marks)
         tail = full[self._consumed:].strip() \
             if full.startswith(self._head) else ""
+        with self._plock:
+            rest, self._pending = self._pending, []
         if tail:
             self._consumed = len(full)
-            self._enqueue(tail)
+            self._enqueue(tail, self._consumed, rest)
+        else:
+            self._fire([p for _, p in rest])
         self._q.put(("done", on_done))
         self._ensure_worker()
 
-    def _enqueue(self, sentence: str) -> None:
+    def _ingest(self, marks) -> None:
+        """Take the marks not seen yet: one inside an already-queued
+        sentence rides with it (fires at once if that sentence was
+        dequeued); the rest wait for the next sentence or finish()."""
+        marks = list(marks)
+        late = []
+        with self._plock:
+            new, self._seen = marks[self._seen:], max(self._seen, len(marks))
+            for off, pt in new:
+                item = next((it for end, it in self._items if off <= end),
+                            None) if off <= self._consumed else None
+                if item is None:
+                    self._pending.append((off, pt))
+                elif item.dequeued:
+                    late.append(pt)
+                else:
+                    item.points.append(pt)
+        self._fire(late)
+
+    def _fire(self, points) -> None:
+        if points and self._on_sentence and not self._stopped.is_set():
+            try:
+                self._on_sentence(points)
+            except Exception:
+                # a callback bug must not kill the worker: the answer is
+                # still spoken and on_done still ends the turn
+                import sys
+                import traceback
+                traceback.print_exc(file=sys.stderr)
+
+    def _enqueue(self, sentence: str, end: int, extra=()) -> None:
+        with self._plock:
+            mine = [m for m in self._pending if m[0] <= end]
+            self._pending = [m for m in self._pending if m[0] > end]
+            mine += extra
+            item = _Item(sentence, [p for _, p in mine])
+            self._items.append((end, item))
         if not sentence:
+            self._fire(item.points)
             return
         self.started = True
-        self._q.put(("say", sentence))
+        self._q.put(("say", item))
         self._ensure_worker()
 
     def _ensure_worker(self) -> None:
@@ -184,6 +239,11 @@ class SentenceSpeaker:
                 if val and not self._stopped.is_set():
                     val()
                 return
+            with self._plock:
+                val.dequeued = True
+                points = list(val.points)
+            self._fire(points)
+            val = val.sentence
             argv = _argv(val, self._cfg)
             if argv is None:
                 continue
@@ -230,6 +290,15 @@ class SentenceSpeaker:
         except queue.Empty:
             pass
         self._release()
+
+
+class _Item:
+    """One queued sentence and the points that fire when it starts."""
+
+    def __init__(self, sentence: str, points: list):
+        self.sentence = sentence
+        self.points = points
+        self.dequeued = False
 
 
 def _kill_now(proc) -> None:

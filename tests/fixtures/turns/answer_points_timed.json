@@ -1,0 +1,60 @@
+{
+  "description": "Answer route, voice on (fake TTS, 300 ms per sentence): two streamed sentences each carry a [POINT] tag. Each point is published when its sentence starts playing, so points grows 1 then 2 while speaking and the second never shows early.",
+  "audio": "ask.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "where do i click for display settings"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "chunks": [
+            "Open Settings[POINT:100,200:Settings] first. ",
+            "Then click Display[POINT:300,400:Display] to finish."
+          ],
+          "chunk_delay_ms": 50
+        }
+      ]
+    }
+  },
+  "config": {
+    "voice": {
+      "enabled": "true",
+      "cmd": "/bin/sh -c \"/bin/sleep 0.3\" {text}"
+    }
+  },
+  "expect": {
+    "statuses": [
+      "listening",
+      "transcribing",
+      "deciding",
+      "acting",
+      "speaking",
+      "done"
+    ],
+    "transcript": "where do i click for display settings",
+    "answer": "Open Settings first. Then click Display to finish.",
+    "brain_calls": 1,
+    "points_growth": [
+      1,
+      2
+    ],
+    "points_gap_ms_min": 200
+  },
+  "name": "answer_points_timed",
+  "scenario": "points timed to speech"
+}

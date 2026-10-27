@@ -295,6 +295,21 @@ def check_expectations(res: TurnResult) -> list:
             bad.append(f"stop_within_ms: expected <= "
                        f"{ex['stop_within_ms']} ({bound:g} w/ jitter), "
                        f"got {ms}")
+    if "points_growth" in ex or "points_gap_ms_min" in ex:
+        # point counts while speaking (empty lists skipped): the list
+        # grows with the sentences, never jumping ahead of them
+        seen = [(len(e["points"]), e["t_ms"]) for e in res.events
+                if e["status"] == "speaking" and e.get("points")]
+        want("points_growth", dedupe([n for n, _ in seen]))
+        if "points_gap_ms_min" in ex:
+            t = {}
+            for n, ms in seen:
+                t.setdefault(n, ms)
+            gap = t[2] - t[1] if 1 in t and 2 in t else None
+            if gap is None or gap < ex["points_gap_ms_min"]:
+                bad.append(f"points_gap_ms_min: expected >= "
+                           f"{ex['points_gap_ms_min']} between the first "
+                           f"1-point and 2-point events, got {gap}")
     want("tool_calls", [t["name"] for t in res.trace_events("tool_call")])
     if "brain_calls" in ex:
         want("brain_calls", len(res.chat_calls()))
