@@ -52,6 +52,59 @@ function beaconSync(prev, next) {
   return { kind: "append", from: prev.length }
 }
 
+// Drawings from state.drawings: [{kind:"ring"|"arrow"|"hl", ...}] ->
+// full records {kind,x,y,r,w,h,x1,y1,x2,y2} (unused fields 0, so a ListModel
+// sees one role set), at most `max` (16 = the daemon's per-turn cap),
+// malformed shapes dropped.
+function drawings(list, max) {
+  var out = []
+  var src = Array.isArray(list) ? list : []
+  function nums(o, keys) {
+    for (var i = 0; i < keys.length; i++) {
+      if (typeof o[keys[i]] !== "number" || !isFinite(o[keys[i]])) return false
+    }
+    return true
+  }
+  for (var i = 0; i < src.length; i++) {
+    var d = src[i]
+    if (!d || typeof d !== "object") continue
+    var r = { kind: d.kind, x: 0, y: 0, r: 0, w: 0, h: 0, x1: 0, y1: 0, x2: 0, y2: 0 }
+    if (d.kind === "ring" && nums(d, ["x", "y", "r"]) && d.r > 0) {
+      r.x = d.x; r.y = d.y; r.r = d.r
+    } else if (d.kind === "hl" && nums(d, ["x", "y", "w", "h"]) && d.w > 0 && d.h > 0) {
+      r.x = d.x; r.y = d.y; r.w = d.w; r.h = d.h
+    } else if (d.kind === "arrow" && nums(d, ["x1", "y1", "x2", "y2"])) {
+      r.x1 = d.x1; r.y1 = d.y1; r.x2 = d.x2; r.y2 = d.y2
+    } else continue
+    out.push(r)
+  }
+  return out.slice(0, max === undefined ? 16 : max)
+}
+
+// How the draw layer's ListModel follows a new drawings() list; same
+// contract as beaconSync: "append" from `from` when `next` extends `prev`
+// (a sentence's shape landed, earlier shapes never replay their draw-on),
+// "reset" when it does not, "none" when nothing changed.
+function drawSync(prev, next) {
+  var keys = ["kind", "x", "y", "r", "w", "h", "x1", "y1", "x2", "y2"]
+  var same = next.length >= prev.length
+  for (var i = 0; same && i < prev.length; i++) {
+    for (var k = 0; same && k < keys.length; k++) same = prev[i][keys[k]] === next[i][keys[k]]
+  }
+  if (!same) return { kind: "reset", from: 0 }
+  if (next.length === prev.length) return { kind: "none", from: next.length }
+  return { kind: "append", from: prev.length }
+}
+
+// Draw-layer look (Clacky's overlay): ~3 px strokes, a 14 px arrowhead at
+// 30 degrees, a highlight fill at alpha 0.18; strokes draw on over 300 ms.
+var DRAW_STROKE = 3
+var DRAW_HL_STROKE = 2
+var DRAW_HEAD = 14
+var DRAW_HEAD_DEG = 30
+var DRAW_HL_ALPHA = 0.18
+var DRAW_ON_MS = 300
+
 // Beacons hold, then fade after 8 s or on the next turn.
 var BEACON_HOLD_MS = 8000
 var BEACON_LAND_MS = 280

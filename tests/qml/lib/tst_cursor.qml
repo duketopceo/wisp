@@ -120,4 +120,45 @@ TestCase {
     compare(Co.buddyOffScreen("follow", { x: 1, y: 1 }), false)
     compare(Co.buddyOffScreen("held", null), false)
   }
+
+  function ring(x) { return { kind: "ring", x: x, y: 2, r: 5 } }
+  function full(o) {
+    var r = { kind: "", x: 0, y: 0, r: 0, w: 0, h: 0, x1: 0, y1: 0, x2: 0, y2: 0 }
+    for (var k in o) r[k] = o[k]
+    return r
+  }
+
+  function test_drawings_normalize_and_drop_malformed() {
+    var d = Cur.drawings([ring(1), { kind: "arrow", x1: 1, y1: 2, x2: 3, y2: 4 },
+      { kind: "hl", x: 1, y: 2, w: 30, h: 40 }, { kind: "ring", x: 1, y: 2, r: 0 },
+      { kind: "hl", x: 1, y: 2, w: -3, h: 4 }, { kind: "blob", x: 1 }, null,
+      { kind: "ring", x: "z", y: 1, r: 3 }, { kind: "arrow", x1: 1 }])
+    compare(d.length, 3)
+    compare(d[0].kind, "ring")
+    compare(d[1].x2, 3)
+    compare(d[2].w, 30)
+    compare(d[0].w, 0)
+    compare(Cur.drawings(undefined).length, 0)
+    compare(Cur.drawings([ring(1), ring(2), ring(3)], 2).length, 2)
+  }
+
+  function test_draw_sync_appends_only_the_new_shape() {
+    var a = full(ring(1))
+    var b = full(ring(2))
+    compare(Cur.drawSync([], [a]).kind, "append")
+    compare(Cur.drawSync([], [a]).from, 0)
+    var plan = Cur.drawSync([a], [a, b])
+    compare(plan.kind, "append")
+    compare(plan.from, 1)
+  }
+
+  function test_draw_sync_clears_resets_and_idles() {
+    var a = full(ring(1))
+    var b = full(ring(2))
+    compare(Cur.drawSync([a, b], []).kind, "reset")
+    compare(Cur.drawSync([a], [b]).kind, "reset")
+    compare(Cur.drawSync([a], [b, a]).kind, "reset")
+    compare(Cur.drawSync([], []).kind, "none")
+    compare(Cur.drawSync([a], [full(ring(1))]).kind, "none")
+  }
 }
