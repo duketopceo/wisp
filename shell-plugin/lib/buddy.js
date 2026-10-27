@@ -118,6 +118,9 @@ function settle(n) { n.rot = REST_DEG; n.scale = 1 }
 function endTail(n, live) {
   n.phase = live ? "follow" : "hidden"
   n.x = n.ox; n.y = n.oy; n.vx = 0; n.vy = 0; settle(n)
+  // with no pointer ever sampled that spot is made up, so the next
+  // target lands directly instead of flying in from it
+  n.placed = n.hasPtr
 }
 
 function step(m, input, dt) {

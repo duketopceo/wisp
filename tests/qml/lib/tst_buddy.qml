@@ -288,4 +288,16 @@ TestCase {
     compare(flew, false)
     compare(r.m.phase, "hidden")
   }
+
+  // a second target in the same turn, still with no pointer, also lands
+  // directly rather than flying in from a made-up spot
+  function test_second_target_without_pointer_lands_directly() {
+    var r = run(Buddy.init(), inp("acting", null, aim(400, 300, "Save")), 0.6, 60)
+    r = run(r.m, inp("acting", null, null), 4.2, 60)
+    r = run(r.m, inp("acting", null, aim(900, 500, "Open")), 0.1, 60)
+    var flew = r.frames.some(function (v) { return v.phase === "flying" })
+    compare(flew, false)
+    near(r.m.x, 900, 0.01)
+    near(r.m.y, 500, 0.01)
+  }
 }

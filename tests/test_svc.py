@@ -281,11 +281,17 @@ class TestInstall(unittest.TestCase):
             for f in stale + [cache]:
                 f.parent.mkdir(parents=True, exist_ok=True)
                 f.write_text("old\n")
+            # a stale link to a directory goes as a link; its target stays
+            elsewhere = e.home / "elsewhere"
+            elsewhere.mkdir()
+            (plugin / "linked").symlink_to(elsewhere)
             with mock.patch.object(config, "HOME", e.home), \
                  mock.patch("wisp.platform.current", return_value="linux"):
                 w.install_files()
             for f in stale:
                 self.assertFalse(f.exists(), f)
+            self.assertFalse((plugin / "linked").is_symlink())
+            self.assertTrue(elsewhere.is_dir())
             self.assertTrue((plugin / "components" / "Buddy.qml").exists())
             self.assertTrue((opt / "wisp" / "config.py").exists())
             # bytecode caches are the interpreter's, not ours to sweep

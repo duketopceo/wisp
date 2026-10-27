@@ -791,7 +791,9 @@ def _mirror(src: pathlib.Path, dst: pathlib.Path) -> None:
         rel = f.relative_to(dst)
         if "__pycache__" in rel.parts or (src / rel).exists():
             continue
-        if f.is_dir():
+        if f.is_symlink():
+            f.unlink()      # a link, never its target
+        elif f.is_dir():
             if not any(f.iterdir()):
                 f.rmdir()
         else:
