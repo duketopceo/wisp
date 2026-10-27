@@ -111,15 +111,33 @@ Item {
     }
   }
 
-  // beacons: state.points are in layer coordinates
+  // beacons: state.points are in layer coordinates. A plain array model
+  // rebuilds every delegate when it grows, replaying the landed beacons;
+  // the ListModel only appends the new ones (rebuilds on a new turn).
+  ListModel { id: beaconModel }
+  property var beaconsSynced: []
+  onBeaconsChanged: {
+    var plan = Cursor.beaconSync(beaconsSynced, beacons);
+    if (plan.kind === "none") return;
+    if (plan.kind === "reset") beaconModel.clear();
+    for (var i = plan.from; i < beacons.length; i++) beaconModel.append({ bx: beacons[i].x, by: beacons[i].y, step: beacons[i].index });
+    beaconsSynced = beacons;
+  }
+  Component.onCompleted: {
+    for (var i = 0; i < beacons.length; i++) beaconModel.append({ bx: beacons[i].x, by: beacons[i].y, step: beacons[i].index });
+    beaconsSynced = beacons;
+  }
+
   Repeater {
-    model: root.beacons
+    model: beaconModel
     delegate: Beacon {
-      required property var modelData
+      required property real bx
+      required property real by
+      required property int step
       service: root.service
-      index: modelData.index
-      x: modelData.x - width / 2
-      y: modelData.y - height
+      index: step
+      x: bx - width / 2
+      y: by - height
     }
   }
 

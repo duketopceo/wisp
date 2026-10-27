@@ -37,6 +37,21 @@ function beacons(points, max) {
   return out.slice(0, max === undefined ? 8 : max)
 }
 
+// How a beacon ListModel follows a new beacons() list: "append" the entries
+// from `from` on when `next` extends `prev` (a point landed mid-answer, the
+// earlier beacons keep their delegates), "reset" when it does not (a new
+// turn, or an emptied list), "none" when nothing changed.
+function beaconSync(prev, next) {
+  var same = next.length >= prev.length
+  for (var i = 0; same && i < prev.length; i++) {
+    same = prev[i].x === next[i].x && prev[i].y === next[i].y
+      && prev[i].label === next[i].label && prev[i].index === next[i].index
+  }
+  if (!same) return { kind: "reset", from: 0 }
+  if (next.length === prev.length) return { kind: "none", from: next.length }
+  return { kind: "append", from: prev.length }
+}
+
 // Beacons hold, then fade after 8 s or on the next turn.
 var BEACON_HOLD_MS = 8000
 var BEACON_LAND_MS = 280
