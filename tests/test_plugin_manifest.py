@@ -96,5 +96,15 @@ class TestBarWidget(unittest.TestCase):
             self.assertIn(k, wcopy.STRINGS)
 
 
+class TestThirdPartyNotices(unittest.TestCase):
+    def test_notice_files_exist_and_match(self):
+        top = ROOT / "THIRD_PARTY_NOTICES.md"
+        shipped = PLUGIN / "THIRD_PARTY_NOTICES.md"
+        self.assertTrue(top.is_file())
+        self.assertTrue(shipped.is_file())
+        self.assertFalse(shipped.is_symlink())
+        self.assertEqual(top.read_bytes(), shipped.read_bytes())
+
+
 if __name__ == "__main__":
     unittest.main()

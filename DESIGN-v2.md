@@ -245,6 +245,13 @@ on any wallpaper. Companion parts: click ripple (single expanding ring,
 "parked" state for guide mode (wick points at the target, gentle 1
 cycle settle, then still). SVG path + QML.
 
+**A5 amendment (2026-10-26).** The cursor buddy is the Clacky triangle
+buddy (Clacky 0.2.0 look, MIT; see THIRD_PARTY_NOTICES.md), not the
+truncated-arrow ghost above: a triangle beside the owner's pointer, a
+five-bar waveform while listening and an arc spinner while working. The
+click ripple (220ms, one ring) stays. Plan:
+docs/plans/2026-10-26-2149-feat-clacky-cursor-buddy-plan.md.
+
 **A6. Point beacon.** Replaces numbered rings. A short vertical light
 "stake" with index in the monospace caption size, lands with one spring
 overshoot, then holds still. Label in a square-cornered chip that follows
@@ -506,6 +513,10 @@ tune by eye against A8 reference video):
 Durations: `instant 90`, `quick 140` (= Omarchy kit), `state 220`,
 `travel 320-520` (distance-scaled: 320 + 0.25ms/px, cap 520).
 Enter = OutCubic, exit = InCubic, ~70% of enter duration.
+
+Buddy exception (2026-10-26): the cursor buddy's flight of 0.35-0.7 s and
+its 1.4 s return intentionally supersede the `travel 320-520` token for
+the buddy only. Everything else keeps `travel`.
 
 Creature states (target parameter vectors):
 
