@@ -67,6 +67,11 @@ def _browseros_live() -> bool:
         return False
 
 
+# resolved apps that count as a browser for role web apps, besides
+# whatever the 'browser' role maps to
+_BROWSERS = ("browseros", "chromium", "google-chrome", "firefox", "brave")
+
+
 def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
     # Resolve the app first: "unknown app" / "not installed" are about the
     # request and read the same with or without a window manager. The
@@ -89,9 +94,23 @@ def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
         # user's configured default handler — 'open mail' opens THEIR
         # mail app, not a guessed client
         from .. import inventory
-        role = inventory.defaults().get(app.strip().lower())
+        defaults = inventory.defaults()
+        role_word = app.strip().lower()
+        role = defaults.get(role_word)
         if role:
             binname = _lookup(apps, role)
+            # a role served by a browser is a web app: open its URL in
+            # that browser — focusing the window reads as success while
+            # the inbox never opens
+            url = config.web_settings(cfg).get(role_word)
+            if binname and url and (role in _BROWSERS
+                                    or role == defaults.get("browser")):
+                down = _wm_down()
+                if down:
+                    return down
+                if not _exec_detached(f"{binname} {shlex.quote(url)}"):
+                    return f"SKIP (could not open {url} in {role})"
+                return f"OPENED {url} -> {role}"
             if binname:
                 app = role
         if not binname:

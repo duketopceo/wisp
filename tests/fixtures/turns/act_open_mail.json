@@ -1,0 +1,56 @@
+{
+  "description": "Act route: 'open my email' makes one launch(mail) step. The launch stub returns the OPENED line the real launch gives when mail resolves to a browser (tests/test_tools.py proves that); the turn ends ACTED, never a focused-window success.",
+  "audio": "act.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "wisp agent open my email"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "tool_calls": [
+            {
+              "name": "launch",
+              "arg": "mail"
+            }
+          ]
+        },
+        {
+          "content": "Opened your inbox in the browser."
+        }
+      ]
+    }
+  },
+  "expect": {
+    "tool_calls": [
+      "launch"
+    ],
+    "launch_calls": [
+      "mail"
+    ],
+    "steps_contain": [
+      "OPENED https://mail.google.com -> browseros"
+    ],
+    "result_prefix": "ACTED (1 steps)",
+    "brain_calls": 2
+  },
+  "name": "act_open_mail",
+  "scenario": "open mail in browser",
+  "launch_results": {
+    "mail": "OPENED https://mail.google.com -> browseros"
+  }
+}

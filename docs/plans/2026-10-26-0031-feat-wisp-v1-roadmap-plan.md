@@ -87,7 +87,7 @@ The Jev decider earns nothing on this traffic: over 692 routed turns (Oct 4–26
 - Q1 (owner). The v1.0 pass rate. Recommendation: `gate_rate = "60%"` now (current 32%), raised after Phase 9.
 - Q2 (owner). Which clacky extras to keep. Recommendation: keep streaming speech-to-text and barge-in (R8); drop the three listed under Outside v1.
 - Q3 (Phase 5). Replace the `jev` grounding fallback with an OpenRouter vision point call, or drop it.
-- Q4 (Phase 6). Hosted speech-to-text default: Groq (live today) or another OpenAI-compatible endpoint.
+- Q4 (settled). Groq is the hosted speech-to-text default (owner, 2026-10-26, shipped in #146).
 
 ---
 

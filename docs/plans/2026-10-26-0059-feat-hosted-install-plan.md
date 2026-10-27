@@ -16,7 +16,7 @@ execution: code
 - **Authority:** Phase 6 of `docs/plans/2026-10-26-0031-feat-wisp-v1-roadmap-plan.md` (roadmap R1 redeploy-and-measure, R2 hosted install — not this plan's R1/R2). Tracker: Tallyline TLY-200.
 - **Execution profile:** U1 → U2 → U3 → U4, serial; full Python suite green after each.
 - **Stop conditions:** Stop if any change would alter `rs/` or `tests/fixtures/ipc_commands.jsonl`, or would turn a local model server back on by default.
-- **Who finishes:** This run's PR. The owner confirms Q4 (STT provider) on review.
+- **Who finishes:** This run's PR (#146). Q4 settled by the owner on 2026-10-26: Groq.
 
 ---
 
@@ -43,7 +43,7 @@ Today's shipped config defaults `[stt] provider = "local"` (whisper.cpp), so a n
 
 - **Hosted only by default.** Governs R1, R5. (session-settled: user-directed — chosen over keeping local models on by default: the owner never uses them.)
 - **Linux only.** Governs R4, R5. (session-settled: user-directed — chosen over cross-platform seams.)
-- **Groq is the default STT provider.** Governs R1. Agent recommendation, not owner-settled (Q4): already live on this machine and cheap; any OpenAI-compatible endpoint stays configurable.
+- **Groq is the default STT provider.** Governs R1. (session-settled: user-directed, 2026-10-26 — chosen over another OpenAI-compatible provider: already live on this machine and cheap.) Any OpenAI-compatible endpoint stays configurable.
 
 ### Scope Boundaries
 
@@ -55,7 +55,7 @@ Today's shipped config defaults `[stt] provider = "local"` (whisper.cpp), so a n
 
 ### Outstanding Questions
 
-- Q4 (owner). Groq as the hosted STT default, or another OpenAI-compatible provider. The plan ships Groq; switching is a two-line default change.
+- Q4. Settled 2026-10-26 by the owner: Groq is the hosted STT default.
 
 ---
 

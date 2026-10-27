@@ -400,6 +400,7 @@ def run_turn(fixture, timeout: float = 60.0) -> TurnResult:
             "urls": urls,
             "config": _pin_jev_router(fx),
             "catalog": fx.get("catalog"),
+            "launch_results": fx.get("launch_results"),
             "chooser": fx.get("chooser"),
             "notify_now": fx.get("notify_now"),
             "interrupt_after_ms": fx.get("interrupt_after_ms"),
