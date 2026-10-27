@@ -782,6 +782,22 @@ def cmd_trigger(cfg: dict, phase: str = "") -> int:
             st.close()
 
 
+def _mirror(src: pathlib.Path, dst: pathlib.Path) -> None:
+    """Copy `src` over `dst`, then delete files `dst` has that `src` no
+    longer does, so a module or QML component removed from the repo stops
+    shipping. Bytecode caches are the interpreter's and stay."""
+    shutil.copytree(src, dst, dirs_exist_ok=True)
+    for f in sorted(dst.rglob("*"), reverse=True):
+        rel = f.relative_to(dst)
+        if "__pycache__" in rel.parts or (src / rel).exists():
+            continue
+        if f.is_dir():
+            if not any(f.iterdir()):
+                f.rmdir()
+        else:
+            f.unlink()
+
+
 def install_files(dry_run: bool = False, cfg: dict | None = None,
                   src: pathlib.Path | None = None,
                   deploy: dict | None = None) -> None:
@@ -810,7 +826,7 @@ def install_files(dry_run: bool = False, cfg: dict | None = None,
     opt.mkdir(parents=True, exist_ok=True)
     pkg = src / "wisp"
     if pkg.is_dir():
-        shutil.copytree(pkg, opt / "wisp", dirs_exist_ok=True)
+        _mirror(pkg, opt / "wisp")
         print(f"installed {opt}/wisp")
     for name in ("wispd",):
         target = opt / name
@@ -824,7 +840,7 @@ def install_files(dry_run: bool = False, cfg: dict | None = None,
             print(f"installed {opt}/{f.name}")
     shells_src = src / "shells"
     if shells_src.is_dir():
-        shutil.copytree(shells_src, opt / "shells", dirs_exist_ok=True)
+        _mirror(shells_src, opt / "shells")
         print(f"installed {opt}/shells")
     res = _desktop.install(src, config.HOME, opt)
     for f in res["backups"]:
@@ -837,7 +853,7 @@ def install_files(dry_run: bool = False, cfg: dict | None = None,
     plugin_dst = (config.HOME / ".config" / "omarchy" / "plugins"
                   / "io.github.duketopceo.wisp")
     if plugin_src.is_dir():
-        shutil.copytree(plugin_src, plugin_dst, dirs_exist_ok=True)
+        _mirror(plugin_src, plugin_dst)
         # an old installer copied the directory itself — sweep the
         # stale nested copy so there's exactly one QML source of truth
         shutil.rmtree(plugin_dst / "shell-plugin", ignore_errors=True)

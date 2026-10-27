@@ -256,6 +256,41 @@ class TestInstall(unittest.TestCase):
                 self.assertFalse((e.unit_dir / f"{n}.service").exists(), n)
             self.assertTrue((e.unit_dir / "wispd.service").exists())
 
+    def test_install_prunes_files_the_source_no_longer_has(self):
+        # a component deleted from the repo must not linger in the
+        # installed plugin (or the opt copies) after the next install
+        import importlib.machinery
+        import importlib.util
+        from wisp import config
+        root = pathlib.Path(__file__).resolve().parent.parent
+        loader = importlib.machinery.SourceFileLoader(
+            "wispd_prune", str(root / "wispd"))
+        spec = importlib.util.spec_from_loader("wispd_prune", loader)
+        w = importlib.util.module_from_spec(spec)
+        loader.exec_module(w)
+        with Env() as e:
+            stub_systemctl(e.bin)
+            e.fake_exes()
+            plugin = (e.home / ".config" / "omarchy" / "plugins"
+                      / "io.github.duketopceo.wisp")
+            opt = e.home / ".local" / "opt" / "wisp"
+            stale = [plugin / "components" / "GhostCursor.qml",
+                     opt / "wisp" / "gone.py",
+                     opt / "shells" / "debug" / "Gone.qml"]
+            cache = opt / "wisp" / "__pycache__" / "config.cpython-311.pyc"
+            for f in stale + [cache]:
+                f.parent.mkdir(parents=True, exist_ok=True)
+                f.write_text("old\n")
+            with mock.patch.object(config, "HOME", e.home), \
+                 mock.patch("wisp.platform.current", return_value="linux"):
+                w.install_files()
+            for f in stale:
+                self.assertFalse(f.exists(), f)
+            self.assertTrue((plugin / "components" / "Buddy.qml").exists())
+            self.assertTrue((opt / "wisp" / "config.py").exists())
+            # bytecode caches are the interpreter's, not ours to sweep
+            self.assertTrue(cache.exists())
+
     def test_never_enables_or_restarts(self):
         with Env() as e:
             stub_systemctl(e.bin)
