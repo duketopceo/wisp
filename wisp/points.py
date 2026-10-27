@@ -309,3 +309,39 @@ def to_logical(points_px: list[dict], mons: list[dict]) -> list[dict]:
         if not placed:
             out.append(dict(p))
     return out
+
+
+def _scaled(v: int, scale: float) -> int:
+    return max(1, math.floor(v / scale + 0.5))
+
+
+def drawings_to_logical(drawings_px: list[dict], mons: list[dict],
+                        canvas: bool = False) -> list[dict]:
+    """Map drawing marks (screenshot px, `kind` ring/arrow/hl) to
+    logical coords. Anchors (ring center, both arrow ends, HL top-left)
+    go through the same call points use: `canvas_to_logical` when
+    `canvas` (image already logical: sizes unchanged), else `to_logical`,
+    where ring r and HL w/h divide by the scale of the monitor holding
+    the anchor (rounded, at least 1)."""
+    conv = canvas_to_logical if canvas else to_logical
+    out = []
+    for d in drawings_px:
+        kind = d.get("kind")
+        if kind == "arrow":
+            a, b = conv([{"x": d["x1"], "y": d["y1"]},
+                         {"x": d["x2"], "y": d["y2"]}], mons)
+            out.append({"kind": kind, "x1": a["x"], "y1": a["y"],
+                        "x2": b["x"], "y2": b["y"]})
+            continue
+        if kind not in ("ring", "hl"):
+            continue
+        a = conv([{"x": d["x"], "y": d["y"]}], mons)[0]
+        s = 1.0 if canvas else _map_px_point(d["x"], d["y"], mons)[2]
+        if kind == "ring":
+            out.append({"kind": kind, "x": a["x"], "y": a["y"],
+                        "r": d["r"] if canvas else _scaled(d["r"], s)})
+        else:
+            out.append({"kind": kind, "x": a["x"], "y": a["y"],
+                        "w": d["w"] if canvas else _scaled(d["w"], s),
+                        "h": d["h"] if canvas else _scaled(d["h"], s)})
+    return out

@@ -178,6 +178,46 @@ class Drawings(unittest.TestCase):
             assert "[" not in clean, (i, clean)
 
 
+class DrawingsToLogical(unittest.TestCase):
+    MON2 = [{"x": 0, "y": 0, "width": 2880, "height": 1800, "scale": 2.0},
+            {"x": 1440, "y": 0, "width": 3840, "height": 2160,
+             "scale": 2.0}]
+    RING = {"kind": "ring", "x": 200, "y": 100, "r": 40}
+    HL = {"kind": "hl", "x": 100, "y": 100, "w": 400, "h": 200}
+    ARROW = {"kind": "arrow", "x1": 100, "y1": 100, "x2": 3080, "y2": 100}
+
+    def test_to_logical_path_divides_sizes_by_anchor_scale(self):
+        out = points.drawings_to_logical([self.RING, self.HL, self.ARROW],
+                                         self.MON2)
+        assert out[0] == {"kind": "ring", "x": 100, "y": 50, "r": 20}
+        assert out[1] == {"kind": "hl", "x": 50, "y": 50, "w": 200, "h": 100}
+        assert (out[2]["x1"], out[2]["y1"]) == (50, 50)
+        ref = points.to_logical([{"x": 3080, "y": 100}], self.MON2)[0]
+        assert (out[2]["x2"], out[2]["y2"]) == (ref["x"], ref["y"])
+
+    def test_sizes_at_least_one(self):
+        out = points.drawings_to_logical(
+            [{"kind": "ring", "x": 5, "y": 5, "r": 1}], self.MON2)
+        assert out[0]["r"] == 1
+
+    def test_canvas_path_keeps_sizes_and_shifts_origin(self):
+        old = points.SHOT_ORIGIN
+        points.SHOT_ORIGIN = (10, 20)
+        try:
+            out = points.drawings_to_logical([self.RING, self.HL],
+                                             self.MON2, canvas=True)
+        finally:
+            points.SHOT_ORIGIN = old
+        assert out[0] == {"kind": "ring", "x": 210, "y": 120, "r": 40}
+        assert out[1] == {"kind": "hl", "x": 110, "y": 120, "w": 400,
+                          "h": 200}
+
+    def test_outside_every_monitor_passes_through(self):
+        out = points.drawings_to_logical(
+            [{"kind": "ring", "x": 99999, "y": 5, "r": 30}], self.MON2)
+        assert out[0] == {"kind": "ring", "x": 99999, "y": 5, "r": 30}
+
+
 class StripPartial(unittest.TestCase):
     def test_partial_points_json_with_inner_bracket(self):
         out = points.strip_partial('Open it [POINTS:[{"x":1,"y":2}]')
