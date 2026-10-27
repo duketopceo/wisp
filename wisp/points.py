@@ -11,11 +11,14 @@ Grammar (canonical, both cores):
   [POINTS:[{x,y,label} ...]]  — JSON array, tag ends at "]]"
   [RING:x,y,r]        — ring target center + radius in screenshot px
   [ARROW:x1,y1,x2,y2] — arrow start + end in screenshot px
-  [HL:x,y,w,h]        — highlight rect in screenshot px (fades ~2 s)
+  [HL:x,y,w,h]        — highlight rect in screenshot px
 A '['-terminated [POINT token whose coords don't parse is still stripped
 (markup noise); a token with no closing ']' stays in the text, and
 "[POINT" followed by anything other than ':', ' ', 'S' or ']' is not a
-tag (e.g. "[POINTER]" passes through).
+tag (e.g. "[POINTER]" passes through). RING/ARROW/HL are only tags when
+the opener is immediately followed by ':' ("[HLS]" passes through); their
+fields are plain ints (spaces ok), and a malformed tag, float or
+non-positive size is stripped without a mark.
 
 Source attribution: `[POINT:x,y:label(:screenN)]` and `[POINT:none]` tag
 syntax ported/extended from farzaa/clicky CompanionManager.swift (MIT).
@@ -29,17 +32,56 @@ import shutil
 import subprocess
 
 MAX_POINTS = 32
-MAX_DRAWINGS = 64
+MAX_DRAWINGS = 16  # per turn, all drawing kinds combined
 MAX_LABEL = 80
+
+
+# drawing tag opener -> (kind, int fields, positive-only fields)
+_DRAW_TAGS = {
+    "[RING:": ("ring", ("x", "y", "r"), ("r",)),
+    "[ARROW:": ("arrow", ("x1", "y1", "x2", "y2"), ()),
+    "[HL:": ("hl", ("x", "y", "w", "h"), ("w", "h")),
+}
+_OPENERS = ("[POINT",) + tuple(_DRAW_TAGS)
+
+
+def _next_opener(text: str, pos: int = 0) -> tuple[int, str]:
+    """(index, opener) of the earliest tag opener at or after `pos`,
+    or (-1, "")."""
+    best, found = -1, ""
+    for op in _OPENERS:
+        i = text.find(op, pos)
+        if i >= 0 and (best < 0 or i < best):
+            best, found = i, op
+    return best, found
+
+
+def _parse_drawing(opener: str, body: str) -> dict | None:
+    """Payload for a drawing tag body ("1, 2,3"), or None if malformed."""
+    kind, fields, positive = _DRAW_TAGS[opener]
+    parts = body.split(",")
+    if len(parts) != len(fields):
+        return None
+    try:
+        vals = [int(v) for v in parts]
+    except ValueError:
+        return None
+    d = {"kind": kind, **dict(zip(fields, vals))}
+    if any(d[f] <= 0 for f in positive):
+        return None
+    return d
 
 
 def extract_marked(text: str) -> tuple[str, list[tuple[int, dict]]]:
     """Like `extract`, but also report where each tag sat: returns
-    (clean_text, [(offset, point_px)]). `offset` is the tag's character
+    (clean_text, [(offset, mark_px)]). `offset` is the tag's character
     position in clean_text; a [POINTS:[...]] list yields one mark per
-    point, all at the same offset."""
+    point, all at the same offset. A mark is a point payload (no "kind")
+    or a drawing payload ("kind" ring/arrow/hl plus raw px fields), in
+    one list in text order — a stable append-only prefix as text grows."""
     marks: list[tuple[int, dict]] = []
     points: list[dict] = []
+    drawings = 0
     clean = []
     n = 0  # chars in `clean` so far
 
@@ -56,12 +98,23 @@ def extract_marked(text: str) -> tuple[str, list[tuple[int, dict]]]:
 
     rest = text
     while True:
-        i = rest.find("[POINT")
+        i, op = _next_opener(rest)
         if i < 0:
             keep(rest)
             break
         keep(rest[:i])
         tag = rest[i:]
+        if op != "[POINT":
+            e = tag.find("]")
+            if e < 0:
+                keep(tag)  # unclosed — leave visible
+                break
+            d = _parse_drawing(op, tag[len(op):e])
+            if d is not None and drawings < MAX_DRAWINGS:
+                drawings += 1
+                marks.append((n, d))
+            rest = tag[e + 1:]
+            continue
         # not a tag unless the next char is ':', ' ', ']' or 'S'
         nxt = tag[6:7]
         if nxt and nxt not in ": ]S":
@@ -103,33 +156,37 @@ def extract_marked(text: str) -> tuple[str, list[tuple[int, dict]]]:
 
 
 def extract(text: str) -> tuple[str, list[dict]]:
-    """Strip point tags from `text`; return (clean_text, points_px).
-    Points keep screenshot-pixel coords: [{x, y, label}]."""
+    """Strip every tag kind from `text`; return (clean_text, points_px).
+    Points keep screenshot-pixel coords: [{x, y, label}]; drawings are
+    stripped and not returned (use `extract_marked`)."""
     clean, marks = extract_marked(text)
-    return clean, [p for _, p in marks]
+    return clean, [p for _, p in marks if "kind" not in p]
 
 
 def strip_partial(text: str) -> str:
-    """Cut a still-open trailing point tag (or the start of one, like
-    "[POI") so streaming text never shows or speaks it. Closed tags and
+    """Cut a still-open trailing tag (or the start of one, like "[POI"
+    or "[R") so streaming text never shows or speaks it. Closed tags and
     text without a partial tag come back unchanged."""
     pos = 0
     while True:
-        i = text.find("[POINT", pos)
+        i, op = _next_opener(text, pos)
         if i < 0:
             break
         tag = text[i:]
-        nxt = tag[6:7]
-        if nxt and nxt not in ": ]S":
-            pos = i + 6
-            continue
-        closer = "]]" if tag.startswith("[POINTS") else "]"
+        if op == "[POINT":
+            nxt = tag[6:7]
+            if nxt and nxt not in ": ]S":
+                pos = i + 6
+                continue
+            closer = "]]" if tag.startswith("[POINTS") else "]"
+        else:
+            closer = "]"
         e = tag.find(closer)
         if e < 0:
             return text[:i]
         pos = i + e + len(closer)
-    for n in range(min(5, len(text)), 0, -1):
-        if text.endswith("[POINT"[:n]):
+    for n in range(min(6, len(text)), 0, -1):
+        if any(op.startswith(text[-n:]) for op in _OPENERS):
             return text[:-n]
     return text
 
@@ -168,11 +225,6 @@ def _add(points: list, x, y, label, screen: int | None = None) -> None:
     points.append(item)
 
 
-_DRAW_TAG_RE = re.compile(
-    r"\[(?P<kind>POINTS|POINT|RING|ARROW|HL)(?P<sep>[:\s\]])"
-)
-
-
 def _map_px_point(x: int, y: int, mons: list[dict]) -> tuple[int, int, float]:
     """Map one screenshot-pixel (x, y) to (logical_x, logical_y, scale)."""
     for m in reversed(mons):
@@ -184,186 +236,6 @@ def _map_px_point(x: int, y: int, mons: list[dict]) -> tuple[int, int, float]:
             ly = m.get("y", 0) + math.floor((y - oy) / s + 0.5)
             return int(lx), int(ly), s
     return int(x), int(y), 1.0
-
-
-def _map_drawing_to_logical(d: dict, mons: list[dict]) -> dict:
-    """Map a drawing primitive from grim composite pixels to logical coords."""
-    if not mons:
-        return dict(d)
-    kind = d.get("kind") or d.get("type")
-    out = dict(d)
-    if kind == "point":
-        lx, ly, _ = _map_px_point(d["x"], d["y"], mons)
-        out["x"], out["y"] = lx, ly
-    elif kind == "ring":
-        lx, ly, s = _map_px_point(d["x"], d["y"], mons)
-        out["x"], out["y"] = lx, ly
-        out["r"] = max(1, math.floor(d["r"] / s + 0.5))
-    elif kind == "arrow":
-        x1, y1, _ = _map_px_point(d["x1"], d["y1"], mons)
-        x2, y2, _ = _map_px_point(d["x2"], d["y2"], mons)
-        out["x1"], out["y1"] = x1, y1
-        out["x2"], out["y2"] = x2, y2
-    elif kind == "hl":
-        lx, ly, s = _map_px_point(d["x"], d["y"], mons)
-        out["x"], out["y"] = lx, ly
-        out["w"] = max(1, math.floor(d["w"] / s + 0.5))
-        out["h"] = max(1, math.floor(d["h"] / s + 0.5))
-    return out
-
-
-def extract_drawings(text: str,
-                     monitors: list[dict] | None = None) -> tuple[str, list[dict]]:
-    """Extract `[POINT:x,y:label]`, `[RING:x,y,r]`, `[ARROW:x1,y1,x2,y2]`,
-    and `[HL:x,y,w,h]` tags from `text`.
-
-    When `monitors` is provided, maps grim composite pixel coordinates to
-    Hyprland logical coordinates (including scaling `r` and `w`/`h` by the
-    containing monitor's scale). When `monitors` is None, preserves raw
-    screenshot-pixel coordinates.
-
-    Returns `(clean_text, drawings)`.
-    """
-    drawings: list[dict] = []
-    clean: list[str] = []
-    rest = text or ""
-
-    while rest:
-        m = _DRAW_TAG_RE.search(rest)
-        if not m:
-            clean.append(rest)
-            break
-        start = m.start()
-        kind = m.group("kind")
-        clean.append(rest[:start])
-        tag = rest[start:]
-
-        if kind == "POINTS":
-            e = tag.find("]]")
-            if e < 0:
-                clean.append(tag)
-                break
-            blob = tag[tag.find("[", 1):e + 1] if "[" in tag[1:e] else ""
-            try:
-                for p in json.loads(blob):
-                    if len(drawings) < MAX_DRAWINGS:
-                        px = int(p.get("x"))
-                        py = int(p.get("y"))
-                        lbl, scr = _split_screen_label(p.get("label", ""))
-                        item = {
-                            "kind": "point",
-                            "type": "point",
-                            "x": px,
-                            "y": py,
-                            "label": lbl[:MAX_LABEL],
-                        }
-                        if scr is not None:
-                            item["screen"] = scr
-                        drawings.append(item)
-            except (json.JSONDecodeError, KeyError, TypeError,
-                    ValueError, AttributeError):
-                pass
-            rest = tag[e + 2:]
-            continue
-
-        e = tag.find("]")
-        if e < 0:
-            clean.append(tag)
-            break
-
-        prefix_len = 1 + len(kind)
-        body = tag[prefix_len:e].lstrip(": ")
-
-        if len(drawings) < MAX_DRAWINGS:
-            if kind == "POINT":
-                if body.strip().lower() != "none":
-                    coords, _, label = body.partition(":")
-                    xy = coords.split(",")
-                    if len(xy) >= 2:
-                        try:
-                            px, py = int(xy[0].strip()), int(xy[1].strip())
-                            lbl = label.strip()
-                            lbl, screen = _split_screen_label(lbl)
-                            item = {
-                                "kind": "point",
-                                "type": "point",
-                                "x": px,
-                                "y": py,
-                                "label": lbl[:MAX_LABEL],
-                            }
-                            if screen is not None:
-                                item["screen"] = screen
-                            drawings.append(item)
-                        except (ValueError, TypeError):
-                            pass
-            elif kind == "RING":
-                parts = body.partition(":")[0].split(",")
-                if len(parts) >= 3:
-                    try:
-                        px = int(parts[0].strip())
-                        py = int(parts[1].strip())
-                        r = int(parts[2].strip())
-                        if r > 0:
-                            drawings.append({
-                                "kind": "ring",
-                                "type": "ring",
-                                "x": px,
-                                "y": py,
-                                "r": r,
-                            })
-                    except (ValueError, TypeError):
-                        pass
-            elif kind == "ARROW":
-                parts = body.partition(":")[0].split(",")
-                if len(parts) >= 4:
-                    try:
-                        x1 = int(parts[0].strip())
-                        y1 = int(parts[1].strip())
-                        x2 = int(parts[2].strip())
-                        y2 = int(parts[3].strip())
-                        drawings.append({
-                            "kind": "arrow",
-                            "type": "arrow",
-                            "x1": x1,
-                            "y1": y1,
-                            "x2": x2,
-                            "y2": y2,
-                        })
-                    except (ValueError, TypeError):
-                        pass
-            elif kind == "HL":
-                parts = body.partition(":")[0].split(",")
-                if len(parts) >= 4:
-                    try:
-                        px = int(parts[0].strip())
-                        py = int(parts[1].strip())
-                        w = int(parts[2].strip())
-                        h = int(parts[3].strip())
-                        if w > 0 and h > 0:
-                            drawings.append({
-                                "kind": "hl",
-                                "type": "hl",
-                                "x": px,
-                                "y": py,
-                                "w": w,
-                                "h": h,
-                                "fade_ms": 2000,
-                            })
-                    except (ValueError, TypeError):
-                        pass
-
-        rest = tag[e + 1:]
-
-    if monitors is not None:
-        drawings = [_map_drawing_to_logical(d, monitors) for d in drawings]
-
-    return "".join(clean).strip(), drawings
-
-
-def strip_drawing_tags(text: str) -> str:
-    """Return `text` with all closed POINT/POINTS/RING/ARROW/HL tags stripped."""
-    clean, _ = extract_drawings(text, monitors=None)
-    return clean
 
 
 def monitors() -> list[dict]:
