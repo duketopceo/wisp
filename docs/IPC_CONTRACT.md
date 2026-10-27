@@ -284,8 +284,10 @@ spoken answer and publishes the normalized list. With voice on, the
 list grows while the status stays `speaking`: each point is appended
 when the sentence holding its tag starts playing (a whole-key `points`
 diff; no new field or event). With voice off, or for act-result speech,
-all points arrive together with the `speaking` transition. Shells must
-treat a longer `points` list as the same annotations plus new ones and
+all points arrive together with the `speaking` transition. Within a
+turn the core only ever appends: earlier entries keep their order and
+values, and the list resets only when the status leaves `speaking`.
+Shells must treat a longer `points` list as the same annotations plus new ones and
 not replay what is already shown.
 
 ## Push stream (additive; W3)
