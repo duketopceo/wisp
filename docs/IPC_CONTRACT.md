@@ -280,7 +280,13 @@ coordinates (already normalized from screenshot pixels via monitor
 scale); `label` and `step` are optional strings/ints. The model emits
 them as `[POINT:x,y:label]` / `[POINTS:[{x,y,label}]]` tags in
 screenshot-pixel coords; the core strips tags from the displayed/
-spoken answer and publishes the normalized list.
+spoken answer and publishes the normalized list. With voice on, the
+list grows while the status stays `speaking`: each point is appended
+when the sentence holding its tag starts playing (a whole-key `points`
+diff; no new field or event). With voice off, or for act-result speech,
+all points arrive together with the `speaking` transition. Shells must
+treat a longer `points` list as the same annotations plus new ones and
+not replay what is already shown.
 
 ## Push stream (additive; W3)
 
