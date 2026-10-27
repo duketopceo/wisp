@@ -205,12 +205,20 @@ class SentencePointsTests(unittest.TestCase):
         self.finish(sp, "One here.")
 
     def test_late_mark_for_queued_sentence_rides_with_it(self):
-        # first sentence occupies the worker; second is still queued
-        sp = self.speaker()
+        # first sentence occupies the worker; second is still queued. The
+        # fake TTS blocks on a gate file, so sentence 1 cannot finish (and
+        # sentence 2 cannot be dequeued) until the test releases it.
+        gate = pathlib.Path(self.dir.name) / "gate"
+        gated = pathlib.Path(self.dir.name) / "gated.sh"
+        gated.write_text(f'#!/bin/sh\necho "$1" >> {self.log}\n'
+                         f'while [ ! -e {gate} ]; do sleep 0.02; done\n')
+        gated.chmod(gated.stat().st_mode | stat.S_IXUSR)
+        sp = self.speaker(cmd=str(gated))
         sp.feed("One here. Two there. ", [])
-        self.assertTrue(self.wait_for(lambda: self.spoken_now()))
+        self.assertTrue(self.wait_for(self.spoken_now))
         sp.feed("One here. Two there. ", [(19, "rides")])
         self.assertEqual(self.calls, [])
+        gate.touch()
         self.finish(sp, "One here. Two there.", [(19, "rides")])
         self.assertEqual([c[0] for c in self.calls], [["rides"]])
         self.assertEqual(self.calls[0][1], ["One here."])
