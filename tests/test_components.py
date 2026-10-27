@@ -154,7 +154,7 @@ class TestCompanionRules(unittest.TestCase):
         self.assertIn("service.cuaTarget", src)
 
     def test_window_free_libs_have_no_colors(self):
-        for name in ("creature", "cursor", "companion"):
+        for name in ("creature", "cursor", "companion", "buddy"):
             src = code(PLUGIN / "lib" / f"{name}.js")
             self.assertIsNone(HEX.search(src), name)
             self.assertIn(".pragma library", src)
