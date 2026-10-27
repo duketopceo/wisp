@@ -57,4 +57,42 @@ TestCase {
     compare(Co.pillVisible("acting"), false)
     compare(Co.pillVisible("idle"), false)
   }
+
+  // buddy target precedence: cua.target (global, shifted by the screen
+  // origin) over a guide step (already layer coords) over the newest point
+  // while speaking
+  function test_buddy_target_shifts_cua_by_origin() {
+    var t = Co.buddyTarget({ cuaTarget: { x: 2000, y: 500, label: "Save", confidence: 1, phase: "aim" },
+      guide: { x: 10, y: 10, label: "g" }, status: "acting", points: [] },
+      { x: 1728, y: 0 }, "click", "unsure")
+    compare(t.x, 272)
+    compare(t.y, 500)
+    compare(t.visible, true)
+  }
+
+  function test_buddy_target_guide_is_not_shifted() {
+    var t = Co.buddyTarget({ cuaTarget: null, guide: { x: 40, y: 60, label: "next" },
+      status: "awaiting_choice", points: [] }, { x: 1728, y: 0 }, "click", "unsure")
+    compare(t.x, 40)
+    compare(t.y, 60)
+  }
+
+  function test_buddy_target_newest_point_only_while_speaking() {
+    var pts = [{ x: 1, y: 2, label: "a", step: 1 }, { x: 30, y: 40, label: "b", step: 2 }]
+    var t = Co.buddyTarget({ cuaTarget: null, guide: null, status: "speaking", points: pts },
+      { x: 0, y: 0 }, "click", "unsure")
+    compare(t.x, 30)
+    compare(t.label, "b")
+    compare(Co.buddyTarget({ cuaTarget: null, guide: null, status: "deciding", points: pts },
+      { x: 0, y: 0 }, "click", "unsure"), null)
+    compare(Co.buddyTarget(null, { x: 0, y: 0 }, "click", "unsure"), null)
+  }
+
+  // a following buddy hides while the pointer is on another screen; flight,
+  // hold and the tail do not depend on the pointer
+  function test_buddy_hidden_off_screen_only_while_following() {
+    compare(Co.buddyOffScreen("follow", null), true)
+    compare(Co.buddyOffScreen("follow", { x: 1, y: 1 }), false)
+    compare(Co.buddyOffScreen("held", null), false)
+  }
 }

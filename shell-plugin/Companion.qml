@@ -6,6 +6,7 @@ import Quickshell.Wayland
 import qs.Commons
 import "components"
 import "lib/buddy.js" as Buddy
+import "lib/companion.js" as Co
 import "lib/cursor.js" as Cursor
 
 // Companion overlay for io.github.duketopceo.wisp.
@@ -57,7 +58,8 @@ Item {
   // the model and its view are in that screen's layer coordinates.
   property var screenRect: ({ x: 0, y: 0, w: 0, h: 0 })
   property var buddyModel: Buddy.init()
-  property var buddyView: Buddy.view(Buddy.init(), { screen: { w: 0, h: 0 }, motion: "off" })
+  // null until the first step; the overlay keeps Buddy's own hidden view
+  property var buddyView: null
   property var pointerGlobal: null
   // the label pill's size, read back from the overlay so view() can flip it
   property var buddyPill: ({ w: 0, h: 0 })
@@ -69,32 +71,11 @@ Item {
   readonly property bool buddyFull: buddyMotion === "full"
   readonly property var pointerLayer: Buddy.layerPointer(pointerGlobal, screenRect)
 
-  // Where the buddy points, in layer coordinates: a cua.target (global),
-  // else a guide step (already layer), else the newest point while speaking.
-  readonly property var buddyTarget: {
-    if (!svc) return null;
-    var ox = screenRect.x, oy = screenRect.y;
-    var click = svc.ui("ui.target.click"), unsure = svc.ui("ui.target.unsure");
-    var t = svc.cuaTarget;
-    if (t) {
-      var v = Cursor.ghostView(t, false, false, click, unsure);
-      v.x -= ox; v.y -= oy;
-      return v;
-    }
-    var g = svc.guide;
-    if (g) {
-      return Cursor.ghostView({ x: g.x, y: g.y, label: g.label ? String(g.label) : "",
-        confidence: 1, phase: "aim" }, true, false, click, unsure);
-    }
-    if (svc.status === "speaking") {
-      var pts = Cursor.beacons(svc.points);
-      if (pts.length > 0) {
-        var p = pts[pts.length - 1];
-        return { visible: true, state: "parked", x: p.x, y: p.y, label: p.label, unsure: false };
-      }
-    }
-    return null;
-  }
+  // Where the buddy points, in layer coordinates (lib/companion.js).
+  readonly property var buddyTarget: svc
+    ? Co.buddyTarget(svc, { x: screenRect.x, y: screenRect.y },
+        svc.ui("ui.target.click"), svc.ui("ui.target.unsure"))
+    : null
 
   function advance(dt) {
     var m = Buddy.step(root.buddyModel, {
@@ -105,7 +86,7 @@ Item {
     var v = Buddy.view(m, { screen: { w: root.screenRect.w, h: root.screenRect.h },
       motion: root.buddyMotion, pill: root.buddyPill.w > 0 ? root.buddyPill : undefined });
     // pointer on another screen: the following buddy hides (R4)
-    if (m.phase === "follow" && root.pointerLayer === null) v.visible = false;
+    if (Co.buddyOffScreen(m.phase, root.pointerLayer)) v.visible = false;
     root.buddyView = v;
   }
 
