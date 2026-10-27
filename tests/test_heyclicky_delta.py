@@ -174,96 +174,73 @@ class TestDrawingTags(unittest.TestCase):
         for text in self.CLICKY_EXAMPLES:
             with self.subTest(text=text):
                 spoken, xy, label, screen = clicky_parse(text)
-                clean, ds = points.extract_drawings(text)
+                clean, marks = points.extract_marked(text)
                 self.assertEqual(clean, spoken)
                 if xy is None:
-                    self.assertEqual(ds, [])
+                    self.assertEqual(marks, [])
                     continue
-                self.assertEqual(len(ds), 1)
-                d = ds[0]
-                self.assertEqual((d["kind"], d["x"], d["y"]),
-                                 ("point", xy[0], xy[1]))
+                self.assertEqual(len(marks), 1)
+                d = marks[0][1]
+                self.assertNotIn("kind", d)
+                self.assertEqual((d["x"], d["y"]), xy)
                 self.assertEqual(d["label"] or None, label)
                 self.assertEqual(d.get("screen"), screen)
 
     def test_all_shape_kinds(self):
         text = ("look [RING:100,200,30] then [ARROW:1,2,300,400] "
                 "and [HL:10,20,200,50] at [POINT:5,6:save]")
-        clean, ds = points.extract_drawings(text)
+        clean, marks = points.extract_marked(text)
         self.assertNotIn("[", clean)
-        kinds = {d["kind"]: d for d in ds}
-        self.assertEqual(kinds["ring"],
-                         {"kind": "ring", "type": "ring",
-                          "x": 100, "y": 200, "r": 30})
-        self.assertEqual(
-            (kinds["arrow"]["x1"], kinds["arrow"]["y1"],
-             kinds["arrow"]["x2"], kinds["arrow"]["y2"]), (1, 2, 300, 400))
-        self.assertEqual(
-            (kinds["hl"]["w"], kinds["hl"]["h"], kinds["hl"]["fade_ms"]),
-            (200, 50, 2000))
-        self.assertEqual(kinds["point"]["label"], "save")
+        self.assertEqual([m["kind"] if "kind" in m else "point"
+                          for _, m in marks],
+                         ["ring", "arrow", "hl", "point"])
+        self.assertEqual(marks[0][1],
+                         {"kind": "ring", "x": 100, "y": 200, "r": 30})
+        self.assertEqual(marks[1][1],
+                         {"kind": "arrow", "x1": 1, "y1": 2,
+                          "x2": 300, "y2": 400})
+        self.assertEqual(marks[2][1],
+                         {"kind": "hl", "x": 10, "y": 20, "w": 200, "h": 50})
+        self.assertEqual(marks[3][1]["label"], "save")
 
     def test_malformed_shapes_stripped_not_drawn(self):
-        clean, ds = points.extract_drawings(
+        clean, marks = points.extract_marked(
             "a [RING:x,y,z] b [HL:1,2,0,5] c [ARROW:1,2] d")
-        self.assertEqual(ds, [])
+        self.assertEqual(marks, [])
         self.assertEqual(clean, "a  b  c  d")
 
     def test_unclosed_tag_stays_visible(self):
-        clean, ds = points.extract_drawings("see [RING:1,2,3")
-        self.assertEqual(ds, [])
+        clean, _ = points.extract("see [RING:1,2,3")
         self.assertIn("[RING:1,2,3", clean)
 
     def test_non_tags_pass_through(self):
-        clean, ds = points.extract_drawings("[POINTER] [HLS] [RINGS]")
-        self.assertEqual(ds, [])
-        self.assertEqual(clean, "[POINTER] [HLS] [RINGS]")
+        text = "[POINTER] [HLS] [RINGS] [ARROWS] [HL7 spec]"
+        clean, marks = points.extract_marked(text)
+        self.assertEqual(marks, [])
+        self.assertEqual(clean, text)
+        self.assertEqual(points.strip_partial(text), text)
 
     def test_points_json_form(self):
-        _, ds = points.extract_drawings(
+        _, pts = points.extract(
             'x [POINTS:[{"x":1,"y":2,"label":"a"},{"x":3,"y":4}]] y')
-        self.assertEqual([(d["x"], d["y"]) for d in ds], [(1, 2), (3, 4)])
+        self.assertEqual([(d["x"], d["y"]) for d in pts], [(1, 2), (3, 4)])
 
-    def test_strip_drawing_tags(self):
-        self.assertEqual(points.strip_drawing_tags(
-            "hi [RING:1,2,3] there [POINT:none]"), "hi  there")
-
-    def test_monitor_mapping_scale_2(self):
-        mons = [{"x": 0, "y": 0, "width": 2880, "height": 1800,
-                 "scale": 2.0},
-                {"x": 1440, "y": 0, "width": 3840, "height": 2160,
-                 "scale": 2.0}]
-        _, ds = points.extract_drawings(
-            "[RING:200,100,40] [HL:100,100,400,200] "
-            "[ARROW:100,100,3080,100] [POINT:3120,20:x]", monitors=mons)
-        by = {d["kind"]: d for d in ds}
-        self.assertEqual((by["ring"]["x"], by["ring"]["y"], by["ring"]["r"]),
-                         (100, 50, 20))
-        self.assertEqual((by["hl"]["x"], by["hl"]["y"], by["hl"]["w"],
-                          by["hl"]["h"]), (50, 50, 200, 100))
-        # arrow crosses monitors: each endpoint maps independently
-        self.assertEqual((by["arrow"]["x1"], by["arrow"]["y1"]), (50, 50))
-        self.assertEqual((by["arrow"]["x2"], by["arrow"]["y2"]),
-                         (1440 + 100, 50))
-        self.assertEqual((by["point"]["x"], by["point"]["y"]),
-                         (1440 + 120, 10))
+    def test_extract_strips_every_tag_kind(self):
+        self.assertEqual(points.extract(
+            "hi [RING:1,2,3] there [POINT:none]"), ("hi  there", []))
 
     def test_point_mapping_agrees_with_to_logical(self):
         mons = [{"x": 0, "y": 0, "width": 3840, "height": 2160,
                  "scale": 1.5}]
-        _, ds = points.extract_drawings("[POINT:1501,999:a]", monitors=mons)
+        lx, ly, s = points._map_px_point(1501, 999, mons)
         ref = points.to_logical([{"x": 1501, "y": 999, "label": "a"}], mons)
-        self.assertEqual((ds[0]["x"], ds[0]["y"]),
-                         (ref[0]["x"], ref[0]["y"]))
-
-    def test_no_monitors_keeps_pixels(self):
-        _, ds = points.extract_drawings("[RING:200,100,40]")
-        self.assertEqual(ds[0]["r"], 40)
+        self.assertEqual((lx, ly), (ref[0]["x"], ref[0]["y"]))
+        self.assertEqual(s, 1.5)
 
     def test_cap(self):
         text = " ".join(f"[RING:{i},{i},5]" for i in range(200))
-        _, ds = points.extract_drawings(text)
-        self.assertEqual(len(ds), points.MAX_DRAWINGS)
+        _, marks = points.extract_marked(text)
+        self.assertEqual(len(marks), points.MAX_DRAWINGS)
 
 
 # ------------------------------------------------------------------ H1
@@ -739,7 +716,7 @@ class TestReviewRegressions(unittest.TestCase):
         self.assertEqual(points._scale_of({"scale": 2}), 2.0)
 
     def test_points_json_label_screen_suffix_matches_point_tag(self):
-        _, d = points.extract_drawings(
+        _, d = points.extract(
             '[POINTS:[{"x":1,"y":2,"label":"terminal:screen2"}]]')
         self.assertEqual(d[0]["label"], "terminal")
         self.assertEqual(d[0]["screen"], 2)

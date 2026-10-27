@@ -855,6 +855,47 @@
    }
   }
  },
+ "DrawLayer": {
+  "mode": "variant",
+  "on": "desktop",
+  "pad": 0,
+  "props": {
+   "height": 360
+  },
+  "scale2": true,
+  "variants": {
+   "shapes": {
+    "_fixture": {
+     "patch": {
+      "drawings": [
+       {
+        "kind": "ring",
+        "r": 44,
+        "x": 120,
+        "y": 90
+       },
+       {
+        "kind": "arrow",
+        "x1": 230,
+        "x2": 470,
+        "y1": 260,
+        "y2": 150
+       },
+       {
+        "h": 70,
+        "kind": "hl",
+        "w": 260,
+        "x": 300,
+        "y": 40
+       }
+      ]
+     }
+    },
+    "_state": "speaking"
+   }
+  },
+  "width": 640
+ },
  "EmptyState": {
   "mode": "variant",
   "pad": 12,

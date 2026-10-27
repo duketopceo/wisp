@@ -310,6 +310,30 @@ def check_expectations(res: TurnResult) -> list:
                 bad.append(f"points_gap_ms_min: expected >= "
                            f"{ex['points_gap_ms_min']} between the first "
                            f"1-point and 2-point events, got {gap}")
+    if "drawings_growth" in ex or "drawings_gap_ms_min" in ex:
+        # drawing counts while speaking (empty lists skipped), like points
+        seen = [(len(e["drawings"]), e["t_ms"]) for e in res.events
+                if e["status"] == "speaking" and e.get("drawings")]
+        want("drawings_growth", dedupe([n for n, _ in seen]))
+        if "drawings_gap_ms_min" in ex:
+            t = {}
+            for n, ms in seen:
+                t.setdefault(n, ms)
+            gap = t[2] - t[1] if 1 in t and 2 in t else None
+            if gap is None or gap < ex["drawings_gap_ms_min"]:
+                bad.append(f"drawings_gap_ms_min: expected >= "
+                           f"{ex['drawings_gap_ms_min']} between the first "
+                           f"1-drawing and 2-drawing events, got {gap}")
+    if ex.get("tag_free"):
+        # no tag in any published answer, and everything clears at done
+        for e in res.events:
+            if "[" in str(e.get("answer", "")):
+                bad.append(f"tag_free: tag in answer {e['answer']!r}")
+                break
+        last = res.events[-1] if res.events else {}
+        if last.get("status") == "done" and (last.get("drawings")
+                                             or last.get("points")):
+            bad.append("tag_free: points/drawings not cleared at done")
     want("tool_calls", [t["name"] for t in res.trace_events("tool_call")])
     if "brain_calls" in ex:
         want("brain_calls", len(res.chat_calls()))

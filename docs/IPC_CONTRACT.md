@@ -103,6 +103,7 @@ round-trip — they are not IPC commands and are absent from the table:
   "prompt_id": "string — id of the offered choices/confirm; \"\" when none",
   "confirm": "null, or {prompt_id, prompt, timeout_s, kind} while a confirm card waits (additive, W25; kind \"confirm\"|\"handoff\" added U3)",
   "points": [{"x": 0, "y": 0, "label": "string", "step": 1}],
+  "drawings": [{"kind": "ring", "x": 0, "y": 0, "r": 40}],
   "steps": ["tool arg → result", "…"],
   "actions": [{"id": "a3", "kind": "tool", "label": "click",
                "status": "in_flight", "target": "640,360",
@@ -289,6 +290,16 @@ turn the core only ever appends: earlier entries keep their order and
 values, and the list resets only when the status leaves `speaking`.
 Shells must treat a longer `points` list as the same annotations plus new ones and
 not replay what is already shown.
+
+`drawings` is a top-level list of on-screen shapes, additive under
+`contract_version` 2 (absent on older cores — default `[]`). Shapes:
+`{"kind":"ring","x","y","r"}`, `{"kind":"arrow","x1","y1","x2","y2"}`
+and `{"kind":"hl","x","y","w","h"}`, all in Hyprland logical
+coordinates. They follow the same rule as `points`: appended when the
+sentence holding the tag starts playing (one publish carries both), the
+list only grows within a turn, and it resets when the status leaves
+`speaking`. A publish that carries no status while the status is not
+`speaking` never changes `points` or `drawings`.
 
 ## Push stream (additive; W3)
 

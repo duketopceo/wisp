@@ -361,5 +361,66 @@ class ActionStreamTest(BusCase):
         self.assertEqual(st.snapshot()["actions"][0]["status"], "done")
 
 
+class DrawingsLifecycleTest(BusCase):
+    RING = {"kind": "ring", "x": 10, "y": 20, "r": 30}
+    ARROW = {"kind": "arrow", "x1": 1, "y1": 2, "x2": 3, "y2": 4}
+    PT = {"x": 5, "y": 6, "label": "a", "step": 1}
+
+    def _speaking(self, bus, t):
+        bus.publish(t, status="speaking", points=[self.PT],
+                    drawings=[self.RING])
+        snap = bus.snapshot()
+        self.assertEqual(snap["drawings"], [self.RING])
+        self.assertEqual(snap["points"], [self.PT])
+
+    def test_leaving_speaking_clears_drawings_and_points(self):
+        for nxt in ("done", "error", "listening", "idle"):
+            with self.subTest(next=nxt):
+                bus = self.make()
+                t = bus.begin_turn()
+                self._speaking(bus, t)
+                bus.publish(t, status=nxt)
+                snap = bus.snapshot()
+                self.assertEqual(snap["drawings"], [])
+                self.assertEqual(snap["points"], [])
+
+    def test_new_turns_first_status_clears_both(self):
+        bus = self.make()
+        t = bus.begin_turn()
+        self._speaking(bus, t)
+        t2 = bus.begin_turn()
+        bus.publish(t2, status="listening")
+        snap = bus.snapshot()
+        self.assertEqual((snap["drawings"], snap["points"]), ([], []))
+
+    def test_statusless_publish_while_not_speaking_is_ignored(self):
+        bus = self.make()
+        t = bus.begin_turn()
+        bus.publish(t, status="listening")
+        bus.publish(t, drawings=[self.RING])
+        bus.publish(t, points=[self.PT])
+        snap = bus.snapshot()
+        self.assertEqual(snap["drawings"], [])
+        self.assertEqual(snap["points"], [])
+
+    def test_statusless_publish_while_speaking_applies(self):
+        bus = self.make()
+        t = bus.begin_turn()
+        self._speaking(bus, t)
+        both = [self.RING, self.ARROW]
+        bus.publish(t, drawings=both, points=[self.PT, self.PT])
+        snap = bus.snapshot()
+        self.assertEqual(snap["drawings"], both)
+        self.assertEqual(len(snap["points"]), 2)
+
+    def test_snapshot_and_state_json_carry_drawings(self):
+        bus = self.make()
+        t = bus.begin_turn()
+        self._speaking(bus, t)
+        self.assertEqual(self.disk()["drawings"], [self.RING])
+        self.assertEqual(self.disk()["contract_version"], 2)
+        self.assertEqual(state_mod.CONTRACT_VERSION, 2)
+
+
 if __name__ == "__main__":
     unittest.main()
