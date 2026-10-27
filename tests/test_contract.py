@@ -110,7 +110,7 @@ class BusWriterOutput(unittest.TestCase):
         assert isinstance(d["seq"], int) and d["seq"] >= 3
         assert d["updated_at"].endswith("+00:00")
         # additive only: nothing from the v1 document is renamed away
-        for k in ("points", "steps", "guide", "focus", "goal",
+        for k in ("points", "drawings", "steps", "guide", "focus", "goal",
                   "transcript", "answer", "choices", "actions"):
             assert k in d, k
         assert isinstance(d["actions"], list)

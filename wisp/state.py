@@ -82,6 +82,7 @@ class State:
         self.prompt_id = ""    # id of the offered choices/confirm (U9)
         self.confirm = None    # {prompt_id, prompt, timeout_s, kind} while a confirm waits (W25; kind U3)
         self.points = []
+        self.drawings = []  # on-screen shapes (ring/arrow/hl), logical coords
         self.steps = []
         # unified lifecycle stream — survives turns (unlike `steps`),
         # capped at the last ACTIONS_CAP entries; entries mutate by id
@@ -136,6 +137,15 @@ class State:
         if status is not None and status != "speaking" \
                 and "points" not in fields:
             self.points = []
+        if status is not None and status != "speaking" \
+                and "drawings" not in fields:
+            self.drawings = []
+        # interrupts publish with no turn id, so the turn guard can't
+        # stop a late stage publish: a status-less points/drawings
+        # write only lands while speaking
+        if status is None and self.status != "speaking":
+            fields = {k: v for k, v in fields.items()
+                      if k not in ("points", "drawings")}
         for k, v in fields.items():
             if hasattr(self, k):
                 setattr(self, k, v)
@@ -265,6 +275,7 @@ class State:
             "prompt_id": self.prompt_id,
             "confirm": dict(self.confirm) if self.confirm else None,
             "points": list(self.points),
+            "drawings": list(self.drawings),
             "steps": list(self.steps),
             "actions": [dict(a) for a in self.actions],
             "suggestion": self.suggestion,

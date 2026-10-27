@@ -287,4 +287,14 @@ TestCase {
     verify(line.ok)
     compare(line.text, "labeled correct: t1")
   }
+
+  function test_drawings_default_empty_and_parsed() {
+    var legacy = S.applySnapshot(S.initial(), snap({ status: "speaking" }), 1, "file").view
+    compare(legacy.drawings.length, 0)
+    compare(S.initial().drawings.length, 0)
+    var v = S.applySnapshot(S.initial(), snap({ status: "speaking",
+      drawings: [{ kind: "ring", x: 1, y: 2, r: 3 }, { kind: "hl", x: 1, y: 2, w: 3, h: 4 }] }), 2, "file").view
+    compare(v.drawings.length, 2)
+    compare(v.drawings[1].kind, "hl")
+  }
 }

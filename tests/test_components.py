@@ -22,7 +22,7 @@ COMP = PLUGIN / "components"
 FIXTURE_SERVICE = ROOT / "tests" / "qml" / "harness" / "FixtureService.qml"
 
 EXPECTED = ["Answer", "AgentRow", "AgentsTab", "BarActions", "BarMark", "BarPill", "Beacon", "Bubble", "Buddy", "Chip",
-            "Creature", "EmptyState", "FirstRunCard",
+            "Creature", "DrawLayer", "EmptyState", "FirstRunCard",
             "HealthSection", "Icon", "Mark", "MemoryTab", "NowTab", "OverlayLayer",
             "PanelTab", "Pill", "RunCard", "SettingsTab", "StatusLine", "StepRow",
             "StopControl", "Transcript",
@@ -184,7 +184,7 @@ class TestServiceSurface(unittest.TestCase):
         real = service_members((PLUGIN / "WispService.qml").read_text())
         fix = service_members(FIXTURE_SERVICE.read_text())
         mirrored = {"status", "transcript", "answer", "result", "choices",
-                    "promptId", "points", "steps", "actions", "suggestion",
+                    "promptId", "points", "drawings", "steps", "actions", "suggestion",
                     "goal",
                     "level", "tasks", "error", "errorCode", "health",
                     "offline", "stale", "tokens", "motionMode", "fontFamily",

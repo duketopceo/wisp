@@ -41,7 +41,7 @@ Item {
   readonly property real buddyPillWidth: buddy.pillWidth
   readonly property real buddyPillHeight: buddy.pillHeight
   readonly property var beacons: service ? Cursor.beacons(service.points) : []
-  readonly property bool shown: pillShown || bubbleShown || buddyShown || beacons.length > 0
+  readonly property bool shown: pillShown || bubbleShown || buddyShown || beacons.length > 0 || draw.count > 0
   property alias pill: pill
   property alias bubbleHost: bubbleHost
 
@@ -109,6 +109,15 @@ Item {
         font.pixelSize: M.font.label
       }
     }
+  }
+
+  // drawings (ring, arrow, highlight) sit under the beacons and the buddy;
+  // the buddy and beacons read state.points only
+  DrawLayer {
+    id: draw
+    objectName: "drawLayer"
+    anchors.fill: parent
+    service: root.service
   }
 
   // beacons: state.points are in layer coordinates. A plain array model

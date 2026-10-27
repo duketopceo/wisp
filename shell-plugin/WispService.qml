@@ -48,6 +48,7 @@ Item {
   // {promptId, prompt, timeoutS} while a confirm card waits, else null
   property var confirm: null
   property var points: []
+  property var drawings: []
   property var steps: []
   // unified lifecycle stream (contract v2): [{id, kind, label, status,
   // target, reason, undoRef, at, options?, promptId?}]. Supersedes
@@ -272,6 +273,7 @@ Item {
     root.promptId = v.promptId;
     root.confirm = v.confirm;
     root.points = v.points;
+    root.drawings = v.drawings;
     root.steps = v.steps;
     root.actions = v.actions;
     root.suggestion = v.suggestion;

@@ -109,6 +109,21 @@ class ExpectationKeysTest(unittest.TestCase):
         self.assertEqual(len(runner.check_expectations(r)), 1)
 
 
+    def test_drawings_growth_gap_and_tag_free(self):
+        def ev(status, n, t, ans="x"):
+            return {"status": status, "drawings": [{}] * n, "points": [],
+                    "answer": ans, "t_ms": t}
+        ex = {"drawings_growth": [1, 2], "drawings_gap_ms_min": 200,
+              "tag_free": True}
+        r = self._res(expect=ex, events=[
+            ev("speaking", 0, 10), ev("speaking", 1, 20),
+            ev("speaking", 2, 400), ev("done", 0, 500)])
+        self.assertEqual(runner.check_expectations(r), [])
+        r.events = [ev("speaking", 1, 20, "a [RING:1,2,3]"),
+                    ev("speaking", 2, 100), ev("done", 2, 200)]
+        self.assertEqual(len(runner.check_expectations(r)), 3)
+
+
 TURN_CAP_MS = 4000
 
 

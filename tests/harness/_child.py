@@ -204,7 +204,8 @@ def main(spec_path: str) -> int:
                     "error_code": view.get("error_code", ""),
                     "error_detail": view.get("error_detail", ""),
                     "steps": len(view["steps"]),
-                    "points": [dict(pt) for pt in view.get("points") or []]})
+                    "points": [dict(pt) for pt in view.get("points") or []],
+                    "drawings": [dict(d) for d in view.get("drawings") or []]})
         drainer = threading.Thread(target=drain, daemon=True)
         drainer.start()
 

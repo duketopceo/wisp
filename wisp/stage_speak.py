@@ -48,6 +48,12 @@ def ask_chat(transcript: str, cfg: dict, session_text: str = "",
             "[POINT:812,40:Save] to keep it.\". For a multi-step "
             "sequence, give each step its own sentence and tag, or end "
             "with [POINTS:[{\"x\":x,\"y\":y,\"label\":\"step\"}]]. "
+            "To draw on the screen you may also use [RING:x,y,r] (a "
+            "ring: center and radius), [ARROW:x1,y1,x2,y2] (an arrow "
+            "from one spot to another) or [HL:x,y,w,h] (a highlight "
+            "box: top-left corner, width and height), all in screenshot "
+            "pixels, placed inside the sentence they illustrate like a "
+            "point tag, at most three per answer. "
             "The tags render as an overlay and are never spoken.")
     user_content = transcript
     if image_b64:
@@ -205,7 +211,7 @@ def _speak_result(ctx, payload: str) -> None:
     from . import points as _points
     from . import trace as _trace
     pl, state, cfg, sp = _pl(), ctx.state, ctx.cfg, ctx.sp
-    reply, raw = _points.extract(payload)
+    reply, raw = _points.extract(payload)  # drawing tags stripped, none drawn
     ctx.reply = reply
     pts = []
     if raw:
@@ -215,7 +221,7 @@ def _speak_result(ctx, payload: str) -> None:
         else:
             pts = _points.to_logical(raw, _mons)
         _trace.emit(ctx.turn, "points", "act", {"points": pts})
-    _publish_paper(state, payload, ctx.turn)
+    _publish_paper(state, _points.extract(payload)[0], ctx.turn)
     state.transition("speaking", result=ctx.result,
                      answer=reply, points=pts)
     tts_start = sp.now()
@@ -256,14 +262,18 @@ def _ask_user(ctx) -> int:
     return 0
 
 
-def _publish_points(state, pts: list) -> None:
-    """Points-only publish (no status), turn-scoped like `_publish_delta`;
-    plain handles (tests, standalone State) just transition."""
+def _publish_points(state, pts: list, drawings: list) -> None:
+    """Points+drawings publish (no status, one bus.publish so a ring
+    never shows a frame before its beacon), turn-scoped like
+    `_publish_delta`; plain handles (tests, standalone State) just
+    transition."""
     from . import state as _state
     if isinstance(state, _state.TurnState):
-        state._bus.publish(state.turn_id, points=list(pts))
+        state._bus.publish(state.turn_id, points=list(pts),
+                           drawings=list(drawings))
     else:
-        state.transition("speaking", points=list(pts))
+        state.transition("speaking", points=list(pts),
+                         drawings=list(drawings))
 
 
 def _answer(ctx) -> None:
@@ -277,6 +287,7 @@ def _answer(ctx) -> None:
     pl, state, cfg, sp, token = _pl(), ctx.state, ctx.cfg, ctx.sp, ctx.token
     text, result, turn = ctx.text, ctx.result, ctx.turn
     pts = []        # logical points fired so far (voice on)
+    drws = []       # logical drawings fired so far (voice on)
     plock = threading.Lock()  # one lock over append + publish: no reordering
     _mons: list = []          # one monitors() lookup per turn
 
@@ -287,11 +298,26 @@ def _answer(ctx) -> None:
             if _points.img_space_is_logical() else _points.to_logical
         return conv(raw, _mons[0])
 
+    def _split(marks_px):
+        """Fired marks -> (logical points, logical drawings)."""
+        if not marks_px:
+            return [], []
+        if not _mons:
+            _mons.append(_points.monitors())
+        p_px = [m for m in marks_px if "kind" not in m]
+        d_px = [m for m in marks_px if "kind" in m]
+        return (_logical(p_px) if p_px else [],
+                _points.drawings_to_logical(
+                    d_px, _mons[0], _points.img_space_is_logical())
+                if d_px else [])
+
     def _fire(raw):
         # a sentence just started playing: grow the list, publish only
         # if this turn is still the live, speaking one
         with plock:
-            pts.extend(_logical(raw))
+            p, d = _split(raw)
+            pts.extend(p)
+            drws.extend(d)
             bus = getattr(state, "_bus", None)
             if token.cancelled or (
                     bus is not None and hasattr(bus, "current_turn")
@@ -299,7 +325,7 @@ def _answer(ctx) -> None:
                                                       None)) \
                     or state.status != "speaking":
                 return
-            _publish_points(state, pts)
+            _publish_points(state, pts, drws)
 
     ctx.speaker = speaker = speech.SentenceSpeaker(cfg, token=token,
                                                    on_sentence=_fire)
@@ -340,18 +366,22 @@ def _answer(ctx) -> None:
         raise _errors.classify(e, "brain_down") from e
     # paper before point extraction so `::` / plan markers land in
     # note.md even when the spoken reply is the letter body only
-    _publish_paper(state, reply, turn)
+    # (tags stripped first so a stored note never holds one)
+    _publish_paper(state, _points.extract(reply)[0] if reply else reply,
+                   turn)
     ctx.reply = reply
     marks = []
     all_pts = []
+    all_drws = []
     if reply:
         reply, marks = _points.extract_marked(reply)
         ctx.reply = reply
         if marks:
             with plock:
-                all_pts = _logical([p for _, p in marks])
-    if all_pts:
-        _trace.emit(turn, "points", "act", {"points": all_pts})
+                all_pts, all_drws = _split([p for _, p in marks])
+    if all_pts or all_drws:
+        _trace.emit(turn, "points", "act",
+                    {"points": all_pts, "drawings": all_drws})
     token.check()
     _t = time.monotonic()
     tts_start = sp.now()
@@ -361,12 +391,12 @@ def _answer(ctx) -> None:
         # the transition publishes what has fired so far
         with plock:
             state.transition("speaking", result=result, answer=reply,
-                             points=list(pts))
+                             points=list(pts), drawings=list(drws))
         speaker.finish(reply, on_done=pl._end_speaking(state), marks=marks)
         proc = True
     else:
         state.transition("speaking", result=result, answer=reply,
-                         points=all_pts)
+                         points=all_pts, drawings=all_drws)
         proc = speech.speak(reply, cfg)
         if proc is not None:
             speech.on_exit(proc, pl._end_speaking(state))

@@ -29,6 +29,7 @@ Item {
   property string promptId: ""
   property var confirm: null
   property var points: []
+  property var drawings: []
   property var steps: []
   property var actions: []
   property var suggestion: null
@@ -103,6 +104,7 @@ Item {
     root.promptId = v.promptId;
     root.confirm = v.confirm;
     root.points = v.points;
+    root.drawings = v.drawings;
     root.steps = v.steps;
     root.actions = v.actions;
     root.suggestion = v.suggestion;

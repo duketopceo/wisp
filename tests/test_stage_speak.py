@@ -20,6 +20,10 @@ P1 = {"x": 10, "y": 20, "label": "Settings"}
 P2 = {"x": 30, "y": 40, "label": "Display"}
 REPLY = ("Open Settings [POINT:10,20:Settings]. "
          "Then click Display [POINT:30,40:Display].")
+DRAW_REPLY = ("Look here [RING:100,200,30]. "
+              "Then drag [ARROW:1,2,300,400] to Display [POINT:30,40:Display].")
+RING1 = {"kind": "ring", "x": 100, "y": 200, "r": 30}
+ARROW1 = {"kind": "arrow", "x1": 1, "y1": 2, "x2": 300, "y2": 400}
 
 
 class FakeSpeaker:
@@ -56,7 +60,7 @@ class StageBase(unittest.TestCase):
         real = self.bus.publish
 
         def spy(turn_id, **kw):
-            if set(kw) == {"points"}:
+            if set(kw) == {"points", "drawings"}:
                 self.pubs.append((dict(kw), list(self.spoken())))
             return real(turn_id, **kw)
         self.bus.publish = spy
@@ -139,6 +143,18 @@ class VoiceOnTimingTests(StageBase):
         self.assertEqual(lists[-1], [P1, P2])
         self.assertGreaterEqual(len(self.pubs[1][1]), 1)
 
+    def test_drawings_grow_with_sentences(self):
+        self.run_answer(self.cfg, DRAW_REPLY)
+        self.wait_done()
+        pubs = [p[0] for p in self.pubs]
+        self.assertEqual([len(x["drawings"]) for x in pubs], [1, 2])
+        self.assertEqual(pubs[-1]["drawings"], [RING1, ARROW1])
+        self.assertEqual([len(x["points"]) for x in pubs], [0, 1])
+        self.assertGreaterEqual(len(self.pubs[1][1]), 1)
+        self.assertEqual(self.bus.state.drawings, [])
+        for line in self.spoken():
+            self.assertNotIn("[", line)
+
     def test_monitors_looked_up_once_per_turn(self):
         self.run_answer(self.cfg, REPLY,
                         ["Open Settings [POINT:10,20:Settings]. ", REPLY])
@@ -150,7 +166,7 @@ class VoiceOnTimingTests(StageBase):
         self.wait_done()
         evs = [c for c in self.emit.call_args_list if c.args[1] == "points"]
         self.assertEqual(len(evs), 1)
-        self.assertEqual(evs[0].args[3], {"points": [P1, P2]})
+        self.assertEqual(evs[0].args[3], {"points": [P1, P2], "drawings": []})
 
 
 class VoiceOffTests(StageBase):
@@ -167,6 +183,57 @@ class VoiceOffTests(StageBase):
         speaking = [kw for s, kw in seen if s == "speaking"]
         self.assertEqual(speaking[-1]["points"], [P1, P2])
         self.assertNotIn("[POINT", speaking[-1]["answer"])
+
+    def test_drawings_ride_the_speaking_transition_and_clear_at_done(self):
+        cfg = {"voice": {"enabled": "false"}, "agent": {}}
+        seen = []
+        real = self.ts.transition
+        with mock.patch.object(
+                self.ts, "transition",
+                side_effect=lambda s, **kw: (seen.append((s, kw)),
+                                             real(s, **kw))):
+            self.run_answer(cfg, DRAW_REPLY)
+        speaking = [kw for s, kw in seen if s == "speaking"][-1]
+        self.assertEqual(speaking["drawings"], [RING1, ARROW1])
+        self.assertEqual(speaking["points"], [P2])
+        self.assertNotIn("[", speaking["answer"])
+        self.assertEqual(self.bus.state.drawings, [])
+        self.assertEqual(self.bus.state.points, [])
+
+    def test_tag_only_reply_still_reaches_done(self):
+        cfg = {"voice": {"enabled": "false"}, "agent": {}}
+        self.run_answer(cfg, "[RING:100,200,30]")
+        self.assertEqual(self.bus.state.status, "done")
+        self.assertEqual(self.bus.state.drawings, [])
+
+
+class PaperAndActResultTests(StageBase):
+    NOTE = ("::tiles\n- a [RING:1,2,3]\n- b [POINT:1,2:x]\n::\n"
+            "see [ARROW:1,2,3,4] and [HL:1,2,3,4]")
+
+    def test_paper_never_gets_tags(self):
+        cfg = {"voice": {"enabled": "false"}, "agent": {}}
+        with mock.patch.object(stage_speak, "_publish_paper") as pp:
+            self.run_answer(cfg, self.NOTE)
+        text = pp.call_args.args[1]
+        for t in ("[RING", "[ARROW", "[HL", "[POINT"):
+            self.assertNotIn(t, text)
+        self.assertIn("::tiles", text)
+
+    def test_act_result_speaks_clean_and_draws_nothing(self):
+        cfg = {"voice": {"enabled": "false"}, "agent": {}}
+        ctx = self.ctx(cfg)
+        ctx.result = "ACTED: ok"
+        spoken = []
+        with mock.patch.object(stage_speak, "_publish_paper") as pp, \
+             mock.patch.object(speech, "speak",
+                               side_effect=lambda t, c: spoken.append(t)):
+            stage_speak._speak_result(
+                ctx, "Done [RING:1,2,3] and [ARROW:1,2,3,4] ok")
+        self.assertEqual(spoken, ["Done  and  ok"])
+        self.assertEqual(self.bus.state.drawings, [])
+        for t in ("[RING", "[ARROW"):
+            self.assertNotIn(t, pp.call_args.args[1])
 
 
 class GuardTests(StageBase):
@@ -219,6 +286,53 @@ class GuardTests(StageBase):
         self.assertEqual([p[0]["points"] for p in self.pubs],
                          [[P1], [P1, P2]])
         self.assertEqual(self.shown(), [P1, P2])
+
+    def test_fire_publishes_point_and_drawing_in_one_publish(self):
+        self.armed()
+        self.fire([ARROW1, P2])
+        (kw, _), = self.pubs
+        self.assertEqual(kw["drawings"], [ARROW1])
+        self.assertEqual(kw["points"], [P2])
+
+    def test_trailing_tag_fires_with_tail(self):
+        self.armed()
+        self.fire([RING1])
+        self.assertEqual(self.shown(), [])
+        self.assertEqual(list(self.bus.state.drawings), [RING1])
+
+    def test_drawing_mapping_scale_2_on_screen_edge(self):
+        mons = [{"x": 0, "y": 0, "width": 2000, "height": 1200, "scale": 2}]
+        self.mons.return_value = mons
+        with mock.patch.object(points, "img_space_is_logical",
+                               return_value=False):
+            self.armed()
+            self.fire([{"kind": "hl", "x": 1000, "y": 600,
+                        "w": 1000, "h": 600}, RING1])
+        d = self.bus.state.drawings
+        self.assertEqual(d[0], {"kind": "hl", "x": 500, "y": 300,
+                                "w": 500, "h": 300})
+        self.assertEqual(d[1], {"kind": "ring", "x": 50, "y": 100, "r": 15})
+
+    def test_no_drawings_after_cancel_stale_or_done(self):
+        self.armed()
+        self.token.cancel()
+        self.fire([RING1])
+        self.assertEqual(self.pubs, [])
+
+    def test_image_prompt_mentions_drawing_tags(self):
+        from wisp import brain
+        for img, want in (("abc", True), (None, False)):
+            seen = []
+            with mock.patch.object(brain, "supports_vision",
+                                   return_value=True), \
+                 mock.patch.object(
+                     brain, "chat",
+                     side_effect=lambda m, *a, **k: (
+                         seen.append(m), {"content": "ok"})[1]):
+                stage_speak.ask_chat("where", {}, "", image_b64=img)
+            sysmsg = seen[0][0]["content"]
+            for tag in ("RING", "ARROW", "HL"):
+                self.assertEqual(tag in sysmsg, want, tag)
 
     def test_no_publish_after_cancel(self):
         self.armed()

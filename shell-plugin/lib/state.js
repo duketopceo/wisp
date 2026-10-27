@@ -41,7 +41,7 @@ function backoffMs(attempt) {
 function initial() {
   return {
     status: "offline", rawStatus: "offline", transcript: "", answer: "",
-    result: "", choices: [], promptId: "", confirm: null, points: [],
+    result: "", choices: [], promptId: "", confirm: null, points: [], drawings: [],
     steps: [], actions: [],
     suggestion: null, guide: null, focus: {}, note: null,
     goal: "", goalStatus: "",
@@ -204,7 +204,7 @@ function normalize(raw) {
   return {
     status: status, rawStatus: st, transcript: str(raw.transcript),
     answer: str(raw.answer), result: str(raw.result), choices: choices,
-    promptId: str(raw.prompt_id), confirm: confirm, points: arr(raw.points),
+    promptId: str(raw.prompt_id), confirm: confirm, points: arr(raw.points), drawings: arr(raw.drawings),
     steps: arr(raw.steps), actions: actions,
     suggestion: isObj(raw.suggestion) ? raw.suggestion : null,
     guide: isObj(raw.guide) ? raw.guide : null,
