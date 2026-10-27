@@ -46,7 +46,7 @@ flowchart TD
 
     subgraph SURFACE[shell plugin — Quickshell QML]
         PILL["bar pill, top-center<br/>(fixed spot, not pointer-follow)"]
-        GHOST["ghost cursor + point beacons<br/>wisp-points"]
+        GHOST["cursor buddy + point beacons<br/>wisp-points"]
     end
     PIPE --> SURFACE
 ```

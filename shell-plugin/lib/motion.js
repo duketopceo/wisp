@@ -30,14 +30,6 @@ function resolveMode(configValue, animationsEnabled) {
 // Enter uses OutCubic; exit uses InCubic at ~70% of the enter duration.
 function exitMs(enterMs) { return Math.round(enterMs * 0.7) }
 
-// Travel: 320ms + 0.25ms/px, capped at 520. Reduced motion cross-fades
-// in `quick`; off is instant.
-function travelMs(distancePx, mode) {
-  if (mode === "off") return 0
-  if (mode === "reduced") return duration.quick
-  return Math.min(520, Math.round(320 + 0.25 * Math.max(0, distancePx)))
-}
-
 // Only the creature loops, only in states that need it, only in full mode.
 // Accepts reducer statuses and creature states ("thinking").
 var LOOPING = ["listening", "deciding", "thinking", "speaking"]

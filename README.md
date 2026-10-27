@@ -24,7 +24,7 @@ through the real state reducer, with no compositor and no mock-ups) by
 `scripts/ui/readme_media.py`. Live screen recordings are still to do; see
 [Media](#media).
 
-![Companion overlay: listening pill, answer bubble, confirm card, ghost cursor (goldens predate the in-bar live pill — see Surfaces)](assets/readme/companion.png)
+![Companion overlay: listening pill, answer bubble, confirm card, cursor buddy (goldens predate the in-bar live pill — see Surfaces)](assets/readme/companion.png)
 
 ![The panel: Now, Agents, Memory and Settings tabs](assets/readme/panel.png)
 
@@ -72,7 +72,7 @@ notes are in `docs/INSTALL.md`; every config key is in `docs/CONFIG.md`.
 - **Companion overlay**: transient surfaces only (no corner orb): a
   bottom-center pill while you speak, answers in a bubble next to your
   cursor (with `good` and `wrong` label buttons), confirm/choice chips on
-  the pill, and a ghost cursor for act steps. Step detail lives in the
+  the pill, and a cursor buddy beside the pointer that flies to act targets. Step detail lives in the
   Panel Now tab, not a separate console window.
 - **Panel**: opened from the bar. Four tabs: Now (the current turn and
   steps), Agents (background tasks), Memory (skills and recent
@@ -104,7 +104,7 @@ to your Hyprland config.
 What a turn can do:
 
 - **Answer**: with the screenshot taken when you pressed the key, so it
-  already knows the focused app. `[POINT]` replies move the ghost cursor.
+  already knows the focused app. `[POINT]` replies fly the cursor buddy to the point.
   Set `[agent] screenshots = "false"` to keep images local.
 - **Act**: a bounded loop that re-screenshots before every pointer action.
   No blind clicks. See [Computer use](#computer-use).
@@ -270,7 +270,7 @@ Record these, each under 20 seconds, and put the files in
 `assets/readme/`:
 
 1. Hold `Super+D`, say "open the terminal on workspace 2": bar pill, listening pill, answer bubble.
-2. "Turn on night light": Panel Now steps and the ghost cursor aim, click and done.
+2. "Turn on night light": Panel Now steps and the cursor buddy flying to the target.
 3. A risky step: the confirm card, then `Esc` stopping a turn.
 4. Panel tour: Now, Agents, Memory, Settings, plus the first-run card.
 5. `wispd doctor` and `wispd onboard` in a terminal on a fresh install.
