@@ -99,5 +99,148 @@ class SpeechTests(unittest.TestCase):
         self.assertIsNone(_proc())
 
 
+class SentencePointsTests(unittest.TestCase):
+    """SentenceSpeaker hands each sentence's points to on_sentence when the
+    worker starts that sentence (before TTS spawns)."""
+
+    def setUp(self):
+        speech.stop()
+        self.dir = tempfile.TemporaryDirectory()
+        self.log = pathlib.Path(self.dir.name) / "spoken.txt"
+        script = pathlib.Path(self.dir.name) / "tts.sh"
+        script.write_text(f'#!/bin/sh\necho "$1" >> {self.log}\nsleep 0.2\n')
+        script.chmod(script.stat().st_mode | stat.S_IXUSR)
+        self.script = str(script)
+        self.calls = []
+
+    def tearDown(self):
+        speech.stop()
+        self.dir.cleanup()
+
+    def spoken_now(self):
+        return self.log.read_text().splitlines() if self.log.exists() else []
+
+    def on_sentence(self, pts):
+        self.calls.append((list(pts), self.spoken_now()))
+
+    def speaker(self, cmd=None):
+        cfg = {"voice": {"enabled": "true",
+                         "cmd": self.script if cmd is None else cmd}}
+        return speech.SentenceSpeaker(cfg, on_sentence=self.on_sentence)
+
+    def wait_for(self, cond):
+        for _ in range(100):
+            if cond():
+                return True
+            time.sleep(0.05)
+        return False
+
+    def finish(self, sp, full, marks=()):
+        import threading
+        done = threading.Event()
+        sp.finish(full, on_done=done.set, marks=marks)
+        self.assertTrue(done.wait(timeout=10))
+
+    def test_failing_callback_does_not_stall_the_speaker(self):
+        # a raising on_sentence must not kill the worker: the rest of the
+        # answer is still spoken and on_done still ends the turn
+        def boom(pts):
+            raise RuntimeError("callback bug")
+        sp = speech.SentenceSpeaker(
+            {"voice": {"enabled": "true", "cmd": self.script}},
+            on_sentence=boom)
+        text = "One here. Two there. "
+        sp.feed(text, marks=[(3, {"x": 1, "y": 1})])
+        self.finish(sp, text.strip())
+        self.assertEqual(self.spoken_now(), ["One here.", "Two there."])
+
+    TEXT = "One here. Two there."
+
+    def test_points_fire_per_sentence_before_its_tts(self):
+        sp = self.speaker()
+        sp.feed(self.TEXT + " ", [(8, "p1"), (19, "p2")])
+        self.finish(sp, self.TEXT, [(8, "p1"), (19, "p2")])
+        self.assertEqual([c[0] for c in self.calls], [["p1"], ["p2"]])
+        # p1 fired before any TTS ran, p2 after sentence one had spoken
+        self.assertEqual(self.calls[0][1], [])
+        self.assertEqual(self.calls[1][1], ["One here."])
+
+    def test_mark_at_closing_offset_belongs_to_that_sentence(self):
+        sp = self.speaker()
+        # offset 9 == end of "One here." (before the space)
+        self.finish(sp, self.TEXT, [(9, "p1")])
+        self.assertEqual([c[0] for c in self.calls], [["p1"]])
+        self.assertEqual(self.calls[0][1], [])
+
+    def test_failed_spawn_still_fires_points(self):
+        sp = self.speaker(cmd="/nonexistent-bin-xyz")
+        self.finish(sp, self.TEXT, [(8, "p1"), (19, "p2")])
+        self.assertEqual([c[0] for c in self.calls], [["p1"], ["p2"]])
+
+    def test_trailing_marks_fire_with_tail(self):
+        sp = self.speaker()
+        sp.feed("One here. Two", [(8, "p1")])
+        self.finish(sp, "One here. Two there", [(8, "p1"), (19, "p2")])
+        self.assertEqual([c[0] for c in self.calls], [["p1"], ["p2"]])
+        self.assertEqual(self.calls[1][1], ["One here."])
+
+    def test_marks_with_no_tail_fire_before_on_done(self):
+        order = []
+        import threading
+        done = threading.Event()
+        sp2 = speech.SentenceSpeaker(
+            {"voice": {"enabled": "true", "cmd": self.script}},
+            on_sentence=lambda pts: order.append(("pts", pts)))
+        sp2.finish("", on_done=lambda: (order.append("done"), done.set()),
+                   marks=[(0, "p1")])
+        self.assertTrue(done.wait(timeout=10))
+        self.assertEqual(order, [("pts", ["p1"]), "done"])
+
+    def test_late_mark_for_dequeued_sentence_fires_at_once(self):
+        sp = self.speaker()
+        sp.feed("One here. ", [])
+        self.assertTrue(self.wait_for(lambda: self.spoken_now()))
+        sp.feed("One here. ", [(9, "late")])
+        self.assertEqual([c[0] for c in self.calls], [["late"]])
+        self.finish(sp, "One here.")
+
+    def test_late_mark_for_queued_sentence_rides_with_it(self):
+        # first sentence occupies the worker; second is still queued
+        sp = self.speaker()
+        sp.feed("One here. Two there. ", [])
+        self.assertTrue(self.wait_for(lambda: self.spoken_now()))
+        sp.feed("One here. Two there. ", [(19, "rides")])
+        self.assertEqual(self.calls, [])
+        self.finish(sp, "One here. Two there.", [(19, "rides")])
+        self.assertEqual([c[0] for c in self.calls], [["rides"]])
+        self.assertEqual(self.calls[0][1], ["One here."])
+
+    def test_every_mark_fires_exactly_once(self):
+        sp = self.speaker()
+        marks = [(8, "a"), (19, "b"), (26, "c")]
+        sp.feed("One here. Two there. ", marks[:2])
+        sp.feed("One here. Two there. Three ", marks[:2])
+        self.finish(sp, "One here. Two there. Three x", marks)
+        fired = [p for c in self.calls for p in c[0]]
+        self.assertEqual(sorted(fired), ["a", "b", "c"])
+
+    def test_stop_drops_queued_points(self):
+        stopper = speech.SentenceSpeaker(
+            {"voice": {"enabled": "true", "cmd": self.script}},
+            on_sentence=lambda pts: (self.calls.append((pts, None)),
+                                     stopper.stop()))
+        stopper.feed("One here. Two there. ", [(8, "p1"), (19, "p2")])
+        self.assertTrue(self.wait_for(lambda: self.calls))
+        time.sleep(0.5)
+        self.assertEqual([c[0] for c in self.calls], [["p1"]])
+
+    def test_voice_disabled_never_calls_back(self):
+        sp = speech.SentenceSpeaker({"voice": {"enabled": "false"}},
+                                    on_sentence=self.on_sentence)
+        sp.feed(self.TEXT + " ", [(8, "p1")])
+        sp.finish(self.TEXT, marks=[(19, "p2")])
+        self.assertEqual(self.calls, [])
+
+
 if __name__ == "__main__":
     unittest.main()
