@@ -1,0 +1,64 @@
+{
+  "description": "Answer route, voice on (fake TTS, 300 ms per sentence): two streamed sentences, the first with a [RING], the second with a [POINT] and an [ARROW]. Each sentence's marks are published when it starts playing, so drawings grow 1 then 2 and points 0 then 1 while speaking, the second never early; no tag reaches the answer and everything clears at done.",
+  "audio": "ask.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "how do i move this tab to the other window"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "chunks": [
+            "Look at this tab[RING:100,200,30] first. ",
+            "Then drag it[ARROW:100,200,900,300] to Display[POINT:300,400:Display] to finish."
+          ],
+          "chunk_delay_ms": 50
+        }
+      ]
+    }
+  },
+  "config": {
+    "voice": {
+      "enabled": "true",
+      "cmd": "/bin/sh -c \"/bin/sleep 0.3\" {text}"
+    }
+  },
+  "expect": {
+    "statuses": [
+      "listening",
+      "transcribing",
+      "deciding",
+      "acting",
+      "speaking",
+      "done"
+    ],
+    "transcript": "how do i move this tab to the other window",
+    "answer": "Look at this tab first. Then drag it to Display to finish.",
+    "brain_calls": 1,
+    "drawings_growth": [
+      1,
+      2
+    ],
+    "drawings_gap_ms_min": 200,
+    "points_growth": [
+      1
+    ],
+    "tag_free": true
+  },
+  "name": "answer_draw_timed",
+  "scenario": "drawings timed to speech"
+}
