@@ -32,6 +32,8 @@ from . import state as _state
 MAX_STEPS = 8
 MAX_ERRORS = 2
 MAX_PARSE_MISSES = 1
+# narrated-next-step replies (no tool call) nudged back into the loop
+MAX_INTENT_NUDGES = 2
 MAX_SECONDS = 600          # wall-clock cap for one run; 0 = off
 MAX_USD = 0.0              # per-run paid-model spend cap; 0 = off
 MAX_IMAGES = 3  # cap retained screenshots in the message window
@@ -235,6 +237,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
         steps_out.clear()
     errors = 0
     parse_misses = 0
+    intent_nudges = 0
     max_steps = _limit(cfg, "act_max_steps", MAX_STEPS)
     max_errors = _limit(cfg, "act_max_errors", MAX_ERRORS)
     max_parse_misses = _limit(cfg, "act_max_parse_misses", MAX_PARSE_MISSES)
@@ -364,6 +367,16 @@ def run_act_loop(task: str, cfg: dict, state=None,
                          for i, (n, a) in enumerate(parsed["actions"])]
             if not calls:
                 text = (msg.get("content") or "").strip()
+                if (intent_nudges < MAX_INTENT_NUDGES
+                        and _announces_next_step(text)):
+                    # 'Now I'm taking a screenshot…' with no tool call is
+                    # a narrated plan, not an outcome — ending here
+                    # reported ACTED after one wrong click
+                    intent_nudges += 1
+                    messages.append({"role": "assistant", "content": text})
+                    messages.append({"role": "user",
+                                     "content": _CONTINUE_NUDGE})
+                    continue
                 _publish(state, task, steps)
                 _goals.record_steps(steps)
                 if text.upper().startswith("ASK_USER:"):
@@ -1036,6 +1049,23 @@ def _surface(cfg: dict | None) -> str:
     if (cfg or {}).get("pointer", {}).get("mode") == "guide":
         return "desktop-guide"
     return "desktop"
+
+
+_NEXT_STEP_RE = re.compile(
+    r"\b(?:now i'?m|now i am|i'?ll|i will|let me|next,? i|i'?m going to|"
+    r"i need to|taking a (?:new |fresh )?screenshot|to see if|to check if|"
+    r"to verify)\b", re.I)
+_CONTINUE_NUDGE = ("You described a next step but did not call a tool. "
+                   "Call the tool now. If the task is already complete, "
+                   "reply with one short sentence describing the outcome.")
+
+
+def _announces_next_step(text: str) -> bool:
+    """True when a tool-less reply narrates what it will do next rather
+    than reporting a finished outcome."""
+    if not text or text.upper().startswith(("ASK_USER:", "DONE")):
+        return False
+    return bool(_NEXT_STEP_RE.search(text))
 
 
 _GUIDE_RE = re.compile(r"(?:GUIDE|MOVE-GUIDE|CLICKED|MOVED)\((-?\d+),"
