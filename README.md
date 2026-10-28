@@ -21,8 +21,12 @@ a fresh-box install and the learning loop; see `ROADMAP.md`). Linux
 These images are real renders. They are composed from the offscreen
 snapshot goldens in `tests/qml/snapshots` (the shipped QML components run
 through the real state reducer, with no compositor and no mock-ups) by
-`scripts/ui/readme_media.py`. Live screen recordings are still to do; see
-[Media](#media).
+`scripts/ui/readme_media.py`. Live screen recordings are made by a
+repeatable harness (`scripts/demo/record.py`) and none is published yet; see
+[Media](#media) and [docs/MEDIA.md](docs/MEDIA.md).
+
+<!-- hero:start -->
+<!-- hero:end -->
 
 ![Companion overlay: listening pill, answer bubble, confirm card, cursor buddy (goldens predate the in-bar live pill — see Surfaces)](assets/readme/companion.png)
 
@@ -316,15 +320,14 @@ The images above are deterministic and re-made with
 update`. A test (`tests/test_readme_media.py`) keeps every README image
 present and under 250 KB.
 
-Live screen recordings are a to-do that needs a person at the desktop.
-Record these, each under 20 seconds, and put the files in
-`assets/readme/`:
-
-1. Hold `Super+D`, say "open the terminal on workspace 2": bar pill, listening pill, answer bubble.
-2. "Turn on night light": Panel Now steps and the cursor buddy flying to the target.
-3. A risky step: the confirm card, then `Esc` stopping a turn.
-4. Panel tour: Now, Agents, Memory, Settings, plus the first-run card.
-5. `wispd doctor` and `wispd onboard` in a terminal on a fresh install.
+Live recordings come from real turns, recorded the same way every time
+by `python3 scripts/demo/record.py <script>` (five 30 to 60 second scripts in
+`scripts/demo/scripts/`; `--dry-run` prints the plan and records nothing).
+A clip is kept only if the turn it shows really happened (the script's
+`proof:` line is checked against the decision log), sensitive windows are
+blanked in the video, and paths and tokens are scrubbed from every text
+artefact. Details, the size caps and the caption files are in
+[docs/MEDIA.md](docs/MEDIA.md). The harness writes files and posts nothing.
 
 ## Development
 
