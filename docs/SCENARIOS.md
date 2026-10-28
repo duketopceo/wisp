@@ -35,6 +35,8 @@ table to list every fixture.
 | `answer_points_timed` | points timed to speech | Answer route with voice on and a fake TTS that takes 300 ms per sentence: the brain streams two sentences, each with its own [POINT] tag. `points` grows 1 then 2 while speaking, the second point arriving only after the first sentence has played; no event carries both early. |
 | `ask` | answer | Answer route: Jev routes to answer, brain streams a reply. Characterization baseline of today's pipeline. |
 | `ask_chip` | answer from an ask chip | Saying an ask chip's text (the kitty skill's first ask) runs as a normal answer turn: same route, same stages, one brain call. |
+| `ask_selection` | answer with the selection | Answer route with a press-time selection: it reaches the brain as a quoted data block (B22). |
+| `ask_selection_injected` | selection is data | A selection that tries to give orders is delivered as data and routing is unchanged (B22). |
 | `brain_down` | brain down | Answer brain returns 500 and no fallback is configured: the turn ends in error with error_code brain_down (U7). No canned answer. |
 | `brain_fallback` | brain fallback | Primary answer brain returns 500; [brain] fallback names a second fake brain which answers. Trace records fallback_from (U7). |
 | `budget_blocked` | budget blocked | W14: `[budget] daily_usd = 0` with `gate_primary = true` and a paid primary brain. The cap gates the primary too: no request is made and the turn ends in error with error_code budget_exceeded. |

@@ -442,6 +442,7 @@ def run_turn(fixture, timeout: float = 60.0) -> TurnResult:
             "launch_results": fx.get("launch_results"),
             "chooser": fx.get("chooser"),
             "notify_now": fx.get("notify_now"),
+            "selection": fx.get("selection"),
             "interrupt_after_ms": fx.get("interrupt_after_ms"),
             "interrupt_after_first_delta_ms":
                 fx.get("interrupt_after_first_delta_ms"),

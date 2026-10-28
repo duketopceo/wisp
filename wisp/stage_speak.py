@@ -23,7 +23,8 @@ def _pl():
 def ask_chat(transcript: str, cfg: dict, session_text: str = "",
              image_b64: str | None = None, on_delta=None,
              meta: dict | None = None, doc_text: str = "",
-             scribble_hint: str = "", tutor_text: str = "") -> str:
+             scribble_hint: str = "", tutor_text: str = "",
+             selection_text: str = "", clip_image: str = "") -> str:
     """Real answer via the configured brain provider ([brain] default).
     image_b64 attaches a screenshot — dropped when the provider lacks
     vision support (U6 capability gating)."""
@@ -79,6 +80,15 @@ def ask_chat(transcript: str, cfg: dict, session_text: str = "",
         messages.append({"role": "system", "content": doc_text})
     if tutor_text:
         messages.append({"role": "system", "content": tutor_text})
+    if clip_image and not brain.supports_vision(cfg):
+        clip_image = ""
+    if selection_text:
+        messages.append({"role": "system", "content": selection_text})
+    if clip_image:
+        if not isinstance(user_content, list):
+            user_content = [{"type": "text", "text": transcript}]
+        user_content.append({"type": "image_url",
+                             "image_url": {"url": clip_image}})
     messages.append({"role": "user", "content": user_content})
     if on_delta is not None:
         out = brain.chat_stream(messages, cfg, on_delta=on_delta,
@@ -381,6 +391,10 @@ def _answer(ctx) -> None:
                   if getattr(ctx, "doc_text", "") else {})
         if getattr(ctx, "tutor_text", ""):
             _extra["tutor_text"] = ctx.tutor_text
+        if getattr(ctx, "selection_text", ""):
+            _extra["selection_text"] = ctx.selection_text
+            if getattr(ctx, "clip_image", ""):
+                _extra["clip_image"] = ctx.clip_image
         if getattr(ctx, "scribble_hint", ""):
             _extra["scribble_hint"] = ctx.scribble_hint
         reply = pl.ask_chat(text, cfg, ctx.session_text,

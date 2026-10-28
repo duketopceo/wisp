@@ -449,6 +449,24 @@ escalates to a VLM judge.
 | `region_px` | `96` | side of the square pixel region diffed around a click point |
 | `frame_wait_s` | `0.5` | bound on waiting for the driver's before/after frames |
 
+## [selection] — what you selected, copied or pointed at
+
+"What does this mean" can use the exact words you highlighted, the image
+you copied, or the file whose path you selected, instead of a guess from
+the screenshot. The Wayland primary selection is read once when you press
+the key; the clipboard is read only when your question says "this",
+"that", "copied", "clipboard" or "selected". Nothing is read between
+presses, and the text is passed to the answer model only (never the router
+or the act loop) as quoted data it must not obey, with control and
+invisible characters removed and the size capped at 4000 characters. A
+selected file path goes through the `[docs]` reader and its protected
+folder rule. A selection is sent only when the question points at it.
+
+| key | default | meaning |
+|-----|---------|---------|
+| `enabled` | `true` | set `false` to never read the selection or clipboard |
+| `clipboard` | `true` | set `false` to read the selection only |
+
 ## [docs] — answer about the whole document
 
 When you ask about a document ("what does page 30 say", "summarize this
