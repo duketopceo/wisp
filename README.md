@@ -208,6 +208,18 @@ don't answer "done, or stuck?"), it is kept for six hours: do the step
 yourself, then say "continue" (or "next step", "I did that") and Wisp picks
 up with the same goal and the steps already done, without repeating them.
 
+When a walkthrough finishes, say "save that as a lesson called <name>" (or
+just "save that lesson"). "Replay that lesson" (or "replay the lesson about
+<topic>") speaks and points at the saved steps again without asking a model
+anything.
+
+## First minute
+
+`wispd onboard --tour` runs five spoken steps that show Wisp working: hello,
+draw, circle, ask about your screen, dictation. Each step waits for you to do
+what it asked and records a pass; a step you skip is offered again next run.
+`wispd onboard --tour circle` replays one step.
+
 ## Privacy
 
 - Audio is transcribed locally by default (`[stt] provider = "local"`).

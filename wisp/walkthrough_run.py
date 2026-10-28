@@ -22,6 +22,9 @@ from . import config
 from . import walkthrough as _wt
 
 PAUSED_FILE = config.DATA_DIR / "walkthrough.json"
+LAST_FILE = config.DATA_DIR / "walkthrough_last.json"   # last finished one
+SAVE_PREFIX = "lesson-save:"
+REPLAY_PREFIX = "lesson-replay:"
 PAUSED_TTL_S = 6 * 3600       # a lesson older than this is not resumed
 RESUME_PREFIX = "resume:"
 
@@ -61,6 +64,34 @@ def demo_intent(text: str) -> str | None:
     m = _DEMO.match(text or "")
     goal = m.group(1).strip() if m else ""
     return goal or None
+
+
+_SAVE = re.compile(
+    r"^\s*(?:(?:hey\s+)?wisp[,\s]+)?(?:please\s+)?"
+    r"(?:save|keep|remember)\s+(?:that|this|the\s+last|it)"
+    r"(?:\s+(?:walkthrough|lesson|tutorial))?"
+    r"(?:\s+as\s+(?:a\s+)?(?:lesson|walkthrough)?\s*(?:called|named)?\s*(.*?))?"
+    r"[\s.!?]*$", re.IGNORECASE)
+_REPLAY = re.compile(
+    r"^\s*(?:(?:hey\s+)?wisp[,\s]+)?(?:please\s+)?"
+    r"(?:replay|redo|play(?:\s+back)?|run)\s+"
+    r"(?:(?:that|the|my|this)\s+)?(?:saved\s+)?(?:lesson|walkthrough|tutorial)"
+    r"(?:\s+(?:called|named|about|for|on))?\s*(.*?)[\s.!?]*$",
+    re.IGNORECASE)
+
+
+def lesson_intent(text: str):
+    """("save", title) for "save that as a lesson called X", ("replay",
+    name) for "replay that lesson", else None. A bare "save that" only
+    counts when it names a lesson or walkthrough."""
+    t = text or ""
+    m = _SAVE.match(t)
+    if m and re.search(r"lesson|walkthrough|tutorial", t, re.IGNORECASE):
+        return "save", (m.group(1) or "").strip()
+    m = _REPLAY.match(t)
+    if m:
+        return "replay", (m.group(1) or "").strip()
+    return None
 
 
 def resume_intent(text: str) -> bool:
@@ -253,6 +284,61 @@ def save_paused(wt, planned, current, path=None) -> None:
         pass
 
 
+def save_last(wt, planned, path=None) -> None:
+    """Remember the walkthrough that just finished so it can be saved as a
+    lesson."""
+    import os
+    path = path or LAST_FILE
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(_dump(wt, planned, None)))
+        os.replace(tmp, path)
+    except OSError:
+        pass
+
+
+def last_finished(path=None) -> dict | None:
+    try:
+        data = json.loads((path or LAST_FILE).read_text())
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) and data.get("steps") else None
+
+
+def steps_from(data: dict) -> list:
+    return [_wt.Step(text=d["text"], point=d.get("point"),
+                     label=d.get("label") or "")
+            for d in data.get("steps", []) if d.get("text")]
+
+
+def save_lesson(title: str, lessons_dir=None, last=None) -> str:
+    """Save the last finished walkthrough as a lesson; the line to speak."""
+    from . import lessons
+    data = last if last is not None else last_finished()
+    if data is None:
+        return ("WALKED (0 steps): there's no finished walkthrough to "
+                "save yet.")
+    name = lessons.save(title, data, root=lessons_dir)
+    if not name:
+        return "WALKED (0 steps): I couldn't save that lesson."
+    shown = (title or data.get("goal") or name).strip()
+    return (f"WALKED ({len(data['steps'])} steps): saved the lesson "
+            f"{shown}. Say replay that lesson to run it again.")
+
+
+def replay_lesson(query: str, cfg: dict, state=None, *, lessons_dir=None,
+                  **kw) -> str:
+    """Re-speak and re-point a saved lesson. No planning and no model
+    call: the saved steps go straight to the runner."""
+    from . import lessons
+    rec = lessons.find(query, root=lessons_dir)
+    if rec is None:
+        return "WALKED (0 steps): I don't have a saved lesson like that."
+    return run(rec.get("goal") or rec["title"], cfg, state,
+               steps=steps_from(rec), **kw)
+
+
 def clear_paused(path=None) -> None:
     try:
         (path or PAUSED_FILE).unlink()
@@ -354,8 +440,10 @@ def run(goal: str, cfg: dict, state=None, *, ask=None,
             save_paused(wt, planned, current[0])
         return f"WALKED ({n} steps): {line}"
 
-    def finish(line):
+    def finish(line, completed=False):
         clear_paused()
+        if completed and keep and wt.done_log:
+            save_last(wt, planned)
         return f"WALKED ({len(wt.done_log)} steps): {line}"
 
     ev = wt.issue_step(now=env.clock())
@@ -382,7 +470,7 @@ def run(goal: str, cfg: dict, state=None, *, ask=None,
         if action == "advanced":
             ev = wt.issue_step(now=env.clock())
             continue
-        return finish("all done.")
+        return finish("all done.", completed=True)
 
 
 def _do_step(wt, ev, env: _Env, ask, ground, monitors):
