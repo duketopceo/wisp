@@ -168,7 +168,8 @@ def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
         token.check()
         if not capture_stage(ctx):
             return 0
-        context_stage(ctx)
+        if not context_stage(ctx):
+            return 0
         if not route_stage(ctx):
             return 0
         execute_stage(ctx)

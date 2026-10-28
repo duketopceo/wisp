@@ -5,7 +5,7 @@ over four stage modules, all writing through the StateBus turn handle:
 
 | Module | Stage | Owns |
 |---|---|---|
-| `wisp/stage_capture.py` | capture | recorder and level sampler, transcription (local, wordink, OpenAI-compatible), trigger screenshot and window map, `capture_stage` and `context_stage` (focus, goal, session, memory, correction) |
+| `wisp/stage_capture.py` | capture | recorder and level sampler, transcription (local, wordink, OpenAI-compatible), trigger screenshot (checked for a black or single-colour frame by `wisp/blank.py`: one window-capture retry, then the window's accessibility text with one spoken sentence, else "I can't see that window." and no model call) and window map, `capture_stage` and `context_stage` (focus, goal, session, memory, correction) |
 | `wisp/stage_route.py` | route | `JEV_QUESTIONS`, `ask_jev`, shadow decider, rescues (`fuzzy_app`, `complex_launch`), clarify prompt, `route_stage` |
 | `wisp/stage_execute.py` | execute | `execute` (risk gate and dispatch to tools, act loop, agents, dictation), `execute_stage` |
 | `wisp/stage_speak.py` | speak | `ask_chat`, answer streaming, TTS, ASK_USER, `log_decision`, `speak_stage` |
