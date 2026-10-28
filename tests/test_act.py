@@ -133,6 +133,48 @@ class Loop(unittest.TestCase):
         self.assertTrue(r.startswith("ACTED ("), r)
         self.assertIn("Settings are open", r)
 
+    def test_unsupported_done_refocus_names_wrong_app(self):
+        steps = [{"tool": "launch", "arg": "foot",
+                  "result": "FOCUSED foot -> foot (already running) "
+                            "\u2014 screen changed; verify"}]
+        why = act._unsupported_done("Open up my stripe tablet", steps)
+        self.assertEqual(
+            why, "launch only refocused foot, which the request did "
+                 "not name")
+
+    def test_unsupported_done_shared_word_is_supported(self):
+        steps = [{"tool": "launch", "arg": "terminal",
+                  "result": "FOCUSED terminal -> foot (already running)"}]
+        self.assertIsNone(act._unsupported_done("open the terminal", steps))
+
+    def test_unsupported_done_app_stem_is_supported(self):
+        steps = [{"tool": "launch", "arg": "spotifast",
+                  "result": "FOCUSED spotifast -> spotifast (already "
+                            "running)"}]
+        self.assertIsNone(act._unsupported_done("bring up spotify", steps))
+
+    def test_unsupported_done_verify_missed(self):
+        steps = [{"tool": "click", "arg": "5,5", "result": "CLICKED",
+                  "verify": {"verdict": "missed"}}]
+        self.assertTrue(act._unsupported_done("click it", steps))
+        steps = [{"tool": "click", "arg": "x",
+                  "result": "CLICKED \u2014 verify FAILED: aimed"}]
+        self.assertTrue(act._unsupported_done("click it", steps))
+
+    def test_unsupported_done_needs_an_effect_step(self):
+        self.assertIsNone(act._unsupported_done("what is this", []))
+        self.assertIsNone(act._unsupported_done(
+            "what is this", [{"tool": "screenshot", "arg": "",
+                              "result": "SHOT x"}]))
+
+    def test_unsupported_done_uses_last_effect_step(self):
+        steps = [{"tool": "launch", "arg": "foot",
+                  "result": "FOCUSED foot -> foot (already running)"},
+                 {"tool": "tab", "arg": "stripe",
+                  "result": "SWITCHED tab 'Stripe'"},
+                 {"tool": "screenshot", "arg": "", "result": "SHOT x"}]
+        self.assertIsNone(act._unsupported_done("open my stripe tab", steps))
+
     def test_narration_nudges_are_bounded(self):
         replies = [_msg(content="Let me take a screenshot.")] * 5
         with mock.patch.object(act, "_post", side_effect=replies) as post:

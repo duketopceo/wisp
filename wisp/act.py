@@ -34,6 +34,8 @@ MAX_ERRORS = 2
 MAX_PARSE_MISSES = 1
 # narrated-next-step replies (no tool call) nudged back into the loop
 MAX_INTENT_NUDGES = 2
+# done claims contradicted by the run's last effect step, nudged back
+MAX_DONE_NUDGES = 1
 MAX_SECONDS = 600          # wall-clock cap for one run; 0 = off
 MAX_USD = 0.0              # per-run paid-model spend cap; 0 = off
 MAX_IMAGES = 3  # cap retained screenshots in the message window
@@ -241,6 +243,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
     errors = 0
     parse_misses = 0
     intent_nudges = 0
+    done_nudges = 0
     max_steps = _limit(cfg, "act_max_steps", MAX_STEPS)
     max_errors = _limit(cfg, "act_max_errors", MAX_ERRORS)
     max_parse_misses = _limit(cfg, "act_max_parse_misses", MAX_PARSE_MISSES)
@@ -388,7 +391,19 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     _state.action_add(state, "question", text[9:].strip(),
                                       status="awaiting")
                     return "ASK_USER " + text[9:].strip()
+                why = _unsupported_done(task, steps)
+                if why and done_nudges < MAX_DONE_NUDGES:
+                    done_nudges += 1
+                    messages.append({"role": "assistant", "content": text})
+                    messages.append({"role": "user", "content": (
+                        f"Not confirmed: {why}. Check the latest "
+                        "screenshot against the request. Continue with a "
+                        "tool call, or reply with what actually "
+                        "happened.")})
+                    continue
                 _goals.close("done")
+                if why:
+                    text = f"I could not confirm that worked \u2014 {why}."
                 out = f"ACTED ({len(steps)} steps): {text or 'done'}"
                 want_traj = True
                 return out
@@ -1111,6 +1126,42 @@ _NEXT_STEP_RE = re.compile(
 _CONTINUE_NUDGE = ("You described a next step but did not call a tool. "
                    "Call the tool now. If the task is already complete, "
                    "reply with one short sentence describing the outcome.")
+
+
+def _words(text: str) -> set:
+    return set(re.findall(r"[a-z0-9]+", (text or "").lower()))
+
+
+def _same_word(a: str, b: str) -> bool:
+    # app binaries drift from spoken names (spotify -> spotifast): a
+    # shared 5-letter stem counts as naming the app
+    return a == b or (len(a) >= 5 and len(b) >= 5 and a[:5] == b[:5])
+
+
+def _unsupported_done(task: str, steps: list) -> "str | None":
+    """One-line reason when a tool-less 'done' is contradicted by the
+    run's last effect step, else None. Pure answers (no effect step)
+    and supported claims return None."""
+    last = next((s for s in reversed(steps)
+                 if s.get("tool") in _SCREEN_CHANGING), None)
+    if last is None:
+        return None
+    result = str(last.get("result") or "")
+    # a recorded (turn_dir) step's verdict is re-checked after the loop
+    # by _terminal_verify, which may flip a mid-run "missed" to
+    # "landed" — only an unrecorded step's verdict is final here
+    missed = (not last.get("turn_dir")
+              and (last.get("verify") or {}).get("verdict") == "missed")
+    if missed or "verify FAILED" in result:
+        return f"the last step ({last['tool']}) failed verification"
+    if last["tool"] in ("launch", "focus") and result.startswith("FOCUSED"):
+        cls = result.partition("->")[2].split(" (")[0]
+        named = _words(last.get("arg")) | _words(cls)
+        if not any(_same_word(a, b) for a in _words(task) for b in named):
+            return (f"{last['tool']} only refocused "
+                    f"{(last.get('arg') or cls).strip()}, which the "
+                    "request did not name")
+    return None
 
 
 def _announces_next_step(text: str) -> bool:
