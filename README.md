@@ -251,6 +251,12 @@ what it asked and records a pass; a step you skip is offered again next run.
   text file on your machine and sends only the pages that matter to the
   answer. Keys, config, keyrings, browser profiles and system folders
   are never read, and `[docs] enabled = "false"` turns it off.
+- Asking about "this" or "that" can use the text you selected, the
+  image you copied or the file path you highlighted. The selection is
+  read when you press the key, the clipboard only when the question says
+  "this", "that", "copied" or "selected", nothing between presses. It
+  goes to the answer only, as quoted data, and
+  `[selection] enabled = "false"` turns it off.
 - The cua audit log keeps the length and a salted hash of typed text,
   not the text.
 
