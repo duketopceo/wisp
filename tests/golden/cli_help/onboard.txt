@@ -1,6 +1,6 @@
 usage: wispd onboard [-h] [--status] [--step ID] [--yes] [--undo ID]
-                     [--finish] [--reset] [--tour [STEP]] [--interactive]
-                     [--json] [--quiet] [--no-color]
+                     [--finish] [--reset] [--tour [STEP]] [--starter]
+                     [--interactive] [--json] [--quiet] [--no-color]
 
 Walk through first-run setup (every step skippable)
 
@@ -16,6 +16,8 @@ options:
   --tour [STEP]  the first-minute tour: five spoken steps (hello, draw,
                  circle, ask, dictation); name one step to replay just that
                  one
+  --starter      four spoken questions, then three starters to accept or skip
+                 (say skip any time to stop)
   --interactive  walk the steps even without a terminal
 
 global options:

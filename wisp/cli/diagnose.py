@@ -456,6 +456,9 @@ def _onboard_args(p):
                    help="the first-minute tour: five spoken steps "
                         "(hello, draw, circle, ask, dictation); name one "
                         "step to replay just that one")
+    p.add_argument("--starter", action="store_true",
+                   help="four spoken questions, then three starters to "
+                        "accept or skip (say skip any time to stop)")
     p.add_argument("--interactive", action="store_true",
                    help="walk the steps even without a terminal")
 
@@ -482,6 +485,52 @@ def _onboard_tour(ctx, a, cfg, progress):
     n = sum(1 for r in res if r["status"] in ("passed", "already"))
     return ctx.emit({"steps": res, "passed": n, "total": len(res)},
                     f"tour: {n} of {len(res)} steps passed")
+
+
+def _onboard_starter(ctx, a, cfg, progress):
+    """B32: the spoken starter pack. Answers are the user's next voice
+    turns, read back from the decision log; nothing is injected."""
+    import time as _t
+    from .. import agent_home, memory, routines, speech, starter_pack
+    quiet = ctx.json or ctx.flags.quiet
+
+    def say(line):
+        if not quiet:
+            print(line)
+        proc = speech.speak(line, cfg)
+        if proc is not None:
+            proc.wait()
+
+    def ask(question, wait_s=90.0):
+        since = starter_pack.clock_iso()
+        say(question)
+        end = _t.monotonic() + wait_s
+        while _t.monotonic() < end:
+            _t.sleep(1.0)
+            got = starter_pack.transcripts_since(since)
+            if got:
+                return got[0]
+        return None
+
+    def confirm(prompt):
+        reply = ask(prompt + " Say yes or no.")
+        return bool(reply) and reply.strip().lower().strip(".! ") in (
+            "yes", "yeah", "yep", "sure", "ok", "okay", "keep it going")
+
+    def write_profile(lines):
+        for line in lines:
+            memory.edit("user", "add", new=line)
+
+    res = starter_pack.run(
+        ask, confirm, say, write_profile=write_profile,
+        make_helper=lambda h: agent_home.create(h["name"], h["role"]),
+        make_routine=lambda r: routines.teach_routine(
+            r, cfg, confirm=lambda *_a, **_k: True),
+        note=lambda t: memory.edit("user", "add", new=t),
+        mark=progress.starter_mark,
+        log=(lambda s: None) if quiet else print)
+    return ctx.emit(res, f"starter pack: {res['status']}, "
+                         f"{len(res['accepted'])} accepted")
 
 
 def _onboard_rows(ctx, st):
@@ -525,6 +574,8 @@ def onboard(ctx, a):
                                             else "nothing to undo"))
     if a.tour:
         return _onboard_tour(ctx, a, cfg, progress)
+    if a.starter:
+        return _onboard_starter(ctx, a, cfg, progress)
     if a.finish:
         progress.finish()
         return ctx.emit({"finished": True}, "setup marked finished")
