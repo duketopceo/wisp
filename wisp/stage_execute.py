@@ -78,7 +78,9 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
     if route == "routine":
         return _run_teach()
     if route == "agent":
-        from . import routines
+        from . import agent_home, routines
+        if agent_home.decode(detail) is not None:
+            return agents.run_named(detail, cfg)
         if routines.parse_teach_intent(detail) is not None:
             return _run_teach()
         return agents.spawn(detail or app or "unnamed task", cfg)

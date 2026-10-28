@@ -472,7 +472,12 @@ def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
           spawned_by: str = "user",
           depth: int = 0,
           routine_id: str | None = None,
-          name_hint: str | None = None) -> str:
+          name_hint: str | None = None,
+          agent: str | None = None) -> str:
+    """Spawn one run. `agent` names a persistent helper (B10): the run
+    starts in that helper's folder, its outputs go to the folder's
+    output/, and its identity, notes and waiting messages ride in the
+    prompt."""
     task = task.strip()
     if not task:
         return "SKIP (empty agent task)"
@@ -482,7 +487,7 @@ def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
     if len(_running(tasks_file)) >= cap:
         return (f"SKIP (agent limit: {cap} already running — "
                 "cancel one or raise [agent] max_concurrent)")
-    name = _slug(name_hint or task)
+    name = _slug(name_hint or agent or task)
     base, i = name, 2
     existing = {r.get("name") for r in _records(tasks_file)}
     while name in existing:
@@ -491,13 +496,21 @@ def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
     log_dir.mkdir(parents=True, exist_ok=True)
     log = log_dir / f"{name}.log"
     out_dir = log_dir / name / "out"
+    prompt = task
+    if agent:
+        from . import agent_home
+        agent_home.create(agent)
+        home = agent_home.home(agent)
+        out_dir = home / "output"
+        cwd = cwd or str(home)
+        prompt = agent_home.prompt(agent, task)
     out_dir.mkdir(parents=True, exist_ok=True)
     exit_f = _exit_file(log_dir, name)
     exit_f.unlink(missing_ok=True)
     # [agents] model — distinct from [agent] model (that's the Jev
     # router); empty unless the user sets an agent-model override
     model = cfg.get("agents", {}).get("model", "")
-    cmd = _runtime_cmd(cfg, task, model)
+    cmd = _runtime_cmd(cfg, prompt, model)
     if cmd is None:
         rt = cfg.get("brain", {}).get("agent_runtime", "auto")
         if rt == "auto":
@@ -541,8 +554,52 @@ def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
     }
     if routine_id:
         rec["routine_id"] = routine_id
+    if agent:
+        rec["agent"] = _slug(agent)
     _log_line(rec, tasks_file)
     return f"SPAWNED {name} (pid {proc.pid})"
+
+
+def run_named(detail: str, cfg: dict, tasks_file=config.TASKS_FILE,
+              **spawn_kw) -> str:
+    """Handle a named-agent route (`agent_home.encode` payload): create a
+    helper, tell one something, or say what is running. The result starts
+    with ACTED so it is spoken."""
+    from . import agent_home
+    d = agent_home.decode(detail) or {}
+    kind = d.get("kind")
+    if kind == "create":
+        name = d.get("name", "")
+        made = agent_home.create(name, d.get("role", ""))
+        shown = name
+        if d.get("task"):
+            out = spawn(d["task"], cfg, tasks_file, agent=name, **spawn_kw)
+            if not out.startswith("SPAWNED"):
+                return out
+            return f"ACTED (0 steps): {shown} is on it."
+        return (f"ACTED (0 steps): {shown} is ready. Say tell {shown} what "
+                "to do." if made else
+                f"ACTED (0 steps): {shown} already exists. Say tell {shown} "
+                "what to do.")
+    if kind == "tell":
+        name, msg = d.get("name", ""), d.get("message", "")
+        slug = _slug(name)
+        busy = [r for r in _running(tasks_file) if r.get("agent") == slug]
+        if busy:
+            agent_home.leave_message(name, msg)
+            return (f"ACTED (0 steps): {name} is still working. I left it "
+                    "your message for its next run.")
+        out = spawn(msg, cfg, tasks_file, agent=name, **spawn_kw)
+        return (f"ACTED (0 steps): {name} is on it."
+                if out.startswith("SPAWNED") else out)
+    if kind == "status":
+        running = _running(tasks_file)
+        if not running:
+            return "ACTED (0 steps): nothing is running."
+        parts = [f"{r.get('agent') or r.get('name')}: "
+                 f"{str(r.get('task') or '')[:60]}" for r in running]
+        return f"ACTED (0 steps): {len(running)} running. " + "; ".join(parts)
+    return "SKIP (unknown agent request)"
 
 
 # Daemon-spawned children — held so exited ones can be reaped (Popen

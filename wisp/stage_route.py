@@ -391,7 +391,10 @@ def fixed_route(text: str, router: str):
         return "clarify", None
     if routines.parse_teach_intent(text) is not None:
         return "learn", text
-    from . import walkthrough_run
+    from . import agent_home, walkthrough_run
+    named = agent_home.route_for(text)
+    if named:
+        return named
     lesson = walkthrough_run.lesson_intent(text)
     if lesson:
         pre = walkthrough_run.SAVE_PREFIX if lesson[0] == "save" \
