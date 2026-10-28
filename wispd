@@ -913,7 +913,7 @@ def install_files(dry_run: bool = False, cfg: dict | None = None,
         shutil.copy2(src / name, target)
         target.chmod(0o755)
         print(f"installed {target}")
-    for extra in ("scripts/build_harness.py",):
+    for extra in ("scripts/build_harness.py", "CHANGELOG.md"):
         f = src / extra
         if f.exists():
             shutil.copy2(f, opt / f.name)
