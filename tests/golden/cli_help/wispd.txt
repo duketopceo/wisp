@@ -26,6 +26,7 @@ Diagnose:
 Pointer and notifications:
   cua          The cua-driver pointer backend: status, test, log, kill, enable
   notify       Desktop notifications
+  scribble     Strokes drawn on the screen while asking (overlay)
 
 Agents and memory:
   task         Background agents: list, status, cancel, run

@@ -263,6 +263,7 @@ verbs and examples. Add `--json` for machine-readable output.
 | `wispd watch` | follow the push stream as NDJSON |
 | `wispd tui` | terminal dashboard |
 | `wispd note` | show or follow the live paper (`note.md`) |
+| `wispd scribble set\|clear` | the strokes drawn on screen while holding the talk key (the overlay calls this; they reach the next screenshot only) |
 | `wispd doctor` | check every dependency |
 | `wispd health` | local model endpoint health |
 | `wispd latency` | p50 and p90 per budget path |

@@ -424,18 +424,25 @@ def context_stage(ctx) -> None:
     # it. Clicky does the same — the model sees the app instead of
     # asking which one.
     ctx.shot_b64 = None
+    from . import scribble as _scribble
+    marks = _scribble.take()          # consumed by this turn, used or not
     if cfg.get("agent", {}).get("screenshots", "true") == "true":
         # pure Q&A doesn't need the screen — dropping the image saves
         # ~700KB of payload + the transcode on "what time is it" turns.
         # Conservative: any referent token keeps the shot.
-        qa_skip = _qa_needs_no_screen(text)
+        qa_skip = _qa_needs_no_screen(text) and marks is None
         if not qa_skip:
             with sp.timed("screenshot"):
                 ctx.shot_b64 = pl.turn_screenshot(cfg, speculative)
+            ctx.shot_b64, ctx.scribble_hint = _scribble.apply(
+                ctx.shot_b64, marks)
+            if ctx.scribble_hint:
+                context += "\n" + ctx.scribble_hint
         _trace.emit(turn, "screen_capture", "act",
                     {"captured": bool(ctx.shot_b64),
                      "img_kb": len(ctx.shot_b64 or "") * 3 // 4096,
                      "qa_skip": qa_skip,
+                     "scribbled": bool(ctx.scribble_hint),
                      "speculative": bool(speculative)})
     wins = speculative.take("windows") if speculative else None
     if wins:

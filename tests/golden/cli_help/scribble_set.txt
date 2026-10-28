@@ -1,0 +1,18 @@
+usage: wispd scribble set [-h] [--json] [--quiet] [--no-color] data
+
+Store the strokes the next turn draws into its screenshot
+
+positional arguments:
+  data         JSON {"strokes": [[[x, y], ...]], "w": screen width, "h":
+               screen height}
+
+options:
+  -h, --help   show this help message and exit
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd scribble set '{"strokes":[[[10,10],[80,40]]],"w":1920,"h":1080}'

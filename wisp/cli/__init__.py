@@ -18,13 +18,13 @@ def load_groups():
         return
     _LOADED = True
     from . import (agents, core, cua, diagnose,  # noqa: F401
-                   dictate, learning, note, settings)
+                   dictate, learning, note, scribble, settings)
     registry.SECTIONS[:] = [
         ("Daemon", ["daemon", "status", "stop", "interrupt", "trigger",
                     "watch", "choice", "tui", "note"]),
         ("Diagnose", ["doctor", "health", "latency", "spend", "binds",
                       "onboard", "trace", "captures"]),
-        ("Pointer and notifications", ["cua", "notify"]),
+        ("Pointer and notifications", ["cua", "notify", "scribble"]),
         ("Agents and memory", ["task", "memory", "dictate", "suggest",
                                "label", "context"]),
         ("Learning", ["learn", "eval", "skills"]),
@@ -104,6 +104,7 @@ ALIASES = {
     "task_cancel": _to("task", "cancel"),
     "agent": _to("task", "run"),
     "agents": _agents,
+    "scribble": _grp("scribble", "set"),
     "memory": _grp("memory", "edit"),
     "memory-write": _to("memory", "write"),
     "suggestions": _to("suggest", "list"),

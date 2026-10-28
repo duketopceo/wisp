@@ -10,6 +10,7 @@ import "../lib/metrics.js" as M
 import "../lib/cursor.js" as Cursor
 import "../lib/companion.js" as Companion
 import "../lib/card.js" as CardLib
+import "../lib/scribble.js" as Scribble
 
 Item {
   id: root
@@ -31,6 +32,8 @@ Item {
   signal confirmChosen(string pick, string promptId)
   signal moreClicked()
   signal verdict(string verdict)
+  // strokes drawn while listening, for the daemon (see ScribbleLayer)
+  signal scribbled(var payload)
 
   // a confirm card replaces the pill (it carries the question and the
   // chips); on a v2 daemon the card is the stream's awaiting confirm
@@ -49,7 +52,10 @@ Item {
   readonly property var cardSpot: CardLib.place(width, height, CardLib.cardSize(cardImage),
     CardLib.avoidRects(beacons, draw.shapes, service ? service.cuaTarget : null,
       bubbleShown ? { x: bubbleHost.x, y: bubbleHost.y, w: bubbleHost.width, h: bubbleHost.height } : null))
-  readonly property bool shown: pillShown || bubbleShown || buddyShown || beacons.length > 0 || draw.count > 0 || cardShown
+  // the talk key is held: the layer takes the pointer for a scribble
+  readonly property bool scribbleActive: service !== null && Scribble.active(service.status)
+  property alias scribbleItem: scribble
+  readonly property bool shown: scribbleActive || pillShown || bubbleShown || buddyShown || beacons.length > 0 || draw.count > 0 || cardShown
   property alias pill: pill
   property alias bubbleHost: bubbleHost
 
@@ -117,6 +123,16 @@ Item {
         font.pixelSize: M.font.label
       }
     }
+  }
+
+  // under everything else, so the pill and the bubble keep their own input
+  ScribbleLayer {
+    id: scribble
+    objectName: "scribbleLayer"
+    anchors.fill: parent
+    service: root.service
+    active: root.scribbleActive
+    onScribbled: function (payload) { root.scribbled(payload); }
   }
 
   // drawings (ring, arrow, highlight) sit under the beacons and the buddy;
