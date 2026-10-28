@@ -53,10 +53,11 @@ omarchy plugin add {mirror}.git --enable
 ```
 
 The plugin shows the daemon's state. The daemon itself (`wispd`) comes from
-the release page; nothing is installed or edited until you say yes:
+the source repository (the `--from-plugin` flag is newer than the last
+packaged release); nothing is installed or edited until you say yes:
 
 ```sh
-tar xzf wisp-linux-x86_64.tar.gz && cd wisp-linux-x86_64
+git clone {repo} && cd wisp
 python3 wispd install --from-plugin --dry-run   # every file, and the bind line
 python3 wispd install --from-plugin             # prints the same, then asks
 ```
