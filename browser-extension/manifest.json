@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Wisp browser lane",
+  "version": "0.1.0",
+  "description": "Lets Wisp work in a tab group beside yours, in plain sight, and stops the moment you press Stop. Off until you pair it with a code from Wisp.",
+  "minimum_chrome_version": "116",
+  "permissions": ["tabs", "tabGroups", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "background.js" },
+  "action": {
+    "default_title": "Wisp browser lane",
+    "default_popup": "popup.html"
+  }
+}

@@ -137,6 +137,42 @@ def audit_event(tool: str, app: str, cfg: dict | None = None, *,
         pass
 
 
+def killed(cfg: dict | None = None, path=None) -> bool:
+    """True while the kill switch is armed (config or the kill file)."""
+    p = pathlib.Path(path) if path else kill_default_path()
+    return settings(cfg)["kill"] or p.exists()
+
+
+# -- fields wisp never fills (B14) -----------------------------------------
+# A browser field holding a password, a one-time code or a card number is
+# read (its label shows) but never filled, whatever the model asks for.
+# browser-extension/lib.js carries the same rule for the page side; a test
+# runs both over one fixture list so they cannot drift.
+SENSITIVE_TYPES = ("password",)
+SENSITIVE_AUTOCOMPLETE = re.compile(
+    r"(?:^|\s)(?:one-time-code|current-password|new-password|cc-[a-z-]+)"
+    r"(?:\s|$)", re.I)
+SENSITIVE_HINT = re.compile(
+    r"(?:pass(?:word|code|phrase)|\bpin\b|one[\s_-]?time|\botp\b|\b2fa\b|"
+    r"\bmfa\b|verification[\s_-]?code|security[\s_-]?code|auth(?:entication)?"
+    r"[\s_-]?code|\bcvv\b|\bcvc\b|card[\s_-]?(?:number|no)|credit[\s_-]?card|"
+    r"\bcc[\s_-]?num)", re.I)
+
+
+def sensitive_field(f: dict) -> bool:
+    """True for a form field that must never be filled: type=password,
+    an autocomplete token for a password, one-time code or card, or a
+    name, id, label or placeholder that says so."""
+    f = f or {}
+    if str(f.get("type", "")).strip().lower() in SENSITIVE_TYPES:
+        return True
+    if SENSITIVE_AUTOCOMPLETE.search(str(f.get("autocomplete", ""))):
+        return True
+    hint = " ".join(str(f.get(k, "")) for k in
+                    ("name", "id", "label", "placeholder", "ariaLabel"))
+    return bool(SENSITIVE_HINT.search(hint))
+
+
 def kill_default_path() -> pathlib.Path:
     return pathlib.Path(config.RUN_DIR) / "cua.kill"
 
