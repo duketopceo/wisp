@@ -53,11 +53,14 @@ omarchy plugin add {mirror}.git --enable
 ```
 
 The plugin shows the daemon's state. The daemon itself (`wispd`) comes from
-the source repository (the `--from-plugin` flag is newer than the last
-packaged release); nothing is installed or edited until you say yes:
+the source repository, pinned to the exact commit this plugin was built
+from (the `--from-plugin` flag is newer than the last packaged release;
+check the commit before you run anything); nothing is installed or edited until you say yes:
 
 ```sh
-git clone {repo} && cd wisp
+git clone {repo}
+git -C wisp checkout --detach {commit}
+cd wisp
 python3 wispd install --from-plugin --dry-run   # every file, and the bind line
 python3 wispd install --from-plugin             # prints the same, then asks
 ```
@@ -151,8 +154,25 @@ def validate(folder) -> list:
     return bad
 
 
-def build(out, version: str, root: pathlib.Path = ROOT) -> dict:
-    """Write the mirror tree into `out` (replaced when it exists)."""
+def head_commit(root: pathlib.Path = ROOT) -> str:
+    """The full SHA of the checked-out source, or ""."""
+    try:
+        r = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
+                           capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def build(out, version: str, root: pathlib.Path = ROOT,
+          commit: str | None = None) -> dict:
+    """Write the mirror tree into `out` (replaced when it exists). The
+    README pins the daemon install to `commit` (a full 40-hex SHA of the
+    source repo; default the checked-out HEAD)."""
+    commit = (commit or head_commit(root)).lower()
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise ValueError("a full 40-character source commit SHA is "
+                         "required to pin the install")
     out = pathlib.Path(out)
     plugin = root / "shell-plugin"
     ver = version.lstrip("v")
@@ -166,7 +186,8 @@ def build(out, version: str, root: pathlib.Path = ROOT) -> dict:
     (out / "manifest.json").write_text(json.dumps(m, indent=2) + "\n")
     shutil.copy2(root / "LICENSE", out / "LICENSE")
     (out / "README.md").write_text(README.format(
-        repo=REPO_URL, mirror=MIRROR_URL, plugin_id=m["id"], version=ver))
+        repo=REPO_URL, mirror=MIRROR_URL, plugin_id=m["id"], version=ver,
+        commit=commit))
     prev = root / "assets" / "readme" / "companion.png"
     if prev.is_file() and prev.stat().st_size <= MAX_PREVIEW_KB * 1024:
         shutil.copy2(prev, out / "preview.png")
@@ -210,10 +231,13 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--out", required=True, help="folder to write")
     ap.add_argument("--version", required=True, help="release tag, v1.2.3")
+    ap.add_argument("--commit", default=None, metavar="SHA",
+                    help="source commit the install is pinned to (full "
+                    "40-char SHA; default: this checkout's HEAD)")
     ap.add_argument("--lint", action="store_true", help="also run qmllint")
     a = ap.parse_args(argv)
     try:
-        res = build(a.out, a.version)
+        res = build(a.out, a.version, commit=a.commit)
     except (ValueError, OSError) as e:
         print(f"plugin_mirror: {e}", file=sys.stderr)
         return 2

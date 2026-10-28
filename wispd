@@ -9,6 +9,7 @@ daemon is up. The command line itself (`wispd <group> <verb>`, --help,
 this script keeps the daemon, installer and IPC handler it calls into.
 """
 import datetime
+import os
 import pathlib
 import shutil
 import signal
@@ -713,6 +714,14 @@ def _start_keys(st, cfg: dict):
 
 def run_daemon(cfg: dict) -> int:
     global _DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL, _HEALTH
+    try:
+        # transcripts and traces are private to this user: new files are
+        # 0600 and older versions' world-readable ones are tightened
+        from wisp import private
+        os.umask(0o077)
+        private.harden()
+    except Exception as e:
+        dlog(f"private permissions failed: {e}")
     from wisp import skills, theme, memory as _memory
     skills.register_tools()  # skill_<name> entries from skills/*/SKILL.md
     skills.seed()          # bundled dayflow-bridge/self-checkup skills

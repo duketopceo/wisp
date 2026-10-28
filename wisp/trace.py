@@ -101,9 +101,10 @@ def emit(turn: str, step: str, kind: str,
           "step": step, "kind": kind, "ms": ms,
           "data": _clip(data or {})}
     try:
-        TRACE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        from . import private
+        TRACE_FILE.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         _rotate(TRACE_FILE)
-        with open(TRACE_FILE, "a") as f:
+        with private.open_append(TRACE_FILE) as f:
             f.write(json.dumps(ev, separators=(",", ":")) + "\n")
     except OSError:
         pass

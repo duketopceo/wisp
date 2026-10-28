@@ -20,6 +20,8 @@ RestartSec=2
 RestartSteps=5
 RestartMaxDelaySec=60
 Slice=session.slice
+# transcripts, traces and replies are for this user alone
+UMask=0077
 
 [Install]
 WantedBy=default.target

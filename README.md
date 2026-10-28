@@ -257,6 +257,10 @@ what it asked and records a pass; a step you skip is offered again next run.
   "this", "that", "copied" or "selected", nothing between presses. It
   goes to the answer only, as quoted data, and
   `[selection] enabled = "false"` turns it off.
+- Transcripts, replies and traces stay in `~/.local/share/wisp`, a 0700
+  folder of 0600 files (the daemon runs with umask 077 and starts by
+  tightening anything an older version wrote); settings and keys in
+  `~/.config/wisp` are private the same way.
 - The cua audit log keeps the length and a salted hash of typed text,
   not the text.
 

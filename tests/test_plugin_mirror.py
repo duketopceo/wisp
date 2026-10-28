@@ -76,6 +76,17 @@ class Mirror(unittest.TestCase):
         self.assertIn("--from-plugin", text)
         self.assertIn("AGPL-3.0-only", text)
 
+    def test_the_daemon_install_is_pinned_to_a_full_commit(self):
+        sha = "0123456789abcdef0123456789abcdef01234567"
+        pm.build(self.tmp / "pin", "v1.2.5", commit=sha)
+        text = (self.tmp / "pin" / "README.md").read_text()
+        self.assertIn(f"git -C wisp checkout --detach {sha}", text)
+        self.assertNotIn("git clone https://github.com/duketopceo/wisp "
+                         "&&", text)
+        for bad in ("", "main", "abc123", "v0.9.0", sha[:39], sha + "0"):
+            with self.assertRaises(ValueError):
+                pm.build(self.tmp / "bad", "v1.2.5", commit=bad or "x")
+
     def test_no_python_or_tests_or_symlinks_ride_along(self):
         names = [f for f in self.res["files"]]
         self.assertFalse([n for n in names if n.endswith((".py", ".pyc"))])
