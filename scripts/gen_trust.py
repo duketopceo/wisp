@@ -127,6 +127,7 @@ MENTIONS = {
     "cal.com": "A name in a list of apps Wisp can connect to, in help "
                "text.",
     "wisp.ai": "An example in help text.",
+    "example.com": "An example address in help text.",
     "amara.org": "A credit line for subtitle text in a bundled sample.",
     "www.w3.org": "An XML namespace in a generated icon. Never "
                   "requested.",
@@ -165,6 +166,10 @@ STORES = (
      "`[report] dsn`. No transcripts, screenshots, typed text, keys or "
      "home paths.",
      "Bounded by `[report] queue_max`. Off while `dsn` is empty."),
+    ("imports.json",
+     "The hash and location of each lesson, skill or helper you "
+     "imported, so importing the same file twice changes nothing.",
+     "Delete the file any time; the imported items stay."),
     ("state.json", "What the panel shows right now. In your runtime "
      "directory (memory-backed).", "Gone at logout or reboot."),
 )
@@ -197,6 +202,9 @@ CHOOSE = (
     ("MCP servers you configure", "Receive the tool calls you "
      "approve."),
     ("`[images] allow`", "Hosts a picture may be fetched from."),
+    ("`wispd import <https address>`", "One GET of the address you typed "
+     "(https only, 256 KB), after which nothing is written until you read "
+     "the full text and say yes."),
 )
 
 

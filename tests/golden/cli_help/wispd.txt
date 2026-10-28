@@ -30,18 +30,19 @@ Pointer and notifications:
   notify       Desktop notifications
   scribble     Strokes drawn on the screen while asking (overlay)
 
-Agents and memory:
+Agents, learning and sharing:
   task         Background agents: list, status, cancel, run
   memory       Edit the MEMORY and USER notes
   dictate      Dictation modes and personal corrections
   suggest      Suggestions mined from your activity
   label        Label the last turn to measure routing accuracy
   context      Print what the daemon sees right now
-
-Learning:
+  routine      Scheduled routines: list, pause, resume
   learn        Failure log
   eval         End-to-end eval: first-time-correct rate per turn kind
   skills       Installed skills
+  export       Write a lesson, skill or helper to one shareable file
+  import       Show a shared lesson, skill or helper and import it only on a yes
 
 Settings:
   config       Show or change config.toml (live, no restart)

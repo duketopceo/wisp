@@ -1,0 +1,24 @@
+usage: wispd export helper [-h] [--routine ID] [--out FILE] [--json] [--quiet]
+                           [--no-color]
+                           name
+
+Write a helper's identity (and chosen routines) to one file
+
+positional arguments:
+  name          the helper's name
+
+options:
+  -h, --help    show this help message and exit
+  --routine ID  include one of its scheduled routines (it arrives paused);
+                repeat for more
+  --out FILE    where to write it (default: NAME.wisp-KIND.json here; never
+                overwrites)
+
+global options:
+  --json        machine-readable output (one JSON object)
+  --quiet, -q   print nothing on success
+  --no-color    plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd export helper Scout
+  wispd export helper Scout --routine weekly-digest
