@@ -1,0 +1,54 @@
+{
+  "description": "Act route: 'open up my stripe tab' makes one tab step (switch to the already-open browser tab); launch is never called. The tab stub returns the SWITCHED line the real tool gives (tests/test_tools.py proves that).",
+  "audio": "act.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "wisp agent open up my stripe tab"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "tool_calls": [
+            {
+              "name": "tab",
+              "arg": "stripe"
+            }
+          ]
+        },
+        {
+          "content": "Switched to your Stripe tab."
+        }
+      ]
+    }
+  },
+  "expect": {
+    "tool_calls": [
+      "tab"
+    ],
+    "launch_calls": [],
+    "steps_contain": [
+      "SWITCHED tab 'Stripe Dashboard' -> dashboard.stripe.com"
+    ],
+    "result_prefix": "ACTED (1 steps)",
+    "brain_calls": 2
+  },
+  "name": "act_switch_tab",
+  "scenario": "switch to an open browser tab",
+  "tab_results": {
+    "stripe": "SWITCHED tab 'Stripe Dashboard' -> dashboard.stripe.com"
+  }
+}

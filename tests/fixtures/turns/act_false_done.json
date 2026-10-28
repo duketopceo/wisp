@@ -1,0 +1,59 @@
+{
+  "description": "Act route, live miss 2026-10-28 (t2e469f9a): 'open up my stripe tablet' makes launch(foot), which only refocuses an already-running terminal. The model claims 'opened'; the done-claim guard nudges once, the model repeats the claim, and the turn ends with an honest 'could not confirm' instead of the false success.",
+  "audio": "act.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "wisp agent open up my stripe tablet"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "tool_calls": [
+            {
+              "name": "launch",
+              "arg": "foot"
+            }
+          ]
+        },
+        {
+          "content": "The Stripe tablet has been opened."
+        },
+        {
+          "content": "The Stripe tablet has been opened."
+        }
+      ]
+    }
+  },
+  "expect": {
+    "tool_calls": [
+      "launch"
+    ],
+    "launch_calls": [
+      "foot"
+    ],
+    "steps_contain": [
+      "FOCUSED foot -> foot (already running)"
+    ],
+    "result_prefix": "ACTED (1 steps): I could not confirm that worked",
+    "brain_calls": 3
+  },
+  "name": "act_false_done",
+  "scenario": "act done claim contradicted by its own step",
+  "launch_results": {
+    "foot": "FOCUSED foot -> foot (already running)"
+  }
+}
