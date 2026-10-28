@@ -48,7 +48,10 @@ class Fixture(unittest.TestCase):
         for p in (mock.patch.object(update, "opt_dir", lambda: self.opt),
                   mock.patch.object(update, "asset_name", lambda: NAME),
                   mock.patch.object(update, "installed_version",
-                                    lambda: "v1.0.0")):
+                                    lambda: "v1.0.0"),
+                  mock.patch.object(update, "installed_record",
+                                    lambda: {"ref": "v1.0.0",
+                                             "commit": "a" * 40})):
             p.start()
             self.addCleanup(p.stop)
 
@@ -217,9 +220,131 @@ class Install(Fixture):
             p.write_bytes(data)
         (self.opt / "wisp" / "gone.py").unlink()
         with mock.patch.object(update, "installed_version",
-                               lambda: "v2.0.0"):
-            res, asked, ran = self.go(True)
+                               lambda: "v2.0.0"), \
+                mock.patch.object(update, "installed_record",
+                                  lambda: {"ref": "v2.0.0"}):
+            res, asked, ran = self.go(True, force=True)
         self.assertEqual((asked, ran), ([], []))
+
+
+class NeverBackwards(Fixture):
+    """A release that is not newer than the install is refused before the
+    download, unless --force; a dry run still previews it with a warning."""
+
+    COMMIT = "336976f" + "0" * 33
+
+    def go(self, record, *, dry_run=False, force=False, compare=None,
+           answer=True):
+        asked, ran, urls = [], [], []
+        seams = self.seams(self.release())
+        base = seams["fetch_json"]
+
+        def fetch_json(url):
+            urls.append(url)
+            if "/compare/" in url:
+                if isinstance(compare, Exception):
+                    raise compare
+                return compare
+            return base(url)
+        seams["fetch_json"] = fetch_json
+        with mock.patch.object(update, "installed_record", lambda: record):
+            res = update.run_update(
+                dry_run=dry_run, force=force, emit_text=lambda t: None,
+                confirm=lambda q: asked.append(q) or answer,
+                install_fn=lambda root: ran.append(root) or 0, **seams)
+        return res, asked, ran, urls
+
+    def refused(self, record, **kw):
+        with self.assertRaises(update.UpdateError) as c:
+            self.go(record, **kw)
+        self.assertEqual(self.downloads, 0)       # stopped before download
+        self.assertIn("Nothing was installed", str(c.exception))
+        self.assertIn("--force", str(c.exception))
+        return str(c.exception)
+
+    def test_an_older_release_than_the_installed_version_is_refused(self):
+        msg = self.refused({"ref": "v3.1.0"})
+        self.assertIn("downgrade", msg)
+
+    def test_the_same_version_is_refused(self):
+        self.assertIn("already what is installed",
+                      self.refused({"ref": "v2.0.0"}))
+
+    def test_a_newer_release_installs(self):
+        res, asked, ran, _ = self.go({"ref": "v1.9.9"})
+        self.assertTrue(res["applied"])
+        self.assertEqual(res["ordering"], "newer")
+        self.assertFalse(res["forced"])
+
+    def test_versions_compare_numerically_and_prereleases_sort_below(self):
+        self.refused({"ref": "v10.0.0"})
+        res, *_ = self.go({"ref": "v2.0.0-rc1"})
+        self.assertTrue(res["applied"])           # rc1 < 2.0.0
+        self.assertLess(update.parse_version("v1.9.0"),
+                        update.parse_version("v1.10.0"))
+        self.assertIsNone(update.parse_version("master"))
+
+    def test_a_master_install_ahead_of_the_tag_is_refused(self):
+        # the install is a commit on master, past v2.0.0: compare says ahead
+        rec = {"ref": "master", "commit": self.COMMIT}
+        self.refused(rec, compare={"status": "ahead"})
+
+    def test_identical_to_the_tag_is_refused(self):
+        self.refused({"ref": "master", "commit": self.COMMIT},
+                     compare={"status": "identical"})
+
+    def test_diverged_is_refused_and_says_so(self):
+        msg = self.refused({"ref": "master", "commit": self.COMMIT},
+                           compare={"status": "diverged"})
+        self.assertIn("diverged", msg)
+
+    def test_a_commit_behind_the_tag_installs(self):
+        res, _, ran, urls = self.go({"ref": "master", "commit": self.COMMIT},
+                                    compare={"status": "behind"})
+        self.assertTrue(res["applied"])
+        self.assertEqual(len(ran), 1)
+        self.assertTrue(any(f"/compare/v2.0.0...{self.COMMIT}" in u
+                            for u in urls))
+
+    def test_when_the_comparison_fails_it_fails_closed(self):
+        rec = {"ref": "master", "commit": self.COMMIT}
+        self.refused(rec, compare=OSError("offline"))
+        self.refused(rec, compare={"message": "Not Found"})
+        self.refused({"ref": "master", "commit": "unknown"})
+        self.refused({})
+
+    def test_force_installs_an_older_release_and_says_it_was_forced(self):
+        res, asked, ran, _ = self.go({"ref": "v3.1.0"}, force=True)
+        self.assertTrue(res["applied"])
+        self.assertTrue(res["forced"])
+        self.assertEqual(res["ordering"], "older")
+        self.assertEqual(len(asked), 1)           # still asks for the yes
+
+    def test_force_without_a_yes_still_installs_nothing(self):
+        res, _, ran, _ = self.go({"ref": "v3.1.0"}, force=True, answer=False)
+        self.assertEqual(ran, [])
+        self.assertFalse(res["applied"])
+
+    def test_a_dry_run_previews_an_older_release_with_a_warning(self):
+        out = []
+        seams = self.seams(self.release())
+        with mock.patch.object(update, "installed_record",
+                               lambda: {"ref": "v3.1.0"}):
+            res = update.run_update(dry_run=True, emit_text=out.append,
+                                    **seams)
+        text = "\n".join(out)
+        self.assertEqual(res["ordering"], "older")
+        self.assertIn("refuses it without --force", text)
+        self.assertFalse(res["applied"])
+
+    def test_the_cli_exposes_force(self):
+        from wisp.cli import registry
+        cmd = registry.commands()["daemon update"]
+        import argparse
+        p = argparse.ArgumentParser()
+        cmd.args(p)
+        self.assertTrue(p.parse_args(["--force"]).force)
+        self.assertFalse(p.parse_args([]).force)
 
 
 class Versions(unittest.TestCase):
