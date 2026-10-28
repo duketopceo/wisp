@@ -105,6 +105,21 @@ coordinate space).
 | verdicts all `unverifiable`/`missed` | cua daemon env missing `DISPLAY`/`WAYLAND_DISPLAY` (injection fails silently → no frames) | `systemctl --user cat cua-driver` — needs `Environment=DISPLAY=:0 WAYLAND_DISPLAY=wayland-1` (+ `CUA_DRIVER_RS_ENABLE_WAYLAND=1`) |
 | `control channel unreachable` skips | app launched without `--control <port>` or `[control.<app>]` port mismatch | channel is opt-in; absent → ladder falls to pixel/judge, grounding to a11y/uitars |
 
+## Reporting a bug
+
+`wispd bugreport` writes one markdown file: version, deployed commit, endpoint
+health, the last typed errors (`errors.jsonl`: a code and an exception type,
+never a message), trace event counts by kind (no content), the config with every
+value masked, and an empty "what happened" section. It holds no transcripts,
+replies, window titles, file names, typed text or keys, and the whole text goes
+through the scrubber error reports use. `--dry-run` prints the path, size and
+sections and writes nothing; `--errors N` sets how many errors to include. The
+file is 0600 and nothing is sent: read it, then open a GitHub issue yourself.
+
+`wispd whatsnew` shows what changed in the installed version (the first three
+lines under it in `CHANGELOG.md`); the Panel shows the same once per version
+after an update, never on first install.
+
 ## Verify after changes
 
 ```
