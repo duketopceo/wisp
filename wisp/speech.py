@@ -97,7 +97,12 @@ _SPEAKERS: list = []
 # a sentence ends at . ! or ? (plus closing quotes/brackets) followed by
 # whitespace — "3.5" and a trailing "three." with nothing after it yet
 # are not complete
-_SENTENCE = re.compile(r"(.+?[.!?][\"')\]]*)\s+", re.S)
+_SENTENCE = re.compile(r"(.+?[.!?\u2026][\"')\]]*)\s+", re.S)
+# The first thing said can end at a clause break once it is long enough to
+# be worth a TTS start, so a long opening sentence need not finish first.
+FIRST_CLAUSE_MIN = 28
+_CLAUSE = re.compile(
+    r"(.{%d,}?[,;:\u2014\u2013][\"')\]]*)\s+" % FIRST_CLAUSE_MIN, re.S)
 
 
 class SentenceSpeaker:
@@ -129,6 +134,8 @@ class SentenceSpeaker:
         self._pending: list = []         # marks past every queued sentence
         self._seen = 0                   # marks already ingested
         self.enabled = cfg.get("voice", {}).get("enabled", "false") == "true"
+        self._early_clause = cfg.get("voice", {}).get(
+            "early_clause", "true") != "false"
         self.started = False
         self.spoken: list = []
         self._consumed = 0          # chars of the cleaned text queued
@@ -151,6 +158,8 @@ class SentenceSpeaker:
         self._ingest(marks)
         while True:
             m = _SENTENCE.match(text, self._consumed)
+            if not m and self._early_clause and not self._items:
+                m = _CLAUSE.match(text, self._consumed)
             if not m:
                 return
             self._consumed = m.end()
