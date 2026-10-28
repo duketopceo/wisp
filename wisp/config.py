@@ -204,6 +204,15 @@ shots_keep_days = "30"
 # to the answer. Never from protected folders; false turns it off.
 enabled = "true"
 
+[selection]
+# Selected or copied text, a copied image, or a file path you pointed at
+# (wisp/selection.py). The primary selection is read once at key press;
+# the clipboard only when the question says "this", "that", "copied" or
+# "selected". Nothing is read between presses. It reaches the answer only,
+# as quoted data, never the router or the act loop.
+enabled = "true"
+clipboard = "true"
+
 [images]
 # Image cards (wisp/tools/imagefetch.py): an answer may show one picture.
 # Only https hosts in `allow` (a comma list; each entry also matches its
@@ -513,6 +522,7 @@ def _default_cfg_dict() -> dict:
         "packs": {"keep": "200", "keep_days": "30",
                   "shots_keep": "100", "shots_keep_days": "30"},
         "docs": {"enabled": "true"},
+        "selection": {"enabled": "true", "clipboard": "true"},
         "images": {"allow": "", "max_kb": "4096", "timeout_s": "8"},
         "verify": {"judge_timeout_s": "20", "pixel_landed_min": "0.02",
                    "pixel_missed_max": "0.001", "pixel_eps": "16",

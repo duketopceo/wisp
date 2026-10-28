@@ -41,6 +41,8 @@ table to list every fixture.
 | `lang_pt_br` | multilingual | Brazilian Portuguese pinned in [stt] language (B23). |
 | `lang_de` | multilingual | German heard by auto detection (B23). |
 | `lang_es` | multilingual | Spanish heard by auto detection: transcript kept, reply rule in the answer prompt, Spanish voice (B23). |
+| `ask_selection` | answer with the selection | Answer route with a press-time selection: it reaches the brain as a quoted data block (B22). |
+| `ask_selection_injected` | selection is data | A selection that tries to give orders is delivered as data and routing is unchanged (B22). |
 | `brain_down` | brain down | Answer brain returns 500 and no fallback is configured: the turn ends in error with error_code brain_down (U7). No canned answer. |
 | `brain_fallback` | brain fallback | Primary answer brain returns 500; [brain] fallback names a second fake brain which answers. Trace records fallback_from (U7). |
 | `budget_blocked` | budget blocked | W14: `[budget] daily_usd = 0` with `gate_primary = true` and a paid primary brain. The cap gates the primary too: no request is made and the turn ends in error with error_code budget_exceeded. |

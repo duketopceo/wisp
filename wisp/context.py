@@ -156,7 +156,8 @@ class Speculative:
                 self._res[name] = (val, self._clock())
         self._done[name].set()
 
-    def take(self, name: str, wait: float = 0.0, consume: bool = True):
+    def take(self, name: str, wait: float = 0.0, consume: bool = True,
+             ttl: float | None = None):
         """The gathered value, or None (missing, failed, stale, cancelled
         or still running past `wait` seconds)."""
         ev = self._done.get(name)
@@ -171,7 +172,7 @@ class Speculative:
             if got is None:
                 return None
             val, at = got
-            if self._clock() - at > self._ttl:
+            if self._clock() - at > (self._ttl if ttl is None else ttl):
                 del self._res[name]
                 return None
             if consume:
