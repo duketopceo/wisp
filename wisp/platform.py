@@ -119,6 +119,39 @@ def screenshot_cmd(out: Path, output: str | None = None) -> list | None:
     return None
 
 
+def window_screenshot_cmd(out: Path, geometry: tuple | None) -> list | None:
+    """Capture only the focused window's rectangle (x, y, w, h), the
+    retry for a blank full-screen frame. grim and maim can crop; the
+    other tools cannot, so there is no window retry for them."""
+    if not geometry or len(geometry) != 4:
+        return None
+    x, y, w, h = (int(v) for v in geometry)
+    if w < 8 or h < 8:
+        return None
+    if _which("grim") and desktop() in ("hyprland", "gnome", "kde", ""):
+        return ["grim", "-g", f"{x},{y} {w}x{h}", str(out)]
+    if _which("maim"):
+        return ["maim", "-g", f"{w}x{h}+{x}+{y}", str(out)]
+    if _which("grim"):
+        return ["grim", "-g", f"{x},{y} {w}x{h}", str(out)]
+    return None
+
+
+def active_geometry() -> tuple | None:
+    """Focused window rectangle (x, y, w, h) in layout pixels, or None."""
+    try:
+        w = hypr.query("activewindow")
+    except hypr.HyprError:
+        return None
+    if not isinstance(w, dict):
+        return None
+    at, size = w.get("at"), w.get("size")
+    try:
+        return (int(at[0]), int(at[1]), int(size[0]), int(size[1]))
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
 def type_text_cmd(text: str) -> list | None:
     order = {"hyprland": ["wtype", "ydotool"],
              "x11": ["xdotool"],
