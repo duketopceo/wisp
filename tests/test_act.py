@@ -153,6 +153,23 @@ class Loop(unittest.TestCase):
                             "running)"}]
         self.assertIsNone(act._unsupported_done("bring up spotify", steps))
 
+    def test_unsupported_done_refocus_of_the_window_in_front(self):
+        steps = [{"tool": "launch", "arg": "foot",
+                  "result": "FOCUSED foot -> foot (already running)"}]
+        self.assertTrue(act._unsupported_done(
+            "Open up my stripe tablet", steps, start_focus="foot"))
+
+    def test_unsupported_done_focusing_another_app_is_a_change(self):
+        # 'play music' -> spotify, 'open my email' -> thunderbird: the
+        # request names a role, not the app, but the screen did change
+        for task, app in (("play some music", "spotify"),
+                          ("open my email", "thunderbird")):
+            steps = [{"tool": "launch", "arg": app,
+                      "result": f"FOCUSED {app} -> {app} (already "
+                                "running)"}]
+            self.assertIsNone(act._unsupported_done(
+                task, steps, start_focus="foot"), task)
+
     def test_unsupported_done_verify_missed(self):
         steps = [{"tool": "click", "arg": "5,5", "result": "CLICKED",
                   "verify": {"verdict": "missed"}}]

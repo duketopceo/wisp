@@ -244,6 +244,10 @@ def run_act_loop(task: str, cfg: dict, state=None,
     parse_misses = 0
     intent_nudges = 0
     done_nudges = 0
+    # the window focused at trigger time (stage_capture records it):
+    # refocusing it changes nothing on screen
+    start_focus = str((getattr(state, "focus", None) or {}).get("app")
+                      or "")
     max_steps = _limit(cfg, "act_max_steps", MAX_STEPS)
     max_errors = _limit(cfg, "act_max_errors", MAX_ERRORS)
     max_parse_misses = _limit(cfg, "act_max_parse_misses", MAX_PARSE_MISSES)
@@ -391,7 +395,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     _state.action_add(state, "question", text[9:].strip(),
                                       status="awaiting")
                     return "ASK_USER " + text[9:].strip()
-                why = _unsupported_done(task, steps)
+                why = _unsupported_done(task, steps, start_focus)
                 if why and done_nudges < MAX_DONE_NUDGES:
                     done_nudges += 1
                     messages.append({"role": "assistant", "content": text})
@@ -1134,7 +1138,8 @@ def _same_word(a: str, b: str) -> bool:
     return a == b or (len(a) >= 5 and len(b) >= 5 and a[:5] == b[:5])
 
 
-def _unsupported_done(task: str, steps: list) -> "str | None":
+def _unsupported_done(task: str, steps: list,
+                      start_focus: str = "") -> "str | None":
     """One-line reason when a tool-less 'done' is contradicted by the
     run's last effect step, else None. Pure answers (no effect step)
     and supported claims return None."""
@@ -1152,7 +1157,11 @@ def _unsupported_done(task: str, steps: list) -> "str | None":
     if missed or "verify FAILED" in result:
         return f"the last step ({last['tool']}) failed verification"
     if last["tool"] in ("launch", "focus") and result.startswith("FOCUSED"):
-        cls = result.partition("->")[2].split(" (")[0]
+        cls = result.partition("->")[2].split(" (")[0].strip()
+        # focusing another app is a visible change (music -> spotify);
+        # only a refocus of the window already in front is a no-op
+        if start_focus and start_focus.lower() != cls.lower():
+            return None
         named = _words(last.get("arg")) | _words(cls)
         if not any(_same_word(a, b) for a in _words(task) for b in named):
             return (f"{last['tool']} only refocused "
