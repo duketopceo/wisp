@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Toolbelt + agent-manager tests — all subprocesses mocked."""
+import http.server
 import json
 import os
 import pathlib
+import socket
 import sys
 import tempfile
+import threading
 import unittest
 from unittest import mock
 
@@ -38,6 +41,98 @@ class TestRegistry(unittest.TestCase):
         self.assertTrue(tools.denied("rm -rf /home"))
         self.assertTrue(tools.denied("sudo mkfs.ext4 /dev/sda"))
         self.assertFalse(tools.denied("ls -la"))
+
+
+class _CdpHandler(http.server.BaseHTTPRequestHandler):
+    tabs = [
+        {"type": "page", "id": "S1", "title": "Developers \u2013 Pace-HQ \u2013 Stripe",
+         "url": "https://dashboard.stripe.com/test/developers"},
+        {"type": "page", "id": "G1", "title": "Inbox (5) - x@gmail.com - Gmail",
+         "url": "https://mail.google.com/mail/u/0/#inbox"},
+        {"type": "service_worker", "id": "W1", "title": "Stripe worker",
+         "url": "https://dashboard.stripe.com/sw.js"},
+    ]
+    activated: list = []
+
+    def do_GET(self):
+        if self.path == "/json/list":
+            body = json.dumps(self.tabs).encode()
+        elif self.path.startswith("/json/activate/"):
+            self.activated.append(self.path.rsplit("/", 1)[1])
+            body = b"Target activated"
+        else:
+            self.send_response(404)
+            self.end_headers()
+            return
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *a):
+        pass
+
+
+class TestTabTool(unittest.TestCase):
+    def setUp(self):
+        _CdpHandler.activated = []
+        self.srv = http.server.HTTPServer(("127.0.0.1", 0), _CdpHandler)
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.addCleanup(self.srv.server_close)
+        self.addCleanup(self.srv.shutdown)
+        self.port = self.srv.server_address[1]
+        self.focused = []
+        for p in (mock.patch.object(tools.desktop, "CDP_PORTS",
+                                    (self.port,)),
+                  mock.patch.object(tools.desktop, "_focus_browser",
+                                    side_effect=self.focused.append)):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_registered_safe(self):
+        self.assertEqual(tools.risk_of("tab"), "safe")
+        self.assertIn("tab", tools.describe())
+
+    def test_stripe_tablet_switches_to_stripe(self):
+        out = tools.run("tab", "stripe tablet", {})
+        self.assertEqual(_CdpHandler.activated, ["S1"])
+        self.assertTrue(out.startswith("SWITCHED tab "), out)
+        self.assertIn("dashboard.stripe.com", out)
+        self.assertEqual(self.focused, ["Developers \u2013 Pace-HQ \u2013 Stripe"])
+
+    def test_gmail(self):
+        out = tools.run("tab", "gmail", {})
+        self.assertEqual(_CdpHandler.activated, ["G1"])
+        self.assertIn("mail.google.com", out)
+
+    def test_my_email_means_the_mail_tab_not_a_page_titled_email(self):
+        extra = {"type": "page", "id": "E1",
+                 "title": "Verify your email - Example",
+                 "url": "https://example.com/verify"}
+        with mock.patch.object(_CdpHandler, "tabs",
+                               [extra] + _CdpHandler.tabs):
+            tools.run("tab", "my email", {})
+        self.assertEqual(_CdpHandler.activated, ["G1"])
+
+    def test_host_query(self):
+        tools.run("tab", "dashboard.stripe.com", {})
+        self.assertEqual(_CdpHandler.activated, ["S1"])
+
+    def test_no_match_skips_without_activating(self):
+        out = tools.run("tab", "nonexistent thing", {})
+        self.assertTrue(out.startswith("SKIP (no open tab matches "), out)
+        # inactive tab titles never reach the model
+        self.assertNotIn("Gmail", out)
+        self.assertEqual(_CdpHandler.activated, [])
+
+    def test_no_debug_port(self):
+        s = socket.socket()
+        s.bind(("127.0.0.1", 0))
+        dead = s.getsockname()[1]
+        s.close()
+        with mock.patch.object(tools.desktop, "CDP_PORTS", (dead,)):
+            out = tools.run("tab", "stripe", {})
+        self.assertEqual(out, "SKIP (no browser debug port on 127.0.0.1; "
+                              "open the tab by clicking it)")
 
 
 class TestToolExec(unittest.TestCase):

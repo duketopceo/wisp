@@ -115,6 +115,22 @@ class Loop(unittest.TestCase):
         run.assert_called_once()
         assert r.startswith("ACTED (1 steps)")
 
+    def test_unconfirmed_done_leaves_the_goal_open(self):
+        from wisp import goals
+        replies = [_msg(calls=[_call("tab", "stripe")]),
+                   _msg(content="Switched to Stripe."),
+                   _msg(content="Switched to Stripe.")]
+        self.addCleanup(setattr, goals, "CURRENT", None)
+        goals.join_or_new("open my stripe tab", "foot", self.cfg)
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run",
+                               return_value="SKIP (no open tab matches "
+                                            "'stripe')"):
+            r = act.run_act_loop("open my stripe tab", self.cfg,
+                                 initial_image="aGk=")
+        self.assertIn("could not confirm", r)
+        self.assertEqual((goals.CURRENT or {}).get("status"), "open")
+
     def test_narrated_next_step_is_nudged_back_into_loop(self):
         # live run 2026-10-27: one click, then "Now I'm taking a
         # screenshot…" with no tool call ended the turn as ACTED
@@ -132,6 +148,71 @@ class Loop(unittest.TestCase):
         self.assertEqual(post.call_count, 4)
         self.assertTrue(r.startswith("ACTED ("), r)
         self.assertIn("Settings are open", r)
+
+    def test_unsupported_done_refocus_names_wrong_app(self):
+        steps = [{"tool": "launch", "arg": "foot",
+                  "result": "FOCUSED foot -> foot (already running) "
+                            "\u2014 screen changed; verify"}]
+        why = act._unsupported_done("Open up my stripe tablet", steps)
+        self.assertEqual(
+            why, "launch only refocused foot, which the request did "
+                 "not name")
+
+    def test_unsupported_done_shared_word_is_supported(self):
+        steps = [{"tool": "launch", "arg": "terminal",
+                  "result": "FOCUSED terminal -> foot (already running)"}]
+        self.assertIsNone(act._unsupported_done("open the terminal", steps))
+
+    def test_unsupported_done_app_stem_is_supported(self):
+        steps = [{"tool": "launch", "arg": "spotifast",
+                  "result": "FOCUSED spotifast -> spotifast (already "
+                            "running)"}]
+        self.assertIsNone(act._unsupported_done("bring up spotify", steps))
+
+    def test_unsupported_done_refocus_of_the_window_in_front(self):
+        steps = [{"tool": "launch", "arg": "foot",
+                  "result": "FOCUSED foot -> foot (already running)"}]
+        self.assertTrue(act._unsupported_done(
+            "Open up my stripe tablet", steps, start_focus="foot"))
+
+    def test_unsupported_done_focusing_another_app_is_a_change(self):
+        # 'play music' -> spotify, 'open my email' -> thunderbird: the
+        # request names a role, not the app, but the screen did change
+        for task, app in (("play some music", "spotify"),
+                          ("open my email", "thunderbird")):
+            steps = [{"tool": "launch", "arg": app,
+                      "result": f"FOCUSED {app} -> {app} (already "
+                                "running)"}]
+            self.assertIsNone(act._unsupported_done(
+                task, steps, start_focus="foot"), task)
+
+    def test_unsupported_done_verify_missed(self):
+        steps = [{"tool": "click", "arg": "5,5", "result": "CLICKED",
+                  "verify": {"verdict": "missed"}}]
+        self.assertTrue(act._unsupported_done("click it", steps))
+        steps = [{"tool": "click", "arg": "x",
+                  "result": "CLICKED \u2014 verify FAILED: aimed"}]
+        self.assertTrue(act._unsupported_done("click it", steps))
+
+    def test_unsupported_done_needs_an_effect_step(self):
+        self.assertIsNone(act._unsupported_done("what is this", []))
+        self.assertIsNone(act._unsupported_done(
+            "what is this", [{"tool": "screenshot", "arg": "",
+                              "result": "SHOT x"}]))
+
+    def test_unsupported_done_uses_last_effect_step(self):
+        steps = [{"tool": "launch", "arg": "foot",
+                  "result": "FOCUSED foot -> foot (already running)"},
+                 {"tool": "tab", "arg": "stripe",
+                  "result": "SWITCHED tab 'Stripe'"},
+                 {"tool": "screenshot", "arg": "", "result": "SHOT x"}]
+        self.assertIsNone(act._unsupported_done("open my stripe tab", steps))
+
+    def test_unsupported_done_skipped_tab_switch(self):
+        steps = [{"tool": "tab", "arg": "stripe",
+                  "result": "SKIP (no open tab matches 'stripe')"}]
+        why = act._unsupported_done("open my stripe tab", steps)
+        self.assertIn("tab switch was skipped", why or "")
 
     def test_narration_nudges_are_bounded(self):
         replies = [_msg(content="Let me take a screenshot.")] * 5

@@ -40,7 +40,7 @@ MODES = ("auto", "background", "pointer")
 # virtual-keyboard typers, wheel scrolls, DOM ops, window/socket ops
 _BACKGROUND_TOOLS = frozenset({
     "type_text", "key", "fill", "scroll",
-    "focus", "workspace", "launch", "close",
+    "focus", "tab", "workspace", "launch", "close",
 })
 _POINTER_TOOLS = frozenset({"click", "move"})
 

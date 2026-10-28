@@ -61,6 +61,10 @@ REGISTRY = {
                {"tier": "T0", "reversible": True, "external": False}),
     "focus": (desktop.focus, "safe", "focus a window by class",
               {"tier": "T0", "reversible": True, "external": False}),
+    "tab": (desktop.tab, "safe",
+            "switch to an already-open browser tab — arg: its title or "
+            "site, e.g. 'stripe' or 'gmail'",
+            {"tier": "T0", "reversible": True, "external": False}),
     "close": (desktop.close, "mutating",
               "close the active/matching window",
               {"tier": "T2", "reversible": False, "external": False}),

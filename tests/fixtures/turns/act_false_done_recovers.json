@@ -1,0 +1,72 @@
+{
+  "description": "Act route: same unsupported done claim after launch(foot), but the nudge makes the model call tab(stripe). The later done is checked against that tab step and reported normally.",
+  "audio": "act.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "wisp agent open up my stripe tablet"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "tool_calls": [
+            {
+              "name": "launch",
+              "arg": "foot"
+            }
+          ]
+        },
+        {
+          "content": "The Stripe tablet has been opened."
+        },
+        {
+          "tool_calls": [
+            {
+              "name": "tab",
+              "arg": "stripe"
+            }
+          ]
+        },
+        {
+          "content": "Switched to your Stripe tab."
+        }
+      ]
+    }
+  },
+  "expect": {
+    "tool_calls": [
+      "launch",
+      "tab"
+    ],
+    "launch_calls": [
+      "foot"
+    ],
+    "steps_contain": [
+      "FOCUSED foot -> foot (already running)",
+      "SWITCHED tab 'Stripe Dashboard' -> dashboard.stripe.com"
+    ],
+    "result_prefix": "ACTED (2 steps): Switched",
+    "brain_calls": 4
+  },
+  "name": "act_false_done_recovers",
+  "scenario": "act done claim nudged into a real step",
+  "launch_results": {
+    "foot": "FOCUSED foot -> foot (already running)"
+  },
+  "tab_results": {
+    "stripe": "SWITCHED tab 'Stripe Dashboard' -> dashboard.stripe.com"
+  }
+}
