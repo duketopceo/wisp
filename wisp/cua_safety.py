@@ -203,6 +203,20 @@ def _live_window(state=None) -> dict:
     return {"app": app, "title": title}
 
 
+
+def capture_blocked(cfg: dict | None = None, window: dict | None = None) -> str:
+    """Why a screenshot must not be taken right now, or ''. The focused
+    window is checked against the same deny policy that gates input (the
+    password managers, keyring prompts and a terminal running sudo, plus
+    `[cua] deny`), so a secret on screen never rides into a model
+    payload. Off with `[cua] safety = false`."""
+    s = settings(cfg if cfg is not None else config.load_config())
+    if not s["safety"]:
+        return ""
+    w = window if window is not None else _live_window()
+    return _match((w.get("app") or "").lower(), w.get("title") or "", s)
+
+
 class Guard:
     """One per act-loop run: holds the per-turn count; the rolling
     per-window counts live in the (shared) limiter."""

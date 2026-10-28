@@ -48,6 +48,10 @@ def screenshot(arg: str = "", cfg: dict | None = None) -> str:
     dom_page = (cfg or {}).get("screen", {}).get("dom_page")
     if dom_page:
         return _dom_shot(f, cfg)
+    from .. import cua_safety
+    why = cua_safety.capture_blocked(cfg)
+    if why:
+        return f"SKIP (screenshot skipped: {why})"
     # arg or [screen] output names a single output to capture (grim -o)
     output = ((arg or "").strip()
               or (cfg or {}).get("screen", {}).get("output", ""))
