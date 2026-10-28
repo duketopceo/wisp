@@ -1,0 +1,24 @@
+usage: wispd import [-h] [--yes] [--hash SHA256] [--json] [--quiet]
+                    [--no-color]
+                    source
+
+Show a shared lesson, skill or helper and import it only on a yes
+
+positional arguments:
+  source         a bundle file or an https address
+
+options:
+  -h, --help     show this help message and exit
+  --yes          import without the prompt; needs --hash
+  --hash SHA256  the hash shown for the text you read; with --yes it must
+                 match, so you import exactly what you read
+
+global options:
+  --json         machine-readable output (one JSON object)
+  --quiet, -q    print nothing on success
+  --no-color     plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd import cleanup.wisp-lesson.json
+  wispd import https://example.com/scout.wisp-helper.json
+  wispd import FILE --yes --hash sha256:...

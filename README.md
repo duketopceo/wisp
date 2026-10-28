@@ -66,6 +66,11 @@ wispd onboard                  # guided first run, every step skippable
   markdown file for a bug report: version, health, recent error codes,
   trace counts and a masked config, never what you said or saw. Nothing
   is sent; you open the issue yourself.
+- `wispd export lesson NAME` (or `skill`, or `helper`) writes one file you
+  can share (no keys, home paths, memory or scripts), and `wispd import FILE|URL`
+  shows its full text and what it asks for, and imports it only on your
+  yes. Imported helper routines arrive paused (`wispd routine list`,
+  `wispd routine resume ID`).
 
 Prerequisites: `pw-record` (or `arecord`), whisper.cpp at
 `~/src/whisper.cpp` with `models/ggml-small.en.bin`, `hyprctl`,

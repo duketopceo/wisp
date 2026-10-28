@@ -27,6 +27,7 @@ These settings take any address. Whatever you put there gets what the stage send
 | `[report] dsn` | Receives typed error codes, only when set. |
 | MCP servers you configure | Receive the tool calls you approve. |
 | `[images] allow` | Hosts a picture may be fetched from. |
+| `wispd import <https address>` | One GET of the address you typed (https only, 256 KB), after which nothing is written until you read the full text and say yes. |
 
 ## On this machine only
 
@@ -43,6 +44,7 @@ Loopback addresses (`127.0.0.1`, `localhost`) are local services: whisper.cpp, a
 | `gmail.com` | An example in help text: a domain you say is opened in your browser. |
 | `cal.com` | A name in a list of apps Wisp can connect to, in help text. |
 | `wisp.ai` | An example in help text. |
+| `example.com` | An example address in help text. |
 | `amara.org` | A credit line for subtitle text in a bundled sample. |
 | `www.w3.org` | An XML namespace in a generated icon. Never requested. |
 
@@ -60,6 +62,7 @@ Everything below lives in `~/.local/share/wisp` (a 0700 folder of 0600 files), `
 | recall.db | Memory notes and their search index. | Delete the file any time. |
 | errors.jsonl | The last typed error codes and exception type names, for `wispd bugreport`. Never a message, transcript or path. | Bounded to about 200 entries. Delete the file any time. |
 | report_queue.jsonl | Typed error codes waiting to be reported, only if you set `[report] dsn`. No transcripts, screenshots, typed text, keys or home paths. | Bounded by `[report] queue_max`. Off while `dsn` is empty. |
+| imports.json | The hash and location of each lesson, skill or helper you imported, so importing the same file twice changes nothing. | Delete the file any time; the imported items stay. |
 | state.json | What the panel shows right now. In your runtime directory (memory-backed). | Gone at logout or reboot. |
 
 ## Never sent
@@ -79,6 +82,7 @@ From the scan this page is built from.
 - `api.groq.com`: `rs/wispd/src/config.rs`, `wisp/config.py`
 - `cal.com`: `wisp/mcpauth.py`
 - `calendar.google.com`: `wisp/config.py`
+- `example.com`: `wisp/cli/share.py`
 - `github.com`: `rs/wispd/src/brain.rs`, `wisp/brain.py`, `wisp/grounding.py`, `wisp/route.py`, `wisp/stage_route.py`, `wisp/update.py` and 1 more
 - `gmail.com`: `wisp/tools/__init__.py`
 - `mail.google.com`: `wisp/config.py`
