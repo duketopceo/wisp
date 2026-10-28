@@ -89,6 +89,7 @@ def settings(cfg: dict | None) -> dict:
         "safety": _truthy(c.get("safety"), True),
         "allow": _csv(c.get("allow")),
         "deny": _csv(c.get("deny")),
+        "deny_titles": _csv(c.get("deny_titles")),
         "deny_builtin": _truthy(c.get("deny_builtin"), True),
         "per_min": _num(c.get("max_clicks_per_min"), DEFAULT_MAX_PER_MIN),
         "per_turn": _num(c.get("max_per_turn"), DEFAULT_MAX_PER_TURN),
@@ -174,6 +175,10 @@ def _match(app: str, title: str, s: dict) -> str:
     if s["deny_builtin"] and any(t in hay for t in TERMINALS) \
             and "sudo" in (title or "").lower():
         return "terminal running sudo is denied"
+    low = (title or "").lower()
+    for t in s["deny_titles"]:
+        if t and t in low:
+            return f"window title matches {t!r}"
     return ""
 
 

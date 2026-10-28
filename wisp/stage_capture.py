@@ -276,6 +276,10 @@ def capture_screen() -> pathlib.Path | None:
                 _normalize_shot(out)
             except Exception:
                 pass
+            from . import redact
+            if redact.apply(out, config.load_config()):
+                out.unlink(missing_ok=True)   # a hidden window rides along
+                return None
             return out
         return None
     except Exception:
