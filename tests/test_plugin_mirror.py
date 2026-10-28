@@ -29,6 +29,16 @@ class Mirror(unittest.TestCase):
     def test_the_source_plugin_is_valid(self):
         self.assertEqual(pm.validate(ROOT / "shell-plugin"), [])
 
+    def test_the_manifest_license_is_the_licence_in_the_repo(self):
+        lic = (ROOT / "LICENSE").read_text()
+        self.assertIn("GNU AFFERO GENERAL PUBLIC LICENSE", lic)
+        man = json.loads((ROOT / "shell-plugin/manifest.json").read_text())
+        self.assertEqual(man["license"], "AGPL-3.0-only")
+        for n in ("THIRD_PARTY_NOTICES.md",
+                  "shell-plugin/THIRD_PARTY_NOTICES.md"):
+            self.assertNotIn("Wisp is MIT licensed",
+                             (ROOT / n).read_text(), n)
+
     def test_the_mirror_is_valid_and_has_the_files_a_listing_needs(self):
         self.assertEqual(pm.validate(self.out), [])
         for f in ("manifest.json", "README.md", "LICENSE", "preview.png",
@@ -64,7 +74,7 @@ class Mirror(unittest.TestCase):
         self.assertIn(f"omarchy plugin remove {PLUGIN_ID}", text)
         self.assertIn("systemctl --user disable --now wispd.service", text)
         self.assertIn("--from-plugin", text)
-        self.assertIn("MIT", text)
+        self.assertIn("AGPL-3.0-only", text)
 
     def test_no_python_or_tests_or_symlinks_ride_along(self):
         names = [f for f in self.res["files"]]

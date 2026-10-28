@@ -1,6 +1,6 @@
 # Third-party notices
 
-Wisp is MIT licensed (see LICENSE). Parts of the cursor buddy and the
+Wisp is AGPL-3.0-only (see LICENSE; releases up to v0.9.0 were MIT). Parts of the cursor buddy and the
 HeyClicky-derived behavior follow the projects below. Each license is
 reproduced verbatim.
 
