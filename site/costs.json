@@ -1,0 +1,13 @@
+{
+ "status": "pending",
+ "generated": "2026-10-28",
+ "note": "These are one person's numbers, not a promise. The model bill is the only cost. Until the maintainer generates them from his own ledger (python3 scripts/site/costcard.py), the card shows only the defaults the code ships with.",
+ "items": [
+  {"label": "Default daily spend cap", "value": "$8.00", "kind": "repo",
+   "source": "wisp/ledger.py (DEFAULT_DAILY_USD)", "as_of": "2026-10-28"},
+  {"label": "Default monthly spend cap", "value": "$160.00", "kind": "repo",
+   "source": "wisp/ledger.py (DEFAULT_MONTHLY_USD)", "as_of": "2026-10-28"},
+  {"label": "Local models", "value": "$0.00 (recorded, never gated)", "kind": "repo",
+   "source": "README.md (Spend)", "as_of": "2026-10-28"}
+ ]
+}

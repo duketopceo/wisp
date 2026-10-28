@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wisp: a voice teacher and doer for Omarchy</title>
+<meta name="description" content="Wisp is a voice teacher and doer for Omarchy that points at your screen.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<h1>Wisp is a voice teacher and doer for Omarchy that points at your screen.</h1>
+<p>Hold <code>Super+D</code>, say what you want, and let go. Wisp looks at your screen, answers out loud, points at the thing it means, or does the step for you and asks first when it matters.</p>
+<pre>{{install}}</pre>
+<p class="mute">Omarchy (Hyprland) only. {{version_line}} AGPL-3.0. <a href="{{repo}}">Source</a>.</p>
+
+{{hero}}
+
+<h2>What it does</h2>
+<ul>
+<li>Answers questions about what is on your screen, and points the cursor buddy at it. <a href="{{repo}}/blob/master/README.md#using-it">README</a></li>
+<li>Takes a circle or scribble you draw while you hold the key as part of the question. <a href="{{repo}}/blob/master/wisp/scribble.py">code</a></li>
+<li>Answers Omarchy questions from your own install (version, theme, your rebound keys) rather than a manual. <a href="{{repo}}/blob/master/wisp/omarchy_tutor.py">code</a></li>
+<li>Hands a long job to a background helper and tells you when it finishes. <a href="{{repo}}/blob/master/README.md#using-it">README</a></li>
+</ul>
+
+<h2>Honest limits</h2>
+<ul>
+<li>Linux on Omarchy/Hyprland only. No macOS or Windows.</li>
+<li>Version 0.9: expect rough edges. 1.0 is a verification milestone, not a feature drop.</li>
+<li>It needs whisper.cpp with a model, plus a model provider key or a local model server.</li>
+<li>With a cloud model, the screenshot for the turn that needs it goes to that provider. <code>screenshots = "false"</code> or a local model keeps it on your machine. <a href="{{repo}}/blob/master/README.md#privacy">Privacy</a></li>
+</ul>
+
+<h2>What a day costs</h2>
+{{cost_card}}
+
+<h2>How it compares</h2>
+{{compare}}
+
+<h2>Trust</h2>
+<p>The source, tests and plans are public. Error reporting is off by default and this page loads nothing from any other host, runs no scripts and has no analytics. <a href="{{repo}}/blob/master/README.md#privacy">What is sent and when</a>.</p>
+
+<footer>Built from <a href="{{repo}}/tree/master/site">site/</a> by <code>scripts/site/build.py</code>. Cost numbers: <a href="{{repo}}/blob/master/docs/COSTS.md">docs/COSTS.md</a>.</footer>
+</main>
+</body>
+</html>
