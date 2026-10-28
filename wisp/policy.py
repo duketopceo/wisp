@@ -148,6 +148,58 @@ def gate(name: str, arg: str, cfg: dict, confirm,
     return f"SKIPPED ({name} declined by user)"
 
 
+PREVIEW_MIN = 3        # mutating steps in one reply that earn a plan card
+PREVIEW_LINES = 20     # the card lists at most this many steps
+
+
+def plan_steps(calls, cfg: dict | None) -> list:
+    """The (name, arg) calls of one reply that change something: T1 and
+    T2 steps the hard preempts would not already refuse."""
+    out = []
+    for n, a in calls:
+        if tier_of(n, a, cfg) in ("T1", "T2") and preempted(n, a, cfg) is None:
+            out.append((n, a))
+    return out
+
+
+def plan_prompt(steps: list) -> str:
+    """One line per step, numbered, bounded to PREVIEW_LINES."""
+    lines = [f"{i}. {n} {a}".strip()[:90]
+             for i, (n, a) in enumerate(steps[:PREVIEW_LINES], 1)]
+    if len(steps) > PREVIEW_LINES:
+        lines.append(f"…and {len(steps) - PREVIEW_LINES} more")
+    return f"run this plan ({len(steps)} steps)?\n" + "\n".join(lines)
+
+
+def plan_preview(calls, cfg: dict | None, confirm, state=None,
+                 minimum: int = PREVIEW_MIN) -> tuple:
+    """Show a multi-step reply as ONE card before any step runs.
+    Returns (steps, refusal): `steps` is the previewed plan ([] when no
+    card was needed or none can be shown) and `refusal` a result string
+    when the user said no (or let it lapse). A yes grants the steps for
+    this app, so their own per-step cards do not repeat it."""
+    if confirm is None or minimum <= 0:
+        return [], None
+    steps = plan_steps(calls, cfg)
+    if len(steps) < minimum:
+        return [], None
+    confirmed = getattr(state, "confirmed", None)
+    if isinstance(confirmed, set) and ALWAYS_GRANT in confirmed:
+        return steps, None
+    ok, last = ask(confirm, plan_prompt(steps))
+    if not ok:
+        why = "timed out" if last == _confirm.TIMEOUT else "declined by user"
+        return steps, f"SKIPPED (plan {why})"
+    if isinstance(confirmed, set):
+        if last == _confirm.ALWAYS:
+            confirmed.add(ALWAYS_GRANT)
+        else:
+            app = _focus_app(state)
+            for n, _a in steps:
+                confirmed.add((n, app))
+    return steps, None
+
+
 def checkpoint_prompt(items: list) -> str:
     """Card text for the gated steps of one reply: a single step keeps
     the 'run close: w1?' shape; several batch into one card naming each
