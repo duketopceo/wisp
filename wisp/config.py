@@ -196,6 +196,12 @@ keep_days = "30"
 shots_keep = "100"
 shots_keep_days = "30"
 
+[docs]
+# Answer about the whole document (wisp/docread.py): the focused PDF,
+# DOCX, XLSX, TXT or MD file is read locally and the relevant pages go
+# to the answer. Never from protected folders; false turns it off.
+enabled = "true"
+
 [verify]
 # Verify ladder (wisp/verify.py, U2): each recorded action's verdict.
 # The pixel rung masks a region_px square around the click point and
@@ -486,6 +492,7 @@ def _default_cfg_dict() -> dict:
         "traj": {"enabled": "true", "max_inject": "3"},
         "packs": {"keep": "200", "keep_days": "30",
                   "shots_keep": "100", "shots_keep_days": "30"},
+        "docs": {"enabled": "true"},
         "verify": {"judge_timeout_s": "20", "pixel_landed_min": "0.02",
                    "pixel_missed_max": "0.001", "pixel_eps": "16",
                    "region_px": "96", "frame_wait_s": "0.5"},

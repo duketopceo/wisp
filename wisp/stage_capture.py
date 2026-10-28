@@ -476,3 +476,8 @@ def context_stage(ctx) -> None:
         _trace.emit(turn, "correction", "thought",
                     {"via": corr["via"], "prior": corr["prior_task"]})
     ctx.corr, ctx.detail, ctx.context = corr, detail, context
+    try:
+        from . import docread
+        ctx.doc_text = docread.context_for(text, win, cfg)
+    except Exception:
+        ctx.doc_text = ""            # a document read never fails a turn

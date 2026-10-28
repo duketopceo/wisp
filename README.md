@@ -236,6 +236,10 @@ what it asked and records a pass; a step you skip is offered again next run.
   an `omaseal://` reference), only typed error codes and a scrubbed
   context are sent: never transcripts, screenshots, typed text, keys,
   environment values or paths with your username.
+- Asking about "this document" reads the focused PDF, DOCX, XLSX or
+  text file on your machine and sends only the pages that matter to the
+  answer. Keys, config, keyrings, browser profiles and system folders
+  are never read, and `[docs] enabled = "false"` turns it off.
 - The cua audit log keeps the length and a salted hash of typed text,
   not the text.
 
