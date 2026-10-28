@@ -64,7 +64,13 @@ Window {
       'import QtQuick; Rectangle { }', stage, "host");
     host.color = c.on === "desktop" ? c.tokens.raised : c.tokens.canvas;
     var props = {};
-    for (var k in c.props) props[k] = c.props[k];
+    for (var k in c.props) {
+      var v = c.props[k];
+      // "@fixtures/x.png": a file under tests/fixtures, as a file URL
+      if (typeof v === "string" && v.indexOf("@fixtures/") === 0)
+        v = Qt.resolvedUrl("../../fixtures/" + v.slice(10));
+      props[k] = v;
+    }
     props.service = svc;
     var item = comp.createObject(host, props);
     if (item === null) {

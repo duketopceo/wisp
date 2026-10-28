@@ -565,6 +565,39 @@
   },
   "width": 180
  },
+ "Card": {
+  "mode": "variant",
+  "on": "canvas",
+  "pad": 16,
+  "settle": 80,
+  "variants": {
+   "empty": {},
+   "landscape": {
+    "img": {
+     "alt": "hills",
+     "caption": "",
+     "h": 200,
+     "host": "upload.wikimedia.org",
+     "local": "/fixtures/landscape.png",
+     "source": "https://upload.wikimedia.org/wikipedia/commons/a/ab/Sunset_over_hills.png",
+     "w": 320
+    },
+    "pictureOverride": "@fixtures/images/landscape.png"
+   },
+   "portrait": {
+    "img": {
+     "alt": "",
+     "caption": "",
+     "h": 300,
+     "host": "upload.wikimedia.org",
+     "local": "/fixtures/portrait.png",
+     "source": "https://upload.wikimedia.org/a.png",
+     "w": 200
+    },
+    "pictureOverride": "@fixtures/images/portrait.png"
+   }
+  }
+ },
  "Chip": {
   "mode": "variant",
   "pad": 10,

@@ -346,7 +346,13 @@ Lines, in order:
      the conversation paper was rewritten. `objects` is the parsed `::`
      list; `plan` is the live `{now}`/`{pick}`/`{needs}` strip (`[]`
      when `closed`); `rendered` is the text form for CLI/panel. Additive
-     — older clients ignore it.
+     — older clients ignore it. An `image` object (`::image[url=...]`,
+     B5) also carries `image: {status, source, host, local, w, h,
+     reason}`: `status` is `loading` (allowed, still downloading),
+     `ready` (`local` is an absolute path of the stored copy, `w`/`h` its
+     pixel size) or `refused` (`reason` says why; nothing was fetched).
+     The note is republished when a download lands. A client shows the
+     picture only when `status == "ready"` and always shows `source`.
    - `{"type":"ping"}` after 15 s with nothing to send (all topics; a
      keep-alive, ignore it). Clients should treat 45 s of silence as a
      dead connection and reconnect.
