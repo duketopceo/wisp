@@ -88,6 +88,7 @@ class ScrubEnvTest(unittest.TestCase):
                 mock.patch.object(agents, "_systemd_scope_enabled",
                                   return_value=False), \
                 mock.patch.object(agents, "_pstart", return_value="1"), \
+                mock.patch.object(agents, "_PROCS", []), \
                 mock.patch.object(agents.subprocess, "Popen", fake_popen):
             out = agents.spawn("do it", {}, d / "t.jsonl", d / "logs")
         self.assertTrue(out.startswith("SPAWNED"), out)
