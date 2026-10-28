@@ -26,6 +26,7 @@ import argparse
 import json
 import os
 import pathlib
+import shlex
 import shutil
 import subprocess
 import sys
@@ -81,6 +82,7 @@ TOLERANCE = {
     "BindsView": Tolerance(10, 0.012),
     "Creature": Tolerance(12, 0.008),
     "Companion": Tolerance(12, 0.006),
+    "DrawLayer": Tolerance(12, 0.006),   # wobbly pen strokes: edge drift
 }
 
 
@@ -93,6 +95,9 @@ def scenes():
 
 
 def find_runner():
+    env = os.environ.get("WISP_QML", "").strip()
+    if env:                  # e.g. "python3 scripts/ui/qml_pyside6.py"
+        return env
     p = shutil.which("qml")
     if p:
         return p
@@ -153,6 +158,7 @@ def cases(only=None):
                         "pad": scene.get("pad", 10),
                         "on": scene.get("on", "canvas"),
                         "source": scene.get("source"),
+                        "settle": scene.get("settle", 0),
                     })
     if only:
         out = [c for c in out if only in c["id"]]
@@ -213,7 +219,8 @@ def render(out_dir, only=None, runner=None):
             manifest = pathlib.Path(tmp) / f"manifest-{scale}.json"
             manifest.write_text(json.dumps({"cases": batch}))
             p = subprocess.run(
-                [runner, str(HARNESS / "Snap.qml"), "--", str(manifest),
+                [*shlex.split(runner), str(HARNESS / "Snap.qml"), "--",
+                 str(manifest),
                  str(out_dir)],
                 env=render_env(scale=scale, fonts_conf=conf),
                 capture_output=True, text=True, timeout=300)

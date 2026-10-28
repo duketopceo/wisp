@@ -294,6 +294,16 @@ def _answer(ctx) -> None:
     drws = []       # logical drawings fired so far (voice on)
     plock = threading.Lock()  # one lock over append + publish: no reordering
     _mons: list = []          # one monitors() lookup per turn
+    _shot: list = []          # the press-time screenshot, decoded once
+
+    def _tones(d_px):
+        """Light or dark under each drawing, from the shot the model saw
+        (marks are in its pixels); [] when there is no shot."""
+        from . import ink as _ink
+        if not _shot:
+            _shot.append(_ink.open_image(getattr(ctx, "shot_b64", None)))
+        return _ink.tones_for(_shot[0], d_px) if _shot[0] is not None \
+            else []
 
     def _logical(raw):
         if not _mons:
@@ -310,16 +320,25 @@ def _answer(ctx) -> None:
             _mons.append(_points.monitors())
         p_px = [m for m in marks_px if "kind" not in m]
         d_px = [m for m in marks_px if "kind" in m]
-        return (_logical(p_px) if p_px else [],
-                _points.drawings_to_logical(
-                    d_px, _mons[0], _points.img_space_is_logical())
-                if d_px else [])
+        d_log = (_points.drawings_to_logical(
+            d_px, _mons[0], _points.img_space_is_logical())
+            if d_px else [])
+        tones = _tones(d_px) if d_px else []
+        if len(tones) == len(d_log):          # same marks, same order
+            for d, t in zip(d_log, tones):
+                if t:
+                    d["tone"] = t
+        return (_logical(p_px) if p_px else [], d_log)
 
     def _fire(raw):
         # a sentence just started playing: grow the list, publish only
         # if this turn is still the live, speaking one
         with plock:
             p, d = _split(raw)
+            ms = int(getattr(speaker, "sentence_ms", 0) or 0)
+            if ms > 0:        # the pen's pace: this sentence's spoken time
+                for one in d:
+                    one["ms"] = ms
             pts.extend(p)
             drws.extend(d)
             bus = getattr(state, "_bus", None)

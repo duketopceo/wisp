@@ -301,6 +301,14 @@ list only grows within a turn, and it resets when the status leaves
 `speaking`. A publish that carries no status while the status is not
 `speaking` never changes `points` or `drawings`.
 
+Every shape may also carry two optional fields, absent on older cores
+(shells that do not know them ignore them): `"ms"`, the estimated spoken
+time in milliseconds of the sentence the shape belongs to (a shell paces
+the pen's draw-on from it; absent means the plain 300 ms draw-on), and
+`"tone"`, `"light"` or `"dark"`, the brightness of the screen under the
+shape in the press-time screenshot (a shell picks its glow from it). An
+unknown shape kind is dropped by the shell, never executed.
+
 ## Push stream (additive; W3)
 
 `{"cmd":"subscribe","topics":[...]}` (topics optional, default all) turns
