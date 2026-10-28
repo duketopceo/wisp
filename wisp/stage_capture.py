@@ -247,6 +247,9 @@ def active_window() -> dict:
 def capture_screen() -> pathlib.Path | None:
     """Platform screenshot → RUN_DIR/screen.png. None on fail."""
     from . import platform
+    from . import cua_safety
+    if cua_safety.capture_blocked():
+        return None   # sensitive window focused: no shot (R13)
     out = config.RUN_DIR / "screen.png"
     cmd = platform.screenshot_cmd(out)
     if not cmd:
