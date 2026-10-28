@@ -20,6 +20,7 @@ def setUpModule():
     global _TMP
     _TMP = tempfile.TemporaryDirectory()
     wr.PAUSED_FILE = pathlib.Path(_TMP.name) / "walkthrough.json"
+    wr.LAST_FILE = pathlib.Path(_TMP.name) / "walkthrough_last.json"
 
 
 def tearDownModule():

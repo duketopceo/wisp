@@ -412,8 +412,36 @@ def _onboard_args(p):
                    help="mark setup finished (hides the Panel card)")
     p.add_argument("--reset", action="store_true",
                    help="forget all progress")
+    p.add_argument("--tour", nargs="?", const="all", metavar="STEP",
+                   help="the first-minute tour: five spoken steps "
+                        "(hello, draw, circle, ask, dictation); name one "
+                        "step to replay just that one")
     p.add_argument("--interactive", action="store_true",
                    help="walk the steps even without a terminal")
+
+
+def _onboard_tour(ctx, a, cfg, progress):
+    from .. import speech, tour
+    ids = [s.id for s in tour.STEPS]
+    only = "" if a.tour == "all" else a.tour
+    if only and only not in ids:
+        raise CliError("E_USAGE", f"Unknown tour step {only!r}. Choose "
+                       f"{', '.join(ids)}.", "wispd onboard --help")
+    quiet = ctx.json or ctx.flags.quiet
+
+    def say(line):
+        if not quiet:
+            print(line)
+        proc = speech.speak(line, cfg)
+        if proc is not None:
+            proc.wait()
+
+    res = tour.run(say, tour.turns_since, progress.tour_mark,
+                   log=(lambda s: None) if quiet else print, only=only,
+                   done=progress.tour)
+    n = sum(1 for r in res if r["status"] in ("passed", "already"))
+    return ctx.emit({"steps": res, "passed": n, "total": len(res)},
+                    f"tour: {n} of {len(res)} steps passed")
 
 
 def _onboard_rows(ctx, st):
@@ -430,7 +458,7 @@ def _onboard_rows(ctx, st):
 @command("onboard", "Walk through first-run setup (every step skippable)",
          ["wispd onboard", "wispd onboard --status --json",
           "wispd onboard --step notifications --yes",
-          "wispd onboard --undo mic"],
+          "wispd onboard --undo mic", "wispd onboard --tour"],
          {"ready": "bool", "finished": "bool", "done_count": "int",
           "total": "int", "steps": "list"},
          args=_onboard_args)
@@ -455,6 +483,8 @@ def onboard(ctx, a):
         r = ob.undo(a.undo, progress)
         return ctx.emit(r, f"{a.undo}: " + ("undone" if r["undone"]
                                             else "nothing to undo"))
+    if a.tour:
+        return _onboard_tour(ctx, a, cfg, progress)
     if a.finish:
         progress.finish()
         return ctx.emit({"finished": True}, "setup marked finished")
