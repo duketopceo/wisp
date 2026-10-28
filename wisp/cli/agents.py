@@ -1,4 +1,5 @@
 """Agents and memory: task, memory, suggest, label, context."""
+import os
 import base64
 import binascii
 
@@ -127,13 +128,18 @@ def _task_run_args(p):
 def task_run(ctx, a):
     rid = (getattr(a, "routine", "") or "").strip()
     if rid:
+        from .. import routines
+        if os.environ.get("INVOCATION_ID"):   # started by a systemd timer
+            routines.wait_until_online(ctx.cfg)   # e.g. right after a wake
         try:
             r = ctx.send({"cmd": "agent", "routine_id": rid})
         except CliError as e:
             if e.code != "E_DAEMON_DOWN":
                 raise
-            from .. import routines
             r = routines.run_routine(rid, ctx.cfg)
+        if r.get("deferred"):
+            msg = r.get("result") or "Routine not run: no network."
+            return ctx.emit({"result": msg}, msg)   # not a failure
         if not r.get("ok"):
             msg = r.get("result") or r.get("error") or "Routine did not run."
             raise CliError("E_FAILED", msg, "wispd task list",
