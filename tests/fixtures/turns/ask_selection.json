@@ -42,6 +42,6 @@
     "brain_calls": 1
   },
   "name": "ask_selection",
-  "scenario": "answer",
+  "scenario": "answer with the selection",
   "selection": "ERR_CONNECTION_RESET"
 }
