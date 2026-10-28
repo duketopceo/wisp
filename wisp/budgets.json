@@ -38,6 +38,8 @@
   "resources": {
     "wispd_rss_mb": 250,
     "wispd_idle_cpu_pct": 3,
+    "idle_cpu_pct": 3,
+    "idle_rss_mb": 250,
     "cua_driver_memory_max": "512M",
     "companion_idle_cpu_pct_120hz": 5,
     "always_on_polling_loops": 0

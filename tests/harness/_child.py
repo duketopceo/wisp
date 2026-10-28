@@ -71,7 +71,29 @@ def main(spec_path: str) -> int:
         if not spec.get("real_hypr"):
             pipeline.active_window = lambda: {}
 
+        if spec.get("second_start"):
+            # this child plays the first daemon (B29): it holds the
+            # instance lock, and a second `wispd daemon` is started while
+            # the turn is in flight
+            from wisp import instance
+            instance.acquire()
+
+        def second_start():
+            import os
+            import subprocess
+            root = HERE.parent.parent
+            p = subprocess.run(
+                [sys.executable, str(root / "wispd"), "daemon", "run"],
+                capture_output=True, text=True, timeout=60,
+                env=dict(os.environ), cwd=str(root))
+            out["second_start"] = {
+                "rc": p.returncode, "stderr": p.stderr,
+                "holder": os.getpid(),
+                "sock_exists": config.SOCK_FILE.exists()}
+
         def fake_record(secs, state=None):
+            if spec.get("second_start") and "second_start" not in out:
+                second_start()
             dst = config.CFG_DIR / "utterance.wav"
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(spec["wav"], dst)
