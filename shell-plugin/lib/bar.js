@@ -85,6 +85,9 @@ function tooltipLines(view, o) {
 }
 
 // Mark dimming: offline and stale read as muted, never as live.
+// the open-mic mark: up for as long as the daemon says the wake word listens
+function micOpen(mic, offline) { return mic === "open" && !offline }
+
 function dimmed(offline, stale) { return !!offline || !!stale }
 
 // A badge dot for a pending suggestion. A pending choice already has its

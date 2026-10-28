@@ -182,6 +182,19 @@ with `wispd spend`.
 |-----|---------|---------|
 | `enabled` | `false` | allow local model servers (llama.cpp Ornith, UI-TARS, jev-shim, ollama). Off: `wispd onboard` skips the local ladder, `[ground] providers` drops `uitars`, and `wispd install --units` skips the llama/jev-shim units. OpenRouter stays the brain either way |
 
+## [handsfree] — double-tap to keep listening (opt-in)
+
+| key | default | meaning |
+|-----|---------|---------|
+| `enabled` | `false` | tap the talk key twice and the second tap keeps listening after release; the next tap sends. Off: hold-to-talk is unchanged. See [PRIVACY.md](PRIVACY.md) |
+
+## [wakeword] — local wake word (opt-in)
+
+| key | default | meaning |
+|-----|---------|---------|
+| `enabled` | `false` | listen for the phrase with the local whisper.cpp model; nothing is sent and no screenshot is taken until it is heard. Refused over open speakers (headphones or `wispd install --echo-cancel`). The bar shows an open-mic mark while it runs |
+| `phrase` | `"hey wisp"` | what to listen for |
+
 ## [health] — endpoint probes (U7)
 
 Local endpoints only (Jev, every brain-chain entry, optional extras, a

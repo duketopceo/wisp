@@ -72,6 +72,7 @@ Item {
   property string errorCode: ""
   property var health: ({})
   property var spend: ({})
+  property string mic: ""     // "open" while the opt-in wake word listens
   property string turnId: ""
   property var seq: null
   property int contractVersion: 1
@@ -306,6 +307,7 @@ Item {
     root.errorCode = v.errorCode;
     root.health = v.health;
     root.spend = v.spend;
+    root.mic = v.mic;
     root.seq = v.seq;
     root.contractVersion = v.contractVersion;
     root.connection = v.connection;
