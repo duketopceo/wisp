@@ -336,6 +336,18 @@ def choice(ctx, a):
     return ctx.emit({"pick": a.pick, "result": reply.get("result") or ""})
 
 
+def _ask_args(p):
+    p.add_argument("text", help="the question to ask, as one argument")
+
+
+@command("ask", "Ask one typed question (starts a normal turn)",
+         ['wispd ask "what is the front wheel for?"'],
+         {"asked": "bool"}, args=_ask_args)
+def ask(ctx, a):
+    reply = ctx.expect_ok(ctx.send({"cmd": "ask", "text": a.text}))
+    return ctx.emit({"asked": bool(reply.get("asked"))})
+
+
 @command("tui", "Open the terminal UI",
          ["wispd tui"], stream=True)
 def tui(ctx, a):

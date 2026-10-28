@@ -10,6 +10,7 @@ import "../lib/metrics.js" as M
 import "../lib/cursor.js" as Cursor
 import "../lib/companion.js" as Companion
 import "../lib/card.js" as CardLib
+import "../lib/model3d.js" as ModelLib
 import "../lib/scribble.js" as Scribble
 import "../lib/chips.js" as ChipsLib
 
@@ -53,13 +54,23 @@ Item {
   readonly property var cardSpot: CardLib.place(width, height, CardLib.cardSize(cardImage),
     CardLib.avoidRects(beacons, draw.shapes, service ? service.cuaTarget : null,
       bubbleShown ? { x: bubbleHost.x, y: bubbleHost.y, w: bubbleHost.width, h: bubbleHost.height } : null))
+  // a 3D model from the paper (lib/model3d.js): clickable, so the window
+  // takes the pointer on its rectangle only while it shows
+  readonly property var cardModel: service ? ModelLib.modelOf(service.note) : null
+  readonly property bool modelShown: cardModel !== null && bubbleShown
+  readonly property bool modelHovered: modelCard.hovered
+  property alias modelItem: modelCard
+  readonly property var modelSpot: CardLib.place(width, height, ModelLib.cardSize(),
+    CardLib.avoidRects(beacons, draw.shapes, service ? service.cuaTarget : null,
+      bubbleShown ? { x: bubbleHost.x, y: bubbleHost.y, w: bubbleHost.width, h: bubbleHost.height } : null)
+      .concat(cardShown ? [CardLib.rect(cardSpot.x, cardSpot.y, CardLib.cardSize(cardImage).w, CardLib.cardSize(cardImage).h)] : []))
   // the talk key is held: the layer takes the pointer for a scribble
   readonly property bool scribbleActive: service !== null && Scribble.active(service.status)
   property alias scribbleItem: scribble
   // "what can I ask here" after a quick tap: text only, never over a live turn
   readonly property bool chipsShown: service !== null && ChipsLib.quiet(service.status) && askChips.shown
   property alias askChipsItem: askChips
-  readonly property bool shown: scribbleActive || pillShown || bubbleShown || buddyShown || beacons.length > 0 || draw.count > 0 || cardShown || chipsShown
+  readonly property bool shown: scribbleActive || pillShown || bubbleShown || buddyShown || beacons.length > 0 || draw.count > 0 || cardShown || modelShown || chipsShown
   property alias pill: pill
   property alias bubbleHost: bubbleHost
 
@@ -169,6 +180,17 @@ Item {
     visible: root.cardShown
     x: root.cardSpot.x
     y: root.cardSpot.y
+  }
+
+  // the 3D card: the one clickable card, kept clear of the picture card
+  ModelCard {
+    id: modelCard
+    objectName: "modelCard"
+    service: root.service
+    model: root.cardModel
+    visible: root.modelShown
+    x: root.modelSpot.x
+    y: root.modelSpot.y
   }
 
   // beacons: state.points are in layer coordinates. A plain array model

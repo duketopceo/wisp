@@ -72,6 +72,7 @@ Item {
   // the bar actions call these; the harness never talks to a daemon
   function trigger() {}
   function interrupt() {}
+  function askAbout(text) { return false; }
   function startDaemon() {}
   function sendChoice(pick, pid) { return false; }
 

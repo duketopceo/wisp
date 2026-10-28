@@ -182,6 +182,8 @@ Item {
         Region { item: layer.scribbleActive ? layer.scribbleItem : null }
         Region { item: layer.pillShown ? layer.pill : null }
         Region { item: layer.bubbleShown ? layer.bubbleHost : null }
+        // the 3D card takes clicks only while it is on screen
+        Region { item: layer.modelShown ? layer.modelItem : null }
       }
       WlrLayershell.namespace: "wisp-points"
       WlrLayershell.layer: WlrLayer.Overlay
@@ -191,7 +193,7 @@ Item {
       // confirm card ignores it: the daemon's own deadline ends the card.
       Timer {
         interval: Cursor.dwellMs(root.svc.answer)
-        running: layer.bubbleShown && !layer.bubbleHovered && root.svc.confirm === null
+        running: layer.bubbleShown && !layer.bubbleHovered && !layer.modelHovered && root.svc.confirm === null
         onTriggered: root.bubbleDismissed = true
       }
 
