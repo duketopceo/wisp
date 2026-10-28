@@ -1,0 +1,55 @@
+{
+  "description": "French pinned (B23).",
+  "audio": "ask.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "quelle heure est-il"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "content": "Il est trois heures et demie.",
+          "chunk_delay_ms": 0
+        }
+      ]
+    }
+  },
+  "expect": {
+    "statuses": [
+      "listening",
+      "transcribing",
+      "deciding",
+      "acting",
+      "speaking",
+      "done"
+    ],
+    "transcript": "quelle heure est-il",
+    "answer": "Il est trois heures et demie.",
+    "brain_calls": 1
+  },
+  "name": "lang_fr",
+  "scenario": "multilingual",
+  "config": {
+    "voice": {
+      "enabled": "true",
+      "cmd": "/bin/sh -c \"/bin/true\" {voice} {text}"
+    },
+    "stt": {
+      "language": "fr"
+    }
+  }
+}

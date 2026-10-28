@@ -30,14 +30,15 @@ def dictation_text(text: str) -> str:
 def execute(answers: dict, cfg: dict, harness: dict | None = None,
             detail: str = "", state=None, confirm=None,
             initial_image: str | None = None, interrupted=None,
-            ask=None) -> str:
+            ask=None, lang: str = "") -> str:
     """Route-aware dispatch. Falls back to the legacy action-based path
     when Jev's response lacks the route question. Jev only answers typed
     questions (noul/choice/score) — free-text args come from the
     transcript via `detail`. `initial_image` is the trigger-time
     screenshot (b64) handed to the act loop so the model sees the app
     instead of asking which one. `ask` is the in-loop question channel
-    (U4) forwarded to every act-loop dispatch."""
+    (U4) forwarded to every act-loop dispatch. `lang` is the spoken
+    language when it is not English (dictation keeps it, B23)."""
     from . import agents, tools
 
     def _run_act(task: str) -> str:
@@ -122,7 +123,8 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
         text_to_paste = dictation_text(body)
         from . import dictate
         return dictate.run(text_to_paste, cfg, state=state,
-                           confirm=confirm)
+                           confirm=confirm,
+                           **({"lang": lang} if lang else {}))
     if route == "learn":
         from . import routines
         if routines.parse_teach_intent(detail) is not None:
@@ -175,6 +177,14 @@ def _dispatch_status(result: str) -> str:
     return _state.result_status(result)
 
 
+def _lang_kw(ctx) -> dict:
+    """`lang=` only for a non-English turn, so English dispatch is
+    exactly as before."""
+    from . import lang as _lang
+    code = getattr(ctx, "lang", "")
+    return {} if _lang.is_english(code) else {"lang": code}
+
+
 def execute_stage(ctx) -> None:
     """Run the dispatch for this turn; sets ctx.result."""
     from . import trace as _trace
@@ -206,7 +216,8 @@ def execute_stage(ctx) -> None:
         result = ctx.result = pl.execute(
             answers, cfg, ctx.harness, detail=ctx.detail, state=state,
             confirm=confirm, initial_image=act_img,
-            interrupted=ctx.interrupted, ask=ask)
+            interrupted=ctx.interrupted, ask=ask,
+            **_lang_kw(ctx))
     except _cancel.Cancelled:
         _state.action_set(state, aid, status="cancelled",
                           reason="interrupted")

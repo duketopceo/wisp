@@ -332,7 +332,8 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
         if c == "label":
             from wisp import learn
             result = learn.label_last(cmd.get("label", ""),
-                                      cmd.get("note", ""))
+                                      cmd.get("note", ""),
+                                      cmd.get("lang", ""))
             state_mod.action_add(
                 st, "label", cmd.get("label", "") or "label",
                 status="failed" if result.startswith(("ERROR", "SKIP"))

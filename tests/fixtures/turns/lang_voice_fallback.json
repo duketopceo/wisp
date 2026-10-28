@@ -1,0 +1,56 @@
+{
+  "description": "Spanish heard but the custom voice command takes no {lang}: the default voice is used and the fallback is recorded (B23).",
+  "audio": "ask.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "¿qué hora es?",
+      "language": "spanish"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "content": "Son las tres y media.",
+          "chunk_delay_ms": 0
+        }
+      ]
+    }
+  },
+  "expect": {
+    "statuses": [
+      "listening",
+      "transcribing",
+      "deciding",
+      "acting",
+      "speaking",
+      "done"
+    ],
+    "transcript": "¿qué hora es?",
+    "answer": "Son las tres y media.",
+    "brain_calls": 1
+  },
+  "name": "lang_voice_fallback",
+  "scenario": "multilingual",
+  "config": {
+    "voice": {
+      "enabled": "true",
+      "cmd": "/bin/sh -c \"/bin/true\" {text}"
+    },
+    "stt": {
+      "language": "auto"
+    }
+  }
+}

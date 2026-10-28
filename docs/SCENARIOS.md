@@ -34,6 +34,13 @@ table to list every fixture.
 | `answer_draw_timed` | drawings timed to speech | Answer route with voice on and a fake TTS that takes 300 ms per sentence: the brain streams two sentences, the first with a [RING], the second with a [POINT] and an [ARROW]. `drawings` grows 1 then 2 while speaking (the second only after the first sentence has played), `points` arrives with the second; no tag reaches the answer and both lists are empty at done. |
 | `answer_points_timed` | points timed to speech | Answer route with voice on and a fake TTS that takes 300 ms per sentence: the brain streams two sentences, each with its own [POINT] tag. `points` grows 1 then 2 while speaking, the second point arriving only after the first sentence has played; no event carries both early. |
 | `ask` | answer | Answer route: Jev routes to answer, brain streams a reply. Characterization baseline of today's pipeline. |
+| `lang_unsupported` | multilingual | [stt] language names a language the speech service cannot transcribe: the turn ends at once with a spoken reason, no brain call (B23). |
+| `lang_voice_fallback` | multilingual | Spanish heard but the custom voice command takes no {lang}: the default voice is used and the fallback is recorded (B23). |
+| `lang_fr` | multilingual | French pinned (B23). |
+| `lang_ja` | multilingual | Japanese heard by auto detection (B23). |
+| `lang_pt_br` | multilingual | Brazilian Portuguese pinned in [stt] language (B23). |
+| `lang_de` | multilingual | German heard by auto detection (B23). |
+| `lang_es` | multilingual | Spanish heard by auto detection: transcript kept, reply rule in the answer prompt, Spanish voice (B23). |
 | `ask_chip` | answer from an ask chip | Saying an ask chip's text (the kitty skill's first ask) runs as a normal answer turn: same route, same stages, one brain call. |
 | `ask_selection` | answer with the selection | Answer route with a press-time selection: it reaches the brain as a quoted data block (B22). |
 | `ask_selection_injected` | selection is data | A selection that tries to give orders is delivered as data and routing is unchanged (B22). |

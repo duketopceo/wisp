@@ -196,7 +196,10 @@ class FakeJev(FakeServer):
 
 class FakeWhisper(FakeServer):
     def serve(self, h, method, body, n):
-        self.respond(h, 200, {"text": self.script.get("transcript", "")})
+        out = {"text": self.script.get("transcript", "")}
+        if self.script.get("language"):
+            out["language"] = self.script["language"]    # verbose_json
+        self.respond(h, 200, out)
 
 
 class FakeBrain(FakeServer):

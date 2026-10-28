@@ -1,0 +1,55 @@
+{
+  "description": "Brazilian Portuguese pinned in [stt] language (B23).",
+  "audio": "ask.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "que horas são"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "content": "São três e meia.",
+          "chunk_delay_ms": 0
+        }
+      ]
+    }
+  },
+  "expect": {
+    "statuses": [
+      "listening",
+      "transcribing",
+      "deciding",
+      "acting",
+      "speaking",
+      "done"
+    ],
+    "transcript": "que horas são",
+    "answer": "São três e meia.",
+    "brain_calls": 1
+  },
+  "name": "lang_pt_br",
+  "scenario": "multilingual",
+  "config": {
+    "voice": {
+      "enabled": "true",
+      "cmd": "/bin/sh -c \"/bin/true\" {voice} {text}"
+    },
+    "stt": {
+      "language": "pt-BR"
+    }
+  }
+}
