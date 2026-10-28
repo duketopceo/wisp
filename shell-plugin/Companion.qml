@@ -167,6 +167,8 @@ Item {
       exclusionMode: ExclusionMode.Ignore
       // input only where interactive: the pill and the bubble
       mask: Region {
+        // the whole screen, but only while the talk key is held (scribble)
+        Region { item: layer.scribbleActive ? layer.scribbleItem : null }
         Region { item: layer.pillShown ? layer.pill : null }
         Region { item: layer.bubbleShown ? layer.bubbleHost : null }
       }
@@ -210,6 +212,7 @@ Item {
         onConfirmChosen: function (pick, promptId) { root.svc.sendChoice(pick, promptId); }
         onMoreClicked: root.bubbleDismissed = true
         onVerdict: function (verdict) { root.labeled = true; root.svc.label(verdict); }
+        onScribbled: function (payload) { root.svc.scribble(payload); }
       }
     }
   }
