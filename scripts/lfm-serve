@@ -25,8 +25,11 @@ set -euo pipefail
 MODEL="${LFM_MODEL:-LiquidAI/LFM2.5-VL-1.6B-GGUF:Q4_0}"
 PORT="${LFM_PORT:-8082}"
 CTX="${LFM_CTX:-8192}"
+BIN="${LFM_BIN:-$HOME/src/llama.cpp/build-vk/bin/llama-server}"
+[ -x "$BIN" ] || BIN="$(command -v llama-server)"
+[ -x "$BIN" ] || { echo "lfm-serve: no llama-server (build ~/src/llama.cpp or set LFM_BIN)" >&2; exit 1; }
 
-exec llama-server -hf "$MODEL" \
+exec "$BIN" -hf "$MODEL" \
   --host 127.0.0.1 --port "$PORT" \
   -c "$CTX" --jinja -ngl 99 \
   ${LFM_EXTRA:-}

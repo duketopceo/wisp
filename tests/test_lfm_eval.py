@@ -90,12 +90,13 @@ class LfmEvalTest(unittest.TestCase):
     def test_load_rows_and_fixture_file_shape(self):
         rows = lfm_eval.load_rows(
             ROOT / "tests" / "fixtures" / "lfm_gate.jsonl")
-        self.assertEqual(len(rows), 3)
+        self.assertGreaterEqual(len(rows), 10)
         self.assertTrue(all(r.get("name") and r.get("prompt")
                             for r in rows))
-        # referenced image resolves fixture-relative
-        img = next(r for r in rows if r.get("image"))
-        self.assertTrue((img["_dir"] / img["image"]).exists())
+        # every referenced image resolves fixture-relative
+        for img in (r for r in rows if r.get("image")):
+            self.assertTrue((img["_dir"] / img["image"]).exists(),
+                            img["image"])
 
     def test_main_offline_errors_cleanly(self):
         # a dead lfm endpoint must be a gate failure (exit 1/2), not a
