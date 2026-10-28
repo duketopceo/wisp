@@ -5,7 +5,7 @@
 // regenerate. lib/settings.js builds on this table.
 
 // every key the daemon validates, in schema order
-var KEYS = ["budget.daily_usd", "budget.monthly_usd", "budget.gate_primary", "pointer.mode", "pointer.backend", "cua.dry_run", "cua.kill_switch", "cua.confirm", "cua.delivery", "cua.max_clicks_per_min", "cua.max_per_turn", "agent.autonomy", "dictation.mode", "cua.timeout_ms", "audio.seconds", "agent.screenshots", "ui.theme", "brain.router", "brain.allow_paid", "local.enabled", "keys.submap", "agents.act_max_steps", "agents.act_max_errors", "agents.act_max_parse_misses", "agents.act_max_seconds", "agents.act_max_usd", "agents.writer_queue_max", "stt.provider", "packs.keep", "packs.keep_days", "packs.shots_keep", "packs.shots_keep_days", "verify.judge_timeout_s", "verify.pixel_eps", "verify.region_px"]
+var KEYS = ["budget.daily_usd", "budget.monthly_usd", "budget.gate_primary", "pointer.mode", "pointer.backend", "cua.dry_run", "cua.kill_switch", "cua.confirm", "cua.delivery", "cua.max_clicks_per_min", "cua.max_per_turn", "agent.autonomy", "dictation.mode", "cua.timeout_ms", "audio.seconds", "chips.enabled", "chips.days", "agent.screenshots", "ui.theme", "brain.router", "brain.allow_paid", "local.enabled", "keys.submap", "agents.act_max_steps", "agents.act_max_errors", "agents.act_max_parse_misses", "agents.act_max_seconds", "agents.act_max_usd", "agents.writer_queue_max", "stt.provider", "packs.keep", "packs.keep_days", "packs.shots_keep", "packs.shots_keep_days", "verify.judge_timeout_s", "verify.pixel_eps", "verify.region_px"]
 
 // keys the Panel edits: kind usd, int, bool or choice
 var FIELDS = [

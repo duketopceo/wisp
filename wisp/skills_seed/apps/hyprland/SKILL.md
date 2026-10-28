@@ -3,6 +3,7 @@ name: hyprland
 description: Hyprland window manager shortcuts, workspaces, and Omarchy tiling controls
 tier: safe
 app_classes: hyprland, org.hyprland
+asks: How do I move a window to another workspace; How do I make this window float; Which key opens the terminal
 ---
 # hyprland
 

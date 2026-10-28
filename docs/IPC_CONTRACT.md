@@ -110,6 +110,7 @@ round-trip — they are not IPC commands and are absent from the table:
                "reason": "", "undo_ref": null, "delivery": "background",
                "at": "ISO-8601"}],
   "guide": {"x": 0, "y": 0, "label": "string", "mode": "guide|drive", "seq": 1},
+  "chips": "null, or {app, asks: [up to 3 short questions], seq} — ask chips after a quick tap (additive, B21); cleared by the next listening transition",
   "focus": {"app": "string", "title": "string"},
   "note": "null, or {conv_id, path, raw, objects, plan, closed, rendered} — live paper surface (additive, gap-closure U1); when closed, plan is []",
   "goal": {"text": "string", "status": "open|done|failed"},

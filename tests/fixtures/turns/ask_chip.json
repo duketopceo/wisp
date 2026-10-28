@@ -1,0 +1,46 @@
+{
+ "description": "Saying an ask chip's text (the kitty skill's first ask) runs as a normal answer turn: same route, same stages, one brain call.",
+ "audio": "ask.wav",
+ "endpoints": {
+  "whisper": {
+   "transcript": "how do i open a new tab"
+  },
+  "jev": {
+   "answers": {
+    "route": {
+     "choice": "answer"
+    },
+    "app": {
+     "choice": "none",
+     "confidence": 0.99
+    },
+    "risk": {
+     "score": 0
+    }
+   }
+  },
+  "brain": {
+   "responses": [
+    {
+     "content": "Press Ctrl+Shift+T in kitty.",
+     "chunk_delay_ms": 0
+    }
+   ]
+  }
+ },
+ "expect": {
+  "statuses": [
+   "listening",
+   "transcribing",
+   "deciding",
+   "acting",
+   "speaking",
+   "done"
+  ],
+  "transcript": "how do i open a new tab",
+  "answer": "Press Ctrl+Shift+T in kitty.",
+  "brain_calls": 1
+ },
+ "name": "ask_chip",
+ "scenario": "answer from an ask chip"
+}

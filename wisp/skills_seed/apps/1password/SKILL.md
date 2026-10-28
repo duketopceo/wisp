@@ -4,6 +4,7 @@ description: 1Password desktop and web vault quick access, autofill, and lock sh
 tier: safe
 app_classes: 1password
 url_hosts: 1password.com, my.1password.com
+asks: How do I open quick access; How do I lock my vault; Is it safe to autofill here
 ---
 # 1password
 

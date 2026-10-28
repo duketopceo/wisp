@@ -3,6 +3,7 @@ name: thunderbird
 description: Mozilla Thunderbird mail compose, reply, search, and folder navigation
 tier: safe
 app_classes: thunderbird, org.mozilla.thunderbird
+asks: How do I filter these emails; How do I add an account; Where is the spam folder
 ---
 # thunderbird
 

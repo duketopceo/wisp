@@ -83,6 +83,7 @@ TOLERANCE = {
     "Creature": Tolerance(12, 0.008),
     "Companion": Tolerance(12, 0.006),
     "DrawLayer": Tolerance(12, 0.006),
+    "AskChips": Tolerance(10, 0.012),   # text only
     "Card": Tolerance(10, 0.012),   # picture resampling and the source line text
 }
 

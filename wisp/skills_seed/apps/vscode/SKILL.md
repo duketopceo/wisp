@@ -3,6 +3,7 @@ name: vscode
 description: VS Code / VSCodium / Cursor command palette, sidebar, and terminal shortcuts
 tier: safe
 app_classes: code, code-oss, vscodium, cursor, vscode
+asks: How do I open the command palette; How do I find in all files; How do I open the terminal
 ---
 # vscode
 
