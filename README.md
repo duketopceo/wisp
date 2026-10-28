@@ -127,6 +127,10 @@ What a turn can do:
   goal join one goal (`[agent] goal_ttl_s`, 10 minutes). Questions from
   the agent come back through the voice backchannel without ending it.
 
+Spoken settings: "talk slower", "talk faster" and "talk at normal speed"
+change `[voice] speed` (0.5 to 1.5) and are logged with the guarded calls
+(`wispd cua log --audit`).
+
 ## Computer use
 
 Wisp can click, scroll, type and press keys for you. Pointer backends,

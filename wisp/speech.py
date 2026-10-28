@@ -21,8 +21,26 @@ _LOCK = threading.Lock()
 _PROC: subprocess.Popen | None = None
 
 
+SPEED_MIN, SPEED_MAX = 0.5, 1.5
+SPEED_STEPS = (0.5, 0.75, 1.0, 1.25, 1.5)
+
+
+def speed(cfg: dict) -> float:
+    """[voice] speed as a multiplier, clamped to 0.5 to 1.5; 1.0 when
+    unset or not a number."""
+    raw = (cfg.get("voice") or {}).get("speed", "")
+    try:
+        v = float(raw) if str(raw).strip() else 1.0
+    except (TypeError, ValueError):
+        return 1.0
+    if v != v:       # NaN
+        return 1.0
+    return min(SPEED_MAX, max(SPEED_MIN, v))
+
+
 def _argv(msg: str, cfg: dict) -> list[str] | None:
     cmd = cfg.get("voice", {}).get("cmd", "")
+    rate = speed(cfg)
     if cmd:
         try:
             parts = shlex.split(cmd)
@@ -30,13 +48,15 @@ def _argv(msg: str, cfg: dict) -> list[str] | None:
             return None
         if not parts:
             return None
+        # `{rate}` receives the speed multiplier (1.0 = normal)
+        parts = [p.replace("{rate}", f"{rate:g}") for p in parts]
         if "{text}" in parts:
             parts = [msg if p == "{text}" else p for p in parts]
         else:
             parts.append(msg)
         return parts
     from . import platform
-    return platform.tts_argv(msg)
+    return platform.tts_argv(msg, rate)
 
 
 def speak(msg: str, cfg: dict) -> subprocess.Popen | None:
