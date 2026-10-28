@@ -237,6 +237,18 @@ class Progress:
         self._write(d)
         return True
 
+    @property
+    def tour(self) -> dict:
+        t = self._read().get("tour")
+        return t if isinstance(t, dict) else {}
+
+    def tour_mark(self, step: str):
+        d = self._read()
+        t = d.get("tour") if isinstance(d.get("tour"), dict) else {}
+        t[step] = _now()
+        d["tour"] = t
+        self._write(d)
+
     def finish(self):
         d = self._read()
         d["finished"] = _now()

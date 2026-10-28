@@ -84,6 +84,13 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
         return agents.spawn(detail or app or "unnamed task", cfg)
     if route == "walkthrough":
         from . import walkthrough_run
+        if detail.startswith(walkthrough_run.SAVE_PREFIX):
+            return walkthrough_run.save_lesson(
+                detail[len(walkthrough_run.SAVE_PREFIX):].strip())
+        if detail.startswith(walkthrough_run.REPLAY_PREFIX):
+            return walkthrough_run.replay_lesson(
+                detail[len(walkthrough_run.REPLAY_PREFIX):].strip(), cfg,
+                state=state, interrupted=interrupted)
         goal, demo = walkthrough_run.split_mode(detail)
         resume = None
         if detail == walkthrough_run.RESUME_PREFIX:
