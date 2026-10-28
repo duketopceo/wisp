@@ -1,0 +1,16 @@
+usage: wispd health idle [-h] [--seconds N] [--json] [--quiet] [--no-color]
+
+Measure the running daemon's idle CPU and memory against its budgets
+
+options:
+  -h, --help   show this help message and exit
+  --seconds N  how long to watch the idle daemon (1 to 60, default 3)
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd health idle
+  wispd health idle --seconds 10 --json

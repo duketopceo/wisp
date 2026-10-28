@@ -715,6 +715,15 @@ def _start_keys(st, cfg: dict):
 
 def run_daemon(cfg: dict) -> int:
     global _DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL, _HEALTH
+    # one daemon per user: a second start must not touch the first's
+    # socket, state or speech (wisp/instance.py)
+    from wisp import instance
+    try:
+        instance.acquire()
+    except instance.AlreadyRunning as e:
+        print(f"wispd: {e}; not starting a second one. "
+              "`wispd stop` stops it.", file=sys.stderr)
+        return instance.EXIT_RUNNING
     try:
         # transcripts and traces are private to this user: new files are
         # 0600 and older versions' world-readable ones are tightened

@@ -91,6 +91,20 @@ window-local region through the zoom lane; the frame comes back as
 the next observation (inspect only — its pixels are not the click
 coordinate space).
 
+## One daemon, and what idle costs
+
+`wispd daemon run` takes a lock (`wispd.lock`, next to the socket) before it
+touches anything. A second start prints which pid holds it and exits 78
+without replacing the first daemon's socket, so a key press is never
+answered twice. The systemd unit does not restart on 78. The kernel drops
+the lock when the daemon dies, so there is nothing stale to clean up.
+
+`wispd health idle` watches the running daemon for a few seconds with nothing
+asked and compares CPU and resident memory with the `idle_cpu_pct` (3) and
+`idle_rss_mb` (250) rows of `wisp/budgets.json`; over budget exits 4.
+`tests/test_idle_budget.py` runs the same check against the real daemon in
+CI, and fails when a spin loop holds the lock instead.
+
 ## Known failure modes → recovery
 
 | Symptom | Cause | Fix |

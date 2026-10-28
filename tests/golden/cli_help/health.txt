@@ -4,6 +4,8 @@ Probe the local model endpoints
 
 positional arguments:
   <verb>
+    idle       Measure the running daemon's idle CPU and memory against its
+               budgets
     start      Print (or with --run, execute) the command that starts down
                endpoints
 
