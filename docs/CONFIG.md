@@ -448,6 +448,20 @@ escalates to a VLM judge.
 | `region_px` | `96` | side of the square pixel region diffed around a click point |
 | `frame_wait_s` | `0.5` | bound on waiting for the driver's before/after frames |
 
+## [docs] — answer about the whole document
+
+When you ask about a document ("what does page 30 say", "summarize this
+paper") and the focused window shows a PDF, DOCX, XLSX, TXT or MD file,
+Wisp reads the file locally and gives the answer model the pages your
+question names or matches (about 6000 characters). Files over 40 MB and
+files in protected folders (`~/.ssh`, `~/.config`, keyrings, browser
+profiles, system directories) are never read. Scanned PDFs use OCR when
+`tesseract` is installed.
+
+| key | default | meaning |
+|-----|---------|---------|
+| `enabled` | `true` | set `false` to never read the focused file |
+
 ## [debug]
 
 | key | meaning |
