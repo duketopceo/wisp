@@ -45,6 +45,10 @@ Settings (value, default, range):
                                default 800; 50 to 60000
   audio.seconds                Longest recording for one turn in seconds
                                default 60; 1 to 600
+  chips.enabled                Show ask chips when you tap the talk key without speaking (first week only)
+                               default true; true or false
+  chips.days                   How many days from the first tap the ask chips are offered
+                               default 7; 1 to 365
   agent.screenshots            Attach a screenshot to answer calls
                                default true; true or false
   ui.theme                     Fallback theme when the desktop theme is unreadable
