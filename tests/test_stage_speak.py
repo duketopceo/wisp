@@ -148,7 +148,13 @@ class VoiceOnTimingTests(StageBase):
         self.wait_done()
         pubs = [p[0] for p in self.pubs]
         self.assertEqual([len(x["drawings"]) for x in pubs], [1, 2])
-        self.assertEqual(pubs[-1]["drawings"], [RING1, ARROW1])
+        shown = pubs[-1]["drawings"]
+        # each mark carries the spoken time of its own sentence (the
+        # pen's pace); the geometry is untouched
+        self.assertEqual([{k: v for k, v in d.items() if k != "ms"}
+                          for d in shown], [RING1, ARROW1])
+        self.assertTrue(all(isinstance(d["ms"], int) and d["ms"] > 0
+                            for d in shown))
         self.assertEqual([len(x["points"]) for x in pubs], [0, 1])
         self.assertGreaterEqual(len(self.pubs[1][1]), 1)
         self.assertEqual(self.bus.state.drawings, [])

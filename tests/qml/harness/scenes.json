@@ -863,7 +863,55 @@
    "height": 360
   },
   "scale2": true,
+  "settle": 80,
   "variants": {
+   "arrow": {
+    "_fixture": {
+     "patch": {
+      "drawings": [
+       {
+        "kind": "arrow",
+        "x1": 230,
+        "x2": 470,
+        "y1": 260,
+        "y2": 150
+       }
+      ]
+     }
+    },
+    "_state": "speaking"
+   },
+   "region": {
+    "_fixture": {
+     "patch": {
+      "drawings": [
+       {
+        "h": 70,
+        "kind": "hl",
+        "w": 260,
+        "x": 300,
+        "y": 40
+       }
+      ]
+     }
+    },
+    "_state": "speaking"
+   },
+   "ring": {
+    "_fixture": {
+     "patch": {
+      "drawings": [
+       {
+        "kind": "ring",
+        "r": 44,
+        "x": 120,
+        "y": 90
+       }
+      ]
+     }
+    },
+    "_state": "speaking"
+   },
    "shapes": {
     "_fixture": {
      "patch": {
@@ -887,6 +935,84 @@
         "w": 260,
         "x": 300,
         "y": 40
+       }
+      ]
+     }
+    },
+    "_state": "speaking"
+   },
+   "tone_dark": {
+    "_fixture": {
+     "patch": {
+      "drawings": [
+       {
+        "kind": "ring",
+        "r": 44,
+        "tone": "dark",
+        "x": 120,
+        "y": 90
+       },
+       {
+        "kind": "arrow",
+        "tone": "dark",
+        "x1": 230,
+        "x2": 470,
+        "y1": 260,
+        "y2": 150
+       },
+       {
+        "h": 70,
+        "kind": "hl",
+        "tone": "dark",
+        "w": 260,
+        "x": 300,
+        "y": 40
+       }
+      ]
+     }
+    },
+    "_state": "speaking"
+   },
+   "tone_light": {
+    "_fixture": {
+     "patch": {
+      "drawings": [
+       {
+        "kind": "ring",
+        "r": 44,
+        "tone": "light",
+        "x": 120,
+        "y": 90
+       },
+       {
+        "kind": "arrow",
+        "tone": "light",
+        "x1": 230,
+        "x2": 470,
+        "y1": 260,
+        "y2": 150
+       },
+       {
+        "h": 70,
+        "kind": "hl",
+        "tone": "light",
+        "w": 260,
+        "x": 300,
+        "y": 40
+       }
+      ]
+     }
+    },
+    "_state": "speaking"
+   },
+   "unknown_kind_dropped": {
+    "_fixture": {
+     "patch": {
+      "drawings": [
+       {
+        "kind": "squiggle",
+        "x": 50,
+        "y": 50
        }
       ]
      }
