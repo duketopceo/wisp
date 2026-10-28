@@ -12,7 +12,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from wisp import config, cua_safety, notify, platform, voice_polish  # noqa: E402
 from wisp import stage_route, stage_execute, voice_settings  # noqa: E402
-from wisp import settings_schema  # noqa: E402
+from wisp import settings_schema, pipeline, stage_speak  # noqa: E402
 
 import test_notify  # noqa: E402
 import test_stage_speak  # noqa: E402
@@ -71,9 +71,38 @@ class DeliveryPlan(unittest.TestCase):
 
     def test_captions_off_hides_the_spoken_text(self):
         cfg = {"voice": {"enabled": "true", "captions": "false"}}
-        d = voice_polish.begin(cfg, runner({}))
+        with mock.patch.object(voice_polish, "voice_usable",
+                               return_value=True):
+            d = voice_polish.begin(cfg, runner({}))
         self.assertEqual(d.shown("hello"), "")
         self.assertEqual(d.cfg["voice"]["enabled"], "true")
+
+    def test_captions_stay_on_when_there_is_no_voice_to_speak_with(self):
+        cfg = {"voice": {"enabled": "true", "captions": "false"}}
+        with mock.patch.object(voice_polish, "voice_usable",
+                               return_value=False):
+            d = voice_polish.begin(cfg, runner({}))
+        self.assertEqual(d.shown("hello"), "hello")
+
+    def test_voice_usable_checks_the_tts_program(self):
+        with mock.patch.object(voice_polish.shutil, "which",
+                               lambda n: "/bin/x" if n == "mytts" else None):
+            self.assertTrue(voice_polish.voice_usable(
+                {"voice": {"cmd": "mytts --fast {text}"}}))
+            self.assertFalse(voice_polish.voice_usable(
+                {"voice": {"cmd": "nothere {text}"}}))
+        with mock.patch.object(platform, "tts_binary", lambda: None):
+            self.assertFalse(voice_polish.voice_usable({"voice": {}}))
+        with mock.patch.object(platform, "tts_binary", lambda: "espeak"):
+            self.assertTrue(voice_polish.voice_usable({"voice": {}}))
+
+    def test_revealed_shows_the_text_when_nothing_was_spoken(self):
+        cfg = {"voice": {"enabled": "true", "captions": "false"}}
+        with mock.patch.object(voice_polish, "voice_usable",
+                               return_value=True):
+            d = voice_polish.begin(cfg, runner({}))
+        self.assertEqual(d.shown("hi"), "")
+        self.assertEqual(d.revealed("hi"), "hi")
 
     def test_muted_speaker_stops_speech_and_shows_text_with_hint(self):
         cfg = {"voice": {"enabled": "true", "captions": "false"}}
@@ -120,9 +149,34 @@ class MutedTurn(test_stage_speak.StageBase):
         speaker = mock.patch("wisp.speech.SentenceSpeaker",
                              test_stage_speak.FakeSpeaker)
         with mock.patch.object(voice_polish, "speaker_muted",
-                               return_value=False), speaker:
+                               return_value=False), \
+             mock.patch.object(voice_polish, "voice_usable",
+                               return_value=True), speaker:
             self.run_answer(cfg, "Open Settings.", ["Open ", "Open Settings."])
         self.assertEqual(self.bus.state.answer, "")
+
+    def test_clipboard_gets_the_text_without_point_tags(self):
+        cfg = {"voice": {"enabled": "true"}, "agent": {}}
+        with mock.patch.object(voice_polish, "speaker_muted",
+                               return_value=True), \
+             mock.patch.object(voice_polish, "copy_to_clipboard",
+                               return_value=True) as cp:
+            self.run_answer(cfg, test_stage_speak.REPLY)
+        copied = cp.call_args[0][0]
+        self.assertNotIn("[POINT", copied)
+        self.assertIn("Open Settings", copied)
+
+    def test_captions_off_still_shows_the_text_when_speech_never_starts(self):
+        cfg = {"voice": {"enabled": "true", "captions": "false"}}
+        ctx = self.ctx(cfg)
+        with mock.patch.object(voice_polish, "speaker_muted",
+                               return_value=False), \
+             mock.patch.object(voice_polish, "voice_usable",
+                               return_value=True), \
+             mock.patch.object(pipeline.speech, "speak", return_value=None):
+            stage_speak._speak_result(ctx, "All done.")
+        self.assertEqual(self.bus.state.answer, "All done.")
+        self.assertEqual(self.bus.state.status, "done")
 
 
 class MicFailover(unittest.TestCase):
@@ -164,6 +218,33 @@ class MicFailover(unittest.TestCase):
             self.cmd, spawn, device="usb", sleep=lambda s: None)
         self.assertTrue(over)
         self.assertEqual(spawned, [["rec", "--target", "usb"], ["rec"]])
+
+    def test_the_dead_attempt_is_cleared_before_the_retry(self):
+        spawned, spawn = self.spawn_with(True)
+        order = []
+        voice_polish.spawn_recorder(
+            self.cmd, lambda a: (order.append("spawn"), spawn(a))[1],
+            device="usb", sleep=lambda s: None,
+            before_retry=lambda: order.append("clear"))
+        self.assertEqual(order, ["spawn", "clear", "spawn"])
+        order.clear()
+        s2, sp2 = self.spawn_with(False)
+        voice_polish.spawn_recorder(
+            self.cmd, sp2, device="usb", sleep=lambda s: None,
+            before_retry=lambda: order.append("clear"))
+        self.assertEqual(order, [])
+
+    def test_a_named_mic_never_falls_back_inside_pipewire(self):
+        with mock.patch.object(platform, "_which",
+                               lambda n: n == "pw-record"):
+            cmd = platform.record_cmd(pathlib.Path("/tmp/a.wav"), None, "usb")
+            self.assertIn("node.dont-fallback=true", " ".join(cmd))
+
+    def test_the_failover_toast_is_not_held_on_a_call(self):
+        from wisp import stage_capture
+        with mock.patch.object(pipeline, "notify") as n:
+            stage_capture._note_mic_failover(None, "usb")
+        self.assertEqual(n.call_args.kwargs["hold"], False)
 
     def test_record_cmd_targets_the_device(self):
         with mock.patch.object(platform, "_which",
@@ -261,6 +342,22 @@ class HeldToasts(unittest.TestCase):
         self.assertEqual(n.send("boom", "error"), "sent")
         self.assertEqual(n.send("turn done", "success", turn="t1"), "sent")
         self.assertEqual(len(bus.notifies()), 2)
+
+    def test_a_repeat_is_held_once_and_cannot_crowd_out_a_new_one(self):
+        n, bus, _ = self.mk({"why": "in_call"})
+        for _ in range(notify.HELD_MAX + 5):
+            n.send("same", "info")
+        n.send("different", "info")
+        self.assertEqual(sorted(h[0] for h in n._held), ["different", "same"])
+
+    def test_the_hold_cache_follows_the_setting(self):
+        t = [0.0]
+        run = runner({"hyprctl": (0, json.dumps(CLIENTS))})
+        c = voice_polish.HoldCache(ttl=60, clock=lambda: t[0])
+        self.assertEqual(c.get({}, run), "in_call")
+        off = {"quiet": {"on_calls": "false"}}
+        self.assertEqual(c.get(off, run), "")          # no waiting for ttl
+        self.assertEqual(c.get({}, run), "in_call")
 
     def test_the_held_list_is_bounded(self):
         n, _bus, _ = self.mk({"why": "in_call"})

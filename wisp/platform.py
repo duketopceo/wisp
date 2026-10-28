@@ -72,7 +72,10 @@ def record_cmd(out: Path, seconds: float | None,
         cmd = ["pw-record", "--rate", "16000", "--channels", "1",
                "--format", "s16"]
         if device:
-            cmd += ["--target", device]
+            # a missing mic must fail, not quietly record the default one:
+            # the failover in voice_polish.spawn_recorder owns that step
+            cmd += ["--target", device,
+                    "-P", "{ node.dont-fallback=true }"]
         if seconds:
             cmd += ["--sample-count", str(int(16000 * seconds))]
         return cmd + [str(out)]

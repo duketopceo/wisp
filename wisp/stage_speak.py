@@ -259,7 +259,9 @@ def _speak_result(ctx, payload: str) -> None:
         speech.on_exit(proc, pl._end_speaking(state))
     else:
         _close_paper(state)
-        state.transition("done", result=ctx.result)
+        # nothing was spoken: the text must not stay hidden by captions off
+        state.transition("done", result=ctx.result,
+                         answer=vp.revealed(reply))
     sp.record("tts_start", tts_start)
 
 
@@ -281,7 +283,7 @@ def _ask_user(ctx) -> int:
     if proc is not None:
         speech.on_exit(proc, pl._end_speaking(state))
     else:
-        state.transition("done", result=result)
+        state.transition("done", result=result, answer=vp.revealed(q))
     session.append_turn(text, route="act", reply=q, result=result,
                         app=ctx.app)
     pl.notify(result, "success", spoken=True,
@@ -454,7 +456,6 @@ def _answer(ctx) -> None:
         if why:
             reply = (reply + " " + " ".join(why)).strip()
     ctx.reply = reply
-    vp.finish(reply)
     marks = []
     all_pts = []
     all_drws = []
@@ -464,6 +465,7 @@ def _answer(ctx) -> None:
         if marks:
             with plock:
                 all_pts, all_drws = _split([p for _, p in marks])
+    vp.finish(reply)    # a muted speaker: the tag-free text, on the clipboard
     if all_pts or all_drws:
         _trace.emit(turn, "points", "act",
                     {"points": all_pts, "drawings": all_drws})
@@ -495,7 +497,7 @@ def _answer(ctx) -> None:
                 round((time.monotonic() - _t) * 1000))
     if proc is None:
         _close_paper(state)
-        state.transition("done")
+        state.transition("done", answer=vp.revealed(reply))
 
 
 def _finish(ctx) -> int:

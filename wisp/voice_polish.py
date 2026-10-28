@@ -18,6 +18,7 @@ raises into a turn.
 import dataclasses
 import json
 import re
+import shlex
 import shutil
 import subprocess
 import threading
@@ -78,14 +79,12 @@ def speaker_muted(runner=None) -> bool:
 
 
 def copy_to_clipboard(text: str, runner=None) -> bool:
-    """wl-copy the text; False when there is no clipboard tool."""
+    """wl-copy the text (the dictate helper); False when there is no
+    clipboard tool."""
     if not text:
         return False
-    run = runner or _run
-    if not (shutil.which("wl-copy") or runner):
-        return False
-    rc, _ = run(["wl-copy"], timeout=2.0, data=text.encode())
-    return rc == 0
+    from . import dictate
+    return dictate.copy_to_clipboard(text, timeout=2.0, runner=runner)
 
 
 @dataclasses.dataclass
@@ -108,12 +107,34 @@ class Delivery:
             return f"{text}\n{self.hint}" if self.hint else text
         return text if self.captions else ""
 
+    def revealed(self, text: str) -> str:
+        """Bubble text once nothing was spoken after all: the answer
+        shows whatever the captions setting says."""
+        if self.muted:
+            return self.shown(text)
+        return text
+
     def finish(self, text: str, runner=None) -> None:
         """Muted: put the final answer on the clipboard, set the hint."""
         if not self.muted:
             return
         self.copied = copy_to_clipboard(text, runner)
         self.hint = HINT_MUTED if self.copied else HINT_MUTED_NOCOPY
+
+
+def voice_usable(cfg: dict) -> bool:
+    """True when a TTS command exists to speak with: the [voice] cmd's
+    program, else the built-in espeak. With none, captions stay on so the
+    answer is never hidden and unspoken."""
+    cmd = str(((cfg or {}).get("voice", {}) or {}).get("cmd", "")).strip()
+    if cmd:
+        try:
+            first = shlex.split(cmd)[0]
+        except (ValueError, IndexError):
+            return False
+        return bool(shutil.which(first))
+    from . import platform
+    return platform.tts_binary() is not None
 
 
 def begin(cfg: dict, runner=None) -> Delivery:
@@ -126,7 +147,8 @@ def begin(cfg: dict, runner=None) -> Delivery:
         quiet = dict(cfg)
         quiet["voice"] = dict(cfg.get("voice", {}), enabled="false")
         return Delivery(cfg=quiet, muted=True, hint=HINT_MUTED)
-    return Delivery(cfg=cfg, captions=captions_on(cfg))
+    return Delivery(cfg=cfg,
+                    captions=captions_on(cfg) or not voice_usable(cfg))
 
 
 # -- mic failover -------------------------------------------------------
@@ -138,12 +160,14 @@ def mic_device(cfg: dict) -> str:
 
 
 def spawn_recorder(cmd_for, spawn, *, device: str = "",
-                   settle_s: float = 0.35, sleep=time.sleep):
+                   settle_s: float = 0.35, sleep=time.sleep,
+                   before_retry=None):
     """Start the recorder on `device`; when that process dies inside
     `settle_s` (the mic is gone) start it again on the default device.
 
-    `cmd_for(device)` builds the argv, `spawn(argv)` returns a Popen.
-    Returns (proc, failed_over). Never loops: one retry, then the caller's
+    `cmd_for(device)` builds the argv, `spawn(argv)` returns a Popen,
+    `before_retry()` clears what the dead attempt wrote. Returns
+    (proc, failed_over). Never loops: one retry, then the caller's
     own "recording produced no audio" error ends the turn."""
     proc = spawn(cmd_for(device))
     if not device:
@@ -151,6 +175,8 @@ def spawn_recorder(cmd_for, spawn, *, device: str = "",
     sleep(settle_s)
     if proc.poll() is None:
         return proc, False
+    if before_retry is not None:
+        before_retry()
     return spawn(cmd_for("")), True
 
 
@@ -221,11 +247,15 @@ class HoldCache:
         self._ttl, self._clock = ttl, clock
         self._at = None
         self._val = ""
+        self._on = None
         self._lock = threading.Lock()
 
     def get(self, cfg: dict, runner=None) -> str:
         with self._lock:
             now = self._clock()
+            on = quiet_enabled(cfg)
+            if on != self._on:           # the setting changed: probe again
+                self._at, self._on = None, on
             if self._at is None or now - self._at >= self._ttl:
                 try:
                     self._val = hold_reason(cfg, runner)

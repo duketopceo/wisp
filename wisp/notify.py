@@ -173,7 +173,7 @@ class Notifier:
 
     # -- public ------------------------------------------------------
     def send(self, msg, level="info", *, turn=None, code=None, key=None,
-             actions=None, spoken=False, stale=False) -> str:
+             actions=None, spoken=False, stale=False, hold=True) -> str:
         """Decide synchronously, deliver asynchronously. Returns the
         decision: sent | disabled | cancelled | stale | quiet | spoken |
         deduped."""
@@ -195,7 +195,7 @@ class Notifier:
             return "spoken"
         if in_quiet(self._opt("quiet"), self._now()):
             return "quiet"
-        if turn is None and level in ("info", "success") \
+        if hold and turn is None and level in ("info", "success") \
                 and self._hold_or_queue(msg, level, key, actions):
             return "held"
         self.flush_held()
@@ -231,9 +231,14 @@ class Notifier:
         screen share is on; it is delivered when that ends."""
         if not self._hold_reason():
             return False
+        dk = key or f"{level}:{msg}"
         with self._lock:
-            if len(self._held) < HELD_MAX:
-                self._held.append((msg, level, key, list(actions or [])))
+            # the same announcement held twice goes out once (the dedupe
+            # key the normal path uses), and repeats never fill the cap
+            self._held = [h for h in self._held
+                          if (h[2] or f"{h[1]}:{h[0]}") != dk]
+            self._held.append((msg, level, key, list(actions or [])))
+            del self._held[:-HELD_MAX]
         self._arm_held_timer()
         return True
 

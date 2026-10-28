@@ -84,7 +84,8 @@ def record_start(state=None) -> dict:
     # [audio] device gone (unplugged, Bluetooth asleep): record from the
     # system default instead and say so, never hang on a dead mic (B8b)
     proc, failed_over = voice_polish.spawn_recorder(
-        lambda d: platform.record_cmd(out, None, d), _spawn, device=device)
+        lambda d: platform.record_cmd(out, None, d), _spawn, device=device,
+        before_retry=lambda: out.unlink(missing_ok=True))
     if failed_over:
         _note_mic_failover(state, device)
     from . import stt_stream
@@ -97,7 +98,8 @@ def _note_mic_failover(state, device: str) -> None:
     """One toast; the turn goes on with the default mic."""
     from . import voice_polish
     try:
-        _pl().notify(voice_polish.HINT_MIC, "info", key="mic-failover")
+        _pl().notify(voice_polish.HINT_MIC, "info", key="mic-failover",
+                     hold=False)
     except Exception:
         pass
 
