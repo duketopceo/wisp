@@ -59,6 +59,13 @@ _BUILTINS = {
     "openai_compat": {"kind": "openai_compat", "base_url": "",
                       "key_env": "", "vision": "false",
                       "tools": "false"},
+    # B34, both off until the owner turns them on: the capped trial proxy
+    # (wisp/trial.py, base_url comes from [trial] url) and the user's own
+    # coding-agent CLI (wisp/clibrain.py, `cli:claude` / `cli:codex`)
+    "trial": {"kind": "openai_compat", "base_url": "", "key_env": "",
+              "vision": "false", "tools": "false"},
+    "cli": {"kind": "cli", "base_url": "cli://local", "key_env": "",
+            "vision": "false", "tools": "false"},
     "mlx": {"kind": "openai_compat",
             "base_url": "http://localhost:8080/v1",
             "key_env": "", "vision": "false", "tools": "false"},
@@ -69,6 +76,14 @@ def _make(cfg: dict, name: str, model: str) -> dict:
     p = dict(_BUILTINS.get(name, _BUILTINS["openai_compat"]))
     p.update({k: v for k, v in cfg.get(f"brain.{name}", {}).items()})
     p["name"], p["model"] = name, model
+    if name == "trial":
+        from . import trial
+        p["base_url"] = trial.url(cfg)     # "" while the trial is off
+        p["paid"] = False
+    if name == "cli":
+        from . import clibrain
+        p["paid"] = False
+        p["enabled"] = clibrain.enabled(cfg)   # the chain call has no cfg
     if "paid" in p:
         p["paid"] = str(p["paid"]).lower() == "true"
     else:
@@ -147,6 +162,9 @@ def _post(url: str, headers: dict, body: dict, timeout: float = 60) -> dict:
 
 
 def _headers(p: dict) -> dict:
+    if p["name"] == "trial":
+        from . import trial
+        return {"Authorization": f"Bearer {trial.token()}"}
     key = config.require_key(p["key_env"]) if p.get("key_env") else ""
     headers = {}
     if key:
@@ -172,6 +190,12 @@ def _ollama_msgs(messages: list) -> list:
 
 
 def _chat_one(p: dict, messages: list, tools, timeout) -> dict:
+    if p["kind"] == "cli":
+        from . import clibrain
+        return clibrain.chat(p, messages)
+    if p["name"] == "trial":
+        from . import trial
+        messages, tools = trial.text_only(messages), None
     base = p["base_url"].rstrip("/")
     if p["kind"] == "ollama":
         body = {"model": p["model"], "messages": _ollama_msgs(messages),
@@ -211,6 +235,13 @@ def _relax(r, timeout) -> None:
 
 def _stream_one(p: dict, messages: list, on_delta, timeout,
                 first_token_s: float) -> dict:
+    if p["kind"] == "cli" or p["name"] == "trial":
+        # one reply, no token stream: a CLI answers whole and the trial
+        # proxy does not stream
+        res = _chat_one(p, messages, None, timeout)
+        if on_delta and res.get("content"):
+            on_delta(res["content"])
+        return res
     base = p["base_url"].rstrip("/")
     ollama = p["kind"] == "ollama"
     if ollama:
@@ -293,6 +324,10 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
 
 
 def _describe(p: dict, e: Exception) -> str:
+    if p["name"] == "trial":
+        from . import trial
+        if trial.limit_reached(e):
+            return f"brain provider 'trial': {trial.LIMIT_LINE}"
     if errors_codes.is_connection_failure(e):
         return (f"brain provider '{p['name']}' unreachable at "
                 f"{p['base_url']} ({e})")
@@ -324,7 +359,9 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
     missing = None
     for i, p in enumerate(chain(cfg)):
         cancel.check()  # a cancelled turn never moves to the next brain
-        if not p["base_url"]:
+        if not p["base_url"] and p["name"] == "trial":
+            failures.append("brain provider 'trial' is off")
+        elif not p["base_url"]:
             failures.append(f"brain provider '{p['name']}' needs "
                             f"brain.{p['name']}.base_url")
         elif p["paid"] and not budget_ok(cfg, primary=not i):
