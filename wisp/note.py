@@ -18,7 +18,7 @@ from typing import Any
 # Plan markers recovered from the HeyClicky paper protocol.
 PLAN_MARKERS = ("now", "pick", "needs")
 # Single-colon object openers (`::tiles`, `::ticket[…]`, …).
-LINE_KINDS = frozenset({"tiles", "ticket", "ask", "question"})
+LINE_KINDS = frozenset({"tiles", "ticket", "ask", "question", "image"})
 # Triple-colon fenced blocks.
 BLOCK_KINDS = frozenset({"letter", "chart", "sketch"})
 # Anything else is letter-text fallback.
@@ -35,6 +35,11 @@ _CLOSE_BLOCK_RE = re.compile(r"^:::\s*$")
 _CLOSE_LINE_RE = re.compile(r"^::\s*$")
 _ATTR_RE = re.compile(r"([A-Za-z_][\w-]*)\s*=\s*([^,\]]+)")
 _SAFE_CONV = re.compile(r"[^A-Za-z0-9._-]+")
+# `::image[url=https://...,alt=...]` line, dropped from the spoken text.
+# with its caption lines and a closing `::`
+_IMAGE_LINE_RE = re.compile(
+    r"^::image\b[^\n]*(?:\n(?!::)[^\n]*)*(?:\n::[ \t]*$)?",
+    re.IGNORECASE | re.M)
 # Line-start `::tiles` / `:::letter` only — not `std::vector` / `Foo::bar`.
 _PAPER_HINT_RE = re.compile(r"^:{2,3}[A-Za-z_]", re.M)
 
@@ -243,6 +248,11 @@ def render_text(parsed: dict | None, *, include_plan: bool | None = None,
             lines.append(f"[{tag}] {body}".rstrip())
         elif kind in ("ask", "question"):
             lines.append(f"? {body}".rstrip())
+        elif kind == "image":
+            img = obj.get("image") or {}
+            alt = attrs.get("alt") or body or "picture"
+            src = img.get("source") or attrs.get("url") or ""
+            lines.append(f"(image) {alt}" + (f" - {src}" if src else ""))
         elif kind in ("chart", "sketch"):
             # v1: text fallback (no ClearScript clone)
             label = "chart" if kind == "chart" else "sketch"
@@ -269,13 +279,80 @@ def spoken_text(parsed: dict | None) -> str:
     return render_text(parsed, include_plan=False)
 
 
+def _image_state(obj: dict, cfg=None) -> dict:
+    """What a card needs about an image object, from the allow-list and the
+    local store only (no network): ready with a local file and its source
+    line, loading, or refused with a speakable reason."""
+    from .tools import imagefetch
+    url = (obj.get("attrs") or {}).get("url", "")
+    st = {"url": url, "status": "loading", "local": "", "source": url,
+          "host": "", "w": 0, "h": 0, "reason": ""}
+    try:
+        st["host"] = imagefetch.check_url(url, cfg)
+    except imagefetch.ImageRefused as e:
+        st.update(status="refused", reason=str(e))
+        return st
+    have = imagefetch.lookup(url)
+    if have:
+        st.update(status="ready", local=have["path"], w=have.get("w", 0),
+                  h=have.get("h", 0), source=have.get("source", url))
+    return st
+
+
+def _decorate(objects: list, cfg=None) -> list:
+    """Copies of `objects` with an `image` state on each image object."""
+    out = []
+    for o in objects:
+        if o.get("kind") == "image":
+            o = dict(o, image=_image_state(o, cfg))
+        out.append(o)
+    return out
+
+
+def _cfg():
+    try:
+        from . import config
+        return config.load_config()
+    except Exception:
+        return {}
+
+
+def refusals(payload: dict | None) -> list:
+    """Speakable reasons for the image objects that were refused."""
+    out = []
+    for o in (payload or {}).get("objects") or []:
+        img = o.get("image") or {}
+        if o.get("kind") == "image" and img.get("status") == "refused" \
+                and img.get("reason") and img["reason"] not in out:
+            out.append(img["reason"])
+    return out
+
+
+_OPEN_IMAGE_TAIL = re.compile(r"(?:^|\n)::[^\n]*$")
+
+
+def strip_image_lines(text: str, partial: bool = False) -> str:
+    """The text with `::image[...]` lines removed (never spoken or shown).
+    `partial` is a stream still arriving: a last line that has only started
+    with `::` is held back too, so half a URL is never spoken."""
+    if not isinstance(text, str) or "::" not in text:
+        return text
+    out = _IMAGE_LINE_RE.sub("", text)
+    if partial:
+        out = _OPEN_IMAGE_TAIL.sub("", out)
+    return out.strip() if out != text else text
+
+
 def _payload(conv_id: str, path: pathlib.Path, parsed: dict, *,
-             closed: bool) -> dict:
+             closed: bool, cfg=None) -> dict:
+    objs = list(parsed.get("objects") or [])
+    if any(o.get("kind") == "image" for o in objs):
+        objs = _decorate(objs, cfg if cfg is not None else _cfg())
     return {
         "conv_id": safe_conv_id(conv_id),
         "path": str(path),
         "raw": parsed.get("raw", ""),
-        "objects": list(parsed.get("objects") or []),
+        "objects": objs,
         "plan": [] if closed else list(parsed.get("plan") or []),
         "closed": bool(closed),
         "rendered": render_text(parsed, closed=closed),
@@ -291,7 +368,11 @@ class NotePad:
 
     def __init__(self, conv_id: str | None = None, *, bus=None,
                  turn_id: str | None = None,
-                 root: pathlib.Path | None = None):
+                 root: pathlib.Path | None = None, cfg: dict | None = None,
+                 fetch=None, spawn=None):
+        self._cfg = cfg
+        self._fetch = fetch          # (url, cfg) -> record; test seam
+        self._spawn = spawn          # (fn) -> None; default: a thread
         self.conv_id = safe_conv_id(conv_id)
         self.path = note_path(self.conv_id, root=root)
         self._bus = bus
@@ -337,9 +418,54 @@ class NotePad:
             self._parsed = parsed
             self._closed = closed
             payload = _payload(self.conv_id, self.path, parsed,
-                               closed=closed)
+                               closed=closed, cfg=self._cfg)
         self._publish(payload)
+        self._start_fetches(parsed, payload)
         return payload
+
+    def _start_fetches(self, parsed: dict, payload: dict) -> None:
+        """Download each allowed, not yet stored picture off the turn's
+        path, then republish so its card shows the local copy."""
+        urls = []
+        for o in payload.get("objects") or []:
+            img = o.get("image") or {}
+            if o.get("kind") == "image" and img.get("status") == "loading" \
+                    and img["url"] not in urls:
+                urls.append(img["url"])
+        if not urls:
+            return
+
+        def work():
+            from .tools import imagefetch
+            fetch = self._fetch or imagefetch.fetch
+            got = False
+            for u in urls:
+                try:
+                    fetch(u, self._cfg if self._cfg is not None
+                          else _cfg())
+                    got = True
+                except (imagefetch.ImageRefused, imagefetch.ImageFailed,
+                        OSError, ValueError):
+                    pass
+            with self._lock:
+                if self._parsed is not parsed:     # a newer note won
+                    return
+                # the turn may have closed this paper while we downloaded:
+                # follow the live note, never reopen its plan strip
+                live = _note_snap(self._bus)
+                if isinstance(live, dict) and live.get("conv_id") not in (
+                        None, self.conv_id):
+                    return
+                closed = bool(live.get("closed")) \
+                    if isinstance(live, dict) else self._closed
+                payload2 = _payload(self.conv_id, self.path, parsed,
+                                    closed=closed, cfg=self._cfg)
+            if got:
+                self._publish(payload2)
+        if self._spawn is not None:
+            self._spawn(work)
+        else:
+            threading.Thread(target=work, daemon=True).start()
 
     def _publish(self, payload: dict) -> None:
         bus = self._bus
@@ -455,7 +581,8 @@ def current_note(*, root: pathlib.Path | None = None,
 def publish_from_text(text: str, *, bus=None, turn_id: str | None = None,
                       conv_id: str | None = None,
                       root: pathlib.Path | None = None,
-                      state=None) -> dict | None:
+                      state=None, cfg: dict | None = None,
+                      fetch=None, spawn=None) -> dict | None:
     """Write a paper when `text` carries markup; else return None.
 
     Callers (speak stage, agent note ops) use this to keep the file,
@@ -465,7 +592,8 @@ def publish_from_text(text: str, *, bus=None, turn_id: str | None = None,
     if not looks_like_paper(text):
         return None
     cid = live_conv_id(bus, state, conv_id)
-    pad = NotePad(cid, bus=bus, turn_id=turn_id, root=root)
+    pad = NotePad(cid, bus=bus, turn_id=turn_id, root=root, cfg=cfg,
+                  fetch=fetch, spawn=spawn)
     return pad.set(text)
 
 

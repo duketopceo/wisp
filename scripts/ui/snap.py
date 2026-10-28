@@ -82,7 +82,8 @@ TOLERANCE = {
     "BindsView": Tolerance(10, 0.012),
     "Creature": Tolerance(12, 0.008),
     "Companion": Tolerance(12, 0.006),
-    "DrawLayer": Tolerance(12, 0.006),   # wobbly pen strokes: edge drift
+    "DrawLayer": Tolerance(12, 0.006),
+    "Card": Tolerance(10, 0.012),   # picture resampling and the source line text
 }
 
 

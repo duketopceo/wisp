@@ -142,7 +142,7 @@ def _close_paper(state, *, bus=None, turn=None) -> None:
         pass
 
 
-def _publish_paper(state, text: str, turn: str | None = None) -> None:
+def _publish_paper(state, text: str, turn: str | None = None) -> dict | None:
     """If `text` carries paper markup, rewrite note.md + state.note.
 
     Uses a conversation-stable note id (not the turn id) so `wispd note`
@@ -152,15 +152,16 @@ def _publish_paper(state, text: str, turn: str | None = None) -> None:
     try:
         from . import note as _note
         if not _note.looks_like_paper(text):
-            return
+            return None
         bus = getattr(state, "_bus", None) or state
         tid = turn
         if tid is None and hasattr(bus, "current_turn"):
             tid = bus.current_turn()
-        _note.publish_from_text(text, bus=bus, turn_id=tid, state=state)
+        return _note.publish_from_text(text, bus=bus, turn_id=tid,
+                                       state=state)
     except (ImportError, OSError, TypeError, AttributeError, ValueError,
             KeyError):
-        pass
+        return None
 
 
 def answer_text(transcript: str) -> str:
@@ -361,7 +362,9 @@ def _answer(ctx) -> None:
         sp.fire("first_token")
         if token.cancelled:
             return  # a cancelled turn publishes no more deltas
-        clean, marks = _points.extract_marked(_points.strip_partial(acc))
+        from . import note as _note
+        clean, marks = _points.extract_marked(_note.strip_image_lines(
+            _points.strip_partial(acc), partial=True))
         pl._publish_delta(state, clean)
         # speak each completed sentence while the rest streams
         speaker.feed(clean, marks)
@@ -392,8 +395,16 @@ def _answer(ctx) -> None:
     # paper before point extraction so `::` / plan markers land in
     # note.md even when the spoken reply is the letter body only
     # (tags stripped first so a stored note never holds one)
-    _publish_paper(state, _points.extract(reply)[0] if reply else reply,
-                   turn)
+    paper = _publish_paper(state, _points.extract(reply)[0] if reply
+                           else reply, turn)
+    if reply:
+        # `::image[...]` lines are for the card, not the voice or bubble;
+        # a refused picture is explained aloud instead
+        from . import note as _note
+        reply = _note.strip_image_lines(reply)
+        why = _note.refusals(paper)
+        if why:
+            reply = (reply + " " + " ".join(why)).strip()
     ctx.reply = reply
     marks = []
     all_pts = []
