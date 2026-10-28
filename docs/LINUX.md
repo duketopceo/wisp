@@ -29,6 +29,7 @@ sessions through the same platform seam (`dim/platform.py`,
 | screenshot | `grim` | `spectacle -b -n -o` | `gnome-screenshot -f` | `maim` |
 | type/dictation | `wtype` | `ydotool type` | `ydotool type` | `xdotool type` |
 | focus | `hl.dsp.focus` | `kdotool`/`wmctrl -a` | **unsupported** | `wmctrl -a` |
+| tab | DevTools `/json/activate` on 127.0.0.1 (9108, 9107, 9222), then `hl.dsp.focus` on the window | tab switches; window not raised | same | same |
 | close | `window.close` | `wmctrl -c`/`xdotool` | **unsupported** | same |
 | workspace | `hl.dsp.focus` | `qdbus KWin setCurrentDesktop` | **unsupported** | `wmctrl -s` |
 | launch | `hl.dsp.exec_cmd` | `setsid sh -c` | `setsid sh -c` | `setsid sh -c` |
