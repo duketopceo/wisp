@@ -1,0 +1,22 @@
+usage: wispd dictate retry [-h] [--delay SECONDS] [--json] [--quiet]
+                           [--no-color]
+                           [N]
+
+Insert a kept dictation again at the focused cursor
+
+positional arguments:
+  N                entry number from `wispd dictate history` (default: the
+                   newest that did not land)
+
+options:
+  -h, --help       show this help message and exit
+  --delay SECONDS  wait this long first, to click into the target (default 3)
+
+global options:
+  --json           machine-readable output (one JSON object)
+  --quiet, -q      print nothing on success
+  --no-color       plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd dictate retry
+  wispd dictate retry 2 --delay 5

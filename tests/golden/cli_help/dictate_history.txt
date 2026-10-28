@@ -1,0 +1,16 @@
+usage: wispd dictate history [-h] [--limit N] [--json] [--quiet] [--no-color]
+
+List recent dictations, newest first (kept on this machine)
+
+options:
+  -h, --help   show this help message and exit
+  --limit N    entries to show (default 20)
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd dictate history
+  wispd dictate history --limit 5

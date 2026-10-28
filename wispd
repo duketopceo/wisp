@@ -762,6 +762,15 @@ def run_daemon(cfg: dict) -> int:
         _HEALTH.start()
     server = ipc.Daemon(_handler(st, cfg, ctl), bus=st)
     server.start()
+    try:
+        # words from a recording that was killed mid-session (B24)
+        from wisp import dictate_history
+        kept = dictate_history.recover(cfg)
+        if kept:
+            dlog(f"kept {len(kept.split())} words from an interrupted "
+                 "recording: wispd dictate history")
+    except Exception as e:
+        dlog(f"dictation recover failed: {e}")
     _keys = _start_keys(st, cfg)
     # systemd Type=notify + WatchdogSec: no-ops outside systemd
     from wisp import svc as _svc
