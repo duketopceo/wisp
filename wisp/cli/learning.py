@@ -21,11 +21,28 @@ def learn_fails(ctx, a):
     return _text(ctx, learn.fails())
 
 
+def _eval_args(p):
+    p.add_argument("--misses", action="store_true",
+                   help="group the turns that were not right first time")
+    p.add_argument("--unlabelled", action="store_true",
+                   help="list recent turns that still need a label")
+    p.add_argument("--limit", type=int, default=10, metavar="N",
+                   help="groups or turns to list (default 10)")
+
+
 @command("eval", "End-to-end eval: first-time-correct rate per turn kind",
-         ["wispd eval", "wispd eval --json"],
-         {"kinds": "dict", "total": "dict", "gate": "dict"})
+         ["wispd eval", "wispd eval --json", "wispd eval --misses",
+          "wispd eval --unlabelled --limit 20"],
+         {"kinds": "dict", "total": "dict", "gate": "dict"},
+         args=_eval_args)
 def eval_cmd(ctx, a):
     from .. import config, learn
+    if a.misses:
+        rows = learn.eval_misses(top=a.limit)
+        return ctx.emit({"misses": rows}, learn.misses_text(rows))
+    if a.unlabelled:
+        rows = learn.eval_unlabelled(limit=a.limit)
+        return ctx.emit({"unlabelled": rows}, learn.unlabelled_text(rows))
     rep = learn.eval_report(config.load_config())
     return ctx.emit(rep, learn.eval_text(rep))
 

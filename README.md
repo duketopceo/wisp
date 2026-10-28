@@ -183,7 +183,9 @@ router decides and the turn goes on. Provider sections and flags are in
 Every run can be labelled (`wispd label set correct|incorrect`, or the
 `good` and `wrong` buttons). `wispd eval` scores the labels
 by turn kind (answer, act, launch, dictate, agent) and checks the
-`[eval]` gate. `wispd learn fails` lists logged failures.
+`[eval]` gate. `wispd eval --misses` groups the turns that were not
+right first time, and `wispd eval --unlabelled` lists the turns still
+waiting for a label. `wispd learn fails` lists logged failures.
 
 ## Privacy
 
