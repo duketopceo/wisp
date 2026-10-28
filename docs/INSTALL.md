@@ -4,6 +4,42 @@ Wisp is a resident voice assistant: a `wispd` daemon plus a
 push-to-talk trigger, a shell plugin (bar mark + live pill + overlay), and a management
 app.
 
+## Let your coding agent do it
+
+Paste this into a coding agent (Claude Code, Codex, opencode or similar)
+running in a terminal on your Omarchy machine:
+
+```text
+Install Wisp for me from https://github.com/duketopceo/wisp. If it is not
+already there, clone it into ~/src/wisp. Then follow the runbook in
+docs/INSTALL.md under "Let your coding agent do it", one step at a time.
+Do the steps marked agent yourself and stop at every step marked user and
+ask me. Never read, print or copy any key, token or .env file, and never run
+anything with elevated privileges; if a step needs one, tell me what and why
+and wait. Show me every plan before anything is written, and finish with the
+verification turn.
+```
+
+The runbook the agent follows. `agent` steps are safe for it to run as
+written; `user` steps need you (keys, microphone permission, the bind, and the
+first spoken test). The dry runs write nothing.
+
+```runbook
+agent  python3 wispd doctor                  # exit 0 or 4: show me every MISS row and its fix
+agent  python3 wispd install --dry-run       # show me every file and the bind it would add
+user   say yes to that plan, then the agent runs: python3 wispd install
+user   put the model key in ~/.config/wisp/.env yourself (the agent must not read or write it)
+agent  python3 wispd onboard --status        # show the first-run checklist
+user   allow the microphone when asked, and confirm the Hyprland bind before it is added
+agent  python3 wispd binds                   # shows the hotkey and the lines it adds
+user   hold Super+D and say "what time is it", then tell the agent what you heard
+agent  python3 wispd doctor                  # exit 0 or 4: report what is still missing
+```
+
+If a step fails, the agent reports the error code and the `Try:` line the
+command printed and stops; it does not edit config files to get past it.
+To undo everything, see Uninstall below.
+
 ## From a release tarball/zip
 
 ```sh

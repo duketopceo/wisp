@@ -12,6 +12,7 @@ it (for example an example of an old name that must keep failing).
 """
 import pathlib
 import re
+import subprocess
 import sys
 import unittest
 
@@ -302,6 +303,84 @@ class Extractor(unittest.TestCase):
         self.assertIn("gate_primary", k["budget"])
         self.assertIn("kill_switch", k["cua"])
         self.assertIn("min_confidence", k["ground"])
+
+
+class AgentRunbook(unittest.TestCase):
+    """B20: the one-paste prompt and the runbook an agent follows."""
+    INSTALL = (ROOT / "docs" / "INSTALL.md").read_text(encoding="utf-8")
+
+    def prompt(self):
+        sec = self.INSTALL.split("## Let your coding agent do it", 1)[1]
+        return re.search(r"```text\n(.*?)```", sec, re.S).group(1)
+
+    def steps(self):
+        sys.path.insert(0, str(HERE))
+        import agent_fixture
+        return agent_fixture.runbook()
+
+    def test_the_prompt_has_no_key_outside_path_or_sudo(self):
+        p = self.prompt()
+        self.assertNotRegex(p, r"(?i)\bsudo\b|\bsu\b|\broot\b")
+        self.assertNotRegex(p, r"sk-[A-Za-z0-9]|gh[pousr]_|Bearer |"
+                            r"(?i:api[_-]?key|token)\s*=")
+        text = re.sub(r"https?://\S+", "", p)      # URLs are not paths
+        for path in re.findall(r"(?<![\w.])(~?/[\w.\-]+(?:/[\w.\-]+)*)",
+                               text):
+            self.assertTrue(path.startswith("~/"), f"outside $HOME: {path}")
+        self.assertIn("Never read, print or copy any key", p)
+        self.assertIn("https://github.com/duketopceo/wisp", p)
+
+    def test_the_runbook_says_which_steps_need_the_user(self):
+        user = " ".join(s["cmd"] for s in self.steps()
+                        if s["who"] == "user").lower()
+        for need in ("key", "microphone", "bind", "hold super+d"):
+            self.assertIn(need, user)
+
+    def test_the_agent_never_reads_keys_installs_or_uses_sudo(self):
+        for s in self.steps():
+            if s["who"] != "agent":
+                continue
+            c = s["cmd"]
+            self.assertTrue(c.startswith("python3 wispd "), c)
+            self.assertNotRegex(c, r"sudo|\.env|cat |omaseal|keyring|rm ")
+            if " install" in c:
+                self.assertIn("--dry-run", c)
+
+    def test_every_wispd_verb_in_the_runbook_exists(self):
+        cmds = registry.commands()
+        for s in self.steps():
+            if s["who"] != "agent":
+                continue
+            toks = s["cmd"].split()[2:]
+            cmd, problem, args = resolve_args(toks, cmds)
+            self.assertEqual(problem, "", s["cmd"])
+            self.assertIsNotNone(cmd, s["cmd"])
+            known = _leaf_options().get(cmd, set()) | GLOBAL_FLAGS
+            for t in args:
+                if t.startswith("-"):
+                    self.assertIn(t, known, s["cmd"])
+
+    def test_a_fixture_agent_runs_every_agent_step_on_a_clean_home(self):
+        r = subprocess.run([sys.executable, str(HERE / "agent_fixture.py")],
+                           capture_output=True, text=True, timeout=300)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(r.stdout.count("STOP"),
+                         sum(s["who"] == "user" for s in self.steps()))
+        self.assertGreaterEqual(r.stdout.count("ok "), 4)
+        self.assertNotIn("FAIL", r.stdout)
+
+    def test_the_fixture_agent_fails_on_an_unexpected_exit(self):
+        sys.path.insert(0, str(HERE))
+        import agent_fixture
+        steps = agent_fixture.runbook(
+            "```runbook\nagent  python3 wispd status  # exit 0\n```")
+        self.assertEqual(steps[0]["ok"], [0])
+
+    def test_agents_md_and_readme_point_at_the_runbook(self):
+        self.assertIn("Let your coding agent do it",
+                      (ROOT / "AGENTS.md").read_text(encoding="utf-8"))
+        self.assertIn("docs/INSTALL.md#let-your-coding-agent-do-it",
+                      (ROOT / "README.md").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
