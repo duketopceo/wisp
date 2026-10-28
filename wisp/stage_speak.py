@@ -22,7 +22,7 @@ def _pl():
 
 def ask_chat(transcript: str, cfg: dict, session_text: str = "",
              image_b64: str | None = None, on_delta=None,
-             meta: dict | None = None) -> str:
+             meta: dict | None = None, doc_text: str = "") -> str:
     """Real answer via the configured brain provider ([brain] default).
     image_b64 attaches a screenshot — dropped when the provider lacks
     vision support (U6 capability gating)."""
@@ -72,6 +72,8 @@ def ask_chat(transcript: str, cfg: dict, session_text: str = "",
     if session_text:
         messages.append({"role": "system",
                          "content": f"Recent conversation:\n{session_text}"})
+    if doc_text:
+        messages.append({"role": "system", "content": doc_text})
     messages.append({"role": "user", "content": user_content})
     if on_delta is not None:
         out = brain.chat_stream(messages, cfg, on_delta=on_delta,
@@ -348,9 +350,11 @@ def _answer(ctx) -> None:
     try:
         _t = time.monotonic()
         _meta: dict = {}
+        _extra = ({"doc_text": ctx.doc_text}
+                  if getattr(ctx, "doc_text", "") else {})
         reply = pl.ask_chat(text, cfg, ctx.session_text,
                             image_b64=ctx.shot_b64,
-                            on_delta=_delta, meta=_meta)
+                            on_delta=_delta, meta=_meta, **_extra)
         sp.fire("first_token")  # non-streaming brains
         _trace.emit(turn, "brain_call", "brain",
                     {"endpoint": "chat/completions",
