@@ -14,6 +14,7 @@ Item {
   id: root
 
   property var service: null
+  readonly property var tk: service ? service.tokens : ({})
   // height of the top bar the bubble parks under (Style.bar.sizeVertical)
   property real barHeight: 28
   property real gap: 5
