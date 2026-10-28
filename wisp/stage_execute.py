@@ -84,6 +84,11 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
         if routines.parse_teach_intent(detail) is not None:
             return _run_teach()
         return agents.spawn(detail or app or "unnamed task", cfg)
+    if route == "setting" and detail.startswith("voice-speed:"):
+        from . import voice_settings
+        return voice_settings.apply(
+            detail[len("voice-speed:"):], cfg,
+            turn=str(getattr(state, "turn", "") or ""))
     if route == "walkthrough":
         from . import walkthrough_run
         if detail.startswith(walkthrough_run.SAVE_PREFIX):

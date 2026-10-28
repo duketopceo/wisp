@@ -118,6 +118,25 @@ def audit_default_path() -> pathlib.Path:
     return pathlib.Path(base) / "wisp" / "cua.jsonl"
 
 
+def audit_event(tool: str, app: str, cfg: dict | None = None, *,
+                turn: str = "", path=None, **extra) -> None:
+    """One audit line for a change that is not a guarded call (a spoken
+    setting). Same file and shape as the guarded calls, so the Panel and
+    `wispd cua log --audit` list it; honours `[cua] audit`."""
+    if not settings(cfg)["audit"]:
+        return
+    rec = {"ts": round(time.time(), 3), "turn": turn, "tool": tool,
+           "app": app, "decision": "allow", "dry_run": False,
+           "result": "OK", "ms": 0, **extra}
+    p = pathlib.Path(path) if path else audit_default_path()
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with open(p, "a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, separators=(",", ":")) + "\n")
+    except OSError:
+        pass
+
+
 def kill_default_path() -> pathlib.Path:
     return pathlib.Path(config.RUN_DIR) / "cua.kill"
 
