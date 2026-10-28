@@ -1,8 +1,15 @@
 # Generic Linux adapter (U9)
 
-Omarchy/Hyprland is the primary target; this adapter makes `wispd`
-work on GNOME 48+, KDE/Plasma 5.27+, and X11 sessions through the same
-platform seam (`dim/platform.py`, `rs/wispd/src/platform.rs`).
+**Status: planned, not yet supported.** Wisp is Omarchy-first: it is
+built into Omarchy first (Hyprland on Arch), and other desktops come
+later. GNOME, KDE/Plasma and X11 are *planned*, not promised and not
+supported today. This page describes the adapter code that exists for
+them (it is not tested against real GNOME, KDE or X11 sessions, and no
+fix or behaviour on those desktops is guaranteed). Use Omarchy.
+
+The adapter makes `wispd` attempt GNOME 48+, KDE/Plasma 5.27+, and X11
+sessions through the same platform seam (`dim/platform.py`,
+`rs/wispd/src/platform.rs`).
 
 ## Detection
 
