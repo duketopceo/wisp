@@ -201,7 +201,8 @@ def _spoken_payload(result: str) -> str:
     """User-facing text inside a terminal act result: the model's final
     reply for ACTED; empty for INTERRUPTED/other prefixes (already
     announced by the interrupt itself, or machine-only status)."""
-    m = re.match(r"^ACTED(?:\s*\([^)]*\))?\s*:\s*(.*)$", result, re.DOTALL)
+    m = re.match(r"^(?:ACTED|WALKED)(?:\s*\([^)]*\))?\s*:\s*(.*)$",
+                 result, re.DOTALL)
     return m.group(1).strip() if m else ""
 
 

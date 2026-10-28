@@ -82,6 +82,11 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
         if routines.parse_teach_intent(detail) is not None:
             return _run_teach()
         return agents.spawn(detail or app or "unnamed task", cfg)
+    if route == "walkthrough":
+        from . import walkthrough_run
+        return walkthrough_run.run(detail, cfg, state=state, ask=ask,
+                                   image_b64=initial_image,
+                                   interrupted=interrupted)
     if route == "act":
         return _run_act(detail)
     if route == "dictation":

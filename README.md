@@ -187,6 +187,17 @@ by turn kind (answer, act, launch, dictate, agent) and checks the
 right first time, and `wispd eval --unlabelled` lists the turns still
 waiting for a label. `wispd learn fails` lists logged failures.
 
+## Walkthroughs
+
+Say "walk me through <task>" (also "guide me through", "take me through",
+"teach me how to"). Wisp plans up to 15 steps, speaks each one and points
+at its control, then waits for you to do it: the focused window or its
+title changing counts as done. After 20 s of no change it asks "done, or
+stuck?". Pointing is label-first: the control's on-screen label is looked
+up through the app's control channel and the accessibility tree before the
+model's own coordinates are used. Wisp never clicks or types during a
+walkthrough, and Esc stops it.
+
 ## Privacy
 
 - Audio is transcribed locally by default (`[stt] provider = "local"`).
