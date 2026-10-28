@@ -71,6 +71,8 @@ def record_start(state=None) -> dict:
     sampler.start()
     proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL, env=_pl().hypr_env())
+    from . import stt_stream
+    stt_stream.begin(out, proc)   # streams finished chunks while held
     return {"proc": proc, "out": out, "sampler_stop": stop_ev,
             "sampler": sampler, "t0": time.monotonic()}
 
@@ -164,6 +166,12 @@ def _amplitude_sampler(seconds: int | None, state=None,
 def transcribe(wav: pathlib.Path, cfg: dict) -> str:
     stt = config.stt_settings(cfg)
     provider = stt["provider"]
+    from . import stt_stream
+    streamer = stt_stream.claim(wav)
+    if streamer is not None and provider == "openai":
+        text = streamer.finish()    # chunks sent while the key was held
+        if text is not None:
+            return text
     if provider == "wordink":
         try:
             import wordink
