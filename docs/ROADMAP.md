@@ -23,6 +23,17 @@ it builds on.
   refused mid-drill), real-input instant takeover
 - **Surface** — bar pill top-center (own spot), ghost cursor, beacons,
   ACTED replies spoken
+- **Hosted install (#146)** — Groq speech-to-text default, onboarding asks
+  for keys, `wispd install --ref` redeploys from a git ref
+- **Cursor buddy (#148, #149)** — a Clacky-style buddy rides the pointer
+  during a turn and points before the first pointer sample
+- **Points timed to speech (#150)** — each point fires as its sentence
+  starts playing, from one answer stream
+- **Drawn annotations (#152)** — rings, arrows and highlights drawn on
+  screen from the answer stream, cleared when speech ends
+- **Act and mail fixes (#147, #153)** — "open my email" opens Gmail when
+  the mail handler is a browser; a narrated next step without a tool
+  call no longer ends an act run
 
 ## In flight
 
@@ -46,8 +57,9 @@ training arena: local debug builds, deterministic UIs, no user data.
 3. **Aim accuracy** — first live click missed by ~70px. Iterate:
    grounding two-stage (H3) + verify-by-control + trajectory replay
    until click/scroll/type are reliably good.
-4. **Drawn annotations** — the #124 walkthrough overlay is the teaching
-   UX gap vs HeyClicky (they draw on the real UI; we beacon).
+4. **Walkthroughs** — drawn annotations shipped in #152; the step-by-step
+   walkthrough with label-first snapping is the remaining teaching UX gap
+   vs HeyClicky.
 
 ## Then
 
