@@ -18,13 +18,25 @@ import json
 import re
 import time
 
+from . import config
 from . import walkthrough as _wt
+
+PAUSED_FILE = config.DATA_DIR / "walkthrough.json"
+PAUSED_TTL_S = 6 * 3600       # a lesson older than this is not resumed
+RESUME_PREFIX = "resume:"
 
 _INTENT = re.compile(
     r"^\s*(?:(?:hey\s+)?wisp[,\s]+)?(?:please\s+)?"
     r"(?:walk\s+me\s+through|guide\s+me\s+through|take\s+me\s+through|"
     r"teach\s+me\s+how\s+to|step\s+by\s+step(?:\s+how)?\s+(?:to|for))\s+"
     r"(.+?)[\s.!?]*$", re.IGNORECASE | re.DOTALL)
+_RESUME = re.compile(
+    r"^\s*(?:(?:hey\s+)?wisp[,\s]+)?(?:ok(?:ay)?[,\s]+)?"
+    r"(?:continue|carry\s+on|keep\s+going|resume|next(?:\s+step)?|"
+    r"i(?:'ve|\s+have)?\s+(?:did|done)\s+(?:that|it|this)|"
+    r"done(?:\s+with\s+that)?)"
+    r"(?:\s+(?:the\s+)?(?:walkthrough|lesson|steps?|tutorial))?[\s.!?]*$",
+    re.IGNORECASE)
 _DEMO = re.compile(
     r"^\s*(?:(?:hey\s+)?wisp[,\s]+)?(?:please\s+)?"
     r"(?:demonstrate|demo\s+me)\s+(?:how\s+to\s+)?(.+?)[\s.!?]*$",
@@ -49,6 +61,12 @@ def demo_intent(text: str) -> str | None:
     m = _DEMO.match(text or "")
     goal = m.group(1).strip() if m else ""
     return goal or None
+
+
+def resume_intent(text: str) -> bool:
+    """"Continue", "I did that", "next step": only meaningful while a
+    walkthrough is paused, so callers also check `paused()`."""
+    return bool(_RESUME.match(text or ""))
 
 
 def split_mode(detail: str) -> tuple:
@@ -104,11 +122,15 @@ def parse_steps(raw: str, max_steps: int = _wt.MAX_STEPS) -> list:
 
 
 def plan(goal: str, cfg: dict, image_b64: str | None = None,
-         chat=None, skill: str = "") -> list:
+         chat=None, skill: str = "", started: bool = False) -> list:
     from . import brain
     if chat is None:
         chat = brain.chat
     content = _PROMPT % (_wt.MAX_STEPS, goal)
+    if started:
+        content += ("\n\nThe user has already started this. Skip anything "
+                    "they have already done and begin from what the screen "
+                    "shows.")
     if skill:
         content += ("\n\nNotes about the app on screen (use them, do not "
                     "read them out):\n" + skill)
@@ -206,6 +228,68 @@ class _Env:
             self.sleep(0.05)
 
 
+# -- pausing and resuming -------------------------------------------------
+
+def _dump(wt, planned, current) -> dict:
+    steps = []
+    for s in planned:
+        steps.append({"text": s.text, "label": s.label, "point": s.point,
+                      "done": wt.has_completed(s)})
+    return {"goal": wt.goal, "steps": steps,
+            "current": current.text if current is not None else "",
+            "ts": time.time()}
+
+
+def save_paused(wt, planned, current, path=None) -> None:
+    """Keep the goal and what is done so "continue" picks up from here."""
+    import os
+    path = path or PAUSED_FILE
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(_dump(wt, planned, current)))
+        os.replace(tmp, path)
+    except OSError:
+        pass
+
+
+def clear_paused(path=None) -> None:
+    try:
+        (path or PAUSED_FILE).unlink()
+    except OSError:
+        pass
+
+
+def paused(path=None, now=None) -> dict | None:
+    """The paused walkthrough, or None when absent, stale or unreadable."""
+    try:
+        data = json.loads((path or PAUSED_FILE).read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or not data.get("steps") \
+            or not data.get("goal"):
+        return None
+    t = time.time() if now is None else now
+    if t - float(data.get("ts") or 0) > PAUSED_TTL_S:
+        return None
+    return data
+
+
+def _restore(data: dict, current_done: bool = True):
+    """(Walkthrough, steps) rebuilt from a paused dump. The step that was
+    on screen when it paused counts as done: "continue" means the user
+    did it themselves."""
+    planned, cur = [], data.get("current") or ""
+    for d in data["steps"]:
+        planned.append(_wt.Step(text=d["text"], point=d.get("point"),
+                                label=d.get("label") or ""))
+    wt = _wt.Walkthrough(data["goal"], planned)
+    for s, d in zip(planned, data["steps"]):
+        if d.get("done") or (current_done and cur and s.text == cur):
+            wt.mark_step_done(s)
+    return wt, planned
+
+
 def app_skill(window: dict, match=None) -> str:
     """The seeded or learned skill text for the focused app, else ""."""
     cls = (window or {}).get("class", "")
@@ -220,49 +304,85 @@ def app_skill(window: dict, match=None) -> str:
         return ""
 
 
+START_QUESTION = "Have you already started, or are we starting fresh?"
+START_OPTIONS = ["starting fresh", "already started"]
+
+
+def _already_started(ask) -> bool:
+    """Ask what the user already has before planning. No answer means
+    starting fresh."""
+    try:
+        pick = ask(START_QUESTION, list(START_OPTIONS))
+    except Exception:
+        return False
+    return str(pick or "").strip().lower() == START_OPTIONS[1]
+
+
 def run(goal: str, cfg: dict, state=None, *, ask=None,
         image_b64: str | None = None, interrupted=None, steps=None,
         env: _Env | None = None, ground=None, monitors=None,
-        demonstrate: bool = False, skill_match=None) -> str:
+        demonstrate: bool = False, skill_match=None,
+        resume: dict | None = None) -> str:
     """Plan and walk the user through `goal`. Returns "WALKED (n steps):
     <closing line>". With `demonstrate` every step is spoken and pointed
-    at in turn without waiting for the user to act."""
+    at in turn without waiting for the user to act. A walkthrough that
+    stops early is kept, and `resume` (a `paused()` dump) picks it up
+    again with the goal and done steps intact."""
     env = env or _Env(cfg, state, interrupted=interrupted)
-    if steps is not None:
-        planned = steps
+    if resume is not None:
+        wt, planned = _restore(resume)
+        goal = wt.goal
+        env.say(f"Picking up where we left off: {goal}.", None)
     else:
-        planned = plan(goal, cfg, image_b64,
-                       skill=app_skill(env.window(), skill_match))
-    if not planned:
-        return ("WALKED (0 steps): I couldn't work out steps for that, "
-                "try asking more specifically.")
-    wt = _wt.Walkthrough(goal, planned)
+        if steps is not None:
+            planned = steps
+        else:
+            started = bool(ask) and not demonstrate and _already_started(ask)
+            planned = plan(goal, cfg, image_b64,
+                           skill=app_skill(env.window(), skill_match),
+                           started=started)
+        if not planned:
+            return ("WALKED (0 steps): I couldn't work out steps for that, "
+                    "try asking more specifically.")
+        wt = _wt.Walkthrough(goal, planned)
+    keep = not demonstrate
+    current = [None]
+
+    def pause(line):
+        n = len(wt.done_log)
+        if keep:
+            save_paused(wt, planned, current[0])
+        return f"WALKED ({n} steps): {line}"
+
+    def finish(line):
+        clear_paused()
+        return f"WALKED ({len(wt.done_log)} steps): {line}"
+
     ev = wt.issue_step(now=env.clock())
     while True:
         env.check()
         if env.interrupted():
             wt.cancel(env.state)
-            return f"WALKED ({len(wt.done_log)} steps): stopped."
+            return pause("stopped.")
         action = ev.get("action")
         if action == "step":
+            current[0] = ev["step"]
             do = _demo_step if demonstrate else _do_step
             ev = do(wt, ev, env, ask, ground, monitors)
             if ev is None:
-                return (f"WALKED ({len(wt.done_log)} steps): "
-                        "okay, stopping here.")
+                return pause("okay, stopping here.")
             continue
         if action in ("refused_already_done", "refused_failed"):
             ev = wt.issue_step(now=env.clock())
             continue
-        n = len(wt.done_log)
         if action == "max_steps_refused":
-            return f"WALKED ({n} steps): {ev.get('spoken', '')}"
+            return finish(ev.get("spoken", ""))
         if action == "cancelled":
-            return f"WALKED ({n} steps): stopped."
+            return pause("stopped.")
         if action == "advanced":
             ev = wt.issue_step(now=env.clock())
             continue
-        return f"WALKED ({n} steps): all done."
+        return finish("all done.")
 
 
 def _do_step(wt, ev, env: _Env, ask, ground, monitors):
