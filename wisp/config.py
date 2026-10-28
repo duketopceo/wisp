@@ -230,8 +230,9 @@ refine = true
 
 [eval]
 # `wispd eval` gate: the first-time-correct fraction (0-1) the owner
-# requires over at least gate_min_turns labelled turns. Unset on purpose.
-# gate_rate = 0.6
+# requires over at least gate_min_turns labelled turns. The owner set
+# the v1 bar at 60% (2026-10-27).
+gate_rate = "60%"
 gate_min_turns = 50
 
 [ui]
