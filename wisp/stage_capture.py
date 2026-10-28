@@ -338,6 +338,9 @@ def speculative_context(cfg: dict):
     concurrently. Not started — the daemon calls `.start()`."""
     from . import context as _context
     g = {"windows": _context.windows_map}
+    from . import selection as _selection
+    if _selection._enabled(cfg):
+        g["selection"] = lambda: _selection.read_primary(cfg)
     if cfg.get("agent", {}).get("screenshots", "true") == "true":
         g["screenshot"] = lambda: _png_b64(_pl().capture_screen())
     return _context.Speculative(g)
@@ -488,6 +491,18 @@ def context_stage(ctx) -> None:
         ctx.doc_text = docread.context_for(text, win, cfg)
     except Exception:
         ctx.doc_text = ""            # a document read never fails a turn
+    try:
+        from . import selection as _selection
+        prim = speculative.take("selection", wait=_SPEC_WAIT_S, ttl=600) \
+            if speculative else None
+        found = _selection.build(text, prim, cfg)
+        ctx.selection_text, ctx.clip_image = found.text, found.image
+        if found.sources:
+            _trace.emit(turn, "selection", "act",
+                        {"sources": list(found.sources),
+                         "chars": found.chars})
+    except Exception:
+        ctx.selection_text = ctx.clip_image = ""   # never fails a turn
     try:
         from . import omarchy_tutor
         ctx.tutor_text = omarchy_tutor.context_for(text)

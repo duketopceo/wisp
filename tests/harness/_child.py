@@ -226,8 +226,15 @@ def main(spec_path: str) -> int:
         if after is not None:
             arm(after)
 
+        sp_ctx = None
+        if spec.get("selection"):
+            # the press-time primary selection (B22)
+            from wisp import context as _context
+            sp_ctx = _context.Speculative(
+                {"selection": lambda: spec["selection"]}).start()
         code = pipeline.run_listen(cfg, st, wait_for_choice=wait,
-                                   interrupted=interrupt.is_set)
+                                   interrupted=interrupt.is_set,
+                                   speculative=sp_ctx)
         out["exit_code"] = code
         if cfg["voice"]["enabled"] == "true":
             # run_listen returns while TTS is still playing; keep
