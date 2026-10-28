@@ -3,6 +3,7 @@ name: github
 description: GitHub web UI keyboard shortcuts for repos, PRs, and code search
 tier: safe
 url_hosts: github.com, gist.github.com
+asks: How do I review this pull request; Where do I find the failing check; How do I clone this repo
 ---
 # github
 

@@ -3,6 +3,7 @@ name: firefox
 description: Mozilla Firefox navigation, tab management, and privacy UI notes
 tier: safe
 app_classes: firefox, org.mozilla.firefox, librewolf, zen-browser
+asks: How do I open DevTools; How do I reopen a closed tab; Where are my add-ons
 ---
 # firefox
 

@@ -3,6 +3,7 @@ name: spotify
 description: Spotify desktop client playback, search, and queue shortcuts
 tier: safe
 app_classes: spotify, com.spotify.client
+asks: How do I make a playlist; How do I turn on shuffle; How do I find a song I liked
 ---
 # spotify
 

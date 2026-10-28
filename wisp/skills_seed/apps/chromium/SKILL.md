@@ -3,6 +3,7 @@ name: chromium
 description: Chromium / Chrome browser navigation, DevTools, and tab shortcuts on Omarchy
 tier: safe
 app_classes: chromium, chromium-browser, google-chrome, brave-browser
+asks: How do I open DevTools; How do I reopen a closed tab; Where are my downloads
 ---
 # chromium
 

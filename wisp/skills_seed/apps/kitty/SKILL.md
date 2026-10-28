@@ -3,6 +3,7 @@ name: kitty
 description: Kitty and Alacritty terminal emulator splits, tabs, scrollback, and copy/paste
 tier: safe
 app_classes: kitty, alacritty, com.mitchellh.ghostty
+asks: How do I open a new tab; How do I split this window; How do I copy the last output
 ---
 # kitty
 

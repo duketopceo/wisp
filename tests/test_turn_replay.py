@@ -24,7 +24,7 @@ from harness import fakes, runner  # noqa: E402
 from wisp import errors_codes  # noqa: E402
 
 FIXTURES = ROOT / "tests" / "fixtures" / "turns"
-FIXTURE_NAMES = ["ask", "act", "router_act", "router_act_default", "choose", "jev_down", "jev_slow", "brain_down", "brain_fallback",
+FIXTURE_NAMES = ["ask", "ask_chip", "act", "router_act", "router_act_default", "choose", "jev_down", "jev_slow", "brain_down", "brain_fallback",
                  "cancel_mid_stream", "stale_choice"]
 
 
