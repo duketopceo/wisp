@@ -1,0 +1,21 @@
+usage: wispd export lesson [-h] [--out FILE] [--json] [--quiet] [--no-color]
+                           name
+
+Write a saved walkthrough lesson to one file
+
+positional arguments:
+  name         the lesson's title
+
+options:
+  -h, --help   show this help message and exit
+  --out FILE   where to write it (default: NAME.wisp-KIND.json here; never
+               overwrites)
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd export lesson "set up a git remote"
+  wispd export lesson cleanup --out ~/cleanup.json

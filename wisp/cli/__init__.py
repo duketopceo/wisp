@@ -18,7 +18,7 @@ def load_groups():
         return
     _LOADED = True
     from . import (agents, core, cua, diagnose,  # noqa: F401
-                   dictate, learning, note, scribble, settings)
+                   dictate, learning, note, scribble, settings, share)
     registry.SECTIONS[:] = [
         ("Daemon", ["daemon", "status", "stop", "interrupt", "trigger",
                     "watch", "choice", "tui", "note"]),
@@ -26,9 +26,9 @@ def load_groups():
                       "onboard", "trace", "captures", "whatsnew",
                       "bugreport"]),
         ("Pointer and notifications", ["cua", "notify", "scribble"]),
-        ("Agents and memory", ["task", "memory", "dictate", "suggest",
-                               "label", "context"]),
-        ("Learning", ["learn", "eval", "skills"]),
+        ("Agents, learning and sharing",
+         ["task", "memory", "dictate", "suggest", "label", "context",
+          "routine", "learn", "eval", "skills", "export", "import"]),
         ("Settings", ["config", "theme", "connect", "sync", "inventory",
                       "completion"]),
     ]

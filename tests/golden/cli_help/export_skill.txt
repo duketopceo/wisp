@@ -1,0 +1,20 @@
+usage: wispd export skill [-h] [--out FILE] [--json] [--quiet] [--no-color]
+                          name
+
+Write a skill (text only) to one file
+
+positional arguments:
+  name         the skill's name
+
+options:
+  -h, --help   show this help message and exit
+  --out FILE   where to write it (default: NAME.wisp-KIND.json here; never
+               overwrites)
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd export skill git-tips
