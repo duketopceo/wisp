@@ -79,9 +79,13 @@ def score(row: dict, content: str) -> bool:
     return bool(text.strip())
 
 
-def run_provider(spec: str, rows: list, timeout: float) -> list:
+def run_provider(spec: str, rows: list, timeout: float,
+                 base_url: str = "") -> list:
     """[{'ms', 'content', 'ok', 'error'}] per row, same order."""
     cfg = {"brain": {"default": spec}}
+    if base_url:
+        name = spec.split(":", 1)[0]
+        cfg[f"brain.{name}"] = {"base_url": base_url}
     out = []
     for row in rows:
         t0 = time.monotonic()
@@ -142,6 +146,11 @@ def main(argv: list) -> int:
     ap.add_argument("--ref", default="",
                     help="reference provider spec, e.g. "
                          "openrouter:google/gemini-2.5-flash (paid call)")
+    ap.add_argument("--lfm-url", default="",
+                    help="override the lfm provider base_url (e.g. a "
+                         "CPU-only server on another port)")
+    ap.add_argument("--ref-url", default="",
+                    help="override the ref provider base_url")
     ap.add_argument("--timeout", type=float, default=60)
     ap.add_argument("--max-p50-ms", type=int, default=400)
     ap.add_argument("--min-gap", type=float, default=0.10)
@@ -158,8 +167,9 @@ def main(argv: list) -> int:
         print(f"no scorable fixtures in {path}", file=sys.stderr)
         return 2
 
-    lfm_res = run_provider(a.lfm, rows, a.timeout)
-    ref_res = run_provider(a.ref, rows, a.timeout) if a.ref else None
+    lfm_res = run_provider(a.lfm, rows, a.timeout, a.lfm_url)
+    ref_res = (run_provider(a.ref, rows, a.timeout, a.ref_url)
+               if a.ref else None)
     lfm, ref = summarize(lfm_res), summarize(ref_res) if ref_res else None
 
     table_rows = []
