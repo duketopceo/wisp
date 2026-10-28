@@ -106,6 +106,13 @@ def speak(msg: str, cfg: dict) -> subprocess.Popen | None:
     return proc
 
 
+def is_speaking() -> bool:
+    """True while the TTS process is running (the wake word is deaf then)."""
+    with _LOCK:
+        p = _PROC
+    return p is not None and p.poll() is None
+
+
 def on_exit(proc: subprocess.Popen, cb) -> None:
     """Call cb() when proc exits; also clears the tracked pid."""
     def _watch():

@@ -194,6 +194,18 @@ with `wispd spend`.
 | key | default | meaning |
 |-----|---------|---------|
 | `enabled` | `false` | allow `cli:claude` or `cli:codex` as a brain. Wisp runs the CLI once per turn with the text of the turn on stdin and never reads its credentials. See [COSTS.md](COSTS.md) |
+## [handsfree] — double-tap to keep listening (opt-in)
+
+| key | default | meaning |
+|-----|---------|---------|
+| `enabled` | `false` | tap the talk key twice and the second tap keeps listening after release; the next tap sends. Off: hold-to-talk is unchanged. See [PRIVACY.md](PRIVACY.md) |
+
+## [wakeword] — local wake word (opt-in)
+
+| key | default | meaning |
+|-----|---------|---------|
+| `enabled` | `false` | listen for the phrase with the local whisper.cpp model; nothing is sent and no screenshot is taken until it is heard. Refused over open speakers (headphones or `wispd install --echo-cancel`). The bar shows an open-mic mark while it runs |
+| `phrase` | `"hey wisp"` | what to listen for |
 
 ## [health] — endpoint probes (U7)
 

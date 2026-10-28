@@ -83,6 +83,12 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
             return {"ok": True, "state": st.snapshot()}
         if c == "listen":
             phase = cmd.get("phase", "")  # hold-to-talk: start|stop; empty = toggle
+            from wisp import handsfree
+            _hf = handsfree.intercept(cfg, phase)   # None unless opted in
+            if _hf is not None:
+                if _hf == "":
+                    return {"ok": True, "handsfree": True}
+                phase = _hf
             # this request's start (client t0 when sent) — the press
             # origin on a start, the key-up instant on a stop
             req_sp = _trace.Spans(t0_ns=cmd.get("t0"))
@@ -368,6 +374,8 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
         if c == "interrupt":
             # cancel the in-flight turn only — daemon keeps running
             _interrupt(ctl)
+            from wisp import handsfree
+            handsfree.interrupted()   # Esc also ends a hands-free session
             _drop_speculation(ctl)
             tok = ctl.get("token")
             if tok is not None:
@@ -781,6 +789,15 @@ def run_daemon(cfg: dict) -> int:
         _HEALTH.start()
     server = ipc.Daemon(_handler(st, cfg, ctl), bus=st)
     server.start()
+    # opt-in wake word (B33): the supervisor idles until [wakeword]
+    # enabled is true, so a default install runs no listener at all
+    from wisp import wakeword as _ww
+    threading.Thread(
+        target=_ww.supervise, daemon=True, name="wakeword",
+        args=(cfg, lambda v: st.publish(None, mic=v),
+              lambda ph: ipc.send({"cmd": "listen", "phase": ph,
+                                   "t0": time.time_ns()}),
+              speech.is_speaking, dlog), kwargs={"stop": ctl["stop"]}).start()
     try:
         # words from a recording that was killed mid-session (B24)
         from wisp import dictate_history
