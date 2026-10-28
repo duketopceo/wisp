@@ -9,10 +9,12 @@ import base64
 import json
 import os
 import pathlib
+import re
 import signal
 import subprocess
 import threading
 import time
+import urllib.error
 import urllib.request
 
 from . import cancel as _cancel
@@ -189,12 +191,22 @@ def transcribe(wav: pathlib.Path, cfg: dict) -> str:
         raise RuntimeError(f"whisper.cpp missing: {config.WHISPER_BIN} / {model}")
     argv = [str(config.WHISPER_BIN), "-m", str(model), "-nt",
             "-f", str(wav)]
+    from . import lang as _lang
+    multilingual = not _lang.local_model_english_only(cfg)
+    if multilingual:
+        # a multilingual model: pin the language or let it detect
+        argv += ["-l", _lang.base(_lang.configured(cfg)) or "auto"]
     from . import vocab
     prompt = vocab.build(cfg)
     if prompt:
         argv += ["--prompt", prompt]
     r = _cancel.run(argv, capture_output=True, text=True, timeout=120)
-    return " ".join(r.stdout.split())
+    heard = ""
+    if multilingual:
+        m = re.search(r"auto-detected language:\s*([a-z]{2,3})",
+                      r.stderr or "")
+        heard = m.group(1) if m else ""
+    return _lang.Transcript(" ".join(r.stdout.split()), heard)
 
 
 def _cap_prompt(prompt: str, limit: int = 896) -> str:
@@ -212,39 +224,57 @@ def _transcribe_openai(wav: pathlib.Path, stt: dict,
     Together, DeepInfra. Key comes from .env/env via stt.key_env."""
     from . import vocab
     stt = {**config.STT_DEFAULTS, **stt}
+    from . import lang as _lang
     key = config.require_key(stt["key_env"])
     base = stt["base_url"].rstrip("/")
-    boundary = f"----wisp{int(time.monotonic() * 1000)}"
     audio = wav.read_bytes()
-    body = b"\r\n".join([
-        f"--{boundary}".encode(),
-        b'Content-Disposition: form-data; name="model"',
-        b"",
-        stt["model"].encode(),
-        f"--{boundary}".encode(),
-        b'Content-Disposition: form-data; name="prompt"',
-        b"",
-        _cap_prompt(vocab.build(cfg or {"stt": stt})).encode(),
-        f"--{boundary}".encode(),
-        b'Content-Disposition: form-data; name="file"; '
-        b'filename="utterance.wav"',
-        b"Content-Type: audio/wav",
-        b"",
-        audio,
-        f"--{boundary}--".encode(),
-        b"",
-    ])
-    from . import brain as _brain
-    req = urllib.request.Request(
-        f"{base}/audio/transcriptions", data=body,
-        headers={"Authorization": f"Bearer {key}",
-                 "User-Agent": "wisp/1.0",
-                 **_brain.app_headers(base),
-                 "Content-Type":
-                 f"multipart/form-data; boundary={boundary}"})
-    with _cancel.urlopen(req, timeout=60) as resp:
-        return " ".join(
-            json.loads(resp.read()).get("text", "").split())
+    prompt = _cap_prompt(vocab.build(cfg or {"stt": stt}))
+    pinned = _lang.base(_lang.configured(cfg or {"stt": stt}))
+    # a pinned language is sent as is; on auto the model reports what it
+    # heard (verbose_json), so the answer and the voice can follow it
+    extra = [("language", pinned)] if pinned \
+        else [("response_format", "verbose_json")]
+
+    def post(fields):
+        boundary = f"----wisp{int(time.monotonic() * 1000)}"
+        parts = []
+        for name, value in [("model", stt["model"]),
+                            ("prompt", prompt)] + fields:
+            parts += [f"--{boundary}".encode(),
+                      f'Content-Disposition: form-data; name="{name}"'
+                      .encode(), b"", value.encode()]
+        body = b"\r\n".join(parts + [
+            f"--{boundary}".encode(),
+            b'Content-Disposition: form-data; name="file"; '
+            b'filename="utterance.wav"',
+            b"Content-Type: audio/wav",
+            b"",
+            audio,
+            f"--{boundary}--".encode(),
+            b"",
+        ])
+        from . import brain as _brain
+        req = urllib.request.Request(
+            f"{base}/audio/transcriptions", data=body,
+            headers={"Authorization": f"Bearer {key}",
+                     "User-Agent": "wisp/1.0",
+                     **_brain.app_headers(base),
+                     "Content-Type":
+                     f"multipart/form-data; boundary={boundary}"})
+        with _cancel.urlopen(req, timeout=60) as resp:
+            return json.loads(resp.read())
+
+    try:
+        got = post(extra)
+    except urllib.error.HTTPError as e:
+        if e.code != 400:
+            raise
+        if pinned:
+            raise _lang.Refused(_lang.provider_refusal(
+                _lang.configured(cfg or {"stt": stt}))) from e
+        got = post([])        # a provider without verbose_json: no detection
+    return _lang.Transcript(" ".join(got.get("text", "").split()),
+                            "" if pinned else got.get("language", ""))
 
 
 def active_window() -> dict:
@@ -383,8 +413,14 @@ def capture_stage(ctx) -> bool:
                 rec_ms)
     state.transition("transcribing")
     sp.record("release", sp.rel0)
+    from . import lang as _lang
     try:
+        why = _lang.stt_refusal(cfg)
+        if why:
+            raise _lang.Refused(why)
         text = pl.transcribe(wav, cfg)
+    except _lang.Refused as e:
+        return _refuse_language(ctx, str(e))
     except Exception as e:
         raise _errors.classify(e, "stt_down") from e
     token.check()
@@ -392,13 +428,28 @@ def capture_stage(ctx) -> bool:
     _trace.emit(ctx.turn, "transcribe", "stt",
                 {"provider": config.stt_settings(cfg)["provider"],
                  "text": text}, sp.ms["stt"])
+    ctx.lang = _lang.resolve(cfg, getattr(text, "language", ""))
+    text = str(text)
     state.transition("deciding", transcript=text)
     ctx.text = text
+    if ctx.lang and not _lang.is_english(ctx.lang):
+        _trace.emit(ctx.turn, "language", "stt", {"lang": ctx.lang})
     if not text or "[BLANK" in text:
         state.transition("done", result="heard nothing")
         pl.notify("Heard nothing", **pl._toast_ctx(state, ctx.turn, cfg))
         return False
     return True
+
+
+def _refuse_language(ctx, reason: str) -> bool:
+    """The speech setup cannot do the language: say why out loud and end
+    the turn, never hang."""
+    from . import speech
+    pl = _pl()
+    ctx.state.transition("done", result=reason)
+    speech.speak(reason, ctx.cfg)
+    pl.notify(reason, **pl._toast_ctx(ctx.state, ctx.turn, ctx.cfg))
+    return False
 
 
 def context_stage(ctx) -> None:

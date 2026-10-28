@@ -12,6 +12,7 @@ import time
 from datetime import datetime, timezone
 
 from . import config, speech
+from . import lang as _lang_mod
 
 
 def _pl():
@@ -23,7 +24,8 @@ def _pl():
 def ask_chat(transcript: str, cfg: dict, session_text: str = "",
              image_b64: str | None = None, on_delta=None,
              meta: dict | None = None, doc_text: str = "",
-             scribble_hint: str = "", tutor_text: str = "") -> str:
+             scribble_hint: str = "", tutor_text: str = "",
+             lang: str = "") -> str:
     """Real answer via the configured brain provider ([brain] default).
     image_b64 attaches a screenshot — dropped when the provider lacks
     vision support (U6 capability gating)."""
@@ -33,6 +35,10 @@ def ask_chat(transcript: str, cfg: dict, session_text: str = "",
     system = ("You are Wisp, a terse desktop voice assistant on Linux. "
               "Answer in one or two short sentences, plain speech, no "
               "markdown.")
+    from . import lang as _lang
+    rule = _lang.reply_rule(lang)
+    if rule:
+        system += " " + rule
     from . import context as _ctx
     focus = _ctx.snapshot(cfg)
     if focus:
@@ -358,6 +364,12 @@ def _answer(ctx) -> None:
 
     ctx.speaker = speaker = speech.SentenceSpeaker(cfg, token=token,
                                                    on_sentence=_fire)
+    lang_code = getattr(ctx, "lang", "")
+    if lang_code and not _lang_mod.is_english(lang_code):
+        speaker.lang = lang_code
+        _voice, _fb = speech.voice_for(cfg, lang_code)
+        _trace.emit(turn, "tts_voice", "speak",
+                    {"lang": lang_code, "voice": _voice, "fallback": _fb})
 
     def _delta(acc):
         # stream the answer into state.json as it arrives — the
@@ -381,6 +393,8 @@ def _answer(ctx) -> None:
                   if getattr(ctx, "doc_text", "") else {})
         if getattr(ctx, "tutor_text", ""):
             _extra["tutor_text"] = ctx.tutor_text
+        if getattr(ctx, "lang", "") and not _lang_mod.is_english(ctx.lang):
+            _extra["lang"] = ctx.lang
         if getattr(ctx, "scribble_hint", ""):
             _extra["scribble_hint"] = ctx.scribble_hint
         reply = pl.ask_chat(text, cfg, ctx.session_text,
@@ -480,5 +494,7 @@ def _finish(ctx) -> int:
     lane = getattr(ctx, "route_lane", None)
     if lane:
         rec["route_lane"] = lane
+    if getattr(ctx, "lang", "") and not _lang_mod.is_english(ctx.lang):
+        rec["lang"] = ctx.lang
     pl.log_decision(rec)
     return 0

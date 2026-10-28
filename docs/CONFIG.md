@@ -77,6 +77,7 @@ take focus, so `Esc` stays reachable while cua acts. Design notes:
 | `model` | `whisper-large-v3-turbo` | STT model id |
 | `key_env` | `GROQ_API_KEY` | env var / `.env` key name holding the key |
 | `prompt` | `""` | vocab priming (names, jargon) |
+| `language` | `auto` | the language you speak. `auto`: the hosted model detects it and the answer and the spoken voice follow it. Or pin one (`es`, `de`, `fr`, `ja`, `pt-BR`, ...). English changes nothing. The local `small.en` model is English only: with `provider = "local"` and a `.en` model a non-English language is refused out loud, not guessed. Dictation is typed in the language you spoke and never translated |
 | `streaming` | `true` | with the `openai` provider, send finished chunks of a long utterance while the key is held, so only the last part is left to transcribe on release; any failure falls back to one request for the whole recording |
 
 ## [web] — role web apps
@@ -256,6 +257,7 @@ one, `wispd dictate list` shows them.
 | `enabled` | speak answers aloud |
 | `cmd` | override TTS command; `{text}` placeholder or appended arg. Empty = platform default (espeak/say/SAPI) |
 | `speed` | speaking speed multiplier, 0.5 to 1.5 (default 1; steps 0.5, 0.75, 1, 1.25, 1.5). The built-in espeak voice gets `-s <wpm>`; a custom `cmd` gets the multiplier wherever it writes `{rate}`. Say "talk slower", "talk faster" or "talk at normal speed" to change it by voice (logged in the audit log as a `config` entry) |
+| `lang_voices` | per-language voices, `"es=es-mx,de=de"`. Empty: the built-in espeak voice named for the language when it exists, else the default voice, and Wisp says so once. A custom `cmd` may use `{lang}` (the code, like `pt-BR`) or `{voice}` |
 | `early_clause` | `"true"` (default): while an answer streams, start speaking at the first clause break (`, ; : —`) once 28 characters are ready instead of waiting for the full stop. `"false"` waits for sentence ends |
 
 ## [notify] — desktop toasts

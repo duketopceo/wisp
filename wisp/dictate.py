@@ -248,10 +248,17 @@ _PROMPTS = {
 }
 
 
-def _system(mode: str, win: dict, profile: dict, corr: dict) -> str:
+def _system(mode: str, win: dict, profile: dict, corr: dict,
+            lang: str = "") -> str:
     app = (win.get("class") or "").strip()
     title = (win.get("title") or "").strip()[:80]
     sys_p = _PROMPTS[mode]
+    from . import lang as _lang
+    if lang and not _lang.is_english(lang):
+        # dictate in the language spoken; never translate (B23)
+        sys_p += (f" The dictation is in {_lang.name(lang)}. Write the "
+                  f"output in {_lang.name(lang)} too and never translate "
+                  "it.")
     if app:
         sys_p += f"\nInserting into {app}" \
                  + (f' ("{title}")' if title else "") + "."
@@ -290,7 +297,7 @@ def _session_tail() -> str:
 
 
 def rewrite(mode: str, text: str, cfg: dict, win: dict, profile: dict,
-            corr: dict) -> str:
+            corr: dict, lang: str = "") -> str:
     """The cleanup/compose pass. raw never calls the brain; a brain
     error or empty reply degrades to the raw transcript — a dead model
     must not swallow a dictation."""
@@ -301,7 +308,7 @@ def rewrite(mode: str, text: str, cfg: dict, win: dict, profile: dict,
     if tail:
         user = f"{text}\n\nRecent conversation (context only):\n{tail}"
     messages = [{"role": "system",
-                 "content": _system(mode, win, profile, corr)},
+                 "content": _system(mode, win, profile, corr, lang)},
                 {"role": "user", "content": user}]
     try:
         out = (_chat(messages, cfg).get("content") or "").strip()
@@ -436,7 +443,7 @@ def _send_ok(profile: dict, confirm, app: str, text: str) -> bool:
 
 
 def run(text: str, cfg: dict, state=None, confirm=None,
-        mode: str | None = None, guard=None) -> str:
+        mode: str | None = None, guard=None, lang: str = "") -> str:
     """The dictation dispatch: pick the mode, maybe rewrite, guard
     terminals, insert, maybe send. -> the result string the action
     stream records (DICTATED / INSERTED / SKIP / BLOCKED shapes).
@@ -452,7 +459,7 @@ def run(text: str, cfg: dict, state=None, confirm=None,
     mode, text = pick_mode(text, cfg, profile, mode)
     data = _read()
     corr = dict(data["corrections"])
-    out = rewrite(mode, text, cfg, win, profile, corr)
+    out = rewrite(mode, text, cfg, win, profile, corr, lang)
     if mode != "raw":
         out = apply_corrections(out, corr)
     if not out.strip():

@@ -13,7 +13,7 @@ from . import config
 LABELS_FILE = config.DATA_DIR / "labels.jsonl"
 
 
-def label_last(label: str, note: str = "") -> str:
+def label_last(label: str, note: str = "", lang: str = "") -> str:
     """Tag the most recent decisions.jsonl turn correct/incorrect —
     `wispd eval` reads labels.jsonl keyed by `ref`."""
     label = {"ok": "correct", "good": "correct",
@@ -33,6 +33,9 @@ def label_last(label: str, note: str = "") -> str:
         return "nothing to label"
     rec = {"ts": datetime.now(timezone.utc).isoformat(),
            "ref": ref, "label": label, "note": note}
+    if lang:
+        from . import lang as _lang
+        rec["lang"] = _lang.parse(lang) or str(lang)
     try:
         LABELS_FILE.parent.mkdir(parents=True, exist_ok=True)
         with LABELS_FILE.open("a") as f:
@@ -93,22 +96,33 @@ def eval_report(cfg: dict | None = None, decisions_file=None,
     state from `[eval] gate_rate` / `gate_min_turns`."""
     decs = {d.get("ts"): d for d in _read_jsonl(
         decisions_file or config.DECISIONS)}
-    latest = {}
+    latest, spoken = {}, {}
     for lab in _read_jsonl(labels_file or LABELS_FILE):
         ref, label = lab.get("ref"), lab.get("label", "")
         if ref and isinstance(ref, str) and isinstance(label, str):
             latest[ref] = label
+            if lab.get("lang"):
+                spoken[ref] = str(lab["lang"])
     rows, total = {}, {"labelled": 0, "correct": 0, "incorrect": 0,
                        "corrected": 0}
+    langs = {}
     for ref, label in latest.items():
-        kind = turn_kind((decs.get(ref) or {}).get("result", ""))
+        dec = decs.get(ref) or {}
+        kind = turn_kind(dec.get("result", ""))
         _tally(rows, kind, label)
+        # the turn's language: a `lang` on the label, else the one the
+        # decision recorded, else English (B23)
+        _tally(langs, spoken.get(ref) or dec.get("lang") or "en", label)
+    if set(langs) <= {"en"}:
+        langs = {}
     for r in rows.values():
         for k in ("labelled", "correct", "incorrect", "corrected"):
             total[k] += r[k]
     for r in rows.values():
         r["rate"] = _rate(r)
     total["rate"] = _rate(total)
+    for r in langs.values():
+        r["rate"] = _rate(r)
     kinds = {k: rows[k] for k in KINDS if k in rows}
 
     ecfg = (cfg or {}).get("eval", {}) or {}
@@ -138,7 +152,8 @@ def eval_report(cfg: dict | None = None, decisions_file=None,
         gate["needs"] = max(0, min_turns - total["labelled"])
         ok = gate["needs"] == 0 and (total["rate"] or 0) >= gate_rate
         gate["status"] = "PASS" if ok else "FAIL"
-    return {"kinds": kinds, "total": total, "gate": gate}
+    return {"kinds": kinds, "total": total, "gate": gate,
+            "langs": dict(sorted(langs.items()))}
 
 
 def _latest_labels(labels_file=None) -> dict:
@@ -240,6 +255,9 @@ def eval_text(rep: dict) -> str:
              f"{'incorrect':>9} {'retried':>9} {'rate':>6}"]
     lines += [row(k, r) for k, r in rep["kinds"].items()]
     lines.append(row("total", rep["total"]))
+    if rep.get("langs"):
+        lines.append("by language (first time correct):")
+        lines += [row(k, r) for k, r in rep["langs"].items()]
     g = rep["gate"]
     if g["status"] == "invalid":
         lines.append(f"gate invalid: [eval] gate_rate {g['value']!r} is not "

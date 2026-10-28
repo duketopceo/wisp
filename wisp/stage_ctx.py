@@ -23,6 +23,7 @@ class TurnCtx:
         self.model = model
         # capture
         self.text = ""
+        self.lang = ""                      # spoken language, "" = English (B23)
         # context
         self.harness = None
         self.context = ""

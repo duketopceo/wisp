@@ -63,6 +63,8 @@ key = "D"
 seconds = 60
 # whisper.cpp model filename under ~/src/whisper.cpp/models/
 whisper_model = "ggml-small.en.bin"
+# small.en is English only; for other languages use a multilingual model
+# such as ggml-small.bin (or the hosted speech service).
 
 [agent]
 model = "typesafe/jev-1.13"
@@ -268,6 +270,10 @@ model = "whisper-large-v3-turbo"
 # order, e.g. "omaseal://groq/default,GROQ_API_KEY" (keyring first,
 # plain env/.env fallback so non-omaseal installs still work)
 key_env = "GROQ_API_KEY"
+# language you speak. "auto" lets the hosted model detect it and Wisp
+# answers and speaks in that language; or pin one: es, de, fr, ja,
+# pt-BR. The local small.en model is English only.
+language = "auto"
 
 # vocabulary priming — project names, jargon; whisper.cpp --prompt /
 # `prompt` param on the openai provider (huge accuracy win on names)
@@ -432,6 +438,10 @@ enabled = false
 # custom TTS command (e.g. piper); `{text}` is replaced with the message,
 # otherwise the message is appended as the last arg. Empty = espeak default.
 cmd = ""
+# per-language voices, "es=es-mx,de=de". Empty = the built-in espeak voice
+# named for the language when it has one, else the default voice (said
+# once). A custom cmd can use {lang} or {voice}.
+lang_voices = ""
 
 [notify]
 # desktop toasts (D-Bus org.freedesktop.Notifications; notify-send fallback)

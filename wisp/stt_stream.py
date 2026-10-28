@@ -98,6 +98,7 @@ class Streamer:
         self.chunk_s = chunk_s
         self.tick_s = tick_s
         self.texts: list[str] = []        # transcripts of the cut chunks
+        self.langs: list = []             # (words, language) per chunk
         self.cut = 0                      # PCM bytes already transcribed
         self.failed = False
         self.enabled = True
@@ -117,7 +118,11 @@ class Streamer:
         try:
             with os.fdopen(fd, "wb") as f:
                 f.write(wav_bytes(pcm))
-            return self._fn(pathlib.Path(tmp)) or ""
+            got = self._fn(pathlib.Path(tmp)) or ""
+            lang = getattr(got, "language", "")
+            if lang:
+                self.langs.append((len(got.split()), lang))
+            return got
         finally:
             pathlib.Path(tmp).unlink(missing_ok=True)
 
@@ -198,7 +203,13 @@ class Streamer:
                 parts.append(self._transcribe(tail))
             except Exception:
                 return None
-        return " ".join(" ".join(p for p in parts if p).split())
+        text = " ".join(" ".join(p for p in parts if p).split())
+        if not self.langs:
+            return text
+        from . import lang as _lang
+        # the language of the chunk with the most words (a short chunk
+        # is the least reliable)
+        return _lang.Transcript(text, max(self.langs)[1])
 
 
 def begin(path, proc) -> "Streamer":

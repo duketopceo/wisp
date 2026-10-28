@@ -1,0 +1,52 @@
+{
+  "description": "[stt] language names a language the speech service cannot transcribe: the turn ends at once with a spoken reason, no brain call (B23).",
+  "audio": "ask.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "¿qué hora es?",
+      "language": "spanish"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "content": "Son las tres y media.",
+          "chunk_delay_ms": 0
+        }
+      ]
+    }
+  },
+  "expect": {
+    "statuses": [
+      "listening",
+      "transcribing",
+      "done"
+    ],
+    "brain_calls": 0,
+    "result_prefix": "I can't listen in tlh"
+  },
+  "name": "lang_unsupported",
+  "scenario": "multilingual",
+  "config": {
+    "voice": {
+      "enabled": "true",
+      "cmd": "/bin/sh -c \"/bin/true\" {voice} {text}"
+    },
+    "stt": {
+      "language": "tlh"
+    }
+  }
+}
