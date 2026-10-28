@@ -249,7 +249,8 @@ def _ask_user(ctx) -> int:
         speech.on_exit(proc, pl._end_speaking(state))
     else:
         state.transition("done", result=result)
-    session.append_turn(text, route="act", reply=q, result=result)
+    session.append_turn(text, route="act", reply=q, result=result,
+                        app=ctx.app)
     pl.notify(result, "success", spoken=True,
               **pl._toast_ctx(state, ctx.turn, cfg))
     sp.record("done", sp.rel0)
@@ -420,7 +421,8 @@ def _finish(ctx) -> int:
     pl, state, cfg, sp = _pl(), ctx.state, ctx.cfg, ctx.sp
     text, reply, result, answers = ctx.text, ctx.reply, ctx.result, ctx.answers
     session.append_turn(text, route=answers.get("route", {})
-                        .get("choice", ""), reply=reply, result=result)
+                        .get("choice", ""), reply=reply, result=result,
+                        app=ctx.app)
     bgwriter.submit(_recall.index_turn, text, reply, result)
     pl.notify(result, "success", spoken=True,
               **pl._toast_ctx(state, ctx.turn, cfg))
