@@ -209,6 +209,45 @@ def health(ctx, a):
                    "endpoints are down.", "wispd health start", data=data)
 
 
+def _idle_args(p):
+    p.add_argument("--seconds", type=float, default=3.0, metavar="N",
+                   help="how long to watch the idle daemon "
+                        "(1 to 60, default 3)")
+
+
+@command("health idle",
+         "Measure the running daemon's idle CPU and memory against its "
+         "budgets",
+         ["wispd health idle", "wispd health idle --seconds 10 --json"],
+         {"pid": "int", "seconds": "float", "cpu_pct": "float",
+          "rss_mb": "float", "budget_cpu_pct": "float",
+          "budget_rss_mb": "float", "ok": "bool", "over": "list"},
+         args=_idle_args)
+def health_idle(ctx, a):
+    from .. import idle, instance
+    if not 1 <= a.seconds <= 60:
+        raise CliError("E_USAGE", "--seconds must be between 1 and 60.",
+                       "wispd health idle --seconds 3")
+    pid = instance.holder()
+    s = idle.sample(pid, a.seconds) if pid else None
+    if s is None:
+        raise CliError("E_DAEMON_DOWN", "No running wispd to measure.",
+                       "wispd daemon run")
+    b = idle.budgets()
+    over = idle.breaches(s, b)
+    data = {**s, "budget_cpu_pct": b["cpu_pct"],
+            "budget_rss_mb": b["rss_mb"], "ok": not over, "over": over}
+    text = (f"pid {s['pid']}, {s['seconds']} s idle: "
+            f"CPU {s['cpu_pct']}% (budget {b['cpu_pct']:g}%), "
+            f"memory {s['rss_mb']} MB (budget {b['rss_mb']:g} MB)")
+    if not over:
+        return ctx.emit(data, text)
+    if not ctx.json and not ctx.flags.quiet:
+        print(text)
+    raise CliError("E_UNHEALTHY", "; ".join(over) + ".",
+                   "wispd trace", data=data)
+
+
 def _start_args(p):
     p.add_argument("--run", action="store_true",
                    help="execute the systemctl command (default: print it)")

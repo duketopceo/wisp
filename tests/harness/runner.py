@@ -196,6 +196,7 @@ class TurnResult:
     endpoint_urls: dict = field(default_factory=dict)
     expect: dict = field(default_factory=dict)
     files: dict = field(default_factory=dict)    # rel path -> text (collect)
+    second_start: dict = field(default_factory=dict)  # B29: rc/stderr/pid
 
     @property
     def statuses(self) -> list:
@@ -453,6 +454,7 @@ def run_turn(fixture, timeout: float = 60.0,
                 fx.get("interrupt_after_in_flight_ms"),
             "interrupt_after_step_done_ms":
                 fx.get("interrupt_after_step_done_ms"),
+            "second_start": bool(fx.get("second_start")),
             "result": str(tmp / "result.json"),
         }
         spec_path = tmp / "spec.json"
@@ -473,6 +475,7 @@ def run_turn(fixture, timeout: float = 60.0,
         res.trace = out.get("trace", [])
         res.bus = out.get("bus", {})
         res.final = out.get("final", {})
+        res.second_start = out.get("second_start", {})
         res.violations = out.get("violations", []) + fs.violations()
         res.fake_calls = fs.calls()
         res.launch_calls = out.get("launch_calls", [])
