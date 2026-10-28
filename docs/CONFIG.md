@@ -182,6 +182,19 @@ with `wispd spend`.
 |-----|---------|---------|
 | `enabled` | `false` | allow local model servers (llama.cpp Ornith, UI-TARS, jev-shim, ollama). Off: `wispd onboard` skips the local ladder, `[ground] providers` drops `uitars`, and `wispd install --units` skips the llama/jev-shim units. OpenRouter stays the brain either way |
 
+## [trial] — capped first-run brain (off, not live)
+
+| key | default | meaning |
+|-----|---------|---------|
+| `enabled` | `false` | allow `trial:<model>` as a brain. Needs `url` too; never on in a shipped build |
+| `url` | `""` | the trial proxy's https address (a loopback address may use http). The install sends a random per-install token, text only, never a screenshot or a provider key. See [COSTS.md](COSTS.md) |
+
+## [clibrain] — answer through your own coding-agent CLI (off)
+
+| key | default | meaning |
+|-----|---------|---------|
+| `enabled` | `false` | allow `cli:claude` or `cli:codex` as a brain. Wisp runs the CLI once per turn with the text of the turn on stdin and never reads its credentials. See [COSTS.md](COSTS.md) |
+
 ## [health] — endpoint probes (U7)
 
 Local endpoints only (Jev, every brain-chain entry, optional extras, a

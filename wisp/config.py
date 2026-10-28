@@ -399,6 +399,19 @@ tools = "false"
 # Brains still come from [brain]; OpenRouter is the default.
 enabled = "false"
 
+[trial]
+# B34, off and not live: a capped first-run brain through a proxy the owner
+# runs (scripts/trial_proxy). Needs enabled = "true" and an https url. Text
+# only: no screenshot is ever sent. Cost cap and terms: docs/COSTS.md.
+enabled = "false"
+url = ""
+
+[clibrain]
+# B34, off: let `[brain] default = "cli:claude"` (or cli:codex) answer
+# through your own coding-agent CLI. Sign-in stays in that CLI; Wisp never
+# reads its credentials. Terms: docs/COSTS.md.
+enabled = "false"
+
 [health]
 # probes of LOCAL endpoints (Jev, brain chain, optional extras); remote
 # endpoints are never probed. Results ride state.json `health`.
