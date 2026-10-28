@@ -1,0 +1,3 @@
+{"name": "landscape", "image": "images/landscape.png", "prompt": "Describe this image in one short sentence.", "expect_any": ["mountain", "landscape", "sky", "field", "hill", "water", "lake", "tree", "outdoor", "nature"]}
+{"name": "route-launch", "prompt": "You are a router. The user said: \"open firefox\". Reply with exactly one word: the app name.", "expect_any": ["firefox"]}
+{"name": "route-answer", "prompt": "Answer in one word: what colour is a ripe banana?", "expect": ["yellow"]}
