@@ -170,10 +170,11 @@ sh scripts/fetch_whisper.sh      # clones + builds whisper-cli, downloads ggml-s
 
 - **Linux/Omarchy (Hyprland)**: fully wired — hold `SUPER+D` to talk,
   bar mark + live pill, companion overlay, hyprctl window ops.
-- **Linux GNOME/KDE/X11**: runs via the desktop adapter; window ops
-  degrade where the platform has no API (documented in
-  `docs/LINUX.md`). Bind `wispd trigger` through your DE's shortcut
-  settings.
+- **Linux GNOME/KDE/X11**: planned, not yet supported. Wisp is
+  Omarchy-first: it is built into Omarchy first and expands to other
+  desktops later. A generic adapter exists in the code and is described
+  in `docs/LINUX.md`, but it is not tested or promised, and nothing here
+  should be read as support. Use Omarchy.
 
 ## First run
 

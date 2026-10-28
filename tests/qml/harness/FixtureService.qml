@@ -34,6 +34,7 @@ Item {
   property var actions: []
   property var suggestion: null
   property var guide: null
+  property var chips: null
   property var cuaTarget: null
   property var note: null
   property string goal: ""
@@ -109,6 +110,7 @@ Item {
     root.actions = v.actions;
     root.suggestion = v.suggestion;
     root.guide = v.guide;
+    root.chips = v.chips;
     root.cuaTarget = v.cuaTarget;
     root.goal = v.goal;
     root.goalStatus = v.goalStatus;

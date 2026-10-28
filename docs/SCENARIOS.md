@@ -41,6 +41,7 @@ table to list every fixture.
 | `lang_pt_br` | multilingual | Brazilian Portuguese pinned in [stt] language (B23). |
 | `lang_de` | multilingual | German heard by auto detection (B23). |
 | `lang_es` | multilingual | Spanish heard by auto detection: transcript kept, reply rule in the answer prompt, Spanish voice (B23). |
+| `ask_chip` | answer from an ask chip | Saying an ask chip's text (the kitty skill's first ask) runs as a normal answer turn: same route, same stages, one brain call. |
 | `ask_selection` | answer with the selection | Answer route with a press-time selection: it reaches the brain as a quoted data block (B22). |
 | `ask_selection_injected` | selection is data | A selection that tries to give orders is delivered as data and routing is unchanged (B22). |
 | `brain_down` | brain down | Answer brain returns 500 and no fallback is configured: the turn ends in error with error_code brain_down (U7). No canned answer. |

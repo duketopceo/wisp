@@ -3,6 +3,7 @@ name: gimp
 description: GIMP image editor toolbox, layers dock, and export shortcuts
 tier: safe
 app_classes: gimp, gimp-2.10, gimp-3.0, org.gimp.gimp
+asks: How do I crop an image; How do I remove a background; How do I export this as a PNG
 ---
 # gimp
 

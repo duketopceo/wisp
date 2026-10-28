@@ -11,6 +11,7 @@ import "../lib/cursor.js" as Cursor
 import "../lib/companion.js" as Companion
 import "../lib/card.js" as CardLib
 import "../lib/scribble.js" as Scribble
+import "../lib/chips.js" as ChipsLib
 
 Item {
   id: root
@@ -55,7 +56,10 @@ Item {
   // the talk key is held: the layer takes the pointer for a scribble
   readonly property bool scribbleActive: service !== null && Scribble.active(service.status)
   property alias scribbleItem: scribble
-  readonly property bool shown: scribbleActive || pillShown || bubbleShown || buddyShown || beacons.length > 0 || draw.count > 0 || cardShown
+  // "what can I ask here" after a quick tap: text only, never over a live turn
+  readonly property bool chipsShown: service !== null && ChipsLib.quiet(service.status) && askChips.shown
+  property alias askChipsItem: askChips
+  readonly property bool shown: scribbleActive || pillShown || bubbleShown || buddyShown || beacons.length > 0 || draw.count > 0 || cardShown || chipsShown
   property alias pill: pill
   property alias bubbleHost: bubbleHost
 
@@ -142,6 +146,18 @@ Item {
     objectName: "drawLayer"
     anchors.fill: parent
     service: root.service
+  }
+
+  // ask chips: bottom centre, where the listening pill was
+  AskChips {
+    id: askChips
+    objectName: "askChips"
+    service: root.service
+    chips: root.service ? root.service.chips : null
+    anchors.horizontalCenter: parent.horizontalCenter
+    anchors.bottom: parent.bottom
+    anchors.bottomMargin: 96
+    visible: root.chipsShown
   }
 
   // the picture card sits on calm space, never over a mark or the bubble

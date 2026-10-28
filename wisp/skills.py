@@ -314,6 +314,17 @@ def _list_field(raw) -> list[str]:
     return out
 
 
+def asks_field(raw, limit: int = 3, width: int = 60) -> list[str]:
+    """A frontmatter `asks:` line (`;` separated) as up to `limit` short
+    questions. Not lower-cased: they are shown to the user."""
+    out: list[str] = []
+    for part in str(raw or "").split(";"):
+        t = " ".join(part.split()).strip(" ?.")
+        if t and len(t) <= width and t + "?" not in out:
+            out.append(t + "?")
+    return out[:limit]
+
+
 def _norm_host(url_or_host: str | None) -> str:
     """Normalize a URL or host string to a bare lowercase hostname without
     `www.` or port."""
@@ -427,6 +438,7 @@ def match_app_skill_info(
                     "name": name,
                     "description": meta.get("description", ""),
                     "matched_by": "url_host",
+                    "asks": asks_field(meta.get("asks")),
                     "body": body,
                     "path": str(f),
                 }
@@ -440,6 +452,7 @@ def match_app_skill_info(
                     "name": name,
                     "description": meta.get("description", ""),
                     "matched_by": "window_class",
+                    "asks": asks_field(meta.get("asks")),
                     "body": body,
                     "path": str(f),
                 }

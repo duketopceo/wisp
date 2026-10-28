@@ -84,6 +84,56 @@
   },
   "width": 320
  },
+ "AskChips": {
+  "mode": "variant",
+  "on": "desktop",
+  "pad": 0,
+  "props": {
+   "height": 200,
+   "width": 420
+  },
+  "settle": 80,
+  "variants": {
+   "app": {
+    "chips": {
+     "app": "kitty",
+     "asks": [
+      "How do I open a new tab?",
+      "How do I split this window?",
+      "How do I copy the last output?"
+     ],
+     "seq": 1
+    },
+    "motion": "off"
+   },
+   "generic": {
+    "chips": {
+     "app": "",
+     "asks": [
+      "What can you do on this screen?",
+      "What does this window do?",
+      "How do I get started with Wisp?"
+     ],
+     "seq": 2
+    },
+    "motion": "off"
+   },
+   "none": {
+    "chips": null,
+    "motion": "off"
+   },
+   "reduced": {
+    "chips": {
+     "app": "nvim",
+     "asks": [
+      "How do I save and quit?"
+     ],
+     "seq": 3
+    },
+    "motion": "reduced"
+   }
+  }
+ },
  "AuditView": {
   "mode": "variant",
   "pad": 10,

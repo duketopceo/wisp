@@ -115,11 +115,13 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
                             return {"ok": True, "stopped": True,
                                     "ignored": True}
                         _drop_speculation(ctl)
+                        extra = _tap_chips(cfg, held)
                         st.turn(ctl.pop("turn", None)
                                 or st.current_turn()).transition(
-                            "done", result="", transcript="")
+                            "done", result="", transcript="", **extra)
                         dlog(f"listen: {held * 1000:.0f}ms capture "
-                             "ignored (phantom)")
+                             "ignored (phantom)"
+                             + (" -> ask chips" if extra else ""))
                         return {"ok": True, "stopped": True,
                                 "ignored": True}
                     mini = ctl.pop("mini", None)
@@ -390,6 +392,21 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
             return {"ok": True}
         return {"ok": False, "error": f"unknown cmd {c!r}"}
     return handle
+
+
+def _tap_chips(cfg: dict, held: float) -> dict:
+    """{"chips": payload} for a quick tap (B21), else {}. A tap takes no
+    screenshot: only the focused window's class is read."""
+    from wisp import chips
+    if not chips.is_tap(held):
+        return {}
+    try:
+        app = pipeline.active_window().get("class", "") or ""
+        payload = chips.build(cfg, app, seq=int(time.time()))
+    except Exception as e:  # chips are a nicety, never a failed press
+        dlog(f"chips off: {e}")
+        return {}
+    return {"chips": payload} if payload else {}
 
 
 def _drop_speculation(ctl: dict) -> None:

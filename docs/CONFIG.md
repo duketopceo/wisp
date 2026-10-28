@@ -483,6 +483,20 @@ profiles, system directories) are never read. Scanned PDFs use OCR when
 |-----|---------|---------|
 | `enabled` | `true` | set `false` to never read the focused file |
 
+## [chips] — what can I ask here?
+
+A quick tap of the talk key with no speech shows up to three asks that fit
+the focused app, beside the bottom of the screen, for a few seconds. Saying
+one runs it like any other turn. Chips appear only on a tap, never unprompted,
+only during the first `days` days from the first tap, and no screenshot is
+taken for the tap. Each app skill lists its asks in an `asks:` line of its
+`SKILL.md`, separated by `;`.
+
+| key | default | meaning |
+|-----|---------|---------|
+| `enabled` | `true` | set `false` to never show chips |
+| `days` | `7` | chips are offered for this many days from the first tap |
+
 ## [images] — pictures in answers
 
 An answer may carry one picture, a `::image[url=...,alt=...]` line on the

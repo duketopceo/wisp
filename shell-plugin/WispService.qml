@@ -56,6 +56,7 @@ Item {
   property var actions: []
   property var suggestion: null
   property var guide: null
+  property var chips: null
   // paper surface (gap-closure U1): live note payload or null
   // {convId, path, raw, objects, plan, closed, rendered}
   property var note: null
@@ -293,6 +294,7 @@ Item {
     root.actions = v.actions;
     root.suggestion = v.suggestion;
     root.guide = v.guide;
+    root.chips = v.chips;
     root.note = v.note;
     root.cuaTarget = v.cuaTarget;
     root.windowFocus = v.focus;
