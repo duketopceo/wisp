@@ -77,6 +77,7 @@ take focus, so `Esc` stays reachable while cua acts. Design notes:
 | `model` | `whisper-large-v3-turbo` | STT model id |
 | `key_env` | `GROQ_API_KEY` | env var / `.env` key name holding the key |
 | `prompt` | `""` | vocab priming (names, jargon) |
+| `streaming` | `true` | with the `openai` provider, send finished chunks of a long utterance while the key is held, so only the last part is left to transcribe on release; any failure falls back to one request for the whole recording |
 
 ## [web] — role web apps
 
