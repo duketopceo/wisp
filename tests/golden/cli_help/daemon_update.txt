@@ -1,0 +1,20 @@
+usage: wispd daemon update [-h] [--dry-run] [--sha256 HEX] [--json] [--quiet]
+                           [--no-color]
+
+Fetch the latest release, verify it, and install on your yes
+
+options:
+  -h, --help    show this help message and exit
+  --dry-run     print version, digest and the files that would change; write
+                nothing
+  --sha256 HEX  expected SHA-256 of the download, for a release that publishes
+                none
+
+global options:
+  --json        machine-readable output (one JSON object)
+  --quiet, -q   print nothing on success
+  --no-color    plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd update --dry-run
+  wispd update
