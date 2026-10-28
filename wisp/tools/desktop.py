@@ -3,6 +3,7 @@ import json
 import re
 import shlex
 import shutil
+import time
 import urllib.parse
 import urllib.request
 
@@ -221,7 +222,7 @@ _TAB_ALIAS = {"email": "mail", "emails": "mail", "inbox": "mail"}
 
 
 def _words(s: str) -> list[str]:
-    return [w for w in re.split(r"[^a-z0-9]+", (s or "").lower()) if w]
+    return re.findall(r"[a-z0-9]+", (s or "").lower())
 
 
 def _query_words(query: str) -> list[str]:
@@ -257,7 +258,6 @@ def _tab_score(query: list[str], tab: dict) -> int:
 
 def _focus_browser(title: str) -> None:
     """Raise the Chromium window (prefer the one titled with the tab)."""
-    import time
     from .. import platform
     if not platform.uses_hypr() or not hypr.available():
         return

@@ -1128,10 +1128,6 @@ _CONTINUE_NUDGE = ("You described a next step but did not call a tool. "
                    "reply with one short sentence describing the outcome.")
 
 
-def _words(text: str) -> set:
-    return set(re.findall(r"[a-z0-9]+", (text or "").lower()))
-
-
 def _same_word(a: str, b: str) -> bool:
     # app binaries drift from spoken names (spotify -> spotifast): a
     # shared 5-letter stem counts as naming the app
@@ -1142,6 +1138,7 @@ def _unsupported_done(task: str, steps: list) -> "str | None":
     """One-line reason when a tool-less 'done' is contradicted by the
     run's last effect step, else None. Pure answers (no effect step)
     and supported claims return None."""
+    from .goals import _tokens as _words
     last = next((s for s in reversed(steps)
                  if s.get("tool") in _SCREEN_CHANGING), None)
     if last is None:
