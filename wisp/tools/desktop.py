@@ -296,9 +296,8 @@ def tab(query: str) -> str:
         if sc > top:
             best, top = t, sc
     if best is None:
-        names = "; ".join(t.get("title", "") for t in pages[:5])
-        return (f"SKIP (no open tab matches {query!r})"
-                + (f" open tabs: {names}" if names else ""))
+        # no tab titles here: inactive tabs are not the model's to read
+        return f"SKIP (no open tab matches {query!r})"
     try:
         _cdp_get(port, "/json/activate/" + str(best["id"]))
     except OSError as e:

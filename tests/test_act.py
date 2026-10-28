@@ -115,6 +115,22 @@ class Loop(unittest.TestCase):
         run.assert_called_once()
         assert r.startswith("ACTED (1 steps)")
 
+    def test_unconfirmed_done_leaves_the_goal_open(self):
+        from wisp import goals
+        replies = [_msg(calls=[_call("tab", "stripe")]),
+                   _msg(content="Switched to Stripe."),
+                   _msg(content="Switched to Stripe.")]
+        self.addCleanup(setattr, goals, "CURRENT", None)
+        goals.join_or_new("open my stripe tab", "foot", self.cfg)
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run",
+                               return_value="SKIP (no open tab matches "
+                                            "'stripe')"):
+            r = act.run_act_loop("open my stripe tab", self.cfg,
+                                 initial_image="aGk=")
+        self.assertIn("could not confirm", r)
+        self.assertEqual((goals.CURRENT or {}).get("status"), "open")
+
     def test_narrated_next_step_is_nudged_back_into_loop(self):
         # live run 2026-10-27: one click, then "Now I'm taking a
         # screenshot…" with no tool call ended the turn as ACTED
@@ -191,6 +207,12 @@ class Loop(unittest.TestCase):
                   "result": "SWITCHED tab 'Stripe'"},
                  {"tool": "screenshot", "arg": "", "result": "SHOT x"}]
         self.assertIsNone(act._unsupported_done("open my stripe tab", steps))
+
+    def test_unsupported_done_skipped_tab_switch(self):
+        steps = [{"tool": "tab", "arg": "stripe",
+                  "result": "SKIP (no open tab matches 'stripe')"}]
+        why = act._unsupported_done("open my stripe tab", steps)
+        self.assertIn("tab switch was skipped", why or "")
 
     def test_narration_nudges_are_bounded(self):
         replies = [_msg(content="Let me take a screenshot.")] * 5

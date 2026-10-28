@@ -120,7 +120,8 @@ class TestTabTool(unittest.TestCase):
     def test_no_match_skips_without_activating(self):
         out = tools.run("tab", "nonexistent thing", {})
         self.assertTrue(out.startswith("SKIP (no open tab matches "), out)
-        self.assertIn("Gmail", out)
+        # inactive tab titles never reach the model
+        self.assertNotIn("Gmail", out)
         self.assertEqual(_CdpHandler.activated, [])
 
     def test_no_debug_port(self):

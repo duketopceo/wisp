@@ -405,9 +405,12 @@ def run_act_loop(task: str, cfg: dict, state=None,
                         "tool call, or reply with what actually "
                         "happened.")})
                     continue
-                _goals.close("done")
                 if why:
+                    # unconfirmed: leave the goal open so "try again"
+                    # resumes it instead of starting over
                     text = f"I could not confirm that worked \u2014 {why}."
+                else:
+                    _goals.close("done")
                 out = f"ACTED ({len(steps)} steps): {text or 'done'}"
                 want_traj = True
                 return out
@@ -1156,6 +1159,8 @@ def _unsupported_done(task: str, steps: list,
               and (last.get("verify") or {}).get("verdict") == "missed")
     if missed or "verify FAILED" in result:
         return f"the last step ({last['tool']}) failed verification"
+    if last["tool"] == "tab" and result.startswith("SKIP"):
+        return "the tab switch was skipped: " + result[len("SKIP"):].strip(" ()")
     if last["tool"] in ("launch", "focus") and result.startswith("FOCUSED"):
         cls = result.partition("->")[2].split(" (")[0].strip()
         # focusing another app is a visible change (music -> spotify);
