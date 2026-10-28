@@ -34,3 +34,18 @@ on shutdown and `atexit` covers the rest.
 `[agents]` keys, declared in `wisp/settings_schema.py`:
 `act_max_steps` (12), `act_max_errors` (2), `act_max_parse_misses` (1),
 `writer_queue_max` (256).
+
+## Latency gate
+
+`wisp/budgets.json` holds a p50 budget per path (a path's p90 may be up to
+1.5x). The replay harness (`tests/harness/latency.py`) runs fixture turns
+against fake models and fails `tests.test_budgets` when a measured path goes
+over its budget; on CI the budget is multiplied by 2 (`CI_SCALE`) because
+shared runners are slower than a desktop. `tests.test_latency_budgets` proves
+the gate by slowing one stage at a time (speech-to-text, route, first token)
+and requiring that path to fail at the exact budget. A budget is never loosened to make
+a change pass.
+
+`wispd eval` prints the measured p50 and p90 of the last week of turns next to
+each path's budget (the same table as `wispd latency`), and `--json` carries
+the rows as `latency`.
