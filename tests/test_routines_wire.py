@@ -23,6 +23,9 @@ class RoutinesWireU3Test(unittest.TestCase):
         self.logs = self.td / "tasks"
         self.logs.mkdir()
         self.cfg = {"agent": {"task_timeout_s": "1800", "max_concurrent": "5"}}
+        p = mock.patch.object(routines, "online", lambda cfg=None: True)
+        p.start()
+        self.addCleanup(p.stop)
 
     def test_cli_agents_run_with_daemon_up_sends_routine_id(self):
         with CliEnv(daemon=True) as env:

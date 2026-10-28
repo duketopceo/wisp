@@ -1045,7 +1045,11 @@ def _record_routine_for_task(rec: dict, final_status: str, delivered: bool,
         return None
     from . import routines
     ok = (final_status == "done") and bool(delivered)
-    outcome = routines.record_routine_outcome(rid, ok=ok, store=routines_store)
+    # a run that failed while the network is gone is a missed run, not a
+    # failing routine
+    offline = not ok and not routines.online(None)
+    outcome = routines.record_routine_outcome(rid, ok=ok, store=routines_store,
+                                              offline=offline)
     return {
         "id": outcome.get("id", rid),
         "ok": bool(outcome.get("ok")),

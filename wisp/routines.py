@@ -425,8 +425,13 @@ def record_routine_outcome(
     ok: bool,
     store: RoutineStore | None = None,
     path: Path | str | None = None,
+    offline: bool = False,
 ) -> dict:
     """Record a scheduled routine run result.
+
+    - `offline=True` (the run was missed or failed for lack of a network):
+      recorded as `last_status="missed_offline"`; it does not count toward
+      the failure pause and does not reset the count either.
 
     - On `ok=True`: sets `unread=True` (quiet completion), resets
       `consecutive_failures=0`, never speaks aloud (`speak=False`).
@@ -461,6 +466,8 @@ def record_routine_outcome(
         r.consecutive_failures = 0
         r.unread = True
         r.last_status = "ok"
+    elif offline:
+        r.last_status = "missed_offline"
     else:
         r.consecutive_failures += 1
         r.last_status = "failed"
@@ -489,6 +496,56 @@ def record_routine_outcome(
     }
 
 
+def online(cfg: dict | None = None) -> bool:
+    """Is there a network to run on? A default route out of an interface
+    that is up, read from /proc and /sys (no probe leaves the machine).
+    With local models enabled the routine can run offline, so True."""
+    if config.local_enabled(cfg):
+        return True
+    try:
+        rows = _read_text(_PROC_ROUTE).splitlines()[1:]
+    except OSError:
+        return True            # cannot tell: do not block the routine
+    for row in rows:
+        f = row.split()
+        if len(f) > 3 and f[1] == "00000000" and int(f[3], 16) & 1:
+            state = _read_text(_SYS_NET / f[0] / "operstate").strip() \
+                if (_SYS_NET / f[0] / "operstate").exists() else "up"
+            if state in ("up", "unknown"):
+                return True
+    return False
+
+
+_PROC_ROUTE = Path("/proc/net/route")
+_SYS_NET = Path("/sys/class/net")
+
+
+def _read_text(p) -> str:
+    return Path(p).read_text()
+
+
+def wait_until_online(cfg: dict | None = None, *, wait_s: float | None = None,
+                      poll_s: float = 2.0, sleep=None, online_fn=None) -> bool:
+    """Wait up to `wait_s` ([agents] routine_wait_s, default 120) for the
+    network, e.g. just after the machine wakes. True when online."""
+    import time
+    online_fn = online_fn or online
+    sleep = sleep or time.sleep
+    if wait_s is None:
+        try:
+            wait_s = float(((cfg or {}).get("agents") or {}).get(
+                "routine_wait_s", 120))
+        except (TypeError, ValueError):
+            wait_s = 120.0
+    waited = 0.0
+    while not online_fn(cfg):
+        if waited >= wait_s:
+            return False
+        sleep(poll_s)
+        waited += poll_s
+    return True
+
+
 def run_routine(
     routine_id: str,
     cfg: dict | None = None,
@@ -497,11 +554,13 @@ def run_routine(
     path: Path | str | None = None,
     tasks_file=None,
     log_dir=None,
+    online_fn=None,
 ) -> dict:
     """Load `routine_id` from `RoutineStore` and spawn it via `agents.spawn`
     with `routine_id` provenance (U3). Used by both the daemon `agent` handler
     and the daemon-down CLI fallback."""
     from . import agents
+    online_fn = online_fn or online
     st = store if store is not None else RoutineStore(path=path)
     r = st.get(routine_id)
     if r is None:
@@ -512,6 +571,13 @@ def run_routine(
         msg = f"SKIP (routine {r.id!r} is paused)"
         return {"ok": False, "error": "routine_paused", "result": msg,
                 "routine_id": r.id}
+    if not online_fn(cfg):
+        # a run missed while offline is not a failure of the routine
+        record_routine_outcome(r.id, False, store=st, offline=True)
+        msg = (f"SKIP (routine {r.id!r} not run: no network; it will run "
+               "on its next schedule)")
+        return {"ok": False, "deferred": True, "error": "offline",
+                "result": msg, "routine_id": r.id}
     tf = tasks_file if tasks_file is not None else config.TASKS_FILE
     ld = log_dir if log_dir is not None else config.TASK_LOGS
     out = agents.spawn(
