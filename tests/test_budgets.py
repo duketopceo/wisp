@@ -144,9 +144,7 @@ class HarnessCeilingTest(unittest.TestCase):
     """Run the fake-backed suite and fail on any budget regression."""
 
     def test_harness_measured_paths_stay_under_their_budgets(self):
-        import os
-        scale = 2.0 if os.environ.get("CI") or os.environ.get(
-            "GITHUB_ACTIONS") else 1.0
+        scale = hl.ci_scale()
         series = hl.measure(runs=2)
         self.assertTrue({"P3", "P4", "P5", "P7", "P9", "P10", "E2E"}
                         <= set(series), sorted(series))

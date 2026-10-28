@@ -80,6 +80,17 @@ def summarize(series: dict) -> dict:
     return out
 
 
+# Shared CI runners are slower and noisier than a desktop, so the gate
+# there allows this multiple of each budget. Locally the budget is exact.
+CI_SCALE = 2.0
+
+
+def ci_scale(env=None) -> float:
+    import os
+    env = os.environ if env is None else env
+    return CI_SCALE if env.get("CI") or env.get("GITHUB_ACTIONS") else 1.0
+
+
 def check(series: dict, *, budget_scale: float = 1.0) -> list:
     """Regressions: p50 over the budget, or p90 over 1.5x the budget."""
     bad = []

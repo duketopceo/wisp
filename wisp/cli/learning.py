@@ -8,6 +8,7 @@ GROUPS["skills"] = "Installed skills"
 GROUPS["trace"] = "Turn trace and daily digest"
 
 _TEXT = {"text": "str"}
+LATENCY_WINDOW_H = 168   # `wispd eval` shows the last week of turns
 
 
 def _text(ctx, s):
@@ -33,7 +34,8 @@ def _eval_args(p):
 @command("eval", "End-to-end eval: first-time-correct rate per turn kind",
          ["wispd eval", "wispd eval --json", "wispd eval --misses",
           "wispd eval --unlabelled --limit 20"],
-         {"kinds": "dict", "total": "dict", "gate": "dict"},
+         {"kinds": "dict", "total": "dict", "gate": "dict",
+          "latency": "list"},
          args=_eval_args)
 def eval_cmd(ctx, a):
     from .. import config, learn
@@ -43,8 +45,13 @@ def eval_cmd(ctx, a):
     if a.unlabelled:
         rows = learn.eval_unlabelled(limit=a.limit)
         return ctx.emit({"unlabelled": rows}, learn.unlabelled_text(rows))
+    from .. import telemetry
     rep = learn.eval_report(config.load_config())
-    return ctx.emit(rep, learn.eval_text(rep))
+    lat = telemetry.latency_report(LATENCY_WINDOW_H)
+    text = learn.eval_text(rep)
+    if lat["turns"]:
+        text += "\n\n" + telemetry.latency_text(LATENCY_WINDOW_H)
+    return ctx.emit({**rep, "latency": lat["rows"]}, text)
 
 
 @command("skills list", "List installed skills",
