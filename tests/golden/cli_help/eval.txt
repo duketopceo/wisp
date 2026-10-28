@@ -1,15 +1,21 @@
-usage: wispd eval [-h] [--json] [--quiet] [--no-color]
+usage: wispd eval [-h] [--misses] [--unlabelled] [--limit N] [--json]
+                  [--quiet] [--no-color]
 
 End-to-end eval: first-time-correct rate per turn kind
 
 options:
-  -h, --help   show this help message and exit
+  -h, --help    show this help message and exit
+  --misses      group the turns that were not right first time
+  --unlabelled  list recent turns that still need a label
+  --limit N     groups or turns to list (default 10)
 
 global options:
-  --json       machine-readable output (one JSON object)
-  --quiet, -q  print nothing on success
-  --no-color   plain output (also NO_COLOR, or not a tty)
+  --json        machine-readable output (one JSON object)
+  --quiet, -q   print nothing on success
+  --no-color    plain output (also NO_COLOR, or not a tty)
 
 Examples:
   wispd eval
   wispd eval --json
+  wispd eval --misses
+  wispd eval --unlabelled --limit 20

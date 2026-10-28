@@ -141,6 +141,91 @@ def eval_report(cfg: dict | None = None, decisions_file=None,
     return {"kinds": kinds, "total": total, "gate": gate}
 
 
+def _latest_labels(labels_file=None) -> dict:
+    latest = {}
+    for lab in _read_jsonl(labels_file or LABELS_FILE):
+        ref, label = lab.get("ref"), lab.get("label", "")
+        if ref and isinstance(ref, str) and isinstance(label, str):
+            latest[ref] = (label, lab.get("note", ""))
+    return latest
+
+
+def _pattern(result: str) -> str:
+    """A turn's failure pattern: the result's leading words with
+    numbers collapsed, so "ACTED (3 steps): ..." and "ACTED (7 steps):
+    ..." group together."""
+    import re
+    head = re.sub(r"\d+", "N", str(result or "").strip())
+    return " ".join(head.split()[:4]) or "(empty)"
+
+
+def eval_misses(decisions_file=None, labels_file=None,
+                top: int = 10) -> list:
+    """Phase 9: the labelled turns that were not right first time,
+    grouped by turn kind and result pattern, biggest group first. Each
+    group carries up to three example transcripts, so the top act
+    failures are re-ranked from data rather than from memory."""
+    decs = {d.get("ts"): d for d in _read_jsonl(
+        decisions_file or config.DECISIONS)}
+    groups = {}
+    for ref, (label, note) in _latest_labels(labels_file).items():
+        if label == "correct":
+            continue
+        d = decs.get(ref) or {}
+        key = (turn_kind(d.get("result", "")), _pattern(d.get("result", "")))
+        g = groups.setdefault(key, {"kind": key[0], "pattern": key[1],
+                                    "count": 0, "retried": 0,
+                                    "examples": []})
+        g["count"] += 1
+        g["retried"] += label == "corrected-by-retry"
+        t = (d.get("transcript") or "").strip()
+        if t and len(g["examples"]) < 3:
+            g["examples"].append(t[:60])
+    ranked = sorted(groups.values(),
+                    key=lambda g: (-g["count"], g["kind"], g["pattern"]))
+    return ranked[:max(1, int(top))]
+
+
+def eval_unlabelled(decisions_file=None, labels_file=None,
+                    limit: int = 20) -> list:
+    """Recent turns with no label yet, newest first: what to label
+    next to reach the gate's turn count. Turns the eval ignores (an
+    empty result) are skipped."""
+    labelled = set(_latest_labels(labels_file))
+    rows = []
+    for d in reversed(_read_jsonl(decisions_file or config.DECISIONS)):
+        ref = d.get("ts")
+        if not ref or ref in labelled or not d.get("result"):
+            continue
+        rows.append({"ref": ref, "kind": turn_kind(d["result"]),
+                     "transcript": (d.get("transcript") or "")[:60],
+                     "result": str(d["result"])[:60]})
+        if len(rows) >= max(1, int(limit)):
+            break
+    return rows
+
+
+def misses_text(rows: list) -> str:
+    if not rows:
+        return "no misses: every labelled turn was right first time"
+    lines = ["top misses (not right first time):"]
+    for g in rows:
+        ex = "; ".join(repr(e) for e in g["examples"])
+        lines.append(f"  {g['count']:>3}x {g['kind']:<7} {g['pattern']}"
+                     + (f"  e.g. {ex}" if ex else ""))
+    return "\n".join(lines)
+
+
+def unlabelled_text(rows: list) -> str:
+    if not rows:
+        return "every logged turn is labelled"
+    lines = ["unlabelled turns (newest first):"]
+    for r in rows:
+        lines.append(f"  {r['ref'][11:19]} {r['kind']:<7} "
+                     f"{r['transcript']!r:<40} {r['result']}")
+    return "\n".join(lines)
+
+
 def eval_text(rep: dict) -> str:
     """Render eval_report for the terminal."""
     if not rep["total"]["labelled"]:

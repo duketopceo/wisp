@@ -235,5 +235,62 @@ class TestBareLabelAlias(unittest.TestCase):
                          ["label", "set", "correct"])
 
 
+class TestEvalMisses(EvalBase):
+    def dect(self, ref, result, transcript):
+        with self.decs.open("a") as f:
+            f.write(json.dumps({"ts": ref, "result": result,
+                                "transcript": transcript}) + "\n")
+
+    def test_groups_misses_by_kind_and_pattern_biggest_first(self):
+        self.dect("T1", "ACTED (3 steps): opened browseros", "open my email")
+        self.dect("T2", "ACTED (7 steps): opened browseros", "open mail")
+        self.dect("T3", "ANSWERED", "what time is it")
+        self.dect("T4", "ACTED (2 steps): ok", "open firefox")
+        for r, lab in (("T1", "incorrect"), ("T2", "corrected-by-retry"),
+                       ("T3", "incorrect"), ("T4", "correct")):
+            self.lab(r, lab)
+        rows = learn.eval_misses(self.decs, self.labs)
+        self.assertEqual([(g["kind"], g["count"]) for g in rows],
+                         [("act", 2), ("answer", 1)])
+        self.assertEqual(rows[0]["retried"], 1)
+        self.assertEqual(rows[0]["examples"], ["open my email", "open mail"])
+        self.assertIn("2x act", learn.misses_text(rows))
+
+    def test_latest_label_wins_and_clean_run_reports_none(self):
+        self.dect("T1", "ANSWERED", "q")
+        self.lab("T1", "incorrect")
+        self.lab("T1", "correct")
+        rows = learn.eval_misses(self.decs, self.labs)
+        self.assertEqual(rows, [])
+        self.assertIn("no misses", learn.misses_text(rows))
+
+    def test_unlabelled_lists_newest_first_and_skips_labelled(self):
+        self.dect("2026-10-27T10:00:00", "ANSWERED", "old")
+        self.dect("2026-10-27T11:00:00", "ACTED (1 steps): x", "new")
+        self.dect("2026-10-27T12:00:00", "ANSWERED", "done")
+        self.dect("2026-10-27T13:00:00", "", "no result")
+        self.lab("2026-10-27T12:00:00", "correct")
+        rows = learn.eval_unlabelled(self.decs, self.labs, limit=5)
+        self.assertEqual([r["transcript"] for r in rows], ["new", "old"])
+        self.assertEqual(rows[0]["kind"], "act")
+        self.assertEqual(len(learn.eval_unlabelled(self.decs, self.labs,
+                                                   limit=1)), 1)
+        self.assertIn("unlabelled turns", learn.unlabelled_text(rows))
+
+    def test_cli_flags(self):
+        self.dect("T1", "ACTED (3 steps): x", "open my email")
+        self.lab("T1", "incorrect")
+        self.dect("T2", "ANSWERED", "hi")
+        t = TestEvalCli("test_json_matches")
+        t.decs, t.labs = self.decs, self.labs
+        code, out = t.run_cli("eval", "--misses", "--json")
+        self.assertEqual(code, 0)
+        d = json.loads(out)
+        d = d.get("data", d)
+        self.assertEqual(d["misses"][0]["count"], 1)
+        code, out = t.run_cli("eval", "--unlabelled")
+        self.assertIn("hi", out)
+
+
 if __name__ == "__main__":
     unittest.main()
