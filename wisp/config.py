@@ -226,6 +226,7 @@ act_max_errors = 2          # consecutive failed tool calls tolerated
 act_max_parse_misses = 1    # unparseable replies in action-text mode
 act_max_seconds = 600       # wall-clock bound per run; 0 disables
 act_max_usd = 0             # per-run model-spend cap; 0 disables
+routine_wait_s = 120        # a scheduled routine waits this long for the network
 writer_queue_max = 256      # background trajectory/recall writes queued
 
 [dev]
@@ -498,7 +499,7 @@ def _default_cfg_dict() -> dict:
                    "region_px": "96", "frame_wait_s": "0.5"},
         "agents": {"act_max_steps": "12", "act_max_errors": "2",
                    "act_max_parse_misses": "1", "act_max_seconds": "600",
-                   "act_max_usd": "0",
+                   "act_max_usd": "0", "routine_wait_s": "120",
                    "writer_queue_max": "256"},
         "dev": {"refine": "true"},
         "eval": {"gate_min_turns": "50"},
