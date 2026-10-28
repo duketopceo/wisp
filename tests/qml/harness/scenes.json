@@ -3009,5 +3009,39 @@
   "mode": "state",
   "pad": 10,
   "width": 280
+ },
+ "WhatsNewCard": {
+  "mode": "variant",
+  "on": "canvas",
+  "pad": 10,
+  "scale2": true,
+  "variants": {
+   "headline": {
+    "_state": "idle",
+    "card": {
+     "date": "2026-11-02",
+     "lines": [
+      "Draw on your screen and ask about it: Wisp draws rings, arrows and highlights, and you can scribble on the screen to point at what you mean.",
+      "Walkthroughs: Wisp can teach you a task step by step, spoken and pointed.",
+      "Answers start sooner: the first clause is spoken as soon as it is ready."
+     ],
+     "more": 4,
+     "title": "v0.10.0",
+     "url": "https://github.com/duketopceo/wisp/blob/master/CHANGELOG.md"
+    }
+   },
+   "short": {
+    "_state": "idle",
+    "card": {
+     "date": "",
+     "lines": [
+      "One headline."
+     ],
+     "more": 0,
+     "title": "Unreleased",
+     "url": "https://github.com/duketopceo/wisp/blob/master/CHANGELOG.md"
+    }
+   }
+  }
  }
 }
