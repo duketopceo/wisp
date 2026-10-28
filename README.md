@@ -111,6 +111,13 @@ What a turn can do:
 - **Agent**: "Wisp, agent, fix the tests in wisp" starts a named task on
   your runtime (`opencode`, `codex`, `claude` or `devin`; `auto` probes
   `PATH`). `wispd task list` shows status and a live log tail.
+  **Named helpers**: "make me a research helper called Scout" gives it a
+  folder in the data dir (`agents/scout/`: `AGENTS.md` identity, dated
+  `notes/`, `output/`, `tmp/`). "Tell Scout to ..." starts a run that reads
+  its identity and notes (a busy helper gets the message in its inbox
+  instead), and "what's running" lists the live ones. A helper asks once with
+  bundled questions, prints `PROGRESS:` lines, and the first sentence of its
+  result is what Wisp speaks.
 - **Tools**: launch, focus and close apps, switch workspace, notify,
   screenshot, pointer, typing, a guarded shell, file search, DOM-mode
   `fill` and click-by-id, X compose helpers (`post` / `post_send`), and
