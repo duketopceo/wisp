@@ -309,10 +309,10 @@ def _resolve(v, default_fn):
         return None
 
 
-def visible_deny(cfg, clients=None, monitors=None):
-    """(offender|None, readable) — the mapped client of a deny-listed
-    class on a visible workspace. `clients`/`monitors` take the
-    compositor lists directly or as callables (None -> hypr socket).
+def visible_deny_all(cfg, clients=None, monitors=None):
+    """(offenders, readable) — every mapped client of a deny-listed class
+    on a visible workspace, in compositor order. `clients`/`monitors` take
+    the compositor lists directly or as callables (None -> hypr socket).
     readable=False when the window list can't be fetched: the caller
     suppresses rather than captures."""
     try:
@@ -323,9 +323,9 @@ def visible_deny(cfg, clients=None, monitors=None):
         else:
             listing = _clients()
     except Exception:
-        return None, False
+        return [], False
     if not isinstance(listing, list):
-        return None, False
+        return [], False
     mons = _resolve(monitors, _monitors)
     if not mons:
         vis = None       # workspace visibility unknown -> all mapped count
@@ -337,6 +337,7 @@ def visible_deny(cfg, clients=None, monitors=None):
                 if isinstance(ws, dict) and ws.get("id") is not None:
                     vis.add(ws["id"])
     s = cua_safety.settings(cfg)
+    found = []
     for c in listing:
         if not isinstance(c, dict):
             continue
@@ -348,8 +349,14 @@ def visible_deny(cfg, clients=None, monitors=None):
             continue    # on a workspace no monitor is showing
         if cua_safety.deny_match(c.get("class") or "",
                                  c.get("title") or "", cfg, s=s):
-            return c, True
-    return None, True
+            found.append(c)
+    return found, True
+
+
+def visible_deny(cfg, clients=None, monitors=None):
+    """(offender|None, readable) — the first of `visible_deny_all`."""
+    found, readable = visible_deny_all(cfg, clients, monitors)
+    return (found[0] if found else None), readable
 
 
 def suppress(turn_dir, why: str) -> dict:
