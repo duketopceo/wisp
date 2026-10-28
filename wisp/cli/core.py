@@ -153,6 +153,9 @@ def _update_args(p):
     p.add_argument("--dry-run", action="store_true",
                    help="print version, digest and the files that would "
                         "change; write nothing")
+    p.add_argument("--force", action="store_true",
+                   help="install a release that is older than, the same "
+                        "as, or cannot be compared with what is installed")
     p.add_argument("--sha256", metavar="HEX",
                    help="expected SHA-256 of the download, for a release "
                         "that publishes none")
@@ -160,9 +163,11 @@ def _update_args(p):
 
 @command("daemon update",
          "Fetch the latest release, verify it, and install on your yes",
-         ["wispd update --dry-run", "wispd update"],
+         ["wispd update --dry-run", "wispd update",
+          "wispd update --force"],
          {"version": "str", "installed_version": "str", "sha256": "str",
-          "changes": "dict", "dry_run": "bool", "applied": "bool"},
+          "changes": "dict", "dry_run": "bool", "applied": "bool",
+          "ordering": "str", "forced": "bool"},
          args=_update_args)
 def daemon_update(ctx, a):
     from .. import update
@@ -170,6 +175,7 @@ def daemon_update(ctx, a):
         else (lambda t: print(t))
     try:
         res = update.run_update(dry_run=a.dry_run, sha256=a.sha256,
+                                force=a.force,
                                 confirm=update.tty_confirm, emit_text=say)
     except update.UpdateError as e:
         raise CliError("E_FAILED", str(e), "wispd update --dry-run")

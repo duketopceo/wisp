@@ -53,6 +53,14 @@ nothing. A yes runs that tarball's `wispd install`; it does not restart
 the daemon, so apply it with `systemctl --user restart wispd`. Installing
 needs a terminal to ask you.
 
+`wispd update` never goes backwards. It compares the release with what is
+installed (version numbers when you installed a release; when you
+deployed a git ref, the installed commit against the release tag on
+GitHub) and refuses a release that is older, the same, diverged from your
+install, or that it cannot compare, before downloading anything. A
+`--dry-run` still previews it and says so. `wispd update --force` installs
+it anyway, and still asks for your yes.
+
 ## Deploying a git ref
 
 `wispd install --ref <git-ref>` installs that branch, tag or commit of
