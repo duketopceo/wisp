@@ -240,7 +240,12 @@ what it asked and records a pass; a step you skip is offered again next run.
 
 ## Privacy
 
-- Audio is transcribed locally by default (`[stt] provider = "local"`).
+- Every outside host, what it gets, who holds the key and what you
+  control is listed in [docs/TRUST.md](docs/TRUST.md), a page generated
+  from the code (a test fails when a new host appears without an entry).
+- Audio goes to your speech provider (Groq by default) unless you set
+  `[stt] provider = "local"`, which transcribes on this machine with
+  whisper.cpp.
 - Screenshots ride into the model only for the turn that needs them, and
   stay on the machine when `screenshots = "false"` or the brain is local.
 - Error reporting is off. If you set `[report] dsn` (a GlitchTip DSN or
