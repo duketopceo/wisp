@@ -69,6 +69,13 @@ _BUILTINS = {
     "mlx": {"kind": "openai_compat",
             "base_url": "http://localhost:8080/v1",
             "key_env": "", "vision": "false", "tools": "false"},
+    # spike/lfm-local: Liquid LFM2.5-VL on llama.cpp mtmd :8082 — the
+    # local/offline answer lane behind `scripts/lfm-serve`. Override
+    # model, URL, vision/tools per [brain.lfm]; not in any default
+    # chain. See docs/research/2026-10-28-lfm-local-spike.md.
+    "lfm": {"kind": "openai_compat",
+            "base_url": "http://127.0.0.1:8082/v1",
+            "key_env": "", "vision": "true", "tools": "false"},
 }
 
 
