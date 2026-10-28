@@ -80,8 +80,8 @@ Your settings and memory stay in `~/.config/wisp` and
 
 ## License
 
-MIT, see LICENSE. Bundled third-party notices are in
-THIRD_PARTY_NOTICES.md. Version {version}.
+AGPL-3.0-only, see LICENSE (releases up to v0.9.0 were MIT). Bundled
+third-party notices are in THIRD_PARTY_NOTICES.md. Version {version}.
 """
 
 
