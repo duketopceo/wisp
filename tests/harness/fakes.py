@@ -124,7 +124,8 @@ class FakeServer:
             return self.respond(h, st, {"error": f"scripted failure #{n}"})
         status = self.script.get("status", 200)
         if status != 200:
-            return self.respond(h, status, {"error": "scripted status"})
+            return self.respond(h, status, {"error": self.script.get(
+                "error_body", "scripted status")})
         self.serve(h, method, parsed, n)
 
     # hooks -------------------------------------------------------
@@ -196,7 +197,10 @@ class FakeJev(FakeServer):
 
 class FakeWhisper(FakeServer):
     def serve(self, h, method, body, n):
-        self.respond(h, 200, {"text": self.script.get("transcript", "")})
+        out = {"text": self.script.get("transcript", "")}
+        if self.script.get("language"):
+            out["language"] = self.script["language"]    # verbose_json
+        self.respond(h, 200, out)
 
 
 class FakeBrain(FakeServer):

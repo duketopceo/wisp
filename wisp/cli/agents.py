@@ -188,21 +188,26 @@ def suggest_list(ctx, a):
 def _label_args(p):
     p.add_argument("label", help="correct or incorrect: was the last route "
                    "right?")
+    p.add_argument("--lang", default="", metavar="CODE",
+                   help="language the turn was spoken in (es, de, pt-BR, "
+                   "...); eval then reports it per language")
     p.add_argument("note", nargs="*", help="optional note")
 
 
 @command("label set", "Label the last turn correct or incorrect",
          ["wispd label set correct", "wispd label set incorrect it opened "
-          "the wrong app"], {"result": "str"}, args=_label_args)
+          "the wrong app", "wispd label set correct --lang es"],
+         {"result": "str"}, args=_label_args)
 def label_set(ctx, a):
     note = " ".join(a.note)
     try:
-        r = ctx.send({"cmd": "label", "label": a.label, "note": note})
+        r = ctx.send({"cmd": "label", "label": a.label, "note": note,
+                      **({"lang": a.lang} if a.lang else {})})
     except CliError as e:
         if e.code != "E_DAEMON_DOWN":
             raise
         from .. import learn
-        out = learn.label_last(a.label, note)
+        out = learn.label_last(a.label, note, a.lang)
         if out.startswith(("SKIP", "ERROR", "nothing")):
             if ctx.json:
                 raise CliError("E_FAILED", "Nothing was labelled.",
