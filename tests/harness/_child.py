@@ -47,6 +47,12 @@ def main(spec_path: str) -> int:
                 "vision": "false", "tools": "true"}
         for section, vals in spec.get("config", {}).items():
             cfg.setdefault(section, {}).update(vals)
+        if "trace" in spec.get("config", {}).get("debug", {}):
+            # the trace reads its own flag from the config file, which a
+            # fixture does not write: pin it for this turn
+            trace_mod._enabled = str(spec["config"]["debug"]["trace"]
+                                     ).lower() not in (
+                "false", "0", "no", "off")
 
         # -- seams: no desktop, no notifications, no real launches ----
         # a fixture that declares the notify / hypr fakes gets the REAL

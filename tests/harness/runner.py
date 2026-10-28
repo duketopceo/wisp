@@ -195,6 +195,7 @@ class TurnResult:
     tempdir: str = ""
     endpoint_urls: dict = field(default_factory=dict)
     expect: dict = field(default_factory=dict)
+    files: dict = field(default_factory=dict)    # rel path -> text (collect)
 
     @property
     def statuses(self) -> list:
@@ -361,7 +362,7 @@ def _build_fakes(fx: dict) -> dict:
     return live
 
 
-def child_env(tmp: pathlib.Path, fs: FakeSet) -> dict:
+def child_env(tmp: pathlib.Path, fs: FakeSet, extra: dict | None = None) -> dict:
     """The turn child's environment. PATH is ONLY the fake bin dir, so a
     real binary (cua-driver, hyprctl, notify-send, systemctl, ...) can
     never be reached: whatever is not faked is "command not found"."""
@@ -392,6 +393,7 @@ def child_env(tmp: pathlib.Path, fs: FakeSet) -> dict:
                 env[k] = v
         env["USERPROFILE"] = str(tmp / "home")
     env.update(fs.env())
+    env.update(extra or {})
     return env
 
 
@@ -405,7 +407,8 @@ def _pin_jev_router(fx: dict) -> dict:
     return cfg
 
 
-def run_turn(fixture, timeout: float = 60.0) -> TurnResult:
+def run_turn(fixture, timeout: float = 60.0,
+             collect_files: bool = False) -> TurnResult:
     fx = fixture if isinstance(fixture, dict) else load_fixture(fixture)
     wav = resolve_audio(fx)
     tmp = pathlib.Path(shorttmp.mkdtemp(prefix="wr-"))
@@ -456,7 +459,7 @@ def run_turn(fixture, timeout: float = 60.0) -> TurnResult:
         spec_path.write_text(json.dumps(spec))
         home = tmp / "home"
         home.mkdir(exist_ok=True)
-        env = child_env(tmp, fs)
+        env = child_env(tmp, fs, fx.get("env"))
         proc = subprocess.run(
             [sys.executable, str(HERE / "_child.py"), str(spec_path)],
             env=env, capture_output=True, text=True, timeout=timeout,
@@ -488,12 +491,27 @@ def run_turn(fixture, timeout: float = 60.0) -> TurnResult:
                 for c in s.calls]
         res.peer_closed = {n: s.peer_closed for n, s in live.items()}
         res.spans = _spans(res)
+        if collect_files:
+            res.files = _collect(tmp)
         return res
     finally:
         for s in live.values():
             s.stop()
         fs.stop()
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _collect(tmp: pathlib.Path) -> dict:
+    """Every file the turn left under the temp HOME / XDG tree (text, rel
+    path keys), for tests that audit what a turn wrote to disk."""
+    out = {}
+    for sub in ("home", "config", "data", "state", "run"):
+        base = tmp / sub
+        for p in sorted(base.rglob("*")) if base.is_dir() else []:
+            if p.is_file() and not p.is_symlink():
+                out[f"{sub}/{p.relative_to(base)}"] = p.read_text(
+                    errors="replace")
+    return out
 
 
 def _spans(res: TurnResult) -> dict:

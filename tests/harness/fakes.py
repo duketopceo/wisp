@@ -124,7 +124,8 @@ class FakeServer:
             return self.respond(h, st, {"error": f"scripted failure #{n}"})
         status = self.script.get("status", 200)
         if status != 200:
-            return self.respond(h, status, {"error": "scripted status"})
+            return self.respond(h, status, {"error": self.script.get(
+                "error_body", "scripted status")})
         self.serve(h, method, parsed, n)
 
     # hooks -------------------------------------------------------
