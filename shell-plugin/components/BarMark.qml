@@ -18,6 +18,8 @@ Item {
                                        service ? service.stale : false)
   readonly property bool badged: service ? B.badge(service.status, service.suggestion !== null) : false
   readonly property real dot: 6
+  // opt-in wake word: a ring in the fail tone for as long as the mic is open
+  readonly property bool micOpen: service ? B.micOpen(service.mic, service.offline) : false
 
   implicitWidth: size + M.spacing.sm
   implicitHeight: size + M.spacing.sm
@@ -39,6 +41,18 @@ Item {
     height: root.dot
     radius: root.dot / 2
     color: root.tk[C.toneToken("awaiting_choice")]
+  }
+
+  // open mic (wake word): bottom-right, filled, never hidden by the badge
+  Rectangle {
+    id: micDot
+    visible: root.micOpen
+    x: parent.width - width
+    y: parent.height - height
+    width: root.dot
+    height: root.dot
+    radius: root.dot / 2
+    color: root.tk.fail
   }
 
   // stale: hollow ring, same corner

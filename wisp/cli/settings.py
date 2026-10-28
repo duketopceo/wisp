@@ -63,8 +63,11 @@ def _set_args(p):
          {"key": "str", "value": "str"}, args=_set_args)
 def config_set(ctx, a):
     set_key(ctx, a.key, a.value)
-    return ctx.emit({"key": a.key, "value": a.value},
-                    f"{a.key} = {a.value}")
+    text = f"{a.key} = {a.value}"
+    if a.key == "wakeword.enabled" and a.value.strip().lower() == "true":
+        from .. import wakeword
+        text += "\n" + wakeword.plan(ctx.cfg)    # say what it listens to
+    return ctx.emit({"key": a.key, "value": a.value}, text)
 
 
 @command("config keys", "List the settings wispd checks, with ranges",

@@ -399,6 +399,18 @@ tools = "false"
 # Brains still come from [brain]; OpenRouter is the default.
 enabled = "false"
 
+[handsfree]
+# Opt-in (B33): double-tap the talk key to keep listening after release; the
+# next tap sends. Off means hold-to-talk is exactly as it always was.
+enabled = "false"
+
+[wakeword]
+# Opt-in (B33): listen for the phrase with the local whisper.cpp model, with
+# nothing sent anywhere until it is heard. Refuses to turn on over open
+# speakers. See docs/PRIVACY.md.
+enabled = "false"
+phrase = "hey wisp"
+
 [health]
 # probes of LOCAL endpoints (Jev, brain chain, optional extras); remote
 # endpoints are never probed. Results ride state.json `health`.
@@ -704,6 +716,13 @@ def set_config(section: str, key: str, value: str) -> None:
     value — reject them rather than writing corrupt TOML."""
     if any(c in value for c in '"\\#\n'):
         raise ValueError("config values may not contain \" \\ # or newline")
+    if (section, key) == ("wakeword", "enabled") \
+            and value.strip().lower() == "true":
+        # always-listening is refused over open speakers (B33)
+        from . import wakeword
+        ok, why = wakeword.can_enable()
+        if not ok:
+            raise ValueError("the wake word stays off: " + why)
     # keys in the settings schema (wisp/settings_schema.py) are also
     # checked for type and range, so every writer shares one rule
     from . import settings_schema

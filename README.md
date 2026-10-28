@@ -255,6 +255,10 @@ what it asked and records a pass; a step you skip is offered again next run.
 
 ## Privacy
 
+- Wisp hears you only while you hold the key, unless you opt in to
+  hands-free (double-tap) or a local wake word. Both are off by default,
+  tell you what they listen to when you turn them on, and are described in
+  [docs/PRIVACY.md](docs/PRIVACY.md).
 - Every outside host, what it gets, who holds the key and what you
   control is listed in [docs/TRUST.md](docs/TRUST.md), a page generated
   from the code (a test fails when a new host appears without an entry).

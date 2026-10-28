@@ -45,6 +45,7 @@ Item {
   property string errorCode: ""
   property var health: ({})
   property var spend: ({})
+  property string mic: ""
   property string turnId: ""
   property bool offline: true
   property bool stale: false
@@ -120,6 +121,7 @@ Item {
     root.errorCode = v.errorCode;
     root.health = v.health;
     root.spend = v.spend;
+    root.mic = v.mic;
     root.turnId = v.turnId;
     root.offline = v.offline;
     root.contractNewer = v.contractNewer;
