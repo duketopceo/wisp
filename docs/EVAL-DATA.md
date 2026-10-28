@@ -1,10 +1,10 @@
 # Eval data to record
 
-The v1 gate (`[eval] gate_rate` over `gate_min_turns`, 50 by default) is
-scored from your own labelled turns. On 2026-10-26 there were 19 labelled
-turns and 6 were right first time (32%). The plan recommends
-`gate_rate = "60%"`, so the target is at least 50 labelled turns with 30
-or more right first time, recorded against the deployed `master`.
+The v1 gate (`[eval] gate_rate`, set to 60%, over `gate_min_turns`, 50 by
+default) is scored from your own labelled turns. On 2026-10-26 there were
+19 labelled turns and 6 were right first time (32%). The target is at
+least 50 labelled turns with 30 or more right first time, recorded
+against the deployed `master`.
 
 ## Before recording
 
