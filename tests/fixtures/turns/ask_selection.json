@@ -1,0 +1,47 @@
+{
+  "description": "Answer route with a press-time selection: it reaches the brain as a quoted data block (B22).",
+  "audio": "ask.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "what does this mean"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "content": "ERR_CONNECTION_RESET means the server closed the connection.",
+          "chunk_delay_ms": 0
+        }
+      ]
+    }
+  },
+  "expect": {
+    "statuses": [
+      "listening",
+      "transcribing",
+      "deciding",
+      "acting",
+      "speaking",
+      "done"
+    ],
+    "transcript": "what does this mean",
+    "answer": "ERR_CONNECTION_RESET means the server closed the connection.",
+    "brain_calls": 1
+  },
+  "name": "ask_selection",
+  "scenario": "answer",
+  "selection": "ERR_CONNECTION_RESET"
+}
