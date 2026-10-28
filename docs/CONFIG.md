@@ -237,6 +237,19 @@ and `wispd models` show current health.
 | `mode` | `"cleanup"` | what `dictate` does: `raw` verbatim, `cleanup` fixes grammar/spelling without changing your words, `compose` turns the ramble into finished text for the focused app's genre |
 | `terminal_classes` | `""` | extra window classes that count as terminals for the newline guard (comma list; built-ins: foot, alacritty, kitty, ghostty, wezterm) |
 | `model` | `""` | `provider:model` override for the cleanup/compose pass; empty = the `[brain]` chain |
+| `history` | `"true"` | keep every finished dictation in `~/.local/share/wisp/dictation-history.jsonl` (mode 0600) so a failed insert loses nothing. Never sent anywhere and never put in a prompt. `"false"` keeps nothing |
+| `history_max` | `"100"` | most entries kept |
+| `history_days` | `"7"` | oldest entry kept, in days |
+
+Dictated words are never lost: if an insert fails the text stays in the
+history and the answer says so; `wispd dictate retry [N] [--delay S]`
+inserts it again at the focused cursor, `wispd dictate copy [N]` copies it,
+`wispd dictate history` lists them and `wispd dictate clear` wipes them. A
+long recording writes each transcribed chunk to `dictation-session.jsonl`
+as it goes, so a crash or kill keeps what was said (the next start moves it
+into the history). Cleanup never adds words that were not spoken (a reply
+with new words is dropped and your words are inserted as spoken), and a tap
+or cough with nothing said inserts nothing.
 
 Per-app profiles (VoiceInk Power Mode, thin): a `[dictation.profiles.
 <pattern>]` section matched `*pattern*` against the focused window

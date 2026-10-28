@@ -315,7 +315,21 @@ def rewrite(mode: str, text: str, cfg: dict, win: dict, profile: dict,
         except (ImportError, AttributeError, TypeError):
             pass
         return text
-    return out or text
+    if not out:
+        return text
+    if mode == "cleanup":
+        from . import dictate_history as _hist
+        if not _hist.faithful(text, out, corr.values()):
+            # cleanup added words that were not spoken: keep what was said
+            try:
+                from . import trace
+                trace.emit(trace.current(), "dictate_unfaithful", "brain",
+                           {"mode": mode, "said": len(text.split()),
+                            "wrote": len(out.split())})
+            except (ImportError, AttributeError, TypeError):
+                pass
+            return text
+    return out
 
 
 # -- insertion ----------------------------------------------------------
@@ -360,10 +374,14 @@ def _paste(text: str, cfg: dict, guard=None) -> bool:
     if r.returncode != 0:
         return False
     ok = _input(guard, "key", "ctrl+v", cfg).startswith("KEY")
-    if prior is not None:
-        time.sleep(_PASTE_DELAY_S)
+    if prior is not None or not ok:
+        time.sleep(_PASTE_DELAY_S if ok else 0)
         try:
-            _cancel.run(["wl-copy"], input=prior.encode(),
+            # put the user's clip back; with none to restore, a failed
+            # paste must not leave the dictation on the clipboard
+            _cancel.run(["wl-copy"] + ([] if prior is not None
+                                       else ["--clear"]),
+                        input=(prior or "").encode(),
                         capture_output=True, timeout=5)
         except (OSError, subprocess.SubprocessError):
             pass
@@ -412,6 +430,9 @@ def _maybe_correction(text: str) -> str | None:
     return None
 
 
+KEPT_HINT = (" Your words are kept: `wispd dictate retry` inserts them "
+             "again, `wispd dictate copy` copies them.")
+
 _PREVIEW = 620      # what fits the confirm card (~10 wrapped lines)
 
 
@@ -450,6 +471,13 @@ def run(text: str, cfg: dict, state=None, confirm=None,
     cls = win.get("class") or ""
     profile = profile_for(cls, cfg)
     mode, text = pick_mode(text, cfg, profile, mode)
+    from . import dictate_history as _hist
+    if _hist.is_silence(text):
+        # a tap, a cough or a model's stock phrase for near-silence:
+        # nothing was said, so nothing is inserted (and nothing invented)
+        _hist.add(text, "ignored", cfg, app=cls, raw=text,
+                  note="nothing was said")
+        return "SKIP (nothing was said)"
     data = _read()
     corr = dict(data["corrections"])
     out = rewrite(mode, text, cfg, win, profile, corr)
@@ -457,6 +485,7 @@ def run(text: str, cfg: dict, state=None, confirm=None,
         out = apply_corrections(out, corr)
     if not out.strip():
         return "SKIP (nothing to type)"
+    spoken = text
     terminal = is_terminal(cls, cfg)
     from . import tools
     if terminal and tools.denied(out):
@@ -473,7 +502,12 @@ def run(text: str, cfg: dict, state=None, confirm=None,
         out = collapse_newlines(out)
     via, err = insert(out, cfg, guard)
     if not via:
-        return err or "SKIP (no insert path — wtype/wl-copy missing)"
+        # the words are kept: they can be inserted again or copied
+        _hist.add(out, "failed", cfg, app=cls, raw=spoken,
+                  note=(err or "no insert path")[:120])
+        return ((err or "SKIP (no insert path — wtype/wl-copy missing)")
+                + KEPT_HINT)
+    _hist.add(out, "inserted", cfg, app=cls, via=via, raw=spoken)
     sent = False
     if send:
         sent = _input(guard, "key", "enter", cfg).startswith("KEY")
@@ -484,3 +518,42 @@ def run(text: str, cfg: dict, state=None, confirm=None,
     if sent:
         tag += " +sent"
     return f"{tag}: {out.replace(chr(10), ' ')[:140]}"
+
+
+# -- keeping what was said (B24) ----------------------------------------
+
+def retry(rec: dict, cfg: dict, guard=None) -> str:
+    """Insert a kept dictation again at the focused cursor. The newline
+    guard and the denylist apply exactly as they did the first time."""
+    from . import dictate_history as _hist
+    out = rec.get("text") or ""
+    if not out.strip():
+        return "SKIP (nothing to type)"
+    win = _focused(None)
+    cls = win.get("class") or ""
+    if is_terminal(cls, cfg):
+        from . import tools
+        if tools.denied(out):
+            return "REFUSED (denylisted command)"
+        out = collapse_newlines(out)
+    if guard is None:
+        guard = cua_safety.Guard(cfg)
+    via, err = insert(out, cfg, guard)
+    if not via:
+        return (err or "SKIP (no insert path — wtype/wl-copy missing)") \
+            + KEPT_HINT
+    _hist.mark(rec.get("ts", ""), "inserted")
+    return f"INSERTED: {out.replace(chr(10), ' ')[:140]}"
+
+
+def copy_to_clipboard(text: str) -> bool:
+    """Put a kept dictation on the clipboard (only when the user asks)."""
+    import shutil
+    if not shutil.which("wl-copy"):
+        return False
+    try:
+        r = subprocess.run(["wl-copy"], input=text.encode(),
+                           capture_output=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return r.returncode == 0

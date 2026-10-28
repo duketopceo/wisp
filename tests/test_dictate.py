@@ -168,7 +168,7 @@ class RunTest(unittest.TestCase):
 
     def test_terminal_collapses_newlines_for_every_mode(self):
         cfg = {"dictation": {"mode": "cleanup"}}
-        out = self.go("some thought", cfg, cls="foot",
+        out = self.go("line one line two line three", cfg, cls="foot",
                       chat="line one\nline two\nline three")
         self.assertEqual(self.inserted, ["line one line two line three"])
         self.assertNotIn("\n", out)
@@ -180,8 +180,8 @@ class RunTest(unittest.TestCase):
         self.assertEqual(self.inserted, ["a b"])
 
     def test_non_terminal_keeps_newlines(self):
-        self.go("x", {"dictation": {"mode": "cleanup"}}, cls="chromium",
-                chat="line one\nline two")
+        self.go("line one line two", {"dictation": {"mode": "cleanup"}},
+                cls="chromium", chat="line one\nline two")
         self.assertEqual(self.inserted, ["line one\nline two"])
 
     def test_auto_send_asks_then_presses_enter(self):
@@ -225,7 +225,7 @@ class RunTest(unittest.TestCase):
         data = json.loads(self.f.read_text())
         self.assertEqual(data["corrections"]["wisp dot ai"], "wisp.ai")
         # post-LLM swap, case-insensitive exact phrase
-        self.go("mention the site",
+        self.go("go to wisp dot ai today",
                 {"dictation": {"mode": "cleanup"}},
                 cls="chromium", chat="go to Wisp dot ai today")
         self.assertEqual(self.inserted, ["go to wisp.ai today"])

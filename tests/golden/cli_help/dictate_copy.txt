@@ -1,0 +1,19 @@
+usage: wispd dictate copy [-h] [--json] [--quiet] [--no-color] [N]
+
+Copy a kept dictation to the clipboard
+
+positional arguments:
+  N            entry number from `wispd dictate history` (default: the newest
+               that did not land)
+
+options:
+  -h, --help   show this help message and exit
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd dictate copy
+  wispd dictate copy 1
