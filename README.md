@@ -198,6 +198,10 @@ up through the app's control channel and the accessibility tree before the
 model's own coordinates are used. Wisp never clicks or types during a
 walkthrough, and Esc stops it.
 
+Say "demonstrate <task>" (or "demo me <task>") and Wisp narrates and points
+at every step in one go without waiting for you. When the focused app has a
+skill (`app_classes` in its frontmatter), its notes go into the plan.
+
 ## Privacy
 
 - Audio is transcribed locally by default (`[stt] provider = "local"`).

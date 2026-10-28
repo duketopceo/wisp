@@ -84,9 +84,11 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
         return agents.spawn(detail or app or "unnamed task", cfg)
     if route == "walkthrough":
         from . import walkthrough_run
-        return walkthrough_run.run(detail, cfg, state=state, ask=ask,
+        goal, demo = walkthrough_run.split_mode(detail)
+        return walkthrough_run.run(goal, cfg, state=state, ask=ask,
                                    image_b64=initial_image,
-                                   interrupted=interrupted)
+                                   interrupted=interrupted,
+                                   demonstrate=demo)
     if route == "act":
         return _run_act(detail)
     if route == "dictation":

@@ -273,5 +273,105 @@ class Wiring(unittest.TestCase):
             stage_speak._spoken_payload("ACTED (1 steps): ok"), "ok")
 
 
+class DemonstrateMode(unittest.TestCase):
+    def test_intent(self):
+        self.assertEqual(wr.demo_intent("demonstrate how to export a PDF"),
+                         "export a PDF")
+        self.assertEqual(wr.demo_intent("Wisp, demo me the share dialog."),
+                         "the share dialog")
+        self.assertIsNone(wr.demo_intent("walk me through x"))
+        self.assertIsNone(wr.demo_intent("demonstrate"))
+        self.assertEqual(wr.split_mode("demonstrate: x y"), ("x y", True))
+        self.assertEqual(wr.split_mode("x y"), ("x y", False))
+
+    def test_routes_with_the_mode_in_the_detail(self):
+        self.assertEqual(
+            stage_route.fixed_route("demonstrate how to export", "act"),
+            ("walkthrough", "demonstrate: export"))
+
+    def test_execute_passes_the_mode(self):
+        with mock.patch.object(wr, "run", return_value="WALKED (0 steps): x") \
+                as run:
+            stage_execute.execute({"route": {"choice": "walkthrough"}}, {},
+                                  detail="demonstrate: export",
+                                  initial_image=None,
+                                  interrupted=lambda: False)
+        self.assertEqual(run.call_args.args[0], "export")
+        self.assertTrue(run.call_args.kwargs["demonstrate"])
+
+    def test_every_step_is_spoken_and_pointed_without_waiting(self):
+        sc = Script([W("a")])           # the screen never changes
+        asked, polled = [], []
+        env = sc.env()
+        env._window = lambda: polled.append(1) or W("a")
+        out = wr.run("g", {}, sc.state, steps=steps("one", "two", "three"),
+                     env=env, demonstrate=True,
+                     ask=lambda *a: asked.append(a))
+        self.assertEqual(sc.said, ["one", "two", "three"])
+        self.assertEqual(len(sc.published), 3)
+        self.assertEqual(asked, [])
+        self.assertEqual(polled, [])        # no watching for a click
+        self.assertEqual(sc.i, 0)           # and no waiting
+        self.assertTrue(out.startswith("WALKED (3 steps)"), out)
+
+    def test_zero_input_events(self):
+        sc = Script([W("a")])
+        with mock.patch("wisp.tools.run") as tools_run, \
+                mock.patch("wisp.cua_safety.Guard") as guard:
+            wr.run("g", {}, sc.state, steps=steps("one"), env=sc.env(),
+                   demonstrate=True)
+        tools_run.assert_not_called()
+        guard.assert_not_called()
+
+    def test_interrupt_stops_a_demonstration(self):
+        sc = Script([W("a")])
+        out = wr.run("g", {}, sc.state, steps=steps("one", "two"),
+                     env=sc.env(interrupted=lambda: True), demonstrate=True)
+        self.assertIn("stopped", out)
+
+
+class SkillPriming(unittest.TestCase):
+    def prompt_for(self, window, skill_match):
+        seen = {}
+
+        def chat(messages, cfg, timeout=0):
+            seen["p"] = messages[0]["content"]
+            return {"content": '{"steps":[{"say":"go"}]}'}
+        sc = Script([window])
+        with mock.patch("wisp.brain.chat", chat), \
+                mock.patch("wisp.brain.supports_vision", return_value=False):
+            wr.run("g", {}, sc.state, env=sc.env(), skill_match=skill_match,
+                   demonstrate=True)
+        return seen["p"]
+
+    def test_a_matching_skill_is_in_the_prompt(self):
+        p = self.prompt_for(W("t", "1password"),
+                            lambda cls: "Quick Access is Ctrl+Shift+Space")
+        self.assertIn("Quick Access is Ctrl+Shift+Space", p)
+
+    def test_no_skill_means_no_notes(self):
+        p = self.prompt_for(W("t", "foot"), lambda cls: "")
+        self.assertNotIn("Notes about the app", p)
+
+    def test_no_window_class_never_asks_for_a_skill(self):
+        def boom(cls):
+            raise AssertionError("looked up")
+        self.assertEqual(wr.app_skill({}, boom), "")
+        self.assertEqual(wr.app_skill({"class": ""}, boom), "")
+
+    def test_a_failing_matcher_does_not_stop_the_lesson(self):
+        def boom(cls):
+            raise OSError("disk")
+        self.assertEqual(wr.app_skill({"class": "x"}, boom), "")
+
+    def test_the_seeded_skill_is_found_for_its_app(self):
+        from wisp import skills
+        body = wr.app_skill({"class": "1password"}, skills.match_app_skill)
+        self.assertIn("Quick Access", body)
+        self.assertEqual(
+            wr.app_skill({"class": "no-such-app"}, skills.match_app_skill),
+            "")
+
+
 if __name__ == "__main__":
     unittest.main()
