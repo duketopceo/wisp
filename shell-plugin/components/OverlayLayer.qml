@@ -9,6 +9,7 @@ import QtQuick
 import "../lib/metrics.js" as M
 import "../lib/cursor.js" as Cursor
 import "../lib/companion.js" as Companion
+import "../lib/card.js" as CardLib
 
 Item {
   id: root
@@ -42,7 +43,13 @@ Item {
   readonly property real buddyPillWidth: buddy.pillWidth
   readonly property real buddyPillHeight: buddy.pillHeight
   readonly property var beacons: service ? Cursor.beacons(service.points) : []
-  readonly property bool shown: pillShown || bubbleShown || buddyShown || beacons.length > 0 || draw.count > 0
+  // a picture from the paper rides along with the answer (lib/card.js)
+  readonly property var cardImage: service ? CardLib.imageOf(service.note) : null
+  readonly property bool cardShown: cardImage !== null && bubbleShown
+  readonly property var cardSpot: CardLib.place(width, height, CardLib.cardSize(cardImage),
+    CardLib.avoidRects(beacons, draw.shapes, service ? service.cuaTarget : null,
+      bubbleShown ? { x: bubbleHost.x, y: bubbleHost.y, w: bubbleHost.width, h: bubbleHost.height } : null))
+  readonly property bool shown: pillShown || bubbleShown || buddyShown || beacons.length > 0 || draw.count > 0 || cardShown
   property alias pill: pill
   property alias bubbleHost: bubbleHost
 
@@ -119,6 +126,17 @@ Item {
     objectName: "drawLayer"
     anchors.fill: parent
     service: root.service
+  }
+
+  // the picture card sits on calm space, never over a mark or the bubble
+  Card {
+    id: card
+    objectName: "imageCard"
+    service: root.service
+    img: root.cardImage
+    visible: root.cardShown
+    x: root.cardSpot.x
+    y: root.cardSpot.y
   }
 
   // beacons: state.points are in layer coordinates. A plain array model

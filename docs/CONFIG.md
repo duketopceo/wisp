@@ -463,6 +463,23 @@ profiles, system directories) are never read. Scanned PDFs use OCR when
 |-----|---------|---------|
 | `enabled` | `true` | set `false` to never read the focused file |
 
+## [images] — pictures in answers
+
+An answer may carry one picture, a `::image[url=...,alt=...]` line on the
+paper. Wisp fetches it only from an allow-listed host over https and shows
+it in a small card on calm screen space (clear of every mark and the
+answer bubble) with its source address underneath. A picture from any
+other host is not fetched; Wisp says so out loud. Redirects are checked
+against the same list, hosts that resolve to private or loopback
+addresses are refused, and the file must really be a PNG, JPEG, GIF or
+WebP. Copies are kept in `<data dir>/images/`.
+
+| key | default | meaning |
+|-----|---------|---------|
+| `allow` | `""` | comma list of hosts (each also matches its subdomains); empty keeps the built-in default, `upload.wikimedia.org` |
+| `max_kb` | `4096` | largest picture to download, in KB |
+| `timeout_s` | `8` | give up on a slow fetch after this many seconds |
+
 ## [debug]
 
 | key | meaning |

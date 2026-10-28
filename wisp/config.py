@@ -202,6 +202,15 @@ shots_keep_days = "30"
 # to the answer. Never from protected folders; false turns it off.
 enabled = "true"
 
+[images]
+# Image cards (wisp/tools/imagefetch.py): an answer may show one picture.
+# Only https hosts in `allow` (a comma list; each entry also matches its
+# subdomains) are fetched, never more than max_kb, never longer than
+# timeout_s. Empty allow keeps the built-in default (Wikimedia's image host).
+allow = ""
+max_kb = "4096"
+timeout_s = "8"
+
 [verify]
 # Verify ladder (wisp/verify.py, U2): each recorded action's verdict.
 # The pixel rung masks a region_px square around the click point and
@@ -494,6 +503,7 @@ def _default_cfg_dict() -> dict:
         "packs": {"keep": "200", "keep_days": "30",
                   "shots_keep": "100", "shots_keep_days": "30"},
         "docs": {"enabled": "true"},
+        "images": {"allow": "", "max_kb": "4096", "timeout_s": "8"},
         "verify": {"judge_timeout_s": "20", "pixel_landed_min": "0.02",
                    "pixel_missed_max": "0.001", "pixel_eps": "16",
                    "region_px": "96", "frame_wait_s": "0.5"},
