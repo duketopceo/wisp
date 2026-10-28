@@ -489,6 +489,13 @@ cmd = ""
 # named for the language when it has one, else the default voice (said
 # once). A custom cmd can use {lang} or {voice}.
 lang_voices = ""
+# show the answer text in the bubble while it is spoken; false = the voice
+# is the answer (a muted speaker still shows it)
+captions = true
+
+[quiet]
+# hold announcements nobody asked for while a call or screen share is on
+on_calls = true
 
 [notify]
 # desktop toasts (D-Bus org.freedesktop.Notifications; notify-send fallback)
