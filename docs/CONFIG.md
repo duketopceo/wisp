@@ -69,6 +69,15 @@ take focus, so `Esc` stays reachable while cua acts. Design notes:
 | `whisper_model` | `"ggml-small.en.bin"` | ggml model file name |
 | `device` | empty | the mic to record from, a `pw-record --target` name or an `arecord -D` device. Empty records from the system default. When the named mic is gone (the recorder exits inside about 0.35 s), the turn records from the default mic instead and one toast says so (a call does not hold that toast). Under PipeWire the named mic is recorded with `node.dont-fallback`, so a missing one fails instead of silently using the default. It tries once; if the default fails too, the turn ends with the usual "recording produced no audio" error, never a hang |
 
+## [browser] — watchable browser lane
+
+| key | default | meaning |
+|-----|---------|---------|
+| `lane` | `"off"` | `"extension"` lets the `browser` tool work in your own Chromium through the paired Wisp extension, in a tab group beside your tabs. Off, the tool is not offered to the model and a call does nothing |
+| `port` | `47315` | loopback port the extension polls (1024 to 65535) |
+
+Setup, the rules it keeps and Stop: `docs/BROWSER_LANE.md`.
+
 ## [stt] — speech-to-text
 
 | key | default | meaning |

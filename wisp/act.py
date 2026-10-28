@@ -98,7 +98,7 @@ def _post(messages: list, cfg: dict) -> dict:
     from . import brain, trace as _trace
     t0 = time.monotonic()
     res = brain.chat(messages, cfg,
-                     tools=tools.tool_schemas(), timeout=60)
+                     tools=tools.tool_schemas(cfg), timeout=60)
     raw = res["raw"]
     img = sum(len(p.get("image_url", {}).get("url", ""))
               for m in messages if isinstance(m.get("content"), list)
