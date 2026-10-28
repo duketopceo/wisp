@@ -90,6 +90,11 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
         return voice_settings.apply(
             detail[len("voice-speed:"):], cfg,
             turn=str(getattr(state, "turn", "") or ""))
+    if route == "setting" and detail.startswith("voice-captions:"):
+        from . import voice_settings
+        return voice_settings.apply_captions(
+            detail[len("voice-captions:"):], cfg,
+            turn=str(getattr(state, "turn", "") or ""))
     if route == "setting" and detail.startswith("self:"):
         from . import selfknow
         return selfknow.run(detail[len("self:"):], cfg)

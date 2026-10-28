@@ -23,6 +23,20 @@ _NORMAL = re.compile(
     r"(?:\s+please)?[\s.!?]*$", re.IGNORECASE)
 
 PREFIX = "voice-speed:"
+CAPTIONS_PREFIX = "voice-captions:"
+
+_CAP_OFF = re.compile(
+    _PRE + r"(?:(?:turn|switch)\s+(?:the\s+)?captions?\s+off"
+    r"|(?:turn|switch)\s+off\s+(?:the\s+)?captions?"
+    r"|(?:hide|stop\s+showing)\s+(?:the\s+)?captions?"
+    r"|captions?\s+off|no\s+captions?)"
+    r"(?:\s+please)?[\s.!?]*$", re.IGNORECASE)
+_CAP_ON = re.compile(
+    _PRE + r"(?:(?:turn|switch)\s+(?:the\s+)?captions?\s+on"
+    r"|(?:turn|switch)\s+on\s+(?:the\s+)?captions?"
+    r"|(?:show|start\s+showing)\s+(?:the\s+)?captions?"
+    r"|captions?\s+on)"
+    r"(?:\s+please)?[\s.!?]*$", re.IGNORECASE)
 
 
 def intent(text: str):
@@ -36,6 +50,31 @@ def intent(text: str):
     if _NORMAL.match(t):
         return "normal"
     return None
+
+
+def captions_intent(text: str):
+    """"on" | "off" for a spoken captions request, else None."""
+    t = text or ""
+    if _CAP_OFF.match(t):
+        return "off"
+    if _CAP_ON.match(t):
+        return "on"
+    return None
+
+
+def apply_captions(kind: str, cfg: dict, turn: str = "") -> str:
+    """Set [voice] captions through the same validated config path and
+    audit it; returns the line to speak."""
+    value = "true" if kind == "on" else "false"
+    try:
+        config.set_config("voice", "captions", value)
+    except ValueError as e:
+        return f"SKIP (couldn't change captions: {e})"
+    cfg.setdefault("voice", {})["captions"] = value
+    cua_safety.audit_event("config", "voice", cfg, turn=turn,
+                           setting="voice.captions", value=value)
+    word = "showing" if kind == "on" else "hiding"
+    return f"ACTED (0 steps): okay, {word} captions while I talk."
 
 
 def _nearest(v: float) -> int:

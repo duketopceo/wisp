@@ -73,6 +73,10 @@ Settings (value, default, range):
                                default 0; 0 to 100000, blank for no cap
   agents.writer_queue_max      Trajectory and recall writes held in memory before the oldest is dropped
                                default 256; 1 to 100000
+  voice.captions               Show the answer text in the bubble while it is spoken (off: the voice is the answer; a muted speaker still shows it)
+                               default true; true or false
+  quiet.on_calls               Hold announcements nobody asked for (a finished background agent) while a call or a screen share is on
+                               default true; true or false
   stt.provider                 Speech to text: an OpenAI-compatible API or local whisper.cpp
                                default openai; openai, local
   packs.keep                   Newest capture packs retained under packs/ (0 disables the count bound)

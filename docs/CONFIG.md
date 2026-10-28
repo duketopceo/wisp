@@ -67,6 +67,7 @@ take focus, so `Esc` stays reachable while cua acts. Design notes:
 |-----|---------|---------|
 | `seconds` | `60` | max capture per press — hold `Super+D` (release to send) or `wispd trigger start` then `stop`; bare `wispd trigger` toggles; this is only the safety ceiling |
 | `whisper_model` | `"ggml-small.en.bin"` | ggml model file name |
+| `device` | empty | the mic to record from, a `pw-record --target` name or an `arecord -D` device. Empty records from the system default. When the named mic is gone (the recorder exits inside about 0.35 s), the turn records from the default mic instead and one toast says so. It tries once; if the default fails too, the turn ends with the usual "recording produced no audio" error, never a hang |
 
 ## [stt] — speech-to-text
 
@@ -297,6 +298,15 @@ one, `wispd dictate list` shows them.
 | `speed` | speaking speed multiplier, 0.5 to 1.5 (default 1; steps 0.5, 0.75, 1, 1.25, 1.5). The built-in espeak voice gets `-s <wpm>`; a custom `cmd` gets the multiplier wherever it writes `{rate}`. Say "talk slower", "talk faster" or "talk at normal speed" to change it by voice (logged in the audit log as a `config` entry) |
 | `lang_voices` | per-language voices, `"es=es-mx,de=de"`. Empty: the built-in espeak voice named for the language when it exists, else the default voice, and Wisp says so once. A custom `cmd` may use `{lang}` (the code, like `pt-BR`) or `{voice}` |
 | `early_clause` | `"true"` (default): while an answer streams, start speaking at the first clause break (`, ; : —`) once 28 characters are ready instead of waiting for the full stop. `"false"` waits for sentence ends |
+| `captions` | `"true"` (default): the answer text shows in the bubble while it is spoken. `"false"` hides it while the voice plays (needs a working voice; with voice off the text always shows). A muted speaker always shows it. Say "turn off captions" or "turn on captions" to change it (audited like any `config` change) |
+
+When the default speaker is muted or at 0% (read with `wpctl`, else `pactl`), Wisp does not speak the answer: it copies it to the clipboard with `wl-copy` and the bubble ends with "Speaker is muted, so I copied the answer to your clipboard." Without `wl-copy` the bubble says it could not speak the answer. Nothing is probed while `[voice] enabled` is false.
+
+## [quiet] — calls and screen shares
+
+| key | default | meaning |
+|-----|---------|---------|
+| `on_calls` | `"true"` | hold announcements nobody asked for (a finished background agent, a routine) while a call or screen share is on. Calls and shares are read from the open windows (`hyprctl clients`: Zoom, Teams, Webex, Meet and huddle windows, "is sharing your screen" titles). Held toasts go out when it ends, checked every 20 s, at most 20 kept. Errors and the toast for a turn you started are never held. Uses the same gate as suggestion cards (`suggest_policy`) |
 
 ## [notify] — desktop toasts
 

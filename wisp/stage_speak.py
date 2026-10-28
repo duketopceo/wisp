@@ -235,9 +235,13 @@ def _speak_result(ctx, payload: str) -> None:
     into annotations, publish `speaking`, TTS the payload."""
     from . import points as _points
     from . import trace as _trace
-    pl, state, cfg, sp = _pl(), ctx.state, ctx.cfg, ctx.sp
+    from . import voice_polish
+    pl, state, sp = _pl(), ctx.state, ctx.sp
+    vp = voice_polish.begin(ctx.cfg)   # captions, muted speaker (B8b)
+    cfg = vp.cfg
     reply, raw = _points.extract(payload)  # drawing tags stripped, none drawn
     ctx.reply = reply
+    vp.finish(reply)
     pts = []
     if raw:
         _mons = _points.monitors()
@@ -248,7 +252,7 @@ def _speak_result(ctx, payload: str) -> None:
         _trace.emit(ctx.turn, "points", "act", {"points": pts})
     _publish_paper(state, _points.extract(payload)[0], ctx.turn)
     state.transition("speaking", result=ctx.result,
-                     answer=reply, points=pts)
+                     answer=vp.shown(reply), points=pts)
     tts_start = sp.now()
     proc = speech.speak(reply, cfg)
     if proc is not None:
@@ -264,11 +268,15 @@ def _ask_user(ctx) -> int:
     utterance resumes it (goal ttl covers the pause)."""
     from . import trace as _trace
     from . import session
-    pl, state, cfg, sp = _pl(), ctx.state, ctx.cfg, ctx.sp
+    from . import voice_polish
+    pl, state, sp = _pl(), ctx.state, ctx.sp
     result, text = ctx.result, ctx.text
     q = result[9:].strip()
+    vp = voice_polish.begin(ctx.cfg)
+    cfg = vp.cfg
+    vp.finish(q)
     _trace.emit(ctx.turn, "ask_user", "speak", {"question": q})
-    state.transition("speaking", result=result, answer=q)
+    state.transition("speaking", result=result, answer=vp.shown(q))
     proc = speech.speak(q, cfg)
     if proc is not None:
         speech.on_exit(proc, pl._end_speaking(state))
@@ -310,7 +318,10 @@ def _answer(ctx) -> None:
     ctx.reply."""
     from . import points as _points
     from . import trace as _trace
-    pl, state, cfg, sp, token = _pl(), ctx.state, ctx.cfg, ctx.sp, ctx.token
+    from . import voice_polish
+    pl, state, sp, token = _pl(), ctx.state, ctx.sp, ctx.token
+    vp = voice_polish.begin(ctx.cfg)   # captions, muted speaker (B8b)
+    cfg = vp.cfg
     text, result, turn = ctx.text, ctx.result, ctx.turn
     pts = []        # logical points fired so far (voice on)
     drws = []       # logical drawings fired so far (voice on)
@@ -392,7 +403,7 @@ def _answer(ctx) -> None:
         from . import note as _note
         clean, marks = _points.extract_marked(_note.strip_image_lines(
             _points.strip_partial(acc), partial=True))
-        pl._publish_delta(state, clean)
+        pl._publish_delta(state, vp.shown(clean))
         # speak each completed sentence while the rest streams
         speaker.feed(clean, marks)
 
@@ -443,6 +454,7 @@ def _answer(ctx) -> None:
         if why:
             reply = (reply + " " + " ".join(why)).strip()
     ctx.reply = reply
+    vp.finish(reply)
     marks = []
     all_pts = []
     all_drws = []
@@ -463,12 +475,14 @@ def _answer(ctx) -> None:
         # through the speaker so its points fire as it starts playing;
         # the transition publishes what has fired so far
         with plock:
-            state.transition("speaking", result=result, answer=reply,
+            state.transition("speaking", result=result,
+                             answer=vp.shown(reply),
                              points=list(pts), drawings=list(drws))
         speaker.finish(reply, on_done=pl._end_speaking(state), marks=marks)
         proc = True
     else:
-        state.transition("speaking", result=result, answer=reply,
+        state.transition("speaking", result=result,
+                         answer=vp.shown(reply),
                          points=all_pts, drawings=all_drws)
         proc = speech.speak(reply, cfg)
         if proc is not None:
