@@ -425,6 +425,47 @@ def wrap_systemd_scope(cmd: list[str], task_id: str) -> list[str]:
             f"--unit={unit}", "--", *cmd]
 
 
+# Wisp-held credentials a spawned agent must not inherit (R11). The
+# names Wisp's own config points at (every `key_env`) and the built-in
+# defaults are dropped, as is any name in the .env file Wisp reads keys
+# from. A runtime's own login (ANTHROPIC_API_KEY, CURSOR_API_KEY, ...)
+# is not Wisp-held and passes through. `[agents] env_pass` (comma list)
+# re-allows a name on purpose.
+_WISP_KEY_NAMES = ("OPENROUTER_API_KEY", "GROQ_API_KEY")
+
+
+def _key_env_names(cfg: dict) -> set[str]:
+    names = set(_WISP_KEY_NAMES)
+    for section in (cfg or {}).values():
+        if not isinstance(section, dict):
+            continue
+        spec = section.get("key_env")
+        if not isinstance(spec, str):
+            continue
+        for cand in (c.strip() for c in spec.split(",")):
+            if cand and not cand.startswith("omaseal://"):
+                names.add(cand)
+    try:
+        if config.ENV_FILE.exists():
+            for line in config.ENV_FILE.read_text().splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    names.add(line.split("=", 1)[0].strip()
+                              .removeprefix("export ").strip())
+    except OSError:
+        pass
+    return names
+
+
+def scrub_env(env: dict, cfg: dict) -> dict:
+    """Copy of `env` without Wisp-held credentials (see above)."""
+    allow = {c.strip() for c in
+             str((cfg or {}).get("agents", {}).get("env_pass", "")).split(",")
+             if c.strip()}
+    drop = _key_env_names(cfg) - allow
+    return {k: v for k, v in env.items() if k not in drop}
+
+
 def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
           log_dir=config.TASK_LOGS, cwd: str | None = None, *,
           delivers: list[str] | None = None,
@@ -468,7 +509,7 @@ def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
     shimmed_cmd = _wrap_exit_shim(cmd, exit_f)
     exec_cmd = (wrap_systemd_scope(shimmed_cmd, name)
                 if _systemd_scope_enabled(cfg) else shimmed_cmd)
-    env = dict(os.environ)
+    env = scrub_env(dict(os.environ), cfg)
     env["WISP_TASK_ID"] = name
     env["WISP_OUT_DIR"] = str(out_dir)
     spawn_ts = datetime.now(timezone.utc).isoformat()
