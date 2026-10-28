@@ -20,8 +20,8 @@ def append_turn(transcript: str, route: str = "", reply: str = "",
            "transcript": transcript, "route": route,
            "reply": reply, "result": result, "app": _norm_app(app)}
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a") as f:
+        from . import private
+        with private.open_append(path) as f:
             f.write(json.dumps(rec) + "\n")
     except OSError:
         pass

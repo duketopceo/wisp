@@ -190,8 +190,8 @@ def answer_text(transcript: str) -> str:
 
 def log_decision(record_dict: dict, log_file=config.DECISIONS) -> None:
     try:
-        log_file.parent.mkdir(parents=True, exist_ok=True)
-        with log_file.open("a") as f:
+        from . import private
+        with private.open_append(log_file) as f:
             f.write(json.dumps(record_dict) + "\n")
     except Exception:
         pass
