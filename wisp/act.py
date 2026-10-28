@@ -390,11 +390,37 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 want_traj = True
                 return out
             messages.append(msg)
+            # B11: a reply with several changing steps is shown as ONE
+            # plan card, and every step then checks the screen is still
+            # the one the plan was made for
+            plan, plan_focus, plan_no = [], "", 0
+            if callable(confirm):
+                try:
+                    plan, declined = policy.plan_preview(
+                        [_name_arg(c) for c in calls], cfg, confirm, state,
+                        minimum=_limit(cfg, "act_preview_min",
+                                       policy.PREVIEW_MIN))
+                except cancel.Cancelled:
+                    _goals.record_steps(steps)
+                    return "INTERRUPTED (user)"
+                if declined:
+                    _goals.record_steps(steps)
+                    return declined
+                plan_focus = _focus_class() if plan else ""
+            plan_names = {pair for pair in plan}
             for ci, call in enumerate(calls):
                 if stopped():  # no further steps once the user said stop
                     _goals.record_steps(steps)
                     return "INTERRUPTED (user)"
                 name, arg = _name_arg(call)
+                if (name, arg) in plan_names:
+                    plan_no += 1
+                    why = _stale_why(plan_focus, plan_no, len(plan))
+                    if why:
+                        _goals.record_steps(steps)
+                        out = _budget_abort(state, task, steps, why)
+                        want_traj = True
+                        return out
                 why = budget_hit()
                 if why:
                     _goals.record_steps(steps)
@@ -774,6 +800,28 @@ def _limit_f(cfg: dict | None, key: str, default: float) -> float:
         return float(raw) if raw not in (None, "") else default
     except (TypeError, ValueError):
         return default
+
+
+def _focus_class() -> str:
+    """The focused window's class, "" when it can't be read."""
+    try:
+        from . import platform
+        return str((platform.active_window() or {}).get("class") or "")
+    except Exception:
+        return ""
+
+
+def _stale_why(plan_focus: str, step_no: int, total: int) -> str | None:
+    """Why a previewed plan must stop before its next step: the focused
+    window is not the one the plan was made for. None when it still is
+    (or the focus can't be read)."""
+    if not plan_focus:
+        return None
+    now = _focus_class()
+    if not now or now == plan_focus:
+        return None
+    return (f"screen changed: focus moved from {plan_focus} to {now} "
+            f"before step {step_no} of {total}")
 
 
 def _budget_abort(state, task: str, steps: list, why: str) -> str:

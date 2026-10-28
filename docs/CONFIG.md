@@ -213,6 +213,7 @@ and `wispd models` show current health.
 | `act_max_parse_misses` | unparseable model steps tolerated before the act loop stops (0 to 10) (default 1) |
 | `act_max_seconds` | wall-clock bound for one act run; the abort publishes a `failed` action entry with reason `budget` (0 disables, default 600) |
 | `act_max_usd` | per-run cap on model spend added during the run (0 disables, default 0) |
+| `act_preview_min` | steps that change something in one model reply before Wisp shows the whole plan as one card and runs it on yes (0 disables, default 3). While a plan runs, each step first checks the focused window is still the one the plan was made for and stops with a spoken reason if not |
 | `writer_queue_max` | background writer queue for trajectory and recall writes; oldest dropped and counted when full (default 256) |
 
 ## [mcp]
