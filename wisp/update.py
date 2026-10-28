@@ -7,6 +7,12 @@ records, or a `SHA256SUMS` asset, or `--sha256`); a mismatch or a missing
 digest aborts before anything is unpacked into the install. `--dry-run`
 downloads into a temp dir, prints version, digest and the files that
 would change, and deletes it again: nothing persistent is written.
+
+It also never goes backwards. The release is compared with what is
+installed (version numbers when the install is a release, otherwise the
+installed commit against the release tag through GitHub's compare API);
+a release that is older, the same, diverged from the install, or cannot be
+compared is refused before anything is downloaded, unless `--force`.
 """
 import hashlib
 import json
@@ -18,6 +24,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import urllib.parse
 import urllib.request
 
 from . import config, deploy
@@ -95,6 +102,57 @@ def installed_version() -> str:
     return commit[:12] if commit != "unknown" else "unknown"
 
 
+def installed_record() -> dict:
+    return deploy.read() or {}
+
+
+_VER = re.compile(r"^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?(-[0-9A-Za-z.\-]+)?(\+.*)?$")
+
+
+def parse_version(s) -> tuple | None:
+    """(major, minor, patch, release-flag) of "v1.2.3"; a pre-release
+    ("1.2.3-rc1") sorts below its release. None when `s` is no version."""
+    m = _VER.match(str(s or "").strip())
+    if not m:
+        return None
+    nums = tuple(int(g or 0) for g in m.groups()[:3])
+    return nums + (0 if m.group(4) else 1,)
+
+
+def ordering(tag: str, *, fetch_json=fetch_json, installed=None) -> str:
+    """How the release `tag` stands against the install: "newer" (safe to
+    install), "same", "older", "diverged" (the install has commits the
+    release lacks and the release has others) or "unknown" (cannot tell)."""
+    rec = installed if installed is not None else installed_record()
+    have, want = parse_version(rec.get("ref")), parse_version(tag)
+    if have and want:
+        return "newer" if want > have else ("same" if want == have
+                                            else "older")
+    commit = str(rec.get("commit") or "")
+    if not re.fullmatch(r"[0-9a-f]{7,40}", commit) or not want:
+        return "unknown"
+    try:
+        cmp = fetch_json(f"https://api.github.com/repos/{REPO}/compare/"
+                         f"{urllib.parse.quote(tag)}...{commit}")
+        status = str(cmp.get("status") or "")
+    except (OSError, ValueError, UpdateError, AttributeError):
+        return "unknown"
+    # compare is base...head: the install is the head
+    return {"identical": "same", "ahead": "older", "behind": "newer",
+            "diverged": "diverged"}.get(status, "unknown")
+
+
+def refusal(tag: str, order: str, have: str) -> str:
+    why = {"same": f"{tag} is already what is installed ({have}).",
+           "older": f"{tag} is older than what is installed ({have}); "
+                    "installing it would downgrade.",
+           "diverged": f"{tag} and what is installed ({have}) have "
+                       "diverged; installing it would drop local commits.",
+           }.get(order, f"Cannot tell whether {tag} is newer than what is "
+                        f"installed ({have}).")
+    return why + " Nothing was installed. Pass --force to install it anyway."
+
+
 def opt_dir() -> pathlib.Path:
     return config.HOME / ".local" / "opt" / "wisp"
 
@@ -167,6 +225,10 @@ def describe(res: dict) -> str:
             lines.append(f"  {mark} {n}")
         if len(names) > SHOW:
             lines.append(f"  {mark} ... and {len(names) - SHOW} more {label}")
+    if res.get("ordering", "newer") != "newer":
+        lines.append("note: this release is not newer than what is "
+                     f"installed ({res['ordering']}); `wispd update` "
+                     "refuses it without --force.")
     return "\n".join(lines)
 
 
@@ -184,13 +246,18 @@ def _extract(tarball, dest: pathlib.Path) -> pathlib.Path:
 
 def check(*, sha256: str | None = None, fetch_json=fetch_json,
           fetch_file=fetch_file, fetch_text=fetch_text, installed=None,
-          workdir=None) -> dict:
+          workdir=None, refuse_older: bool = False) -> dict:
     """Download, verify and diff the latest release into `workdir`.
-    Raises UpdateError before anything outside `workdir` is touched."""
+    Raises UpdateError before anything outside `workdir` is touched; with
+    `refuse_older` a release that is not newer than the install is refused
+    before the download."""
     release = fetch_json(API)
     tag = str(release.get("tag_name") or "")
     if not tag:
         raise UpdateError("The latest release has no tag.")
+    order = ordering(tag, fetch_json=fetch_json)
+    if refuse_older and order != "newer":
+        raise UpdateError(refusal(tag, order, installed_version()))
     name = asset_name()
     asset = next((a for a in release.get("assets", [])
                   if a.get("name") == name), None)
@@ -207,6 +274,7 @@ def check(*, sha256: str | None = None, fetch_json=fetch_json,
     root = _extract(tarball, pathlib.Path(workdir) / "tree")
     return {"version": tag, "asset": name, "sha256": got,
             "digest_source": source, "installed_version": installed_version(),
+            "ordering": order,
             "changes": diff(root, installed or opt_dir()), "root": root}
 
 
@@ -218,14 +286,16 @@ def install(root: pathlib.Path, run=subprocess.run) -> int:
 
 
 def run_update(*, dry_run: bool, sha256: str | None = None, confirm=None,
-               emit_text=print, **seams) -> dict:
+               emit_text=print, force: bool = False, **seams) -> dict:
     """The whole flow; returns the result dict (`applied` says whether the
     install ran). `confirm(prompt) -> bool` must be an explicit user yes."""
     install_fn = seams.pop("install_fn", install)
     with tempfile.TemporaryDirectory(prefix="wispd-update-") as td:
-        res = check(sha256=sha256, workdir=td, **seams)
+        res = check(sha256=sha256, workdir=td,
+                    refuse_older=not dry_run and not force, **seams)
         root = res.pop("root")
         res["dry_run"], res["applied"] = dry_run, False
+        res["forced"] = bool(force and res["ordering"] != "newer")
         n = sum(len(v) for v in res["changes"].values())
         emit_text(describe(res))
         if dry_run:

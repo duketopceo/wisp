@@ -1,5 +1,5 @@
-usage: wispd daemon update [-h] [--dry-run] [--sha256 HEX] [--json] [--quiet]
-                           [--no-color]
+usage: wispd daemon update [-h] [--dry-run] [--force] [--sha256 HEX] [--json]
+                           [--quiet] [--no-color]
 
 Fetch the latest release, verify it, and install on your yes
 
@@ -7,6 +7,8 @@ options:
   -h, --help    show this help message and exit
   --dry-run     print version, digest and the files that would change; write
                 nothing
+  --force       install a release that is older than, the same as, or cannot
+                be compared with what is installed
   --sha256 HEX  expected SHA-256 of the download, for a release that publishes
                 none
 
@@ -18,3 +20,4 @@ global options:
 Examples:
   wispd update --dry-run
   wispd update
+  wispd update --force
