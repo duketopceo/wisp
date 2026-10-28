@@ -285,6 +285,7 @@ rate limit, dry run, dispatch. Refusals read `REFUSED (...)`.
 | `safety` | `true` | master switch for this layer (kill switch and audit go with it) |
 | `allow` | `""` | comma list of window-class substrings; when set, any other app is refused (an unknown window fails closed) |
 | `deny` | `""` | extra substrings to refuse; added to the built-in list (password managers, polkit/pinentry, keyrings, and terminals whose title shows `sudo`). Deny beats allow |
+| `deny_titles` | `""` | substrings of a window **title** (for example `bank, paypal`) that are never captured or driven. A visible window with a matching title, or a denied app, is painted black in every screenshot even when it is not the focused window; if it can't be blanked the screenshot is skipped |
 | `max_clicks_per_min` | `30` | rolling 60 s cap on click/scroll/type/key calls per window class (moves are not counted) |
 | `max_per_turn` | `12` | cap on the same calls in one act run |
 | `dry_run` | `false` | log what would happen and return `DRYRUN ...`; no driver, ydotool or hyprctl call. Deny, kill and rate checks still apply |

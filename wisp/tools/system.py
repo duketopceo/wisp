@@ -70,6 +70,11 @@ def screenshot(arg: str = "", cfg: dict | None = None) -> str:
         return "SKIP (screenshot timed out — output powered off?)"
     if r.returncode == 0 and f.exists():
         _normalize_shot(f, output or None)
+        from .. import redact
+        why = redact.apply(f, cfg, output=output or None)
+        if why:
+            f.unlink(missing_ok=True)
+            return f"SKIP (screenshot skipped: {why})"
         return f"SHOT {f}"
     return "SKIP (screenshot failed)"
 
