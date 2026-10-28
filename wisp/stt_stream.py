@@ -91,7 +91,8 @@ class Streamer:
     """Watch one recording and transcribe its finished chunks."""
 
     def __init__(self, path, proc=None, transcribe_fn=None,
-                 chunk_s: float = CHUNK_S, tick_s: float = 0.4):
+                 chunk_s: float = CHUNK_S, tick_s: float = 0.4,
+                 journal=None):
         self.path = pathlib.Path(path)
         self.proc = proc                  # the recorder; ends the watch
         self._fn = transcribe_fn
@@ -99,6 +100,7 @@ class Streamer:
         self.tick_s = tick_s
         self.texts: list[str] = []        # transcripts of the cut chunks
         self.cut = 0                      # PCM bytes already transcribed
+        self.journal = journal            # dictate_history.Journal or None
         self.failed = False
         self.enabled = True
         self._stop = threading.Event()
@@ -167,6 +169,8 @@ class Streamer:
                                self.chunk_s + SEARCH_S - 0.5)
                 self.texts.append(self._transcribe(pcm[:at]))
                 self.cut += at
+                if self.journal is not None:
+                    self.journal.add(self.texts[-1])   # survives a kill
         except Exception:
             self.failed = True
 
@@ -175,6 +179,13 @@ class Streamer:
         """Transcript of the whole recording, or None when the caller
         should transcribe the file itself. Call after the recorder has
         exited and finalized the WAV."""
+        try:
+            return self._finish()
+        finally:
+            if self.journal is not None:
+                self.journal.done()        # the text now lives in the turn
+
+    def _finish(self) -> str | None:
         self._stop.set()
         t = self._thread
         if t is not None:
@@ -204,7 +215,14 @@ class Streamer:
 def begin(path, proc) -> "Streamer":
     """Start watching a recording; replaces any earlier unclaimed watch."""
     _STREAMS.clear()
-    s = Streamer(path, proc).start()
+    journal = None
+    try:
+        from . import config, dictate_history
+        journal = dictate_history.Journal(config.load_config())
+        journal.start()        # an earlier interrupted session is kept
+    except Exception:
+        journal = None
+    s = Streamer(path, proc, journal=journal).start()
     _STREAMS[str(path)] = s
     return s
 

@@ -308,6 +308,12 @@ mode = "cleanup"
 # model override for the cleanup/compose pass, "provider:model" like
 # [brain] default — falls back to the brain chain when unset
 # model = ""
+# every finished dictation is kept locally (never sent anywhere, never in
+# a prompt) so a failed insert loses nothing: `wispd dictate history|retry|
+# copy|clear`. Bounded by count and age; "false" keeps nothing.
+history = "true"
+history_max = "100"
+history_days = "7"
 # per-app profiles (VoiceInk-style Power Mode, thin): one section per
 # class pattern, matched *pattern* against the focused window class
 # [dictation.profiles.chromium]
@@ -508,7 +514,8 @@ def _default_cfg_dict() -> dict:
             "autonomy": "autonomous",
         },
         "voice": {"enabled": "false"},
-        "dictation": {"mode": "cleanup"},
+        "dictation": {"mode": "cleanup", "history": "true",
+                      "history_max": "100", "history_days": "7"},
         "pointer": {"mode": "guide", "backend": "auto"},
         "cua": {"timeout_ms": "800", "safety": "true", "allow": "",
                 "deny": "", "max_clicks_per_min": "30",
