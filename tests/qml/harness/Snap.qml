@@ -91,6 +91,27 @@ Window {
     var c = cases[next];
     var host = renderCase(c);
     if (host === null) { next += 1; step.restart(); return; }
+    // a scene with a Canvas names a settle time: the canvas paints on a
+    // later frame than the one that created it
+    if (c.settle > 0) {
+      settleTimer.host = host;
+      settleTimer.c = c;
+      settleTimer.interval = c.settle;
+      settleTimer.restart();
+      return;
+    }
+    grab(host, c);
+  }
+
+  Timer {
+    id: settleTimer
+    property var host: null
+    property var c: null
+    repeat: false
+    onTriggered: win.grab(host, c)
+  }
+
+  function grab(host, c) {
     host.grabToImage(function (res) {
       if (!res.saveToFile(outDir + "/" + c.id + ".png"))
         fail(c.id + " save failed");

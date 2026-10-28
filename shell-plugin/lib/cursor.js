@@ -53,9 +53,11 @@ function beaconSync(prev, next) {
 }
 
 // Drawings from state.drawings: [{kind:"ring"|"arrow"|"hl", ...}] ->
-// full records {kind,x,y,r,w,h,x1,y1,x2,y2} (unused fields 0, so a ListModel
-// sees one role set), at most `max` (16 = the daemon's per-turn cap),
-// malformed shapes dropped.
+// full records {kind,x,y,r,w,h,x1,y1,x2,y2,ms,tone} (unused fields 0 or "",
+// so a ListModel sees one role set), at most `max` (16 = the daemon's
+// per-turn cap), malformed shapes dropped. `ms` is the spoken time of the
+// sentence the mark belongs to (the pen's pace, lib/ink.js), `tone` is
+// "light" or "dark" for the screen under it; both optional.
 function drawings(list, max) {
   var out = []
   var src = Array.isArray(list) ? list : []
@@ -68,7 +70,9 @@ function drawings(list, max) {
   for (var i = 0; i < src.length; i++) {
     var d = src[i]
     if (!d || typeof d !== "object") continue
-    var r = { kind: d.kind, x: 0, y: 0, r: 0, w: 0, h: 0, x1: 0, y1: 0, x2: 0, y2: 0 }
+    var r = { kind: d.kind, x: 0, y: 0, r: 0, w: 0, h: 0, x1: 0, y1: 0, x2: 0, y2: 0,
+      ms: (typeof d.ms === "number" && isFinite(d.ms) && d.ms > 0) ? d.ms : 0,
+      tone: (d.tone === "light" || d.tone === "dark") ? d.tone : "" }
     if (d.kind === "ring" && nums(d, ["x", "y", "r"]) && d.r > 0) {
       r.x = d.x; r.y = d.y; r.r = d.r
     } else if (d.kind === "hl" && nums(d, ["x", "y", "w", "h"]) && d.w > 0 && d.h > 0) {
@@ -86,7 +90,7 @@ function drawings(list, max) {
 // (a sentence's shape landed, earlier shapes never replay their draw-on),
 // "reset" when it does not, "none" when nothing changed.
 function drawSync(prev, next) {
-  var keys = ["kind", "x", "y", "r", "w", "h", "x1", "y1", "x2", "y2"]
+  var keys = ["kind", "x", "y", "r", "w", "h", "x1", "y1", "x2", "y2", "ms", "tone"]
   var same = next.length >= prev.length
   for (var i = 0; same && i < prev.length; i++) {
     for (var k = 0; same && k < keys.length; k++) same = prev[i][keys[k]] === next[i][keys[k]]

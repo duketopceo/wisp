@@ -38,6 +38,17 @@ def speed(cfg: dict) -> float:
     return min(SPEED_MAX, max(SPEED_MIN, v))
 
 
+def sentence_ms(text: str, cfg: dict | None = None) -> int:
+    """How long `text` takes to say, in ms: words at espeak's rate scaled
+    by [voice] speed. An estimate (the pen's pace, not a timer)."""
+    from . import platform
+    words = len((text or "").split())
+    if not words:
+        return 0
+    wpm = platform.ESPEAK_WPM * speed(cfg or {})
+    return int(round(words / wpm * 60000))
+
+
 def _argv(msg: str, cfg: dict) -> list[str] | None:
     cmd = cfg.get("voice", {}).get("cmd", "")
     rate = speed(cfg)
@@ -157,6 +168,7 @@ class SentenceSpeaker:
         self._early_clause = cfg.get("voice", {}).get(
             "early_clause", "true") != "false"
         self.started = False
+        self.sentence_ms = 0        # est. spoken time of the sentence playing
         self.spoken: list = []
         self._consumed = 0          # chars of the cleaned text queued
         self._head = ""             # the text those chars were taken from
@@ -271,6 +283,7 @@ class SentenceSpeaker:
             with self._plock:
                 val.dequeued = True
                 points = list(val.points)
+            self.sentence_ms = sentence_ms(val.sentence, self._cfg)
             self._fire(points)
             val = val.sentence
             argv = _argv(val, self._cfg)
