@@ -149,6 +149,36 @@ def _install_cua(ctx, a):
     return ctx.emit(data, text)
 
 
+def _update_args(p):
+    p.add_argument("--dry-run", action="store_true",
+                   help="print version, digest and the files that would "
+                        "change; write nothing")
+    p.add_argument("--sha256", metavar="HEX",
+                   help="expected SHA-256 of the download, for a release "
+                        "that publishes none")
+
+
+@command("daemon update",
+         "Fetch the latest release, verify it, and install on your yes",
+         ["wispd update --dry-run", "wispd update"],
+         {"version": "str", "installed_version": "str", "sha256": "str",
+          "changes": "dict", "dry_run": "bool", "applied": "bool"},
+         args=_update_args)
+def daemon_update(ctx, a):
+    from .. import update
+    say = (lambda t: None) if ctx.json or ctx.flags.quiet \
+        else (lambda t: print(t))
+    try:
+        res = update.run_update(dry_run=a.dry_run, sha256=a.sha256,
+                                confirm=update.tty_confirm, emit_text=say)
+    except update.UpdateError as e:
+        raise CliError("E_FAILED", str(e), "wispd update --dry-run")
+    except OSError as e:
+        raise CliError("E_FAILED", f"The release could not be fetched "
+                       f"({e}).", "wispd update --dry-run")
+    return ctx.emit(res)
+
+
 @command("daemon harness", "Rebuild the agent harness file",
          ["wispd daemon harness"], {"exit": "int"})
 def daemon_harness(ctx, a):
