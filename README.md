@@ -40,6 +40,9 @@ repeatable harness (`scripts/demo/record.py`) and none is published yet; see
 
 ## Install
 
+On Omarchy you can paste one prompt into your coding agent and let it do the
+install with you; see [Let your coding agent do it](docs/INSTALL.md#let-your-coding-agent-do-it).
+
 ```sh
 git clone https://github.com/duketopceo/wisp
 cd wisp
