@@ -617,5 +617,80 @@ class TestSuggestionRun(unittest.TestCase):
         self.assertEqual(self.bus.status, "error")
 
 
+class BargeInTests(unittest.TestCase):
+    """Phase 7 / R8: a press while Wisp is thinking talks over it."""
+
+    def setUp(self):
+        import importlib.machinery
+        import importlib.util
+        import tempfile
+        import threading
+        from wisp import cancel, state as state_mod
+        path = str(pathlib.Path(__file__).resolve().parent.parent / "wispd")
+        loader = importlib.machinery.SourceFileLoader("wispd_bi", path)
+        spec = importlib.util.spec_from_loader("wispd_bi", loader)
+        self.w = importlib.util.module_from_spec(spec)
+        loader.exec_module(self.w)
+        self.bus = state_mod.StateBus(
+            state_file=pathlib.Path(tempfile.mkdtemp()) / "state.json")
+        self.addCleanup(self.bus.close)
+        self.token = cancel.CancelToken()
+        self.ctl = {"stop": threading.Event(), "busy": threading.Event(),
+                    "interrupt": threading.Event(),
+                    "choice_event": threading.Event(), "choice_pick": "",
+                    "rec": None, "rec_lock": threading.Lock(),
+                    "token": self.token}
+        self.ctl["busy"].set()
+        self.handle = self.w._handler(self.bus, {}, self.ctl)
+        self.rec = {"proc": mock.Mock(), "sampler_stop": mock.Mock(),
+                    "t0": 0}
+
+    def press(self):
+        with mock.patch.object(self.w.pipeline, "record_start",
+                               return_value=self.rec), \
+             mock.patch.object(self.w.speech, "stop") as stop, \
+             mock.patch.object(self.w, "_rec_watchdog"), \
+             mock.patch.object(self.w, "dlog"):
+            out = self.handle({"cmd": "listen", "phase": "start"})
+        return out, stop
+
+    def test_press_while_deciding_cancels_it_and_starts_a_new_turn(self):
+        turn = self.bus.begin_turn()
+        self.bus.turn(turn).transition("deciding", transcript="open it")
+        # the running turn releases busy when its token is cancelled
+        self.token.register_close(self.ctl["busy"].clear)
+        out, stop = self.press()
+        self.assertTrue(out["ok"])
+        self.assertTrue(self.token.cancelled)
+        self.assertEqual(self.bus.snapshot()["status"], "listening")
+        self.assertNotEqual(self.bus.current_turn(), turn)
+        self.assertNotIn("mini", self.ctl)
+        stop.assert_called()
+
+    def test_press_while_acting_stays_an_interjection(self):
+        turn = self.bus.begin_turn()
+        self.bus.turn(turn).transition("acting")
+        out, _ = self.press()
+        self.assertEqual(out.get("mini"), "stop")
+        self.assertFalse(self.token.cancelled)
+        self.assertEqual(self.bus.current_turn(), turn)
+
+    def test_press_with_a_prompt_pending_answers_it_instead(self):
+        turn = self.bus.begin_turn()
+        self.bus.turn(turn).transition("deciding")
+        self.ctl["broker"] = mock.Mock(pending_id="p1")
+        out, _ = self.press()
+        self.assertEqual(out.get("mini"), "choice")
+        self.assertFalse(self.token.cancelled)
+
+    def test_barge_in_that_cannot_release_busy_falls_back(self):
+        turn = self.bus.begin_turn()
+        self.bus.turn(turn).transition("deciding")
+        with mock.patch.object(self.w, "BARGE_IN_WAIT_S", 0.05):
+            out, _ = self.press()
+        self.assertTrue(self.token.cancelled)
+        self.assertEqual(out.get("mini"), "stop")
+
+
 if __name__ == "__main__":
     unittest.main()
