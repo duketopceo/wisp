@@ -30,6 +30,7 @@ class TurnCtx:
         self.shot_b64 = None
         self.session_text = ""
         self.doc_text = ""                  # excerpts of the focused file
+        self.scribble_hint = ""             # the user drew on the shot (B7)
         self.app = ""                       # focused window class
         self.corr = None
         # route

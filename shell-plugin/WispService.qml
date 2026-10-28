@@ -168,6 +168,21 @@ Item {
     return true;
   }
   function trigger() { return runAction([wispd, "trigger", "--json"], "trigger"); }
+  // Scribble to ask (B7): the strokes drawn while listening, handed to the
+  // daemon as a small file (wispd scribble). Its own subprocess: it must not
+  // queue behind, or flash a result in, the one action slot. A newer payload
+  // replaces one still waiting.
+  property var scribblePending: null
+  function scribble(payload) {
+    if (scribbleProc.running) { root.scribblePending = payload; return; }
+    root.sendScribble(payload);
+  }
+  function sendScribble(p) {
+    scribbleProc.command = p.strokes.length === 0
+      ? [root.wispd, "scribble", "clear", "--json"]
+      : [root.wispd, "scribble", "set", "--json", JSON.stringify(p)];
+    scribbleProc.running = true;
+  }
   function label(verdict) { return runAction([wispd, "label", "set", verdict, "--json"], "label"); }
 
   // Read the settings inputs once (config, cua status, spend by model).
@@ -459,6 +474,16 @@ Item {
         errs[root.setKey] = Settings.errorText(setErr.text) || Copy.string("ui.err.unknown");
       }
       root.configErrors = errs;
+    }
+  }
+
+  Process {
+    id: scribbleProc
+    onRunningChanged: {
+      if (scribbleProc.running || root.scribblePending === null) return;
+      var next = root.scribblePending;
+      root.scribblePending = null;
+      root.sendScribble(next);
     }
   }
 

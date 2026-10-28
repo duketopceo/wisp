@@ -24,7 +24,7 @@ FIXTURE_SERVICE = ROOT / "tests" / "qml" / "harness" / "FixtureService.qml"
 EXPECTED = ["Answer", "AgentRow", "AgentsTab", "BarActions", "BarMark", "BarPill", "Beacon", "Bubble", "Buddy", "Card", "Chip",
             "Creature", "DrawLayer", "EmptyState", "FirstRunCard",
             "HealthSection", "Icon", "Mark", "MemoryTab", "NowTab", "OverlayLayer",
-            "PanelTab", "Pill", "RunCard", "SettingsTab", "StatusLine", "StepRow",
+            "PanelTab", "Pill", "RunCard", "ScribbleLayer", "SettingsTab", "StatusLine", "StepRow",
             "StopControl", "Transcript",
             # management app views
             "AuditView", "BindsView", "HealthView", "SpendView"]
