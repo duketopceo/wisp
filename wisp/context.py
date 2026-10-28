@@ -123,8 +123,12 @@ class Speculative:
     miss: the pipeline falls back to gathering inline."""
 
     def __init__(self, gatherers: dict, ttl: float = SPECULATIVE_TTL_S,
-                 clock=time.monotonic):
+                 clock=time.monotonic, delays: dict | None = None):
         self._gatherers = dict(gatherers)
+        # seconds a gatherer waits before it starts; a cancel during the
+        # wait means it never runs (a tap takes no screenshot)
+        self._delays = dict(delays or {})
+        self._cancel_ev = threading.Event()
         self._ttl = ttl
         self._clock = clock
         self._lock = threading.Lock()
@@ -147,6 +151,10 @@ class Speculative:
         return self
 
     def _run(self, name, fn) -> None:
+        wait = self._delays.get(name, 0)
+        if wait and self._cancel_ev.wait(wait):
+            self._done[name].set()
+            return
         try:
             val = fn()
         except Exception:
@@ -179,6 +187,7 @@ class Speculative:
             return val
 
     def cancel(self) -> None:
+        self._cancel_ev.set()
         with self._lock:
             self._cancelled = True
             self._res.clear()

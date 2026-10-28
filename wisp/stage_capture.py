@@ -340,7 +340,12 @@ def speculative_context(cfg: dict):
     g = {"windows": _context.windows_map}
     if cfg.get("agent", {}).get("screenshots", "true") == "true":
         g["screenshot"] = lambda: _png_b64(_pl().capture_screen())
-    return _context.Speculative(g)
+    delays = {}
+    from . import chips as _chips
+    if "screenshot" in g and _chips.armed(cfg):
+        # a tap (B21) is released before this and takes no screenshot
+        delays["screenshot"] = _chips.TAP_MAX_S
+    return _context.Speculative(g, delays=delays)
 
 
 def screen_b64(cfg: dict, answers: dict) -> str | None:

@@ -90,6 +90,7 @@ class State:
         self._action_seq = 0
         self.suggestion = None
         self.guide = None  # {x, y, label, seq, mode} — ghost cursor target
+        self.chips = None  # {app, asks, seq} — ask chips shown after a tap (B21)
         self.focus = {}  # {app, title} — focused window at turn start
         # paper surface (gap-closure U1): live note payload or None
         # {conv_id, path, raw, objects, plan, closed, rendered}
@@ -131,6 +132,10 @@ class State:
         if status is not None and status not in ("acting", "awaiting_choice") \
                 and "guide" not in fields:
             self.guide = None
+        # ask chips (B21) belong to the tap that showed them: any new turn
+        # (listening) takes them down
+        if status == "listening" and "chips" not in fields:
+            self.chips = None
         # speak-reply point annotations only live while speaking —
         # any other status clears them so a later turn can never
         # read the previous turn's beacons
@@ -280,6 +285,7 @@ class State:
             "actions": [dict(a) for a in self.actions],
             "suggestion": self.suggestion,
             "guide": self.guide,
+            "chips": self.chips,
             "focus": dict(self.focus),
             "note": dict(self.note) if isinstance(self.note, dict)
             else self.note,

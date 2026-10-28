@@ -21,7 +21,7 @@ PLUGIN = ROOT / "shell-plugin"
 COMP = PLUGIN / "components"
 FIXTURE_SERVICE = ROOT / "tests" / "qml" / "harness" / "FixtureService.qml"
 
-EXPECTED = ["Answer", "AgentRow", "AgentsTab", "BarActions", "BarMark", "BarPill", "Beacon", "Bubble", "Buddy", "Card", "Chip",
+EXPECTED = ["AskChips", "Answer", "AgentRow", "AgentsTab", "BarActions", "BarMark", "BarPill", "Beacon", "Bubble", "Buddy", "Card", "Chip",
             "Creature", "DrawLayer", "EmptyState", "FirstRunCard",
             "HealthSection", "Icon", "Mark", "MemoryTab", "NowTab", "OverlayLayer",
             "PanelTab", "Pill", "RunCard", "ScribbleLayer", "SettingsTab", "StatusLine", "StepRow",

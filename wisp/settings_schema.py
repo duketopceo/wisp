@@ -135,6 +135,12 @@ FIELDS = (
        min=50, max=60000),
     _f("audio.seconds", "int", "60",
        "Longest recording for one turn in seconds", min=1, max=600),
+    _f("chips.enabled", "bool", "true",
+       "Show ask chips when you tap the talk key without speaking "
+       "(first week only)"),
+    _f("chips.days", "int", "7",
+       "How many days from the first tap the ask chips are offered",
+       min=1, max=365),
     _f("agent.screenshots", "bool", "true",
        "Attach a screenshot to answer calls"),
     _f("ui.theme", "choice", "dark",

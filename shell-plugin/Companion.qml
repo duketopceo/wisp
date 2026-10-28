@@ -8,6 +8,7 @@ import "components"
 import "lib/buddy.js" as Buddy
 import "lib/companion.js" as Co
 import "lib/cursor.js" as Cursor
+import "lib/chips.js" as ChipsLib
 
 // Companion overlay for io.github.duketopceo.wisp.
 // The corner creature/orb is gone (2026-10-07): a persistent bottom-right
@@ -125,6 +126,16 @@ Item {
         if (!root.buddyFull) root.advance(0);
       }
     }
+  }
+
+  // ask chips leave on their own a few seconds after the tap
+  readonly property int chipsSeq: svc && svc.chips ? svc.chips.seq : 0
+  onChipsSeqChanged: chipsLeave.restart()
+  Timer {
+    id: chipsLeave
+    interval: ChipsLib.SHOW_MS
+    running: layer.chipsShown
+    onTriggered: layer.askChipsItem.expired = true
   }
 
   Timer {

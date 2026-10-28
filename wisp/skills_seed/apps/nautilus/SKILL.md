@@ -3,6 +3,7 @@ name: nautilus
 description: GNOME Files (Nautilus) path bar, hidden files, and archive shortcuts
 tier: safe
 app_classes: nautilus, org.gnome.nautilus, files, thunar
+asks: How do I show hidden files; How do I open a terminal here; How do I connect to a server
 ---
 # nautilus
 
