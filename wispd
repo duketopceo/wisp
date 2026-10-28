@@ -153,7 +153,10 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
                         args=(st, cfg, ctl, wav, sp, tid),
                         daemon=True).start()
                     return {"ok": True, "stopped": True}
-                if ctl["busy"].is_set():
+                if ctl["busy"].is_set() and _barge_in(st, ctl):
+                    pass  # the thinking turn is cancelled: fall through
+                    # to a new turn like a first press
+                elif ctl["busy"].is_set():
                     # a press during a parked or running turn is an
                     # interjection, not a new turn: voice-answer the
                     # pending prompt, else listen for a spoken stop.
@@ -527,6 +530,32 @@ def _interrupt(ctl: dict) -> None:
     left behind, so runs snapshot the seq and cancel on the edge."""
     ctl["interrupt"].set()
     ctl["interrupt_seq"] = ctl.get("interrupt_seq", 0) + 1
+
+
+BARGE_IN_WAIT_S = 2.0
+
+
+def _barge_in(st, ctl: dict) -> bool:
+    """A press while Wisp is still thinking (deciding, no prompt waiting
+    for an answer) talks over it: cancel that turn, stop any speech, and
+    let the press start a new turn. Acting and parked turns keep the
+    interjection path (voice answer or spoken stop). True once the
+    cancelled turn has released `busy`."""
+    if getattr(st, "status", None) != "deciding":
+        return False
+    broker = ctl.get("broker")
+    if broker is not None and broker.pending_id:
+        return False
+    _interrupt(ctl)
+    tok = ctl.get("token")
+    if tok is not None:
+        tok.cancel()  # kills children, closes sockets
+    speech.stop()
+    state_mod.action_add(st, "interrupt", "barge-in", status="done")
+    deadline = time.monotonic() + BARGE_IN_WAIT_S
+    while ctl["busy"].is_set() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    return not ctl["busy"].is_set()
 
 
 def _spoken_stop(st, ctl: dict, text: str) -> dict:
