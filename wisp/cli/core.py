@@ -39,6 +39,14 @@ def _install_args(p):
     p.add_argument("--dry-run", action="store_true",
                    help="print the plan, change nothing "
                         "(also with --cua or --units)")
+    p.add_argument("--from-plugin", action="store_true",
+                   help="the Omarchy plugin was added from the marketplace: "
+                        "install the daemon only, leave the plugin "
+                        "directory to `omarchy plugin update`, print every "
+                        "file and the bind line first and ask")
+    p.add_argument("--yes", "-y", action="store_true",
+                   help="with --from-plugin: answer the question yes "
+                        "(needed without a terminal)")
     p.add_argument("--ref", metavar="GIT_REF",
                    help="install this git ref (branch, tag or commit) "
                         "of the source repo instead of the working tree")
@@ -87,16 +95,43 @@ def _export_ref(a, tmp):
 
 
 def _install(ctx, a, src, repo, commit):
+    deploy = ({"repo": repo, "ref": a.ref, "commit": commit}
+              if src else None)
+    plugin = not a.from_plugin
+
+    def plan():
+        ctx.host.install_files(dry_run=True, cfg=ctx.cfg, src=src,
+                               deploy=deploy, plugin=plugin)
+        ctx.host.install_bind(ctx.cfg, dry_run=True)
+
     def go():
-        ctx.host.install_files(
-            dry_run=a.dry_run, cfg=ctx.cfg, src=src,
-            deploy={"repo": repo, "ref": a.ref, "commit": commit}
-            if src else None)
-        if not a.dry_run:
-            ctx.host.install_bind(ctx.cfg)
+        if a.dry_run:
+            plan()
+            return 0
+        ctx.host.install_files(dry_run=False, cfg=ctx.cfg, src=src,
+                               deploy=deploy, plugin=plugin)
+        ctx.host.install_bind(ctx.cfg)
         return 0
+
+    if a.from_plugin and not a.dry_run:
+        # a marketplace install never edits the user's config unasked
+        _host_call(ctx, lambda: (plan(), 0)[1])
+        if not (a.yes or _tty_yes("Install this? [y/N] ")):
+            return ctx.emit({"installed": False, "cua": None},
+                            "not installed; nothing was changed")
     rc, text = _host_call(ctx, go)
     return ctx.emit({"installed": rc == 0 and not a.dry_run, "cua": None})
+
+
+def _tty_yes(prompt: str) -> bool:
+    import sys
+    if not (sys.stdin and sys.stdin.isatty()):
+        raise CliError("E_USAGE", "Installing from the plugin needs a "
+                       "terminal to ask you, or --yes.",
+                       "wispd install --from-plugin --dry-run")
+    sys.stderr.write(prompt)
+    sys.stderr.flush()
+    return sys.stdin.readline().strip().lower() in ("y", "yes")
 
 
 def _install_units(ctx, a):

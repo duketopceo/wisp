@@ -55,8 +55,30 @@ jobs:
           name: wisp-${{ matrix.name }}
           path: wisp-${{ matrix.name }}.${{ matrix.ext }}
 
+  plugin:
+    # the Omarchy marketplace mirror: the plugin alone, version = the tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: qmllint
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y qt6-declarative-dev-tools || true
+          echo "/usr/lib/qt6/bin" >> "$GITHUB_PATH"
+      - name: Build and validate the mirror
+        run: |
+          python3 scripts/plugin_mirror.py --out build/mirror \
+            --version "${{ github.ref_name }}" --lint
+          tar czf "wisp-plugin-${{ github.ref_name }}.tar.gz" -C build mirror
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wisp-plugin
+          path: wisp-plugin-${{ github.ref_name }}.tar.gz
+
   release:
-    needs: build
+    needs: [build, plugin]
     runs-on: ubuntu-latest
     permissions:
       contents: write

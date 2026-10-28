@@ -34,6 +34,30 @@ python3 wispd install   # core files + service + plugin + menu entry
 - a service: `wispd.service` (systemd user)
 - the push-to-talk bind in `~/.config/hypr/bindings.lua` (Hyprland only)
 
+## From the Omarchy plugin marketplace
+
+```sh
+omarchy plugin add https://github.com/duketopceo/wisp-plugin.git --enable
+```
+
+That adds the bar mark, live pill and overlay only (a plugin-only mirror,
+built from this repo's `shell-plugin/` by `scripts/plugin_mirror.py` on
+every release; this repo stays the source of truth). The daemon comes from
+a release tarball. Run its installer in `--from-plugin` mode: it prints
+every file it will write and the exact lines it will add to
+`~/.config/hypr/bindings.lua`, and writes nothing until you say yes
+(`--yes` answers it for you; without a terminal it refuses and writes
+nothing). It leaves the plugin folder to `omarchy plugin update`.
+
+```sh
+python3 wispd install --from-plugin --dry-run   # the plan, nothing written
+python3 wispd install --from-plugin             # the plan, then asks
+```
+
+`wispd install --dry-run` now also lists the bind it would add. To remove
+everything: `omarchy plugin remove io.github.duketopceo.wisp`, then the
+Uninstall steps below.
+
 ## Updating a release install
 
 `wispd update` checks the latest tagged release of the repo and never

@@ -1,5 +1,6 @@
-usage: wispd daemon install [-h] [--cua] [--units] [--dry-run] [--ref GIT_REF]
-                            [--repo PATH] [--json] [--quiet] [--no-color]
+usage: wispd daemon install [-h] [--cua] [--units] [--dry-run] [--from-plugin]
+                            [--yes] [--ref GIT_REF] [--repo PATH] [--json]
+                            [--quiet] [--no-color]
 
 Install runtime files, the systemd unit and the hotkey bind
 
@@ -9,6 +10,12 @@ options:
   --units        only install the systemd unit templates (scripts/units),
                  backing up changed ones
   --dry-run      print the plan, change nothing (also with --cua or --units)
+  --from-plugin  the Omarchy plugin was added from the marketplace: install
+                 the daemon only, leave the plugin directory to `omarchy
+                 plugin update`, print every file and the bind line first and
+                 ask
+  --yes, -y      with --from-plugin: answer the question yes (needed without a
+                 terminal)
   --ref GIT_REF  install this git ref (branch, tag or commit) of the source
                  repo instead of the working tree
   --repo PATH    source repo for --ref (default: the repo of the last install)
