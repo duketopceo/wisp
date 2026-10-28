@@ -10,11 +10,17 @@ README = ROOT / "README.md"
 MEDIA = ROOT / "assets" / "readme"
 BUDGET = 250 * 1024
 IMG = re.compile(r"!\[[^\]]*\]\(([^)\s]+)\)")
+LINK = re.compile(r"\]\((assets/readme/[^)\s]+\.mp4)\)")
+VIDEO_BUDGET = 5 * 1024 * 1024
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
 
 def linked():
     return [m.group(1) for m in IMG.finditer(README.read_text("utf-8"))]
+
+
+def videos():
+    return LINK.findall(README.read_text("utf-8"))
 
 
 class ReadmeMedia(unittest.TestCase):
@@ -38,8 +44,16 @@ class ReadmeMedia(unittest.TestCase):
             self.assertGreaterEqual(w, 300, rel)
             self.assertGreaterEqual(h, 200, rel)
 
+    def test_hero_video_is_local_and_in_budget(self):
+        for rel in videos():
+            p = ROOT / rel
+            self.assertTrue(p.is_file(), f"missing {rel}")
+            self.assertLessEqual(p.stat().st_size, VIDEO_BUDGET, rel)
+            self.assertIn(rel.replace(".mp4", ".poster.png"), linked(),
+                          "a hero video needs its poster image")
+
     def test_no_orphans(self):
-        names = {pathlib.Path(r).name for r in linked()}
+        names = {pathlib.Path(r).name for r in linked() + videos()}
         found = {p.name for p in MEDIA.glob("*") if p.is_file()}
         self.assertEqual(found - names, set(),
                          "files in assets/readme not linked from README")
