@@ -25,6 +25,11 @@ _INTENT = re.compile(
     r"(?:walk\s+me\s+through|guide\s+me\s+through|take\s+me\s+through|"
     r"teach\s+me\s+how\s+to|step\s+by\s+step(?:\s+how)?\s+(?:to|for))\s+"
     r"(.+?)[\s.!?]*$", re.IGNORECASE | re.DOTALL)
+_DEMO = re.compile(
+    r"^\s*(?:(?:hey\s+)?wisp[,\s]+)?(?:please\s+)?"
+    r"(?:demonstrate|demo\s+me)\s+(?:how\s+to\s+)?(.+?)[\s.!?]*$",
+    re.IGNORECASE | re.DOTALL)
+DEMO_PREFIX = "demonstrate: "
 
 POLL_S = 0.5
 EXACT_PROVIDERS = "control,a11y"      # label-first: no pixels, no model
@@ -36,6 +41,22 @@ def walk_intent(text: str) -> str | None:
     m = _INTENT.match(text or "")
     goal = m.group(1).strip() if m else ""
     return goal or None
+
+
+def demo_intent(text: str) -> str | None:
+    """The goal in "demonstrate X" requests: Wisp narrates and points at
+    every step in one go, and the user does nothing."""
+    m = _DEMO.match(text or "")
+    goal = m.group(1).strip() if m else ""
+    return goal or None
+
+
+def split_mode(detail: str) -> tuple:
+    """(goal, demonstrate) from a route detail made by `route_detail`."""
+    d = detail or ""
+    if d.startswith(DEMO_PREFIX):
+        return d[len(DEMO_PREFIX):], True
+    return d, False
 
 
 # -- planning -----------------------------------------------------------
@@ -83,11 +104,14 @@ def parse_steps(raw: str, max_steps: int = _wt.MAX_STEPS) -> list:
 
 
 def plan(goal: str, cfg: dict, image_b64: str | None = None,
-         chat=None) -> list:
+         chat=None, skill: str = "") -> list:
     from . import brain
     if chat is None:
         chat = brain.chat
     content = _PROMPT % (_wt.MAX_STEPS, goal)
+    if skill:
+        content += ("\n\nNotes about the app on screen (use them, do not "
+                    "read them out):\n" + skill)
     if image_b64 and brain.supports_vision(cfg):
         url = image_b64 if image_b64.startswith("data:") \
             else f"data:image/png;base64,{image_b64}"
@@ -182,13 +206,33 @@ class _Env:
             self.sleep(0.05)
 
 
+def app_skill(window: dict, match=None) -> str:
+    """The seeded or learned skill text for the focused app, else ""."""
+    cls = (window or {}).get("class", "")
+    if not cls:
+        return ""
+    if match is None:
+        from . import skills
+        match = skills.match_app_skill
+    try:
+        return match(cls) or ""
+    except Exception:
+        return ""
+
+
 def run(goal: str, cfg: dict, state=None, *, ask=None,
         image_b64: str | None = None, interrupted=None, steps=None,
-        env: _Env | None = None, ground=None, monitors=None) -> str:
+        env: _Env | None = None, ground=None, monitors=None,
+        demonstrate: bool = False, skill_match=None) -> str:
     """Plan and walk the user through `goal`. Returns "WALKED (n steps):
-    <closing line>"."""
+    <closing line>". With `demonstrate` every step is spoken and pointed
+    at in turn without waiting for the user to act."""
     env = env or _Env(cfg, state, interrupted=interrupted)
-    planned = steps if steps is not None else plan(goal, cfg, image_b64)
+    if steps is not None:
+        planned = steps
+    else:
+        planned = plan(goal, cfg, image_b64,
+                       skill=app_skill(env.window(), skill_match))
     if not planned:
         return ("WALKED (0 steps): I couldn't work out steps for that, "
                 "try asking more specifically.")
@@ -201,7 +245,8 @@ def run(goal: str, cfg: dict, state=None, *, ask=None,
             return f"WALKED ({len(wt.done_log)} steps): stopped."
         action = ev.get("action")
         if action == "step":
-            ev = _do_step(wt, ev, env, ask, ground, monitors)
+            do = _demo_step if demonstrate else _do_step
+            ev = do(wt, ev, env, ask, ground, monitors)
             if ev is None:
                 return (f"WALKED ({len(wt.done_log)} steps): "
                         "okay, stopping here.")
@@ -249,3 +294,17 @@ def _do_step(wt, ev, env: _Env, ask, ground, monitors):
                 return None
             return wt.issue_step(now=env.clock())
         return r   # step | advanced | complete
+
+
+def _demo_step(wt, ev, env: _Env, ask, ground, monitors):
+    """Say and point at one step, then move on: nothing is clicked, typed
+    or waited for."""
+    step = ev["step"]
+    env.say(step.text, snap_point(step, env.cfg, ground=ground,
+                                  monitors=monitors))
+    env.check()
+    if env.interrupted():
+        wt.cancel(env.state)
+        return {"action": "cancelled"}
+    wt.mark_step_done()
+    return wt.issue_step(now=env.clock())
