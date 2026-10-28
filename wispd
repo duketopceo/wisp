@@ -829,13 +829,22 @@ def _mirror(src: pathlib.Path, dst: pathlib.Path) -> None:
             f.unlink()
 
 
+def _plugin_dir() -> pathlib.Path:
+    return (config.HOME / ".config" / "omarchy" / "plugins"
+            / "io.github.duketopceo.wisp")
+
+
 def install_files(dry_run: bool = False, cfg: dict | None = None,
                   src: pathlib.Path | None = None,
-                  deploy: dict | None = None) -> None:
+                  deploy: dict | None = None,
+                  plugin: bool = True) -> None:
     """Copy runtime files to the opt dir, write the trigger shim and
     service registration, and install the shell plugin directory.
     `src` is a pre-exported source tree (`install --ref`); `deploy` is
-    its {repo, ref, commit} for the record (default: this checkout)."""
+    its {repo, ref, commit} for the record (default: this checkout).
+    `plugin=False` leaves the shell plugin directory alone: it arrived
+    from the Omarchy marketplace (`omarchy plugin add`, a git checkout
+    that `omarchy plugin update` owns)."""
     src = src or pathlib.Path(__file__).resolve().parent
     opt = config.HOME / ".local" / "opt" / "wisp"
     if src == opt:
@@ -852,6 +861,11 @@ def install_files(dry_run: bool = False, cfg: dict | None = None,
             print(f"would write {f}")
         for f in res["backups"]:
             print(f"would back up the edited file to {f}")
+        if plugin and (src / "shell-plugin").is_dir():
+            print(f"would write {_plugin_dir()}")
+        print(f"would write {opt}/ (wisp, wispd, shells), "
+              f"{config.HOME}/.local/bin/wisp-trigger and the systemd "
+              "user unit(s)")
         print("dry run: nothing written")
         return
     opt.mkdir(parents=True, exist_ok=True)
@@ -881,9 +895,8 @@ def install_files(dry_run: bool = False, cfg: dict | None = None,
     for t in res["skipped"]:
         print(f"skipped {t} (not found)")
     plugin_src = src / "shell-plugin"
-    plugin_dst = (config.HOME / ".config" / "omarchy" / "plugins"
-                  / "io.github.duketopceo.wisp")
-    if plugin_src.is_dir():
+    plugin_dst = _plugin_dir()
+    if plugin and plugin_src.is_dir():
         _mirror(plugin_src, plugin_dst)
         # an old installer copied the directory itself — sweep the
         # stale nested copy so there's exactly one QML source of truth
@@ -909,8 +922,9 @@ def install_files(dry_run: bool = False, cfg: dict | None = None,
           "restart <unit>")
 
 
-def install_bind(cfg: dict) -> None:
+def install_bind(cfg: dict, dry_run: bool = False) -> None:
     """Idempotently add the push-to-talk bind to ~/.config/hypr/bindings.lua.
+    With `dry_run` it prints what it would do and writes nothing.
 
     Omarchy configures Hyprland in Lua; hyprland.conf is not sourced, so a
     `bind =` line there is dead. Legacy installs wrote one — strip it.
@@ -931,15 +945,21 @@ def install_bind(cfg: dict) -> None:
 
     conf = config.HOME / ".config" / "hypr" / "hyprland.conf"
     if conf.exists() and "wisp-trigger" in conf.read_text():
-        lines = [l for l in conf.read_text().splitlines()
-                 if "wisp-trigger" not in l
-                 and l.strip() != "# Wisp push-to-talk"]
-        conf.write_text("\n".join(lines) + "\n")
-        print("removed dead bind from hyprland.conf (not sourced under Lua)")
+        if dry_run:
+            print(f"would remove the dead wisp bind from {conf} "
+                  "(not sourced under Lua)")
+        else:
+            lines = [l for l in conf.read_text().splitlines()
+                     if "wisp-trigger" not in l
+                     and l.strip() != "# Wisp push-to-talk"]
+            conf.write_text("\n".join(lines) + "\n")
+            print("removed dead bind from hyprland.conf "
+                  "(not sourced under Lua)")
 
     bindings = config.HOME / ".config" / "hypr" / "bindings.lua"
     if not bindings.parent.is_dir():
-        print("no ~/.config/hypr, skipped the hotkey bind")
+        print("no ~/.config/hypr, " + ("would skip" if dry_run else "skipped")
+              + " the hotkey bind")
         return
     text = bindings.read_text() if bindings.exists() else ""
     target_combo = f"{mod} + {key.upper()}"
@@ -957,6 +977,11 @@ def install_bind(cfg: dict) -> None:
     if (len(old) >= 2
             and all("start" in l or "release" in l for l in old)):
         print(f"bind already present in {bindings}")
+        return
+    if dry_run:
+        print(f"would add to {bindings}:")
+        for line in bind.splitlines():
+            print(f"  {line}")
         return
     if old:  # stale toggle-style bind — replace with press/release pair
         text = "\n".join(l for l in text.splitlines()

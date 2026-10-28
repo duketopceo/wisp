@@ -26,6 +26,19 @@ jobs:
       - name: Unit tests
         run: python -m unittest discover -s tests -v
 
+  plugin:
+    # the Omarchy marketplace mirror: build it and validate it (B15)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: qmllint
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y qt6-declarative-dev-tools || true
+          echo "/usr/lib/qt6/bin" >> "$GITHUB_PATH"
+      - name: Build and validate the plugin mirror
+        run: python3 scripts/plugin_mirror.py --out build/mirror --version v0.0.0 --lint
+
   rust:
     runs-on: ${{ matrix.os }}
     strategy:
