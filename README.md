@@ -59,6 +59,11 @@ wispd onboard                  # guided first run, every step skippable
 - `wispd onboard` checks the microphone, the local models, the cua driver,
   notifications and the keyboard submap. The Panel shows the same
   checklist as a card until you finish. Nothing in it edits your config.
+- Some questions are answered from this machine with no model call: "what
+  model are you", "what did I spend today" (or "this week"), "what version
+  is this", "say that again", "copy that" (puts the last answer on the
+  clipboard) and "what went wrong". They match only as the whole
+  sentence, so "explain what version control is" still goes to the model.
 - `wispd doctor` checks every dependency and prints the fix for each
   missing one.
 - `wispd whatsnew` shows what changed in the version you have (the Panel

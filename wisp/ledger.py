@@ -235,6 +235,34 @@ def gate_primary(cfg: dict) -> bool:
         "gate_primary", "false")).strip().lower() == "true"
 
 
+def window(days: int, now=None, path=None) -> dict:
+    """Spend over the last `days` calendar days including today:
+    {usd, calls, days}. Same rows and same sums as `totals`."""
+    now = now or _now()
+    first = (now.date() - _dt.timedelta(days=max(1, days) - 1)).isoformat()
+    last = now.date().isoformat()
+    usd, calls = 0.0, 0
+    for r in _rows(path or globals()["path"]()):
+        day = str(r.get("ts", ""))[:10]
+        if first <= day <= last:
+            usd += _num(r.get("usd"))
+            calls += 1
+    return {"usd": round(usd, 6), "calls": calls, "days": max(1, days)}
+
+
+def last_call(now=None, path=None) -> dict | None:
+    """The newest ledger row ({provider, model, ts}), or None."""
+    best = None
+    for r in _rows(path or globals()["path"]()):
+        if best is None or str(r.get("ts", "")) >= str(best.get("ts", "")):
+            best = r
+    if best is None:
+        return None
+    return {"provider": str(best.get("provider", "?")),
+            "model": str(best.get("model", "?")),
+            "ts": str(best.get("ts", ""))}
+
+
 def status(cfg: dict, now=None, path=None) -> dict:
     """Totals plus caps and whether paid calls are blocked right now.
     Raises OSError when the ledger cannot be read."""

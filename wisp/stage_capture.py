@@ -525,7 +525,9 @@ def context_stage(ctx) -> bool:
         # pure Q&A doesn't need the screen — dropping the image saves
         # ~700KB of payload + the transcode on "what time is it" turns.
         # Conservative: any referent token keeps the shot.
-        qa_skip = _qa_needs_no_screen(text) and marks is None
+        from . import selfknow as _selfknow
+        qa_skip = (_qa_needs_no_screen(text)
+                   or _selfknow.intent(text) is not None) and marks is None
         if not qa_skip:
             with sp.timed("screenshot"):
                 ctx.shot_b64 = pl.turn_screenshot(cfg, speculative)
