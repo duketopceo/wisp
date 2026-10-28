@@ -95,6 +95,7 @@ def _connect(rest):
 ALIASES = {
     "daemon": _grp("daemon", "run"),
     "install": _to("daemon", "install"),
+    "update": _to("daemon", "update"),
     "harness": _to("daemon", "harness"),
     "subscribe": _to("watch"),
     "label": _label,

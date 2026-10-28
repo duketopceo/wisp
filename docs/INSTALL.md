@@ -34,6 +34,25 @@ python3 wispd install   # core files + service + plugin + menu entry
 - a service: `wispd.service` (systemd user)
 - the push-to-talk bind in `~/.config/hypr/bindings.lua` (Hyprland only)
 
+## Updating a release install
+
+`wispd update` checks the latest tagged release of the repo and never
+installs on its own:
+
+```sh
+wispd update --dry-run   # version, digest and the files that would change
+wispd update             # same, then asks; only "y" installs
+```
+
+It downloads the tarball for your architecture into a temporary
+directory, checks its SHA-256 against the digest the release publishes (the
+asset digest, or a `SHA256SUMS` asset), and aborts on a mismatch or when
+no digest is published (pass `--sha256 <hex>` if you have one from a
+source you trust). `--dry-run` deletes the download again and writes
+nothing. A yes runs that tarball's `wispd install`; it does not restart
+the daemon, so apply it with `systemctl --user restart wispd`. Installing
+needs a terminal to ask you.
+
 ## Deploying a git ref
 
 `wispd install --ref <git-ref>` installs that branch, tag or commit of
