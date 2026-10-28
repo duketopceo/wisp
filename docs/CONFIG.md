@@ -254,6 +254,7 @@ one, `wispd dictate list` shows them.
 |-----|---------|
 | `enabled` | speak answers aloud |
 | `cmd` | override TTS command; `{text}` placeholder or appended arg. Empty = platform default (espeak/say/SAPI) |
+| `speed` | speaking speed multiplier, 0.5 to 1.5 (default 1; steps 0.5, 0.75, 1, 1.25, 1.5). The built-in espeak voice gets `-s <wpm>`; a custom `cmd` gets the multiplier wherever it writes `{rate}`. Say "talk slower", "talk faster" or "talk at normal speed" to change it by voice (logged in the audit log as a `config` entry) |
 | `early_clause` | `"true"` (default): while an answer streams, start speaking at the first clause break (`, ; : —`) once 28 characters are ready instead of waiting for the full stop. `"false"` waits for sentence ends |
 
 ## [notify] — desktop toasts
