@@ -85,10 +85,16 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
     if route == "walkthrough":
         from . import walkthrough_run
         goal, demo = walkthrough_run.split_mode(detail)
+        resume = None
+        if detail == walkthrough_run.RESUME_PREFIX:
+            resume = walkthrough_run.paused()
+            if resume is None:
+                return ("WALKED (0 steps): there's no walkthrough to "
+                        "continue.")
         return walkthrough_run.run(goal, cfg, state=state, ask=ask,
                                    image_b64=initial_image,
                                    interrupted=interrupted,
-                                   demonstrate=demo)
+                                   demonstrate=demo, resume=resume)
     if route == "act":
         return _run_act(detail)
     if route == "dictation":

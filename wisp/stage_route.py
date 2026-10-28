@@ -392,6 +392,8 @@ def fixed_route(text: str, router: str):
     if routines.parse_teach_intent(text) is not None:
         return "learn", text
     from . import walkthrough_run
+    if walkthrough_run.resume_intent(text) and walkthrough_run.paused():
+        return "walkthrough", walkthrough_run.RESUME_PREFIX
     demo = walkthrough_run.demo_intent(text)
     if demo:
         return "walkthrough", walkthrough_run.DEMO_PREFIX + demo
