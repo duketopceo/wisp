@@ -265,6 +265,9 @@ def seed() -> None:
         f = d / "SKILL.md"
         if not f.is_file():
             continue
+        need = _frontmatter(_header(f) or "").get("requires_bin")
+        if need and not shutil.which(need):
+            continue        # the program it teaches is not installed
         dst = SKILLS_DIR / d.name
         if (dst / "SKILL.md").exists():
             continue

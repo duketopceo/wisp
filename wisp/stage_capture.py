@@ -488,3 +488,10 @@ def context_stage(ctx) -> None:
         ctx.doc_text = docread.context_for(text, win, cfg)
     except Exception:
         ctx.doc_text = ""            # a document read never fails a turn
+    try:
+        from . import omarchy_tutor
+        ctx.tutor_text = omarchy_tutor.context_for(text)
+    except Exception:
+        ctx.tutor_text = ""          # a tutor read never fails a turn
+    if ctx.tutor_text:
+        ctx.context += "\n" + ctx.tutor_text
