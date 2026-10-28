@@ -1,0 +1,19 @@
+usage: wispd whatsnew [-h] [--seen] [--all] [--json] [--quiet] [--no-color]
+
+Show what changed in the version you have installed
+
+options:
+  -h, --help   show this help message and exit
+  --seen       mark this version's card as seen
+  --all        print the whole changelog instead of the card
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd whatsnew
+  wispd whatsnew --json
+  wispd whatsnew --all
+  wispd whatsnew --seen

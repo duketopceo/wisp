@@ -58,6 +58,7 @@ Everything below lives in `~/.local/share/wisp` (a 0700 folder of 0600 files), `
 | dictation history | Each finished dictation, so a failed insert loses nothing. Never sent anywhere and never put in a prompt. | `[dictation] history`, `history_max` and `history_days` bound it (100 entries, 7 days by default). `wispd dictate clear` empties it. |
 | utterance.wav | The recording of your last turn, in `~/.config/wisp`. | Overwritten by the next turn. Delete it any time. |
 | recall.db | Memory notes and their search index. | Delete the file any time. |
+| errors.jsonl | The last typed error codes and exception type names, for `wispd bugreport`. Never a message, transcript or path. | Bounded to about 200 entries. Delete the file any time. |
 | report_queue.jsonl | Typed error codes waiting to be reported, only if you set `[report] dsn`. No transcripts, screenshots, typed text, keys or home paths. | Bounded by `[report] queue_max`. Off while `dsn` is empty. |
 | state.json | What the panel shows right now. In your runtime directory (memory-backed). | Gone at logout or reboot. |
 
@@ -78,7 +79,7 @@ From the scan this page is built from.
 - `api.groq.com`: `rs/wispd/src/config.rs`, `wisp/config.py`
 - `cal.com`: `wisp/mcpauth.py`
 - `calendar.google.com`: `wisp/config.py`
-- `github.com`: `rs/wispd/src/brain.rs`, `wisp/brain.py`, `wisp/grounding.py`, `wisp/route.py`, `wisp/stage_route.py`, `wisp/update.py`
+- `github.com`: `rs/wispd/src/brain.rs`, `wisp/brain.py`, `wisp/grounding.py`, `wisp/route.py`, `wisp/stage_route.py`, `wisp/update.py` and 1 more
 - `gmail.com`: `wisp/tools/__init__.py`
 - `mail.google.com`: `wisp/config.py`
 - `openrouter.ai`: `rs/wispd/src/brain.rs`, `rs/wispd/src/config.rs`, `wisp/brain.py`, `wisp/config.py`, `wisp/recall.py`

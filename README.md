@@ -61,6 +61,11 @@ wispd onboard                  # guided first run, every step skippable
   checklist as a card until you finish. Nothing in it edits your config.
 - `wispd doctor` checks every dependency and prints the fix for each
   missing one.
+- `wispd whatsnew` shows what changed in the version you have (the Panel
+  shows it once after an update), and `wispd bugreport` writes one
+  markdown file for a bug report: version, health, recent error codes,
+  trace counts and a masked config, never what you said or saw. Nothing
+  is sent; you open the issue yourself.
 
 Prerequisites: `pw-record` (or `arecord`), whisper.cpp at
 `~/src/whisper.cpp` with `models/ggml-small.en.bin`, `hyprctl`,

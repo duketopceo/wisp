@@ -25,7 +25,7 @@ EXPECTED = ["AskChips", "Answer", "AgentRow", "AgentsTab", "BarActions", "BarMar
             "Creature", "DrawLayer", "EmptyState", "FirstRunCard",
             "HealthSection", "Icon", "Mark", "MemoryTab", "NowTab", "OverlayLayer",
             "PanelTab", "Pill", "RunCard", "ScribbleLayer", "SettingsTab", "StatusLine", "StepRow",
-            "StopControl", "Transcript",
+            "StopControl", "Transcript", "WhatsNewCard",
             # management app views
             "AuditView", "BindsView", "HealthView", "SpendView"]
 

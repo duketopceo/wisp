@@ -22,6 +22,8 @@ Diagnose:
   onboard      Walk through first-run setup (every step skippable)
   trace        Turn trace and daily digest
   captures     List capture packs, or show one pack's manifest
+  whatsnew     Show what changed in the version you have installed
+  bugreport    Write one markdown file for a bug report (nothing is sent)
 
 Pointer and notifications:
   cua          The cua-driver pointer backend: status, test, log, kill, enable

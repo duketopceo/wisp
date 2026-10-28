@@ -156,6 +156,10 @@ STORES = (
      "time."),
     ("recall.db", "Memory notes and their search index.",
      "Delete the file any time."),
+    ("errors.jsonl",
+     "The last typed error codes and exception type names, for "
+     "`wispd bugreport`. Never a message, transcript or path.",
+     "Bounded to about 200 entries. Delete the file any time."),
     ("report_queue.jsonl",
      "Typed error codes waiting to be reported, only if you set "
      "`[report] dsn`. No transcripts, screenshots, typed text, keys or "

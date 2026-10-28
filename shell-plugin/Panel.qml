@@ -6,6 +6,7 @@ import qs.Commons
 import qs.Ui
 import "components"
 import "lib/onboard.js" as Onboard
+import "lib/whatsnew.js" as WhatsNew
 
 // Popup panel for io.github.duketopceo.wisp, opened from the bar mark.
 // Four tabs: Now (the turn in flight), Agents (tasks), Memory (skills and
@@ -39,9 +40,12 @@ Panel {
   // (a skip is never written anywhere)
   property var onboard: null
   property var skippedSteps: []
+  // `wispd whatsnew --json`: the card for a version just installed, once
+  property var whatsnew: null
 
   onOpenedChanged: {
-    if (opened) loadOnboard()
+    if (opened) { loadOnboard(); loadWhatsnew() }
+    else dismissWhatsnew()
     if (opened && tab === 3) loadSettings()
   }
   onTabChanged: if (tab === 3) loadSettings()
@@ -50,6 +54,20 @@ Panel {
     if (!service || onboardStatusProc.running) return
     onboardStatusProc.command = Onboard.statusCommand(service.wispd)
     onboardStatusProc.running = true
+  }
+
+  function loadWhatsnew() {
+    if (!service || whatsnewProc.running || whatsnewSeenProc.running || whatsnew) return
+    whatsnewProc.command = WhatsNew.statusCommand(service.wispd)
+    whatsnewProc.running = true
+  }
+
+  // closing the panel (or the button) marks the version seen: shown once
+  function dismissWhatsnew() {
+    if (!whatsnew || !service) return
+    whatsnew = null
+    whatsnewSeenProc.command = WhatsNew.seenCommand(service.wispd)
+    whatsnewSeenProc.running = true
   }
 
   function onboardRun(argv) {
@@ -113,6 +131,23 @@ Panel {
     onExited: wisp.onboard = Onboard.parse(onboardOut.text)
   }
 
+  Process {
+    id: whatsnewProc
+    command: []
+    stdout: StdioCollector { id: whatsnewOut }
+    onExited: wisp.whatsnew = WhatsNew.parse(whatsnewOut.text)
+  }
+
+  Process {
+    id: whatsnewSeenProc
+    command: []
+  }
+
+  Process {
+    id: whatsnewLinkProc
+    command: []
+  }
+
   // one card action at a time; the status is re-read when it ends
   Process {
     id: onboardRunProc
@@ -167,6 +202,20 @@ Panel {
               selected: wisp.tab === index
               onClicked: wisp.tab = index
             }
+          }
+        }
+
+        WhatsNewCard {
+          visible: WhatsNew.visible(wisp.whatsnew)
+          width: col.width - 2 * col.padding
+          service: col.svc
+          card: wisp.whatsnew
+          onDismiss: wisp.dismissWhatsnew()
+          onOpenLink: function (url) {
+            var argv = WhatsNew.linkCommand(url)
+            if (argv.length === 0 || whatsnewLinkProc.running) return
+            whatsnewLinkProc.command = argv
+            whatsnewLinkProc.running = true
           }
         }
 

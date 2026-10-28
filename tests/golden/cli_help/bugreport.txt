@@ -1,0 +1,21 @@
+usage: wispd bugreport [-h] [--out FILE] [--errors N] [--dry-run] [--json]
+                       [--quiet] [--no-color]
+
+Write one markdown file for a bug report (nothing is sent)
+
+options:
+  -h, --help   show this help message and exit
+  --out FILE   where to write it (default: wisp-bugreport-<date>.md in this
+               folder)
+  --errors N   how many recent typed errors to include (default 10)
+  --dry-run    print what would be written and its size; write nothing
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd bugreport
+  wispd bugreport --dry-run
+  wispd bugreport --out ~/wisp-bug.md --errors 20

@@ -1,4 +1,5 @@
-"""Diagnostics: doctor, health, latency, spend, binds, onboard."""
+"""Diagnostics: doctor, health, latency, spend, binds, onboard, whatsnew,
+bugreport."""
 import datetime
 import json
 import shutil
@@ -560,3 +561,98 @@ def captures(ctx, a):
           "yes" if r.get("suppressed") else ""]
          for r in rows])
     return ctx.emit(data, text)
+
+
+# -- whatsnew and bugreport ----------------------------------------------
+
+def _whatsnew_args(p):
+    p.add_argument("--seen", action="store_true",
+                   help="mark this version's card as seen")
+    p.add_argument("--all", action="store_true",
+                   help="print the whole changelog instead of the card")
+
+
+@command("whatsnew", "Show what changed in the version you have installed",
+         ["wispd whatsnew", "wispd whatsnew --json", "wispd whatsnew --all",
+          "wispd whatsnew --seen"],
+         {"version": "str", "card": "dict|null", "seen": "bool"},
+         args=_whatsnew_args)
+def whatsnew(ctx, a):
+    from .. import update, whatsnew as wn
+    if a.seen:
+        v = wn.mark_seen()
+        return ctx.emit({"version": v, "card": None, "seen": True},
+                        f"marked {v} as seen")
+    if a.all:
+        try:
+            text = wn.changelog_path().read_text()
+        except OSError:
+            raise CliError("E_FAILED", "No CHANGELOG.md is installed.",
+                           "wispd daemon install")
+        return ctx.emit({"version": update.installed_version(),
+                         "sections": wn.parse(text), "card": None,
+                         "seen": False}, text.rstrip())
+    c = wn.card()
+    v = update.installed_version()
+    if c is None:
+        return ctx.emit({"version": v, "card": None, "seen": True},
+                        "nothing new since you last looked")
+    lines = [f"What's new in {c['title']}"
+             + (f" ({c['date']})" if c["date"] else "")] \
+        + [f"  - {t}" for t in c["lines"]]
+    if c["more"]:
+        lines.append(f"  and {c['more']} more: wispd whatsnew --all")
+    lines.append(f"  {c['url']}")
+    return ctx.emit({"version": v, "card": c, "seen": False},
+                    "\n".join(lines))
+
+
+def _bugreport_args(p):
+    p.add_argument("--out", metavar="FILE",
+                   help="where to write it (default: wisp-bugreport-"
+                   "<date>.md in this folder)")
+    p.add_argument("--errors", type=int, default=10, metavar="N",
+                   help="how many recent typed errors to include "
+                   "(default 10)")
+    p.add_argument("--dry-run", action="store_true",
+                   help="print what would be written and its size; "
+                   "write nothing")
+
+
+@command("bugreport", "Write one markdown file for a bug report (nothing "
+         "is sent)",
+         ["wispd bugreport", "wispd bugreport --dry-run",
+          "wispd bugreport --out ~/wisp-bug.md --errors 20"],
+         {"path": "str", "bytes": "int", "sections": "list",
+          "written": "bool"},
+         args=_bugreport_args)
+def bugreport(ctx, a):
+    import pathlib
+    import time
+    from .. import bugreport as br, private
+    if a.errors < 0 or a.errors > 200:
+        raise CliError("E_USAGE", "--errors takes 0 to 200.",
+                       "wispd bugreport --help")
+    text = br.build(ctx.cfg, n_errors=a.errors)
+    path = pathlib.Path(a.out).expanduser() if a.out else pathlib.Path(
+        f"wisp-bugreport-{time.strftime('%Y%m%d-%H%M%S')}.md")
+    size = len(text.encode())
+    data = {"path": str(path), "bytes": size,
+            "sections": list(br.SECTIONS), "written": False}
+    if a.dry_run:
+        return ctx.emit(data, "would write %s (%d bytes)\nsections: %s\n"
+                        "dry run: nothing was written."
+                        % (path, size, ", ".join(br.SECTIONS)))
+    if path.exists():
+        raise CliError("E_USAGE", f"{path} exists already.",
+                       "wispd bugreport --out <another file>")
+    try:
+        with private.open_write(path) as f:
+            f.write(text)
+    except OSError as e:
+        raise CliError("E_FAILED", f"Could not write {path}: "
+                       f"{e.strerror or e}.", "wispd bugreport --out <file>")
+    data["written"] = True
+    return ctx.emit(data, f"wrote {path} ({size} bytes). Read it, then "
+                    "open an issue yourself if you want to. Nothing was "
+                    "sent.")

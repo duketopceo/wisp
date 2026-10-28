@@ -25,6 +25,14 @@ def open_append(path, mode: int = FILE_MODE):
     return os.fdopen(fd, "a")
 
 
+def open_write(path, mode: int = FILE_MODE):
+    """Open `path` for writing text (truncating), created 0600."""
+    p = pathlib.Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True, mode=DIR_MODE)
+    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+    return os.fdopen(fd, "w")
+
+
 def _fix(path: pathlib.Path, mode: int) -> bool:
     try:
         if path.is_symlink():

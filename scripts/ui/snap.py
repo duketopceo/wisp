@@ -84,6 +84,7 @@ TOLERANCE = {
     "Companion": Tolerance(12, 0.006),
     "DrawLayer": Tolerance(12, 0.006),
     "AskChips": Tolerance(10, 0.012),   # text only
+    "WhatsNewCard": Tolerance(10, 0.012),   # wrapped text
     "Card": Tolerance(10, 0.012),   # picture resampling and the source line text
 }
 
