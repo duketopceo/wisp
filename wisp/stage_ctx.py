@@ -29,6 +29,7 @@ class TurnCtx:
         self.context = ""
         self.detail = ""
         self.shot_b64 = None
+        self.blind = None                   # blank capture, unrecovered (B28)
         self.session_text = ""
         self.doc_text = ""                  # excerpts of the focused file
         self.scribble_hint = ""             # the user drew on the shot (B7)

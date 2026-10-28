@@ -17,6 +17,7 @@ import time
 import urllib.error
 import urllib.request
 
+from . import blank as _blank
 from . import cancel as _cancel
 from . import config
 from . import errors_codes as _errors
@@ -282,14 +283,18 @@ def active_window() -> dict:
     return platform.active_window()
 
 
-def capture_screen() -> pathlib.Path | None:
-    """Platform screenshot → RUN_DIR/screen.png. None on fail."""
+def capture_screen(window: bool = False) -> pathlib.Path | None:
+    """Platform screenshot → RUN_DIR/screen.png. None on fail.
+    `window=True` crops to the focused window (the blank-frame retry)."""
     from . import platform
     from . import cua_safety
     if cua_safety.capture_blocked():
         return None   # sensitive window focused: no shot (R13)
     out = config.RUN_DIR / "screen.png"
-    cmd = platform.screenshot_cmd(out)
+    if window:
+        cmd = platform.window_screenshot_cmd(out, platform.active_geometry())
+    else:
+        cmd = platform.screenshot_cmd(out)
     if not cmd:
         return None
     try:
@@ -355,9 +360,27 @@ def turn_screenshot(cfg: dict, speculative=None) -> str | None:
         return None
     if speculative is not None:
         got = speculative.take("screenshot", wait=_SPEC_WAIT_S)
-        if got:
+        if got or isinstance(got, _blank.Blind):
             return got
-    return _png_b64(_pl().capture_screen())
+    return _vetted_b64()
+
+
+def _vetted_b64():
+    """A screenshot as a data URL, checked for a blank frame (B28): the
+    frame itself, or a `blank.Blind` when it came out black or empty and
+    the window retry did not help, or None when nothing was captured."""
+    pl = _pl()
+    got = _blank.vet(pl.capture_screen(),
+                     retry=lambda: pl.capture_screen(window=True),
+                     trace=_trace_blank)
+    if isinstance(got, _blank.Blind) or got is None:
+        return got
+    return _png_b64(got)
+
+
+def _trace_blank(event: str, fields: dict) -> None:
+    from . import trace as _trace
+    _trace.emit(_trace.current(), event, "act", fields)
 
 
 _SPEC_WAIT_S = 1.0
@@ -372,7 +395,7 @@ def speculative_context(cfg: dict):
     if _selection._enabled(cfg):
         g["selection"] = lambda: _selection.read_primary(cfg)
     if cfg.get("agent", {}).get("screenshots", "true") == "true":
-        g["screenshot"] = lambda: _png_b64(_pl().capture_screen())
+        g["screenshot"] = _vetted_b64
     delays = {}
     from . import chips as _chips
     if "screenshot" in g and _chips.armed(cfg):
@@ -449,6 +472,18 @@ def capture_stage(ctx) -> bool:
     return True
 
 
+def _say_and_wait(ctx, line: str) -> None:
+    """Speak one sentence now and let it finish (bounded), so the answer
+    that follows does not talk over it."""
+    from . import speech
+    try:
+        proc = speech.speak(line, ctx.cfg)
+        if proc is not None:
+            proc.wait(timeout=8)
+    except Exception:
+        pass
+
+
 def _refuse_language(ctx, reason: str) -> bool:
     """The speech setup cannot do the language: say why out loud and end
     the turn, never hang."""
@@ -460,7 +495,7 @@ def _refuse_language(ctx, reason: str) -> bool:
     return False
 
 
-def context_stage(ctx) -> None:
+def context_stage(ctx) -> bool:
     """Everything the router and the brain are told about this moment:
     harness catalog, focused window, trigger screenshot, goal, recent
     conversation, memory and a refinement correction if there is one."""
@@ -483,6 +518,7 @@ def context_stage(ctx) -> None:
     # it. Clicky does the same — the model sees the app instead of
     # asking which one.
     ctx.shot_b64 = None
+    ctx.blind = None
     from . import scribble as _scribble
     marks = _scribble.take()          # consumed by this turn, used or not
     if cfg.get("agent", {}).get("screenshots", "true") == "true":
@@ -493,6 +529,8 @@ def context_stage(ctx) -> None:
         if not qa_skip:
             with sp.timed("screenshot"):
                 ctx.shot_b64 = pl.turn_screenshot(cfg, speculative)
+            if isinstance(ctx.shot_b64, _blank.Blind):
+                ctx.blind, ctx.shot_b64 = ctx.shot_b64, None
             ctx.shot_b64, ctx.scribble_hint = _scribble.apply(
                 ctx.shot_b64, marks)
             if ctx.scribble_hint:
@@ -503,6 +541,15 @@ def context_stage(ctx) -> None:
                      "qa_skip": qa_skip,
                      "scribbled": bool(ctx.scribble_hint),
                      "speculative": bool(speculative)})
+    if ctx.blind is not None:
+        read = _blank.window_text(win)
+        _trace.emit(turn, "screen_blind", "act",
+                    {"why": ctx.blind.reason, "text_chars": len(read)})
+        if not read:
+            # nothing to read: end honestly, no model call about content
+            return _refuse_language(ctx, _blank.LINE_BLIND)
+        _say_and_wait(ctx, _blank.LINE_READING)
+        context += "\n" + _blank.context_note(ctx.blind.reason, read)
     wins = speculative.take("windows") if speculative else None
     if wins:
         context += "\n" + wins
@@ -566,3 +613,4 @@ def context_stage(ctx) -> None:
         ctx.tutor_text = ""          # a tutor read never fails a turn
     if ctx.tutor_text:
         ctx.context += "\n" + ctx.tutor_text
+    return True
