@@ -36,16 +36,20 @@ def _install_args(p):
     p.add_argument("--units", action="store_true",
                    help="only install the systemd unit templates "
                         "(scripts/units), backing up changed ones")
+    p.add_argument("--echo-cancel", action="store_true",
+                   help="only write the PipeWire echo-cancel drop-in the "
+                        "optional wake word needs over speakers (asks "
+                        "first; --yes answers it)")
     p.add_argument("--dry-run", action="store_true",
                    help="print the plan, change nothing "
-                        "(also with --cua or --units)")
+                        "(also with --cua, --units or --echo-cancel)")
     p.add_argument("--from-plugin", action="store_true",
                    help="the Omarchy plugin was added from the marketplace: "
                         "install the daemon only, leave the plugin "
                         "directory to `omarchy plugin update`, print every "
                         "file and the bind line first and ask")
     p.add_argument("--yes", "-y", action="store_true",
-                   help="with --from-plugin: answer the question yes "
+                   help="answer the question yes (--from-plugin, --echo-cancel) "
                         "(needed without a terminal)")
     p.add_argument("--ref", metavar="GIT_REF",
                    help="install this git ref (branch, tag or commit) "
@@ -67,6 +71,8 @@ def daemon_install(ctx, a):
         return _install_cua(ctx, a)
     if a.units:
         return _install_units(ctx, a)
+    if a.echo_cancel:
+        return _install_echo_cancel(ctx, a)
 
     if a.repo and not a.ref:
         raise CliError("E_USAGE", "--repo only applies with --ref.",
@@ -132,6 +138,22 @@ def _tty_yes(prompt: str) -> bool:
     sys.stderr.write(prompt)
     sys.stderr.flush()
     return sys.stdin.readline().strip().lower() in ("y", "yes")
+
+
+def _install_echo_cancel(ctx, a):
+    """The PipeWire drop-in for the wake word: plan first, write only on a
+    yes, never restart PipeWire."""
+    from .. import config as _cfgmod, echo_cancel
+    text = echo_cancel.plan(_cfgmod.HOME)
+    if a.dry_run:
+        return ctx.emit({"installed": False, "cua": None}, text)
+    if not (a.yes or _tty_yes(text + "\nWrite it? [y/N] ")):
+        return ctx.emit({"installed": False, "cua": None},
+                        "not written; nothing was changed")
+    f = echo_cancel.write(_cfgmod.HOME)
+    return ctx.emit({"installed": True, "cua": None},
+                    f"wrote {f}\nrestart PipeWire to apply it: systemctl "
+                    "--user restart pipewire pipewire-pulse wireplumber")
 
 
 def _install_units(ctx, a):

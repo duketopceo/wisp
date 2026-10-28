@@ -120,6 +120,7 @@ round-trip — they are not IPC commands and are absent from the table:
   "error_code": "closed set, see below; \"\" when no error",
   "error_detail": "string — raw failure text, local only",
   "health": {"<endpoint>": {"ok": true, "since": "ISO-8601", "latency_ms": 12, "code": null}},
+  "mic": "\"open\" while the opt-in wake word listens (bar shows an open-mic mark), else \"\"",
   "spend": {"today_usd": 0.0, "cap_usd": 8.0, "month_usd": 0.0, "monthly_cap_usd": 160.0, "blocked": false},
   "started_at": "ISO-8601",
   "turn_id": "string — turn that produced this write",

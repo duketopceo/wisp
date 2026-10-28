@@ -81,6 +81,17 @@ def record_cmd(out: Path, seconds: float | None) -> list | None:
     return None
 
 
+def stream_cmd() -> list | None:
+    """Mic as raw 16 kHz mono s16 PCM on stdout (the wake word, B33)."""
+    if _which("pw-record"):
+        return ["pw-record", "--rate", "16000", "--channels", "1",
+                "--format", "s16", "-"]
+    if _which("arecord"):
+        return ["arecord", "-D", "default", "-r", "16000", "-c", "1",
+                "-f", "S16_LE", "-t", "raw"]
+    return None
+
+
 def sampler_cmd(seconds: float | None) -> list | None:
     """Live mic level: unsigned-8 PCM (200 Hz mono) on stdout.
     seconds=None → unbounded (toggle mode; caller kills the proc).
