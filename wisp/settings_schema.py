@@ -175,6 +175,12 @@ FIELDS = (
        "Trajectory and recall writes held in memory before the oldest "
        "is dropped",
        min=1, max=100000),
+    _f("voice.captions", "bool", "true",
+       "Show the answer text in the bubble while it is spoken (off: the "
+       "voice is the answer; a muted speaker still shows it)"),
+    _f("quiet.on_calls", "bool", "true",
+       "Hold announcements nobody asked for (a finished background "
+       "agent) while a call or a screen share is on"),
     _f("stt.provider", "choice", "openai",
        "Speech to text: an OpenAI-compatible API or local whisper.cpp",
        choices=("openai", "local")),

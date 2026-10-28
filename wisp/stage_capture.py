@@ -63,21 +63,45 @@ def record_start(state=None) -> dict:
     out = config.CFG_DIR / "utterance.wav"
     config.RUN_DIR.mkdir(parents=True, exist_ok=True)
     out.unlink(missing_ok=True)
-    from . import platform
-    cmd = platform.record_cmd(out, None)
-    if cmd is None:
+    from . import platform, voice_polish
+    if platform.record_cmd(out, None) is None:
         raise RuntimeError(
             f"no recorder found — {platform.missing_deps_hint()}")
+    try:
+        device = voice_polish.mic_device(config.load_config())
+    except Exception:
+        device = ""
     stop_ev = threading.Event()
     sampler = threading.Thread(target=_amplitude_sampler,
                                args=(None, state, stop_ev), daemon=True)
     sampler.start()
-    proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL, env=_pl().hypr_env())
+    env = _pl().hypr_env()
+
+    def _spawn(argv):
+        return subprocess.Popen(argv, stdin=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL, env=env)
+
+    # [audio] device gone (unplugged, Bluetooth asleep): record from the
+    # system default instead and say so, never hang on a dead mic (B8b)
+    proc, failed_over = voice_polish.spawn_recorder(
+        lambda d: platform.record_cmd(out, None, d), _spawn, device=device,
+        before_retry=lambda: out.unlink(missing_ok=True))
+    if failed_over:
+        _note_mic_failover(state, device)
     from . import stt_stream
     stt_stream.begin(out, proc)   # streams finished chunks while held
     return {"proc": proc, "out": out, "sampler_stop": stop_ev,
             "sampler": sampler, "t0": time.monotonic()}
+
+
+def _note_mic_failover(state, device: str) -> None:
+    """One toast; the turn goes on with the default mic."""
+    from . import voice_polish
+    try:
+        _pl().notify(voice_polish.HINT_MIC, "info", key="mic-failover",
+                     hold=False)
+    except Exception:
+        pass
 
 
 def record_stop(rec: dict, state=None) -> pathlib.Path:
