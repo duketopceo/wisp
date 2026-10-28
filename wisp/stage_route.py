@@ -398,6 +398,10 @@ def fixed_route(text: str, router: str):
     speed = voice_settings.intent(text)
     if speed:
         return "setting", voice_settings.PREFIX + speed
+    from . import selfknow
+    own = selfknow.intent(text)
+    if own:
+        return "setting", selfknow.PREFIX + own     # local state, no model
     lesson = walkthrough_run.lesson_intent(text)
     if lesson:
         pre = walkthrough_run.SAVE_PREFIX if lesson[0] == "save" \

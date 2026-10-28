@@ -90,6 +90,9 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
         return voice_settings.apply(
             detail[len("voice-speed:"):], cfg,
             turn=str(getattr(state, "turn", "") or ""))
+    if route == "setting" and detail.startswith("self:"):
+        from . import selfknow
+        return selfknow.run(detail[len("self:"):], cfg)
     if route == "walkthrough":
         from . import walkthrough_run
         if detail.startswith(walkthrough_run.SAVE_PREFIX):
