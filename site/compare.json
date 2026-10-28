@@ -1,0 +1,9 @@
+{
+ "columns": ["", "Wisp", "Others", "Source for the others"],
+ "rows": [
+  ["Platform", "Omarchy / Hyprland only", "HeyClicky: macOS and Windows", "https://www.heyclicky.com/ (read 2026-10-28)"],
+  ["Source", "AGPL-3.0, tests and plans public", "HeyClicky: closed", "https://www.heyclicky.com/trust (read 2026-10-28)"],
+  ["Price", "Free; you pay your model provider, or run local models", "HeyClicky: free 25 messages, Pro $20, Max $100", "https://www.heyclicky.com/ (pricing, read 2026-10-28)"],
+  ["On Omarchy", "Installs as an Omarchy plugin and daemon", "Other voice plugins exist, for example omarchy-voice (MIT)", "https://github.com/wombatoperator/omarchy-voice (README, read 2026-10-28)"]
+ ]
+}
