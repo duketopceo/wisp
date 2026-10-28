@@ -111,6 +111,13 @@ def main(spec_path: str) -> int:
         desc = tools.REGISTRY["launch"][2]
         tools.REGISTRY["launch"] = (fake_launch, "safe", desc)
 
+        # `tab` stub: no browser or CDP port in replay
+        def fake_tab(arg):
+            return (spec.get("tab_results") or {}).get(
+                arg, f"SWITCHED tab {arg!r} (replay stub)")
+        tab_entry = tools.REGISTRY["tab"]
+        tools.REGISTRY["tab"] = (fake_tab,) + tuple(tab_entry[1:])
+
         # -- observe the StateBus (U2) ---------------------------------
         # Events come from a bus subscription: every write, once, in seq
         # order. Wrappers record whether anything wrote state.json

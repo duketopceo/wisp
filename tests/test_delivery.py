@@ -181,7 +181,7 @@ class TruthTable(_Iso):
                          "guide")
 
     def test_planned(self):
-        for t in ("type_text", "key", "fill", "scroll", "focus",
+        for t in ("type_text", "key", "fill", "scroll", "focus", "tab",
                   "workspace", "launch", "close"):
             self.assertEqual(delivery.planned(t, {}), "background", t)
         for t in ("click", "move"):

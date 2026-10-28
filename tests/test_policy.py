@@ -61,7 +61,7 @@ class Confirm:
         return self.answer is not False
 
 
-STATIC = {"screenshot", "ground", "focus", "launch", "notify",
+STATIC = {"screenshot", "ground", "focus", "tab", "launch", "notify",
           "recall", "codegraph", "search_files", "task_status",
           "skill_view", "post", "click", "move", "type_text", "key",
           "scroll", "fill", "workspace", "agent_spawn", "close",
@@ -93,7 +93,7 @@ class TierTable(unittest.TestCase):
                               tools.AUTONOMY_TIERS, name)
 
     def test_declared_table_matches_the_plan(self):
-        t0 = {"screenshot", "ground", "focus", "launch", "notify",
+        t0 = {"screenshot", "ground", "focus", "tab", "launch", "notify",
               "recall", "codegraph", "search_files", "task_status",
               "skill_view", "post"}
         t1 = {"click", "move", "type_text", "key", "scroll", "fill",

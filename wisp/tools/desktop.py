@@ -1,7 +1,10 @@
 """Desktop tools: app launch/focus/close and Hyprland workspace ops."""
+import json
 import re
 import shlex
 import shutil
+import urllib.parse
+import urllib.request
 
 from .. import config
 from .. import hypr
@@ -203,6 +206,107 @@ def focus(classname: str) -> str:
                 f"address:{hit['address']}"))]):
         return f"FOCUSED {classname} -> {hit.get('class', hit['address'])}"
     return f"SKIP (no window matching class {classname!r})"
+
+
+# Loopback Chrome DevTools ports to try, in order: 9108 is Chromium's own,
+# 9107 a shim answering the same /json routes, 9222 the conventional default.
+CDP_PORTS = (9108, 9107, 9222)
+CDP_TIMEOUT_S = 1.0
+_TAB_FILLER = frozenset({"my", "the", "a", "an", "tab", "tabs", "tablet",
+                         "open", "up", "switch", "to", "go", "page",
+                         "website", "site"})
+# spoken word -> the word a tab's title or host actually carries
+# ("my email" is a Gmail tab titled "Inbox ... gmail.com" on mail.*)
+_TAB_ALIAS = {"email": "mail", "emails": "mail", "inbox": "mail"}
+
+
+def _words(s: str) -> list[str]:
+    return [w for w in re.split(r"[^a-z0-9]+", (s or "").lower()) if w]
+
+
+def _query_words(query: str) -> list[str]:
+    return [_TAB_ALIAS.get(w, w) for w in _words(query)
+            if w not in _TAB_FILLER]
+
+
+def _cdp_get(port: int, path: str) -> bytes:
+    # 127.0.0.1 only — never a caller-supplied host
+    url = f"http://127.0.0.1:{int(port)}{path}"
+    with urllib.request.urlopen(url, timeout=CDP_TIMEOUT_S) as r:
+        return r.read()
+
+
+def _cdp_pages() -> tuple[int | None, list[dict]]:
+    """(port, page targets) from the first loopback port that answers."""
+    for port in CDP_PORTS:
+        try:
+            data = json.loads(_cdp_get(port, "/json/list"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, list):
+            return port, [t for t in data if isinstance(t, dict)
+                          and t.get("type") == "page" and t.get("id")]
+    return None, []
+
+
+def _tab_score(query: list[str], tab: dict) -> int:
+    host = urllib.parse.urlparse(tab.get("url") or "").hostname or ""
+    have = _words(tab.get("title", "")) + _words(host)
+    return sum(1 for q in query if any(h.startswith(q) for h in have))
+
+
+def _focus_browser(title: str) -> None:
+    """Raise the Chromium window (prefer the one titled with the tab)."""
+    import time
+    from .. import platform
+    if not platform.uses_hypr() or not hypr.available():
+        return
+    # Chromium retitles its window a beat after /json/activate — poll
+    # briefly so a second browser window is not raised by mistake
+    pick, wins = None, []
+    for _ in range(4):
+        try:
+            clients = hypr.query("clients")
+        except Exception:
+            return
+        wins = [c for c in clients if isinstance(c, dict)
+                and c.get("class") == "chromium-browser"
+                and c.get("address")]
+        pick = next((c for c in wins
+                     if title and title in (c.get("title") or "")), None)
+        if pick or len(wins) < 2:
+            break
+        time.sleep(0.1)
+    pick = pick or (wins[0] if wins else None)
+    if pick:
+        platform._try([hypr.LuaCmd(hypr.focus_window(
+            f"address:{pick['address']}"))])
+
+
+def tab(query: str) -> str:
+    """Switch to an already-open browser tab by title or site."""
+    words = _query_words(query)
+    port, pages = _cdp_pages()
+    if port is None:
+        return ("SKIP (no browser debug port on 127.0.0.1; "
+                "open the tab by clicking it)")
+    best, top = None, 0
+    for t in pages:                       # MRU first; strict > keeps ties
+        sc = _tab_score(words, t)
+        if sc > top:
+            best, top = t, sc
+    if best is None:
+        names = "; ".join(t.get("title", "") for t in pages[:5])
+        return (f"SKIP (no open tab matches {query!r})"
+                + (f" open tabs: {names}" if names else ""))
+    try:
+        _cdp_get(port, "/json/activate/" + str(best["id"]))
+    except OSError as e:
+        return f"SKIP (could not activate tab: {e})"
+    title = best.get("title", "")
+    _focus_browser(title)
+    host = urllib.parse.urlparse(best.get("url") or "").hostname or ""
+    return f"SWITCHED tab {title!r} -> {host}"
 
 
 def close(classname: str) -> str:

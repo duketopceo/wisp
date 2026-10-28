@@ -40,7 +40,7 @@ MAX_IMAGES = 3  # cap retained screenshots in the message window
 # tools whose success may change what's on screen → re-observe before
 # the next pointer step
 _SCREEN_CHANGING = {"click", "move", "type_text", "key", "launch",
-                    "focus", "close", "workspace", "shell", "fill",
+                    "focus", "tab", "close", "workspace", "shell", "fill",
                     "post_send"}
 
 SYSTEM = ("You are Wisp's hands on a Linux desktop (Hyprland). Complete "
@@ -53,9 +53,12 @@ SYSTEM = ("You are Wisp's hands on a Linux desktop (Hyprland). Complete "
           "app to inspect (control-channel when the app ships one, "
           "else a window-crop capture — inspect only, its pixels are "
           "not the click coordinate space). "
+          "To switch to a browser tab that is already open, call tab "
+          "'<name or site>' — do not click the tab strip or call launch; "
+          "launch opens apps, it never switches tabs. "
           "Never click twice off the same screenshot "
           "— after anything that changes the screen (click, key, type, "
-          "launch, focus, workspace, shell), re-screenshot before the "
+          "launch, focus, tab, workspace, shell), re-screenshot before the "
           "next pointer action. A GUIDE result means the ghost cursor "
           "is parked there for the user to click — treat it as done, "
           "not an error, and continue or finish. CLICKED echoes the id "
