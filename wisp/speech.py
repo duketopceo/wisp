@@ -18,6 +18,7 @@ import subprocess
 import threading
 
 _LOCK = threading.Lock()
+_NOTED: set = set()      # languages whose "no voice" note was spoken
 _PROC: subprocess.Popen | None = None
 
 
@@ -49,9 +50,19 @@ def sentence_ms(text: str, cfg: dict | None = None) -> int:
     return int(round(words / wpm * 60000))
 
 
-def _argv(msg: str, cfg: dict) -> list[str] | None:
+def voice_for(cfg: dict, lang: str) -> tuple:
+    """(voice, fallback) for a spoken language; English is ("", False)."""
+    from . import lang as _lang
+    from . import platform
+    return _lang.voice(cfg, lang, platform.tts_binary())
+
+
+def _argv(msg: str, cfg: dict, lang: str = "") -> list[str] | None:
     cmd = cfg.get("voice", {}).get("cmd", "")
     rate = speed(cfg)
+    voice = ""
+    if lang:
+        voice, _fallback = voice_for(cfg, lang)
     if cmd:
         try:
             parts = shlex.split(cmd)
@@ -61,13 +72,18 @@ def _argv(msg: str, cfg: dict) -> list[str] | None:
             return None
         # `{rate}` receives the speed multiplier (1.0 = normal)
         parts = [p.replace("{rate}", f"{rate:g}") for p in parts]
+        if lang:
+            # `{lang}` is the language code, `{voice}` the chosen voice
+            parts = [p.replace("{lang}", lang).replace(
+                "{voice}", voice or lang) for p in parts]
         if "{text}" in parts:
             parts = [msg if p == "{text}" else p for p in parts]
         else:
             parts.append(msg)
         return parts
     from . import platform
-    return platform.tts_argv(msg, rate)
+    return platform.tts_argv(msg, rate, voice) if voice \
+        else platform.tts_argv(msg, rate)
 
 
 def speak(msg: str, cfg: dict) -> subprocess.Popen | None:
@@ -167,11 +183,13 @@ class SentenceSpeaker:
         self.enabled = cfg.get("voice", {}).get("enabled", "false") == "true"
         self._early_clause = cfg.get("voice", {}).get(
             "early_clause", "true") != "false"
+        self.lang = ""              # spoken language of the answer (B23)
         self.started = False
         self.sentence_ms = 0        # est. spoken time of the sentence playing
         self.spoken: list = []
         self._consumed = 0          # chars of the cleaned text queued
         self._head = ""             # the text those chars were taken from
+        self._noted = False         # the one-time "no voice" note
         self._q: queue.Queue = queue.Queue()
         self._stopped = threading.Event()
         self._worker = None
@@ -286,7 +304,11 @@ class SentenceSpeaker:
             self.sentence_ms = sentence_ms(val.sentence, self._cfg)
             self._fire(points)
             val = val.sentence
-            argv = _argv(val, self._cfg)
+            say = val
+            if self.lang and not self._noted:
+                self._noted = True
+                say = self._fallback_note() + val
+            argv = _argv(say, self._cfg, self.lang)
             if argv is None:
                 continue
             try:
@@ -313,6 +335,16 @@ class SentenceSpeaker:
             with self._lock:
                 self._proc = None
         self._release()
+
+    def _fallback_note(self) -> str:
+        """"I don't have a Spanish voice" once per language, when the
+        default voice has to read it; "" otherwise."""
+        from . import lang as _lang
+        _voice, fallback = voice_for(self._cfg, self.lang)
+        if not fallback or self.lang in _NOTED:
+            return ""
+        _NOTED.add(self.lang)
+        return _lang.fallback_note(self.lang) + " "
 
     def _release(self) -> None:
         with _LOCK:

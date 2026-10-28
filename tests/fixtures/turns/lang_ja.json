@@ -1,0 +1,56 @@
+{
+  "description": "Japanese heard by auto detection (B23).",
+  "audio": "ask.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "今何時ですか",
+      "language": "japanese"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "content": "三時半です。",
+          "chunk_delay_ms": 0
+        }
+      ]
+    }
+  },
+  "expect": {
+    "statuses": [
+      "listening",
+      "transcribing",
+      "deciding",
+      "acting",
+      "speaking",
+      "done"
+    ],
+    "transcript": "今何時ですか",
+    "answer": "三時半です。",
+    "brain_calls": 1
+  },
+  "name": "lang_ja",
+  "scenario": "multilingual",
+  "config": {
+    "voice": {
+      "enabled": "true",
+      "cmd": "/bin/sh -c \"/bin/true\" {voice} {text}"
+    },
+    "stt": {
+      "language": "auto"
+    }
+  }
+}

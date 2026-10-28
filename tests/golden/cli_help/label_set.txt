@@ -1,4 +1,5 @@
-usage: wispd label set [-h] [--json] [--quiet] [--no-color] label [note ...]
+usage: wispd label set [-h] [--lang CODE] [--json] [--quiet] [--no-color]
+                       label [note ...]
 
 Label the last turn correct or incorrect
 
@@ -8,6 +9,8 @@ positional arguments:
 
 options:
   -h, --help   show this help message and exit
+  --lang CODE  language the turn was spoken in (es, de, pt-BR, ...); eval then
+               reports it per language
 
 global options:
   --json       machine-readable output (one JSON object)
@@ -17,3 +20,4 @@ global options:
 Examples:
   wispd label set correct
   wispd label set incorrect it opened the wrong app
+  wispd label set correct --lang es

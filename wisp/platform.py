@@ -143,15 +143,17 @@ def tts_binary() -> str | None:
 ESPEAK_WPM = 175   # espeak's own default speaking rate
 
 
-def tts_argv(msg: str, speed: float = 1.0) -> list | None:
+def tts_argv(msg: str, speed: float = 1.0, voice: str = "") -> list | None:
     """Builtin TTS argv for `msg` — used when voice.cmd is empty.
-    `speed` is a multiplier on espeak's default rate; 1.0 adds no flag."""
+    `speed` is a multiplier on espeak's default rate; 1.0 adds no flag.
+    `voice` (an espeak voice such as `es` or `pt-br`) adds `-v`."""
     b = tts_binary()
     if not b:
         return None
+    pre = [b, "-v", voice] if voice else [b]
     if abs(speed - 1.0) < 1e-9:
-        return [b, msg]
-    return [b, "-s", str(round(ESPEAK_WPM * speed)), msg]
+        return pre + [msg]
+    return pre + ["-s", str(round(ESPEAK_WPM * speed)), msg]
 
 
 def notify_cmd(title: str, body: str) -> list | None:
