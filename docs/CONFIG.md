@@ -402,7 +402,7 @@ Off by default. Local sources only (Hyprland window changes, the dayflow journal
 | `[traj] enabled` | `true` | record act-loop runs and inject similar past runs as context |
 | `[traj] max_inject` | `3` | most prior runs injected |
 | `[dev] refine` | `true` | a labelled-bad turn or a correction ("no", "instead") retries with the failed attempt as context |
-| `[eval] gate_rate` | unset | first-time-correct fraction (0 to 1) `wispd eval` must reach for PASS, for example `0.6`; unset prints "gate not set" and no PASS or FAIL |
+| `[eval] gate_rate` | `60%` | first-time-correct fraction (0 to 1, or a percentage) `wispd eval` must reach for PASS; the v1 bar is 60%; unset prints "gate not set" and no PASS or FAIL |
 | `[eval] gate_min_turns` | `50` | labelled turns required before the gate can pass; fewer is FAIL with "needs N more labelled turns" |
 | `[ui] theme` | `dark` | `dark` or `light`; `wispd theme <name>` swaps live |
 | `[apps]` | per OS | name to launch command map Jev resolves "open the terminal" against (`browser`, `terminal`, `files`, `vscode`, `music`, `settings`, `browser_new_tab`) |

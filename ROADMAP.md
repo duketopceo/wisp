@@ -38,15 +38,14 @@ Each is one PR, planned when it starts.
 
 ## v1.0 gate
 
-- [ ] `wispd eval` passes `[eval] gate_rate` over at least 50 labelled turns.
+- [ ] `wispd eval` passes `[eval] gate_rate` (`60%`, decided by the owner 2026-10-27) over at least 50 labelled turns.
 - [ ] `wispd onboard` and `wispd doctor` pass on a clean Omarchy box with hosted keys only.
 - [ ] Tag `v1.0.0`.
 
-Tally (`wispd eval`, 2026-10-26): 19 labelled turns, 6 right first time (32%) — act 3/11 (7 retried), answer 0/2, launch 1/2, other 2/4. Gate not set.
+Tally (`wispd eval`, 2026-10-26): 19 labelled turns, 6 right first time (32%) — act 3/11 (7 retried), answer 0/2, launch 1/2, other 2/4. Gate set to 60% (needs 31 more labelled turns and a higher rate).
 
 ## Open decisions
 
-- **Pass rate.** Recommended: `gate_rate = "60%"` now, raised after Phase 9.
 - **Clacky extras.** Recommended: keep streaming speech-to-text and barge-in; drop journaled organize, skills export and deferred auth for v1.
 
 ## Not doing
