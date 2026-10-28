@@ -401,6 +401,7 @@ def context_stage(ctx) -> None:
                              "context": adapters.context()}
     with sp.timed("hyprctl"):
         win = pl.active_window()
+    ctx.app = win.get("class", "") or ""
     state.transition("deciding", transcript=text,
                      focus={"app": win.get("class", ""),
                             "title": win.get("title", "")[:120]})
@@ -437,7 +438,7 @@ def context_stage(ctx) -> None:
                 {"joined": joined, "goal": goal["text"][:160]})
     from . import session
     n_turns = int(cfg.get("agent", {}).get("session_turns", "8"))
-    ctx.session_text = session.as_text(session.tail(n_turns))
+    ctx.session_text = session.as_text(session.tail(n_turns, app=ctx.app))
     if ctx.session_text:
         context += f"\nRecent conversation:\n{ctx.session_text}"
     from . import memory

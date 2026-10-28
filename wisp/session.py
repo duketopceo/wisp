@@ -2,6 +2,10 @@
 
 Each completed turn appends one record. tail() reads the last N turns so
 follow-ups ("repeat that", "yes do it") resolve against prior context.
+Each record carries the focused app's window class, and tail(app=...)
+returns only that app's turns, so a chat in the terminal does not leak
+into a chat in the browser. Records from before the app field existed
+have no app and only appear in an unscoped tail().
 Single writer (the daemon); readers tolerate a torn final line."""
 import json
 from datetime import datetime, timezone
@@ -10,10 +14,11 @@ from . import config
 
 
 def append_turn(transcript: str, route: str = "", reply: str = "",
-                result: str = "", path=config.SESSION_FILE) -> None:
+                result: str = "", path=config.SESSION_FILE,
+                app: str = "") -> None:
     rec = {"ts": datetime.now(timezone.utc).isoformat(),
            "transcript": transcript, "route": route,
-           "reply": reply, "result": result}
+           "reply": reply, "result": result, "app": _norm_app(app)}
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a") as f:
@@ -22,20 +27,37 @@ def append_turn(transcript: str, route: str = "", reply: str = "",
         pass
 
 
-def tail(n: int = 8, path=config.SESSION_FILE) -> list[dict]:
+def _norm_app(app) -> str:
+    return str(app or "").strip().lower()
+
+
+def tail(n: int = 8, path=config.SESSION_FILE,
+         app: str | None = None) -> list[dict]:
+    """The last `n` turns. With `app` (a window class) only that app's
+    turns; an empty `app` matches turns logged with no app. None is the
+    unscoped tail."""
+    scoped = app is not None
+    want = _norm_app(app)
+    # a scoped tail reads further back: other apps' turns are skipped
+    window = 262144 if scoped else 65536
     try:
         with path.open("rb") as f:
             f.seek(0, 2)
-            f.seek(max(0, f.tell() - 65536))  # tail only the last 64KB
+            f.seek(max(0, f.tell() - window))
             lines = f.read().decode("utf-8", "replace").splitlines()
     except OSError:
         return []
     out = []
-    for line in lines[-max(n * 2, 16):]:
+    for line in (lines if scoped else lines[-max(n * 2, 16):]):
         try:
-            out.append(json.loads(line))
+            rec = json.loads(line)
         except json.JSONDecodeError:
             continue  # tolerate a torn write
+        if not isinstance(rec, dict):
+            continue
+        if scoped and _norm_app(rec.get("app")) != want:
+            continue
+        out.append(rec)
     return out[-n:]
 
 

@@ -29,6 +29,7 @@ class TurnCtx:
         self.detail = ""
         self.shot_b64 = None
         self.session_text = ""
+        self.app = ""                       # focused window class
         self.corr = None
         # route
         self.answers = {}
