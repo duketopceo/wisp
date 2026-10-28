@@ -66,7 +66,7 @@ STATIC = {"screenshot", "ground", "focus", "tab", "launch", "notify",
           "skill_view", "post", "click", "move", "type_text", "key",
           "scroll", "fill", "workspace", "agent_spawn", "close",
           "task_cancel", "memory", "skill_manage", "mcp_call",
-          "post_send", "shell"}
+          "post_send", "shell", "browser"}
 
 
 class TierTable(unittest.TestCase):
@@ -99,7 +99,7 @@ class TierTable(unittest.TestCase):
         t1 = {"click", "move", "type_text", "key", "scroll", "fill",
               "workspace", "agent_spawn"}
         t2 = {"close", "task_cancel", "memory", "skill_manage",
-              "mcp_call", "post_send", "shell"}
+              "mcp_call", "post_send", "shell", "browser"}
         self.assertEqual(STATIC, t0 | t1 | t2)
         for name in t0:
             self.assertEqual(tools.meta_of(name)["tier"], "T0", name)

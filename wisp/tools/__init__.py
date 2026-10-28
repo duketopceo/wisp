@@ -31,7 +31,7 @@ declare their worst case; the policy refines per call (a `memory add`
 is T1, an mcp read is T0, an OAuth/credential call is T3). The lint in
 tests/test_policy.py fails when an entry lacks it.
 """
-from . import desktop, mcpclient, social, system
+from . import browser, desktop, mcpclient, social, system
 
 RISK = {"safe": 0, "interactive": 1, "mutating": 2, "shell": 3}
 
@@ -118,6 +118,19 @@ REGISTRY = {
                  "'<category>/<action>'. Server names/URLs are in "
                  "inventory.json and the [env] context line",
                  {"tier": "T2", "reversible": False, "external": True}),
+    "browser": (browser.run, "mutating",
+                "work in the user's own browser, in a tab group beside "
+                "theirs (needs [browser] lane = \"extension\" and a paired "
+                "extension) — a JSON batch of up to 20 steps "
+                "{\"steps\":[{\"do\":\"open\",\"url\":\"https://…\"},"
+                "{\"do\":\"snapshot\"},{\"do\":\"click\",\"ref\":\"3:7\"},"
+                "{\"do\":\"fill\",\"ref\":\"3:2\",\"value\":\"…\"},"
+                "{\"do\":\"wait_for\",\"text\":\"…\"},{\"do\":\"screenshot\"},"
+                "{\"do\":\"keep\"},{\"do\":\"done\"}]} or one line like "
+                "'snapshot'. Refs come from the latest snapshot only. "
+                "Password, one-time code and card fields are never "
+                "filled — hand those to the user",
+                {"tier": "T2", "reversible": False, "external": True}),
     "post": (social.post_draft, "safe",
              "preview an X post — 'post <text>'; always dry-run",
              {"tier": "T0", "reversible": True, "external": False}),
@@ -197,6 +210,15 @@ def meta_of(name: str) -> dict:
     return {}
 
 
+# tools offered only while their feature is on: name -> cfg predicate
+CONDITIONAL = {"browser": browser.enabled}
+
+
+def _offered(name: str, cfg) -> bool:
+    gate = CONDITIONAL.get(name)
+    return gate is None or bool(gate(cfg))
+
+
 def describe() -> dict:
     """Criteria text for Jev's tool question — routable tools only;
     LOOP_ONLY entries are advertised in tool_schemas but can't be
@@ -205,13 +227,16 @@ def describe() -> dict:
             if name not in LOOP_ONLY}
 
 
-def tool_schemas() -> list:
+def tool_schemas(cfg: dict | None = None) -> list:
     """OpenAI-style tool definitions derived from the registry — one
     string arg per tool. Derived, not static, so new tools appear in the
-    act loop automatically."""
+    act loop automatically. A CONDITIONAL tool (the browser lane) is left
+    out unless `cfg` turns it on."""
     out = []
     for name, e in REGISTRY.items():
         fn, tier, desc = e[0], e[1], e[2]
+        if not _offered(name, cfg):
+            continue
         if fn is None and name not in EXTERN:
             continue
         out.append({
@@ -299,7 +324,7 @@ def _run_inner(name: str, arg: str, cfg: dict,
               system.scroll, system.key, system.type_text,
               system.fill):
         return fn(arg, cfg)
-    if fn is mcpclient.call:
+    if fn is mcpclient.call or fn is browser.run:
         return fn(arg, cfg)
     return fn(arg)
 

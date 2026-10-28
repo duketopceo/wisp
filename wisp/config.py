@@ -66,6 +66,14 @@ whisper_model = "ggml-small.en.bin"
 # small.en is English only; for other languages use a multilingual model
 # such as ggml-small.bin (or the hosted speech service).
 
+[browser]
+# watchable browser lane (B14): "off" or "extension". The extension in
+# browser-extension/ pairs with a one-time code and works in a tab group
+# beside yours; see docs/BROWSER_LANE.md
+lane = "off"
+# loopback port the extension polls
+port = 47315
+
 [agent]
 model = "typesafe/jev-1.13"
 # OpenRouter chat model for the answer route — must accept image_url
