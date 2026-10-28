@@ -175,6 +175,19 @@ FIELDS = (
        "Trajectory and recall writes held in memory before the oldest "
        "is dropped",
        min=1, max=100000),
+    _f("voice.captions", "bool", "true",
+       "Show the answer text in the bubble while it is spoken (off: the "
+       "voice is the answer; a muted speaker still shows it)"),
+    _f("quiet.on_calls", "bool", "true",
+       "Hold announcements nobody asked for (a finished background "
+       "agent) while a call or a screen share is on"),
+    _f("browser.lane", "choice", "off",
+       "Browser lane: off, or extension (work in a tab group in your own "
+       "browser through the paired Wisp extension)",
+       choices=("off", "extension")),
+    _f("browser.port", "int", "47315",
+       "Loopback port the Wisp browser extension polls", min=1024,
+       max=65535),
     _f("stt.provider", "choice", "openai",
        "Speech to text: an OpenAI-compatible API or local whisper.cpp",
        choices=("openai", "local")),

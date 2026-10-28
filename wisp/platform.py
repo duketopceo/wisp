@@ -61,19 +61,26 @@ def dirs() -> tuple[Path, Path, Path]:
 
 # ── commands (argv) ─────────────────────────────────────────────────
 
-def record_cmd(out: Path, seconds: float | None) -> list | None:
+def record_cmd(out: Path, seconds: float | None,
+               device: str = "") -> list | None:
     """Mic capture → WAV at `out`. seconds=None → open-ended toggle
     capture (caller stops with SIGINT); with a value it self-terminates
     after that many seconds. None →
-    caller reports 'no recorder found'."""
+    caller reports 'no recorder found'. `device` names a mic ([audio]
+    device, B8b); "" records from the system default."""
     if _which("pw-record"):
         cmd = ["pw-record", "--rate", "16000", "--channels", "1",
                "--format", "s16"]
+        if device:
+            # a missing mic must fail, not quietly record the default one:
+            # the failover in voice_polish.spawn_recorder owns that step
+            cmd += ["--target", device,
+                    "-P", "{ node.dont-fallback=true }"]
         if seconds:
             cmd += ["--sample-count", str(int(16000 * seconds))]
         return cmd + [str(out)]
     if _which("arecord"):
-        cmd = ["arecord", "-D", "default", "-r", "16000",
+        cmd = ["arecord", "-D", device or "default", "-r", "16000",
                "-c", "1", "-f", "S16_LE"]
         if seconds:
             cmd += ["-d", str(seconds)]

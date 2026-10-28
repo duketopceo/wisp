@@ -33,6 +33,8 @@ How this file is kept:
 - `docs/TRUST.md` lists every outside host Wisp can contact, what it gets, who holds the key and what you control, and a test keeps it true.
 - Voice speed goes from 0.5 to 1.5 times, and you can say "talk slower" or "talk faster".
 - Linux only: the macOS and Windows code paths are removed.
+- Voice polish: a captions toggle (say "turn off captions"), a fallback to your default mic when the one you picked is gone, the answer on your clipboard when the speaker is muted, and no announcements while you are on a call or sharing your screen.
+- Browser lane (off by default): a small extension lets Wisp work in a tab group in your own browser. You pair it with a code, watch it work and press Stop to end it; it never fills password, one-time-code or card fields.
 
 ## v0.9.0 - 2026-09-30
 

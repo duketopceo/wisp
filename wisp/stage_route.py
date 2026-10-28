@@ -398,6 +398,9 @@ def fixed_route(text: str, router: str):
     speed = voice_settings.intent(text)
     if speed:
         return "setting", voice_settings.PREFIX + speed
+    caps = voice_settings.captions_intent(text)
+    if caps:
+        return "setting", voice_settings.CAPTIONS_PREFIX + caps
     from . import selfknow
     own = selfknow.intent(text)
     if own:

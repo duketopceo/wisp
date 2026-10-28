@@ -66,6 +66,14 @@ whisper_model = "ggml-small.en.bin"
 # small.en is English only; for other languages use a multilingual model
 # such as ggml-small.bin (or the hosted speech service).
 
+[browser]
+# watchable browser lane (B14): "off" or "extension". The extension in
+# browser-extension/ pairs with a one-time code and works in a tab group
+# beside yours; see docs/BROWSER_LANE.md
+lane = "off"
+# loopback port the extension polls
+port = 47315
+
 [agent]
 model = "typesafe/jev-1.13"
 # OpenRouter chat model for the answer route — must accept image_url
@@ -499,6 +507,13 @@ cmd = ""
 # named for the language when it has one, else the default voice (said
 # once). A custom cmd can use {lang} or {voice}.
 lang_voices = ""
+# show the answer text in the bubble while it is spoken; false = the voice
+# is the answer (a muted speaker still shows it)
+captions = true
+
+[quiet]
+# hold announcements nobody asked for while a call or screen share is on
+on_calls = true
 
 [notify]
 # desktop toasts (D-Bus org.freedesktop.Notifications; notify-send fallback)

@@ -109,9 +109,23 @@ def _monitor(secs: float):
         p.wait()
 
 
+HELD_MAX = 20        # announcements kept while a call is on
+HELD_POLL_S = 20.0   # how often a held announcement re-checks the call
+
+_HOLD_CACHE = None
+
+
+def _default_hold(cfg) -> str:
+    global _HOLD_CACHE
+    from . import voice_polish
+    if _HOLD_CACHE is None:
+        _HOLD_CACHE = voice_polish.HoldCache()
+    return _HOLD_CACHE.get(cfg)
+
+
 class Notifier:
     def __init__(self, runner=None, clock=None, now=None, cfg=None,
-                 sync=False, monitor=None):
+                 sync=False, monitor=None, hold=None):
         self._run = runner or _run
         self._clock = clock or time.monotonic
         self._now = now or datetime.now
@@ -124,6 +138,12 @@ class Notifier:
         self._seen = {}
         self._q = queue.Queue()
         self._worker = None
+        # announcements wait while a call or screen share is on (B8b);
+        # `hold(cfg)` -> reason or "". Tests inject it; the default
+        # reads the open windows through a short cache.
+        self._hold = hold or _default_hold
+        self._held: list = []
+        self._held_timer = None
 
     # -- config ------------------------------------------------------
     def _opt(self, key, default=""):
@@ -153,7 +173,7 @@ class Notifier:
 
     # -- public ------------------------------------------------------
     def send(self, msg, level="info", *, turn=None, code=None, key=None,
-             actions=None, spoken=False, stale=False) -> str:
+             actions=None, spoken=False, stale=False, hold=True) -> str:
         """Decide synchronously, deliver asynchronously. Returns the
         decision: sent | disabled | cancelled | stale | quiet | spoken |
         deduped."""
@@ -175,6 +195,10 @@ class Notifier:
             return "spoken"
         if in_quiet(self._opt("quiet"), self._now()):
             return "quiet"
+        if hold and turn is None and level in ("info", "success") \
+                and self._hold_or_queue(msg, level, key, actions):
+            return "held"
+        self.flush_held()
         window = float(self._opt("dedupe_secs", "60") or 60)
         dk = key or f"{level}:{msg}"
         with self._lock:
@@ -194,6 +218,59 @@ class Notifier:
                     target=self._loop, daemon=True)
                 self._worker.start()
         return "sent"
+
+    # -- quiet on calls (B8b) ----------------------------------------
+    def _hold_reason(self) -> str:
+        try:
+            return self._hold(self.cfg) or ""
+        except Exception:
+            return ""
+
+    def _hold_or_queue(self, msg, level, key, actions) -> bool:
+        """Park an announcement nobody asked for just now while a call or
+        screen share is on; it is delivered when that ends."""
+        if not self._hold_reason():
+            return False
+        dk = key or f"{level}:{msg}"
+        with self._lock:
+            # the same announcement held twice goes out once (the dedupe
+            # key the normal path uses), and repeats never fill the cap
+            self._held = [h for h in self._held
+                          if (h[2] or f"{h[1]}:{h[0]}") != dk]
+            self._held.append((msg, level, key, list(actions or [])))
+            del self._held[:-HELD_MAX]
+        self._arm_held_timer()
+        return True
+
+    def _arm_held_timer(self) -> None:
+        if self.sync:
+            return
+        with self._lock:
+            if self._held_timer is not None:
+                return
+            t = threading.Timer(HELD_POLL_S, self._held_tick)
+            t.daemon = True
+            self._held_timer = t
+        t.start()
+
+    def _held_tick(self) -> None:
+        with self._lock:
+            self._held_timer = None
+        if self._held:
+            self.flush_held()
+            if self._held:
+                self._arm_held_timer()
+
+    def flush_held(self) -> int:
+        """Deliver what was held once no call or share is on. Returns how
+        many were sent."""
+        if not self._held or self._hold_reason():
+            return 0
+        with self._lock:
+            held, self._held = self._held, []
+        for msg, level, key, actions in held:
+            self.send(msg, level, key=key, actions=actions)
+        return len(held)
 
     def join(self, timeout=2.0):
         end = time.monotonic() + timeout

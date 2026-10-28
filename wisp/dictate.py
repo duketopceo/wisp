@@ -553,14 +553,20 @@ def retry(rec: dict, cfg: dict, guard=None) -> str:
     return f"INSERTED: {out.replace(chr(10), ' ')[:140]}"
 
 
-def copy_to_clipboard(text: str) -> bool:
-    """Put a kept dictation on the clipboard (only when the user asks)."""
+def copy_to_clipboard(text: str, timeout: float = 5, runner=None) -> bool:
+    """Put text on the clipboard with wl-copy (a kept dictation when the
+    user asks; a muted speaker's answer). `runner(argv, timeout=, data=)`
+    returns (returncode, stdout) and stands in for the subprocess in
+    tests."""
     import shutil
+    if runner is not None:
+        rc, _ = runner(["wl-copy"], timeout=timeout, data=text.encode())
+        return rc == 0
     if not shutil.which("wl-copy"):
         return False
     try:
         r = subprocess.run(["wl-copy"], input=text.encode(),
-                           capture_output=True, timeout=5)
+                           capture_output=True, timeout=timeout)
     except (OSError, subprocess.SubprocessError):
         return False
     return r.returncode == 0
