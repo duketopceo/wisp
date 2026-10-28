@@ -202,6 +202,12 @@ Say "demonstrate <task>" (or "demo me <task>") and Wisp narrates and points
 at every step in one go without waiting for you. When the focused app has a
 skill (`app_classes` in its frontmatter), its notes go into the plan.
 
+Wisp first asks whether you have already started or are starting fresh, and
+plans around the answer. If a walkthrough stops (you press the key, or you
+don't answer "done, or stuck?"), it is kept for six hours: do the step
+yourself, then say "continue" (or "next step", "I did that") and Wisp picks
+up with the same goal and the steps already done, without repeating them.
+
 ## Privacy
 
 - Audio is transcribed locally by default (`[stt] provider = "local"`).

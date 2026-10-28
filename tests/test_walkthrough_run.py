@@ -2,6 +2,7 @@
 import json
 import pathlib
 import sys
+import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -9,6 +10,20 @@ from unittest import mock
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from wisp import (stage_execute, stage_route, stage_speak,  # noqa: E402
                   walkthrough as wt, walkthrough_run as wr)
+
+
+_TMP = None
+
+
+def setUpModule():
+    """Never touch the real paused-walkthrough file."""
+    global _TMP
+    _TMP = tempfile.TemporaryDirectory()
+    wr.PAUSED_FILE = pathlib.Path(_TMP.name) / "walkthrough.json"
+
+
+def tearDownModule():
+    _TMP.cleanup()
 
 
 class Intent(unittest.TestCase):
@@ -371,6 +386,138 @@ class SkillPriming(unittest.TestCase):
         self.assertEqual(
             wr.app_skill({"class": "no-such-app"}, skills.match_app_skill),
             "")
+
+
+class PauseAndResume(unittest.TestCase):
+    def setUp(self):
+        wr.clear_paused()
+        self.addCleanup(wr.clear_paused)
+
+    def stop_after_first_step(self, texts=("one", "two", "three")):
+        sc = Script([W("a")])           # nothing changes: user is stuck
+        wr.run("make a repo", {}, sc.state, steps=steps(*texts),
+               env=sc.env(), ask=lambda *a: None)    # no answer: stops
+        return sc
+
+    def test_a_stopped_lesson_is_kept_with_goal_and_steps(self):
+        self.stop_after_first_step()
+        data = wr.paused()
+        self.assertEqual(data["goal"], "make a repo")
+        self.assertEqual([d["text"] for d in data["steps"]],
+                         ["one", "two", "three"])
+        self.assertEqual(data["current"], "one")
+
+    def test_an_interrupt_keeps_the_lesson_too(self):
+        sc = Script([W("a")])
+        out = wr.run("g", {}, sc.state, steps=steps("one", "two"),
+                     env=sc.env(interrupted=lambda: True))
+        self.assertIn("stopped", out)
+        self.assertEqual(wr.paused()["goal"], "g")
+
+    def test_continue_resumes_after_the_manual_step_without_repeats(self):
+        self.stop_after_first_step()
+        sc = Script([W("a"), W("b"), W("b"), W("c"), W("c"), W("d")])
+        out = wr.run("", {}, sc.state, env=sc.env(), resume=wr.paused())
+        self.assertEqual(sc.said[0], "Picking up where we left off: "
+                                     "make a repo.")
+        self.assertEqual(sc.said[1:], ["two", "three"])   # "one" not again
+        self.assertIn("(3 steps)", out)                    # one + two + three
+        self.assertIsNone(wr.paused())                     # finished: cleared
+
+    def test_a_finished_lesson_leaves_nothing_to_resume(self):
+        sc = Script([W("a"), W("b")])
+        wr.run("g", {}, sc.state, steps=steps("one"), env=sc.env())
+        self.assertIsNone(wr.paused())
+
+    def test_done_steps_survive_a_second_pause(self):
+        sc = Script([W("a"), W("b"), W("b"), W("b")])
+        # step one completes (window changes), then the user goes quiet
+        wr.run("g", {}, sc.state, steps=steps("one", "two", "three"),
+               env=sc.env(), ask=lambda *a: None)
+        data = wr.paused()
+        self.assertEqual([d["done"] for d in data["steps"]],
+                         [True, False, False])
+        self.assertEqual(data["current"], "two")
+
+    def test_stale_or_broken_files_are_ignored(self):
+        self.stop_after_first_step()
+        self.assertIsNone(wr.paused(now=wr.paused()["ts"]
+                                    + wr.PAUSED_TTL_S + 1))
+        wr.PAUSED_FILE.write_text("{nope")
+        self.assertIsNone(wr.paused())
+        wr.PAUSED_FILE.write_text(json.dumps({"goal": "", "steps": []}))
+        self.assertIsNone(wr.paused())
+
+    def test_a_demonstration_is_never_kept(self):
+        sc = Script([W("a")])
+        wr.run("g", {}, sc.state, steps=steps("one"), env=sc.env(),
+               demonstrate=True, interrupted=lambda: True)
+        self.assertIsNone(wr.paused())
+
+    def test_continue_only_routes_while_something_is_paused(self):
+        self.assertEqual(stage_route.fixed_route("continue", "chat"),
+                         ("answer", None))
+        self.stop_after_first_step()
+        for said in ("continue", "okay next step", "I did that", "done",
+                     "keep going"):
+            self.assertEqual(stage_route.fixed_route(said, "act"),
+                             ("walkthrough", wr.RESUME_PREFIX), said)
+        self.assertEqual(stage_route.fixed_route("open firefox", "act"),
+                         ("act", None))
+
+    def test_execute_resumes_from_the_saved_dump(self):
+        self.stop_after_first_step()
+        with mock.patch.object(wr, "run",
+                               return_value="WALKED (1 steps): x") as run:
+            stage_execute.execute({"route": {"choice": "walkthrough"}}, {},
+                                  detail=wr.RESUME_PREFIX, initial_image=None,
+                                  interrupted=lambda: False)
+        self.assertEqual(run.call_args.kwargs["resume"]["goal"],
+                         "make a repo")
+
+    def test_execute_with_nothing_paused_says_so(self):
+        out = stage_execute.execute({"route": {"choice": "walkthrough"}}, {},
+                                    detail=wr.RESUME_PREFIX,
+                                    initial_image=None,
+                                    interrupted=lambda: False)
+        self.assertIn("no walkthrough to continue", out)
+
+
+class AskWhatYouHave(unittest.TestCase):
+    def prompt(self, answer, **kw):
+        seen, asked = {}, []
+
+        def chat(messages, cfg, timeout=0):
+            seen["p"] = messages[0]["content"]
+            return {"content": '{"steps":[{"say":"go"}]}'}
+
+        def ask(q, opts=None):
+            asked.append((q, opts))
+            return answer
+        sc = Script([W("a"), W("b")])
+        with mock.patch("wisp.brain.chat", chat), \
+                mock.patch("wisp.brain.supports_vision", return_value=False):
+            wr.run("g", {}, sc.state, env=sc.env(), ask=ask,
+                   skill_match=lambda c: "", **kw)
+        return seen["p"], asked, sc
+
+    def test_it_asks_before_planning(self):
+        p, asked, sc = self.prompt("starting fresh")
+        self.assertEqual(asked, [(wr.START_QUESTION, wr.START_OPTIONS)])
+        self.assertNotIn("already started", p)
+
+    def test_already_started_tells_the_planner(self):
+        p, _, _ = self.prompt("already started")
+        self.assertIn("The user has already started this", p)
+
+    def test_no_answer_means_starting_fresh(self):
+        p, asked, _ = self.prompt(None)
+        self.assertEqual(len(asked), 1)
+        self.assertNotIn("already started", p)
+
+    def test_demonstrations_and_resumes_do_not_ask(self):
+        p, asked, _ = self.prompt("already started", demonstrate=True)
+        self.assertEqual(asked, [])
 
 
 if __name__ == "__main__":
