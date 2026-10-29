@@ -183,5 +183,8 @@ def redact(out: dict) -> dict:
     what a spawned agent peer may see (timings, labels, gate, miss counts)."""
     turns = [dict(t, transcript="", result="", note="")
              for t in out.get("turns") or []]
-    misses = [dict(m, examples=[]) for m in out.get("misses") or []]
+    # a miss's pattern is the result's first words (for dictation, what
+    # the owner said), so it goes too; kind and counts stay
+    misses = [dict(m, examples=[], pattern="")
+              for m in out.get("misses") or []]
     return dict(out, turns=turns, misses=misses)
