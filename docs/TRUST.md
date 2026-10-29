@@ -85,7 +85,7 @@ From the scan this page is built from.
 - `cal.com`: `wisp/mcpauth.py`
 - `calendar.google.com`: `wisp/config.py`
 - `example.com`: `wisp/cli/share.py`
-- `github.com`: `rs/wispd/src/brain.rs`, `wisp/brain.py`, `wisp/grounding.py`, `wisp/route.py`, `wisp/stage_route.py`, `wisp/update.py` and 1 more
+- `github.com`: `rs/wispd/src/brain.rs`, `wisp/brain.py`, `wisp/grounding.py`, `wisp/stage_route.py`, `wisp/update.py`, `wisp/whatsnew.py`
 - `gmail.com`: `wisp/tools/__init__.py`
 - `mail.google.com`: `wisp/config.py`
 - `openrouter.ai`: `rs/wispd/src/brain.rs`, `rs/wispd/src/config.rs`, `wisp/brain.py`, `wisp/config.py`, `wisp/recall.py`
