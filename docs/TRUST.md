@@ -35,6 +35,10 @@ These settings take any address. Whatever you put there gets what the stage send
 
 Loopback addresses (`127.0.0.1`, `localhost`) are local services: whisper.cpp, a local model server (Ollama, LM Studio, MLX), the UI-grounding model, the browser debugging port and per-app control ports. A grounding model on loopback means screenshots never leave the box for that step.
 
+## Background agents
+
+An OpenCode agent Wisp starts runs on this machine and reaches models through ori and OpenRouter, so what it reads and writes goes to OpenRouter-routed models like any other turn. Every tool call it asks permission for gets one answer from Wisp's own policy: reads inside its working folder and a fixed list of build and test commands are allowed; credential files, keyring tools, login flows and Wisp's state folder are refused in every mode; everything else, and anything Wisp cannot parse, is asked out loud and refused if you do not answer. The only door back into Wisp is a read-only tool list (memory, skills, task output, one question to you). `[agents] mcp_memory = false` takes memory off that list. `wispd doctor` does not prove the permission gate, because that takes a live model call: its row says "live check not run".
+
 ## Names in the code that are not requests
 
 | Name | What it is |

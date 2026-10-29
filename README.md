@@ -79,8 +79,9 @@ wispd onboard                  # guided first run, every step skippable
 
 Prerequisites: `pw-record` (or `arecord`), whisper.cpp at
 `~/src/whisper.cpp` with `models/ggml-small.en.bin`, `hyprctl`,
-`notify-send`. Optional: `grim`, `wtype`, `espeak-ng`, `ori` (agent
-spawning). Secrets go in `~/.config/wisp/.env` (`OPENROUTER_API_KEY=...`)
+`notify-send`. Optional: `grim`, `wtype`, `espeak-ng`. Background agents need
+nothing installed by hand: `wispd install --agents` (or the onboarding agents
+step) downloads a pinned `ori` and OpenCode. Secrets go in `~/.config/wisp/.env` (`OPENROUTER_API_KEY=...`)
 or an `omaseal` reference; nothing is committed. Full steps and per-OS
 notes are in `docs/INSTALL.md`; every config key is in `docs/CONFIG.md`.
 
@@ -132,7 +133,13 @@ What a turn can do:
   No blind clicks. See [Computer use](#computer-use).
 - **Agent**: "Wisp, agent, fix the tests in wisp" starts a named task on
   your runtime (`opencode`, `codex`, `claude` or `devin`; `auto` probes
-  `PATH`). `wispd task list` shows status and a live log tail.
+  `PATH`). `wispd task list` shows status and a live log tail. With
+  OpenCode the task is a live session: it speaks progress as it goes, asks
+  you out loud when it needs an answer or a permission for a risky step
+  (silence counts as no), takes follow-ups to the same helper, can be
+  cancelled by voice or `wispd task cancel`, and speaks its answer when it
+  finishes (`wispd task output` reads it back). An interrupted session
+  resumes when you say "continue".
   **Named helpers**: "make me a research helper called Scout" gives it a
   folder in the data dir (`agents/scout/`: `AGENTS.md` identity, dated
   `notes/`, `output/`, `tmp/`). "Tell Scout to ..." starts a run that reads
@@ -146,8 +153,10 @@ What a turn can do:
   `mcp_call` to any configured MCP server. `wispd connect <service>`
   connects OAuth services through the local BrowserOS gateway.
 - **Goal memory**: utterances that share the focused app or the running
-  goal join one goal (`[agent] goal_ttl_s`, 10 minutes). Questions from
-  the agent come back through the voice backchannel without ending it.
+  goal join one goal (`[agent] goal_ttl_s`, 10 minutes). Questions and
+  permission asks from a background agent come back through the voice
+  backchannel without ending it, and a running agent can read your memory
+  (`[agents] mcp_memory`) so a task starts with what you already told Wisp.
 
 Spoken settings: "talk slower", "talk faster" and "talk at normal speed"
 change `[voice] speed` (0.5 to 1.5) and are logged with the guarded calls

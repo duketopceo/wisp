@@ -118,7 +118,7 @@ round-trip — they are not IPC commands and are absent from the table:
   "note": "null, or {conv_id, path, raw, objects, plan, closed, rendered} — live paper surface (additive, gap-closure U1); when closed, plan is []",
   "goal": {"text": "string", "status": "open|done|failed"},
   "level": 0.0,
-  "tasks": {"name": "running|done|failed|cancelled"},
+  "tasks": {"name": "running|done|failed|cancelled|timed_out|exited|interrupted"},
   "error": "string — human-safe copy, never raw exception text",
   "error_code": "closed set, see below; \"\" when no error",
   "error_detail": "string — raw failure text, local only",
@@ -405,7 +405,29 @@ subscriber never delays state.json writes or other subscribers.
 
 `wispd watch [topic ...]` prints this stream (reconnecting forever).
 
-Agent reaper (core behaviour behind the `tasks` field; U2): every 5 s the
+Task entry fields (`tasks`): `status`, `task`, `ts` and `tail` always;
+`exit_code`, `delivered`, `deliverables`, `out_dir`, `refused_count`,
+`routine_id` and `unread` when the record has them. A live ACP session
+(`[brain] agent_runtime` resolving to `opencode`) adds, while `running`:
+`line` (its latest readable step, same text as `tail`), `seconds` (elapsed)
+and `waiting: true` when it is blocked on a question or permission ask.
+`interrupted` marks a session a daemon restart cut off; it is never
+replayed on its own. A finished session's `answer` and `stop_reason` are on its
+record and read back with `task_output`; they are not in `tasks`.
+
+Task events (topic `tasks`): `{"type":"event","name":"task_progress",
+"data":{name,line,seconds}}` is a session's latest `PROGRESS:` line, at most
+one per 2 s per task. `{"type":"event","name":"task_question","data":{helper,
+kind,outcome,prompt_id}}` ends every agent ask: `kind` is `question` or
+`permission`, `outcome` says how it ended (answered, declined, timed out)
+and never carries the answer text.
+
+Agent asks reach you as the usual `awaiting_choice` state with a
+`prompt_id`, plus `source: "agent:<name>"` (`""` for a turn's own prompt),
+so a shell can say which helper is asking. A turn keeps priority: an ask
+waits in a queue and is offered again after the turn.
+
+Agent reaper and ACP (core behaviour behind the `tasks` field; U2): every 5 s the
 daemon closes tasks whose process is gone, SIGTERMs tasks past
 `[agent] task_timeout_s` (`timed_out`), and escalates to SIGKILL after 10 s.
 Every spawn path wraps the child in an exit-code shim (`tasks/<id>.exit`)
@@ -427,6 +449,13 @@ and creates an output workspace at `tasks/<id>/out/`. At reap time:
 - The reaper never signals a pid whose start-time differs from the one
   recorded at spawn (PID reuse). Each running to not-running transition
   publishes the new `tasks` and one `task_finished` event.
+- ACP sessions (OpenCode) are owned by the runtime manager, not the shim:
+  the reaper cancels one past `task_timeout_s` and records `timed_out`; a
+  cancel (`task_cancel`) asks the agent to stop, waits `[agents]
+  cancel_grace_s`, then kills the process group. The agent's stop reason,
+  not its own words, decides `done`/`failed`/`cancelled`. A named helper's
+  process exits after `[agents] acp_idle_s`; a follow-up to a busy session
+  is queued, never dropped.
 
 ## Data files (shared by both cores, never versioned differently)
 
