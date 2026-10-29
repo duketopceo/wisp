@@ -2185,6 +2185,122 @@
   },
   "width": 360
  },
+ "ModelCard": {
+  "mode": "variant",
+  "on": "canvas",
+  "pad": 16,
+  "settle": 80,
+  "variants": {
+   "car": {
+    "model": {
+     "host": "raw.githubusercontent.com",
+     "parts": [
+      {
+       "box": [
+        -0.5,
+        -0.2,
+        -0.2,
+        0.3,
+        0.15,
+        0.2
+       ],
+       "name": "body"
+      },
+      {
+       "box": [
+        -0.2,
+        0.15,
+        -0.15,
+        0.15,
+        0.4,
+        0.15
+       ],
+       "name": "cabin"
+      },
+      {
+       "box": [
+        0.15,
+        -0.35,
+        -0.25,
+        0.4,
+        -0.1,
+        0.25
+       ],
+       "name": "front wheel"
+      },
+      {
+       "box": [
+        -0.5,
+        -0.35,
+        -0.25,
+        -0.25,
+        -0.1,
+        0.25
+       ],
+       "name": "rear wheel"
+      }
+     ],
+     "source": "https://raw.githubusercontent.com/x/car.glb",
+     "title": "toy car"
+    }
+   },
+   "empty": {},
+   "hovered": {
+    "hoverName": "cabin",
+    "model": {
+     "host": "raw.githubusercontent.com",
+     "parts": [
+      {
+       "box": [
+        -0.5,
+        -0.2,
+        -0.2,
+        0.3,
+        0.15,
+        0.2
+       ],
+       "name": "body"
+      },
+      {
+       "box": [
+        -0.2,
+        0.15,
+        -0.15,
+        0.15,
+        0.4,
+        0.15
+       ],
+       "name": "cabin"
+      },
+      {
+       "box": [
+        0.15,
+        -0.35,
+        -0.25,
+        0.4,
+        -0.1,
+        0.25
+       ],
+       "name": "front wheel"
+      },
+      {
+       "box": [
+        -0.5,
+        -0.35,
+        -0.25,
+        -0.25,
+        -0.1,
+        0.25
+       ],
+       "name": "rear wheel"
+      }
+     ],
+     "source": "https://raw.githubusercontent.com/x/car.glb",
+     "title": "toy car"
+    }
+   }
+  }
+ },
  "NowTab": {
   "mode": "variant",
   "pad": 10,

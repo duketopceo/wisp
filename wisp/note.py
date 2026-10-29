@@ -18,7 +18,8 @@ from typing import Any
 # Plan markers recovered from the HeyClicky paper protocol.
 PLAN_MARKERS = ("now", "pick", "needs")
 # Single-colon object openers (`::tiles`, `::ticket[…]`, …).
-LINE_KINDS = frozenset({"tiles", "ticket", "ask", "question", "image"})
+LINE_KINDS = frozenset({"tiles", "ticket", "ask", "question", "image",
+                       "model"})
 # Triple-colon fenced blocks.
 BLOCK_KINDS = frozenset({"letter", "chart", "sketch"})
 # Anything else is letter-text fallback.
@@ -35,10 +36,10 @@ _CLOSE_BLOCK_RE = re.compile(r"^:::\s*$")
 _CLOSE_LINE_RE = re.compile(r"^::\s*$")
 _ATTR_RE = re.compile(r"([A-Za-z_][\w-]*)\s*=\s*([^,\]]+)")
 _SAFE_CONV = re.compile(r"[^A-Za-z0-9._-]+")
-# `::image[url=https://...,alt=...]` line, dropped from the spoken text.
+# `::image[url=https://...,alt=...]` or `::model[...]` line, dropped from the spoken text.
 # with its caption lines and a closing `::`
 _IMAGE_LINE_RE = re.compile(
-    r"^::image\b[^\n]*(?:\n(?!::)[^\n]*)*(?:\n::[ \t]*$)?",
+    r"^::(?:image|model)\b[^\n]*(?:\n(?!::)[^\n]*)*(?:\n::[ \t]*$)?",
     re.IGNORECASE | re.M)
 # Line-start `::tiles` / `:::letter` only — not `std::vector` / `Foo::bar`.
 _PAPER_HINT_RE = re.compile(r"^:{2,3}[A-Za-z_]", re.M)
@@ -299,12 +300,34 @@ def _image_state(obj: dict, cfg=None) -> dict:
     return st
 
 
+def _model_state(obj: dict, cfg=None) -> dict:
+    """What a 3D card needs, like `_image_state`: ready with the model's
+    named parts and boxes, loading, or refused with a speakable reason."""
+    from .tools import modelfetch
+    url = (obj.get("attrs") or {}).get("url", "")
+    st = {"url": url, "status": "loading", "title": "", "parts": [],
+          "source": url, "host": "", "reason": ""}
+    try:
+        st["host"] = modelfetch.check_url(url, cfg)
+    except modelfetch.ModelRefused as e:
+        st.update(status="refused", reason=str(e))
+        return st
+    have = modelfetch.lookup(url)
+    if have:
+        st.update(status="ready", title=have.get("title", ""),
+                  parts=have["parts"], source=have.get("source", url))
+    return st
+
+
 def _decorate(objects: list, cfg=None) -> list:
-    """Copies of `objects` with an `image` state on each image object."""
+    """Copies of `objects` with an `image` or `model` state on each image
+    or model object."""
     out = []
     for o in objects:
         if o.get("kind") == "image":
             o = dict(o, image=_image_state(o, cfg))
+        elif o.get("kind") == "model":
+            o = dict(o, model=_model_state(o, cfg))
         out.append(o)
     return out
 
@@ -321,8 +344,9 @@ def refusals(payload: dict | None) -> list:
     """Speakable reasons for the image objects that were refused."""
     out = []
     for o in (payload or {}).get("objects") or []:
-        img = o.get("image") or {}
-        if o.get("kind") == "image" and img.get("status") == "refused" \
+        img = o.get("image") or o.get("model") or {}
+        if o.get("kind") in ("image", "model") \
+                and img.get("status") == "refused" \
                 and img.get("reason") and img["reason"] not in out:
             out.append(img["reason"])
     return out
@@ -346,7 +370,7 @@ def strip_image_lines(text: str, partial: bool = False) -> str:
 def _payload(conv_id: str, path: pathlib.Path, parsed: dict, *,
              closed: bool, cfg=None) -> dict:
     objs = list(parsed.get("objects") or [])
-    if any(o.get("kind") == "image" for o in objs):
+    if any(o.get("kind") in ("image", "model") for o in objs):
         objs = _decorate(objs, cfg if cfg is not None else _cfg())
     return {
         "conv_id": safe_conv_id(conv_id),
@@ -369,9 +393,10 @@ class NotePad:
     def __init__(self, conv_id: str | None = None, *, bus=None,
                  turn_id: str | None = None,
                  root: pathlib.Path | None = None, cfg: dict | None = None,
-                 fetch=None, spawn=None):
+                 fetch=None, spawn=None, fetch_model=None):
         self._cfg = cfg
         self._fetch = fetch          # (url, cfg) -> record; test seam
+        self._fetch_model = fetch_model   # same, for ::model cards
         self._spawn = spawn          # (fn) -> None; default: a thread
         self.conv_id = safe_conv_id(conv_id)
         self.path = note_path(self.conv_id, root=root)
@@ -426,17 +451,19 @@ class NotePad:
     def _start_fetches(self, parsed: dict, payload: dict) -> None:
         """Download each allowed, not yet stored picture off the turn's
         path, then republish so its card shows the local copy."""
-        urls = []
+        urls, models = [], []
         for o in payload.get("objects") or []:
-            img = o.get("image") or {}
-            if o.get("kind") == "image" and img.get("status") == "loading" \
-                    and img["url"] not in urls:
-                urls.append(img["url"])
-        if not urls:
+            kind = o.get("kind")
+            img = o.get("image") or o.get("model") or {}
+            if kind in ("image", "model") and img.get("status") == "loading":
+                bucket = urls if kind == "image" else models
+                if img["url"] not in bucket:
+                    bucket.append(img["url"])
+        if not urls and not models:
             return
 
         def work():
-            from .tools import imagefetch
+            from .tools import imagefetch, modelfetch
             fetch = self._fetch or imagefetch.fetch
             got = False
             for u in urls:
@@ -445,6 +472,14 @@ class NotePad:
                           else _cfg())
                     got = True
                 except (imagefetch.ImageRefused, imagefetch.ImageFailed,
+                        OSError, ValueError):
+                    pass
+            for u in models:
+                try:
+                    (self._fetch_model or modelfetch.fetch)(
+                        u, self._cfg if self._cfg is not None else _cfg())
+                    got = True
+                except (modelfetch.ModelRefused, modelfetch.ModelFailed,
                         OSError, ValueError):
                     pass
             with self._lock:

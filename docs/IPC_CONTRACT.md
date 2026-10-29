@@ -20,6 +20,7 @@ future tray apps). Shells MUST only depend on this document.
 | `status` | — | `{ok, state}` | `state` = full state.json snapshot |
 | `listen` | `phase?: start\|stop`, `t0?: int` (client wall-clock ns of the keypress; additive, optional) | see below | capture + pipeline async on idle; **mini-capture** while a turn is busy; kills in-flight TTS on a new turn (barge-in) |
 | `choice` | `pick: string`, optional `prompt_id: string`, optional `index: int` | `{ok}` or `{ok:false, error}`; `{ok, result}` for `suggestion:` picks | resolves the pending choice/confirm; see Prompt ids |
+| `ask` | `text: string` (one line, 300 chars max) | `{ok, asked:true}` or `{ok:false, error:"empty"\|"busy"}` | a typed question starts one normal turn, skipping capture and speech-to-text (a click on a part of a `model` card, B13); refused for marked peers like `listen` |
 | `suggestions` | — | `{ok, suggestions: [...]}` | pending routine suggestions (suggestions.jsonl backlog) |
 | `task_status` | `name: string` | `{ok, result: string}` | named-agent status |
 | `task_cancel` | `name: string` | `{ok, result: string}` | cancel named agent |
@@ -353,6 +354,11 @@ Lines, in order:
      reason}`: `status` is `loading` (allowed, still downloading),
      `ready` (`local` is an absolute path of the stored copy, `w`/`h` its
      pixel size) or `refused` (`reason` says why; nothing was fetched).
+     A `model` object (`::model[url=...]`, B13) carries `model: {status,
+     title, parts:[{name, box:[x0,y0,z0,x1,y1,z1]}], source, host,
+     reason}` the same way; the boxes are in the model's own space scaled
+     so the longest side is 1. A client shows it only when `status ==
+     "ready"` and may send a click as `ask`.
      The note is republished when a download lands. A client shows the
      picture only when `status == "ready"` and always shows `source`.
    - `{"type":"ping"}` after 15 s with nothing to send (all topics; a
