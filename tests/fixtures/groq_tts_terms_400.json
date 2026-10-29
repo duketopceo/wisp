@@ -1,0 +1,7 @@
+{
+  "recorded": "2026-10-28, one live POST /openai/v1/audio/speech, model canopylabs/orpheus-v1-english, voice hannah, input 'Wisp is on.', response_format wav",
+  "status": 400,
+  "content_type": "application/json",
+  "time_to_first_byte_ms": 82,
+  "body": {"error": {"message": "The model `canopylabs/orpheus-v1-english` requires terms acceptance. Please have the org admin accept the terms at https://console.groq.com/playground?model=canopylabs%2Forpheus-v1-english", "type": "invalid_request_error", "code": "model_terms_required"}}
+}

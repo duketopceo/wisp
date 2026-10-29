@@ -269,6 +269,13 @@ def urlopen(req, *a, **kw):
     tok = _CURRENT
     if tok is None or urllib.request.urlopen is not _ORIG_URLOPEN:
         return urllib.request.urlopen(req, *a, **kw)
+    return urlopen_with(tok, req, *a, **kw)
+
+
+def urlopen_with(tok, req, *a, **kw):
+    """`urlopen` against an explicit token instead of the current turn's:
+    for a worker thread that outlives the turn's `bind` and owns its own
+    token. Cancelling `tok` shuts the connection down."""
     tok.check()
     opener = urllib.request.build_opener(_HTTP(tok), _HTTPS(tok))
     try:

@@ -69,17 +69,21 @@ HOSTS = {
                 "account's privacy settings, not by Wisp."),
     "api.groq.com": dict(
         what="Speech to text for each push-to-talk turn (any "
-             "OpenAI-compatible endpoint works in its place).",
-        sends=[AUDIO],
+             "OpenAI-compatible endpoint works in its place), and the "
+             "voice that speaks answers aloud.",
+        sends=[AUDIO, TEXT],
         detail="The recording of that turn, and the vocabulary prompt "
-               "from `[stt] prompt`.",
+               "from `[stt] prompt`. For the spoken answer, the answer "
+               "text one sentence at a time (English answers only).",
         default="Yes. `[stt] provider` is `openai` with this base URL.",
         key="You. `GROQ_API_KEY` in your environment, "
             "`~/.config/wisp/.env` or your keyring.",
         control="`[stt] provider = \"local\"` transcribes on this "
                 "machine with whisper.cpp and sends no audio; "
-                "`[stt] base_url` points at any other host. The "
-                "provider's retention is its own."),
+                "`[stt] base_url` points at any other host. "
+                "`[voice] provider = \"espeak\"` (or `[voice] enabled = "
+                "false`) sends no answer text. The provider's retention "
+                "is its own."),
     "api.github.com": dict(
         what="Update check and release lookup for `wispd update`.",
         sends=[NONE],

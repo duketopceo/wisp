@@ -32,7 +32,7 @@ class FakeSpeaker:
     enabled = True
     started = False
 
-    def __init__(self, cfg, token=None, on_sentence=None):
+    def __init__(self, cfg, token=None, on_sentence=None, on_audio=None):
         self.on_sentence = on_sentence
         self.feeds = []
         self.finishes = []
@@ -250,8 +250,8 @@ class GuardTests(StageBase):
         self.cfg = {"voice": {"enabled": "true"}, "agent": {}}
         self.spk = None
 
-        def make(cfg, token=None, on_sentence=None):
-            self.spk = FakeSpeaker(cfg, token, on_sentence)
+        def make(cfg, token=None, on_sentence=None, on_audio=None):
+            self.spk = FakeSpeaker(cfg, token, on_sentence, on_audio)
             return self.spk
         p = mock.patch.object(speech, "SentenceSpeaker", make)
         p.start()

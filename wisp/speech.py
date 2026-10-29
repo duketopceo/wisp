@@ -10,16 +10,48 @@ answer is still streaming; a turn's CancelToken (or stop()) kills the
 speaking child and drops the queued sentences.
 """
 
+import os
 import queue
 import re
 import shlex
 import shutil
 import subprocess
+import tempfile
 import threading
+import time
 
 _LOCK = threading.Lock()
 _NOTED: set = set()      # languages whose "no voice" note was spoken
 _PROC: subprocess.Popen | None = None
+
+
+def local_usable(cfg: dict) -> bool:
+    """True when a local TTS command exists to speak with: the [voice]
+    cmd's program, else the built-in espeak."""
+    cmd = str(((cfg or {}).get("voice") or {}).get("cmd", "")).strip()
+    if cmd:
+        try:
+            first = shlex.split(cmd)[0]
+        except (ValueError, IndexError):
+            return False
+        return bool(shutil.which(first))
+    from . import platform
+    return platform.tts_binary() is not None
+
+
+def voice_enabled(cfg: dict) -> bool:
+    """[voice] enabled, the one reader every caller goes through. `true`
+    and `false` are explicit; `auto` (the default, and an unset or blank
+    value) is on when a Groq key resolves or a local voice is installed.
+    Anything else is off."""
+    raw = ((cfg or {}).get("voice") or {}).get("enabled", "auto")
+    v = str(raw).strip().lower() or "auto"
+    if v == "true":
+        return True
+    if v != "auto":
+        return False
+    from . import tts_groq
+    return tts_groq.available(cfg) or local_usable(cfg)
 
 
 SPEED_MIN, SPEED_MAX = 0.5, 1.5
@@ -90,7 +122,7 @@ def speak(msg: str, cfg: dict) -> subprocess.Popen | None:
     """Spawn the TTS command; returns the proc (None if voice off or no
     binary). Caller registers on_exit to observe natural completion."""
     global _PROC
-    if not msg or cfg.get("voice", {}).get("enabled", "false") != "true":
+    if not msg or not voice_enabled(cfg):
         return None
     argv = _argv(msg, cfg)
     if argv is None:
@@ -179,15 +211,17 @@ class SentenceSpeaker:
     when there is none). `stop()` drops queued marks.
     """
 
-    def __init__(self, cfg: dict, token=None, on_sentence=None):
+    def __init__(self, cfg: dict, token=None, on_sentence=None,
+                 on_audio=None):
         self._cfg = cfg
         self._token = token
         self._on_sentence = on_sentence
+        self._on_audio = on_audio        # (ms to first Groq audio)
         self._plock = threading.Lock()   # marks/items: feed vs worker
         self._items: list = []           # (span end, _Item) per sentence
         self._pending: list = []         # marks past every queued sentence
         self._seen = 0                   # marks already ingested
-        self.enabled = cfg.get("voice", {}).get("enabled", "false") == "true"
+        self.enabled = voice_enabled(cfg)
         self._early_clause = cfg.get("voice", {}).get(
             "early_clause", "true") != "false"
         self.lang = ""              # spoken language of the answer (B23)
@@ -202,6 +236,12 @@ class SentenceSpeaker:
         self._worker = None
         self._proc = None
         self._lock = threading.Lock()
+        self._jlock = threading.Lock()   # _order, jobs, _fetcher
+        self._order: list = []           # every queued _Item, in order
+        self._fetcher = None             # tts_groq.Fetcher, lazy
+        self._groq_off = False           # latched: espeak for this turn
+        self._t_first = 0                # ns the first sentence was queued
+        self._audio_told = False
         if self.enabled:
             with _LOCK:
                 _SPEAKERS.append(self)
@@ -282,7 +322,12 @@ class SentenceSpeaker:
             self._fire(item.points)
             return
         self.started = True
+        if not self._t_first:
+            self._t_first = time.monotonic_ns()
+        with self._jlock:
+            self._order.append(item)
         self._q.put(("say", item))
+        self._prefetch()
         self._ensure_worker()
 
     def _ensure_worker(self) -> None:
@@ -294,7 +339,6 @@ class SentenceSpeaker:
 
     # -- worker ----------------------------------------------------
     def _run(self) -> None:
-        global _PROC
         while not self._stopped.is_set():
             try:
                 kind, val = self._q.get(timeout=0.05)
@@ -308,40 +352,156 @@ class SentenceSpeaker:
             with self._plock:
                 val.dequeued = True
                 points = list(val.points)
-            self.sentence_ms = sentence_ms(val.sentence, self._cfg)
-            self._fire(points)
-            val = val.sentence
-            say = val
-            if self.lang and not self._noted:
-                self._noted = True
-                say = self._fallback_note() + val
-            argv = _argv(say, self._cfg, self.lang)
-            if argv is None:
-                continue
-            try:
-                proc = subprocess.Popen(argv, stdout=subprocess.DEVNULL,
-                                        stderr=subprocess.DEVNULL,
-                                        start_new_session=True)
-            except OSError:
-                continue
-            with self._lock:
-                self._proc = proc
-            with _LOCK:
-                _PROC = proc
-            if self._token is not None:
-                self._token.register_pid(proc)
-            if self._stopped.is_set():
-                _kill_now(proc)
-            self.spoken.append(val)
-            proc.wait()
-            if self._token is not None:
-                self._token.unregister_pid(proc)
-            with _LOCK:
-                if _PROC is proc:
-                    _PROC = None
-            with self._lock:
-                self._proc = None
+            if self._groq_ok():
+                self._prefetch()
+                self._say_groq(val, points)
+            else:
+                self._say_local(val.sentence, points)
+            val.done = True
+            self._prefetch()
         self._release()
+
+    # -- local voice (espeak or [voice] cmd) -------------------------
+    def _say_local(self, text: str, points, fire: bool = True) -> None:
+        """Speak `text` with the local voice. `fire` False when the
+        sentence's points already fired (Groq failed mid-sentence)."""
+        if fire:
+            self.sentence_ms = sentence_ms(text, self._cfg)
+            self._fire(points)
+        say = text
+        if self.lang and not self._noted:
+            self._noted = True
+            say = self._fallback_note() + text
+        argv = _argv(say, self._cfg, self.lang)
+        if argv is None:
+            return
+        self._play(argv, text)
+
+    def _play(self, argv, spoken: str) -> bool:
+        """Run one player/TTS child to its end, registered like every
+        speaking child so is_speaking() and barge-in see it. False when
+        nothing was spawned."""
+        global _PROC
+        if self._stopped.is_set():
+            return False
+        try:
+            proc = subprocess.Popen(argv, stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL,
+                                    start_new_session=True)
+        except OSError:
+            return False
+        with self._lock:
+            self._proc = proc
+        with _LOCK:
+            _PROC = proc
+        if self._token is not None:
+            self._token.register_pid(proc)
+        if self._stopped.is_set():
+            _kill_now(proc)
+        self.spoken.append(spoken)
+        proc.wait()
+        if self._token is not None:
+            self._token.unregister_pid(proc)
+        with _LOCK:
+            if _PROC is proc:
+                _PROC = None
+        with self._lock:
+            self._proc = None
+        return True
+
+    # -- Groq voice --------------------------------------------------
+    def _groq_ok(self) -> bool:
+        """Groq speaks this sentence: not latched off for the turn, an
+        English answer (Orpheus is English only), a key, a player and no
+        backoff."""
+        from . import tts_groq
+        return not self._groq_off and not self.lang \
+            and tts_groq.usable(self._cfg)
+
+    def _prefetch(self) -> None:
+        """Keep the sentence playing and the one after it fetching."""
+        if self._stopped.is_set() or not self._groq_ok():
+            return
+        from . import tts_groq
+        with self._jlock:
+            if self._stopped.is_set():
+                return
+            prev = None
+            for item in [i for i in self._order if not i.done][:2]:
+                if item.job is None:
+                    if self._fetcher is None:
+                        self._fetcher = tts_groq.Fetcher(self._cfg)
+                    item.job = _Job(item.sentence, self._fetcher,
+                                    self._stopped, prev)
+                    item.job.start()
+                prev = item.job
+
+    def _latch(self) -> None:
+        """Groq failed: espeak for the rest of this turn, and what was
+        prefetched is dropped."""
+        self._groq_off = True
+        with self._jlock:
+            for item in self._order:
+                if item.job is not None:
+                    item.job.cancel()
+                    item.job = None
+
+    def _say_groq(self, item, points) -> None:
+        from . import tts_groq
+        job = item.job
+        if job is None:               # prefetch refused (stop raced it)
+            return
+        fired = False
+        for i, chunk in enumerate(job.chunks):
+            got = job.get(self._stopped)
+            if got is None:           # stopped
+                return
+            argv = None
+            if isinstance(got, tts_groq.Audio):
+                path = self._wav_file(got.data)
+                argv = tts_groq.player_argv(path) if path else None
+            if argv is None:          # a failure, or no player after all
+                self._latch()
+                rest = " ".join(job.chunks[i:])
+                self._say_local(rest, points, fire=not fired)
+                return
+            try:
+                if not fired:
+                    fired = True
+                    # the pen's pace: this sentence's real spoken time
+                    self.sentence_ms = got.ms if len(job.chunks) == 1 \
+                        else round(got.ms * len(item.sentence)
+                                   / max(1, len(chunk)))
+                    self._first_audio()
+                    self._fire(points)
+                self._play(argv, chunk)
+            finally:
+                try:
+                    os.unlink(path)
+                except OSError:
+                    pass
+        if not fired:
+            self._fire(points)
+
+    @staticmethod
+    def _wav_file(data: bytes) -> str:
+        try:
+            fd, path = tempfile.mkstemp(prefix="wisp-tts-", suffix=".wav")
+            with os.fdopen(fd, "wb") as f:
+                f.write(data)
+            return path
+        except OSError:
+            return ""
+
+    def _first_audio(self) -> None:
+        if self._audio_told or self._on_audio is None:
+            return
+        self._audio_told = True
+        try:
+            self._on_audio(round((time.monotonic_ns() - self._t_first)
+                                 / 1e6))
+        except Exception:   # noqa: BLE001
+            pass
 
     def _fallback_note(self) -> str:
         """"I don't have a Spanish voice" once per language, when the
@@ -359,8 +519,18 @@ class SentenceSpeaker:
                 _SPEAKERS.remove(self)
 
     def stop(self) -> None:
-        """Kill the speaking child, drop the queue. Does not block."""
+        """Kill the speaking child, abort any Groq request in flight and
+        drop the queue and the prefetched audio. Does not block."""
         self._stopped.set()
+        with self._jlock:
+            fetcher = self._fetcher
+            for item in self._order:
+                if item.job is not None:
+                    item.job.cancel()
+                    item.job = None
+            self._order.clear()
+        if fetcher is not None:
+            fetcher.close()
         with self._lock:
             proc = self._proc
         if proc is not None:
@@ -380,6 +550,79 @@ class _Item:
         self.sentence = sentence
         self.points = points
         self.dequeued = False
+        self.done = False
+        self.job = None
+
+
+class _Job:
+    """Fetches the WAVs for one sentence (one per chunk) on its own
+    thread, in order. `get` yields each result: a tts_groq.Audio, or the
+    GroqError that ended the run (nothing follows an error)."""
+
+    def __init__(self, sentence: str, fetcher, stopped, prev=None):
+        from . import tts_groq
+        self.chunks = tts_groq.chunks(sentence)
+        self._fetcher = fetcher
+        self._stopped = stopped
+        self._prev = prev          # requests go out one sentence at a time
+        self._off = threading.Event()
+        self.finished = threading.Event()
+        self.failed = False
+        self._q: queue.Queue = queue.Queue()
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def cancel(self) -> None:
+        self._off.set()
+
+    def _run(self) -> None:
+        try:
+            self._fetch_all()
+        finally:
+            self.finished.set()
+
+    def _fetch_all(self) -> None:
+        from . import cancel, tts_groq
+        prev = self._prev
+        while prev is not None and not prev.finished.wait(0.05):
+            if self._off.is_set() or self._stopped.is_set():
+                return
+        if prev is not None and prev.failed:
+            # an earlier sentence failed: do not spend on this one
+            self._fail(tts_groq.GroqError("backoff", "earlier sentence failed"))
+            return
+        for chunk in self.chunks:
+            if self._off.is_set() or self._stopped.is_set():
+                return
+            try:
+                audio = self._fetcher.synth(chunk)
+            except cancel.Cancelled:
+                return
+            except tts_groq.GroqError as e:
+                self._fail(e)
+                return
+            except Exception as e:   # noqa: BLE001  never kill the turn
+                self._fail(tts_groq.GroqError("net", repr(e)))
+                return
+            self._put(audio)
+
+    def _fail(self, err) -> None:
+        self.failed = True
+        self._put(err)
+
+    def _put(self, result) -> None:
+        if not (self._off.is_set() or self._stopped.is_set()):
+            self._q.put(result)
+
+    def get(self, stopped):
+        """Next result in order; None once the speaker is stopped."""
+        while not stopped.is_set():
+            try:
+                return self._q.get(timeout=0.05)
+            except queue.Empty:
+                continue
+        return None
 
 
 def _kill_now(proc) -> None:
