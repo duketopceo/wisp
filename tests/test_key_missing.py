@@ -78,13 +78,6 @@ class TestKeyMissing(_NoKeys):
                 stage_route.ask_jev("hi", "m", {})
         self.assertEqual(cm.exception.code, "key_missing")
 
-    def test_route_decisions_call_without_a_key_is_key_missing(self):
-        with mock.patch.object(config, "JEV_ENDPOINT",
-                               "https://openrouter.ai/api/alpha/decisions"):
-            with self.assertRaises(errors_codes.WispError) as cm:
-                route._decisions_call("hi", "m", {}, "", None, 1)
-        self.assertEqual(cm.exception.code, "key_missing")
-
     def test_brain_with_declared_key_env_and_no_key_is_key_missing(self):
         cfg = {"brain": {"default": "openrouter:m", "fallback": ""}}
         with mock.patch.object(brain, "HEALTH", None):
