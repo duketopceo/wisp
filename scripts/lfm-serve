@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# llama-lfm — local Liquid AI LFM vision server for wisp (spike/lfm-local)
+#
+# Serves LFM2.5-VL-1.6B (GGUF) as an OpenAI-compatible endpoint on
+# 127.0.0.1:8082 via llama.cpp's mtmd path. Install:
+#
+#   install -m755 scripts/lfm-serve ~/.local/bin/llama-lfm
+#
+# then `wispd models start lfm` (unit llama-lfm.service installs when
+# [local] enabled = "true"). Point a brain at it with:
+#
+#   [brain] default = "lfm:lfm25-vl-1.6b"
+#
+# Env overrides:
+#   LFM_MODEL   HF spec or local GGUF path (default shown below)
+#   LFM_PORT    listen port (default 8082 — 8080/8081 are mlx/uitars)
+#   LFM_CTX     context tokens (default 8192)
+#   LFM_EXTRA   extra llama-server args
+#
+# License note: LFM weights ship under LFM Open License v1.0 (not OSI;
+# free below $10M/yr revenue). Keep [local] opt-in; do not vendor the
+# weights into the repo.
+set -euo pipefail
+
+MODEL="${LFM_MODEL:-LiquidAI/LFM2.5-VL-1.6B-GGUF:Q4_0}"
+PORT="${LFM_PORT:-8082}"
+CTX="${LFM_CTX:-8192}"
+BIN="${LFM_BIN:-$HOME/src/llama.cpp/build-vk/bin/llama-server}"
+[ -x "$BIN" ] || BIN="$(command -v llama-server)"
+[ -x "$BIN" ] || { echo "lfm-serve: no llama-server (build ~/src/llama.cpp or set LFM_BIN)" >&2; exit 1; }
+
+exec "$BIN" -hf "$MODEL" \
+  --host 127.0.0.1 --port "$PORT" \
+  -c "$CTX" --jinja -ngl 99 \
+  ${LFM_EXTRA:-}

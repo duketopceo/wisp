@@ -20,8 +20,9 @@ import threading
 import time
 
 UNIT_NAMES = ["llama-local", "llama-jev", "llama-uitars", "jev-shim",
-              "wispd"]
-LLAMA = ["llama-local", "llama-jev", "llama-uitars", "jev-shim"]
+              "llama-lfm", "wispd"]
+LLAMA = ["llama-local", "llama-jev", "llama-uitars", "jev-shim",
+         "llama-lfm"]
 ALWAYS_INSTALL = {"wispd"}     # program is placed by install_files itself
 SPIN_LINES = 50                # POLLERR lines/min (journal cap is ~200)
 SPIN_CPU = 80.0                # % for a cpal_alsa thread
