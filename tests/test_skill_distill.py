@@ -195,3 +195,35 @@ class MigrateRoutinesTest(unittest.TestCase):
         sd = pathlib.Path(tempfile.mkdtemp())
         self.assertEqual(skills.migrate_routines(
             pathlib.Path(tempfile.mkdtemp()) / "nope.json", sd), 0)
+
+
+class BackfillTest(unittest.TestCase):
+    def test_backfills_only_app_skills_without_routing(self):
+        import tempfile
+        sd = pathlib.Path(tempfile.mkdtemp())
+        (sd / "perplexity-app").mkdir()
+        (sd / "perplexity-app" / "SKILL.md").write_text(
+            "---\nname: perplexity-app\ndescription: x\n---\nbody")
+        (sd / "gmail-app").mkdir()
+        (sd / "gmail-app" / "SKILL.md").write_text(
+            "---\nname: gmail-app\nurl_hosts: mail.google.com\n---\nbody")
+        (sd / "randomthing-app").mkdir()
+        (sd / "randomthing-app" / "SKILL.md").write_text(
+            "---\nname: randomthing-app\ndescription: x\n---\nbody")
+        (sd / "not-an-app").mkdir()
+        (sd / "not-an-app" / "SKILL.md").write_text(
+            "---\nname: not-an-app\ndescription: x\n---\nbody")
+        # dry run
+        self.assertEqual(skills.backfill_routing(sd, dry_run=True),
+                         ["perplexity-app"])
+        # apply
+        skills.backfill_routing(sd, dry_run=False)
+        meta = skills._frontmatter(
+            (sd / "perplexity-app" / "SKILL.md").read_text())
+        self.assertEqual(meta.get("url_hosts"), "perplexity.ai")
+        # already-routed + unknown + non-app untouched
+        for name in ("gmail-app", "randomthing-app", "not-an-app"):
+            meta = skills._frontmatter(
+                (sd / name / "SKILL.md").read_text())
+            self.assertNotIn("url_hosts", meta) if name != "gmail-app" \
+                else self.assertEqual(meta["url_hosts"], "mail.google.com")
