@@ -471,9 +471,9 @@ timeout_ms = "500"
 trace = true
 
 [voice]
-# spoken replies: "auto" (default) speaks when a Groq key resolves, else
-# when espeak is installed; "true" always, "false" never. With no usable
-# voice it is a silent no-op
+# spoken replies: "auto" (default) speaks when a Groq key resolves (and a
+# player exists), else stays off; "true" always (espeak or cmd without a
+# key), "false" never. With no usable voice it is a silent no-op
 enabled = "auto"
 # "groq" speaks with Groq Orpheus (English; needs the same Groq key as
 # speech-to-text and the model terms accepted once in the Groq console);

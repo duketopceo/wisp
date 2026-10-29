@@ -10,10 +10,11 @@ import threading
 import time
 import unittest
 import urllib.error
+import urllib.request
 import wave
 from unittest import mock
 
-from wisp import config, ledger, notify, platform, speech, tts_groq
+from wisp import cancel, config, ledger, notify, platform, speech, tts_groq
 from wisp import voice_polish
 
 FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
@@ -78,6 +79,7 @@ class FakeNet:
         self.requests = []
         self.resps = []
         self.tokens = []
+        self.times = []
         self.blocked = threading.Event()
         self._lock = threading.Lock()
 
@@ -86,6 +88,7 @@ class FakeNet:
         auth = req.get_header("Authorization")
         with self._lock:
             self.requests.append(body)
+            self.times.append(time.time())
             self.tokens.append(token)
             step = self.steps.pop(0) if self.steps else ("ok", 300)
         self.auth = auth
@@ -150,6 +153,17 @@ class GroqCase(unittest.TestCase):
         self.addCleanup(speech.stop)
         self.addCleanup(tts_groq.reset)
         self.calls = []
+        # no worker thread may outlive its test: a straggler would call the
+        # next test's stubbed network
+        before = set(threading.enumerate())
+        self.addCleanup(self._drain, before)
+
+    @staticmethod
+    def _drain(before):
+        speech.stop()
+        for t in set(threading.enumerate()) - before:
+            if t.daemon:
+                t.join(5)
 
     # -- helpers ---------------------------------------------------
     def cfg(self, **voice):
@@ -286,12 +300,31 @@ class VoiceModeTests(GroqCase):
                 self.assertEqual(
                     set(got.values()), {want}, (value, with_key, got))
 
-    def test_auto_falls_back_to_espeak_when_no_key(self):
+    def test_auto_with_no_key_and_espeak_installed_is_off(self):
         with mock.patch.object(config, "load_env_key", lambda n: ""), \
                 mock.patch.object(platform, "tts_binary",
                                   lambda: "espeak-ng"):
             tts_groq.reset()
-            self.assertTrue(speech.voice_enabled({"voice": {}}))
+            self.assertFalse(speech.voice_enabled({"voice": {}}))
+            self.assertEqual(speech.backend({"voice": {}})[0], "off")
+
+    def test_auto_with_a_key_is_groq(self):
+        with mock.patch.object(config, "load_env_key", lambda n: "k"), \
+                mock.patch.object(platform, "tts_binary",
+                                  lambda: "espeak-ng"):
+            tts_groq.reset()
+            cfg = {"voice": {"enabled": "auto"}}
+            self.assertTrue(speech.voice_enabled(cfg))
+            self.assertEqual(speech.backend(cfg)[0], "groq")
+
+    def test_true_with_no_key_is_espeak(self):
+        with mock.patch.object(config, "load_env_key", lambda n: ""), \
+                mock.patch.object(platform, "tts_binary",
+                                  lambda: "espeak-ng"):
+            tts_groq.reset()
+            cfg = {"voice": {"enabled": "true"}}
+            self.assertTrue(speech.voice_enabled(cfg))
+            self.assertEqual(speech.backend(cfg)[0], "espeak")
 
     def test_missing_setting_means_auto(self):
         with mock.patch.object(platform, "tts_binary", lambda: None):
@@ -380,14 +413,15 @@ class SynthTests(GroqCase):
         self.assertEqual(cm.exception.kind, "budget")
         self.assertEqual(net.requests, [])
 
-    def test_not_a_wav_is_an_error_and_not_billed(self):
+    def test_not_a_wav_is_an_error_but_still_billed(self):
         net = self.net()
         net.steps = [("ok", 100)]
         with mock.patch.object(FakeResp, "read", lambda s, n=-1: b"nope"):
             with self.assertRaises(tts_groq.GroqError) as cm:
                 tts_groq.Fetcher(self.cfg()).synth("Hi.")
         self.assertEqual(cm.exception.kind, "bad_audio")
-        self.assertEqual(self.rows(), [])
+        # Groq billed the 200 response whatever was in it
+        self.assertEqual([r["in"] for r in self.rows()], [3])
 
 
 class SpeakerTests(GroqCase):
@@ -421,9 +455,12 @@ class SpeakerTests(GroqCase):
         while time.time() < deadline and len(net.requests) < 2:
             time.sleep(0.02)
         self.assertEqual(len(net.requests), 2)
-        # the second request went out before the first sentence finished
-        self.assertEqual(len(self.played()) <= 1, True)
         self.say(sp, "One here. Two there.")
+        # the second request went out while the first sentence (800 ms)
+        # was still playing
+        (start1, ms1), _ = self.played()
+        self.assertEqual(ms1, 800)
+        self.assertLess(net.times[1], start1 + ms1 / 1000 - 0.2)
 
     def test_450_char_sentence_becomes_three_requests(self):
         net = self.net(("ok", 100), ("ok", 100), ("ok", 100))
@@ -515,6 +552,9 @@ class SpeakerTests(GroqCase):
         # first stops the rest before any is sent
         self.assertEqual(len(net.requests), 1)
         self.assertEqual(self.played(), [])
+        self.say(self.speaker(), "Inside the 60 s backoff.")
+        self.assertEqual(len(net.requests), 1)
+        self.clock[0] += 61
         net.steps = [("ok", 100)]
         self.say(self.speaker(), "Fresh turn.")                  # retries
         self.assertEqual(len(net.requests), 2)
@@ -582,6 +622,259 @@ class SpeakerTests(GroqCase):
         self.say(sp, "Timed start.")
         self.assertEqual(len(got), 1)
         self.assertIsInstance(got[0], int)
+
+
+KEY = "gsk_FAKEKEYSECRET0123456789"
+
+
+class ReviewFixTests(GroqCase):
+    # -- 1: dead air --------------------------------------------------
+    def test_silent_endpoint_hands_over_to_espeak_and_backs_off(self):
+        net = self.net(("block",))
+        with mock.patch.object(tts_groq, "FIRST_AUDIO_S", 0.3):
+            t0 = time.monotonic()
+            self.say(self.speaker(), "Hello there.")
+            self.assertLess(time.monotonic() - t0, 3)
+            self.assertEqual(self.spoken(), ["Hello there."])
+            self.assertEqual(tts_groq.last_error()["class"], "net")
+            self.clock[0] += 30                    # inside the 60 s backoff
+            self.say(self.speaker(), "Next turn.")
+            self.assertEqual(len(net.requests), 1)
+            self.assertIn("Next turn.", self.spoken())
+            self.clock[0] += 31
+            net.steps = [("ok", 100)]
+            self.say(self.speaker(), "After.")
+            self.assertEqual(len(net.requests), 2)
+
+    def test_net_and_5xx_back_off_60s_but_4xx_does_not(self):
+        for step, wait in ((("err", urllib.error.URLError("down")), 60),
+                           (("err", http_error(503)), 60),
+                           (("err", http_error(404)), 0)):
+            tts_groq.reset()
+            tts_groq._state_path().unlink(missing_ok=True)
+            self.net(step)
+            with self.assertRaises(tts_groq.GroqError):
+                tts_groq.Fetcher(self.cfg()).synth("Hi.")
+            self.assertEqual(tts_groq.backoff_until(),
+                             self.clock[0] + wait if wait else 0.0, step)
+
+    # -- 2: notice delivery -------------------------------------------
+    def _notified(self):
+        p = pathlib.Path(self.dir.name) / "voice_groq_notified.json"
+        return json.loads(p.read_text()) if p.exists() else []
+
+    def _fail401(self):
+        self.net(("err", http_error(401, b"{}")))
+        with self.assertRaises(tts_groq.GroqError):
+            tts_groq.Fetcher(self.cfg()).synth("Hi.")
+
+    def test_quiet_or_disabled_notice_is_not_marked_shown(self):
+        for decision in ("quiet", "disabled"):
+            tts_groq.reset()
+            with mock.patch.object(notify, "send",
+                                   lambda *a, d=decision, **k: d):
+                self._fail401()
+            self.assertEqual(self._notified(), [], decision)
+        tts_groq.reset()
+        self._fail401()                              # now it can show
+        self.assertEqual(len(self.notices), 1)
+        self.assertEqual(self._notified(), ["auth"])
+
+    def test_held_notice_counts_as_delivered(self):
+        with mock.patch.object(notify, "send", lambda *a, **k: "held"):
+            self._fail401()
+        self.assertEqual(self._notified(), ["auth"])
+
+    def test_notice_is_reserved_while_sending(self):
+        sent = []
+
+        def send(msg, level="info", **kw):
+            sent.append(msg)
+            if len(sent) == 1:     # a second failure lands mid-delivery
+                tts_groq._announce(tts_groq.last_error(), kw.get("cfg"))
+            return "sent"
+        with mock.patch.object(notify, "send", send):
+            self._fail401()
+        self.assertEqual(len(sent), 1)
+
+    # -- 3: doctor after recovery -------------------------------------
+    def test_doctor_forgets_the_error_after_a_good_synth(self):
+        from test_voice_u7 import voice_rows
+        self.net(("err", http_error(429, b"{}", {"retry-after": "30"})),
+                 ("ok", 100))
+        with self.assertRaises(tts_groq.GroqError):
+            tts_groq.Fetcher(self.cfg()).synth("Hi.")
+        state = pathlib.Path(self.dir.name) / "voice_groq.json"
+        self.assertTrue(state.exists())
+        self.clock[0] += 31
+        tts_groq.Fetcher(self.cfg()).synth("Hi.")
+        self.assertIsNone(tts_groq.last_error())
+        self.assertFalse(state.exists())
+        self.assertIn("none", voice_rows(self.cfg())["groq last error"])
+        self.assertEqual(self._notified(), ["rate_limit"])
+
+    # -- 4/5: speaker edges -------------------------------------------
+    def test_temp_wav_is_removed_when_no_player_after_all(self):
+        made = []
+        real = speech.SentenceSpeaker._wav_file
+
+        def wav(data):
+            made.append(real(data))
+            return made[-1]
+        self.net(("ok", 100))
+        with mock.patch.object(speech.SentenceSpeaker, "_wav_file",
+                               staticmethod(wav)), \
+                mock.patch.object(
+                    tts_groq, "player_argv",
+                    lambda p: [sys.executable, "-c", "pass"]
+                    if p == "x" else None):
+            self.say(self.speaker(), "Hello there.")
+        self.assertEqual(len(made), 1)
+        self.assertFalse(pathlib.Path(made[0]).exists())
+        self.assertEqual(self.spoken(), ["Hello there."])
+
+    def test_sentence_without_a_job_is_spoken_locally_with_its_points(self):
+        sp = self.speaker()
+        item = speech._Item("Hello there.", ["p1"])
+        sp._say_groq(item, ["p1"])
+        self.assertEqual(self.spoken(), ["Hello there."])
+        self.assertEqual([c[0] for c in self.calls], [["p1"]])
+
+    def test_wav_file_failure_latches_to_espeak(self):
+        self.net(("ok", 100))
+        with mock.patch.object(speech.SentenceSpeaker, "_wav_file",
+                               staticmethod(lambda data: "")):
+            sp = self.speaker()
+            self.say(sp, "Hello there.")
+        self.assertTrue(sp._groq_off)
+        self.assertEqual(self.spoken(), ["Hello there."])
+
+    def test_429_on_the_third_chunk_speaks_only_the_rest_one_point(self):
+        sentence = " ".join(["word"] * 90)[:450].rstrip() + "."
+        parts = tts_groq.chunks(sentence)
+        self.assertEqual(len(parts), 3)
+        self.net(("ok", 100), ("ok", 100),
+                 ("err", http_error(429, b"{}", {"retry-after": "30"})))
+        self.say(self.speaker(), sentence, marks=[(5, "p1")])
+        self.assertEqual(len(self.played()), 2)
+        self.assertEqual(self.spoken(), [parts[2]])
+        self.assertEqual([c[0] for c in self.calls], [["p1"]])
+
+    def test_backoff_landing_before_playback_keeps_the_fetched_audio(self):
+        sentence = " ".join(["word"] * 90)[:450].rstrip() + "."
+        parts = tts_groq.chunks(sentence)
+        self.net(("ok", 100), ("ok", 100),
+                 ("err", http_error(429, b"{}", {"retry-after": "30"})))
+        real = speech.SentenceSpeaker._ensure_worker
+        sp = self.speaker()
+        done = threading.Event()
+        with mock.patch.object(speech.SentenceSpeaker, "_ensure_worker",
+                               lambda self: None):
+            sp.finish(sentence, on_done=done.set)
+            job = sp._order[0].job
+            self.assertTrue(job.finished.wait(10))   # 429 already landed
+        self.assertFalse(tts_groq.usable(self.cfg()))
+        real(sp)
+        self.assertTrue(done.wait(20))
+        self.assertEqual(len(self.played()), 2)
+        self.assertEqual(self.spoken(), [parts[2]])
+
+    def test_prefetch_racing_a_latch_starts_no_new_request(self):
+        net = self.net(("ok", 100))
+        sp = self.speaker()
+        item = speech._Item("Hello there.", [])
+        sp._order.append(item)
+        sp._groq_off = True            # latched after _prefetch's check
+        with mock.patch.object(speech.SentenceSpeaker, "_groq_ok",
+                               lambda self: True):
+            sp._prefetch()
+        time.sleep(0.2)
+        self.assertIsNone(item.job)
+        self.assertEqual(net.requests, [])
+
+    def test_a_401_latches_the_turn_and_sends_the_auth_notice_once(self):
+        net = self.net(("err", http_error(401, b"{}")))
+        self.say(self.speaker(), "One here. Two there. Three more.")
+        self.assertEqual(self.spoken(),
+                         ["One here.", "Two there.", "Three more."])
+        self.assertEqual(len(net.requests), 1)
+        self.assertEqual(len(self.notices), 1)
+        self.assertIn("rejected the key", self.notices[0][0])
+
+    # -- 6: spend -----------------------------------------------------
+    def test_cancel_mid_read_is_still_billed(self):
+        f = tts_groq.Fetcher(self.cfg())
+        self.net(("ok", 100))
+
+        def read(s, n=-1):
+            f.close()
+            return make_wav(100)
+        with mock.patch.object(FakeResp, "read", read):
+            with self.assertRaises(cancel.Cancelled):
+                f.synth("Hi there.")
+        self.assertEqual([r["in"] for r in self.rows()], [9])
+
+    # -- 7: the key only goes to https, never across a redirect -------
+    def test_plain_http_base_url_never_gets_the_key(self):
+        net = self.net(("ok", 100))
+        cfg = self.cfg(tts_base_url="http://groq.example.test/v1")
+        with self.assertRaises(tts_groq.GroqError) as cm:
+            tts_groq.Fetcher(cfg).synth("Hi.")
+        self.assertEqual(cm.exception.kind, "config")
+        self.assertEqual(net.requests, [])
+        self.assertEqual(tts_groq.last_error()["class"], "config")
+        self.say(self.speaker(cfg), "Local please.")
+        self.assertEqual(net.requests, [])
+        self.assertEqual(self.spoken(), ["Local please."])
+
+    def test_loopback_http_is_allowed(self):
+        net = self.net(("ok", 100))
+        tts_groq.Fetcher(self.cfg(
+            tts_base_url="http://127.0.0.1:9999/v1")).synth("Hi.")
+        self.assertEqual(len(net.requests), 1)
+
+    def test_redirects_are_not_followed(self):
+        req = urllib.request.Request("https://api.groq.com/x", data=b"{}",
+                                     headers={"Authorization": "Bearer k"})
+        h = tts_groq._NoRedirect()
+        self.assertIsNone(h.redirect_request(
+            req, io.BytesIO(), 307, "moved", {}, "https://evil.test/x"))
+        with mock.patch.object(cancel, "urlopen_with") as m:
+            tts_groq._open(req, 4, cancel.CancelToken())
+        self.assertTrue(any(isinstance(x, tts_groq._NoRedirect)
+                            for x in m.call_args.kwargs["handlers"]))
+
+    # -- 8: the key is never recorded ---------------------------------
+    def test_the_key_appears_in_no_record_notice_or_doctor_row(self):
+        from test_voice_u7 import voice_rows
+        echo = json.dumps({"error": {"message": "bad key " + KEY}}).encode()
+        cases = {
+            "auth": ("err", http_error(401, echo)),
+            "net": ("err", urllib.error.URLError("refused " + KEY)),
+            "terms": ("err", http_error(400, json.dumps(
+                {"error": {"message": "requires terms acceptance " + KEY,
+                           "code": "model_terms_required"}}).encode())),
+            "rate_limit": ("err", http_error(
+                429, echo, {"retry-after": "30"})),
+        }
+        tmp = pathlib.Path(self.dir.name)
+        with mock.patch.object(config, "load_env_key", lambda n: KEY):
+            for kind, step in cases.items():
+                tts_groq.reset()
+                for f in tmp.glob("voice_groq*.json"):
+                    f.unlink()
+                self.notices.clear()
+                self.net(step)
+                with self.assertRaises(tts_groq.GroqError) as cm:
+                    tts_groq.Fetcher(self.cfg()).synth("Hi.")
+                self.assertEqual(cm.exception.kind, kind)
+                blobs = [json.dumps(tts_groq.last_error()),
+                         str(cm.exception)]
+                blobs += [f.read_text() for f in tmp.glob("voice_groq*.json")]
+                blobs += [m for m, _ in self.notices]
+                blobs += list(voice_rows(self.cfg()).values())
+                for b in blobs:
+                    self.assertNotIn(KEY, b, kind)
 
 
 if __name__ == "__main__":

@@ -42,8 +42,10 @@ def local_usable(cfg: dict) -> bool:
 def voice_enabled(cfg: dict) -> bool:
     """[voice] enabled, the one reader every caller goes through. `true`
     and `false` are explicit; `auto` (the default, and an unset or blank
-    value) is on when a Groq key resolves or a local voice is installed.
-    Anything else is off."""
+    value) is on only when a Groq key resolves and an audio player exists;
+    with no key it is off, even if espeak is installed. Espeak and
+    [voice] cmd stay the fallback while voice is on, and the voice under
+    `true`. Anything else is off."""
     raw = ((cfg or {}).get("voice") or {}).get("enabled", "auto")
     v = str(raw).strip().lower() or "auto"
     if v == "true":
@@ -51,7 +53,7 @@ def voice_enabled(cfg: dict) -> bool:
     if v != "auto":
         return False
     from . import tts_groq
-    return tts_groq.available(cfg) or local_usable(cfg)
+    return tts_groq.available(cfg)
 
 
 def backend(cfg: dict) -> tuple:
@@ -63,7 +65,7 @@ def backend(cfg: dict) -> tuple:
         raw = str(((cfg or {}).get("voice") or {}).get("enabled", "auto"))
         return "off", (f"[voice] enabled = {raw.strip()}"
                        if raw.strip().lower() not in ("", "auto")
-                       else "no Groq key and no local voice installed")
+                       else "auto: no Groq key (set one, or enabled = true for espeak)")
     local = "cmd" if str(((cfg or {}).get("voice") or {}).get(
         "cmd", "")).strip() else "espeak"
     if tts_groq.provider(cfg) != "groq":
@@ -202,10 +204,12 @@ def _speak_groq(msg: str, cfg: dict) -> "_GroqCall":
     global _PROC
     sp = SentenceSpeaker(cfg)
     call = _GroqCall(sp)
-    sp.finish(msg, on_done=call._done.set)
+    # register first: once finish() starts the worker, its player may
+    # claim _PROC at once, and the old-process kill must not take it
     with _LOCK:
         old, _PROC = _PROC, call
     _kill(old)
+    sp.finish(msg, on_done=call._done.set)
     return call
 
 
@@ -423,7 +427,11 @@ class SentenceSpeaker:
             with self._plock:
                 val.dequeued = True
                 points = list(val.points)
-            if self._groq_ok():
+            with self._jlock:
+                fetched = val.job is not None
+            # a sentence already fetched (or failed) is played from its
+            # job even if a backoff has landed since: the audio is paid for
+            if not self._groq_off and (fetched or self._groq_ok()):
                 self._prefetch()
                 self._say_groq(val, points)
             else:
@@ -495,8 +503,8 @@ class SentenceSpeaker:
             return
         from . import tts_groq
         with self._jlock:
-            if self._stopped.is_set():
-                return
+            if self._stopped.is_set() or self._groq_off:
+                return       # (a latch may land after the check above)
             prev = None
             for item in [i for i in self._order if not i.done][:2]:
                 if item.job is None:
@@ -510,8 +518,8 @@ class SentenceSpeaker:
     def _latch(self) -> None:
         """Groq failed: espeak for the rest of this turn, and what was
         prefetched is dropped."""
-        self._groq_off = True
         with self._jlock:
+            self._groq_off = True
             for item in self._order:
                 if item.job is not None:
                     item.job.cancel()
@@ -520,18 +528,30 @@ class SentenceSpeaker:
     def _say_groq(self, item, points) -> None:
         from . import tts_groq
         job = item.job
-        if job is None:               # prefetch refused (stop raced it)
+        if job is None:               # prefetch refused (stop, backoff)
+            if not self._stopped.is_set():
+                self._say_local(item.sentence, points)
             return
         fired = False
         for i, chunk in enumerate(job.chunks):
-            got = job.get(self._stopped)
+            # the first chunk has a deadline for the response to start;
+            # past it the endpoint is treated as down
+            got = job.get(self._stopped, tts_groq.FIRST_AUDIO_S
+                          if i == 0 else None)
             if got is None:           # stopped
                 return
-            argv = None
+            if got is _TIMEOUT:
+                got = tts_groq.GroqError("net", "no response in "
+                                         f"{tts_groq.FIRST_AUDIO_S:g} s")
+                tts_groq._trip(got, self._cfg)
+                if self._fetcher is not None:
+                    self._fetcher.close()      # frees the stuck thread
+            path = argv = None
             if isinstance(got, tts_groq.Audio):
                 path = self._wav_file(got.data)
                 argv = tts_groq.player_argv(path) if path else None
             if argv is None:          # a failure, or no player after all
+                self._unlink(path)
                 self._latch()
                 rest = " ".join(job.chunks[i:])
                 self._say_local(rest, points, fire=not fired)
@@ -547,12 +567,17 @@ class SentenceSpeaker:
                     self._fire(points)
                 self._play(argv, chunk)
             finally:
-                try:
-                    os.unlink(path)
-                except OSError:
-                    pass
+                self._unlink(path)
         if not fired:
             self._fire(points)
+
+    @staticmethod
+    def _unlink(path) -> None:
+        if path:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
 
     @staticmethod
     def _wav_file(data: bytes) -> str:
@@ -614,6 +639,9 @@ class SentenceSpeaker:
         self._release()
 
 
+_TIMEOUT = object()
+
+
 class _Item:
     """One queued sentence and the points that fire when it starts."""
 
@@ -639,6 +667,7 @@ class _Job:
         self._off = threading.Event()
         self.finished = threading.Event()
         self.failed = False
+        self.responding = threading.Event()   # the response has started
         self._q: queue.Queue = queue.Queue()
 
     def start(self) -> None:
@@ -667,7 +696,8 @@ class _Job:
             if self._off.is_set() or self._stopped.is_set():
                 return
             try:
-                audio = self._fetcher.synth(chunk)
+                audio = self._fetcher.synth(
+                    chunk, on_headers=self.responding.set)
             except cancel.Cancelled:
                 return
             except tts_groq.GroqError as e:
@@ -686,13 +716,19 @@ class _Job:
         if not (self._off.is_set() or self._stopped.is_set()):
             self._q.put(result)
 
-    def get(self, stopped):
-        """Next result in order; None once the speaker is stopped."""
+    def get(self, stopped, first_by=None):
+        """Next result in order; None once the speaker is stopped.
+        `first_by` (seconds) is a deadline for the response to start:
+        past it with no response, _TIMEOUT. Once bytes are arriving the
+        fetcher's own read timeout is the cap."""
+        end = None if first_by is None else time.monotonic() + first_by
         while not stopped.is_set():
             try:
                 return self._q.get(timeout=0.05)
             except queue.Empty:
-                continue
+                if end is not None and time.monotonic() >= end \
+                        and not self.responding.is_set():
+                    return _TIMEOUT
         return None
 
 

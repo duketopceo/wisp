@@ -71,6 +71,15 @@ class DoctorRowTests(GroqCase):
                          "cmd")
 
 
+class DoctorAutoNoKeyTests(GroqCase):
+    def test_auto_with_no_key_reads_off_and_why(self):
+        with mock.patch.object(config, "load_env_key", lambda n: ""):
+            tts_groq.reset()
+            got = voice_rows({"voice": {"enabled": "auto"}})
+        self.assertTrue(got["voice backend"].startswith("off"), got)
+        self.assertIn("no Groq key", got["voice backend"])
+
+
 class NoticeTests(GroqCase):
     def test_terms_notice_has_link_and_espeak_and_fires_once(self):
         trip(self, terms_err())
@@ -109,21 +118,40 @@ class SpeakTests(GroqCase):
         net = self.net(("ok", 200))
         proc = speech.speak("Opened the settings.", self.cfg())
         proc.wait(timeout=20)
-        self.assertEqual(len(net.requests), 1)
+        self.assertEqual(len(net.requests), 1, net.requests)
         self.assertEqual(net.requests[0]["input"], "Opened the settings.")
         self.assertEqual(len(self.played()), 1)
         self.assertEqual(self.spoken(), [])
         self.assertIsNotNone(proc.poll())
 
     def test_speak_returns_at_once_without_waiting_for_the_network(self):
-        self.net(("block",))
+        net = self.net(("block",))
         t0 = time.monotonic()
         proc = speech.speak("Slow.", self.cfg())
         self.assertLess(time.monotonic() - t0, 0.5)
         self.assertIsNone(proc.poll())
         self.assertTrue(speech.is_speaking())
+        # let the request reach the (stubbed) network before stopping, so
+        # no worker outlives the test and hits the next test's stub
+        self.assertTrue(net.blocked.wait(5))
         speech.stop()
         proc.wait(timeout=5)
+
+    def test_a_fast_player_is_not_killed_by_speak_replacing_the_old_proc(self):
+        self.net(("ok", 1500))
+        real = speech.SentenceSpeaker.finish
+
+        def finish(sp, *a, **k):
+            real(sp, *a, **k)
+            deadline = time.time() + 5          # the worker wins the race
+            while not self.played() and time.time() < deadline:
+                time.sleep(0.01)
+        with mock.patch.object(speech.SentenceSpeaker, "finish", finish):
+            proc = speech.speak("Race me.", self.cfg())
+        proc.wait(timeout=20)
+        # a killed player would end the call at once, not after 1.5 s
+        self.assertGreater(time.time() - self.played()[0][0], 1.2)
+        self.assertEqual(self.spoken(), [])
 
     def test_failure_falls_back_to_espeak(self):
         self.net(("err", http_error(500, b"{}")))

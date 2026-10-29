@@ -297,7 +297,7 @@ one, `wispd dictate list` shows them.
 
 | key | meaning |
 |-----|---------|
-| `enabled` | `"auto"` (default): speak answers when a Groq key resolves, else when espeak (or `cmd`) is installed. `"true"` always speaks, `"false"` never does. Speech, desktop toasts (no toast for a spoken answer) and captions all read this one setting |
+| `enabled` | `"auto"` (default): speak answers when a Groq key resolves and an audio player exists; with no key it stays off, even if espeak is installed. Espeak (or `cmd`) is the fallback while voice is on. `"true"` always speaks (espeak or `cmd` when there is no key), `"false"` never does. Speech, desktop toasts (no toast for a spoken answer) and captions all read this one setting |
 | `provider` | `"groq"` (default): speak with Groq Orpheus when a key resolves, a player (`pw-play`, else `paplay`, else `aplay`) is installed and the answer is English; `cmd`/espeak speaks whenever Groq cannot. `"espeak"`: never ask Groq. Same key as speech-to-text: `[stt] key_env` when `[stt] base_url` is Groq, else `omaseal://groq/default,GROQ_API_KEY` |
 | `tts_model` | Groq model, default `canopylabs/orpheus-v1-english` (a preview model; the id is configurable for when it changes). Not in the settings table: edit `config.toml` |
 | `tts_voice` | Orpheus voice: `autumn`, `diana`, `hannah` (default), `austin`, `daniel`, `troy` |

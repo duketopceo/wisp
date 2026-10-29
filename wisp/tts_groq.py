@@ -39,7 +39,10 @@ MAX_CHARS = 200            # Orpheus rejects longer input
 TERMS_BACKOFF_S = 3600     # re-probe an hour after a terms error
 RATE_DEFAULT_S = 60        # a 429 without retry-after
 RATE_MAX_S = 86400
-TIMEOUT_S = 30
+TIMEOUT_S = 30             # per socket read once the response started
+FIRST_AUDIO_S = 4.0        # a sentence's first chunk: no response by now,
+                           # and the turn goes to espeak
+NET_BACKOFF_S = 60         # after a net or 5xx failure
 MAX_BYTES = 8 * 1024 * 1024
 KEY_TTL_HIT_S = 600
 KEY_TTL_MISS_S = 30
@@ -50,14 +53,17 @@ Audio = namedtuple("Audio", "data ms")
 
 
 class GroqError(Exception):
-    """kind: terms | rate_limit | auth | http | net | bad_audio | budget |
-    nokey | backoff. `retry_after` is seconds (rate_limit)."""
+    """kind: terms | rate_limit | auth | http | net | bad_audio | config |
+    budget | nokey | backoff. `retry_after` is seconds (rate_limit);
+    `status` the HTTP status of an http error."""
 
-    def __init__(self, kind: str, detail: str = "", retry_after: float = 0):
+    def __init__(self, kind: str, detail: str = "", retry_after: float = 0,
+                 status: int = 0):
         super().__init__(f"{kind}: {detail}" if detail else kind)
         self.kind = kind
         self.detail = detail
         self.retry_after = retry_after
+        self.status = status
 
 
 # -- process state ----------------------------------------------------
@@ -67,6 +73,7 @@ _KEYS: dict = {}           # ref -> (value, expires monotonic)
 _UNTIL = 0.0               # no Groq request before this wall time
 _LAST: dict | None = None  # last error record, see last_error()
 _LOADED = False
+_RESERVED: set = set()     # notice classes being sent or already sent
 
 
 def _now() -> float:
@@ -79,6 +86,7 @@ def reset() -> None:
     global _UNTIL, _LAST, _LOADED
     with _LOCK:
         _KEYS.clear()
+        _RESERVED.clear()
         _UNTIL, _LAST, _LOADED = 0.0, None, False
 
 
@@ -169,12 +177,37 @@ def _notice_text(kind: str, until: float) -> str:
 
 def _announce(rec: dict, cfg) -> None:
     """Send the one notice for this error class, the first time it
-    happens on this machine. Daemon only, like the state record."""
+    happens on this machine. Daemon only, like the state record. The
+    class is reserved in memory while the notice is sent and remembered
+    on disk only when notify accepted it (sent or held); a quiet or
+    disabled notifier releases it so the notice can show later."""
     if not ledger.ACTIVE:
         return
     kind = rec["class"]
+    path = _notified_path()
     with _LOCK:
-        path = _notified_path()
+        if kind in _RESERVED:
+            return
+        try:
+            shown = json.loads(path.read_text())
+            shown = shown if isinstance(shown, list) else []
+        except (OSError, ValueError):
+            shown = []
+        if kind in shown:
+            return
+        _RESERVED.add(kind)
+    try:
+        from . import notify
+        decision = notify.send(_notice_text(kind, rec["until"]),
+                               "attention", cfg=cfg,
+                               key=f"voice-groq-{kind}")
+    except Exception:   # noqa: BLE001  a notice never breaks speech
+        decision = ""
+    if decision not in ("sent", "held"):
+        with _LOCK:
+            _RESERVED.discard(kind)
+        return
+    with _LOCK:
         try:
             shown = json.loads(path.read_text())
             shown = shown if isinstance(shown, list) else []
@@ -188,13 +221,7 @@ def _announce(rec: dict, cfg) -> None:
             tmp.write_text(json.dumps(shown + [kind]))
             os.replace(tmp, path)
         except OSError:
-            return          # cannot remember it: stay quiet, not noisy
-    try:
-        from . import notify
-        notify.send(_notice_text(kind, rec["until"]), "attention", cfg=cfg,
-                    key=f"voice-groq-{kind}")
-    except Exception:   # noqa: BLE001  a notice never breaks speech
-        pass
+            pass            # stays reserved in memory: quiet, not noisy
 
 
 def _trip(err: GroqError, cfg=None) -> None:
@@ -203,11 +230,17 @@ def _trip(err: GroqError, cfg=None) -> None:
     global _UNTIL, _LAST
     now = _now()
     until = 0.0
+    secret = key(cfg) if cfg is not None else ""
+    if secret and secret in err.detail:
+        err.detail = err.detail.replace(secret, "[key]")
+        err.args = (f"{err.kind}: {err.detail}",)
     if err.kind == "terms":
         until = now + TERMS_BACKOFF_S
     elif err.kind == "rate_limit":
         wait = err.retry_after or RATE_DEFAULT_S
         until = now + min(float(wait), RATE_MAX_S)
+    elif err.kind == "net" or (err.kind == "http" and err.status >= 500):
+        until = now + NET_BACKOFF_S
     rec = {"class": err.kind, "ts": now, "until": until,
            "detail": err.detail[:300]}
     with _LOCK:
@@ -252,6 +285,15 @@ def _key_ref(cfg) -> str:
     if stt.get("key_env") and host.split(".")[-2:] == ["groq", "com"]:
         return str(stt["key_env"])
     return GROQ_KEY_REF
+
+
+def _safe_url(url: str) -> bool:
+    """The key goes only to https, or to this machine (the test harness's
+    fake endpoint is plain http on loopback)."""
+    u = urlparse(url)
+    return u.scheme == "https" or (
+        u.scheme == "http" and u.hostname in ("127.0.0.1", "localhost",
+                                              "::1"))
 
 
 def key(cfg) -> str:
@@ -396,13 +438,20 @@ def classify(status: int, headers, body: bytes) -> GroqError:
                          wait if wait > 0 else RATE_DEFAULT_S)
     if status in (401, 403):
         return GroqError("auth", msg or f"HTTP {status}")
-    return GroqError("http", msg or f"HTTP {status}")
+    return GroqError("http", msg or f"HTTP {status}", status=status)
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *a, **kw):
+        return None
 
 
 def _open(req, timeout, token):
     """The one network seam (tests replace it). The response's socket is
-    closed when `token` is cancelled."""
-    return cancel.urlopen_with(token, req, timeout=timeout)
+    closed when `token` is cancelled. Redirects are not followed: the
+    Authorization header must not leave the configured host."""
+    return cancel.urlopen_with(token, req, timeout=timeout,
+                               handlers=(_NoRedirect(),))
 
 
 class Fetcher:
@@ -415,10 +464,12 @@ class Fetcher:
         self._resps: set = set()
         self._lock = threading.Lock()
 
-    def synth(self, text: str) -> Audio:
+    def synth(self, text: str, on_headers=None) -> Audio:
         """WAV for `text` (<= 200 chars). Raises cancel.Cancelled when
         closed, GroqError otherwise. The backoff and the spend cap are
-        checked before anything is sent."""
+        checked before anything is sent. `on_headers()` is called once
+        the response has started (the speaker's first-audio deadline
+        stops applying; the longer read cap takes over)."""
         self.token.check()
         cfg = self.cfg
         if not available(cfg):
@@ -427,6 +478,10 @@ class Fetcher:
             raise GroqError("backoff", "waiting out a Groq backoff")
         if not ledger.paid_allowed(cfg):
             raise GroqError("budget", "daily spend cap reached")
+        if not _safe_url(base_url(cfg)):
+            err = GroqError("config", "tts_base_url must be https")
+            _trip(err, cfg)
+            raise err
         body = json.dumps({"model": model(cfg), "input": text,
                            "voice": voice(cfg),
                            "response_format": "wav"}).encode()
@@ -439,6 +494,11 @@ class Fetcher:
         try:
             try:
                 resp = _open(req, TIMEOUT_S, self.token)
+                # a 200 is billed per input character whatever happens to
+                # the body (barge-in, bad audio), so count it now
+                ledger.note_chars("groq", model(cfg), len(text))
+                if on_headers is not None:
+                    on_headers()
                 with self._lock:
                     self._resps.add(resp)
                 data = resp.read(MAX_BYTES + 1)
@@ -479,8 +539,24 @@ class Fetcher:
             err = GroqError("bad_audio", str(e))
             _trip(err, cfg)
             raise err from None
-        ledger.note_chars("groq", model(cfg), len(text))
+        self._recovered()
         return Audio(data, ms)
+
+    @staticmethod
+    def _recovered() -> None:
+        """A good synth past every backoff: Groq works again, so the
+        doctor stops showing the old error. The one-time notice record
+        stays."""
+        global _LAST
+        with _LOCK:
+            if _LAST is None or _now() < _UNTIL:
+                return
+            _LAST = None
+        if ledger.ACTIVE:
+            try:
+                _state_path().unlink()
+            except OSError:
+                pass
 
     def close(self) -> None:
         """Abort every request in flight and close every response."""
