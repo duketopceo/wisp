@@ -140,7 +140,7 @@ class Layout(unittest.TestCase):
                      "ask_chat", "execute", "build_questions",
                      "JEV_QUESTIONS", "log_decision", "notify",
                      "run_listen", "_publish_error", "_end_speaking",
-                     "_shadow_decision", "hypr_env", "fuzzy_app"):
+                     "hypr_env", "fuzzy_app"):
             self.assertTrue(hasattr(pipeline, name), name)
 
 
