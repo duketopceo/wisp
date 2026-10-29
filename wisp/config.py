@@ -16,7 +16,6 @@ DATA_DIR = pathlib.Path(
     os.environ.get("XDG_DATA_HOME", DATA_DIR_P.parent)) / "wisp"
 CORRECTIONS = DATA_DIR / "corrections.jsonl"
 DECISIONS = DATA_DIR / "decisions.jsonl"
-SHADOW = DATA_DIR / "shadow.jsonl"
 ROUTE_AB = DATA_DIR / "route_ab.jsonl"
 _xdg_rt = os.environ.get("XDG_RUNTIME_DIR")
 RUN_DIR = (pathlib.Path(_xdg_rt) / "wisp") if _xdg_rt else RUN_DIR_P
@@ -38,19 +37,6 @@ WHISPER_BIN = WHISPER_HOME / "build" / "bin" / "whisper-cli"
 JEV_ENDPOINT = os.environ.get(
     "WISP_JEV_ENDPOINT", "https://openrouter.ai/api/alpha/decisions")
 CHAT_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
-
-# Second deciders, run alongside the primary purely to record agreement.
-# Selected with `[jev] shadow = "<name>"`; the primary still decides every
-# turn — a shadow never changes what the agent does, it only creates the
-# labeled-comparison data the v1.0 accuracy gate needs. The pplx shadow
-# uses OpenRouter (same key as Jev) — no separate Perplexity key.
-SHADOW_PROVIDERS = {
-    "pplx": {
-        "endpoint": "https://openrouter.ai/api/alpha/decisions",
-        "model": "perplexity/pplx-decider-v1.2",
-        "key_env": "OPENROUTER_API_KEY",
-    },
-}
 
 DEFAULT_CONFIG = """\
 [hotkey]
@@ -475,13 +461,6 @@ timeout_ms = "500"
 # (e.g. http://127.0.0.1:8931/decisions → llama-jev qwen3-4b :8091).
 
 [jev]
-# Shadow decider: a second decision model answers the same questions on
-# every turn so the two can be compared against your labels later. The
-# PRIMARY still decides — a shadow never changes what Wisp does, it only
-# accumulates the agreement data the soak needs. Both answers land in
-# shadow.jsonl, keyed by the same turn id decisions.jsonl carries. "" = off.
-# Known values: "pplx" (perplexity/pplx-decider-v1.2 on OpenRouter).
-shadow = ""
 # Optional runtime route lane: flash decider before Jev (default off).
 # flash_decider = false
 # flash_model = "perplexity/pplx-decider-flash-v1.2"
