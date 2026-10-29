@@ -5,7 +5,7 @@
   "audio": "ask.wav",
   "endpoints": {
     "whisper": {
-      "transcript": "what window is focused"
+      "transcript": "check which window is focused"
     },
     "brain": {
       "responses": [
