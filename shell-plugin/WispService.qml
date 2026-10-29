@@ -170,6 +170,8 @@ Item {
     return true;
   }
   function trigger() { return runAction([wispd, "trigger", "--json"], "trigger"); }
+  // A click on a part of a 3D card (B13): one typed question, a normal turn.
+  function askAbout(text) { return runAction([wispd, "ask", "--json", text], "ask"); }
   // Scribble to ask (B7): the strokes drawn while listening, handed to the
   // daemon as a small file (wispd scribble). Its own subprocess: it must not
   // queue behind, or flash a result in, the one action slot. A newer payload

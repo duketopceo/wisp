@@ -98,12 +98,24 @@ HOSTS = {
                "from your machine is in it, but the picture's address "
                "comes from the answer.",
         default="Only when an answer shows a picture. This is the only "
-                "host fetched by default.",
+                "host fetched by default for pictures.",
         key="None.",
         control="`[images] allow` is the full list of hosts that may be "
                 "fetched, https only, size-capped, private addresses "
                 "refused. Set it to a host you do not use to turn "
                 "pictures off."),
+    "raw.githubusercontent.com": dict(
+        what="3D models for answer cards.",
+        sends=[NONE],
+        detail="A plain GET for one glTF or GLB file an answer named. "
+               "Nothing from your machine is in it, but the model's "
+               "address comes from the answer.",
+        default="Only when an answer shows a 3D model.",
+        key="None.",
+        control="`[models] allow` is the full list of hosts that may be "
+                "fetched, https only, size-capped, private addresses "
+                "refused. Set it to a host you do not use to turn 3D "
+                "models off."),
 }
 
 # Names the code mentions that Wisp does not send anything to: a browser
@@ -202,6 +214,7 @@ CHOOSE = (
     ("MCP servers you configure", "Receive the tool calls you "
      "approve."),
     ("`[images] allow`", "Hosts a picture may be fetched from."),
+    ("`[models] allow`", "Hosts a 3D model may be fetched from."),
     ("`wispd import <https address>`", "One GET of the address you typed "
      "(https only, 256 KB), after which nothing is written until you read "
      "the full text and say yes."),

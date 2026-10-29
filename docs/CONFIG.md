@@ -571,6 +571,25 @@ WebP. Copies are kept in `<data dir>/images/`.
 | `max_kb` | `4096` | largest picture to download, in KB |
 | `timeout_s` | `8` | give up on a slow fetch after this many seconds |
 
+## [models] — 3D parts in answers
+
+An answer may carry one small 3D model, a `::model[url=...,alt=...]` line
+on the paper pointing at a glTF or GLB file. Wisp fetches it only from an
+allow-listed host over https (same rules as `[images]`: redirects checked,
+private addresses refused, size and time capped), reads the named parts
+and their bounding boxes (never the mesh data, and a file that points at
+other files is refused) and shows them as a small turnable card. Click a
+part and Wisp asks one question that names it, as a normal turn
+(`wispd ask "..."`). The card takes the pointer only while it is on
+screen; it is click-through again when the answer goes. Parts are kept in
+`<data dir>/models/`.
+
+| key | default | meaning |
+|-----|---------|---------|
+| `allow` | `""` | comma list of hosts (each also matches its subdomains); empty keeps the built-in default, `raw.githubusercontent.com` |
+| `max_kb` | `4096` | largest model file to download, in KB |
+| `timeout_s` | `8` | give up on a slow fetch after this many seconds |
+
 ## [debug]
 
 | key | meaning |
@@ -597,7 +616,7 @@ watch [topic ...]              choice [pick] [--prompt-id ID] [--index N]
 doctor  health [start [--run]]  latency [--since 24h]  spend  binds  onboard
 cua status|test|log|kill|resume|enable|disable   notify test
 task list|status|cancel|run    memory edit|write    suggest list
-label set                     context
+label set                     context  ask TEXT
 learn fails  eval [--json]      skills list|import
 trace show|digest              captures [turn] [--full]
 config show|set|keys           theme show|set|check|css

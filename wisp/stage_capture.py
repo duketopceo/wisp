@@ -450,6 +450,15 @@ def capture_stage(ctx) -> bool:
     nothing was heard: the turn is already finished in that case."""
     from . import trace as _trace
     pl, state, sp, token, cfg = _pl(), ctx.state, ctx.sp, ctx.token, ctx.cfg
+    if ctx.typed:
+        # a typed question (B13): nothing to record or transcribe
+        ctx.text = ctx.typed
+        for name in ("press", "record", "release", "stt"):
+            sp.record(name, sp.now())   # zero-length: the latency table
+        state.transition("deciding", transcript=ctx.text, result="",
+                         answer="", choices=[], points=[], error="",
+                         error_code="", error_detail="")
+        return True
     if ctx.wav is None:
         state.transition("listening", transcript="", result="",
                          answer="", choices=[], points=[], error="",

@@ -34,7 +34,7 @@ READ_CMDS = frozenset({
 })
 MUTATING_CMDS = frozenset({
     "agent", "task_cancel", "choice", "config", "memory", "stop",
-    "interrupt", "listen", "label", "dictate_correct", "learn", "harness",
+    "interrupt", "listen", "ask", "label", "dictate_correct", "learn", "harness",
 })
 SAFETY_CONFIG_KEYS = frozenset({
     "agent.allow_shell", "agent.autonomy", "agent.risk_threshold",

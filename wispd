@@ -219,6 +219,24 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
                 threading.Thread(target=_rec_watchdog,
                                  args=(ctl, secs), daemon=True).start()
                 return {"ok": True, "recording": True}
+        if c == "ask":
+            # a typed question (a click on a 3D card part, B13): one
+            # ordinary turn that starts from the text, never over a live one
+            text = " ".join(str(cmd.get("text", "")).split())[:300]
+            if not text:
+                return {"ok": False, "error": "empty"}
+            with ctl["rec_lock"]:
+                if ctl["rec"] is not None or ctl["busy"].is_set():
+                    return {"ok": False, "error": "busy"}
+                ctl["busy"].set()
+            tid = st.begin_turn()
+            ctl["interrupt"].clear()
+            ctl["token"] = cancel.CancelToken()
+            speech.stop()
+            threading.Thread(target=_run_listen,
+                             args=(st, cfg, ctl, None, None, tid, text),
+                             daemon=True).start()
+            return {"ok": True, "asked": True}
         if c == "choice":
             pick = cmd.get("pick", "")
             if pick.startswith("suggestion:"):
@@ -599,7 +617,7 @@ def _spoken_stop(st, ctl: dict, text: str) -> dict:
 
 
 def _run_listen(st: state_mod.StateBus, cfg: dict, ctl: dict,
-                wav=None, spans=None, turn_id=None) -> None:
+                wav=None, spans=None, turn_id=None, typed="") -> None:
     turn_id = turn_id or st.current_turn()
     token = ctl.get("token")
     if token is None:
@@ -610,7 +628,7 @@ def _run_listen(st: state_mod.StateBus, cfg: dict, ctl: dict,
                             wait_for_choice=_wait_for_choice(ctl, token),
                             interrupted=ctl["interrupt"].is_set,
                             wav=wav, spans=spans, turn_id=turn_id,
-                            cancel=token, speculative=spec)
+                            cancel=token, speculative=spec, typed=typed)
         dlog(f"turn done: status={st.status} "
              f"transcript={st.transcript!r} result={st.result!r}")
     except Exception as e:

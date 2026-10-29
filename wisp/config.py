@@ -237,6 +237,16 @@ allow = ""
 max_kb = "4096"
 timeout_s = "8"
 
+[models]
+# 3D parts cards (wisp/tools/modelfetch.py): an answer may show one small
+# glTF/GLB model whose parts can be clicked to ask about. Only https hosts
+# in `allow` (a comma list; each entry also matches its subdomains) are
+# fetched, never more than max_kb, never longer than timeout_s. Empty allow
+# keeps the built-in default (GitHub's raw host, home of the Khronos samples).
+allow = ""
+max_kb = "4096"
+timeout_s = "8"
+
 [verify]
 # Verify ladder (wisp/verify.py, U2): each recorded action's verdict.
 # The pixel rung masks a region_px square around the click point and

@@ -1,6 +1,6 @@
 # Wisp Roadmap
 
-State: **Phases 1–4, 6, 7 and 8 are on `master`, plus units B1–B34 of the beat-competitors plan except B3, B13 and B31. Next: act quality (Phase 9), then the router fast path (Phase 5).**
+State: **Phases 1–4, 6, 7 and 8 are on `master`, plus units B1–B34 of the beat-competitors plan except B3 and B31. Next: act quality (Phase 9), then the router fast path (Phase 5).**
 Last updated: 2026-10-28. Plan of record: `docs/plans/2026-10-26-0031-feat-wisp-v1-roadmap-plan.md`.
 
 ## Product target
@@ -26,9 +26,9 @@ Fixed decisions:
 
 7. Phase 7, the rest: sensitive-window skip (#158), per-app chat history, barge-in and streaming speech-to-text (#160–#162, R8), spoken walkthroughs with label-first snapping (#163, R7).
 8. Phase 8 · Agent hardening: Wisp-held credentials scrubbed from spawned agents (#155, R11).
-9. Beat-competitors plan (`docs/plans/2026-10-27-feat-wisp-beat-competitors-plan.md`), B1–B34 except B3, B13 and B31 (#164–#204): latency gate, earlier first sentence, hand-drawn ink, image cards, walkthrough lessons, scribble to ask, voice speed, document context, named helpers, plan preview, install and trust pages, multilingual turns, dictation safety net, sharing, capture checks, one-instance daemon, self-answers, starter pack, hands-free mode, and a capped trial brain (off).
+9. Beat-competitors plan (`docs/plans/2026-10-27-feat-wisp-beat-competitors-plan.md`), B1–B34 except B3 and B31 (#164–#204): latency gate, earlier first sentence, hand-drawn ink, image cards, walkthrough lessons, scribble to ask, voice speed, document context, named helpers, plan preview, install and trust pages, multilingual turns, dictation safety net, sharing, capture checks, one-instance daemon, self-answers, starter pack, hands-free mode, and a capped trial brain (off).
 
-Also: CI flake root causes (#142), "open my email" opens Gmail when the mail handler is a browser (#147), Argus pinned at c701b2a (#151), act no longer ends a run on a narrated next step without a tool call (#153). Voice polish leftovers (B8b): captions toggle, mic failover, muted speaker keeps the answer on the clipboard, and no announcements on calls. Watchable browser lane (B14): an extension pairs with a code and works in a tab group in your own browser, off by default.
+Also: CI flake root causes (#142), "open my email" opens Gmail when the mail handler is a browser (#147), Argus pinned at c701b2a (#151), act no longer ends a run on a narrated next step without a tool call (#153). Voice polish leftovers (B8b): captions toggle, mic failover, muted speaker keeps the answer on the clipboard, and no announcements on calls. Watchable browser lane (B14): an extension pairs with a code and works in a tab group in your own browser, off by default.  3D parts (B13): an answer can carry one small allow-listed glTF model whose parts you click to ask about.
 
 ## Next, in order
 
@@ -36,7 +36,7 @@ Each is one PR, planned when it starts.
 
 1. **Phase 9 · Act quality** — fix the top act failures from `wispd eval --misses` (default-app resolution, wrong-coordinate clicks, launch-instead-of-navigate, and claiming success without checking the screen — e.g. "open my Stripe tab" focused the terminal and reported done). Unblocks B3.
 2. **Phase 5 · Router fast path** — remove the Jev router (still on the routing path) and its shadow/replay/A-B tooling; the heuristic routes unambiguous launches and questions directly, everything else goes to act. The route span misses its budget (p50 about 1.0 s against 200 ms).
-3. **Remaining plan units** — B3 (accuracy loop, after Phase 9), B31 (growth scoreboard), B13 (optional).
+3. **Remaining plan units** — B3 (accuracy loop, after Phase 9), B31 (growth scoreboard).
 4. **Clean-box check** — `wispd onboard` and `wispd doctor` on a clean Omarchy box with hosted keys only.
 
 ## v1.0 gate

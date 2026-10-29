@@ -1,0 +1,17 @@
+usage: wispd ask [-h] [--json] [--quiet] [--no-color] text
+
+Ask one typed question (starts a normal turn)
+
+positional arguments:
+  text         the question to ask, as one argument
+
+options:
+  -h, --help   show this help message and exit
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd ask "what is the front wheel for?"

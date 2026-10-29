@@ -102,7 +102,8 @@ def _publish_error(state, exc: BaseException) -> None:
 def run_listen(cfg: dict, state, wait_for_choice=None,
                wav: pathlib.Path | None = None,
                interrupted=None, spans=None, turn_id=None,
-               cancel=None, speculative=None) -> int:
+               cancel=None, speculative=None,
+               typed: str = "") -> int:
     """One push-to-talk cycle inside the daemon.
 
     `cancel` is the turn's CancelToken (U9; the daemon's `interrupt`
@@ -121,7 +122,9 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
     the daemon's first press) or a fresh one, and every write goes
     through the bus tagged with it. `speculative` (context.Speculative,
     started at press) supplies the screenshot and window map; the turn
-    discards whatever it did not consume when it ends.
+    discards whatever it did not consume when it ends. `typed` is a
+    question that arrived as text (a click on a 3D card part): the turn
+    skips capture and speech-to-text and starts from it.
     """
     from . import bgwriter
     bgwriter.configure(cfg)
@@ -139,7 +142,7 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
         with _cancel.bind(token):
             return _listen_turn(cfg, state, wait_for_choice, wav,
                                 interrupted, spans, turn_id, token,
-                                speculative)
+                                speculative, typed)
     finally:
         stop_watch.set()
         if speculative is not None:
@@ -147,7 +150,7 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
 
 
 def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
-                 turn_id, token, speculative=None) -> int:
+                 turn_id, token, speculative=None, typed="") -> int:
     secs = int(cfg.get("audio", {}).get("seconds", "60"))
     model = cfg.get("agent", {}).get("model", "typesafe/jev-1.13")
     from . import trace as _trace
@@ -162,6 +165,7 @@ def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
     sp.bind(turn)
     ctx = TurnCtx(cfg, state, wait_for_choice, wav, interrupted, sp, turn,
                   token, speculative, secs, model)
+    ctx.typed = typed
     _trace.emit(turn, "listen_start", "lifecycle",
                 {"seconds": secs, "model": model})
     try:
