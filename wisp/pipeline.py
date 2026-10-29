@@ -46,9 +46,8 @@ from .stage_execute import (  # noqa: F401
     _DICTATE_PREFIX, dictation_text, execute, execute_stage)
 from .stage_route import (  # noqa: F401
     JEV_QUESTIONS, _BENIGN_ACTIONS, _COMPLEX_LAUNCH, _LAUNCH_VERBS,
-    _OPEN_VERB, _ask_prompt, _jev_is_local, _shadow_agree,
-    _shadow_decision, _shadow_worker, ambiguous_choices, apply_choice,
-    ask_jev, auto_pick, build_questions, complex_launch, fuzzy_app,
+    _OPEN_VERB, _ask_prompt, _jev_is_local, ambiguous_choices,
+    apply_choice, ask_jev, auto_pick, build_questions, complex_launch, fuzzy_app,
     is_low_confidence, route_stage)
 from .stage_speak import (  # noqa: F401
     _end_speaking, _publish_delta, answer_text, ask_chat, log_decision,
