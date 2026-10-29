@@ -23,6 +23,13 @@ class _Iso(unittest.TestCase):
 
 class PointerTest(_Iso):
 
+    def setUp(self):
+        super().setUp()
+        # no live compositor here: an unreadable layout is "on screen"
+        p = mock.patch("wisp.points.monitors", return_value=[])
+        p.start()
+        self.addCleanup(p.stop)
+
     def test_parse_xy_screenshot(self):
         # legacy path: raw physical px (no magick to normalize)
         with mock.patch("wisp.points.monitors",
@@ -50,6 +57,44 @@ class PointerTest(_Iso):
     def test_parse_xy_bad(self):
         self.assertIsNone(system._parse_xy("nowhere"))
         self.assertIsNone(system._parse_xy(""))
+
+    # two monitors side by side: 2x laptop (logical 1000x500) + 1x at x=1000
+    MONS = [{"x": 0, "y": 0, "width": 2000, "height": 1000, "scale": 2},
+            {"x": 1000, "y": 0, "width": 1920, "height": 1080,
+             "scale": 1}]
+
+    def test_on_screen_uses_logical_rects(self):
+        from wisp import points
+        self.assertTrue(points.on_screen(10, 20, self.MONS))
+        self.assertTrue(points.on_screen(2500, 900, self.MONS))
+        # right of the 2x monitor's logical width (1000) is the 2nd one;
+        # below the 2x monitor's logical height (500) at x<1000 is nothing
+        self.assertFalse(points.on_screen(500, 800, self.MONS))
+        self.assertFalse(points.on_screen(-50, 10, self.MONS))
+        self.assertFalse(points.on_screen(5000, 10, self.MONS))
+
+    def test_on_screen_unknown_layout_never_vetoes(self):
+        from wisp import points
+        self.assertTrue(points.on_screen(99999, 99999, []))
+
+    def test_offscreen_click_is_refused_not_driven(self):
+        with mock.patch("wisp.points.monitors", return_value=self.MONS), \
+             mock.patch("wisp.pointer.Registry") as reg:
+            out = system.click("5000,10@logical", DRIVE_CFG)
+        self.assertTrue(out.startswith("FAIL (5000,10 is off every screen"),
+                        out)
+        self.assertIn("re-aim", out)
+        reg.assert_not_called()
+
+    def test_offscreen_move_is_refused_in_guide_mode_too(self):
+        with mock.patch("wisp.points.monitors", return_value=self.MONS):
+            out = system.move("500,800@logical", GUIDE_CFG)
+        self.assertTrue(out.startswith("FAIL (500,800 is off every"), out)
+
+    def test_onscreen_click_still_goes_through(self):
+        with mock.patch("wisp.points.monitors", return_value=self.MONS):
+            self.assertEqual(system.click("1500,300@logical", GUIDE_CFG),
+                             "GUIDE(1500,300)")
 
     def test_guide_mode_no_spawn(self):
         with mock.patch("subprocess.run") as run:

@@ -814,7 +814,16 @@ def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
     if xy is None:
         return f"FAIL (could not resolve coordinates or ground target {arg!r})"
     x, y = xy
-    from .. import platform
+    from .. import platform, points
+    mons = points.monitors()
+    if not points.on_screen(x, y, mons):
+        # a coordinate from the wrong space (or invented) maps to no
+        # monitor: driving it clicks nothing, and the loop reads the
+        # click as done. Refuse so the model re-aims from the screenshot.
+        bx, by, bw, bh = points.logical_bbox(mons)
+        return (f"FAIL ({x},{y} is off every screen (screen spans "
+                f"{bx},{by} to {bx + bw},{by + bh}); re-aim from the "
+                "latest screenshot)")
     mode = (cfg or {}).get("pointer", {}).get("mode", "guide")
     op = "click" if do_click else "move"
     # [cua] delivery picks the backend (auto order, pointer-escalation
