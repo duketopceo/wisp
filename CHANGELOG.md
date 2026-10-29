@@ -35,6 +35,7 @@ How this file is kept:
 - Linux only: the macOS and Windows code paths are removed.
 - Voice polish: a captions toggle (say "turn off captions"), a fallback to your default mic when the one you picked is gone, the answer on your clipboard when the speaker is muted, and no announcements while you are on a call or sharing your screen.
 - Browser lane (off by default): a small extension lets Wisp work in a tab group in your own browser. You pair it with a code, watch it work and press Stop to end it; it never fills password, one-time-code or card fields.
+- 3D parts (off unless a model host is allowed): an answer can show one small glTF model from an allow-listed host that you can turn; click a part and Wisp asks one question naming it. It needs no GPU and gives the pointer back when the answer goes.
 
 ## v0.9.0 - 2026-09-30
 
