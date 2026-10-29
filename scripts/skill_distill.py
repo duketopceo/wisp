@@ -25,6 +25,7 @@ import argparse
 import base64
 import json
 import pathlib
+import re
 import sys
 import time
 
@@ -42,17 +43,32 @@ _DESCRIBE = ("You are documenting an application's UI for a voice "
              "pane), and what a user does here. Terse bullets.")
 
 _MERGE = """Merge these per-screen descriptions into one SKILL.md body
-for the app "{app}". Use exactly these sections:
+for the app "{app}". Use exactly these sections, in this order:
 
 ## Overview        — what the app is and the 3 most common tasks
 ## Screens         — one line per screen/page: name — purpose
 ## Controls        — control — where it lives — what it does
 ## Workflows       — numbered click paths for the common tasks
+## Tools           — APIs, CLIs or MCP tools that cover this app, or "none known"
+## Verify before done — how to confirm an action worked before claiming it
 ## Gotchas         — modal traps, required logins, hidden states
 
-Keep every control name verbatim from the descriptions. No preamble —
-output only the section bodies.
-"""
+Rules:
+- Keep every control name verbatim from the descriptions.
+- Populate every section from the descriptions. If a section has no
+  evidence in the descriptions, write "unverified — needs a deeper
+  capture" instead of inventing content.
+- Never repeat the section spec as content. Workflows must be real
+  numbered steps an operator could follow, e.g.:
+
+  ## Workflows
+  1. Compose a reply: open the thread → click the reply arrow at the
+     bottom of the last message → type in the editor → Send.
+  2. Search mail: click the search box top-center → type a query →
+     Enter → results replace the list.
+
+- No preamble — output only the section bodies.
+{tools_note}"""
 
 
 def _data_url(path: pathlib.Path) -> str:
@@ -95,18 +111,79 @@ def describe(cap: dict, spec: str, timeout: float) -> str:
     return brain.chat(msg, cfg, timeout=timeout)["content"]
 
 
-def merge(app: str, parts: list, spec: str, timeout: float) -> str:
+_TEMPLATE_ECHO = re.compile(r"^##\s+\w[^\n]*—", re.M)
+
+
+def _assemble_fallback(app: str, parts: list, tools_note: str) -> str:
+    """Deterministic merge when the brain echoes the template instead
+    of merging — small local models do this. Screens/Controls come
+    straight from the captures; reasoning sections stay honestly empty."""
+    screens = [re.sub(r"^###\s*", "", p).split("\n", 1)[0].strip()
+               for p in parts]
+    body = [
+        f"## Overview\n{app} — distilled from {len(parts)} captured "
+        "screens. Common tasks: see Workflows.",
+        "## Screens\n" + "\n".join(f"- {s}" for s in screens),
+        "## Controls\n" + "\n".join(parts),
+        "## Workflows\nunverified — needs a deeper capture",
+        "## Tools\n" + (tools_note or "none known"),
+        "## Verify before done\nunverified — needs a deeper capture",
+        "## Gotchas\nunverified — needs a deeper capture",
+    ]
+    return "\n\n".join(body)
+
+
+def merge(app: str, parts: list, spec: str, timeout: float,
+          tools_note: str = "") -> str:
     cfg = {"brain": {"default": spec}}
-    prompt = _MERGE.format(app=app) + "\n\n" + "\n\n---\n\n".join(parts)
-    return brain.chat([{"role": "user", "content": prompt}],
+    note = ("\nKnown tool coverage for this app (use in ## Tools): "
+            + tools_note) if tools_note else ""
+    prompt = (_MERGE.format(app=app, tools_note=note) + "\n\n"
+              + "\n\n---\n\n".join(parts))
+    body = brain.chat([{"role": "user", "content": prompt}],
                       cfg, timeout=timeout)["content"]
+    if _TEMPLATE_ECHO.search(body):
+        return _assemble_fallback(app, parts, tools_note)
+    return body
 
 
-def frontmatter(slug: str, app: str) -> str:
-    return (f"---\nname: {slug}\n"
-            f"description: UI map and workflows for {app} — "
-            f"use when the user is in {app} or asks how to do "
-            f"something in it\n---\n\n")
+_FRONTMATTER_WHITELIST = {
+    "name", "description", "url_hosts", "app_classes", "asks",
+    "tier", "provenance", "draft", "version",
+}
+
+
+def frontmatter(slug: str, app: str, hosts: list | None = None,
+                classes: list | None = None, asks: list | None = None,
+                provenance: str = "distilled", draft: bool = True) -> str:
+    """Whitelist-only frontmatter — app skills are doc skills; `tool:`
+    and foreign schema keys never reach the file."""
+    lines = ["---", f"name: {slug}",
+             f"description: UI map and workflows for {app} — "
+             f"use when the user is in {app} or asks how to do "
+             f"something in it"]
+    if hosts:
+        lines.append("url_hosts: " + ", ".join(hosts))
+    if classes:
+        lines.append("app_classes: " + ", ".join(classes))
+    if asks:
+        lines.append("asks: " + "; ".join(asks))
+    lines.append("tier: safe")
+    lines.append(f"provenance: {provenance}")
+    if draft:
+        lines.append("draft: first-run (unverified)")
+    return "\n".join(lines) + "\n---\n\n"
+
+
+def sanitize_frontmatter(text: str) -> str:
+    """Strip non-whitelist keys from existing frontmatter — adapted or
+    generated skills can never smuggle tool:/tier: or foreign schema."""
+    m = re.match(r"^---\n(.*?)\n---\n", text, re.S)
+    if not m:
+        return text
+    keep = [ln for ln in m.group(1).splitlines()
+            if ln.split(":", 1)[0].strip() in _FRONTMATTER_WHITELIST]
+    return "---\n" + "\n".join(keep) + "\n---\n" + text[m.end():]
 
 
 def main(argv: list) -> int:
@@ -122,6 +199,16 @@ def main(argv: list) -> int:
     ap.add_argument("--timeout", type=float, default=90)
     ap.add_argument("--out", type=pathlib.Path, default=None,
                     help="skill dir (default ~/.local/share/wisp/skills/<slug>)")
+    ap.add_argument("--hosts", default="",
+                    help="comma url_hosts for auto-inject, e.g. mail.google.com")
+    ap.add_argument("--classes", default="",
+                    help="comma app_classes for auto-inject")
+    ap.add_argument("--asks", default="",
+                    help="semicolon-separated example asks shown on match")
+    ap.add_argument("--tools-note", default="",
+                    help="known API/CLI/MCP coverage for the Tools section")
+    ap.add_argument("--verified", action="store_true",
+                    help="drop the first-run draft marker")
     ap.add_argument("--keep-parts", action="store_true",
                     help="write per-screen descriptions alongside SKILL.md")
     a = ap.parse_args(argv)
@@ -148,10 +235,17 @@ def main(argv: list) -> int:
         print("all captures failed", file=sys.stderr)
         return 2
 
-    body = merge(app, parts, a.provider, a.timeout)
+    body = merge(app, parts, a.provider, a.timeout,
+                 tools_note=a.tools_note)
     outdir = a.out or SKILLS_DIR / a.slug
     outdir.mkdir(parents=True, exist_ok=True)
-    (outdir / "SKILL.md").write_text(frontmatter(a.slug, app) + body + "\n")
+    fm = frontmatter(
+        a.slug, app,
+        hosts=[h.strip() for h in a.hosts.split(",") if h.strip()],
+        classes=[c.strip() for c in a.classes.split(",") if c.strip()],
+        asks=[q.strip() for q in a.asks.split(";") if q.strip()],
+        draft=not a.verified)
+    (outdir / "SKILL.md").write_text(fm + body + "\n")
     if a.keep_parts:
         (outdir / "parts.md").write_text("\n\n".join(parts) + "\n")
     print(f"wrote {outdir / 'SKILL.md'} "
