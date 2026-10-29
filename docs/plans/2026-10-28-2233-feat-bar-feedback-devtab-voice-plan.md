@@ -190,11 +190,11 @@ U1 → U2 → U3. U4 → U5. U6 → U7. Phase D can start at once; B and C start
 
 **Goal:** Good is one tap; wrong opens an optional note; a hotkey rates the last turn wrong.
 **Requirements:** R6 (answer card), R7, R8, R9. **Dependencies:** U1.
-**Files:** `shell-plugin/components/OverlayLayer.qml` (replace the good/wrong chips), `shell-plugin/components/NowTab.qml` (note field), `shell-plugin/Panel.qml` (open on Now with focus), a new note component under `shell-plugin/components/`, `shell-plugin/WispService.qml` (`label(turn, label, note)`), `tests/qml/harness/FixtureService.qml`, `assets/` thumb icons via `scripts/assets/build_icons.py`, `tests/test_icons.py`, copy strings via `scripts/assets/gen_copy.py`, the bind writer used by `wispd install` (alongside the Super+D bind), `tests/test_components.py`, snapshot scenes and goldens.
+**Files:** `shell-plugin/components/OverlayLayer.qml` (replace the good/wrong chips), `shell-plugin/components/NowTab.qml` (note field), `shell-plugin/Panel.qml` (open on Now with focus), `wisp/state.py` and `shell-plugin/lib/state.js` (`rate_prompt`), `docs/IPC_CONTRACT.md` (state section), a new note component under `shell-plugin/components/`, `shell-plugin/WispService.qml` (`label(turn, label, note)`), `tests/qml/harness/FixtureService.qml`, `assets/` thumb icons via `scripts/assets/build_icons.py`, `tests/test_icons.py`, copy strings via `scripts/assets/gen_copy.py`, the bind writer used by `wispd install` (alongside the Super+D bind), `tests/test_components.py`, snapshot scenes and goldens.
 **Approach:**
 1. Two owned thumb icons (KTD7).
 2. Rate buttons on the finished answer card, hidden for cancelled/errored turns, with accessible names. Good saves at once and shows a short receipt with the gate count. Wrong saves the label at once and opens the panel's Now tab with a one-line note field focused (Enter saves, Esc skips); the overlay never takes keyboard focus.
-3. The hotkey runs `wispd label incorrect` (no `--turn`, so the last finished turn) and asks the plugin to open the same note; a second press while the note is open skips it.
+3. The hotkey runs `wispd label incorrect` (no `--turn`, so the last finished turn). The daemon then publishes a `rate_prompt: {turn}` field in state; `WispService` sees it and opens the panel's Now tab with the note focused. A second press while the note is open skips it. The new state field gets a row in the state section of `docs/IPC_CONTRACT.md` (state, not the command fixture).
 4. A `not_found` or `not_ratable` reply shows a short muted line instead of the receipt.
 **Patterns to follow:** the existing chips in `OverlayLayer.qml` and `NowTab.qml` calling `WispService.label()`; the Super+D bind writer in `wispd install`.
 **Test scenarios:**
@@ -265,7 +265,7 @@ U1 → U2 → U3. U4 → U5. U6 → U7. Phase D can start at once; B and C start
 **Approach:** per KTD5.
 1. One shared `voice_on()`/`voice_backend()` helper replacing every `[voice] enabled` read (KTD6); the Groq key check is cached.
 2. Chunk sentences longer than 200 characters at clause boundaries.
-3. Fetch through `cancel.urlopen`; drop prefetched audio on stop.
+3. The speaker owns each open response and closes its socket from `SentenceSpeaker.stop()`, because the worker thread outlives the turn's `cancel.bind` (the global token is gone or belongs to a newer turn by then); drop prefetched audio on stop.
 4. Fire points and drawings at playback start with the WAV duration.
 5. Latches: per-turn espeak on any failure; process backoff on 429 and on a terms error (KTD5).
 6. A `usage.jsonl` row per request and a spend-cap check before each fetch (R19).
@@ -323,4 +323,4 @@ U1 → U2 → U3. U4 → U5. U6 → U7. Phase D can start at once; B and C start
 - The owner's `~/.config/wisp/config.toml` has `[voice] enabled = false`; change it to `auto` (or delete the line) after PR D.
 - The owner's Groq org must accept the Orpheus terms once at the Groq console playground for `canopylabs/orpheus-v1-english`.
 - `~/.config/hypr/bindings.lua` is stash-canonical on the owner's machine: `sync-watch` reverts it from `~/.local/share/machine/lukekimball/bindings.lua`. Add the rate hotkey to the stash copy too, or it reverts.
-- Free-tier Groq limits (about 100 TTS requests a day) make daily talk-back need the paid Developer tier; the espeak fallback covers the gap.
+- Free-tier Groq limits (about 100 TTS requests a day, 10 a minute) make daily talk-back need the paid Developer tier; on a free key a multi-sentence answer can switch to espeak mid-answer. The espeak fallback covers the gap. U6's live call also records time to first byte for a 200-character chunk, since it decides whether the 1.5 s start goal holds.
