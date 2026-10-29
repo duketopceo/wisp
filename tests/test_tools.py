@@ -213,10 +213,42 @@ class TestToolExec(unittest.TestCase):
         cfg = {"apps": {}, "agent": {}}
         with mock.patch.object(tools.desktop.shutil, "which",
                                return_value="/usr/bin/xdg-open"), \
+             mock.patch.object(tools.desktop, "_browseros_live",
+                               return_value=False), \
+             mock.patch("wisp.inventory.defaults", return_value={}), \
              mock.patch.object(tools.desktop, "_exec_detached") as ex:
             out = tools.desktop.launch("gmail.com", cfg)
         self.assertIn("OPENED https://gmail.com", out)
         ex.assert_called_once_with("xdg-open https://gmail.com")
+
+    def _site_launch(self, cfg, live=False, role="firefox"):
+        self._hypr_up()
+        with mock.patch.object(tools.desktop.shutil, "which",
+                               return_value="/usr/bin/x"), \
+             mock.patch.object(tools.desktop, "_browseros_live",
+                               return_value=live), \
+             mock.patch("wisp.inventory.defaults",
+                        return_value={"browser": role}), \
+             mock.patch.object(tools.desktop, "_exec_detached") as ex:
+            out = tools.desktop.launch("stripe.com", cfg)
+        return out, ex
+
+    def test_launch_site_goes_to_live_browseros_not_xdg_open(self):
+        out, ex = self._site_launch({"apps": {}, "agent": {}}, live=True)
+        self.assertEqual(out, "OPENED https://stripe.com -> browseros")
+        ex.assert_called_once_with("browseros https://stripe.com")
+
+    def test_launch_site_uses_the_browser_role_when_browseros_is_down(self):
+        cfg = {"apps": {"firefox": "firefox"}, "agent": {}}
+        out, ex = self._site_launch(cfg)
+        self.assertEqual(out, "OPENED https://stripe.com -> firefox")
+        ex.assert_called_once_with("firefox https://stripe.com")
+
+    def test_launch_site_browseros_opt_out_skips_browseros(self):
+        cfg = {"apps": {"firefox": "firefox"},
+               "agent": {"browseros_first": "false"}}
+        out, ex = self._site_launch(cfg, live=True)
+        ex.assert_called_once_with("firefox https://stripe.com")
 
     def _mail_launch(self, cfg, role_app="browseros", win=None,
                      role="mail"):
