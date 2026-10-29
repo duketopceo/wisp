@@ -1,6 +1,7 @@
 // Panel Now tab: the run card first (U8 — intent, live step, interrupt,
 // terminal summary), then goal, what was heard, the answer, the step
-// list, choice chips, stop, and the yes/no label row. Reads everything
+// list, choice chips, stop, the yes/no label row and, after a wrong
+// rating, its one-line note. Reads everything
 // from `service`; actions leave as signals (the Panel wires them to the
 // service).
 import QtQuick
@@ -14,6 +15,8 @@ Column {
   signal choose(string pick)
   signal stopClicked()
   signal labelClicked(string verdict)
+  signal noteSaved(string text)
+  signal noteSkipped()
 
   readonly property var tk: service ? service.tokens : ({})
   readonly property var run: service ? service.run : ({
@@ -204,6 +207,16 @@ Column {
       label: root.service.ui("ui.now.no")
       onClicked: root.labelClicked("incorrect")
     }
+  }
+
+  // a wrong rating's optional one-line note (state.rate_prompt): Enter
+  // saves it onto the rated turn, Esc skips
+  RateNote {
+    visible: root.service.ratePrompt !== null
+    width: parent.width
+    service: root.service
+    onSaved: function (text) { root.noteSaved(text); }
+    onSkipped: root.noteSkipped()
   }
 
   Text {

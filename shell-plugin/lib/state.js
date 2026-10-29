@@ -46,6 +46,7 @@ function initial() {
     suggestion: null, guide: null, chips: null, focus: {}, note: null,
     goal: "", goalStatus: "",
     level: 0, mic: "", tasks: {}, error: "", errorCode: "", health: {}, spend: {},
+    ratePrompt: null,
     startedAt: "", turnId: "", seq: null, contractVersion: 1,
     updatedAt: "", heartbeatAt: "",
     connection: "none", offline: true, stale: false, contractNewer: false,
@@ -215,6 +216,8 @@ function normalize(raw) {
     tasks: isObj(raw.tasks) ? raw.tasks : {}, error: str(raw.error),
     errorCode: code, health: isObj(raw.health) ? raw.health : {},
     spend: isObj(raw.spend) ? raw.spend : {}, mic: str(raw.mic),
+    ratePrompt: isObj(raw.rate_prompt) && str(raw.rate_prompt.turn) !== ""
+      ? { turn: str(raw.rate_prompt.turn) } : null,
     startedAt: str(raw.started_at), turnId: str(raw.turn_id),
     seq: raw.seq === undefined || raw.seq === null || !isFinite(seq) ? null : seq,
     contractVersion: cv, updatedAt: str(raw.updated_at),
@@ -465,10 +468,11 @@ function actionResult(exitCode, stdout, stderr) {
       var raw = typeof env.error === "string" ? env.error : ""
       var ec = str(eobj.code || raw)
       return { ok: false, error: ec.replace(/^E_/, "").toLowerCase(),
-               text: str(eobj.message) || raw || ec }
+               text: str(eobj.message) || raw || ec,
+               status: str((isObj(env.data) ? env.data : {}).status) }
     }
     var d = isObj(env.data) ? env.data : env
-    return { ok: true, error: "",
+    return { ok: true, error: "", status: str(d.status),
              text: str(d.result) || str(d.text) || str(d.sent) }
   }
   var m = /E_([A-Z_]+):?[ \t]*([^\n]*)/.exec(String(stderr || ""))

@@ -28,7 +28,6 @@ Item {
     : (shell && manifest ? shell.serviceFor(manifest.id) : null)
 
   property bool bubbleDismissed: false
-  property bool labeled: false
 
   // plugin contract: the shell calls these for reasons that are not ours
   // (rescan, panel sweep); an overlay with nothing persistent has nothing
@@ -155,7 +154,6 @@ Item {
     target: root.svc
     function onTurnChanged() {
       root.bubbleDismissed = false;
-      root.labeled = false;
     }
     function onConfirmChanged() {
       if (root.svc.confirm === null) return;
@@ -220,11 +218,10 @@ Item {
         gap: Style.gapsOut
         refreshHz: root.refreshOf(win.screen)
         bubbleDismissed: root.bubbleDismissed
-        labeled: root.labeled
         onChoose: function (pick, index) { root.svc.sendChoice(pick, root.svc.promptId); }
         onConfirmChosen: function (pick, promptId) { root.svc.sendChoice(pick, promptId); }
         onMoreClicked: root.bubbleDismissed = true
-        onVerdict: function (verdict) { root.labeled = true; root.svc.label(verdict); }
+        onVerdict: function (verdict, turn) { root.svc.label(verdict, turn, ""); }
         onScribbled: function (payload) { root.svc.scribble(payload); }
       }
     }

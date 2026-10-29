@@ -438,7 +438,8 @@ def route_stage(ctx) -> bool:
         state.transition("done", result=result)
         pl.notify(result, "attention", **pl._toast_ctx(state, turn, cfg))
         pl.log_decision({"ts": datetime.now(timezone.utc).isoformat(),
-                         "transcript": text, "answers": answers,
+                         "turn": turn, "transcript": text,
+                         "answers": answers,
                          "result": result, "corrected": False})
         ctx.result = result
         return False

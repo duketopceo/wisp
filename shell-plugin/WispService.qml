@@ -8,6 +8,7 @@ import "lib/tokens.js" as Tokens
 import "lib/motion.js" as Motion
 import "lib/settings.js" as Settings
 import "lib/run.js" as Run
+import "lib/rate.js" as Rate
 
 // WispService: the one reader of wispd state for every surface (Companion,
 // Panel, bar widget). Surfaces bind to this object (shell.serviceFor(
@@ -72,6 +73,11 @@ Item {
   property string errorCode: ""
   property var health: ({})
   property var spend: ({})
+  // {turn} while a wrong rating waits for its optional note (state.rate_prompt)
+  property var ratePrompt: null
+  // the prompted turn id, "" when none: surfaces react to this, not to the
+  // object (normalize builds a fresh {turn} on every state message)
+  readonly property string ratePromptTurn: ratePrompt ? String(ratePrompt.turn || "") : ""
   property string mic: ""     // "open" while the opt-in wake word listens
   property string turnId: ""
   property var seq: null
@@ -187,7 +193,15 @@ Item {
       : [root.wispd, "scribble", "set", "--json", JSON.stringify(p)];
     scribbleProc.running = true;
   }
-  function label(verdict) { return runAction([wispd, "label", "set", verdict, "--json"], "label"); }
+  // Rate a turn (U2): `turn` names the card's turn, `note` re-labels it with
+  // a typed note. The reply's typed status and the turn ride lastAction, so
+  // the card that asked can show its own receipt.
+  function label(verdict, turn, note) {
+    return runAction(Rate.labelCommand(wispd, verdict, turn || "", note || ""),
+                     "label", { turn: turn || "", verdict: verdict });
+  }
+  // Esc on the note: close it without writing a label.
+  function skipRatePrompt() { return runAction(Rate.skipCommand(wispd), "label-skip"); }
 
   // Read the settings inputs once (config, cua status, spend by model).
   function loadSettings() {
@@ -239,25 +253,29 @@ Item {
   property var actionQueue: []
   property string actionVerb: ""
 
-  function _launch(cmd, verb) {
+  property var actionMeta: ({})
+
+  function _launch(cmd, verb, meta) {
     root.actionVerb = verb || "";
+    root.actionMeta = meta || {};
     root.lastAction = { verb: root.actionVerb, pending: true,
-                        ok: false, message: "", at: Date.now() };
+                        ok: false, message: "", at: Date.now(),
+                        turn: root.actionMeta.turn || "", verdict: root.actionMeta.verdict || "" };
     actionProc.command = cmd;
     actionProc.running = true;
   }
 
-  function runAction(cmd, verb) {
+  function runAction(cmd, verb, meta) {
     if (actionProc.running) {
       if (actionQueue.length >= 8) {
         root.lastAction = { verb: verb || "", pending: false, ok: false,
           message: Copy.errorMessage("busy"), at: Date.now() };
         return false;
       }
-      actionQueue = actionQueue.concat([{ cmd: cmd, verb: verb || "" }]);
+      actionQueue = actionQueue.concat([{ cmd: cmd, verb: verb || "", meta: meta || {} }]);
       return true;
     }
-    _launch(cmd, verb);
+    _launch(cmd, verb, meta);
     return true;
   }
 
@@ -270,11 +288,12 @@ Item {
     if (msg === "")
       msg = r.ok ? Copy.string("ui.noted") : Copy.errorMessage("internal");
     root.lastAction = { verb: root.actionVerb, pending: false,
-                        ok: r.ok, message: msg, at: Date.now() };
+                        ok: r.ok, message: msg, at: Date.now(), status: r.status || "",
+                        turn: root.actionMeta.turn || "", verdict: root.actionMeta.verdict || "" };
     if (root.actionQueue.length > 0) {
       var nxt = root.actionQueue[0];
       root.actionQueue = root.actionQueue.slice(1);
-      _launch(nxt.cmd, nxt.verb);
+      _launch(nxt.cmd, nxt.verb, nxt.meta);
     }
   }
 
@@ -309,6 +328,9 @@ Item {
     root.errorCode = v.errorCode;
     root.health = v.health;
     root.spend = v.spend;
+    var rp = v.ratePrompt;
+    var rpTurn = rp ? String(rp.turn || "") : "";
+    if (rpTurn !== root.ratePromptTurn) root.ratePrompt = rp;
     root.mic = v.mic;
     root.seq = v.seq;
     root.contractVersion = v.contractVersion;
