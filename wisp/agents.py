@@ -14,6 +14,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 from datetime import datetime, timezone
 
 from . import config, util
@@ -42,6 +43,38 @@ def _records(tasks_file=config.TASKS_FILE) -> list:
                 if l.strip()]
     except OSError:
         return []
+
+
+def record_process(proc_id: str, pid: int, scope: str = "",
+                   tasks_file=config.TASKS_FILE) -> dict:
+    """Log the one long-lived ACP process record (KTD3). It holds many
+    session records and no concurrency slot of its own."""
+    rec = {"id": proc_id, "name": proc_id, "kind": "acp_process",
+           "pid": pid, "pstart": _pstart(pid),
+           "scope": scope or _scope_unit(proc_id),
+           "status": "running", "ts": datetime.now(timezone.utc).isoformat()}
+    _log_line(rec, tasks_file)
+    return rec
+
+
+def record_session(name: str, task: str, acp_process: str,
+                   session_id: str = "", model: str = "", cwd: str = "",
+                   tasks_file=config.TASKS_FILE, **extra) -> dict:
+    """Log a session record: today's task shape minus a pid of its own
+    (liveness is its process record's), plus the ACP fields."""
+    rec = {"id": name, "name": name, "task": task, "kind": "session",
+           "acp_process": acp_process, "session_id": session_id,
+           "model": model, "cwd": cwd, "stop_reason": None,
+           "status": "running", "refused_count": 0,
+           "ts": datetime.now(timezone.utc).isoformat(), **extra}
+    _log_line(rec, tasks_file)
+    return rec
+
+
+def _proc_running(proc: dict | None) -> bool:
+    return bool(proc and proc.get("kind") == "acp_process"
+                and proc.get("status") == "running"
+                and _alive(proc.get("pid", -1), proc.get("pstart", "")))
 
 
 def _proc_stat(pid: int) -> tuple[str, str] | None:
@@ -210,7 +243,12 @@ def classify_peer(peer: dict | None, tasks_file=config.TASKS_FILE) -> dict:
         if not tid:
             continue
         rec = by_id.get(tid)
-        if rec is not None and rec.get("status") == "running":
+        if rec is not None and rec.get("kind") == "session":
+            # a session id rides its process: valid while that runs
+            if _proc_running(by_id.get(rec.get("acp_process"))):
+                return {"marked": True, "verified": True, "spoofed": False,
+                        "task_id": rec["id"], "reason": "env_verified"}
+        elif rec is not None and rec.get("status") == "running":
             rpid = int(rec.get("pid") or -1)
             rpstart = rec.get("pstart", "")
             if rpid in seen or (rpid > 0 and _alive(rpid, rpstart)):
@@ -233,16 +271,26 @@ def record_refusal(task_id: str, cmd: str,
     rec = _find(task_id, tasks_file)
     if not rec:
         return 0
-    count = int(rec.get("refused_count") or 0) + 1
-    cmds = list(rec.get("refused_cmds") or [])
-    if cmd:
-        cmds.append(str(cmd))
-    _log_line({
-        "id": rec["id"],
-        "name": rec["name"],
-        "refused_count": count,
-        "refused_cmds": cmds,
-    }, tasks_file)
+    targets = [rec]
+    if rec.get("kind") == "acp_process":
+        # a peer in the process scope is attributed to the visible
+        # sessions it is running; none running -> the process record
+        sess = [r for r in _latest(tasks_file)
+                if r.get("kind") == "session" and r.get("status") == "running"
+                and r.get("acp_process") == rec["id"]]
+        targets = sess or [rec]
+    count = 0
+    for t in targets:
+        count = int(t.get("refused_count") or 0) + 1
+        cmds = list(t.get("refused_cmds") or [])
+        if cmd:
+            cmds.append(str(cmd))
+        _log_line({
+            "id": t["id"],
+            "name": t["name"],
+            "refused_count": count,
+            "refused_cmds": cmds,
+        }, tasks_file)
     return count
 
 
@@ -296,6 +344,8 @@ def _state_of(rec: dict) -> str:
     AND the process (same start-time) is alive; a dead task whose
     record never got closed reads `exited`."""
     status = rec.get("status", "exited")
+    if rec.get("kind") == "session":
+        return status  # written by the runtime; _tick fails dead-process ones
     if status == "running":
         return "running" if _alive(rec.get("pid", -1),
                                    rec.get("pstart", "")) else "exited"
@@ -328,8 +378,14 @@ def _find(name: str, tasks_file=config.TASKS_FILE) -> dict | None:
 def _running(tasks_file=config.TASKS_FILE) -> list:
     """Tasks whose process is still alive (also one that is closing
     down after SIGTERM — it still holds a concurrency slot)."""
-    return [r for r in _latest(tasks_file)
-            if _alive(r.get("pid", -1), r.get("pstart", ""))]
+    recs = _latest(tasks_file)
+    by_id = {r["id"]: r for r in recs if r.get("id")}
+    return [r for r in recs
+            if (r.get("status") == "running"
+                and _proc_running(by_id.get(r.get("acp_process")))
+                if r.get("kind") == "session"
+                else r.get("kind") != "acp_process"
+                and _alive(r.get("pid", -1), r.get("pstart", "")))]
 
 
 def _signal(rec: dict, sig: int) -> None:
@@ -996,6 +1052,8 @@ def tasks(tasks_file=config.TASKS_FILE,
         recs = _latest(tasks_file)
     out = {}
     for rec in recs:
+        if rec.get("kind") == "acp_process":
+            continue
         status = _state_of(rec)
         entry = {
             "status": status,
@@ -1070,10 +1128,24 @@ def _tick(cfg: dict, tasks_file, log_dir, kill_grace_s: float,
     stamp = now.isoformat()
     if recs is None:
         recs = _latest(tasks_file)
+    by_id = {r["id"]: r for r in recs if r.get("id")}
     for rec in recs:
         pid, pstart = rec.get("pid", -1), rec.get("pstart", "")
         alive = _alive(pid, pstart)
         status = rec.get("status")
+        if rec.get("kind") == "session":
+            # status is the runtime's; only a dead process fails it
+            if status == "running" \
+                    and not _proc_running(by_id.get(rec.get("acp_process"))):
+                _log_line({"id": rec["id"], "name": rec["name"],
+                           "status": "failed", "error": "process exited",
+                           "ts": stamp}, tasks_file)
+            continue
+        if rec.get("kind") == "acp_process":
+            if status == "running" and not alive:
+                _log_line({"id": rec["id"], "name": rec["name"],
+                           "status": "exited", "ts": stamp}, tasks_file)
+            continue
         if status == "running" and not alive:
             # process gone, or its pid now belongs to someone else
             st = _proc_stat(pid) if pid > 0 else None
@@ -1181,6 +1253,57 @@ def _tick_events(cfg, tasks_file, log_dir, kill_grace_s,
     return cur, done
 
 
+def _kill_scope(scope: str, sig: int) -> None:
+    """Best-effort signal to a systemd scope (reaches descendants that
+    left the process group); no systemd -> a no-op."""
+    if not scope or not shutil.which("systemctl"):
+        return
+    try:
+        subprocess.run(["systemctl", "--user", "kill",
+                        f"--signal={signal.Signals(sig).name}", scope],
+                       capture_output=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def sweep_orphans(tasks_file=config.TASKS_FILE,
+                  kill_grace_s: float = KILL_GRACE_S) -> list:
+    """Daemon start: every ACP process record still `running` belongs to
+    a previous daemon. A live one (pstart matching) is SIGTERMed via its
+    scope, then SIGKILLed after the grace; a record whose pid now belongs
+    to someone else is never signalled. Either way the record closes and
+    its running sessions become `interrupted` (never replayed, R12)."""
+    recs = _latest(tasks_file)
+    procs = [r for r in recs if r.get("kind") == "acp_process"
+             and r.get("status") == "running"]
+    live = [r for r in procs if r.get("pstart")
+            and _alive(r.get("pid", -1), r["pstart"])]
+    for r in live:
+        _kill_scope(r.get("scope", ""), signal.SIGTERM)
+        _signal(r, signal.SIGTERM)
+    deadline = time.monotonic() + kill_grace_s
+    while live and time.monotonic() < deadline:
+        live = [r for r in live if _alive(r["pid"], r["pstart"])]
+        if live:
+            time.sleep(0.05)
+    for r in live:
+        _kill_scope(r.get("scope", ""), signal.SIGKILL)
+        _signal(r, signal.SIGKILL)
+    stamp = datetime.now(timezone.utc).isoformat()
+    ids = {r["id"] for r in procs}
+    swept = []
+    for r in recs:
+        if r.get("kind") == "session" and r.get("status") == "running" \
+                and r.get("acp_process") in ids:
+            _log_line({"id": r["id"], "name": r["name"],
+                       "status": "interrupted", "ts": stamp}, tasks_file)
+            swept.append(r["name"])
+    for r in procs:
+        _log_line({"id": r["id"], "name": r["name"], "status": "exited",
+                   "ts": stamp}, tasks_file)
+    return swept
+
+
 def reconcile_routines(cfg: dict, tasks_file=config.TASKS_FILE,
                        log_dir=config.TASK_LOGS, routines_store=None,
                        on_finished=None) -> list:
@@ -1234,6 +1357,10 @@ def start_reaper(cfg: dict, bus, stop: threading.Event,
     whoever caused it (exit, timeout, `task_cancel`). Idle cost is one
     small file read per tick; it stops when `stop` is set."""
     def run() -> None:
+        try:
+            sweep_orphans(tasks_file, kill_grace_s)
+        except Exception:
+            pass
         while not stop.is_set():
             try:
                 cur, done = _tick_events(cfg, tasks_file, log_dir,

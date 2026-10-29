@@ -134,6 +134,17 @@ class IpcAuthzTest(unittest.TestCase):
         self.assertEqual(
             merged["refused_count"], len(ipc.MUTATING_CMDS) + 1)
 
+    def test_refused_ipc_from_acp_process_scope_counts_on_session(self):
+        p = self._spawn_sleeper()
+        agents.record_process("acp-scout", p.pid, tasks_file=self.tf)
+        agents.record_session("scout-task", "do it", "acp-scout",
+                              tasks_file=self.tf)
+        resp = self.handle({"cmd": "task_cancel", "name": "x"},
+                           {"pid": p.pid, "uid": os.getuid()})
+        self.assertEqual(resp["error"], "marked_peer_refused")
+        self.assertEqual(
+            agents._find("scout-task", self.tf)["refused_count"], 1)
+
     def test_unmarked_peer_passes_mutating_and_read_commands(self):
         p = self._spawn_sleeper()
         peer = {"pid": p.pid, "uid": os.getuid()}
