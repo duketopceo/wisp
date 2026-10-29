@@ -1,9 +1,10 @@
 """Provenance gate: no non-MIT corpus text may appear in wisp artifacts.
 
-Extracts 12-word sequences from non-MIT files in the extracted
-HeyClicky corpus (outside the repo, research-only) and fails if any
-appear in shipped/tracked artifacts. Skips when the corpus isn't on
-this machine — the gate only runs where the reference corpus exists.
+Extracts 12-word sequences from non-MIT files in a locally held
+third-party skill corpus (outside the repo, research-only) and fails
+if any appear in shipped/tracked artifacts. Skips when the corpus
+isn't on this machine — the gate only runs where the reference corpus
+exists.
 """
 import pathlib
 import re
@@ -11,7 +12,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CORPUS = (pathlib.Path.home()
-          / ".local/share/wisp/reference/heyclicky-skills")
+          / ".local/share/wisp/reference/skill-corpus")
 
 # Files the corpus's own ATTRIBUTION marks MIT (or whose bundled
 # LICENSE.txt is MIT) — allowed adaptation sources, skipped by the gate.
@@ -39,7 +40,7 @@ TARGETS = [
     ROOT / "tests" / "fixtures" / "skills",
     ROOT / "scripts",
     ROOT / "docs" / "research" / "app-skill-format.md",
-    ROOT / "docs" / "research" / "heyclicky-corpus.md",
+    ROOT / "docs" / "research" / "skill-corpus-sources.md",
 ]
 
 
