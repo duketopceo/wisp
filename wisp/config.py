@@ -264,6 +264,9 @@ writer_queue_max = 256      # background trajectory/recall writes queued
 # "didn't work", "instead") makes the next utterance retry with the
 # failed attempt as context; pairs are measured via wispd fails.
 refine = true
+# the panel's Dev tab (v1 gate, recent turns with stage timings, top
+# misses). Local-only; off for everyone else.
+panel = false
 
 [eval]
 # `wispd eval` gate: the first-time-correct fraction (0-1) the owner
