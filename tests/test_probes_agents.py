@@ -21,7 +21,10 @@ class ProbeTests(unittest.TestCase):
         td = tempfile.TemporaryDirectory()
         self.addCleanup(td.cleanup)
         self.root = pathlib.Path(td.name)
-        self.auth = (0, {"source": "keyring"})
+        # the real `ori auth --json` envelope (0.16.1); only `authenticated` counts
+        self.auth = (0, {"ok": True, "command": "auth",
+                         "data": {"authenticated": True,
+                                  "source": {"kind": "environment"}}})
 
     def probe(self):
         return probes_agents.AgentsProbe(
@@ -48,7 +51,7 @@ class ProbeTests(unittest.TestCase):
         self.both("2.1.0")
         self.assertEqual(self.probe().check()["state"], "wrong_version")
 
-    def test_ready_with_key_source(self):
+    def test_ready_when_authenticated(self):
         self.both()
         r = self.probe().check()
         self.assertEqual((r["state"], r["ok"]), ("ready", True))
@@ -58,9 +61,14 @@ class ProbeTests(unittest.TestCase):
         self.auth = (1, None)
         self.assertEqual(self.probe().check()["state"], "not_signed_in")
 
-    def test_exit_zero_without_source_is_not_signed_in(self):
+    def test_exit_zero_but_not_authenticated_is_not_signed_in(self):
         self.both()
-        self.auth = (0, {})
+        self.auth = (0, {"ok": True, "data": {"authenticated": False}})
+        self.assertEqual(self.probe().check()["state"], "not_signed_in")
+
+    def test_top_level_source_without_envelope_is_not_signed_in(self):
+        self.both()
+        self.auth = (0, {"source": "keyring"})
         self.assertEqual(self.probe().check()["state"], "not_signed_in")
 
     def test_auth_skipped_reports_installed(self):

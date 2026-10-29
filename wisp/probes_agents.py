@@ -7,11 +7,12 @@ wins:
   opencode_v1     opencode reports 1.x (Wisp refuses to drive it)
   wrong_version   ori or opencode differs from the pin
   installed       both match; sign-in not checked (`auth=False`)
-  not_signed_in   `ori auth --json` fails or names no key source
+  not_signed_in   `ori auth --json` fails or does not report authenticated
   ready           everything fine
 
 Only the pinned `current` binaries are consulted, never PATH, and the
-auth output is reduced to its `source` field; secrets are never read.
+auth output is reduced to `data.authenticated` (its `source` label can name
+an env var even when the credential is stored); secrets are never read.
 """
 import json
 import os
@@ -84,6 +85,7 @@ class AgentsProbe:
         if not auth:
             return "installed"
         rc, data = self._auth(ori)
-        if rc != 0 or not (data or {}).get("source"):
+        body = (data or {}).get("data")
+        if rc != 0 or not isinstance(body, dict) or body.get("authenticated") is not True:
             return "not_signed_in"
         return "ready"
