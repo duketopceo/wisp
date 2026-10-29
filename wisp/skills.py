@@ -558,3 +558,47 @@ def register_tools() -> None:
             # dynamic skill_* names policy resolves
             {"tier": tools.RISK_AUTONOMY.get(tier, "T2"),
              "reversible": False, "external": True})
+
+
+def migrate_routines(routines_file: Path | None = None,
+                     skills_dir: Path | None = None) -> int:
+    """Lift JSON routines (routines.json) into SKILL.md skills — same
+    shape as clacky's migrate_legacy. Each routine becomes a doc skill
+    draft named routine-<id>; existing skill dirs are skipped; the JSON
+    store is left untouched as backup. Returns count migrated."""
+    src = skills_dir or SKILLS_DIR
+    path = routines_file or (config.DATA_DIR / "routines.json")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return 0
+    entries = data.get("routines", data)
+    if not isinstance(entries, dict):
+        return 0
+    n = 0
+    for rid, entry in entries.items():
+        if not isinstance(entry, dict):
+            continue
+        slug = f"routine-{_slug(entry.get('name') or rid)}"
+        d = src / slug
+        if (d / "SKILL.md").exists():
+            continue
+        task = (entry.get("task") or "").strip()
+        if not task:
+            continue
+        sched = entry.get("schedule") or "daily"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "SKILL.md").write_text(
+            "---\n"
+            f"name: {slug}\n"
+            f"description: Routine '{entry.get('name') or rid}' "
+            f"({sched}) — {task[:80]}\n"
+            "provenance: migrated-from-routines\n"
+            "draft: unverified\n"
+            "---\n\n"
+            f"# {entry.get('name') or rid}\n\n"
+            f"Scheduled routine: **{sched}**\n\n"
+            f"Task: {task}\n",
+            encoding="utf-8")
+        n += 1
+    return n

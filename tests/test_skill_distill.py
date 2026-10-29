@@ -168,3 +168,30 @@ class DistillTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MigrateRoutinesTest(unittest.TestCase):
+    def test_migrates_json_routines_to_skills(self):
+        import tempfile
+        rj = pathlib.Path(tempfile.mkdtemp()) / "routines.json"
+        rj.write_text(json.dumps({"routines": {
+            "morning-mail": {"name": "morning mail", "task":
+                             "check inbox and summarize", "schedule": "daily"},
+            "empty": {"name": "empty", "task": ""}}}))
+        sd = pathlib.Path(tempfile.mkdtemp())
+        n = skills.migrate_routines(rj, sd)
+        self.assertEqual(n, 1)
+        f = sd / "routine-morning-mail" / "SKILL.md"
+        self.assertTrue(f.exists())
+        meta = skills._frontmatter(f.read_text())
+        self.assertEqual(meta.get("provenance"), "migrated-from-routines")
+        self.assertNotIn("tool", meta)
+        # idempotent + JSON untouched
+        self.assertEqual(skills.migrate_routines(rj, sd), 0)
+        self.assertIn("morning-mail", json.loads(rj.read_text())["routines"])
+
+    def test_missing_or_bad_json_returns_zero(self):
+        import tempfile
+        sd = pathlib.Path(tempfile.mkdtemp())
+        self.assertEqual(skills.migrate_routines(
+            pathlib.Path(tempfile.mkdtemp()) / "nope.json", sd), 0)
