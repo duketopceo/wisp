@@ -50,6 +50,14 @@ Panel {
   }
   onTabChanged: if (tab === 3) loadSettings()
 
+  // a wrong rating asks for its note: show it on the Now tab
+  Connections {
+    target: wisp.service
+    function onRatePromptChanged() {
+      if (wisp.service.ratePrompt !== null) wisp.tab = 0
+    }
+  }
+
   function loadOnboard() {
     if (!service || onboardStatusProc.running) return
     onboardStatusProc.command = Onboard.statusCommand(service.wispd)
@@ -242,7 +250,11 @@ Panel {
             if (col.svc.sendChoice(pick, col.svc.promptId)) wisp.close()
           }
           onStopClicked: col.svc.interrupt()
-          onLabelClicked: function (verdict) { col.svc.label(verdict) }
+          onLabelClicked: function (verdict) { col.svc.label(verdict, col.svc.turnId, "") }
+          onNoteSaved: function (text) {
+            if (col.svc.ratePrompt !== null) col.svc.label("incorrect", col.svc.ratePrompt.turn, text)
+          }
+          onNoteSkipped: col.svc.skipRatePrompt()
         }
 
         AgentsTab {

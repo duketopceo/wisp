@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compile the owned icon set into shell-plugin/lib/icons.js (plan KTD4).
 
-Sources are hand-authored SVGs: assets/icons/src/*.svg (24 UI icons, 7 bar
+Sources are hand-authored SVGs: assets/icons/src/*.svg (26 UI icons, 7 bar
 glyphs, ghost cursor, beacon) plus assets/brand/mark.svg. Each is checked
 against DESIGN-v2 5.6 (16px viewBox, one path, currentColor, 1.5px stroke,
 square caps and mitred joins; fills and round caps only on the mark

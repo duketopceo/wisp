@@ -151,6 +151,19 @@ class LabelTurnTest(unittest.TestCase):
         learn.label_last("incorrect")
         self.assertEqual([r["ref"] for r in self._labels()], ["T1"])
 
+    def test_out_names_the_turn_that_was_labelled(self):
+        self._decs({"ts": "T1", "turn": "a1", "result": "ANSWERED"},
+                   {"ts": "T2", "turn": "b2", "result": "ANSWERED"})
+        got = {}
+        learn.label_last("incorrect", out=got)
+        self.assertEqual(got, {"turn": "b2"})
+        got = {}
+        learn.label_last("incorrect", turn="a1", out=got)
+        self.assertEqual(got, {"turn": "a1"})
+        got = {}
+        learn.label_last("incorrect", turn="zz", out=got)
+        self.assertEqual(got, {})
+
     def test_cancelled_turn_is_not_ratable_and_writes_nothing(self):
         self._decs({"ts": "T1", "turn": "a1", "result": "ANSWERED"},
                    {"ts": "T2", "turn": "b2",

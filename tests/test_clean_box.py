@@ -86,6 +86,43 @@ class CleanBoxTest(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertNotIn("already in use", out)
 
+    def rate_lines(self, e):
+        text = (e.home / ".config" / "hypr" / "bindings.lua").read_text()
+        return [l for l in text.splitlines()
+                if "label set incorrect" in l]
+
+    def test_install_writes_the_rate_bind_once(self):
+        e = self.box()
+        self.assertEqual(e.run(["install"])[0], 0)
+        lines = self.rate_lines(e)
+        self.assertEqual(len(lines), 1, lines)
+        # Super+Shift+D is Omarchy's Docker bind
+        self.assertIn('"SUPER + ALT + D"', lines[0])
+        self.assertIn("/.local/bin/wispd label set incorrect", lines[0])
+        # idempotent: a second install adds nothing
+        self.assertEqual(e.run(["install"])[0], 0)
+        self.assertEqual(len(self.rate_lines(e)), 1)
+        self.assertEqual(
+            (e.home / ".config" / "hypr" / "bindings.lua")
+            .read_text().count("wisp-trigger start"), 1)
+
+    def test_rate_bind_lands_beside_an_existing_push_to_talk_bind(self):
+        e = self.box()
+        (e.home / ".config" / "hypr" / "bindings.lua").write_text(BIND_HEAD)
+        code, out, err = e.run(["install"])
+        self.assertEqual(code, 0, err)
+        self.assertEqual(len(self.rate_lines(e)), 1)
+
+    def test_rate_bind_follows_the_hotkey_config(self):
+        e = self.box()
+        cfg = e.home / ".config" / "wisp"
+        cfg.mkdir(parents=True, exist_ok=True)
+        (cfg / "config.toml").write_text(
+            '[hotkey]\nmod = "ALT"\nkey = "f"\n')
+        self.assertEqual(e.run(["install"])[0], 0)
+        # a mod that already holds ALT takes CTRL
+        self.assertIn('"ALT + CTRL + F"', self.rate_lines(e)[0])
+
     def test_unrelated_super_d_bind_still_warns(self):
         e = self.box()
         (e.home / ".config" / "hypr" / "bindings.lua").write_text(

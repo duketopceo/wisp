@@ -115,6 +115,19 @@ class BusWriterOutput(unittest.TestCase):
             assert k in d, k
         assert isinstance(d["actions"], list)
 
+    def test_rate_prompt_rides_state_and_clears_on_a_new_turn(self):
+        import tempfile
+        f = pathlib.Path(tempfile.mkdtemp()) / "state.json"
+        bus = state.StateBus(state_file=f)
+        try:
+            bus.publish(None, rate_prompt={"turn": "b2"})
+            assert json.loads(f.read_text())["rate_prompt"] == {"turn": "b2"}
+            t = bus.begin_turn()
+            bus.publish(t, status="listening")
+            assert json.loads(f.read_text())["rate_prompt"] is None
+        finally:
+            bus.close()
+
     def test_action_entries_match_the_schema(self):
         # lifecycle entries carry the full v2 shape; transitions
         # mutate the same entry in place, keyed by id

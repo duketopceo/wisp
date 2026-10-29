@@ -30,11 +30,12 @@ def label_status(result: str) -> str:
 
 
 def label_last(label: str, note: str = "", lang: str = "",
-               turn: str = "") -> str:
+               turn: str = "", out: dict | None = None) -> str:
     """Tag a decisions.jsonl turn correct/incorrect — `wispd eval` reads
     labels.jsonl keyed by `ref`. With `turn`, that turn's line; without
     it, the most recent finished line (cancelled and error lines are
-    skipped). A cancelled or errored turn is not_ratable."""
+    skipped). A cancelled or errored turn is not_ratable. `out`, when
+    given, receives {"turn": id} of the turn that was labelled."""
     label = {"ok": "correct", "good": "correct",
              "bad": "incorrect"}.get(label, label)
     if label not in ("correct", "incorrect"):
@@ -66,6 +67,8 @@ def label_last(label: str, note: str = "", lang: str = "",
             f.write(json.dumps(rec) + "\n")
     except OSError as e:
         return f"ERROR ({e})"
+    if out is not None:
+        out["turn"] = str(hit.get("turn", "") or "")
     return f"labeled {label}: {ref}"
 
 

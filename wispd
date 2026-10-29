@@ -355,16 +355,37 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
                     "error": result if result.startswith("SKIP") else ""}
         if c == "label":
             from wisp import learn
-            result = learn.label_last(cmd.get("label", ""),
-                                      cmd.get("note", ""),
+            lab = cmd.get("label", "")
+            wrong = lab in ("incorrect", "bad")
+            prompt = st.snapshot().get("rate_prompt") or {}
+            # `skip` closes the open note (Esc); a second press of the
+            # wrong hotkey (no turn named) closes it too, writing nothing
+            if lab == "skip" or (wrong and prompt
+                                 and not cmd.get("turn")):
+                st.publish(None, rate_prompt=None)
+                state_mod.action_add(st, "label", "skip", status="done",
+                                     reason="rating note closed")
+                return {"ok": True, "result": "rating note closed",
+                        "status": "ok"}
+            got: dict = {}
+            result = learn.label_last(lab, cmd.get("note", ""),
                                       cmd.get("lang", ""),
-                                      turn=cmd.get("turn", ""))
+                                      turn=cmd.get("turn", ""), out=got)
             status = learn.label_status(result)
             state_mod.action_add(
-                st, "label", cmd.get("label", "") or "label",
+                st, "label", lab or "label",
                 status="failed" if result.startswith(
                     ("ERROR", "SKIP", "not_found", "not_ratable"))
                 else "done", reason=result)
+            # a wrong rating asks the panel for its optional note; the
+            # note's own save (it carries text) and a new turn close it
+            rated = got.get("turn", "")
+            if status == "ok" and wrong and rated:
+                if cmd.get("note", ""):
+                    if prompt.get("turn") == rated:
+                        st.publish(None, rate_prompt=None)
+                elif prompt.get("turn") != rated:
+                    st.publish(None, rate_prompt={"turn": rated})
             reply = {"ok": True, "result": result}
             if status:
                 reply["status"] = status
@@ -1009,6 +1030,45 @@ def install_files(dry_run: bool = False, cfg: dict | None = None,
 
 
 def install_bind(cfg: dict, dry_run: bool = False) -> None:
+    """Idempotently add the push-to-talk bind and the rate-wrong bind to
+    ~/.config/hypr/bindings.lua."""
+    _install_ptt_bind(cfg, dry_run)
+    _install_rate_bind(cfg, dry_run)
+
+
+def _install_rate_bind(cfg: dict, dry_run: bool = False) -> None:
+    """Idempotently add `MOD + ALT + KEY` (default Super+Alt+D): rate
+    the last finished turn wrong and open the panel's note (U2). Omarchy
+    already binds Super+Shift+D (Docker), Super+Ctrl+D and
+    Super+Ctrl+Alt+D; a mod that already holds ALT takes CTRL instead."""
+    from wisp import platform
+    if not platform.supports_hotkey_install():
+        return
+    mod = cfg.get("hotkey", {}).get("mod", "SUPER")
+    key = cfg.get("hotkey", {}).get("key", "D")
+    extra = "CTRL" if "ALT" in mod.upper() else "ALT"
+    combo = f"{mod} + {extra} + {key.upper()}"
+    cmd = f"{config.HOME}/.local/bin/wispd label set incorrect"
+    bind = (f'o.bind("{combo}", "Wisp rate last answer wrong", '
+            f'{{ launch = "{cmd}" }})')
+    bindings = config.HOME / ".config" / "hypr" / "bindings.lua"
+    if not bindings.parent.is_dir():
+        return
+    text = bindings.read_text() if bindings.exists() else ""
+    if "label set incorrect" in text:
+        print(f"rate bind already present in {bindings}")
+        return
+    if dry_run:
+        print(f"would add to {bindings}:\n  {bind}")
+        return
+    with bindings.open("a") as f:
+        f.write(f"\n-- Wisp rate last answer wrong\n{bind}\n")
+    print(f"added rate bind to {bindings}: {bind}")
+    subprocess.run(["hyprctl", "reload"], env=pipeline.hypr_env(),
+                   capture_output=True)
+
+
+def _install_ptt_bind(cfg: dict, dry_run: bool = False) -> None:
     """Idempotently add the push-to-talk bind to ~/.config/hypr/bindings.lua.
     With `dry_run` it prints what it would do and writes nothing.
 

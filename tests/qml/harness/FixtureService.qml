@@ -45,6 +45,7 @@ Item {
   property string errorCode: ""
   property var health: ({})
   property var spend: ({})
+  property var ratePrompt: null
   property string mic: ""
   property string turnId: ""
   property bool offline: true
@@ -75,6 +76,8 @@ Item {
   function askAbout(text) { return false; }
   function startDaemon() {}
   function sendChoice(pick, pid) { return false; }
+  function label(verdict, turn, note) { return false; }
+  function skipRatePrompt() { return false; }
 
   function ui(key) { return Copy.string(key); }
   function pickLabel(pick) { return Copy.pickLabel(pick); }
@@ -122,10 +125,13 @@ Item {
     root.errorCode = v.errorCode;
     root.health = v.health;
     root.spend = v.spend;
+    root.ratePrompt = v.ratePrompt;
     root.mic = v.mic;
     root.turnId = v.turnId;
     root.offline = v.offline;
     root.contractNewer = v.contractNewer;
     root.stale = !!(mods && mods.stale);
+    // a rated card's reply (verb label, turn, status), for receipt scenes
+    root.lastAction = mods && mods.lastAction ? mods.lastAction : null;
   }
 }

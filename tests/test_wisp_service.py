@@ -170,10 +170,11 @@ class TestActionLifecycle(unittest.TestCase):
 
     def test_label_click_renders_an_ack(self):
         now = (PLUGIN / "components" / "NowTab.qml").read_text()
-        overlay = (PLUGIN / "components" / "OverlayLayer.qml").read_text()
+        # the answer card's ack moved into RateRow (U2)
+        row = (PLUGIN / "components" / "RateRow.qml").read_text()
         self.assertIn("lastAction", now)
         self.assertIn("ui.noted", now)
-        self.assertIn("lastAction", overlay)
+        self.assertIn("lastAction", row)
 
     def test_debug_shell_calls_existing_service_entrypoints(self):
         app = (ROOT / "shells" / "debug" / "shell.qml").read_text()
