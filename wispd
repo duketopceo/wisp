@@ -306,6 +306,10 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
             from wisp import suggest
             return {"ok": True,
                     "suggestions": suggest.pending()}
+        if c == "agent_tool":
+            from wisp import agent_mcp
+            return agent_mcp.handle(cmd, peer, cfg,
+                                    ctl.get("agent_ask"), tasks_file)
         if c == "task_status":
             from wisp import agents
             return {"ok": True, "result": agents.status(cmd.get("name", ""))}
@@ -1111,6 +1115,8 @@ def _doctor(cfg: dict) -> int:
             and not chosen:
         print("  !! agent_runtime=auto but nothing detected")
         ok = False
+    from wisp.cli import diagnose as _diagnose
+    _diagnose._agent_rows(row)
 
     print("stt / audio:")
     from wisp import platform as _plat
@@ -1207,7 +1213,24 @@ def rebuild_harness() -> int:
     return subprocess.run([sys.executable, str(builder)]).returncode
 
 
+def _agent_mcp() -> int:
+    """Hidden `wispd agent-mcp`: the MCP stdio bridge OpenCode launches
+    (U8). The session token arrives in WISP_MCP_TOKEN, never argv."""
+    from wisp import agent_mcp
+    token = os.environ.get("WISP_MCP_TOKEN", "")
+    if not token:
+        print("wispd agent-mcp: WISP_MCP_TOKEN not set", file=sys.stderr)
+        return 2
+    cfg = config.load_config()
+    wait = agent_mcp.ask_timeout_s(cfg) + 15
+    agent_mcp.serve(sys.stdin, sys.stdout,
+                    lambda c: ipc.send(c, timeout=wait), token, cfg)
+    return 0
+
+
 def main() -> int:
+    if sys.argv[1:2] == ["agent-mcp"]:
+        return _agent_mcp()
     from wisp import cli, ledger
     ledger.ACTIVE = True  # real runs record usage; library use does not
     return cli.main(sys.argv[1:], host=sys.modules[__name__])

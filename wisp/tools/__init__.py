@@ -164,6 +164,10 @@ REGISTRY = {
     "recall": (None, "safe", "search long-term recall — "
                "'search <query>' returns top-k indexed context",
                {"tier": "T0", "reversible": True, "external": False}),
+    "memory_read": (None, "safe", "read the user's USER.md and "
+                    "MEMORY.md (read-only)",
+                    {"tier": "T0", "reversible": True,
+                     "external": False}),
     "skill_manage": (None, "mutating", "author a self-taught skill — "
                      "'create|name|description|body', 'edit|name||body', "
                      "'write_file|name|filename|body', 'delete|name', "
@@ -171,6 +175,9 @@ REGISTRY = {
                      {"tier": "T2", "reversible": False,
                       "external": False}),
     "skill_view": (None, "safe", "read a skill's full SKILL.md by name",
+                   {"tier": "T0", "reversible": True,
+                    "external": False}),
+    "skill_list": (None, "safe", "list skills with their descriptions",
                    {"tier": "T0", "reversible": True,
                     "external": False}),
     "ask_user": (None, "safe",
@@ -188,7 +195,7 @@ REGISTRY = {
 # loop, not here); tool_schemas must not drop them.
 EXTERN = frozenset({"agent_spawn", "task_status", "task_cancel",
                     "memory", "recall", "skill_manage", "skill_view",
-                    "ask_user", "observe"})
+                    "memory_read", "skill_list", "ask_user", "observe"})
 
 # loop-internal backchannels the model can call inside a run but that
 # have no route-level executor — Jev must never route to them (run()
@@ -300,6 +307,13 @@ def _run_inner(name: str, arg: str, cfg: dict,
     if name == "recall":
         from .. import recall
         return recall.run(arg)
+    if name == "memory_read":
+        from .. import memory
+        return memory.snapshot() or "(memory is empty)"
+    if name == "skill_list":
+        from .. import skills
+        return "\n".join(f"- {s['name']}: {s['description']}"
+                         for s in skills.index()) or "(no skills)"
     if name == "skill_manage":
         from .. import skills
         return skills.run_manage(arg)
