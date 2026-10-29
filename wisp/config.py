@@ -258,6 +258,13 @@ act_max_seconds = 600       # wall-clock bound per run; 0 disables
 act_max_usd = 0             # per-run model-spend cap; 0 disables
 routine_wait_s = 120        # a scheduled routine waits this long for the network
 writer_queue_max = 256      # background trajectory/recall writes queued
+# OpenCode background agents (ACP). The session runs on the first of these
+# the agent runtime offers; none offered = the task fails, never a default.
+acp_models = "openrouter/deepseek/deepseek-v4-flash,openrouter/deepseek/deepseek-v4.1-flash,openrouter/google/gemini-3.5-flash-lite"
+acp_idle_s = "900"          # a named helper's process exits after this idle
+ask_timeout_s = "120"       # an unanswered agent ask is refused after this
+cancel_grace_s = "10"       # cancel waits this long, then kills the process
+mcp_memory = "true"         # agents may read USER.md/MEMORY.md (to OpenRouter)
 
 [dev]
 # refinement loop: a labeled-bad turn or a correction cue ("no",
@@ -568,7 +575,12 @@ def _default_cfg_dict() -> dict:
         "agents": {"act_max_steps": "12", "act_max_errors": "2",
                    "act_max_parse_misses": "1", "act_max_seconds": "600",
                    "act_max_usd": "0", "routine_wait_s": "120",
-                   "writer_queue_max": "256"},
+                   "writer_queue_max": "256",
+                   "acp_models": "openrouter/deepseek/deepseek-v4-flash,"
+                                 "openrouter/deepseek/deepseek-v4.1-flash,"
+                                 "openrouter/google/gemini-3.5-flash-lite",
+                   "acp_idle_s": "900", "ask_timeout_s": "120",
+                   "cancel_grace_s": "10", "mcp_memory": "true"},
         "dev": {"refine": "true"},
         "eval": {"gate_min_turns": "50"},
         "ui": {"theme": "dark"},

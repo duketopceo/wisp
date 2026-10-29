@@ -789,6 +789,13 @@ def run_daemon(cfg: dict) -> int:
         st, ctl["broker"], lambda t: speech.speak(t, cfg), st.emit_event,
         busy=ctl["busy"].is_set)
     ctl["agent_ask"].start()
+    # U9: the opencode runtime's ACP processes and sessions
+    from wisp import acp_runtime as _acp_runtime, agents as _agents0
+    _acp_runtime.set_manager(_acp_runtime.Manager(
+        cfg, ask=ctl["agent_ask"], bus=st,
+        on_finished=lambda t: _agents0.notify_done(t),
+        wispd_path=str(pathlib.Path(__file__).resolve())))
+    _acp_runtime.manager().start()
     # U1: rec/<turn>/ dirs left by a dead run are orphans — the turn
     # never reached pack-write, so they're discarded, never promoted
     from wisp import record as _record
@@ -879,6 +886,10 @@ def run_daemon(cfg: dict) -> int:
         if _keys is not None:
             _keys.stop()
         server.stop()
+        from wisp import acp_runtime as _acp_stop
+        if _acp_stop.manager() is not None:
+            _acp_stop.manager().stop()   # sessions interrupted, scopes killed
+        ctl["agent_ask"].stop()
         st.transition("idle")
         st.close()
         from wisp import bgwriter
