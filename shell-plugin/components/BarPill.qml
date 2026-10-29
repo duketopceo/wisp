@@ -1,15 +1,21 @@
-// Bar pill: the live-activities row that grows beside the bar mark while
-// the daemon works — the wordView word in its tone plus a mic-level meter
-// while listening. While a run is live (U8) it shows a progress dot and
-// the truncated intent instead of the generic word; when the run resolves
-// an outcome tint (ok / fail / stopped) holds for a few seconds, then the
-// pill folds away — an ambient signal, not a second panel. Motion off
-// skips the tint entirely. Collapses to zero width at idle so the bar
-// keeps its rest footprint; the WidgetButton's animated width does the
-// grow/shrink. No timers, no polling: every value binds straight to
-// WispService.
+// Bar pill: the Wisp element beside the bar mark (U3). Idle and offline
+// show nothing here (the mark alone carries them, so the bar keeps its rest
+// footprint); every other state is a pill of glyph plus word: a 5-bar mic
+// waveform for listening, a turning arc for thinking, the buddy's triangle
+// for speaking, a pointer for acting with the step count when known, an
+// alert in a yellow border for needs you, an x in a red border plus one
+// muted word of cause for error (it stays until the next turn starts), and
+// after a finished turn a check, "done" and two thumb buttons for the
+// service's 8 s rating window (hovering pauses it). Spend, voice and the
+// mouse map live in the hover card, not here. The word always repeats the
+// state; color is never the only signal. No Timer: the window is the
+// service's; the arc turns only while thinking and only in full motion.
 import QtQuick
+import QtQuick.Shapes
+import "../lib/bar.js" as B
 import "../lib/metrics.js" as M
+import "../lib/motion.js" as Motion
+import "../lib/rate.js" as Rate
 
 Item {
   id: root
@@ -18,105 +24,238 @@ Item {
 
   readonly property var tk: service ? service.tokens : ({})
   readonly property string motionMode: service ? service.motionMode : "off"
-  readonly property var view: service ? service.wordView : ({ word: "", tone: "muted" })
-  readonly property var run: service && service.run ? service.run
-    : ({ present: false, active: false, outcome: "", intent: "", key: "" })
-  readonly property bool runActive: run.active === true
-  readonly property string runOutcome: !runActive && run.present ? run.outcome : ""
-  readonly property bool listening: service ? service.status === "listening" : false
-  // the tint is up until `tintFor` catches the resolved run's key — one
-  // pause per outcome, then the pill folds through the opacity behavior.
-  // `tintKey` snapshots the key at tint start: a new run interrupting the
-  // hold must not steal the key and lose its own outcome tint
-  property string tintFor: ""
-  property string tintKey: ""
-  readonly property bool tintUp: runOutcome !== "" && motionMode !== "off"
-    && tintFor !== run.key
-  onTintUpChanged: if (tintUp) tintKey = run.key
-  // live while the daemon works or waits on the user, or while a fresh
-  // outcome tint is still up; an error keeps the word up until the next
-  // turn so a failed ask isn't silent
-  readonly property bool live: service !== null && (
-    service.busy || service.status === "listening" ||
-    service.status === "awaiting_choice" || service.confirm !== null ||
-    service.suggestion !== null || service.status === "error" || tintUp)
+  readonly property var info: B.pillState({
+    status: service ? service.status : "offline",
+    result: service ? service.result : "",
+    errorCode: service ? service.errorCode : "",
+    offline: service ? service.offline === true : true,
+    confirm: service ? service.confirm !== null : false,
+    windowOpen: service ? service.ratingWindowOpen === true : false,
+    rateable: service ? Rate.rateable(service.status, service.answer,
+      service.result, service.errorCode) : false,
+    run: service ? service.run : null
+  })
+  readonly property real glyphSize: M.font.icon - 2
+  // a tap rates the turn it was made on; a newer turn starts the pill fresh
+  property string tapped: ""
+  property string tappedFor: ""
+  readonly property bool rated: tapped !== "" && service !== null && tappedFor === service.turnId
 
   clip: true
-  implicitWidth: live ? row.implicitWidth + M.spacing.lg : 0
-  implicitHeight: row.implicitHeight
-  opacity: live ? 1 : 0
+  implicitWidth: info.visible ? pill.width + M.spacing.md : 0
+  implicitHeight: pill.height
+  opacity: info.visible ? 1 : 0
   Behavior on opacity {
     enabled: root.motionMode !== "off"
     NumberAnimation { duration: 140 }
   }
 
-  PauseAnimation {
-    id: tintHold
-    duration: 2800
-    running: root.tintUp
-    onStopped: root.tintFor = root.tintKey
+  // hovering the pill holds the rating window open
+  HoverHandler {
+    id: hover
+    enabled: root.info.visible
+    onHoveredChanged: if (root.service) root.service.pillHover = hovered
   }
 
-  Row {
-    id: row
+  Rectangle {
+    id: pill
+    x: M.spacing.md
     anchors.verticalCenter: parent.verticalCenter
-    spacing: M.spacing.md
+    height: M.size.control - M.spacing.lg
+    width: row.implicitWidth + 2 * M.spacing.lg
+    radius: M.pillRadius(height, M.radius.chrome)
+    color: "transparent"
+    border.width: M.size.keyline
+    border.color: root.tk[root.info.border] ? root.tk[root.info.border] : "transparent"
 
-    // progress dot while a run is live; the outcome tint in its place
-    // once it resolves
-    Rectangle {
-      visible: root.runActive || root.tintUp
-      width: M.spacing.md
-      height: M.spacing.md
-      radius: width / 2
-      anchors.verticalCenter: parent.verticalCenter
-      color: root.tintUp
-        ? root.tk[root.runOutcome === "done" ? "ok"
-          : root.runOutcome === "failed" ? "fail" : "inkMuted"]
-        : root.tk.ember
-    }
+    Row {
+      id: row
+      anchors.centerIn: parent
+      spacing: M.spacing.md
 
-    Column {
-      anchors.verticalCenter: parent.verticalCenter
-      spacing: 2
+      // glyph slot: one of waveform / arc / triangle / icon
+      Item {
+        width: root.glyphSize
+        height: root.glyphSize
+        anchors.verticalCenter: parent.verticalCenter
+
+        Row {
+          visible: root.info.glyph === "waveform"
+          anchors.centerIn: parent
+          spacing: 1
+          Repeater {
+            model: B.waveBars(root.service ? root.service.level : 0)
+            delegate: Rectangle {
+              required property var modelData
+              required property int index
+              objectName: "bar" + index
+              width: 2
+              height: modelData
+              radius: 1
+              anchors.verticalCenter: parent.verticalCenter
+              color: root.tk.ember
+            }
+          }
+        }
+
+        Item {
+          id: arc
+          visible: root.info.glyph === "arc"
+          anchors.fill: parent
+          // turns only while thinking, only in full motion; static otherwise
+          RotationAnimator on rotation {
+            from: 0
+            to: 360
+            duration: 1100
+            loops: Animation.Infinite
+            running: Motion.loops("thinking", root.motionMode) && root.info.kind === "thinking"
+          }
+          Shape {
+            anchors.fill: parent
+            preferredRendererType: Shape.CurveRenderer
+            antialiasing: true
+            ShapePath {
+              fillColor: "transparent"
+              strokeColor: root.tk.ember
+              strokeWidth: 1.5
+              capStyle: ShapePath.RoundCap
+              PathAngleArc {
+                centerX: root.glyphSize / 2
+                centerY: root.glyphSize / 2
+                radiusX: root.glyphSize / 2 - 1.5
+                radiusY: root.glyphSize / 2 - 1.5
+                startAngle: -90
+                sweepAngle: 270
+              }
+            }
+          }
+        }
+
+        Shape {
+          visible: root.info.glyph === "triangle"
+          anchors.fill: parent
+          preferredRendererType: Shape.CurveRenderer
+          antialiasing: true
+          ShapePath {
+            fillColor: root.tk.ember
+            strokeColor: "transparent"
+            startX: root.glyphSize / 2
+            startY: 1
+            PathLine { x: root.glyphSize - 1; y: root.glyphSize - 2 }
+            PathLine { x: 1; y: root.glyphSize - 2 }
+            PathLine { x: root.glyphSize / 2; y: 1 }
+          }
+        }
+
+        Icon {
+          visible: root.info.glyph !== "waveform" && root.info.glyph !== "arc"
+            && root.info.glyph !== "triangle"
+          anchors.centerIn: parent
+          name: root.info.glyph
+          size: root.glyphSize
+          color: root.tk[root.info.token] ? root.tk[root.info.token] : "transparent"
+        }
+      }
 
       Text {
         objectName: "word"
-        width: Math.min(implicitWidth, 160)
-        elide: Text.ElideRight
-        // a live run's intent echo replaces the generic status word;
-        // a live paper plan marker is the next-best ambient signal
-        text: {
-          if (root.runActive && root.run.intent !== "")
-            return root.run.intent
-          var n = root.service ? root.service.note : null
-          if (n && !n.closed && n.plan && n.plan.length > 0) {
-            var step = n.plan[0]
-            var body = (step.text || "").trim()
-            if (body !== "") return body
-          }
-          return root.view.word
-        }
-        color: root.tk[M.toneToken(root.view.tone)]
+        anchors.verticalCenter: parent.verticalCenter
+        text: !root.service || !root.info.visible ? ""
+          : root.info.thumbs && root.rated ? root.service.ui(root.tapped === "incorrect" ? "ui.rate.wrong" : "ui.rate.good")
+          : root.service.ui(root.info.wordKey)
+        color: root.tk[root.info.wordToken]
         font.family: root.service ? root.service.fontFamily : ""
         font.pixelSize: M.font.label
         font.weight: Font.DemiBold
       }
 
-      // mic level, listening only: the pill breathes with the voice
-      Rectangle {
-        visible: root.listening
-        width: 36
-        height: 3
-        radius: 1.5
-        color: root.tk.inkMuted ? Qt.alpha(root.tk.inkMuted, 0.35) : "transparent"
+      // acting: "2/4" when the run knows its steps
+      Text {
+        objectName: "step"
+        visible: root.info.step !== ""
+        anchors.verticalCenter: parent.verticalCenter
+        text: root.info.step
+        color: root.tk.inkMuted
+        font.family: root.service ? root.service.fontFamily : ""
+        font.pixelSize: M.font.label
+      }
+
+      // error: one muted word of cause
+      Text {
+        objectName: "cause"
+        visible: root.info.cause !== ""
+        anchors.verticalCenter: parent.verticalCenter
+        text: root.info.cause
+        color: root.tk.inkMuted
+        font.family: root.service ? root.service.fontFamily : ""
+        font.pixelSize: M.font.label
+      }
+
+      // done window: rate this turn through the service's label path
+      Row {
+        visible: root.info.thumbs && !root.rated
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: M.spacing.sm
+
         Rectangle {
-          width: parent.width * Math.max(0.08, root.service ? root.service.level : 0)
-          height: parent.height
-          radius: parent.radius
-          color: root.tk.ember
+          id: thumbUp
+          objectName: "thumbUp"
+          width: M.font.icon + M.spacing.md
+          height: width
+          radius: M.radius.chip
+          color: upArea.pressed ? root.tk.selection : "transparent"
+          border.width: M.size.keyline
+          border.color: upArea.containsMouse ? root.tk.keylineStrong : root.tk.keyline
+          Accessible.role: Accessible.Button
+          Accessible.name: root.service ? root.service.ui("ui.label.good") : ""
+          function activate() { root.rate("correct"); }
+          Icon {
+            anchors.centerIn: parent
+            name: "thumb-up"
+            size: M.font.icon - 2
+            color: root.tk.ink
+          }
+          MouseArea {
+            id: upArea
+            anchors.fill: parent
+            hoverEnabled: true
+            onClicked: thumbUp.activate()
+          }
+        }
+
+        Rectangle {
+          id: thumbDown
+          objectName: "thumbDown"
+          width: thumbUp.width
+          height: width
+          radius: M.radius.chip
+          color: downArea.pressed ? root.tk.selection : "transparent"
+          border.width: M.size.keyline
+          border.color: downArea.containsMouse ? root.tk.keylineStrong : root.tk.keyline
+          Accessible.role: Accessible.Button
+          Accessible.name: root.service ? root.service.ui("ui.label.wrong") : ""
+          function activate() { root.rate("incorrect"); }
+          Icon {
+            anchors.centerIn: parent
+            name: "thumb-down"
+            size: M.font.icon - 2
+            color: root.tk.ink
+          }
+          MouseArea {
+            id: downArea
+            anchors.fill: parent
+            hoverEnabled: true
+            onClicked: thumbDown.activate()
+          }
         }
       }
     }
+  }
+
+  function rate(verdict) {
+    if (!root.service) return
+    root.tapped = verdict
+    root.tappedFor = root.service.turnId
+    root.service.label(verdict, root.service.turnId, "")
   }
 }
