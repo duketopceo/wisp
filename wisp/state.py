@@ -80,6 +80,7 @@ class State:
         self.result = ""
         self.choices = []
         self.prompt_id = ""    # id of the offered choices/confirm (U9)
+        self.source = ""       # who raised the prompt: "agent:<name>" (U7), "" for a turn's own
         self.confirm = None    # {prompt_id, prompt, timeout_s, kind} while a confirm waits (W25; kind U3)
         self.points = []
         self.drawings = []  # on-screen shapes (ring/arrow/hl), logical coords
@@ -279,6 +280,7 @@ class State:
             "result": self.result,
             "choices": list(self.choices),
             "prompt_id": self.prompt_id,
+            "source": self.source,
             "confirm": dict(self.confirm) if self.confirm else None,
             "points": list(self.points),
             "drawings": list(self.drawings),

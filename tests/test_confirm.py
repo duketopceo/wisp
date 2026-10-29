@@ -333,5 +333,18 @@ class TestDenyResult(unittest.TestCase):
                          "skipped, you said no")
 
 
+class TestSourceField(ConfirmBase):
+    """U7: `source` names who raised the published prompt (empty for a
+    turn's own card) and rides the snapshot beside prompt_id."""
+
+    def test_source_defaults_empty_and_publishes(self):
+        self.assertEqual(self.st.snapshot()["source"], "")
+        self.st.transition("awaiting_choice", choices=["Allow", "No"],
+                           prompt_id="p1", source="agent:scout")
+        self.assertEqual(self.st.snapshot()["source"], "agent:scout")
+        self.st.transition("idle", source="")
+        self.assertEqual(self.st.snapshot()["source"], "")
+
+
 if __name__ == "__main__":
     unittest.main()

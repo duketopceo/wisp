@@ -471,6 +471,9 @@ def _wait_for_choice(ctl: dict, token=None):
     broker = ctl.get("broker")
     if broker is None:
         broker = ctl["broker"] = cancel.PromptBroker()
+    aq = ctl.get("agent_ask")
+    if aq is not None:
+        aq.withdraw()   # a turn's prompt outranks a published agent ask
     return broker.waiter(token)
 
 
@@ -776,6 +779,12 @@ def run_daemon(cfg: dict) -> int:
            "broker": cancel.PromptBroker(), "token": None,
            "rec": None, "rec_lock": threading.Lock()}
     _DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL = st, cfg, ctl
+    # U7: background agents' asks ride the same broker and `choice` IPC
+    from wisp import agent_ask as _agent_ask
+    ctl["agent_ask"] = _agent_ask.AskQueue(
+        st, ctl["broker"], lambda t: speech.speak(t, cfg), st.emit_event,
+        busy=ctl["busy"].is_set)
+    ctl["agent_ask"].start()
     # U1: rec/<turn>/ dirs left by a dead run are orphans — the turn
     # never reached pack-write, so they're discarded, never promoted
     from wisp import record as _record
