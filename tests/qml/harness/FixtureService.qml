@@ -46,6 +46,12 @@ Item {
   property var health: ({})
   property var spend: ({})
   property var ratePrompt: null
+  // Dev tab (U5): the harness never runs the call; scenes pass the data
+  // straight to the component
+  property bool devPanel: false
+  property var devData: null
+  property bool devLoading: false
+  property string devError: ""
   // the prompted turn id, "" when none: surfaces react to this, not to the
   // object (normalize builds a fresh {turn} on every state message)
   readonly property string ratePromptTurn: ratePrompt ? String(ratePrompt.turn || "") : ""
@@ -81,6 +87,8 @@ Item {
   function sendChoice(pick, pid) { return false; }
   function label(verdict, turn, note) { return false; }
   function skipRatePrompt() { return false; }
+  function loadConfig() {}
+  function loadDev() {}
 
   function ui(key) { return Copy.string(key); }
   function pickLabel(pick) { return Copy.pickLabel(pick); }
