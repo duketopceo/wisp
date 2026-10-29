@@ -76,6 +76,22 @@ def _browseros_live() -> bool:
 _BROWSERS = ("browseros", "chromium", "google-chrome", "firefox", "brave")
 
 
+def _web_browser(apps: dict, cfg: dict) -> str | None:
+    """The binary that should open a URL: BrowserOS when it is live (the
+    signed-in agent browser, same rule as launch('browser')), else the
+    browser role's resolved app when it is installed, else None so the
+    caller falls back to xdg-open."""
+    if cfg.get("agent", {}).get("browseros_first", "true") == "true" \
+            and shutil.which("browseros") and _browseros_live():
+        return "browseros"
+    from .. import inventory
+    role = inventory.defaults().get("browser")
+    binname = _lookup(apps, role) if role else None
+    if binname and _on_path(binname.split()[0]):
+        return binname
+    return None
+
+
 def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
     # Resolve the app first: "unknown app" / "not installed" are about the
     # request and read the same with or without a window manager. The
@@ -129,6 +145,14 @@ def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
                 down = _wm_down()
                 if down:
                     return down
+                # "go to <site>" navigates the user's own browser (a tab
+                # in the running instance), not whatever xdg-open maps
+                # the scheme to — that spawned a second app
+                via = _web_browser(apps, cfg)
+                if via:
+                    if not _exec_detached(f"{via} {shlex.quote(url)}"):
+                        return f"SKIP (could not open {url} in {via})"
+                    return f"OPENED {url} -> {via}"
                 _exec_detached(f"xdg-open {shlex.quote(url)}")
                 return f"OPENED {url} -> default browser"
             return f"SKIP (unknown app {app!r})"

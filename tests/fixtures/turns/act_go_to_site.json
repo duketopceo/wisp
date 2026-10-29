@@ -1,0 +1,56 @@
+{
+  "description": "Act route: 'go to stripe.com' makes one launch(stripe.com) step. The launch stub returns the OPENED line the real launch gives when a site opens in the user's browser (tests/test_tools.py proves that); the turn ends ACTED, never a second app spawned through xdg-open.",
+  "audio": "act.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "wisp agent go to stripe.com"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "tool_calls": [
+            {
+              "name": "launch",
+              "arg": "stripe.com"
+            }
+          ]
+        },
+        {
+          "content": "Opened stripe.com in your browser."
+        }
+      ]
+    }
+  },
+  "expect": {
+    "tool_calls": [
+      "launch"
+    ],
+    "launch_calls": [
+      "stripe.com"
+    ],
+    "steps_contain": [
+      "OPENED https://stripe.com -> browseros"
+    ],
+    "result_prefix": "ACTED (1 steps)",
+    "brain_calls": 2
+  },
+  "name": "act_go_to_site",
+  "scenario": "go to a site in the browser",
+  "launch_results": {
+    "stripe.com": "OPENED https://stripe.com -> browseros"
+  }
+}
