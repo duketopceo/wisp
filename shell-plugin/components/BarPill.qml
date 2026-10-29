@@ -54,7 +54,16 @@ Item {
   HoverHandler {
     id: hover
     enabled: root.info.visible
-    onHoveredChanged: if (root.service) root.service.pillHover = hovered
+  }
+  // a Binding (not a handler write) so the flag drops when the pill hides
+  // or is destroyed under the pointer; a stuck true would pause the
+  // rating window forever
+  Binding {
+    target: root.service
+    property: "pillHover"
+    value: hover.hovered && root.info.visible
+    when: root.service !== null
+    restoreMode: Binding.RestoreBindingOrValue
   }
 
   Rectangle {
