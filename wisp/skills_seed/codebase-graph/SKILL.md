@@ -34,7 +34,7 @@ for structural questions.
 |---|---|---|
 | `search_graph` | find symbols | `project`, `query`/`semantic_query`, `label`, `file_pattern` |
 | `trace_path` | callers/callees/data flow | `function_name`, `direction`, `depth`, `mode` (calls/data_flow/cross_service) |
-| `get_architecture` | module overview | `project`, `aspects` |
+| `get_architecture` | module overview | `project`, `aspects` — valid: `all`, `overview`, `structure`, `dependencies`, `routes`, `languages`, `packages`, `entry_points`, `hotspots`, `boundaries`, `layers`, `file_tree`, `clusters`, `cycles` |
 | `get_code_snippet` | read a symbol's code | `project`, `qn` or `file`+`lines` |
 | `get_file_outline` | file's symbol map | `project`, `file` |
 | `query_graph` | custom Cypher | `query`, `project`, `graph=code|missed` |
