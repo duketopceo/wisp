@@ -137,6 +137,7 @@ Every routed turn appends Jev vs heuristic vs final route to `route_ab.jsonl`. D
 | key | default | meaning |
 |-----|---------|---------|
 | `router` | `"act"` | `act` (default: every turn straight to the agent loop — the loop's brain decides answer-vs-work; no decision hop) / `jev` (decision API) / `chat` (straight to answer brain) / `off` (clarify) |
+| `fast_path` | `"true"` | Under `router = act`, a bare launch of a catalogued app ("open firefox") or a plain question ("what does this error mean") skips the act loop and goes straight to the launch or answer handler, with no model hop. Compound requests, unknown apps and questions that carry an action verb still go to act. `"false"` sends every turn to act |
 | `default` | `"openrouter:<answer_model>"` | `name:model` selecting a `[brain.<name>]` provider |
 | `fallback` | `""` | comma-separated `name:model` chain tried after `default` (e.g. `"mlx:ornith, ollama:ornith"`) |
 | `allow_paid` | `false` | allow paid fallback entries (OpenRouter, or `paid = "true"` on the section); the U10 cap hook (`brain.budget_ok`, see `[budget]`) also applies; at a cap fallbacks are skipped, the primary runs unless `[budget] gate_primary` |
