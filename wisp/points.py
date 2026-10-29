@@ -259,6 +259,22 @@ def logical_bbox(mons: list[dict]) -> tuple:
     return int(x0), int(y0), round(x1 - x0), round(y1 - y0)
 
 
+def on_screen(x: int, y: int, mons: list[dict], margin: int = 2) -> bool:
+    """Is the logical point (x, y) inside some monitor's logical rect?
+    An unreadable layout (no monitors) says yes: no evidence, no veto.
+    `margin` forgives rounding at the outer edges."""
+    if not mons:
+        return True
+    for m in mons:
+        s = _scale_of(m)
+        x0, y0 = m.get("x", 0), m.get("y", 0)
+        w, h = m.get("width", 0) / s, m.get("height", 0) / s
+        if (x0 - margin <= x < x0 + w + margin
+                and y0 - margin <= y < y0 + h + margin):
+            return True
+    return False
+
+
 def img_space_is_logical() -> bool:
     """True when screenshots are normalized to the logical canvas —
     magick is present to resize, or every monitor is scale 1 anyway.
