@@ -481,6 +481,22 @@ class TestHandlerActionStream(unittest.TestCase):
         self.assertTrue(r["ok"])  # command ran; the outcome failed
         self.assertEqual(self.actions("label")[-1]["status"], "failed")
 
+    def test_label_passes_turn_and_types_the_reply(self):
+        with mock.patch("wisp.learn.label_last",
+                        return_value="not_ratable: turn b2 was cancelled"
+                        ) as lab:
+            r = self.handle()({"cmd": "label", "label": "correct",
+                               "turn": "b2"})
+        self.assertEqual(lab.call_args.kwargs.get("turn"), "b2")
+        self.assertEqual(r["status"], "not_ratable")
+        self.assertEqual(self.actions("label")[-1]["status"], "failed")
+
+    def test_label_ok_reply_has_status_ok(self):
+        with mock.patch("wisp.learn.label_last",
+                        return_value="labeled correct: t1"):
+            r = self.handle()({"cmd": "label", "label": "correct"})
+        self.assertEqual(r["status"], "ok")
+
     def test_suggestion_pick_resolves_the_card_entry(self):
         # the card's stream entry resolves by kind when the pick lands
         self.bus.action_add("suggestion", "try x", status="awaiting",

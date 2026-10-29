@@ -357,12 +357,18 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
             from wisp import learn
             result = learn.label_last(cmd.get("label", ""),
                                       cmd.get("note", ""),
-                                      cmd.get("lang", ""))
+                                      cmd.get("lang", ""),
+                                      turn=cmd.get("turn", ""))
+            status = learn.label_status(result)
             state_mod.action_add(
                 st, "label", cmd.get("label", "") or "label",
-                status="failed" if result.startswith(("ERROR", "SKIP"))
+                status="failed" if result.startswith(
+                    ("ERROR", "SKIP", "not_found", "not_ratable"))
                 else "done", reason=result)
-            return {"ok": True, "result": result}
+            reply = {"ok": True, "result": result}
+            if status:
+                reply["status"] = status
+            return reply
         if c == "learn":
             # weekly proposals were removed; the verb stays in the IPC
             # contract as a no-op

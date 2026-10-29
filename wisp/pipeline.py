@@ -191,7 +191,7 @@ def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
             fields["result"] = ctx.result
         state.transition("idle", **fields)
         log_decision({"ts": datetime.now(timezone.utc).isoformat(),
-                      "result": "CANCELLED (user)",
+                      "turn": turn, "result": "CANCELLED (user)",
                       "timing_ms": sp.legacy_timing()})
         return 0
     except Exception as e:
@@ -202,7 +202,7 @@ def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
                     {"error": str(e), "error_code": err.code})
         _publish_error(state, err)
         log_decision({"ts": datetime.now(timezone.utc).isoformat(),
-                      "result": f"ERROR ({e})",
+                      "turn": turn, "result": f"ERROR ({e})",
                       "timing_ms": sp.legacy_timing()})
         notify(_copy.toast_text(err.code), "error", code=err.code,
                actions=[_open_log_action()],

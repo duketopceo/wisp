@@ -13,24 +13,48 @@ from . import config
 LABELS_FILE = config.DATA_DIR / "labels.jsonl"
 
 
-def label_last(label: str, note: str = "", lang: str = "") -> str:
-    """Tag the most recent decisions.jsonl turn correct/incorrect —
-    `wispd eval` reads labels.jsonl keyed by `ref`."""
+_UNRATABLE = ("CANCELLED", "ERROR")
+
+
+def label_status(result: str) -> str:
+    """Typed reply for a `label_last` result string: ok | not_found |
+    not_ratable. Refusals (SKIP/ERROR write failures) carry none."""
+    r = str(result or "")
+    if r.startswith("labeled "):
+        return "ok"
+    if r.startswith("not_ratable"):
+        return "not_ratable"
+    if r.startswith(("not_found", "nothing to label")):
+        return "not_found"
+    return ""
+
+
+def label_last(label: str, note: str = "", lang: str = "",
+               turn: str = "") -> str:
+    """Tag a decisions.jsonl turn correct/incorrect — `wispd eval` reads
+    labels.jsonl keyed by `ref`. With `turn`, that turn's line; without
+    it, the most recent finished line (cancelled and error lines are
+    skipped). A cancelled or errored turn is not_ratable."""
     label = {"ok": "correct", "good": "correct",
              "bad": "incorrect"}.get(label, label)
     if label not in ("correct", "incorrect"):
         return "SKIP (label must be correct|incorrect)"
-    try:
-        last = ""
-        with config.DECISIONS.open() as f:
-            for line in f:
-                if line.strip():
-                    last = line
-        if not last:
+    turn = str(turn or "").strip()
+    rows = _read_jsonl(config.DECISIONS)
+    if turn:
+        hit = next((d for d in reversed(rows)
+                    if d.get("turn") == turn), None)
+        if hit is None:
+            return f"not_found: no turn {turn}"
+        if str(hit.get("result", "")).startswith(_UNRATABLE):
+            return f"not_ratable: turn {turn} did not finish"
+    else:
+        hit = next((d for d in reversed(rows)
+                    if not str(d.get("result", "")).startswith(
+                        _UNRATABLE)), None)
+        if hit is None:
             return "nothing to label"
-        ref = json.loads(last).get("ts", "")
-    except OSError:
-        return "nothing to label"
+    ref = hit.get("ts", "")
     rec = {"ts": datetime.now(timezone.utc).isoformat(),
            "ref": ref, "label": label, "note": note}
     if lang:

@@ -30,7 +30,7 @@ future tray apps). Shells MUST only depend on this document.
 | `stop` | — | `{ok}` | daemon exits, socket removed; kills in-flight TTS |
 | `interrupt` | — | `{ok}` | cancels the in-flight turn only — daemon stays up; see Cancellation |
 | `config` | `set: {"section.key": "val"}` (optional) | `{ok, config}` | read config; with `set`, writes config.toml preserving comments/order and live-reloads |
-| `label` | `label: correct\|incorrect` | `{ok, result}` | tag the most recent decision (read by `wispd eval` and the trajectory join) |
+| `label` | `label: correct\|incorrect`, `turn?: string`, `note?`, `lang?` | `{ok, result, status?}`; `status` is `ok`, `not_found` (no such turn, or nothing to label) or `not_ratable` (the turn was cancelled or errored); nothing is written unless `ok` | tag the turn named by `turn`; without it, the most recent decision that is not cancelled or errored. Re-labelling appends a new line and `wispd eval` takes the latest per turn |
 | `dictate_correct` | `{"heard","meant"}` | `{ok, result}` or `{ok:false, error, result}` | record a personal dictation correction → `dictation.json` (U6); cleanup/compose prompts carry the table |
 | `context` | — | `{ok, result}` | focused app, `[windows]` workspace map, inventory counts |
 | `captures` | `turn_id?: string`, `full?: bool`, `limit?: int` | `{ok, packs}` or `{ok, manifest}` | read capture-pack list or manifest |
@@ -428,7 +428,8 @@ and creates an output workspace at `tasks/<id>/out/`. At reap time:
 
 ## Data files (shared by both cores, never versioned differently)
 
-- `decisions.jsonl` — one JSON per turn: `ts`, `transcript`, `answers`,
+- `decisions.jsonl` — one JSON per turn: `ts`, `turn` (the turn id, on
+  every line including cancelled and error ones), `transcript`, `answers`,
   `result`, `timing_ms{record,stt,jev,act}`, `corrected`.
 - `session.jsonl` — turns for follow-up context.
 - `corrections.jsonl` — user picks on ambiguous turns.
