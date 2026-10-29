@@ -1,18 +1,21 @@
-usage: wispd daemon install [-h] [--cua] [--units] [--echo-cancel] [--dry-run]
-                            [--from-plugin] [--yes] [--ref GIT_REF]
-                            [--repo PATH] [--json] [--quiet] [--no-color]
+usage: wispd daemon install [-h] [--cua] [--agents] [--units] [--echo-cancel]
+                            [--dry-run] [--from-plugin] [--yes]
+                            [--ref GIT_REF] [--repo PATH] [--json] [--quiet]
+                            [--no-color]
 
 Install runtime files, the systemd unit and the hotkey bind
 
 options:
   -h, --help     show this help message and exit
   --cua          also install the pinned cua-driver (scripts/cua/install.sh)
+  --agents       only install the pinned ori and OpenCode 2.x background-agent
+                 runtime (user scope, checksummed, no sudo)
   --units        only install the systemd unit templates (scripts/units),
                  backing up changed ones
   --echo-cancel  only write the PipeWire echo-cancel drop-in the optional wake
                  word needs over speakers (asks first; --yes answers it)
-  --dry-run      print the plan, change nothing (also with --cua, --units or
-                 --echo-cancel)
+  --dry-run      print the plan, change nothing (also with --cua, --agents,
+                 --units or --echo-cancel)
   --from-plugin  the Omarchy plugin was added from the marketplace: install
                  the daemon only, leave the plugin directory to `omarchy
                  plugin update`, print every file and the bind line first and

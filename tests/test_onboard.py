@@ -23,7 +23,7 @@ sys.path.insert(0, str(HERE))
 import shorttmp  # noqa: E402
 from cli_env import CliEnv  # noqa: E402
 
-from wisp import config, onboard  # noqa: E402
+from wisp import agent_install, agent_pins, config, onboard  # noqa: E402
 
 LADDER_URLS = {u for _n, u in onboard.LADDER}
 
@@ -33,7 +33,8 @@ class Fakes:
 
     def __init__(self, up=None, cua="running", notify="sent", submap=False,
                  recorder=True, model=True, notifier=True, keys=None,
-                 secrets=()):
+                 secrets=(), agents="ready", smoke=(True, "ok"),
+                 browser=(True, "signed in")):
         self.up = set(LADDER_URLS if up is None else up)
         self.fetched = []
         self.sent = 0
@@ -47,8 +48,42 @@ class Fakes:
             if keys is None else set(keys)
         self.secrets = list(secrets)
         self.stored = []
+        self.agents_state = agents
+        self.installed = []
+        self.logins = []     # ("key", ori, key) or ("browser", ori)
+        self.smokes = 0
+        self.smoke_result = smoke
+        self.browser_result = browser
 
     def probes(self):
+        def agents(cfg):
+            ok = self.agents_state in ("installed", "ready")
+            return {"state": self.agents_state, "ok": ok,
+                    "fix": "wispd install --agents"}
+
+        def install(tool):
+            self.installed.append(tool)
+            if self.agents_state in ("absent", "opencode_v1",
+                                     "wrong_version") \
+                    and len(self.installed) % 2 == 0:
+                self.agents_state = "not_signed_in"
+            return agent_install.Result("installed")
+
+        def login_key(ori, key):
+            self.logins.append(("key", str(ori), key))
+            self.agents_state = "ready"
+            return True, "signed in"
+
+        def login_browser(ori):
+            self.logins.append(("browser", str(ori)))
+            if self.browser_result[0]:
+                self.agents_state = "ready"
+            return self.browser_result
+
+        def smoke(cfg):
+            self.smokes += 1
+            return self.smoke_result
+
         def fetch(url):
             self.fetched.append(url)
             return url in self.up
@@ -78,7 +113,9 @@ class Fakes:
             notify_ready=lambda: self.notifier, notify_send=send,
             submap=lambda: self.submap_present,
             key=lambda env: "k" if env in self.keys else "",
-            store_key=store, secret=secret)
+            store_key=store, secret=secret, agents=agents,
+            agent_install=install, ori_login_key=login_key,
+            ori_login_browser=login_browser, acp_smoke=smoke)
 
 
 def tree(root):
@@ -138,10 +175,10 @@ class OnboardCase(unittest.TestCase):
 class TestSteps(OnboardCase):
     def test_step_order(self):
         self.assertEqual([s.id for s in onboard.STEPS],
-                         ["mic", "models", "keys", "cua",
+                         ["mic", "models", "keys", "agents", "cua",
                           "notifications", "keybinding"])
         self.assertEqual([s.id for s in onboard.STEPS if s.optional],
-                         ["cua", "keybinding"])
+                         ["agents", "cua", "keybinding"])
 
     def test_mic_needs_recorder_and_model(self):
         r = onboard.check("mic", self.cfg, Fakes().probes())
@@ -221,20 +258,205 @@ class TestSteps(OnboardCase):
         self.assertFalse(self.progress.path.exists())
 
 
+ORI = agent_pins.runtime_paths(pathlib.Path("/rt"))["ori"]
+
+
+class TestAgentsStep(OnboardCase):
+    def conf_path(self):
+        return (self.data / "agent-runtime" / "home" / "config"
+                / "opencode" / "opencode.json")
+
+    def run_agents(self, f):
+        return onboard.run_step("agents", self.cfg, f.probes(),
+                                self.progress)
+
+    def test_step_is_optional_and_sits_after_keys(self):
+        ids = [s.id for s in onboard.STEPS]
+        self.assertEqual(ids[ids.index("keys") + 1], "agents")
+        self.assertTrue(next(s for s in onboard.STEPS
+                             if s.id == "agents").optional)
+
+    def test_all_ready_is_ok_and_run_is_a_noop(self):
+        f = Fakes(agents="ready")
+        r = self.run_agents(f)
+        self.assertEqual((r["state"], r["done"]), ("ok", True))
+        self.assertEqual((f.installed, f.logins, f.smokes), ([], [], 0))
+        self.assertFalse(self.conf_path().exists())
+
+    def test_absent_installs_signs_in_with_the_key_and_smoke_tests(self):
+        f = Fakes(agents="absent")
+        r = self.run_agents(f)
+        self.assertEqual((r["state"], r["done"]), ("ok", True), r)
+        self.assertEqual(f.installed, ["ori", "opencode"])
+        self.assertEqual(len(f.logins), 1)
+        kind, ori, key = f.logins[0]
+        self.assertEqual((kind, key), ("key", "k"))
+        self.assertTrue(ori.endswith("agent-runtime/ori/current/ori"), ori)
+        self.assertEqual(f.smokes, 1)
+        self.assertTrue(self.conf_path().is_file())
+        self.assertIn("agents", self.progress.done)
+
+    def test_no_stored_key_takes_the_browser_path(self):
+        f = Fakes(agents="not_signed_in", keys=())
+        r = self.run_agents(f)
+        self.assertEqual(r["state"], "ok", r)
+        self.assertEqual(f.installed, [])   # already installed
+        self.assertEqual([x[0] for x in f.logins], ["browser"])
+
+    def test_browser_timeout_is_todo_and_marks_nothing(self):
+        f = Fakes(agents="not_signed_in", keys=(),
+                  browser=(False, "sign-in did not finish"))
+        r = self.run_agents(f)
+        self.assertEqual((r["state"], r["done"]), ("todo", False))
+        self.assertIn("sign-in did not finish", r["detail"])
+        self.assertEqual(f.smokes, 0)
+        self.assertEqual(self.progress.done, {})
+        self.assertFalse(self.conf_path().exists())
+
+    def test_smoke_failure_is_todo_and_writes_no_config(self):
+        f = Fakes(agents="not_signed_in", smoke=(False, "no ACP reply"))
+        r = self.run_agents(f)
+        self.assertEqual((r["state"], r["done"]), ("todo", False))
+        self.assertIn("no ACP reply", r["detail"])
+        self.assertFalse(self.conf_path().exists())
+
+    def test_opencode_1x_still_installs_the_pinned_2x(self):
+        f = Fakes(agents="opencode_v1")
+        r = self.run_agents(f)
+        self.assertEqual(r["state"], "ok", r)
+        self.assertEqual(f.installed, ["ori", "opencode"])
+
+    def test_failed_install_is_todo_with_the_reason(self):
+        f = Fakes(agents="absent")
+        probes = f.probes()
+        probes.agent_install = lambda tool: agent_install.Result(
+            "failed", f"{tool} download failed")
+        r = onboard.run_step("agents", self.cfg, probes, self.progress)
+        self.assertEqual((r["state"], r["done"]), ("todo", False))
+        self.assertIn("download failed", r["detail"])
+        self.assertEqual(f.logins, [])
+
+    def test_detail_discloses_memory_reads_go_to_openrouter(self):
+        for state in ("absent", "not_signed_in", "ready"):
+            r = onboard.check("agents", self.cfg,
+                              Fakes(agents=state).probes())
+            self.assertIn("memory", r["detail"], state)
+            self.assertIn("OpenRouter", r["detail"], state)
+
+    def test_check_states(self):
+        ck = lambda st: onboard.check(  # noqa: E731
+            "agents", self.cfg, Fakes(agents=st).probes())
+        self.assertEqual(ck("ready")["state"], "ok")
+        for st in ("absent", "opencode_v1", "wrong_version",
+                   "not_signed_in"):
+            self.assertEqual(ck(st)["state"], "todo", st)
+        self.assertIn("1.x", ck("opencode_v1")["detail"])
+
+
+class TestDoctorAgents(unittest.TestCase):
+    class Probe:
+        def __init__(self, state, ok):
+            self.r = {"state": state, "ok": ok, "code": None,
+                      "fix": "wispd install --agents", "ori": "0.16.1",
+                      "opencode": "2.2.0"}
+
+        def check(self, auth=True):
+            return self.r
+
+    def rows(self, state, ok):
+        from wisp.cli import diagnose
+        secs = diagnose.doctor_sections(
+            {}, agents_probe=self.Probe(state, ok))
+        sec = next(x for x in secs if x["name"] == "agents")
+        return {r["name"]: r for r in sec["rows"]}
+
+    def test_ready_runtime_row_is_ok(self):
+        rows = self.rows("ready", True)
+        self.assertTrue(rows["agent runtime"]["ok"])
+        self.assertIn("ready", rows["agent runtime"]["value"])
+
+    def test_absent_is_optional_so_not_a_failure(self):
+        r = self.rows("absent", False)["agent runtime"]
+        self.assertTrue(r["ok"])
+        self.assertIn("wispd install --agents", r["value"])
+
+    def test_broken_install_is_a_failure(self):
+        for state in ("opencode_v1", "wrong_version", "not_signed_in"):
+            r = self.rows(state, False)["agent runtime"]
+            self.assertFalse(r["ok"], state)
+
+    def test_says_the_live_permission_gate_check_was_not_run(self):
+        g = self.rows("ready", True)["agent permission gate"]
+        self.assertIn("not run", g["value"])
+        self.assertTrue(g["ok"])
+
+
+class TestOriLogin(unittest.TestCase):
+    """The default login probes against a fake ori (no network)."""
+
+    FAKE = (
+        "#!%s\n"
+        "import json, os, sys, time\n"
+        "d = os.environ['FAKE_ORI_DIR']\n"
+        "open(d + '/argv', 'w').write(json.dumps(sys.argv[1:]))\n"
+        "if '--with-key' in sys.argv:\n"
+        "    open(d + '/stdin', 'w').write(sys.stdin.read())\n"
+        "elif '--no-browser' in sys.argv:\n"
+        "    print('Open https://openrouter.ai/auth?cb=1 to sign in', "
+        "flush=True)\n"
+        "    time.sleep(float(os.environ.get('FAKE_ORI_WAIT', '0.2')))\n"
+    ) % sys.executable
+
+    def setUp(self):
+        self.td = shorttmp.TemporaryDirectory()
+        self.addCleanup(self.td.cleanup)
+        self.dir = pathlib.Path(self.td.name)
+        self.ori = self.dir / "ori"
+        self.ori.write_text(self.FAKE)
+        self.ori.chmod(0o755)
+        p = mock.patch.dict("os.environ", {"FAKE_ORI_DIR": str(self.dir)})
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_key_goes_on_stdin_and_never_on_argv(self):
+        ok, _detail = onboard._ori_login_key(self.ori, "sk-or-test")
+        self.assertTrue(ok)
+        self.assertEqual(json.loads((self.dir / "argv").read_text()),
+                         ["login", "--with-key"])
+        self.assertEqual((self.dir / "stdin").read_text(), "sk-or-test\n")
+        self.assertNotIn("sk-or-test", (self.dir / "argv").read_text())
+
+    def test_browser_path_opens_the_printed_url(self):
+        opened = []
+        ok, _d = onboard._ori_login_browser(
+            self.ori, opener=opened.append, timeout_s=10)
+        self.assertTrue(ok)
+        self.assertEqual(opened, ["https://openrouter.ai/auth?cb=1"])
+        self.assertEqual(json.loads((self.dir / "argv").read_text()),
+                         ["login", "--no-browser"])
+
+    def test_browser_path_gives_up_after_the_timeout(self):
+        with mock.patch.dict("os.environ", {"FAKE_ORI_WAIT": "30"}):
+            ok, detail = onboard._ori_login_browser(
+                self.ori, opener=lambda u: None, timeout_s=1)
+        self.assertFalse(ok)
+        self.assertIn("sign-in did not finish", detail)
+
+
 class TestFlow(OnboardCase):
     def test_fresh_home_full_flow_records_every_available_step(self):
         before = tree(self.home)
         self.assertEqual(before, {})
         f = Fakes()
-        res, ask = self.walk(f, "y", "y", "y", "y", "y")
+        res, ask = self.walk(f, "y", "y", "y", "y", "y", "y")
         done = json.loads(self.progress.path.read_text())["done"]
-        self.assertEqual(sorted(done),
-                         ["cua", "keys", "mic", "models", "notifications"])
+        self.assertEqual(sorted(done), ["agents", "cua", "keys", "mic",
+                                        "models", "notifications"])
         self.assertEqual(f.sent, 1)
-        self.assertEqual(res["done"], ["mic", "models", "keys", "cua",
-                                       "notifications"])
+        self.assertEqual(res["done"], ["mic", "models", "keys", "agents",
+                                       "cua", "notifications"])
         self.assertEqual(res["na"], ["keybinding"])
-        self.assertEqual(len(ask.prompts), 5)  # no prompt for the na step
+        self.assertEqual(len(ask.prompts), 6)  # no prompt for the na step
         # only the progress file was written, no config
         self.assertEqual(sorted(tree(self.home)),
                          [".local/share/wisp/onboard.json"])
@@ -249,30 +471,31 @@ class TestFlow(OnboardCase):
         # a new process: fresh Progress object, same file
         self.progress = onboard.Progress()
         f2 = Fakes()
-        res, ask = self.walk(f2, "y", "y", "y", "y")
+        res, ask = self.walk(f2, "y", "y", "y", "y", "y")
         self.assertEqual(res["resumed"], ["mic"])
-        self.assertEqual(res["done"], ["mic", "models", "keys", "cua",
-                                       "notifications"])
-        self.assertEqual(len(ask.prompts), 4)
+        self.assertEqual(res["done"], ["mic", "models", "keys", "agents",
+                                       "cua", "notifications"])
+        self.assertEqual(len(ask.prompts), 5)
         self.assertFalse(any("mic" in p.lower() for p in ask.prompts))
         self.assertEqual(f2.sent, 1)
 
     def test_skip_writes_nothing_at_all(self):
         f = Fakes()
-        res, ask = self.walk(f, "s", "s", "s", "s", "s")
+        res, ask = self.walk(f, "s", "s", "s", "s", "s", "s")
         self.assertEqual(tree(self.home), {})
         self.assertEqual(sorted(res["skipped"]),
-                         ["cua", "keys", "mic", "models", "notifications"])
+                         ["agents", "cua", "keys", "mic", "models",
+                          "notifications"])
         self.assertEqual(res["done"], [])
         self.assertEqual(f.sent, 0)
         self.assertFalse(self.data.exists())
         self.assertFalse(self.cfgdir.exists())
 
     def test_skip_one_then_finish_the_rest(self):
-        res, _ = self.walk(Fakes(), "s", "y", "s", "s", "n")
+        res, _ = self.walk(Fakes(), "s", "y", "s", "s", "s", "n")
         self.assertEqual(res["done"], ["models"])
         self.assertEqual(sorted(res["skipped"]),
-                         ["cua", "keys", "mic", "notifications"])
+                         ["agents", "cua", "keys", "mic", "notifications"])
         # skipped steps are asked again next time
         self.progress = onboard.Progress()
         res, ask = self.walk(Fakes(), "q")
@@ -281,7 +504,7 @@ class TestFlow(OnboardCase):
 
     def test_a_failing_step_is_not_recorded_and_flow_continues(self):
         f = Fakes(up=set())
-        res, _ = self.walk(f, "y", "y", "y", "y", "y")
+        res, _ = self.walk(f, "y", "y", "y", "y", "y", "y")
         self.assertNotIn("models", res["done"])
         self.assertIn("models", res["failed"])
         self.assertIn("mic", res["done"])
@@ -292,8 +515,9 @@ class TestFlow(OnboardCase):
         self.assertEqual(tree(self.home), {})
 
     def test_every_step_is_reversible(self):
-        self.walk(Fakes(), "y", "y", "y", "y", "y")
-        for sid in ("mic", "models", "keys", "cua", "notifications"):
+        self.walk(Fakes(), "y", "y", "y", "y", "y", "y")
+        for sid in ("mic", "models", "keys", "agents", "cua",
+                    "notifications"):
             self.assertTrue(onboard.undo(sid, self.progress)["undone"], sid)
         self.assertEqual(json.loads(self.progress.path.read_text())["done"],
                          {})
@@ -315,7 +539,7 @@ class TestFlow(OnboardCase):
         self.assertTrue(st["finished"])
 
     def test_all_required_steps_done_finishes_the_run(self):
-        self.walk(Fakes(), "y", "y", "y", "n", "y")
+        self.walk(Fakes(), "y", "y", "y", "y", "n", "y")
         st = onboard.status(self.cfg, Fakes().probes(),
                             onboard.Progress())
         self.assertTrue(st["finished"])  # cua and keybinding are optional
@@ -342,19 +566,19 @@ class TestStatus(OnboardCase):
         self.walk(Fakes(), "y", "q")
         st = onboard.status(self.cfg, Fakes().probes(), onboard.Progress())
         self.assertEqual([s["id"] for s in st["steps"]],
-                         ["mic", "models", "keys", "cua",
+                         ["mic", "models", "keys", "agents", "cua",
                           "notifications", "keybinding"])
         mic = st["steps"][0]
         self.assertEqual(mic["state"], "done")
         self.assertTrue(mic["done"] and mic["ok"])
         self.assertEqual(st["steps"][1]["state"], "todo")
-        self.assertEqual(st["steps"][5]["state"], "na")
+        self.assertEqual(st["steps"][6]["state"], "na")
         for s in st["steps"]:
             for k in ("id", "name", "optional", "state", "ok", "done",
                       "detail", "try"):
                 self.assertIn(k, s)
         self.assertEqual(st["done_count"], 1)
-        self.assertEqual(st["total"], 5)  # na steps do not count
+        self.assertEqual(st["total"], 6)  # na steps do not count
 
     def test_status_writes_nothing(self):
         onboard.status(self.cfg, Fakes().probes(), self.progress)
@@ -528,7 +752,7 @@ class TestCli(unittest.TestCase):
             d = json.loads(out)["data"]
             self.assertFalse(d["finished"])
             self.assertEqual([s["id"] for s in d["steps"]],
-                             ["mic", "models", "keys", "cua",
+                             ["mic", "models", "keys", "agents", "cua",
                               "notifications", "keybinding"])
             self.assertEqual(tree(env.home / ".local"), {})
             # the text table must not create config.toml either
