@@ -38,7 +38,7 @@ class RoutinesWireU3Test(unittest.TestCase):
 
     def test_cli_agents_run_daemon_down_fallback_spawns_and_reconciles(self):
         with CliEnv(daemon=False) as env:
-            env.shim("ori", "exit 0")
+            env.shim("codex", "exit 0")  # a one-shot runtime: opencode needs the daemon
             r_store = routines.RoutineStore(env.data / "routines.json")
             r_store.create(
                 routines.Routine(
