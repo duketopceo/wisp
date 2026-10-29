@@ -129,6 +129,21 @@ class IpcAuthzTest(unittest.TestCase):
                 self.assertNotEqual(resp.get("error"), "marked_peer_refused")
                 self.assertTrue(resp.get("ok"), resp)
 
+        # devlog: a marked peer reads timings, never what the owner said
+        from wisp import devlog
+        full = {"turns": [{"turn": "t1", "transcript": "open my bank",
+                           "result": "ACTED (1 steps): opened",
+                           "note": "wrong tab", "stages": []}],
+                "misses": [{"kind": "act", "examples": ["open my bank"]}]}
+        with mock.patch.object(devlog, "build", return_value=full):
+            resp = self.handle({"cmd": "devlog"}, peer)
+            own = self.handle({"cmd": "devlog"}, None)
+        self.assertTrue(resp["ok"], resp)
+        self.assertEqual(resp["turns"][0]["transcript"], "")
+        self.assertEqual(resp["turns"][0]["note"], "")
+        self.assertEqual(resp["misses"][0]["examples"], [])
+        self.assertEqual(own["turns"][0]["transcript"], "open my bank")
+
         # Refused count persisted on the task record
         merged = agents._find("bg-worker", self.tf)
         self.assertEqual(
