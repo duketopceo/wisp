@@ -16,7 +16,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 from fakes import acp_agent  # noqa: E402
 from fakes.bins import BinDir  # noqa: E402
-from wisp import (acp_runtime, agent_ask, agent_home, agent_mcp,  # noqa: E402
+from wisp import (acp_runtime, agent_ask, agent_home, agent_mcp, config,  # noqa: E402
                   agents, cancel, state)
 
 READY = {"state": "ready", "ok": True, "fix": None}
@@ -66,6 +66,10 @@ class Case(unittest.TestCase):
         td = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(td.cleanup)
         self.dir = pathlib.Path(td.name)
+        # never the real ~/.local/share/wisp; absent, as on a fresh CI host
+        p = mock.patch.object(config, "DATA_DIR", self.dir / "data")
+        p.start()
+        self.addCleanup(p.stop)
         self.tf = self.dir / "tasks.jsonl"
         self.ld = self.dir / "tasks"
         self.work = self.dir / "work"
@@ -527,7 +531,8 @@ class Resume(Case):
 
     def test_continue_without_load_support_says_so(self):
         agents.record_session("scout", "x", "acp-scout", "s9",
-                              tasks_file=self.tf, agent="scout")
+                              cwd=str(self.work), tasks_file=self.tf,
+                              agent="scout")
         agents._log_line({"id": "scout", "name": "scout",
                           "status": "interrupted"}, self.tf)
         self.script(prompts=[[]])
