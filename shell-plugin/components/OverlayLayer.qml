@@ -1,5 +1,5 @@
 // Overlay layer: the Overlay half of the Companion composition: listening
-// pill, answer bubble (with the good/wrong chips), beacons and the cursor
+// pill, answer bubble (with the good/wrong rate row), beacons and the cursor
 // buddy. Window-free: the host window owns the layer and the input region
 // (it masks `pill` and `bubbleHost` when shown; the buddy is click-through).
 // The host hands the buddy's view in layer coordinates, so pointer, targets
@@ -24,7 +24,6 @@ Item {
   property real gap: 5
   property real refreshHz: 60
   property bool bubbleDismissed: false
-  property bool labeled: false
   // lib/buddy.js view(), computed by the host once per frame (null keeps
   // Buddy's own hidden view); wanted keeps the window mapped through the
   // live turn and the dwell-and-return tail
@@ -33,7 +32,7 @@ Item {
   signal choose(string pick, int index)
   signal confirmChosen(string pick, string promptId)
   signal moreClicked()
-  signal verdict(string verdict)
+  signal verdict(string verdict, string turn)
   // strokes drawn while listening, for the daemon (see ScribbleLayer)
   signal scribbled(var payload)
 
@@ -108,34 +107,11 @@ Item {
         onConfirmChosen: function (pick, promptId) { root.confirmChosen(pick, promptId); }
       }
 
-      Row {
-        spacing: M.spacing.md
-        visible: root.service.status === "done" && root.service.answer !== "" && !root.labeled && root.service.confirm === null
-        Chip {
-          service: root.service
-          label: root.service.ui("ui.label.good")
-          onClicked: root.verdict("correct")
-        }
-        Chip {
-          service: root.service
-          label: root.service.ui("ui.label.wrong")
-          onClicked: root.verdict("incorrect")
-        }
-      }
-
-      // the verdict's ack ("noted", or the daemon's own reply such as
-      // "nothing to label") once the chips fold away
-      Text {
-        visible: root.labeled
-        text: {
-          var a = root.service.lastAction;
-          return a && a.verb === "label" && !a.pending && a.message !== ""
-            ? a.message : root.service.ui("ui.noted");
-        }
-        color: root.service.lastAction && root.service.lastAction.ok === false
-          ? root.tk.fail : root.tk.inkMuted
-        font.family: root.service.fontFamily
-        font.pixelSize: M.font.label
+      // good / wrong on a finished answer; folds into its own receipt
+      RateRow {
+        service: root.service
+        allowed: root.service.confirm === null
+        onRate: function (verdict, turn) { root.verdict(verdict, turn); }
       }
     }
   }

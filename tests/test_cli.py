@@ -153,6 +153,47 @@ class TestHelp(unittest.TestCase):
             self.assertTrue(msg[0].isupper() and msg.endswith("."), code)
 
 
+class TestLabelTurn(unittest.TestCase):
+    """`wispd label set --turn X`: the turn rides the IPC command and a
+    not_found/not_ratable outcome is a failure, daemon up or down."""
+
+    def _seed(self, env, *rows):
+        env.data.mkdir(parents=True, exist_ok=True)
+        (env.data / "decisions.jsonl").write_text(
+            "".join(json.dumps(r) + "\n" for r in rows))
+
+    def test_turn_is_sent_over_ipc(self):
+        with CliEnv(daemon=True) as env:
+            code, out, err = env.run(["label", "set", "correct",
+                                      "--turn", "X7"])
+            self.assertEqual(code, 0, err)
+            self.assertEqual(env.ipc[-1]["turn"], "X7")
+
+    def test_daemon_refusals_exit_failed(self):
+        for status in ("not_found", "not_ratable"):
+            def handler(cmd, status=status):
+                return {"ok": True, "result": status + ": turn X",
+                        "status": status}
+            with CliEnv() as env:
+                env.start_daemon(handler)
+                with self.subTest(status):
+                    code, out, err = env.run(["label", "set", "correct",
+                                              "--turn", "X"])
+                    self.assertEqual(code, 1, err)
+                    self.assertTrue(err.startswith("E_FAILED:"), err)
+
+    def test_daemon_down_fallback_refusals_exit_failed(self):
+        with CliEnv() as env:
+            self._seed(env, {"ts": "t1", "turn": "C3",
+                             "result": "CANCELLED (user)"})
+            for turn in ("nope", "C3"):  # not_found, not_ratable
+                with self.subTest(turn):
+                    code, out, err = env.run(["label", "set", "correct",
+                                              "--turn", turn])
+                    self.assertEqual(code, 1, err)
+                    self.assertTrue(err.startswith("E_FAILED:"), err)
+
+
 class TestExitCodes(unittest.TestCase):
     def assertErr(self, err, code):
         self.assertRegex(err, ERR_RE)

@@ -191,6 +191,9 @@ def _label_args(p):
     p.add_argument("--lang", default="", metavar="CODE",
                    help="language the turn was spoken in (es, de, pt-BR, "
                    "...); eval then reports it per language")
+    p.add_argument("--turn", default="", metavar="ID",
+                   help="turn id to label (default: the last finished "
+                   "turn)")
     p.add_argument("note", nargs="*", help="optional note")
 
 
@@ -202,13 +205,15 @@ def label_set(ctx, a):
     note = " ".join(a.note)
     try:
         r = ctx.send({"cmd": "label", "label": a.label, "note": note,
-                      **({"lang": a.lang} if a.lang else {})})
+                      **({"lang": a.lang} if a.lang else {}),
+                      **({"turn": a.turn} if a.turn else {})})
     except CliError as e:
         if e.code != "E_DAEMON_DOWN":
             raise
         from .. import learn
-        out = learn.label_last(a.label, note, a.lang)
-        if out.startswith(("SKIP", "ERROR", "nothing")):
+        out = learn.label_last(a.label, note, a.lang, a.turn)
+        if out.startswith(("SKIP", "ERROR", "nothing", "not_found",
+                           "not_ratable")):
             if ctx.json:
                 raise CliError("E_FAILED", "Nothing was labelled.",
                                "wispd status", data={"result": out})
@@ -218,6 +223,11 @@ def label_set(ctx, a):
         return ctx.emit({"result": out}, out)
     ctx.expect_ok(r)
     res = r.get("result") or ""
+    if r.get("status") in ("not_found", "not_ratable"):
+        if not ctx.json:
+            print(res)
+        raise CliError("E_FAILED", "Nothing was labelled.", "wispd status",
+                       data={"result": res, "status": r["status"]})
     return ctx.emit({"result": res}, res)
 
 

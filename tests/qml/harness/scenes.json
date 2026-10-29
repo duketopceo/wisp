@@ -766,6 +766,14 @@
    "blocked": {
     "_state": "blocked"
    },
+   "cancelled": {
+    "_fixture": {
+     "patch": {
+      "result": "CANCELLED (user)"
+     }
+    },
+    "_state": "done"
+   },
    "confirm": {
     "_state": "confirm"
    },
@@ -2330,6 +2338,16 @@
     },
     "_state": "offline"
    },
+   "rate_prompt": {
+    "_fixture": {
+     "patch": {
+      "rate_prompt": {
+       "turn": "t-done"
+      }
+     }
+    },
+    "_state": "done"
+   },
    "run_active": {
     "_state": "run_active"
    },
@@ -2367,6 +2385,77 @@
   "on": "desktop",
   "pad": 12,
   "scale2": true
+ },
+ "RateNote": {
+  "mode": "variant",
+  "pad": 10,
+  "variants": {
+   "empty": {
+    "_state": "done"
+   },
+   "typed": {
+    "_state": "done",
+    "text": "opened the wrong app"
+   }
+  }
+ },
+ "RateRow": {
+  "mode": "variant",
+  "on": "desktop",
+  "pad": 10,
+  "variants": {
+   "good": {
+    "_fixture": {
+     "lastAction": {
+      "at": 1,
+      "message": "ok",
+      "ok": true,
+      "pending": false,
+      "status": "",
+      "turn": "t-done",
+      "verb": "label",
+      "verdict": "correct"
+     }
+    },
+    "_state": "done",
+    "tapped": "correct"
+   },
+   "not_ratable": {
+    "_fixture": {
+     "lastAction": {
+      "at": 1,
+      "message": "Nothing was labelled.",
+      "ok": false,
+      "pending": false,
+      "status": "not_ratable",
+      "turn": "t-done",
+      "verb": "label",
+      "verdict": "correct"
+     }
+    },
+    "_state": "done",
+    "tapped": "correct"
+   },
+   "ready": {
+    "_state": "done"
+   },
+   "wrong": {
+    "_fixture": {
+     "lastAction": {
+      "at": 1,
+      "message": "ok",
+      "ok": true,
+      "pending": false,
+      "status": "",
+      "turn": "t-done",
+      "verb": "label",
+      "verdict": "incorrect"
+     }
+    },
+    "_state": "done",
+    "tapped": "incorrect"
+   }
+  }
  },
  "RunCard": {
   "mode": "variant",

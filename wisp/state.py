@@ -106,6 +106,7 @@ class State:
         self.health = {}        # {endpoint: {ok, since, latency_ms, code}}
         self.mic = ""           # "open" while the wake word listens (B33)
         self.spend = {}         # {today_usd, cap_usd, ...} from ledger.py
+        self.rate_prompt = None  # {turn}: a wrong rating wants its note
         self.started_at = _now()
         self.heartbeat_at = None
         self._last_blob = None  # last written state.json body
@@ -137,6 +138,10 @@ class State:
         # (listening) takes them down
         if status == "listening" and "chips" not in fields:
             self.chips = None
+        # an open rating note belongs to the turn it rates: a new turn
+        # takes it down
+        if status == "listening" and "rate_prompt" not in fields:
+            self.rate_prompt = None
         # speak-reply point annotations only live while speaking —
         # any other status clears them so a later turn can never
         # read the previous turn's beacons
@@ -299,6 +304,8 @@ class State:
             "health": {k: dict(v) for k, v in self.health.items()},
             "mic": self.mic,
             "spend": dict(self.spend),
+            "rate_prompt": dict(self.rate_prompt)
+            if self.rate_prompt else None,
             "started_at": self.started_at,
             "heartbeat_at": self.heartbeat_at,
             **self.meta,
@@ -490,6 +497,10 @@ class StateBus:
         dropped from here on."""
         with self._lock:
             self._turn = _new_turn_id()
+            # an open rating note belongs to the turn it rates: any new
+            # turn (typed ask included) takes it down
+            if self.state.rate_prompt:
+                self.publish(None, rate_prompt=None)
             return self._turn
 
     def current_turn(self) -> str:

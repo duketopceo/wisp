@@ -30,7 +30,7 @@ future tray apps). Shells MUST only depend on this document.
 | `stop` | — | `{ok}` | daemon exits, socket removed; kills in-flight TTS |
 | `interrupt` | — | `{ok}` | cancels the in-flight turn only — daemon stays up; see Cancellation |
 | `config` | `set: {"section.key": "val"}` (optional) | `{ok, config}` | read config; with `set`, writes config.toml preserving comments/order and live-reloads |
-| `label` | `label: correct\|incorrect` | `{ok, result}` | tag the most recent decision (read by `wispd eval` and the trajectory join) |
+| `label` | `label: correct\|incorrect\|skip`, `turn?: string`, `note?`, `lang?` | `{ok, result, status?}`; `status` is `ok`, `not_found` (no such turn, or nothing to label) or `not_ratable` (the turn was cancelled or errored); nothing is written unless `ok` | tag the turn named by `turn`; without it, the most recent decision that is not cancelled or errored. Re-labelling appends a new line and `wispd eval` takes the latest per turn |
 | `dictate_correct` | `{"heard","meant"}` | `{ok, result}` or `{ok:false, error, result}` | record a personal dictation correction → `dictation.json` (U6); cleanup/compose prompts carry the table |
 | `context` | — | `{ok, result}` | focused app, `[windows]` workspace map, inventory counts |
 | `captures` | `turn_id?: string`, `full?: bool`, `limit?: int` | `{ok, packs}` or `{ok, manifest}` | read capture-pack list or manifest |
@@ -123,6 +123,7 @@ round-trip — they are not IPC commands and are absent from the table:
   "health": {"<endpoint>": {"ok": true, "since": "ISO-8601", "latency_ms": 12, "code": null}},
   "mic": "\"open\" while the opt-in wake word listens (bar shows an open-mic mark), else \"\"",
   "spend": {"today_usd": 0.0, "cap_usd": 8.0, "month_usd": 0.0, "monthly_cap_usd": 160.0, "blocked": false},
+  "rate_prompt": "null, or {turn} while a wrong rating waits for its optional note (additive, U2); cleared by the note's save, a skip, or the next listening transition",
   "started_at": "ISO-8601",
   "turn_id": "string — turn that produced this write",
   "seq": 0,
@@ -166,6 +167,14 @@ primary too only when `[budget] gate_primary = "true"` (local models
 always run). A `spend` health
 row goes down with code `budget_exceeded` in the same state. `{}` on
 older cores.
+
+Rate prompt (additive; U2): a `label incorrect` that wrote a line
+publishes `rate_prompt: {turn}` for the turn it rated; shells open the
+panel's Now tab with a one-line note focused. Saving the note is another
+`label incorrect` for that `turn` carrying `note` (it re-labels the turn
+and clears the prompt). `label skip` clears it without writing, and so
+does a second `label incorrect` that names no `turn` (the hotkey pressed
+twice). `null` on older cores.
 
 Prompt ids (additive; U9): every `awaiting_choice` publishes `choices`
 together with a `prompt_id`, and clears both when the prompt resolves.
@@ -428,7 +437,8 @@ and creates an output workspace at `tasks/<id>/out/`. At reap time:
 
 ## Data files (shared by both cores, never versioned differently)
 
-- `decisions.jsonl` — one JSON per turn: `ts`, `transcript`, `answers`,
+- `decisions.jsonl` — one JSON per turn: `ts`, `turn` (the turn id, on
+  every line including cancelled and error ones), `transcript`, `answers`,
   `result`, `timing_ms{record,stt,jev,act}`, `corrected`.
 - `session.jsonl` — turns for follow-up context.
 - `corrections.jsonl` — user picks on ambiguous turns.

@@ -481,6 +481,103 @@ class TestHandlerActionStream(unittest.TestCase):
         self.assertTrue(r["ok"])  # command ran; the outcome failed
         self.assertEqual(self.actions("label")[-1]["status"], "failed")
 
+    def test_label_passes_turn_and_types_the_reply(self):
+        with mock.patch("wisp.learn.label_last",
+                        return_value="not_ratable: turn b2 was cancelled"
+                        ) as lab:
+            r = self.handle()({"cmd": "label", "label": "correct",
+                               "turn": "b2"})
+        self.assertEqual(lab.call_args.kwargs.get("turn"), "b2")
+        self.assertEqual(r["status"], "not_ratable")
+        self.assertEqual(self.actions("label")[-1]["status"], "failed")
+
+    def test_label_ok_reply_has_status_ok(self):
+        with mock.patch("wisp.learn.label_last",
+                        return_value="labeled correct: t1"):
+            r = self.handle()({"cmd": "label", "label": "correct"})
+        self.assertEqual(r["status"], "ok")
+
+    # -- rate_prompt (U2): the daemon asks the panel for a note ----------
+    def _decisions(self, *rows):
+        from wisp import config, learn
+        d = pathlib.Path(tempfile.mkdtemp())
+        dec, lab = d / "decisions.jsonl", d / "labels.jsonl"
+        dec.write_text("".join(json.dumps(r) + "\n" for r in rows))
+        for obj, name, val in ((config, "DECISIONS", dec),
+                               (learn, "LABELS_FILE", lab)):
+            p = mock.patch.object(obj, name, val)
+            p.start()
+            self.addCleanup(p.stop)
+        return lab
+
+    def _rows(self):
+        return [{"ts": "t1", "turn": "A1", "result": "ANSWERED x"},
+                {"ts": "t2", "turn": "B2", "result": "ANSWERED y"}]
+
+    def prompt(self):
+        return self.bus.state.snapshot().get("rate_prompt")
+
+    def test_wrong_without_turn_publishes_rate_prompt_for_that_turn(self):
+        self._decisions(*self._rows())
+        r = self.handle()({"cmd": "label", "label": "incorrect"})
+        self.assertEqual(r["status"], "ok")
+        self.assertEqual(self.prompt(), {"turn": "B2"})
+
+    def test_wrong_with_turn_prompts_for_that_turn(self):
+        self._decisions(*self._rows())
+        self.handle()({"cmd": "label", "label": "incorrect", "turn": "A1"})
+        self.assertEqual(self.prompt(), {"turn": "A1"})
+
+    def test_good_never_prompts(self):
+        self._decisions(*self._rows())
+        self.handle()({"cmd": "label", "label": "correct"})
+        self.assertIsNone(self.prompt())
+
+    def test_refused_wrong_does_not_prompt(self):
+        self._decisions({"ts": "t9", "turn": "C3",
+                         "result": "CANCELLED (user)"})
+        r = self.handle()({"cmd": "label", "label": "incorrect",
+                           "turn": "C3"})
+        self.assertEqual(r["status"], "not_ratable")
+        self.assertIsNone(self.prompt())
+
+    def test_second_press_skips_the_open_note_and_writes_nothing(self):
+        lab = self._decisions(*self._rows())
+        h = self.handle()
+        h({"cmd": "label", "label": "incorrect"})
+        n = len(lab.read_text().splitlines())
+        r = h({"cmd": "label", "label": "incorrect"})
+        self.assertTrue(r["ok"])
+        self.assertIsNone(self.prompt())
+        self.assertEqual(len(lab.read_text().splitlines()), n)
+
+    def test_saving_the_note_relabels_the_turn_and_clears_the_prompt(self):
+        lab = self._decisions(*self._rows())
+        h = self.handle()
+        h({"cmd": "label", "label": "incorrect"})
+        h({"cmd": "label", "label": "incorrect", "turn": "B2",
+           "note": "wrong app"})
+        self.assertIsNone(self.prompt())
+        last = json.loads(lab.read_text().splitlines()[-1])
+        self.assertEqual((last["ref"], last["note"]), ("t2", "wrong app"))
+
+    def test_skip_clears_the_prompt_without_a_label(self):
+        lab = self._decisions(*self._rows())
+        h = self.handle()
+        h({"cmd": "label", "label": "incorrect"})
+        n = len(lab.read_text().splitlines())
+        r = h({"cmd": "label", "label": "skip"})
+        self.assertTrue(r["ok"])
+        self.assertIsNone(self.prompt())
+        self.assertEqual(len(lab.read_text().splitlines()), n)
+
+    def test_a_new_turn_clears_the_prompt(self):
+        self._decisions(*self._rows())
+        self.handle()({"cmd": "label", "label": "incorrect"})
+        t = self.bus.begin_turn()
+        self.bus.publish(t, status="listening")
+        self.assertIsNone(self.prompt())
+
     def test_suggestion_pick_resolves_the_card_entry(self):
         # the card's stream entry resolves by kind when the pick lands
         self.bus.action_add("suggestion", "try x", status="awaiting",
@@ -536,6 +633,40 @@ class TestHandlerActionStream(unittest.TestCase):
                                "heard": "teh", "meant": "the"})
         self.assertTrue(r["ok"])
         self.assertEqual(r["error"], "")
+
+    def test_good_rating_of_the_prompted_turn_clears_the_prompt(self):
+        self._decisions(*self._rows())
+        h = self.handle()
+        h({"cmd": "label", "label": "incorrect"})
+        self.assertEqual(self.prompt(), {"turn": "B2"})
+        h({"cmd": "label", "label": "correct", "turn": "B2"})
+        self.assertIsNone(self.prompt())
+
+    def test_good_rating_of_another_turn_keeps_the_prompt(self):
+        self._decisions(*self._rows())
+        h = self.handle()
+        h({"cmd": "label", "label": "incorrect"})
+        h({"cmd": "label", "label": "correct", "turn": "A1"})
+        self.assertEqual(self.prompt(), {"turn": "B2"})
+
+    def test_noted_label_of_another_turn_keeps_the_open_prompt(self):
+        lab = self._decisions(*self._rows())
+        h = self.handle()
+        h({"cmd": "label", "label": "incorrect"})
+        h({"cmd": "label", "label": "incorrect", "turn": "A1",
+           "note": "old one"})
+        rows = [json.loads(x) for x in lab.read_text().splitlines()]
+        self.assertEqual(rows[-1]["ref"], "t1")
+        self.assertEqual(rows[-1]["note"], "old one")
+        self.assertEqual(self.prompt(), {"turn": "B2"})
+
+    def test_a_new_typed_turn_takes_the_prompt_down(self):
+        # typed `ask` never passes through status=listening
+        self._decisions(*self._rows())
+        self.handle()({"cmd": "label", "label": "incorrect"})
+        self.assertEqual(self.prompt(), {"turn": "B2"})
+        self.bus.begin_turn()
+        self.assertIsNone(self.prompt())
 
 
 class TestSuggestionRun(unittest.TestCase):

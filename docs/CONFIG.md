@@ -10,6 +10,11 @@ restart) or the Settings tab in the GUI. Every key has a default.
 | `mod` | `"SUPER"` | modifier for push-to-talk |
 | `key` | `"D"` | key for push-to-talk (SUPER+D) |
 
+`wispd install` also writes a second bind, `mod + ALT + key` (Super+Alt+D
+by default; `mod + CTRL + key` when `mod` already holds ALT, since Omarchy owns
+Super+Shift+D): it rates the last finished answer wrong and opens the panel's
+Now tab with a one-line note.
+
 ## [keys] — keyboard submap (Linux/Hyprland)
 
 | key | default | meaning |
