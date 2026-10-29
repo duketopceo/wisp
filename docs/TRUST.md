@@ -47,6 +47,30 @@ Loopback addresses (`127.0.0.1`, `localhost`) are local services: whisper.cpp, a
 | `example.com` | An example address in help text. |
 | `amara.org` | A credit line for subtitle text in a bundled sample. |
 | `www.w3.org` | An XML namespace in a generated icon. Never requested. |
+| `airtable.com` | App-skill routing: matched against the frontmost window's URL to pick the Airtable skill. Nothing is sent to it. |
+| `app.asana.com` | App-skill routing: matched against the frontmost window's URL to pick the Asana skill. Nothing is sent to it. |
+| `app.clickup.com` | App-skill routing: matched against the frontmost window's URL to pick the ClickUp skill. Nothing is sent to it. |
+| `app.slack.com` | App-skill routing: matched against the frontmost window's URL to pick the Slack skill. Nothing is sent to it. |
+| `atlassian.net` | App-skill routing: matched against the frontmost window's URL to pick the Jira or Confluence skill. Nothing is sent to it. |
+| `chatgpt.com` | App-skill routing: matched against the frontmost window's URL to pick the ChatGPT skill. Nothing is sent to it. |
+| `claude.ai` | App-skill routing: matched against the frontmost window's URL to pick the Claude skill. Nothing is sent to it. |
+| `dash.cloudflare.com` | App-skill routing: matched against the frontmost window's URL to pick the Cloudflare skill. Nothing is sent to it. |
+| `discord.com` | App-skill routing: matched against the frontmost window's URL to pick the Discord skill. Nothing is sent to it. |
+| `docs.google.com` | App-skill routing: matched against the frontmost window's URL to pick the Google Docs skill. Nothing is sent to it. |
+| `drive.google.com` | App-skill routing: matched against the frontmost window's URL to pick the Google Drive skill. Nothing is sent to it. |
+| `dropbox.com` | App-skill routing: matched against the frontmost window's URL to pick the Dropbox skill. Nothing is sent to it. |
+| `figma.com` | App-skill routing: matched against the frontmost window's URL to pick the Figma skill. Nothing is sent to it. |
+| `gitlab.com` | App-skill routing: matched against the frontmost window's URL to pick the GitLab skill. Nothing is sent to it. |
+| `linear.app` | App-skill routing: matched against the frontmost window's URL to pick the Linear skill. Nothing is sent to it. |
+| `open.spotify.com` | App-skill routing: matched against the frontmost window's URL to pick the Spotify skill. Nothing is sent to it. |
+| `outlook.office.com` | App-skill routing: matched against the frontmost window's URL to pick the Outlook skill. Nothing is sent to it. |
+| `perplexity.ai` | App-skill routing: matched against the frontmost window's URL to pick the Perplexity skill. Nothing is sent to it. |
+| `reddit.com` | App-skill routing: matched against the frontmost window's URL to pick the Reddit skill. Nothing is sent to it. |
+| `stackoverflow.com` | App-skill routing: matched against the frontmost window's URL to pick the Stack Overflow skill. Nothing is sent to it. |
+| `tallyline.app` | App-skill routing: matched against the frontmost window's URL to pick the Tallyline skill. Nothing is sent to it. |
+| `trello.com` | App-skill routing: matched against the frontmost window's URL to pick the Trello skill. Nothing is sent to it. |
+| `vercel.com` | App-skill routing: matched against the frontmost window's URL to pick the Vercel skill. Nothing is sent to it. |
+| `youtube.com` | App-skill routing: matched against the frontmost window's URL to pick the YouTube skill. Nothing is sent to it. |
 
 ## Stored on this machine
 
@@ -77,17 +101,41 @@ Everything below lives in `~/.local/share/wisp` (a 0700 folder of 0600 files), `
 
 From the scan this page is built from.
 
+- `airtable.com`: `wisp/skills.py`
 - `amara.org`: `wisp/dictate_history.py`
 - `api.github.com`: `wisp/update.py`
 - `api.groq.com`: `rs/wispd/src/config.rs`, `wisp/config.py`
+- `app.asana.com`: `wisp/skills.py`
+- `app.clickup.com`: `wisp/skills.py`
+- `app.slack.com`: `wisp/skills.py`
+- `atlassian.net`: `wisp/skills.py`
 - `cal.com`: `wisp/mcpauth.py`
-- `calendar.google.com`: `wisp/config.py`
+- `calendar.google.com`: `wisp/config.py`, `wisp/skills.py`
+- `chatgpt.com`: `wisp/skills.py`
+- `claude.ai`: `wisp/skills.py`
+- `dash.cloudflare.com`: `wisp/skills.py`
+- `discord.com`: `wisp/skills.py`
+- `docs.google.com`: `wisp/skills.py`
+- `drive.google.com`: `wisp/skills.py`
+- `dropbox.com`: `wisp/skills.py`
 - `example.com`: `wisp/cli/share.py`
-- `github.com`: `rs/wispd/src/brain.rs`, `wisp/brain.py`, `wisp/grounding.py`, `wisp/route.py`, `wisp/stage_route.py`, `wisp/update.py` and 1 more
+- `figma.com`: `wisp/skills.py`
+- `github.com`: `rs/wispd/src/brain.rs`, `wisp/brain.py`, `wisp/grounding.py`, `wisp/route.py`, `wisp/skills.py`, `wisp/stage_route.py` and 2 more
+- `gitlab.com`: `wisp/skills.py`
 - `gmail.com`: `wisp/tools/__init__.py`
-- `mail.google.com`: `wisp/config.py`
+- `linear.app`: `wisp/skills.py`
+- `mail.google.com`: `wisp/config.py`, `wisp/skills.py`
+- `open.spotify.com`: `wisp/skills.py`
 - `openrouter.ai`: `rs/wispd/src/brain.rs`, `rs/wispd/src/config.rs`, `wisp/brain.py`, `wisp/config.py`, `wisp/recall.py`
+- `outlook.office.com`: `wisp/skills.py`
+- `perplexity.ai`: `wisp/skills.py`
+- `reddit.com`: `wisp/skills.py`
+- `stackoverflow.com`: `wisp/skills.py`
+- `tallyline.app`: `wisp/skills.py`
+- `trello.com`: `wisp/skills.py`
 - `upload.wikimedia.org`: `wisp/tools/imagefetch.py`
+- `vercel.com`: `wisp/skills.py`
 - `wisp.ai`: `wisp/cli/dictate.py`
 - `www.w3.org`: `wisp/tools/system.py`
-- `x.com`: `wisp/tools/social.py`
+- `x.com`: `wisp/skills.py`, `wisp/tools/social.py`
+- `youtube.com`: `wisp/skills.py`

@@ -131,6 +131,83 @@ MENTIONS = {
     "amara.org": "A credit line for subtitle text in a bundled sample.",
     "www.w3.org": "An XML namespace in a generated icon. Never "
                   "requested.",
+    # App-skill routing. `wisp/skills.py` backfills `url_hosts` on
+    # `<name>-app` skills from `_HOST_GUESSES`, so the router can pick a
+    # skill by the frontmost window's URL. The host is matched, never
+    # contacted: nothing here opens a socket, and only a skill you run
+    # decides what happens next.
+    "airtable.com": "App-skill routing: matched against the frontmost "
+                    "window's URL to pick the Airtable skill. Nothing is "
+                    "sent to it.",
+    "app.asana.com": "App-skill routing: matched against the frontmost "
+                     "window's URL to pick the Asana skill. Nothing is "
+                     "sent to it.",
+    "app.clickup.com": "App-skill routing: matched against the frontmost "
+                       "window's URL to pick the ClickUp skill. Nothing is "
+                       "sent to it.",
+    "app.slack.com": "App-skill routing: matched against the frontmost "
+                     "window's URL to pick the Slack skill. Nothing is "
+                     "sent to it.",
+    "atlassian.net": "App-skill routing: matched against the frontmost "
+                     "window's URL to pick the Jira or Confluence skill. "
+                     "Nothing is sent to it.",
+    "chatgpt.com": "App-skill routing: matched against the frontmost "
+                   "window's URL to pick the ChatGPT skill. Nothing is "
+                   "sent to it.",
+    "claude.ai": "App-skill routing: matched against the frontmost "
+                 "window's URL to pick the Claude skill. Nothing is sent "
+                 "to it.",
+    "dash.cloudflare.com": "App-skill routing: matched against the "
+                           "frontmost window's URL to pick the Cloudflare "
+                           "skill. Nothing is sent to it.",
+    "discord.com": "App-skill routing: matched against the frontmost "
+                   "window's URL to pick the Discord skill. Nothing is "
+                   "sent to it.",
+    "docs.google.com": "App-skill routing: matched against the frontmost "
+                       "window's URL to pick the Google Docs skill. "
+                       "Nothing is sent to it.",
+    "drive.google.com": "App-skill routing: matched against the frontmost "
+                        "window's URL to pick the Google Drive skill. "
+                        "Nothing is sent to it.",
+    "dropbox.com": "App-skill routing: matched against the frontmost "
+                   "window's URL to pick the Dropbox skill. Nothing is "
+                   "sent to it.",
+    "figma.com": "App-skill routing: matched against the frontmost "
+                 "window's URL to pick the Figma skill. Nothing is sent "
+                 "to it.",
+    "gitlab.com": "App-skill routing: matched against the frontmost "
+                  "window's URL to pick the GitLab skill. Nothing is sent "
+                  "to it.",
+    "linear.app": "App-skill routing: matched against the frontmost "
+                  "window's URL to pick the Linear skill. Nothing is sent "
+                  "to it.",
+    "open.spotify.com": "App-skill routing: matched against the frontmost "
+                        "window's URL to pick the Spotify skill. Nothing "
+                        "is sent to it.",
+    "outlook.office.com": "App-skill routing: matched against the "
+                          "frontmost window's URL to pick the Outlook "
+                          "skill. Nothing is sent to it.",
+    "perplexity.ai": "App-skill routing: matched against the frontmost "
+                     "window's URL to pick the Perplexity skill. Nothing "
+                     "is sent to it.",
+    "reddit.com": "App-skill routing: matched against the frontmost "
+                  "window's URL to pick the Reddit skill. Nothing is sent "
+                  "to it.",
+    "stackoverflow.com": "App-skill routing: matched against the "
+                         "frontmost window's URL to pick the Stack "
+                         "Overflow skill. Nothing is sent to it.",
+    "tallyline.app": "App-skill routing: matched against the frontmost "
+                     "window's URL to pick the Tallyline skill. Nothing is "
+                     "sent to it.",
+    "trello.com": "App-skill routing: matched against the frontmost "
+                  "window's URL to pick the Trello skill. Nothing is sent "
+                  "to it.",
+    "vercel.com": "App-skill routing: matched against the frontmost "
+                  "window's URL to pick the Vercel skill. Nothing is sent "
+                  "to it.",
+    "youtube.com": "App-skill routing: matched against the frontmost "
+                   "window's URL to pick the YouTube skill. Nothing is "
+                   "sent to it.",
 }
 
 # What stays on this machine, and for how long.
