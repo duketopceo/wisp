@@ -7,6 +7,7 @@ All backends faked (same Rig pattern as test_pointer_registry)."""
 import json
 import os
 import pathlib
+import shutil
 import stat
 import sys
 import tempfile
@@ -451,8 +452,14 @@ class YieldMidDrive(_Iso):
             ydo = bins / "ydotool"
             # write the "human" event, then linger so the watch thread
             # has read it by the time the process exits
+            # PATH is restricted to `bins`, so `sleep` must be linked in
+            # — without it the linger silently fails, the stub exits at
+            # once and the second argv races the watch thread's read
+            sleep_bin = shutil.which("sleep")
+            self.assertIsNotNone(sleep_bin)
+            (bins / "sleep").symlink_to(sleep_bin)
             ydo.write_text(f'#!/bin/sh\necho "ydo $*" >> "{log}"\n'
-                           f'printf x > "{fifo}"\nsleep 0.2\nexit 0\n')
+                           f'printf x > "{fifo}"\nsleep 0.5\nexit 0\n')
             ydo.chmod(0o755)
             env = mock.patch.dict(os.environ, {
                 "PATH": str(bins), "WISP_OS": "linux",
