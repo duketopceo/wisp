@@ -380,6 +380,9 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
             # a wrong rating asks the panel for its optional note; the
             # note's own save (it carries text) and a new turn close it
             rated = got.get("turn", "")
+            if status == "ok" and not wrong and rated \
+                    and prompt.get("turn") == rated:
+                st.publish(None, rate_prompt=None)  # rated good: no note
             if status == "ok" and wrong and rated:
                 if cmd.get("note", ""):
                     if prompt.get("turn") == rated:

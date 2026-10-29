@@ -75,6 +75,9 @@ Item {
   property var spend: ({})
   // {turn} while a wrong rating waits for its optional note (state.rate_prompt)
   property var ratePrompt: null
+  // the prompted turn id, "" when none: surfaces react to this, not to the
+  // object (normalize builds a fresh {turn} on every state message)
+  readonly property string ratePromptTurn: ratePrompt ? String(ratePrompt.turn || "") : ""
   property string mic: ""     // "open" while the opt-in wake word listens
   property string turnId: ""
   property var seq: null
@@ -325,7 +328,9 @@ Item {
     root.errorCode = v.errorCode;
     root.health = v.health;
     root.spend = v.spend;
-    root.ratePrompt = v.ratePrompt;
+    var rp = v.ratePrompt;
+    var rpTurn = rp ? String(rp.turn || "") : "";
+    if (rpTurn !== root.ratePromptTurn) root.ratePrompt = rp;
     root.mic = v.mic;
     root.seq = v.seq;
     root.contractVersion = v.contractVersion;

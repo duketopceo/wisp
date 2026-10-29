@@ -53,8 +53,8 @@ Panel {
   // a wrong rating asks for its note: show it on the Now tab
   Connections {
     target: wisp.service
-    function onRatePromptChanged() {
-      if (wisp.service.ratePrompt !== null) wisp.tab = 0
+    function onRatePromptTurnChanged() {
+      if (wisp.service.ratePromptTurn !== "") wisp.tab = 0
     }
   }
 

@@ -128,10 +128,31 @@ class TestWiring(unittest.TestCase):
 
     def test_bar_and_panel_open_the_note_on_the_now_tab(self):
         bar = self.read("shell-plugin/BarWidget.qml")
-        self.assertIn("onRatePromptChanged", bar)
+        self.assertIn("onRatePromptTurnChanged", bar)
         panel = self.read("shell-plugin/Panel.qml")
-        self.assertIn("onRatePromptChanged", panel)
+        self.assertIn("onRatePromptTurnChanged", panel)
         self.assertIn("skipRatePrompt", panel)
+
+    def test_prompt_reactions_key_on_the_turn_not_the_object(self):
+        # normalize() builds a fresh {turn} every message: only a turn
+        # change (not the var's changed signal) may open the panel
+        for p in ("shell-plugin/WispService.qml",
+                  "tests/qml/harness/FixtureService.qml"):
+            src = self.read(p)
+            self.assertRegex(
+                src, r"readonly property string ratePromptTurn", p)
+            self.assertNotRegex(src, r"root\.ratePrompt = v\.ratePrompt", p)
+        for p in ("shell-plugin/BarWidget.qml", "shell-plugin/Panel.qml"):
+            src = self.read(p)
+            self.assertNotIn("onRatePromptChanged", src, p)
+            self.assertIn("onRatePromptTurnChanged", src, p)
+
+    def test_rate_note_clears_its_text(self):
+        src = self.read("shell-plugin/components/RateNote.qml")
+        self.assertRegex(src, r"onVisibleChanged: if \(visible\) \{ field\.text")
+        self.assertRegex(src, r"Keys\.onEscapePressed: \{ field\.text")
+        fin = src[src.index("function finish()"):]
+        self.assertIn('field.text = ""', fin)
 
     def test_state_contract_documents_rate_prompt(self):
         doc = self.read("docs/IPC_CONTRACT.md")

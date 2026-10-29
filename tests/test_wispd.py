@@ -634,6 +634,40 @@ class TestHandlerActionStream(unittest.TestCase):
         self.assertTrue(r["ok"])
         self.assertEqual(r["error"], "")
 
+    def test_good_rating_of_the_prompted_turn_clears_the_prompt(self):
+        self._decisions(*self._rows())
+        h = self.handle()
+        h({"cmd": "label", "label": "incorrect"})
+        self.assertEqual(self.prompt(), {"turn": "B2"})
+        h({"cmd": "label", "label": "correct", "turn": "B2"})
+        self.assertIsNone(self.prompt())
+
+    def test_good_rating_of_another_turn_keeps_the_prompt(self):
+        self._decisions(*self._rows())
+        h = self.handle()
+        h({"cmd": "label", "label": "incorrect"})
+        h({"cmd": "label", "label": "correct", "turn": "A1"})
+        self.assertEqual(self.prompt(), {"turn": "B2"})
+
+    def test_noted_label_of_another_turn_keeps_the_open_prompt(self):
+        lab = self._decisions(*self._rows())
+        h = self.handle()
+        h({"cmd": "label", "label": "incorrect"})
+        h({"cmd": "label", "label": "incorrect", "turn": "A1",
+           "note": "old one"})
+        rows = [json.loads(x) for x in lab.read_text().splitlines()]
+        self.assertEqual(rows[-1]["ref"], "t1")
+        self.assertEqual(rows[-1]["note"], "old one")
+        self.assertEqual(self.prompt(), {"turn": "B2"})
+
+    def test_a_new_typed_turn_takes_the_prompt_down(self):
+        # typed `ask` never passes through status=listening
+        self._decisions(*self._rows())
+        self.handle()({"cmd": "label", "label": "incorrect"})
+        self.assertEqual(self.prompt(), {"turn": "B2"})
+        self.bus.begin_turn()
+        self.assertIsNone(self.prompt())
+
 
 class TestSuggestionRun(unittest.TestCase):
     """_run_suggestion: interrupt edge-detection (a stale shared latch

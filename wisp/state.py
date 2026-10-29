@@ -497,6 +497,10 @@ class StateBus:
         dropped from here on."""
         with self._lock:
             self._turn = _new_turn_id()
+            # an open rating note belongs to the turn it rates: any new
+            # turn (typed ask included) takes it down
+            if self.state.rate_prompt:
+                self.publish(None, rate_prompt=None)
             return self._turn
 
     def current_turn(self) -> str:

@@ -237,6 +237,30 @@ class DecisionWriterTurnTest(unittest.TestCase):
         self.assertTrue(rows[0].get("turn"), rows)
         self.assertTrue(rows[0]["result"].startswith("CANCELLED"))
 
+    def test_low_confidence_cancel_line_carries_turn(self):
+        from wisp import pipeline, stage_route
+        logged = []
+        ctx = mock.MagicMock()
+        ctx.turn, ctx.text = "T9", "open thing"
+        ctx.cfg = {"brain": {"router": "jev"}}
+        ctx.wait_for_choice = None
+        ctx.harness = {}
+        from wisp import trace
+        with mock.patch.object(pipeline, "log_decision",
+                               side_effect=logged.append), \
+             mock.patch.object(pipeline, "notify"), \
+             mock.patch.object(trace, "emit"), \
+             mock.patch.object(stage_route, "fixed_route",
+                               return_value=("launch", None)), \
+             mock.patch.object(stage_route, "is_low_confidence",
+                               return_value=True), \
+             mock.patch.object(stage_route, "ambiguous_choices",
+                               return_value=[]):
+            self.assertFalse(stage_route.route_stage(ctx))
+        self.assertEqual(len(logged), 1, logged)
+        self.assertEqual(logged[0].get("turn"), "T9")
+        self.assertTrue(logged[0]["result"].startswith("CANCELLED"))
+
     def test_error_line_carries_turn(self):
         rows = self._run(RuntimeError("boom"))
         self.assertEqual(len(rows), 1, rows)

@@ -21,7 +21,8 @@ Rectangle {
   border.width: M.size.keyline
   border.color: field.activeFocus ? tk.accent : tk.keyline
 
-  onVisibleChanged: if (visible) field.forceActiveFocus()
+  // a fresh prompt never inherits the last note's text
+  onVisibleChanged: if (visible) { field.text = ""; field.forceActiveFocus() }
   Component.onCompleted: if (visible) field.forceActiveFocus()
 
   TextInput {
@@ -38,7 +39,7 @@ Rectangle {
     Accessible.name: root.service ? root.service.ui("ui.rate.note") : ""
     Keys.onReturnPressed: root.finish()
     Keys.onEnterPressed: root.finish()
-    Keys.onEscapePressed: root.skipped()
+    Keys.onEscapePressed: { field.text = ""; root.skipped() }
   }
 
   Text {
@@ -54,6 +55,7 @@ Rectangle {
 
   function finish() {
     var t = field.text.replace(/^\s+|\s+$/g, "");
+    field.text = "";
     if (t === "") root.skipped();
     else root.saved(t);
   }

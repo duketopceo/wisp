@@ -46,6 +46,9 @@ Item {
   property var health: ({})
   property var spend: ({})
   property var ratePrompt: null
+  // the prompted turn id, "" when none: surfaces react to this, not to the
+  // object (normalize builds a fresh {turn} on every state message)
+  readonly property string ratePromptTurn: ratePrompt ? String(ratePrompt.turn || "") : ""
   property string mic: ""
   property string turnId: ""
   property bool offline: true
@@ -125,7 +128,9 @@ Item {
     root.errorCode = v.errorCode;
     root.health = v.health;
     root.spend = v.spend;
-    root.ratePrompt = v.ratePrompt;
+    var rp = v.ratePrompt;
+    var rpTurn = rp ? String(rp.turn || "") : "";
+    if (rpTurn !== root.ratePromptTurn) root.ratePrompt = rp;
     root.mic = v.mic;
     root.turnId = v.turnId;
     root.offline = v.offline;
