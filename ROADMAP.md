@@ -1,7 +1,7 @@
 # Wisp Roadmap
 
-State: **Phases 1–4, 6, 7 and 8 are on `master`, plus units B1–B34 of the beat-competitors plan except B3 and B31. Next: act quality (Phase 9), then the router fast path (Phase 5).**
-Last updated: 2026-10-28. Plan of record: `docs/plans/2026-10-26-0031-feat-wisp-v1-roadmap-plan.md`.
+State: **Phases 1–4, 6, 7 and 8 are on `master`, plus units B1–B34 of the beat-competitors plan except B3 and B31. Phase 9 and Phase 5 are partly shipped (below); what is left needs labelled turns or a fixture migration.**
+Last updated: 2026-10-28 (evening). Plan of record: `docs/plans/2026-10-26-0031-feat-wisp-v1-roadmap-plan.md`.
 
 ## Product target
 
@@ -34,8 +34,8 @@ Also: CI flake root causes (#142), "open my email" opens Gmail when the mail han
 
 Each is one PR, planned when it starts.
 
-1. **Phase 9 · Act quality** — fix the top act failures from `wispd eval --misses` (default-app resolution, wrong-coordinate clicks, launch-instead-of-navigate, and claiming success without checking the screen — e.g. "open my Stripe tab" focused the terminal and reported done). Unblocks B3.
-2. **Phase 5 · Router fast path** — remove the Jev router (still on the routing path) and its shadow/replay/A-B tooling; the heuristic routes unambiguous launches and questions directly, everything else goes to act. The route span misses its budget (p50 about 1.0 s against 200 ms).
+1. **Phase 9 · Act quality** — shipped so far: default-app resolution (#147), open-tab switching and no unconfirmed success claims (#212), "go to a site" opens in the user's browser instead of `xdg-open` (#231), and clicks that land off every monitor are refused so the loop re-aims (#232). Left: re-rank from `wispd eval --misses` once there are labelled act turns after the verification ladder (none are recorded yet, so wrong-coordinate clicks have no fresh data). Unblocks B3.
+2. **Phase 5 · Router fast path** — shipped so far: the regex fast path in front of act (#233; bare launches of catalogued apps and plain questions skip the act loop, `[brain] fast_path`), and removal of the shadow decider (#234), the flash lane and the route A/B log (#235). Left: remove the Jev router itself (`router = jev`, `route.decide`, `ask_jev`, `JEV_QUESTIONS`, the clarify prompt), which 45 replay fixtures and about 20 test files still script; `suggest` and the grounding `jev` fallback also call Jev (Q3). Do it as fixture migration first, then deletion.
 3. **Remaining plan units** — B3 (accuracy loop, after Phase 9), B31 (growth scoreboard).
 4. **Clean-box check** — `wispd onboard` and `wispd doctor` on a clean Omarchy box with hosted keys only.
 
