@@ -62,6 +62,25 @@ class PolicyTable(unittest.TestCase):
             (call("execute", "omaseal get x"), "refuse"),
             (call("execute", "ori login"), "refuse"),
             (call("read", path=CWD + "/.env"), "refuse"),
+            # review: expansion and flags must not slip past the path check
+            (call("execute", "cat $HOME/.ssh/id_rsa"), "ask"),
+            (call("execute", "cat {/etc/passwd,x}"), "ask"),
+            (call("execute", "ls *.py"), "ask"),
+            (call("execute", "rg --pre=sh x ."), "ask"),
+            (call("execute", "rg --pre sh x ."), "ask"),
+            (call("execute", "git diff --output=/home/x/.bashrc"), "ask"),
+            (call("execute", "git diff --output ../x"), "ask"),
+            (call("execute", "git diff --ext-diff"), "ask"),
+            (call("execute", "git branch evil"), "ask"),
+            (call("execute", "git branch -a"), "allow"),
+            (call("execute", "tree -o ../x"), "ask"),
+            (call("execute", "find . -fprint ../x"), "ask"),
+            (call("execute", "pytest -p evil"), "ask"),
+            (call("execute", "python3 -m pytest -c ../evil.ini"), "ask"),
+            (call("execute", "pytest --rootdir=/tmp"), "ask"),
+            (call("execute", "grep --file=/etc/shadow x"), "ask"),
+            (call("execute", "pytest -q tests/test_a.py"), "allow"),
+            (call("execute", "git log --oneline -5"), "allow"),
         ]
         for tc, want in rows:
             with self.subTest(tc=tc):

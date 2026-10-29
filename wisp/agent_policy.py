@@ -35,12 +35,26 @@ _CRED = re.compile(
     r"|\.local/share/keyrings", re.I)
 _BINARIES = {"secret-tool", "omaseal"}
 _LOGIN = {"login", "signin", "logout"}
-_UNPARSEABLE = ("|", ";", "&", "`", "$(", ">", "<", "\n", "${")
+# shell syntax the matcher can't reason about, including expansions that
+# could reach outside cwd past the literal path check ($HOME, {a,b}, globs)
+_UNPARSEABLE = ("|", ";", "&", "`", "$", ">", "<", "\n", "{", "*", "?", "[")
 
 # commands that only read; paths stay inside cwd/out_dir
 _READ_CMDS = {"ls", "cat", "head", "tail", "wc", "grep", "rg", "pwd",
               "tree", "stat", "file", "diff", "which", "echo"}
 _GIT_READ = {"status", "diff", "log", "show", "blame", "branch"}
+_GIT_BRANCH_READ = {"-a", "-r", "--list", "-v", "-vv", "--all", "--remotes"}
+# flags that write a file or run a program, per command (pytest also via
+# python -m pytest)
+_RISKY_FLAGS = {
+    "git": {"--output", "-o", "--ext-diff", "--textconv"},
+    "rg": {"--pre", "--pre-glob"},
+    "grep": {"--file", "-f"},
+    "tree": {"-o"},
+    "find": {"-fprint", "-fprint0", "-fprintf", "-fls", "-ok", "-okdir"},
+    "pytest": {"-p", "-c", "--rootdir", "--confcutdir", "--import-mode",
+               "--override-ini", "-o", "--basetemp"},
+}
 # build/test commands: (argv0, optional required subcommand set)
 _BUILD_CMDS = {
     "pytest": None, "ruff": {"check"}, "mypy": None, "flake8": None,
@@ -143,17 +157,25 @@ def _shell_class(cmd: str, cwd: str, out_dir: str | None,
         return "ask"
     if not argv or argv[0] == "sudo":
         return "ask"
+    a0 = os.path.basename(argv[0])
+    tool = "pytest" if a0 in _PY and argv[1:3] == ["-m", "pytest"] else a0
+    risky = _RISKY_FLAGS.get(tool, set())
     for a in argv[1:]:
-        if not a.startswith("-") and ("/" in a or a.startswith("~")
-                                      or ".." in a):
-            n = _norm(a, cwd)
+        flag, eq, val = a.partition("=")
+        if a.startswith("-") and flag in risky:
+            return "ask"
+        if a.startswith("-") and not eq:
+            continue
+        p = val if a.startswith("-") else a
+        if "/" in p or p.startswith("~") or ".." in p:
+            n = _norm(p, cwd)
             if not (_under(n, cwd) or _under(n, out_dir)):
                 return "ask"
-    a0 = os.path.basename(argv[0])
     if a0 in _READ_CMDS:
         return "allow"
-    if a0 == "git" and len(argv) > 1 and argv[1] in _GIT_READ \
-            and "-D" not in argv and "-d" not in argv:
+    if a0 == "git" and len(argv) > 1 and argv[1] in _GIT_READ:
+        if argv[1] == "branch" and not set(argv[2:]) <= _GIT_BRANCH_READ:
+            return "ask"            # creates, renames or deletes a branch
         return "allow"
     if a0 == "find" and not {"-exec", "-delete", "-execdir"} & set(argv):
         return "allow"

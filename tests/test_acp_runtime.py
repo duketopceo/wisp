@@ -383,7 +383,9 @@ class Cancel(Case):
         self.assertEqual(rec["status"], "cancelled")
         self.assertIn("session/cancel", self.methods())
 
-    def test_agent_that_ignores_cancel_is_killed_after_the_grace(self):
+    def ignore_cancel(self):
+        """Install an `ori` whose prompt never ends and that ignores
+        session/cancel, so the cancel grace window stays open."""
         stub = self.cur / "ori"
         opts = ("[{'id':'model','category':'model','type':'select',"
                 "'currentValue':'fake/model-a',"
@@ -408,6 +410,19 @@ class Cancel(Case):
             "    elif me == 'session/prompt':\n"
             "        time.sleep(600)\n")
         stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
+
+    def test_follow_up_during_cancel_is_not_accepted(self):
+        # review: a tell in the cancel grace window was reported queued,
+        # then dropped when the session ended
+        self.ignore_cancel()
+        name = self.spawn("start", agent="scout").split()[1]
+        until(lambda: self.rec(name).get("model") == MODEL, "model set")
+        time.sleep(0.2)                 # the prompt is in flight
+        agents.cancel(name, self.tf)
+        self.assertFalse(self.mgr.tell("scout", "also do B"))
+
+    def test_agent_that_ignores_cancel_is_killed_after_the_grace(self):
+        self.ignore_cancel()
         name = self.spawn().split()[1]
         until(lambda: self.rec(name).get("model") == MODEL, "model set")
         time.sleep(0.2)                 # the prompt is in flight

@@ -322,7 +322,9 @@ class SessionRun:
 
     def enqueue(self, text) -> bool:
         with self.lock:
-            if self.closed:
+            # a cancelling run never reads its queue again: refuse, so the
+            # caller falls back to a new session instead of dropping it
+            if self.closed or self.cancelling:
                 return False
             self.queue.append(text)
             return True

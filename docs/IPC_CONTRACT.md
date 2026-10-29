@@ -412,8 +412,9 @@ Task entry fields (`tasks`): `status`, `task`, `ts` and `tail` always;
 `line` (its latest readable step, same text as `tail`), `seconds` (elapsed)
 and `waiting: true` when it is blocked on a question or permission ask.
 `interrupted` marks a session a daemon restart cut off; it is never
-replayed on its own. A finished session's `answer` and `stop_reason` are on its
-record and read back with `task_output`; they are not in `tasks`.
+replayed on its own. A finished session's `answer` and `stop_reason` are kept
+on its `tasks.jsonl` record only; they are not in `tasks`, and `task_output`
+returns the log tail, whose last lines include the answer.
 
 Task events (topic `tasks`): `{"type":"event","name":"task_progress",
 "data":{name,line,seconds}}` is a session's latest `PROGRESS:` line, at most
