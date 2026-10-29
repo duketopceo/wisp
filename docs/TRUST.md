@@ -47,6 +47,7 @@ Loopback addresses (`127.0.0.1`, `localhost`) are local services: whisper.cpp, a
 | `cal.com` | A name in a list of apps Wisp can connect to, in help text. |
 | `wisp.ai` | An example in help text. |
 | `example.com` | An example address in help text. |
+| `console.groq.com` | A link shown in the voice notice and `wispd doctor` for accepting the Orpheus terms. Wisp never requests it. |
 | `amara.org` | A credit line for subtitle text in a bundled sample. |
 | `www.w3.org` | An XML namespace in a generated icon. Never requested. |
 
@@ -84,6 +85,7 @@ From the scan this page is built from.
 - `api.groq.com`: `rs/wispd/src/config.rs`, `wisp/config.py`, `wisp/tts_groq.py`
 - `cal.com`: `wisp/mcpauth.py`
 - `calendar.google.com`: `wisp/config.py`
+- `console.groq.com`: `wisp/tts_groq.py`
 - `example.com`: `wisp/cli/share.py`
 - `github.com`: `rs/wispd/src/brain.rs`, `wisp/brain.py`, `wisp/grounding.py`, `wisp/stage_route.py`, `wisp/update.py`, `wisp/whatsnew.py`
 - `gmail.com`: `wisp/tools/__init__.py`

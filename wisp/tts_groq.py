@@ -10,8 +10,9 @@ timing and playback, and uses this module for the network half:
   gone (the worker thread outlives the turn's `cancel.bind`);
 - backoffs and the last error class, process-wide: a 429 waits out
   `retry-after`, a terms error waits an hour and then re-probes by
-  itself. `last_error()` is the record the doctor row and the one-time
-  notice (U7) read.
+  itself. `last_error()` is the record the doctor row reads;
+- the first failure of each class sends one notice (U7), remembered in
+  `voice_groq_notified.json` so a restart does not repeat it.
 
 Every request is gated by the paid/cap check before it goes out and
 writes one `usage.jsonl` row priced per character.
@@ -42,6 +43,8 @@ TIMEOUT_S = 30
 MAX_BYTES = 8 * 1024 * 1024
 KEY_TTL_HIT_S = 600
 KEY_TTL_MISS_S = 30
+TERMS_LINK = ("https://console.groq.com/playground"
+              "?model=canopylabs%2Forpheus-v1-english")
 
 Audio = namedtuple("Audio", "data ms")
 
@@ -137,7 +140,64 @@ def backoff_until() -> float:
     return _UNTIL
 
 
-def _trip(err: GroqError) -> None:
+def fmt_time(ts: float) -> str:
+    """Wall time as the user's local HH:MM."""
+    return time.strftime("%H:%M", time.localtime(ts))
+
+
+def _notified_path():
+    return config.DATA_DIR / "voice_groq_notified.json"
+
+
+def _notice_text(kind: str, until: float) -> str:
+    """What happened and what to do, for the first failure of a class."""
+    tail = " Speaking in espeak until then."
+    if kind == "terms":
+        return ("Groq voice needs a one-time OK: accept the Orpheus terms "
+                f"at {TERMS_LINK} and Wisp switches to it on its own."
+                + tail)
+    if kind == "rate_limit":
+        return ("Groq voice hit its rate limit. Wisp speaks in espeak "
+                f"until {fmt_time(until)}; a paid Groq tier lifts the "
+                "limit.")
+    if kind == "auth":
+        return ("Groq rejected the key, so Wisp speaks in espeak. Fix the "
+                "key in omaseal (groq/default) or GROQ_API_KEY.")
+    return ("Groq voice failed once and Wisp fell back to espeak. Run "
+            "wispd doctor to see why.")
+
+
+def _announce(rec: dict, cfg) -> None:
+    """Send the one notice for this error class, the first time it
+    happens on this machine. Daemon only, like the state record."""
+    if not ledger.ACTIVE:
+        return
+    kind = rec["class"]
+    with _LOCK:
+        path = _notified_path()
+        try:
+            shown = json.loads(path.read_text())
+            shown = shown if isinstance(shown, list) else []
+        except (OSError, ValueError):
+            shown = []
+        if kind in shown:
+            return
+        tmp = path.with_name(path.name + f".{os.getpid()}.tmp")
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp.write_text(json.dumps(shown + [kind]))
+            os.replace(tmp, path)
+        except OSError:
+            return          # cannot remember it: stay quiet, not noisy
+    try:
+        from . import notify
+        notify.send(_notice_text(kind, rec["until"]), "attention", cfg=cfg,
+                    key=f"voice-groq-{kind}")
+    except Exception:   # noqa: BLE001  a notice never breaks speech
+        pass
+
+
+def _trip(err: GroqError, cfg=None) -> None:
     """Record a failure; a rate limit or terms error also starts a
     process-wide backoff."""
     global _UNTIL, _LAST
@@ -155,6 +215,7 @@ def _trip(err: GroqError) -> None:
         if until:
             _UNTIL = max(_UNTIL, until)
     _write_state(rec)
+    _announce(rec, cfg)
 
 
 # -- settings and key -------------------------------------------------
@@ -390,7 +451,7 @@ class Fetcher:
                     detail = b""
                 e.close()
                 err = classify(e.code, e.headers, detail)
-                _trip(err)
+                _trip(err, cfg)
                 raise err from None
             except cancel.Cancelled:
                 raise
@@ -399,7 +460,7 @@ class Fetcher:
                 if self.token.cancelled:
                     raise cancel.Cancelled() from e
                 err = GroqError("net", str(e))
-                _trip(err)
+                _trip(err, cfg)
                 raise err from None
         finally:
             if resp is not None:
@@ -416,7 +477,7 @@ class Fetcher:
             ms = wav_ms(data)
         except ValueError as e:
             err = GroqError("bad_audio", str(e))
-            _trip(err)
+            _trip(err, cfg)
             raise err from None
         ledger.note_chars("groq", model(cfg), len(text))
         return Audio(data, ms)

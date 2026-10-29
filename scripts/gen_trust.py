@@ -144,6 +144,9 @@ MENTIONS = {
                "text.",
     "wisp.ai": "An example in help text.",
     "example.com": "An example address in help text.",
+    "console.groq.com": "A link shown in the voice notice and `wispd doctor` "
+                        "for accepting the Orpheus terms. Wisp never "
+                        "requests it.",
     "amara.org": "A credit line for subtitle text in a bundled sample.",
     "www.w3.org": "An XML namespace in a generated icon. Never "
                   "requested.",

@@ -54,6 +54,32 @@ def voice_enabled(cfg: dict) -> bool:
     return tts_groq.available(cfg) or local_usable(cfg)
 
 
+def backend(cfg: dict) -> tuple:
+    """(name, why): who speaks a one-off English line now. name is groq,
+    cmd ([voice] cmd), espeak or off. The one helper speak(), the doctor
+    row and the notice read; makes no network call."""
+    from . import tts_groq
+    if not voice_enabled(cfg):
+        raw = str(((cfg or {}).get("voice") or {}).get("enabled", "auto"))
+        return "off", (f"[voice] enabled = {raw.strip()}"
+                       if raw.strip().lower() not in ("", "auto")
+                       else "no Groq key and no local voice installed")
+    local = "cmd" if str(((cfg or {}).get("voice") or {}).get(
+        "cmd", "")).strip() else "espeak"
+    if tts_groq.provider(cfg) != "groq":
+        why = f"provider = {tts_groq.provider(cfg)}"
+    elif not tts_groq.available(cfg):
+        why = "no Groq key or no audio player"
+    else:
+        wait = tts_groq.backoff_until()
+        if tts_groq._now() >= wait:
+            return "groq", "Groq key resolves"
+        why = f"Groq backing off until {tts_groq.fmt_time(wait)}"
+    if not local_usable(cfg):
+        return "off", why + "; no local voice installed"
+    return local, why
+
+
 SPEED_MIN, SPEED_MAX = 0.5, 1.5
 SPEED_STEPS = (0.5, 0.75, 1.0, 1.25, 1.5)
 
@@ -124,6 +150,8 @@ def speak(msg: str, cfg: dict) -> subprocess.Popen | None:
     global _PROC
     if not msg or not voice_enabled(cfg):
         return None
+    if backend(cfg)[0] == "groq":
+        return _speak_groq(msg, cfg)
     argv = _argv(msg, cfg)
     if argv is None:
         return None
@@ -136,6 +164,49 @@ def speak(msg: str, cfg: dict) -> subprocess.Popen | None:
         old, _PROC = _PROC, proc
     _kill(old)
     return proc
+
+
+class _GroqCall:
+    """What speak() returns on the Groq path: the Popen surface callers
+    use (poll, wait, terminate, kill), over a SentenceSpeaker that does
+    the fetching, playing and espeak fallback. Ends when the line has
+    been spoken or the speaker was stopped."""
+
+    def __init__(self, speaker):
+        self._sp = speaker
+        self._done = threading.Event()
+
+    def poll(self):
+        return 0 if self._done.is_set() or self._sp._stopped.is_set() \
+            else None
+
+    def wait(self, timeout=None):
+        end = None if timeout is None else time.monotonic() + timeout
+        while self.poll() is None:
+            left = None if end is None else end - time.monotonic()
+            if left is not None and left <= 0:
+                raise subprocess.TimeoutExpired("groq-speak", timeout)
+            self._done.wait(0.02 if left is None else min(0.02, left))
+        return 0
+
+    def terminate(self):
+        self._sp.stop()
+
+    kill = terminate
+
+
+def _speak_groq(msg: str, cfg: dict) -> "_GroqCall":
+    """Speak one line through the same path as streamed answers
+    (chunks, Fetcher, player, cancel, spend cap, backoff, per-failure
+    espeak fallback). Returns at once; the network is not waited on."""
+    global _PROC
+    sp = SentenceSpeaker(cfg)
+    call = _GroqCall(sp)
+    sp.finish(msg, on_done=call._done.set)
+    with _LOCK:
+        old, _PROC = _PROC, call
+    _kill(old)
+    return call
 
 
 def is_speaking() -> bool:

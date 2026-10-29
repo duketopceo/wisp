@@ -101,6 +101,14 @@ class FakeNet:
         return resp
 
 
+class _Notices(list):
+    """Stands in for notify.send: records (message, level)."""
+
+    def append_notice(self, msg, level="info", **kw):
+        self.append((msg, level))
+        return "sent"
+
+
 class GroqCase(unittest.TestCase):
     """Isolated process state, fake player, fake key, ledger in a tmp dir."""
 
@@ -116,6 +124,7 @@ class GroqCase(unittest.TestCase):
         self.espeak = str(script)
         self.usage = tmp / "usage.jsonl"
         self.clock = [1_000_000.0]
+        self.notices = _Notices()
         speech.stop()
         tts_groq.reset()
         for p in (
@@ -130,6 +139,11 @@ class GroqCase(unittest.TestCase):
             mock.patch.object(ledger, "ACTIVE", True),
             mock.patch.object(tts_groq, "_state_path",
                               lambda: tmp / "voice_groq.json"),
+            # U7: the one-time notice never reaches a real notifier
+            mock.patch.object(tts_groq, "_notified_path",
+                              lambda: tmp / "voice_groq_notified.json",
+                              create=True),
+            mock.patch.object(notify, "send", self.notices.append_notice),
         ):
             p.start()
             self.addCleanup(p.stop)
