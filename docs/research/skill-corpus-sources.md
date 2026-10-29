@@ -1,16 +1,16 @@
-# HeyClicky skill corpus — provenance boundary
+# Third-party skill corpus — provenance boundary
 
 ## What exists and where
 
-The HeyClicky `.dmg` (`~/Downloads`, 2026-10-23 build) was opened with
-`7zz` (7-Zip standalone) on 2026-10-28. `HeyClicky.app/Contents/Resources/`
+A third-party assistant app's `.dmg` (`~/Downloads`, 2026-10-23 build) was opened with
+`7zz` (7-Zip standalone) on 2026-10-28. Its `Contents/Resources/`
 carries its shipped skill library: 48 `.md` files = **38 skill files**
-(25 loose + 11 `ClickyIntegrationSkills/*/SKILL.md` + 2 `ClickyBundledSkills`)
-plus docs (`AGENTS.md`, `ATTRIBUTION.md`, `ClickyModelInstructions.md`)
+(25 loose + 11 `integration skills dir/*/SKILL.md` + 2 `bundled skills dir`)
+plus docs (`AGENTS.md`, `ATTRIBUTION.md`, `the vendor's model-instructions file`)
 and bundled references.
 
 The corpus lives **outside the git tree** at
-`~/.local/share/wisp/reference/heyclicky-skills/` — research-only,
+`~/.local/share/wisp/reference/skill-corpus/` — research-only,
 deletable at will. Nothing in wisp's deliverables reads or derives from
 any non-MIT file in it; it serves only as a discovery map (which apps
 have skills, what coverage depth looks like).
@@ -27,7 +27,7 @@ repo**, never from the extracted copy:
 | Vercel | MIT (`LICENSE.txt` bundled) | vercel-deploy |
 
 Non-MIT corpus files — the 11 composio-coupled integration skills,
-`clicky-browser`, `ClickyModelInstructions.md`, `powerpoint.md`
+the vendor's browser skill, `the vendor's model-instructions file`, `powerpoint.md`
 (declared Proprietary), and license-less files — contribute **nothing**:
 no text, no structure. This eliminates EULA/proprietary exposure rather
 than managing it.

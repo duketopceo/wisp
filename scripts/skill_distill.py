@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Distill an app's UI into a wisp SKILL.md (spike/lfm-local).
 
-Two inputs, same idea as HeyClicky's app skill files: walk an app's
-screens, describe each, then merge the descriptions into one
-progressive-disclosure skill any brain can use in-context.
+Two inputs, same idea as the shipped app-skill files used by
+menu-bar assistant apps: walk an app's screens, describe each, then
+merge the descriptions into one progressive-disclosure skill any
+brain can use in-context.
 
     # from a crawl directory: images + optional <img>.txt notes
     python scripts/skill_distill.py perplexity-app \
