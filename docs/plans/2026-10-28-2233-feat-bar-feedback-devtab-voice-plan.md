@@ -64,7 +64,7 @@ answers in silence, the biggest felt gap against HeyClicky.
 **Feedback**
 - R6. Every finished turn can be rated good or wrong in one tap from the answer card and, for 8 s after it ends, from the bar pill (the "done" rating window, which then collapses to idle; hovering pauses it). Rating a turn again replaces its earlier rating; `wispd eval` already counts the latest label per turn.
 - R7. Rating wrong offers an optional one-line note, typed in the panel's Now tab (the overlay takes no keyboard focus); good is one tap with no prompt.
-- R8. A hotkey (default Super+Shift+D) rates the last finished turn wrong and opens the panel's Now tab with the note focused.
+- R8. A hotkey (default Super+Alt+D; Omarchy already binds Super+Shift+D to Docker) rates the last finished turn wrong and opens the panel's Now tab with the note focused.
 - R9. A rating always lands on the turn it was given for, including after a cancel or while a newer turn runs. Cancelled and errored turns cannot be rated.
 
 **Dev tab**
