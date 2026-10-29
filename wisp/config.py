@@ -16,7 +16,6 @@ DATA_DIR = pathlib.Path(
     os.environ.get("XDG_DATA_HOME", DATA_DIR_P.parent)) / "wisp"
 CORRECTIONS = DATA_DIR / "corrections.jsonl"
 DECISIONS = DATA_DIR / "decisions.jsonl"
-ROUTE_AB = DATA_DIR / "route_ab.jsonl"
 _xdg_rt = os.environ.get("XDG_RUNTIME_DIR")
 RUN_DIR = (pathlib.Path(_xdg_rt) / "wisp") if _xdg_rt else RUN_DIR_P
 LEVEL_FILE = RUN_DIR / "level"
@@ -461,13 +460,8 @@ timeout_ms = "500"
 # (e.g. http://127.0.0.1:8931/decisions → llama-jev qwen3-4b :8091).
 
 [jev]
-# Optional runtime route lane: flash decider before Jev (default off).
-# flash_decider = false
-# flash_model = "perplexity/pplx-decider-flash-v1.2"
-# flash_confidence = 0.7
-# flash_deadline_ms = 220   # sub-budget of deadline_ms; rest goes to Jev
 # Jev is an accelerator, never a gate: past this many ms the heuristic
-# router decides and the turn goes on (route_ab.jsonl keeps both).
+# router decides and the turn goes on.
 # deadline_ms = 400
 
 [debug]

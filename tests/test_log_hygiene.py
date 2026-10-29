@@ -37,7 +37,6 @@ WORDS_TOKEN = "SENTINELWORDS"
 WORD_STORES = {
     "data/wisp/session.jsonl",     # recent turns, [session]
     "data/wisp/decisions.jsonl",   # route labels for `wispd label`
-    "data/wisp/route_ab.jsonl",    # router agreement record
     "data/wisp/trace.jsonl",       # dev trace, [debug] trace
     "data/wisp/recall.db",         # memory index
     "run/wisp/state.json",         # live state for the panel (tmpfs)
