@@ -127,7 +127,7 @@ def _agent_rows(row, probe=None) -> None:
     label = st.replace("_", " ")
     if st == "absent":
         row("agent runtime", f"not installed: {r['fix']}")
-    elif r["ok"] or st == "ready":
+    elif r["ok"]:
         row("agent runtime", f"{label} (ori {r['ori']}, "
             f"opencode {r['opencode']})")
     else:

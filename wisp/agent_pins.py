@@ -6,6 +6,7 @@ Each SHA-256 below was copied from its release's `SHA256SUMS` on
 download. To bump a pin, change the version/tag and all four hashes
 together; `install()` refuses any pin that is not a 64-hex digest.
 """
+import os
 import pathlib
 import platform
 import re
@@ -61,6 +62,12 @@ def pin(tool: str, arch: str) -> dict | None:
         return {"version": OPENCODE_VERSION, "url": url,
                 "sha256": SHA256[key], "archive": True}
     return None
+
+
+def ori_env(base=None) -> dict:
+    """Env for a direct `ori` call: no self-update check (pins must not
+    drift) and no update notice on stdout."""
+    return dict(os.environ if base is None else base, ORI_NO_UPDATE_CHECK="1")
 
 
 def runtime_root(root=None) -> pathlib.Path:

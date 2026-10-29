@@ -15,7 +15,6 @@ auth output is reduced to `data.authenticated` (its `source` label can name
 an env var even when the credential is stored); secrets are never read.
 """
 import json
-import os
 import subprocess
 
 from . import agent_install, agent_pins
@@ -38,7 +37,7 @@ _FIX = {
 
 def _auth(ori) -> tuple:
     """-> (returncode, parsed JSON or None) from `ori auth --json`."""
-    env = dict(os.environ, ORI_NO_UPDATE_CHECK="1")
+    env = agent_pins.ori_env()
     try:
         r = subprocess.run([str(ori), "auth", "--json"], capture_output=True,
                            text=True, timeout=5, env=env)

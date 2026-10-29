@@ -422,13 +422,8 @@ def _reap_expired(cfg: dict, tasks_file=config.TASKS_FILE,
         acp = kind == "session"
         if not acp and not _alive(rec.get("pid", -1), rec.get("pstart", "")):
             continue
-        try:
-            age = (now - datetime.fromisoformat(
-                (acp and rec.get("resumed")) or rec.get("started", ""))
-            ).total_seconds()
-        except (ValueError, TypeError):
-            continue
-        if age <= timeout:
+        # a bad timestamp reads as 0 s, so the record is left alone
+        if _elapsed(rec) <= timeout:
             continue
         if acp:
             from . import acp_runtime

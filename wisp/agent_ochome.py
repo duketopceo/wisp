@@ -16,11 +16,11 @@ import json
 import os
 import pathlib
 
-from . import agent_home, agent_pins, agents, config, note
+from . import agent_home, agent_pins, agents, note
 
 
 def home_dir(home=None) -> pathlib.Path:
-    return pathlib.Path(home or (config.DATA_DIR / "agent-runtime" / "home"))
+    return pathlib.Path(home or (agent_pins.runtime_root() / "home"))
 
 
 # Ordered, last match wins (OpenCode 2 permissions). Everything asks, so

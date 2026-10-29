@@ -36,9 +36,6 @@ LINE_MAX = 200
 ANSWER_MAX = 4000
 SWEEP_S = 5.0
 RESUME_PROMPT = "Continue where you left off."
-# setsid so the child leads its own process group (the registry signals
-# the group); AcpConnection has no start_new_session of its own
-_SETSID = "import os,sys;os.setsid();os.execvp(sys.argv[1],sys.argv[1:])"
 
 _MANAGER = None
 
@@ -103,9 +100,8 @@ def waiting(rec: dict) -> bool:
     """True while a question or risky-action ask from this task is
     pending (the `waiting` marker the Agents tab shows)."""
     names = {rec.get("name"), rec.get("agent")} - {None, ""}
-    with agent_mcp._TLOCK:
-        if names & agent_mcp._PENDING:
-            return True
+    if agent_mcp.is_asking(names):
+        return True
     mgr = _MANAGER
     return bool(mgr and mgr.asking(names))
 
@@ -144,15 +140,15 @@ class HelperProcess:
         cmd = agents._wrap_exit_shim(argv, exit_f)
         if agents._systemd_scope_enabled(cfg):
             cmd = agents.wrap_systemd_scope(cmd, self.id)
-        cmd = [sys.executable, "-c", _SETSID, *cmd]
         try:
+            # its own session, so the registry can signal the whole group
             self.conn = acp.AcpConnection(
                 cmd, env=env, cwd=str(cwd), on_update=self._on_update,
-                on_permission=self._on_permission)
+                on_permission=self._on_permission, start_new_session=True)
         except OSError as e:
             raise _Skip(f"agent spawn failed: {e}") from None
         self.rec = agents.record_process(
-            self.id, self.conn._proc.pid, agents._scope_unit(self.id),
+            self.id, self.conn.pid, agents._scope_unit(self.id),
             self.tf)
         try:
             self.conn.initialize()
@@ -225,6 +221,7 @@ class SessionRun:
         self.last_emit = None
         self.started = mgr.clock()
         self.log = ld / f"{name}.log"
+        ld.mkdir(parents=True, exist_ok=True)
 
     # worker --------------------------------------------------------------
 
@@ -351,7 +348,6 @@ class SessionRun:
             return
         self.last_line = text
         try:
-            self.ld.mkdir(parents=True, exist_ok=True)
             with self.log.open("a") as f:
                 f.write(text + "\n")
         except OSError:
@@ -367,9 +363,8 @@ class SessionRun:
                           seconds=int(now - self.started))
 
     def _scan(self, text) -> None:
-        self.buf += text
-        while "\n" in self.buf:
-            line, self.buf = self.buf.split("\n", 1)
+        *lines, self.buf = (self.buf + text).split("\n")
+        for line in lines:
             if line.strip().startswith("PROGRESS:"):
                 self._line(line.strip())
 

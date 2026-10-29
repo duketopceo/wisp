@@ -34,7 +34,7 @@ def fetch_url(url: str, dest) -> None:
 def version_of(binary) -> str | None:
     """`<binary> --version` -> semver, None when it can't be read. ori
     telemetry and update checks stay off."""
-    env = dict(os.environ, ORI_NO_UPDATE_CHECK="1")
+    env = agent_pins.ori_env()
     try:
         r = subprocess.run([str(binary), "--version"], capture_output=True,
                            text=True, timeout=5, env=env)

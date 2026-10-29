@@ -72,7 +72,8 @@ class PromptHandle:
 
 class AcpConnection:
     def __init__(self, argv, env=None, cwd=None, on_update=None,
-                 on_permission=None, max_line=MAX_LINE):
+                 on_permission=None, max_line=MAX_LINE,
+                 start_new_session=False):
         self.on_update = on_update
         self.on_permission = on_permission
         self.max_line = max_line
@@ -86,7 +87,8 @@ class AcpConnection:
         self._perms: dict = {}  # rpc id -> (session_id, reply fn)
         self._proc = subprocess.Popen(
             argv, env=env, cwd=cwd, stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            start_new_session=start_new_session)
         self._threads = [
             threading.Thread(target=self._read_loop, daemon=True,
                              name="acp-reader"),
@@ -279,6 +281,10 @@ class AcpConnection:
                        if s == session_id]
         for reply in replies:
             reply()
+
+    @property
+    def pid(self) -> int:
+        return self._proc.pid
 
     def close(self):
         self._fail(AcpClosed("closed"))

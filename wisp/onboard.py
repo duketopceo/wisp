@@ -40,7 +40,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from . import config
+from . import agent_pins, config
 
 # local model ladder, probed over loopback only: (name, url)
 LADDER = (
@@ -172,7 +172,7 @@ def _ori_login_key(ori, key: str) -> tuple:
         r = subprocess.run([str(ori), "login", "--with-key"],
                            input=key + "\n", capture_output=True, text=True,
                            timeout=30,
-                           env=dict(os.environ, ORI_NO_UPDATE_CHECK="1"))
+                           env=agent_pins.ori_env())
     except (OSError, subprocess.SubprocessError) as e:
         return False, f"ori login did not run ({type(e).__name__})"
     if r.returncode != 0:
@@ -193,7 +193,7 @@ def _ori_login_browser(ori, opener=_open_url,
         proc = subprocess.Popen(
             [str(ori), "login", "--no-browser"], stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, text=True,
-            env=dict(os.environ, ORI_NO_UPDATE_CHECK="1"))
+            env=agent_pins.ori_env())
     except OSError as e:
         return False, f"ori login did not run ({type(e).__name__})"
 

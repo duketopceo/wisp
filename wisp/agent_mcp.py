@@ -57,6 +57,12 @@ _TLOCK = threading.Lock()
 _PENDING: set = set()       # helpers with an ask_user in flight
 
 
+def is_asking(names) -> bool:
+    """True while any of `names` has an ask_user in flight."""
+    with _TLOCK:
+        return bool(set(names) & _PENDING)
+
+
 def mint(session: str) -> str:
     tok = secrets.token_urlsafe(32)
     with _TLOCK:
