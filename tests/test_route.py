@@ -1,13 +1,11 @@
-"""Jev accelerator, heuristic router and route A/B log (W11, backend U8).
+"""Jev accelerator and heuristic router (W11, backend U8).
 
 Jev answers under a deadline; past it, or on any failure, a heuristic
 route decides and the turn continues. Fakes only: Jev is a loopback
 HTTP server, nothing here leaves the machine.
 """
-import json
 import pathlib
 import sys
-import tempfile
 import time
 import unittest
 from unittest import mock
@@ -17,7 +15,6 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
 from harness import fakes  # noqa: E402
-from cli_env import CliEnv  # noqa: E402
 from wisp import config, pipeline, route  # noqa: E402
 
 APPS = {"firefox": {"launch": "firefox"}, "discord": {"launch": "discord"},
@@ -32,15 +29,6 @@ ACT = {"answers": {"route": {"choice": "act"},
 
 
 class RouteBase(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.ab = pathlib.Path(self.tmp.name) / "route_ab.jsonl"
-        for name, val in (("ROUTE_AB", self.ab),):
-            p = mock.patch.object(config, name, val, create=True)
-            p.start()
-            self.addCleanup(p.stop)
-
     def jev(self, script):
         srv = fakes.FakeJev(script)
         srv.start()
@@ -116,59 +104,6 @@ class DeadlineTest(RouteBase):
                 self.assertEqual(meta["jev_status"], "malformed")
                 self.assertEqual(resp["answers"]["route"]["choice"],
                                  "answer")
-
-
-class FlashLaneTest(RouteBase):
-    FLASH_CFG = {"jev": {"flash_decider": "true", "flash_deadline_ms": "220",
-                         "deadline_ms": "400"}}
-
-    def test_off_by_default_uses_jev(self):
-        self.jev(dict(ANSWER, latency_ms=80))
-        _, meta = self.decide(cfg={})
-        self.assertEqual(meta["source"], "jev")
-        self.assertIsNone(meta.get("flash_status"))
-
-    def test_high_confidence_flash_accepted(self):
-        flash = {"answers": {"route": {"choice": "answer", "confidence": 0.92}}}
-        with mock.patch.object(route, "_decisions_call",
-                               return_value=flash):
-            resp, meta = self.decide(cfg=self.FLASH_CFG)
-        self.assertEqual(meta["source"], "flash")
-        self.assertEqual(meta["route_lane"], "flash")
-        self.assertEqual(resp["answers"]["route"]["choice"], "answer")
-        self.assertEqual(meta["flash_status"], "ok")
-
-    def test_low_confidence_hands_off_to_jev(self):
-        flash = {"answers": {"route": {"choice": "act", "confidence": 0.5}}}
-        self.jev(dict(ANSWER, latency_ms=80))
-        with mock.patch.object(route, "_decisions_call",
-                               return_value=flash):
-            resp, meta = self.decide(cfg=self.FLASH_CFG)
-        self.assertEqual(meta["source"], "jev")
-        self.assertEqual(meta["flash_status"], "low_confidence")
-        self.assertEqual(resp["answers"]["route"]["choice"], "answer")
-
-    def test_flash_error_hands_off_to_jev(self):
-        self.jev(dict(ANSWER, latency_ms=80))
-        with mock.patch.object(route, "_decisions_call",
-                               side_effect=OSError("down")):
-            resp, meta = self.decide(cfg=self.FLASH_CFG)
-        self.assertEqual(meta["source"], "jev")
-        self.assertEqual(meta["flash_status"], "error")
-
-    def test_deadline_respected_with_flash(self):
-        self.jev(dict(ANSWER, latency_ms=2000))
-
-        def slow_flash(*a, **k):
-            time.sleep(0.25)
-            return {"answers": {"route": {"choice": "act", "confidence": 0.5}}}
-
-        t0 = time.monotonic()
-        with mock.patch.object(route, "_decisions_call", side_effect=slow_flash):
-            _, meta = self.decide("open firefox", cfg=self.FLASH_CFG)
-        took = (time.monotonic() - t0) * 1000
-        self.assertLess(took, 700)
-        self.assertGreaterEqual(took, 350)
 
 
 class GateTest(RouteBase):
@@ -262,58 +197,6 @@ class HeuristicTable(unittest.TestCase):
         self.assertEqual(a["app"]["choice"], "firefox")
         self.assertGreaterEqual(a["app"]["confidence"], 0.8)
         self.assertEqual(a["risk"]["score"], 0)
-
-
-class AbLogTest(RouteBase):
-    def test_disagreement_logged_with_fields(self):
-        self.jev(ANSWER)
-        _, meta = self.decide("open firefox")
-        route.log_ab(meta, "open firefox", "t-1", "launch")
-        rec = json.loads(self.ab.read_text().splitlines()[0])
-        for k in ("ts", "turn", "transcript", "jev", "heuristic", "final",
-                  "agree", "deadline_ms"):
-            self.assertIn(k, rec)
-        self.assertEqual(rec["jev"]["route"], "answer")
-        self.assertEqual(rec["jev"]["status"], "ok")
-        self.assertIsInstance(rec["jev"]["ms"], int)
-        self.assertEqual(rec["heuristic"]["route"], "launch")
-        self.assertEqual(rec["heuristic"]["rule"], "bare_launch")
-        self.assertEqual(rec["final"], {"route": "launch",
-                                        "source": "heuristic"})
-        self.assertFalse(rec["agree"])
-        self.assertEqual(rec["turn"], "t-1")
-
-    def test_jev_down_is_logged_with_null_agreement(self):
-        self.jev({"status": 502})
-        _, meta = self.decide("what time is it")
-        route.log_ab(meta, "what time is it", "t-2", "answer")
-        rec = json.loads(self.ab.read_text())
-        self.assertEqual(rec["jev"]["status"], "error")
-        self.assertIsNone(rec["jev"]["route"])
-        self.assertIsNone(rec["agree"])
-
-    def test_log_failure_never_raises(self):
-        with mock.patch.object(config, "ROUTE_AB",
-                               pathlib.Path("/proc/nope/x.jsonl")):
-            route.log_ab({"source": "heuristic"}, "x", "t", "answer")
-
-
-def _seed(env, rows):
-    env.data.mkdir(parents=True, exist_ok=True)
-    (env.data / "route_ab.jsonl").write_text(
-        "".join(json.dumps(r) + "\n" for r in rows))
-
-
-def _row(jev, heur, final, status="ok", ms=90, source="jev", t="x"):
-    return {"ts": "2026-10-04T10:00:00+00:00", "turn": t, "transcript": t,
-            "deadline_ms": 400,
-            "jev": {"route": jev, "status": status, "ms": ms},
-            "heuristic": {"route": heur, "rule": "r", "ms": 1},
-            "final": {"route": final, "source": source},
-            "agree": None if jev is None else jev == heur,
-            "override": source == "heuristic" and status == "ok"}
-
-
 
 
 class FastRouteTest(unittest.TestCase):

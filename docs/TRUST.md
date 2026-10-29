@@ -57,7 +57,7 @@ Everything below lives in `~/.local/share/wisp` (a 0700 folder of 0600 files), `
 | What | Holds | How long, and your control |
 | --- | --- | --- |
 | session.jsonl | Recent turns: what you said, the route, the reply. | Not trimmed automatically. Delete the file any time. |
-| decisions.jsonl, route_ab.jsonl | One line per turn: transcript, route choice, timings. Used to label and compare routing. | Not trimmed automatically. Delete the files any time. |
+| decisions.jsonl | One line per turn: transcript, route choice, timings. Used to label and compare routing. | Not trimmed automatically. Delete the files any time. |
 | trace.jsonl | Per-stage event stream for debugging, including the transcript and answer text. Keys are never written. | `[debug] trace = false` writes nothing. Rotates at 10 MB and keeps one earlier file. |
 | dictation history | Each finished dictation, so a failed insert loses nothing. Never sent anywhere and never put in a prompt. | `[dictation] history`, `history_max` and `history_days` bound it (100 entries, 7 days by default). `wispd dictate clear` empties it. |
 | utterance.wav | The recording of your last turn, in `~/.config/wisp`. | Overwritten by the next turn. Delete it any time. |
@@ -85,7 +85,7 @@ From the scan this page is built from.
 - `cal.com`: `wisp/mcpauth.py`
 - `calendar.google.com`: `wisp/config.py`
 - `example.com`: `wisp/cli/share.py`
-- `github.com`: `rs/wispd/src/brain.rs`, `wisp/brain.py`, `wisp/grounding.py`, `wisp/route.py`, `wisp/stage_route.py`, `wisp/update.py` and 1 more
+- `github.com`: `rs/wispd/src/brain.rs`, `wisp/brain.py`, `wisp/grounding.py`, `wisp/stage_route.py`, `wisp/update.py`, `wisp/whatsnew.py`
 - `gmail.com`: `wisp/tools/__init__.py`
 - `mail.google.com`: `wisp/config.py`
 - `openrouter.ai`: `rs/wispd/src/brain.rs`, `rs/wispd/src/config.rs`, `wisp/brain.py`, `wisp/config.py`, `wisp/recall.py`

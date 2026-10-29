@@ -149,7 +149,7 @@ MENTIONS = {
 STORES = (
     ("session.jsonl", "Recent turns: what you said, the route, the reply.",
      "Not trimmed automatically. Delete the file any time."),
-    ("decisions.jsonl, route_ab.jsonl",
+    ("decisions.jsonl",
      "One line per turn: transcript, route choice, timings. Used to "
      "label and compare routing.",
      "Not trimmed automatically. Delete the files any time."),

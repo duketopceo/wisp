@@ -413,8 +413,6 @@ def route_stage(ctx) -> bool:
     if route_meta:
         ctx.route_lane = route_meta.get("route_lane") or route_meta.get(
             "source")
-        _route.log_ab(route_meta, text, turn,
-                      answers.get("route", {}).get("choice"))
     # clarify only gates routes that truly need a named target —
     # launch has no other way to resolve the app. act/agent resolve
     # the target from the screen + goal instead of asking.
