@@ -244,8 +244,10 @@ class TestLongSession(Base):
         path.write_bytes(S.wav_bytes(tone(14)))
         s = S.Streamer(path, transcribe_fn=lambda p: "word", chunk_s=6.0,
                        tick_s=0.001, journal=H.Journal({})).start()
+        # the streamer appends to `texts` first and journals the chunk a
+        # moment later, so wait for the journal itself, not the text
         for _ in range(300):
-            if s.texts:
+            if s.texts and H.JOURNAL.exists():
                 break
             time.sleep(0.01)
         self.assertTrue(H.JOURNAL.exists())
