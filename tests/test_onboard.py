@@ -452,6 +452,45 @@ class TestStoreKey(unittest.TestCase):
         self.assertEqual((self.tmp / "ring.groq.default").read_text(),
                          "gsk-ring")
 
+    def _secret_tool(self, body):
+        f = self.tmp / "sbin" / "secret-tool"
+        f.parent.mkdir(exist_ok=True)
+        self.argv_log = self.tmp / "argv.log"
+        self.stdin_log = self.tmp / "stdin.log"
+        f.write_text(f'#!/bin/sh\necho "$@" >> "{self.argv_log}"\n{body}\n')
+        f.chmod(0o755)
+        return mock.patch.dict(
+            "os.environ", {"PATH": f"{f.parent}:/usr/bin:/bin"})
+
+    def test_keyring_ref_stores_in_secret_tool_value_on_stdin_only(self):
+        key_env = "keyring://wisp/openrouter,OPENROUTER_API_KEY"
+        with self._secret_tool(f'cat > "{self.tmp}/stdin.log"'):
+            where = onboard._store_key(key_env, "sk-or-v1-secret")
+        self.assertEqual(where, "desktop keyring")
+        self.assertEqual((self.tmp / "stdin.log").read_text(),
+                         "sk-or-v1-secret")
+        argv = self.argv_log.read_text()
+        self.assertNotIn("sk-or-v1-secret", argv)
+        self.assertIn("store --label Wisp openrouter service wisp "
+                      "account openrouter", argv)
+        self.assertFalse(self.env.exists())
+
+    def test_keyring_ref_without_a_working_keyring_writes_env_0600(self):
+        key_env = "keyring://wisp/openrouter,OPENROUTER_API_KEY"
+        with self._secret_tool("cat >/dev/null; exit 1"):
+            where = onboard._store_key(key_env, "sk-or-v1-file")
+        self.assertEqual(where, str(self.env))
+        self.assertEqual(self.env.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.env.read_text(),
+                         "OPENROUTER_API_KEY=sk-or-v1-file\n")
+
+    def test_keyring_ref_with_no_secret_tool_writes_env_0600(self):
+        self._no_omaseal()
+        where = onboard._store_key(
+            "keyring://wisp/openrouter,OPENROUTER_API_KEY", "sk-or-v1-f")
+        self.assertEqual(where, str(self.env))
+        self.assertEqual(self.env.stat().st_mode & 0o777, 0o600)
+
 
 class TestDefaultFetch(unittest.TestCase):
     def test_http_answer_means_up_and_refused_means_down(self):

@@ -69,7 +69,11 @@ def doctor_sections(cfg: dict, cua_probe=None) -> list:
     row("tools", p.get("tools"))
     key = config.load_env_key(p.get("key_env", "")) \
         if p.get("key_env") else "n/a"
-    row("api key", "set" if key == "set" or (key and key != "n/a")
+    # name the first source that yields a value, never the value
+    src = next((c.strip() for c in str(p.get("key_env", "")).split(",")
+                if c.strip() and config.load_env_key(c.strip())), "")
+    row("api key", f"set ({src})" if src
+        else "set" if key == "set" or (key and key != "n/a")
         else key or "MISSING", bool(key))
 
     row = section("health")

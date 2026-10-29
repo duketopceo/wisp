@@ -373,7 +373,7 @@ agent_runtime = "auto"
 [brain.openrouter]
 kind = "openai_compat"
 base_url = "https://openrouter.ai/api/v1"
-key_env = "OPENROUTER_API_KEY"
+key_env = "keyring://wisp/openrouter,OPENROUTER_API_KEY"
 vision = "true"
 tools = "true"
 
@@ -656,18 +656,35 @@ def key_label(name: str) -> str:
     (GROQ_API_KEY for `omaseal://groq/default,GROQ_API_KEY`), else the
     list itself."""
     cands = [c.strip() for c in str(name).split(",") if c.strip()]
-    return next((c for c in cands if not c.startswith("omaseal://")),
+    return next((c for c in cands
+                 if not c.startswith(("omaseal://", "keyring://"))),
                 str(name))
 
 
 def load_env_key(name: str) -> str:
     """Resolve a secret. `name` may be a comma-separated list of
-    sources tried in order — `omaseal://svc/acct` refs and plain env
+    sources tried in order — `keyring://svc/acct` (desktop Secret
+    Service via secret-tool), `omaseal://svc/acct` refs and plain env
     var names (also looked up in .env) — so an omaseal user can keep
     `omaseal://groq/default,GROQ_API_KEY` and a non-omaseal install
     still resolves the same key. "" when nothing yields a value."""
     for cand in (c.strip() for c in str(name).split(",")):
         if not cand:
+            continue
+        if cand.startswith("keyring://"):
+            ref = cand[len("keyring://"):].split("/", 1)
+            if len(ref) == 2:
+                try:
+                    from . import platform as _platform
+                    r = subprocess.run(
+                        [_platform.resolve_exe("secret-tool"), "lookup",
+                         "service", ref[0], "account", ref[1]],
+                        capture_output=True, text=True,
+                        timeout=OMASEAL_TIMEOUT_S)
+                    if r.returncode == 0 and r.stdout.strip():
+                        return r.stdout.strip()
+                except (OSError, subprocess.SubprocessError):
+                    pass
             continue
         if cand.startswith("omaseal://"):
             ref = cand[len("omaseal://"):].split("/", 1)

@@ -94,14 +94,29 @@ def _whisper_ok(cfg: dict) -> bool:
 
 def _store_key(key_env: str, value: str) -> str:
     """Store a key where config.load_env_key will find it and say where:
-    the omaseal ref in key_env when there is one and omaseal is on PATH,
-    else ~/.config/wisp/.env (0600). The value only ever travels on
-    omaseal's stdin or into the 0600 file. Raises ValueError for a value
+    the desktop keyring for a keyring:// ref when secret-tool stores it,
+    the omaseal ref when there is one and omaseal is on PATH, else
+    ~/.config/wisp/.env (0600). The value only ever travels on the
+    store tool's stdin or into the 0600 file. Raises ValueError for a value
     that cannot be stored safely, OSError/RuntimeError when the store
     itself failed."""
     if not value or any(c.isspace() for c in value):
         raise ValueError("a key cannot be empty or contain whitespace")
     cands = [c.strip() for c in key_env.split(",") if c.strip()]
+    kr = next((c[len("keyring://"):].split("/", 1) for c in cands
+               if c.startswith("keyring://")), None)
+    tool = shutil.which("secret-tool")
+    if kr and len(kr) == 2 and tool:
+        try:
+            r = subprocess.run(
+                [tool, "store", "--label", f"Wisp {kr[1]}",
+                 "service", kr[0], "account", kr[1]],
+                input=value, capture_output=True, text=True,
+                timeout=config.OMASEAL_TIMEOUT_S)
+            if r.returncode == 0:
+                return "desktop keyring"
+        except (OSError, subprocess.SubprocessError):
+            pass  # no Secret Service answering: the 0600 file below
     ref = next((c[len("omaseal://"):].split("/", 1) for c in cands
                 if c.startswith("omaseal://")), None)
     exe = shutil.which("omaseal")
