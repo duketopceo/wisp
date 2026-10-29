@@ -1,0 +1,24 @@
+{
+  "name": "fast_path_answer",
+  "scenario": "fast path plain question",
+  "description": "Default router: 'what does this error mean' is a plain question, so the fast path sends it to the answer handler in one brain call. No Jev call and no act loop (the result is ANSWERED, not ACTED).",
+  "audio": "ask.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "what does this error mean"
+    },
+    "brain": {
+      "responses": [
+        {
+          "content": "It says the file is missing."
+        }
+      ]
+    }
+  },
+  "expect": {
+    "jev_calls": 0,
+    "brain_calls": 1,
+    "result_prefix": "ANSWERED",
+    "answer": "It says the file is missing."
+  }
+}

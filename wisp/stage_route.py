@@ -425,6 +425,35 @@ def fixed_route(text: str, router: str):
     return None
 
 
+# words that make a question an action request in disguise ("how do I
+# open X and click Y"): such turns stay with the act loop
+_FAST_ACTION = re.compile(
+    r"\b(?:click|open|launch|start|run|type|press|close|quit|go to|"
+    r"navigate|search|find|download|play|pause|scroll|drag|fill|select|"
+    r"log ?in|sign in|then|and)\b", re.I)
+
+
+def fast_route(text: str, apps: dict | None, cfg: dict):
+    """The no-model fast path in front of act: (answers, rule) for a
+    bare launch of a catalogued app ("open firefox") or a plain question
+    ("what does this error mean"); None sends the turn to the act loop.
+
+    Everything ambiguous (compound requests, unknown apps, questions that
+    carry an action verb) is left to act. `[brain] fast_path = "false"`
+    turns the path off."""
+    if str((cfg or {}).get("brain", {}).get("fast_path",
+                                            "true")).lower() == "false":
+        return None
+    from . import route as _route
+    h = _route.heuristic(text, apps)
+    if h["rule"] == "bare_launch":
+        return _route.heuristic_answers(h), h["rule"]
+    if h["rule"] in ("question_word", "question_mark") \
+            and not _FAST_ACTION.search(text):
+        return _route.heuristic_answers(h), h["rule"]
+    return None
+
+
 def route_stage(ctx) -> bool:
     """Decide the route. False when the turn ended here (low confidence
     and no pick): it is already finished."""
@@ -443,11 +472,19 @@ def route_stage(ctx) -> bool:
     route_meta = None
     router = cfg.get("brain", {}).get("router", "act")
     fixed = fixed_route(text, router)
+    fast_rule = None
+    if fixed == ("act", None) and router == "act":
+        fast = fast_route(text, harness.get("apps"), cfg)
+        if fast:
+            fixed, fast_rule = None, fast[1]
+            resp = {"answers": fast[0]}
     if fixed:
         choice, detail = fixed
         if detail:
             ctx.detail = detail
         resp = {"answers": {"route": {"choice": choice}}}
+    elif fast_rule:
+        ctx.route_lane = "fast_path"
     else:
         resp, route_meta = _route.decide(
             text, model, pl.build_questions(harness), context, cfg,
@@ -460,6 +497,8 @@ def route_stage(ctx) -> bool:
     _trace.emit(turn, "decision", "thought",
                 {"model": model, "answers": answers,
                  "latency_ms": resp.get("latency_ms"),
+                 **({"route_lane": "fast_path", "route_rule": fast_rule}
+                    if fast_rule else {}),
                  **({"route_source": route_meta["source"],
                      "jev_status": route_meta["jev_status"],
                      "route_lane": route_meta.get("route_lane")}

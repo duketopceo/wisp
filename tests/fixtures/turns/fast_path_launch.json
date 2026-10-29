@@ -1,0 +1,32 @@
+{
+  "name": "fast_path_launch",
+  "scenario": "fast path launch",
+  "description": "Default router: 'open firefox' is a bare launch of a catalogued app, so the regex fast path launches it directly. No Jev call and no brain call (the act loop never starts).",
+  "audio": "ask.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "open firefox"
+    },
+    "brain": {
+      "responses": [
+        {
+          "content": ""
+        }
+      ]
+    }
+  },
+  "catalog": {
+    "firefox": {
+      "launch": "firefox",
+      "cues": "web browser"
+    }
+  },
+  "expect": {
+    "jev_calls": 0,
+    "brain_calls": 0,
+    "launch_calls": [
+      "firefox"
+    ],
+    "error_code": ""
+  }
+}

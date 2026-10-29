@@ -314,5 +314,49 @@ def _row(jev, heur, final, status="ok", ms=90, source="jev", t="x"):
             "override": source == "heuristic" and status == "ok"}
 
 
+
+
+class FastRouteTest(unittest.TestCase):
+    """The no-model fast path in front of act (Phase 5)."""
+    APPS = {"firefox": {}, "terminal": {}}
+
+    def _fast(self, text, cfg=None):
+        from wisp import stage_route
+        return stage_route.fast_route(text, self.APPS, cfg or {})
+
+    def test_bare_launch_of_a_catalog_app(self):
+        ans, rule = self._fast("open firefox")
+        self.assertEqual(rule, "bare_launch")
+        self.assertEqual(ans["route"]["choice"], "launch")
+        self.assertEqual(ans["app"]["choice"], "firefox")
+        self.assertGreaterEqual(ans["app"]["confidence"], 0.8)
+
+    def test_polite_launch_still_fast(self):
+        ans, _ = self._fast("could you please open the terminal")
+        self.assertEqual(ans["app"]["choice"], "terminal")
+
+    def test_plain_questions_answer(self):
+        for q in ("what does this error mean", "how do I undo this",
+                  "where is the save button", "is this safe?"):
+            got = self._fast(q)
+            self.assertIsNotNone(got, q)
+            self.assertEqual(got[0]["route"]["choice"], "answer", q)
+
+    def test_ambiguous_turns_stay_in_act(self):
+        for t in ("open firefox and go to github",   # compound
+                  "open discord",                    # not in the catalog
+                  "go to stripe.com",
+                  "click the save button",
+                  "how do I open a file and then save it",
+                  "what is on my screen and click ok",
+                  "check which window is focused"):  # no rule matches
+            self.assertIsNone(self._fast(t), t)
+
+    def test_switch_turns_the_path_off(self):
+        cfg = {"brain": {"fast_path": "false"}}
+        self.assertIsNone(self._fast("open firefox", cfg))
+        self.assertIsNone(self._fast("what is this", cfg))
+
+
 if __name__ == "__main__":
     unittest.main()
