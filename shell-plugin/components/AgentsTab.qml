@@ -2,7 +2,7 @@
 // the empty state. Task fields: status (queued, running, done, failed,
 // cancelled, interrupted), task (the request text) and optional seconds,
 // line and waiting (an ask from the agent is pending). An interrupted
-// agent shows as cancelled with a say-"continue" hint.
+// agent gets a say-"continue" hint.
 import QtQuick
 import "../lib/metrics.js" as M
 
@@ -15,12 +15,11 @@ Column {
   width: 340
 
   function stateOf(t) {
-    var st = t.status || "queued"
-    return st === "interrupted" ? "cancelled" : st
+    return t.status || "queued"
   }
 
   function lineOf(t) {
-    if (t.status === "interrupted") return "interrupted, say continue to resume"
+    if (t.status === "interrupted") return "say continue to resume"
     if (t.waiting) return "waiting for your answer"
     return t.line || t.task || ""
   }
