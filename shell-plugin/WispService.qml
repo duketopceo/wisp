@@ -10,6 +10,7 @@ import "lib/settings.js" as Settings
 import "lib/run.js" as Run
 import "lib/rate.js" as Rate
 import "lib/bar.js" as B
+import "lib/scribble.js" as Scribble
 import "lib/dev.js" as Dev
 
 // WispService: the one reader of wispd state for every surface (Companion,
@@ -86,6 +87,12 @@ Item {
   // pauses the window.
   property bool ratingWindowOpen: false
   property bool pillHover: false
+  // Scribble holds the whole screen while listening (OverlayLayer mask). The
+  // hold is the grab itself: taken on the listening edge, dropped when the
+  // turn leaves listening, is cancelled or interrupted, and by scribbleTimer
+  // a few seconds after the last stroke even if every signal is lost.
+  property bool scribbleHeld: false
+  function scribbleTouch() { if (scribbleHeld) scribbleTimer.restart(); }
   property string mic: ""     // "open" while the opt-in wake word listens
   property string turnId: ""
   property var seq: null
@@ -185,6 +192,10 @@ Item {
   // waits for 8 pending picks is no stop at all.
   property bool stopPending: false
   function interrupt() {
+    // let go at once: the stop must not wait on the daemon to give the
+    // screen back, and a cancelled turn gets no rating window
+    scribbleHeld = false;
+    ratingWindowOpen = false;
     if (stopProc.running) return true;
     stopPending = true;
     stopProc.command = [wispd, "interrupt", "--json"];
@@ -372,7 +383,10 @@ Item {
     root.stale = Reader.isStale(v, Date.now(), root.staleAfterMs);
     root.turnId = v.turnId;
     var win = B.windowAction(prevStatus, root.status, prevTurn, v.turnId, root.offline,
-      Rate.rateable(root.status, root.answer, root.result, root.errorCode));
+      Rate.rateable(root.status, root.answer, root.result, root.errorCode), root.errorCode);
+    var hold = Scribble.holdAction(prevStatus, root.status, root.errorCode, prevTurn, v.turnId);
+    if (hold === "grab") root.scribbleHeld = true;
+    else if (hold === "release") root.scribbleHeld = false;
     if (win === "open") root.ratingWindowOpen = true;
     else if (win === "close") root.ratingWindowOpen = false;
     if (v.turnId !== prevTurn) root.turnChanged(v.turnId);
@@ -479,6 +493,16 @@ Item {
     repeat: false
     running: root.ratingWindowOpen && !root.pillHover
     onTriggered: root.ratingWindowOpen = false
+  }
+
+  // The hard cap on a scribble hold: single-shot, runs only while held, so
+  // a lost release signal gives the screen back (click-through) in seconds.
+  Timer {
+    id: scribbleTimer
+    interval: Scribble.HOLD_MS
+    repeat: false
+    running: root.scribbleHeld
+    onTriggered: root.scribbleHeld = false
   }
 
   // Stale check ticks only while busy (nothing to age when idle).

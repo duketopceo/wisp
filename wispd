@@ -426,6 +426,7 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
         if c == "interrupt":
             # cancel the in-flight turn only — daemon keeps running
             _interrupt(ctl)
+            _cancel_recording(st, ctl)
             from wisp import handsfree
             handsfree.interrupted()   # Esc also ends a hands-free session
             _drop_speculation(ctl)
@@ -481,6 +482,35 @@ def _tap_chips(cfg: dict, held: float) -> dict:
         dlog(f"chips off: {e}")
         return {}
     return {"chips": payload} if payload else {}
+
+
+def _cancel_recording(st, ctl: dict) -> bool:
+    """An interrupt while the talk key is held: no turn token exists yet,
+    so cancelling the token alone left the recorder running and the status
+    on `listening` until release or the [audio] cap (TLY-430: the scribble
+    pad kept the screen for the whole minute). End the capture, drop the
+    speculation and settle idle/cancelled. A mini capture (an interjection
+    during a running turn) belongs to that turn and is left alone."""
+    if ctl.get("rec") is None:
+        return False
+    with ctl["rec_lock"]:
+        rec = ctl["rec"]
+        if rec is None or ctl.get("mini") is not None:
+            return False
+        ctl["rec"] = None
+    try:
+        rec["proc"].send_signal(signal.SIGINT)
+        rec["proc"].wait(timeout=2)
+    except Exception:
+        rec["proc"].kill()
+    rec["sampler_stop"].set()
+    _drop_speculation(ctl)
+    tid = ctl.pop("turn", None) or st.current_turn()
+    st.turn(tid).transition("idle", error="", error_code="cancelled",
+                            error_detail="", choices=[], prompt_id="",
+                            confirm=None, result="", transcript="")
+    dlog("listen: capture cancelled by interrupt")
+    return True
 
 
 def _drop_speculation(ctl: dict) -> None:

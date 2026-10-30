@@ -9,7 +9,7 @@
 function rateable(status, answer, result, errorCode) {
   if (status !== "done" || answer === "") return false
   if (errorCode !== "" && errorCode !== undefined) return false
-  return !/^(CANCELLED|ERROR)/.test(String(result))
+  return !/^(CANCELLED|ERROR|INTERRUPTED|ABORTED)/i.test(String(result))
 }
 
 // `wispd label set --json [--turn T] -- verdict [note]`: options first so
