@@ -63,6 +63,7 @@ Rectangle {
         color: root.active ? root.tk.ember : root.tk.inkMuted
       }
       Text {
+        textFormat: Text.PlainText
         width: parent.width - x
         anchors.verticalCenter: parent.verticalCenter
         text: root.run.intent
@@ -79,6 +80,7 @@ Rectangle {
     // step cursor + in-flight step while the run is live — "step 3/8 ·
     // click Save" — or just the step's name when no tool ran yet
     Text {
+      textFormat: Text.PlainText
       visible: root.active
       width: parent.width
       text: {
@@ -100,6 +102,7 @@ Rectangle {
       width: parent.width
       spacing: M.spacing.md
       Text {
+        textFormat: Text.PlainText
         text: root.service.ui("ui.now.asks")
         color: root.tk.needsYou
         font.family: root.service.fontFamily
@@ -107,6 +110,7 @@ Rectangle {
         font.weight: Font.DemiBold
       }
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         text: root.question ? root.question.text : ""
         wrapMode: Text.Wrap
@@ -154,6 +158,7 @@ Rectangle {
             clip: true
             onAccepted: if (sendChip.enabled) sendChip.clicked()
             Text {
+              textFormat: Text.PlainText
               visible: input.text === ""
               anchors.verticalCenter: parent.verticalCenter
               text: root.service.ui("ui.question.answer")
@@ -182,6 +187,7 @@ Rectangle {
       width: parent.width
       spacing: M.spacing.md
       Text {
+        textFormat: Text.PlainText
         anchors.verticalCenter: parent.verticalCenter
         width: parent.width
           - (undoText.visible ? undoText.implicitWidth + M.spacing.md : 0)
@@ -193,6 +199,7 @@ Rectangle {
         font.pixelSize: M.font.label
       }
       Text {
+        textFormat: Text.PlainText
         id: undoText
         visible: root.run.undoRefs.length > 0
         anchors.verticalCenter: parent.verticalCenter
@@ -202,6 +209,7 @@ Rectangle {
         font.pixelSize: M.font.caption
       }
       Text {
+        textFormat: Text.PlainText
         id: hideText
         anchors.verticalCenter: parent.verticalCenter
         text: root.service.ui("ui.hide")

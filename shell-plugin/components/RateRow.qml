@@ -67,6 +67,7 @@ Item {
         color: btn.tk.ink
       }
       Text {
+        textFormat: Text.PlainText
         anchors.verticalCenter: parent.verticalCenter
         text: btn.word
         color: btn.tk.ink
@@ -104,6 +105,7 @@ Item {
   }
 
   Text {
+    textFormat: Text.PlainText
     id: receiptText
     visible: root.rated
     text: root.line

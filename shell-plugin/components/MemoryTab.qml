@@ -31,6 +31,7 @@ Column {
     width: parent.width
     spacing: M.spacing.sm
     Text {
+      textFormat: Text.PlainText
       text: root.skills.length + " " + root.service.ui("ui.memory.skills")
       color: root.tk.ink
       font.family: root.service.fontFamily
@@ -40,6 +41,7 @@ Column {
     Repeater {
       model: root.skills.slice(0, root.maxSkills)
       delegate: Text {
+        textFormat: Text.PlainText
         width: root.width
         text: modelData.name + (modelData.description ? "  " + modelData.description : "")
         elide: Text.ElideRight
@@ -49,6 +51,7 @@ Column {
       }
     }
     Text {
+      textFormat: Text.PlainText
       visible: root.skills.length > root.maxSkills
       text: root.service.ui("ui.memory.more")
       color: root.tk.inkMuted
@@ -62,6 +65,7 @@ Column {
     width: parent.width
     spacing: M.spacing.sm
     Text {
+      textFormat: Text.PlainText
       text: root.service.ui("ui.memory.activity")
       color: root.tk.ink
       font.family: root.service.fontFamily
@@ -71,6 +75,7 @@ Column {
     Repeater {
       model: root.decisions.slice(0, root.maxDecisions)
       delegate: Text {
+        textFormat: Text.PlainText
         width: root.width
         text: modelData.ts + "  " + modelData.route + "  " + modelData.text
         elide: Text.ElideRight

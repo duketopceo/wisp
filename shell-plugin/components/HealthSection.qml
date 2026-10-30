@@ -35,6 +35,7 @@ Column {
   }
 
   component Heading: Text {
+    textFormat: Text.PlainText
     color: root.tk.ink
     font.family: root.service.fontFamily
     font.pixelSize: M.font.body
@@ -43,6 +44,7 @@ Column {
   }
 
   component Line: Text {
+    textFormat: Text.PlainText
     width: root.width
     elide: Text.ElideRight
     color: root.dim ? root.tk.inkMuted : root.tk.ink
@@ -58,6 +60,7 @@ Column {
     spacing: M.spacing.lg
     Dot { good: r.good; anchors.verticalCenter: parent.verticalCenter }
     Text {
+      textFormat: Text.PlainText
       text: r.label
       color: root.dim ? root.tk.inkMuted : root.tk.ink
       font.family: root.service.fontFamily
@@ -65,6 +68,7 @@ Column {
       anchors.verticalCenter: parent.verticalCenter
     }
     Text {
+      textFormat: Text.PlainText
       text: r.detail
       color: r.good ? root.tk.inkMuted : root.tk.fail
       font.family: root.service.fontFamily
@@ -83,6 +87,7 @@ Column {
   Heading { text: root.service.ui("ui.settings.health") }
 
   Text {
+    textFormat: Text.PlainText
     // W25 moved "out of date" off service.notice (a stale turn reads
     // reconnecting in the status line); settings views still say it.
     readonly property string line: root.service.notice !== "" ? root.service.notice
@@ -97,6 +102,7 @@ Column {
   // endpoints
   Heading { text: root.service.ui("ui.health.endpoints"); font.weight: Font.Normal; color: root.tk.inkMuted; font.pixelSize: M.font.caption }
   Text {
+    textFormat: Text.PlainText
     visible: root.sec.endpoints.length === 0
     text: root.service.ui("ui.health.none")
     color: root.tk.inkMuted
@@ -139,6 +145,7 @@ Column {
     visible: root.cv !== null && (root.cv.kill || root.cv.dryRun)
     spacing: M.spacing.lg
     Text {
+      textFormat: Text.PlainText
       visible: root.cv !== null && root.cv.kill
       text: root.service.ui("ui.cua.kill_switch_on")
       color: root.tk.needsYou
@@ -146,6 +153,7 @@ Column {
       font.pixelSize: M.font.caption
     }
     Text {
+      textFormat: Text.PlainText
       visible: root.cv !== null && root.cv.dryRun
       text: root.service.ui("ui.cua.dry_run")
       color: root.tk.needsYou
@@ -181,6 +189,7 @@ Column {
     color: root.tk.inkMuted
   }
   Text {
+    textFormat: Text.PlainText
     visible: root.models.length > 0
     text: root.service.ui("ui.health.models")
     color: root.tk.inkMuted
@@ -199,6 +208,7 @@ Column {
   // last errors
   Heading { text: root.service.ui("ui.health.errors"); font.weight: Font.Normal; color: root.tk.inkMuted; font.pixelSize: M.font.caption }
   Text {
+    textFormat: Text.PlainText
     visible: root.sec.errors.length === 0
     text: root.service.ui("ui.health.no_errors")
     color: root.tk.inkMuted

@@ -15,6 +15,7 @@ Column {
   width: 340
 
   Text {
+    textFormat: Text.PlainText
     width: parent.width
     text: root.service.ui("ui.empty." + root.tab)
     wrapMode: Text.Wrap
@@ -23,6 +24,7 @@ Column {
     font.pixelSize: M.font.body
   }
   Text {
+    textFormat: Text.PlainText
     width: parent.width
     text: root.service.ui("ui.empty." + root.tab + ".hint")
     wrapMode: Text.Wrap

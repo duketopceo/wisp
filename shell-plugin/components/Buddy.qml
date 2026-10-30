@@ -152,6 +152,7 @@ Item {
     scale: root.view.label.scale
 
     Text {
+      textFormat: Text.PlainText
       id: labelText
       anchors.centerIn: parent
       text: root.view.label.text

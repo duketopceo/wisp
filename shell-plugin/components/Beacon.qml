@@ -53,6 +53,7 @@ Item {
     }
 
     Text {
+      textFormat: Text.PlainText
       anchors.horizontalCenter: parent.horizontalCenter
       y: (M.size.beacon * 1.6 - M.size.beacon) / 2 + M.size.beacon * 0.18
       text: String(root.index)

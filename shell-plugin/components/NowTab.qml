@@ -77,6 +77,7 @@ Column {
   }
 
   Text {
+    textFormat: Text.PlainText
     visible: root.service.goal !== ""
     width: parent.width
     text: root.service.ui("ui.goal") + ": " + root.service.goal
@@ -101,6 +102,7 @@ Column {
   // paper surface (gap-closure U2): rendered note (plan strip + tiles /
   // letter). Plan markers clear from `rendered` when the note closes.
   Text {
+    textFormat: Text.PlainText
     visible: root.noteBody !== ""
     width: parent.width
     text: root.noteBody
@@ -111,6 +113,7 @@ Column {
   }
 
   Text {
+    textFormat: Text.PlainText
     visible: root.asking
     width: parent.width
     text: root.service.ui("ui.now.asks") + ": " + root.service.result.slice(9).replace(/^[:\s]+/, "")
@@ -153,6 +156,7 @@ Column {
   }
 
   Text {
+    textFormat: Text.PlainText
     visible: root.actionNack !== null
     width: parent.width
     text: root.actionNack !== null && root.actionNack.message !== ""
@@ -164,6 +168,7 @@ Column {
   }
 
   Text {
+    textFormat: Text.PlainText
     visible: root.service.error !== "" || root.service.status === "error"
     width: parent.width
     text: root.service.errorMessage + (root.service.errorHint !== "" ? ". " + root.service.errorHint : "")
@@ -191,6 +196,7 @@ Column {
     visible: root.judgeable && root.labelAck === null
     spacing: M.spacing.lg
     Text {
+      textFormat: Text.PlainText
       anchors.verticalCenter: parent.verticalCenter
       text: root.service.ui("ui.now.right")
       color: root.tk.inkMuted
@@ -220,6 +226,7 @@ Column {
   }
 
   Text {
+    textFormat: Text.PlainText
     visible: root.labelAck !== null
     width: parent.width
     text: root.labelAck !== null && !root.labelAck.pending && root.labelAck.message !== ""
