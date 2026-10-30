@@ -112,7 +112,15 @@ def _install(ctx, a, src, repo, commit):
               if src else None)
     plugin = not a.from_plugin
 
+    def preflight_rows():
+        from .. import config as _cfgmod, preflight
+        return preflight.run(_cfgmod.HOME, _cfgmod.HOME / ".local" / "opt"
+                             / "wisp")
+
     def plan():
+        from .. import preflight
+        print("preflight:")
+        print(preflight.format_rows(preflight_rows()))
         ctx.host.install_files(dry_run=True, cfg=ctx.cfg, src=src,
                                deploy=deploy, plugin=plugin)
         ctx.host.install_bind(ctx.cfg, dry_run=True)
@@ -121,6 +129,11 @@ def _install(ctx, a, src, repo, commit):
         if a.dry_run:
             plan()
             return 0
+        from .. import preflight
+        rows = preflight_rows()
+        if preflight.blockers(rows):
+            raise CliError("E_FAILED", preflight.refusal(rows),
+                           "wispd doctor")
         ctx.host.install_files(dry_run=False, cfg=ctx.cfg, src=src,
                                deploy=deploy, plugin=plugin)
         ctx.host.install_bind(ctx.cfg)
@@ -252,11 +265,19 @@ def _update_args(p):
     p.add_argument("--sha256", metavar="HEX",
                    help="expected SHA-256 of the download, for a release "
                         "that publishes none")
+    p.add_argument("--restart", action="store_true",
+                   help="after a verified install, offer to restart wispd "
+                        "and check that it answers (with --rollback: after "
+                        "restoring)")
+    p.add_argument("--rollback", action="store_true",
+                   help="restore the files saved before the last update "
+                        "(also the way back from an unfinished update)")
 
 
 @command("daemon update",
          "Fetch the latest release, verify it, and install on your yes",
          ["wispd update --dry-run", "wispd update",
+          "wispd update --restart", "wispd update --rollback",
           "wispd update --force"],
          {"version": "str", "installed_version": "str", "sha256": "str",
           "changes": "dict", "dry_run": "bool", "applied": "bool",
@@ -267,8 +288,12 @@ def daemon_update(ctx, a):
     say = (lambda t: None) if ctx.json or ctx.flags.quiet \
         else (lambda t: print(t))
     try:
+        if a.rollback:
+            res = update.rollback(confirm=update.tty_confirm,
+                                  emit_text=say, restart=a.restart)
+            return ctx.emit(res)
         res = update.run_update(dry_run=a.dry_run, sha256=a.sha256,
-                                force=a.force,
+                                force=a.force, restart=a.restart,
                                 confirm=update.tty_confirm, emit_text=say)
     except update.UpdateError as e:
         raise CliError("E_FAILED", str(e), "wispd update --dry-run")
