@@ -79,11 +79,12 @@ class Cua:
         self.timeout_s = float(timeout_s)
         self.env = env
 
-    # -- availability (same contract as platform._cua_live) ------------
+    # -- availability (daemon must answer, as platform._cua_live) ------------
     def available(self) -> bool:
         if shutil.which(self.binary) is None:
             return False
-        return os.path.exists(socket_path())
+        from . import platform
+        return platform._cua_probe(socket_path())
 
     # -- generic call --------------------------------------------------
     def call(self, tool: str, args: dict | None = None, *,

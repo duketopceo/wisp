@@ -48,6 +48,7 @@ Item {
   }
 
   Text {
+    textFormat: Text.PlainText
     objectName: "cardSource"
     x: CardLib.PAD
     y: CardLib.PAD * 2 + root.size.picH

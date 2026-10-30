@@ -47,6 +47,7 @@ Rectangle {
       width: parent.width
       spacing: M.spacing.lg
       Text {
+        textFormat: Text.PlainText
         width: parent.width - progress.implicitWidth - M.spacing.lg
         text: root.service.ui("ui.onboard.title")
         color: root.tk.ink
@@ -55,6 +56,7 @@ Rectangle {
         font.weight: Font.DemiBold
       }
       Text {
+        textFormat: Text.PlainText
         id: progress
         text: root.count.done + "/" + root.count.total + " " + root.service.ui("ui.onboard.progress")
         color: root.tk.inkMuted
@@ -81,6 +83,7 @@ Rectangle {
             color: root.dotColor(modelData.state)
           }
           Text {
+            textFormat: Text.PlainText
             text: root.service.ui("ui.onboard.step." + modelData.id)
             color: root.tk.ink
             font.family: root.service.fontFamily
@@ -88,6 +91,7 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
           }
           Text {
+            textFormat: Text.PlainText
             text: (modelData.optional ? root.service.ui("ui.onboard.optional") + ", " : "")
               + root.service.ui("ui.onboard.state." + modelData.state)
             color: root.tk.inkMuted
@@ -98,6 +102,7 @@ Rectangle {
         }
 
         Text {
+          textFormat: Text.PlainText
           visible: modelData.detail !== ""
           width: parent.width
           text: modelData.detail + (modelData.state === "todo" && modelData.tryText !== ""

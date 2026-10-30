@@ -36,7 +36,7 @@ class TestPlatform(unittest.TestCase):
                 shot = platform.screenshot_cmd(Path("/t/s.png"))
                 self.assertEqual(shot[0], "grim")
                 self.assertEqual(
-                    platform.type_text_cmd("hi")[0], "wtype")
+                    platform.type_text_cmd()[0], "wtype")
                 self.assertEqual(platform.tts_binary(), "espeak-ng")
 
     def test_toggle_cmds_omit_duration(self):
@@ -66,7 +66,7 @@ class TestPlatform(unittest.TestCase):
                 self.assertEqual(
                     platform.screenshot_cmd(Path("/t/s.png"))[0], shot)
                 self.assertEqual(
-                    platform.type_text_cmd("hi")[0], typer)
+                    platform.type_text_cmd()[0], typer)
                 self.assertEqual(platform.current(), "linux")
 
     def test_desktop_fallback_order(self):

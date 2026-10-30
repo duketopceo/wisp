@@ -9,17 +9,18 @@
 function rateable(status, answer, result, errorCode) {
   if (status !== "done" || answer === "") return false
   if (errorCode !== "" && errorCode !== undefined) return false
-  return !/^(CANCELLED|ERROR)/.test(String(result))
+  return !/^(CANCELLED|ERROR|INTERRUPTED|ABORTED)/i.test(String(result))
 }
 
-// `wispd label set --json [--turn T] -- verdict [note]`: options first so
-// the optional note words are not read as options.
+// `wispd label set --json [--turn T] [--stdin] -- verdict`: the optional
+// note is typed text, so the caller writes it to the child's stdin
+// (`--stdin`) instead of putting it on the command line, where other local
+// accounts can read it.
 function labelCommand(wispd, verdict, turn, note) {
   var cmd = [wispd, "label", "set", "--json"]
   if (turn) cmd = cmd.concat(["--turn", turn])
-  cmd = cmd.concat(["--", verdict])
-  if (note) cmd = cmd.concat([note])
-  return cmd
+  if (note) cmd = cmd.concat(["--stdin"])
+  return cmd.concat(["--", verdict])
 }
 
 // closes the open note without writing a label

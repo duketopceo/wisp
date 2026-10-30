@@ -63,8 +63,10 @@ Item {
     CardLib.avoidRects(beacons, draw.shapes, service ? service.cuaTarget : null,
       bubbleShown ? { x: bubbleHost.x, y: bubbleHost.y, w: bubbleHost.width, h: bubbleHost.height } : null)
       .concat(cardShown ? [CardLib.rect(cardSpot.x, cardSpot.y, CardLib.cardSize(cardImage).w, CardLib.cardSize(cardImage).h)] : []))
-  // the talk key is held: the layer takes the pointer for a scribble
-  readonly property bool scribbleActive: service !== null && Scribble.active(service.status)
+  // the talk key is held: the layer takes the pointer for a scribble, but
+  // only while the service still holds the grab (it drops it on a cancel,
+  // an interrupt and after Scribble.HOLD_MS, TLY-430)
+  readonly property bool scribbleActive: service !== null && Scribble.active(service.status) && service.scribbleHeld === true
   property alias scribbleItem: scribble
   // "what can I ask here" after a quick tap: text only, never over a live turn
   readonly property bool chipsShown: service !== null && ChipsLib.quiet(service.status) && askChips.shown

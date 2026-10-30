@@ -48,7 +48,7 @@ class TestRateLib(unittest.TestCase):
     def test_label_command_names_the_turn_and_guards_the_note(self):
         cmd = js('R.labelCommand("wispd", "incorrect", "b2", "wrong app")')
         self.assertEqual(cmd, ["wispd", "label", "set", "--json", "--turn",
-                               "b2", "--", "incorrect", "wrong app"])
+                               "b2", "--stdin", "--", "incorrect"])
         cmd = js('R.labelCommand("wispd", "correct", "", "")')
         self.assertEqual(cmd, ["wispd", "label", "set", "--json", "--",
                                "correct"])

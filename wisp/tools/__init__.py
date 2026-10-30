@@ -31,7 +31,7 @@ declare their worst case; the policy refines per call (a `memory add`
 is T1, an mcp read is T0, an OAuth/credential call is T3). The lint in
 tests/test_policy.py fails when an entry lacks it.
 """
-from . import browser, desktop, mcpclient, social, system
+from . import browser, desktop, mcpclient, media, social, system
 
 RISK = {"safe": 0, "interactive": 1, "mutating": 2, "shell": 3}
 
@@ -65,6 +65,12 @@ REGISTRY = {
             "switch to an already-open browser tab — arg: its title or "
             "site, e.g. 'stripe' or 'gmail'",
             {"tier": "T0", "reversible": True, "external": False}),
+    "media": (media.media, "safe",
+              "media playback and volume through Omarchy's own media "
+              "controls — arg: play_pause, pause, play, next, previous, "
+              "volume_up, volume_down or mute (pause/play are one "
+              "toggle on Omarchy)",
+              {"tier": "T0", "reversible": True, "external": False}),
     "close": (desktop.close, "mutating",
               "close the active/matching window",
               {"tier": "T2", "reversible": False, "external": False}),

@@ -49,6 +49,7 @@ Rectangle {
     spacing: M.spacing.md
 
     Text {
+      textFormat: Text.PlainText
       visible: root.card !== null
       width: parent.width
       text: root.question ? root.service.ui("ui.now.asks") : root.service.ui("ui.confirm.title")
@@ -58,6 +59,7 @@ Rectangle {
       font.weight: Font.DemiBold
     }
     Text {
+      textFormat: Text.PlainText
       visible: root.card !== null
       width: parent.width
       text: root.card ? root.card.prompt : ""
@@ -69,6 +71,7 @@ Rectangle {
       font.pixelSize: M.font.answer
     }
     Text {
+      textFormat: Text.PlainText
       // the thing being approved (e.g. the dictation about to send) —
       // approving blind is no approval; daemon caps detail at 4k
       visible: root.card !== null && root.card.detail !== ""
@@ -128,6 +131,7 @@ Rectangle {
       }
     }
     Text {
+      textFormat: Text.PlainText
       visible: root.card !== null && (!root.question || root.card.options.length === 0)
       width: parent.width
       text: root.question ? root.service.ui("ui.question.hint") : root.service.ui("ui.confirm.hint")
@@ -137,6 +141,7 @@ Rectangle {
     }
 
     Text {
+      textFormat: Text.PlainText
       visible: root.failed && root.card === null
       width: parent.width
       text: root.service.errorMessage !== "" ? root.service.errorMessage : root.service.statusWord
@@ -147,6 +152,7 @@ Rectangle {
       font.weight: Font.DemiBold
     }
     Text {
+      textFormat: Text.PlainText
       visible: root.failed && root.card === null && root.service.errorHint !== ""
       width: parent.width
       text: root.service.errorHint

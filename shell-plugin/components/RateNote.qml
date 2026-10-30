@@ -43,6 +43,7 @@ Rectangle {
   }
 
   Text {
+    textFormat: Text.PlainText
     anchors.fill: field
     anchors.leftMargin: 0
     verticalAlignment: Text.AlignVCenter

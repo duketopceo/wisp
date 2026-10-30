@@ -19,6 +19,7 @@ Row {
   }
 
   Text {
+    textFormat: Text.PlainText
     anchors.verticalCenter: parent.verticalCenter
     text: root.wv.word
     color: root.tk[M.toneToken(root.wv.tone)]
@@ -28,6 +29,7 @@ Row {
   }
 
   Text {
+    textFormat: Text.PlainText
     anchors.verticalCenter: parent.verticalCenter
     visible: root.service.notice !== ""
     text: root.service.notice
