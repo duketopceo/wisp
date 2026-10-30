@@ -117,8 +117,9 @@ var LIVE = { listening: true, transcribing: true, deciding: true,
 // What the service does to the window on a state message: "open" on the
 // done edge of a rateable turn, "close" when the turn moved on, the daemon
 // went offline or the status left done, else "keep".
-function windowAction(prevStatus, status, prevTurn, turn, offline, rateable) {
-  if (offline || status !== "done") return "close"
+// A turn the daemon marked cancelled (errorCode) never holds a window.
+function windowAction(prevStatus, status, prevTurn, turn, offline, rateable, errorCode) {
+  if (offline || status !== "done" || errorCode === "cancelled") return "close"
   if (prevStatus !== "done" && LIVE[prevStatus] === true && rateable) return "open"
   if (turn !== prevTurn) return "close"
   return "keep"

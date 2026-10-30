@@ -78,3 +78,18 @@ function bounds(strokes) {
 
 // Is the layer taking input? Only while the talk key is held.
 function active(status) { return status === "listening" }
+
+// Hard cap on one hold of the screen. The layer masks the whole screen, so
+// a lost "turn ended" signal must never keep it: the service drops the hold
+// this long after the last press or stroke (TLY-430).
+var HOLD_MS = 6000
+
+// What the service does to the hold on a state message: "grab" on the
+// listening edge (or a new turn that is already listening), "release" the
+// moment the status leaves listening or the daemon says the turn was
+// cancelled, else "keep".
+function holdAction(prevStatus, status, errorCode, prevTurn, turn) {
+  if (status !== "listening" || errorCode === "cancelled") return "release"
+  if (prevStatus !== "listening" || turn !== prevTurn) return "grab"
+  return "keep"
+}

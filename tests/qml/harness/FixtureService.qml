@@ -61,6 +61,9 @@ Item {
   // fixture alone (mods.ratingWindow overrides), never from the previous case.
   property bool ratingWindowOpen: false
   property bool pillHover: false
+  // the scribble grab (WispService.scribbleHeld); fixtures hold it while listening
+  property bool scribbleHeld: true
+  function scribbleTouch() {}
   property alias ratingTimer: ratingTimerItem
   Timer {
     id: ratingTimerItem
