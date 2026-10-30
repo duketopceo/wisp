@@ -144,6 +144,11 @@ class Judge:
         if self.spent >= self.cap:
             self.capped = True
             return _unjudged("cap")
+        # the owner's [agent] screenshots = false keeps the screen off
+        # the network for the judge too
+        if str(self.cfg.get("agent", {}).get("screenshots", "true")
+               ).lower() != "true":
+            return _unjudged("screenshots off")
         try:
             shot = capture()
         except Exception:

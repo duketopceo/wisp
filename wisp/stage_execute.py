@@ -76,6 +76,11 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
     if gated and risk > threshold:
         return f"BLOCKED (risk={risk:.2f} > {threshold})"
 
+    # a dev-mode run drives only act/tool/launch/answer turns; any other
+    # route the router picks (agent, setting, learn ...) is not run
+    if (cfg or {}).get("dev", {}).get("run_id") and \
+            route not in ("act", "tool", "launch", "answer"):
+        return f"SKIPPED (dev run: route {route} not run)"
     if route == "routine":
         return _run_teach()
     if route == "agent":
