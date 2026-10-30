@@ -143,6 +143,12 @@ class State:
         # takes it down
         if status == "listening" and "rate_prompt" not in fields:
             self.rate_prompt = None
+        # an error belongs to the turn that hit it: a new turn starts
+        # clean, so a "cancelled" code can never leak into the next one
+        # (the scribble grab keys on it)
+        if status == "listening" and "error_code" not in fields:
+            self.error_code = ""
+            self.error_detail = ""
         # speak-reply point annotations only live while speaking —
         # any other status clears them so a later turn can never
         # read the previous turn's beacons
