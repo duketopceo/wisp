@@ -561,6 +561,32 @@ class TestFlow(OnboardCase):
         self.assertEqual(onboard.Progress().done, {})
 
 
+class TestOptionalNeverBlocks(OnboardCase):
+    """U3: a missing or declined optional component never stops setup, and
+    nothing is downloaded or called without a yes."""
+
+    def test_declining_agents_and_cua_still_finishes_the_required_steps(self):
+        f = Fakes(agents="absent")
+        res, _ = self.walk(f, "y", "y", "y", "n", "n", "y")
+        st = onboard.status(self.cfg, f.probes(), onboard.Progress())
+        self.assertTrue(st["finished"])
+        self.assertEqual((f.installed, f.logins, f.smokes), ([], [], 0))
+        self.assertNotIn("agents", res["done"])
+
+    def test_the_agents_step_alone_does_nothing_until_it_is_run(self):
+        f = Fakes(agents="absent")
+        st = onboard.status(self.cfg, f.probes(), self.progress)
+        row = next(r for r in st["steps"] if r["id"] == "agents")
+        self.assertEqual(row["state"], "todo")
+        self.assertEqual((f.installed, f.logins, f.smokes), ([], [], 0))
+
+    def test_a_status_check_writes_nothing_even_with_everything_missing(self):
+        f = Fakes(agents="absent", keys=set(), recorder=False, model=False,
+                  up=set())
+        onboard.status(self.cfg, f.probes(), self.progress)
+        self.assertEqual(tree(self.home), {})
+
+
 class TestStatus(OnboardCase):
     def test_status_shape_for_the_panel_card(self):
         self.walk(Fakes(), "y", "q")

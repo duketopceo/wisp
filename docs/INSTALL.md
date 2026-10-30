@@ -109,9 +109,10 @@ directory, checks its SHA-256 against the digest the release publishes (the
 asset digest, or a `SHA256SUMS` asset), and aborts on a mismatch or when
 no digest is published (pass `--sha256 <hex>` if you have one from a
 source you trust). `--dry-run` deletes the download again and writes
-nothing. A yes runs that tarball's `wispd install`; it does not restart
-the daemon, so apply it with `systemctl --user restart wispd`. Installing
-needs a terminal to ask you.
+nothing. A yes saves a backup of the managed files (below), runs that
+tarball's `wispd install`, and checks every installed file against the
+verified release. It does not restart the daemon unless you pass
+`--restart` and say yes. Installing needs a terminal to ask you.
 
 `wispd update` never goes backwards. It compares the release with what is
 installed (version numbers when you installed a release; when you
@@ -120,6 +121,90 @@ GitHub) and refuses a release that is older, the same, diverged from your
 install, or that it cannot compare, before downloading anything. A
 `--dry-run` still previews it and says so. `wispd update --force` installs
 it anyway, and still asks for your yes.
+
+### The stages of an update
+
+1. **Preflight.** OS, architecture, Python, free space, systemd, optional
+   tools and the current install are checked first. A `MISS` row stops
+   the update or install before anything is written and says what to fix;
+   a `warn` row (no systemd, no OpenCode, no Ollama, no `hyprctl`) is
+   shown and never blocks. `wispd doctor` and `wispd install --dry-run`
+   show the same rows.
+2. **Preview.** The version, digest and every file that would change. It
+   also says when the release changes the shell plugin or the units,
+   because rollback does not cover them.
+3. **Consent.** Nothing is downloaded into the install, written or
+   restarted without your yes. Nothing reads or prints a key.
+4. **Verify the download.** SHA-256 against the published digest, then
+   ordering (never backwards), before anything outside a temp directory
+   is touched.
+5. **Back up.** The managed files under `~/.local/opt/wisp/` (`wisp/`,
+   `shells/`, `wispd`, `build_harness.py`, `CHANGELOG.md`, `deploy.json`)
+   are copied to `~/.local/state/wisp/update/<id>/` with a manifest, owner
+   only. Your config, keys, memories, skills and documents are not in it
+   and are never read or changed.
+6. **Apply and verify.** The installer runs, the release version is
+   recorded, and every file is compared with the verified release. A
+   mismatch is reported as a failure, never as success.
+7. **Restart (optional).** `wispd update --restart` asks, restarts
+   `wispd`, and checks that it answers.
+
+### When an update fails
+
+Whatever the failure (installer error, interruption, mismatch, a daemon
+that does not answer), the backup and manifest stay and `wispd update`
+refuses to start another update until you decide:
+
+```sh
+wispd update --rollback            # restore the saved files, on your yes
+wispd update --rollback --restart  # and offer to restart the daemon
+```
+
+Rollback restores a file only when it is still what the update wrote (or,
+after an interrupted run, anything that is not the old content). A file
+you changed since the update is kept and listed; files you did not get
+from Wisp are never touched. Running it twice does nothing the second
+time. Read the limits: this is a backup of managed files, not a
+filesystem snapshot. The shell plugin directory, systemd units, desktop
+entry, the hotkey bind, installed agents and anything outside
+`~/.local/opt/wisp/` are not rolled back, so a rollback after a release
+that changed them can leave the old core with newer plugin files. After
+a failed first install there is no backup; use Uninstall below.
+
+### Offline, degraded and kept files
+
+With no network, `wispd update` stops at the download and changes nothing;
+the installed copy keeps working. Without systemd the files install and
+the units are not started; start `wispd` yourself. Without OpenCode,
+Ollama, a microphone permission or a keyring, install and onboarding still
+finish: those steps are optional, skipped on request and never run
+without a yes.
+
+Backups accumulate under `~/.local/state/wisp/update/`. Nothing deletes
+them. After an update you have verified yourself, remove old
+directories there by hand if you want the space back; keep the newest
+one until you are sure.
+
+### What the download proves
+
+A release download is checked against a SHA-256 published by the same
+GitHub release. That catches a corrupted or swapped file in transit. It
+does not authenticate the publisher: if the release itself were replaced,
+the digest would match. For an independent check, take the digest from a
+source you trust and pass `--sha256 <hex>`. There is no one-line `curl |
+sh` bootstrap because it would need a signing key that is distributed
+separately from the release; that is tracked as follow-up work.
+
+### Release checklist
+
+Before a release is announced, record in the release notes: OS,
+architecture and release id; whether an isolated first install, an update
+and a rollback each ran in a temporary HOME; whether failure injection
+(interrupted installer, wrong digest, daemon that does not answer) ran;
+and the result of one spoken test on a real machine (hold the bind, say a
+sentence, say what you heard). A check that was not run is listed as not
+run. A release is not called verified on the strength of checks that were
+skipped.
 
 ## Deploying a git ref
 
