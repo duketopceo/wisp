@@ -4,6 +4,7 @@ import "../../../shell-plugin/lib/copy.js" as Copy
 import "../../../shell-plugin/lib/motion.js" as Motion
 import "../../../shell-plugin/lib/run.js" as Run
 import "../../../shell-plugin/lib/rate.js" as Rate
+import "../../../shell-plugin/lib/dev.js" as Dev
 
 // Stand-in for WispService in the snapshot harness: the same property and
 // function names components read, filled from a lib/state.js view built from
@@ -50,6 +51,12 @@ Item {
   // Dev tab (U5): the harness never runs the call; scenes pass the data
   // straight to the component
   property bool devPanel: false
+  readonly property bool devOn: Dev.sessionOn(view.raw)
+  readonly property int devRunsLeft: Dev.runsLeft(view.raw)
+  readonly property bool devTab: devPanel || devOn
+  property var devRuns: null
+  property bool devRunsLoading: false
+  property string devRunsError: ""
   property var devData: null
   property bool devLoading: false
   property string devError: ""

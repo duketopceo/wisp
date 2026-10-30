@@ -85,6 +85,8 @@ def decide(name: str, arg: str, cfg: dict | None, state=None) -> str:
 def preempted(name: str, arg: str, cfg: dict | None) -> str | None:
     """Hard preempts before policy: denylist on shell + text-bearing
     args, live secret keys, and shell needs allow_shell."""
+    if name in ((cfg or {}).get("dev", {}).get("deny_tools") or ()):
+        return f"REFUSED (dev run denies {name})"
     tier = cua_safety.effective_tier(name, cfg)
     if tier == "shell" or name in tools.TEXT_INPUT:
         if tools.denied(arg):
@@ -109,7 +111,22 @@ def gate(name: str, arg: str, cfg: dict, confirm,
     """The act loop's gate: a refusal/result string when the call is
     blocked or handed off, else None. `batch` is the reply's remaining
     (name, arg) calls so one checkpoint card covers every gated step
-    still queued — not a card per tool."""
+    still queued — not a card per tool.
+
+    In a dev-mode run (`[dev] run_id` set on the run's config copy) a
+    refusal is also traced as `gate_stop`, which is how the runner
+    records the task as stopped."""
+    out = _gate(name, arg, cfg, confirm, state, batch, ctx)
+    if out is not None and (cfg or {}).get("dev", {}).get("run_id") \
+            and str(out).startswith(("SKIPPED (", "REFUSED (")):
+        from . import trace
+        trace.emit(trace.current(), "gate_stop", "policy",
+                   {"tool": name, "result": str(out)[:200]})
+    return out
+
+
+def _gate(name: str, arg: str, cfg: dict, confirm,
+          state=None, batch=(), ctx=None) -> str | None:
     hit = preempted(name, arg, cfg)
     if hit:
         return hit

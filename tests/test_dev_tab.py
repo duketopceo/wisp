@@ -173,12 +173,14 @@ class TestWiring(unittest.TestCase):
         self.fix = read(HARNESS / "FixtureService.qml")
 
     def test_flag_off_no_dev_call(self):
-        # the only place the command is built is behind the flag
+        # the only place the command is built is behind the flag or session
         m = re.search(r"function loadDev\(\)\s*\{(.*?)\n  \}", self.svc, re.S)
         self.assertIsNotNone(m, "loadDev() missing")
-        self.assertIn("devPanel", m.group(1))
+        self.assertIn("devTab", m.group(1))
         self.assertIn("devProc", m.group(1))
         self.assertEqual(len(re.findall(r"devProc\.running\s*=\s*true",
+                                        self.svc)), 1)
+        self.assertEqual(len(re.findall(r"devRunsProc\.running\s*=\s*true",
                                         self.svc)), 1)
 
     def test_proc_is_one_shot_devlog_command(self):
@@ -195,14 +197,15 @@ class TestWiring(unittest.TestCase):
 
     def test_service_members_mirrored_in_fixture(self):
         for name in ("devPanel", "devData", "devLoading", "devError",
-                     "loadDev"):
+                     "loadDev", "devTab", "devOn", "devRunsLeft", "devRuns",
+                     "devRunsLoading", "devRunsError"):
             self.assertRegex(self.svc, name)
             self.assertRegex(self.fix, name)
 
     def test_panel_five_tabs_only_with_flag(self):
         self.assertIn('["now", "agents", "memory", "settings"]', self.panel)
         self.assertRegex(self.panel,
-                         r"tabKeys:\s*service && service\.devPanel\s*\?"
+                         r"tabKeys:\s*service && service\.devTab\s*\?"
                          r"\s*baseTabs\.concat\(\[\"devtab\"\]\)\s*:\s*baseTabs")
         # Settings stays index 3, Dev is index 4
         self.assertIn("tab === 3", self.panel)
@@ -240,7 +243,8 @@ class TestScenes(unittest.TestCase):
         scenes = json.loads(read(HARNESS / "scenes.json"))
         self.assertIn("DevTab", scenes)
         names = set(scenes["DevTab"]["variants"])
-        self.assertTrue({"data", "empty", "loading", "error"} <= names)
+        self.assertTrue({"data", "empty", "loading", "error", "runs",
+                         "runs_empty", "runs_ab"} <= names)
         for theme in ("dark", "light"):
             for v in names:
                 g = ROOT / "tests" / "qml" / "snapshots" / theme / "1x" / \
@@ -252,6 +256,209 @@ class TestScenes(unittest.TestCase):
         d = scenes["DevTab"]["variants"]["data"]
         self.assertTrue(d["reply"]["turns"])
         self.assertTrue(d.get("selectedId"))
+
+
+def runsum(**kw):
+    r = {"run_id": "20261030T081200Z", "tasks": 6, "ran": 6, "judged_n": 5,
+         "unjudged": 1, "judge_capped": False,
+         "mix": {"judged": {"success": 3, "stopped": 1, "incomplete": 1,
+                            "wrong_tries": 0, "unjudged": 1},
+                 "confirmed": {"correct": 2, "incorrect": 1,
+                               "unreviewed": 3}},
+         "accuracy": {"judged": 0.6, "confirmed": 2 / 3},
+         "drift_count": 1,
+         "cost": {"task_usd": 0.01, "judge_usd": 0.0112, "total_usd": 0.0212},
+         "stage_ms": {"wall": 9000},
+         "started": "2026-10-30T08:12:09+00:00",
+         "ended": "2026-10-30T08:13:40+00:00", "rows": []}
+    r.update(kw)
+    return r
+
+
+WORDS = {"success": "success", "stopped": "stopped",
+         "incomplete": "incomplete", "wrong_tries": "wrong tries",
+         "unjudged": "unjudged", "a": "A better", "b": "B better",
+         "tie": "tie"}
+
+
+@unittest.skipUnless(jsnode.NODE, "node not installed")
+class TestRunsLib(unittest.TestCase):
+    def test_command_and_parse(self):
+        self.assertEqual(js("D.runsCommand('/x/wispd')"),
+                         ["/x/wispd", "dev", "runs", "--json"])
+        body = {"runs": [runsum()]}
+        r = js("D.parseRuns(%r)" % json.dumps({"ok": True, "data": body}))
+        self.assertTrue(r["ok"])
+        self.assertEqual(len(r["data"]["runs"]), 1)
+        self.assertTrue(js("D.parseRuns(%r)" % json.dumps(body))["ok"])
+        self.assertFalse(js("D.parseRuns('')")["ok"])
+        self.assertFalse(js("D.parseRuns(%r)" % json.dumps(
+            {"turns": []}))["ok"])
+        self.assertEqual(js("D.parseRuns(%r)" % json.dumps(
+            {"ok": False, "error": {"code": "E_X"}}))["error"], "E_X")
+
+    def test_empty_and_latest(self):
+        self.assertTrue(js("D.isRunsEmpty(null)"))
+        self.assertTrue(js("D.isRunsEmpty({runs: []})"))
+        a, b = runsum(run_id="new"), runsum(run_id="old")
+        d = json.dumps({"runs": [a, b]})
+        self.assertFalse(js("D.isRunsEmpty(%s)" % d))
+        self.assertEqual(js("D.latestRun(%s)" % d)["run_id"], "new")
+        self.assertIsNone(js("D.latestRun({runs: []})"))
+
+    def test_run_view_summary(self):
+        v = js("D.runView(%s, %s)" % (json.dumps(runsum()),
+                                      json.dumps(WORDS)))
+        self.assertEqual(v["when"], "2026-10-30 08:12")
+        self.assertEqual(v["judged"], "60%")
+        self.assertEqual(v["confirmed"], "67%")
+        self.assertEqual(v["tasks"], 6)
+        self.assertEqual(v["drift"], 1)
+        self.assertEqual(v["cost"], "$0.021")
+        self.assertFalse(v["ab"])
+        keys = [s["key"] for s in v["segments"]]
+        self.assertEqual(keys, ["success", "incomplete", "stopped",
+                                "unjudged"])
+        self.assertAlmostEqual(sum(s["share"] for s in v["segments"]), 1.0)
+        self.assertEqual(v["mixLine"],
+                         "3 success \u00b7 1 incomplete \u00b7 1 stopped"
+                         " \u00b7 1 unjudged")
+
+    def test_run_view_unknowns_are_dashes(self):
+        r = runsum(accuracy={"judged": None, "confirmed": None},
+                   cost={}, started=None, ended=None, mix={}, tasks=0)
+        v = js("D.runView(%s, %s)" % (json.dumps(r), json.dumps(WORDS)))
+        self.assertEqual((v["judged"], v["confirmed"], v["cost"]),
+                         ("-", "-", "-"))
+        self.assertEqual(v["when"], "20261030T081200Z")
+        self.assertEqual(v["segments"], [])
+
+    def test_run_view_ab_pair_line(self):
+        pairs = [{"index": i, "goal": "g", "a": "success", "b": "stopped",
+                  "better": b} for i, b in enumerate(
+                      ["a", "a", "b", "tie"])]
+        r = runsum(vs="brain.default=acme/model", pairs=pairs,
+                   arms={"a": runsum(), "b": runsum()})
+        v = js("D.runView(%s, %s)" % (json.dumps(r), json.dumps(WORDS)))
+        self.assertTrue(v["ab"])
+        self.assertEqual(v["vs"], "brain.default=acme/model")
+        self.assertEqual(v["pairLine"],
+                         "2 A better \u00b7 1 B better \u00b7 1 tie")
+
+    def test_badge_text(self):
+        w = {"dev": "dev", "local": "local", "one": "run left",
+             "many": "runs left"}
+        self.assertEqual(js("D.badgeText(true, 3, %s)" % json.dumps(w)),
+                         "dev \u00b7 3 runs left")
+        self.assertEqual(js("D.badgeText(true, 1, %s)" % json.dumps(w)),
+                         "dev \u00b7 1 run left")
+        self.assertEqual(js("D.badgeText(false, 0, %s)" % json.dumps(w)),
+                         "local")
+
+    def test_session_helpers(self):
+        self.assertTrue(js("D.sessionOn({dev: {on: true, runs_left: 4}})"))
+        self.assertFalse(js("D.sessionOn({dev: {on: 'yes'}})"))
+        self.assertFalse(js("D.sessionOn({})"))
+        self.assertFalse(js("D.sessionOn(null)"))
+        self.assertEqual(js("D.runsLeft({dev: {on: true, runs_left: 4}})"), 4)
+        self.assertEqual(js("D.runsLeft({dev: {on: true, runs_left: -2}})"), 0)
+        self.assertEqual(js("D.runsLeft({})"), 0)
+
+
+@unittest.skipUnless(jsnode.NODE, "node not installed")
+class TestBarDevBadge(unittest.TestCase):
+    BASE = {"status": "idle", "result": "", "errorCode": "",
+            "offline": False, "confirm": False, "windowOpen": False,
+            "rateable": False, "run": None}
+
+    def pill(self, **kw):
+        o = dict(self.BASE, **kw)
+        return jsnode.call("B.pillState(%s)" % json.dumps(o), B="bar")
+
+    def test_idle_without_dev_is_still_hidden(self):
+        v = self.pill()
+        self.assertFalse(v["visible"])
+        self.assertFalse(v.get("dev", False))
+
+    def test_idle_with_dev_shows_only_the_badge(self):
+        v = self.pill(dev=True)
+        self.assertTrue(v["visible"])
+        self.assertTrue(v["dev"])
+        self.assertEqual((v["kind"], v["glyph"], v["wordKey"]),
+                         ("idle", "", ""))
+
+    def test_live_state_keeps_its_pill_and_gains_the_badge(self):
+        v = self.pill(status="acting", dev=True)
+        self.assertEqual((v["kind"], v["glyph"]), ("acting", "act"))
+        self.assertTrue(v["dev"])
+        self.assertFalse(self.pill(status="acting")["dev"])
+
+    def test_error_keeps_its_red_border_with_dev(self):
+        v = self.pill(status="error", errorCode="timeout", dev=True)
+        self.assertEqual((v["kind"], v["border"]), ("error", "fail"))
+        self.assertTrue(v["dev"])
+
+    def test_offline_never_shows_the_badge(self):
+        v = self.pill(offline=True, dev=True)
+        self.assertFalse(v["visible"])
+
+    def test_badge_uses_the_yellow_token(self):
+        src = read(PLUGIN / "components" / "BarPill.qml")
+        self.assertRegex(src, r"info\.dev")
+        self.assertIn("root.tk.needsYou", src.split("info.dev", 1)[1])
+        self.assertIn("ui.bar.badge", src)
+        self.assertNotRegex(src, r"\bTimer\s*\{")
+
+
+class TestRunsWiring(unittest.TestCase):
+    def setUp(self):
+        self.svc = read(PLUGIN / "WispService.qml")
+        self.panel = read(PLUGIN / "Panel.qml")
+        self.tab = read(PLUGIN / "components" / "DevTab.qml")
+
+    def test_runs_proc_is_one_shot_and_loaded_with_the_turns(self):
+        m = re.search(r"Process\s*\{\s*id:\s*devRunsProc(.*?)\n  \}",
+                      self.svc, re.S)
+        self.assertIsNotNone(m)
+        self.assertIn("Dev.parseRuns", m.group(1))
+        self.assertNotRegex(m.group(1), r"Timer|FileView")
+        self.assertIn("Dev.runsCommand", self.svc)
+        loader = re.search(r"function loadDev\(\)\s*\{(.*?)\n  \}",
+                           self.svc, re.S).group(1)
+        self.assertIn("devRunsProc", loader)
+
+    def test_session_flag_reads_state_dev_field(self):
+        self.assertRegex(self.svc, r"devOn:\s*Dev\.sessionOn")
+        self.assertRegex(self.svc, r"devTab:\s*devPanel \|\| devOn")
+
+    def test_panel_badge_and_runs_wiring(self):
+        self.assertIn("Dev.badgeText", self.panel)
+        self.assertIn("service.devTab", self.panel)
+        self.assertRegex(self.panel, r"runsReply:\s*col\.svc\.devRuns")
+        self.assertIn("devOn", self.panel)
+
+    def test_dev_tab_runs_section_rules(self):
+        self.assertIn("D.runView", self.tab)
+        self.assertIn("ui.dev.runs.empty", self.tab)
+        self.assertNotRegex(self.tab, r"\b(Timer|Process|FileView)\s*\{")
+
+    def test_new_copy_keys(self):
+        from wisp import copy
+        for k in ("ui.bar.badge", "ui.dev.badge.one", "ui.dev.badge.many",
+                  "ui.dev.runs", "ui.dev.runs.empty", "ui.dev.runs.error",
+                  "ui.dev.out.success", "ui.dev.out.stopped",
+                  "ui.dev.out.incomplete", "ui.dev.out.wrong_tries",
+                  "ui.dev.out.unjudged", "ui.dev.pair.a", "ui.dev.pair.b",
+                  "ui.dev.pair.tie"):
+            self.assertIn(k, copy.STRINGS)
+
+    def test_goldens_exist(self):
+        for theme in ("dark", "light"):
+            base = ROOT / "tests" / "qml" / "snapshots" / theme / "1x"
+            for name in ("DevTab__runs", "DevTab__runs_empty",
+                         "DevTab__runs_ab", "BarPillWindow__dev_idle",
+                         "BarPillWindow__dev_acting"):
+                self.assertTrue((base / f"{name}.png").exists(), name)
 
 
 if __name__ == "__main__":

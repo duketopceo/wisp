@@ -222,6 +222,9 @@ FIELDS = (
     _f("dev.panel", "bool", "false",
        "Show the Dev tab (gate, recent turns, stage timings) in the panel; "
        "local-only, off for everyone else"),
+    _f("dev.judge_cap_usd", "usd", "1.00",
+       "Most one dev run may spend on judging its tasks (the rest of the "
+       "run is left unjudged at the cap)"),
     _f("verify.judge_timeout_s", "int", "20",
        "Seconds the verify VLM judge may take before the step lands "
        "unverifiable",

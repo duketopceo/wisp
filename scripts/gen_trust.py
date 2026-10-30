@@ -48,7 +48,8 @@ HOSTS = {
     "openrouter.ai": dict(
         what="Answer model, router and decision calls, the vision fallback "
              "for finding a control on screen, and (only if you turn "
-             "`[recall] provider` on) memory embeddings.",
+             "`[recall] provider` on) memory embeddings. In dev mode "
+             "only, the run judge (`wispd dev run`).",
         sends=[TEXT, SHOT],
         detail="What you said (as text), the focused app and window "
                "names, recent turns, memory notes, a selection or copied "
@@ -60,7 +61,9 @@ HOSTS = {
                "refused while one has focus.",
         default="Yes. It is the default answer brain.",
         key="You. `OPENROUTER_API_KEY` in your environment, "
-            "`~/.config/wisp/.env` or your keyring.",
+            "`~/.config/wisp/.env` or your keyring. The dev-mode judge "
+            "uses `omaseal://openrouter/orchestral` (your eval key) "
+            "instead, never the default key.",
         control="`[brain] default` and `[brain] fallback` take a local "
                 "model (`ollama:`, `lmstudio:`, `mlx:`) and nothing then "
                 "leaves; `[agent] screenshots = false` keeps the screen "

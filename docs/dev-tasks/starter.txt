@@ -1,0 +1,22 @@
+# Starter task list for `wispd dev run`. One task per line; `#` starts a comment.
+# Every task here only opens, finds, switches or controls playback. Nothing types,
+# sends, buys, deletes or posts, since a dev run denies those.
+
+# media
+pause youtube
+play the next song
+turn the volume down
+
+# open
+open my stripe tab
+open the file manager
+open the calculator
+
+# find and navigate
+find the downloads folder
+go to github.com in a new tab
+scroll down the page
+
+# workspace and tab
+switch to workspace 2
+switch to the previous tab

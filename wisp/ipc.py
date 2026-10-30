@@ -30,11 +30,12 @@ _TIMEOUT = 10
 # treated as mutating and refused for marked peers.
 READ_CMDS = frozenset({
     "status", "task_status", "context", "subscribe", "captures",
-    "suggestions", "task_output", "task_artifacts", "devlog",
+    "suggestions", "task_output", "task_artifacts", "devlog", "dev_runs",
 })
 MUTATING_CMDS = frozenset({
     "agent", "task_cancel", "choice", "config", "memory", "stop",
     "interrupt", "listen", "ask", "label", "dictate_correct", "learn", "harness",
+    "dev", "dev_run", "dev_stop",
 })
 # The one command a marked peer may send besides READ_CMDS (U8, R13): the
 # MCP bridge's tool call. Its handler gates on a session token, the

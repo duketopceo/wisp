@@ -1,5 +1,6 @@
-// Panel Dev tab (local only, behind `[dev] panel`): the v1 gate card, the
-// recent turns with a stacked per-stage bar, the selected turn's stage
+// Panel Dev tab (local only, behind `[dev] panel` or a dev session): the
+// latest dev run (when, tasks, judged vs confirmed accuracy, the outcome
+// mix, drift, cost and an A/B pair line), the v1 gate card, the recent turns with a stacked per-stage bar, the selected turn's stage
 // breakdown and the top misses. A pure renderer: the Panel hands in the
 // parsed `wispd dev turns --json` data (service.devData), the loading flag
 // and the error code, and the refresh button leaves through `refresh`
@@ -18,6 +19,10 @@ Column {
   property bool loading: false
   // "" when fine, else a short code (the words come from the copy table)
   property string error: ""
+  // `wispd dev runs --json` data: {runs: [...]}, newest first
+  property var runsReply: null
+  property bool runsLoading: false
+  property string runsError: ""
   // the picked turn id; "" selects the newest
   property string selectedId: ""
   signal refresh()
@@ -29,6 +34,19 @@ Column {
   readonly property var gate: D.gateView(root.reply ? root.reply.gate : null)
   readonly property var names: D.stageNames(root.turns)
   readonly property var pick: D.selected(root.turns, root.selectedId)
+  readonly property var run: D.latestRun(root.runsReply)
+  readonly property var runWords: ({
+    success: root.service ? root.service.ui("ui.dev.out.success") : "",
+    stopped: root.service ? root.service.ui("ui.dev.out.stopped") : "",
+    incomplete: root.service ? root.service.ui("ui.dev.out.incomplete") : "",
+    wrong_tries: root.service ? root.service.ui("ui.dev.out.wrong_tries") : "",
+    unjudged: root.service ? root.service.ui("ui.dev.out.unjudged") : "",
+    a: root.service ? root.service.ui("ui.dev.pair.a") : "",
+    b: root.service ? root.service.ui("ui.dev.pair.b") : "",
+    tie: root.service ? root.service.ui("ui.dev.pair.tie") : "" })
+  readonly property var rv: D.runView(root.run, root.runWords)
+  readonly property int mixW: root.width - 4 * M.spacing.xxl
+  readonly property var mixWidths: D.barWidths(root.rv.segments, root.mixW)
   readonly property int barW: 150
   readonly property int rowH: 34
 
@@ -72,6 +90,180 @@ Column {
         anchors.margins: -M.spacing.lg
         hoverEnabled: true
         onClicked: root.refresh()
+      }
+    }
+  }
+
+  // 0. latest dev run: independent of the turn log, shown once its read has
+  // started (loading), failed or answered
+  Rectangle {
+    visible: root.runsLoading || root.runsError !== "" || root.runsReply !== null
+    width: parent.width
+    height: runCol.implicitHeight + 2 * M.spacing.xxl
+    radius: M.radius.chrome
+    color: root.tk.raised
+    border.width: M.size.keyline
+    border.color: root.tk.keyline
+
+    Column {
+      id: runCol
+      x: M.spacing.xxl
+      y: M.spacing.xxl
+      width: parent.width - 2 * M.spacing.xxl
+      spacing: M.spacing.md
+
+      Item {
+        width: parent.width
+        height: runTitle.implicitHeight
+        Text {
+          textFormat: Text.PlainText
+          id: runTitle
+          text: root.ui("ui.dev.runs")
+          color: root.tk.ink
+          font.family: root.service.fontFamily
+          font.pixelSize: M.font.body
+          font.weight: Font.DemiBold
+        }
+        Text {
+          textFormat: Text.PlainText
+          anchors.right: parent.right
+          anchors.baseline: runTitle.baseline
+          visible: root.run !== null
+          text: root.rv.when
+          color: root.tk.inkMuted
+          font.family: root.service.fontFamily
+          font.pixelSize: M.font.label
+        }
+      }
+
+      Text {
+        textFormat: Text.PlainText
+        visible: root.runsLoading && root.run === null
+        width: parent.width
+        text: root.ui("ui.dev.loading")
+        color: root.tk.inkMuted
+        font.family: root.service.fontFamily
+        font.pixelSize: M.font.label
+      }
+      Text {
+        textFormat: Text.PlainText
+        visible: !root.runsLoading && root.runsError !== "" && root.run === null
+        width: parent.width
+        text: root.ui("ui.dev.runs.error")
+        wrapMode: Text.Wrap
+        color: root.tk.fail
+        font.family: root.service.fontFamily
+        font.pixelSize: M.font.label
+      }
+      Column {
+        visible: !root.runsLoading && root.runsError === "" && root.run === null
+        width: parent.width
+        spacing: M.spacing.sm
+        Text {
+          textFormat: Text.PlainText
+          width: parent.width
+          text: root.ui("ui.dev.runs.empty")
+          wrapMode: Text.Wrap
+          color: root.tk.ink
+          font.family: root.service.fontFamily
+          font.pixelSize: M.font.body
+        }
+        Text {
+          textFormat: Text.PlainText
+          width: parent.width
+          text: root.ui("ui.dev.runs.empty.hint")
+          wrapMode: Text.Wrap
+          color: root.tk.inkMuted
+          font.family: root.service.fontFamily
+          font.pixelSize: M.font.label
+        }
+      }
+
+      // accuracy: judged is the headline, confirmed is the owner's own count
+      Item {
+        visible: root.run !== null
+        width: parent.width
+        height: judgedText.implicitHeight
+        Text {
+          textFormat: Text.PlainText
+          id: judgedText
+          text: root.rv.judged
+          color: root.tk.ink
+          font.family: root.service.fontFamily
+          font.pixelSize: M.font.title
+          font.weight: Font.DemiBold
+        }
+        Text {
+          textFormat: Text.PlainText
+          x: judgedText.width + M.spacing.md
+          anchors.baseline: judgedText.baseline
+          text: root.ui("ui.dev.runs.judged") + D.DOT + root.rv.confirmed
+            + " " + root.ui("ui.dev.runs.confirmed")
+          color: root.tk.inkMuted
+          font.family: root.service.fontFamily
+          font.pixelSize: M.font.body
+        }
+      }
+
+      // outcome mix bar and its words
+      Row {
+        visible: root.run !== null && root.rv.segments.length > 0
+        height: 8
+        Repeater {
+          model: root.rv.segments
+          delegate: Rectangle {
+            required property var modelData
+            required property int index
+            width: root.mixWidths[index]
+            height: 8
+            color: root.tone(modelData.token)
+          }
+        }
+      }
+      Text {
+        textFormat: Text.PlainText
+        visible: root.run !== null && root.rv.mixLine !== ""
+        width: parent.width
+        text: root.rv.mixLine
+        wrapMode: Text.Wrap
+        color: root.tk.inkMuted
+        font.family: root.service.fontFamily
+        font.pixelSize: M.font.label
+      }
+
+      Text {
+        textFormat: Text.PlainText
+        visible: root.run !== null
+        width: parent.width
+        text: root.rv.tasks + " " + root.ui("ui.dev.runs.tasks") + D.DOT
+          + root.ui("ui.dev.runs.drift") + " " + root.rv.drift + D.DOT
+          + root.ui("ui.dev.runs.cost") + " " + root.rv.cost
+        elide: Text.ElideRight
+        color: root.tk.inkMuted
+        font.family: root.service.fontFamily
+        font.pixelSize: M.font.label
+      }
+
+      // A/B: the pair counts, and the one setting that differed
+      Text {
+        textFormat: Text.PlainText
+        visible: root.run !== null && root.rv.ab
+        width: parent.width
+        text: root.ui("ui.dev.runs.vs") + " " + root.rv.pairLine
+        elide: Text.ElideRight
+        color: root.tk.ink
+        font.family: root.service.fontFamily
+        font.pixelSize: M.font.label
+      }
+      Text {
+        textFormat: Text.PlainText
+        visible: root.run !== null && root.rv.ab && root.rv.vs !== ""
+        width: parent.width
+        text: root.rv.vs
+        elide: Text.ElideMiddle
+        color: root.tk.inkMuted
+        font.family: root.service.fontFamily
+        font.pixelSize: M.font.caption
       }
     }
   }
