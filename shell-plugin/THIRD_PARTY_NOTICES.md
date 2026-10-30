@@ -99,3 +99,13 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## ori and OpenCode (downloaded, not bundled)
+
+`wispd install --agents` and the onboarding agents step download these two
+programs from their own release pages and run them as separate processes.
+Wisp does not include, modify or redistribute them; each keeps its own
+license, shipped with the download.
+
+- ori, Apache-2.0, `OpenRouterLabs/ori-releases` on GitHub.
+- OpenCode, MIT, `anomalyco/opencode` on GitHub.

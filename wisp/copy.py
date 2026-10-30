@@ -132,6 +132,7 @@ STRINGS = {
     "ui.agent.done": "done",
     "ui.agent.failed": "failed",
     "ui.agent.cancelled": "cancelled",
+    "ui.agent.interrupted": "interrupted",
     "ui.tab.now": "now",
     "ui.tab.agents": "agents",
     "ui.tab.memory": "memory",

@@ -8,6 +8,21 @@ works byte for byte as it did.
 For where audio and screenshots go once a turn starts, see
 [TRUST.md](TRUST.md).
 
+## What a background agent can see
+
+A background OpenCode agent runs locally and works in its own folder. Its
+one connection back into Wisp is a read-only tool list served by the hidden
+agent-mcp subcommand: `recall`, `memory_read`, `skill_list`, `skill_view`,
+`task_status`, `task_output`, `task_artifacts` and `ask_user`. Nothing else
+on the daemon's socket is open to it. The agent's model calls go through ori
+to OpenRouter, so memory it reads goes to OpenRouter-routed models.
+
+`wispd config set agents.mcp_memory false` removes `recall` and `memory_read`
+from the list. The OpenRouter key lives in your desktop keyring
+(`keyring://wisp/openrouter`); Wisp passes it to ori and never writes it into
+the agent's config files. What the agent may do on your machine is decided
+by Wisp's permission policy; see [TRUST.md](TRUST.md#background-agents).
+
 ## Hands-free by double-tap (off)
 
 `wispd config set handsfree.enabled true`

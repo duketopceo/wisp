@@ -150,7 +150,8 @@ class TestValidation(unittest.TestCase):
                         config.set_config(sec, name, val)
                 bad = (cfg / "c.toml").read_text()
                 self.assertNotIn("fly", bad)
-                self.assertNotIn("900", bad)
+                # the rejected cua.max_per_turn value; other keys may default to 900
+                self.assertNotRegex(bad, r"(?m)^max_per_turn\s*=\s*\"?900")
 
     def test_cli_rejects_with_e_bad_config(self):
         with CliEnv() as env:

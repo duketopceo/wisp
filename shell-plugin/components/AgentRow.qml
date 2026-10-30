@@ -1,5 +1,6 @@
 // Agent row: name, state word, elapsed time and the last log line.
-// States: queued, running (ember tick), done, failed, cancelled.
+// States: queued, running (ember tick), done, failed, cancelled,
+// interrupted (waiting on the user to say continue).
 import QtQuick
 import "../lib/metrics.js" as M
 
@@ -15,7 +16,8 @@ Item {
 
   readonly property var tk: service ? service.tokens : ({})
   readonly property var tokenFor: ({ queued: "inkMuted", running: "ember",
-    done: "ok", failed: "fail", cancelled: "inkMuted" })
+    done: "ok", failed: "fail", cancelled: "inkMuted",
+    interrupted: "needsYou" })
 
   implicitWidth: 340
   implicitHeight: col.implicitHeight + 2 * M.spacing.md

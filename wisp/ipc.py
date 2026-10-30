@@ -36,6 +36,10 @@ MUTATING_CMDS = frozenset({
     "agent", "task_cancel", "choice", "config", "memory", "stop",
     "interrupt", "listen", "ask", "label", "dictate_correct", "learn", "harness",
 })
+# The one command a marked peer may send besides READ_CMDS (U8, R13): the
+# MCP bridge's tool call. Its handler gates on a session token, the
+# peer-is-its-session check and the tool allowlist (wisp/agent_mcp.py).
+MARKED_PEER_CMDS = frozenset({"agent_tool"})
 SAFETY_CONFIG_KEYS = frozenset({
     "agent.allow_shell", "agent.autonomy", "agent.risk_threshold",
     "agents.act_max_usd", "pointer.mode",
@@ -74,6 +78,8 @@ def check_peer_authz(cmd: dict | None, peer: dict | None,
             "reason": info.get("reason") or "unregistered_task_id",
             "cmd": c,
         }
+    if c in MARKED_PEER_CMDS:
+        return None
     # `config set` on safety keys refuses marked peers outright with a
     # specific reason even if command classes ever change.
     if c == "config":

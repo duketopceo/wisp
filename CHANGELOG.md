@@ -17,6 +17,7 @@ How this file is kept:
 
 ## Unreleased
 
+- Background agents are live: "agent, fix the tests" starts an OpenCode session that reports progress, asks you out loud for answers and for permission on risky steps, takes follow-ups and can be cancelled. Onboarding (or `wispd install --agents`) downloads the pinned ori and OpenCode for you, and the agent can read your memory unless you set `[agents] mcp_memory = false`.
 - Draw on your screen and ask about it: Wisp draws rings, arrows and highlights, and you can scribble on the screen to point at what you mean.
 - Walkthroughs: Wisp can teach you a task step by step, spoken and pointed, and you can save a lesson, replay it and resume one you paused.
 - Answers start sooner: the first clause is spoken as soon as it is ready, speech is transcribed while you still hold the key, and pressing the key while Wisp thinks cancels that turn and starts a new one.

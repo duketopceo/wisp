@@ -458,18 +458,20 @@ class TestAgents(unittest.TestCase):
             tf = pathlib.Path(td) / "tasks.jsonl"
             ld = pathlib.Path(td) / "logs"
             proc = mock.Mock(pid=4242)
+            # the one-shot path (codex/claude/devin); opencode runs over ACP
             with mock.patch.object(agents.shutil, "which",
-                                   return_value="/usr/bin/ori"), \
+                                   return_value="/usr/bin/codex"), \
                  mock.patch.object(agents.subprocess, "Popen",
                                    return_value=proc), \
                  mock.patch.object(agents, "_proc_stat",
                                    return_value=("S", "99")):
-                out = agents.spawn("fix the tests in wisp", {},
+                out = agents.spawn("fix the tests in wisp",
+                                   {"brain": {"agent_runtime": "codex"}},
                                    tasks_file=tf, log_dir=ld)
             self.assertIn("SPAWNED", out)
             rec = json.loads(tf.read_text().splitlines()[0])
             self.assertEqual(rec["pid"], 4242)
-            self.assertIn("ori opencode", rec["cmd"])
+            self.assertIn("codex exec", rec["cmd"])
 
     def test_spawn_missing_ori(self):
         # a missing configured runtime is an explicit error naming it

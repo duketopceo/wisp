@@ -141,7 +141,7 @@ An absent or empty key uses the default, so a config file without a `[web]` sect
 | `fallback` | `""` | comma-separated `name:model` chain tried after `default` (e.g. `"mlx:ornith, ollama:ornith"`) |
 | `allow_paid` | `false` | allow paid fallback entries (OpenRouter, or `paid = "true"` on the section); the U10 cap hook (`brain.budget_ok`, see `[budget]`) also applies; at a cap fallbacks are skipped, the primary runs unless `[budget] gate_primary` |
 | `first_token_s` | `3` | a streaming entry must emit a token within this many seconds or the chain moves on; all entries failing ends the turn `brain_down` |
-| `agent_runtime` | `"opencode"` | spawned-agent runtime: `opencode`/`codex`/`claude`/`devin` |
+| `agent_runtime` | `"auto"` | spawned-agent runtime: `auto`/`opencode`/`codex`/`claude`/`devin`. `auto` uses the pinned OpenCode (installed by `wispd install --agents`) when it is ready, else the first of `codex`, `claude`, `devin` found on `PATH`. Only `opencode` runs as a live ACP session (progress, questions, follow-ups, cancel); the others are one-shot CLI runs |
 
 Retries: one fast retry on connection refused/reset only; timeouts are
 never retried. Once answer text has streamed, a failure ends the turn
@@ -252,6 +252,18 @@ and `wispd models` show current health.
 | `act_preview_min` | steps that change something in one model reply before Wisp shows the whole plan as one card and runs it on yes (0 disables, default 3). While a plan runs, each step first checks the focused window is still the one the plan was made for and stops with a spoken reason if not |
 | `routine_wait_s` | seconds a scheduled routine waits for a network connection (for example right after the machine wakes) before giving up; a run missed while offline never counts toward the three-failure pause (0 skips the wait, default 120) |
 | `writer_queue_max` | background writer queue for trajectory and recall writes; oldest dropped and counted when full (default 256) |
+| `acp_models` | comma list of OpenRouter models for background OpenCode agents, cheapest first (default `openrouter/deepseek/deepseek-v4-flash,openrouter/deepseek/deepseek-v4.1-flash,openrouter/google/gemini-3.5-flash-lite`). A session runs on the first one the agent runtime offers; if none is offered the task fails instead of falling back to another model. No reasoning effort is requested |
+| `acp_idle_s` | seconds a named helper's agent process may sit idle before it exits; the next request starts a fresh one (default 900) |
+| `ask_timeout_s` | seconds an agent's question or permission ask waits for your answer; a permission then counts as refused, a question as unanswered (default 120) |
+| `cancel_grace_s` | seconds a cancel waits for the agent to stop on its own before its process is killed (default 10) |
+| `mcp_memory` | `true` lets agents read `USER.md` and `MEMORY.md` over the read-only bridge; those reads go to OpenRouter-routed models. `false` removes the memory tools from the list (default `true`) |
+
+Background agents authenticate to OpenRouter through ori. The key Wisp hands
+it comes from the `[brain.openrouter] key_env` list, tried in order:
+`keyring://wisp/openrouter` (the desktop Secret Service, the default first
+entry), `omaseal://svc/acct` (still works), then a plain env var such as
+`OPENROUTER_API_KEY` from your environment or `~/.config/wisp/.env`.
+`wispd onboard --step agents` stores a key in the keyring when you give it one.
 
 ## [mcp]
 
