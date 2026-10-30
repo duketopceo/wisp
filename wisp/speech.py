@@ -3,7 +3,9 @@
 speak() spawns the TTS command and tracks its pid; a new listen (or
 stop) calls stop() to kill in-flight speech fast — SIGTERM, no drain.
 [voice] cmd overrides the binary: whitespace/shlex-split argv, `{text}`
-placeholder replaced by the message (else it's appended as last arg).
+never carries the message: the text is fed to the program's stdin (a
+private, already-unlinked temp file), because argv is readable by other
+local accounts while the program runs. A `{text}` token is dropped.
 
 SentenceSpeaker (backend U9) starts TTS per completed sentence while the
 answer is still streaming; a turn's CancelToken (or stop()) kills the
@@ -117,7 +119,10 @@ def voice_for(cfg: dict, lang: str) -> tuple:
     return _lang.voice(cfg, lang, platform.tts_binary())
 
 
-def _argv(msg: str, cfg: dict, lang: str = "") -> list[str] | None:
+def _argv(cfg: dict, lang: str = "") -> list[str] | None:
+    """The TTS program and its flags. Never the message: that goes to
+    stdin (see _stdin_for), since argv is visible to other local
+    accounts. A `{text}` token in [voice] cmd is dropped."""
     cmd = cfg.get("voice", {}).get("cmd", "")
     rate = speed(cfg)
     voice = ""
@@ -136,14 +141,20 @@ def _argv(msg: str, cfg: dict, lang: str = "") -> list[str] | None:
             # `{lang}` is the language code, `{voice}` the chosen voice
             parts = [p.replace("{lang}", lang).replace(
                 "{voice}", voice or lang) for p in parts]
-        if "{text}" in parts:
-            parts = [msg if p == "{text}" else p for p in parts]
-        else:
-            parts.append(msg)
-        return parts
+        return [p for p in parts if p != "{text}"]
     from . import platform
-    return platform.tts_argv(msg, rate, voice) if voice \
-        else platform.tts_argv(msg, rate)
+    return platform.tts_argv(rate, voice) if voice \
+        else platform.tts_argv(rate)
+
+
+def _stdin_for(msg: str):
+    """The message as an unlinked 0600 temp file, rewound, to hand the
+    TTS child as stdin. A file, not a pipe, so a child that never reads
+    cannot block the caller. The caller closes it after Popen."""
+    f = tempfile.TemporaryFile()
+    f.write(msg.encode("utf-8"))
+    f.seek(0)
+    return f
 
 
 def speak(msg: str, cfg: dict) -> subprocess.Popen | None:
@@ -154,12 +165,14 @@ def speak(msg: str, cfg: dict) -> subprocess.Popen | None:
         return None
     if backend(cfg)[0] == "groq":
         return _speak_groq(msg, cfg)
-    argv = _argv(msg, cfg)
+    argv = _argv(cfg)
     if argv is None:
         return None
     try:
-        proc = subprocess.Popen(argv, stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL)
+        with _stdin_for(msg) as fin:
+            proc = subprocess.Popen(argv, stdin=fin,
+                                    stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL)
     except OSError:
         return None
     with _LOCK:
@@ -451,12 +464,12 @@ class SentenceSpeaker:
         if self.lang and not self._noted:
             self._noted = True
             say = self._fallback_note() + text
-        argv = _argv(say, self._cfg, self.lang)
+        argv = _argv(self._cfg, self.lang)
         if argv is None:
             return
-        self._play(argv, text)
+        self._play(argv, text, stdin_text=say)
 
-    def _play(self, argv, spoken: str) -> bool:
+    def _play(self, argv, spoken: str, stdin_text: str | None = None) -> bool:
         """Run one player/TTS child to its end, registered like every
         speaking child so is_speaking() and barge-in see it. False when
         nothing was spawned."""
@@ -464,9 +477,16 @@ class SentenceSpeaker:
         if self._stopped.is_set():
             return False
         try:
-            proc = subprocess.Popen(argv, stdout=subprocess.DEVNULL,
-                                    stderr=subprocess.DEVNULL,
-                                    start_new_session=True)
+            if stdin_text is None:
+                proc = subprocess.Popen(argv, stdout=subprocess.DEVNULL,
+                                        stderr=subprocess.DEVNULL,
+                                        start_new_session=True)
+            else:
+                with _stdin_for(stdin_text) as fin:
+                    proc = subprocess.Popen(argv, stdin=fin,
+                                            stdout=subprocess.DEVNULL,
+                                            stderr=subprocess.DEVNULL,
+                                            start_new_session=True)
         except OSError:
             return False
         with self._lock:

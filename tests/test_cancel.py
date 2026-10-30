@@ -643,7 +643,7 @@ class SentenceSpeakerTest(unittest.TestCase):
             "#!/bin/sh\n"
             # macOS date(1) has no %N; keep timestamps dumb — ordering
             # tests only need monotonic speak order, not wall-clock ns.
-            f'printf "0|%s\\n" "$1" >> {self.log}\n'
+            f'printf "0|%s\\n" "$(cat)" >> {self.log}\n'
             f'echo $$ >> {self.dir}/pids\n'
             f'exec sleep "${{FAKE_TTS_SLEEP:-0.05}}"\n')
         script.chmod(script.stat().st_mode | stat.S_IXUSR)
@@ -773,7 +773,7 @@ class StreamingTtsThroughAskChatTest(unittest.TestCase):
         log = d / "tts.log"
         script = d / "fake-tts"
         script.write_text(
-            f'#!/bin/sh\nprintf "%s|%s\\n" "$(date +%s.%N)" "$1" >> {log}\n'
+            f'#!/bin/sh\nprintf "%s|%s\\n" "$(date +%s.%N)" "$(cat)" >> {log}\n'
             "exec sleep 0.05\n")
         script.chmod(script.stat().st_mode | stat.S_IXUSR)
         chunks = ["It is ", "half past ", "three. ", "Take ", "an ",
