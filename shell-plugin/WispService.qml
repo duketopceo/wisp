@@ -148,10 +148,19 @@ Item {
   property var configErrors: ({})    // key -> message from the daemon or validator
   property string configSaved: ""    // key last written without error
 
-  // --- dev tab (U5): local only, behind `[dev] panel` -----------------------
-  // One `wispd dev turns --json` call per tab open and per refresh press,
-  // never on a timer and never with the flag off.
+  // --- dev tab (U5): local only, behind `[dev] panel` or a dev session ------
+  // One `wispd dev turns --json` and one `wispd dev runs --json` call per tab
+  // open and per refresh press, never on a timer and never with both off.
   readonly property bool devPanel: configValues["dev.panel"] === "true"
+  // the dev session (state.dev), and whether the Dev tab exists: the session
+  // is on or the flag is
+  readonly property bool devOn: Dev.sessionOn(view.raw)
+  readonly property int devRunsLeft: Dev.runsLeft(view.raw)
+  readonly property bool devTab: devPanel || devOn
+  // `wispd dev runs --json`, read with the turns on tab open and refresh
+  property var devRuns: null
+  property bool devRunsLoading: false
+  property string devRunsError: ""
   property var devData: null         // parsed reply data, null until read
   property bool devLoading: false
   property string devError: ""       // "" when fine, else a short code
@@ -246,13 +255,22 @@ Item {
     if (!cfgProc.running) cfgProc.running = true;
   }
 
-  // The Dev tab's one read. Refused unless the flag is on.
+  // The Dev tab's reads (turns, then runs). Refused unless the flag or the
+  // session is on.
   function loadDev() {
-    if (!devPanel || devProc.running) return;
-    devLoading = true;
-    devError = "";
-    devProc.command = Dev.command(wispd);
-    devProc.running = true;
+    if (!devTab) return;
+    if (!devProc.running) {
+      devLoading = true;
+      devError = "";
+      devProc.command = Dev.command(wispd);
+      devProc.running = true;
+    }
+    if (!devRunsProc.running) {
+      devRunsLoading = true;
+      devRunsError = "";
+      devRunsProc.command = Dev.runsCommand(wispd);
+      devRunsProc.running = true;
+    }
   }
 
   // Validate, then `wispd config set KEY VALUE`. A rejected value or a
@@ -646,6 +664,24 @@ Item {
       if (!devProc.running && root.devLoading) {
         root.devLoading = false;
         root.devError = "spawn";
+      }
+    }
+  }
+
+  Process {
+    id: devRunsProc
+    command: [root.wispd, "dev", "runs", "--json"]
+    stdout: StdioCollector { id: devRunsOut }
+    onExited: function (code) {
+      var r = Dev.parseRuns(devRunsOut.text);
+      root.devRunsLoading = false;
+      if (r.ok) { root.devRuns = r.data; root.devRunsError = ""; }
+      else root.devRunsError = r.error || "error";
+    }
+    onRunningChanged: {
+      if (!devRunsProc.running && root.devRunsLoading) {
+        root.devRunsLoading = false;
+        root.devRunsError = "spawn";
       }
     }
   }

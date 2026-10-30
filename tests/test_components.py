@@ -209,7 +209,7 @@ class TestPanelW22(unittest.TestCase):
         src = code(self.PANEL)
         self.assertIn('["now", "agents", "memory", "settings"]', src)
         self.assertIn('baseTabs.concat(["devtab"])', src)
-        self.assertIn("service.devPanel", src)
+        self.assertIn("service.devTab", src)
 
     def test_no_timer_or_polling(self):
         src = code(self.PANEL)
