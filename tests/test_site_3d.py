@@ -10,10 +10,18 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / "site-3d"
-INSTALL = "git clone https://github.com/duketopceo/wisp && cd wisp && python3 wispd install"
+INSTALL = 'f=$(mktemp) && curl -fsSL https://wisp.observer/install.py -o "$f" && python3 "$f" --version v1.0.0-rc.2'
 
 
 class LandingContract(unittest.TestCase):
+    def test_install_uses_pinned_authenticated_candidate(self):
+        html = (SITE / "index.html").read_text()
+        self.assertIn("--version v1.0.0-rc.2", html)
+        self.assertIn("independently installed GitHub CLI", html)
+        self.assertIn("not self-authenticating", html)
+        self.assertIn("/blob/v1.0.0-rc.2/scripts/bootstrap/install.py", html)
+        self.assertIn("~/.local/bin/wispd onboard", html)
+
     def test_install_and_demo_are_honest(self):
         html = (SITE / "index.html").read_text()
         self.assertIn(INSTALL.replace("&&", "&amp;&amp;"), html)
