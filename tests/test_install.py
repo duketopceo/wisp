@@ -169,6 +169,28 @@ class InstallRefTest(unittest.TestCase):
         self.assertIn("dry run: nothing written", out)
         self.assertFalse(self.opt(e).exists())
 
+    def test_dry_run_shows_the_preflight_and_starts_nothing(self):
+        e = self.env()
+        code, out, err = e.run(["install", "--dry-run"])
+        self.assertEqual(code, 0, err)
+        self.assertIn("preflight:", out)
+        for row in ("architecture", "disk space", "systemd user",
+                    "current install"):
+            self.assertIn(row, out)
+        self.assertIn("dry run: nothing written", out)
+        self.assertFalse(self.opt(e).exists())
+        self.assertFalse((e.home / ".local" / "state").exists())
+
+    def test_an_edited_desktop_entry_is_previewed_as_a_backup(self):
+        e = self.env()
+        self.assertEqual(e.run(["install"])[0], 0)
+        desk = e.home / ".local" / "share" / "applications" / "wisp.desktop"
+        desk.write_text(desk.read_text() + "# my edit\n")
+        code, out, err = e.run(["install", "--dry-run"])
+        self.assertEqual(code, 0, err)
+        self.assertIn("would back up the edited file", out)
+        self.assertIn("# my edit", desk.read_text())      # untouched
+
     def test_plain_install_records_the_checkout_commit(self):
         e = self.env()
         code, out, err = e.run(["install"])
@@ -234,6 +256,31 @@ class InstallAgentsTest(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn("no network", err)
         self.assertEqual(calls, ["ori"])   # stops at the first failure
+
+
+class InstallPreflightGate(unittest.TestCase):
+    """A blocking preflight row stops a real install before any write."""
+
+    def test_a_blocker_stops_install_before_the_host_writes(self):
+        import contextlib
+        import io
+        from wisp import preflight
+
+        class Host:
+            def install_files(self, **kw):
+                raise AssertionError("must not write")
+            install_bind = install_files
+
+        rows = [{"id": "disk space", "level": "block",
+                 "detail": "1 MiB free", "fix": "Free space."}]
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(preflight, "run", lambda *a, **k: rows), \
+                contextlib.redirect_stdout(out), \
+                contextlib.redirect_stderr(err):
+            code = cli.main(["install"], host=Host())
+        self.assertNotEqual(code, 0)
+        self.assertIn("nothing was written", out.getvalue() + err.getvalue())
+        self.assertIn("1 MiB free", out.getvalue() + err.getvalue())
 
 
 if __name__ == "__main__":
