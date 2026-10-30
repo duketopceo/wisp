@@ -114,6 +114,86 @@ class ReleasePackagingTest(unittest.TestCase):
                 self.assertEqual(entries[name].mtime, int(EPOCH))
                 self.assertEqual((entries[name].uid, entries[name].gid), (0, 0))
 
+    def checksums(self, assets, name="SHA256SUMS"):
+        output = self.work / name
+        result = subprocess.run(
+            [sys.executable, str(BUILD), "checksums", "--out", str(output),
+             *(str(path) for path in assets)],
+            text=True, capture_output=True, timeout=10,
+        )
+        return result, output
+
+    def test_checksums_include_exact_native_attestation_release_assets(self):
+        names = (
+            "wisp-linux-x86_64.tar.gz",
+            "wisp-linux-aarch64.tar.gz",
+            "wisp-linux-x86_64.tar.gz.sigstore.json",
+            "wisp-linux-aarch64.tar.gz.sigstore.json",
+            "wisp-plugin-v1.2.3-rc.2.tar.gz",
+        )
+        assets = [self.work / name for name in names]
+        for path in assets:
+            # Inert byte fixtures: checksum generation does not verify attestations.
+            path.write_bytes(f"fixture for {path.name}\n".encode())
+        result, output = self.checksums(assets)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        expected = "".join(
+            f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n"
+            for path in sorted(assets, key=lambda path: path.name)
+        ).encode()
+        self.assertEqual(output.read_bytes(), expected)
+        reverse, reverse_output = self.checksums(reversed(assets), "SHA256SUMS.reverse")
+        self.assertEqual(reverse.returncode, 0, reverse.stderr)
+        self.assertEqual(reverse_output.read_bytes(), expected)
+
+    def test_checksums_reject_unknown_attestation_bundle_names(self):
+        for name in (
+            "wisp-linux-ppc64.tar.gz.sigstore.json",
+            "wisp-plugin-v1.2.3.tar.gz.sigstore.json",
+            "wisp-linux-x86_64.sigstore.json",
+            "wisp-linux-x86_64.tar.gz.sigstore.json.extra",
+            "wisp-linux-aarch64.tar.gz.SIGSTORE.JSON",
+        ):
+            with self.subTest(name=name):
+                asset = self.work / name
+                asset.write_text("inert fixture")
+                result, output = self.checksums([asset])
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("unexpected release asset name", result.stderr)
+                self.assertFalse(output.exists())
+
+    def test_checksums_refuse_symlinked_native_attestation_bundles(self):
+        target = self.work / "inert-fixture"
+        target.write_text("synthetic bundle bytes")
+        for name in ("wisp-linux-x86_64.tar.gz.sigstore.json",
+                     "wisp-linux-aarch64.tar.gz.sigstore.json"):
+            with self.subTest(name=name):
+                asset = self.work / name
+                asset.symlink_to(target)
+                result, output = self.checksums([asset])
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("asset must be a regular file", result.stderr)
+                self.assertFalse(output.exists())
+
+    def test_checksums_refuse_directory_native_attestation_bundles(self):
+        asset = self.work / "wisp-linux-x86_64.tar.gz.sigstore.json"
+        asset.mkdir()
+        result, output = self.checksums([asset])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("asset must be a regular file", result.stderr)
+        self.assertFalse(output.exists())
+
+    def test_checksums_refuse_duplicate_native_attestation_basenames(self):
+        name = "wisp-linux-aarch64.tar.gz.sigstore.json"
+        one, two = self.work / name, self.work / "other" / name
+        two.parent.mkdir()
+        one.write_text("one")
+        two.write_text("two")
+        result, output = self.checksums([one, two])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("checksum asset basenames must be unique", result.stderr)
+        self.assertFalse(output.exists())
+
     def source_copy(self):
         source = self.work / "source"
         source.mkdir()
