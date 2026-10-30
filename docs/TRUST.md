@@ -63,6 +63,7 @@ Everything below lives in `~/.local/share/wisp` (a 0700 folder of 0600 files), `
 | --- | --- | --- |
 | session.jsonl | Recent turns: what you said, the route, the reply. | Not trimmed automatically. Delete the file any time. |
 | decisions.jsonl | One line per turn: transcript, route choice, timings. Used to label and compare routing. | Not trimmed automatically. Delete the files any time. |
+| trajectories.jsonl | What the act loop did for each task: the task text (your words), the app, the steps and the outcome. Used to show the loop how a similar task went before. | Rotates at its size cap and keeps one earlier file. Delete the files any time. |
 | trace.jsonl | Per-stage event stream for debugging, including the transcript and answer text. Keys are never written. | `[debug] trace = false` writes nothing. Rotates at 10 MB and keeps one earlier file. |
 | dictation history | Each finished dictation, so a failed insert loses nothing. Never sent anywhere and never put in a prompt. | `[dictation] history`, `history_max` and `history_days` bound it (100 entries, 7 days by default). `wispd dictate clear` empties it. |
 | utterance.wav | The recording of your last turn, in `~/.config/wisp`. | Overwritten by the next turn. Delete it any time. |

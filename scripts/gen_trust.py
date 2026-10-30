@@ -160,6 +160,12 @@ STORES = (
      "One line per turn: transcript, route choice, timings. Used to "
      "label and compare routing.",
      "Not trimmed automatically. Delete the files any time."),
+    ("trajectories.jsonl",
+     "What the act loop did for each task: the task text (your words), "
+     "the app, the steps and the outcome. Used to show the loop how a "
+     "similar task went before.",
+     "Rotates at its size cap and keeps one earlier file. Delete the "
+     "files any time."),
     ("trace.jsonl",
      "Per-stage event stream for debugging, including the transcript "
      "and answer text. Keys are never written.",
