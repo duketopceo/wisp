@@ -1,17 +1,23 @@
-usage: wispd dev run [-h] [--json] [--quiet] [--no-color] FILE
+usage: wispd dev run [-h] [--vs KEY=VALUE] [--json] [--quiet] [--no-color]
+                     FILE
 
 Run a task list on the live desktop (dev mode must be on)
 
 positional arguments:
-  FILE         task list: one task per line, # for comments
+  FILE            task list: one task per line, # for comments
 
 options:
-  -h, --help   show this help message and exit
+  -h, --help      show this help message and exit
+  --vs KEY=VALUE  run the list a second time with one setting changed
+                  (brain.default=openrouter:acme/model) and pair the two runs
+                  per task; your config is never written; both count as one
+                  run
 
 global options:
-  --json       machine-readable output (one JSON object)
-  --quiet, -q  print nothing on success
-  --no-color   plain output (also NO_COLOR, or not a tty)
+  --json          machine-readable output (one JSON object)
+  --quiet, -q     print nothing on success
+  --no-color      plain output (also NO_COLOR, or not a tty)
 
 Examples:
   wispd dev run docs/dev-tasks/starter.txt
+  wispd dev run tasks.txt --vs brain.default=openrouter:acme/m

@@ -10,23 +10,28 @@ the config (KTD2-KTD4):
     "no" at once, so a step that needs the owner ends as `stopped`;
   - the copy denies text entry, key presses, shell, external calls,
     posting and closing windows (policy.preempted reads `[dev]
-    deny_tools`), turns trajectory feedback off and forces the act
-    router so a task is pre-screened and never routed through a model;
+    deny_tools`) and turns trajectory feedback off. The owner's router
+    setting is kept, so a run measures the real routing (the regex fast
+    path included);
   - a task whose route pre-screens as agent, learn, setting, walkthrough
-    or dictation is skipped as `stopped` and never runs.
+    or dictation is skipped as `stopped` and never runs. The pre-screen
+    only calls the router's pure functions.
 
-One JSON line per task goes to dev_runs/<run_id>.jsonl in the data dir.
-`judge`, `drift` and `cost` are left null for the later units. The
-owner's config is never written.
+After each task the judge (wisp.devjudge) reads the end-of-turn screen,
+and drift is flagged (wisp.devreport). One JSON line per task goes to
+dev_runs/<run_id>.jsonl in the data dir. `--vs key=value` runs the list
+a second time on a config copy with that one override (arm `b`); both
+arms count as one run. The owner's config is never written.
 """
 import copy
 import json
+import re
 import secrets
 import threading
 import time
 from datetime import datetime, timezone
 
-from . import config, devsession
+from . import config, devsession, ipc
 
 DENY_TOOLS = ("type_text", "key", "shell", "mcp_call", "post_send",
               "close", "fill", "browser")
@@ -53,25 +58,46 @@ def read_tasks(path) -> list:
     lines dropped, whitespace collapsed, 300 chars at most (the `ask`
     cap)."""
     out = []
-    for line in open(path, encoding="utf-8"):
-        t = " ".join(line.split())
-        if t and not t.startswith("#"):
-            out.append(t[:300])
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            t = " ".join(line.split())
+            if t and not t.startswith("#"):
+                out.append(t[:300])
     return out
 
 
 # -- safety ----------------------------------------------------------------
 
-def run_config(cfg: dict, run_id: str) -> dict:
-    """A deep copy of `cfg` for one run. The owner's own config object
-    is never changed."""
+def parse_vs(vs: str) -> tuple:
+    """`section.key=value` -> (section, key, value). One override only;
+    the safety and spend settings and the run's own `[dev]` and `[traj]`
+    keys cannot be overridden. Raises ValueError."""
+    k, eq, v = str(vs).partition("=")
+    k = k.strip()
+    sec, dot, key = k.partition(".")
+    if not eq or not dot or not sec or not key or "." in key \
+            or not re.fullmatch(r"[A-Za-z0-9_-]+", sec) \
+            or not re.fullmatch(r"[A-Za-z0-9_-]+", key):
+        raise ValueError("--vs wants one section.key=value, "
+                         "like brain.default=openrouter:acme/model")
+    if ipc.is_safety_config_key(k) or sec in ("dev", "traj"):
+        raise ValueError(f"--vs cannot change {k}")
+    return sec, key, v.strip()
+
+
+def run_config(cfg: dict, run_id: str, vs=None) -> dict:
+    """A deep copy of `cfg` for one run, with the one `--vs` override
+    applied when given. The owner's own config object is never
+    changed."""
     c = copy.deepcopy(cfg)
     c.setdefault("dev", {})
     c["dev"]["run_id"] = run_id
     c["dev"]["deny_tools"] = list(DENY_TOOLS)
     c.setdefault("traj", {})["enabled"] = "false"
     c.setdefault("agent", {})["allow_shell"] = "false"
-    c.setdefault("brain", {})["router"] = "act"
+    if vs:
+        sec, key, val = vs
+        c.setdefault(sec, {})[key] = val
     return c
 
 
@@ -150,10 +176,13 @@ def _trace_steps(turn_id: str) -> tuple:
                           "arg": str(d.get("args", ""))[:120],
                           "result": None, "ms": None})
         elif e.get("step") == "tool_result":
+            full = str(d.get("result", ""))
             for s in reversed(steps):
                 if s["tool"] == d.get("name") and s["result"] is None:
-                    s["result"] = str(d.get("result", ""))[:120]
+                    s["result"] = full[:120]
                     s["ms"] = e.get("ms")
+                    if _verify_failed(full):
+                        s["verify_failed"] = True     # past the 120 chars
                     break
         elif e.get("step") == "gate_stop":
             res = str(d.get("result", ""))[:120]
@@ -161,6 +190,11 @@ def _trace_steps(turn_id: str) -> tuple:
             steps.append({"tool": str(d.get("tool", "")), "arg": "",
                           "result": res, "ms": None, "stopped": True})
     return steps, stops
+
+
+def _verify_failed(result: str) -> bool:
+    return "verify FAILED" in result \
+        or '"verdict":"missed"' in result.replace(" ", "")
 
 
 def classify(result: str, stops: list) -> str:
@@ -191,13 +225,21 @@ def store_path(run_id: str):
     return config.DATA_DIR / "dev_runs" / f"{run_id}.jsonl"
 
 
-def start(cfg: dict, st, ctl: dict, path, run_listen=None) -> dict:
+def start(cfg: dict, st, ctl: dict, path, run_listen=None, judge=None,
+          vs=None) -> dict:
     """Begin a run over the task file at `path`. Refused when the
     session is off, a run is going, a turn is in flight, or the list is
-    unreadable or empty."""
+    unreadable or empty. `vs` ("section.key=value") runs the list twice,
+    the second time with that one override."""
     global _thread
     if not devsession.is_on():
         return {"ok": False, "error": "dev_off"}
+    override = None
+    if vs is not None:
+        try:
+            override = parse_vs(vs)
+        except ValueError as e:
+            return {"ok": False, "error": str(e)}
     try:
         goals = read_tasks(path)
     except OSError as e:
@@ -215,14 +257,20 @@ def start(cfg: dict, st, ctl: dict, path, run_listen=None) -> dict:
                   + "-" + secrets.token_hex(2))
         _stop.clear()
         _summary.clear()
-        _summary.update({"run_id": run_id, "tasks": len(goals), "done": 0,
+        total = len(goals) * (2 if override else 1)
+        _summary.update({"run_id": run_id, "tasks": total, "done": 0,
                          "stopped": False, "running": True,
+                         "judge_capped": False,
                          "path": str(store_path(run_id))})
+        if judge is None:
+            from . import devjudge
+            judge = devjudge.Judge(cfg)
         _thread = threading.Thread(
             target=_run, name="dev-run", daemon=True,
-            args=(cfg, st, ctl, run_id, goals, run_listen))
+            args=(cfg, st, ctl, run_id, goals, run_listen, judge,
+                  override, vs))
         _thread.start()
-    return {"ok": True, "run_id": run_id, "tasks": len(goals)}
+    return {"ok": True, "run_id": run_id, "tasks": total}
 
 
 def stop() -> dict:
@@ -264,26 +312,41 @@ def _publish_dev(st) -> None:
         pass
 
 
-def _run(cfg, st, ctl, run_id, goals, run_listen) -> None:
+def _run(cfg, st, ctl, run_id, goals, run_listen, judge=None,
+         override=None, vs=None) -> None:
     if run_listen is None:
         from . import pipeline
         run_listen = pipeline.run_listen
-    rcfg = run_config(cfg, run_id)
+    arms = ([("a", run_config(cfg, run_id)),
+             ("b", run_config(cfg, run_id, override))] if override
+            else [(None, run_config(cfg, run_id))])
     out = store_path(run_id)
     try:
-        for i, goal in enumerate(goals):
-            if _stop.is_set():
-                _summary["stopped"] = True
-                break
-            row = _one(rcfg, st, ctl, run_id, i, goal, run_listen)
-            _append(out, row)
-            _summary["done"] = i + 1
-            if ctl["interrupt"].is_set():     # the owner interrupted
-                _summary["stopped"] = True
-                break
-        else:
-            if _stop.is_set():
-                _summary["stopped"] = True
+        from . import devreport
+        apps = devreport.app_skills()
+    except Exception:
+        apps = set()
+    done = 0
+    try:
+        for arm, rcfg in arms:
+            for i, goal in enumerate(goals):
+                if _stop.is_set():
+                    _summary["stopped"] = True
+                    return
+                row = _one(rcfg, st, ctl, run_id, i, goal, run_listen,
+                           judge, apps)
+                if arm:
+                    row["arm"], row["vs"] = arm, vs
+                _append(out, row)
+                done += 1
+                _summary["done"] = done
+                _summary["judge_capped"] = bool(
+                    getattr(judge, "capped", False))
+                if ctl["interrupt"].is_set():     # the owner interrupted
+                    _summary["stopped"] = True
+                    return
+        if _stop.is_set():
+            _summary["stopped"] = True
     finally:
         # a stopped run still counts: it produced a report
         devsession.complete_run()
@@ -292,8 +355,31 @@ def _run(cfg, st, ctl, run_id, goals, run_listen) -> None:
         _publish_dev(st)
 
 
-def _one(rcfg, st, ctl, run_id, index, goal, run_listen) -> dict:
+def _judge(judge, goal, steps) -> dict:
+    try:
+        return judge.judge(goal, steps)
+    except Exception as e:
+        return {"outcome": "unjudged", "reason":
+                f"judge failed: {type(e).__name__}", "model": None,
+                "cost_usd": 0.0}
+
+
+def _drift(goal, row, apps) -> dict:
+    j = (row.get("judge") or {}).get("outcome")
+    eff = j if j in ("success", "stopped", "incomplete", "wrong_tries") \
+        else row.get("outcome")
+    try:
+        from . import devreport
+        return devreport.drift(goal, row.get("steps") or [], eff, apps)
+    except Exception:
+        return {"suspected": False}
+
+
+def _one(rcfg, st, ctl, run_id, index, goal, run_listen, judge=None,
+         apps=()) -> dict:
+    from . import ledger
     started = _now()
+    spend0 = ledger.session_totals()["cost"]
     t0 = time.monotonic()
     route, skip = prescreen(goal, rcfg)
     row = {"run_id": run_id, "index": index, "goal": goal, "turn": None,
@@ -303,6 +389,8 @@ def _one(rcfg, st, ctl, run_id, index, goal, run_listen) -> dict:
     if skip:
         row.update(result=f"SKIP (route {route} is not run in dev mode)",
                    outcome="stopped")
+        row["judge"] = {"outcome": "unjudged", "reason": "not run",
+                        "model": None, "cost_usd": 0.0}
     else:
         from . import cancel, trace
         tid = st.begin_turn()
@@ -325,6 +413,15 @@ def _one(rcfg, st, ctl, run_id, index, goal, run_listen) -> dict:
             if isinstance(d.get("timing_ms"), dict):
                 row["timing_ms"] = dict(d["timing_ms"])
         row["outcome"] = classify(row["result"] or "", stops)
+        task_usd = max(0.0, ledger.session_totals()["cost"] - spend0)
+        row["judge"] = (_judge(judge, goal, steps) if judge is not None
+                        else {"outcome": "unjudged", "reason": "no judge",
+                              "model": None, "cost_usd": 0.0})
+        row["cost"] = {"task_usd": round(task_usd, 6),
+                       "judge_usd": round(float(
+                           row["judge"].get("cost_usd") or 0.0), 6)}
+    row["cost"] = row["cost"] or {"task_usd": 0.0, "judge_usd": 0.0}
+    row["drift"] = _drift(goal, row, apps)
     row["timing_ms"]["wall"] = round((time.monotonic() - t0) * 1000)
     row["ended"] = _now()
     return row

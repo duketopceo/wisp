@@ -491,6 +491,8 @@ Off by default. Local sources only (Hyprland window changes, the dayflow journal
 | `[traj] max_inject` | `3` | most prior runs injected |
 | `[dev] refine` | `true` | a labelled-bad turn or a correction ("no", "instead") retries with the failed attempt as context |
 | `[dev] panel` | `false` | when `true` the panel gains a fifth tab, Dev (v1 gate, recent turns with per-stage time, top misses); local-only. It reads `wispd dev turns --json` once when the tab opens and when you press refresh, never on a timer |
+| `[dev] judge_model` | `google/gemini-2.5-flash` | vision model that judges each task of a `wispd dev run` at its end, on the eval key (`omaseal://openrouter/orchestral`, never the default key) |
+| `[dev] judge_cap_usd` | `1.00` | most a single run may spend on judging; the rest of the run is marked unjudged and the report says so (0 judges nothing; blank or invalid uses 1.00) |
 | `[eval] gate_rate` | `60%` | first-time-correct fraction (0 to 1, or a percentage) `wispd eval` must reach for PASS; the v1 bar is 60%; unset prints "gate not set" and no PASS or FAIL |
 | `[eval] gate_min_turns` | `50` | labelled turns required before the gate can pass; fewer is FAIL with "needs N more labelled turns" |
 | `[ui] theme` | `dark` | `dark` or `light`; `wispd theme <name>` swaps live |

@@ -1,0 +1,23 @@
+usage: wispd dev review [-h] [-n N] [--set TURN LABEL] [--json] [--quiet]
+                        [--no-color]
+                        [RUN_ID]
+
+Check the judge on up to five tasks: confirm or flip
+
+positional arguments:
+  RUN_ID            the run to review (default: the newest)
+
+options:
+  -h, --help        show this help message and exit
+  -n N              tasks to show (default 5)
+  --set TURN LABEL  write your own label for one task: correct or incorrect
+
+global options:
+  --json            machine-readable output (one JSON object)
+  --quiet, -q       print nothing on success
+  --no-color        plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd dev review
+  wispd dev review --json
+  wispd dev review --set TURN correct

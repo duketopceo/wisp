@@ -14,7 +14,26 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 import shorttmp  # noqa: E402
 from wisp import config, devrun, devsession, policy, state as state_mod  # noqa: E402
-from wisp import trace  # noqa: E402
+from wisp import learn, trace  # noqa: E402
+from wisp import devreport  # noqa: E402
+
+
+class FakeJudge:
+    """Stands in for devjudge.Judge: no brain, no screenshot."""
+
+    def __init__(self, outcome="success", cap_after=None):
+        self.outcome, self.cap_after = outcome, cap_after
+        self.calls = []
+        self.capped = False
+
+    def judge(self, goal, steps):
+        self.calls.append({"goal": goal, "steps": steps})
+        if self.cap_after is not None and len(self.calls) > self.cap_after:
+            self.capped = True
+            return {"outcome": "unjudged", "reason": "cap", "model": None,
+                    "cost_usd": 0.0}
+        return {"outcome": self.outcome, "reason": "looks right",
+                "model": "google/gemini-2.5-flash", "cost_usd": 0.002}
 
 
 class Base(unittest.TestCase):
@@ -27,9 +46,14 @@ class Base(unittest.TestCase):
             p = mock.patch.object(config, name, val)
             p.start()
             self.addCleanup(p.stop)
-        p = mock.patch.object(trace, "TRACE_FILE", self.dir / "trace.jsonl")
-        p.start()
-        self.addCleanup(p.stop)
+        for obj, name, val in (
+                (trace, "TRACE_FILE", self.dir / "trace.jsonl"),
+                (learn, "LABELS_FILE", self.dir / "labels.jsonl"),
+                (devreport, "app_skills", lambda: set())):
+            p = mock.patch.object(obj, name, val)
+            p.start()
+            self.addCleanup(p.stop)
+        self.judge = FakeJudge()
         self.st = state_mod.StateBus(state_file=self.dir / "state.json",
                                      autostart=False)
         self.addCleanup(self.st.close)
@@ -72,7 +96,8 @@ class Base(unittest.TestCase):
         if session:
             devsession.turn_on()
         r = devrun.start(self.cfg, self.st, self.ctl, path,
-                         run_listen=self.fake_run_listen)
+                         run_listen=self.fake_run_listen,
+                         judge=self.judge)
         if r.get("ok"):
             self.assertTrue(devrun.wait(10))
         return r
@@ -101,8 +126,7 @@ class TestRunner(Base):
             self.assertEqual(x["outcome"], "success")
             self.assertEqual(x["run_id"], r["run_id"])
             for k in ("judge", "drift", "cost"):
-                self.assertIn(k, x)
-                self.assertIsNone(x[k])
+                self.assertIsNotNone(x[k], k)
             for k in ("turn", "route", "result", "steps", "timing_ms",
                       "started", "ended"):
                 self.assertIn(k, x)
@@ -121,6 +145,30 @@ class TestRunner(Base):
         self.assertEqual(self.cfg["traj"]["enabled"], "true")
         self.assertEqual(self.cfg["agent"]["allow_shell"], "true")
         self.assertNotIn("deny_tools", self.cfg.get("dev", {}))
+
+    def test_run_config_keeps_the_owners_router(self):
+        # a run measures the owner's real routing, fast path included
+        for router in ("act", "jev", "off"):
+            with self.subTest(router=router):
+                self.cfg["brain"]["router"] = router
+                self.calls.clear()
+                self.run_list(self.tasks("open firefox"))
+                self.assertEqual(self.calls[0]["cfg"]["brain"]["router"],
+                                 router)
+        del self.cfg["brain"]["router"]
+        self.calls.clear()
+        self.run_list(self.tasks("open firefox"))
+        self.assertNotIn("router", self.calls[0]["cfg"]["brain"])
+
+    def test_prescreen_does_not_depend_on_or_change_the_router(self):
+        for router in ("act", "jev"):
+            cfg = dict(self.cfg, brain=dict(self.cfg["brain"],
+                                            router=router))
+            snap = json.dumps(cfg, sort_keys=True)
+            self.assertEqual(devrun.prescreen("have an agent fix my build",
+                                              cfg)[1], True)
+            self.assertEqual(devrun.prescreen("open firefox", cfg)[1], False)
+            self.assertEqual(json.dumps(cfg, sort_keys=True), snap)
 
     def test_confirmation_step_ends_stopped(self):
         self.script["delete the draft"] = (
@@ -169,7 +217,7 @@ class TestRunner(Base):
             return self.fake_run_listen(*a, **k)
         devsession.turn_on()
         r = devrun.start(self.cfg, self.st, self.ctl, self.tasks("a", "b"),
-                         run_listen=boom)
+                         run_listen=boom, judge=self.judge)
         self.assertTrue(devrun.wait(10))
         rows = self.rows(r["run_id"])
         self.assertEqual([x["outcome"] for x in rows],
@@ -226,14 +274,16 @@ class TestSessionRules(Base):
         devsession.turn_on()
         r = devrun.start(self.cfg, self.st, self.ctl,
                          str(self.dir / "nope.txt"),
-                         run_listen=self.fake_run_listen)
+                         run_listen=self.fake_run_listen,
+                         judge=self.judge)
         self.assertFalse(r["ok"])
 
     def test_empty_list_is_an_error(self):
         devsession.turn_on()
         r = devrun.start(self.cfg, self.st, self.ctl,
                          self.tasks("# only a comment", ""),
-                         run_listen=self.fake_run_listen)
+                         run_listen=self.fake_run_listen,
+                         judge=self.judge)
         self.assertFalse(r["ok"])
 
     def test_completed_run_counts_and_fifth_turns_session_off(self):
@@ -241,7 +291,8 @@ class TestSessionRules(Base):
         for i in range(1, 6):
             r = devrun.start(self.cfg, self.st, self.ctl,
                              self.tasks("open firefox"),
-                             run_listen=self.fake_run_listen)
+                             run_listen=self.fake_run_listen,
+                         judge=self.judge)
             self.assertTrue(r["ok"], (i, r))
             self.assertTrue(devrun.wait(10))
             self.assertEqual(devsession.status()["runs_done"], i)
@@ -257,12 +308,14 @@ class TestSessionRules(Base):
             return self.fake_run_listen(*a, **k)
         devsession.turn_on()
         r1 = devrun.start(self.cfg, self.st, self.ctl,
-                          self.tasks("open firefox"), run_listen=slow)
+                          self.tasks("open firefox"),
+                          run_listen=slow, judge=self.judge)
         self.assertTrue(r1["ok"])
         self.assertTrue(started.wait(5))
         r2 = devrun.start(self.cfg, self.st, self.ctl,
                           self.tasks("open firefox"),
-                          run_listen=self.fake_run_listen)
+                          run_listen=self.fake_run_listen,
+                         judge=self.judge)
         self.assertFalse(r2["ok"])
         self.assertEqual(r2["error"], "busy")
         gate.set()
@@ -273,7 +326,8 @@ class TestSessionRules(Base):
         self.ctl["busy"].set()
         r = devrun.start(self.cfg, self.st, self.ctl,
                          self.tasks("open firefox"),
-                         run_listen=self.fake_run_listen)
+                         run_listen=self.fake_run_listen,
+                         judge=self.judge)
         self.assertEqual(r.get("error"), "busy")
 
     def test_stop_finishes_the_current_task_then_stops(self):
@@ -308,6 +362,186 @@ class TestDenyHook(Base):
         with mock.patch.object(trace, "emit") as emit:
             policy.gate("key", "Return", {}, None)
             emit.assert_not_called()
+
+
+class TestJudgeWiring(Base):
+    def test_each_ran_task_is_judged_after_it_with_goal_and_steps(self):
+        self.script["pause youtube"] = (
+            "ACTED (1 steps): paused",
+            [{"step": "tool_call", "kind": "tool",
+              "data": {"name": "media", "args": "pause"}},
+             {"step": "tool_result", "kind": "tool",
+              "data": {"name": "media", "result": "paused"}}])
+        r = self.run_list(self.tasks("pause youtube", "open firefox"))
+        self.assertEqual([c["goal"] for c in self.judge.calls],
+                         ["pause youtube", "open firefox"])
+        self.assertEqual(self.judge.calls[0]["steps"][0]["tool"], "media")
+        rows = self.rows(r["run_id"])
+        self.assertEqual(rows[0]["judge"]["outcome"], "success")
+        self.assertEqual(rows[0]["judge"]["reason"], "looks right")
+        self.assertAlmostEqual(rows[0]["cost"]["judge_usd"], 0.002)
+        self.assertIn("task_usd", rows[0]["cost"])
+
+    def test_skipped_tasks_are_not_judged(self):
+        r = self.run_list(self.tasks("have an agent fix my build"))
+        self.assertEqual(self.judge.calls, [])
+        row = self.rows(r["run_id"])[0]
+        self.assertEqual(row["judge"]["outcome"], "unjudged")
+        self.assertEqual(row["judge"]["reason"], "not run")
+        self.assertEqual(row["outcome"], "stopped")
+
+    def test_judge_runs_before_the_next_task_starts(self):
+        order = []
+        real = self.judge.judge
+
+        def judge(goal, steps):
+            order.append(("judge", goal))
+            return real(goal, steps)
+        self.judge.judge = judge
+        orig = self.fake_run_listen
+
+        def listen(*a, **k):
+            order.append(("run", k["typed"]))
+            return orig(*a, **k)
+        devsession.turn_on()
+        devrun.start(self.cfg, self.st, self.ctl, self.tasks("a", "b"),
+                     run_listen=listen, judge=self.judge)
+        self.assertTrue(devrun.wait(10))
+        self.assertEqual(order, [("run", "a"), ("judge", "a"),
+                                 ("run", "b"), ("judge", "b")])
+
+    def test_cap_marks_the_rest_unjudged_and_the_summary_says_so(self):
+        self.judge = FakeJudge(cap_after=1)
+        r = self.run_list(self.tasks("a", "b", "c"))
+        rows = self.rows(r["run_id"])
+        self.assertEqual([x["judge"]["outcome"] for x in rows],
+                         ["success", "unjudged", "unjudged"])
+        self.assertEqual(rows[2]["judge"]["reason"], "cap")
+        self.assertTrue(devrun.last_summary()["judge_capped"])
+        # the run still ran every task
+        self.assertEqual([c["typed"] for c in self.calls], ["a", "b", "c"])
+
+    def test_a_judge_that_raises_never_breaks_the_run(self):
+        def boom(goal, steps):
+            raise RuntimeError("keyring locked")
+        self.judge.judge = boom
+        r = self.run_list(self.tasks("a", "b"))
+        rows = self.rows(r["run_id"])
+        self.assertEqual([x["judge"]["outcome"] for x in rows],
+                         ["unjudged", "unjudged"])
+        self.assertEqual([x["outcome"] for x in rows],
+                         ["success", "success"])
+
+    def test_nothing_judge_made_is_written_to_labels(self):
+        self.run_list(self.tasks("a", "b", "c"))
+        self.assertFalse(learn.LABELS_FILE.exists())
+
+    def test_drift_is_recorded_for_an_app_skill_task_with_failed_verify(self):
+        self.script["play something on spotify"] = (
+            "ACTED (2 steps): ok",
+            [{"step": "tool_call", "kind": "tool",
+              "data": {"name": "click", "args": "play"}},
+             {"step": "tool_result", "kind": "tool",
+              "data": {"name": "click",
+                       "result": "CLICKED x - verify FAILED: aimed at"}},
+             {"step": "tool_call", "kind": "tool",
+              "data": {"name": "click", "args": "play button"}},
+             {"step": "tool_result", "kind": "tool",
+              "data": {"name": "click", "result": "CLICKED play"}}])
+        with mock.patch.object(devreport, "app_skills",
+                               return_value={"spotify"}):
+            r = self.run_list(self.tasks("play something on spotify",
+                                         "open firefox"))
+        rows = self.rows(r["run_id"])
+        self.assertTrue(rows[0]["drift"]["suspected"])
+        self.assertEqual(rows[0]["drift"]["apps"], ["spotify"])
+        self.assertTrue(rows[0]["steps"][0]["verify_failed"])
+        self.assertIn("click", rows[0]["drift"]["next"])
+        self.assertTrue(rows[0]["drift"]["recovered"])
+        self.assertFalse(rows[1]["drift"]["suspected"])
+
+
+class TestAB(Base):
+    def setUp(self):
+        super().setUp()
+        self.cfg["brain"]["default"] = "openrouter:google/gemini-2.5-flash"
+        self.conf = self.dir / "config.toml"
+        self.conf.write_text('[brain]\ndefault = "openrouter:a/b"\n')
+        self.conf_bytes = self.conf.read_bytes()
+
+    def run_ab(self, vs, *lines):
+        devsession.turn_on()
+        r = devrun.start(self.cfg, self.st, self.ctl, self.tasks(*lines),
+                         run_listen=self.fake_run_listen, judge=self.judge,
+                         vs=vs)
+        if r.get("ok"):
+            self.assertTrue(devrun.wait(10))
+        return r
+
+    def test_runs_the_list_twice_with_one_override_and_pairs_per_task(self):
+        before = json.dumps(self.cfg, sort_keys=True)
+        r = self.run_ab("brain.default=acme/other", "open firefox",
+                        "pause youtube")
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(r["tasks"], 4)
+        self.assertEqual([c["typed"] for c in self.calls],
+                         ["open firefox", "pause youtube"] * 2)
+        defaults = [c["cfg"]["brain"]["default"] for c in self.calls]
+        self.assertEqual(defaults[:2],
+                         ["openrouter:google/gemini-2.5-flash"] * 2)
+        self.assertEqual(defaults[2:], ["acme/other"] * 2)
+        rows = self.rows(r["run_id"])
+        self.assertEqual([x["arm"] for x in rows], ["a", "a", "b", "b"])
+        self.assertEqual({x["vs"] for x in rows},
+                         {"brain.default=acme/other"})
+        run = devreport.build(r["run_id"])["runs"][0]
+        self.assertEqual([p["goal"] for p in run["pairs"]],
+                         ["open firefox", "pause youtube"])
+        self.assertEqual(run["vs"], "brain.default=acme/other")
+        # nothing about the owner's config changed
+        self.assertEqual(json.dumps(self.cfg, sort_keys=True), before)
+        self.assertEqual(self.conf.read_bytes(), self.conf_bytes)
+
+    def test_both_arms_count_as_one_run(self):
+        self.run_ab("brain.default=acme/other", "open firefox")
+        self.assertEqual(devsession.status()["runs_done"], 1)
+
+    def test_stop_ends_both_arms(self):
+        self.after["one"] = devrun.stop
+        r = self.run_ab("brain.default=x", "one", "two")
+        self.assertEqual([c["typed"] for c in self.calls], ["one"])
+        self.assertEqual(len(self.rows(r["run_id"])), 1)
+
+    def test_bad_override_is_refused_before_anything_runs(self):
+        devsession.turn_on()
+        for bad in ("nokey", "=x", "brain=x", "a.b.c=x", ""):
+            with self.subTest(vs=bad):
+                r = devrun.start(self.cfg, self.st, self.ctl,
+                                 self.tasks("open firefox"),
+                                 run_listen=self.fake_run_listen,
+                                 judge=self.judge, vs=bad or "  ")
+                self.assertFalse(r["ok"])
+                self.assertEqual(self.calls, [])
+        self.assertFalse(self.ctl["busy"].is_set())
+
+    def test_override_cannot_unlock_the_safety_settings(self):
+        devsession.turn_on()
+        for bad in ("agent.allow_shell=true", "dev.deny_tools=",
+                    "traj.enabled=true", "cua.kill_switch=false",
+                    "budget.daily_usd=999"):
+            with self.subTest(vs=bad):
+                r = devrun.start(self.cfg, self.st, self.ctl,
+                                 self.tasks("open firefox"),
+                                 run_listen=self.fake_run_listen,
+                                 judge=self.judge, vs=bad)
+                self.assertFalse(r["ok"], bad)
+                self.assertEqual(self.calls, [])
+
+    def test_value_may_contain_equals_and_colons(self):
+        r = self.run_ab("brain.default=openrouter:a/b?x=1", "open firefox")
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(self.calls[1]["cfg"]["brain"]["default"],
+                         "openrouter:a/b?x=1")
 
 
 if __name__ == "__main__":
