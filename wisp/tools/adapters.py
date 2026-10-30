@@ -6,7 +6,6 @@ provides a non-empty catalog wins; the generic fallback always works on
 a fresh install.
 """
 import configparser
-import json
 import pathlib
 import shutil
 
