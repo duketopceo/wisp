@@ -1,5 +1,5 @@
-usage: wispd choice [-h] [--prompt-id ID] [--index N] [--json] [--quiet]
-                    [--no-color]
+usage: wispd choice [-h] [--stdin] [--prompt-id ID] [--index N] [--json]
+                    [--quiet] [--no-color]
                     [pick]
 
 Answer a pending prompt from the keyboard or a script
@@ -9,6 +9,8 @@ positional arguments:
 
 options:
   -h, --help      show this help message and exit
+  --stdin         read the pick (or typed answer) from one line of stdin, so
+                  private text stays off the command line
   --prompt-id ID  answer this prompt only
   --index N       1-based option number
 

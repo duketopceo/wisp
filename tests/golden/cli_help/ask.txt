@@ -1,4 +1,4 @@
-usage: wispd ask [-h] [--json] [--quiet] [--no-color] text
+usage: wispd ask [-h] [--stdin] [--json] [--quiet] [--no-color] [text]
 
 Ask one typed question (starts a normal turn)
 
@@ -7,6 +7,7 @@ positional arguments:
 
 options:
   -h, --help   show this help message and exit
+  --stdin      read the question from one line of stdin
 
 global options:
   --json       machine-readable output (one JSON object)

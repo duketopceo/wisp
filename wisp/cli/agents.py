@@ -4,6 +4,7 @@ import base64
 import binascii
 
 from .. import config
+from . import registry
 from .registry import CliError, GROUPS, command, from_wisp_code
 from . import strings
 
@@ -195,6 +196,9 @@ def _label_args(p):
                    help="turn id to label (default: the last finished "
                    "turn)")
     p.add_argument("note", nargs="*", help="optional note")
+    p.add_argument("--stdin", action="store_true",
+                   help="read the note from one line of stdin, so it stays "
+                   "off the command line")
 
 
 @command("label set", "Label the last turn correct or incorrect",
@@ -202,7 +206,7 @@ def _label_args(p):
           "the wrong app", "wispd label set correct --lang es"],
          {"result": "str"}, args=_label_args)
 def label_set(ctx, a):
-    note = " ".join(a.note)
+    note = registry.read_stdin_line() if a.stdin else " ".join(a.note)
     try:
         r = ctx.send({"cmd": "label", "label": a.label, "note": note,
                       **({"lang": a.lang} if a.lang else {}),
