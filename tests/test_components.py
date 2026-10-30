@@ -22,7 +22,7 @@ COMP = PLUGIN / "components"
 FIXTURE_SERVICE = ROOT / "tests" / "qml" / "harness" / "FixtureService.qml"
 
 EXPECTED = ["AskChips", "Answer", "AgentRow", "AgentsTab", "BarActions", "BarMark", "BarPill", "Beacon", "Bubble", "Buddy", "Card", "Chip",
-            "Creature", "DrawLayer", "EmptyState", "FirstRunCard",
+            "Creature", "DevTab", "DrawLayer", "EmptyState", "FirstRunCard",
             "HealthSection", "Icon", "Mark", "MemoryTab", "ModelCard", "NowTab", "OverlayLayer",
             "PanelTab", "Pill", "RateNote", "RateRow", "RunCard", "ScribbleLayer", "SettingsTab", "StatusLine", "StepRow",
             "StopControl", "Transcript", "WhatsNewCard",
@@ -205,8 +205,11 @@ class TestPanelW22(unittest.TestCase):
     PANEL = PLUGIN / "Panel.qml"
 
     def test_four_tabs(self):
+        # four tabs with `[dev] panel` off, five (Dev last) with it on
         src = code(self.PANEL)
         self.assertIn('["now", "agents", "memory", "settings"]', src)
+        self.assertIn('baseTabs.concat(["devtab"])', src)
+        self.assertIn("service.devPanel", src)
 
     def test_no_timer_or_polling(self):
         src = code(self.PANEL)

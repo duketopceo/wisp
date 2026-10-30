@@ -322,6 +322,7 @@ verbs and examples. Add `--json` for machine-readable output.
 | `wispd dictate correct` / `wispd dictate list` | teach a heard->meant dictation correction, or show them |
 | `wispd suggest list` | suggestions mined from your activity |
 | `wispd label set` / `wispd eval` | label a run, or score your labels by turn kind |
+| `wispd dev turns` | the last turns with per-stage time, labels, the v1 gate and top misses (read-only) |
 | `wispd context` | what the daemon sees right now |
 | `wispd ask TEXT` | ask one typed question as a normal turn (a click on a 3D part sends this) |
 | `wispd learn fails` | logged failures |
