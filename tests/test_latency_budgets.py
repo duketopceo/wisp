@@ -86,7 +86,7 @@ class GateMargin(unittest.TestCase):
 
     def test_no_budget_is_looser_than_the_plan(self):
         plan = {"P1": 25, "P2": 25, "P3": 600, "P4": 200, "P5": 500,
-                "P6": 150, "P7": 1200, "P8": 300, "P9": 150,
+                "P6": 150, "P6G": 1500, "P7": 1200, "P8": 300, "P9": 150,
                 "P10": 1000, "E2E": 1400}
         got = {p["id"]: p["budget_p50_ms"]
                for p in telemetry.load_budgets()["paths"]}

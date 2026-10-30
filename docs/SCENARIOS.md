@@ -17,7 +17,7 @@ python -m unittest tests.test_scenarios     # whole corpus, under 20 s
 `error_detail_contains`, `tool_calls`, `brain_calls`, `jev_calls`,
 `cua_calls`, `steps_contain` (one substring per act step, in order),
 `notify_count`, `notify_bodies`, `launch_calls`, `hypr_requests_contain`,
-`peer_closed`, top-level `notify_now` (fixed clock for quiet hours), `brain_fallback_from`, `stop_within_ms` (interrupt to idle,
+`peer_closed`, `groq_tts_calls` (requests the fake Groq speech endpoint saw), top-level `notify_now` (fixed clock for quiet hours), `brain_fallback_from`, `stop_within_ms` (interrupt to idle,
 the P9 budget). `tests/test_scenarios.py` requires every fixture to carry a
 `description`, a `scenario` tag and a non-empty `expect`, and requires this
 table to list every fixture.
@@ -36,6 +36,7 @@ table to list every fixture.
 | `act_open_mail` | open mail in browser | Act route: 'open my email' makes one launch(mail) step. The launch stub returns the OPENED line the real launch gives when mail resolves to a browser (tests/test_tools.py proves that); the turn ends ACTED, never a focused-window success. |
 | `act_switch_tab` | switch to an open browser tab | Act route: 'open up my stripe tab' makes one tab step (switch to the already-open browser tab); launch is never called. The tab stub returns the SWITCHED line the real tool gives (tests/test_tools.py proves that). |
 | `answer_draw_timed` | drawings timed to speech | Answer route with voice on and a fake TTS that takes 300 ms per sentence: the brain streams two sentences, the first with a [RING], the second with a [POINT] and an [ARROW]. `drawings` grows 1 then 2 while speaking (the second only after the first sentence has played), `points` arrives with the second; no tag reaches the answer and both lists are empty at done. |
+| `answer_groq_voice` | groq talk-back timed to audio | Answer route with Groq talk-back: a fake `/audio/speech` returns a 400 ms then a 300 ms WAV and a fake player sleeps each WAV's real length. The brain streams two sentences, each with its own [POINT] tag; one request per sentence, `points` grows 1 then 2 and the second point arrives only after the first WAV's real duration (>= 350 ms). |
 | `answer_points_timed` | points timed to speech | Answer route with voice on and a fake TTS that takes 300 ms per sentence: the brain streams two sentences, each with its own [POINT] tag. `points` grows 1 then 2 while speaking, the second point arriving only after the first sentence has played; no event carries both early. |
 | `ask` | answer | Answer route: Jev routes to answer, brain streams a reply. Characterization baseline of today's pipeline. |
 | `fast_path_answer` | fast path plain question | Default router: 'what does this error mean' is a plain question, so the fast path sends it to the answer handler in one brain call. No Jev call and no act loop (the result is ANSWERED, not ACTED). |

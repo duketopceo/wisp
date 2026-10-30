@@ -191,6 +191,16 @@ def tts_binary() -> str | None:
     return None
 
 
+def audio_player() -> list | None:
+    """argv prefix of a program that plays a WAV file given as its last
+    argument: pw-play (PipeWire), else paplay, else aplay. None when
+    none is installed."""
+    for argv in (["pw-play"], ["paplay"], ["aplay", "-q"]):
+        if _which(argv[0]):
+            return argv
+    return None
+
+
 ESPEAK_WPM = 175   # espeak's own default speaking rate
 
 

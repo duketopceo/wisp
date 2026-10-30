@@ -302,12 +302,22 @@ one, `wispd dictate list` shows them.
 
 | key | meaning |
 |-----|---------|
-| `enabled` | speak answers aloud |
+| `enabled` | `"auto"` (default): speak answers when a Groq key resolves and an audio player exists; with no key it stays off, even if espeak is installed. Espeak (or `cmd`) is the fallback while voice is on. `"true"` always speaks (espeak or `cmd` when there is no key), `"false"` never does. Speech, desktop toasts (no toast for a spoken answer) and captions all read this one setting |
+| `provider` | `"groq"` (default): speak with Groq Orpheus when a key resolves, a player (`pw-play`, else `paplay`, else `aplay`) is installed and the answer is English; `cmd`/espeak speaks whenever Groq cannot. `"espeak"`: never ask Groq. Same key as speech-to-text: `[stt] key_env` when `[stt] base_url` is Groq, else `omaseal://groq/default,GROQ_API_KEY` |
+| `tts_model` | Groq model, default `canopylabs/orpheus-v1-english` (a preview model; the id is configurable for when it changes). Not in the settings table: edit `config.toml` |
+| `tts_voice` | Orpheus voice: `autumn`, `diana`, `hannah` (default), `austin`, `daniel`, `troy` |
+| `tts_base_url` | Groq API base, default `https://api.groq.com/openai/v1`. Not in the settings table |
 | `cmd` | override TTS command; `{text}` placeholder or appended arg. Empty = platform default (espeak/say/SAPI) |
 | `speed` | speaking speed multiplier, 0.5 to 1.5 (default 1; steps 0.5, 0.75, 1, 1.25, 1.5). The built-in espeak voice gets `-s <wpm>`; a custom `cmd` gets the multiplier wherever it writes `{rate}`. Say "talk slower", "talk faster" or "talk at normal speed" to change it by voice (logged in the audit log as a `config` entry) |
 | `lang_voices` | per-language voices, `"es=es-mx,de=de"`. Empty: the built-in espeak voice named for the language when it exists, else the default voice, and Wisp says so once. A custom `cmd` may use `{lang}` (the code, like `pt-BR`) or `{voice}` |
 | `early_clause` | `"true"` (default): while an answer streams, start speaking at the first clause break (`, ; : —`) once 28 characters are ready instead of waiting for the full stop. `"false"` waits for sentence ends |
 | `captions` | `"true"` (default): the answer text shows in the bubble while it is spoken. `"false"` hides it while the voice plays. The text shows anyway when voice is off, when no TTS program is installed, or when speech does not start. A muted speaker always shows it. Say "turn off captions" or "turn on captions" to change it (audited like any `config` change) |
+
+### Groq talk-back
+
+Each sentence goes to Groq as one request of at most 200 characters (a longer sentence splits at clause breaks, then spaces), the next sentence is fetched while the current one plays, and points and drawings start when that sentence's audio starts, timed from the WAV's real length. One voice per answer: if Groq fails (any error, a spend cap, no player), the rest of that answer is spoken by espeak or `cmd`; the next answer tries Groq again. Two failures wait first: a rate limit (429) waits out `retry-after`, and a terms error (the model's terms are accepted once per Groq org at `https://console.groq.com/playground?model=canopylabs%2Forpheus-v1-english`) waits an hour and then tries by itself. The last failure class and the wait end are kept in `voice_groq.json` in the data dir. Muted speakers and a non-English answer never reach Groq.
+
+Groq speech is paid: each request writes a `usage.jsonl` row at $22 per million characters, counts toward `[budget]` and is refused at the daily cap (espeak speaks instead). The free Groq tier allows about 100 speech requests a day, so a long answer can switch to espeak partway.
 
 When the default speaker is muted or at 0% (read with `wpctl`, else `pactl`), Wisp does not speak the answer: it copies it to the clipboard with `wl-copy` and the bubble ends with "Speaker is muted, so I copied the answer to your clipboard." Without `wl-copy` the bubble says it could not speak the answer. Nothing is probed while `[voice] enabled` is false.
 
@@ -372,7 +382,8 @@ also needs p90 <= 1.5x). Not revised yet from live traces.
 | P3 | transcript (key up -> text); warm whisper floor 1300 | 600 |
 | P4 | route (context + route) | 200 |
 | P5 | first answer token | 500 |
-| P6 | TTS start | 150 |
+| P6 | TTS start (espeak or `[voice] cmd`) | 150 |
+| P6G | TTS start, Groq (first sentence handed over -> first audio) | 1500 |
 | P7 | act first step (UI-TARS grounding) | 1200 |
 | P8 | agent ack | 300 |
 | P9 | stop (request -> idle) | 150 |

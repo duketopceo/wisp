@@ -1,0 +1,66 @@
+{
+  "description": "Answer route with Groq talk-back (fake /audio/speech, WAVs of 400 ms then 300 ms, fake player that sleeps each WAV's real length): two streamed sentences each carry a [POINT] tag. One WAV is fetched per sentence, each point is published when its sentence's audio starts, so points grows 1 then 2 and the second arrives only after the first WAV has played (its real 400 ms, not an espeak word estimate).",
+  "audio": "ask.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "where do i click for display settings"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "chunks": [
+            "Open Settings[POINT:100,200:Settings] first. ",
+            "Then click Display[POINT:300,400:Display] to finish."
+          ],
+          "chunk_delay_ms": 50
+        }
+      ]
+    },
+    "groq_tts": {
+      "wav_ms": [
+        400,
+        300
+      ]
+    }
+  },
+  "config": {
+    "voice": {
+      "enabled": "true"
+    }
+  },
+  "expect": {
+    "statuses": [
+      "listening",
+      "transcribing",
+      "deciding",
+      "acting",
+      "speaking",
+      "done"
+    ],
+    "transcript": "where do i click for display settings",
+    "answer": "Open Settings first. Then click Display to finish.",
+    "brain_calls": 1,
+    "points_growth": [
+      1,
+      2
+    ],
+    "points_gap_ms_min": 350,
+    "groq_tts_calls": 2
+  },
+  "name": "answer_groq_voice",
+  "scenario": "groq talk-back timed to audio"
+}

@@ -18,7 +18,6 @@ raises into a turn.
 import dataclasses
 import json
 import re
-import shlex
 import shutil
 import subprocess
 import threading
@@ -54,7 +53,9 @@ def captions_on(cfg: dict) -> bool:
 
 
 def voice_on(cfg: dict) -> bool:
-    return _flag(cfg, "voice", "enabled", "false")
+    """[voice] enabled through the one shared reader (true, false, auto)."""
+    from . import speech
+    return speech.voice_enabled(cfg)
 
 
 # -- muted speaker ------------------------------------------------------
@@ -123,18 +124,11 @@ class Delivery:
 
 
 def voice_usable(cfg: dict) -> bool:
-    """True when a TTS command exists to speak with: the [voice] cmd's
-    program, else the built-in espeak. With none, captions stay on so the
-    answer is never hidden and unspoken."""
-    cmd = str(((cfg or {}).get("voice", {}) or {}).get("cmd", "")).strip()
-    if cmd:
-        try:
-            first = shlex.split(cmd)[0]
-        except (ValueError, IndexError):
-            return False
-        return bool(shutil.which(first))
-    from . import platform
-    return platform.tts_binary() is not None
+    """True when something can speak: Groq (a key and a player), the
+    [voice] cmd's program, or the built-in espeak. With none, captions
+    stay on so the answer is never hidden and unspoken."""
+    from . import speech, tts_groq
+    return tts_groq.available(cfg) or speech.local_usable(cfg)
 
 
 def begin(cfg: dict, runner=None) -> Delivery:

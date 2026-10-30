@@ -24,7 +24,7 @@ from harness import latency as hl  # noqa: E402
 
 BASELINE = ROOT / "docs" / "baselines" / "latency-harness.json"
 PLAN_BUDGETS = {"P1": 25, "P2": 25, "P3": 600, "P4": 200, "P5": 500,
-                "P6": 150, "P7": 1200, "P8": 300, "P9": 150,
+                "P6": 150, "P6G": 1500, "P7": 1200, "P8": 300, "P9": 150,
                 "P10": 1000, "E2E": 1400}
 
 

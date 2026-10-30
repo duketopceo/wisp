@@ -471,8 +471,17 @@ timeout_ms = "500"
 trace = true
 
 [voice]
-# spoken replies via espeak/espeak-ng when true; missing binary = silent no-op
-enabled = false
+# spoken replies: "auto" (default) speaks when a Groq key resolves (and a
+# player exists), else stays off; "true" always (espeak or cmd without a
+# key), "false" never. With no usable voice it is a silent no-op
+enabled = "auto"
+# "groq" speaks with Groq Orpheus (English; needs the same Groq key as
+# speech-to-text and the model terms accepted once in the Groq console);
+# espeak or [voice] cmd speaks when Groq cannot. "espeak" never asks Groq
+provider = "groq"
+tts_model = "canopylabs/orpheus-v1-english"
+# autumn, diana, hannah, austin, daniel or troy
+tts_voice = "hannah"
 # custom TTS command (e.g. piper); `{text}` is replaced with the message,
 # otherwise the message is appended as the last arg. Empty = espeak default.
 cmd = ""
@@ -546,7 +555,7 @@ def _default_cfg_dict() -> dict:
             "confidence_instant": "0.95", "confidence_ambiguous": "0.8",
             "autonomy": "autonomous",
         },
-        "voice": {"enabled": "false"},
+        "voice": {"enabled": "auto"},
         "dictation": {"mode": "cleanup", "history": "true",
                       "history_max": "100", "history_days": "7"},
         "pointer": {"mode": "guide", "backend": "auto"},

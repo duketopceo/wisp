@@ -33,6 +33,18 @@ def main(spec_path: str) -> int:
         cfg = config.load_config()
         cfg.setdefault("agent", {}).update({"screenshots": "false"})
         cfg.setdefault("voice", {})["enabled"] = "false"
+        # Groq talk-back only for a fixture that declares the fake Groq
+        # endpoint; every other fixture keeps its espeak / [voice] cmd
+        cfg["voice"]["provider"] = "espeak"
+        if "groq_tts" in urls:
+            from wisp import tts_groq
+            cfg["voice"].update(provider="groq", tts_base_url=urls["groq_tts"]
+                                + "/openai/v1")
+            # no desktop here: a child that sleeps the WAV's real length
+            _play = ("import sys, time, wave; w = wave.open(sys.argv[1]); "
+                     "time.sleep(w.getnframes() / w.getframerate())")
+            tts_groq.player_argv = lambda path: [sys.executable, "-c",
+                                                 _play, path]
         cfg["stt"] = {"provider": "openai", "base_url": urls["whisper"],
                       "model": "fake", "key_env": "WISP_FAKE_STT_KEY",
                       "prompt": "static", "vocab_dynamic": "false"}

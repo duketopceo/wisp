@@ -123,6 +123,11 @@ def _default_hold(cfg) -> str:
     return _HOLD_CACHE.get(cfg)
 
 
+def _voice_enabled(cfg) -> bool:
+    from . import speech
+    return speech.voice_enabled(cfg)
+
+
 class Notifier:
     def __init__(self, runner=None, clock=None, now=None, cfg=None,
                  sync=False, monitor=None, hold=None):
@@ -189,9 +194,8 @@ class Notifier:
             level = "info"
         if stale:
             return "stale"
-        if (spoken and level in ("info", "success") and
-                str(self.cfg.get("voice", {}).get("enabled", "false"))
-                .lower() == "true"):
+        if spoken and level in ("info", "success") and \
+                _voice_enabled(self.cfg):
             return "spoken"
         if in_quiet(self._opt("quiet"), self._now()):
             return "quiet"
