@@ -169,6 +169,52 @@
   "pad": 8,
   "scale2": true
  },
+ "BarPillWindow": {
+  "mode": "variant",
+  "on": "desktop",
+  "pad": 8,
+  "scale2": false,
+  "source": "../../../shell-plugin/components/BarPill.qml",
+  "variants": {
+   "done_window": {
+    "_state": "done"
+   },
+   "done_collapsed": {
+    "_state": "done",
+    "_fixture": {
+     "ratingWindow": false
+    }
+   },
+   "done_cancelled": {
+    "_state": "done",
+    "_fixture": {
+     "patch": {
+      "result": "CANCELLED"
+     }
+    }
+   },
+   "done_offline": {
+    "_state": "done",
+    "_fixture": {
+     "offline": true
+    }
+   },
+   "acting_steps": {
+    "_state": "run_active"
+   },
+   "error_cause": {
+    "_state": "error"
+   },
+   "listening_loud": {
+    "_state": "listening",
+    "_fixture": {
+     "patch": {
+      "level": 0.9
+     }
+    }
+   }
+  }
+ },
  "Beacon": {
   "mode": "variant",
   "on": "desktop",

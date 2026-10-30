@@ -460,7 +460,7 @@ and creates an output workspace at `tasks/<id>/out/`. At reap time:
   tool_result/brain_call/answer/speak/points/ipc/error,
   choice_voice/interrupt_voice/interjection_dropped, plus `kind=span`
   events (`step` = press, release, stt, context, route, first_token,
-  first_step, tts_start, done, and sub-spans screenshot/hyprctl/memory/
+  first_step, tts_start, tts_start_groq (Python core: Groq first audio), done, and sub-spans screenshot/hyprctl/memory/
   goal; `ms` = duration, `data.offset_ms` from the keypress,
   `data.t0_source` client|daemon). `wispd trace show --tail N --turn
   <id> --kind <k>` on both cores; Python core adds `trace show --latency

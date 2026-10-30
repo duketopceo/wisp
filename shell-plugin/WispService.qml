@@ -9,6 +9,7 @@ import "lib/motion.js" as Motion
 import "lib/settings.js" as Settings
 import "lib/run.js" as Run
 import "lib/rate.js" as Rate
+import "lib/bar.js" as B
 import "lib/dev.js" as Dev
 
 // WispService: the one reader of wispd state for every surface (Companion,
@@ -79,6 +80,12 @@ Item {
   // the prompted turn id, "" when none: surfaces react to this, not to the
   // object (normalize builds a fresh {turn} on every state message)
   readonly property string ratePromptTurn: ratePrompt ? String(ratePrompt.turn || "") : ""
+  // The bar pill's done rating window (U3): true for 8 s after a rateable
+  // turn finishes, closed by ratingTimer, a new turn or going offline.
+  // `pillHover` is set by the bar while the pointer is on the pill and
+  // pauses the window.
+  property bool ratingWindowOpen: false
+  property bool pillHover: false
   property string mic: ""     // "open" while the opt-in wake word listens
   property string turnId: ""
   property var seq: null
@@ -325,6 +332,7 @@ Item {
     if (r.refused) refused = true;
     var v = r.view;
     var prevTurn = root.turnId;
+    var prevStatus = root.status;
     root.view = v;
     root.status = v.status;
     root.rawStatus = v.rawStatus;
@@ -363,6 +371,10 @@ Item {
     root.contractNewer = v.contractNewer;
     root.stale = Reader.isStale(v, Date.now(), root.staleAfterMs);
     root.turnId = v.turnId;
+    var win = B.windowAction(prevStatus, root.status, prevTurn, v.turnId, root.offline,
+      Rate.rateable(root.status, root.answer, root.result, root.errorCode));
+    if (win === "open") root.ratingWindowOpen = true;
+    else if (win === "close") root.ratingWindowOpen = false;
     if (v.turnId !== prevTurn) root.turnChanged(v.turnId);
     root.stateApplied(v);
     if (r.resync && root.connection === "stream") root.reconnect();
@@ -456,6 +468,17 @@ Item {
     running: root.connection !== "stream" && root.status !== "idle" && root.status !== "offline"
     repeat: true
     onTriggered: stateView.reload()
+  }
+
+  // The done rating window: one single-shot, armed on the done edge (the
+  // window opening), paused while the pill is hovered, off once it fires or
+  // a new turn closes the window. Never runs at idle.
+  Timer {
+    id: ratingTimer
+    interval: B.WINDOW_MS
+    repeat: false
+    running: root.ratingWindowOpen && !root.pillHover
+    onTriggered: root.ratingWindowOpen = false
   }
 
   // Stale check ticks only while busy (nothing to age when idle).
