@@ -553,6 +553,30 @@ class TestNewCommands(unittest.TestCase):
                                           "prompt_id": "p9", "index": 3})
             self.assertEqual(env.ipc[1], {"cmd": "interrupt"})
 
+    def test_typed_text_comes_from_stdin_not_argv(self):
+        # the shell plugin writes private answers and notes to stdin so
+        # they never appear on the command line
+        with CliEnv(daemon=True) as env:
+            env.run(["choice", "--stdin", "--prompt-id", "p1"],
+                    stdin="my private answer\n")
+            env.run(["ask", "--stdin"], stdin="what is secret-7731?\n")
+            env.run(["label", "set", "--stdin", "--", "incorrect"],
+                    stdin="it read zebra-7731\n")
+            self.assertEqual(env.ipc[0], {"cmd": "choice",
+                                          "pick": "my private answer",
+                                          "prompt_id": "p1"})
+            self.assertEqual(env.ipc[1], {"cmd": "ask",
+                                          "text": "what is secret-7731?"})
+            self.assertEqual(env.ipc[2]["note"], "it read zebra-7731")
+            self.assertEqual(env.ipc[2]["label"], "incorrect")
+
+    def test_a_blank_stdin_pick_is_a_dismiss_and_ask_needs_text(self):
+        with CliEnv(daemon=True) as env:
+            env.run(["choice", "--stdin"], stdin="\n")
+            self.assertEqual(env.ipc[0], {"cmd": "choice", "pick": ""})
+            code, _out, _err = env.run(["ask", "--stdin"], stdin="\n")
+            self.assertNotEqual(code, 0)
+
     def test_health_start_prints_and_never_runs(self):
         with CliEnv(extra_env={"WISP_JEV_ENDPOINT":
                                "http://127.0.0.1:9/x"}) as env:

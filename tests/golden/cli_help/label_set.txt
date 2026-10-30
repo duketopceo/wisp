@@ -1,5 +1,5 @@
-usage: wispd label set [-h] [--lang CODE] [--turn ID] [--json] [--quiet]
-                       [--no-color]
+usage: wispd label set [-h] [--lang CODE] [--turn ID] [--stdin] [--json]
+                       [--quiet] [--no-color]
                        label [note ...]
 
 Label the last turn correct or incorrect
@@ -13,6 +13,8 @@ options:
   --lang CODE  language the turn was spoken in (es, de, pt-BR, ...); eval then
                reports it per language
   --turn ID    turn id to label (default: the last finished turn)
+  --stdin      read the note from one line of stdin, so it stays off the
+               command line
 
 global options:
   --json       machine-readable output (one JSON object)

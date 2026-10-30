@@ -168,6 +168,16 @@ class TestActionLifecycle(unittest.TestCase):
         self.assertIn("onExited", body)
         self.assertIn("finishAction", body)
 
+    def test_typed_text_goes_to_stdin_not_argv(self):
+        # other local accounts can read argv while a process runs
+        m = re.search(r"function sendChoice.*?\n  \}", SRC, re.S)
+        self.assertIn('"choice", "--stdin"', m.group(0))
+        self.assertNotRegex(m.group(0), r'\[wispd, "choice", pick')
+        self.assertIn('[wispd, "ask", "--stdin", "--json"]', SRC)
+        self.assertRegex(SRC, r"stdinEnabled:\s*true")
+        self.assertIn("actionProc.write(", SRC)
+        self.assertRegex(SRC, r"onStarted:\s*root\.writeActionStdin\(\)")
+
     def test_actions_are_serial_with_a_visible_busy_cap(self):
         self.assertIn("actionQueue", SRC)
         self.assertIn("actionProc.running", SRC)

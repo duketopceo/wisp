@@ -23,6 +23,7 @@ How this file is kept:
 - Answers start sooner: the first clause is spoken as soon as it is ready, speech is transcribed while you still hold the key, and pressing the key while Wisp thinks cancels that turn and starts a new one.
 - Ask chips: a quick tap of the talk key shows up to three things you can ask in the app you are in, for your first seven days.
 - Selected text, a copied image or a file you pointed at can ride along with a question that says "this" or "that". Nothing is read between key presses.
+- What you type into an answer card, a rating note or a 3D-part question no longer appears in a command line another account on the machine could read; the panel hands it to `wispd` on stdin (`wispd choice --stdin`, `wispd ask --stdin`, `wispd label set --stdin`).
 - Wisp speaks and understands other languages: it answers in the language you spoke, picks a matching voice when one is installed, and says so once when it has none.
 - Dictation keeps what you said: a failed insert loses nothing (`wispd dictate history`, `retry`, `copy`), a killed session is recovered on the next start, and the cleanup pass cannot change your words.
 - Your transcripts, replies and traces are private to your account: files are readable only by you, and older ones are tightened when the daemon starts.
