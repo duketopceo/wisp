@@ -31,6 +31,7 @@ Rectangle {
     spacing: M.spacing.md
 
     Text {
+      textFormat: Text.PlainText
       visible: root.hint !== ""
       anchors.verticalCenter: parent.verticalCenter
       text: root.hint
@@ -39,6 +40,7 @@ Rectangle {
       font.pixelSize: M.font.caption
     }
     Text {
+      textFormat: Text.PlainText
       anchors.verticalCenter: parent.verticalCenter
       text: root.label
       color: root.selected ? root.tk.accent : root.tk.ink

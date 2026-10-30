@@ -33,6 +33,7 @@ Rectangle {
     spacing: M.spacing.xl
 
     Text {
+      textFormat: Text.PlainText
       objectName: "whatsnewTitle"
       width: parent.width
       text: root.service.ui("ui.whatsnew.title") + (root.card ? " " + root.card.title : "")
@@ -46,6 +47,7 @@ Rectangle {
     Repeater {
       model: root.card ? root.card.lines : []
       delegate: Text {
+        textFormat: Text.PlainText
         required property string modelData
         objectName: "whatsnewLine"
         width: col.width
@@ -58,6 +60,7 @@ Rectangle {
     }
 
     Text {
+      textFormat: Text.PlainText
       objectName: "whatsnewMore"
       visible: root.card !== null && root.card.more > 0
       width: parent.width

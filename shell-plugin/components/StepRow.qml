@@ -44,6 +44,7 @@ Item {
   }
 
   Text {
+    textFormat: Text.PlainText
     id: label
     x: icon.x + icon.width + M.spacing.md
     width: root.width - x - (root.state === "confirm" ? confirmTag.implicitWidth + M.spacing.lg : 0)
@@ -56,6 +57,7 @@ Item {
   }
 
   Text {
+    textFormat: Text.PlainText
     id: confirmTag
     visible: root.state === "confirm"
     anchors.right: parent.right

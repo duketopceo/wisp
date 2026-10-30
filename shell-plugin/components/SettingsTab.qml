@@ -56,6 +56,7 @@ Column {
   }
 
   component Group: Text {
+    textFormat: Text.PlainText
     color: root.tk.ink
     font.family: root.service.fontFamily
     font.pixelSize: M.font.body
@@ -70,6 +71,7 @@ Column {
     width: root.width
 
     Text {
+      textFormat: Text.PlainText
       text: root.service.ui(f.def.label)
       color: root.tk.inkMuted
       font.family: root.service.fontFamily
@@ -130,6 +132,7 @@ Column {
     }
 
     Text {
+      textFormat: Text.PlainText
       visible: text !== ""
       width: parent.width
       text: root.problem(f.key)
@@ -139,6 +142,7 @@ Column {
       font.pixelSize: M.font.caption
     }
     Text {
+      textFormat: Text.PlainText
       visible: root.savedKey === f.key && root.problem(f.key) === ""
       text: root.service.ui("ui.set.saved")
       color: root.tk.ok
@@ -153,6 +157,7 @@ Column {
     delegate: Field { def: modelData }
   }
   Text {
+    textFormat: Text.PlainText
     text: root.service.ui("ui.set.blank")
     color: root.tk.inkMuted
     font.family: root.service.fontFamily
@@ -182,6 +187,7 @@ Column {
     spacing: M.spacing.sm
     Group { text: root.service.ui("ui.settings.connect") }
     Text {
+      textFormat: Text.PlainText
       visible: root.connectors.length === 0
       text: root.service.ui("ui.settings.connect.none")
       color: root.tk.inkMuted
@@ -202,6 +208,7 @@ Column {
           color: modelData.connected ? root.tk.ok : root.tk.inkMuted
         }
         Text {
+          textFormat: Text.PlainText
           width: 180
           text: modelData.name
           elide: Text.ElideRight
