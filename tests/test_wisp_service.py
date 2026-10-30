@@ -85,6 +85,31 @@ class TestShape(unittest.TestCase):
                 self.assertRegex(body, r"running:[^\n]*(busy|stale|Busy)",
                                  "fast timer must run only while busy")
 
+    def test_every_repeating_timer_is_gated_on_a_condition(self):
+        # nothing repeats unconditionally: each repeat:true Timer's running
+        # binding names the state that justifies it
+        for m in re.finditer(r"Timer\s*\{(.*?)\n\s*\}", SRC, re.S):
+            body = m.group(1)
+            if re.search(r"repeat:\s*true", body):
+                self.assertRegex(body, r"running:[^\n]*(busy|stale|refused|connection)",
+                                 "a repeating timer must be gated")
+
+    def test_rating_window_is_one_single_shot_timer(self):
+        # U3: the bar pill's 8 s done window. Single-shot, runs only while
+        # the window is open and the pill is not hovered; never at idle.
+        timers = [m.group(1) for m in re.finditer(r"Timer\s*\{(.*?)\n\s*\}", SRC, re.S)
+                  if "ratingTimer" in m.group(1)]
+        self.assertEqual(len(timers), 1)
+        body = timers[0]
+        self.assertRegex(body, r"interval:\s*B\.WINDOW_MS|interval:\s*8000")
+        self.assertRegex(body, r"repeat:\s*false")
+        self.assertRegex(body, r"running:[^\n]*ratingWindowOpen[^\n]*!\s*root\.pillHover"
+                               r"|running:[^\n]*!\s*root\.pillHover[^\n]*ratingWindowOpen")
+        self.assertRegex(body, r"ratingWindowOpen\s*=\s*false")
+        for prop in ("ratingWindowOpen", "pillHover"):
+            self.assertRegex(SRC, r"property\s+bool\s+" + prop)
+        self.assertIn("B.windowAction", SRC)
+
     def test_no_hex_colors(self):
         code = re.sub(r"//.*", "", SRC)
         self.assertEqual(re.findall(r"#[0-9a-fA-F]{6}\b", code), [])
