@@ -1,11 +1,12 @@
 """Learning and telemetry: learn, skills, trace."""
 import io
 
-from .registry import GROUPS, command
+from .registry import GROUPS, CliError, command
 
 GROUPS["learn"] = "Failure log"
 GROUPS["skills"] = "Installed skills"
 GROUPS["trace"] = "Turn trace and daily digest"
+GROUPS["dev"] = "Developer views of recent turns"
 
 _TEXT = {"text": "str"}
 LATENCY_WINDOW_H = 168   # `wispd eval` shows the last week of turns
@@ -130,3 +131,43 @@ def _capture(ctx, fn):
             return rc
         return ctx.emit({"text": buf.getvalue().rstrip("\n")})
     return fn()
+
+
+def _dev_args(p):
+    p.add_argument("-n", "--limit", type=int, default=None, metavar="N",
+                   dest="n", help="turns to return (default 20, max 50)")
+
+
+def _dev_text(d):
+    rs = d.get("rated_share")
+    g = d.get("gate") or {}
+    lines = [f"gate: {g.get('correct', 0)}/{g.get('labelled', 0)} right "
+             f"first time ({g.get('status', 'unset')}), "
+             f"rated {'-' if rs is None else format(rs, '.0%')} of "
+             f"{d.get('finished', 0)} finished"]
+    for t in d.get("turns", []):
+        ms = t.get("total_ms")
+        lines.append(f"  {t['id'] or '-':<10}{t['label']:<10}"
+                     f"{'-' if ms is None else ms:>6} ms  "
+                     f"{t['route'] or '-':<8}{t['transcript'][:50]}")
+    return "\n".join(lines)
+
+
+@command("dev turns", "Last turns with stages, labels, gate and misses",
+         ["wispd dev turns", "wispd dev turns --json -n 5"],
+         {"turns": "list", "gate": "dict", "rated": "int",
+          "finished": "int", "rated_share": "float", "misses": "list",
+          "truncated": "bool"}, args=_dev_args)
+def dev_turns(ctx, a):
+    msg = {"cmd": "devlog", **({"n": a.n} if a.n is not None else {})}
+    try:
+        r = ctx.send(msg)
+    except CliError as e:
+        if e.code != "E_DAEMON_DOWN":
+            raise
+        # read-only: answer from the files when no daemon is running
+        from .. import config, devlog
+        r = {"ok": True, **devlog.build(config.load_config(), n=a.n)}
+    ctx.expect_ok(r)
+    data = {k: v for k, v in r.items() if k != "ok"}
+    return ctx.emit(data, _dev_text(data))

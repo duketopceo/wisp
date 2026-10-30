@@ -443,6 +443,18 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
             # one manifest; transcript/state-dump text only via --full
             from wisp import packs
             return packs.captures_response(cmd)
+        if c == "devlog":
+            # U4: dev tab data, read-only; tail-reads the logs per call
+            from wisp import agents, devlog
+            try:
+                out = devlog.build(cfg, n=cmd.get("n"))
+                # a spawned agent reads timings, not what the owner said
+                if agents.classify_peer(peer, tasks_file=tasks_file).get(
+                        "marked"):
+                    out = devlog.redact(out)
+                return {"ok": True, **out}
+            except Exception as e:
+                return {"ok": False, "error": str(e)}
         if c == "stop":
             speech.stop()
             ctl["stop"].set()

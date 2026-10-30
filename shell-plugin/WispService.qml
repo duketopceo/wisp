@@ -10,6 +10,7 @@ import "lib/settings.js" as Settings
 import "lib/run.js" as Run
 import "lib/rate.js" as Rate
 import "lib/bar.js" as B
+import "lib/dev.js" as Dev
 
 // WispService: the one reader of wispd state for every surface (Companion,
 // Panel, bar widget). Surfaces bind to this object (shell.serviceFor(
@@ -140,6 +141,14 @@ Item {
   property var configErrors: ({})    // key -> message from the daemon or validator
   property string configSaved: ""    // key last written without error
 
+  // --- dev tab (U5): local only, behind `[dev] panel` -----------------------
+  // One `wispd dev turns --json` call per tab open and per refresh press,
+  // never on a timer and never with the flag off.
+  readonly property bool devPanel: configValues["dev.panel"] === "true"
+  property var devData: null         // parsed reply data, null until read
+  property bool devLoading: false
+  property string devError: ""       // "" when fine, else a short code
+
   signal stateApplied(var view)
   signal turnChanged(string turnId)
 
@@ -215,6 +224,21 @@ Item {
     if (!cfgProc.running) cfgProc.running = true;
     if (!cuaProc.running) cuaProc.running = true;
     if (!spendProc.running) spendProc.running = true;
+  }
+
+  // Read the config alone (the Panel needs `[dev] panel` before it knows
+  // whether the Dev tab exists).
+  function loadConfig() {
+    if (!cfgProc.running) cfgProc.running = true;
+  }
+
+  // The Dev tab's one read. Refused unless the flag is on.
+  function loadDev() {
+    if (!devPanel || devProc.running) return;
+    devLoading = true;
+    devError = "";
+    devProc.command = Dev.command(wispd);
+    devProc.running = true;
   }
 
   // Validate, then `wispd config set KEY VALUE`. A rejected value or a
@@ -565,6 +589,25 @@ Item {
     onExited: function (code) {
       if (code !== 0) return;
       try { root.spendModels = JSON.parse(spendOut.text).data.models || []; } catch (e) {}
+    }
+  }
+
+  Process {
+    id: devProc
+    command: [root.wispd, "dev", "turns", "--json"]
+    stdout: StdioCollector { id: devOut }
+    onExited: function (code) {
+      var r = Dev.parse(devOut.text);
+      root.devLoading = false;
+      if (r.ok) { root.devData = r.data; root.devError = ""; }
+      else root.devError = r.error || "error";
+    }
+    // a spawn failure flips running without exited
+    onRunningChanged: {
+      if (!devProc.running && root.devLoading) {
+        root.devLoading = false;
+        root.devError = "spawn";
+      }
     }
   }
 

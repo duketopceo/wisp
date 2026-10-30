@@ -10,7 +10,8 @@ import "lib/whatsnew.js" as WhatsNew
 
 // Popup panel for io.github.duketopceo.wisp, opened from the bar mark.
 // Four tabs: Now (the turn in flight), Agents (tasks), Memory (skills and
-// recent decisions) and Settings (Health, then the config editor). Until
+// recent decisions) and Settings (Health, then the config editor); a fifth,
+// Dev (local only), is appended when `[dev] panel = true`. Until
 // setup is finished a first-run card sits above the tabs (wispd onboard). State
 // comes only from the plugin's WispService (hostWidget.service); the tab
 // bodies are window-free components under components/. The only files read
@@ -30,7 +31,10 @@ Panel {
 
   readonly property var service: hostWidget && hostWidget.service ? hostWidget.service : null
   readonly property string dataDir: Quickshell.env("HOME") + "/.local/share/wisp"
-  readonly property var tabKeys: ["now", "agents", "memory", "settings"]
+  readonly property var baseTabs: ["now", "agents", "memory", "settings"]
+  // Dev is index 4, after Settings (index 3), and only with the flag on
+  readonly property bool devPanelOn: service !== null && service.devPanel
+  readonly property var tabKeys: service && service.devPanel ? baseTabs.concat(["devtab"]) : baseTabs
   property int tab: 0
 
   property var skills: []
@@ -44,11 +48,25 @@ Panel {
   property var whatsnew: null
 
   onOpenedChanged: {
-    if (opened) { loadOnboard(); loadWhatsnew() }
+    if (opened) { loadOnboard(); loadWhatsnew(); if (service) service.loadConfig() }
     else dismissWhatsnew()
     if (opened && tab === 3) loadSettings()
+    if (opened && tab === 4 && service) service.loadDev()
   }
-  onTabChanged: if (tab === 3) loadSettings()
+  onTabChanged: {
+    if (tab === 3) loadSettings()
+    if (tab === 4 && service) service.loadDev()
+  }
+
+  // the flag arrives with the config read: back to Now if it went off, read
+  // the Dev data if its tab is already the open one
+  Connections {
+    target: wisp.service
+    function onDevPanelChanged() {
+      if (!wisp.service.devPanel && wisp.tab === 4) wisp.tab = 0
+      else if (wisp.service.devPanel && wisp.opened && wisp.tab === 4) wisp.service.loadDev()
+    }
+  }
 
   // a wrong rating asks for its note: show it on the Now tab
   Connections {
@@ -211,6 +229,26 @@ Panel {
               onClicked: wisp.tab = index
             }
           }
+          // local-only marker beside the Dev tab
+          Rectangle {
+            visible: wisp.devPanelOn
+            anchors.verticalCenter: parent.verticalCenter
+            width: localBadge.implicitWidth + 2 * Style.space(6)
+            height: localBadge.implicitHeight + Style.space(2)
+            radius: Style.space(3)
+            color: "transparent"
+            border.width: 1
+            border.color: col.tk.needsYou
+            Text {
+              id: localBadge
+              anchors.centerIn: parent
+              text: col.svc.ui("ui.dev.local")
+              font.capitalization: Font.AllUppercase
+              color: col.tk.needsYou
+              font.family: col.svc.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+          }
         }
 
         WhatsNewCard {
@@ -286,6 +324,16 @@ Panel {
             connRunProc.command = [col.svc.wispd, "connect", alias]
             connRunProc.running = true
           }
+        }
+
+        DevTab {
+          visible: wisp.devPanelOn && wisp.tab === 4
+          width: col.width - 2 * col.padding
+          service: col.svc
+          reply: col.svc.devData
+          loading: col.svc.devLoading
+          error: col.svc.devError
+          onRefresh: col.svc.loadDev()
         }
 
         Text {

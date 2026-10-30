@@ -216,6 +216,9 @@ FIELDS = (
     _f("packs.shots_keep_days", "int", "30",
        "Days a shots/ screenshot is kept (0 disables the age bound)",
        min=0, max=3650),
+    _f("dev.panel", "bool", "false",
+       "Show the Dev tab (gate, recent turns, stage timings) in the panel; "
+       "local-only, off for everyone else"),
     _f("verify.judge_timeout_s", "int", "20",
        "Seconds the verify VLM judge may take before the step lands "
        "unverifiable",

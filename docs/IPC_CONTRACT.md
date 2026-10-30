@@ -34,6 +34,7 @@ future tray apps). Shells MUST only depend on this document.
 | `dictate_correct` | `{"heard","meant"}` | `{ok, result}` or `{ok:false, error, result}` | record a personal dictation correction → `dictation.json` (U6); cleanup/compose prompts carry the table |
 | `context` | — | `{ok, result}` | focused app, `[windows]` workspace map, inventory counts |
 | `captures` | `turn_id?: string`, `full?: bool`, `limit?: int` | `{ok, packs}` or `{ok, manifest}` | read capture-pack list or manifest |
+| `devlog` | `n?: int` (turns, default 20, max 50) | `{ok, turns, gate, rated, finished, rated_share, misses, truncated}`; each turn is `{id, turn, ts, transcript, route, kind, result, label: correct\|incorrect\|corrected-by-retry\|none, note, total_ms, stages: [{name, ms}], act_steps}`; `gate` is `{labelled, correct, rate, gate_rate, min_turns, status, needs, kinds}` | read-only dev tab data: tail-reads the last turns from decisions.jsonl and trace.jsonl, joins stage spans and the latest label, reuses `wispd eval`'s tally and misses; reply capped at 64 KB (`truncated`), recomputed per call |
 | `task_output` | `name: string` | `{ok, name, status, exit_code, output}` | read named-agent log output (U2) |
 | `task_artifacts` | `name: string` | `{ok, name, out_dir, delivered, deliverables, artifacts}` | read named-agent output workspace + deliverable verification (U2) |
 | `learn` | — | `{ok, result}` | no-op; weekly proposals were removed |
@@ -44,7 +45,7 @@ future tray apps). Shells MUST only depend on this document.
 
 The daemon captures `SO_PEERCRED` (`{pid, uid}`) on every AF_UNIX connection and classifies IPC commands into two sets (**deny-by-default**):
 
-- **Read class (`READ_CMDS`):** `status`, `task_status`, `context`, `subscribe`, `captures`, `suggestions`, `task_output`, `task_artifacts`. `captures` with `full: true` (transcript/state-dump fields) is refused for marked peers with `"reason": "gated_read"`.
+- **Read class (`READ_CMDS`):** `status`, `task_status`, `context`, `subscribe`, `captures`, `devlog`, `suggestions`, `task_output`, `task_artifacts`. `captures` with `full: true` (transcript/state-dump fields) is refused for marked peers with `"reason": "gated_read"`.
 - **Mutating class (`MUTATING_CMDS` + anything unlisted):** `agent`, `task_cancel`, `choice`, `config`, `memory`, `stop`, `interrupt`, `listen`, `label`, `dictate_correct`, `learn`, `harness`, and any unknown or future command not in `READ_CMDS`. `config` and `memory` are mutating as whole commands, so their get forms (`wispd config`, `wispd memory`) are refused for marked peers too: a `config` reply carries the full config, including key references.
 
 Every process spawned via `agent_spawn` is placed in a registered task scope (`wisp-task-<id>.scope` via `systemd-run --user --scope` on systemd hosts, recorded in `tasks.jsonl` alongside `WISP_TASK_ID` and root PID/start-time). On each request `_dispatch` checks the connecting peer:

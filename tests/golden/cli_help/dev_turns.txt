@@ -1,0 +1,16 @@
+usage: wispd dev turns [-h] [-n N] [--json] [--quiet] [--no-color]
+
+Last turns with stages, labels, gate and misses
+
+options:
+  -h, --help     show this help message and exit
+  -n, --limit N  turns to return (default 20, max 50)
+
+global options:
+  --json         machine-readable output (one JSON object)
+  --quiet, -q    print nothing on success
+  --no-color     plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd dev turns
+  wispd dev turns --json -n 5

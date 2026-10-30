@@ -29,6 +29,10 @@ def canned(cmd: dict) -> dict:
         return {"ok": True, "state": {"status": "idle", "tasks": {}}}
     if c == "label":
         return {"ok": True, "result": "LABELLED " + cmd.get("label", "")}
+    if c == "devlog":
+        return {"ok": True, "turns": [], "gate": {}, "rated": 0,
+                "finished": 0, "rated_share": None, "misses": [],
+                "truncated": False}
     if c == "context":
         return {"ok": True, "result": "ctx: terminal focused"}
     if c in ("task_status", "task_cancel"):
