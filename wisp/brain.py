@@ -173,6 +173,28 @@ def _headers(p: dict) -> dict:
     return headers
 
 
+def _provider_prefs(p: dict) -> dict | None:
+    """Optional OpenRouter provider routing preferences from [brain.<name>]."""
+    raw_order = p.get("provider_order") or p.get("provider")
+    order: list[str] = []
+    if isinstance(raw_order, str):
+        order = [s.strip() for s in raw_order.split(",") if s.strip()]
+    elif isinstance(raw_order, (list, tuple)):
+        order = [str(s).strip() for s in raw_order if str(s).strip()]
+    sort = str(p.get("provider_sort", "")).strip()
+    allow_fallbacks = p.get("allow_fallbacks")
+    prefs: dict = {}
+    if order:
+        prefs["order"] = order
+    if sort in ("price", "throughput", "latency"):
+        prefs["sort"] = sort
+    if isinstance(allow_fallbacks, bool):
+        prefs["allow_fallbacks"] = allow_fallbacks
+    elif isinstance(allow_fallbacks, str) and allow_fallbacks.lower() in ("true", "false"):
+        prefs["allow_fallbacks"] = allow_fallbacks.lower() == "true"
+    return prefs or None
+
+
 def _ollama_msgs(messages: list) -> list:
     msgs = []
     for m in messages:
@@ -211,6 +233,9 @@ def _chat_one(p: dict, messages: list, tools, timeout) -> dict:
     if tools and _tools_ok(p):
         body["tools"] = tools
         body["tool_choice"] = "auto"
+    prefs = _provider_prefs(p)
+    if prefs:
+        body["provider"] = prefs
     resp = _post(f"{base}/chat/completions", _headers(p), body, timeout)
     msg = (resp.get("choices") or [{}])[0].get("message", {})
     if not msg.get("content") and not msg.get("tool_calls"):
@@ -253,6 +278,9 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
                 "max_tokens": 600, "stream": True,
                 "stream_options": {"include_usage": True},
                 "usage": {"include": True}}
+        prefs = _provider_prefs(p)
+        if prefs:
+            body["provider"] = prefs
         url, headers = f"{base}/chat/completions", _headers(p)
     req = urllib.request.Request(
         url, data=json.dumps(body).encode(),

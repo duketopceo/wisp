@@ -19,7 +19,10 @@ var FIELDS = [
   {"key": "cua.max_clicks_per_min", "group": "cua", "kind": "int", "label": "ui.set.clicks", "widget": "number", "min": 1, "max": 600},
   {"key": "cua.max_per_turn", "group": "cua", "kind": "int", "label": "ui.set.per_turn", "widget": "number", "min": 1, "max": 200},
   {"key": "agent.autonomy", "group": "agent", "kind": "choice", "label": "ui.set.autonomy", "widget": "choice", "options": ["autonomous", "guided", "always_ask"]},
-  {"key": "dictation.mode", "group": "dictation", "kind": "choice", "label": "ui.set.dictation", "widget": "choice", "options": ["raw", "cleanup", "compose"]}
+  {"key": "dictation.mode", "group": "dictation", "kind": "choice", "label": "ui.set.dictation", "widget": "choice", "options": ["raw", "cleanup", "compose"]},
+  {"key": "voice.captions", "group": "voice", "kind": "bool", "label": "ui.set.captions", "widget": "toggle"},
+  {"key": "voice.enabled", "group": "voice", "kind": "choice", "label": "ui.set.voice", "widget": "choice", "options": ["auto", "true", "false"]},
+  {"key": "voice.tts_voice", "group": "voice", "kind": "choice", "label": "ui.set.tts_voice", "widget": "choice", "options": ["autumn", "diana", "hannah", "austin", "daniel", "troy"]}
 ]
 
 // characters a config value may not contain (as a regex source)

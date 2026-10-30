@@ -222,12 +222,33 @@ def speak_stage(ctx) -> int:
 
 
 def _spoken_payload(result: str) -> str:
-    """User-facing text inside a terminal act result: the model's final
-    reply for ACTED; empty for INTERRUPTED/other prefixes (already
-    announced by the interrupt itself, or machine-only status)."""
+    """User-facing text inside a terminal act or tool result: the model's
+    final reply for ACTED/WALKED, or a brief natural-language confirmation
+    for direct tool actions (OPENED, SWITCHED tab, LAUNCHED, FOCUSED,
+    WORKSPACE); empty for INTERRUPTED/other machine prefixes."""
     m = re.match(r"^(?:ACTED|WALKED)(?:\s*\([^)]*\))?\s*:\s*(.*)$",
                  result, re.DOTALL)
-    return m.group(1).strip() if m else ""
+    if m:
+        return m.group(1).strip()
+    m = re.match(r"^SWITCHED tab\s+'([^']+)'\s*->\s*(\S+)", result)
+    if m:
+        title, host = m.group(1).strip(), m.group(2).strip()
+        return f"Switched to {title or host}."
+    m = re.match(r"^OPENED\s+(\S+)\s*->\s*(.+)$", result)
+    if m:
+        url = m.group(1).strip()
+        host = re.sub(r"^https?://", "", url).split("/", 1)[0]
+        return f"Opened {host or url}."
+    m = re.match(r"^LAUNCHED\s+([^\s-]+?)\s*->\s*(.+)$", result)
+    if m:
+        return f"Opened {m.group(1).strip()}."
+    m = re.match(r"^FOCUSED\s+([^\s-]+?)(?:\s*->.*)?$", result)
+    if m:
+        return f"Focused {m.group(1).strip()}."
+    m = re.match(r"^WORKSPACE\s+(\d+)\b", result)
+    if m:
+        return f"Switched to workspace {m.group(1)}."
+    return ""
 
 
 def _speak_result(ctx, payload: str) -> None:

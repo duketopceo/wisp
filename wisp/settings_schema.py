@@ -177,18 +177,21 @@ FIELDS = (
        min=1, max=100000),
     _f("voice.captions", "bool", "true",
        "Show the answer text in the bubble while it is spoken (off: the "
-       "voice is the answer; a muted speaker still shows it)"),
+       "voice is the answer; a muted speaker still shows it)",
+       panel=True, label="ui.set.captions"),
     _f("voice.enabled", "choice", "auto",
        "Spoken answers: auto speaks when a Groq key or a local voice "
        "exists, true always, false never",
-       choices=("auto", "true", "false")),
+       choices=("auto", "true", "false"),
+       panel=True, label="ui.set.voice"),
     _f("voice.provider", "choice", "groq",
        "Who speaks: groq (Orpheus, English; espeak or [voice] cmd when "
        "Groq cannot) or espeak (never ask Groq)",
        choices=("groq", "espeak")),
     _f("voice.tts_voice", "choice", "hannah",
        "Groq Orpheus voice",
-       choices=("autumn", "diana", "hannah", "austin", "daniel", "troy")),
+       choices=("autumn", "diana", "hannah", "austin", "daniel", "troy"),
+       panel=True, label="ui.set.tts_voice"),
     _f("quiet.on_calls", "bool", "true",
        "Hold announcements nobody asked for (a finished background "
        "agent) while a call or a screen share is on"),

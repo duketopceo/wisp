@@ -260,7 +260,7 @@ routine_wait_s = 120        # a scheduled routine waits this long for the networ
 writer_queue_max = 256      # background trajectory/recall writes queued
 # OpenCode background agents (ACP). The session runs on the first of these
 # the agent runtime offers; none offered = the task fails, never a default.
-acp_models = "openrouter/deepseek/deepseek-v4-flash,openrouter/deepseek/deepseek-v4.1-flash,openrouter/google/gemini-3.5-flash-lite"
+acp_models = "openrouter/particle-ai/particle-1,openrouter/deepseek/deepseek-v4-flash,openrouter/deepseek/deepseek-v4.1-flash,openrouter/google/gemini-3.5-flash-lite"
 acp_idle_s = "900"          # a named helper's process exits after this idle
 ask_timeout_s = "120"       # an unanswered agent ask is refused after this
 cancel_grace_s = "10"       # cancel waits this long, then kills the process
@@ -306,7 +306,7 @@ language = "auto"
 
 # vocabulary priming — project names, jargon; whisper.cpp --prompt /
 # `prompt` param on the openai provider (huge accuracy win on names)
-prompt = "Wisp, wispd, Omarchy, Hyprland, Jev, OpenRouter, dayflow, omaseal, omarchy plugins, RetroArch, Steam, Discord, VS Code, Kubernetes, k8s, Tailscale, Waybar, Quickshell"
+prompt = "Wisp, wispd, Omarchy, Hyprland, Jev, OpenRouter, dayflow, omaseal, omarchy plugins, RetroArch, Steam, Discord, VS Code, Kubernetes, k8s, Tailscale, Waybar, Quickshell, Robinhood, TradingView, Polymarket, YouTube, Gmail, Linear, Stripe, Supabase, GitHub, Particle AI"
 
 [web]
 # Web app a role opens when its default handler is a browser (a native
@@ -589,7 +589,8 @@ def _default_cfg_dict() -> dict:
                    "act_max_parse_misses": "1", "act_max_seconds": "600",
                    "act_max_usd": "0", "routine_wait_s": "120",
                    "writer_queue_max": "256",
-                   "acp_models": "openrouter/deepseek/deepseek-v4-flash,"
+                   "acp_models": "openrouter/particle-ai/particle-1,"
+                                 "openrouter/deepseek/deepseek-v4-flash,"
                                  "openrouter/deepseek/deepseek-v4.1-flash,"
                                  "openrouter/google/gemini-3.5-flash-lite",
                    "acp_idle_s": "900", "ask_timeout_s": "120",

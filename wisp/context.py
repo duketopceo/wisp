@@ -77,8 +77,13 @@ def snapshot(cfg: dict) -> str:
     parts = []
     if app:
         parts.append(f"app={app}")
-    if title and mode == "full":
-        parts.append(f"title={title[:80]!r}")
+    if title:
+        if mode == "full":
+            parts.append(f"title={title[:80]!r}")
+        for prof in ("personal", "work"):
+            if prof in title.lower():
+                parts.append(f"profile={prof}")
+                break
     if mode == "full":
         doing = _last_dayflow()
         if doing:

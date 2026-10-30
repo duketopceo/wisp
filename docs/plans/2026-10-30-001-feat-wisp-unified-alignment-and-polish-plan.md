@@ -48,6 +48,10 @@ Khan needs Wisp to act immediately and reliably on natural voice commands:
 - **R4 (Web Services & Tab-First Resolution for Email, Stripe, Linear, GitHub, Notion, Slack)**: Normalize spoken possessive/service aliases (`"my email"`, `"my stripe"`, `"my linear"`), check open CDP browser tabs first (`SWITCHED tab ...`), fall back to opening the service URL (`WEB_DEFAULTS`), and teach `act._unsupported_done` that switching/opening a service in a browser satisfies a service navigation task.
 - **R5 (Sensitive Surface Policy for Stripe & Financial Apps)**: Add `BUILTIN_SENSITIVE_SURFACES` and `cua_safety.sensitive_surface()`. Keep screen capture and read/navigation tools (`screenshot`, `observe`, `ground`, `move`, `scroll`, `tab`, `launch`, `focus`) unblocked on Stripe, promote mutating input tools (`click`, `type_text`, `key`, `fill`) to `T2` confirmation on sensitive surfaces, and preempt typing live secret keys (`sk_live_`, `rk_live_`, `whsec_`).
 - **R6 (Low-Latency Capture & Continuous Companion Feedback)**: Only sleep before press-time capture when `ask_chips` are actually armed, tighten `ENTRY_DELAY_S` in `shell-plugin/lib/buddy.js`, and keep the status pill visible during `deciding` and `acting` in `shell-plugin/lib/companion.js` when no bubble or confirm card is up.
+- **R7 (Particle AI `particle-ai/particle-1` & OpenRouter Provider Routing)**: Promote `openrouter/particle-ai/particle-1` (Particle AI's post-trained DeepSeek V4.1 Flash agentic model) to the primary default in `acp_runtime.DEFAULT_MODELS` and `[agents] acp_models`, add `"Particle AI"` to the Whisper vocabulary prompt, and support `provider_order` / `provider_sort` in `brain.py` for OpenRouter calls.
+- **R8 (Multi-Browser Profile `Personal` vs. `Work` & Tab Intelligence)**: Detect `Personal` vs `Work` browser profiles from the spoken utterance (`"for work"`, `"on personal"`) or fall back to the currently focused browser window (`active_browser_profile()`), scan all active CDP ports (`9100`, `9222`, `9223`), boost matching profile tabs in `_tab_score()`, focus the matching profile browser window in `_focus_browser()`, and inject `profile=personal|work` into `context.snapshot()`.
+- **R9 (Talkback Confirmations & Panel Voice Controls)**: Ensure direct tool actions (`SWITCHED tab`, `OPENED`, `LAUNCHED`, `FOCUSED`, `WORKSPACE`) speak concise natural confirmations aloud in `stage_speak._spoken_payload()` and render clean copy in `copy.RESULT_RULES`; expose `voice.enabled`, `voice.tts_voice`, and `voice.captions` in `settings_schema.py` (`panel=True`).
+- **R10 (Omarchy Quickshell Settings & StatusLine UX Redesign)**: Group `SettingsTab.qml` into clean, scannable surface cards (`voice and talkback`, `dictation`, `pointer` + `agent`, `cua safety`, `budget`, `connectors`), render `on`/`off` labels on boolean chips, and add a quick `talk`/`stop` action chip to `StatusLine.qml`.
 
 ## Scope Boundaries
 
@@ -121,3 +125,48 @@ Khan needs Wisp to act immediately and reliably on natural voice commands:
     - `shell-plugin/lib/companion.js`
     - `tests/qml/lib/tst_pill.qml`
   - **Verification**: `python3 -m unittest tests/test_qml_lib.py tests/test_components.py tests/test_pipeline.py`
+
+- [x] **Unit 7 (U7): Particle AI (`particle-ai/particle-1`) & OpenRouter Provider Routing**
+  - **Goal**: Set `openrouter/particle-ai/particle-1` as the primary default OpenCode ACP agent model ahead of `deepseek-v4-flash`, add `"Particle AI"` to the STT prompt, and support `provider_order` / `provider_sort` in `wisp/brain.py`.
+  - **Requirements**: R7
+  - **Files**:
+    - `wisp/acp_runtime.py`
+    - `wisp/config.py`
+    - `wisp/brain.py`
+    - `docs/CONFIG.md`
+    - `docs/COSTS.md`
+  - **Verification**: `python3 -m unittest tests/test_acp_runtime.py tests/test_brain.py`
+
+- [x] **Unit 8 (U8): Multi-Browser Profile (`Personal` vs. `Work`) & Tab Intelligence**
+  - **Goal**: Resolve `Personal` vs. `Work` browser profiles from the utterance or focused window, scan all active CDP ports, boost profile-matching tabs, focus the matching browser profile window, and inject `profile=personal|work` into `[focus]`.
+  - **Requirements**: R8
+  - **Files**:
+    - `wisp/tools/desktop.py`
+    - `wisp/context.py`
+    - `wisp/act.py`
+    - `tests/test_tools.py`
+    - `tests/test_context.py`
+  - **Verification**: `python3 -m unittest tests/test_tools.py tests/test_context.py`
+
+- [x] **Unit 9 (U9): Talkback Confirmations & Settings Voice Controls**
+  - **Goal**: Speak concise confirmations aloud for direct desktop/browser actions (`SWITCHED tab`, `OPENED`, `LAUNCHED`, `FOCUSED`, `WORKSPACE`), translate them cleanly in `copy.py`, and expose `voice.enabled`, `voice.tts_voice`, and `voice.captions` in Panel Settings.
+  - **Requirements**: R9
+  - **Files**:
+    - `wisp/stage_speak.py`
+    - `wisp/settings_schema.py`
+    - `wisp/copy.py`
+    - `shell-plugin/lib/copy.js`
+    - `shell-plugin/lib/settings_schema.js`
+    - `tests/test_stage_speak.py`
+    - `tests/test_settings_schema.py`
+  - **Verification**: `python3 -m unittest tests/test_stage_speak.py tests/test_settings_schema.py`
+
+- [x] **Unit 10 (U10): Omarchy Quickshell Settings & StatusLine UX Redesign**
+  - **Goal**: Organize `SettingsTab.qml` into clean surface cards (`voice and talkback`, `dictation`, `pointer` + `agent`, `cua safety`, `budget`, `connectors`) with `on`/`off` toggle labels, and add a quick `talk`/`stop` action chip to `StatusLine.qml`.
+  - **Requirements**: R10
+  - **Files**:
+    - `shell-plugin/components/SettingsTab.qml`
+    - `shell-plugin/components/StatusLine.qml`
+    - `ROADMAP.md`
+    - `docs/ROADMAP.md`
+  - **Verification**: `python3 -m unittest tests/test_components.py tests/test_qml_lib.py`

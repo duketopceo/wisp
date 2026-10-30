@@ -75,7 +75,17 @@ def _browseros_live() -> bool:
 # whatever the 'browser' role maps to
 _BROWSERS = ("browseros", "chromium", "google-chrome", "firefox", "brave")
 
+_LEADING_VERB = re.compile(
+    r"^(?:go\s+to|open(?:\s+up)?|check|switch\s+to|show(?:\s+me)?|visit|navigate\s+to)\s+",
+    re.I,
+)
 _LEADING_POSSESSIVE = re.compile(r"^(?:my|the|our|a|an)\s+", re.I)
+_PROFILE_QUALIFIER = re.compile(
+    r"(?:\b(?:for|on|in)\s+(?:my\s+)?(?:work|personal)(?:\s+(?:profile|account|browser))?\b"
+    r"|^(?:work|personal)\s+"
+    r"|\s+(?:work|personal)$)",
+    re.I,
+)
 
 # Natural spoken names for web services and role aliases. When the user
 # says "check my email", "go to my Stripe", or "go to Linear", launch()
@@ -98,13 +108,16 @@ _SERVICE_ALIASES = {
 
 
 def _clean_target(raw: str) -> str:
-    return _LEADING_POSSESSIVE.sub("", (raw or "").strip()).strip()
+    s = _LEADING_VERB.sub("", (raw or "").strip()).strip()
+    return _LEADING_POSSESSIVE.sub("", s).strip()
 
 
 def _resolve_service_role(raw: str) -> str:
     cleaned = _clean_target(raw).lower()
-    compact = re.sub(r"[\s._-]+", "", cleaned)
-    return _SERVICE_ALIASES.get(cleaned) or _SERVICE_ALIASES.get(compact) or cleaned
+    stripped = _LEADING_POSSESSIVE.sub("", _PROFILE_QUALIFIER.sub(" ", cleaned).strip()).strip()
+    target = stripped or cleaned
+    compact = re.sub(r"[\s._-]+", "", target)
+    return _SERVICE_ALIASES.get(target) or _SERVICE_ALIASES.get(compact) or target
 
 
 def _web_browser(apps: dict, cfg: dict) -> str | None:
@@ -148,6 +161,8 @@ def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
         from .. import inventory
         defaults = inventory.defaults()
         role_word = _resolve_service_role(app)
+        prof_hint = requested_profile(app)
+        tab_query = f"{role_word} {prof_hint}".strip() if prof_hint else role_word
         role = defaults.get(role_word)
         web_urls = config.web_settings(cfg)
         url = web_urls.get(role_word)
@@ -161,7 +176,7 @@ def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
                 down = _wm_down()
                 if down:
                     return down
-                switched = _try_switch_open_tab(role_word)
+                switched = _try_switch_open_tab(tab_query)
                 if switched:
                     return switched
                 if not _exec_detached(f"{binname} {shlex.quote(url)}"):
@@ -173,7 +188,7 @@ def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
             down = _wm_down()
             if down:
                 return down
-            switched = _try_switch_open_tab(role_word)
+            switched = _try_switch_open_tab(tab_query)
             if switched:
                 return switched
             via = _web_browser(apps, cfg)
@@ -291,19 +306,58 @@ CDP_PORTS = (9108, 9107, 9222)
 CDP_TIMEOUT_S = 1.0
 _TAB_FILLER = frozenset({"my", "the", "a", "an", "tab", "tabs", "tablet",
                          "open", "up", "switch", "to", "go", "page",
-                         "website", "site"})
+                         "website", "site", "for", "on", "in", "profile",
+                         "account"})
+_PROFILE_HINTS = ("personal", "work")
 # spoken word -> the word a tab's title or host actually carries
 # ("my email" is a Gmail tab titled "Inbox ... gmail.com" on mail.*)
 _TAB_ALIAS = {"email": "mail", "emails": "mail", "inbox": "mail"}
+_BROWSER_CLASSES = frozenset({
+    "chromium-browser", "chromium", "browseros", "google-chrome",
+    "firefox", "brave", "brave-browser",
+})
 
 
 def _words(s: str) -> list[str]:
     return re.findall(r"[a-z0-9]+", (s or "").lower())
 
 
+def _extract_profile(text: str) -> str:
+    low = (text or "").lower()
+    for p in _PROFILE_HINTS:
+        if re.search(rf"\b{p}\b", low):
+            return p
+    return ""
+
+
+def active_browser_profile() -> str:
+    """Return 'personal' or 'work' when the focused window (or single matching
+    browser client) indicates a browser profile, else ''."""
+    from .. import platform
+    try:
+        win = platform.active_window() or {}
+    except Exception:
+        win = {}
+    prof = _extract_profile(win.get("title", ""))
+    if prof:
+        return prof
+    return ""
+
+
+def requested_profile(query: str) -> str:
+    """Explicit profile in `query` ('for work', 'on personal') wins;
+    otherwise fall back to the currently focused browser profile."""
+    explicit = _extract_profile(query)
+    if explicit:
+        return explicit
+    return active_browser_profile()
+
+
 def _query_words(query: str) -> list[str]:
-    return [_TAB_ALIAS.get(w, w) for w in _words(query)
-            if w not in _TAB_FILLER]
+    raw = [_TAB_ALIAS.get(w, w) for w in _words(query)
+           if w not in _TAB_FILLER]
+    without_prof = [w for w in raw if w not in _PROFILE_HINTS]
+    return without_prof or raw
 
 
 def _cdp_get(port: int, path: str) -> bytes:
@@ -314,42 +368,67 @@ def _cdp_get(port: int, path: str) -> bytes:
 
 
 def _cdp_pages() -> tuple[int | None, list[dict]]:
-    """(port, page targets) from the first loopback port that answers."""
+    """(first_port, page targets) across responding loopback CDP ports.
+    Each target carries `_cdp_port` so multi-profile browser instances on
+    different ports can be activated on their own port."""
+    first_port: int | None = None
+    pages: list[dict] = []
     for port in CDP_PORTS:
         try:
             data = json.loads(_cdp_get(port, "/json/list"))
         except (OSError, ValueError):
             continue
         if isinstance(data, list):
-            return port, [t for t in data if isinstance(t, dict)
-                          and t.get("type") == "page" and t.get("id")]
-    return None, []
+            if first_port is None:
+                first_port = port
+            for t in data:
+                if isinstance(t, dict) and t.get("type") == "page" and t.get("id"):
+                    item = dict(t)
+                    item.setdefault("_cdp_port", port)
+                    pages.append(item)
+    return first_port, pages
 
 
-def _tab_score(query: list[str], tab: dict) -> int:
+def _tab_score(query: list[str], tab: dict, profile: str = "") -> int:
     host = urllib.parse.urlparse(tab.get("url") or "").hostname or ""
-    have = _words(tab.get("title", "")) + _words(host)
-    return sum(1 for q in query if any(h.startswith(q) for h in have))
+    title = tab.get("title", "")
+    have = _words(title) + _words(host)
+    base = sum(1 for q in query if any(h.startswith(q) for h in have))
+    if base > 0 and profile:
+        tab_prof = _extract_profile(title) or _extract_profile(str(tab.get("profile", "")))
+        if tab_prof == profile:
+            base += 1
+    return base
 
 
-def _focus_browser(title: str) -> None:
-    """Raise the Chromium window (prefer the one titled with the tab)."""
+def _focus_browser(title: str, profile: str = "") -> None:
+    """Raise the browser window (prefer the one matching `title` and `profile`)."""
     from .. import platform
     if not platform.uses_hypr() or not hypr.available():
         return
-    # Chromium retitles its window a beat after /json/activate — poll
-    # briefly so a second browser window is not raised by mistake
+    # Browsers retitle their window a beat after /json/activate — poll
+    # briefly so a second browser window (e.g. Personal vs Work) is not
+    # raised by mistake.
     pick, wins = None, []
+    prof = (profile or "").lower()
     for _ in range(4):
         try:
             clients = hypr.query("clients")
         except Exception:
             return
         wins = [c for c in clients if isinstance(c, dict)
-                and c.get("class") == "chromium-browser"
+                and (c.get("class") or "").lower() in _BROWSER_CLASSES
                 and c.get("address")]
-        pick = next((c for c in wins
-                     if title and title in (c.get("title") or "")), None)
+        if title and prof:
+            pick = next((c for c in wins
+                         if title in (c.get("title") or "")
+                         and prof in (c.get("title") or "").lower()), None)
+        if not pick and title:
+            pick = next((c for c in wins
+                         if title in (c.get("title") or "")), None)
+        if not pick and prof:
+            pick = next((c for c in wins
+                         if prof in (c.get("title") or "").lower()), None)
         if pick or len(wins) < 2:
             break
         time.sleep(0.1)
@@ -364,22 +443,27 @@ def _try_switch_open_tab(query: str) -> str | None:
     words = _query_words(query)
     if not words:
         return None
+    prof = requested_profile(query)
     port, pages = _cdp_pages()
     if port is None or not pages:
         return None
     best, top = None, 0
     for t in pages:
-        sc = _tab_score(words, t)
+        sc = _tab_score(words, t, profile=prof)
         if sc > top:
             best, top = t, sc
     if best is None:
         return None
+    target_port = int(best.get("_cdp_port") or port)
     try:
-        _cdp_get(port, "/json/activate/" + str(best["id"]))
+        _cdp_get(target_port, "/json/activate/" + str(best["id"]))
     except OSError:
         return None
     title = best.get("title", "")
-    _focus_browser(title)
+    if prof:
+        _focus_browser(title, profile=prof)
+    else:
+        _focus_browser(title)
     host = urllib.parse.urlparse(best.get("url") or "").hostname or ""
     return f"SWITCHED tab {title!r} -> {host}"
 
@@ -387,24 +471,29 @@ def _try_switch_open_tab(query: str) -> str | None:
 def tab(query: str) -> str:
     """Switch to an already-open browser tab by title or site."""
     words = _query_words(query)
+    prof = requested_profile(query)
     port, pages = _cdp_pages()
     if port is None:
         return ("SKIP (no browser debug port on 127.0.0.1; "
                 "open the tab by clicking it)")
     best, top = None, 0
     for t in pages:                       # MRU first; strict > keeps ties
-        sc = _tab_score(words, t)
+        sc = _tab_score(words, t, profile=prof)
         if sc > top:
             best, top = t, sc
     if best is None:
         # no tab titles here: inactive tabs are not the model's to read
         return f"SKIP (no open tab matches {query!r})"
+    target_port = int(best.get("_cdp_port") or port)
     try:
-        _cdp_get(port, "/json/activate/" + str(best["id"]))
+        _cdp_get(target_port, "/json/activate/" + str(best["id"]))
     except OSError as e:
         return f"SKIP (could not activate tab: {e})"
     title = best.get("title", "")
-    _focus_browser(title)
+    if prof:
+        _focus_browser(title, profile=prof)
+    else:
+        _focus_browser(title)
     host = urllib.parse.urlparse(best.get("url") or "").hostname or ""
     return f"SWITCHED tab {title!r} -> {host}"
 

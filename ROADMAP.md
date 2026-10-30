@@ -1,7 +1,7 @@
 # Wisp Roadmap
 
-State: **Phases 1–4, 6, 7 and 8 are on `master`, plus units B1–B34 of the beat-competitors plan except B3 and B31. Phase 9 and Phase 5 are partly shipped, and the bar, rating, Dev tab and voice work (phases A to D) is on `master` (below); what is left needs labelled turns or a fixture migration.**
-Last updated: 2026-10-29 (night). Plan of record: `docs/plans/2026-10-26-0031-feat-wisp-v1-roadmap-plan.md`. This is the only roadmap; `docs/ROADMAP.md` points here.
+State: **Phases 1–9 are on `master` / `feat/wisp-unified-alignment-and-polish`, plus units B1–B34 of the beat-competitors plan (except B3/B31), Phases A–D (bar, rating, Dev tab, voice), and Unification Waves U1–U10 (single-shot VLM grounding, pointer `auto` driving, deictic routing + OpenCode CWD inference, web service aliases + tab-first launch, sensitive T2 surface gating, QML pill continuity, Particle AI `particle-ai/particle-1` OpenCode default + OpenRouter provider routing, multi-browser profile Personal/Work & tab intelligence, talkback confirmation + Settings voice controls, and Omarchy Quickshell Settings card UX).**
+Last updated: 2026-10-30. Plan of record: `docs/plans/2026-10-30-001-feat-wisp-unified-alignment-and-polish-plan.md` (building on `docs/plans/2026-10-26-0031-feat-wisp-v1-roadmap-plan.md`). This is the only roadmap; `docs/ROADMAP.md` points here.
 
 ## Product target
 
@@ -35,6 +35,18 @@ Fixed decisions:
    - **D, talk-back (#244):** answers are spoken through Groq Orpheus when a Groq key resolves, with espeak as the fallback, and `wispd doctor` gains a voice section.
    - **Also:** the test suite no longer reads the live desktop (#245), dead helpers and imports are gone (#248), and the no-daemon trigger fallback now records privately like the daemon: umask 077, private folders, one shared setup (#250).
 
+10. Unified Alignment & Polish (`docs/plans/2026-10-30-001-feat-wisp-unified-alignment-and-polish-plan.md`, #259):
+    - **U1, single-shot VLM grounding (`wisp/grounding.py`, `wisp/config.py`):** added `"vlm"` to `[ground] providers = "control,a11y,vlm,jev"` using HeyClicky's aspect-ratio bucket table (`1024x768`, `1280x800`, `1366x768`) before the 9-call Jev grid bisection fallback.
+    - **U2, pointer `auto` driving (`wisp/config.py`, `wisp/tools/pointer.py`):** changed `[pointer] mode` default to `"auto"` and wired `auto` into `click`/`move`/`scroll` so the act loop drives real clicks while keeping guide mode available.
+    - **U3, deictic routing & OpenCode CWD inference (`wisp/route.py`, `wisp/agents.py`, `wisp/stage_route.py`):** screen/error/debug questions (`"tell me what this does"`, `"what's wrong here"`, `"debug this"`) bypass blind fast-path text answers and attach live screen context; background OpenCode tasks infer the active git repo from the focused window title or prompt.
+    - **U4, web service aliases & tab-first launch (`wisp/tools/desktop.py`, `wisp/config.py`):** natural spoken targets (`"check my email"`, `"go to my Stripe"`, `"go to my Linear"`, `"GitHub"`, `"Notion"`, `"Slack"`) switch to an already-open browser tab first or open the configured service URL.
+    - **U5, sensitive web surface T2 gating (`wisp/policy.py`):** mutating actions (`click`, `type_text`, `fill`, `key`, `post_send`) on financial/admin surfaces (`stripe`, `robinhood`, `plaid`, `mercury`, `brex`, `wise`, `paypal`, `coinbase`, `ibkr`) promote to T2 confirmation even when `autonomy = "autonomous"`.
+    - **U6, QML pill & notch HUD continuity (`shell-plugin/lib/companion.js`):** listening pill stays visible across `listening`, `transcribing`, `deciding`, `acting`, `speaking`, and `awaiting_choice`, handing off cleanly to `Bubble.qml` (parked top-center under the Omarchy bar) when a confirmation card or spoken answer arrives.
+    - **U7, Particle AI (`particle-ai/particle-1`) & OpenRouter provider routing (`wisp/acp_runtime.py`, `wisp/config.py`, `wisp/brain.py`):** promoted `openrouter/particle-ai/particle-1` (Particle AI's post-trained DeepSeek V4.1 Flash agentic model) to the primary OpenCode ACP model ahead of `deepseek-v4-flash`, and added optional `provider_order` / `provider_sort` routing to `brain.py`.
+    - **U8, multi-browser profile (`Personal` vs `Work`) & tab intelligence (`wisp/tools/desktop.py`, `wisp/context.py`, `wisp/act.py`):** `tab()` and `launch()` detect `Personal` vs `Work` from the utterance (`"for work"`, `"on personal"`) or fall back to the currently focused browser window's profile, scan all active CDP ports, and inject `profile=personal|work` into `[focus]`.
+    - **U9, talkback confirmation & Settings voice controls (`wisp/stage_speak.py`, `wisp/settings_schema.py`, `wisp/copy.py`):** direct tool actions (`SWITCHED tab`, `OPENED`, `LAUNCHED`, `FOCUSED`, `WORKSPACE`) now speak concise confirmations aloud and render clean human copy in the bubble; `voice.enabled`, `voice.tts_voice`, and `voice.captions` are editable directly in the Panel Settings tab.
+    - **U10, Omarchy Quickshell Settings & StatusLine UX (`shell-plugin/components/SettingsTab.qml`, `shell-plugin/components/StatusLine.qml`):** grouped Panel Settings into clean surface cards (`voice and talkback`, `dictation`, `pointer` + `agent`, `cua safety`, `budget`, `connectors`) with `on`/`off` toggle labels, and added a quick `talk`/`stop` chip to `StatusLine`.
+
 Also: CI flake root causes (#142), "open my email" opens Gmail when the mail handler is a browser (#147), Argus pinned at c701b2a (#151), act no longer ends a run on a narrated next step without a tool call (#153). Voice polish leftovers (B8b): captions toggle, mic failover, muted speaker keeps the answer on the clipboard, and no announcements on calls. Watchable browser lane (B14): an extension pairs with a code and works in a tab group in your own browser, off by default.  3D parts (B13): an answer can carry one small allow-listed glTF model whose parts you click to ask about.
 
 ## Next, in order
@@ -47,6 +59,7 @@ Each is one PR, planned when it starts.
 4. **Verified install and update** (`docs/plans/2026-10-29-2302-feat-verified-install-update-plan.md`) — shipped so far: a shared preflight, a backed-up and verified `wispd update` with `--rollback`, and the stage and recovery docs. Left: a one-line bootstrap (needs an independently distributed signing key), recovery of the plugin, units and bind, first-install recovery, cleanup tooling, and the local-model promotion gate (waits on #239 and owner thresholds).
 5. **Remaining plan units** — B3 (accuracy loop, after Phase 9), B31 (growth scoreboard).
 6. **Clean-box check** — `wispd onboard` and `wispd doctor` on a clean Omarchy box with hosted keys only.
+7. **Next-horizon desktop overlays (post-v1)** — interactive scratchpad mini-explainer card (building on `note.py` paper strip and `Bubble.qml`) and richer on-screen 3D model generation/inspection overlays (building on `ModelCard.qml` and `lib/model3d.js`).
 
 ## v1.0 gate
 
