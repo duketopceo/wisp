@@ -15,7 +15,6 @@ logged and dropped, malformed model output is discarded.
 import hashlib
 import json
 import threading
-import time
 from datetime import datetime, timezone
 
 from . import config, sense

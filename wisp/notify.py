@@ -10,10 +10,8 @@ Behaviour: one toast per turn (replace-id), 60 s dedupe, quiet hours,
 urgency from typed error codes, buttons only when the server advertises
 `actions`, never blocks the caller, no toast for cancel or stale turns.
 """
-import os
 import queue
 import re
-import shutil
 import subprocess
 import threading
 import time

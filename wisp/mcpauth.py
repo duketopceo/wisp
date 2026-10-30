@@ -280,7 +280,3 @@ def connect(name: str, cfg: dict,
                     "registered in wisp mcp.json")
     return (f"TIMEOUT waiting for {canon[0]} sign-in — retry "
             f"'wispd connect {name}' after finishing the browser flow")
-
-
-def _unhook() -> None:  # test seam
-    _ALIASES.clear()

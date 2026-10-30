@@ -355,9 +355,6 @@ class RoutineStore:
             self._write_raw(raw)
         return removed
 
-    def record_outcome(self, routine_id: str, ok: bool) -> dict:
-        return record_routine_outcome(routine_id, ok, store=self)
-
 
 def _interpret_opt_in(value) -> bool:
     if isinstance(value, bool):
@@ -415,9 +412,6 @@ def require_first_opt_ingate(
     if allowed and store is not None:
         store.set_opted_in(True)
     return allowed
-
-
-require_first_opt_in_gate = require_first_opt_ingate
 
 
 def record_routine_outcome(

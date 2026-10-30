@@ -697,19 +697,6 @@ def _run_cmds(cmds: list) -> bool:
     return True
 
 
-def _drive(x: int, y: int, backend: str, do_click: bool) -> bool:
-    """Pointer precedence: cua (when it is the live backend) always
-    wins, so the user's real cursor is never touched; otherwise a
-    move-only goes over the Hyprland socket eval (no fork); everything
-    else runs the backend's argv (hyprcursor+ydotool / ydotool / wlrctl).
-    """
-    from .. import platform
-    if backend != "cua" and not do_click and platform.uses_hypr() \
-            and hypr.run_lua(hypr.cursor_move(x, y)):
-        return True
-    return _run_cmds(platform.pointer_cmds(x, y, backend, click=do_click))
-
-
 def _move_fallback(x: int, y: int, cfg: dict | None) -> bool:
     """cua move failed: hypr eval (if on Hyprland), then the next
     backend in auto order (hyprcursor -> ydotool -> wlrctl)."""

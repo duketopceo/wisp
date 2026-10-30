@@ -182,10 +182,3 @@ def targets(host: str, port: int = 9222) -> list:
     r = urllib.request.urlopen(f"http://{host}:{port}/json/version",
                                timeout=5)
     return json.loads(r.read())
-
-
-def open_page(host: str, url: str, port: int = 9222) -> Page:
-    """Connect to the browser-level ws, spawn+attach a page, navigate."""
-    ver = targets(host, port)
-    ws = ver["webSocketDebuggerUrl"]
-    return Page(ws).open(url)
