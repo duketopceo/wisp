@@ -1,0 +1,18 @@
+usage: wispd recap [-h] [--claim | --off] [--json] [--quiet] [--no-color]
+
+Show last week's private local usage recap (opt-in)
+
+options:
+  -h, --help   show this help message and exit
+  --claim      reserve this week's local card once (panel open)
+  --off        turn the local weekly recap off
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd recap --json
+  wispd recap --claim --json
+  wispd recap --off

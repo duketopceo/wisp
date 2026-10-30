@@ -104,23 +104,27 @@ Setup, the rules it keeps and Stop: `docs/BROWSER_LANE.md`.
 
 An absent or empty key uses the default, so a config file without a `[web]` section works unchanged. Values cannot contain `#`: the config parser treats it as a comment.
 
-## [jev] — routing deadline
+## [growth] — private weekly recap
 
 | key | default | meaning |
 |-----|---------|---------|
-| `deadline_ms` | `400` | Jev gets this long to route; past it, on an error, or on a malformed reply the heuristic router decides and the turn goes on |
+| `weekly_recap` | `"false"` | Opt in to a once-per-week local recap of days, turns and recorded spend; no network or remote reporting |
 
+The recap is off by default. `wispd recap --json` previews local data,
+`wispd recap --claim --json` reserves delivery, and `wispd recap --off --json`
+disables it. Recorded spend is not necessarily measured spend; see
+`docs/GROWTH.md` for provenance and missing-data limits.
 
-## [agent] — routing + action policy
+## [agent] — action policy and optional grounding
 
 | key | default | meaning |
 |-----|---------|---------|
-| `model` | `typesafe/jev-1.13` | Jev decision model |
+| `model` | `typesafe/jev-1.13` | Optional structured grounding model; not a turn-router hop |
 | `answer_model` | `meta-llama/llama-4-maverick` | model that writes answers (used when `brain.default` unset) |
 | `session_turns` | `8` | turns of chat history kept in context |
 | `screenshots` | `true` | allow screen capture for context |
 | `confirm_timeout` | `120` | seconds a confirm card waits before it resolves as deny (clamped 5 to 600) |
-| `risk_threshold` | `9` | numeric risk gate; Jev scores run about 0 to 2, so the default only blocks extreme risk. Real protection is the denylist, `allow_shell` and the confirm tier |
+| `risk_threshold` | `9` | Compatibility score gate for explicit route payloads; the denylist, `allow_shell`, confirmation tier and live-surface policy remain separate protections |
 | `confidence_instant` | `0.95` | auto-accept cutoff |
 | `confidence_ambiguous` | `0.8` | ask-choice cutoff |
 | `allow_shell` | `false` | allow free-form shell tool (commands also pass a built-in denylist that is not configurable) |
@@ -135,7 +139,7 @@ An absent or empty key uses the default, so a config file without a `[web]` sect
 
 | key | default | meaning |
 |-----|---------|---------|
-| `router` | `"act"` | `act` (default: every turn straight to the agent loop — the loop's brain decides answer-vs-work; no decision hop) / `jev` (decision API) / `chat` (straight to answer brain) / `off` (clarify) |
+| `router` | `"act"` | `act` (local fast paths, then the conversational act loop) / `chat` (answer without execution) / `off` (clarify); saved legacy `jev` or unknown values fall back to act without a decision-service request |
 | `fast_path` | `"true"` | Under `router = act`, a bare launch of a catalogued app ("open firefox") or a plain question ("what does this error mean") skips the act loop and goes straight to the launch or answer handler, with no model hop. Compound requests, unknown apps and questions that carry an action verb still go to act. `"false"` sends every turn to act |
 | `default` | `"openrouter:<answer_model>"` | `name:model` selecting a `[brain.<name>]` provider |
 | `fallback` | `""` | comma-separated `name:model` chain tried after `default` (e.g. `"mlx:ornith, ollama:ornith"`) |
@@ -412,7 +416,7 @@ Resources: wispd under 250 MB RSS and 3% idle CPU; cua-driver
 
 | key | default | meaning |
 |-----|---------|---------|
-| `[pointer] mode` | `guide` | `guide`: Wisp points with the ghost cursor, you click. `drive`: inject real input through the backend. `auto`: drive when a backend exists, guide otherwise |
+| `[pointer] mode` | `auto` (live act) | `guide`: Wisp points with the ghost cursor, you click. `drive`: inject real input through the backend. `auto`: drive when a backend exists, guide otherwise. The template leaves this unset; standalone tools guide, while live act chooses a temporary backend-aware mode. Explicit saved choices are preserved |
 | `[pointer] backend` | `auto` | `auto`, `cua`, `hyprcursor`, `ydotool`, `wlrctl` or `none`. A named backend is used alone; if it is unavailable Wisp guides |
 | `[ground] providers` | `control,a11y,uitars,jev` | grounding chain order: app control channel, cua accessibility tree, local UI-TARS, vision fallback. `uitars` is dropped unless `[local] enabled = true` |
 | `[ground] min_confidence` | `0.5` | candidates below this are re-observed once, then refused |

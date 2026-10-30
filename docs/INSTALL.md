@@ -4,6 +4,51 @@ Wisp is a resident voice assistant: a `wispd` daemon plus a
 push-to-talk trigger, a shell plugin (bar mark + live pill + overlay), and a management
 app.
 
+## One-line verified-release bootstrap
+
+Use a published tag, including a prerelease such as `v1.0.0-rc.1`; the
+example is a candidate identifier, not a claim that this tag exists yet.
+Run as your normal Linux desktop user, never with sudo. Python 3.11.4+,
+`curl`, Linux x86_64 or aarch64, and GitHub HTTPS access are required.
+The bootstrap is self-contained Python, not a shell script:
+
+```sh
+VERSION=v1.0.0-rc.1; f=$(mktemp) && curl -fLsS "https://raw.githubusercontent.com/duketopceo/wisp/$VERSION/scripts/bootstrap/install.py" -o "$f" && python3 "$f" --version "$VERSION"
+```
+
+For inspect-first use, stop after downloading, read the file with your
+editor (or `python3 "$f" --inspect-source`), then run:
+
+```sh
+python3 "$f" --version "$VERSION" --dry-run
+python3 "$f" --version "$VERSION"              # terminal consent
+# Explicit unattended consent after inspection:
+python3 "$f" --version "$VERSION" --yes
+```
+
+`--dry-run` is offline: it prints the selected release endpoint, architecture
+and intended actions, with no network, HOME writes or service actions.
+It does not claim to have checked release availability. Unsupported hosts
+exit 4. Without `--version`, only GitHub's latest non-prerelease is selected;
+always pin a release candidate explicitly. `--from-plugin` preserves the
+marketplace's plugin ownership. `--sha256 <hex>` supplies an independently
+obtained archive checksum; no API token or other secret is needed.
+
+After consent, bootstrap fetches official GitHub release metadata and
+`SHA256SUMS` (or the release asset digest), verifies the downloaded archive,
+refuses traversal, links, device files, secrets such as `.env`, duplicate
+members and excessive expanded size, then runs the actual extracted
+installer's preview and apply. Missing required inputs stop before HOME
+mutation. There is no sudo, model download, key entry, audio capture,
+daemon start or restart. The unit installer may reload user-unit definitions,
+but never enables or starts a unit. A failed first install may leave files;
+it is not a filesystem transaction. See Uninstall below.
+
+The bootstrap source itself is trusted through the selected official GitHub
+tag over HTTPS; read it before executing. Archive hashes from the same
+publisher do not defend against a compromised publisher. No independent
+signature or attestation verification is claimed.
+
 ## Let your coding agent do it
 
 Paste this into a coding agent (Claude Code, Codex, opencode or similar)
@@ -26,7 +71,7 @@ first spoken test). The dry runs write nothing.
 
 ```runbook
 agent  python3 wispd doctor                  # exit 0 or 4: show me every MISS row and its fix
-agent  python3 wispd install --dry-run       # show me every file and the bind it would add
+agent  python3 wispd install --dry-run       # exit 0 or 4; show every MISS and planned write
 user   say yes to that plan, then the agent runs: python3 wispd install
 user   put the model key in ~/.config/wisp/.env yourself (the agent must not read or write it)
 agent  python3 wispd onboard --status        # show the first-run checklist
@@ -50,7 +95,8 @@ python3 wispd install   # core files + service + plugin + menu entry
 `wispd install` is idempotent. It lays down:
 
 - `~/.local/opt/wisp/` — the Python core (`wisp/`), launcher (`wispd`),
-  GUI (`shells/`), shell plugin source
+  GUI (`shells/`), runtime assets, binary, scripts, public docs/baseline/task data,
+  release metadata and plugin ownership records
 - `~/.local/bin/wispd` + `wisp-trigger` on PATH
 - `~/.local/share/applications/wisp.desktop` — "Wisp" in the app menu
   opens the management app; right-click actions: Listen (`wispd
@@ -129,20 +175,23 @@ it anyway, and still asks for your yes.
    the update or install before anything is written and says what to fix;
    a `warn` row (no systemd, no OpenCode, no Ollama, no `hyprctl`) is
    shown and never blocks. `wispd doctor` and `wispd install --dry-run`
-   show the same rows.
+   include the shared preflight rows. Doctor also checks runtime readiness
+   and exits 4 if any of its checks are missing; that is not a clean bill
+   of health or an installation-success claim. Blocked install previews exit 4 without writes,
+   network or service actions; an unblocked preview exits 0.
 2. **Preview.** The version, digest and every file that would change. It
-   also says when the release changes the shell plugin or the units,
-   because rollback does not cover them.
+   also calls out external plugin and unit changes.
 3. **Consent.** Nothing is downloaded into the install, written or
    restarted without your yes. Nothing reads or prints a key.
 4. **Verify the download.** SHA-256 against the published digest, then
    ordering (never backwards), before anything outside a temp directory
    is touched.
-5. **Back up.** The managed files under `~/.local/opt/wisp/` (`wisp/`,
-   `shells/`, `wispd`, `build_harness.py`, `CHANGELOG.md`, `deploy.json`)
-   are copied to `~/.local/state/wisp/update/<id>/` with a manifest, owner
-   only. Your config, keys, memories, skills and documents are not in it
-   and are never read or changed.
+5. **Back up.** Managed core/runtime resources under `~/.local/opt/wisp/`
+   and the exact plugin files and selected unit templates this installer
+   will write are copied to `~/.local/state/wisp/update/<id>/`.
+   The owner-only manifest holds relative paths, pre/post hashes,
+   original permissions and whether the daemon was active.
+   Config, keys, memories, user skills and documents are excluded.
 6. **Apply and verify.** The installer runs, the release version is
    recorded, and every file is compared with the verified release. A
    mismatch is reported as a failure, never as success.
@@ -160,17 +209,28 @@ wispd update --rollback            # restore the saved files, on your yes
 wispd update --rollback --restart  # and offer to restart the daemon
 ```
 
-Rollback restores a file only when it is still what the update wrote (or,
-after an interrupted run or a failed verification, anything that is not
-the old content). A file
-you changed since the update is kept and listed; files you did not get
-from Wisp are never touched. Running it twice does nothing the second
-time. Read the limits: this is a backup of managed files, not a
-filesystem snapshot. The shell plugin directory, systemd units, desktop
-entry, the hotkey bind, installed agents and anything outside
-`~/.local/opt/wisp/` are not rolled back, so a rollback after a release
-that changed them can leave the old core with newer plugin files. After
-a failed first install there is no backup; use Uninstall below.
+For plugin files and units, rollback restores only content attributable
+to the update, even after interruption. A different current hash is kept
+and listed, not guessed to be an incomplete copy. Newly added external
+files are removed only when they still match the expected update hash.
+Core files retain interrupted-apply recovery: partial core bytes are
+restored from backup; after a verified update, differing core files are
+kept as user edits. Symlinked paths and escapes are refused.
+
+The plugin installer preserves unrelated additions and detects edits
+against its previous `plugin-files.json` record; edited files are kept.
+Marketplace mode persists across reinstall/update and never takes over a
+marketplace plugin. Legacy installs without that ownership record cannot
+identify pre-existing edits automatically; update backups preserve their
+old bytes. Units retain changed-file `.bak-<timestamp>` copies.
+
+Repeated rollback is safe; previously kept edits stay kept. A partial
+restore says so and lists attention needed, rather than claiming success.
+The recovery scope is not a filesystem snapshot: desktop entries/icons,
+launchers, hotkey binds, installed agents, user config and service-manager
+state are excluded. No rollback restarts services without `--restart`
+and a separate yes. After a failed first install there is no update backup;
+use Uninstall below.
 
 ### Offline, degraded and kept files
 
@@ -192,9 +252,9 @@ A release download is checked against a SHA-256 published by the same
 GitHub release. That catches a corrupted or swapped file in transit. It
 does not authenticate the publisher: if the release itself were replaced,
 the digest would match. For an independent check, take the digest from a
-source you trust and pass `--sha256 <hex>`. There is no one-line `curl |
-sh` bootstrap because it would need a signing key that is distributed
-separately from the release; that is tracked as follow-up work.
+source you trust and pass `--sha256 <hex>`. The bootstrap above has this
+same trust boundary; it does not claim signing or attestation without an
+independent trust root and actual proof material.
 
 ### Release checklist
 
@@ -267,6 +327,13 @@ sh scripts/fetch_whisper.sh      # clones + builds whisper-cli, downloads ggml-s
 After `wispd install`, run the guided setup (or open the Panel, where a
 first-run card shows the same steps until setup is finished):
 
+If `~/.local/bin` is not yet on PATH, use `~/.local/bin/wispd` explicitly.
+Installation does not start the daemon. When you choose, start it with
+`systemctl --user start wispd` (or `~/.local/bin/wispd daemon run` in a
+terminal), then do the microphone/bind test yourself. `doctor` reports
+missing capabilities honestly; onboarding completion is not proof of a
+successful live voice turn.
+
 ```sh
 wispd onboard                    # walk the steps on a terminal
 wispd onboard --status           # checklist only, exit 0
@@ -284,10 +351,14 @@ Steps, in order:
    `:8080`, Jev `:8091` and `:8931`, UI-TARS `:8081`, Ollama `:11434`).
    It never starts or stops a service; `wispd health start` is the
    manual way to do that.
-3. **cua** (optional): the cua-driver probe from `wispd cua status`.
-4. **notifications**: sends one test notification, only when you answer
+3. **keys**: checks required provider keys; explicit key entry is private,
+   never a command-line argument or copied into an agent conversation.
+4. **agents** (optional): pinned ori/OpenCode install and sign-in, only
+   with consent; decline it to finish core onboarding without agents.
+5. **cua** (optional): the cua-driver probe from `wispd cua status`.
+6. **notifications**: sends one test notification, only when you answer
    yes (or pass `--yes`).
-5. **keybinding** (optional): checks that the keyboard submap (Esc stops,
+7. **keybinding** (optional): checks that the keyboard submap (Esc stops,
    Enter confirms, number keys choose) is registered; shown as not
    available while the daemon has not registered it (Hyprland only).
 
@@ -306,6 +377,17 @@ stale) and the daemon's check in `wispd config set`, so a bad value gets
 the same `E_BAD_CONFIG` message from the CLI, the Panel and the daemon.
 
 ## Verifying
+
+The installed runbook is `~/.local/opt/wisp/docs/INSTALL.md`; starter tasks
+and their provenance remain under `~/.local/opt/wisp/docs/`. Once you
+explicitly enable dev mode and start the daemon, run the installed task
+list from any working directory:
+
+```sh
+~/.local/bin/wispd dev run ~/.local/opt/wisp/docs/dev-tasks/starter.txt
+```
+
+That command invokes a live desktop run, not an installer smoke test.
 
 ```sh
 wispd status          # daemon + state

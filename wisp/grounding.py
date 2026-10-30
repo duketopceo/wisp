@@ -91,6 +91,13 @@ class Target:
     window: str = ""
     rect: tuple | None = None      # element bounds (x,y,w,h) in `frame`
 
+    @property
+    def element_backed(self) -> bool:
+        """Only observed control/tree bounds count, not a model's label."""
+        return self.frame in ("global", "logical") \
+            and self.source in ("control", "a11y") \
+            and _contains(self.rect, self.x, self.y)
+
 
 class Shot:
     """One screen capture: full-resolution PNG b64 + its pixel size."""
@@ -416,6 +423,12 @@ def _rect(v):
     return r
 
 
+def _contains(rect, x, y):
+    r = _rect(rect)
+    return r is not None and r[0] <= x < r[0] + r[2] \
+        and r[1] <= y < r[1] + r[3]
+
+
 def _focused_window(listing):
     wins = listing.get("windows") if isinstance(listing, dict) else None
     for w in wins if isinstance(wins, list) else []:
@@ -453,6 +466,7 @@ def _a11y(ctx) -> Candidate | None:
     if not isinstance(els, list):
         return None
     want = ctx.target.strip().casefold()
+    point = getattr(ctx, "point", None)
     best, score = [], 0.0
     for el in els:
         if not isinstance(el, dict):
@@ -460,7 +474,25 @@ def _a11y(ctx) -> Candidate | None:
         rect = _rect(el.get("frame", el.get("bounds")))
         names = [el[k].strip().casefold() for k in _NAME_KEYS
                  if isinstance(el.get(k), str) and el[k].strip()]
-        if rect is None or not names:
+        if rect is None or (not names and point is None):
+            continue
+        if point is not None:
+            role = str(el.get("role", "")).casefold().removeprefix("ax")
+            if role in (
+                    "window", "application", "document", "webarea",
+                    "root", "desktop"):
+                continue
+            x, y, w, h = rect
+            if ctx.st["a11y_frame"] == "window":
+                wr = _rect(win.get("frame", win.get("bounds")))
+                if wr is None:
+                    continue
+                x, y = x + wr[0], y + wr[1]
+            rect = (x, y, w, h)
+            label = names[0] if names else str(
+                el.get("id") or el.get("role") or "")
+            if label and _contains(rect, *point):
+                best.append((rect, label))
             continue
         sc = 1.0 if want in names else (
             0.85 if any(want in n or n in want for n in names) else 0.0)
@@ -470,6 +502,11 @@ def _a11y(ctx) -> Candidate | None:
             best.append(rect)
     if not best:
         return None
+    if point is not None:
+        rect, label = min(best, key=lambda item: item[0][2] * item[0][3])
+        return Candidate(*point, 1.0, "a11y", frame="global",
+                         label=label, window=str(win.get("title") or ""),
+                         rect=rect)
     x, y, w, h = best[0]
     if ctx.st["a11y_frame"] == "window":
         wr = _rect(win.get("frame", win.get("bounds")))
@@ -525,9 +562,23 @@ def _control(ctx) -> Candidate | None:
         raise ProviderDown(f"control channel {e.code}") from None
     # match the target against element id/label, a11y-style scoring
     want = ctx.target.strip().casefold()
+    point = getattr(ctx, "point", None)
+    if point is not None and not _contains(win.get("bounds"), *point):
+        # resolve_rect confines its CENTER for named grounding. A numeric
+        # point must itself stay inside the focused app: an oversized
+        # unauthenticated control rect cannot license another window.
+        return None
     score = 0.0
     cands = []
+    ppt = (insp.get("pixelsPerPoint") if isinstance(insp, dict)
+           else None)
     for el in els:
+        if point is not None:
+            rect = _ctl.resolve_rect(el.get("rect"), win, ppt=ppt,
+                                     slack=st["slack_px"])
+            if _contains(rect, *point):
+                cands.append(el)
+            continue
         keys = [n.casefold() for n in (el.get("id"), el.get("label"))
                 if n]
         if not keys:
@@ -541,8 +592,8 @@ def _control(ctx) -> Candidate | None:
     # validate each top-scored rect against compositor bounds; the
     # first that lands inside the app's window grounds the click
     el = grect = None
-    ppt = (insp.get("pixelsPerPoint") if isinstance(insp, dict)
-           else None)
+    if point is not None:
+        cands.sort(key=lambda item: item["rect"][2] * item["rect"][3])
     for cand_el in cands:
         grect = _ctl.resolve_rect(cand_el.get("rect"), win, ppt=ppt,
                                   slack=st["slack_px"])
@@ -558,8 +609,10 @@ def _control(ctx) -> Candidate | None:
                      cap=st["element_cap"])
     if el is None:
         return None
-    cx, cy = grect[0] + grect[2] / 2.0, grect[1] + grect[3] / 2.0
-    conf = score if len(cands) == 1 else 0.4    # ambiguous tie -> low
+    cx, cy = point if point is not None else (
+        grect[0] + grect[2] / 2.0, grect[1] + grect[3] / 2.0)
+    conf = 1.0 if point is not None else (
+        score if len(cands) == 1 else 0.4)    # ambiguous name -> low
     return Candidate(cx, cy, conf, "control", frame="global",
                      label=el.get("label") or el["id"],
                      window=win.get("title") or "", rect=grect)
@@ -814,6 +867,36 @@ PROVIDERS = {
 class _Ctx:
     def __init__(self, **kw):
         self.__dict__.update(kw)
+
+
+def target_at_point(x: int, y: int, cfg: dict | None = None) -> Target | None:
+    """Read-only element hit test in global logical coordinates.
+
+    This is evidence, not another model prediction. A named VLM/label or
+    numeric model point can use the same live control/a11y element.
+    """
+    from . import cancel
+    cfg = cfg or {}
+    st = settings(cfg)
+    try:
+        cua = _default_cua()
+    except Exception:
+        cua = None
+    ctx = _Ctx(target="", point=(x, y), cfg=cfg, st=st,
+               timeout=st["budget"], cua=cua)
+    for provider in (_control, _a11y):
+        cancel.check()
+        try:
+            c = provider(ctx)
+        except cancel.Cancelled:
+            raise
+        except Exception:
+            continue
+        if c is not None and _contains(c.rect, x, y) \
+                and c.confidence >= st["min_conf"]:
+            return Target(x, y, "global", c.confidence, c.source,
+                          c.label, c.window, c.rect)
+    return None
 
 
 def _default_capture():

@@ -3421,6 +3421,27 @@
    },
    "stale": {
     "_state": "stale"
+   },
+   "weekly_recap_opt_in": {
+    "_fixture": {
+     "weeklyRecap": {
+      "activity_note": "",
+      "days_used": 5,
+      "spend": {
+       "basis": "source_not_recorded",
+       "complete": true,
+       "estimated_usd": null,
+       "measured_usd": null,
+       "recorded_usd": 0.83
+      },
+      "spend_note": "Recorded costs may include estimates; measured and estimated shares are unknown.",
+      "summary": "you used wisp 5 days, 6 turns, $0.83 recorded",
+      "title": "your week with wisp",
+      "turns": 6,
+      "week_end": "2026-10-25",
+      "week_start": "2026-10-19"
+     }
+    }
    }
   },
   "width": 360
@@ -4276,6 +4297,75 @@
   "mode": "state",
   "pad": 10,
   "width": 280
+ },
+ "WeeklyRecapCard": {
+  "mode": "variant",
+  "pad": 10,
+  "scale2": true,
+  "variants": {
+   "recorded_costs": {
+    "card": {
+     "activity_note": "",
+     "days_used": 5,
+     "spend": {
+      "basis": "source_not_recorded",
+      "complete": true,
+      "estimated_usd": null,
+      "measured_usd": null,
+      "recorded_usd": 0.83
+     },
+     "spend_note": "Recorded costs may include estimates; measured and estimated shares are unknown.",
+     "summary": "you used wisp 5 days, 6 turns, $0.83 recorded",
+     "title": "your week with wisp",
+     "turns": 6,
+     "week_end": "2026-10-25",
+     "week_start": "2026-10-19"
+    }
+   },
+   "partial_records": {
+    "card": {
+     "activity_note": "Days and turns are partial; some local activity rows could not be read.",
+     "days_used": 5,
+     "spend": {
+      "basis": "source_not_recorded",
+      "complete": false,
+      "estimated_usd": null,
+      "measured_usd": null,
+      "recorded_usd": 0.83
+     },
+     "spend_note": "Recorded costs may include estimates; measured and estimated shares are unknown.",
+     "summary": "you used wisp 5 days, 6 turns, $0.83 partial recorded",
+     "title": "your week with wisp",
+     "turns": 6,
+     "week_end": "2026-10-25",
+     "week_start": "2026-10-19"
+    }
+   },
+   "usage_unavailable": {
+    "card": {
+     "activity_note": "",
+     "days_used": 5,
+     "spend": {
+      "basis": "source_not_recorded",
+      "complete": false,
+      "estimated_usd": null,
+      "measured_usd": null,
+      "recorded_usd": null
+     },
+     "spend_note": "Recorded costs may include estimates; measured and estimated shares are unknown.",
+     "summary": "you used wisp 5 days, 6 turns, spend unavailable",
+     "title": "your week with wisp",
+     "turns": 6,
+     "week_end": "2026-10-25",
+     "week_start": "2026-10-19"
+    }
+   },
+   "disabled_hidden": {
+    "card": null,
+    "visible": false
+   }
+  },
+  "width": 340
  },
  "WhatsNewCard": {
   "mode": "variant",

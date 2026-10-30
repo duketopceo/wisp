@@ -717,8 +717,9 @@ class ActEvents(unittest.TestCase):
         st = FakeState()
         gt = mock.Mock(side_effect=AssertionError("must not ground"))
         ran, steps = run_loop("night light", "CLICKED", gt, st,
-                              window={"class": "KeePassXC", "title": ""})
+                              window={"class": "KeePassXC", "title": "Vault"})
         self.assertEqual(ran, [])
+        gt.assert_not_called()
         res = [x for x in steps if x["tool"] == "click"][0]["result"]
         self.assertTrue(res.startswith("REFUSED"))
         self.assertNotIn("click", [p[0] for p in phases(st)])

@@ -93,6 +93,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
 
         Row {
+          id: waveform
           visible: root.info.glyph === "waveform"
           anchors.centerIn: parent
           spacing: 1
@@ -105,7 +106,7 @@ Item {
               width: 2
               height: modelData
               radius: 1
-              anchors.verticalCenter: parent.verticalCenter
+              anchors.verticalCenter: waveform.verticalCenter
               color: root.tk.ember
             }
           }

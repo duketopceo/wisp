@@ -17,8 +17,10 @@ def load_groups():
     if _LOADED:
         return
     _LOADED = True
-    from . import (agents, core, cua, diagnose,  # noqa: F401
+    from . import (agents, core, cua, diagnose, diagnostics,  # noqa: F401
                    dictate, learning, note, scribble, settings, share)
+    # `recap` remains registered/completable with its own help; the opt-in
+    # companion view is documented in docs/GROWTH.md, not the compact menu.
     registry.SECTIONS[:] = [
         ("Daemon", ["daemon", "status", "stop", "interrupt", "trigger",
                     "watch", "choice", "tui", "note"]),

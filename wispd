@@ -9,6 +9,7 @@ daemon is up. The command line itself (`wispd <group> <verb>`, --help,
 this script keeps the daemon, installer and IPC handler it calls into.
 """
 import datetime
+from contextlib import suppress
 import os
 import pathlib
 import shutil
@@ -109,19 +110,22 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
                     if held < 0.4:
                         # phantom release or key-repeat bounce — too short to
                         # mean anything; kill the recorder and settle quietly
+                        capture_state = (
+                            None if ctl.get("mini") is not None else
+                            st.turn(ctl.get("turn") or st.current_turn()))
                         try:
-                            rec["proc"].send_signal(signal.SIGINT)
-                            rec["proc"].wait(timeout=2)
-                        except Exception:
-                            rec["proc"].kill()
-                        rec["sampler_stop"].set()
+                            pipeline.record_stop(rec, capture_state,
+                                                 discard=True)
+                        finally:
+                            if ctl.get("mini") is None:
+                                with suppress(Exception):
+                                    _drop_speculation(ctl)
                         if ctl.pop("mini", None) is not None:
                             # mini-capture bounce — the parked turn owns
                             # the state surface and the turn id; settle
                             # nothing but the recorder
                             return {"ok": True, "stopped": True,
                                     "ignored": True}
-                        _drop_speculation(ctl)
                         extra = _tap_chips(cfg, held)
                         st.turn(ctl.pop("turn", None)
                                 or st.current_turn()).transition(
@@ -143,6 +147,12 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
                             return {"ok": False, "error": str(e)}
                         return _voice_answer(st, cfg, ctl, wav, mini)
                     if ctl["busy"].is_set():
+                        try:
+                            tid = ctl.pop("turn", None) or st.current_turn()
+                            pipeline.record_stop(rec, st.turn(tid), discard=True)
+                        finally:
+                            with suppress(Exception):
+                                _drop_speculation(ctl)
                         return {"ok": False, "error": "busy"}
                     tid = ctl.pop("turn", None) or st.current_turn()
                     # P2: key-up publishes `transcribing` before the
@@ -534,14 +544,12 @@ def _cancel_recording(st, ctl: dict) -> bool:
         if rec is None or ctl.get("mini") is not None:
             return False
         ctl["rec"] = None
-    try:
-        rec["proc"].send_signal(signal.SIGINT)
-        rec["proc"].wait(timeout=2)
-    except Exception:
-        rec["proc"].kill()
-    rec["sampler_stop"].set()
-    _drop_speculation(ctl)
     tid = ctl.pop("turn", None) or st.current_turn()
+    try:
+        pipeline.record_stop(rec, st.turn(tid), discard=True)
+    finally:
+        with suppress(Exception):
+            _drop_speculation(ctl)
     st.turn(tid).transition("idle", error="", error_code="cancelled",
                             error_detail="", choices=[], prompt_id="",
                             confirm=None, result="", transcript="")
@@ -608,15 +616,16 @@ def _rec_watchdog(ctl: dict, secs: int) -> None:
     # state/cfg fetched at call time via the closure the daemon holds
     try:
         tid = _DAEMON_CTL.pop("turn", None) or _DAEMON_ST.current_turn()
-        wav = pipeline.record_stop(rec, _DAEMON_ST.turn(tid))
         if not admitted:
             # a parked suggestion/turn already owns the loop — a second
             # act loop would clobber the single-slot prompt broker;
             # the capture is stopped, just never run
+            pipeline.record_stop(rec, _DAEMON_ST.turn(tid), discard=True)
             dlog("rec watchdog: turn busy — capture discarded")
             _DAEMON_ST.turn(tid).transition(
                 "done", result="discarded — another turn is running")
             return
+        wav = pipeline.record_stop(rec, _DAEMON_ST.turn(tid))
         threading.Thread(
             target=_run_listen,
             args=(_DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL, wav, None, tid),
@@ -1070,6 +1079,8 @@ def install_files(dry_run: bool = False, cfg: dict | None = None,
     that `omarchy plugin update` owns)."""
     src = src or pathlib.Path(__file__).resolve().parent
     opt = config.HOME / ".local" / "opt" / "wisp"
+    from wisp import update as _update
+    plugin = plugin and _update.plugin_managed(config.HOME, opt)
     if src == opt:
         # invoked via the ~/.local/bin symlink → __file__ resolves to
         # the installed copy; copytree would self-copy and silently
@@ -1078,6 +1089,45 @@ def install_files(dry_run: bool = False, cfg: dict | None = None,
               "(python3 wispd install) — this wispd IS the installed "
               "copy; nothing updated")
         return
+    # Validate mandatory archive inputs before the first HOME mutation.
+    for rel in ("wispd", "wisp", "assets/desktop/wisp.desktop",
+                "scripts/units/wispd.service"):
+        if not (src / rel).exists():
+            raise ValueError(f"Incomplete Wisp source: missing {rel}; "
+                             "nothing was installed.")
+    targets = [opt, config.HOME / ".local/bin/wispd",
+               config.HOME / ".local/bin/wisp-trigger",
+               config.HOME / ".local/share/applications/wisp.desktop",
+               config.HOME / ".config/systemd/user",
+               config.HOME / ".config/hypr/bindings.lua",
+               config.HOME / ".config/hypr/hyprland.conf"]
+    if plugin:
+        targets.append(_plugin_dir())
+    icon_root = src / "assets/icons/hicolor"
+    if icon_root.is_dir():
+        targets.extend(config.HOME / ".local/share/icons/hicolor"
+                       / f.relative_to(icon_root) for f in icon_root.rglob("*")
+                       if f.is_file())
+    for target in targets:
+        _desktop.refuse_links(target, tree=target in (opt, _plugin_dir()))
+    from wisp import svc as _svc_install
+    _svc_install.install_units(config.HOME, dry_run=True,
+                               local=config.local_enabled(cfg),
+                               units_dir=src / "scripts/units")
+    plugin_plan = _update.plugin_plan(src, config.HOME, opt) if plugin else None
+    # Release metadata is part of the verified archive; validate its shape
+    # before any install writes and retain its source tag/commit.
+    release_deploy = None
+    if (src / "release.json").is_file():
+        import json
+        import re
+        meta = json.loads((src / "release.json").read_text())
+        if not re.fullmatch(r"v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?",
+                            str(meta.get("version", ""))) \
+                or not re.fullmatch(r"[0-9a-f]{40}", str(meta.get("commit", ""))):
+            raise ValueError("Invalid release.json version/commit; nothing installed.")
+        release_deploy = {"repo": None, "ref": meta["version"],
+                          "commit": meta["commit"]}
     if dry_run:
         res = _desktop.install(src, config.HOME, opt, dry_run=True)
         for f in res["written"]:
@@ -1086,12 +1136,15 @@ def install_files(dry_run: bool = False, cfg: dict | None = None,
             print(f"would back up the edited file to {f}")
         if plugin and (src / "shell-plugin").is_dir():
             print(f"would write {_plugin_dir()}")
-        print(f"would write {opt}/ (wisp, wispd, shells), "
-              f"{config.HOME}/.local/bin/wisp-trigger and the systemd "
-              "user unit(s)")
+        print(f"would write {opt}/ (wisp, wispd, shells, assets, bin, "
+              "runtime scripts, release inventory, docs including "
+              "docs/baselines and docs/dev-tasks), "
+              f"{config.HOME}/.local/bin/wispd, "
+              f"{config.HOME}/.local/bin/wisp-trigger and the systemd user unit(s)")
         print("dry run: nothing written")
         return
     opt.mkdir(parents=True, exist_ok=True)
+    (opt / "plugin-mode").write_text("managed\n" if plugin else "marketplace\n")
     pkg = src / "wisp"
     if pkg.is_dir():
         _mirror(pkg, opt / "wisp")
@@ -1110,6 +1163,17 @@ def install_files(dry_run: bool = False, cfg: dict | None = None,
     if shells_src.is_dir():
         _mirror(shells_src, opt / "shells")
         print(f"installed {opt}/shells")
+    # Retain runtime resources at the paths modules resolve relative to opt.
+    # Do not copy the whole source tree (which could contain local secrets).
+    for rel in ("assets", "bin", "scripts/units", "scripts/cua",
+                "scripts/bootstrap", "docs"):
+        if (src / rel).is_dir():
+            _mirror(src / rel, opt / rel)
+    for rel in ("scripts/build_harness.py", "scripts/fetch_whisper.sh",
+                "release.json", "payload.json"):
+        if (src / rel).is_file():
+            (opt / rel).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src / rel, opt / rel)
     res = _desktop.install(src, config.HOME, opt)
     for f in res["backups"]:
         print(f"backed up edited desktop file to {f}")
@@ -1120,16 +1184,28 @@ def install_files(dry_run: bool = False, cfg: dict | None = None,
     plugin_src = src / "shell-plugin"
     plugin_dst = _plugin_dir()
     if plugin and plugin_src.is_dir():
-        _mirror(plugin_src, plugin_dst)
-        # an old installer copied the directory itself — sweep the
-        # stale nested copy so there's exactly one QML source of truth
-        shutil.rmtree(plugin_dst / "shell-plugin", ignore_errors=True)
+        # Unlike the core package, this directory may contain user additions.
+        # Never prune unowned files or nested user content.
+        for rel in plugin_plan["owned"]:
+            target = plugin_dst / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(plugin_src / rel, target)
+        for rel in plugin_plan["kept"]:
+            print(f"kept edited plugin file {rel}")
+        (opt / "plugin-files.json").write_bytes(_update.plugin_record(plugin_plan))
         print(f"installed {plugin_dst}")
+    import shlex
     trigger = config.HOME / ".local" / "bin" / "wisp-trigger"
     trigger.parent.mkdir(parents=True, exist_ok=True)
-    trigger.write_text(f'#!/bin/sh\nexec {sys.executable} {opt}/wispd trigger "$@"\n')
+    trigger.write_text("#!/bin/sh\nexec " + shlex.quote(sys.executable)
+                       + " " + shlex.quote(str(opt / "wispd")) + ' trigger "$@"\n')
     trigger.chmod(0o755)
     print(f"installed {trigger}")
+    launcher = trigger.with_name("wispd")
+    launcher.write_text("#!/bin/sh\nexec " + shlex.quote(sys.executable)
+                        + " " + shlex.quote(str(opt / "wispd")) + ' "$@"\n')
+    launcher.chmod(0o755)
+    print(f"installed {launcher}")
     from wisp import deploy as _deploy, svc
     # templates come from the tree being installed: the installed copy has
     # no scripts/, and an exported ref must not get this checkout's units
@@ -1137,7 +1213,7 @@ def install_files(dry_run: bool = False, cfg: dict | None = None,
                              units_dir=src / "scripts" / "units")
     print(svc.describe(acts))
     # recorded last, so a failed install never claims its commit
-    d = deploy or {"repo": src, "ref": None,
+    d = deploy or release_deploy or {"repo": src, "ref": None,
                    "commit": _deploy.head_commit(src)}
     _deploy.write(d["repo"], d["ref"], d["commit"])
     print(f"recorded deploy {(d['commit'] or 'unknown')[:12]}")

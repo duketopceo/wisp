@@ -7,14 +7,30 @@ at the thing it means, or hands a long job to a background coding agent.
 It keeps the conversation open across utterances, so "check the build",
 "open it" and "scroll to the failure" are one task.
 
-Pipeline: push-to-talk, PipeWire capture, whisper.cpp, Jev routing, then
-one of launch, tool, agent, act, dictate, answer or clarify. The result
+Pipeline: push-to-talk, PipeWire capture, configured speech recognition,
+then fast-path routing or the act loop. Cloud, local, and safe presets
+provide starting configurations; providers and local tools still need setup. The result
 shows up as the bar mark and live pill, a cursor bubble, a bottom-center
 listening pill on the overlay, and the Panel.
 
 Status: v0.9 shipped; v1.0 is a verification milestone (a labelled soak,
 a fresh-box install and the learning loop; see `ROADMAP.md`). Linux
-(Omarchy/Hyprland) is the only supported platform.
+(Omarchy/Hyprland) is the full-app target. The [macOS](docs/MACOS.md) and
+[Windows](docs/WINDOWS.md) adapters are experimental, not complete desktop ports.
+
+## Website previews
+
+`site/` remains the lightweight, no-script site. The optional interactive
+version lives in `site-3d/`; its self-hosted desktop illustration is not a
+live model call or a benchmark.
+
+```sh
+python3 scripts/site/build.py --out build/site
+python3 scripts/site/build_3d.py
+```
+
+The intended primary domain is `wisp.observer`. Domain deployment and a
+hosted bootstrap installer remain separate, unverified release work.
 
 ## What it looks like
 
@@ -220,15 +236,15 @@ cost. Any `llama.cpp`, Ollama or LM Studio endpoint works as a
 | Endpoint | Port | Role |
 |---|---|---|
 | Ornith (llama-server, GPU) | `:8080` | answer and act brain |
-| Jev (llama-jev) behind jev-shim | `:8091`, `:8931` | decisions router |
+| Jev (llama-jev) behind jev-shim | `:8091`, `:8931` | optional structured grounding |
 | UI-TARS-7B (llama-server) | `:8081` | GUI grounding, emits `Action: click(x,y)` text |
 | Ollama | `:11434` | CPU or GPU brain, native `/api/chat` |
 
 `wispd health` probes these over loopback only. `wispd health start`
 prints the command that starts a down endpoint (`--run` executes it).
-Jev is an accelerator, not a gate: past `[jev] deadline_ms` a heuristic
-router decides and the turn goes on. Provider sections and flags are in
-`docs/CONFIG.md`.
+Turn routing uses local fast paths and the act/chat/off choice; the old Jev
+decision service is not called. The separately named optional Jev grounding
+provider remains available. Provider sections and flags are in `docs/CONFIG.md`.
 
 ## Learning
 
@@ -330,6 +346,7 @@ verbs and examples. Add `--json` for machine-readable output.
 | `wispd health` | local model endpoint health |
 | `wispd latency` | p50 and p90 per budget path |
 | `wispd spend` | usage today and the caps |
+| `wispd recap --json` | preview the private, opt-in weekly recap; `--off` disables it |
 | `wispd binds` | the hotkey and its Hyprland binds |
 | `wispd onboard` | guided first run |
 | `wispd trace show` / `trace digest` | turn trace and local digest |

@@ -94,6 +94,10 @@ Item {
   // {verb, pending, ok, message, at} — mirrors WispService.lastAction;
   // the harness never runs actions, so null unless a scene sets it
   property var lastAction: null
+  // B31: inert by default; recap scenes may opt in to an explicit card.
+  // No local logs, processes or delivery state are touched by the harness.
+  property var weeklyRecap: null
+  property bool recapVisible: false
 
   readonly property string statusWord: Copy.statusWord(status)
   readonly property string statusTone: Copy.statusTone(status)
@@ -117,6 +121,7 @@ Item {
   }
   function skipRatePrompt() { return false; }
   function loadConfig() {}
+  function disableRecap() { root.weeklyRecap = null; return true; }
   function loadDev() {}
 
   function ui(key) { return Copy.string(key); }
@@ -124,6 +129,7 @@ Item {
 
   // snapshot: raw state.json object; mods: {offline, stale}
   function load(snapshot, mods) {
+    root.weeklyRecap = mods && mods.weeklyRecap ? mods.weeklyRecap : null;
     var v = Reader.initial();
     if (mods && mods.patch) {
       // a variant overrides raw snapshot fields (health, spend, tasks)

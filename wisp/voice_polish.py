@@ -17,6 +17,7 @@ raises into a turn.
 """
 import dataclasses
 import json
+import math
 import re
 import shutil
 import subprocess
@@ -100,15 +101,15 @@ def duck_speaker(cfg: dict, runner=None) -> float | None:
     rc, out = run(["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"])
     if rc != 0 or not out.strip() or "[MUTED]" in out:
         return None
-    m = re.search(r"Volume:\s*([0-9.]+)", out)
+    m = re.fullmatch(r"\s*Volume:\s*(\d+(?:\.\d+)?)\s*", out)
     if not m:
         return None
     vol = float(m.group(1))
-    if vol <= 0.15:
+    if not math.isfinite(vol) or vol <= 0.15:
         return None
     target = round(max(0.08, vol * 0.2), 2)
-    run(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", f"{target:.2f}"])
-    return vol
+    rc, _ = run(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", f"{target:.2f}"])
+    return vol if rc == 0 else None
 
 
 def restore_speaker(prev_vol: float | None, runner=None) -> None:

@@ -7,10 +7,11 @@ import sys
 import tarfile
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-from wisp import deploy, preflight, update  # noqa: E402
+from wisp import config, deploy, preflight, update  # noqa: E402
 
 ORIG_INSTALLED_VERSION = update.installed_version
 NAME = "wisp-linux-x86_64.tar.gz"
@@ -47,7 +48,8 @@ class Fixture(unittest.TestCase):
         self.sha = hashlib.sha256(self.blob).hexdigest()
         self.downloads = 0
         self.state = self.tmp / "state"
-        for p in (mock.patch.object(update, "opt_dir", lambda: self.opt),
+        for p in (mock.patch.object(config, "HOME", self.tmp),
+                  mock.patch.object(update, "opt_dir", lambda: self.opt),
                   mock.patch.object(update, "state_dir",
                                     lambda: self.state),
                   mock.patch.object(deploy, "record_path",
@@ -123,6 +125,16 @@ class DryRun(Fixture):
         self.assertFalse(res["applied"])
         self.assertIn("nothing was written", text)
 
+    def test_preview_reports_retained_runtime_resource_changes(self):
+        (self.opt / "assets").mkdir()
+        (self.opt / "assets/icon.svg").write_bytes(b"old")
+        self.blob = make_tar({**NEW, "assets/icon.svg": b"new",
+                              "docs/baselines/new.json": b"{}"})
+        self.sha = hashlib.sha256(self.blob).hexdigest()
+        res, _ = self.run_it()
+        self.assertIn("assets/icon.svg", res["changes"]["changed"])
+        self.assertIn("docs/baselines/new.json", res["changes"]["added"])
+
     def test_a_wrong_digest_aborts(self):
         rel = self.release()
         rel["assets"][0]["digest"] = "sha256:" + "0" * 64
@@ -174,6 +186,21 @@ class DryRun(Fixture):
         rel = self.release()
         rel["assets"][0]["digest"] = "sha256:" + hashlib.sha256(
             blob).hexdigest()
+        with self.assertRaises(update.UpdateError):
+            self.run_it(rel=rel, blob=blob)
+
+    def test_even_in_tree_archive_symlinks_are_refused(self):
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+            file = tarfile.TarInfo("wisp/wispd")
+            file.size = 1
+            tf.addfile(file, io.BytesIO(b"x"))
+            link = tarfile.TarInfo("wisp/link")
+            link.type, link.linkname = tarfile.SYMTYPE, "wispd"
+            tf.addfile(link)
+        blob = buf.getvalue()
+        rel = self.release()
+        rel["assets"][0]["digest"] = "sha256:" + hashlib.sha256(blob).hexdigest()
         with self.assertRaises(update.UpdateError):
             self.run_it(rel=rel, blob=blob)
 
@@ -705,6 +732,214 @@ class PreflightGate(Fixture):
                                 **self.seams(self.release()))
         self.assertIn("opencode", "\n".join(out))
         self.assertFalse(res["applied"])
+
+
+class ExternalRecovery(Fixture):
+    def test_backups_have_unique_ids_even_with_the_same_clock_tick(self):
+        root = self.tmp / "release"
+        root.mkdir()
+        with mock.patch.object(update.time, "strftime", return_value="same-tick"):
+            first = update.protect(self.opt, root, "v1", "v2", False)
+            second = update.protect(self.opt, root, "v2", "v3", False)
+        self.assertNotEqual(first["id"], second["id"])
+        self.assertEqual(len(update._manifests(self.state)), 2)
+
+    def test_linked_backup_state_is_refused_before_writes(self):
+        root = self.tmp / "release"
+        root.mkdir()
+        outside = self.tmp / "outside"
+        outside.mkdir()
+        self.state.symlink_to(outside, target_is_directory=True)
+        with self.assertRaises(update.UpdateError):
+            update.protect(self.opt, root, "v1", "v2", False)
+        self.assertEqual(list(outside.iterdir()), [])
+
+    def test_interrupted_apply_keeps_external_user_edits_and_reports_partial(self):
+        plug = self.tmp / ".config/omarchy/plugins/io.github.duketopceo.wisp"
+        plug.mkdir(parents=True)
+        (plug / "main.qml").write_bytes(b"old")
+        root = self.tmp / "release"
+        (root / "shell-plugin").mkdir(parents=True)
+        (root / "shell-plugin/main.qml").write_bytes(b"new")
+        man = update.protect(self.opt, root, "v1", "v2", False)
+        update._save(man, "applying")
+        (plug / "main.qml").write_bytes(b"user edit after failure")
+        out = []
+        res = update.rollback(confirm=lambda _: True, emit_text=out.append)
+        self.assertFalse(res["rolled_back"])
+        self.assertIn("@plugin/main.qml", res["kept"])
+        self.assertEqual((plug / "main.qml").read_bytes(), b"user edit after failure")
+        again = update.rollback(confirm=lambda _: True, emit_text=out.append)
+        self.assertIn("@plugin/main.qml", again["kept"])
+        self.assertTrue(any("incomplete" in s for s in out), out)
+
+    def test_failed_apply_restores_attributable_plugin_and_unit_files(self):
+        plugin = self.tmp / ".config/omarchy/plugins/io.github.duketopceo.wisp"
+        unit = self.tmp / ".config/systemd/user/wispd.service"
+        plugin.mkdir(parents=True)
+        unit.parent.mkdir(parents=True)
+        (plugin / "main.qml").write_bytes(b"old plugin")
+        (plugin / "my-extra.qml").write_bytes(b"user addition")
+        unit.write_bytes(b"old unit")
+        unit.chmod(0o640)
+        files = {**NEW, "shell-plugin/main.qml": b"new plugin",
+                 "scripts/units/wispd.service": b"new unit"}
+        self.blob = make_tar(files)
+        self.sha = hashlib.sha256(self.blob).hexdigest()
+
+        def fail(root):
+            self.mirror(root)
+            (plugin / "main.qml").write_bytes(b"new plugin")
+            unit.write_bytes(b"new unit")
+            return 9
+
+        with self.assertRaises(update.UpdateError):
+            update.run_update(dry_run=False, confirm=lambda _: True,
+                              emit_text=lambda _: None, install_fn=fail,
+                              **self.seams(self.release()))
+        manifest = update._manifests(self.state)[-1]
+        self.assertEqual(manifest.get("after_modes", {}).get("@units/wispd.service"), 0o640)
+        result = update.rollback(confirm=lambda _: True, emit_text=lambda _: None)
+        self.assertTrue(result["rolled_back"], result)
+        self.assertEqual((plugin / "main.qml").read_bytes(), b"old plugin")
+        self.assertEqual(unit.read_bytes(), b"old unit")
+        self.assertEqual(unit.stat().st_mode & 0o777, 0o640)
+        self.assertEqual((plugin / "my-extra.qml").read_bytes(), b"user addition")
+
+
+class RollbackUnitReload(Fixture):
+    def prepare_unit(self, *, added=False):
+        unit = self.tmp / ".config/systemd/user/wispd.service"
+        unit.parent.mkdir(parents=True)
+        if not added:
+            unit.write_bytes(b"old unit directives")
+        root = self.tmp / "release-unit"
+        (root / "scripts/units").mkdir(parents=True)
+        (root / "scripts/units/wispd.service").write_bytes(b"new unit directives")
+        man = update.protect(self.opt, root, "v1", "v2", True)
+        unit.write_bytes(b"new unit directives")
+        update._save(man, "verified")
+        return unit
+
+    def test_consented_restart_loads_restored_directives_before_starting(self):
+        unit = self.prepare_unit()
+        calls, loaded = [], [b"new unit directives"]
+
+        def manager(argv, **kw):
+            calls.append(argv)
+            if argv == ["systemctl", "--user", "daemon-reload"]:
+                loaded[0] = unit.read_bytes()
+            elif argv == ["systemctl", "--user", "restart", "wispd"]:
+                self.assertEqual(loaded[0], b"old unit directives")
+            else:
+                self.assertEqual(argv[-2:], ["status", "--quiet"])
+            return SimpleNamespace(returncode=0)
+
+        with mock.patch("subprocess.run", side_effect=AssertionError("host process forbidden")):
+            result = update.rollback(confirm=lambda _: True, restart=True,
+                                     run=manager, emit_text=lambda _: None)
+        self.assertTrue(result["rolled_back"])
+        self.assertTrue(result["ipc_ok"])
+        self.assertEqual(calls[:2], [
+            ["systemctl", "--user", "daemon-reload"],
+            ["systemctl", "--user", "restart", "wispd"]])
+
+    def test_reload_failure_preserves_disk_success_without_restart_or_probe(self):
+        unit = self.prepare_unit()
+        calls, output = [], []
+
+        def manager(argv, **kw):
+            calls.append(argv)
+            return SimpleNamespace(returncode=1)
+
+        with mock.patch("subprocess.run", side_effect=AssertionError("host process forbidden")):
+            result = update.rollback(confirm=lambda _: True, restart=True,
+                                     run=manager, emit_text=output.append)
+        self.assertEqual(calls, [["systemctl", "--user", "daemon-reload"]])
+        self.assertTrue(result["rolled_back"])
+        self.assertIsNone(result["ipc_ok"])
+        self.assertEqual(result.get("runtime_error"), "daemon-reload-failed")
+        self.assertEqual(unit.read_bytes(), b"old unit directives")
+        self.assertEqual(update._manifests(self.state)[-1]["phase"], "restored")
+        self.assertIn("disk restore", "\n".join(output))
+        self.assertIn("daemon-reload failed", "\n".join(output))
+
+    def test_without_restart_flag_only_manual_reload_then_restart_is_advised(self):
+        self.prepare_unit()
+        output, prompts = [], []
+
+        def consent(prompt):
+            prompts.append(prompt)
+            return True
+
+        denied = mock.Mock(side_effect=AssertionError("no manager action consent"))
+        with mock.patch("subprocess.run", denied):
+            result = update.rollback(confirm=consent, restart=False,
+                                     run=denied, emit_text=output.append)
+        self.assertTrue(result["rolled_back"])
+        self.assertEqual(len(prompts), 1)
+        denied.assert_not_called()
+        hint = "\n".join(output)
+        self.assertIn("systemctl --user daemon-reload", hint)
+        self.assertLess(hint.index("systemctl --user daemon-reload"),
+                        hint.index("systemctl --user restart wispd"))
+
+    def test_declining_runtime_consent_performs_no_manager_actions(self):
+        self.prepare_unit()
+        output, prompts = [], []
+
+        def consent(prompt):
+            prompts.append(prompt)
+            return len(prompts) == 1
+
+        denied = mock.Mock(side_effect=AssertionError("no manager action consent"))
+        with mock.patch("subprocess.run", denied):
+            result = update.rollback(confirm=consent, restart=True,
+                                     run=denied, emit_text=output.append)
+        self.assertTrue(result["rolled_back"])
+        self.assertIsNone(result["ipc_ok"])
+        self.assertEqual(len(prompts), 2)
+        self.assertIn("unit definitions", prompts[1])
+        self.assertIn("systemctl --user daemon-reload", "\n".join(output))
+        denied.assert_not_called()
+
+    def test_removed_update_added_unit_is_unloaded_before_restart(self):
+        unit = self.prepare_unit(added=True)
+        calls = []
+
+        def manager(argv, **kw):
+            calls.append(argv)
+            self.assertFalse(unit.exists())
+            return SimpleNamespace(returncode=0)
+
+        with mock.patch("subprocess.run", side_effect=AssertionError("host process forbidden")):
+            result = update.rollback(confirm=lambda _: True, restart=True,
+                                     run=manager, emit_text=lambda _: None)
+        self.assertEqual(result["removed"], ["@units/wispd.service"])
+        self.assertTrue(result["ipc_ok"])
+        self.assertEqual(calls[:2], [
+            ["systemctl", "--user", "daemon-reload"],
+            ["systemctl", "--user", "restart", "wispd"]])
+
+    def assert_reload_exception_is_closed(self, error):
+        self.prepare_unit()
+        runner = mock.Mock(side_effect=error)
+        with mock.patch("subprocess.run", side_effect=AssertionError("host process forbidden")):
+            result = update.rollback(confirm=lambda _: True, restart=True,
+                                     run=runner, emit_text=lambda _: None)
+        self.assertTrue(result["rolled_back"])
+        self.assertFalse(result["daemon_reload_ok"])
+        self.assertEqual(result["runtime_error"], "daemon-reload-failed")
+        self.assertIsNone(result["ipc_ok"])
+        runner.assert_called_once_with(["systemctl", "--user", "daemon-reload"],
+                                       capture_output=True, timeout=10)
+
+    def test_missing_manager_fails_closed(self):
+        self.assert_reload_exception_is_closed(FileNotFoundError("missing manager"))
+
+    def test_timed_out_reload_fails_closed(self):
+        self.assert_reload_exception_is_closed(
+            update.subprocess.TimeoutExpired(["systemctl"], 10))
 
 
 class Versions(unittest.TestCase):

@@ -33,6 +33,7 @@ HARNESS_FILE = CFG_DIR / "harness.json"
 WHISPER_HOME = HOME / "src" / "whisper.cpp"
 WHISPER_BIN = WHISPER_HOME / "build" / "bin" / "whisper-cli"
 
+# Optional structured grounding provider, not the retired turn router.
 JEV_ENDPOINT = os.environ.get(
     "WISP_JEV_ENDPOINT", "https://openrouter.ai/api/alpha/decisions")
 CHAT_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
@@ -98,10 +99,12 @@ max_calls_per_day = 48
 model = "openrouter:google/gemini-2.5-flash"
 
 [pointer]
-# guide = Wisp points with the ghost cursor, you click (safe default).
+# With mode unset, tools guide; live act turns use auto when a backend exists.
+# Set guide explicitly to keep the ghost cursor even during live act turns.
+# guide = Wisp points with the ghost cursor, you click.
 # drive = inject real clicks via the detected backend.
 # auto  = drive when a backend exists, guide otherwise.
-mode = "guide"
+# mode = "auto"
 # auto | cua | hyprcursor | ydotool | wlrctl | none — auto prefers a
 # live cua-driver daemon (background virtual-pointer clicks on native
 # Wayland — needs the cua-hyprland plugin + CUA_DRIVER_RS_ENABLE_WAYLAND=1
@@ -203,6 +206,10 @@ enabled = "true"
 # `days` days of use. Never without a tap. false turns them off.
 enabled = "true"
 days = "7"
+
+# Private local usage recap. Opt-in; nothing is sent.
+[growth]
+weekly_recap = "false"
 
 [selection]
 # Selected or copied text, a copied image, or a file path you pointed at
@@ -365,9 +372,9 @@ monthly_usd = "160.00"
 gate_primary = "false"
 
 [brain]
-# router: "act" (every turn straight to the agent loop — default),
-# "jev" (typed decisions), "chat" (transcript+screen straight to the
-# answer brain), or "off" (always clarify via choices)
+# router: "act" (local fast paths, then the conversational act loop),
+# "chat" (answer without execution), or "off" (clarify via choices).
+# Saved legacy "jev" values fall back to act; no decision service is called.
 router = "act"
 # answer provider as "name:model" — named sections below or any
 # [brain.<name>] table you add (kind: openai_compat | ollama)
@@ -471,18 +478,10 @@ timeout_ms = "500"
 # vision = "true"                          # instead of tool_calls
 # tools = "false"
 # action_text = "true"
-# Jev can also run locally: point WISP_JEV_ENDPOINT at a jev-shim
-# (e.g. http://127.0.0.1:8931/decisions → llama-jev qwen3-4b :8091).
-
-[jev]
-# Jev is an accelerator, never a gate: past this many ms the heuristic
-# router decides and the turn goes on.
-# deadline_ms = 400
-
 [debug]
 # full-fidelity event stream to ~/.local/share/wisp/trace.jsonl —
 # every stage of every turn (record/stt/decision/tools/brain/tts/ipc)
-# with ms timings, for replay-by-us-and-Jev debugging. Never logs keys.
+# with ms timings, for local replay debugging. Never logs keys.
 trace = true
 
 [voice]
@@ -574,7 +573,7 @@ def _default_cfg_dict() -> dict:
         "voice": {"enabled": "auto"},
         "dictation": {"mode": "cleanup", "history": "true",
                       "history_max": "100", "history_days": "7"},
-        "pointer": {"mode": "guide", "backend": "auto"},
+        "pointer": {"backend": "auto"},
         "cua": {"timeout_ms": "800", "safety": "true", "allow": "",
                 "deny": "", "max_clicks_per_min": "30",
                 "max_per_turn": "12", "dry_run": "false",
@@ -585,6 +584,7 @@ def _default_cfg_dict() -> dict:
                   "shots_keep": "100", "shots_keep_days": "30"},
         "docs": {"enabled": "true"},
         "chips": {"enabled": "true", "days": "7"},
+        "growth": {"weekly_recap": "false"},
         "selection": {"enabled": "true", "clipboard": "true"},
         "images": {"allow": "", "max_kb": "4096", "timeout_s": "8"},
         "verify": {"judge_timeout_s": "20", "pixel_landed_min": "0.02",
@@ -669,6 +669,7 @@ WEB_DEFAULTS = {
     "stripe": "https://dashboard.stripe.com",
     "linear": "https://linear.app",
     "github": "https://github.com",
+    "notion": "https://www.notion.so",
     "slack": "https://app.slack.com",
 }
 

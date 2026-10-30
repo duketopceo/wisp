@@ -13,8 +13,9 @@ sent a final `overflow` event and dropped, never blocking the bus.
 Transport per OS (mirrors rs/wispd/src/ipc.rs):
   linux/macos → AF_UNIX socket at SOCK_FILE
   windows     → 127.0.0.1 TCP; the ephemeral port is written to
-                SOCK_FILE (a plain file) for client discovery. Same
-                protocol — fixture replay is identical.
+                SOCK_FILE (a plain file) for client discovery.
+                Experimental framing only: requests are refused until
+                an authenticated native peer-identity boundary exists.
 """
 import json
 import socket
@@ -65,6 +66,13 @@ def classify_cmd(cmd_name: str | None) -> str:
     return "read" if cmd_name in READ_CMDS else "mutating"
 
 
+def _attributed(peer) -> bool:
+    """Only native socket credentials supply this identity, never JSON."""
+    return (isinstance(peer, dict)
+            and type(peer.get("pid")) is int and peer["pid"] > 0
+            and type(peer.get("uid")) is int and peer["uid"] >= 0)
+
+
 def check_peer_authz(cmd: dict | None, peer: dict | None,
                      tasks_file=None) -> dict | None:
     """Return None when `peer` is allowed to run `cmd`, or a refusal reply
@@ -72,6 +80,11 @@ def check_peer_authz(cmd: dict | None, peer: dict | None,
     agent (or a spoofed WISP_TASK_ID holder) attempting a disallowed call."""
     if not isinstance(cmd, dict):
         return None
+    # Trusted in-process callers may still use read helpers without peer
+    # metadata; the transport rejects ALL unattributed requests below.
+    if not _attributed(peer) and classify_cmd(cmd.get("cmd")) != "read":
+        return {"ok": False, "error": "unattributed_peer",
+                "cmd": cmd.get("cmd")}
     from . import agents
     tf = tasks_file if tasks_file is not None else config.TASKS_FILE
     info = agents.classify_peer(peer, tasks_file=tf)
@@ -246,7 +259,14 @@ class Daemon:
             except json.JSONDecodeError:
                 resp = {"ok": False, "error": "malformed json"}
             else:
-                if isinstance(cmd, dict) and cmd.get("cmd") == "subscribe":
+                if not _attributed(peer):
+                    # Loopback is not a user identity or agent ancestry
+                    # boundary. Do not dispatch even read commands: some
+                    # expose private state or have marked-peer redaction.
+                    resp = {"ok": False, "error": "unattributed_peer"}
+                    if isinstance(cmd, dict) and cmd.get("cmd") == "subscribe":
+                        resp["type"] = "hello"
+                elif isinstance(cmd, dict) and cmd.get("cmd") == "subscribe":
                     refused = check_peer_authz(cmd, peer)
                     if refused is not None:
                         hello_err = {"type": "hello", **refused}
@@ -254,10 +274,11 @@ class Daemon:
                         return
                     self._stream(conn, cmd)
                     return
-                try:
-                    resp = self._handler(cmd, peer)
-                except Exception as e:
-                    resp = {"ok": False, "error": str(e)}
+                else:
+                    try:
+                        resp = self._handler(cmd, peer)
+                    except Exception as e:
+                        resp = {"ok": False, "error": str(e)}
             conn.sendall(json.dumps(resp).encode() + b"\n")
         except (OSError, socket.timeout):
             pass

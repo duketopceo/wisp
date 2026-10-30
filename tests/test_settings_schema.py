@@ -66,6 +66,23 @@ TABLE = [
 
 
 class TestSchemaShape(unittest.TestCase):
+    def test_unconfigured_pointer_selection_does_not_impersonate_explicit_guide(self):
+        self.assertEqual(S.field("pointer.mode").default, "auto")
+
+    def test_router_schema_does_not_offer_retired_decision_lane(self):
+        self.assertEqual(S.problem("brain.router", "jev"), "choice")
+        field = next(f for f in S.FIELDS if f.key == "brain.router")
+        self.assertEqual(field.choices, ("act", "chat", "off"))
+
+    def test_private_weekly_recap_is_declared_and_off_by_default(self):
+        field = next((f for f in S.FIELDS if f.key == "growth.weekly_recap"), None)
+        self.assertIsNotNone(field)
+        self.assertEqual((field.kind, field.default, field.section, field.panel),
+                         ("bool", "false", "growth", False))
+        self.assertEqual(config._default_cfg_dict()["growth"]["weekly_recap"],
+                         "false")
+        self.assertIn('[growth]\nweekly_recap = "false"', config.DEFAULT_CONFIG)
+
     def test_keys_unique_and_sectioned(self):
         keys = [f.key for f in S.FIELDS]
         self.assertEqual(len(keys), len(set(keys)))
@@ -96,14 +113,19 @@ class TestSchemaShape(unittest.TestCase):
 
     def test_defaults_match_default_config(self):
         import re
+        import tomllib
+        parsed = tomllib.loads(config.DEFAULT_CONFIG)
+        # These documented fallbacks must remain absent from persisted defaults:
+        # budget preserves its legacy alias, pointer preserves explicit choice.
+        inherited = {"budget.daily_usd", "pointer.mode"}
         for f in S.FIELDS:
             sec, _, name = f.key.partition(".")
+            self.assertEqual(name in parsed.get(sec, {}), f.key not in inherited,
+                             f.key)
             m = re.search(r"(?ms)^\[%s\]\n(.*?)(?=^\[|\Z)" % re.escape(sec),
                           config.DEFAULT_CONFIG)
             self.assertIsNotNone(m, f.key)
-            # budget.daily_usd stays commented in the template so the
-            # legacy [brain] daily_cap_usd alias can still apply
-            lead = "(?:# )?" if f.key == "budget.daily_usd" else ""
+            lead = "(?:# )?"
             mm = re.search(r'(?m)^' + lead + r'%s\s*=\s*"?([^"\n#]*?)"?\s*(?:#.*)?$'
                            % re.escape(name), m.group(1))
             self.assertIsNotNone(mm, f.key)

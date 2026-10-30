@@ -3,6 +3,7 @@ __pycache__/
 .env
 *.wav
 build/
+node_modules/
 dist/
 *.egg-info/
 .venv/

@@ -159,6 +159,63 @@ MENTIONS = {
     "amara.org": "A credit line for subtitle text in a bundled sample.",
     "www.w3.org": "An XML namespace in a generated icon. Never "
                   "requested.",
+    "airtable.com": "A local app-skill routing hint for Airtable. "
+                    "No request is made by this lookup.",
+    "app.asana.com": "A local app-skill routing hint for Asana. "
+                     "No request is made by this lookup.",
+    "app.clickup.com": "A local app-skill routing hint for ClickUp. "
+                       "No request is made by this lookup.",
+    "atlassian.net": "A local app-skill routing hint for Jira and "
+                     "Confluence. No request is made by this lookup.",
+    "chatgpt.com": "A local app-skill routing hint for ChatGPT. "
+                   "No request is made by this lookup.",
+    "claude.ai": "A local app-skill routing hint for Claude. "
+                 "No request is made by this lookup.",
+    "cloudflare.com": "Matched against the focused window title to "
+                      "select a local app skill for Cloudflare. "
+                      "No request is made by this lookup.",
+    "dash.cloudflare.com": "A local app-skill routing hint for the "
+                           "Cloudflare dashboard. No request is made "
+                           "by this lookup.",
+    "discord.com": "A local app-skill routing hint for Discord, also "
+                   "matched against the focused window title. "
+                   "No request is made by this lookup.",
+    "docs.google.com": "A local app-skill routing hint for Google Docs "
+                       "and Sheets, also matched against the focused "
+                       "window title. No request is made by this lookup.",
+    "drive.google.com": "A local app-skill routing hint for Google Drive, "
+                        "also matched against the focused window title. "
+                        "No request is made by this lookup.",
+    "dropbox.com": "A local app-skill routing hint for Dropbox. "
+                   "No request is made by this lookup.",
+    "figma.com": "A local app-skill routing hint for Figma, also matched "
+                 "against the focused window title. No request is made "
+                 "by this lookup.",
+    "gitlab.com": "A local app-skill routing hint for GitLab. "
+                  "No request is made by this lookup.",
+    "open.spotify.com": "A local app-skill routing hint for Spotify. "
+                        "No request is made by this lookup.",
+    "outlook.office.com": "A local app-skill routing hint for Outlook. "
+                          "No request is made by this lookup.",
+    "perplexity.ai": "A local app-skill routing hint for Perplexity, also "
+                     "matched against the focused window title. "
+                     "No request is made by this lookup.",
+    "reddit.com": "A local app-skill routing hint for Reddit. "
+                  "No request is made by this lookup.",
+    "stackoverflow.com": "A local app-skill routing hint for Stack "
+                         "Overflow. No request is made by this lookup.",
+    "stripe.com": "Matched against the focused window title to select "
+                  "a local app skill for Stripe. No request is made "
+                  "by this lookup.",
+    "tallyline.app": "A local app-skill routing hint for Tallyline. "
+                     "No request is made by this lookup.",
+    "trello.com": "A local app-skill routing hint for Trello. "
+                  "No request is made by this lookup.",
+    "vercel.com": "A local app-skill routing hint for Vercel, also "
+                  "matched against the focused window title. "
+                  "No request is made by this lookup.",
+    "youtube.com": "A local app-skill routing hint for YouTube. "
+                   "No request is made by this lookup.",
 }
 
 # What stays on this machine, and for how long.

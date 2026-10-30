@@ -18,9 +18,9 @@ An applied update is a transaction over the Wisp-managed files in the opt
 dir (never config, keys, memories or other user data): they are copied to
 `~/.local/state/wisp/update/<id>/` with a manifest before anything is
 replaced, checked against the verified tree afterwards, and `--rollback`
-restores them. That is a managed-file backup, not a filesystem snapshot:
-the shell plugin, units, desktop entry, binds and any external state are
-not rolled back.
+restores them. Attributable shell plugin files and selected unit templates
+are included. Desktop entries/icons, launchers, binds and service-manager
+state remain outside this managed-file backup, not a filesystem snapshot.
 """
 import hashlib
 import json
@@ -37,14 +37,15 @@ import time
 import urllib.parse
 import urllib.request
 
-from . import config, deploy, preflight
+from . import config, deploy, preflight, svc
 
 REPO = "duketopceo/wisp"
 API = f"https://api.github.com/repos/{REPO}/releases/latest"
 DOWNLOAD_PREFIX = f"https://github.com/{REPO}/releases/download/"
 MAX_BYTES = 400 * 1024 * 1024
-TRACKED_DIRS = ("wisp", "shells", "shell-plugin")
-TRACKED_FILES = ("wispd",)
+TRACKED_DIRS = ("wisp", "shells", "shell-plugin", "assets", "bin", "scripts",
+                "docs")
+TRACKED_FILES = ("wispd", "CHANGELOG.md", "release.json", "payload.json")
 SHOW = 20
 
 
@@ -208,12 +209,14 @@ def _hashes(base: pathlib.Path) -> dict:
 
 def diff(new_root: pathlib.Path, installed: pathlib.Path) -> dict:
     new, old = _hashes(new_root), _hashes(installed)
-    # shell-plugin is installed elsewhere on some setups: compare only
-    # directories the install actually has
-    tracked = {d for d in TRACKED_DIRS if (installed / d).is_dir()} \
-        or set(TRACKED_DIRS)
+    # Plugin is external on installed systems; all core resources (including
+    # newly introduced resource directories) still belong in the preview.
+    tracked = set(TRACKED_DIRS)
+    if installed.is_dir() and any(installed.iterdir()) \
+            and not (installed / "shell-plugin").is_dir():
+        tracked.discard("shell-plugin")
     new = {k: v for k, v in new.items()
-           if k in TRACKED_FILES or k.split("/")[0] in tracked}
+           if k in TRACKED_FILES or any(k.startswith(d + "/") for d in tracked)}
     return {"added": sorted(k for k in new if k not in old),
             "changed": sorted(k for k in new if k in old and new[k] != old[k]),
             "removed": sorted(k for k in old if k not in new)}
@@ -244,6 +247,18 @@ def describe(res: dict) -> str:
 def _extract(tarball, dest: pathlib.Path) -> pathlib.Path:
     try:
         with tarfile.open(tarball) as tf:
+            seen, total = set(), 0
+            for m in tf:
+                p = pathlib.PurePosixPath(m.name)
+                if p.is_absolute() or ".." in p.parts or "\\" in m.name \
+                        or not (m.isfile() or m.isdir()) \
+                        or m.name in seen or len(seen) >= 50000:
+                    raise UpdateError("The release contains an unsafe archive member.")
+                seen.add(m.name)
+                total += m.size
+                if total > 1024 * 1024 * 1024:
+                    raise UpdateError("The expanded release exceeds the size limit.")
+            # All members validated before the first extraction write.
             tf.extractall(dest, filter="data")
     except (tarfile.TarError, OSError) as e:
         raise UpdateError(f"The download is not a valid archive ({e}).")
@@ -296,11 +311,87 @@ def install(root: pathlib.Path, run=subprocess.run) -> int:
 
 # -- the transaction -----------------------------------------------------
 
-OPT_DIRS = ("wisp", "shells")
-OPT_FILES = ("wispd", "CHANGELOG.md", "build_harness.py", "deploy.json")
-SCOPE_NOTE = ("Rollback covers the files under ~/.local/opt/wisp only: the "
-              "shell plugin, systemd units, desktop entry and hotkey bind "
-              "are not rolled back.")
+OPT_DIRS = ("wisp", "shells", "assets", "bin", "scripts/units",
+            "scripts/cua", "scripts/bootstrap", "docs")
+OPT_FILES = ("wispd", "CHANGELOG.md", "build_harness.py", "deploy.json",
+             "plugin-mode", "release.json", "payload.json",
+             "scripts/build_harness.py", "scripts/fetch_whisper.sh",
+             "plugin-files.json")
+SCOPE_NOTE = ("Rollback covers managed core files, attributable shell plugin "
+              "files and installed systemd unit templates. Desktop entry, "
+              "icons, launchers, hotkey bind and service-manager state are "
+              "not rolled back. User edits are kept and reported.")
+PLUGIN_REL = ".config/omarchy/plugins/io.github.duketopceo.wisp"
+
+
+def plugin_managed(home=None, opt=None) -> bool:
+    home, opt = home or config.HOME, opt or opt_dir()
+    mode = opt / "plugin-mode"
+    return not ((mode.is_file() and mode.read_text().strip() == "marketplace")
+                or (home / PLUGIN_REL / ".git").exists())
+
+
+def plugin_plan(root, home=None, opt=None) -> dict:
+    """Copy only source-owned files; keep additions and detected user edits."""
+    home, opt = home or config.HOME, opt or opt_dir()
+    previous = {}
+    try:
+        previous = json.loads((opt / "plugin-files.json").read_text())
+        if not isinstance(previous, dict):
+            previous = {}
+    except (OSError, ValueError):
+        pass
+    owned, kept = {}, []
+    record = dict(previous)
+    source = root / "shell-plugin"
+    if source.is_dir() and plugin_managed(home, opt):
+        for src in sorted(source.rglob("*")):
+            if not src.is_file() or "__pycache__" in src.parts:
+                continue
+            rel = src.relative_to(source).as_posix()
+            dst = _safe(home, PLUGIN_REL + "/" + rel)
+            if dst is None:
+                raise UpdateError("Unsafe shell plugin destination; nothing installed.")
+            if rel in previous and dst.is_file() and _sha(dst) != previous[rel]:
+                kept.append(rel)
+                continue
+            owned[rel] = record[rel] = _sha(src)
+    return {"owned": owned, "kept": kept, "record": record}
+
+
+def plugin_record(plan) -> bytes:
+    return (json.dumps(plan["record"], indent=1, sort_keys=True) + "\n").encode()
+
+
+def _external(root: pathlib.Path) -> dict:
+    """Expected external writes, keyed by explicit ownership namespace."""
+    out = {}
+    for rel, digest in plugin_plan(root)["owned"].items():
+        out["@plugin/" + rel] = digest
+    units = root / "scripts/units"
+    names = [n for n in svc.UNIT_NAMES if (units / f"{n}.service").is_file()]
+    if names:
+        acts = svc.install_units(config.HOME, dry_run=True, names=names,
+                                 local=config.local_enabled(config.load_config()),
+                                 units_dir=units)
+        for a in acts:
+            if a["action"] != "skip":
+                out["@units/" + a["name"] + ".service"] = _sha(
+                    units / (a["name"] + ".service"))
+    return out
+
+
+def _path(opt: pathlib.Path, rel: str) -> pathlib.Path | None:
+    if rel.startswith("@plugin/"):
+        return _safe(config.HOME, PLUGIN_REL + "/" + rel[len("@plugin/"):])
+    if rel.startswith("@units/"):
+        name = rel[len("@units/"):]
+        if name not in {n + ".service" for n in svc.UNIT_NAMES}:
+            return None
+        return _safe(config.HOME, ".config/systemd/user/" + name)
+    if rel.startswith("@"):
+        return None
+    return _safe(opt, rel)
 
 
 def state_dir() -> pathlib.Path:
@@ -341,6 +432,8 @@ def _safe(opt: pathlib.Path, rel: str) -> pathlib.Path | None:
     r = pathlib.PurePosixPath(rel)
     if r.is_absolute() or ".." in r.parts or not r.parts:
         return None
+    if any(p.is_symlink() for p in (opt, *opt.parents)):
+        return None
     cur = opt
     for part in r.parts:
         cur = cur / part
@@ -352,6 +445,8 @@ def _safe(opt: pathlib.Path, rel: str) -> pathlib.Path | None:
 
 
 def _mkdir(p: pathlib.Path) -> None:
+    if any(part.is_symlink() for part in (p, *p.parents)):
+        raise UpdateError("Unsafe update state path (symlink); stopped.")
     p.mkdir(parents=True, exist_ok=True)
     os.chmod(p, 0o700)
 
@@ -359,7 +454,8 @@ def _mkdir(p: pathlib.Path) -> None:
 def _write_private(p: pathlib.Path, data: bytes) -> None:
     _mkdir(p.parent)
     tmp = p.with_name(f".{p.name}.{os.getpid()}.tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                 | getattr(os, "O_NOFOLLOW", 0), 0o600)
     with os.fdopen(fd, "wb") as f:
         f.write(data)
     os.replace(tmp, p)
@@ -379,19 +475,26 @@ def protect(opt: pathlib.Path, root: pathlib.Path, frm: str, to: str,
     state = state or state_dir()
     for part in (state.parent, state):
         _mkdir(part)
-    uid = time.strftime("%Y%m%dT%H%M%S") + f"-{os.getpid()}"
-    d = state / uid
-    _mkdir(d)
+    prefix = time.strftime("%Y%m%dT%H%M%S") + f"-{time.time_ns()}-{os.getpid()}-"
+    d = pathlib.Path(tempfile.mkdtemp(prefix=prefix, dir=state))
+    uid = d.name
+    external = _external(root)
     before, modes = {}, {}
-    for rel in _managed(opt):
-        src = _safe(opt, rel)
+    for rel in {**_managed(opt), **external}:
+        src = _path(opt, rel)
         if src is None or not src.is_file():
             continue
         data = src.read_bytes()
         before[rel] = hashlib.sha256(data).hexdigest()
         modes[rel] = src.stat().st_mode & 0o777
         _write_private(d / "files" / rel, data)
-    owned = _managed(root, staged=True)
+    owned = {**_managed(root, staged=True), **external}
+    if (root / "shell-plugin").is_dir():
+        owned["plugin-mode"] = hashlib.sha256(
+            b"managed\n" if plugin_managed() else b"marketplace\n").hexdigest()
+        if plugin_managed():
+            owned["plugin-files.json"] = hashlib.sha256(
+                plugin_record(plugin_plan(root))).hexdigest()
     man = {"id": uid, "dir": str(d), "opt": str(opt), "from": frm,
            "to": to, "service_active": bool(service_active),
            "before": before, "modes": modes, "owned": owned,
@@ -430,8 +533,13 @@ def verify(man: dict, opt: pathlib.Path, tag: str) -> list:
     """Reasons the install does not match the verified tree; [] when it
     does. deploy.json is hashed after its tag write."""
     now = _managed(opt)
-    bad = [f"{rel} differs from the release"
-           for rel, h in man["owned"].items() if now.get(rel) != h]
+    bad = []
+    for rel, h in man["owned"].items():
+        p = _path(opt, rel)
+        actual = (_sha(p) if p and p.is_file() else None) \
+            if rel.startswith("@") else now.get(rel)
+        if actual != h:
+            bad.append(f"{rel} differs from the release")
     rec = deploy.read() or {}
     if rec.get("ref") != tag:
         bad.append(f"the recorded version is {rec.get('ref')!r}, "
@@ -448,7 +556,7 @@ def plan_rollback(man: dict, opt: pathlib.Path) -> dict:
     kept = set(man.get("kept", []))
     restore, remove, keep = [], [], []
     for rel, was in sorted(man["before"].items()):
-        p = _safe(opt, rel)
+        p = _path(opt, rel)
         if rel in kept:
             keep.append((rel, "kept by an earlier rollback"))
             continue
@@ -458,20 +566,22 @@ def plan_rollback(man: dict, opt: pathlib.Path) -> dict:
         cur = _sha(p) if p.is_file() else None
         if cur == was:
             continue
-        if interrupted or cur is None or cur == man["owned"].get(rel):
+        if (interrupted and not rel.startswith("@")) \
+                or (cur is None and not rel.startswith("@")) \
+                or cur == man["owned"].get(rel):
             restore.append(rel)
         else:
             keep.append((rel, "changed since the update"))
     for rel, mine in sorted(man["owned"].items()):
         if rel in man["before"]:
             continue
-        p = _safe(opt, rel)
+        p = _path(opt, rel)
         if rel in kept:
             keep.append((rel, "kept by an earlier rollback"))
         elif p is None:
             keep.append((rel, "not a plain file inside the install"))
         elif p.is_file():
-            if interrupted or _sha(p) == mine:
+            if (interrupted and not rel.startswith("@")) or _sha(p) == mine:
                 remove.append(rel)
             else:
                 keep.append((rel, "changed since the update"))
@@ -506,7 +616,7 @@ def restart_service(run=subprocess.run) -> bool:
 
 
 def outside_changes(root: pathlib.Path, home=None) -> list:
-    """Things this release changes that rollback does not cover."""
+    """External plugin/unit changes, called out separately in the preview."""
     home = home or config.HOME
     out = []
     plug = home / ".config" / "omarchy" / "plugins" \
@@ -548,7 +658,8 @@ def rollback(*, confirm=None, emit_text=print, restart: bool = False,
     man = ms[-1]
     opt = opt or pathlib.Path(man["opt"])
     res = {"rolled_back": False, "id": man["id"], "restored": [],
-           "removed": [], "kept": [], "ipc_ok": None}
+           "removed": [], "kept": [], "ipc_ok": None,
+           "daemon_reload_ok": None, "runtime_error": None}
     if man["phase"] == "restored":
         emit_text(f"update {man['id']} was already rolled back.")
         return res
@@ -563,7 +674,8 @@ def rollback(*, confirm=None, emit_text=print, restart: bool = False,
         emit_text(f"  keep    {rel} ({why})")
     emit_text(SCOPE_NOTE)
     if not plan["restore"] and not plan["remove"]:
-        emit_text("nothing to restore.")
+        emit_text("restore incomplete: files listed as keep need your "
+                  "attention." if plan["keep"] else "nothing to restore.")
         _remember_kept(man, plan)
         _save(man, "restored-partial" if plan["keep"] else "restored")
         res["kept"] = [k for k, _ in plan["keep"]]
@@ -575,8 +687,12 @@ def rollback(*, confirm=None, emit_text=print, restart: bool = False,
         return res
     failed = []
     for rel in plan["restore"]:
-        dst, src = _safe(opt, rel), pathlib.Path(man["dir"]) / "files" / rel
+        dst = _path(opt, rel)
+        src = _safe(pathlib.Path(man["dir"]) / "files", rel)
         try:
+            if dst is None or src is None or not src.is_file() \
+                    or _sha(src) != man["before"][rel]:
+                raise OSError("unsafe or damaged backup; kept")
             dst.parent.mkdir(parents=True, exist_ok=True)
             tmp = dst.with_name(f".{dst.name}.{os.getpid()}.tmp")
             shutil.copyfile(src, tmp)
@@ -587,7 +703,10 @@ def rollback(*, confirm=None, emit_text=print, restart: bool = False,
             failed.append((rel, str(e)))
     for rel in plan["remove"]:
         try:
-            _safe(opt, rel).unlink()
+            dst = _path(opt, rel)
+            if dst is None:
+                raise OSError("unsafe destination; kept")
+            dst.unlink()
             res["removed"].append(rel)
         except OSError as e:
             failed.append((rel, str(e)))
@@ -602,16 +721,40 @@ def rollback(*, confirm=None, emit_text=print, restart: bool = False,
               "the restore is incomplete: "
               + ", ".join(res["kept"]) + " still need your attention. "
               "External state and your own data were not rolled back.")
+    units_changed = any(rel.startswith("@units/") for rel in
+                        res["restored"] + res["removed"])
+    manual = ("the daemon was running; to use the restored files: "
+              + ("systemctl --user daemon-reload && " if units_changed else "")
+              + "systemctl --user restart wispd")
     if man["service_active"] and restart:
-        if confirm("Restart wispd on the restored files? [y/N] "):
+        prompt = ("Reload user unit definitions and restart wispd on the "
+                  "restored files? [y/N] " if units_changed else
+                  "Restart wispd on the restored files? [y/N] ")
+        if confirm(prompt):
+            if units_changed:
+                try:
+                    res["daemon_reload_ok"] = run(
+                        ["systemctl", "--user", "daemon-reload"],
+                        capture_output=True, timeout=10).returncode == 0
+                except (OSError, subprocess.TimeoutExpired):
+                    res["daemon_reload_ok"] = False
+                if not res["daemon_reload_ok"]:
+                    res["runtime_error"] = "daemon-reload-failed"
+                    emit_text("disk restore result above is unchanged; "
+                              "daemon-reload failed. No restart or IPC check "
+                              "was attempted; runtime recovery is not verified. "
+                              "Retry systemctl --user daemon-reload before "
+                              "systemctl --user restart wispd.")
+                    return res
             if restart_service(run):
                 res["ipc_ok"] = ipc_ok(opt, run)
             emit_text("daemon answers after restart." if res["ipc_ok"]
                       else "the daemon did not answer after the restart; "
                       "see: journalctl --user -u wispd")
+        else:
+            emit_text(manual)
     elif man["service_active"]:
-        emit_text("the daemon was running; restart it to use the restored "
-                  "files: systemctl --user restart wispd")
+        emit_text(manual)
     return res
 
 
@@ -665,13 +808,21 @@ def run_update(*, dry_run: bool, sha256: str | None = None, confirm=None,
         res["backup"] = man["dir"]
         _save(man, "applying")
         rc = install_fn(root)
+        man["after"], man["after_modes"] = {}, {}
+        for rel in man["before"].keys() | man["owned"].keys():
+            p = _path(opt, rel)
+            if p is not None and p.is_file():
+                man["after"][rel] = _sha(p)
+                man["after_modes"][rel] = p.stat().st_mode & 0o777
+        _save(man)
         if rc:
             raise UpdateError(
                 f"The installer exited {rc}; the update is unfinished. "
                 "Run `wispd update --rollback` to restore the previous "
                 "files. " + SCOPE_NOTE)
-        deploy.write(None, res["version"], None)
+        deploy.write(None, res["version"], (deploy.read() or {}).get("commit"))
         man["owned"]["deploy.json"] = _sha(deploy.record_path())
+        man["after"]["deploy.json"] = man["owned"]["deploy.json"]
         _save(man, "applied")
         bad = verify(man, opt, res["version"])
         if bad:
@@ -683,8 +834,9 @@ def run_update(*, dry_run: bool, sha256: str | None = None, confirm=None,
                 "files. " + SCOPE_NOTE)
         _save(man, "verified")
         res["applied"], res["verified"] = True, True
-        emit_text(f"installed {res['version']} and verified every file "
-                  f"against the release. Backup: {man['dir']}")
+        emit_text(f"installed {res['version']} and verified managed writes "
+                  f"against the release (preserved user edits excluded). "
+                  f"Backup: {man['dir']}")
         if res["outside"]:
             emit_text("note: this release also changed "
                       + ", ".join(res["outside"]) + "; " + SCOPE_NOTE)

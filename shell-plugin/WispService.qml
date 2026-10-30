@@ -148,6 +148,19 @@ Item {
   property var configErrors: ({})    // key -> message from the daemon or validator
   property string configSaved: ""    // key last written without error
 
+  // B31: one local-only recap read per panel open, never a poll.
+  // --claim reserves that completed week before the card is delivered.
+  property var weeklyRecap: null
+  property bool recapReadRequested: false
+  property bool recapSuppressed: false
+  property bool recapVisible: false
+  onRecapVisibleChanged: { if (recapVisible) root.loadRecap(); }
+  readonly property bool recapEnabled: configValues["growth.weekly_recap"] === "true"
+  onRecapEnabledChanged: {
+    if (!recapEnabled) weeklyRecap = null;
+    else recapSuppressed = false;
+  }
+
   // --- dev tab (U5): local only, behind `[dev] panel` or a dev session ------
   // One `wispd dev turns --json` and one `wispd dev runs --json` call per tab
   // open and per refresh press, never on a timer and never with both off.
@@ -252,7 +265,32 @@ Item {
   // Read the config alone (the Panel needs `[dev] panel` before it knows
   // whether the Dev tab exists).
   function loadConfig() {
+    root.weeklyRecap = null;
+    root.recapReadRequested = true;
     if (!cfgProc.running) cfgProc.running = true;
+  }
+
+  function loadRecap() {
+    if (!root.recapVisible || !root.recapEnabled || root.recapSuppressed
+        || root.weeklyRecap || recapProc.running) return;
+    recapProc.running = true;
+  }
+
+  function finishRecap(code, text) {
+    root.weeklyRecap = null;
+    if (code !== 0 || !root.recapEnabled || root.recapSuppressed) return;
+    try {
+      var reply = JSON.parse(text);
+      if (reply.ok && reply.data && reply.data.enabled)
+        root.weeklyRecap = reply.data.card || null;
+    } catch (e) {}
+  }
+
+  function disableRecap() {
+    root.weeklyRecap = null;
+    // Do not let a claim already in flight restore the card after off.
+    root.recapSuppressed = true;
+    return runAction([root.wispd, "recap", "--off", "--json"], "recap-off");
   }
 
   // The Dev tab's reads (turns, then runs). Refused unless the flag or the
@@ -624,9 +662,20 @@ Item {
     command: [root.wispd, "config", "show", "--json"]
     stdout: StdioCollector { id: cfgOut }
     onExited: function (code) {
-      if (code !== 0) return;
+      if (code !== 0) { root.recapReadRequested = false; return; }
       try { root.configValues = Settings.flatten(JSON.parse(cfgOut.text)); } catch (e) {}
+      if (root.recapReadRequested) {
+        root.recapReadRequested = false;
+        root.loadRecap();
+      }
     }
+  }
+
+  Process {
+    id: recapProc
+    command: [root.wispd, "recap", "--claim", "--json"]
+    stdout: StdioCollector { id: recapOut }
+    onExited: function (code) { root.finishRecap(code, recapOut.text); }
   }
 
   Process {

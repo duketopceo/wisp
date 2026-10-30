@@ -81,13 +81,8 @@ class TurnSpansTest(unittest.TestCase):
             time.sleep(shot_s)
             return None
 
-        def slow_jev(*a, **k):
-            time.sleep(jev_s)
-            return {"answers": {"route": {"choice": route},
-                                "confidence": {"score": 0.9},
-                                "app": {"choice": ""}}}
         cfg = {"audio": {"seconds": "0"}, "agent": {},
-               "brain": {"router": "jev"}}  # Jev path until Phase 5
+               "brain": {"router": "chat"}}
         from wisp import session as sess  # noqa: F811
         from wisp import memory as mem  # noqa: F811
         with mock.patch.object(trace, "TRACE_FILE", tf), \
@@ -95,10 +90,8 @@ class TurnSpansTest(unittest.TestCase):
                                return_value=d / "x.wav"), \
              mock.patch.object(pipeline, "transcribe", return_value="hello"), \
              mock.patch.object(pipeline, "capture_screen", slow_shot), \
-             mock.patch.object(pipeline, "ask_jev", slow_jev), \
              mock.patch.object(pipeline, "execute", return_value="ANSWERED"), \
              mock.patch.object(pipeline, "ask_chat", return_value="hi"), \
-             mock.patch.object(pipeline, "build_questions", return_value={}), \
              mock.patch.object(pipeline, "active_window", return_value={}), \
              mock.patch.object(pipeline, "notify"), \
              mock.patch.object(pipeline.speech, "speak", return_value=None), \
@@ -123,7 +116,6 @@ class TurnSpansTest(unittest.TestCase):
         self.assertGreaterEqual(spans["screenshot"]["ms"], 490)
         self.assertGreaterEqual(spans["context"]["ms"], 490)
         self.assertLess(spans["context"]["ms"], 900)
-        self.assertGreaterEqual(spans["route"]["ms"], 45)
         self.assertLess(spans["route"]["ms"], 400)
 
     def test_all_named_spans_present_on_answer_path(self):
@@ -140,7 +132,9 @@ class TurnSpansTest(unittest.TestCase):
         self.assertEqual(t["stt_ms"], spans["stt"]["ms"])
         self.assertEqual(t["jev_ms"], spans["context"]["ms"]
                          + spans["route"]["ms"])
-        self.assertGreaterEqual(t["jev_ms"], 240)
+        # Historical timing key remains an aggregate for compatibility;
+        # it no longer includes a separate decision-provider wait.
+        self.assertGreaterEqual(t["jev_ms"], 200)
 
     def test_supplied_spans_object_is_used(self):
         from wisp import trace

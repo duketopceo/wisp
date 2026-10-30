@@ -48,16 +48,22 @@ def tier_of(name: str, arg: str = "", cfg: dict | None = None,
     """The call's autonomy tier: the declared meta, refined by arg, then
     the [cua] confirm=always promotion (T1 input -> T2) and sensitive-surface
     promotion (T1 mutating input on Stripe/financial surfaces -> T2)."""
+    return _call_tier(name, arg, cfg, state)[0]
+
+
+def _call_tier(name: str, arg: str, cfg: dict | None,
+               state=None) -> tuple[str, str]:
+    # Probe once per call, including stateless callers and confirm=always.
+    surface = (cua_safety.sensitive_surface(cfg, state=state)
+               if name in SENSITIVE_MUTATING else "")
     t = declared_tier(name)
     t = _refine(name, arg or "", t)
     if t == "T1" and name in cua_safety.GUARDED \
             and cua_safety.settings(cfg)["confirm"] == "always":
         t = "T2"
-    if t == "T1" and name in SENSITIVE_MUTATING \
-            and state is not None \
-            and cua_safety.sensitive_surface(cfg, state=state):
+    if t == "T1" and surface:
         t = "T2"
-    return t
+    return t, surface
 
 
 def declared_tier(name: str) -> str:
@@ -71,7 +77,10 @@ def declared_tier(name: str) -> str:
 
 def decide(name: str, arg: str, cfg: dict | None, state=None) -> str:
     """"run" | "confirm" | "handoff" — what the gate does with a call."""
-    t = tier_of(name, arg, cfg, state=state)
+    return _decision(tier_of(name, arg, cfg, state=state), cfg)
+
+
+def _decision(t: str, cfg: dict | None) -> str:
     if t == "T3":
         return "handoff"
     mode = mode_of(cfg)
@@ -130,7 +139,8 @@ def _gate(name: str, arg: str, cfg: dict, confirm,
     hit = preempted(name, arg, cfg)
     if hit:
         return hit
-    decision = decide(name, arg, cfg, state=state)
+    tier, surface = _call_tier(name, arg, cfg, state)
+    decision = _decision(tier, cfg)
     if decision == "run":
         return None
     app = _focus_app(state)
@@ -140,6 +150,11 @@ def _gate(name: str, arg: str, cfg: dict, confirm,
     # every step that would ask ends as needing confirmation
     if (cfg or {}).get("dev", {}).get("run_id"):
         grants = frozenset()
+    # A sensitive (or unidentified) surface needs consent for THIS action,
+    # not a turn-start app grant, wildcard, plan preview or batched tail.
+    if surface:
+        grants = frozenset()
+        batch = ()
     if decision == "handoff":
         if ctx is not None and (name, app) in ctx["declined"]:
             return f"SKIPPED ({name} declined by user)"
@@ -166,7 +181,7 @@ def _gate(name: str, arg: str, cfg: dict, confirm,
         items.pop()
     ok, last = ask(confirm, checkpoint_prompt(items))
     if ok:
-        if isinstance(confirmed, set):
+        if isinstance(confirmed, set) and not surface:
             if last == _confirm.ALWAYS:
                 confirmed.add(ALWAYS_GRANT)
             else:

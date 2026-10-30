@@ -30,22 +30,32 @@ def dictation_text(text: str) -> str:
 def execute(answers: dict, cfg: dict, harness: dict | None = None,
             detail: str = "", state=None, confirm=None,
             initial_image: str | None = None, interrupted=None,
-            ask=None, lang: str = "") -> str:
-    """Route-aware dispatch. Falls back to the legacy action-based path
-    when Jev's response lacks the route question. Jev only answers typed
-    questions (noul/choice/score) — free-text args come from the
-    transcript via `detail`. `initial_image` is the trigger-time
+            ask=None, lang: str = "", *, user_request: str = "") -> str:
+    """Route-aware dispatch, retaining older action-payload compatibility.
+    Free-text arguments come from the caller's transcript via `detail`,
+    not a decision model. `initial_image` is the trigger-time
     screenshot (b64) handed to the act loop so the model sees the app
     instead of asking which one. `ask` is the in-loop question channel
     (U4) forwarded to every act-loop dispatch. `lang` is the spoken
-    language when it is not English (dictation keeps it, B23)."""
+    language when it is not English (dictation keeps it, B23).
+    `user_request` is the original human transcript, separate from decorated
+    task context; omitted provenance never authorizes element-free clicks."""
     from . import agents, tools
 
     def _run_act(task: str) -> str:
-        from . import act
-        return act.run_act_loop(task, cfg, state=state, harness=harness,
+        from . import act, platform
+        turn_cfg = cfg
+        pointer = cfg.get("pointer", {})
+        # Presence is the preference signal, not equality with the default.
+        # Older generated guide entries are indistinguishable from user
+        # choices, so preserve them too; never infer consent from their value.
+        if "mode" not in pointer:
+            mode = "auto" if platform.pointer_backend(cfg) else "guide"
+            turn_cfg = {**cfg, "pointer": {**pointer, "mode": mode}}
+        return act.run_act_loop(task, turn_cfg, state=state, harness=harness,
                                 confirm=confirm, initial_image=initial_image,
-                                interrupted=interrupted, ask=ask)
+                                interrupted=interrupted, ask=ask,
+                                user_request=user_request)
 
     def _run_teach() -> str:
         from . import routines
@@ -61,8 +71,7 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
     threshold = float(cfg.get("agent", {}).get("risk_threshold", "9"))
 
     # Risk gate applies to mutating work — a plain app launch or a text
-    # answer is never blocked on risk (Jev's score band for launches
-    # straddles the navigational/mutating line: "open discord" ~1.6).
+    # answer is never blocked on a legacy payload's risk score.
     # dictation is self-confirming — the transcript is the user's own
     # instruction, so it skips the risk gate like launch/answer. Same for
     # a safe-tier tool pick even when the route guess was off.
@@ -81,6 +90,16 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
     if (cfg or {}).get("dev", {}).get("run_id") and \
             route not in ("act", "tool", "launch", "answer"):
         return f"SKIPPED (dev run: route {route} not run)"
+    if route == "clarify":
+        if ask is None:
+            return "SKIPPED (router off: choose an action before execution)"
+        choices = {"Explain": "answer", "Act": "act", "Dictate": "dictation"}
+        picked = ask("How should Wisp handle this request?",
+                     ["Explain", "Act", "Dictate", "Cancel"])
+        if not isinstance(picked, str) or picked not in choices:
+            return "SKIPPED (no action selected)"
+        route = choices[picked]
+        answers["route"] = {"choice": route}
     if route == "routine":
         return _run_teach()
     if route == "agent":
@@ -159,8 +178,8 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
         if tier == "shell":
             if cfg.get("agent", {}).get("allow_shell", "false") != "true":
                 return "BLOCKED (shell tool needs allow_shell=true in config)"
-            # Jev returns no free-text args — `detail` is the raw
-            # transcript, and executing it verbatim turns every
+            # `detail` is the raw transcript, and executing it verbatim
+            # turns every
             # misroute into `sh -c "<your sentence>"`. The act loop's
             # model composes a real argv from the request instead.
             return _run_act(detail)
@@ -179,8 +198,8 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
         return tools.run(action, detail, cfg, harness)
     # U4 route fallback: a missing/garbage route for an actionable
     # request still has the transcript — hand it to the act loop
-    # rather than returning a dead SKIP. (Jev's decision path itself
-    # is untouched; this only rescues the dispatch.)
+    # rather than returning a dead SKIP. Synthesized fallback tasks are
+    # never promoted to human coordinate authorization.
     return _run_act(detail or app or "continue the task")
 
 
@@ -230,6 +249,7 @@ def execute_stage(ctx) -> None:
             answers, cfg, ctx.harness, detail=ctx.detail, state=state,
             confirm=confirm, initial_image=act_img,
             interrupted=ctx.interrupted, ask=ask,
+            user_request=ctx.text,
             **_lang_kw(ctx))
     except _cancel.Cancelled:
         _state.action_set(state, aid, status="cancelled",

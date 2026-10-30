@@ -7,26 +7,33 @@ T3 hands off, `agent.autonomy` picks the session mode, and the
 import json
 import pathlib
 import sys
+import types
 import unittest
 from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from wisp import act, policy, tools  # noqa: E402
+from wisp import act, confirm, platform, policy, tools  # noqa: E402
 
 # U4: unfaked loop calls reach a live cua-driver's recording + pack
 # write; the pack seam is stubbed module-wide (its suite is elsewhere)
 _WRITE_PACK = None
+_LIVE_WINDOW = None
 
 
 def setUpModule():
-    global _WRITE_PACK
+    global _WRITE_PACK, _LIVE_WINDOW
     _WRITE_PACK = mock.patch.object(act, "_write_pack")
     _WRITE_PACK.start()
+    # Legacy tier/loop tests assume a known ordinary desktop surface.
+    _LIVE_WINDOW = mock.patch.object(platform, "active_window", return_value={
+        "class": "firefox", "title": "Ordinary page"})
+    _LIVE_WINDOW.start()
 
 
 def tearDownModule():
     _WRITE_PACK.stop()
+    _LIVE_WINDOW.stop()
 
 
 def _call(name, arg=""):
@@ -505,7 +512,9 @@ class LoopPaths(unittest.TestCase):
         self.assertIsNone(added.get("w"))   # T2 carries no undo hint
 
 
-    def test_sensitive_surface_promotes_mutating_input_to_t2_while_keeping_observation_free(self):
+    @mock.patch.object(platform, "active_window", return_value={
+        "class": "chromium", "title": "Developers - Stripe"})
+    def test_sensitive_surface_promotes_mutating_input_to_t2_while_keeping_observation_free(self, _live):
         import types
         st = types.SimpleNamespace(
             focus={"app": "chromium", "title": "Developers – Pace-HQ – Stripe"},
@@ -528,6 +537,88 @@ class LoopPaths(unittest.TestCase):
     def test_preempted_refuses_live_stripe_secret_key_in_text_input(self):
         out = policy.preempted("type_text", "sk_live_51abcDEF1234567890xyz", {})
         self.assertEqual(out, "REFUSED (live secret key in input)")
+
+
+class LiveSensitiveSurface(unittest.TestCase):
+    def test_sensitive_yes_does_not_authorize_the_next_mutation(self):
+        st = types.SimpleNamespace(
+            focus={"app": "chromium", "title": "Inbox - Gmail"},
+            confirmed=set())
+        ask = mock.Mock(side_effect=[confirm.ALWAYS, False])
+        with mock.patch.object(platform, "active_window", return_value={
+                "class": "chromium", "title": "Developers - Stripe"}):
+            self.assertIsNone(policy.gate(
+                "click", "100,200", {}, ask, state=st))
+            self.assertEqual(policy.gate(
+                "click", "300,400", {}, ask, state=st),
+                "SKIPPED (click declined by user)")
+        self.assertFalse(st.confirmed)
+        self.assertEqual(ask.call_count, 2)
+
+    def test_each_mutation_uses_the_current_tab(self):
+        st = types.SimpleNamespace(
+            focus={"app": "chromium", "title": "Inbox - Gmail"},
+            confirmed=set())
+        with mock.patch.object(platform, "active_window", side_effect=[
+                {"class": "chromium", "title": "Inbox - Gmail"},
+                {"class": "chromium", "title": "Developers - Stripe"},
+                {"class": "chromium", "title": "Inbox - Gmail"}]) as live:
+            self.assertIsNone(policy.gate("click", "1,2", {}, None, state=st))
+            self.assertEqual(
+                policy.gate("click", "3,4", {}, None, state=st),
+                "SKIPPED (click needs user confirmation)")
+            self.assertIsNone(policy.gate("click", "5,6", {}, None, state=st))
+        self.assertEqual(live.call_count, 3)
+
+    def test_sensitive_mutations_do_not_inherit_session_grants(self):
+        for grants in ({("click", "chromium")}, {policy.ALWAYS_GRANT}):
+            with self.subTest(grants=grants):
+                st = types.SimpleNamespace(
+                    focus={"app": "chromium", "title": "Inbox - Gmail"},
+                    confirmed=grants.copy())
+                ask = Confirm()
+                with mock.patch.object(platform, "active_window", return_value={
+                        "class": "chromium", "title": "Developers - Stripe"}):
+                    self.assertIsNone(policy.gate(
+                        "click", "100,200", {}, ask, state=st,
+                        batch=[("type_text", "hello")]))
+                    self.assertIsNone(policy.gate(
+                        "click", "300,400", {}, ask, state=st))
+                self.assertEqual(ask.prompts, [
+                    "run click: 100,200?", "run click: 300,400?"])
+                self.assertEqual(st.confirmed, grants)
+
+    def test_missing_live_surface_requires_confirmation_despite_cached_gmail(self):
+        st = types.SimpleNamespace(
+            focus={"app": "chromium", "title": "Inbox - Gmail"},
+            confirmed=set())
+        for live in ({}, {"class": "chromium"}, OSError("no compositor")):
+            with self.subTest(live=live):
+                kw = ({"side_effect": live} if isinstance(live, Exception)
+                      else {"return_value": live})
+                with mock.patch.object(platform, "active_window", **kw):
+                    self.assertEqual(
+                        policy.gate("click", "100,200", {}, None, state=st),
+                        "SKIPPED (click needs user confirmation)")
+
+    def test_stateless_sensitive_mutations_require_confirmation(self):
+        with mock.patch.object(platform, "active_window", return_value={
+                "class": "chromium", "title": "Developers - Stripe"}):
+            for name, arg in (("click", "100,200"), ("type_text", "hello"),
+                              ("key", "Return"), ("fill", "1:2|hello")):
+                with self.subTest(tool=name):
+                    self.assertEqual(
+                        policy.gate(name, arg, {}, None),
+                        f"SKIPPED ({name} needs user confirmation)")
+
+    def test_gmail_turn_navigating_to_stripe_requires_confirmation(self):
+        st = types.SimpleNamespace(
+            focus={"app": "chromium", "title": "Inbox - Gmail"},
+            confirmed=set())
+        with mock.patch.object(platform, "active_window", return_value={
+                "class": "chromium", "title": "Developers - Stripe"}):
+            out = policy.gate("click", "100,200", {}, None, state=st)
+        self.assertEqual(out, "SKIPPED (click needs user confirmation)")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,23 @@
+{
+  "date": "2026-10-30",
+  "repository": {
+    "full_name": "duketopceo/wisp",
+    "private": false,
+    "stargazers_count": 17,
+    "forks_count": 4
+  },
+  "releases": [{"id": 1}, {"id": 2}],
+  "assets": {
+    "1": [{"download_count": 10}, {"download_count": 6}],
+    "2": [{"download_count": 9}]
+  },
+  "counts": {
+    "issues": {"totalCount": 12},
+    "discussions": {"totalCount": 3}
+  },
+  "traffic": {
+    "clones": null,
+    "views": {"count": 0, "uniques": 0}
+  },
+  "ignored_token": "fixture-secret-never-emit"
+}

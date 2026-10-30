@@ -28,107 +28,27 @@ ACT = {"answers": {"route": {"choice": "act"},
                    "risk": {"score": 2}}}
 
 
-class RouteBase(unittest.TestCase):
-    def jev(self, script):
-        srv = fakes.FakeJev(script)
-        srv.start()
-        self.addCleanup(srv.stop)
-        p = mock.patch.object(config, "JEV_ENDPOINT", srv.url + "/decisions")
-        p.start()
-        self.addCleanup(p.stop)
-        return srv
+class RetiredRouterTest(unittest.TestCase):
+    """Outage/slow/malformed decision endpoints can no longer affect routing."""
 
-    def decide(self, text="what time is it", cfg=None):
-        return route.decide(text, "m", {}, "", cfg or {}, APPS)
+    def test_retired_endpoints_never_receive_routing_traffic(self):
+        from harness import runner
+        for name in ("jev_down", "jev_slow"):
+            with self.subTest(name=name):
+                res = runner.run_turn(name)
+                self.assertEqual(runner.check_expectations(res), [])
+                self.assertEqual(res.calls["jev"], [])
+                self.assertLess(res.trace_events("route")[0]["ms"], 200)
 
-
-class DeadlineTest(RouteBase):
-    def test_fast_jev_is_used(self):
-        self.jev(dict(ANSWER, latency_ms=80))
-        resp, meta = self.decide()
-        self.assertEqual(meta["source"], "jev")
-        self.assertEqual(resp["answers"]["route"]["choice"], "answer")
-        self.assertEqual(meta["jev_status"], "ok")
-        self.assertGreaterEqual(meta["jev_ms"], 60)
-        self.assertLess(meta["jev_ms"], 400)
-
-    def test_deadline_expiry_returns_heuristic_within_budget(self):
-        self.jev(dict(ANSWER, latency_ms=2000))
-        t0 = time.monotonic()
-        resp, meta = self.decide("open firefox")
-        took = (time.monotonic() - t0) * 1000
-        self.assertLess(took, 700)          # 400 ms deadline + slack
-        self.assertGreaterEqual(took, 380)
-        self.assertEqual(meta["source"], "heuristic")
-        self.assertEqual(meta["jev_status"], "timeout")
-        self.assertEqual(resp["answers"]["route"]["choice"], "launch")
-        self.assertEqual(resp["answers"]["app"]["choice"], "firefox")
-
-    def test_deadline_is_configurable(self):
-        self.jev(dict(ANSWER, latency_ms=300))
-        _, meta = self.decide(cfg={"jev": {"deadline_ms": "100"}})
-        self.assertEqual(meta["jev_status"], "timeout")
-        self.assertEqual(meta["deadline_ms"], 100)
-
-    def test_late_reply_is_discarded(self):
-        self.jev(dict(ANSWER, latency_ms=700))
-        resp, meta = self.decide("open firefox")
-        time.sleep(0.5)                      # the late reply lands here
-        self.assertEqual(resp["answers"]["route"]["choice"], "launch")
-        self.assertEqual(meta["source"], "heuristic")
-
-    def test_jev_502_falls_back_without_error(self):
-        srv = self.jev({"status": 502})
-        resp, meta = self.decide("open discord")
-        self.assertEqual(meta["source"], "heuristic")
-        self.assertEqual(meta["jev_status"], "error")
-        self.assertEqual(meta["jev_code"], "jev_down")
-        self.assertEqual(resp["answers"]["app"]["choice"], "discord")
-        self.assertEqual(len(srv.calls), 1)     # no retry on an HTTP error
-
-    def test_jev_unreachable_falls_back(self):
-        with mock.patch.object(config, "JEV_ENDPOINT",
-                               "http://127.0.0.1:9/x"):
-            resp, meta = self.decide("open firefox")
-        self.assertEqual(meta["source"], "heuristic")
-        self.assertEqual(meta["jev_status"], "error")
-
-    def test_jev_malformed_falls_back(self):
-        for bad in ({"answers": "nope"},
-                    {"answers": {"route": {"choice": "teleport"}}},
-                    {"answers": {}}):
-            with self.subTest(bad=bad):
-                self.jev(bad)
-                resp, meta = self.decide("what time is it")
-                self.assertEqual(meta["source"], "heuristic")
-                self.assertEqual(meta["jev_status"], "malformed")
-                self.assertEqual(resp["answers"]["route"]["choice"],
-                                 "answer")
-
-
-class GateTest(RouteBase):
-    def test_bare_launch_overrides_jev_and_logs_disagreement(self):
-        self.jev(ANSWER)
-        resp, meta = self.decide("open firefox")
-        self.assertEqual(resp["answers"]["route"]["choice"], "launch")
-        self.assertEqual(meta["source"], "heuristic")
-        self.assertTrue(meta["override"])
-        self.assertEqual(meta["jev_route"], "answer")
-        self.assertFalse(meta["agree"])
-
-    def test_compound_request_keeps_jev_act(self):
-        self.jev(ACT)
-        resp, meta = self.decide("open firefox and go to github")
-        self.assertEqual(resp["answers"]["route"]["choice"], "act")
-        self.assertEqual(meta["source"], "jev")
-        self.assertFalse(meta["override"])
-
-    def test_jev_route_kept_when_heuristic_is_not_a_bare_launch(self):
-        self.jev(ACT)
-        resp, meta = self.decide("what time is it")
-        self.assertEqual(meta["source"], "jev")
-        self.assertEqual(resp["answers"]["route"]["choice"], "act")
-        self.assertFalse(meta["agree"])     # logged, but Jev still wins
+    def test_ambiguous_requests_need_no_decision_model(self):
+        from wisp import stage_route
+        for text in ("open firefox and go to github",
+                     "open discord on the settings page",
+                     "open the spreadsheet app", "check my email"):
+            with self.subTest(text=text):
+                self.assertIsNone(stage_route.fast_route(text, APPS, {}))
+                self.assertEqual(stage_route.fixed_route(text, "jev"),
+                                 ("act", None))
 
 
 class HeuristicTable(unittest.TestCase):
@@ -212,6 +132,16 @@ class HeuristicTable(unittest.TestCase):
 class FastRouteTest(unittest.TestCase):
     """The no-model fast path in front of act (Phase 5)."""
     APPS = {"firefox": {}, "terminal": {}}
+
+    def test_retired_or_unknown_router_uses_act_without_decision_http(self):
+        from wisp import stage_route
+        for router in ("jev", "heuristic", "typo", ""):
+            with self.subTest(router=router), \
+                    mock.patch("urllib.request.urlopen",
+                               side_effect=AssertionError("decision HTTP")):
+                self.assertEqual(
+                    stage_route.fixed_route("check my email", router),
+                    ("act", None))
 
     def _fast(self, text, cfg=None):
         from wisp import stage_route

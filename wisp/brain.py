@@ -230,7 +230,7 @@ def _chat_one(p: dict, messages: list, tools, timeout) -> dict:
         msg = resp.get("message", {})
         return {"content": msg.get("content", ""), "raw": msg,
                 "usage": ledger.usage_of(resp),
-                "ttft_ms": lat_ms, "latency_ms": lat_ms}
+                "ttft_ms": None, "latency_ms": lat_ms}
     body = {"model": p["model"], "messages": messages, "max_tokens": 600,
             "usage": {"include": True}}  # OpenRouter: report usage.cost
     if tools and _tools_ok(p):
@@ -247,13 +247,12 @@ def _chat_one(p: dict, messages: list, tools, timeout) -> dict:
         # gemini-2.5-flash with image+tools): retry once before the caller
         # mistakes it for a clean "done"
         time.sleep(0.05)
-        t0 = time.monotonic()
         resp = _post(f"{base}/chat/completions", _headers(p), body, timeout)
         msg = (resp.get("choices") or [{}])[0].get("message", {})
     lat_ms = round((time.monotonic() - t0) * 1000)
     return {"content": msg.get("content", ""), "raw": msg,
             "usage": ledger.usage_of(resp),
-            "ttft_ms": lat_ms, "latency_ms": lat_ms}
+            "ttft_ms": None, "latency_ms": lat_ms}
 
 
 def _relax(r, timeout) -> None:
@@ -353,8 +352,6 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
             raise err from e
         raise
     lat_ms = round((time.monotonic() - t0) * 1000)
-    if ttft_ms is None:
-        ttft_ms = lat_ms
     if not usage:  # provider sent none: estimate (~4 chars a token)
         usage = {"in": sum(len(str(m.get("content", "")))
                            for m in messages) // 4,

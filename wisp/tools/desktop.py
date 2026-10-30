@@ -302,7 +302,9 @@ def focus(classname: str) -> str:
 
 # Loopback Chrome DevTools ports to try, in order: 9108 is Chromium's own,
 # 9107 a shim answering the same /json routes, 9222 the conventional default.
-CDP_PORTS = (9108, 9107, 9222)
+# Also discover profile instances on 9100 and 9223 without changing the
+# existing ports' precedence.
+CDP_PORTS = (9108, 9107, 9222, 9100, 9223)
 CDP_TIMEOUT_S = 1.0
 _TAB_FILLER = frozenset({"my", "the", "a", "an", "tab", "tabs", "tablet",
                          "open", "up", "switch", "to", "go", "page",

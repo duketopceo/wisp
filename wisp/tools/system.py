@@ -3,12 +3,47 @@ import pathlib
 import re
 import shutil
 import subprocess
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 from .. import cancel as _cancel
 from .. import config
 from .. import delivery as _delivery
 from .. import hypr
 from ..pipeline import hypr_env, notify
+
+_POINTER_CONTEXT = ContextVar("wisp_pointer_context", default=None)
+
+
+@contextmanager
+def pointer_context(*, target=None, user_request: str = ""):
+    """Caller-owned provenance, never populated from a tool-call payload.
+
+    Scoped to one dispatch so a grounded element/coordinate instruction
+    cannot authorize the next action or leak into a concurrent turn.
+    """
+    token = _POINTER_CONTEXT.set((target, user_request))
+    try:
+        yield
+    finally:
+        _POINTER_CONTEXT.reset(token)
+
+
+def _human_coordinates(arg: str) -> bool:
+    """Narrow literal-coordinate instruction from the trusted caller only."""
+    context = _POINTER_CONTEXT.get()
+    request = context[1] if context else ""
+    if not isinstance(request, str):
+        return False
+    match = re.fullmatch(
+        r"\s*(?:please\s+)?(?:click|tap)\s+(?:at\s+)?"
+        r"(-?\d+)\s*,\s*(-?\d+)\s*(@logical)?\s*[.!]?\s*",
+        request, re.IGNORECASE)
+    chosen = re.fullmatch(r"\s*(-?\d+)\s*,\s*(-?\d+)\s*(@logical)?\s*",
+                          arg or "")
+    return bool(match and chosen
+                and (int(match[1]), int(match[2]), bool(match[3]))
+                == (int(chosen[1]), int(chosen[2]), bool(chosen[3])))
 
 # input tools that would seize the real cursor in a way the user can't
 # take back cleanly — double-click races the user's own clicks, drag
@@ -665,19 +700,25 @@ def _parse_xy(arg: str):
     return pts[0]["x"], pts[0]["y"]
 
 
-def _resolve_target_xy(arg: str, cfg: dict | None = None):
+def _resolve_target(arg: str, cfg: dict | None = None):
     """Resolve 'x,y', 'x,y@logical', or a natural-language element via the
     W13 grounding adapter."""
     xy = _parse_xy(arg)
     if xy is not None:
-        return xy
+        from .. import grounding
+        context = _POINTER_CONTEXT.get()
+        target = context[0] if context else None
+        if isinstance(target, grounding.Target) \
+                and target.frame in ("global", "logical") \
+                and (target.x, target.y) == xy:
+            return target
+        return grounding.Target(*xy, "global", 1.0, "model")
     # name -> grounding adapter chain (a11y / UI-TARS / Jev). Returns
     # compositor-global (== logical) coords; a low-confidence or missing
     # target resolves to None and is never clicked.
     try:
         from .. import grounding
-        t = grounding.ground_target(arg, cfg)
-        return t.x, t.y
+        return grounding.ground_target(arg, cfg)
     except grounding.GroundRefused:
         return None
     except Exception as e:
@@ -685,6 +726,12 @@ def _resolve_target_xy(arg: str, cfg: dict | None = None):
         if isinstance(e, cancel.Cancelled):
             raise
         return None
+
+
+def _resolve_target_xy(arg: str, cfg: dict | None = None):
+    """Read-only coordinate adapter; mutation keeps the entire Target."""
+    target = _resolve_target(arg, cfg)
+    return (target.x, target.y) if target is not None else None
 
 
 def _run_cmds(cmds: list) -> bool:
@@ -799,10 +846,10 @@ def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
         hm = _re.search(r"hit:([^\n]+)", out)
         return (f"CLICKED {hm.group(1).strip()}" if hm
                 else f"SKIP ({out[:60]})")
-    xy = _resolve_target_xy(arg, cfg)
-    if xy is None:
+    target = _resolve_target(arg, cfg)
+    if target is None:
         return f"FAIL (could not resolve coordinates or ground target {arg!r})"
-    x, y = xy
+    x, y = target.x, target.y
     from .. import platform, points
     mons = points.monitors()
     if not points.on_screen(x, y, mons):
@@ -821,6 +868,11 @@ def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
     backend = _delivery.resolve_backend(cfg, op) if mode in ("drive", "auto") \
         else None
     if backend:
+        if do_click and not target.element_backed and not _human_coordinates(arg):
+            from .. import grounding
+            if grounding.target_at_point(x, y, cfg) is None:
+                return ("REFUSED (no element at model-chosen coordinates; "
+                        "re-observe or name the target)")
         # pointer.Registry owns precedence: a move falls through the
         # chain, a failed click is NOT retried elsewhere (double-click
         # risk) and the act loop re-observes instead.

@@ -13,11 +13,19 @@ from . import config, trace
 DECISIONS = config.DECISIONS
 
 
-def _load(path) -> list:
+def _load(path, *, status=None) -> list:
     """Parsed JSON lines; unreadable files and corrupt lines are skipped."""
+    if status is not None:
+        status.update(state="ok", skipped=0)
     try:
         lines = path.read_text().splitlines()
-    except OSError:
+    except FileNotFoundError:
+        if status is not None:
+            status["state"] = "missing"
+        return []
+    except (OSError, UnicodeError):
+        if status is not None:
+            status["state"] = "unreadable"
         return []
     out = []
     for ln in lines:
@@ -26,20 +34,27 @@ def _load(path) -> list:
         try:
             row = json.loads(ln)
         except ValueError:
+            if status is not None:
+                status["state"] = "partial"
+                status["skipped"] += 1
             continue
         if isinstance(row, dict):
             out.append(row)
+        elif status is not None:
+            status["state"] = "partial"
+            status["skipped"] += 1
     return out
 
 
 def digest(hours: int = 24, decisions_file=None,
            trace_file=None) -> dict:
-    """{turns, routes{}, avg_ms{}, outcomes{}, per_hour[24],
+    """{turns, routes{}, avg_ms{}, outcomes{}, per_hour[hours],
     model_latency_ms}"""
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(hours=hours)
     decs, routes, outcomes = [], Counter(), Counter()
     ms_sums, ms_n = Counter(), Counter()
-    per_hour = [0] * min(hours, 24)
+    per_hour = [0] * hours
     for d in _load(decisions_file or DECISIONS):
         try:
             ts = datetime.fromisoformat(d.get("ts", ""))
@@ -56,7 +71,7 @@ def digest(hours: int = 24, decisions_file=None,
                                  "CANCELLED", "FAIL", "SKIP"))
         outcomes["ok" if ok else "fail"] += 1
         per_hour[max(0, min(hours - 1, int(
-            (datetime.now(timezone.utc) - ts).total_seconds()
+            (now - ts).total_seconds()
             // 3600)))] += 1
         for k, v in (d.get("timing_ms") or {}).items():
             if isinstance(v, (int, float)):

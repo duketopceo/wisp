@@ -6,6 +6,7 @@ module patches as `pipeline.<name>` is looked up through `_pl()` at call
 time so the patch still takes effect (see docs/PIPELINE_STAGES.md).
 """
 import base64
+from contextlib import suppress
 import json
 import os
 import pathlib
@@ -52,9 +53,12 @@ def record(seconds: int, state=None) -> pathlib.Path:
     rec = _pl().record_start(state)
     try:
         rec["proc"].wait(timeout=seconds)
-        return _record_finish(rec, state)
     except subprocess.TimeoutExpired:
         return _pl().record_stop(rec, state)
+    except BaseException:
+        _record_abort(rec, state)
+        raise
+    return _record_finish(rec, state)
 
 
 def record_start(state=None) -> dict:
@@ -74,28 +78,36 @@ def record_start(state=None) -> dict:
     except Exception:
         device = ""
         ducked_vol = None
-    stop_ev = threading.Event()
-    sampler = threading.Thread(target=_amplitude_sampler,
-                               args=(None, state, stop_ev), daemon=True)
-    sampler.start()
-    env = _pl().hypr_env()
+    rec = {"out": out, "ducked_vol": ducked_vol}
+    try:
+        rec["sampler_stop"] = threading.Event()
+        rec["sampler"] = threading.Thread(
+            target=_amplitude_sampler,
+            args=(None, state, rec["sampler_stop"]), daemon=True)
+        rec["sampler"].start()
+        env = _pl().hypr_env()
 
-    def _spawn(argv):
-        return subprocess.Popen(argv, stdin=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL, env=env)
+        def _spawn(argv):
+            proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL, env=env)
+            # Retain ownership even if device settling/retry raises.
+            rec["proc"] = proc
+            return proc
 
-    # [audio] device gone (unplugged, Bluetooth asleep): record from the
-    # system default instead and say so, never hang on a dead mic (B8b)
-    proc, failed_over = voice_polish.spawn_recorder(
-        lambda d: platform.record_cmd(out, None, d), _spawn, device=device,
-        before_retry=lambda: out.unlink(missing_ok=True))
-    if failed_over:
-        _note_mic_failover(state, device)
-    from . import stt_stream
-    stt_stream.begin(out, proc)   # streams finished chunks while held
-    return {"proc": proc, "out": out, "sampler_stop": stop_ev,
-            "sampler": sampler, "t0": time.monotonic(),
-            "ducked_vol": ducked_vol}
+        # [audio] device gone: retry the default mic once (B8b).
+        proc, failed_over = voice_polish.spawn_recorder(
+            lambda d: platform.record_cmd(out, None, d), _spawn, device=device,
+            before_retry=lambda: out.unlink(missing_ok=True))
+        rec["proc"] = proc
+        if failed_over:
+            _note_mic_failover(state, device)
+        from . import stt_stream
+        stt_stream.begin(out, proc)   # streams finished chunks while held
+        rec["t0"] = time.monotonic()
+        return rec
+    except BaseException:
+        _record_abort(rec, state)
+        raise
 
 
 def _note_mic_failover(state, device: str) -> None:
@@ -108,47 +120,89 @@ def _note_mic_failover(state, device: str) -> None:
         pass
 
 
-def record_stop(rec: dict, state=None) -> pathlib.Path:
-    """SIGINT the recorder (finalizes the WAV header), then validate."""
+def record_stop(rec: dict, state=None, *, discard: bool = False
+                ) -> pathlib.Path | None:
+    """Stop capture; discard cancelled/bounced audio without validating it."""
+    if discard and rec.get("capture_discarded"):
+        return rec.get("out")
     proc = rec["proc"]
-    if proc.poll() is None:
-        try:
-            proc.send_signal(signal.SIGINT)
-            proc.wait(timeout=3)
-        except (subprocess.TimeoutExpired, ProcessLookupError):
-            proc.kill()
-            proc.wait(timeout=3)
-    rec["sampler_stop"].set()
+    try:
+        if proc.poll() is None:
+            try:
+                proc.send_signal(signal.SIGINT)
+                proc.wait(timeout=3)
+            except (subprocess.TimeoutExpired, ProcessLookupError):
+                proc.kill()
+                proc.wait(timeout=3)
+    except BaseException:
+        _record_abort(rec, state)
+        raise
+    if discard:
+        _record_discard(rec, state)
+        return rec.get("out")
     return _record_finish(rec, state, settled=True)
 
 
 _SAMPLER_JOIN_S = 0.25
 
 
+def _record_abort(rec: dict, state=None) -> None:
+    """Rollback without replacing the startup/stop exception."""
+    proc = rec.get("proc")
+    if proc is not None:
+        with suppress(Exception):
+            proc.kill()
+        with suppress(Exception):
+            proc.wait(timeout=3)
+    _record_discard(rec, state)
+
+
+def _record_discard(rec: dict, state=None) -> None:
+    """Release audio and the unconsumed stream; never transcribe a tail."""
+    rec["capture_discarded"] = True
+    _record_cleanup(rec, state)
+    from . import stt_stream
+    with suppress(Exception):
+        stt_stream.discard(rec.get("out"))
+
+
 def _record_finish(rec: dict, state=None, settled: bool = False
                    ) -> pathlib.Path:
     out = rec["out"]
-    if not settled:
-        # bounded path: proc already exited or timed out
+    _record_cleanup(rec, state)
+    try:
+        if not (out.exists() and out.stat().st_size > 44):
+            raise RuntimeError(f"recording produced no audio: {out}")
+    except BaseException:
+        _record_discard(rec, state)
+        raise
+    return out
+
+
+def _record_cleanup(rec: dict, state=None) -> None:
+    """Release capture-owned audio state even if another release fails."""
+    if rec.get("audio_cleaned"):
+        return
+    rec["audio_cleaned"] = True
+    with suppress(Exception):
         rec["sampler_stop"].set()
     try:
         from . import voice_polish
-        voice_polish.restore_speaker(rec.get("ducked_vol"))
+        voice_polish.restore_speaker(rec.pop("ducked_vol", None))
     except Exception:
         pass
     # the level sampler may publish one more window after the recorder
     # stops; wait for it to exit (event-driven) instead of a fixed
     # 300 ms sleep, then zero the level. Bounded in case it is stuck.
     sampler = rec.get("sampler")
-    if sampler is not None:
-        sampler.join(timeout=_SAMPLER_JOIN_S)
-    if state:
-        state.set_level(0.0)
-    else:
-        config.LEVEL_FILE.write_text("0.0")
-    if not (out.exists() and out.stat().st_size > 44):
-        raise RuntimeError(f"recording produced no audio: {out}")
-    return out
+    with suppress(Exception):
+        if sampler is not None:
+            sampler.join(timeout=_SAMPLER_JOIN_S)
+    with suppress(Exception):
+        if state:
+            state.set_level(0.0)
+        else:
+            config.LEVEL_FILE.write_text("0.0")
 
 
 _LEVEL_WINDOW = 20
@@ -180,23 +234,26 @@ def _amplitude_sampler(seconds: int | None, state=None,
             if stop_ev is not None and stop_ev.is_set():
                 break
             w = proc.stdout.read(_LEVEL_WINDOW)
+            if stop_ev is not None and stop_ev.is_set():
+                break
             if not w:
                 break
             if len(w) < _LEVEL_WINDOW:
                 continue  # short tail at EOF — next read ends the loop
             rms = sum(abs(b - 128) for b in w) / (len(w) * 128)
             publish(min(1.0, rms * 6))
-        if proc.poll() is None:
-            proc.kill()
-        proc.wait(timeout=5)
     except Exception:
         try:
             publish(0.0)
         except Exception:
             pass
     finally:
-        if proc is not None and proc.poll() is None:
-            proc.kill()
+        if proc is not None:
+            with suppress(Exception):
+                if proc.poll() is None:
+                    proc.kill()
+            with suppress(Exception):
+                proc.wait(timeout=5)
 
 
 def transcribe(wav: pathlib.Path, cfg: dict) -> str:

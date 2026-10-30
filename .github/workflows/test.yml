@@ -7,7 +7,7 @@ on:
 
 jobs:
   unit:
-    # Wisp is Linux-only; CI runs on ubuntu.
+    # Linux is the full-app target; macOS/Windows probe seams are experimental.
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

@@ -112,8 +112,9 @@ def settings(cfg: dict | None) -> dict:
 
 def sensitive_surface(cfg: dict | None = None, state=None,
                       window: dict | None = None) -> str:
-    """Return the matched sensitive surface token (e.g. 'stripe') when the
-    focused window's app or title is on the sensitive list, else ''.
+    """Return the matched sensitive token, 'unknown' if live identity
+    cannot be established, or '' for a known non-sensitive surface.
+    Never authorize a mutation from the turn-start state.focus snapshot.
     Sensitive surfaces allow observation and navigation (T0, scroll, move)
     while promoting mutating pointer/keyboard actions (click, type_text,
     key, fill) from T1 to T2 confirmation."""
@@ -126,12 +127,10 @@ def sensitive_surface(cfg: dict | None = None, state=None,
     if not tokens:
         return ""
     if window is None:
-        focus = getattr(state, "focus", None) if state is not None else None
-        if isinstance(focus, dict) and (focus.get("app") or focus.get("title")):
-            window = {"app": focus.get("app", ""),
-                      "title": focus.get("title", "")}
-        else:
-            window = _live_window(state)
+        # state.focus is a turn-start snapshot, not the current surface.
+        window = _live_window()
+    if not (window.get("app") or window.get("class")) or not window.get("title"):
+        return "unknown"
     hay = f"{window.get('app') or window.get('class') or ''} {window.get('title') or ''}".lower()
     for tok in tokens:
         if tok and re.search(rf"\b{re.escape(tok)}\b", hay):

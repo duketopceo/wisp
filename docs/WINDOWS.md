@@ -1,75 +1,43 @@
-# Windows adapter (U8)
+# Windows: experimental adapters
 
-`wispd` / `wispd-rs` on Windows: same command surface, same
-config/state/trace formats. Every OS shell-out routes through
-`dim/platform.py` / `rs/wispd/src/platform.rs`.
+Linux with Omarchy/Hyprland remains the full-app target. Windows has
+experimental command adapters and loopback IPC support, not a verified
+end-to-end desktop port.
 
-## Transport
+## Implemented seams
 
-Windows can't use the unix socket: both cores switch to **TCP
-loopback** — the daemon binds `127.0.0.1:<ephemeral>` and writes the
-port to the `wispd.sock` path as a plain text file. Clients read the
-file, connect, and speak the identical newline-JSON protocol, so
-fixture replay and `wispd` CLI work unchanged. (The plan's named-pipe
-option was superseded: AF_UNIX-in-std lacks on Rust Windows, and a
-named-pipe dependency adds total code for no contract change.)
+`wisp/platform.py` contains Windows command builders and monitor parsing.
+`rs/wispd/src/platform.rs` contains the Rust-side platform mapping.
+The Python command builders support `WISP_OS=windows` for deterministic
+tests. Shell-command construction does not prove that permissions, device
+drivers, PowerShell modules, or recording tools work on a real PC.
 
-## Paths
+The experimental IPC seam binds to loopback and writes its selected port
+to the socket-path file. TCP does not supply the Linux peer identity
+contract, so unattributed requests are refused before dispatch. A usable
+authenticated native Windows control interface remains unimplemented;
+this is not a complete Windows daemon, companion, or installer.
 
-| What | Windows |
-|---|---|
-| config | `%APPDATA%\wisp\` |
-| data | `%LOCALAPPDATA%\wisp\` |
-| socket/state (port file) | `%TEMP%\wisp\` |
+## Validation still required
 
-## Command map
+- Microphone and screenshot capture, recording dependencies, and permissions.
+- DPI-aware monitor coordinates and multi-monitor action targeting.
+- Browser-profile targeting, native focus, and reliable cancellation.
+- Sensitive-action confirmations and input delivery on a real desktop.
+- Native hotkey, companion, background service, installer, and uninstaller.
+- Hardware/model-backed latency and task-success evaluations.
 
-| Capability | Linux | macOS | Windows |
-|---|---|---|---|
-| mic record | pw-record | afrecord | `sox -t waveaudio` |
-| mic level | arecord U8 | sox | `sox -t waveaudio -t u8` |
-| screenshot | grim | screencapture | PowerShell `CopyFromScreen` |
-| type text | wtype | osascript | PowerShell `SendKeys` |
-| TTS | espeak | say | PowerShell SAPI (`voice.cmd` overrides — recommended: SAPI quality is poor) |
-| notify | notify-send | osascript | BurntToast → `msg` fallback |
-| focus | hl.dsp.focus | `open -a` | `WScript.Shell.AppActivate` |
-| close | window.close | Cmd-W | `CloseMainWindow` / `Alt-F4` SendKeys |
-| workspace | hl.dsp | Ctrl-n | **unsupported** → graceful SKIP |
-| launch | exec_cmd | `sh -c` | `cmd /c start /b` |
-| monitors | hyprctl -j | system_profiler | `System.Windows.Forms.Screen` (scale=1) |
+There is no release claim here for Scheduled Tasks registration, a tray
+app, signing, virtual-desktop support, or a complete GUI. Do not run the
+Linux installation instructions expecting a supported Windows installation.
 
-Missing tools degrade to `SKIP (… — hint)`; nothing panics.
+## Source checks
 
-## Deps
+Run the platform and IPC tests from the repository root:
 
-- `powershell` (always present; `pwsh` also accepted everywhere the
-  seam shells out) — `sox` for mic capture + level meter
-- Install mic support: `winget install --id ChrisBagwell.SoX -e`.
-  The package is portable — winget appends its dir to the *user*
-  `PATH`, so open a fresh shell before `wispd doctor` sees it.
-  Verify with `sox --version` and
-  `python -c "from wisp import platform as p; print(p.record_cmd(...))"`.
-- No mic yet? Point `[stt]` at an OpenAI-compatible endpoint instead
-  (Groq `whisper-large-v3-turbo` verified on Windows) — STT works
-  without whisper.cpp, but capture still needs sox.
-- `BurntToast` module optional for rich notifications
+```sh
+PYTHONPATH=tests python3 -m unittest test_platform test_ipc_tcp -v
+```
 
-## Service / hotkey
-
-`wispd install` registers `schtasks /tn DimAgent /sc onlogon` instead of
-the systemd unit. Push-to-talk hotkey: bind `wispd trigger` via
-PowerToys Keyboard Manager, AutoHotkey, or `global-hotkey` in the tray
-app (U10 packaging).
-
-## Shell
-
-Same decision as U7: thin native `tray-icon` notification-area item
-consuming the existing port-file transport — no Tauri webview at this
-stage.
-
-## Known residuals
-
-- Workspace/virtual-desktop switching: coming soon — needs the
-  IVirtualDesktopManager COM API; today it's an explicit SKIP
-- Monitor scale assumed 1 (DPI-aware monitors): coming soon (U10)
-- Defender/AV signing friction: coming soon (U10 packaging)
+These tests check deterministic contracts only. Linux release and live-run
+gates are tracked separately in `ROADMAP.md`.

@@ -225,6 +225,13 @@ class FakeBrain(FakeServer):
 
     def serve(self, h, method, body, n):
         entry = self._entry(n)
+        # A scripted follow-up can depend on the actual broker reply,
+        # rather than unconditionally launching even after NO_ANSWER.
+        required = entry.get("requires_tool_result")
+        if required and not any(
+                m.get("role") == "tool" and m.get("content") == required
+                for m in (body or {}).get("messages", [])):
+            entry = entry.get("otherwise", {"content": ""})
         self._sleep(entry.get("latency_ms", 0))
         stream = bool(body and body.get("stream"))
         calls = entry.get("tool_calls") or []

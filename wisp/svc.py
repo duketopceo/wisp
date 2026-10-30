@@ -98,6 +98,8 @@ def install_units(home, dry_run: bool = False, names=None,
     stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(now))
     acts, wrote = [], False
     for n in names or UNIT_NAMES:
+        if n not in UNIT_NAMES:
+            raise ValueError("Unknown Wisp unit name.")
         dst = udir / f"{n}.service"
         a = {"name": n, "path": str(dst), "action": "new",
              "backup": None, "reason": ""}
@@ -105,6 +107,8 @@ def install_units(home, dry_run: bool = False, names=None,
         if not local and n in LLAMA:
             a["action"], a["reason"] = "skip", "[local] enabled is off"
             continue
+        from .desktop import refuse_links
+        refuse_links(dst)
         text = render(n, home, units_dir)
         missing = [] if n in ALWAYS_INSTALL else \
             [x for x in _needed_paths(text, home)
@@ -118,6 +122,7 @@ def install_units(home, dry_run: bool = False, names=None,
                 continue
             a["action"] = "update"
             a["backup"] = str(dst.with_name(dst.name + f".bak-{stamp}"))
+            refuse_links(pathlib.Path(a["backup"]))
         if dry_run:
             continue
         udir.mkdir(parents=True, exist_ok=True)

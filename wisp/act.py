@@ -172,14 +172,17 @@ def run_act_loop(task: str, cfg: dict, state=None,
                  initial_image: str | None = None,
                  interrupted=None,
                  steps_out: list | None = None,
-                 ask=None) -> str:
+                 ask=None, *, user_request: str = "") -> str:
     """Drive the chat model through the toolbelt until it finishes or a
     bound trips. `confirm(prompt)->bool` asks the user (choice widget /
     IPC) when wired; without it mutating calls skip. `ask(question,
     options)->pick|None` is the in-loop conversation channel (U4 —
     `confirm.make_ask` on the same broker); without it `ask_user` calls
     resolve NO_ANSWER. `steps_out`, if a list, receives the run's step
-    records for judging/replay."""
+    records for judging/replay. `user_request` is the caller's verbatim
+    human instruction, not a generated task/goal or model tool payload.
+    Only that trusted channel may authorize an element-free coordinate
+    click; omitted context fails closed."""
     from . import brain
     at_mode = brain.action_text(cfg)
     if not brain.supports_tools(cfg) and not at_mode:
@@ -564,8 +567,12 @@ def run_act_loop(task: str, cfg: dict, state=None,
                                     nonlocal dispatched_at, dispatch_mono
                                     dispatched_at = time.time()
                                     dispatch_mono = time.monotonic()
-                                    return tools.run(name, tool_arg, cfg,
-                                                     harness)
+                                    from .tools.system import pointer_context
+                                    with pointer_context(
+                                            target=tgt,
+                                            user_request=user_request):
+                                        return tools.run(name, tool_arg, cfg,
+                                                         harness)
                                 # kill/deny/rate/dry-run/audit around
                                 # dispatch
                                 result = guard.run(
@@ -731,11 +738,8 @@ def _aim(name: str, arg: str, cfg: dict, guard, state):
         return arg, None, None
     from .tools import system as _sys
     if _XY_ARG.match(arg or ""):
-        # explicit coordinates: no grounding; only convert for the ghost
-        # cursor when something is listening
-        if state is None or not callable(getattr(state, "emit_event",
-                                                 None)):
-            return arg, None, None
+        # Explicit model coordinates are not human provenance. Keep the
+        # typed target even when no ghost-cursor overlay is listening.
         xy = _sys._parse_xy(arg)
         if xy is None:
             return arg, None, None

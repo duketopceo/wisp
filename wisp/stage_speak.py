@@ -253,6 +253,11 @@ def _spoken_payload(result: str) -> str:
         return f"Switched to workspace {m.group(1)}."
     m = re.match(r"^MEDIA\s+([a-z_]+)\b", result)
     if m:
+        if m.group(1) == "mute":
+            return "Sent the mute toggle."
+        if m.group(1) == "play_pause" or (
+                m.group(1) in ("play", "pause") and "via omarchy" in result):
+            return "Sent the play/pause toggle."
         act = m.group(1).replace("_", " ")
         return f"Media {act}."
     return ""

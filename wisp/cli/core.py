@@ -115,16 +115,17 @@ def _install(ctx, a, src, repo, commit):
     from .. import preflight
 
     def plan():
+        rows = preflight.run()
         print("preflight:")
-        print(preflight.format_rows(preflight.run()))
+        print(preflight.format_rows(rows))
         ctx.host.install_files(dry_run=True, cfg=ctx.cfg, src=src,
                                deploy=deploy, plugin=plugin)
         ctx.host.install_bind(ctx.cfg, dry_run=True)
+        return 4 if preflight.blockers(rows) else 0
 
     def go():
         if a.dry_run:
-            plan()
-            return 0
+            return plan()
         rows = preflight.run()
         if preflight.blockers(rows):
             raise CliError("E_FAILED", preflight.refusal(rows),
@@ -141,7 +142,8 @@ def _install(ctx, a, src, repo, commit):
             return ctx.emit({"installed": False, "cua": None},
                             "not installed; nothing was changed")
     rc, text = _host_call(ctx, go)
-    return ctx.emit({"installed": rc == 0 and not a.dry_run, "cua": None})
+    ctx.emit({"installed": rc == 0 and not a.dry_run, "cua": None}, text)
+    return rc
 
 
 def _tty_yes(prompt: str) -> bool:
