@@ -26,6 +26,9 @@ _enabled = None    # cached after first check
 
 def _cfg_flag() -> bool:
     global _enabled
+    from . import devsession
+    if devsession.is_on():     # a dev session forces tracing on; the
+        return True            # owner's setting is read, never changed
     if _enabled is None:
         v = config.load_config().get("debug", {}).get("trace", "true")
         _enabled = str(v).lower() not in ("false", "0", "no", "off")
