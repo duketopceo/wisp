@@ -95,6 +95,7 @@ Item {
   }
 
   Text {
+    textFormat: Text.PlainText
     objectName: "modelCaption"
     x: Model.PAD
     y: Model.PAD * 2 + root.size.viewH

@@ -167,6 +167,7 @@ Item {
       }
 
       Text {
+        textFormat: Text.PlainText
         objectName: "word"
         anchors.verticalCenter: parent.verticalCenter
         text: !root.service || !root.info.visible ? ""
@@ -180,6 +181,7 @@ Item {
 
       // acting: "2/4" when the run knows its steps
       Text {
+        textFormat: Text.PlainText
         objectName: "step"
         visible: root.info.step !== ""
         anchors.verticalCenter: parent.verticalCenter
@@ -191,6 +193,7 @@ Item {
 
       // error: one muted word of cause
       Text {
+        textFormat: Text.PlainText
         objectName: "cause"
         visible: root.info.cause !== ""
         anchors.verticalCenter: parent.verticalCenter

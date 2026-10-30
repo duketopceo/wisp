@@ -240,6 +240,7 @@ Panel {
             border.width: 1
             border.color: col.tk.needsYou
             Text {
+              textFormat: Text.PlainText
               id: localBadge
               anchors.centerIn: parent
               text: col.svc.ui("ui.dev.local")
@@ -337,6 +338,7 @@ Panel {
         }
 
         Text {
+          textFormat: Text.PlainText
           width: col.width - 2 * col.padding
           text: col.svc.ui("ui.bar.hint")
           color: col.tk.inkMuted

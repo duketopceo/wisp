@@ -21,6 +21,7 @@ Column {
   spacing: M.spacing.md
 
   component Cell: Text {
+    textFormat: Text.PlainText
     elide: Text.ElideRight
     color: root.tk.ink
     font.family: root.service.fontFamily
@@ -28,6 +29,7 @@ Column {
   }
 
   Text {
+    textFormat: Text.PlainText
     text: root.service.ui("ui.manage.audit")
     color: root.tk.ink
     font.family: root.service.fontFamily
@@ -35,6 +37,7 @@ Column {
     font.weight: Font.DemiBold
   }
   Text {
+    textFormat: Text.PlainText
     text: root.service.ui("ui.manage.audit.sub")
     color: root.tk.inkMuted
     font.family: root.service.fontFamily

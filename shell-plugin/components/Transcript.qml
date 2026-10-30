@@ -24,6 +24,7 @@ Item {
   }
 
   Text {
+    textFormat: Text.PlainText
     id: label
     x: mic.width + M.spacing.md
     width: root.width - x

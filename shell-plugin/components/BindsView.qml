@@ -20,6 +20,7 @@ Column {
   spacing: M.spacing.md
 
   component Cell: Text {
+    textFormat: Text.PlainText
     elide: Text.ElideRight
     color: root.tk.ink
     font.family: root.service.fontFamily
@@ -27,6 +28,7 @@ Column {
   }
 
   component Sub: Text {
+    textFormat: Text.PlainText
     color: root.tk.inkMuted
     font.family: root.service.fontFamily
     font.pixelSize: M.font.caption
@@ -34,6 +36,7 @@ Column {
   }
 
   Text {
+    textFormat: Text.PlainText
     text: root.service.ui("ui.manage.binds")
     color: root.tk.ink
     font.family: root.service.fontFamily
@@ -41,6 +44,7 @@ Column {
     font.weight: Font.DemiBold
   }
   Text {
+    textFormat: Text.PlainText
     text: root.service.ui("ui.manage.binds.sub")
     color: root.tk.inkMuted
     font.family: root.service.fontFamily

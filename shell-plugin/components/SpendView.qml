@@ -23,6 +23,7 @@ Column {
   spacing: M.spacing.md
 
   component Cell: Text {
+    textFormat: Text.PlainText
     elide: Text.ElideRight
     color: root.dim ? root.tk.inkMuted : root.tk.ink
     font.family: root.service.fontFamily
@@ -30,6 +31,7 @@ Column {
   }
 
   Text {
+    textFormat: Text.PlainText
     text: root.service.ui("ui.manage.spend")
     color: root.tk.ink
     font.family: root.service.fontFamily
@@ -37,6 +39,7 @@ Column {
     font.weight: Font.DemiBold
   }
   Text {
+    textFormat: Text.PlainText
     text: root.service.ui("ui.manage.spend.sub")
     color: root.tk.inkMuted
     font.family: root.service.fontFamily
@@ -44,6 +47,7 @@ Column {
     bottomPadding: M.spacing.lg
   }
   Text {
+    textFormat: Text.PlainText
     // W25 moved "out of date" off service.notice (a stale turn reads
     // reconnecting in the status line); settings views still say it.
     readonly property string line: root.service.notice !== "" ? root.service.notice
@@ -87,6 +91,7 @@ Column {
   }
 
   Text {
+    textFormat: Text.PlainText
     text: root.service.ui("ui.health.models")
     color: root.tk.inkMuted
     font.family: root.service.fontFamily

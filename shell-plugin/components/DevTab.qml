@@ -44,6 +44,7 @@ Column {
     height: M.size.control
 
     Text {
+      textFormat: Text.PlainText
       anchors.verticalCenter: parent.verticalCenter
       visible: root.hasData
       text: root.ui("ui.dev.gate")
@@ -54,6 +55,7 @@ Column {
     }
 
     Text {
+      textFormat: Text.PlainText
       id: refreshLabel
       anchors.right: parent.right
       anchors.verticalCenter: parent.verticalCenter
@@ -76,6 +78,7 @@ Column {
 
   // loading, error and empty states stand in for the body
   Text {
+    textFormat: Text.PlainText
     visible: root.loading && !root.hasData
     width: parent.width
     text: root.ui("ui.dev.loading")
@@ -89,6 +92,7 @@ Column {
     width: parent.width
     spacing: M.spacing.md
     Text {
+      textFormat: Text.PlainText
       width: parent.width
       text: root.ui("ui.dev.error")
       wrapMode: Text.Wrap
@@ -97,6 +101,7 @@ Column {
       font.pixelSize: M.font.body
     }
     Text {
+      textFormat: Text.PlainText
       width: parent.width
       text: root.ui("ui.dev.error.hint")
       wrapMode: Text.Wrap
@@ -111,6 +116,7 @@ Column {
     width: parent.width
     spacing: M.spacing.md
     Text {
+      textFormat: Text.PlainText
       width: parent.width
       text: root.ui("ui.dev.empty")
       wrapMode: Text.Wrap
@@ -119,6 +125,7 @@ Column {
       font.pixelSize: M.font.body
     }
     Text {
+      textFormat: Text.PlainText
       width: parent.width
       text: root.ui("ui.dev.empty.hint")
       wrapMode: Text.Wrap
@@ -130,6 +137,7 @@ Column {
 
   // an error while older data is still showing
   Text {
+    textFormat: Text.PlainText
     visible: root.error !== "" && root.hasData
     width: parent.width
     text: root.ui("ui.dev.error")
@@ -159,6 +167,7 @@ Column {
         width: parent.width
         height: rateText.implicitHeight
         Text {
+          textFormat: Text.PlainText
           id: rateText
           text: root.gate.rateText
           color: root.tone(D.toneToken(root.gate.tone))
@@ -167,6 +176,7 @@ Column {
           font.weight: Font.DemiBold
         }
         Text {
+          textFormat: Text.PlainText
           x: rateText.width + M.spacing.md
           anchors.baseline: rateText.baseline
           visible: root.gate.tick >= 0
@@ -207,12 +217,14 @@ Column {
       }
 
       Text {
+        textFormat: Text.PlainText
         text: root.gate.labelled + " / " + root.gate.minTurns + " " + root.ui("ui.dev.labelled")
         color: root.tk.inkMuted
         font.family: root.service.fontFamily
         font.pixelSize: M.font.label
       }
       Text {
+        textFormat: Text.PlainText
         visible: root.reply && typeof root.reply.rated_share === "number"
         text: root.ui("ui.dev.rated") + " " + D.pct(root.reply ? root.reply.rated_share : null)
           + " " + root.ui("ui.dev.of_turns")
@@ -221,6 +233,7 @@ Column {
         font.pixelSize: M.font.label
       }
       Text {
+        textFormat: Text.PlainText
         readonly property string line: D.kindLine(root.reply && root.reply.gate ? root.reply.gate.kinds : null)
         visible: line !== ""
         width: parent.width
@@ -240,6 +253,7 @@ Column {
     spacing: M.spacing.sm
 
     Text {
+      textFormat: Text.PlainText
       text: root.ui("ui.dev.recent")
       color: root.tk.ink
       font.family: root.service.fontFamily
@@ -270,6 +284,7 @@ Column {
           width: parent.width - root.barW - 2 * M.spacing.lg - M.size.control
           spacing: 1
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             text: row.modelData.transcript
             elide: Text.ElideRight
@@ -278,6 +293,7 @@ Column {
             font.pixelSize: M.font.label
           }
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             text: D.routeLine(row.modelData, { step: root.ui("ui.dev.step"), steps: root.ui("ui.dev.steps") })
             elide: Text.ElideRight
@@ -352,6 +368,7 @@ Column {
             color: root.tone(D.stageToken(root.names, parent.modelData))
           }
           Text {
+            textFormat: Text.PlainText
             text: parent.modelData
             color: root.tk.inkMuted
             font.family: root.service.fontFamily
@@ -380,6 +397,7 @@ Column {
       spacing: M.spacing.md
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         text: root.pick ? root.pick.transcript : ""
         wrapMode: Text.Wrap
@@ -398,6 +416,7 @@ Column {
           width: pickCol.width
           height: 16
           Text {
+            textFormat: Text.PlainText
             width: 64
             anchors.verticalCenter: parent.verticalCenter
             text: stageRow.modelData.name
@@ -415,6 +434,7 @@ Column {
             color: root.tone(D.stageToken(root.names, stageRow.modelData.name))
           }
           Text {
+            textFormat: Text.PlainText
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
             text: Math.round(stageRow.modelData.ms) + " ms"
@@ -426,6 +446,7 @@ Column {
       }
 
       Text {
+        textFormat: Text.PlainText
         visible: text !== ""
         width: parent.width
         text: root.pick ? root.pick.result : ""
@@ -445,6 +466,7 @@ Column {
     width: parent.width
     spacing: M.spacing.sm
     Text {
+      textFormat: Text.PlainText
       text: root.ui("ui.dev.misses")
       color: root.tk.ink
       font.family: root.service.fontFamily
@@ -459,6 +481,7 @@ Column {
         width: root.width
         height: 16
         Text {
+          textFormat: Text.PlainText
           width: parent.width - 36
           anchors.verticalCenter: parent.verticalCenter
           text: missRow.modelData.pattern
@@ -468,6 +491,7 @@ Column {
           font.pixelSize: M.font.label
         }
         Text {
+          textFormat: Text.PlainText
           anchors.right: parent.right
           anchors.verticalCenter: parent.verticalCenter
           text: missRow.modelData.count
