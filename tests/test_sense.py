@@ -239,12 +239,12 @@ class TestAgentGuards(unittest.TestCase):
             self.assertIn("agent limit", out)
 
     def test_model_flag_position(self):
-        # --model lands after 'run': ori opencode run --model X <task>
+        # --model lands after 'run': ori opencode run --model X
         cfg = {"brain": {"agent_runtime": "opencode"},
                "agents": {"model": "m/x"}}
         with mock.patch.object(agents.shutil, "which",
                                return_value="/usr/bin/ori"):
-            cmd = agents._runtime_cmd(cfg, "do it", "m/x")
+            cmd = agents._runtime_cmd(cfg, "m/x")
         self.assertEqual(cmd[:4], ["ori", "opencode", "run",
                                    "--model"])
 

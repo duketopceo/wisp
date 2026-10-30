@@ -400,10 +400,12 @@ def type_text(text: str, cfg: dict | None = None) -> str:
         return ("TYPED" if r.startswith("typed:")
                 else f"SKIP ({r[:60]})")
     from .. import platform
-    cmd = platform.type_text_cmd(text)
+    cmd = platform.type_text_cmd()
     if not cmd:
         return (f"SKIP (no typer — {platform.missing_deps_hint()})")
-    r = _cancel.run(cmd, capture_output=True, env=hypr_env())
+    # the text goes on stdin, not argv: other local accounts can read argv
+    r = _cancel.run(cmd, input=text.encode("utf-8"), capture_output=True,
+                    env=hypr_env())
     return "TYPED" if r.returncode == 0 else "SKIP (typer failed)"
 
 
