@@ -65,3 +65,20 @@ def harden(roots=None) -> int:
             for f in files:
                 n += _fix(pathlib.Path(dirpath) / f, FILE_MODE)
     return n
+
+
+def apply(roots=None) -> int:
+    """The one setup every recording path runs before it captures audio:
+    umask 077 so new files are born private, the data and config folders
+    created 0700 when missing, and everything an older version wrote
+    tightened. The daemon and the no-daemon trigger fallback both call
+    it, so neither can record into a traversable folder or create a
+    world-readable `utterance.wav`. Returns how many entries `harden`
+    changed."""
+    os.umask(0o077)
+    for root in (roots if roots is not None
+                 else [config.DATA_DIR, config.CFG_DIR]):
+        if root:
+            pathlib.Path(root).mkdir(parents=True, exist_ok=True,
+                                     mode=DIR_MODE)
+    return harden(roots)

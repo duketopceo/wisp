@@ -781,6 +781,17 @@ def _start_keys(st, cfg: dict):
         return None
 
 
+def _apply_private() -> None:
+    """umask 077 and private data/config folders (wisp/private.py), shared
+    by the daemon and the no-daemon trigger fallback so every path that
+    records runs the same hardening. Never blocks a start."""
+    try:
+        from wisp import private
+        private.apply()
+    except Exception as e:
+        dlog(f"private permissions failed: {e}")
+
+
 def run_daemon(cfg: dict) -> int:
     global _DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL, _HEALTH
     # one daemon per user: a second start must not touch the first's
@@ -792,14 +803,9 @@ def run_daemon(cfg: dict) -> int:
         print(f"wispd: {e}; not starting a second one. "
               "`wispd stop` stops it.", file=sys.stderr)
         return instance.EXIT_RUNNING
-    try:
-        # transcripts and traces are private to this user: new files are
-        # 0600 and older versions' world-readable ones are tightened
-        from wisp import private
-        os.umask(0o077)
-        private.harden()
-    except Exception as e:
-        dlog(f"private permissions failed: {e}")
+    # transcripts and traces are private to this user: new files are
+    # 0600 and older versions' world-readable ones are tightened
+    _apply_private()
     from wisp import skills, theme, memory as _memory
     skills.register_tools()  # skill_<name> entries from skills/*/SKILL.md
     skills.seed()          # bundled dayflow-bridge/self-checkup skills
@@ -925,7 +931,9 @@ def cmd_trigger(cfg: dict, phase: str = "") -> int:
         return 1
     except (ConnectionError, OSError):
         # No daemon: run the pipeline inline so the bind still works
-        # before the systemd unit is installed/enabled.
+        # before the systemd unit is installed/enabled. It records
+        # audio, so it gets the daemon's private setup first.
+        _apply_private()
         st = state_mod.StateBus()
         try:
             return pipeline.run_listen(cfg, st)
