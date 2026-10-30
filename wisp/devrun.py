@@ -169,8 +169,14 @@ def _trace_steps(turn_id: str) -> tuple:
             evs.append(e)
     evs.reverse()
     steps, stops = [], []
+    llm = {}
     for e in evs:
         d = e.get("data") or {}
+        if e.get("step") in ("brain_call", "llm_call") and not llm:
+            llm = {"provider": d.get("provider") or d.get("brain"),
+                   "model": d.get("model"),
+                   "ttft_ms": d.get("ttft_ms"),
+                   "latency_ms": d.get("latency_ms", e.get("ms"))}
         if e.get("step") == "tool_call":
             steps.append({"tool": str(d.get("name", "")),
                           "arg": str(d.get("args", ""))[:120],
@@ -189,7 +195,7 @@ def _trace_steps(turn_id: str) -> tuple:
             stops.append(res)
             steps.append({"tool": str(d.get("tool", "")), "arg": "",
                           "result": res, "ms": None, "stopped": True})
-    return steps, stops
+    return steps, stops, llm
 
 
 def _verify_failed(result: str) -> bool:
@@ -404,14 +410,22 @@ def _one(rcfg, st, ctl, run_id, index, goal, run_listen, judge=None,
         except Exception as e:
             row["error"] = f"{type(e).__name__}: {e}"[:200]
         d = _decision(tid)
-        steps, stops = _trace_steps(tid)
+        steps, stops, llm = _trace_steps(tid)
         row["steps"] = steps
+        if llm.get("model"):
+            row["model"] = llm["model"]
+        if llm.get("provider"):
+            row["provider"] = llm["provider"]
         if d:
             row["result"] = d.get("result")
             r = ((d.get("answers") or {}).get("route") or {}).get("choice")
             row["route"] = r or route
             if isinstance(d.get("timing_ms"), dict):
                 row["timing_ms"] = dict(d["timing_ms"])
+        if llm.get("ttft_ms") is not None:
+            row["timing_ms"]["ttft"] = llm["ttft_ms"]
+        if llm.get("latency_ms") is not None:
+            row["timing_ms"]["llm"] = llm["latency_ms"]
         row["outcome"] = classify(row["result"] or "", stops)
         task_usd = max(0.0, ledger.session_totals()["cost"] - spend0)
         row["judge"] = (_judge(judge, goal, steps) if judge is not None

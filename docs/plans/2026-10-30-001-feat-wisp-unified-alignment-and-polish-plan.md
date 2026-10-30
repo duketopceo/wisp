@@ -170,3 +170,43 @@ Khan needs Wisp to act immediately and reliably on natural voice commands:
     - `ROADMAP.md`
     - `docs/ROADMAP.md`
   - **Verification**: `python3 -m unittest tests/test_components.py tests/test_qml_lib.py`
+
+- [x] **Unit 11 (U11): Dev Tuning Mode & Per-Model TTFT/Latency Benchmarking**
+  - **Goal**: Merge `origin/docs/dev-tuning-mode` (`wispd dev on|off|run|runs|review`, deterministic starter tasks, LLM judge, A/B arms, drift detection) and instrument `wisp/brain.py`, `wisp/telemetry.py`, `wisp/devlog.py`, and `wispd latency` with per-call `ttft_ms`, `latency_ms`, and per-model p50/p90 tables.
+  - **Files**:
+    - `wisp/brain.py`
+    - `wisp/telemetry.py`
+    - `wisp/devlog.py`
+    - `wisp/devrun.py`
+    - `wisp/devreport.py`
+    - `wisp/ledger.py`
+    - `wisp/cli/diagnose.py`
+    - `wisp/cli/learning.py`
+  - **Verification**: `python3 -m unittest discover -s tests -p "test_dev*.py"`
+
+- [x] **Unit 12 (U12): App Skill Ingestion, Provenance & Live `[app_skill]` Injection**
+  - **Goal**: Port `scripts/skill_distill.py` (`--ingest`, `--from-routines`, `--backfill-routing`, `--validate`), provenance-checked frontmatter (`source`, `app_classes`, `url_hosts`, `asks`), and `codebase-graph` + `graphify` seed skills from `origin/spike/lfm-local`, and wire `skills.match_app_skill()` into `context.snapshot("full")` and `memory.context_block()`.
+  - **Files**:
+    - `wisp/skills.py`
+    - `scripts/skill_distill.py`
+    - `wisp/context.py`
+    - `wisp/memory.py`
+    - `wisp/skills_seed/codebase-graph/SKILL.md`
+    - `wisp/skills_seed/graphify/SKILL.md`
+    - `tests/test_skill_distill.py`
+    - `tests/test_skill_provenance.py`
+  - **Verification**: `python3 -m unittest tests/test_skill_distill.py tests/test_skill_provenance.py tests/test_skills.py tests/test_context.py`
+
+- [x] **Unit 13 (U13): Settings Presets (`cloud`, `local`, `safe`) & Cross-OS Telemetry Seams (macOS / Windows)**
+  - **Goal**: Add `wispd config preset {cloud,local,safe}` for one-command cloud vs. local vs. guided-safe switching, collapse advanced CUA safety sliders behind an `advanced safety & limits` toggle chip in `SettingsTab.qml`, and restore macOS/Windows telemetry & action adapters in `wisp/platform.py` and `wisp/ipc.py` to match `rs/wispd/src/platform.rs`.
+  - **Files**:
+    - `wisp/cli/settings.py`
+    - `shell-plugin/components/SettingsTab.qml`
+    - `wisp/copy.py`
+    - `wisp/platform.py`
+    - `wisp/ipc.py`
+    - `docs/MACOS.md`
+    - `docs/WINDOWS.md`
+    - `tests/test_platform.py`
+    - `tests/test_ipc_tcp.py`
+  - **Verification**: `python3 -m unittest tests/test_platform.py tests/test_ipc_tcp.py tests/test_cli.py`

@@ -178,6 +178,9 @@ def _task(r: dict, confirmed) -> dict:
             "cost_usd": round(_num(c.get("task_usd"))
                               + _num(c.get("judge_usd")), 6),
             "total_ms": (r.get("timing_ms") or {}).get("wall"),
+            "ttft_ms": (r.get("timing_ms") or {}).get("ttft"),
+            "model": r.get("model"),
+            "provider": r.get("provider"),
             "steps": [{"tool": s.get("tool", ""), "arg": s.get("arg", ""),
                        "result": s.get("result") or ""}
                       for s in (r.get("steps") or [])

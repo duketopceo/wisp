@@ -103,6 +103,29 @@ class TestPlatform(unittest.TestCase):
         with _with_os("linux"):
             self.assertFalse(platform.wm_ok(p))
 
+    def test_macos_and_windows_telemetry_seams(self):
+        with _with_os("macos"), \
+                mock.patch.object(platform, "_which", return_value=True):
+            self.assertEqual(platform.current(), "macos")
+            self.assertEqual(platform.desktop(), "")
+            cfg, data, _ = platform.dirs()
+            self.assertIn("Application Support/wisp", cfg.as_posix())
+            self.assertEqual(platform.screenshot_cmd(Path("/t/s.png"))[0],
+                             "screencapture")
+            self.assertEqual(platform.record_cmd(Path("/t/u.wav"), 5)[0],
+                             "sox")
+            self.assertEqual(platform.tts_binary(), "say")
+            self.assertEqual(platform.audio_player(), ["afplay"])
+        with _with_os("windows"), \
+                mock.patch.object(platform, "_which", return_value=True):
+            self.assertEqual(platform.current(), "windows")
+            self.assertEqual(platform.desktop(), "")
+            self.assertEqual(platform.screenshot_cmd(Path("/t/s.png"))[0],
+                             "powershell")
+            self.assertEqual(platform.record_cmd(Path("/t/u.wav"), 5)[0],
+                             "sox")
+            self.assertEqual(platform.tts_binary(), "powershell")
+
 
 
 class TestDefaultApps(unittest.TestCase):

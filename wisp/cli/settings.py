@@ -70,6 +70,69 @@ def config_set(ctx, a):
     return ctx.emit({"key": a.key, "value": a.value}, text)
 
 
+PRESETS = {
+    "cloud": {
+        "description": "Cloud-first (Particle AI + OpenRouter + Groq STT/TTS, pointer auto)",
+        "keys": {
+            "local.enabled": "false",
+            "brain.router": "act",
+            "stt.provider": "openai",
+            "voice.enabled": "auto",
+            "pointer.mode": "auto",
+            "agent.autonomy": "autonomous",
+        },
+    },
+    "local": {
+        "description": "Local-first (local whisper.cpp + local llama.cpp/LFM/UI-TARS)",
+        "keys": {
+            "local.enabled": "true",
+            "brain.router": "act",
+            "stt.provider": "local",
+            "voice.enabled": "auto",
+            "pointer.mode": "auto",
+        },
+    },
+    "safe": {
+        "description": "Guided safety mode (pointer guide-only, confirm every risky step)",
+        "keys": {
+            "pointer.mode": "guide",
+            "agent.autonomy": "guided",
+            "cua.confirm": "always",
+        },
+    },
+}
+
+
+def _preset_args(p):
+    p.add_argument("name", nargs="?", choices=sorted(PRESETS),
+                   help="preset to apply (cloud, local, or safe); omit to list")
+
+
+@command("config preset",
+         "Apply a one-shot configuration preset (cloud, local, or safe)",
+         ["wispd config preset", "wispd config preset cloud",
+          "wispd config preset local"],
+         {"preset": "str|null", "applied": "dict", "presets": "dict"},
+         args=_preset_args)
+def config_preset(ctx, a):
+    if not a.name:
+        lines = ["Available presets:"]
+        for k, info in PRESETS.items():
+            lines.append(f"  {k:<8}  {info['description']}")
+        return ctx.emit({"preset": None, "applied": {}, "presets": PRESETS},
+                        "\n".join(lines))
+    info = PRESETS[a.name]
+    applied = {}
+    for k, v in info["keys"].items():
+        set_key(ctx, k, v)
+        applied[k] = v
+    lines = [f"applied preset {a.name} ({info['description']}):"]
+    for k, v in applied.items():
+        lines.append(f"  {k} = {v}")
+    return ctx.emit({"preset": a.name, "applied": applied,
+                     "presets": PRESETS}, "\n".join(lines))
+
+
 @command("config keys", "List the settings wispd checks, with ranges",
          ["wispd config keys", "wispd config keys --json"],
          {"keys": "list"})

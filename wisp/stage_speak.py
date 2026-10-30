@@ -103,7 +103,10 @@ def ask_chat(transcript: str, cfg: dict, session_text: str = "",
         out = brain.chat(messages, cfg, timeout=30)
     if meta is not None:
         meta.update(provider=out.get("provider"),
-                    fallback_from=out.get("fallback_from"))
+                    model=out.get("model"),
+                    fallback_from=out.get("fallback_from"),
+                    ttft_ms=out.get("ttft_ms"),
+                    latency_ms=out.get("latency_ms"))
     return out["content"].strip()
 
 
@@ -456,10 +459,12 @@ def _answer(ctx) -> None:
         sp.fire("first_token")  # non-streaming brains
         _trace.emit(turn, "brain_call", "brain",
                     {"endpoint": "chat/completions",
-                     "model": cfg.get("agent", {})
+                     "model": _meta.get("model") or cfg.get("agent", {})
                      .get("answer_model", ""),
                      "provider": _meta.get("provider"),
                      "fallback_from": _meta.get("fallback_from"),
+                     "ttft_ms": _meta.get("ttft_ms"),
+                     "latency_ms": _meta.get("latency_ms"),
                      "reply": reply},
                     round((time.monotonic() - _t) * 1000))
     except Exception as e:

@@ -230,6 +230,8 @@ STRINGS = {
     "ui.set.captions": "live captions",
     "ui.set.on": "on",
     "ui.set.off": "off",
+    "ui.set.advanced.show": "advanced safety & limits",
+    "ui.set.advanced.hide": "hide advanced",
     "ui.set.save": "save",
     "ui.set.saved": "saved",
     "ui.set.blank": "blank means no cap",

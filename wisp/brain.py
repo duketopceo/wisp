@@ -224,10 +224,13 @@ def _chat_one(p: dict, messages: list, tools, timeout) -> dict:
                 "stream": False}
         if tools and _tools_ok(p):
             body["tools"] = tools
+        t0 = time.monotonic()
         resp = _post(f"{base}/api/chat", {}, body, timeout)
+        lat_ms = round((time.monotonic() - t0) * 1000)
         msg = resp.get("message", {})
         return {"content": msg.get("content", ""), "raw": msg,
-                "usage": ledger.usage_of(resp)}
+                "usage": ledger.usage_of(resp),
+                "ttft_ms": lat_ms, "latency_ms": lat_ms}
     body = {"model": p["model"], "messages": messages, "max_tokens": 600,
             "usage": {"include": True}}  # OpenRouter: report usage.cost
     if tools and _tools_ok(p):
@@ -236,6 +239,7 @@ def _chat_one(p: dict, messages: list, tools, timeout) -> dict:
     prefs = _provider_prefs(p)
     if prefs:
         body["provider"] = prefs
+    t0 = time.monotonic()
     resp = _post(f"{base}/chat/completions", _headers(p), body, timeout)
     msg = (resp.get("choices") or [{}])[0].get("message", {})
     if not msg.get("content") and not msg.get("tool_calls"):
@@ -243,10 +247,13 @@ def _chat_one(p: dict, messages: list, tools, timeout) -> dict:
         # gemini-2.5-flash with image+tools): retry once before the caller
         # mistakes it for a clean "done"
         time.sleep(0.05)
+        t0 = time.monotonic()
         resp = _post(f"{base}/chat/completions", _headers(p), body, timeout)
         msg = (resp.get("choices") or [{}])[0].get("message", {})
+    lat_ms = round((time.monotonic() - t0) * 1000)
     return {"content": msg.get("content", ""), "raw": msg,
-            "usage": ledger.usage_of(resp)}
+            "usage": ledger.usage_of(resp),
+            "ttft_ms": lat_ms, "latency_ms": lat_ms}
 
 
 def _relax(r, timeout) -> None:
@@ -287,6 +294,7 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
         headers={"User-Agent": UA, "Content-Type": "application/json",
                  **headers}, method="POST")
     t0 = time.monotonic()
+    ttft_ms = None
     acc, msg, usage = "", {}, {}
     try:
         with cancel.urlopen(req, timeout=first_token_s) as r:
@@ -325,6 +333,7 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
                     done = False
                 if piece:
                     if not acc:
+                        ttft_ms = round((time.monotonic() - t0) * 1000)
                         _relax(r, timeout)
                     acc += piece
                     if on_delta:
@@ -343,12 +352,15 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
             err.committed = True
             raise err from e
         raise
+    lat_ms = round((time.monotonic() - t0) * 1000)
+    if ttft_ms is None:
+        ttft_ms = lat_ms
     if not usage:  # provider sent none: estimate (~4 chars a token)
         usage = {"in": sum(len(str(m.get("content", "")))
                            for m in messages) // 4,
                  "out": len(acc) // 4, "cost": None}
     return {"content": acc, "raw": msg or {"content": acc},
-            "usage": usage}
+            "usage": usage, "ttft_ms": ttft_ms, "latency_ms": lat_ms}
 
 
 def _describe(p: dict, e: Exception) -> str:
@@ -425,9 +437,12 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
                                               "brain_down")
             else:
                 res["provider"] = p["name"]
+                res["model"] = p["model"]
                 res["fallback_from"] = first_failed
                 ledger.note(p["name"], p["model"], p["paid"],
-                            res.get("usage") or {})
+                            res.get("usage") or {},
+                            ttft_ms=res.get("ttft_ms"),
+                            latency_ms=res.get("latency_ms"))
                 if first_failed:
                     trace.emit(trace.current(), "brain_fallback", "brain",
                                {"fallback_from": first_failed,

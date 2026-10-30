@@ -147,9 +147,14 @@ def _dev_text(d):
              f"{d.get('finished', 0)} finished"]
     for t in d.get("turns", []):
         ms = t.get("total_ms")
+        ttft = t.get("ttft_ms")
+        mod = (t.get("model") or t.get("provider") or "")[:18]
+        extra = ""
+        if ttft is not None or mod:
+            extra = f"  ttft={'-' if ttft is None else str(ttft)+'ms':<7} {mod:<18}"
         lines.append(f"  {t['id'] or '-':<10}{t['label']:<10}"
                      f"{'-' if ms is None else ms:>6} ms  "
-                     f"{t['route'] or '-':<8}{t['transcript'][:50]}")
+                     f"{t['route'] or '-':<8}{t['transcript'][:40]}{extra}")
     return "\n".join(lines)
 
 

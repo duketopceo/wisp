@@ -111,7 +111,10 @@ def _post(messages: list, cfg: dict) -> dict:
               if p.get("type") == "image_url")
     _trace.emit(_trace.current(), "llm_call", "act",
                 {"brain": res.get("provider"),
+                 "model": res.get("model"),
                  "fallback_from": res.get("fallback_from"),
+                 "ttft_ms": res.get("ttft_ms"),
+                 "latency_ms": res.get("latency_ms"),
                  "msgs": len(messages), "img_kb": img // 1024,
                  "tools_out": [_name_arg(c)[0]
                                for c in raw.get("tool_calls") or []],

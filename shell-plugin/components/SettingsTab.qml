@@ -20,6 +20,7 @@ Column {
   // edits in progress by key
   property var draft: ({})
   property var connectors: []
+  property bool showAdvanced: false
   signal save(string key, string value)
   signal connectClicked(string alias)
 
@@ -234,9 +235,24 @@ Column {
       y: M.spacing.lg
       width: parent.width - 2 * M.spacing.lg
       spacing: M.spacing.md
-      Group { text: root.service.ui("ui.settings.cua") }
+      Row {
+        width: parent.width
+        spacing: M.spacing.lg
+        Group {
+          text: root.service.ui("ui.settings.cua")
+          anchors.verticalCenter: parent.verticalCenter
+        }
+        Chip {
+          objectName: "toggle:advanced"
+          service: root.service
+          label: root.showAdvanced
+            ? root.service.ui("ui.set.advanced.hide")
+            : root.service.ui("ui.set.advanced.show")
+          onClicked: root.showAdvanced = !root.showAdvanced
+        }
+      }
       Repeater {
-        model: S.group("cua")
+        model: root.showAdvanced ? S.group("cua") : []
         delegate: Field { def: modelData; width: cuaCol.width }
       }
     }

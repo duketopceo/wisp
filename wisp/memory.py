@@ -496,6 +496,18 @@ def context_block(transcript: str = "") -> str:
     sidx = skills.index_text(transcript)
     if sidx:
         parts.append(f"[skills]\n{sidx}")
+    try:
+        from . import context as _ctx, platform as _plat
+        win = _plat.active_window() or {}
+        app = win.get("class") or win.get("app") or ""
+        title = win.get("title") or ""
+        if app or title:
+            app_body = skills.match_app_skill(
+                app, url_host=_ctx.focus_url_host(app, title))
+            if app_body:
+                parts.append(f"[app_skill]\n{app_body}")
+    except Exception:
+        pass
     if transcript:
         rec = recall.context_for(transcript)
         if rec:

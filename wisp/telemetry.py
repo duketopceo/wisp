@@ -157,20 +157,35 @@ def _pct(vals: list, p: float):
 
 
 def latency_report(since_hours: float = 24, trace_file=None) -> dict:
-    """{turns, rows:[{id,label,n,p50,p90,budget_p50,verdict}]} from the
-    `span` events in trace.jsonl. P4 and E2E are composed per turn."""
+    """{turns, rows:[{id,label,n,p50,p90,budget_p50,verdict}],
+    models:[{provider,model,n,ttft_p50,ttft_p90,latency_p50,latency_p90}]}
+    from the `span` and `brain_call`/`llm_call` events in trace.jsonl."""
     cutoff = datetime.now(timezone.utc) - timedelta(hours=since_hours)
     per_turn: dict = {}
+    model_series: dict = {}
     for e in _load(trace_file or trace.TRACE_FILE):
-        if e.get("kind") != "span" or not isinstance(e.get("ms"),
-                                                      (int, float)):
-            continue
         try:
             if datetime.fromisoformat(e.get("ts", "")) < cutoff:
                 continue
         except ValueError:
             continue
-        per_turn.setdefault(e["turn"], {})[e["step"]] = e["ms"]
+        if e.get("kind") == "span" and isinstance(e.get("ms"),
+                                                  (int, float)):
+            per_turn.setdefault(e["turn"], {})[e["step"]] = e["ms"]
+        elif e.get("kind") in ("brain", "act") and e.get("step") in (
+                "brain_call", "llm_call"):
+            d = e.get("data") or {}
+            prov = str(d.get("provider") or d.get("brain") or "unknown")
+            mod = str(d.get("model") or "unknown")
+            ttft = d.get("ttft_ms")
+            lat = d.get("latency_ms", e.get("ms"))
+            bucket = model_series.setdefault(
+                (prov, mod), {"ttft": [], "lat": [], "n": 0})
+            bucket["n"] += 1
+            if isinstance(ttft, (int, float)):
+                bucket["ttft"].append(int(ttft))
+            if isinstance(lat, (int, float)):
+                bucket["lat"].append(int(lat))
     series = {k: [] for k, _, _ in BUDGETS}
     for m in per_turn.values():
         for pid, name in _SPAN.items():
@@ -192,7 +207,19 @@ def latency_report(since_hours: float = 24, trace_file=None) -> dict:
             ok = row["p50"] <= budget and row["p90"] <= budget * P90_FACTOR
             row["verdict"] = "ok" if ok else "MISS"
         rows.append(row)
-    return {"turns": len(per_turn), "rows": rows}
+    models = []
+    for (prov, mod), b in sorted(
+            model_series.items(), key=lambda kv: (-kv[1]["n"], kv[0])):
+        models.append({
+            "provider": prov,
+            "model": mod,
+            "n": b["n"],
+            "ttft_p50": _pct(b["ttft"], 50) if b["ttft"] else None,
+            "ttft_p90": _pct(b["ttft"], 90) if b["ttft"] else None,
+            "latency_p50": _pct(b["lat"], 50) if b["lat"] else None,
+            "latency_p90": _pct(b["lat"], 90) if b["lat"] else None,
+        })
+    return {"turns": len(per_turn), "rows": rows, "models": models}
 
 
 def latency_text(since_hours: float = 24, trace_file=None) -> str:
