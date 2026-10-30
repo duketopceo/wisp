@@ -148,10 +148,32 @@ Item {
   property var configErrors: ({})    // key -> message from the daemon or validator
   property string configSaved: ""    // key last written without error
 
-  // --- dev tab (U5): local only, behind `[dev] panel` -----------------------
-  // One `wispd dev turns --json` call per tab open and per refresh press,
-  // never on a timer and never with the flag off.
+  // B31: one local-only recap read per panel open, never a poll.
+  // --claim reserves that completed week before the card is delivered.
+  property var weeklyRecap: null
+  property bool recapReadRequested: false
+  property bool recapSuppressed: false
+  property bool recapVisible: false
+  onRecapVisibleChanged: { if (recapVisible) root.loadRecap(); }
+  readonly property bool recapEnabled: configValues["growth.weekly_recap"] === "true"
+  onRecapEnabledChanged: {
+    if (!recapEnabled) weeklyRecap = null;
+    else recapSuppressed = false;
+  }
+
+  // --- dev tab (U5): local only, behind `[dev] panel` or a dev session ------
+  // One `wispd dev turns --json` and one `wispd dev runs --json` call per tab
+  // open and per refresh press, never on a timer and never with both off.
   readonly property bool devPanel: configValues["dev.panel"] === "true"
+  // the dev session (state.dev), and whether the Dev tab exists: the session
+  // is on or the flag is
+  readonly property bool devOn: Dev.sessionOn(view.raw)
+  readonly property int devRunsLeft: Dev.runsLeft(view.raw)
+  readonly property bool devTab: devPanel || devOn
+  // `wispd dev runs --json`, read with the turns on tab open and refresh
+  property var devRuns: null
+  property bool devRunsLoading: false
+  property string devRunsError: ""
   property var devData: null         // parsed reply data, null until read
   property bool devLoading: false
   property string devError: ""       // "" when fine, else a short code
@@ -243,16 +265,50 @@ Item {
   // Read the config alone (the Panel needs `[dev] panel` before it knows
   // whether the Dev tab exists).
   function loadConfig() {
+    root.weeklyRecap = null;
+    root.recapReadRequested = true;
     if (!cfgProc.running) cfgProc.running = true;
   }
 
-  // The Dev tab's one read. Refused unless the flag is on.
+  function loadRecap() {
+    if (!root.recapVisible || !root.recapEnabled || root.recapSuppressed
+        || root.weeklyRecap || recapProc.running) return;
+    recapProc.running = true;
+  }
+
+  function finishRecap(code, text) {
+    root.weeklyRecap = null;
+    if (code !== 0 || !root.recapEnabled || root.recapSuppressed) return;
+    try {
+      var reply = JSON.parse(text);
+      if (reply.ok && reply.data && reply.data.enabled)
+        root.weeklyRecap = reply.data.card || null;
+    } catch (e) {}
+  }
+
+  function disableRecap() {
+    root.weeklyRecap = null;
+    // Do not let a claim already in flight restore the card after off.
+    root.recapSuppressed = true;
+    return runAction([root.wispd, "recap", "--off", "--json"], "recap-off");
+  }
+
+  // The Dev tab's reads (turns, then runs). Refused unless the flag or the
+  // session is on.
   function loadDev() {
-    if (!devPanel || devProc.running) return;
-    devLoading = true;
-    devError = "";
-    devProc.command = Dev.command(wispd);
-    devProc.running = true;
+    if (!devTab) return;
+    if (!devProc.running) {
+      devLoading = true;
+      devError = "";
+      devProc.command = Dev.command(wispd);
+      devProc.running = true;
+    }
+    if (!devRunsProc.running) {
+      devRunsLoading = true;
+      devRunsError = "";
+      devRunsProc.command = Dev.runsCommand(wispd);
+      devRunsProc.running = true;
+    }
   }
 
   // Validate, then `wispd config set KEY VALUE`. A rejected value or a
@@ -606,9 +662,20 @@ Item {
     command: [root.wispd, "config", "show", "--json"]
     stdout: StdioCollector { id: cfgOut }
     onExited: function (code) {
-      if (code !== 0) return;
+      if (code !== 0) { root.recapReadRequested = false; return; }
       try { root.configValues = Settings.flatten(JSON.parse(cfgOut.text)); } catch (e) {}
+      if (root.recapReadRequested) {
+        root.recapReadRequested = false;
+        root.loadRecap();
+      }
     }
+  }
+
+  Process {
+    id: recapProc
+    command: [root.wispd, "recap", "--claim", "--json"]
+    stdout: StdioCollector { id: recapOut }
+    onExited: function (code) { root.finishRecap(code, recapOut.text); }
   }
 
   Process {
@@ -646,6 +713,24 @@ Item {
       if (!devProc.running && root.devLoading) {
         root.devLoading = false;
         root.devError = "spawn";
+      }
+    }
+  }
+
+  Process {
+    id: devRunsProc
+    command: [root.wispd, "dev", "runs", "--json"]
+    stdout: StdioCollector { id: devRunsOut }
+    onExited: function (code) {
+      var r = Dev.parseRuns(devRunsOut.text);
+      root.devRunsLoading = false;
+      if (r.ok) { root.devRuns = r.data; root.devRunsError = ""; }
+      else root.devRunsError = r.error || "error";
+    }
+    onRunningChanged: {
+      if (!devRunsProc.running && root.devRunsLoading) {
+        root.devRunsLoading = false;
+        root.devRunsError = "spawn";
       }
     }
   }

@@ -5,7 +5,7 @@
 // regenerate. lib/settings.js builds on this table.
 
 // every key the daemon validates, in schema order
-var KEYS = ["budget.daily_usd", "budget.monthly_usd", "budget.gate_primary", "pointer.mode", "pointer.backend", "cua.dry_run", "cua.kill_switch", "cua.confirm", "cua.delivery", "cua.max_clicks_per_min", "cua.max_per_turn", "agent.autonomy", "dictation.mode", "cua.timeout_ms", "audio.seconds", "chips.enabled", "chips.days", "agent.screenshots", "ui.theme", "brain.router", "brain.allow_paid", "local.enabled", "keys.submap", "agents.act_max_steps", "agents.act_max_errors", "agents.act_max_parse_misses", "agents.act_max_seconds", "agents.act_max_usd", "agents.writer_queue_max", "voice.captions", "voice.enabled", "voice.provider", "voice.tts_voice", "quiet.on_calls", "browser.lane", "browser.port", "stt.provider", "packs.keep", "packs.keep_days", "packs.shots_keep", "packs.shots_keep_days", "dev.panel", "verify.judge_timeout_s", "verify.pixel_eps", "verify.region_px"]
+var KEYS = ["budget.daily_usd", "budget.monthly_usd", "budget.gate_primary", "pointer.mode", "pointer.backend", "cua.dry_run", "cua.kill_switch", "cua.confirm", "cua.delivery", "cua.max_clicks_per_min", "cua.max_per_turn", "agent.autonomy", "dictation.mode", "cua.timeout_ms", "audio.seconds", "chips.enabled", "chips.days", "agent.screenshots", "ui.theme", "brain.router", "growth.weekly_recap", "brain.allow_paid", "local.enabled", "keys.submap", "agents.act_max_steps", "agents.act_max_errors", "agents.act_max_parse_misses", "agents.act_max_seconds", "agents.act_max_usd", "agents.writer_queue_max", "voice.captions", "voice.enabled", "voice.provider", "voice.tts_voice", "quiet.on_calls", "browser.lane", "browser.port", "stt.provider", "packs.keep", "packs.keep_days", "packs.shots_keep", "packs.shots_keep_days", "dev.panel", "dev.judge_cap_usd", "verify.judge_timeout_s", "verify.pixel_eps", "verify.region_px"]
 
 // keys the Panel edits: kind usd, int, bool or choice
 var FIELDS = [
@@ -19,7 +19,10 @@ var FIELDS = [
   {"key": "cua.max_clicks_per_min", "group": "cua", "kind": "int", "label": "ui.set.clicks", "widget": "number", "min": 1, "max": 600},
   {"key": "cua.max_per_turn", "group": "cua", "kind": "int", "label": "ui.set.per_turn", "widget": "number", "min": 1, "max": 200},
   {"key": "agent.autonomy", "group": "agent", "kind": "choice", "label": "ui.set.autonomy", "widget": "choice", "options": ["autonomous", "guided", "always_ask"]},
-  {"key": "dictation.mode", "group": "dictation", "kind": "choice", "label": "ui.set.dictation", "widget": "choice", "options": ["raw", "cleanup", "compose"]}
+  {"key": "dictation.mode", "group": "dictation", "kind": "choice", "label": "ui.set.dictation", "widget": "choice", "options": ["raw", "cleanup", "compose"]},
+  {"key": "voice.captions", "group": "voice", "kind": "bool", "label": "ui.set.captions", "widget": "toggle"},
+  {"key": "voice.enabled", "group": "voice", "kind": "choice", "label": "ui.set.voice", "widget": "choice", "options": ["auto", "true", "false"]},
+  {"key": "voice.tts_voice", "group": "voice", "kind": "choice", "label": "ui.set.tts_voice", "widget": "choice", "options": ["autumn", "diana", "hannah", "austin", "daniel", "troy"]}
 ]
 
 // characters a config value may not contain (as a regex source)

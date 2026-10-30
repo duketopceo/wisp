@@ -124,10 +124,6 @@ def models_line(cfg: dict, last=None) -> str:
                if e]
     if backups:
         parts[0] += ", falling back to " + " then ".join(backups)
-    if str(b.get("router", "act")) == "jev":
-        m = (cfg.get("agent", {}) or {}).get("model", "")
-        if m:
-            parts.append(f"the router is {m}")
     from . import config
     stt = config.stt_settings(cfg)
     if stt.get("provider") == "openai":

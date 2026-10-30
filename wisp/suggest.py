@@ -1,8 +1,8 @@
 """Suggestion miner — turn the activity window into "automate this?"
 cards.
 
-Pipeline per tick: read the recent activity window → cheap Jev gate
-("is there a repeated workflow here?") → one batch call to the
+Pipeline per tick: read the recent activity window → local density gate
+→ one budgeted batch call to the
 configured `[sense] model` (defaults to a cheap remote, or a local
 Gemma-class model via ollama/mlx) → dedup against never-list and prior
 suggestions → surface the top pick on state.json so the orb/GUI can
@@ -23,20 +23,6 @@ from . import state as _state
 SUGGESTIONS_FILE = config.DATA_DIR / "suggestions.jsonl"
 NEVER_FILE = config.CFG_DIR / "never.json"
 _BUDGET_FILE = config.DATA_DIR / "sense_budget.json"
-
-_MINE_Q = {
-    "mine": {
-        "type": "choice",
-        "instructions": "Does this activity window show a repeated "
-                        "workflow worth offering to automate?",
-        "criteria": {
-            "yes": "the same multi-app or multi-step sequence repeats, "
-                   "or one action recurs at a predictable time",
-            "no": "sparse, idle, or one-off activity — nothing a "
-                  "shortcut would help",
-        },
-    },
-}
 
 _PROMPT = """You are reviewing a privacy-first activity journal (window/app
 names and summarized work blocks, no content). Find ONE workflow the
@@ -120,26 +106,8 @@ def _sense_cfg(cfg: dict) -> dict:
 
 
 def _worth_mining(window: list, cfg: dict, log) -> bool:
-    """Jev gate first (cheap, typed); on router failure fall back to a
-    dumb event-count threshold so mining still works offline."""
-    if len(window) < 4:
-        return False
-    summary = "\n".join(
-        f"- {r.get('window', {}).get('app', '?')}: "
-        f"{r.get('window', {}).get('title', '')[:60]}"
-        + (" [dayflow blocks: "
-           + "; ".join(b.get("title", "") for b in r["dayflow"]) + "]"
-           if r.get("dayflow") else "")
-        for r in window[-60:])
-    try:
-        from . import pipeline
-        answers = pipeline.ask_jev(
-            "activity window for pattern mining", "typesafe/jev-1.13",
-            _MINE_Q, context=summary)
-        return answers.get("mine", {}).get("choice") == "yes"
-    except Exception as e:
-        log(f"suggest: jev gate failed ({e}) — count fallback")
-        return len(window) >= 8
+    """A local prefilter; the sense model judges repeated-workflow evidence."""
+    return len(window) >= 6
 
 
 def mine(cfg: dict, state=None, log=None) -> list:
@@ -152,8 +120,7 @@ def mine(cfg: dict, state=None, log=None) -> list:
     turn_id = bus.current_turn() if bus else None
     window = sense.read_window(
         hours=float(cfg.get("sense", {}).get("window_h", "3")))
-    if not _budget_ok(cfg):  # budget covers the Jev gate too — it's a
-        # paid call, so it must come before _worth_mining
+    if not _budget_ok(cfg):
         log("suggest: daily call budget exhausted")
         return []
     if not _worth_mining(window, cfg, log):

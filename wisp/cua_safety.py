@@ -56,6 +56,15 @@ BUILTIN_DENY_APPS = (
     "1password", "bitwarden", "keepassxc", "keepass", "enpass", "lastpass",
     "seahorse", "gnome-keyring", "pinentry", "polkit", "policykit",
     "hyprpolkitagent", "omaseal", "kwalletmanager", "gcr-prompter")
+# Financial / billing surfaces (Stripe, banking, brokerages) where reading,
+# explaining, pointing, scrolling, and switching tabs are allowed, but
+# mutating actions (click, type_text, key, fill) promote from T1 to T2
+# (user confirmation required).
+BUILTIN_SENSITIVE_SURFACES = (
+    "stripe", "billing", "checkout", "plaid", "mercury", "brex",
+    "robinhood", "coinbase")
+SENSITIVE_SECRET_RE = re.compile(
+    r"\b(?:sk_live_[A-Za-z0-9]{10,}|rk_live_[A-Za-z0-9]{10,}|whsec_[A-Za-z0-9]{10,})\b")
 TERMINALS = ("ghostty", "kitty", "alacritty", "foot", "wezterm", "konsole",
              "gnome-terminal", "xterm", "terminator", "tilix", "st-256color")
 _NAMED_KEYS = {"enter", "return", "tab", "esc", "escape", "space", "up",
@@ -91,6 +100,8 @@ def settings(cfg: dict | None) -> dict:
         "deny": _csv(c.get("deny")),
         "deny_titles": _csv(c.get("deny_titles")),
         "deny_builtin": _truthy(c.get("deny_builtin"), True),
+        "sensitive": _csv(c.get("sensitive")),
+        "sensitive_builtin": _truthy(c.get("sensitive_builtin"), True),
         "per_min": _num(c.get("max_clicks_per_min"), DEFAULT_MAX_PER_MIN),
         "per_turn": _num(c.get("max_per_turn"), DEFAULT_MAX_PER_TURN),
         "dry_run": _truthy(c.get("dry_run")),
@@ -98,6 +109,34 @@ def settings(cfg: dict | None) -> dict:
         "audit": _truthy(c.get("audit"), True),
         "confirm": str(c.get("confirm", "tier")).strip().lower(),
     }
+
+
+def sensitive_surface(cfg: dict | None = None, state=None,
+                      window: dict | None = None) -> str:
+    """Return the matched sensitive token, 'unknown' if live identity
+    cannot be established, or '' for a known non-sensitive surface.
+    Never authorize a mutation from the turn-start state.focus snapshot.
+    Sensitive surfaces allow observation and navigation (T0, scroll, move)
+    while promoting mutating pointer/keyboard actions (click, type_text,
+    key, fill) from T1 to T2 confirmation."""
+    s = settings(cfg)
+    if not s["safety"]:
+        return ""
+    tokens = list(s["sensitive"])
+    if s["sensitive_builtin"]:
+        tokens += list(BUILTIN_SENSITIVE_SURFACES)
+    if not tokens:
+        return ""
+    if window is None:
+        # state.focus is a turn-start snapshot, not the current surface.
+        window = _live_window()
+    if not (window.get("app") or window.get("class")) or not window.get("title"):
+        return "unknown"
+    hay = f"{window.get('app') or window.get('class') or ''} {window.get('title') or ''}".lower()
+    for tok in tokens:
+        if tok and re.search(rf"\b{re.escape(tok)}\b", hay):
+            return tok
+    return ""
 
 
 def effective_tier(name: str, cfg: dict | None) -> str:
@@ -305,8 +344,15 @@ class Guard:
     def applies(self, name: str) -> bool:
         if not self.s["safety"] or name not in GUARDED:
             return False
-        if name in POINTER and self.pointer_mode != "drive":
+        if name in POINTER and self.pointer_mode not in ("drive", "auto"):
             return False   # guide mode only moves the ghost cursor
+        if name in ("click", "move") and self.pointer_mode == "auto" \
+                and not self.cfg.get("screen", {}).get("dom_page", ""):
+            # Match tools.system._pointer's real delivery decision. Missing
+            # native injection is NOT enough: Cua may still deliver the input.
+            from . import delivery
+            if delivery.resolve_backend(self.cfg, name) is None:
+                return False  # actual auto fallback is guidance, not input
         return True
 
     # -- policy --------------------------------------------------------

@@ -7,6 +7,7 @@ paid calls.
 """
 import importlib.machinery
 import importlib.util
+import os
 import pathlib
 import sys
 import threading
@@ -137,7 +138,9 @@ class VoiceAnswerWiringTest(unittest.TestCase):
                     "token": cancel.CancelToken()}
         self.st = mock.Mock()
         self.st.current_turn.return_value = "t1"
-        self.handle = self.w._handler(self.st, {}, self.ctl)
+        handle = self.w._handler(self.st, {}, self.ctl)
+        peer = {"pid": os.getpid(), "uid": getattr(os, "getuid", lambda: 0)()}
+        self.handle = lambda cmd, peer=peer: handle(cmd, peer)
 
     def _park(self, options):
         """Open a prompt like a waiting turn does; return the got-box."""
@@ -300,26 +303,20 @@ class ContinuityTest(unittest.TestCase):
                  {"transcript": "should I fix the connection first",
                   "result": "ASK_USER: fix the connection first?"}]
 
-        def jev(text, model, questions, context="", cfg=None):
-            captured["context"] = context
-            return {"answers": {"route": {"choice": "answer"},
-                                "confidence": {"score": 0.9},
-                                "app": {"choice": ""}}}
+        def answer(text, cfg, session_text="", **kwargs):
+            captured["context"] = session_text
+            return "deploying"
         cfg = {"audio": {"seconds": "0"}, "agent": {},
-               "brain": {"router": "jev"}}  # Jev path until Phase 5
+               "brain": {"router": "chat"}}
         with mock.patch.object(trace, "TRACE_FILE", tf), \
              mock.patch.object(sess, "tail", return_value=turns), \
              mock.patch.object(pipeline, "transcribe",
                                return_value="yes do it"), \
              mock.patch.object(pipeline, "capture_screen",
                                return_value=None), \
-             mock.patch.object(pipeline, "ask_jev", side_effect=jev), \
              mock.patch.object(pipeline, "execute",
                                return_value="ANSWERED"), \
-             mock.patch.object(pipeline, "ask_chat",
-                               return_value="deploying"), \
-             mock.patch.object(pipeline, "build_questions",
-                               return_value={}), \
+             mock.patch.object(pipeline, "ask_chat", side_effect=answer), \
              mock.patch.object(pipeline, "active_window",
                                return_value={}), \
              mock.patch.object(pipeline, "notify"), \

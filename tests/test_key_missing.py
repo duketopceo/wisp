@@ -70,13 +70,12 @@ class TestKeyMissing(_NoKeys):
         self.assertIn("OPENROUTER_API_KEY", cm.exception.public)
         self.assertIn("wispd onboard", cm.exception.public)
 
-    def test_jev_route_keeps_key_missing_instead_of_jev_down(self):
+    def test_legacy_router_does_not_need_a_decision_provider_key(self):
         from wisp import stage_route
         with mock.patch.object(config, "JEV_ENDPOINT",
                                "https://openrouter.ai/api/alpha/decisions"):
-            with self.assertRaises(errors_codes.WispError) as cm:
-                stage_route.ask_jev("hi", "m", {})
-        self.assertEqual(cm.exception.code, "key_missing")
+            self.assertEqual(stage_route.fixed_route("hi", "jev"),
+                             ("act", None))
 
     def test_brain_with_declared_key_env_and_no_key_is_key_missing(self):
         cfg = {"brain": {"default": "openrouter:m", "fallback": ""}}

@@ -341,6 +341,44 @@ class TestToolExec(unittest.TestCase):
         self.assertIn("FOCUSED thunderbird", out)
         ex.assert_not_called()
 
+    def test_launch_my_email_resolves_to_mail_web_role(self):
+        self._hypr_up()
+        cfg = {"apps": {"browseros": "browseros"}, "agent": {}}
+        with mock.patch.object(tools.desktop, "_try_switch_open_tab",
+                               return_value=None):
+            out, ex = self._mail_launch(cfg, role="my email")
+        self.assertEqual(out, "OPENED https://mail.google.com -> browseros")
+        ex.assert_called_once_with("browseros https://mail.google.com")
+
+    def test_launch_stripe_switches_to_open_tab_when_present(self):
+        self._hypr_up()
+        cfg = {"apps": {"browseros": "browseros"}, "agent": {}}
+        with mock.patch.object(tools.desktop, "_try_switch_open_tab",
+                               return_value="SWITCHED tab 'Developers – Stripe' -> dashboard.stripe.com") as sw, \
+             mock.patch.object(tools.desktop, "_web_browser",
+                               return_value="browseros"), \
+             mock.patch.object(tools.desktop, "_exec_detached") as ex:
+            out = tools.desktop.launch("my Stripe", cfg)
+        self.assertTrue(out.startswith("SWITCHED tab "), out)
+        sw.assert_called_once_with("stripe", url="https://dashboard.stripe.com",
+                                   browser="browseros")
+        ex.assert_not_called()
+
+    def test_launch_linear_opens_default_web_url_when_no_tab(self):
+        self._hypr_up()
+        cfg = {"apps": {"browseros": "browseros"}, "agent": {}}
+        with mock.patch.object(tools.desktop, "_try_switch_open_tab",
+                               return_value=None), \
+             mock.patch.object(tools.desktop.shutil, "which",
+                               return_value="/x/browseros"), \
+             mock.patch.object(tools.desktop, "_browseros_live",
+                               return_value=True), \
+             mock.patch("wisp.inventory.defaults", return_value={}), \
+             mock.patch.object(tools.desktop, "_exec_detached") as ex:
+            out = tools.desktop.launch("my Linear", cfg)
+        self.assertEqual(out, "OPENED https://linear.app -> browseros")
+        ex.assert_called_once_with("browseros https://linear.app")
+
     def test_launch_unknown_noun_still_skips(self):
         self._hypr_up()
         cfg = {"apps": {}, "agent": {}}
@@ -432,7 +470,7 @@ class TestRouteDispatch(unittest.TestCase):
         a.assert_called_once_with("rm -rf /", mock.ANY, state=None,
                                   harness=None, confirm=None,
                                   initial_image=None, interrupted=None,
-                                  ask=None)
+                                  ask=None, user_request="")
 
     def test_risk_blocks_before_route(self):
         out = pipeline.execute(
@@ -529,3 +567,66 @@ class WebConfigTemplateTest(unittest.TestCase):
                 cfg = config.load_config()
         self.assertIn("prompt", cfg["stt"])
         self.assertEqual(set(cfg["web"]), {"mail", "calendar"})
+
+
+class MultiProfileBrowserTests(unittest.TestCase):
+    """Multi-profile browser detection (Personal vs Work) for tab() and launch()."""
+
+    def test_active_browser_profile_from_window_title(self):
+        with mock.patch("wisp.platform.active_window",
+                        return_value={"class": "BrowserOS", "title": "Inbox — Personal"}):
+            self.assertEqual(tools.desktop.active_browser_profile(), "personal")
+        with mock.patch("wisp.platform.active_window",
+                        return_value={"class": "brave-browser", "title": "Linear - Work"}):
+            self.assertEqual(tools.desktop.active_browser_profile(), "work")
+
+    def test_requested_profile_overrides_active_window(self):
+        with mock.patch("wisp.platform.active_window",
+                        return_value={"class": "BrowserOS", "title": "YouTube — Personal"}):
+            self.assertEqual(
+                tools.desktop.requested_profile("check my email for work"), "work")
+            self.assertEqual(
+                tools.desktop.requested_profile("check my email"), "personal")
+
+    def test_tab_prefers_matching_browser_profile(self):
+        pages = [
+            {"id": "p1", "type": "page",
+             "title": "Inbox - kimballluke@gmail.com — Personal",
+             "url": "https://mail.google.com/mail/u/0/#inbox",
+             "_cdp_port": 9100},
+            {"id": "p2", "type": "page",
+             "title": "Inbox - luke@bartlett.com — Work",
+             "url": "https://mail.google.com/mail/u/0/#inbox",
+             "_cdp_port": 9101},
+        ]
+        activated = []
+        with mock.patch.object(tools.desktop, "_cdp_pages",
+                               return_value=(9100, pages)), \
+             mock.patch.object(
+                 tools.desktop, "_cdp_get",
+                 side_effect=lambda port, path: activated.append((port, path)) or "Target activated"
+             ), \
+             mock.patch.object(tools.desktop, "_focus_browser", return_value=None), \
+             mock.patch("wisp.platform.active_window",
+                        return_value={"class": "BrowserOS", "title": "YouTube — Personal"}):
+            out_work = tools.desktop.tab("email for work")
+            out_personal = tools.desktop.tab("email")
+        self.assertIn("Work", out_work)
+        self.assertEqual(activated[0], (9101, "/json/activate/p2"))
+        self.assertIn("Personal", out_personal)
+        self.assertEqual(activated[1], (9100, "/json/activate/p1"))
+
+    def test_launch_strips_profile_qualifier_and_checks_open_tabs(self):
+        seen_queries = []
+        with mock.patch.object(tools.desktop, "_wm_down", return_value=None), \
+            mock.patch.object(
+                 tools.desktop, "_try_switch_open_tab",
+                 side_effect=lambda q, **kw: (seen_queries.append(q),
+                                        "SWITCHED tab 'Stripe — Work' -> dashboard.stripe.com"
+                                        if "work" in q.lower() else None)[1]
+             ), \
+             mock.patch.object(tools.desktop, "_web_browser",
+                               return_value="browseros"):
+            out = tools.desktop.launch("go to my Stripe for work", {"agent": {}})
+        self.assertIn("SWITCHED tab 'Stripe — Work'", out)
+        self.assertEqual(seen_queries, ["stripe work"])

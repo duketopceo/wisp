@@ -82,8 +82,8 @@ before the recorder stops (late renders land as `landed`).
 `[control.<app>]` wires an app's loopback JSON-lines channel
 (FilmCraft: `filmcraft --control 9876`, `ui.elements`/`ui.inspect`/
 `ui.screenshot`) — channel rects are validated against compositor
-bounds, grounding prefers it over a11y/UI-TARS/Jev
-(`ground.providers = control,a11y,uitars,jev`). `observe` is the safe
+bounds, grounding prefers it over a11y/VLM/UI-TARS/Jev
+(`ground.providers = control,a11y,vlm,uitars,jev`). `observe` is the safe
 read-only capture tool: deny-gated, channel-first, cua `zoom`
 fallback, mints `turn-9NNNN` dirs under the turn's `rec/` root. Its
 arg is a control-channel panel name, or `x1,y1,x2,y2` to crop a

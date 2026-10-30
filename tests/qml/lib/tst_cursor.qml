@@ -79,7 +79,8 @@ TestCase {
     compare(Co.pillVisible("awaiting_choice"), true)
     compare(Co.pillVisible("listening"), true)
     compare(Co.pillVisible("transcribing"), true)
-    compare(Co.pillVisible("acting"), false)
+    compare(Co.pillVisible("deciding"), true)
+    compare(Co.pillVisible("acting"), true)
     compare(Co.pillVisible("idle"), false)
   }
 

@@ -356,7 +356,8 @@ def _latency_args(p):
 @command("latency", "p50 and p90 per budget path from recent turns",
          ["wispd latency", "wispd latency --since 6h --json",
           "wispd latency --budgets", "wispd latency --harness"],
-         {"since_h": "float", "turns": "int", "rows": "list"},
+         {"since_h": "float", "turns": "int", "rows": "list",
+          "models": "list"},
          args=_latency_args)
 def latency(ctx, a):
     from .. import telemetry
@@ -369,9 +370,10 @@ def latency(ctx, a):
         return _latency_harness(ctx, a)
     hours = telemetry.parse_since(a.since)
     rep = telemetry.latency_report(hours)
-    data = {"since_h": hours, "turns": rep["turns"], "rows": rep["rows"]}
+    data = {"since_h": hours, "turns": rep["turns"], "rows": rep["rows"],
+            "models": rep.get("models", [])}
     h = f"{hours:g}h"
-    if not rep["turns"]:
+    if not rep["turns"] and not rep.get("models"):
         return ctx.emit(data, f"no spans in the last {h} "
                               "(run a turn first)")
     rows = [[r["id"], r["label"], r["n"],
@@ -383,6 +385,16 @@ def latency(ctx, a):
              for r in rep["rows"]]
     text = f"latency {h}, {rep['turns']} turns (ms)\n" + ctx.table(
         ["id", "path", "n", "p50", "p90", "budget", "verdict"], rows, tones)
+    if rep.get("models"):
+        mrows = [[m["provider"], m["model"], m["n"],
+                  "-" if m["ttft_p50"] is None else m["ttft_p50"],
+                  "-" if m["ttft_p90"] is None else m["ttft_p90"],
+                  "-" if m["latency_p50"] is None else m["latency_p50"],
+                  "-" if m["latency_p90"] is None else m["latency_p90"]]
+                 for m in rep["models"]]
+        text += "\n\nmodels (ms)\n" + ctx.table(
+            ["provider", "model", "n", "ttft_p50", "ttft_p90",
+             "lat_p50", "lat_p90"], mrows)
     return ctx.emit(data, text)
 
 

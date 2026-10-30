@@ -28,7 +28,8 @@ from datetime import datetime, timezone
 from . import (acp, agent_ask, agent_mcp, agent_ochome, agent_policy, agents,
                config)
 
-DEFAULT_MODELS = ("openrouter/deepseek/deepseek-v4-flash,"
+DEFAULT_MODELS = ("openrouter/particle-ai/particle-1,"
+                  "openrouter/deepseek/deepseek-v4-flash,"
                   "openrouter/deepseek/deepseek-v4.1-flash,"
                   "openrouter/google/gemini-3.5-flash-lite")
 PROGRESS_GAP_S = 2.0        # task_progress events: at most one per 2 s

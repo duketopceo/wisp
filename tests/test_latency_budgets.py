@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """B1: "fast" is a number in CI.
 
-A stage slowed on purpose through the replay harness must trip the
-budget gate, the unmodified suite must pass it, and `wispd eval` shows
-the measured p50 and p90 next to each budget.
+A stage slowed on purpose must trip the budget gate. Endpoint stages use
+the replay harness; routing uses the actual local routing span. Both feed
+the same harness samples/budget checks. The unmodified fixture must pass,
+and `wispd eval` shows measured p50 and p90 next to each budget.
 """
 import copy
 import io
@@ -11,16 +12,18 @@ import json
 import pathlib
 import sys
 import tempfile
+import time
 import unittest
 from contextlib import redirect_stdout
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
-from wisp import telemetry  # noqa: E402
+from wisp import stage_route, telemetry, trace  # noqa: E402
 from harness import latency as hl, runner  # noqa: E402
 
 
@@ -30,8 +33,6 @@ def slowed(stage: str, ms: int = 1500) -> dict:
     ep = fx["endpoints"]
     if stage == "stt":
         ep["whisper"]["latency_ms"] = ms
-    elif stage == "route":
-        ep["jev"]["latency_ms"] = ms
     elif stage == "first_token":
         ep["brain"]["responses"][0]["latency_ms"] = ms
     else:
@@ -45,6 +46,41 @@ def measure_one(fx: dict) -> dict:
     for pid, ms in hl.samples(res).items():
         series.setdefault(pid, []).append(ms)
     return series
+
+
+def measure_slow_local_route(ms: int = 1500) -> dict:
+    """Delay the current local decision boundary inside its real span.
+
+    Routing has no endpoint after Jev retirement. Keep the actual
+    route_stage -> Spans -> replay samples -> budget-check chain instead
+    of pretending a retired server still contributes latency.
+    """
+    spans = trace.Spans()
+    events = []
+    ctx = SimpleNamespace(
+        cfg={"brain": {"router": "act"}}, text="what is a shell",
+        detail="what is a shell", sp=spans, turn="slow-local-route",
+        token=mock.Mock(), harness={"apps": {}})
+
+    def emit(turn, step, kind, data=None, ms=None):
+        events.append({"turn": turn, "step": step, "kind": kind, "ms": ms})
+
+    def slow_fixed_route(*args):
+        time.sleep(ms / 1000)
+        return "act", None
+
+    try:
+        with mock.patch.object(trace, "emit", side_effect=emit), \
+             mock.patch.object(stage_route, "fixed_route",
+                               side_effect=slow_fixed_route):
+            spans.bind(ctx.turn)
+            spans.record("stt", spans.now())
+            if not stage_route.route_stage(ctx):
+                raise AssertionError("the delayed local route did not finish")
+    finally:
+        spans.close()
+    result = runner.TurnResult(trace=events)
+    return {pid: [value] for pid, value in hl.samples(result).items()}
 
 
 class SlowedStageTrips(unittest.TestCase):
@@ -62,8 +98,10 @@ class SlowedStageTrips(unittest.TestCase):
         self.assertTrips("first_token", "P5")
 
     def test_slow_route_fails_the_route_or_e2e_budget(self):
-        bad = hl.check(measure_one(slowed("route")), budget_scale=1.0)
-        self.assertTrue(any(b.startswith(("P4 ", "E2E ")) for b in bad), bad)
+        series = measure_slow_local_route()
+        self.assertGreaterEqual(series["P4"][0], 1500)
+        bad = hl.check(series, budget_scale=1.0)
+        self.assertTrue(any(b.startswith("P4 ") for b in bad), bad)
 
     def test_the_unmodified_fixture_passes(self):
         series = measure_one(runner.load_fixture("ask"))

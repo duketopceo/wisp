@@ -9,27 +9,31 @@
     }
   },
   "fakes": {
-    "cua": {},
+    "cua": {
+      "tools": {
+        "list_windows": {
+          "stdout": {
+            "windows": [{
+              "pid": 4242, "window_id": 1, "focused": true,
+              "title": "Save document", "frame": [0, 0, 200, 200]
+            }]
+          }
+        },
+        "get_window_state": {
+          "stdout": {
+            "elements": [{
+              "name": "Save", "role": "button", "frame": [0, 0, 40, 40]
+            }]
+          }
+        }
+      }
+    },
     "hypr": {},
     "notify": {}
   },
   "endpoints": {
     "whisper": {
       "transcript": "wisp agent click the save button"
-    },
-    "jev": {
-      "answers": {
-        "route": {
-          "choice": "answer"
-        },
-        "app": {
-          "choice": "none",
-          "confidence": 0.99
-        },
-        "risk": {
-          "score": 0
-        }
-      }
     },
     "brain": {
       "responses": [
@@ -54,6 +58,9 @@
     "cua_calls": [
       "start_session",
       "start_recording",
+      "list_windows",
+      "list_windows",
+      "get_window_state",
       "click",
       "stop_recording"
     ],

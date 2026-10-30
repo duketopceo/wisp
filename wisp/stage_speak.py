@@ -103,7 +103,10 @@ def ask_chat(transcript: str, cfg: dict, session_text: str = "",
         out = brain.chat(messages, cfg, timeout=30)
     if meta is not None:
         meta.update(provider=out.get("provider"),
-                    fallback_from=out.get("fallback_from"))
+                    model=out.get("model"),
+                    fallback_from=out.get("fallback_from"),
+                    ttft_ms=out.get("ttft_ms"),
+                    latency_ms=out.get("latency_ms"))
     return out["content"].strip()
 
 
@@ -222,12 +225,42 @@ def speak_stage(ctx) -> int:
 
 
 def _spoken_payload(result: str) -> str:
-    """User-facing text inside a terminal act result: the model's final
-    reply for ACTED; empty for INTERRUPTED/other prefixes (already
-    announced by the interrupt itself, or machine-only status)."""
+    """User-facing text inside a terminal act or tool result: the model's
+    final reply for ACTED/WALKED, or a brief natural-language confirmation
+    for direct tool actions (OPENED, SWITCHED tab, LAUNCHED, FOCUSED,
+    WORKSPACE); empty for INTERRUPTED/other machine prefixes."""
     m = re.match(r"^(?:ACTED|WALKED)(?:\s*\([^)]*\))?\s*:\s*(.*)$",
                  result, re.DOTALL)
-    return m.group(1).strip() if m else ""
+    if m:
+        return m.group(1).strip()
+    m = re.match(r"^SWITCHED tab\s+'([^']+)'\s*->\s*(\S+)", result)
+    if m:
+        title, host = m.group(1).strip(), m.group(2).strip()
+        return f"Switched to {title or host}."
+    m = re.match(r"^OPENED\s+(\S+)\s*->\s*(.+)$", result)
+    if m:
+        url = m.group(1).strip()
+        host = re.sub(r"^https?://", "", url).split("/", 1)[0]
+        return f"Opened {host or url}."
+    m = re.match(r"^LAUNCHED\s+([^\s-]+?)\s*->\s*(.+)$", result)
+    if m:
+        return f"Opened {m.group(1).strip()}."
+    m = re.match(r"^FOCUSED\s+([^\s-]+?)(?:\s*->.*)?$", result)
+    if m:
+        return f"Focused {m.group(1).strip()}."
+    m = re.match(r"^WORKSPACE\s+(\d+)\b", result)
+    if m:
+        return f"Switched to workspace {m.group(1)}."
+    m = re.match(r"^MEDIA\s+([a-z_]+)\b", result)
+    if m:
+        if m.group(1) == "mute":
+            return "Sent the mute toggle."
+        if m.group(1) == "play_pause" or (
+                m.group(1) in ("play", "pause") and "via omarchy" in result):
+            return "Sent the play/pause toggle."
+        act = m.group(1).replace("_", " ")
+        return f"Media {act}."
+    return ""
 
 
 def _speak_result(ctx, payload: str) -> None:
@@ -435,10 +468,12 @@ def _answer(ctx) -> None:
         sp.fire("first_token")  # non-streaming brains
         _trace.emit(turn, "brain_call", "brain",
                     {"endpoint": "chat/completions",
-                     "model": cfg.get("agent", {})
+                     "model": _meta.get("model") or cfg.get("agent", {})
                      .get("answer_model", ""),
                      "provider": _meta.get("provider"),
                      "fallback_from": _meta.get("fallback_from"),
+                     "ttft_ms": _meta.get("ttft_ms"),
+                     "latency_ms": _meta.get("latency_ms"),
                      "reply": reply},
                     round((time.monotonic() - _t) * 1000))
     except Exception as e:

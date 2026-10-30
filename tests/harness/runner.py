@@ -403,16 +403,6 @@ def child_env(tmp: pathlib.Path, fs: FakeSet, extra: dict | None = None) -> dict
     return env
 
 
-def _pin_jev_router(fx: dict) -> dict:
-    """Fixtures that script Jev endpoint traffic and set no router keep
-    the old ``jev`` routing (the default is ``act``) until Phase 5."""
-    cfg = fx.get("config", {})
-    if "jev" in fx.get("endpoints", {}) and \
-            "router" not in cfg.get("brain", {}):
-        cfg = {**cfg, "brain": {**cfg.get("brain", {}), "router": "jev"}}
-    return cfg
-
-
 def run_turn(fixture, timeout: float = 60.0,
              collect_files: bool = False) -> TurnResult:
     fx = fixture if isinstance(fixture, dict) else load_fixture(fixture)
@@ -446,7 +436,7 @@ def run_turn(fixture, timeout: float = 60.0,
             "real_notify": "notify" in fx.get("fakes", {}),
             "real_hypr": "hypr" in fx.get("fakes", {}),
             "urls": urls,
-            "config": _pin_jev_router(fx),
+            "config": fx.get("config", {}),
             "catalog": fx.get("catalog"),
             "launch_results": fx.get("launch_results"),
             "tab_results": fx.get("tab_results"),
@@ -544,4 +534,3 @@ def _spans(res: TurnResult) -> dict:
     if res.events:
         spans["turn_ms"] = res.events[-1]["t_ms"] - res.events[0]["t_ms"]
     return spans
-

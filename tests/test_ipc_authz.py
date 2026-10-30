@@ -66,6 +66,28 @@ class IpcAuthzTest(unittest.TestCase):
         self.procs = []
         self.addCleanup(self._cleanup_procs)
 
+    def test_marked_peer_refused_on_dev_commands_and_no_session_change(self):
+        # dev tuning mode: on/off, run and stop all move the owner's
+        # desktop or the session file, so a spawned agent never gets them
+        from wisp import devsession
+        for mcmd in ("dev", "dev_run", "dev_stop"):
+            self.assertIn(mcmd, ipc.MUTATING_CMDS)
+        p = self._spawn_sleeper()
+        self._register_task("bg-dev", p.pid)
+        peer = {"pid": p.pid, "uid": os.getuid()}
+        with mock.patch.object(config, "DATA_DIR", self.td):
+            for msg in ({"cmd": "dev", "op": "on"},
+                        {"cmd": "dev_run", "path": "/nope"},
+                        {"cmd": "dev_stop"}):
+                with self.subTest(cmd=msg["cmd"]):
+                    resp = self.handle(msg, peer)
+                    self.assertFalse(resp["ok"])
+                    self.assertEqual(resp["error"], "marked_peer_refused")
+            self.assertFalse(devsession.is_on())
+            own = self.handle({"cmd": "dev", "op": "on"},
+                              {"pid": os.getpid(), "uid": os.getuid()})
+            self.assertTrue(own["ok"], own)
+
     def test_devlog_works_with_the_daemons_default_tasks_file(self):
         # the live daemon builds its handler with no tasks_file; devlog's
         # peer check must fall back to config.TASKS_FILE like every other

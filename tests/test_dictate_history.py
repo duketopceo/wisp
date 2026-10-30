@@ -223,7 +223,9 @@ class TestLongSession(Base):
         s = S.Streamer(path, transcribe_fn=fn, chunk_s=58.0, tick_s=0.001,
                        journal=H.Journal({})).start()
         for _ in range(2000):
-            if len(s.texts) >= 10:
+            # Quiet-boundary selection makes chunk lengths variable. Ten
+            # visible transcripts do not guarantee ten minutes were committed.
+            if len(s.texts) >= 10 and s.cut / S.BPS >= 10 * 58 - 5:
                 break
             time.sleep(0.01)
         s._stop.set()                  # the process dies: no finish()

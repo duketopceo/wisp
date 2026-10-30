@@ -7,6 +7,7 @@ away on cancel, phantom release or after 5 s. Everything is faked: no
 recorder, no screen, no network."""
 import importlib.machinery
 import importlib.util
+import os
 import pathlib
 import sys
 import tempfile
@@ -215,7 +216,11 @@ class TestDaemonTrigger(unittest.TestCase):
                     "choice_event": threading.Event(), "choice_pick": "",
                     "rec": None, "rec_lock": threading.Lock()}
         self.cfg = {}
-        self.handle = self.w._handler(self.bus, self.cfg, self.ctl)
+        self.raw_handle = self.w._handler(self.bus, self.cfg, self.ctl)
+        peer = {"pid": os.getpid(), "uid": getattr(os, "getuid", lambda: 0)()}
+        # Direct harness calls emulate the native socket's credentials;
+        # no caller-supplied JSON field can grant attribution.
+        self.handle = lambda cmd, peer=peer: self.raw_handle(cmd, peer)
         self.spec_gate = threading.Event()
         self.addCleanup(self.spec_gate.set)
         self.spec = context.Speculative(
@@ -267,6 +272,17 @@ class TestDaemonTrigger(unittest.TestCase):
         self.assertTrue(r["ok"])
         self.assertLess(time.monotonic() - t, 0.1)
         self.assertIs(self.ctl["spec"], self.spec)
+
+    def test_unattributed_press_cannot_start_recording_or_speculation(self):
+        with mock.patch.object(self.w.pipeline, "record_start") as start, \
+             mock.patch.object(self.w.pipeline, "speculative_context") as speculate:
+            reply = self.raw_handle({"cmd": "listen", "phase": "start"})
+        self.assertEqual(reply["error"], "unattributed_peer")
+        self.assertFalse(reply["ok"])
+        start.assert_not_called()
+        speculate.assert_not_called()
+        self.assertNotIn("spec", self.ctl)
+        self.assertEqual(self.bus.snapshot()["status"], "idle")
 
     def test_double_press_keeps_one_speculation(self):
         self.press()

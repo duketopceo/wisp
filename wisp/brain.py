@@ -173,6 +173,28 @@ def _headers(p: dict) -> dict:
     return headers
 
 
+def _provider_prefs(p: dict) -> dict | None:
+    """Optional OpenRouter provider routing preferences from [brain.<name>]."""
+    raw_order = p.get("provider_order") or p.get("provider")
+    order: list[str] = []
+    if isinstance(raw_order, str):
+        order = [s.strip() for s in raw_order.split(",") if s.strip()]
+    elif isinstance(raw_order, (list, tuple)):
+        order = [str(s).strip() for s in raw_order if str(s).strip()]
+    sort = str(p.get("provider_sort", "")).strip()
+    allow_fallbacks = p.get("allow_fallbacks")
+    prefs: dict = {}
+    if order:
+        prefs["order"] = order
+    if sort in ("price", "throughput", "latency"):
+        prefs["sort"] = sort
+    if isinstance(allow_fallbacks, bool):
+        prefs["allow_fallbacks"] = allow_fallbacks
+    elif isinstance(allow_fallbacks, str) and allow_fallbacks.lower() in ("true", "false"):
+        prefs["allow_fallbacks"] = allow_fallbacks.lower() == "true"
+    return prefs or None
+
+
 def _ollama_msgs(messages: list) -> list:
     msgs = []
     for m in messages:
@@ -202,15 +224,22 @@ def _chat_one(p: dict, messages: list, tools, timeout) -> dict:
                 "stream": False}
         if tools and _tools_ok(p):
             body["tools"] = tools
+        t0 = time.monotonic()
         resp = _post(f"{base}/api/chat", {}, body, timeout)
+        lat_ms = round((time.monotonic() - t0) * 1000)
         msg = resp.get("message", {})
         return {"content": msg.get("content", ""), "raw": msg,
-                "usage": ledger.usage_of(resp)}
+                "usage": ledger.usage_of(resp),
+                "ttft_ms": None, "latency_ms": lat_ms}
     body = {"model": p["model"], "messages": messages, "max_tokens": 600,
             "usage": {"include": True}}  # OpenRouter: report usage.cost
     if tools and _tools_ok(p):
         body["tools"] = tools
         body["tool_choice"] = "auto"
+    prefs = _provider_prefs(p)
+    if prefs:
+        body["provider"] = prefs
+    t0 = time.monotonic()
     resp = _post(f"{base}/chat/completions", _headers(p), body, timeout)
     msg = (resp.get("choices") or [{}])[0].get("message", {})
     if not msg.get("content") and not msg.get("tool_calls"):
@@ -220,8 +249,10 @@ def _chat_one(p: dict, messages: list, tools, timeout) -> dict:
         time.sleep(0.05)
         resp = _post(f"{base}/chat/completions", _headers(p), body, timeout)
         msg = (resp.get("choices") or [{}])[0].get("message", {})
+    lat_ms = round((time.monotonic() - t0) * 1000)
     return {"content": msg.get("content", ""), "raw": msg,
-            "usage": ledger.usage_of(resp)}
+            "usage": ledger.usage_of(resp),
+            "ttft_ms": None, "latency_ms": lat_ms}
 
 
 def _relax(r, timeout) -> None:
@@ -253,12 +284,16 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
                 "max_tokens": 600, "stream": True,
                 "stream_options": {"include_usage": True},
                 "usage": {"include": True}}
+        prefs = _provider_prefs(p)
+        if prefs:
+            body["provider"] = prefs
         url, headers = f"{base}/chat/completions", _headers(p)
     req = urllib.request.Request(
         url, data=json.dumps(body).encode(),
         headers={"User-Agent": UA, "Content-Type": "application/json",
                  **headers}, method="POST")
     t0 = time.monotonic()
+    ttft_ms = None
     acc, msg, usage = "", {}, {}
     try:
         with cancel.urlopen(req, timeout=first_token_s) as r:
@@ -297,6 +332,7 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
                     done = False
                 if piece:
                     if not acc:
+                        ttft_ms = round((time.monotonic() - t0) * 1000)
                         _relax(r, timeout)
                     acc += piece
                     if on_delta:
@@ -315,12 +351,13 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
             err.committed = True
             raise err from e
         raise
+    lat_ms = round((time.monotonic() - t0) * 1000)
     if not usage:  # provider sent none: estimate (~4 chars a token)
         usage = {"in": sum(len(str(m.get("content", "")))
                            for m in messages) // 4,
                  "out": len(acc) // 4, "cost": None}
     return {"content": acc, "raw": msg or {"content": acc},
-            "usage": usage}
+            "usage": usage, "ttft_ms": ttft_ms, "latency_ms": lat_ms}
 
 
 def _describe(p: dict, e: Exception) -> str:
@@ -397,9 +434,12 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
                                               "brain_down")
             else:
                 res["provider"] = p["name"]
+                res["model"] = p["model"]
                 res["fallback_from"] = first_failed
                 ledger.note(p["name"], p["model"], p["paid"],
-                            res.get("usage") or {})
+                            res.get("usage") or {},
+                            ttft_ms=res.get("ttft_ms"),
+                            latency_ms=res.get("latency_ms"))
                 if first_failed:
                     trace.emit(trace.current(), "brain_fallback", "brain",
                                {"fallback_from": first_failed,

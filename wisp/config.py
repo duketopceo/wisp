@@ -33,6 +33,7 @@ HARNESS_FILE = CFG_DIR / "harness.json"
 WHISPER_HOME = HOME / "src" / "whisper.cpp"
 WHISPER_BIN = WHISPER_HOME / "build" / "bin" / "whisper-cli"
 
+# Optional structured grounding provider, not the retired turn router.
 JEV_ENDPOINT = os.environ.get(
     "WISP_JEV_ENDPOINT", "https://openrouter.ai/api/alpha/decisions")
 CHAT_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
@@ -98,10 +99,12 @@ max_calls_per_day = 48
 model = "openrouter:google/gemini-2.5-flash"
 
 [pointer]
-# guide = Wisp points with the ghost cursor, you click (safe default).
+# With mode unset, tools guide; live act turns use auto when a backend exists.
+# Set guide explicitly to keep the ghost cursor even during live act turns.
+# guide = Wisp points with the ghost cursor, you click.
 # drive = inject real clicks via the detected backend.
 # auto  = drive when a backend exists, guide otherwise.
-mode = "guide"
+# mode = "auto"
 # auto | cua | hyprcursor | ydotool | wlrctl | none — auto prefers a
 # live cua-driver daemon (background virtual-pointer clicks on native
 # Wayland — needs the cua-hyprland plugin + CUA_DRIVER_RS_ENABLE_WAYLAND=1
@@ -146,10 +149,14 @@ delivery = "auto"
 # UI grounding adapter (wisp/grounding.py, W13): click/move target name ->
 # screen point. Chain order; control = the app's own control channel
 # (wisp/control.py — apps registered under [control], FilmCraft first),
-# a11y = cua get_window_state tree (when the driver is up), uitars =
+# a11y = cua get_window_state tree (when the driver is up), vlm =
+# aspect-matched single-image pointing through the configured brain,
+# uitars =
 # local llama-server (loopback only, screenshots never leave the box),
 # jev = the Decision-Agent patch fallback.
-providers = "control,a11y,uitars,jev"
+# WISP_JEV_ENDPOINT overrides this optional structured-grounding endpoint,
+# not the retired turn router.
+providers = "control,a11y,vlm,uitars,jev"
 # candidates below this are re-observed once, then refused (never clicked)
 min_confidence = "0.5"
 # shared budget for the fast providers (P7: act first step 1.2 s)
@@ -203,6 +210,10 @@ enabled = "true"
 # `days` days of use. Never without a tap. false turns them off.
 enabled = "true"
 days = "7"
+
+# Private local usage recap. Opt-in; nothing is sent.
+[growth]
+weekly_recap = "false"
 
 [selection]
 # Selected or copied text, a copied image, or a file path you pointed at
@@ -260,7 +271,7 @@ routine_wait_s = 120        # a scheduled routine waits this long for the networ
 writer_queue_max = 256      # background trajectory/recall writes queued
 # OpenCode background agents (ACP). The session runs on the first of these
 # the agent runtime offers; none offered = the task fails, never a default.
-acp_models = "openrouter/deepseek/deepseek-v4-flash,openrouter/deepseek/deepseek-v4.1-flash,openrouter/google/gemini-3.5-flash-lite"
+acp_models = "openrouter/particle-ai/particle-1,openrouter/deepseek/deepseek-v4-flash,openrouter/deepseek/deepseek-v4.1-flash,openrouter/google/gemini-3.5-flash-lite"
 acp_idle_s = "900"          # a named helper's process exits after this idle
 ask_timeout_s = "120"       # an unanswered agent ask is refused after this
 cancel_grace_s = "10"       # cancel waits this long, then kills the process
@@ -274,6 +285,11 @@ refine = true
 # the panel's Dev tab (v1 gate, recent turns with stage timings, top
 # misses). Local-only; off for everyone else.
 panel = false
+# the run judge (wispd dev run): a cheap vision model on the dedicated
+# eval key reads the screen at the end of each task. A run stops judging
+# at judge_cap_usd and marks the rest unjudged.
+judge_model = "google/gemini-2.5-flash"
+judge_cap_usd = "1.00"
 
 [eval]
 # `wispd eval` gate: the first-time-correct fraction (0-1) the owner
@@ -306,7 +322,7 @@ language = "auto"
 
 # vocabulary priming — project names, jargon; whisper.cpp --prompt /
 # `prompt` param on the openai provider (huge accuracy win on names)
-prompt = "Wisp, wispd, Omarchy, Hyprland, Jev, OpenRouter, dayflow, omaseal, omarchy plugins, RetroArch, Steam, Discord, VS Code, Kubernetes, k8s, Tailscale, Waybar, Quickshell"
+prompt = "Wisp, wispd, Omarchy, Hyprland, Jev, OpenRouter, dayflow, omaseal, omarchy plugins, RetroArch, Steam, Discord, VS Code, Kubernetes, k8s, Tailscale, Waybar, Quickshell, Robinhood, TradingView, Polymarket, YouTube, Gmail, Linear, Stripe, Supabase, GitHub, Particle AI"
 
 [web]
 # Web app a role opens when its default handler is a browser (a native
@@ -360,9 +376,9 @@ monthly_usd = "160.00"
 gate_primary = "false"
 
 [brain]
-# router: "act" (every turn straight to the agent loop — default),
-# "jev" (typed decisions), "chat" (transcript+screen straight to the
-# answer brain), or "off" (always clarify via choices)
+# router: "act" (local fast paths, then the conversational act loop),
+# "chat" (answer without execution), or "off" (clarify via choices).
+# Saved legacy "jev" values fall back to act; no decision service is called.
 router = "act"
 # answer provider as "name:model" — named sections below or any
 # [brain.<name>] table you add (kind: openai_compat | ollama)
@@ -466,18 +482,10 @@ timeout_ms = "500"
 # vision = "true"                          # instead of tool_calls
 # tools = "false"
 # action_text = "true"
-# Jev can also run locally: point WISP_JEV_ENDPOINT at a jev-shim
-# (e.g. http://127.0.0.1:8931/decisions → llama-jev qwen3-4b :8091).
-
-[jev]
-# Jev is an accelerator, never a gate: past this many ms the heuristic
-# router decides and the turn goes on.
-# deadline_ms = 400
-
 [debug]
 # full-fidelity event stream to ~/.local/share/wisp/trace.jsonl —
 # every stage of every turn (record/stt/decision/tools/brain/tts/ipc)
-# with ms timings, for replay-by-us-and-Jev debugging. Never logs keys.
+# with ms timings, for local replay debugging. Never logs keys.
 trace = true
 
 [voice]
@@ -569,7 +577,7 @@ def _default_cfg_dict() -> dict:
         "voice": {"enabled": "auto"},
         "dictation": {"mode": "cleanup", "history": "true",
                       "history_max": "100", "history_days": "7"},
-        "pointer": {"mode": "guide", "backend": "auto"},
+        "pointer": {"backend": "auto"},
         "cua": {"timeout_ms": "800", "safety": "true", "allow": "",
                 "deny": "", "max_clicks_per_min": "30",
                 "max_per_turn": "12", "dry_run": "false",
@@ -580,6 +588,7 @@ def _default_cfg_dict() -> dict:
                   "shots_keep": "100", "shots_keep_days": "30"},
         "docs": {"enabled": "true"},
         "chips": {"enabled": "true", "days": "7"},
+        "growth": {"weekly_recap": "false"},
         "selection": {"enabled": "true", "clipboard": "true"},
         "images": {"allow": "", "max_kb": "4096", "timeout_s": "8"},
         "verify": {"judge_timeout_s": "20", "pixel_landed_min": "0.02",
@@ -589,7 +598,8 @@ def _default_cfg_dict() -> dict:
                    "act_max_parse_misses": "1", "act_max_seconds": "600",
                    "act_max_usd": "0", "routine_wait_s": "120",
                    "writer_queue_max": "256",
-                   "acp_models": "openrouter/deepseek/deepseek-v4-flash,"
+                   "acp_models": "openrouter/particle-ai/particle-1,"
+                                 "openrouter/deepseek/deepseek-v4-flash,"
                                  "openrouter/deepseek/deepseek-v4.1-flash,"
                                  "openrouter/google/gemini-3.5-flash-lite",
                    "acp_idle_s": "900", "ask_timeout_s": "120",
@@ -660,6 +670,11 @@ def stt_settings(cfg: dict | None) -> dict:
 WEB_DEFAULTS = {
     "mail": "https://mail.google.com",
     "calendar": "https://calendar.google.com",
+    "stripe": "https://dashboard.stripe.com",
+    "linear": "https://linear.app",
+    "github": "https://github.com",
+    "notion": "https://www.notion.so",
+    "slack": "https://app.slack.com",
 }
 
 

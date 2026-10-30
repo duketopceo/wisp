@@ -108,6 +108,7 @@ class State:
         self.mic = ""           # "open" while the wake word listens (B33)
         self.spend = {}         # {today_usd, cap_usd, ...} from ledger.py
         self.rate_prompt = None  # {turn}: a wrong rating wants its note
+        self.dev = {"on": False, "runs_left": 0}  # dev tuning session
         self.started_at = _now()
         self.heartbeat_at = None
         self._last_blob = None  # last written state.json body
@@ -314,6 +315,7 @@ class State:
             "spend": dict(self.spend),
             "rate_prompt": dict(self.rate_prompt)
             if self.rate_prompt else None,
+            "dev": dict(self.dev),
             "started_at": self.started_at,
             "heartbeat_at": self.heartbeat_at,
             **self.meta,
