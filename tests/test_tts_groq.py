@@ -122,7 +122,7 @@ class GroqCase(unittest.TestCase):
         self.plog = tmp / "player.log"
         self.slog = tmp / "espeak.log"
         script = tmp / "espeak.sh"
-        script.write_text(f'#!/bin/sh\necho "$1" >> {self.slog}\nsleep 0.05\n')
+        script.write_text(f'#!/bin/sh\necho "$(cat)" >> {self.slog}\nsleep 0.05\n')
         script.chmod(0o755)
         self.espeak = str(script)
         self.usage = tmp / "usage.jsonl"

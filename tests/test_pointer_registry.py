@@ -288,8 +288,8 @@ class TestClickNoRetry(_Iso):
             self.assertFalse(out.ok)
             self.assertEqual(r.shell(), [])
 
-    def test_cua_down_click_not_retried_when_socket_stale(self):
-        # stale socket: _cua_live true, daemon dead -> E_CUA_DOWN
+    def test_stale_socket_click_goes_to_next_backend(self):
+        # stale socket: TLY-430 _cua_live False, daemon dead -> auto never picks cua
         td = tempfile.TemporaryDirectory()
         t = pathlib.Path(td.name)
         bins = fakes.BinDir(t / "bin")
@@ -302,15 +302,17 @@ class TestClickNoRetry(_Iso):
                 "HOME": td.name, "USERPROFILE": td.name,
                 "PATH": str(bins.path),
                 "WISP_OS": "linux", "WISP_DESKTOP": "x11"}):
+            platform._cua_probe_reset()
             cua.start()
             try:
                 out = pointer.Registry(DRIVE).click(1, 2)
             finally:
                 cua.stop()
+        ran = log.exists()
         td.cleanup()
-        self.assertFalse(out.ok)
-        self.assertEqual(out.backend, "cua")
-        self.assertFalse(log.exists())
+        self.assertTrue(out.ok)
+        self.assertEqual(out.backend, "ydotool")
+        self.assertTrue(ran)
 
     def test_non_cua_click_runs_move_then_click(self):
         with Rig(("ydotool",)) as r:

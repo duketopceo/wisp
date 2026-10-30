@@ -44,6 +44,7 @@ Rectangle {
         refreshHz: root.refreshHz
       }
       Text {
+        textFormat: Text.PlainText
         anchors.verticalCenter: parent.verticalCenter
         objectName: "word"
         text: root.service.wordView.word
@@ -61,6 +62,7 @@ Rectangle {
         color: root.tk.inkMuted
       }
       Text {
+        textFormat: Text.PlainText
         anchors.verticalCenter: parent.verticalCenter
         width: parent.width - x
         visible: root.service.transcript !== ""

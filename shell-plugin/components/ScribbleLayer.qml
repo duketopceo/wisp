@@ -96,11 +96,15 @@ Item {
     enabled: root.active
     acceptedButtons: Qt.LeftButton
     cursorShape: Qt.CrossCursor
-    onPressed: function (m) { root.live = S.begin(m.x, m.y); }
+    onPressed: function (m) {
+      root.live = S.begin(m.x, m.y);
+      if (root.service) root.service.scribbleTouch();
+    }
     onPositionChanged: function (m) {
       if (pressed) root.live = S.extend(root.live, m.x, m.y);
     }
     onReleased: {
+      if (root.service) root.service.scribbleTouch();
       var next = S.commit(root.strokes, root.live);
       root.live = [];
       if (next === root.strokes) return;

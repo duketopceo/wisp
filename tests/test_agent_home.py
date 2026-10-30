@@ -24,6 +24,7 @@ class Base(unittest.TestCase):
         p.start()
         self.addCleanup(p.stop)
         self.popen = []
+        self.stdins = []
 
         class P:
             pid = 5000
@@ -32,6 +33,9 @@ class Base(unittest.TestCase):
                 return None
 
         def fake_popen(cmd, **kw):
+            fin = kw.get("stdin")
+            self.stdins.append(fin.read().decode()
+                               if hasattr(fin, "read") else "")
             self.popen.append((cmd, kw))
             P.pid += 1
             return P()
@@ -40,7 +44,7 @@ class Base(unittest.TestCase):
         self.alive = alive.start()
         self.addCleanup(alive.stop)
         for target, val in (
-                ("_runtime_cmd", lambda cfg, task, model: ["agent", task]),
+                ("_runtime_cmd", lambda cfg, model: ["agent", "run"]),
                 ("_pinned_state", lambda: {"state": "absent"}),
                 ("_systemd_scope_enabled", lambda cfg: False),
                 ("_pstart", lambda pid: "1"),
@@ -56,8 +60,10 @@ class Base(unittest.TestCase):
         self.addCleanup(q.stop)
 
     def prompt_of(self, i):
-        """The prompt argument of the i-th spawned command."""
-        return next(a for a in self.popen[i][0] if "Task: " in a)
+        """The prompt the i-th spawned agent was given. It is stdin, not
+        argv: other local accounts can read argv while it runs."""
+        self.assertNotIn("Task: ", " ".join(self.popen[i][0]))
+        return self.stdins[i]
 
     def run_named(self, detail, **kw):
         return agents.run_named(detail, {}, self.tasks, log_dir=self.logs,

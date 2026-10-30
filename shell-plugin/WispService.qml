@@ -10,6 +10,7 @@ import "lib/settings.js" as Settings
 import "lib/run.js" as Run
 import "lib/rate.js" as Rate
 import "lib/bar.js" as B
+import "lib/scribble.js" as Scribble
 import "lib/dev.js" as Dev
 
 // WispService: the one reader of wispd state for every surface (Companion,
@@ -86,6 +87,12 @@ Item {
   // pauses the window.
   property bool ratingWindowOpen: false
   property bool pillHover: false
+  // Scribble holds the whole screen while listening (OverlayLayer mask). The
+  // hold is the grab itself: taken on the listening edge, dropped when the
+  // turn leaves listening, is cancelled or interrupted, and by scribbleTimer
+  // a few seconds after the last stroke even if every signal is lost.
+  property bool scribbleHeld: false
+  function scribbleTouch() { if (scribbleHeld) scribbleTimer.restart(); }
   property string mic: ""     // "open" while the opt-in wake word listens
   property string turnId: ""
   property var seq: null
@@ -175,9 +182,11 @@ Item {
         message: Copy.errorMessage("stale_prompt"), at: Date.now() };
       return false;
     }
-    var cmd = [wispd, "choice", pick];
+    // The pick can be typed free text: it goes to the child's stdin, never
+    // onto the command line, which other local accounts can read.
+    var cmd = [wispd, "choice", "--stdin"];
     if (pid) cmd = cmd.concat(["--prompt-id", pid]);
-    return runAction(cmd.concat(["--json"]), "choice");
+    return runAction(cmd.concat(["--json"]), "choice", null, String(pick));
   }
   // Bar action while offline: start the user service (no daemon to ask).
   function startDaemon() { return runAction(["systemctl", "--user", "start", "wispd.service"], "daemon"); }
@@ -185,6 +194,10 @@ Item {
   // waits for 8 pending picks is no stop at all.
   property bool stopPending: false
   function interrupt() {
+    // let go at once: the stop must not wait on the daemon to give the
+    // screen back, and a cancelled turn gets no rating window
+    scribbleHeld = false;
+    ratingWindowOpen = false;
     if (stopProc.running) return true;
     stopPending = true;
     stopProc.command = [wispd, "interrupt", "--json"];
@@ -193,7 +206,7 @@ Item {
   }
   function trigger() { return runAction([wispd, "trigger", "--json"], "trigger"); }
   // A click on a part of a 3D card (B13): one typed question, a normal turn.
-  function askAbout(text) { return runAction([wispd, "ask", "--json", text], "ask"); }
+  function askAbout(text) { return runAction([wispd, "ask", "--stdin", "--json"], "ask", null, String(text)); }
   // Scribble to ask (B7): the strokes drawn while listening, handed to the
   // daemon as a small file (wispd scribble). Its own subprocess: it must not
   // queue behind, or flash a result in, the one action slot. A newer payload
@@ -214,7 +227,8 @@ Item {
   // the card that asked can show its own receipt.
   function label(verdict, turn, note) {
     return runAction(Rate.labelCommand(wispd, verdict, turn || "", note || ""),
-                     "label", { turn: turn || "", verdict: verdict });
+                     "label", { turn: turn || "", verdict: verdict },
+                     note ? String(note) : null);
   }
   // Esc on the note: close it without writing a label.
   function skipRatePrompt() { return runAction(Rate.skipCommand(wispd), "label-skip"); }
@@ -285,8 +299,20 @@ Item {
   property string actionVerb: ""
 
   property var actionMeta: ({})
+  // Private text for the in-flight action's stdin (null: none). Typed
+  // answers and notes ride here, not in argv, which other local accounts
+  // can read while the process runs. One line: newlines become spaces.
+  property var actionStdin: null
 
-  function _launch(cmd, verb, meta) {
+  function _line(s) { return s === null || s === undefined ? null : String(s).replace(/[\r\n]+/g, " "); }
+
+  function writeActionStdin() {
+    if (root.actionStdin !== null) actionProc.write(root.actionStdin + "\n");
+    root.actionStdin = null;
+  }
+
+  function _launch(cmd, verb, meta, stdin) {
+    root.actionStdin = _line(stdin);
     root.actionVerb = verb || "";
     root.actionMeta = meta || {};
     root.lastAction = { verb: root.actionVerb, pending: true,
@@ -296,17 +322,17 @@ Item {
     actionProc.running = true;
   }
 
-  function runAction(cmd, verb, meta) {
+  function runAction(cmd, verb, meta, stdin) {
     if (actionProc.running) {
       if (actionQueue.length >= 8) {
         root.lastAction = { verb: verb || "", pending: false, ok: false,
           message: Copy.errorMessage("busy"), at: Date.now() };
         return false;
       }
-      actionQueue = actionQueue.concat([{ cmd: cmd, verb: verb || "", meta: meta || {} }]);
+      actionQueue = actionQueue.concat([{ cmd: cmd, verb: verb || "", meta: meta || {}, stdin: stdin }]);
       return true;
     }
-    _launch(cmd, verb, meta);
+    _launch(cmd, verb, meta, stdin);
     return true;
   }
 
@@ -324,7 +350,7 @@ Item {
     if (root.actionQueue.length > 0) {
       var nxt = root.actionQueue[0];
       root.actionQueue = root.actionQueue.slice(1);
-      _launch(nxt.cmd, nxt.verb, nxt.meta);
+      _launch(nxt.cmd, nxt.verb, nxt.meta, nxt.stdin);
     }
   }
 
@@ -372,7 +398,10 @@ Item {
     root.stale = Reader.isStale(v, Date.now(), root.staleAfterMs);
     root.turnId = v.turnId;
     var win = B.windowAction(prevStatus, root.status, prevTurn, v.turnId, root.offline,
-      Rate.rateable(root.status, root.answer, root.result, root.errorCode));
+      Rate.rateable(root.status, root.answer, root.result, root.errorCode), root.errorCode);
+    var hold = Scribble.holdAction(prevStatus, root.status, root.errorCode, prevTurn, v.turnId);
+    if (hold === "grab") root.scribbleHeld = true;
+    else if (hold === "release") root.scribbleHeld = false;
     if (win === "open") root.ratingWindowOpen = true;
     else if (win === "close") root.ratingWindowOpen = false;
     if (v.turnId !== prevTurn) root.turnChanged(v.turnId);
@@ -479,6 +508,16 @@ Item {
     repeat: false
     running: root.ratingWindowOpen && !root.pillHover
     onTriggered: root.ratingWindowOpen = false
+  }
+
+  // The hard cap on a scribble hold: single-shot, runs only while held, so
+  // a lost release signal gives the screen back (click-through) in seconds.
+  Timer {
+    id: scribbleTimer
+    interval: Scribble.HOLD_MS
+    repeat: false
+    running: root.scribbleHeld
+    onTriggered: root.scribbleHeld = false
   }
 
   // Stale check ticks only while busy (nothing to age when idle).
@@ -617,6 +656,10 @@ Item {
   Process {
     id: actionProc
     command: [root.wispd, "status"]
+    // stdin stays open for the whole run: a command that takes typed text
+    // reads one line from it (--stdin), the others never read it.
+    stdinEnabled: true
+    onStarted: root.writeActionStdin()
     stdout: StdioCollector { id: actionOut }
     stderr: StdioCollector { id: actionErr }
     onExited: function (code, status) { root.finishAction(code); }

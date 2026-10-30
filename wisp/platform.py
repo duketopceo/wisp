@@ -170,17 +170,20 @@ def active_geometry() -> tuple | None:
         return None
 
 
-def type_text_cmd(text: str) -> list | None:
+def type_text_cmd() -> list | None:
+    """The typer's argv, never the text: the caller writes the text to
+    its stdin, because argv is readable by other local accounts while the
+    typer runs (a dictated message or a typed password would show)."""
     order = {"hyprland": ["wtype", "ydotool"],
              "x11": ["xdotool"],
              }.get(desktop(), ["ydotool", "wtype", "xdotool"])
     for b in order:
         if _which(b):
             if b == "wtype":
-                return [b, "--", text]
+                return [b, "-"]
             if b == "ydotool":
-                return [b, "type", "--", text]
-            return [b, "type", "--clearmodifiers", "--", text]
+                return [b, "type", "--file", "-"]
+            return [b, "type", "--clearmodifiers", "--file", "-"]
     return None
 
 
@@ -204,8 +207,10 @@ def audio_player() -> list | None:
 ESPEAK_WPM = 175   # espeak's own default speaking rate
 
 
-def tts_argv(msg: str, speed: float = 1.0, voice: str = "") -> list | None:
-    """Builtin TTS argv for `msg` — used when voice.cmd is empty.
+def tts_argv(speed: float = 1.0, voice: str = "") -> list | None:
+    """Builtin TTS argv: the program and its flags, never the message.
+    The text goes to the program's stdin (`--stdin`), because argv is
+    visible to other local accounts while the program runs.
     `speed` is a multiplier on espeak's default rate; 1.0 adds no flag.
     `voice` (an espeak voice such as `es` or `pt-br`) adds `-v`."""
     b = tts_binary()
@@ -213,8 +218,8 @@ def tts_argv(msg: str, speed: float = 1.0, voice: str = "") -> list | None:
         return None
     pre = [b, "-v", voice] if voice else [b]
     if abs(speed - 1.0) < 1e-9:
-        return pre + [msg]
-    return pre + ["-s", str(round(ESPEAK_WPM * speed)), msg]
+        return pre + ["--stdin"]
+    return pre + ["-s", str(round(ESPEAK_WPM * speed)), "--stdin"]
 
 
 def notify_cmd(title: str, body: str) -> list | None:
@@ -380,14 +385,53 @@ def active_window() -> dict:
     return {"class": w.get("class", ""), "title": w.get("title", "")}
 
 
+_CUA_NEG_TTL = 2.0
+_cua_neg: dict = {}  # socket path -> monotonic time of last failed probe
+
+
+def _cua_probe_reset() -> None:
+    _cua_neg.clear()
+
+
+def _cua_probe(path: str, timeout: float = 0.2) -> bool:
+    """True when something accepts a connection on the daemon socket.
+    A leftover socket file with no daemon refuses (ECONNREFUSED)."""
+    import socket
+    if not hasattr(socket, "AF_UNIX"):
+        return os.path.exists(path)  # no unix sockets: presence only
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        s.settimeout(timeout)
+        s.connect(path)
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
+
+
 def _cua_live() -> bool:
-    """cua-driver reachable. Linux: binary on PATH plus the daemon
-    socket (Wayland backend enabled server-side via
-    CUA_DRIVER_RS_ENABLE_WAYLAND)."""
+    """cua-driver reachable: binary on PATH AND the daemon answers on
+    its socket (a bounded connect — a stale socket file left by a dead
+    daemon is not live; TLY-430). Only failures are cached (2 s) so a
+    dead daemon is never reported live and the probe stays cheap; a
+    live answer is re-checked each call (a local connect, ~100 us).
+    Wayland backend is enabled server-side via
+    CUA_DRIVER_RS_ENABLE_WAYLAND."""
     if not _which("cua-driver"):
         return False
-    return os.path.exists(
-        os.path.expanduser("~/.cache/cua-driver/cua-driver.sock"))
+    import time
+    path = os.path.expanduser("~/.cache/cua-driver/cua-driver.sock")
+    if not os.path.exists(path):
+        return False
+    t = _cua_neg.get(path)
+    if t is not None and time.monotonic() - t < _CUA_NEG_TTL:
+        return False
+    if _cua_probe(path):
+        _cua_neg.pop(path, None)
+        return True
+    _cua_neg[path] = time.monotonic()
+    return False
 
 
 def pointer_backend(cfg: dict | None = None,

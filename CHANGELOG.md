@@ -19,19 +19,23 @@ How this file is kept:
 
 - Background agents are live: "agent, fix the tests" starts an OpenCode session that reports progress, asks you out loud for answers and for permission on risky steps, takes follow-ups and can be cancelled. Onboarding (or `wispd install --agents`) downloads the pinned ori and OpenCode for you, and the agent can read your memory unless you set `[agents] mcp_memory = false`.
 - Draw on your screen and ask about it: Wisp draws rings, arrows and highlights, and you can scribble on the screen to point at what you mean.
+- Your agent tasks and short dictations no longer appear in a command line another account on the machine could read: Wisp hands them to the agent runtime and to the typer on stdin.
 - Walkthroughs: Wisp can teach you a task step by step, spoken and pointed, and you can save a lesson, replay it and resume one you paused.
 - Answers start sooner: the first clause is spoken as soon as it is ready, speech is transcribed while you still hold the key, and pressing the key while Wisp thinks cancels that turn and starts a new one.
 - Ask chips: a quick tap of the talk key shows up to three things you can ask in the app you are in, for your first seven days.
 - Selected text, a copied image or a file you pointed at can ride along with a question that says "this" or "that". Nothing is read between key presses.
+- What you type into an answer card, a rating note or a 3D-part question no longer appears in a command line another account on the machine could read; the panel hands it to `wispd` on stdin (`wispd choice --stdin`, `wispd ask --stdin`, `wispd label set --stdin`).
 - Wisp speaks and understands other languages: it answers in the language you spoke, picks a matching voice when one is installed, and says so once when it has none.
 - Dictation keeps what you said: a failed insert loses nothing (`wispd dictate history`, `retry`, `copy`), a killed session is recovered on the next start, and the cleanup pass cannot change your words.
 - Your transcripts, replies and traces are private to your account: files are readable only by you, and older ones are tightened when the daemon starts.
 - Pressing the talk key before the daemon is running now records privately too: the recording is readable only by you, same as when the daemon runs.
+- Spoken replies no longer appear in the speech program's command line: the text is passed on stdin, so another account on the machine cannot read it while it is spoken. A custom `[voice] cmd` now reads the text from stdin, and `{text}` is ignored.
 - `wispd update` checks a release against its published SHA-256, installs only when you say yes, and refuses a release that is not newer than what you have.
 - Blank windows: Wisp paints over password managers and other sensitive windows in every screenshot, and takes none while one has focus.
 - Helpers: name a background helper, give it a folder and notes, and ask for it by name. Routines wait for the network instead of counting an offline miss as a failure.
 - The Omarchy tutor answers "how do I do this in Omarchy" from your own machine's bindings and config.
 - Answer cards can show one picture from an allow-listed host.
+- Answers and other text in the panel are shown as plain text, so an answer that contains an HTML image tag no longer makes your machine request that address.
 - `docs/TRUST.md` lists every outside host Wisp can contact, what it gets, who holds the key and what you control, and a test keeps it true.
 - Voice speed goes from 0.5 to 1.5 times, and you can say "talk slower" or "talk faster".
 - Linux only: the macOS and Windows code paths are removed.

@@ -39,6 +39,7 @@ Item {
     spacing: M.spacing.md
 
     Text {
+      textFormat: Text.PlainText
       objectName: "chipsTitle"
       text: root.v.title
       color: root.tk.inkMuted
@@ -59,6 +60,7 @@ Item {
         border.width: M.size.keyline
         border.color: root.tk.keyline
         Text {
+          textFormat: Text.PlainText
           id: label
           anchors.centerIn: parent
           text: chip.modelData

@@ -350,6 +350,9 @@ def watch(ctx, a):
 def _choice_args(p):
     p.add_argument("pick", nargs="?", default="",
                    help="the option to pick (omit when using --index)")
+    p.add_argument("--stdin", action="store_true",
+                   help="read the pick (or typed answer) from one line of "
+                   "stdin, so private text stays off the command line")
     p.add_argument("--prompt-id", metavar="ID",
                    help="answer this prompt only")
     p.add_argument("--index", type=int, metavar="N",
@@ -361,6 +364,8 @@ def _choice_args(p):
           "wispd choice --prompt-id p1 --index 2"],
          {"pick": "str", "result": "str"}, args=_choice_args)
 def choice(ctx, a):
+    if a.stdin:
+        a.pick = registry.read_stdin_line()
     msg = {"cmd": "choice", "pick": a.pick}
     if a.prompt_id:
         msg["prompt_id"] = a.prompt_id
@@ -373,13 +378,21 @@ def choice(ctx, a):
 
 
 def _ask_args(p):
-    p.add_argument("text", help="the question to ask, as one argument")
+    p.add_argument("text", nargs="?", default="",
+                   help="the question to ask, as one argument")
+    p.add_argument("--stdin", action="store_true",
+                   help="read the question from one line of stdin")
 
 
 @command("ask", "Ask one typed question (starts a normal turn)",
          ['wispd ask "what is the front wheel for?"'],
          {"asked": "bool"}, args=_ask_args)
 def ask(ctx, a):
+    if a.stdin:
+        a.text = registry.read_stdin_line()
+    if not a.text:
+        raise CliError("E_USAGE", "Nothing to ask.",
+                       "wispd ask \"your question\"")
     reply = ctx.expect_ok(ctx.send({"cmd": "ask", "text": a.text}))
     return ctx.emit({"asked": bool(reply.get("asked"))})
 

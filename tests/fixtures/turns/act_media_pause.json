@@ -1,0 +1,57 @@
+{
+  "description": "Act route, live miss 2026-10-30 (t6549f8d2): 'pause youtube' makes one media(pause) step through Omarchy's native media control; no tab switch and no click on a player. The media stub returns the MEDIA line the real tool gives (tests/test_media_tool.py proves that); the turn ends ACTED.",
+  "audio": "act.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "wisp agent pause youtube"
+    },
+    "jev": {
+      "answers": {
+        "route": {
+          "choice": "answer"
+        },
+        "app": {
+          "choice": "none",
+          "confidence": 0.99
+        },
+        "risk": {
+          "score": 0
+        }
+      }
+    },
+    "brain": {
+      "responses": [
+        {
+          "tool_calls": [
+            {
+              "name": "media",
+              "arg": "pause"
+            }
+          ]
+        },
+        {
+          "content": "Paused YouTube."
+        }
+      ]
+    }
+  },
+  "expect": {
+    "tool_calls": [
+      "media"
+    ],
+    "launch_calls": [],
+    "media_calls": [
+      "pause"
+    ],
+    "steps_contain": [
+      "MEDIA pause via omarchy"
+    ],
+    "result_prefix": "ACTED (1 steps)",
+    "brain_calls": 2
+  },
+  "name": "act_media_pause",
+  "scenario": "pause media natively",
+  "media_results": {
+    "pause": "MEDIA pause via omarchy (Omarchy has one play/pause toggle; it flips the current state, so check it landed)"
+  }
+}

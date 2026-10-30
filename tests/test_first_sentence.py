@@ -36,7 +36,9 @@ class Capture:
     def speaker(self):
         sp = speech.SentenceSpeaker(self.cfg)
         self._patch = mock.patch.object(
-            speech, "_argv", side_effect=lambda m, c, lang="": self.said.append(m))
+            speech.SentenceSpeaker, "_play",
+            side_effect=lambda argv, spoken, stdin_text=None:
+            self.said.append(stdin_text))
         self._patch.start()
         return sp
 

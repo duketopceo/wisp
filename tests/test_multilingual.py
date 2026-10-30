@@ -184,41 +184,41 @@ class TestVoice(unittest.TestCase):
     def test_english_argv_is_unchanged(self):
         with mock.patch.object(platform, "tts_binary",
                                return_value="espeak-ng"):
-            self.assertEqual(speech._argv("hi", {}), ["espeak-ng", "hi"])
-            self.assertEqual(speech._argv("hi", {}, "en"),
-                             ["espeak-ng", "hi"])
+            self.assertEqual(speech._argv({}), ["espeak-ng", "--stdin"])
+            self.assertEqual(speech._argv({}, "en"),
+                             ["espeak-ng", "--stdin"])
 
     def test_espeak_gets_the_language_voice(self):
         with mock.patch.object(platform, "tts_binary",
                                return_value="espeak-ng"), \
                 mock.patch.object(lang, "_espeak_has", return_value=True):
-            self.assertEqual(speech._argv("hola", {}, "es"),
-                             ["espeak-ng", "-v", "es", "hola"])
-            self.assertEqual(speech._argv("oi", {}, "pt-BR"),
-                             ["espeak-ng", "-v", "pt-br", "oi"])
+            self.assertEqual(speech._argv({}, "es"),
+                             ["espeak-ng", "-v", "es", "--stdin"])
+            self.assertEqual(speech._argv({}, "pt-BR"),
+                             ["espeak-ng", "-v", "pt-br", "--stdin"])
 
     def test_missing_voice_falls_back_to_the_default(self):
         with mock.patch.object(platform, "tts_binary",
                                return_value="espeak-ng"), \
                 mock.patch.object(lang, "_espeak_has", return_value=False):
-            self.assertEqual(speech._argv("hola", {}, "es"),
-                             ["espeak-ng", "hola"])
+            self.assertEqual(speech._argv({}, "es"),
+                             ["espeak-ng", "--stdin"])
             self.assertEqual(speech.voice_for({}, "es"), ("", True))
 
     def test_configured_voice_wins(self):
         cfg = {"voice": {"lang_voices": "es=es-mx, de=de"}}
         with mock.patch.object(platform, "tts_binary",
                                return_value="espeak-ng"):
-            self.assertEqual(speech._argv("hola", cfg, "es"),
-                             ["espeak-ng", "-v", "es-mx", "hola"])
+            self.assertEqual(speech._argv(cfg, "es"),
+                             ["espeak-ng", "-v", "es-mx", "--stdin"])
 
     def test_custom_command_placeholders(self):
         cfg = {"voice": {"cmd": "say -v {voice} -l {lang} {text}"}}
         self.assertEqual(
-            speech._argv("hola", cfg, "es"),
-            ["say", "-v", "es", "-l", "es", "hola"])
+            speech._argv(cfg, "es"),
+            ["say", "-v", "es", "-l", "es"])
         cfg["voice"]["lang_voices"] = "es=Monica"
-        self.assertEqual(speech._argv("hola", cfg, "es")[2], "Monica")
+        self.assertEqual(speech._argv(cfg, "es")[2], "Monica")
 
     def test_voice_listing_is_parsed(self):
         out = ("Pty Language Age/Gender VoiceName File Other\n"
@@ -236,7 +236,7 @@ class TestVoice(unittest.TestCase):
 
         class P:
             def __init__(self, argv, **kw):
-                argvs.append(argv)
+                argvs.append(kw["stdin"].read().decode())
 
             def wait(self, timeout=None):
                 return 0
@@ -254,7 +254,7 @@ class TestVoice(unittest.TestCase):
                 sp.lang = "es"
                 sp.finish("Hola mundo.")
                 sp._worker.join(3)
-        first, second = argvs[0][-1], argvs[1][-1]
+        first, second = argvs[0], argvs[1]
         self.assertTrue(first.startswith("I don't have a Spanish voice"))
         self.assertTrue(first.endswith("Hola mundo."))
         self.assertEqual(second, "Hola mundo.")

@@ -21,7 +21,7 @@ def main(spec_path: str) -> int:
     spec = json.loads(pathlib.Path(spec_path).read_text())
     guard = NetworkGuard()
     guard.install()
-    out = {"events": [], "launch_calls": [], "notifications": [],
+    out = {"events": [], "launch_calls": [], "media_calls": [], "notifications": [],
            "interrupt_fired": False, "violations": [], "final": {}}
     result_path = pathlib.Path(spec["result"])
     try:
@@ -129,6 +129,14 @@ def main(spec_path: str) -> int:
                 arg, f"SWITCHED tab {arg!r} (replay stub)")
         tab_entry = tools.REGISTRY["tab"]
         tools.REGISTRY["tab"] = (fake_tab,) + tuple(tab_entry[1:])
+
+        # `media` stub: no Omarchy shell / player in replay
+        def fake_media(arg):
+            out["media_calls"].append(arg)
+            return (spec.get("media_results") or {}).get(
+                arg, f"MEDIA {arg} (replay stub)")
+        media_entry = tools.REGISTRY["media"]
+        tools.REGISTRY["media"] = (fake_media,) + tuple(media_entry[1:])
 
         # -- observe the StateBus (U2) ---------------------------------
         # Events come from a bus subscription: every write, once, in seq

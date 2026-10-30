@@ -186,10 +186,10 @@ class TestAvailable(unittest.TestCase):
         with Env({"mode": "absent"}):
             self.assertFalse(cua.Cua().available())
 
-    def test_stale_socket_counts_as_available_but_down(self):
-        # same contract as platform._cua_live: file presence only
+    def test_stale_socket_is_not_available(self):
+        # TLY-430: the daemon must answer, a leftover socket file is not
         with Env({"mode": "stale"}):
-            self.assertTrue(cua.Cua().available())
+            self.assertFalse(cua.Cua().available())
 
 
 if __name__ == "__main__":

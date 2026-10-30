@@ -492,8 +492,9 @@ provider = "groq"
 tts_model = "canopylabs/orpheus-v1-english"
 # autumn, diana, hannah, austin, daniel or troy
 tts_voice = "hannah"
-# custom TTS command (e.g. piper); `{text}` is replaced with the message,
-# otherwise the message is appended as the last arg. Empty = espeak default.
+# custom TTS command (e.g. piper); the message is written to its stdin,
+# never put on the command line (other local accounts can read argv). A
+# `{text}` token is dropped. Empty = espeak default.
 cmd = ""
 # per-language voices, "es=es-mx,de=de". Empty = the built-in espeak voice
 # named for the language when it has one, else the default voice (said

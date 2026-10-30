@@ -31,6 +31,7 @@ Item {
     spacing: M.spacing.sm
 
     Text {
+      textFormat: Text.PlainText
       id: text
       width: parent.width
       text: root.body
@@ -58,6 +59,7 @@ Item {
     }
 
     Text {
+      textFormat: Text.PlainText
       visible: root.truncated
       text: root.service.ui("ui.more")
       color: root.tk.accent
