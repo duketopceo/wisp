@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#131211">
-  <meta name="description" content="Wisp is a voice teacher and doer for Omarchy that points at your screen. Explore its desktop companion and install from source.">
+  <meta name="description" content="Wisp is a voice teacher and doer for Omarchy that points at your screen. Explore its desktop companion and install the Linux release candidate.">
   <title>Wisp | A little more reach.</title>
   <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
   <link rel="preload" href="assets/outfit-variable.ttf" as="font" type="font/ttf" crossorigin>
@@ -74,11 +74,13 @@
     <section class="setup wrap" id="install" aria-labelledby="install-title">
       <div class="setup-title"><h2 id="install-title">Give your desktop<br>a little Wisp.</h2><p>Omarchy / Hyprland is the full-app target.<br>macOS and Windows support is experimental.</p></div>
       <div class="install-command">
-        <code id="install-code">git clone https://github.com/duketopceo/wisp &amp;&amp; cd wisp &amp;&amp; python3 wispd install</code>
+        <code id="install-code">f=$(mktemp) &amp;&amp; curl -fsSL https://wisp.observer/install.py -o "$f" &amp;&amp; python3 "$f" --version v1.0.0-rc.2</code>
         <button type="button" id="copy-install" disabled>Copy command</button>
       </div>
       <p id="copy-status" role="status" aria-live="polite"></p>
       <div class="setup-details">
+        <p>Linux candidate <a href="https://github.com/duketopceo/wisp/releases/tag/v1.0.0-rc.2">v1.0.0-rc.2</a>, for x86_64 and ARM64. Requires Python 3.11.4+, curl and independently installed GitHub CLI. Review the <a href="https://github.com/duketopceo/wisp/blob/v1.0.0-rc.2/scripts/bootstrap/install.py">bootstrap source</a> first; it is not self-authenticating. Native payload attestations are verified before extraction.</p>
+        <p>After installation, run <code>~/.local/bin/wispd onboard</code>. It guides setup without putting provider keys in shell history.</p>
         <p>Start with the <a href="https://github.com/duketopceo/wisp/blob/master/docs/INSTALL.md">installation guide</a>. Presets: <code>wispd config preset cloud</code>, <code>wispd config preset local</code>, or <code>wispd config preset safe</code>. These set defaults, not credentials or downloaded models. A local preset alone does not make every data path local.</p>
         <p>Early-stage software, with real-desktop evaluation still ahead. Follow the <a href="https://github.com/duketopceo/wisp/blob/master/ROADMAP.md">roadmap</a> for readiness gates and current work.</p>
       </div>
