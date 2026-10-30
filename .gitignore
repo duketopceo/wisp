@@ -4,6 +4,7 @@ __pycache__/
 *.wav
 build/
 node_modules/
+.wrangler/
 dist/
 *.egg-info/
 .venv/

@@ -24,6 +24,14 @@ source-freeze record does not substitute for them. Stable-v1 accuracy,
 historical clicklab data, real desktop/voice checks and other native
 platforms remain gated rather than silently marked complete.
 
+**Later owner hosting decision:** Use Cloudflare Workers Static Assets, not
+GitHub Pages or Cloudflare Pages. Worker `wisp-observer` is published at
+[wisp.observer](https://wisp.observer/) and
+[www.wisp.observer](https://www.wisp.observer/); approved domain cutover is
+complete and the obsolete GitHub custom-domain association is cleared.
+Keep baseline/enhanced QA gates and `/plain/`; see
+[HOSTING.md](../HOSTING.md) for the reproducible bundle and publication boundary.
+
 ## Goal Capsule
 
 - **Objective:** Khan can reinstall a release candidate, complete straightforward onboarding, and use the Linux app—including screen drawing—for real work before judging success or tuning skills.
@@ -171,7 +179,7 @@ Khan needs Wisp to act immediately and reliably on natural voice commands:
 - KTD2. **Vendor the existing Three.js choice.** Retain the draft's explicit `0.170.0` pin rather than selecting another engine; vendor the required distribution and upstream license, record provenance and digest, and use relative module imports. Replace the draft's CDN import and remote font dependencies with local assets or system fonts. The exact asset digest is an implementation-time receipt, not an invented planning value. ([Current enhanced draft](../../site-3d/index.html))
 - KTD3. **DOM-first, finite illustrative state.** Put installation, platform limits and scenario descriptions in semantic HTML; a small deterministic scenario model drives both text and the scene. Start idle with no invented live metrics; user selection produces a bounded illustration and returns to rest. Reduced motion renders static states without continuous animation; module/load failure leaves the HTML, and WebGL/context failure switches to a labelled static visual. Pause rendering offscreen/when hidden and dispose resources on teardown. This is a page-local lifecycle, not a new runtime architecture.
 - KTD4. **Claims follow owning code, not the draft.** Verify descriptions against the config, preset, policy, media and diagnostic implementations; use neutral pending text when no measurement exists. In particular, `local` currently changes only a subset of keys, and Omarchy's media backend exposes play/pause as a toggle, so neither universal offline privacy nor idempotent pause/resume can be inferred from their labels. ([Preset implementation](../../wisp/cli/settings.py), [media backend](../../wisp/tools/media.py))
-- KTD5. **Build/review before deploy.** Preserve gated Pages publication and independent baseline output; U26 may promote the selected enhanced artifact only after U18 checks and deployment authorization. Publication must depend on both baseline and enhanced checks, not merely upload an unchecked enhanced directory. ([Pages workflow](../../.github/workflows/pages.yml))
+- KTD5. **Build/review before deploy.** Preserve baseline/enhanced QA and independent baseline output; U26 publishes the selected Cloudflare Workers artifact after applicable U18 checks and deployment authorization. Artifact creation depends on both lanes, not merely an unchecked enhanced directory. The historical workflow filename no longer implies GitHub hosting. ([Website workflow](../../.github/workflows/pages.yml))
 - KTD6. **One release-input inventory, actual installer.** Extend `scripts/release/build.py` and `scripts/release/verify.py` rather than creating a competing packaging script; validate both architecture artifacts, mandatory desktop/unit resources, version/commit metadata and the installed files they produce. Source-checkout fixtures alone do not satisfy R20. ([Release builder](../../scripts/release/build.py), [release workflow](../../.github/workflows/release.yml))
 - KTD7. **Authenticated manifest before apply.** Use a detached signed release manifest binding version, commit, architecture and artifact digest; use Ed25519 with a pinned verifier, independent owner-established public-key fingerprint, rotation instructions and no private signing material in the repository. Verify the entry script against an independently authenticated pinned digest before execution; do not advertise blind `curl | sh`. The owner must provide real signing/publishing configuration before a live bootstrap claim, not before deterministic verifier implementation.
 - KTD8. **Ownership-limited recovery.** Reuse the existing transaction manifest and explicit plugin/unit namespaces, preserving content hashes, modes and prior service state; restore attributable writes only, never arbitrary HOME paths. Inventory desktop/icon/bind/launcher exclusions explicitly unless tests establish their inclusion. Capturing prior service state does not authorize an unconsented restart or promise restoration of service-manager state. ([Update transaction](../../wisp/update.py))
@@ -233,7 +241,7 @@ flowchart TB
   V[Vendored Three.js and local assets] --> EB
   EB --> EO[build/site-3d]
   EO --> Q[Deterministic checks and browser QA]
-  BO --> D[Existing gated Pages deployment]
+  BO --> D[Authorized Cloudflare Workers deployment]
   Q --> R[QA receipt, not a deployment]
   R -. later authorized promotion .-> D
 ```
@@ -767,12 +775,12 @@ flowchart LR
   1. Integrate shared config/schema/goldens once, reconcile roadmap and trust facts with source, then freeze one source commit for deterministic checks, archive metadata and release evidence.
   2. Collect focused/full Python, locked Rust, required native offscreen QML, plugin lint/mirror, both sites and desktop/mobile browser results; failures/skips remain visible.
   3. Request the owner-selected release label/card and recommend prerelease under KTD12; publish verified archive bytes with identity/digest/download-back checks, adding KTD7 signature verification for the authenticated channel. Missing signing input prevents that channel, not a truthful repository-install candidate.
-  4. Record DNS/HTTPS, selected Pages artifact/commit, fallback assets, publication gates and bootstrap-execution evidence; expose hosted installation only after R19/R21, leaving repository installation available.
+  4. Record DNS/HTTPS, selected Workers asset bundle/commit, fallback assets, publication gates and bootstrap-execution evidence; expose hosted installation only after R19/R21, leaving repository installation available.
   5. Hand over exact installed version/commit, reinstall/onboard/doctor steps, rollback limits and a short owner-run checklist; collect real labels through existing evaluation later, not synthetic replay or judge substitution.
 - **Execution note:** Source-freeze checks run after owner integration; stale receipts from another tree or release archive are not transferable.
 - **Test scenarios:**
   - A mismatched source commit, architecture or uploaded/downloaded digest prevents candidate publication; invalid/missing signatures additionally prevent the authenticated channel, and CI failure cannot be bypassed by a documentation-only success claim.
-  - Pages publication waits for both lanes and browser checks; PRs cannot publish, and the chosen enhanced target does not replace or weaken baseline validation.
+  - Worker artifact creation waits for both lanes and browser checks; PR CI cannot publish, and the enhanced target does not replace or weaken baseline validation. Public deployment requires separate owner authorization.
   - Covers AE4/AE6. Before activation, public copy contains repository installation only; after verified deployment, the real pinned bootstrap command works from the documented host and its failure path remains safe.
   - Covers AE9. Candidate notes explicitly retain R28 as UNVERIFIED without owner evidence; historical clicklab summaries, offscreen QML and replay/judge scores cannot clear it.
   - Missing signing/DNS/hardware/source data produces scoped pending evidence and usable fallback instructions, not fake links or an assertion that all roadmap outcomes passed.

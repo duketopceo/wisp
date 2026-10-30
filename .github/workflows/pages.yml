@@ -1,20 +1,21 @@
-name: pages
+name: website
 
 # Validates both landing lanes on every PR. The enhanced homepage and /plain/
-# publish only after both lanes pass, from master with PAGES_ENABLED="true".
+# become a Cloudflare Workers artifact only after both lanes pass.
+# Publication and custom-domain changes remain separately authorized actions.
 on:
   pull_request:
-    paths: ["site/**", "site-3d/**", "scripts/site/**", "scripts/bootstrap/**", "tests/browser/**", "tests/test_site*.py", "assets/readme/**", "README.md", ".github/workflows/pages.yml"]
+    paths: ["site/**", "site-3d/**", "scripts/site/**", "scripts/bootstrap/**", "tests/browser/**", "tests/test_site*.py", "tests/test_shipping_claims.py", "assets/readme/**", "README.md", "wrangler.json", "package.json", "package-lock.json", ".github/workflows/pages.yml"]
   push:
     branches: [master]
-    paths: ["site/**", "site-3d/**", "scripts/site/**", "scripts/bootstrap/**", "tests/browser/**", "tests/test_site*.py", "assets/readme/**", "README.md", ".github/workflows/pages.yml"]
+    paths: ["site/**", "site-3d/**", "scripts/site/**", "scripts/bootstrap/**", "tests/browser/**", "tests/test_site*.py", "tests/test_shipping_claims.py", "assets/readme/**", "README.md", "wrangler.json", "package.json", "package-lock.json", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: pages
+  group: website
   cancel-in-progress: true
 
 jobs:
@@ -41,8 +42,11 @@ jobs:
           node-version: "22"
       - name: Test and build the optional visual landing
         run: |
-          python3 -m unittest tests.test_site_3d -v
+          python3 -m unittest tests.test_site_3d tests.test_site_workers -v
           python3 scripts/site/build_3d.py
+          python3 scripts/site/build_workers.py
+      - name: Install pinned Worker development server
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Install pinned browser tests
         working-directory: tests/browser
         run: |
@@ -52,36 +56,34 @@ jobs:
         working-directory: tests/browser
         env:
           WISP_BROWSERS: chromium,webkit
+          WISP_SITE_URL: http://127.0.0.1:3000/
+          WRANGLER_SEND_METRICS: "false"
         run: |
-          python3 -c 'from functools import partial; from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler; ThreadingHTTPServer(("127.0.0.1", 3000), partial(SimpleHTTPRequestHandler, directory="../../build")).serve_forever()' &
+          ../../node_modules/.bin/wrangler dev --config ../../wrangler.json --local --ip 127.0.0.1 --port 3000 --log-level warn &
           server=$!
           trap 'kill "$server"' EXIT
-          curl --fail --silent --retry 10 --retry-connrefused --retry-delay 1 http://127.0.0.1:3000/site-3d/ > /dev/null
+          curl --fail --silent --retry 30 --retry-connrefused --retry-delay 1 http://127.0.0.1:3000/ > /dev/null
           npm test
-      - name: Assemble public homepage and independent no-script version
-        run: |
-          python3 scripts/site/build_3d.py --out build/published
-          python3 scripts/site/build.py --out build/published/plain
-          install -m 644 scripts/bootstrap/install.py build/published/install.py
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: build/published
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: enhanced-landing-qa
           path: build/browser-qa
 
-  deploy:
+  assets:
     needs: [build, enhanced]
-    if: github.ref == 'refs/heads/master' && vars.PAGES_ENABLED == 'true'
     runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test complete Worker bundle
+        run: python3 -m unittest tests.test_site_workers -v
+      - name: Assemble reviewed assets
+        run: python3 scripts/site/build_workers.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wisp-workers-assets
+          path: build/published
+          include-hidden-files: true
+          if-no-files-found: error

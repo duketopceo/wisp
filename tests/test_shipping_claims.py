@@ -23,25 +23,24 @@ class PlatformClaims(unittest.TestCase):
         self.assertIn("50", text)
         self.assertNotIn("wisp.casa", text)
 
-    def test_enhanced_validation_does_not_replace_pages_publish_gates(self):
+    def test_enhanced_validation_does_not_deploy_to_github_pages(self):
         text = (ROOT / ".github/workflows/pages.yml").read_text()
         self.assertIn('"site-3d/**"', text)
         self.assertIn("scripts/site/build_3d.py", text)
         self.assertIn("scripts/site/build.py", text)
-        self.assertIn("vars.PAGES_ENABLED == 'true'", text)
-        self.assertIn("github.ref == 'refs/heads/master'", text)
+        self.assertNotIn("actions/deploy-pages", text)
+        self.assertNotIn("actions/upload-pages-artifact", text)
+        self.assertNotIn("PAGES_ENABLED", text)
 
-    def test_pages_publication_waits_for_both_lanes_and_retains_plain_site(self):
+    def test_worker_artifact_waits_for_both_lanes(self):
         text = (ROOT / ".github/workflows/pages.yml").read_text()
         self.assertIn("needs: [build, enhanced]", text)
-        self.assertIn("build_3d.py --out build/published", text)
-        self.assertIn("build.py --out build/published/plain", text)
+        self.assertIn("scripts/site/build_workers.py", text)
         self.assertIn("path: build/published", text)
-        self.assertLess(text.index("build_3d.py --out build/published"),
-                        text.index("build.py --out build/published/plain"))
+        self.assertIn("name: wisp-workers-assets", text)
 
     def test_published_installer_is_the_reviewed_self_contained_bootstrap(self):
         text = (ROOT / ".github/workflows/pages.yml").read_text()
         self.assertIn('"scripts/bootstrap/**"', text)
-        self.assertIn("install -m 644 scripts/bootstrap/install.py "
-                      "build/published/install.py", text)
+        self.assertIn("scripts/site/build_workers.py", text)
+        # Real byte-for-byte bootstrap coverage is in test_site_workers.

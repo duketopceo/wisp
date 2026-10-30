@@ -221,6 +221,44 @@ claim that model reinforcement learning has been performed.
 
 ## Remaining release gates
 
+### Website hosting update
+
+The owner's later direction supersedes GitHub Pages: the Three.js landing is
+published on Cloudflare Worker `wisp-observer`, with both
+[wisp.observer](https://wisp.observer/) and
+[www.wisp.observer](https://www.wisp.observer/) connected to production.
+The four GitHub A records were removed within the approved scope; GitHub's
+custom-domain association is now `null`, and apex HTTPS returns 200.
+
+The new reproducible bundle retains `/plain/`, vendored assets and byte-identical
+`/install.py`. Wrangler 4.156.0 validates the static-only configuration in a dry
+run; Node.js 22 is website tooling, not a new desktop dependency.
+The Worker-specific local Chromium gate passed with a rendered WebGL frame,
+scenario/cancellation/approval/fallback coverage, zero external requests and zero
+page errors. Its first live-domain rerun detected Cloudflare's injected analytics
+beacon; the owner approved disabling Wisp-only RUM. After that scoped change,
+the unchanged live Chromium gate passed: rendered WebGL, scenario, approval,
+cancellation and fallback coverage, zero external requests and zero page errors.
+The live `www` homepage SHA-256 is
+`db947c1ddf7d20364cd05bc12fe3633875e06d6994b8c90563742685d64aba50`,
+identical to the final local bundle, including its corrected hosting footer.
+
+The hosting integration broad suite passed **3,989 tests in 405.641 seconds,
+21 skipped**. That run collected the four initial Worker tests before the
+single-line footer correction and its additional test; final focused/hosted
+checks cover that last change separately.
+See [HOSTING.md](../HOSTING.md) for deployment and rollback boundaries.
+
+### Owner-provided install attempt
+
+The owner supplied an Ubuntu 24.04 x86-64 SSH smoke-test excerpt. It stops while
+the repository is cloning, so it is not evidence of installer completion,
+onboarding, service startup or an active supported graphical session.
+The default clone also does not select the unmerged candidate branch.
+No private addresses or login metadata from that excerpt are copied here.
+
+### App and final publication gates
+
 - **Real Omarchy:** clean-box install, onboard/doctor, microphone/media
   behavior, capture/cancellation, profile targeting, cursor injection,
   QML feedback, and permission/policy behavior on the actual desktop.
@@ -229,15 +267,10 @@ claim that model reinforcement learning has been performed.
   7/23 or quoted 7/26 snapshots are not current verification.
 - **R6 timing:** `buddy.js` still uses its 0.30-second entry delay.
   Reducing it needs a real screenshot-clearance and overlay check.
-- **Production hosting:** the owner approved all five launch DNS records.
-  Four DNS-only apex A records are saved and publicly resolving; the
-  `www` CNAME remains pending because its dashboard dropdown failed and
-  API authentication still fails after reconnection. GitHub Pages is
-  configured for `wisp.observer`; deployment, certificate and HTTPS checks
-  remain separate gates. The bootstrap publication path is `/install.py`,
-  not `.sh`; a public command must target a real authenticated release.
-  ([Public apex DNS](https://dns.google/resolve?name=wisp.observer&type=A),
-  [public www DNS](https://dns.google/resolve?name=www.wisp.observer&type=CNAME))
+- **Final hosted checks:** Worker-specific WebKit and final committed-source
+  hosted CI remain separate receipts. Domain cutover is complete, not a pending
+  GitHub CNAME task. The bootstrap publication path is `/install.py`, not `.sh`;
+  its advertised release command must target real authenticated native assets.
 - **Native ports:** authenticated IPC, companion integration, packaging,
   signing and hardware validation remain work, not supported releases.
 
