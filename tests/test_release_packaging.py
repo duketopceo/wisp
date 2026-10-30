@@ -155,6 +155,41 @@ class ReleasePackagingTest(unittest.TestCase):
         self.assertIn("escapes source", result.stderr)
         self.assertFalse(archive.exists())
 
+    def test_source_aliases_cannot_reintroduce_excluded_targets(self):
+        source = self.source_copy()
+        targets = ("wisp/.env", "wisp/.env.production", "wisp/private.pyc",
+                   "assets/node_modules", "shell-plugin/build", "wisp/.cache",
+                   "wisp/cache", "wisp/.venv")
+        for index, name in enumerate(targets):
+            with self.subTest(target=name):
+                target = source / name
+                if name.endswith((".env", ".production", ".pyc")):
+                    target.write_text("synthetic private sentinel")
+                else:
+                    target.mkdir(parents=True, exist_ok=True)
+                    (target / "public-looking.txt").write_text("synthetic private sentinel")
+                alias = source / "assets" / "public-settings"
+                alias.symlink_to(target, target_is_directory=target.is_dir())
+                try:
+                    result, archive = self.bundle(out=f"alias-{index}", source=source)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("excluded resource target", result.stderr)
+                    self.assertFalse(archive.exists())
+                finally:
+                    alias.unlink()
+
+    def test_allowed_in_tree_aliases_are_materialized_as_regular_resources(self):
+        source = self.source_copy()
+        (source / "assets" / "public-notice.txt").symlink_to("../LICENSE")
+        result, archive = self.bundle(source=source)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        with tarfile.open(archive) as tf:
+            notice = tf.getmember("wisp-linux-x86_64/assets/public-notice.txt")
+            self.assertTrue(notice.isfile())
+            self.assertEqual(tf.extractfile(notice).read(), (source / "LICENSE").read_bytes())
+            debug = tf.getmember("wisp-linux-x86_64/shells/debug/WispService.qml")
+            self.assertTrue(debug.isfile())
+
     def test_output_cannot_be_inside_a_packaged_source_tree(self):
         source = self.source_copy()
         result, archive = self.bundle(out=str(source / "wisp"), source=source)

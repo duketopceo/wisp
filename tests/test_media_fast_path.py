@@ -8,14 +8,15 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from wisp import pipeline, route, stage_route, stage_speak, tools
+from wisp import pipeline, stage_route, stage_speak, tools
 from wisp.tools import media
 
 
 class MediaFastPath(unittest.TestCase):
     def setUp(self):
-        for target in ("wisp.act.run_act_loop", "subprocess.Popen",
-                       "subprocess.run"):
+        for target in ("wisp.act.run_act_loop", "wisp.brain.chat",
+                       "wisp.brain.chat_stream", "urllib.request.urlopen",
+                       "subprocess.Popen", "subprocess.run"):
             patch = mock.patch(target, side_effect=AssertionError(
                 "model/system process forbidden"))
             patch.start()
@@ -43,9 +44,7 @@ class MediaFastPath(unittest.TestCase):
         # Fixed, unrelated lesson/settings/routine intents are out of scope.
         # Keep the actual route_stage -> fast_route -> media_fast_arg chain.
         with mock.patch.object(stage_route, "fixed_route",
-                               return_value=("act", None)), \
-             mock.patch.object(route, "decide",
-                               side_effect=AssertionError("model forbidden")):
+                               return_value=("act", None)):
             self.assertTrue(pipeline.route_stage(ctx))
 
     def test_exact_controls_produce_canonical_registered_arguments(self):
@@ -88,14 +87,14 @@ class MediaFastPath(unittest.TestCase):
                 self.route_context(ctx)
                 self.assertEqual(ctx.answers["route"]["choice"], "act")
                 self.assertEqual(ctx.detail, text)
-                self.assertFalse(hasattr(ctx, "route_lane"))
+                self.assertEqual(ctx.route_lane, "act")
 
     def test_disabled_fast_path_keeps_act_route_with_original_detail(self):
         ctx = self.context("pause YouTube", fast_path="false")
         self.route_context(ctx)
         self.assertEqual(ctx.answers["route"]["choice"], "act")
         self.assertEqual(ctx.detail, "pause YouTube")
-        self.assertFalse(hasattr(ctx, "route_lane"))
+        self.assertEqual(ctx.route_lane, "act")
 
     def test_non_media_turn_question_keeps_existing_fast_answer(self):
         result = stage_route.fast_route("what is a turn in a game", {}, {})

@@ -9,15 +9,28 @@ app.
 Use a published tag, including a prerelease such as `v1.0.0-rc.1`; the
 example is a candidate identifier, not a claim that this tag exists yet.
 Run as your normal Linux desktop user, never with sudo. Python 3.11.4+,
-`curl`, Linux x86_64 or aarch64, and GitHub HTTPS access are required.
-The bootstrap is self-contained Python, not a shell script:
+`curl`, Linux x86_64 or aarch64, GitHub HTTPS access, and an **independently
+installed GitHub CLI with artifact-attestation support** are required.
+The bootstrap never installs its own verifier. Check `gh attestation verify
+--help` for exact-identity, source-ref/source-digest, signer-digest and
+hosted-runner verification flags. ([GitHub CLI verification](https://cli.github.com/manual/gh_attestation_verify))
+
+The bootstrap is self-contained Python, not a shell script. **This
+convenience download does not authenticate the bootstrap script itself.**
+Use it only after independently trusting/reviewing that pinned script;
+otherwise download without executing and inspect it in a separate editor.
+A malicious replacement bootstrap could simply omit its own checks;
+the later payload attestation cannot repair that root-entrypoint problem.
+([bootstrap implementation](https://github.com/duketopceo/wisp/blob/master/scripts/bootstrap/install.py))
 
 ```sh
 VERSION=v1.0.0-rc.1; f=$(mktemp) && curl -fLsS "https://raw.githubusercontent.com/duketopceo/wisp/$VERSION/scripts/bootstrap/install.py" -o "$f" && python3 "$f" --version "$VERSION"
 ```
 
-For inspect-first use, stop after downloading, read the file with your
-editor (or `python3 "$f" --inspect-source`), then run:
+For inspect-first use, stop after downloading and read the file with a
+separate trusted editor before executing anything. `--inspect-source` is
+only a convenience for an already-trusted script, not a safe way to inspect
+untrusted Python. After establishing that trust, run:
 
 ```sh
 python3 "$f" --version "$VERSION" --dry-run
@@ -32,22 +45,54 @@ It does not claim to have checked release availability. Unsupported hosts
 exit 4. Without `--version`, only GitHub's latest non-prerelease is selected;
 always pin a release candidate explicitly. `--from-plugin` preserves the
 marketplace's plugin ownership. `--sha256 <hex>` supplies an independently
-obtained archive checksum; no API token or other secret is needed.
+obtained archive checksum but **cannot bypass attestation**; no API token
+or other secret is needed. `--trusted-root /independent/root.json` optionally
+uses a previously provisioned GitHub/Sigstore trust root, never one shipped
+with the Wisp release. Without that option, gh obtains authenticated TUF
+trust material using its independently installed roots. An unavailable or
+unsupported verifier, missing bundle, failed verification or unavailable
+trust roots stops without extraction or payload execution—there is no
+checksum-only downgrade. ([GitHub CLI verification](https://cli.github.com/manual/gh_attestation_verify),
+[trusted-root provisioning](https://cli.github.com/manual/gh_attestation_trusted-root))
 
 After consent, bootstrap fetches official GitHub release metadata and
-`SHA256SUMS` (or the release asset digest), verifies the downloaded archive,
-refuses traversal, links, device files, secrets such as `.env`, duplicate
-members and excessive expanded size, then runs the actual extracted
-installer's preview and apply. Missing required inputs stop before HOME
+`SHA256SUMS` (or the release asset digest) for integrity, plus the archive's
+`<archive>.sigstore.json` public bundle. Before extraction, independent gh
+verifies the archive bytes against keyless GitHub/Sigstore proof, the exact
+`duketopceo/wisp/.github/workflows/release.yml@refs/tags/<tag>` identity,
+GitHub's OIDC issuer, the expected repository, the exact tag ref and the
+resolved full source/signer commit, and GitHub-hosted runners. Only then
+does bootstrap validate/extract the archive and run its real installer.
+([bootstrap](https://github.com/duketopceo/wisp/blob/master/scripts/bootstrap/install.py),
+[GitHub CLI policy flags](https://cli.github.com/manual/gh_attestation_verify))
+
+Extraction refuses traversal, links, devices, secrets such as `.env`,
+duplicate members and excessive expanded size. Missing inputs stop before HOME
 mutation. There is no sudo, model download, key entry, audio capture,
 daemon start or restart. The unit installer may reload user-unit definitions,
 but never enables or starts a unit. A failed first install may leave files;
 it is not a filesystem transaction. See Uninstall below.
 
-The bootstrap source itself is trusted through the selected official GitHub
-tag over HTTPS; read it before executing. Archive hashes from the same
-publisher do not defend against a compromised publisher. No independent
-signature or attestation verification is claimed.
+Attestations authenticate the stated build identity and artifact digest,
+not that the source is safe, that repository maintainers are uncompromised,
+or that voice/desktop tests passed. This implementation configures that
+channel; a real Wisp release is not attested until its actual bundle exists
+and verification succeeds. The separate plugin-only asset is not covered
+by the native archive's attestation. The in-app updater enforces the same
+native archive policy before extracting or executing a candidate; it loads
+the helper from the trusted running installation, never the candidate.
+([release workflow](https://github.com/duketopceo/wisp/blob/master/.github/workflows/release.yml),
+[updater](https://github.com/duketopceo/wisp/blob/master/wisp/update.py))
+
+For offline **verification** after downloading artifacts, provision the
+root on an independently trusted connected machine, transport it separately,
+and pass `--trusted-root`; the bootstrap itself still downloads release/tag
+metadata and assets. Local-bundle verification needs no GitHub login, and
+bootstrap isolates gh's config/cache and removes token environment variables.
+If unavailable, stop and independently review/build a pinned source commit;
+do not run an unauthenticated archive as a fallback.
+([local bundles](https://cli.github.com/manual/gh_attestation_verify),
+[root command](https://cli.github.com/manual/gh_attestation_trusted-root))
 
 ## Let your coding agent do it
 
@@ -248,13 +293,23 @@ one until you are sure.
 
 ### What the download proves
 
-A release download is checked against a SHA-256 published by the same
-GitHub release. That catches a corrupted or swapped file in transit. It
-does not authenticate the publisher: if the release itself were replaced,
-the digest would match. For an independent check, take the digest from a
-source you trust and pass `--sha256 <hex>`. The bootstrap above has this
-same trust boundary; it does not claim signing or attestation without an
-independent trust root and actual proof material.
+A release download is checked against a publisher SHA-256 for integrity;
+that checksum alone does not authenticate the publisher. Both bootstrap
+and in-app update additionally require the public GitHub/Sigstore bundle,
+an independently installed compatible `gh`, and exact release-workflow,
+tag and source-commit verification before extraction or payload execution.
+`--sha256` supplies an additional integrity check and `--force` changes
+version-order consent only: neither bypasses authentication. An updater
+dry run downloads/verifies in temporary storage and reports authentication
+separately; missing verifier, bundle or trusted installed helper refuses
+without managed writes. Old unsigned releases are source/manual-review
+only. Existing legacy updater binaries do not retroactively acquire these
+guards; use the authenticated bootstrap or independently reviewed source
+to migrate them. Offline rollback of an owned backup requires no new
+release, verifier or network. The bootstrap entry script and any manual
+source checkout still require a separate initial trust decision.
+([updater](https://github.com/duketopceo/wisp/blob/master/wisp/update.py),
+[bootstrap](https://github.com/duketopceo/wisp/blob/master/scripts/bootstrap/install.py))
 
 ### Release checklist
 

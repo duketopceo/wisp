@@ -4,9 +4,13 @@ would change, and install only on an explicit yes.
 Never automatic: nothing in the daemon calls this. A download is checked
 against the SHA-256 the release publishes (the asset digest GitHub
 records, or a `SHA256SUMS` asset, or `--sha256`); a mismatch or a missing
-digest aborts before anything is unpacked into the install. `--dry-run`
-downloads into a temp dir, prints version, digest and the files that
-would change, and deletes it again: nothing persistent is written.
+digest aborts before anything is unpacked into the install. Every download
+also requires independent GitHub/Sigstore attestation verification using
+the trusted installed bootstrap helper and independently installed gh,
+bound to this repository's release workflow, exact tag and source commit.
+Missing authentication cannot be bypassed with --force or --sha256.
+`--dry-run` downloads into a temp dir, prints authentication, digest and
+files that would change, and deletes it again: nothing persistent is written.
 
 It also never goes backwards. The release is compared with what is
 installed (version numbers when the install is a release, otherwise the
@@ -34,6 +38,7 @@ import sys
 import tarfile
 import tempfile
 import time
+import types
 import urllib.parse
 import urllib.request
 
@@ -227,6 +232,8 @@ def describe(res: dict) -> str:
     lines = [f"latest release: {res['version']} ({res['asset']})",
              f"installed:      {res['installed_version']}",
              f"sha256:         {res['sha256']}  (verified, {res['digest_source']})",
+             f"authentication: GitHub/Sigstore release.yml, exact tag and "
+             f"source {res['source_commit']} (verified)",
              f"files:          {len(ch['added'])} added, "
              f"{len(ch['changed'])} changed, {len(ch['removed'])} removed"]
     for label, key, mark in (("added", "added", "+"),
@@ -268,6 +275,30 @@ def _extract(tarball, dest: pathlib.Path) -> pathlib.Path:
     return tops[0]
 
 
+def _trusted_bootstrap():
+    """Load only this installation's helper, never a downloaded candidate.
+
+    Compile the local module directly so dry runs do not create bytecode files.
+    Its trust is inherited from the running installation/source checkout.
+    """
+    base = pathlib.Path(__file__).resolve().parents[1]
+    helper = _safe(base, "scripts/bootstrap/install.py")
+    if helper is None or not helper.is_file():
+        raise UpdateError("Authentication unavailable: trusted local bootstrap "
+                          "helper missing or unsafe. Review a source checkout "
+                          "manually; unsigned releases cannot be auto-updated.")
+    module = types.ModuleType("wisp_trusted_bootstrap")
+    module.__file__ = str(helper)
+    try:
+        exec(compile(helper.read_bytes(), str(helper), "exec"), module.__dict__)
+        if module.REPO != REPO or not callable(module.verify_attestation):
+            raise ValueError("incompatible verification helper")
+    except (OSError, SyntaxError, AttributeError, ValueError) as exc:
+        raise UpdateError("Authentication unavailable: repair the trusted "
+                          "local bootstrap helper from reviewed source.") from exc
+    return module
+
+
 def check(*, sha256: str | None = None, fetch_json=fetch_json,
           fetch_file=fetch_file, fetch_text=fetch_text, installed=None,
           workdir=None, refuse_older: bool = False) -> dict:
@@ -288,17 +319,50 @@ def check(*, sha256: str | None = None, fetch_json=fetch_json,
     if not asset:
         raise UpdateError(f"Release {tag} has no {name}.")
     want, source = _digest_for(asset, release, name, fetch_text, sha256)
+    trusted = _trusted_bootstrap()
+    verifier = shutil.which("gh")
+    if not verifier:
+        raise UpdateError("Authentication unavailable: independently install gh "
+                          "with attestation support, or manually review source. "
+                          "No checksum-only update is permitted.")
+    bundle_name = name + ".sigstore.json"
+    bundle_asset = next((a for a in release.get("assets", [])
+                         if a.get("name") == bundle_name), None)
+    if not bundle_asset:
+        raise UpdateError("Release lacks its public attestation bundle; unsigned "
+                          "releases require manual source review.")
+    try:
+        if not trusted.TAG.fullmatch(tag):
+            raise ValueError("invalid release tag")
+        archive_url = trusted.release_url(asset, tag)
+        bundle_url = trusted.release_url(bundle_asset, tag)
+        commit = fetch_json(f"https://api.github.com/repos/{REPO}/commits/{tag}").get("sha", "")
+        if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40}", commit):
+            raise ValueError("invalid source commit digest")
+    except ValueError as exc:
+        raise UpdateError(f"Attestation policy refused release metadata: {exc}") from exc
     tarball = pathlib.Path(workdir) / name
-    got = fetch_file(asset["browser_download_url"], tarball)
+    got = fetch_file(archive_url, tarball)
     if got != want:
         tarball.unlink(missing_ok=True)
         raise UpdateError(
             f"Digest mismatch for {name}: the release says {want}, the "
             f"download is {got}. Nothing was installed.")
+    bundle = pathlib.Path(workdir) / bundle_name
+    fetch_file(bundle_url, bundle)
+    try:
+        if bundle.stat().st_size > 16 * 1024 * 1024:
+            raise ValueError("attestation bundle exceeds size limit")
+        trusted.verify_attestation(verifier, tarball, bundle, tag, commit,
+                                   pathlib.Path(workdir))
+    except (ValueError, OSError, subprocess.TimeoutExpired) as exc:
+        raise UpdateError(f"Attestation authentication failed: {exc} "
+                          "Nothing was extracted or installed; manually review "
+                          "source instead. No unsigned fallback.") from exc
     root = _extract(tarball, pathlib.Path(workdir) / "tree")
     return {"version": tag, "asset": name, "sha256": got,
             "digest_source": source, "installed_version": installed_version(),
-            "ordering": order,
+            "ordering": order, "authenticated": True, "source_commit": commit,
             "changes": diff(root, installed or opt_dir()), "root": root}
 
 
@@ -694,10 +758,18 @@ def rollback(*, confirm=None, emit_text=print, restart: bool = False,
                     or _sha(src) != man["before"][rel]:
                 raise OSError("unsafe or damaged backup; kept")
             dst.parent.mkdir(parents=True, exist_ok=True)
-            tmp = dst.with_name(f".{dst.name}.{os.getpid()}.tmp")
-            shutil.copyfile(src, tmp)
-            os.chmod(tmp, man.get("modes", {}).get(rel, 0o644))
-            os.replace(tmp, dst)
+            # Exclusive, unpredictable creation prevents a preseeded symlink
+            # redirecting recovery writes outside the managed directory.
+            fd, name = tempfile.mkstemp(prefix=f".{dst.name}.", suffix=".tmp",
+                                        dir=dst.parent)
+            tmp = pathlib.Path(name)
+            try:
+                with os.fdopen(fd, "wb") as stream, src.open("rb") as saved:
+                    shutil.copyfileobj(saved, stream)
+                    os.fchmod(stream.fileno(), man.get("modes", {}).get(rel, 0o644))
+                os.replace(tmp, dst)
+            finally:
+                tmp.unlink(missing_ok=True)
             res["restored"].append(rel)
         except OSError as e:
             failed.append((rel, str(e)))
@@ -820,7 +892,7 @@ def run_update(*, dry_run: bool, sha256: str | None = None, confirm=None,
                 f"The installer exited {rc}; the update is unfinished. "
                 "Run `wispd update --rollback` to restore the previous "
                 "files. " + SCOPE_NOTE)
-        deploy.write(None, res["version"], (deploy.read() or {}).get("commit"))
+        deploy.write(None, res["version"], res["source_commit"])
         man["owned"]["deploy.json"] = _sha(deploy.record_path())
         man["after"]["deploy.json"] = man["owned"]["deploy.json"]
         _save(man, "applied")

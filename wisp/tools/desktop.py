@@ -1,5 +1,6 @@
 """Desktop tools: app launch/focus/close and Hyprland workspace ops."""
 import json
+import pathlib
 import re
 import shlex
 import shutil
@@ -140,8 +141,15 @@ def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
     # Resolve the app first: "unknown app" / "not installed" are about the
     # request and read the same with or without a window manager. The
     # Hyprland gate applies only once we are about to exec through it.
-    app = _clean_target(app) or app
     apps = _resolve_apps(cfg, harness)
+    # Catalog names can start with an article or a launch verb ("The Game",
+    # "Open Board"). Prefer the complete name before interpreting its words.
+    raw_app = (app or "").strip()
+    binname = _lookup(apps, raw_app)
+    if not binname:
+        raw_app = _LEADING_VERB.sub("", raw_app).strip()
+        binname = _lookup(apps, raw_app)
+    app = raw_app if binname else (_clean_target(app) or app)
     # soak fix: "browser" prefers BrowserOS (live logins) when its MCP
     # server is up — opt out with [agent] browseros_first = "false"
     if app in ("browser", "browser_new_tab") \
@@ -153,7 +161,7 @@ def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
             return down
         _exec_detached("browseros")
         return "LAUNCHED browser -> browseros"
-    binname = _lookup(apps, app)
+    binname = binname or _lookup(apps, app)
     if not binname:
         # role words ('mail', 'files', 'editor') and service aliases
         # ('email', 'stripe', 'linear') resolve through the user's
@@ -176,7 +184,8 @@ def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
                 down = _wm_down()
                 if down:
                     return down
-                switched = _try_switch_open_tab(tab_query)
+                switched = _try_switch_open_tab(tab_query, url=url,
+                                                browser=binname)
                 if switched:
                     return switched
                 if not _exec_detached(f"{binname} {shlex.quote(url)}"):
@@ -188,16 +197,18 @@ def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
             down = _wm_down()
             if down:
                 return down
-            switched = _try_switch_open_tab(tab_query)
+            via = _web_browser(apps, cfg)
+            switched = _try_switch_open_tab(tab_query, url=url,
+                                            browser=via or "")
             if switched:
                 return switched
-            via = _web_browser(apps, cfg)
             if via:
                 if not _exec_detached(f"{via} {shlex.quote(url)}"):
                     return f"SKIP (could not open {url} in {via})"
                 return f"OPENED {url} -> {via}"
             if shutil.which("xdg-open"):
-                _exec_detached(f"xdg-open {shlex.quote(url)}")
+                if not _exec_detached(f"xdg-open {shlex.quote(url)}"):
+                    return f"SKIP (could not open {url} in default browser)"
                 return f"OPENED {url} -> default browser"
             return f"SKIP (no browser to open {url})"
         if not binname:
@@ -220,7 +231,8 @@ def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
                     if not _exec_detached(f"{via} {shlex.quote(url)}"):
                         return f"SKIP (could not open {url} in {via})"
                     return f"OPENED {url} -> {via}"
-                _exec_detached(f"xdg-open {shlex.quote(url)}")
+                if not _exec_detached(f"xdg-open {shlex.quote(url)}"):
+                    return f"SKIP (could not open {url} in default browser)"
                 return f"OPENED {url} -> default browser"
             return f"SKIP (unknown app {app!r})"
     binary = binname.split()[0]
@@ -306,6 +318,7 @@ def focus(classname: str) -> str:
 # existing ports' precedence.
 CDP_PORTS = (9108, 9107, 9222, 9100, 9223)
 CDP_TIMEOUT_S = 1.0
+_PROC_ROOT = pathlib.Path("/proc")
 _TAB_FILLER = frozenset({"my", "the", "a", "an", "tab", "tabs", "tablet",
                          "open", "up", "switch", "to", "go", "page",
                          "website", "site", "for", "on", "in", "profile",
@@ -386,7 +399,7 @@ def _cdp_pages() -> tuple[int | None, list[dict]]:
             for t in data:
                 if isinstance(t, dict) and t.get("type") == "page" and t.get("id"):
                     item = dict(t)
-                    item.setdefault("_cdp_port", port)
+                    item["_cdp_port"] = port
                     pages.append(item)
     return first_port, pages
 
@@ -398,12 +411,13 @@ def _tab_score(query: list[str], tab: dict, profile: str = "") -> int:
     base = sum(1 for q in query if any(h.startswith(q) for h in have))
     if base > 0 and profile:
         tab_prof = _extract_profile(title) or _extract_profile(str(tab.get("profile", "")))
-        if tab_prof == profile:
-            base += 1
+        if tab_prof != profile:
+            return 0
+        base += 1
     return base
 
 
-def _focus_browser(title: str, profile: str = "") -> None:
+def _focus_browser(title: str, profile: str = "", browser: str = "") -> None:
     """Raise the browser window (prefer the one matching `title` and `profile`)."""
     from .. import platform
     if not platform.uses_hypr() or not hypr.available():
@@ -413,13 +427,19 @@ def _focus_browser(title: str, profile: str = "") -> None:
     # raised by mistake.
     pick, wins = None, []
     prof = (profile or "").lower()
+    classes = _BROWSER_CLASSES
+    if browser:
+        binary = pathlib.Path(shlex.split(browser)[0]).name.lower()
+        classes = {"chromium": {"chromium", "chromium-browser"},
+                   "brave": {"brave", "brave-browser"}}.get(binary, {binary})
     for _ in range(4):
         try:
             clients = hypr.query("clients")
         except Exception:
             return
         wins = [c for c in clients if isinstance(c, dict)
-                and (c.get("class") or "").lower() in _BROWSER_CLASSES
+                and (c.get("class") or "").lower() in classes
+                and (not prof or prof in (c.get("title") or "").lower())
                 and c.get("address")]
         if title and prof:
             pick = next((c for c in wins
@@ -440,17 +460,93 @@ def _focus_browser(title: str, profile: str = "") -> None:
             f"address:{pick['address']}"))])
 
 
-def _try_switch_open_tab(query: str) -> str | None:
+def _cdp_owner_matches(port: int, browser: str) -> bool:
+    """Prove a loopback endpoint belongs to the selected executable.
+
+    Port conventions and /json/version product names are not ownership
+    evidence. If procfs is absent/inaccessible or ownership is ambiguous,
+    skip reuse and launch the configured browser command instead.
+    """
+    def profile_args(args: list[str]) -> dict:
+        values = {}
+        it = iter(args)
+        for arg in it:
+            key, sep, value = arg.partition("=")
+            if key in ("--profile-directory", "--user-data-dir",
+                       "--profile", "-profile", "-P"):
+                values[key] = value if sep else next(it, "")
+            elif key in ("--guest", "--incognito", "--private-window"):
+                values[key] = True
+        return values
+
+    try:
+        command = shlex.split(browser)
+        selected = shutil.which(command[0]) if command else None
+        if not selected:
+            return False
+        selected_exe = pathlib.Path(selected).resolve()
+        inodes = set()
+        for name in ("tcp", "tcp6"):
+            try:
+                rows = (_PROC_ROOT / "net" / name).read_text().splitlines()[1:]
+            except OSError:
+                continue
+            for row in rows:
+                fields = row.split()
+                if (len(fields) > 9 and fields[3] == "0A"
+                        and int(fields[1].rsplit(":", 1)[1], 16) == port):
+                    inodes.add(f"socket:[{fields[9]}]")
+        if len(inodes) != 1:
+            return False
+        owners = []
+        for process in _PROC_ROOT.glob("[0-9]*"):
+            try:
+                if not any(str(fd.readlink()) in inodes
+                           for fd in (process / "fd").iterdir()):
+                    continue
+                owners.append(process)
+            except OSError:
+                continue
+        if len(owners) != 1 or (owners[0] / "exe").resolve() != selected_exe:
+            return False
+        actual = (owners[0] / "cmdline").read_bytes().decode().split("\0")
+        wanted_profiles = profile_args(command[1:])
+        actual_profiles = profile_args(actual[1:])
+        for mode in ("--guest", "--incognito", "--private-window"):
+            if bool(wanted_profiles.get(mode)) != bool(actual_profiles.get(mode)):
+                return False
+        return all(actual_profiles.get(key) == value
+                   for key, value in wanted_profiles.items())
+    except (OSError, ValueError):
+        return False
+
+
+def _try_switch_open_tab(query: str, *, url: str = "",
+                         browser: str = "") -> str | None:
     """If an open browser tab already matches `query`, activate and focus it."""
     words = _query_words(query)
     if not words:
+        return None
+    if not browser:
         return None
     prof = requested_profile(query)
     port, pages = _cdp_pages()
     if port is None or not pages:
         return None
     best, top = None, 0
+    owners = {}
     for t in pages:
+        if url:
+            expected_host = urllib.parse.urlparse(url).hostname
+            if (not expected_host or
+                    urllib.parse.urlparse(t.get("url") or "").hostname
+                    != expected_host):
+                continue
+        target_port = int(t.get("_cdp_port") or port)
+        if target_port not in owners:
+            owners[target_port] = _cdp_owner_matches(target_port, browser)
+        if not owners[target_port]:
+            continue
         sc = _tab_score(words, t, profile=prof)
         if sc > top:
             best, top = t, sc
@@ -462,10 +558,7 @@ def _try_switch_open_tab(query: str) -> str | None:
     except OSError:
         return None
     title = best.get("title", "")
-    if prof:
-        _focus_browser(title, profile=prof)
-    else:
-        _focus_browser(title)
+    _focus_browser(title, profile=prof, browser=browser)
     host = urllib.parse.urlparse(best.get("url") or "").hostname or ""
     return f"SWITCHED tab {title!r} -> {host}"
 

@@ -27,6 +27,10 @@ env:
 jobs:
   build:
     timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -38,7 +42,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ github.ref }}
           persist-credentials: false
           fetch-depth: 0
 
@@ -57,7 +61,11 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
+          # Certificate identity/source ref come from the workflow context,
+          # not checkout's ref input. Dispatch must select the tag itself.
+          test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"
           test "$(git rev-parse "${RELEASE_TAG}^{commit}")" = "$(git rev-parse HEAD)"
+          test "$GITHUB_SHA" = "$(git rev-parse HEAD)"
           echo "SOURCE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)" >> "$GITHUB_ENV"
           echo "RUSTFLAGS=--remap-path-prefix=$GITHUB_WORKSPACE=/wisp" >> "$GITHUB_ENV"
@@ -94,10 +102,28 @@ jobs:
             --version "$RELEASE_TAG" --commit "$SOURCE_COMMIT" \
             --target "$BUNDLE_TARGET" | tee "dist/verification-$BUNDLE_TARGET.json"
 
+      - name: Attest native archive with public keyless build provenance
+        id: provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/wisp-${{ matrix.name }}.tar.gz
+
+      - name: Retain public attestation bundle alongside its archive
+        env:
+          ATTESTATION_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+          BUNDLE_TARGET: ${{ matrix.name }}
+        run: |
+          set -euo pipefail
+          test -s "$ATTESTATION_BUNDLE"
+          cp -- "$ATTESTATION_BUNDLE" "dist/wisp-$BUNDLE_TARGET.tar.gz.sigstore.json"
+
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: wisp-${{ matrix.name }}
-          path: dist/*
+          path: |
+            dist/*.tar.gz
+            dist/*.sigstore.json
+            dist/verification-*.json
           if-no-files-found: error
 
   plugin:
@@ -107,7 +133,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ github.ref }}
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
@@ -121,6 +147,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
+          test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"
           command -v qmllint
           python3 scripts/plugin_mirror.py --out build/mirror \
             --version "$RELEASE_TAG" --commit "$(git rev-parse HEAD)" --lint
@@ -142,7 +169,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ github.ref }}
           persist-credentials: false
           fetch-depth: 0
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -153,21 +180,45 @@ jobs:
           path: dist
           pattern: wisp-*
           merge-multiple: true
-      - name: Require all three assets and publish their SHA-256 checksums
+      - name: Require native bundles and publish all asset SHA-256 checksums
         run: |
           set -euo pipefail
+          test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"
+          test "$GITHUB_SHA" = "$(git rev-parse "${RELEASE_TAG}^{commit}")"
           test -f dist/wisp-linux-x86_64.tar.gz
           test -f dist/wisp-linux-aarch64.tar.gz
+          test -s dist/wisp-linux-x86_64.tar.gz.sigstore.json
+          test -s dist/wisp-linux-aarch64.tar.gz.sigstore.json
           test -f "dist/wisp-plugin-$RELEASE_TAG.tar.gz"
           test "$(find dist -maxdepth 1 -name '*.tar.gz' | wc -l)" -eq 3
           python scripts/release/build.py checksums --out dist/SHA256SUMS \
             dist/wisp-linux-x86_64.tar.gz dist/wisp-linux-aarch64.tar.gz \
+            dist/wisp-linux-x86_64.tar.gz.sigstore.json \
+            dist/wisp-linux-aarch64.tar.gz.sigstore.json \
             "dist/wisp-plugin-$RELEASE_TAG.tar.gz"
           (cd dist && sha256sum --check SHA256SUMS)
       - name: Create verified draft release, upload everything, then publish
         shell: bash
         run: |
           set -euo pipefail
+          SOURCE_COMMIT="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+          test "$GITHUB_SHA" = "$SOURCE_COMMIT"
+          test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"
+          verify_attestations() {
+            directory="$1"
+            for target in linux-x86_64 linux-aarch64; do
+              archive="$directory/wisp-$target.tar.gz"
+              test -s "$archive.sigstore.json"
+              gh attestation verify "$archive" --bundle "$archive.sigstore.json" \
+                --repo "$GITHUB_REPOSITORY" \
+                --cert-identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@refs/tags/$RELEASE_TAG" \
+                --cert-oidc-issuer https://token.actions.githubusercontent.com \
+                --source-ref "refs/tags/$RELEASE_TAG" \
+                --source-digest "$SOURCE_COMMIT" --signer-digest "$SOURCE_COMMIT" \
+                --deny-self-hosted-runners --digest-alg sha256
+            done
+          }
+          verify_attestations dist
           # Do not overwrite an existing release or mix new and old assets.
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             echo "Release already exists; inspect it instead of overwriting." >&2
@@ -175,11 +226,12 @@ jobs:
           fi
           gh release create "$RELEASE_TAG" --verify-tag --draft \
             --title "Wisp $RELEASE_TAG" --generate-notes \
-            dist/*.tar.gz dist/SHA256SUMS
+            dist/*.tar.gz dist/*.sigstore.json dist/SHA256SUMS
           # Confirm the uploaded bytes, not just the local staging directory.
           mkdir downloaded
           gh release download "$RELEASE_TAG" --dir downloaded
           (cd downloaded && sha256sum --check SHA256SUMS)
+          verify_attestations downloaded
           prerelease=()
           [[ "$RELEASE_TAG" != *-* ]] || prerelease+=(--prerelease)
           gh release edit "$RELEASE_TAG" --draft=false "${prerelease[@]}"

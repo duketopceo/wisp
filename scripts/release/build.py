@@ -39,6 +39,8 @@ def collect(source, names=(*TREES, *SCRIPT_TREES, *FILES)):
         resolved = path.resolve(strict=True)
         if not resolved.is_relative_to(source):
             raise ValueError(f"resource escapes source: {relative}")
+        if excluded(resolved.relative_to(source)):
+            raise ValueError(f"excluded resource target: {relative}")
         if resolved in ancestors:
             raise ValueError(f"cyclic resource link: {relative}")
         if resolved.is_dir():

@@ -46,6 +46,13 @@ def _norm(s: str) -> str:
 
 
 def _catalog_app(rest: str, apps: dict) -> str:
+    # A complete installed title can contain deictic/filler words
+    # ("This War of Mine", "The Game"); do not reinterpret those words
+    # as a reference to something on screen before checking the catalog.
+    exact = _norm(rest or "")
+    for name in apps or {}:
+        if exact and _norm(name) == exact:
+            return name
     if _DEICTIC.search(rest or ""):
         return ""
     want = _norm(_FILLER.sub(" ", rest))

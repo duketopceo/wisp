@@ -61,7 +61,8 @@ BUILTIN_DENY_APPS = (
 # mutating actions (click, type_text, key, fill) promote from T1 to T2
 # (user confirmation required).
 BUILTIN_SENSITIVE_SURFACES = (
-    "stripe", "plaid", "mercury", "brex", "robinhood", "coinbase")
+    "stripe", "billing", "checkout", "plaid", "mercury", "brex",
+    "robinhood", "coinbase")
 SENSITIVE_SECRET_RE = re.compile(
     r"\b(?:sk_live_[A-Za-z0-9]{10,}|rk_live_[A-Za-z0-9]{10,}|whsec_[A-Za-z0-9]{10,})\b")
 TERMINALS = ("ghostty", "kitty", "alacritty", "foot", "wezterm", "konsole",
@@ -345,6 +346,13 @@ class Guard:
             return False
         if name in POINTER and self.pointer_mode not in ("drive", "auto"):
             return False   # guide mode only moves the ghost cursor
+        if name in ("click", "move") and self.pointer_mode == "auto" \
+                and not self.cfg.get("screen", {}).get("dom_page", ""):
+            # Match tools.system._pointer's real delivery decision. Missing
+            # native injection is NOT enough: Cua may still deliver the input.
+            from . import delivery
+            if delivery.resolve_backend(self.cfg, name) is None:
+                return False  # actual auto fallback is guidance, not input
         return True
 
     # -- policy --------------------------------------------------------

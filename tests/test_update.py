@@ -1,6 +1,7 @@
 """B9: `wispd update` verifies, previews, and never installs unasked."""
 import hashlib
 import io
+import json
 import os
 import pathlib
 import sys
@@ -47,6 +48,14 @@ class Fixture(unittest.TestCase):
         self.blob = make_tar(NEW)
         self.sha = hashlib.sha256(self.blob).hexdigest()
         self.downloads = 0
+        self.source_commit = "b" * 40
+        self.bundle = json.dumps({"fixture": "fake public bundle",
+                                  "source_commit": self.source_commit}).encode()
+        self.verifier_calls = []
+        self.verifier_status = 0
+        self.verifier_flags = ("--bundle --repo --cert-identity --cert-oidc-issuer "
+                               "--source-ref --source-digest --signer-digest "
+                               "--deny-self-hosted-runners --digest-alg")
         self.state = self.tmp / "state"
         for p in (mock.patch.object(config, "HOME", self.tmp),
                   mock.patch.object(update, "opt_dir", lambda: self.opt),
@@ -61,15 +70,40 @@ class Fixture(unittest.TestCase):
                                     lambda: "v1.0.0"),
                   mock.patch.object(update, "installed_record",
                                     lambda: {"ref": "v1.0.0",
-                                             "commit": "a" * 40})):
+                                             "commit": "a" * 40}),
+                  mock.patch("shutil.which", return_value="/independent/gh"),
+                  mock.patch("subprocess.run", side_effect=self.verifier_runner)):
             p.start()
             self.addCleanup(p.stop)
 
-    def release(self, digest=True, sums=None):
+    def verifier_runner(self, argv, **kw):
+        self.assertEqual(argv[0], "/independent/gh", "host process forbidden")
+        self.assertEqual(argv[1:3], ["attestation", "verify"])
+        if argv[-1] == "--help":
+            return SimpleNamespace(returncode=0, stdout=self.verifier_flags)
+        self.assertEqual(argv[argv.index("--source-ref") + 1], "refs/tags/v2.0.0")
+        self.assertEqual(argv[argv.index("--source-digest") + 1], self.source_commit)
+        self.assertEqual(argv[argv.index("--signer-digest") + 1], self.source_commit)
+        self.assertEqual(argv[argv.index("--cert-identity") + 1],
+                         "https://github.com/duketopceo/wisp/.github/workflows/release.yml@refs/tags/v2.0.0")
+        self.assertEqual(argv[argv.index("--repo") + 1], "duketopceo/wisp")
+        self.assertIn("--deny-self-hosted-runners", argv)
+        self.assertEqual(pathlib.Path(argv[argv.index("--bundle") + 1]).read_bytes(),
+                         self.bundle)
+        self.assertTrue(pathlib.Path(argv[3]).is_file())
+        self.assertEqual(kw["env"]["GH_HOST"], "github.com")
+        self.assertNotIn("GH_TOKEN", kw["env"])
+        self.verifier_calls.append(argv)
+        return SimpleNamespace(returncode=self.verifier_status, stdout="")
+
+    def release(self, digest=True, sums=None, bundle=True):
         a = {"name": NAME, "browser_download_url": URL}
         if digest:
             a["digest"] = "sha256:" + self.sha
         assets = [a]
+        if bundle:
+            assets.append({"name": NAME + ".sigstore.json",
+                           "browser_download_url": URL + ".sigstore.json"})
         if sums:
             assets.append({"name": "SHA256SUMS",
                            "browser_download_url": update.DOWNLOAD_PREFIX
@@ -81,13 +115,21 @@ class Fixture(unittest.TestCase):
 
         def fetch_file(url, dest):
             self.downloads += 1
-            pathlib.Path(dest).write_bytes(blob)
-            return hashlib.sha256(blob).hexdigest()
-        return dict(fetch_json=lambda u: rel, fetch_file=fetch_file,
+            data = self.bundle if url == URL + ".sigstore.json" else blob
+            self.assertIn(url, (URL, URL + ".sigstore.json"))
+            pathlib.Path(dest).write_bytes(data)
+            return hashlib.sha256(data).hexdigest()
+
+        def fetch_json(url):
+            if url == update.API:
+                return rel
+            self.assertEqual(url, "https://api.github.com/repos/duketopceo/wisp/commits/v2.0.0")
+            return {"sha": self.source_commit}
+
+        return dict(fetch_json=fetch_json, fetch_file=fetch_file,
                     fetch_text=lambda u: sums,
                     preflight_fn=lambda: self.pf_rows,
                     service_active=lambda: False)
-
     pf_rows = [{"id": "os", "level": "ok", "detail": "Linux", "fix": ""}]
 
     def mirror(self, root):
@@ -101,6 +143,93 @@ class Fixture(unittest.TestCase):
             (self.opt / rel).parent.mkdir(parents=True, exist_ok=True)
             (self.opt / rel).write_bytes(src.read_bytes())
         return 0
+
+
+class AuthenticatedUpdate(Fixture):
+    def test_failed_attestation_refuses_before_extraction_or_managed_writes(self):
+        self.verifier_status = 1
+        before = {str(p): p.read_bytes() for p in self.opt.rglob("*") if p.is_file()}
+        with mock.patch.object(update, "_extract",
+                               side_effect=AssertionError("candidate extraction forbidden")):
+            with self.assertRaisesRegex(update.UpdateError, "[Aa]ttestation"):
+                update.run_update(dry_run=False, force=True, sha256=self.sha,
+                                  confirm=lambda _: True, **self.seams(self.release()))
+        self.assertEqual(len(self.verifier_calls), 1)
+        self.assertFalse(self.state.exists())
+        self.assertEqual(before, {str(p): p.read_bytes()
+                                 for p in self.opt.rglob("*") if p.is_file()})
+
+    def test_missing_bundle_cannot_be_bypassed_with_force_or_checksum(self):
+        with self.assertRaisesRegex(update.UpdateError, "attestation bundle"):
+            update.run_update(dry_run=False, force=True, sha256=self.sha,
+                              confirm=lambda _: True,
+                              **self.seams(self.release(bundle=False)))
+        self.assertEqual(self.downloads, 0)
+        self.assertFalse(self.state.exists())
+
+    def test_missing_independent_verifier_is_truthful_in_dry_run(self):
+        before = sorted(str(p) for p in self.tmp.rglob("*"))
+        with mock.patch("shutil.which", return_value=None):
+            with self.assertRaisesRegex(update.UpdateError, "Authentication unavailable"):
+                update.run_update(dry_run=True, **self.seams(self.release()))
+        self.assertEqual(self.downloads, 0)
+        self.assertEqual(before, sorted(str(p) for p in self.tmp.rglob("*")))
+
+    def test_unsafe_local_helper_is_not_loaded_from_candidate(self):
+        trusted = self.tmp / "trusted"
+        (trusted / "scripts/bootstrap").mkdir(parents=True)
+        (trusted / "wisp").mkdir()
+        outside = self.tmp / "outside.py"
+        outside.write_text("raise AssertionError('untrusted helper executed')")
+        helper = trusted / "scripts/bootstrap/install.py"
+        for symlink in (False, True):
+            if symlink:
+                helper.symlink_to(outside)
+            with mock.patch.object(update, "__file__", str(trusted / "wisp/update.py")):
+                with self.assertRaisesRegex(update.UpdateError, "trusted local bootstrap"):
+                    update.run_update(dry_run=True, **self.seams(self.release()))
+        self.assertEqual(self.downloads, 0)
+
+    def test_invalid_source_digest_refuses_before_download(self):
+        seams = self.seams(self.release())
+        fetch = seams["fetch_json"]
+        seams["fetch_json"] = lambda u: fetch(u) if u == update.API else {"sha": "short"}
+        with self.assertRaisesRegex(update.UpdateError, "source commit digest"):
+            update.run_update(dry_run=True, **seams)
+        self.assertEqual(self.downloads, 0)
+
+    def test_unsupported_verifier_refuses_before_extracting_candidate_helper(self):
+        self.verifier_flags = "--bundle --repo"
+        files = dict(NEW)
+        files["scripts/bootstrap/install.py"] = b"raise AssertionError('candidate executed')"
+        blob = make_tar(files)
+        self.sha = hashlib.sha256(blob).hexdigest()
+        with mock.patch.object(update, "_extract",
+                               side_effect=AssertionError("candidate extraction forbidden")):
+            with self.assertRaisesRegex(update.UpdateError, "lacks required"):
+                update.run_update(dry_run=True, **self.seams(self.release(), blob=blob))
+        self.assertEqual(self.verifier_calls, [])
+
+    def test_verified_plan_identifies_authentication_separately_from_integrity(self):
+        out = []
+        result = update.run_update(dry_run=True, emit_text=out.append,
+                                   **self.seams(self.release()))
+        self.assertTrue(result["authenticated"])
+        self.assertEqual(result["source_commit"], self.source_commit)
+        self.assertIn("authentication: GitHub/Sigstore", "\n".join(out))
+        self.assertEqual(len(self.verifier_calls), 1)
+
+    def test_apply_records_authenticated_source_commit_not_installer_claim(self):
+        def installer(root):
+            self.assertEqual(len(self.verifier_calls), 1)
+            self.mirror(root)
+            deploy.write(None, "v2.0.0", "c" * 40)
+            return 0
+        result = update.run_update(dry_run=False, install_fn=installer,
+                                   confirm=lambda _: True, emit_text=lambda _: None,
+                                   **self.seams(self.release()))
+        self.assertTrue(result["applied"])
+        self.assertEqual(deploy.read()["commit"], self.source_commit)
 
 
 class DryRun(Fixture):
@@ -552,7 +681,7 @@ class Transaction(Fixture):
         self.assertIsNone(update.unfinished(self.state))
         self.downloads = 0
         self.apply()
-        self.assertEqual(self.downloads, 1)
+        self.assertEqual(self.downloads, 2)       # archive and public bundle
 
     def test_a_failed_verification_is_rolled_back_in_full(self):
         def bad(root):
@@ -571,14 +700,13 @@ class Transaction(Fixture):
             self):
         self.apply()
         (self.opt / "wisp" / "b.py").write_bytes(b"my edit")   # kept
-        real = update.shutil.copyfile
-
         def boom(src, dst, **kw):
             raise OSError("disk full")
-        with mock.patch.object(update.shutil, "copyfile", boom):
+        with mock.patch.object(update.shutil, "copyfileobj", boom):
             res = self.rollback()
         self.assertFalse(res["rolled_back"])
         self.assertEqual(self.manifest()["phase"], "restore-incomplete")
+        self.assertEqual(list(self.opt.rglob(".*.tmp")), [])
         self.rollback()                         # retry now works
         self.assertEqual((self.opt / "wisp" / "a.py").read_bytes(), b"A1")
         self.assertEqual((self.opt / "wisp" / "b.py").read_bytes(),
@@ -735,6 +863,26 @@ class PreflightGate(Fixture):
 
 
 class ExternalRecovery(Fixture):
+    def test_rollback_does_not_follow_preseeded_temporary_symlink(self):
+        root = self.tmp / "release"
+        root.mkdir()
+        (root / "wispd").write_bytes(b"new launcher")
+        man = update.protect(self.opt, root, "v1", "v2", False, state=self.state)
+        (self.opt / "wispd").write_bytes(b"new launcher")
+        update._save(man, "verified")
+        victim = self.tmp / "user-data"
+        victim.write_bytes(b"keep user data")
+        collision = self.opt / f".wispd.{os.getpid()}.tmp"
+        collision.symlink_to(victim)
+        with mock.patch("subprocess.run", side_effect=AssertionError("offline rollback only")):
+            result = update.rollback(confirm=lambda _: True, emit_text=lambda _: None,
+                                     opt=self.opt, state=self.state)
+        self.assertTrue(result["rolled_back"], result)
+        self.assertEqual(victim.read_bytes(), b"keep user data")
+        self.assertFalse((self.opt / "wispd").is_symlink())
+        self.assertEqual((self.opt / "wispd").read_bytes(), b"old launcher")
+        self.assertTrue(collision.is_symlink())
+
     def test_backups_have_unique_ids_even_with_the_same_clock_tick(self):
         root = self.tmp / "release"
         root.mkdir()

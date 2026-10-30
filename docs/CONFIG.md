@@ -418,7 +418,7 @@ Resources: wispd under 250 MB RSS and 3% idle CPU; cua-driver
 |-----|---------|---------|
 | `[pointer] mode` | `auto` (live act) | `guide`: Wisp points with the ghost cursor, you click. `drive`: inject real input through the backend. `auto`: drive when a backend exists, guide otherwise. The template leaves this unset; standalone tools guide, while live act chooses a temporary backend-aware mode. Explicit saved choices are preserved |
 | `[pointer] backend` | `auto` | `auto`, `cua`, `hyprcursor`, `ydotool`, `wlrctl` or `none`. A named backend is used alone; if it is unavailable Wisp guides |
-| `[ground] providers` | `control,a11y,uitars,jev` | grounding chain order: app control channel, cua accessibility tree, local UI-TARS, vision fallback. `uitars` is dropped unless `[local] enabled = true` |
+| `[ground] providers` | `control,a11y,vlm,uitars,jev` | grounding chain order: app control channel, cua accessibility tree, aspect-matched VLM pointing, local UI-TARS, structured vision fallback. `uitars` is dropped unless `[local] enabled = true` |
 | `[ground] min_confidence` | `0.5` | candidates below this are re-observed once, then refused |
 | `[ground] budget_ms` | `1200` | shared budget for the fast providers |
 | `[ground] fallback_timeout_ms` | `5000` | timeout for the vision fallback |

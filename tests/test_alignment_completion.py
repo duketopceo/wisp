@@ -164,6 +164,10 @@ class NotionFallbackTest(unittest.TestCase):
         with mock.patch.object(desktop, "_resolve_apps", return_value={}), \
              mock.patch("wisp.inventory.defaults", return_value={}), \
              mock.patch.object(desktop, "_wm_down", return_value=None), \
+             mock.patch.object(desktop, "_web_browser",
+                               return_value="chromium --profile-directory=Work"), \
+             mock.patch.object(desktop, "_cdp_owner_matches",
+                               return_value=True), \
              mock.patch.object(desktop, "_cdp_get",
                                side_effect=cdp_get) as cdp, \
              mock.patch.object(desktop, "_focus_browser"), \

@@ -37,7 +37,7 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
     screenshot (b64) handed to the act loop so the model sees the app
     instead of asking which one. `ask` is the in-loop question channel
     (U4) forwarded to every act-loop dispatch. `lang` is the spoken
-    language when it is not English (dictation keeps it, B23).
+    language when it is not English (dictation and act keep it, B23).
     `user_request` is the original human transcript, separate from decorated
     task context; omitted provenance never authorizes element-free clicks."""
     from . import agents, tools
@@ -55,7 +55,8 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
         return act.run_act_loop(task, turn_cfg, state=state, harness=harness,
                                 confirm=confirm, initial_image=initial_image,
                                 interrupted=interrupted, ask=ask,
-                                user_request=user_request)
+                                user_request=user_request,
+                                **({"lang": lang} if lang else {}))
 
     def _run_teach() -> str:
         from . import routines

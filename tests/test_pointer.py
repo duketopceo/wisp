@@ -118,7 +118,9 @@ class PointerTest(_Iso):
 
         with mock.patch.object(platform, "pointer_backend",
                                return_value="ydotool"), \
-             mock.patch("subprocess.run", side_effect=fake_run):
+             mock.patch("subprocess.run", side_effect=fake_run), \
+             system.pointer_context(user_request="click at 10,20@logical"):
+            # This backend-argv fixture represents a literal human request.
             out = system.click("10,20@logical", DRIVE_CFG)
         self.assertEqual(out, "CLICKED(10,20)")
         self.assertEqual(len(calls), 2)  # move + click
@@ -133,10 +135,20 @@ class PointerTest(_Iso):
         with mock.patch.object(platform, "pointer_backend",
                                return_value="wlrctl"), \
              mock.patch("subprocess.run",
-                        return_value=mock.Mock(returncode=0)) as run:
+                        return_value=mock.Mock(returncode=0)) as run, \
+             system.pointer_context(user_request="click at 1,2@logical"):
             out = system.click("1,2@logical", AUTO)
         self.assertEqual(out, "CLICKED(1,2)")
         self.assertGreaterEqual(run.call_count, 1)
+
+    def test_model_coordinate_without_element_never_reaches_backend(self):
+        with mock.patch.object(platform, "pointer_backend",
+                               return_value="ydotool"), \
+             mock.patch("wisp.grounding.target_at_point", return_value=None), \
+             mock.patch("subprocess.run") as run:
+            out = system.click("10,20@logical", DRIVE_CFG)
+        self.assertTrue(out.startswith("REFUSED"), out)
+        run.assert_not_called()
 
     def test_explicit_backend_missing_falls_back(self):
         cfg = {"pointer": {"mode": "drive", "backend": "ydotool"}}

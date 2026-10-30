@@ -1066,6 +1066,25 @@ def _plugin_dir() -> pathlib.Path:
             / "io.github.duketopceo.wisp")
 
 
+def _preflight_install_path(path: pathlib.Path, directory: bool = False) -> None:
+    """Refuse file/directory collisions without deleting existing user content."""
+    for parent in reversed(path.parents):
+        if parent.exists() and not parent.is_dir():
+            raise ValueError(f"Install path conflict: {parent} must be a directory; "
+                             "nothing was installed.")
+    if path.exists() and (not path.is_dir() if directory else not path.is_file()):
+        kind = "directory" if directory else "regular file"
+        raise ValueError(f"Install path conflict: {path} must be a {kind}; "
+                         "nothing was installed.")
+
+
+def _preflight_install_tree(src: pathlib.Path, dst: pathlib.Path) -> None:
+    _preflight_install_path(dst, directory=src.is_dir())
+    if src.is_dir():
+        for child in src.iterdir():
+            _preflight_install_tree(child, dst / child.name)
+
+
 def install_files(dry_run: bool = False, cfg: dict | None = None,
                   src: pathlib.Path | None = None,
                   deploy: dict | None = None,
@@ -1110,11 +1129,32 @@ def install_files(dry_run: bool = False, cfg: dict | None = None,
                        if f.is_file())
     for target in targets:
         _desktop.refuse_links(target, tree=target in (opt, _plugin_dir()))
+        _preflight_install_path(
+            target, directory=target in (
+                opt, _plugin_dir(), config.HOME / ".config/systemd/user"))
+    # Check the whole destination shape before plugin-mode or any runtime copy.
+    # copytree/copy2 otherwise fail late or redirect a file into an existing dir.
+    for rel in ("wisp", "shells", "assets", "bin", "scripts/units",
+                "scripts/cua", "scripts/bootstrap", "docs"):
+        if (src / rel).is_dir():
+            _preflight_install_tree(src / rel, opt / rel)
+    for rel in ("wispd", "scripts/build_harness.py", "scripts/fetch_whisper.sh",
+                "release.json", "payload.json", "CHANGELOG.md"):
+        if (src / rel).is_file():
+            _preflight_install_path(opt / rel)
+    for name in ("plugin-mode", "deploy.json"):
+        _preflight_install_path(opt / name)
+    if (src / "scripts/build_harness.py").is_file():
+        _preflight_install_path(opt / "build_harness.py")
     from wisp import svc as _svc_install
     _svc_install.install_units(config.HOME, dry_run=True,
                                local=config.local_enabled(cfg),
                                units_dir=src / "scripts/units")
     plugin_plan = _update.plugin_plan(src, config.HOME, opt) if plugin else None
+    if plugin_plan is not None:
+        _preflight_install_path(opt / "plugin-files.json")
+        for rel in plugin_plan["owned"]:
+            _preflight_install_path(_plugin_dir() / rel)
     # Release metadata is part of the verified archive; validate its shape
     # before any install writes and retain its source tag/commit.
     release_deploy = None

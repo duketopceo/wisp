@@ -4,6 +4,7 @@
 import importlib.machinery
 import importlib.util
 import json
+import os
 import pathlib
 import sys
 import threading
@@ -147,6 +148,9 @@ class TestIpc(Base):
         self.handle = WISPD._handler(
             self.st, config._default_cfg_dict(), self.ctl,
             tasks_file=self.dir / "tasks.jsonl")
+        # Direct handler tests represent the local, native-attributed caller.
+        # Missing peer identity intentionally cannot mutate daemon state.
+        self.peer = {"pid": os.getpid(), "uid": os.getuid()}
 
     def test_dev_is_mutating(self):
         self.assertIn("dev", ipc.MUTATING_CMDS)
@@ -154,28 +158,30 @@ class TestIpc(Base):
         self.assertIn("dev_stop", ipc.MUTATING_CMDS)
 
     def test_on_status_off_over_ipc_and_state_publishes(self):
-        r = self.handle({"cmd": "dev", "op": "on"})
+        r = self.handle({"cmd": "dev", "op": "on"}, self.peer)
         self.assertTrue(r["ok"], r)
         self.assertTrue(r["dev"]["on"])
         self.assertEqual(self.st.snapshot()["dev"],
                          {"on": True, "runs_left": 5})
-        r = self.handle({"cmd": "dev", "op": "status"})
+        r = self.handle({"cmd": "dev", "op": "status"}, self.peer)
         self.assertTrue(r["dev"]["on"])
-        r = self.handle({"cmd": "dev", "op": "off"})
+        r = self.handle({"cmd": "dev", "op": "off"}, self.peer)
         self.assertFalse(r["dev"]["on"])
         self.assertEqual(self.st.snapshot()["dev"],
                          {"on": False, "runs_left": 0})
 
     def test_unknown_op_is_an_error(self):
-        r = self.handle({"cmd": "dev", "op": "sideways"})
+        r = self.handle({"cmd": "dev", "op": "sideways"}, self.peer)
         self.assertFalse(r["ok"])
 
     def test_off_never_touches_config(self):
         cfgfile = self.dir / "config.toml"
         cfgfile.write_text("[dev]\npanel = \"false\"\n")
         with mock.patch.object(config, "CFG_FILE", cfgfile):
-            self.handle({"cmd": "dev", "op": "on"})
-            self.handle({"cmd": "dev", "op": "off"})
+            self.assertTrue(self.handle(
+                {"cmd": "dev", "op": "on"}, self.peer)["ok"])
+            self.assertTrue(self.handle(
+                {"cmd": "dev", "op": "off"}, self.peer)["ok"])
         self.assertEqual(cfgfile.read_text(), "[dev]\npanel = \"false\"\n")
 
 

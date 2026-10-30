@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Inspect this file before running. Stdlib only; no sudo, keys or services.
 
-Trust root: official GitHub release over HTTPS, SHA-256 from that publisher
-or an independently obtained --sha256. This is NOT signature verification.
+Payload trust: independently installed GitHub CLI and its Sigstore trust
+roots verify keyless release-workflow attestations before extraction.
+Publisher SHA-256 is integrity only; it never substitutes for authentication.
 """
 import argparse
 import hashlib
@@ -11,6 +12,7 @@ import os
 import pathlib
 import platform
 import re
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -22,6 +24,9 @@ API = f"https://api.github.com/repos/{REPO}/releases"
 DOWNLOAD = f"https://github.com/{REPO}/releases/download/"
 TAG = re.compile(r"v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?")
 LIMIT = 400 * 1024 * 1024
+VERIFY_FLAGS = ("--bundle", "--repo", "--cert-identity", "--cert-oidc-issuer",
+                "--source-ref", "--source-digest", "--signer-digest",
+                "--deny-self-hosted-runners", "--digest-alg")
 
 
 def fetch(url, limit=LIMIT):
@@ -38,6 +43,43 @@ def release_url(asset, tag):
     if url != DOWNLOAD + tag + "/" + asset["name"]:
         raise ValueError("Asset URL is not in the selected official release.")
     return url
+
+
+def verify_attestation(verifier, archive, bundle, tag, commit, work, trusted_root=None):
+    """Use independently installed verifier/roots, never trust release roots."""
+    env = dict(os.environ)
+    for name in ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN",
+                 "GITHUB_ENTERPRISE_TOKEN"):
+        env.pop(name, None)
+    home = work / "verifier-home"
+    home.mkdir(mode=0o700)
+    env.update(HOME=str(home), GH_CONFIG_DIR=str(home / "config"),
+               XDG_CONFIG_HOME=str(home / "config"),
+               XDG_CACHE_HOME=str(home / "cache"), GH_HOST="github.com",
+               GH_PROMPT_DISABLED="1")
+    help_result = subprocess.run([verifier, "attestation", "verify", "--help"],
+                                 env=env, capture_output=True, text=True,
+                                 timeout=15)
+    required = VERIFY_FLAGS + (("--custom-trusted-root",) if trusted_root else ())
+    if help_result.returncode or any(flag not in help_result.stdout.split()
+                                     for flag in required):
+        raise ValueError("Installed gh lacks required attestation-verification "
+                         "flags. Independently upgrade it or review source.")
+    identity = f"https://github.com/{REPO}/.github/workflows/release.yml@refs/tags/{tag}"
+    command = [verifier, "attestation", "verify", str(archive),
+               "--bundle", str(bundle), "--repo", REPO,
+               "--cert-identity", identity, "--cert-oidc-issuer",
+               "https://token.actions.githubusercontent.com",
+               "--source-ref", f"refs/tags/{tag}", "--source-digest", commit,
+               "--signer-digest", commit, "--deny-self-hosted-runners",
+               "--digest-alg", "sha256"]
+    if trusted_root:
+        command.extend(["--custom-trusted-root", str(trusted_root)])
+    checked = subprocess.run(command, env=env, capture_output=True,
+                             text=True, timeout=120)
+    if checked.returncode:
+        raise ValueError("Keyless attestation verification failed; no extraction "
+                         "or payload execution is permitted.")
 
 
 def extract(archive, destination):
@@ -95,6 +137,8 @@ def main(argv=None):
     parser.add_argument("--from-plugin", action="store_true",
                         help="leave marketplace plugin files untouched")
     parser.add_argument("--sha256", help="independently obtained archive SHA-256")
+    parser.add_argument("--trusted-root",
+                        help="independently provisioned gh/Sigstore trusted-root JSON; never a release asset")
     args, extra = parser.parse_known_args(argv)
     if extra:
         parser.error("Unsupported arguments; never pass credentials to bootstrap.")
@@ -112,7 +156,8 @@ def main(argv=None):
     endpoint = API + ("/tags/" + args.version if args.version else "/latest")
     print(f"Release metadata: {endpoint}")
     print(f"Asset: wisp-linux-{arch}.tar.gz")
-    print("Verify publisher SHA-256 before safe extraction; preview installer, "
+    print("Require independent gh/Sigstore attestation verification plus SHA-256 "
+          "before safe extraction; preview installer, "
           "then install user-scoped files. No service start or restart.")
     if args.dry_run:
         print("Dry run: no network, writes or service actions.")
@@ -128,7 +173,17 @@ def main(argv=None):
                          .strip().lower() not in ("y", "yes")):
         print("Not installed. Use --yes only after inspecting the plan/source.")
         return 2
+    verifier = shutil.which("gh")
+    if not verifier:
+        print("Refusing payload execution: independently install GitHub CLI "
+              "with artifact-attestation verification, or review/build the "
+              "source manually. No checksum-only fallback.")
+        return 4
     try:
+        trusted_root = pathlib.Path(args.trusted_root).resolve() if args.trusted_root else None
+        if trusted_root and not trusted_root.is_file():
+            raise ValueError("Independent trusted-root file is missing; "
+                             "no release-provided root will be accepted.")
         release = json.loads(fetch(endpoint, 4 * 1024 * 1024))
         tag = release["tag_name"]
         if not TAG.fullmatch(tag) or (args.version and tag != args.version):
@@ -149,15 +204,29 @@ def main(argv=None):
             want = asset.get("digest", "").removeprefix("sha256:")
         if not want or not re.fullmatch(r"[a-fA-F0-9]{64}", want):
             raise ValueError("No valid release SHA-256 is available; refusing install.")
+        bundle_asset = assets.get(name + ".sigstore.json")
+        if not bundle_asset:
+            raise ValueError("Required public keyless attestation bundle is missing.")
+        commit = json.loads(fetch(
+            f"https://api.github.com/repos/{REPO}/commits/{tag}",
+            4 * 1024 * 1024))["sha"]
+        if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40}", commit):
+            raise ValueError("Cannot establish the exact release-tag source digest.")
         blob = fetch(url)
         got = hashlib.sha256(blob).hexdigest()
         if got != want.lower():
             raise ValueError("Release SHA-256 mismatch; nothing installed.")
-        print(f"Verified {tag}: {got} ({trust}); not a signature or attestation.")
+        print(f"Integrity checked {tag}: {got} ({trust}); authentication pending.")
         with tempfile.TemporaryDirectory(prefix="wisp-bootstrap-") as td:
             work = pathlib.Path(td)
             archive = work / name
             archive.write_bytes(blob)
+            bundle = work / (name + ".sigstore.json")
+            bundle.write_bytes(fetch(release_url(bundle_asset, tag),
+                                     16 * 1024 * 1024))
+            verify_attestation(verifier, archive, bundle, tag, commit, work, trusted_root)
+            print(f"Keyless attestation verified for release.yml at "
+                  f"refs/tags/{tag}, source {commit}.")
             root = extract(archive, work / "tree")
             command = [sys.executable, str(root / "wispd"), "install"]
             if args.from_plugin:
@@ -176,10 +245,13 @@ def main(argv=None):
               "  ~/.local/bin/wispd doctor\n"
               "Start services and test the microphone only when you choose.")
         return 0
-    except (OSError, ValueError, KeyError, TypeError, tarfile.TarError) as exc:
+    except (OSError, ValueError, KeyError, TypeError, tarfile.TarError,
+            subprocess.TimeoutExpired) as exc:
         detail = str(exc) if isinstance(exc, ValueError) else type(exc).__name__
         print(f"Bootstrap stopped: {detail}; no success claimed. "
               "Check the selected release and SHA-256. No service was started.")
+        print("No checksum-only downgrade. Independently install/repair gh and "
+              "its trusted roots, or inspect and build the source manually.")
         return 1
 
 

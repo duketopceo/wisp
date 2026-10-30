@@ -6,11 +6,13 @@ The full-app assets are **Linux x86_64** and **Linux aarch64**, built and Rust-t
 
 ## Release assets and inventory
 
-Each release publishes these four assets; the filenames for the two app archives stay stable because the updater selects them by architecture. ([workflow](https://github.com/duketopceo/wisp/blob/master/.github/workflows/release.yml), [updater asset selection](https://github.com/duketopceo/wisp/blob/master/wisp/update.py))
+Each release requires these six assets; native archives retain their stable filenames and gain public keyless-attestation companions. The plugin-only archive is not covered by the native-archive attestations. ([workflow](https://github.com/duketopceo/wisp/blob/master/.github/workflows/release.yml), [updater asset selection](https://github.com/duketopceo/wisp/blob/master/wisp/update.py))
 
 ```text
 wisp-linux-x86_64.tar.gz
 wisp-linux-aarch64.tar.gz
+wisp-linux-x86_64.tar.gz.sigstore.json
+wisp-linux-aarch64.tar.gz.sigstore.json
 wisp-plugin-vMAJOR.MINOR.PATCH.tar.gz
 SHA256SUMS
 ```
@@ -36,7 +38,20 @@ The inventory is generated from the staged payload, not maintained as an incompl
 
 ## Integrity and reproducibility
 
-`SHA256SUMS` contains sorted, basename-only hashes for all three downloadable archives. The updater can consume this file when GitHub's release-asset digest is unavailable. These are **unsigned checksums**, not proof of an independently authenticated publisher: downloading an archive and its checksum from the same GitHub repository does not protect against a compromised publisher. No signing key or signature is claimed. Compare a digest obtained through a separate trusted channel when that assurance is required. ([checksum generation](https://github.com/duketopceo/wisp/blob/master/scripts/release/build.py), [updater digest handling](https://github.com/duketopceo/wisp/blob/master/wisp/update.py), [install trust model](https://github.com/duketopceo/wisp/blob/master/docs/INSTALL.md))
+`SHA256SUMS` contains sorted basename-only hashes for the three archives and two bundles. These **unsigned checksums provide integrity, not authentication**; changing an archive and its publisher checksum together is not sufficient to pass bootstrap or this in-app updater, both of which additionally require keyless attestation verification. ([checksum generation](https://github.com/duketopceo/wisp/blob/master/scripts/release/build.py), [updater](https://github.com/duketopceo/wisp/blob/master/wisp/update.py))
+
+Each native GitHub-hosted build runs packaging and isolated-install verification, then `actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6` (official v4.2.2) generates keyless build provenance and exports its public bundle. Only those build jobs receive `id-token: write` and `attestations: write`; there is no generated/stored maintainer signing key. Public GitHub repositories use the public Sigstore channel. ([official action](https://github.com/actions/attest), [pinned action interface](https://github.com/actions/attest/blob/1e69f48acb82d1966a394da916b4c1698aa569d6/action.yml), [workflow](https://github.com/duketopceo/wisp/blob/master/.github/workflows/release.yml))
+
+Bootstrap requires an independently installed `gh`, whose Sigstore/GitHub trust roots authenticate the proof before archive extraction or payload execution. Verification pins the repository, exact release-workflow certificate identity including the tag ref, source ref, full source/signer commit digest, GitHub OIDC issuer and GitHub-hosted runners. Neither a publisher checksum nor `--sha256` can waive this policy; missing bundles/verifier or failed verification refuses safely. A source/manual build is a separate explicit trust decision, not an automatic downgrade. ([CLI verification policy](https://cli.github.com/manual/gh_attestation_verify), [bootstrap](https://github.com/duketopceo/wisp/blob/master/scripts/bootstrap/install.py))
+
+For offline bundle verification, obtain the trust material separately using an independently trusted CLI, not from a Wisp release. `--custom-trusted-root` avoids live TUF refresh; local `--bundle` verification does not require GitHub authentication. The bootstrap exposes this as `--trusted-root /independent/root.json`, while still requiring its normal release metadata/asset downloads. ([trusted-root command](https://cli.github.com/manual/gh_attestation_trusted-root), [bundle verification](https://cli.github.com/manual/gh_attestation_verify))
+
+```sh
+# On an independently trusted connected machine, then transport separately:
+gh attestation trusted-root > independent-trusted-root.json
+```
+
+The downloaded bootstrap script is **not self-authenticating**: reviewing/trusting that pinned entrypoint remains a prerequisite, and a later valid payload attestation cannot authenticate code already executed to check it. Build identity also does not prove source safety, uncompromised maintainers, reproducible Rust compilation or a successful live voice turn. No production attestation is claimed until a real release has produced actual bundles and their verification succeeds. ([install trust boundary](https://github.com/duketopceo/wisp/blob/master/docs/INSTALL.md), [workflow](https://github.com/duketopceo/wisp/blob/master/.github/workflows/release.yml))
 
 Packaging normalizes gzip headers, archive order, file modes, owner/group and timestamps to `SOURCE_DATE_EPOCH` from the source commit. With identical source contents, binary bytes, release metadata and packaging Python/zlib, repeated packaging produces identical archives. This is not a claim of bit-identical Rust binaries across arbitrary hosts: runner images, native libraries and system packages can still change. ([packager](https://github.com/duketopceo/wisp/blob/master/scripts/release/build.py))
 
@@ -88,13 +103,13 @@ The JSON result says explicitly that desktop/voice smoke was not run. A passing 
 4. With explicit release authorization, create and push that tag, or dispatch the release workflow against an existing tag:
 
    ```sh
-   gh workflow run release.yml --ref master -f tag=v1.2.3
+   gh workflow run release.yml --ref v1.2.3 -f tag=v1.2.3
    ```
 
-5. Inspect both native build jobs, the plugin validation and the per-architecture JSON verification artifacts.
+5. The workflow must execute at that selected tag, not `master` while checking out a tag: GitHub's certificate/source identity comes from the run context. Inspect both native build jobs, their public bundles, plugin validation and per-architecture verification artifacts.
 6. Complete the user-confirmed Linux desktop/voice smoke and record performed/skipped checks.
 
-The workflow requires both architecture archives and the plugin, writes and locally verifies `SHA256SUMS`, creates a draft release, downloads the uploaded assets, rechecks their hashes and only then publishes. Prerelease tags are marked as prereleases. An existing release is refused rather than silently overwritten; if publication fails, inspect the remaining draft before deciding how to recover. ([workflow](https://github.com/duketopceo/wisp/blob/master/.github/workflows/release.yml))
+The workflow requires both native archives, both bundles and the plugin, then writes/checks `SHA256SUMS`. It verifies each native archive's attestation before creating a draft, uploads bundles alongside archives, downloads all draft assets, rechecks hashes and verifies the downloaded native archive/bundle pairs before publishing. A failure leaves publication blocked; if it occurred after draft creation, inspect that draft rather than assuming no remote state exists. Prerelease tags are marked accordingly; an existing release is refused rather than overwritten. ([workflow](https://github.com/duketopceo/wisp/blob/master/.github/workflows/release.yml))
 
 The workflow does not certify a live voice interaction automatically; do not present its release publication as proof of the manual smoke check. ([workflow](https://github.com/duketopceo/wisp/blob/master/.github/workflows/release.yml), [verifier](https://github.com/duketopceo/wisp/blob/master/scripts/release/verify.py))
 
@@ -103,6 +118,7 @@ The workflow does not certify a live voice interaction automatically; do not pre
 Run these only on the intended Linux machine, after reviewing the release and choosing its version:
 
 ```sh
+set -e
 test "$(uname -s)" = Linux || exit 1
 VERSION=v1.2.3
 case "$(uname -m)" in
@@ -114,8 +130,17 @@ ASSET="wisp-$TARGET.tar.gz"
 mkdir "wisp-download-$VERSION"
 cd "wisp-download-$VERSION"
 gh release download "$VERSION" --repo duketopceo/wisp \
-  --pattern "$ASSET" --pattern SHA256SUMS
+  --pattern "$ASSET" --pattern "$ASSET.sigstore.json" --pattern SHA256SUMS
 sha256sum --ignore-missing --check SHA256SUMS
+# Resolve/independently review the exact full tag commit; do not use a branch name.
+COMMIT="$(gh api "repos/duketopceo/wisp/commits/$VERSION" --jq .sha)"
+gh attestation verify "$ASSET" --bundle "$ASSET.sigstore.json" \
+  --repo duketopceo/wisp \
+  --cert-identity "https://github.com/duketopceo/wisp/.github/workflows/release.yml@refs/tags/$VERSION" \
+  --cert-oidc-issuer https://token.actions.githubusercontent.com \
+  --source-ref "refs/tags/$VERSION" --source-digest "$COMMIT" \
+  --signer-digest "$COMMIT" --deny-self-hosted-runners --digest-alg sha256
+# Stop on any failure above. Never extract/execute based on checksum alone.
 mkdir unpack
 tar -xzf "$ASSET" -C unpack
 cd "unpack/wisp-$TARGET"
@@ -126,7 +151,7 @@ python3 wispd install
 
 The installer writes user-scope files, not system packages, and does not restart the daemon. Retain the extracted release folder for optional setup and inspection. Existing plugin installation, hotkey edits and desktop files are distinct managed surfaces; inspect the preview before reinstalling. ([installer](https://github.com/duketopceo/wisp/blob/master/wispd), [install CLI](https://github.com/duketopceo/wisp/blob/master/wisp/cli/core.py))
 
-For an existing installation, prefer the verified transactional updater; it checks release ordering and asks before applying. Use `--force` only after inspecting why the normal version-order guard refused the release. ([updater](https://github.com/duketopceo/wisp/blob/master/wisp/update.py))
+For installations containing this updater, both bootstrap and transactional update require the independently installed compatible `gh` verifier and public native archive bundle, bound to this repository's release workflow, exact tag and source commit, before extraction or payload execution. Update loads the verification helper only from its trusted running installation, never the candidate. Missing local helper, verifier, bundle or failed verification refuses without checksum-only fallback; `--force` changes version-order consent only and `--sha256` cannot waive authentication. Dry-run reports authentication separately from integrity. Old unsigned releases are source/manual-review only; legacy updater binaries must be migrated through authenticated bootstrap or independently reviewed source rather than assumed safe. Offline owned-backup rollback remains independent of new downloads and authentication tools. Use `--force` only after inspecting a version-order refusal. ([updater](https://github.com/duketopceo/wisp/blob/master/wisp/update.py), [authenticated bootstrap](https://github.com/duketopceo/wisp/blob/master/scripts/bootstrap/install.py))
 
 ```sh
 wispd update --dry-run

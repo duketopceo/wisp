@@ -149,10 +149,14 @@ delivery = "auto"
 # UI grounding adapter (wisp/grounding.py, W13): click/move target name ->
 # screen point. Chain order; control = the app's own control channel
 # (wisp/control.py — apps registered under [control], FilmCraft first),
-# a11y = cua get_window_state tree (when the driver is up), uitars =
+# a11y = cua get_window_state tree (when the driver is up), vlm =
+# aspect-matched single-image pointing through the configured brain,
+# uitars =
 # local llama-server (loopback only, screenshots never leave the box),
 # jev = the Decision-Agent patch fallback.
-providers = "control,a11y,uitars,jev"
+# WISP_JEV_ENDPOINT overrides this optional structured-grounding endpoint,
+# not the retired turn router.
+providers = "control,a11y,vlm,uitars,jev"
 # candidates below this are re-observed once, then refused (never clicked)
 min_confidence = "0.5"
 # shared budget for the fast providers (P7: act first step 1.2 s)

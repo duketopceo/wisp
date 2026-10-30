@@ -16,6 +16,8 @@ script keys:
          "absent" no socket, no CLI (cua-driver not installed)
   tools  {tool: {ok, result, error, latency_ms, hang}}; ``default`` key
          applies to every other tool
+         ``stdout`` optionally supplies the exact CLI JSON payload, e.g.
+         read-only window/element metadata rather than the action envelope.
 """
 import json
 import os
@@ -110,6 +112,8 @@ class FakeCua:
             if rule.get("ok", True):
                 rep = {"ok": True, "result": rule.get(
                     "result", {"tool": tool})}
+                if "stdout" in rule:
+                    rep["stdout"] = rule["stdout"]
             else:
                 rep = {"ok": False,
                        "error": rule.get("error", "E_CUA_FAILED")}

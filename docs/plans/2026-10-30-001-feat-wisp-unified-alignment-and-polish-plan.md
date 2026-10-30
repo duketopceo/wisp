@@ -9,6 +9,21 @@ execution: code
 
 # Wisp Unified Alignment and Shipping Completion - Plan
 
+## Execution Receipt
+
+At the 2026-10-30 candidate source freeze, the repaired broad Python suite
+passed 3,985 tests with 21 skips. Runtime, installer, recovery, signing,
+browser ownership, grounding and fixture corrections are implemented;
+evidence and limitations are recorded in
+[Wisp Shipping Completion](../qa/wisp-shipping-completion.md).
+
+The shipping target is an installable Linux release candidate, followed
+by owner-operated runs and tuning. Hosted CI, published native assets,
+public installation and domain HTTPS need separate receipts; this
+source-freeze record does not substitute for them. Stable-v1 accuracy,
+historical clicklab data, real desktop/voice checks and other native
+platforms remain gated rather than silently marked complete.
+
 ## Goal Capsule
 
 - **Objective:** Khan can reinstall a release candidate, complete straightforward onboarding, and use the Linux app—including screen drawing—for real work before judging success or tuning skills.

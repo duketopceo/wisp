@@ -172,7 +172,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
                  initial_image: str | None = None,
                  interrupted=None,
                  steps_out: list | None = None,
-                 ask=None, *, user_request: str = "") -> str:
+                 ask=None, *, user_request: str = "", lang: str = "") -> str:
     """Drive the chat model through the toolbelt until it finishes or a
     bound trips. `confirm(prompt)->bool` asks the user (choice widget /
     IPC) when wired; without it mutating calls skip. `ask(question,
@@ -191,6 +191,11 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 f"tools — set [brain.{p['name']}] tools=true or pick a "
                 f"capable provider)")
     system = SYSTEM
+    if lang:
+        from . import lang as _lang
+        rule = _lang.reply_rule(lang)
+        if rule:
+            system += " " + rule
     from . import trajectories, context as _ctx, action_stats as _ast
     traj_recs = trajectories._read_all()  # one parse feeds both blocks
     traj_labs = trajectories._labels()
@@ -1081,6 +1086,10 @@ def _record_traj(task: str, harness: dict | None, steps: list, out: str,
     rotation check and the append all happen off the turn's hot path.
     `pack` is the deterministic packs/<turn> link — the pack write runs
     later in the finally, so the ref is by name, not existence."""
+    # Default act routing also handles plain questions. Empty-step replies
+    # have no action path to replay and must not expand transcript storage.
+    if not steps:
+        return
     from . import trajectories
     snap = [dict(s) for s in steps]
     record = trajectories.record     # bound now: patches stay honoured
@@ -1175,11 +1184,19 @@ def _unsupported_done(task: str, steps: list,
         return "the tab switch was skipped: " + result[len("SKIP"):].strip(" ()")
     if last["tool"] in ("launch", "focus") and result.startswith("FOCUSED"):
         cls = result.partition("->")[2].split(" (")[0].strip()
+        from . import config as _config
+        from .tools import desktop as _desktop
+        task_words = _words(task)
+        service_roles = {_desktop._resolve_service_role(w)
+                         for w in task_words} & set(_config.WEB_DEFAULTS)
+        focused = cls or result[len("FOCUSED"):].split(" (")[0].strip()
+        if focused.lower() in _desktop._BROWSER_CLASSES and service_roles:
+            return (f"{last['tool']} only focused a browser; the service "
+                    "destination needs a tab switch or URL confirmation")
         # focusing another app is a visible change (music -> spotify);
         # only a refocus of the window already in front is a no-op
         if start_focus and start_focus.lower() != cls.lower():
             return None
-        from .tools import desktop as _desktop
         arg_words = _words(last.get("arg"))
         alias_words = {_desktop._resolve_service_role(w) for w in arg_words}
         task_words = _words(task) | {_desktop._resolve_service_role(w)

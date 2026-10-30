@@ -55,6 +55,14 @@ was cherry-picked as `d2a9285`; this is not a merge of either PR.
 - **Router off:** an explicit Explain, Act or Dictate choice is required.
   Missing, invalid or cancelled choices do not enter act or execute tools.
   Unattended development runs skip this interactive route.
+- **Language and privacy:** act receives the requested reply language while
+  the English prompt remains unchanged. Empty-step answers return before
+  trajectory queueing; real-action trajectory snapshots retain their
+  existing behavior. This does not solve broader action-history consent
+  or redaction.
+- **Workspace inference:** complete title paths retain spaces rather than
+  accepting an existing truncated prefix. Explicit configured directories
+  take precedence. Browser titles cannot select an agent workspace.
 
 The native manual review is limited and is not a completed formal
 multi-reviewer CE pipeline. Its original seven findings were independently
@@ -128,6 +136,11 @@ Playwright 1.59.0. CI pins the enhanced job to `ubuntu-24.04`, installs
 Chromium and WebKit, and records engine-specific coverage rather than
 calling a fallback a successful enhanced render.
 
+The hosted gate passes actual WebGL rendering on Chromium 147.0.7727.15
+and WebKit 26.4, with scenarios, cancellation, approval and fallbacks passing
+and zero external requests or page errors. This is hosted coverage, not
+a claim that local WebKit installed. ([enhanced CI job](https://github.com/duketopceo/wisp/actions/runs/41130287443/job/124319132519))
+
 ## Verification ledger
 
 Final integrated regression, source-freeze review and PR CI results are
@@ -139,6 +152,16 @@ CPU-contention-sensitive idle-budget failure. The keyboard race has
 dedicated regressions; the idle-budget check passed in isolation without
 changing its assertion. Browser processes must be closed before the final
 local full suite to avoid artificial renderer contention.
+
+The first broad run after the release-scope expansion executed 3,903 tests
+with 47 failures, 55 errors and 21 skips. It is a red integration receipt,
+not a release pass. Repairs cover stale removed-router mocks, attributable
+IPC callers, explicit live-window/element evidence and answer-lane fixtures.
+A later run reached 3,985 tests with two stale browser/image fixtures
+remaining. After those fixture repairs, the focused 104-test rerun passed.
+The final broad rerun passed: **3,985 tests in 404.577 seconds,
+21 skipped**, on Python 3.14.8. Hosted Python 3.11/3.13 checks remain a
+separate merge gate; local success is not a hosted-CI receipt.
 
 The latest parent integration slice passes 118 tests. It includes router-off
 selection, trusted request forwarding, schema/default alignment, the known
@@ -171,11 +194,19 @@ harness is not real Hyprland/Omarchy or a release-install desktop pass.
 ## Installation and learning handoff
 
 The candidate payload includes runtime docs/tasks, desktop and unit templates,
-release metadata and a user-scoped launcher. Bootstrap verification uses
-GitHub HTTPS and published SHA-256 checksums; there is no independent
-publisher-signature claim. It supports explicit prerelease selection,
-preflight and consent before installation. Plugin ownership and external
-unit restoration are included in update/rollback coverage.
+release metadata and a user-scoped launcher. Bootstrap and in-app update
+require independent GitHub CLI/Sigstore verification before extraction or
+candidate execution. Verification binds native archives to the repository,
+release workflow, exact tag, source commit and hosted runner; missing or
+failed verification cannot downgrade to checksums. Public checksums remain
+integrity checks, not a trust root. The downloaded bootstrap script itself
+still needs independent source trust/review; later payload checks cannot
+authenticate a malicious replacement script.
+
+Explicit prerelease selection, preflight and consent are supported.
+Plugin ownership and external unit restoration are included in recovery.
+Archive install tests use stub service-manager commands; they do not
+prove that a real desktop daemon was started.
 
 Legacy decision routing is retired; optional structured grounding remains.
 The private weekly recap is off by default. Public growth snapshots are
@@ -198,10 +229,15 @@ claim that model reinforcement learning has been performed.
   7/23 or quoted 7/26 snapshots are not current verification.
 - **R6 timing:** `buddy.js` still uses its 0.30-second entry delay.
   Reducing it needs a real screenshot-clearance and overlay check.
-- **Production hosting:** GitHub Pages custom-domain configuration is set,
-  but DNS confirmation, deployment, certificate and HTTPS verification
-  remain pending. The reviewed bootstrap is published as `/install.py`,
-  not `.sh`; its public installation command must target a real release.
+- **Production hosting:** the owner approved all five launch DNS records.
+  Four DNS-only apex A records are saved and publicly resolving; the
+  `www` CNAME remains pending because its dashboard dropdown failed and
+  API authentication still fails after reconnection. GitHub Pages is
+  configured for `wisp.observer`; deployment, certificate and HTTPS checks
+  remain separate gates. The bootstrap publication path is `/install.py`,
+  not `.sh`; a public command must target a real authenticated release.
+  ([Public apex DNS](https://dns.google/resolve?name=wisp.observer&type=A),
+  [public www DNS](https://dns.google/resolve?name=www.wisp.observer&type=CNAME))
 - **Native ports:** authenticated IPC, companion integration, packaging,
   signing and hardware validation remain work, not supported releases.
 

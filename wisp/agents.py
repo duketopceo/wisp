@@ -543,15 +543,46 @@ def _infer_cwd(cfg: dict | None = None) -> str | None:
         from . import platform
         win = platform.active_window() or {}
         title = str(win.get("title") or "")
+        app = str(win.get("class") or win.get("app") or "").lower()
     except Exception:
-        title = ""
+        return None
+    # Remote page titles are not workspace authority. Limit this best-effort
+    # fallback to native editor, terminal and file-manager surfaces.
+    native = ("code", "cursor", "vscodium", "windsurf", "jetbrains",
+              "ghostty", "kitty", "alacritty", "foot", "wezterm", "konsole",
+              "terminal", "gnome-terminal", "nautilus", "dolphin", "thunar")
+    if not any(re.search(r"(?<!\w)" + re.escape(name) + r"(?!\w)", app)
+               for name in native):
+        return None
     if title:
-        for m in re.finditer(r"(~(?:/[\w.@+-]+)+|/(?:home|Users|workspace|tmp)(?:/[\w.@+-]+)+)", title):
-            cand = pathlib.Path(os.path.expanduser(m.group(1)))
-            if cand.is_file():
-                cand = cand.parent
-            if cand.is_dir():
-                return str(cand)
+        captions = ("Cursor", "Visual Studio Code", "Code", "VSCodium",
+                    "Windsurf", "Terminal", "Ghostty", "Kitty", "Konsole",
+                    "WezTerm", "Alacritty", "Nautilus", "Dolphin", "Thunar")
+        pattern = r"""(?P<quote>["']?)(?P<path>~/|/(?:home|Users|workspace|tmp)/)"""
+        for match in re.finditer(pattern, title):
+            raw = title[match.start("path"):].splitlines()[0]
+            quote = match.group("quote")
+            if quote:
+                if quote not in raw:
+                    continue
+                raw, suffix = raw.split(quote, 1)
+                if suffix.startswith("/"):
+                    continue
+            candidates = [raw]
+            for caption in captions:
+                for sep in (" — ", " – ", " - ", " | "):
+                    suffix = sep + caption
+                    if raw.lower().endswith(suffix.lower()):
+                        candidates.append(raw[:-len(suffix)])
+            for candidate in candidates:
+                try:
+                    cand = pathlib.Path(os.path.expanduser(candidate))
+                    if cand.is_file():
+                        cand = cand.parent
+                    if cand.is_dir():
+                        return str(cand)
+                except (OSError, ValueError):
+                    continue
     return None
 
 

@@ -355,10 +355,13 @@ class TestToolExec(unittest.TestCase):
         cfg = {"apps": {"browseros": "browseros"}, "agent": {}}
         with mock.patch.object(tools.desktop, "_try_switch_open_tab",
                                return_value="SWITCHED tab 'Developers – Stripe' -> dashboard.stripe.com") as sw, \
+             mock.patch.object(tools.desktop, "_web_browser",
+                               return_value="browseros"), \
              mock.patch.object(tools.desktop, "_exec_detached") as ex:
             out = tools.desktop.launch("my Stripe", cfg)
         self.assertTrue(out.startswith("SWITCHED tab "), out)
-        sw.assert_called_once_with("stripe")
+        sw.assert_called_once_with("stripe", url="https://dashboard.stripe.com",
+                                   browser="browseros")
         ex.assert_not_called()
 
     def test_launch_linear_opens_default_web_url_when_no_tab(self):
@@ -467,7 +470,7 @@ class TestRouteDispatch(unittest.TestCase):
         a.assert_called_once_with("rm -rf /", mock.ANY, state=None,
                                   harness=None, confirm=None,
                                   initial_image=None, interrupted=None,
-                                  ask=None)
+                                  ask=None, user_request="")
 
     def test_risk_blocks_before_route(self):
         out = pipeline.execute(
@@ -616,12 +619,14 @@ class MultiProfileBrowserTests(unittest.TestCase):
     def test_launch_strips_profile_qualifier_and_checks_open_tabs(self):
         seen_queries = []
         with mock.patch.object(tools.desktop, "_wm_down", return_value=None), \
-             mock.patch.object(
+            mock.patch.object(
                  tools.desktop, "_try_switch_open_tab",
-                 side_effect=lambda q: (seen_queries.append(q),
+                 side_effect=lambda q, **kw: (seen_queries.append(q),
                                         "SWITCHED tab 'Stripe — Work' -> dashboard.stripe.com"
                                         if "work" in q.lower() else None)[1]
-             ):
+             ), \
+             mock.patch.object(tools.desktop, "_web_browser",
+                               return_value="browseros"):
             out = tools.desktop.launch("go to my Stripe for work", {"agent": {}})
         self.assertIn("SWITCHED tab 'Stripe — Work'", out)
         self.assertEqual(seen_queries, ["stripe work"])
