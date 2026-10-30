@@ -243,6 +243,15 @@ def parse(argv):
 
 # -- context --------------------------------------------------------------
 
+def read_stdin_line() -> str:
+    """One line of private text from stdin, without its newline. A
+    caller that must not put the text on the command line (other local
+    accounts can read argv) writes it here instead. Reads a line, not to
+    EOF, so a writer that keeps the pipe open cannot stall it."""
+    import sys
+    return sys.stdin.readline().rstrip("\r\n")
+
+
 class Ctx:
     """What a handler sees: parsed flags, output helpers, the daemon."""
 

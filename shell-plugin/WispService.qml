@@ -175,9 +175,11 @@ Item {
         message: Copy.errorMessage("stale_prompt"), at: Date.now() };
       return false;
     }
-    var cmd = [wispd, "choice", pick];
+    // The pick can be typed free text: it goes to the child's stdin, never
+    // onto the command line, which other local accounts can read.
+    var cmd = [wispd, "choice", "--stdin"];
     if (pid) cmd = cmd.concat(["--prompt-id", pid]);
-    return runAction(cmd.concat(["--json"]), "choice");
+    return runAction(cmd.concat(["--json"]), "choice", null, String(pick));
   }
   // Bar action while offline: start the user service (no daemon to ask).
   function startDaemon() { return runAction(["systemctl", "--user", "start", "wispd.service"], "daemon"); }
@@ -193,7 +195,7 @@ Item {
   }
   function trigger() { return runAction([wispd, "trigger", "--json"], "trigger"); }
   // A click on a part of a 3D card (B13): one typed question, a normal turn.
-  function askAbout(text) { return runAction([wispd, "ask", "--json", text], "ask"); }
+  function askAbout(text) { return runAction([wispd, "ask", "--stdin", "--json"], "ask", null, String(text)); }
   // Scribble to ask (B7): the strokes drawn while listening, handed to the
   // daemon as a small file (wispd scribble). Its own subprocess: it must not
   // queue behind, or flash a result in, the one action slot. A newer payload
@@ -214,7 +216,8 @@ Item {
   // the card that asked can show its own receipt.
   function label(verdict, turn, note) {
     return runAction(Rate.labelCommand(wispd, verdict, turn || "", note || ""),
-                     "label", { turn: turn || "", verdict: verdict });
+                     "label", { turn: turn || "", verdict: verdict },
+                     note ? String(note) : null);
   }
   // Esc on the note: close it without writing a label.
   function skipRatePrompt() { return runAction(Rate.skipCommand(wispd), "label-skip"); }
@@ -285,8 +288,20 @@ Item {
   property string actionVerb: ""
 
   property var actionMeta: ({})
+  // Private text for the in-flight action's stdin (null: none). Typed
+  // answers and notes ride here, not in argv, which other local accounts
+  // can read while the process runs. One line: newlines become spaces.
+  property var actionStdin: null
 
-  function _launch(cmd, verb, meta) {
+  function _line(s) { return s === null || s === undefined ? null : String(s).replace(/[\r\n]+/g, " "); }
+
+  function writeActionStdin() {
+    if (root.actionStdin !== null) actionProc.write(root.actionStdin + "\n");
+    root.actionStdin = null;
+  }
+
+  function _launch(cmd, verb, meta, stdin) {
+    root.actionStdin = _line(stdin);
     root.actionVerb = verb || "";
     root.actionMeta = meta || {};
     root.lastAction = { verb: root.actionVerb, pending: true,
@@ -296,17 +311,17 @@ Item {
     actionProc.running = true;
   }
 
-  function runAction(cmd, verb, meta) {
+  function runAction(cmd, verb, meta, stdin) {
     if (actionProc.running) {
       if (actionQueue.length >= 8) {
         root.lastAction = { verb: verb || "", pending: false, ok: false,
           message: Copy.errorMessage("busy"), at: Date.now() };
         return false;
       }
-      actionQueue = actionQueue.concat([{ cmd: cmd, verb: verb || "", meta: meta || {} }]);
+      actionQueue = actionQueue.concat([{ cmd: cmd, verb: verb || "", meta: meta || {}, stdin: stdin }]);
       return true;
     }
-    _launch(cmd, verb, meta);
+    _launch(cmd, verb, meta, stdin);
     return true;
   }
 
@@ -324,7 +339,7 @@ Item {
     if (root.actionQueue.length > 0) {
       var nxt = root.actionQueue[0];
       root.actionQueue = root.actionQueue.slice(1);
-      _launch(nxt.cmd, nxt.verb, nxt.meta);
+      _launch(nxt.cmd, nxt.verb, nxt.meta, nxt.stdin);
     }
   }
 
@@ -617,6 +632,10 @@ Item {
   Process {
     id: actionProc
     command: [root.wispd, "status"]
+    // stdin stays open for the whole run: a command that takes typed text
+    // reads one line from it (--stdin), the others never read it.
+    stdinEnabled: true
+    onStarted: root.writeActionStdin()
     stdout: StdioCollector { id: actionOut }
     stderr: StdioCollector { id: actionErr }
     onExited: function (code, status) { root.finishAction(code); }
