@@ -253,7 +253,8 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
             return {"ok": True, "dev": s}
         if c == "dev_run":
             from wisp import devrun
-            return devrun.start(cfg, st, ctl, str(cmd.get("path", "")))
+            return devrun.start(cfg, st, ctl, str(cmd.get("path", "")),
+                                vs=cmd.get("vs"))
         if c == "dev_stop":
             from wisp import devrun
             return devrun.stop()
@@ -478,6 +479,19 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
                       else config.TASKS_FILE)
                 if agents.classify_peer(peer, tasks_file=tf).get("marked"):
                     out = devlog.redact(out)
+                return {"ok": True, **out}
+            except Exception as e:
+                return {"ok": False, "error": str(e)}
+        if c == "dev_runs":
+            # dev tuning mode reports: read-only over the run stores
+            from wisp import agents, devreport
+            try:
+                out = devreport.build(cmd.get("run_id") or None)
+                # a spawned agent reads numbers, not what the owner said
+                tf = (tasks_file if tasks_file is not None
+                      else config.TASKS_FILE)
+                if agents.classify_peer(peer, tasks_file=tf).get("marked"):
+                    out = devreport.redact(out)
                 return {"ok": True, **out}
             except Exception as e:
                 return {"ok": False, "error": str(e)}

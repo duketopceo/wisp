@@ -274,6 +274,11 @@ refine = true
 # the panel's Dev tab (v1 gate, recent turns with stage timings, top
 # misses). Local-only; off for everyone else.
 panel = false
+# the run judge (wispd dev run): a cheap vision model on the dedicated
+# eval key reads the screen at the end of each task. A run stops judging
+# at judge_cap_usd and marks the rest unjudged.
+judge_model = "google/gemini-2.5-flash"
+judge_cap_usd = "1.00"
 
 [eval]
 # `wispd eval` gate: the first-time-correct fraction (0-1) the owner

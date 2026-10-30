@@ -219,15 +219,23 @@ def dev_status(ctx, a):
 def _dev_run_args(p):
     p.add_argument("file", metavar="FILE",
                    help="task list: one task per line, # for comments")
+    p.add_argument("--vs", metavar="KEY=VALUE", default=None,
+                   help="run the list a second time with one setting "
+                   "changed (brain.default=openrouter:acme/model) and "
+                   "pair the two runs per task; your config is never "
+                   "written; both count as one run")
 
 
 @command("dev run", "Run a task list on the live desktop (dev mode must be on)",
-         ["wispd dev run docs/dev-tasks/starter.txt"],
+         ["wispd dev run docs/dev-tasks/starter.txt",
+          "wispd dev run tasks.txt --vs brain.default=openrouter:acme/m"],
          {"run_id": "str", "tasks": "int"}, args=_dev_run_args)
 def dev_run(ctx, a):
     import os
-    r = ctx.expect_ok(ctx.send({"cmd": "dev_run",
-                                "path": os.path.abspath(a.file)}))
+    msg = {"cmd": "dev_run", "path": os.path.abspath(a.file)}
+    if a.vs is not None:
+        msg["vs"] = a.vs
+    r = ctx.expect_ok(ctx.send(msg))
     return ctx.emit({"run_id": r.get("run_id"), "tasks": r.get("tasks")},
                     f"run {r.get('run_id')} started: {r.get('tasks')} tasks")
 
@@ -238,3 +246,127 @@ def dev_stop(ctx, a):
     r = ctx.expect_ok(ctx.send({"cmd": "dev_stop"}))
     return ctx.emit({"stopping": bool(r.get("stopping"))},
                     "stopping after the current task")
+
+
+def _fetch_runs(ctx, run_id):
+    """The run reports: from the daemon, or from the run stores when no
+    daemon is running (read-only)."""
+    try:
+        r = ctx.send({"cmd": "dev_runs",
+                      **({"run_id": run_id} if run_id else {})})
+    except CliError as e:
+        if e.code != "E_DAEMON_DOWN":
+            raise
+        from .. import devreport
+        r = {"ok": True, **devreport.build(run_id or None)}
+    ctx.expect_ok(r)
+    return r.get("runs") or []
+
+
+def _dev_runs_args(p):
+    p.add_argument("run_id", nargs="?", default="", metavar="RUN_ID",
+                   help="one run (default: the newest runs)")
+
+
+@command("dev runs", "Run reports: accuracy, outcome mix, drift, cost and time",
+         ["wispd dev runs", "wispd dev runs --json", "wispd dev runs RUN_ID"],
+         {"runs": "list"}, args=_dev_runs_args)
+def dev_runs(ctx, a):
+    from .. import devreport
+    runs = _fetch_runs(ctx, a.run_id)
+    return ctx.emit({"runs": runs}, devreport.render({"runs": runs}))
+
+
+def _dev_review_args(p):
+    p.add_argument("run_id", nargs="?", default="", metavar="RUN_ID",
+                   help="the run to review (default: the newest)")
+    p.add_argument("-n", type=int, default=5, metavar="N",
+                   help="tasks to show (default 5)")
+    p.add_argument("--set", nargs=2, default=None,
+                   metavar=("TURN", "LABEL"),
+                   help="write your own label for one task: correct or "
+                   "incorrect")
+
+
+def _write_label(ctx, label, turn, note):
+    """Your label through the daemon's turn-scoped label command, or
+    straight to labels.jsonl when no daemon is running."""
+    try:
+        r = ctx.send({"cmd": "label", "label": label, "turn": turn,
+                      "note": note})
+        text = str(r.get("result", "")) if r.get("ok") else \
+            str(r.get("error", "not labelled"))
+        return bool(r.get("ok")) and not text.startswith(
+            ("SKIP", "ERROR", "not_found", "not_ratable")), text
+    except CliError as e:
+        if e.code != "E_DAEMON_DOWN":
+            raise
+        from .. import learn
+        text = learn.label_last(label, note, turn=turn)
+        return learn.label_status(text) == "ok", text
+
+
+def _ask_review(t):
+    print(f"\n[{t['index']}] {t['goal']}")
+    print(f"    the judge says {t['judged']}: {t['reason']}")
+    while True:
+        try:
+            ans = input("    confirm (c), flip (f), skip (s), quit (q)? ")
+        except EOFError:
+            return "q"
+        ans = ans.strip().lower()[:1]
+        if ans in ("c", "f", "s", "q"):
+            return ans
+
+
+@command("dev review", "Check the judge on up to five tasks: confirm or flip",
+         ["wispd dev review", "wispd dev review --json",
+          "wispd dev review --set TURN correct"],
+         {"run_id": "str", "tasks": "list", "labelled": "list"},
+         args=_dev_review_args)
+def dev_review(ctx, a):
+    import sys
+    from .. import devreport
+    runs = _fetch_runs(ctx, a.run_id)
+    if not runs:
+        raise CliError("E_NOT_FOUND", "No dev run to review.",
+                       "wispd dev runs")
+    run = runs[0]
+    rows = run.get("rows") or []
+    if a.set:
+        turn, label = a.set
+        if label not in ("correct", "incorrect"):
+            raise CliError("E_USAGE", "The label is correct or incorrect.",
+                           "wispd dev review --help")
+        if not any(r.get("turn") == turn for r in rows):
+            raise CliError("E_NOT_FOUND", f"No task with turn {turn}.",
+                           "wispd dev review --json")
+        ok, text = _write_label(ctx, label, turn, "dev review")
+        if not ok:
+            raise CliError("E_FAILED", "Nothing was labelled.",
+                           "wispd dev review --json", data={"result": text})
+        return ctx.emit({"run_id": run["run_id"], "tasks": [],
+                         "labelled": [{"turn": turn, "label": label}]},
+                        f"labelled {turn} {label}")
+    pick = devreport.pick_review(rows, a.n)
+    tasks = [{k: t.get(k) for k in ("index", "turn", "goal", "judged",
+                                    "reason", "confirmed")} for t in pick]
+    data = {"run_id": run["run_id"], "tasks": tasks, "labelled": []}
+    tty = bool(sys.stdin and sys.stdin.isatty()) and not ctx.json
+    if not tty:
+        text = "\n".join(f"{t['turn']}  {t['judged']:<11} {t['goal'][:60]}"
+                         for t in tasks) or "nothing left to review"
+        return ctx.emit(data, text)
+    for t in tasks:
+        ans = _ask_review(t)
+        if ans == "q":
+            break
+        if ans == "s":
+            continue
+        label = devreport.label_for(t["judged"],
+                                    "confirm" if ans == "c" else "flip")
+        ok, text = _write_label(ctx, label, t["turn"], "dev review")
+        print(f"    {label}" if ok else f"    not labelled: {text}")
+        if ok:
+            data["labelled"].append({"turn": t["turn"], "label": label})
+    return ctx.emit(data, f"{len(data['labelled'])} labelled")
