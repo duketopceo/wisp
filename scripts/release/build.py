@@ -117,7 +117,11 @@ def checksums(args):
         raise ValueError("checksum asset basenames must be unique")
     rows = []
     for path in sorted(paths, key=lambda p: p.name):
-        if not re.fullmatch(r"wisp-[A-Za-z0-9._-]+\.tar\.gz", path.name):
+        if not re.fullmatch(r"wisp-[A-Za-z0-9._-]+\.tar\.gz", path.name) \
+                and path.name not in {
+                    "wisp-linux-x86_64.tar.gz.sigstore.json",
+                    "wisp-linux-aarch64.tar.gz.sigstore.json",
+                }:
             raise ValueError(f"unexpected release asset name: {path.name}")
         if path.is_symlink() or not path.is_file():
             raise ValueError(f"asset must be a regular file: {path}")
