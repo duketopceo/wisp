@@ -172,8 +172,10 @@ def ambiguous_choices(answers: dict, cfg: dict) -> list:
 
 _OPEN_VERB = re.compile(
     r"(?:open|launch|start|close|quit|focus|switch to|run|bring up|"
-    r"pull up|show me)\s+(?:the\s+)?(?:app\s+)?([\w .+~/-]+)",
+    r"pull up|show me(?!\s+(?:what|what's|whats|why|how|where|which)\b))\s+"
+    r"(?:up\s+)?(?:the\s+)?(?:app\s+)?([\w .+~/-]+)",
     re.IGNORECASE)
+_DEICTIC_TARGET = re.compile(r"\b(?:this|that|these|those|here)\b", re.I)
 
 
 def fuzzy_app(text: str, answers: dict) -> str:
@@ -183,7 +185,10 @@ def fuzzy_app(text: str, answers: dict) -> str:
     m = _OPEN_VERB.search(text)
     if not m:
         return ""
-    want = re.sub(r"[\s._-]+", "", m.group(1).strip().rstrip(".")).lower()
+    raw_target = m.group(1).strip().rstrip(".")
+    if _DEICTIC_TARGET.search(raw_target):
+        return ""
+    want = re.sub(r"[\s._-]+", "", raw_target).lower()
     if not want:
         return ""
     keys = [k for k in answers.get("app", {}).get("probabilities", {})
@@ -202,14 +207,17 @@ def fuzzy_app(text: str, answers: dict) -> str:
 _BENIGN_ACTIONS = ("launch", "answer")
 
 
-_COMPLEX_LAUNCH = re.compile(r"\b(on|in|to|at|for|into|and)\s+\S", re.I)
+_COMPLEX_LAUNCH = re.compile(
+    r"\b(?:(on|in|to|at|for|into|and)\s+\S|this\b|that\b|these\b|those\b|here\b)",
+    re.I)
 _LAUNCH_VERBS = ("open", "launch", "start", "go to", "pull up",
                  "bring up", "switch to")
 
 
 def complex_launch(text: str) -> bool:
-    """'open discord' → False (plain launch); 'open X on the Y page'
-    or 'open A and B' → True (multi-step, belongs in act)."""
+    """'open discord' → False (plain launch); 'open X on the Y page',
+    'open up this setting', or 'open A and B' → True (multi-step or
+    on-screen deictic target, belongs in act)."""
     lower = text.lower()
     if not any(v in lower for v in _LAUNCH_VERBS):
         return False

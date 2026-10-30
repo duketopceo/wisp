@@ -40,13 +40,22 @@ def mode_of(cfg: dict | None) -> str:
         else "autonomous"
 
 
-def tier_of(name: str, arg: str = "", cfg: dict | None = None) -> str:
+SENSITIVE_MUTATING = ("click", "type_text", "key", "fill")
+
+
+def tier_of(name: str, arg: str = "", cfg: dict | None = None,
+            state=None) -> str:
     """The call's autonomy tier: the declared meta, refined by arg, then
-    the [cua] confirm=always promotion (T1 input -> T2)."""
+    the [cua] confirm=always promotion (T1 input -> T2) and sensitive-surface
+    promotion (T1 mutating input on Stripe/financial surfaces -> T2)."""
     t = declared_tier(name)
     t = _refine(name, arg or "", t)
     if t == "T1" and name in cua_safety.GUARDED \
             and cua_safety.settings(cfg)["confirm"] == "always":
+        t = "T2"
+    if t == "T1" and name in SENSITIVE_MUTATING \
+            and state is not None \
+            and cua_safety.sensitive_surface(cfg, state=state):
         t = "T2"
     return t
 
@@ -60,9 +69,9 @@ def declared_tier(name: str) -> str:
     return tools.RISK_AUTONOMY.get(tools.risk_of(name), "T2")
 
 
-def decide(name: str, arg: str, cfg: dict | None) -> str:
+def decide(name: str, arg: str, cfg: dict | None, state=None) -> str:
     """"run" | "confirm" | "handoff" — what the gate does with a call."""
-    t = tier_of(name, arg, cfg)
+    t = tier_of(name, arg, cfg, state=state)
     if t == "T3":
         return "handoff"
     mode = mode_of(cfg)
@@ -75,11 +84,13 @@ def decide(name: str, arg: str, cfg: dict | None) -> str:
 
 def preempted(name: str, arg: str, cfg: dict | None) -> str | None:
     """Hard preempts before policy: denylist on shell + text-bearing
-    args, and shell needs allow_shell."""
+    args, live secret keys, and shell needs allow_shell."""
     tier = cua_safety.effective_tier(name, cfg)
     if tier == "shell" or name in tools.TEXT_INPUT:
         if tools.denied(arg):
             return "REFUSED (denylisted command)"
+        if cua_safety.SENSITIVE_SECRET_RE.search(str(arg or "")):
+            return "REFUSED (live secret key in input)"
         if tier == "shell" and \
                 (cfg or {}).get("agent", {}).get(
                     "allow_shell", "false") != "true":
@@ -102,7 +113,7 @@ def gate(name: str, arg: str, cfg: dict, confirm,
     hit = preempted(name, arg, cfg)
     if hit:
         return hit
-    decision = decide(name, arg, cfg)
+    decision = decide(name, arg, cfg, state=state)
     if decision == "run":
         return None
     app = _focus_app(state)
@@ -126,7 +137,7 @@ def gate(name: str, arg: str, cfg: dict, confirm,
         if (n, app) not in grants
         and (ctx is None or (n, app) not in ctx["declined"])
         and preempted(n, a, cfg) is None
-        and decide(n, a, cfg) == "confirm"]
+        and decide(n, a, cfg, state=state) == "confirm"]
     # the card consents only to the steps it names — drop from the tail
     # until every remaining item fits; overflow calls keep their own
     # checkpoint when the loop reaches them

@@ -75,6 +75,37 @@ def _browseros_live() -> bool:
 # whatever the 'browser' role maps to
 _BROWSERS = ("browseros", "chromium", "google-chrome", "firefox", "brave")
 
+_LEADING_POSSESSIVE = re.compile(r"^(?:my|the|our|a|an)\s+", re.I)
+
+# Natural spoken names for web services and role aliases. When the user
+# says "check my email", "go to my Stripe", or "go to Linear", launch()
+# resolves the alias to a web role; if a matching tab is already open in
+# the browser, it switches to that tab instead of spawning a duplicate.
+_SERVICE_ALIASES = {
+    "email": "mail",
+    "emails": "mail",
+    "inbox": "mail",
+    "gmail": "mail",
+    "webmail": "mail",
+    "stripe": "stripe",
+    "stripedashboard": "stripe",
+    "linear": "linear",
+    "linearapp": "linear",
+    "github": "github",
+    "notion": "notion",
+    "slack": "slack",
+}
+
+
+def _clean_target(raw: str) -> str:
+    return _LEADING_POSSESSIVE.sub("", (raw or "").strip()).strip()
+
+
+def _resolve_service_role(raw: str) -> str:
+    cleaned = _clean_target(raw).lower()
+    compact = re.sub(r"[\s._-]+", "", cleaned)
+    return _SERVICE_ALIASES.get(cleaned) or _SERVICE_ALIASES.get(compact) or cleaned
+
 
 def _web_browser(apps: dict, cfg: dict) -> str | None:
     """The binary that should open a URL: BrowserOS when it is live (the
@@ -96,6 +127,7 @@ def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
     # Resolve the app first: "unknown app" / "not installed" are about the
     # request and read the same with or without a window manager. The
     # Hyprland gate applies only once we are about to exec through it.
+    app = _clean_target(app) or app
     apps = _resolve_apps(cfg, harness)
     # soak fix: "browser" prefers BrowserOS (live logins) when its MCP
     # server is up — opt out with [agent] browseros_first = "false"
@@ -110,29 +142,49 @@ def launch(app: str, cfg: dict, harness: dict | None = None) -> str:
         return "LAUNCHED browser -> browseros"
     binname = _lookup(apps, app)
     if not binname:
-        # role words ('mail', 'files', 'editor') resolve through the
-        # user's configured default handler — 'open mail' opens THEIR
-        # mail app, not a guessed client
+        # role words ('mail', 'files', 'editor') and service aliases
+        # ('email', 'stripe', 'linear') resolve through the user's
+        # configured default handler or [web] settings.
         from .. import inventory
         defaults = inventory.defaults()
-        role_word = app.strip().lower()
+        role_word = _resolve_service_role(app)
         role = defaults.get(role_word)
+        web_urls = config.web_settings(cfg)
+        url = web_urls.get(role_word)
         if role:
             binname = _lookup(apps, role)
-            # a role served by a browser is a web app: open its URL in
-            # that browser — focusing the window reads as success while
-            # the inbox never opens
-            url = config.web_settings(cfg).get(role_word)
+            # a role served by a browser is a web app: switch to an
+            # already-open tab when possible, otherwise open its URL in
+            # that browser — focusing the window alone never opens the inbox
             if binname and url and (role in _BROWSERS
                                     or role == defaults.get("browser")):
                 down = _wm_down()
                 if down:
                     return down
+                switched = _try_switch_open_tab(role_word)
+                if switched:
+                    return switched
                 if not _exec_detached(f"{binname} {shlex.quote(url)}"):
                     return f"SKIP (could not open {url} in {role})"
                 return f"OPENED {url} -> {role}"
             if binname:
                 app = role
+        elif url:
+            down = _wm_down()
+            if down:
+                return down
+            switched = _try_switch_open_tab(role_word)
+            if switched:
+                return switched
+            via = _web_browser(apps, cfg)
+            if via:
+                if not _exec_detached(f"{via} {shlex.quote(url)}"):
+                    return f"SKIP (could not open {url} in {via})"
+                return f"OPENED {url} -> {via}"
+            if shutil.which("xdg-open"):
+                _exec_detached(f"xdg-open {shlex.quote(url)}")
+                return f"OPENED {url} -> default browser"
+            return f"SKIP (no browser to open {url})"
         if not binname:
             # a URL/domain still opens via the default browser (webmail
             # and web apps the inventory can't know); bare nouns stay
@@ -305,6 +357,31 @@ def _focus_browser(title: str) -> None:
     if pick:
         platform._try([hypr.LuaCmd(hypr.focus_window(
             f"address:{pick['address']}"))])
+
+
+def _try_switch_open_tab(query: str) -> str | None:
+    """If an open browser tab already matches `query`, activate and focus it."""
+    words = _query_words(query)
+    if not words:
+        return None
+    port, pages = _cdp_pages()
+    if port is None or not pages:
+        return None
+    best, top = None, 0
+    for t in pages:
+        sc = _tab_score(words, t)
+        if sc > top:
+            best, top = t, sc
+    if best is None:
+        return None
+    try:
+        _cdp_get(port, "/json/activate/" + str(best["id"]))
+    except OSError:
+        return None
+    title = best.get("title", "")
+    _focus_browser(title)
+    host = urllib.parse.urlparse(best.get("url") or "").hostname or ""
+    return f"SWITCHED tab {title!r} -> {host}"
 
 
 def tab(query: str) -> str:

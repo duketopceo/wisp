@@ -129,6 +129,20 @@ class Shot:
         except Exception:
             return self.b64, self.width, self.height
 
+    def resized_pointing(self) -> tuple[str, int, int]:
+        """Resize screenshot to the closest Clicky pointing resolution
+        (`1024x768`, `1280x800`, or `1366x768`) for single-pass VLM pointing."""
+        rw, rh = pick_pointing_resolution(self.width, self.height)
+        if (self.width, self.height) == (rw, rh) or not _PIL_AVAILABLE:
+            return self.b64, rw, rh
+        try:
+            im = Image.open(io.BytesIO(base64.b64decode(self.b64)))
+            buf = io.BytesIO()
+            im.convert("RGB").resize((rw, rh)).save(buf, format="PNG")
+            return base64.b64encode(buf.getvalue()).decode(), rw, rh
+        except Exception:
+            return self.b64, rw, rh
+
 
 # ---------------------------------------------------------- frame math
 #
@@ -287,6 +301,9 @@ def _post_json(url: str, body: dict, timeout: float,
         return json.loads(raw)
     except (ValueError, TypeError):
         return None
+
+
+_DEFAULT_POST_JSON = _post_json
 
 
 def _is_loopback(url: str) -> bool:
@@ -673,10 +690,88 @@ def _jev_locate(screenshot_b64: str, target: str, region_hint: str,
     return int(round(center_x)), int(round(center_y)), max_p
 
 
+_VLM_POINT_PROMPT = (
+    "Locate the UI element described as: {target}{hint}.\n"
+    "The attached screenshot is {rw}x{rh} pixels (origin 0,0 at top-left).\n"
+    "Reply with ONLY a single point tag `[POINT:x,y:{target}]` or `(x,y)` "
+    "at the exact center of the element, or `NONE` if it is not visible."
+)
+
+
+def _vlm_locate(shot: Shot, target: str, region_hint: str = "",
+                cfg: dict | None = None,
+                timeout: float = 5.0) -> Tuple[int, int, float] | None:
+    """Single-shot aspect-matched VLM pointing (HeyClicky parity).
+    Resizes `shot` to `pick_pointing_resolution`, asks `brain.chat` for a
+    single `[POINT:x,y:label]` or `(x,y)`, and scales back to `shot` pixels
+    via `scale_point_from_resolution`."""
+    from . import brain, points as _points
+    b64, rw, rh = shot.resized_pointing()
+    hint_str = f" (region hint: {region_hint})" if region_hint else ""
+    prompt = _VLM_POINT_PROMPT.format(
+        target=target, hint=hint_str, rw=rw, rh=rh)
+    messages = [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": prompt},
+            {"type": "image_url",
+             "image_url": {"url": f"data:image/png;base64,{b64}"}},
+        ],
+    }]
+    try:
+        res = brain.chat(messages, cfg or {},
+                         timeout=max(1.0, float(timeout or 5.0)))
+        text = str((res or {}).get("content") or "").strip()
+    except Exception as e:
+        raise ProviderDown(str(e)) from None
+    if not text or text.upper() == "NONE":
+        return None
+    _, marks = _points.extract(text)
+    px_py = None
+    if marks:
+        px_py = (float(marks[0]["x"]), float(marks[0]["y"]))
+    else:
+        xy = parse_uitars_text(text, (rw, rh), "px")
+        if xy is not None:
+            px_py = (float(xy[0]), float(xy[1]))
+    if px_py is None:
+        return None
+    if px_py[0] < 0 or px_py[1] < 0 or px_py[0] > rw or px_py[1] > rh:
+        return None
+    sx, sy = scale_point_from_resolution(
+        px_py[0], px_py[1], rw, rh, shot.width, shot.height)
+    return sx, sy, 0.85
+
+
+def _vlm(ctx) -> Candidate | None:
+    hint = ctx.region_hint or (
+        "menu bar" if any(w in ctx.target.lower()
+                          for w in ("menu", "bar", "top", "panel")) else "")
+    r = _vlm_locate(ctx.shot, ctx.target, hint, ctx.cfg, ctx.timeout)
+    if r is None:
+        return None
+    return Candidate(r[0], r[1], r[2], "vlm",
+                     size=(ctx.shot.width, ctx.shot.height),
+                     label=ctx.target)
+
+
 def _jev(ctx) -> Candidate | None:
     hint = ctx.region_hint or (
         "menu bar" if any(w in ctx.target.lower()
                           for w in ("menu", "bar", "top", "panel")) else "")
+    gc = (ctx.cfg or {}).get("ground", {}) or {}
+    # When _post_json is not mocked by a Jev unit test and Jev patch slicing is
+    # not explicitly forced, try single-shot aspect-matched VLM pointing first
+    # before falling back to 40-crop Jev alpha decisions.
+    if _post_json is _DEFAULT_POST_JSON and gc.get("jev_patches") != "true":
+        try:
+            vr = _vlm_locate(ctx.shot, ctx.target, hint, ctx.cfg, ctx.timeout)
+        except ProviderDown:
+            vr = None
+        if vr is not None:
+            return Candidate(vr[0], vr[1], vr[2], "jev",
+                             size=(ctx.shot.width, ctx.shot.height),
+                             label=ctx.target)
     r = _jev_locate(ctx.shot.b64, ctx.target, hint, 6.0, None, ctx.cfg,
                     ctx.timeout)
     if r is None:
@@ -711,6 +806,7 @@ PROVIDERS = {
     "control": {"fn": _control, "fast": True},
     "a11y": {"fn": _a11y, "fast": True},
     "uitars": {"fn": _uitars, "fast": True},
+    "vlm": {"fn": _vlm, "fast": False},
     "jev": {"fn": _jev, "fast": False},
 }
 

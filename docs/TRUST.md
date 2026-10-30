@@ -46,6 +46,9 @@ An OpenCode agent Wisp starts runs on this machine and reaches models through or
 | `github.com` | Release downloads for `wispd update` (the same GET as api.github.com above) and the project address Wisp names itself with in an `HTTP-Referer` header so OpenRouter can show an app name. |
 | `mail.google.com` | Opened in your browser when you say "open mail" and no native mail client is set (`[web] mail`). |
 | `calendar.google.com` | Opened in your browser when you say "open calendar" and no native client is set (`[web] calendar`). |
+| `dashboard.stripe.com` | Opened in your browser when you say "go to Stripe" or "open Stripe". |
+| `linear.app` | Opened in your browser when you say "go to Linear" or "open Linear". |
+| `app.slack.com` | Opened in your browser when you say "open Slack" and no native client is set. |
 | `x.com` | A compose window is opened in your browser with the text filled in. Nothing is posted until you press Post. |
 | `gmail.com` | An example in help text: a domain you say is opened in your browser. |
 | `cal.com` | A name in a list of apps Wisp can connect to, in help text. |
@@ -87,12 +90,15 @@ From the scan this page is built from.
 - `amara.org`: `wisp/dictate_history.py`
 - `api.github.com`: `wisp/update.py`
 - `api.groq.com`: `rs/wispd/src/config.rs`, `wisp/config.py`, `wisp/tts_groq.py`
+- `app.slack.com`: `wisp/config.py`
 - `cal.com`: `wisp/mcpauth.py`
 - `calendar.google.com`: `wisp/config.py`
 - `console.groq.com`: `wisp/tts_groq.py`
+- `dashboard.stripe.com`: `wisp/config.py`
 - `example.com`: `wisp/cli/share.py`
-- `github.com`: `rs/wispd/src/brain.rs`, `wisp/agent_pins.py`, `wisp/brain.py`, `wisp/grounding.py`, `wisp/stage_route.py`, `wisp/update.py` and 1 more
+- `github.com`: `rs/wispd/src/brain.rs`, `wisp/agent_pins.py`, `wisp/brain.py`, `wisp/config.py`, `wisp/grounding.py`, `wisp/stage_route.py` and 2 more
 - `gmail.com`: `wisp/tools/__init__.py`
+- `linear.app`: `wisp/config.py`
 - `mail.google.com`: `wisp/config.py`
 - `openrouter.ai`: `rs/wispd/src/brain.rs`, `rs/wispd/src/config.rs`, `wisp/brain.py`, `wisp/config.py`, `wisp/recall.py`
 - `raw.githubusercontent.com`: `wisp/tools/modelfetch.py`

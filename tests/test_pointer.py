@@ -134,10 +134,9 @@ class PointerTest(_Iso):
                                return_value="wlrctl"), \
              mock.patch("subprocess.run",
                         return_value=mock.Mock(returncode=0)) as run:
-            # auto mode isn't implemented as drive yet — mode gate is
-            # explicit 'drive'; auto still guides unless user opts in
             out = system.click("1,2@logical", AUTO)
-        self.assertTrue(out.startswith(("GUIDE", "CLICKED")))
+        self.assertEqual(out, "CLICKED(1,2)")
+        self.assertGreaterEqual(run.call_count, 1)
 
     def test_explicit_backend_missing_falls_back(self):
         cfg = {"pointer": {"mode": "drive", "backend": "ydotool"}}

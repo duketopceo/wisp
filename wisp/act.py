@@ -966,7 +966,7 @@ def _record_step(step: dict, name: str, tool_arg: str, dispatched_at,
     if rec is not None and rec.active and dispatched_at is not None \
             and name in _CUA_TOOLS \
             and not (cfg or {}).get("screen", {}).get("dom_page") \
-            and (cfg or {}).get("pointer", {}).get("mode") == "drive":
+            and (cfg or {}).get("pointer", {}).get("mode") in ("drive", "auto"):
         try:
             # planned backend == actual backend on the dispatch path —
             # a recorded dir exists only when the driver saw the call
@@ -1170,8 +1170,13 @@ def _unsupported_done(task: str, steps: list,
         # only a refocus of the window already in front is a no-op
         if start_focus and start_focus.lower() != cls.lower():
             return None
-        named = _words(last.get("arg")) | _words(cls)
-        if not any(_same_word(a, b) for a in _words(task) for b in named):
+        from .tools import desktop as _desktop
+        arg_words = _words(last.get("arg"))
+        alias_words = {_desktop._resolve_service_role(w) for w in arg_words}
+        task_words = _words(task) | {_desktop._resolve_service_role(w)
+                                     for w in _words(task)}
+        named = arg_words | alias_words | _words(cls)
+        if not any(_same_word(a, b) for a in task_words for b in named):
             return (f"{last['tool']} only refocused "
                     f"{(last.get('arg') or cls).strip()}, which the "
                     "request did not name")

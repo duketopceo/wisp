@@ -120,10 +120,13 @@ def _sense_cfg(cfg: dict) -> dict:
 
 
 def _worth_mining(window: list, cfg: dict, log) -> bool:
-    """Jev gate first (cheap, typed); on router failure fall back to a
-    dumb event-count threshold so mining still works offline."""
+    """When router == 'jev', run the Jev gate first; otherwise (default 'act'
+    router) or on router failure use the local event-count threshold so
+    background mining never stalls on the deprecated Jev alpha endpoint."""
     if len(window) < 4:
         return False
+    if (cfg or {}).get("brain", {}).get("router", "act") != "jev":
+        return len(window) >= 6
     summary = "\n".join(
         f"- {r.get('window', {}).get('app', '?')}: "
         f"{r.get('window', {}).get('title', '')[:60]}"

@@ -495,5 +495,30 @@ class LoopPaths(unittest.TestCase):
         self.assertIsNone(added.get("w"))   # T2 carries no undo hint
 
 
+    def test_sensitive_surface_promotes_mutating_input_to_t2_while_keeping_observation_free(self):
+        import types
+        st = types.SimpleNamespace(
+            focus={"app": "chromium", "title": "Developers – Pace-HQ – Stripe"},
+            confirmed=set())
+        self.assertEqual(policy.tier_of("click", "100,200", {}, state=st), "T2")
+        self.assertEqual(policy.tier_of("type_text", "hello", {}, state=st), "T2")
+        self.assertEqual(policy.tier_of("key", "Return", {}, state=st), "T2")
+        self.assertEqual(policy.tier_of("fill", "1:2|hello", {}, state=st), "T2")
+        # Observation and navigation remain unpromoted so Wisp can see,
+        # point, scroll, and switch tabs on Stripe without friction.
+        self.assertEqual(policy.tier_of("move", "100,200", {}, state=st), "T1")
+        self.assertEqual(policy.tier_of("scroll", "down", {}, state=st), "T1")
+        self.assertEqual(policy.tier_of("screenshot", "", {}, state=st), "T0")
+        self.assertEqual(policy.tier_of("tab", "stripe", {}, state=st), "T0")
+        confirm = Confirm(answer=False)
+        out = policy.gate("click", "100,200", {}, confirm, state=st)
+        self.assertEqual(out, "SKIPPED (click declined by user)")
+        self.assertEqual(len(confirm.prompts), 1)
+
+    def test_preempted_refuses_live_stripe_secret_key_in_text_input(self):
+        out = policy.preempted("type_text", "sk_live_51abcDEF1234567890xyz", {})
+        self.assertEqual(out, "REFUSED (live secret key in input)")
+
+
 if __name__ == "__main__":
     unittest.main()

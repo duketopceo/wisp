@@ -341,6 +341,41 @@ class TestToolExec(unittest.TestCase):
         self.assertIn("FOCUSED thunderbird", out)
         ex.assert_not_called()
 
+    def test_launch_my_email_resolves_to_mail_web_role(self):
+        self._hypr_up()
+        cfg = {"apps": {"browseros": "browseros"}, "agent": {}}
+        with mock.patch.object(tools.desktop, "_try_switch_open_tab",
+                               return_value=None):
+            out, ex = self._mail_launch(cfg, role="my email")
+        self.assertEqual(out, "OPENED https://mail.google.com -> browseros")
+        ex.assert_called_once_with("browseros https://mail.google.com")
+
+    def test_launch_stripe_switches_to_open_tab_when_present(self):
+        self._hypr_up()
+        cfg = {"apps": {"browseros": "browseros"}, "agent": {}}
+        with mock.patch.object(tools.desktop, "_try_switch_open_tab",
+                               return_value="SWITCHED tab 'Developers – Stripe' -> dashboard.stripe.com") as sw, \
+             mock.patch.object(tools.desktop, "_exec_detached") as ex:
+            out = tools.desktop.launch("my Stripe", cfg)
+        self.assertTrue(out.startswith("SWITCHED tab "), out)
+        sw.assert_called_once_with("stripe")
+        ex.assert_not_called()
+
+    def test_launch_linear_opens_default_web_url_when_no_tab(self):
+        self._hypr_up()
+        cfg = {"apps": {"browseros": "browseros"}, "agent": {}}
+        with mock.patch.object(tools.desktop, "_try_switch_open_tab",
+                               return_value=None), \
+             mock.patch.object(tools.desktop.shutil, "which",
+                               return_value="/x/browseros"), \
+             mock.patch.object(tools.desktop, "_browseros_live",
+                               return_value=True), \
+             mock.patch("wisp.inventory.defaults", return_value={}), \
+             mock.patch.object(tools.desktop, "_exec_detached") as ex:
+            out = tools.desktop.launch("my Linear", cfg)
+        self.assertEqual(out, "OPENED https://linear.app -> browseros")
+        ex.assert_called_once_with("browseros https://linear.app")
+
     def test_launch_unknown_noun_still_skips(self):
         self._hypr_up()
         cfg = {"apps": {}, "agent": {}}

@@ -29,7 +29,9 @@ _DICTATE = re.compile(
     r"^(?:dictate|dictation|take dictation|type this|write this down|"
     r"write down)\b", re.I)
 _AGENT = re.compile(
-    r"^(?:have an agent|spawn (?:an? )?agent|delegate\b|agent[:,])", re.I)
+    r"^(?:have an agent|spawn (?:an? )?agent|delegate\b|agent[,:]|"
+    r"(?:have |let |run )?(?:opencode|claude|codex|devin)\b|"
+    r"(?:debug|fix|investigate) (?:this|it) in the background\b)", re.I)
 _LEARN = re.compile(
     r"^(?:learn (?:how|to|that)\b|remember (?:this|how|that)\b|"
     r"add a skill\b|save (?:this )?as (?:my |a )?.{0,40}?\broutine\b|"
@@ -37,7 +39,8 @@ _LEARN = re.compile(
 _WH = re.compile(
     r"^(?:what|what's|whats|who|whom|whose|when|where|why|how|which|"
     r"is|are|am|was|were|do|does|did|should|tell me|explain|define|"
-    r"summari[sz]e|describe|give me)\b", re.I)
+    r"summari[sz]e|describe|give me|"
+    r"show me (?:what|what's|whats|why|how|where|which))\b", re.I)
 _SCREENSHOT = re.compile(r"\bscreenshot\b", re.I)
 _WORKSPACE = re.compile(
     r"^(?:go to|switch to|move to|jump to)\s+workspace\s+\d+\b", re.I)
@@ -47,8 +50,10 @@ _LAUNCH = re.compile(
 _ACT = re.compile(
     r"^(?:click|scroll|go to|navigate|search(?: for)?|find|type|press|"
     r"select|fill|close|quit|drag|play|pause|download|log ?in|sign in|"
-    r"open)\b|\b(?:and then|then)\b", re.I)
+    r"open|check|inspect|review|debug|fix|troubleshoot)\b|"
+    r"\b(?:and then|then)\b", re.I)
 _FILLER = re.compile(r"\b(?:the|app|application|up)\b", re.I)
+_DEICTIC = re.compile(r"\b(?:this|that|these|those|here)\b", re.I)
 
 
 def _norm(s: str) -> str:
@@ -56,6 +61,8 @@ def _norm(s: str) -> str:
 
 
 def _catalog_app(rest: str, apps: dict) -> str:
+    if _DEICTIC.search(rest or ""):
+        return ""
     want = _norm(_FILLER.sub(" ", rest))
     if not want:
         return ""

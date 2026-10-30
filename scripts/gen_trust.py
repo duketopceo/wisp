@@ -136,6 +136,12 @@ MENTIONS = {
     "calendar.google.com": "Opened in your browser when you say \"open "
                            "calendar\" and no native client is set "
                            "(`[web] calendar`).",
+    "dashboard.stripe.com": "Opened in your browser when you say \"go to "
+                            "Stripe\" or \"open Stripe\".",
+    "linear.app": "Opened in your browser when you say \"go to Linear\" or "
+                  "\"open Linear\".",
+    "app.slack.com": "Opened in your browser when you say \"open Slack\" "
+                     "and no native client is set.",
     "x.com": "A compose window is opened in your browser with the text "
              "filled in. Nothing is posted until you press Post.",
     "gmail.com": "An example in help text: a domain you say is opened in "

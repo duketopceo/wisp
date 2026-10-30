@@ -818,7 +818,7 @@ def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
     # [cua] delivery picks the backend (auto order, pointer-escalation
     # for `pointer`, real-pointer refusal for `background`); a DOM page
     # already returned above — everything below is a compositor op
-    backend = _delivery.resolve_backend(cfg, op) if mode == "drive" \
+    backend = _delivery.resolve_backend(cfg, op) if mode in ("drive", "auto") \
         else None
     if backend:
         # pointer.Registry owns precedence: a move falls through the

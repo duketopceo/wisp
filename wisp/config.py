@@ -660,6 +660,10 @@ def stt_settings(cfg: dict | None) -> dict:
 WEB_DEFAULTS = {
     "mail": "https://mail.google.com",
     "calendar": "https://calendar.google.com",
+    "stripe": "https://dashboard.stripe.com",
+    "linear": "https://linear.app",
+    "github": "https://github.com",
+    "slack": "https://app.slack.com",
 }
 
 

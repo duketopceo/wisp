@@ -117,6 +117,7 @@ def planned(name: str, cfg: dict | None) -> str:
         return ""
     if (cfg or {}).get("screen", {}).get("dom_page"):
         return "background"
-    if (cfg or {}).get("pointer", {}).get("mode") != "drive":
+    mode = (cfg or {}).get("pointer", {}).get("mode", "guide")
+    if mode not in ("drive", "auto"):
         return "guide"
     return backend_delivery(resolve_backend(cfg, name), name)
