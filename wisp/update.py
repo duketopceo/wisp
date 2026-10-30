@@ -198,12 +198,11 @@ def _hashes(base: pathlib.Path) -> dict:
         for p in sorted(top.rglob("*")) if top.is_dir() else []:
             if p.is_file() and "__pycache__" not in p.parts \
                     and not p.is_symlink():
-                out[str(p.relative_to(base))] = hashlib.sha256(
-                    p.read_bytes()).hexdigest()
+                out[str(p.relative_to(base))] = _sha(p)
     for f in TRACKED_FILES:
         p = base / f
         if p.is_file():
-            out[f] = hashlib.sha256(p.read_bytes()).hexdigest()
+            out[f] = _sha(p)
     return out
 
 
@@ -412,12 +411,17 @@ def _manifests(state: pathlib.Path) -> list:
     return out
 
 
+# Phases where the managed files may be half way between two versions.
+# `restored-partial` is settled: a rollback that only left files the user
+# changed, which stay kept on every later run.
+UNSETTLED = ("applying", "verify-failed", "restore-incomplete")
+
+
 def unfinished(state: pathlib.Path | None = None) -> dict | None:
     """The newest manifest that is not in a settled phase."""
     ms = _manifests(state or state_dir())
     last = ms[-1] if ms else None
-    return last if last and last["phase"] in (
-        "applying", "restore-incomplete") else None
+    return last if last and last["phase"] in UNSETTLED else None
 
 
 def verify(man: dict, opt: pathlib.Path, tag: str) -> list:
@@ -438,10 +442,14 @@ def plan_rollback(man: dict, opt: pathlib.Path) -> dict:
     interrupted apply a file changed since the update is the user's and is
     kept; inside one, anything that is not the old content is leftover, and a
     path the update would have created is removed whatever it holds."""
-    interrupted = man["phase"] in ("applying", "restore-incomplete")
+    interrupted = man["phase"] in UNSETTLED
+    kept = set(man.get("kept", []))
     restore, remove, keep = [], [], []
     for rel, was in sorted(man["before"].items()):
         p = _safe(opt, rel)
+        if rel in kept:
+            keep.append((rel, "kept by an earlier rollback"))
+            continue
         if p is None:
             keep.append((rel, "not a plain file inside the install"))
             continue
@@ -456,7 +464,9 @@ def plan_rollback(man: dict, opt: pathlib.Path) -> dict:
         if rel in man["before"]:
             continue
         p = _safe(opt, rel)
-        if p is None:
+        if rel in kept:
+            keep.append((rel, "kept by an earlier rollback"))
+        elif p is None:
             keep.append((rel, "not a plain file inside the install"))
         elif p.is_file():
             if interrupted or _sha(p) == mine:
@@ -477,20 +487,20 @@ def ipc_ok(opt: pathlib.Path, run=subprocess.run) -> bool:
     return r.returncode == 0
 
 
-def service_active(run=subprocess.run) -> bool:
+def _systemctl(verb: str, timeout: int, run) -> bool:
     try:
-        return run(["systemctl", "--user", "is-active", "--quiet", "wispd"],
-                   timeout=10).returncode == 0
+        return run(["systemctl", "--user", verb, "wispd"],
+                   timeout=timeout).returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         return False
+
+
+def service_active(run=subprocess.run) -> bool:
+    return _systemctl("is-active", 10, run)
 
 
 def restart_service(run=subprocess.run) -> bool:
-    try:
-        return run(["systemctl", "--user", "restart", "wispd"],
-                   timeout=30).returncode == 0
-    except (OSError, subprocess.TimeoutExpired):
-        return False
+    return _systemctl("restart", 30, run)
 
 
 def outside_changes(root: pathlib.Path, home=None) -> list:
@@ -508,7 +518,6 @@ def outside_changes(root: pathlib.Path, home=None) -> list:
         if mine != have:
             out.append("shell plugin")
     try:
-        from . import svc
         udir = home / ".config" / "systemd" / "user"
         for u in sorted((root / "scripts" / "units").glob("*.service")):
             f = udir / u.name
@@ -517,6 +526,12 @@ def outside_changes(root: pathlib.Path, home=None) -> list:
     except OSError:
         pass
     return out
+
+
+def _remember_kept(man: dict, plan: dict) -> None:
+    """Files a rollback left alone stay left alone on every later run."""
+    man["kept"] = sorted(set(man.get("kept", []))
+                         | {rel for rel, _ in plan["keep"]})
 
 
 def rollback(*, confirm=None, emit_text=print, restart: bool = False,
@@ -547,7 +562,8 @@ def rollback(*, confirm=None, emit_text=print, restart: bool = False,
     emit_text(SCOPE_NOTE)
     if not plan["restore"] and not plan["remove"]:
         emit_text("nothing to restore.")
-        _save(man, "restored" if not plan["keep"] else "restore-incomplete")
+        _remember_kept(man, plan)
+        _save(man, "restored-partial" if plan["keep"] else "restored")
         res["kept"] = [k for k, _ in plan["keep"]]
         return res
     if confirm is None or not confirm(
@@ -575,7 +591,9 @@ def rollback(*, confirm=None, emit_text=print, restart: bool = False,
             failed.append((rel, str(e)))
     res["kept"] = [k for k, _ in plan["keep"]] + [k for k, _ in failed]
     complete = not plan["keep"] and not failed
-    _save(man, "restored" if complete else "restore-incomplete")
+    _remember_kept(man, plan)
+    _save(man, "restore-incomplete" if failed else
+          "restored" if complete else "restored-partial")
     res["rolled_back"] = complete
     emit_text(f"restored {len(res['restored'])} file(s), removed "
               f"{len(res['removed'])}." if complete else
@@ -624,9 +642,9 @@ def run_update(*, dry_run: bool, sha256: str | None = None, confirm=None,
         res["outside"] = outside_changes(root)
         n = sum(len(v) for v in res["changes"].values())
         emit_text(describe(res))
-        if preflight.format_rows(rows, only_problems=True):
-            emit_text("preflight:\n"
-                      + preflight.format_rows(rows, only_problems=True))
+        problems = preflight.format_rows(rows, only_problems=True)
+        if problems:
+            emit_text("preflight:\n" + problems)
         if dry_run:
             emit_text("dry run: nothing was written.")
             return res
@@ -655,6 +673,7 @@ def run_update(*, dry_run: bool, sha256: str | None = None, confirm=None,
         _save(man, "applied")
         bad = verify(man, opt, res["version"])
         if bad:
+            _save(man, "verify-failed")   # rollback restores every file
             raise UpdateError(
                 "The installed files do not match the verified release ("
                 + "; ".join(bad[:5]) + "). The update is not verified. "

@@ -112,15 +112,11 @@ def _install(ctx, a, src, repo, commit):
               if src else None)
     plugin = not a.from_plugin
 
-    def preflight_rows():
-        from .. import config as _cfgmod, preflight
-        return preflight.run(_cfgmod.HOME, _cfgmod.HOME / ".local" / "opt"
-                             / "wisp")
+    from .. import preflight
 
     def plan():
-        from .. import preflight
         print("preflight:")
-        print(preflight.format_rows(preflight_rows()))
+        print(preflight.format_rows(preflight.run()))
         ctx.host.install_files(dry_run=True, cfg=ctx.cfg, src=src,
                                deploy=deploy, plugin=plugin)
         ctx.host.install_bind(ctx.cfg, dry_run=True)
@@ -129,8 +125,7 @@ def _install(ctx, a, src, repo, commit):
         if a.dry_run:
             plan()
             return 0
-        from .. import preflight
-        rows = preflight_rows()
+        rows = preflight.run()
         if preflight.blockers(rows):
             raise CliError("E_FAILED", preflight.refusal(rows),
                            "wispd doctor")

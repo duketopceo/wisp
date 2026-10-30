@@ -1221,7 +1221,7 @@ def _doctor(cfg: dict) -> int:
 
     print("install preflight:")
     from wisp import preflight as _pf
-    for r in _pf.run(config.HOME, config.HOME / ".local" / "opt" / "wisp"):
+    for r in _pf.run():
         row(r["id"], r["detail"], good=r["level"] != "block")
 
     print("stt / audio:")

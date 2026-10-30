@@ -476,7 +476,7 @@ class Transaction(Fixture):
             self.apply(bad)
         self.assertIn("not verified", str(c.exception))
         self.assertIn("wisp/a.py", str(c.exception))
-        self.assertEqual(self.manifest()["phase"], "applied")
+        self.assertEqual(self.manifest()["phase"], "verify-failed")
 
     def test_rollback_restores_and_is_idempotent(self):
         self.apply()
@@ -507,7 +507,55 @@ class Transaction(Fixture):
         self.assertEqual((self.opt / "wisp" / "gone.py").read_bytes(), b"G")
         self.assertFalse(res["rolled_back"])
         self.assertIn("wisp/a.py", self.out)
+        self.assertEqual(self.manifest()["phase"], "restored-partial")
+
+    def test_a_second_rollback_never_overwrites_an_edit_the_first_kept(self):
+        self.apply()
+        (self.opt / "wisp" / "a.py").write_bytes(b"my edit")
+        self.rollback()
+        self.rollback()
+        self.assertEqual((self.opt / "wisp" / "a.py").read_bytes(),
+                         b"my edit")
+        self.assertIn("kept by an earlier rollback", self.out)
+
+    def test_an_update_is_not_blocked_after_a_rollback_that_kept_edits(self):
+        self.apply()
+        (self.opt / "wisp" / "a.py").write_bytes(b"my edit")
+        self.rollback()
+        self.assertIsNone(update.unfinished(self.state))
+        self.downloads = 0
+        self.apply()
+        self.assertEqual(self.downloads, 1)
+
+    def test_a_failed_verification_is_rolled_back_in_full(self):
+        def bad(root):
+            self.mirror(root)
+            (self.opt / "wisp" / "a.py").write_bytes(b"torn")
+            return 0
+        with self.assertRaises(update.UpdateError):
+            self.apply(bad)
+        self.assertEqual(self.manifest()["phase"], "verify-failed")
+        self.assertIsNotNone(update.unfinished(self.state))
+        res = self.rollback()
+        self.assertTrue(res["rolled_back"])
+        self.assertEqual((self.opt / "wisp" / "a.py").read_bytes(), b"A1")
+
+    def test_a_failed_restore_stays_unsettled_and_never_touches_kept_files(
+            self):
+        self.apply()
+        (self.opt / "wisp" / "b.py").write_bytes(b"my edit")   # kept
+        real = update.shutil.copyfile
+
+        def boom(src, dst, **kw):
+            raise OSError("disk full")
+        with mock.patch.object(update.shutil, "copyfile", boom):
+            res = self.rollback()
+        self.assertFalse(res["rolled_back"])
         self.assertEqual(self.manifest()["phase"], "restore-incomplete")
+        self.rollback()                         # retry now works
+        self.assertEqual((self.opt / "wisp" / "a.py").read_bytes(), b"A1")
+        self.assertEqual((self.opt / "wisp" / "b.py").read_bytes(),
+                         b"my edit")
 
     def test_unowned_and_runtime_files_are_never_touched(self):
         self.apply()

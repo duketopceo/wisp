@@ -161,7 +161,8 @@ wispd update --rollback --restart  # and offer to restart the daemon
 ```
 
 Rollback restores a file only when it is still what the update wrote (or,
-after an interrupted run, anything that is not the old content). A file
+after an interrupted run or a failed verification, anything that is not
+the old content). A file
 you changed since the update is kept and listed; files you did not get
 from Wisp are never touched. Running it twice does nothing the second
 time. Read the limits: this is a backup of managed files, not a

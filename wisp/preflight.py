@@ -11,6 +11,8 @@ import platform as _plat
 import shutil
 import sys
 
+from . import config, deploy
+
 MIN_FREE = 200 * 1024 * 1024    # install tree, plus one backup of it
 ARCHES = {"x86_64": "x86_64", "amd64": "x86_64", "aarch64": "aarch64",
           "arm64": "aarch64"}
@@ -26,10 +28,12 @@ def _row(id_, level, detail, fix=""):
     return {"id": id_, "level": level, "detail": detail, "fix": fix}
 
 
-def run(home, opt, *, system=None, machine=None, py=None, disk_free=None,
+def run(home=None, opt=None, *, system=None, machine=None, py=None, disk_free=None,
         which=shutil.which, systemd=None, record=None) -> list:
     """The rows for this machine. Every environment probe is a seam so
     tests run offline and identically anywhere."""
+    home = home or config.HOME
+    opt = opt or home / ".local" / "opt" / "wisp"
     system = system or _plat.system()
     machine = (machine or _plat.machine()).lower()
     py = py or tuple(sys.version_info[:2])
@@ -74,10 +78,7 @@ def run(home, opt, *, system=None, machine=None, py=None, disk_free=None,
         found = which(name)
         rows.append(_row(name, "ok" if found else "degraded",
                          found or f"not found; needed for {why}"))
-    rec = record if record is not None else None
-    if rec is None:
-        from . import deploy
-        rec = deploy.read()
+    rec = record if record is not None else deploy.read()
     rows.append(_row("current install", "ok",
                      (str(rec.get("ref") or str(rec.get("commit") or "")[:12]
                           or "unknown") if rec else "none")
