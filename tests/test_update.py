@@ -557,6 +557,18 @@ class Transaction(Fixture):
         self.assertEqual((self.opt / "wisp" / "b.py").read_bytes(),
                          b"my edit")
 
+    def test_rollback_restores_the_original_file_modes(self):
+        os.chmod(self.opt / "wispd", 0o755)
+        os.chmod(self.opt / "wisp" / "a.py", 0o644)
+        res = self.apply()
+        self.assertEqual(oct((pathlib.Path(res["backup"]) / "files"
+                              / "wispd").stat().st_mode & 0o777), "0o600")
+        os.chmod(self.opt / "wispd", 0o600)      # whatever the update left
+        self.rollback()
+        self.assertEqual((self.opt / "wispd").stat().st_mode & 0o777, 0o755)
+        self.assertEqual((self.opt / "wisp" / "a.py").stat().st_mode & 0o777,
+                         0o644)
+
     def test_unowned_and_runtime_files_are_never_touched(self):
         self.apply()
         (self.opt / "wisp" / "runtime.cache").write_text("x")

@@ -382,18 +382,20 @@ def protect(opt: pathlib.Path, root: pathlib.Path, frm: str, to: str,
     uid = time.strftime("%Y%m%dT%H%M%S") + f"-{os.getpid()}"
     d = state / uid
     _mkdir(d)
-    before = {}
+    before, modes = {}, {}
     for rel in _managed(opt):
         src = _safe(opt, rel)
         if src is None or not src.is_file():
             continue
         data = src.read_bytes()
         before[rel] = hashlib.sha256(data).hexdigest()
+        modes[rel] = src.stat().st_mode & 0o777
         _write_private(d / "files" / rel, data)
     owned = _managed(root, staged=True)
     man = {"id": uid, "dir": str(d), "opt": str(opt), "from": frm,
            "to": to, "service_active": bool(service_active),
-           "before": before, "owned": owned, "phase": "staged"}
+           "before": before, "modes": modes, "owned": owned,
+           "phase": "staged"}
     _save(man)
     return man
 
@@ -578,7 +580,7 @@ def rollback(*, confirm=None, emit_text=print, restart: bool = False,
             dst.parent.mkdir(parents=True, exist_ok=True)
             tmp = dst.with_name(f".{dst.name}.{os.getpid()}.tmp")
             shutil.copyfile(src, tmp)
-            os.chmod(tmp, src.stat().st_mode & 0o755 | 0o600)
+            os.chmod(tmp, man.get("modes", {}).get(rel, 0o644))
             os.replace(tmp, dst)
             res["restored"].append(rel)
         except OSError as e:
