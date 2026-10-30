@@ -42,6 +42,7 @@ RESULT_RULES = (
     (r"^LAUNCHED\s+([^\s-]+?)\s*->\s*(.+)$", "opened {1}", None),
     (r"^FOCUSED\s+([^\s-]+?)(?:\s*->.*)?$", "focused {1}", None),
     (r"^WORKSPACE\s+(\d+)\b", "workspace {1}", None),
+    (r"^MEDIA\s+([a-z_]+)\b", "media {1}", None),
     (r"^BLOCKED \(tool .* needs confirmation\)", "blocked: needs your ok",
      None),
     (r"^BLOCKED \(risk=", "blocked: too risky to do on my own", None),

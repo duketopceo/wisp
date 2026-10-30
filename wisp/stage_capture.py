@@ -68,9 +68,12 @@ def record_start(state=None) -> dict:
         raise RuntimeError(
             f"no recorder found — {platform.missing_deps_hint()}")
     try:
-        device = voice_polish.mic_device(config.load_config())
+        cfg_now = config.load_config()
+        device = voice_polish.mic_device(cfg_now)
+        ducked_vol = voice_polish.duck_speaker(cfg_now)
     except Exception:
         device = ""
+        ducked_vol = None
     stop_ev = threading.Event()
     sampler = threading.Thread(target=_amplitude_sampler,
                                args=(None, state, stop_ev), daemon=True)
@@ -91,7 +94,8 @@ def record_start(state=None) -> dict:
     from . import stt_stream
     stt_stream.begin(out, proc)   # streams finished chunks while held
     return {"proc": proc, "out": out, "sampler_stop": stop_ev,
-            "sampler": sampler, "t0": time.monotonic()}
+            "sampler": sampler, "t0": time.monotonic(),
+            "ducked_vol": ducked_vol}
 
 
 def _note_mic_failover(state, device: str) -> None:
@@ -127,6 +131,11 @@ def _record_finish(rec: dict, state=None, settled: bool = False
     if not settled:
         # bounded path: proc already exited or timed out
         rec["sampler_stop"].set()
+    try:
+        from . import voice_polish
+        voice_polish.restore_speaker(rec.get("ducked_vol"))
+    except Exception:
+        pass
     # the level sampler may publish one more window after the recorder
     # stops; wait for it to exit (event-driven) instead of a fixed
     # 300 ms sleep, then zero the level. Bounded in case it is stuck.

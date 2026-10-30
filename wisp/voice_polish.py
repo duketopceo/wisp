@@ -88,6 +88,39 @@ def copy_to_clipboard(text: str, runner=None) -> bool:
     return dictate.copy_to_clipboard(text, timeout=2.0, runner=runner)
 
 
+def duck_speaker(cfg: dict, runner=None) -> float | None:
+    """Lower output volume while the mic is recording so video/music playback
+    does not bleed into the STT transcript (TLY-430). Returns the original
+    volume (0.0..1.5) when ducked, or None when already muted/low/disabled."""
+    if not _flag(cfg, "audio", "duck_while_listening", "true"):
+        return None
+    run = runner or _run
+    if not (shutil.which("wpctl") or runner):
+        return None
+    rc, out = run(["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"])
+    if rc != 0 or not out.strip() or "[MUTED]" in out:
+        return None
+    m = re.search(r"Volume:\s*([0-9.]+)", out)
+    if not m:
+        return None
+    vol = float(m.group(1))
+    if vol <= 0.15:
+        return None
+    target = round(max(0.08, vol * 0.2), 2)
+    run(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", f"{target:.2f}"])
+    return vol
+
+
+def restore_speaker(prev_vol: float | None, runner=None) -> None:
+    """Restore output volume saved by duck_speaker()."""
+    if prev_vol is None:
+        return
+    run = runner or _run
+    if shutil.which("wpctl") or runner:
+        run(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@",
+             f"{float(prev_vol):.2f}"])
+
+
 @dataclasses.dataclass
 class Delivery:
     """What one spoken answer does: `cfg` is the config to speak with

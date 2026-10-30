@@ -251,6 +251,10 @@ def _spoken_payload(result: str) -> str:
     m = re.match(r"^WORKSPACE\s+(\d+)\b", result)
     if m:
         return f"Switched to workspace {m.group(1)}."
+    m = re.match(r"^MEDIA\s+([a-z_]+)\b", result)
+    if m:
+        act = m.group(1).replace("_", " ")
+        return f"Media {act}."
     return ""
 
 

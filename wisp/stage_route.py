@@ -334,10 +334,41 @@ _FAST_ACTION = re.compile(
     r"navigate|search|find|download|play|pause|scroll|drag|fill|select|"
     r"log ?in|sign in|then|and)\b", re.I)
 
+_FAST_MEDIA_RE = re.compile(
+    r"^\s*(?:please\s+)?"
+    r"(?:"
+    r"(?P<pause>pause(?:\s+(?:the\s+)?(?:music|video|song|track|audio|playback|media|youtube|spotify))?)"
+    r"|(?P<play>(?:resume|unpause)(?:\s+(?:the\s+)?(?:music|video|song|track|audio|playback|media|youtube|spotify))?|play\s+(?:the\s+)?(?:music|video|song|track|audio|playback|media))"
+    r"|(?P<next>(?:next|skip)(?:\s+(?:the\s+)?(?:song|track|video|media))?)"
+    r"|(?P<previous>(?:previous|prev)(?:\s+(?:the\s+)?(?:song|track|video|media))?)"
+    r"|(?P<mute>(?:mute|unmute)(?:\s+(?:the\s+)?(?:audio|volume|sound|speaker|speakers))?)"
+    r"|(?P<volume_up>volume\s+up|turn\s+(?:it\s+|the\s+volume\s+)?up|louder)"
+    r"|(?P<volume_down>volume\s+down|turn\s+(?:it\s+|the\s+volume\s+)?down|quieter)"
+    r")\s*[.!?]*\s*$",
+    re.I,
+)
+
+
+def media_fast_arg(text: str) -> str | None:
+    """Return canonical `tools.media` arg ('pause', 'play', 'next',
+    'previous', 'mute', 'volume_up', 'volume_down') for bare media
+    utterances, or None when the utterance is compound/ambiguous."""
+    t = str(text or "").strip()
+    if not t or " and " in t.lower() or " then " in t.lower():
+        return None
+    m = _FAST_MEDIA_RE.match(t)
+    if not m:
+        return None
+    for k, v in m.groupdict().items():
+        if v:
+            return k
+    return None
+
 
 def fast_route(text: str, apps: dict | None, cfg: dict):
     """The no-model fast path in front of act: (answers, rule) for a
-    bare launch of a catalogued app ("open firefox") or a plain question
+    bare launch of a catalogued app ("open firefox"), a bare media
+    control ("pause youtube", "next track", "mute"), or a plain question
     ("what does this error mean"); None sends the turn to the act loop.
 
     Everything ambiguous (compound requests, unknown apps, questions that
@@ -346,6 +377,16 @@ def fast_route(text: str, apps: dict | None, cfg: dict):
     if str((cfg or {}).get("brain", {}).get("fast_path",
                                             "true")).lower() == "false":
         return None
+    m_arg = media_fast_arg(text)
+    if m_arg:
+        return ({
+            "route": {"choice": "tool", "confidence": 0.99},
+            "action": {"choice": "media", "confidence": 0.99},
+            "tool": {"choice": "media", "confidence": 0.99},
+            "app": {"choice": "none", "confidence": 0.99},
+            "risk": {"score": 1.0},
+            "media_arg": m_arg,
+        }, "bare_media")
     from . import route as _route
     h = _route.heuristic(text, apps)
     if h["rule"] == "bare_launch":
@@ -380,6 +421,8 @@ def route_stage(ctx) -> bool:
         if fast:
             fixed, fast_rule = None, fast[1]
             resp = {"answers": fast[0]}
+            if fast[0].get("media_arg"):
+                ctx.detail = fast[0]["media_arg"]
     if fixed:
         choice, detail = fixed
         if detail:
