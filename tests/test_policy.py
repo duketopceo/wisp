@@ -287,6 +287,16 @@ class Gate(unittest.TestCase):
                       {"agent": {"allow_shell": "true"}}, ask, state=st))
         self.assertEqual(len(ask.prompts), 1)
 
+    def test_dev_run_ignores_session_grants(self):
+        # a dev run must not inherit the owner's "always" pick
+        st = mock.Mock()
+        st.focus = {"app": "firefox"}
+        st.confirmed = {("*", "*"), ("close", "firefox")}
+        ask = Confirm(answer=False)
+        cfg = {"agent": {}, "dev": {"run_id": "r1"}}
+        out = act._gate("close", "w", cfg, ask, state=st)
+        self.assertIsNotNone(out)
+
     def test_guided_mode_confirms_t1(self):
         cfg = {"agent": {"autonomy": "guided"}}
         ask = Confirm(answer=False)

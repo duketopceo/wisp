@@ -33,8 +33,21 @@ from datetime import datetime, timezone
 
 from . import config, devsession, ipc
 
-DENY_TOOLS = ("type_text", "key", "shell", "mcp_call", "post_send",
-              "close", "fill", "browser")
+# A run is unattended on the owner's live desktop, so it is an allow
+# list: navigation, reading and media only. Every other tool, including
+# any added later, is denied and the task ends as stopped.
+ALLOW_TOOLS = frozenset((
+    "click", "move", "scroll", "screenshot", "observe", "ground",
+    "launch", "focus", "tab", "media", "workspace",
+    "recall", "memory_read", "skill_list", "skill_view",
+    "search_files", "task_status", "codegraph"))
+
+
+def deny_tools() -> list:
+    """Every registered tool a run may not call (registry minus the
+    allow list), plus the browser lane, which runs outside the registry."""
+    from . import tools
+    return sorted((set(tools.REGISTRY) - ALLOW_TOOLS) | {"browser"})
 OUTCOMES = ("success", "stopped", "incomplete")   # `wrong tries`: U3
 # routes a run will drive; anything else is skipped as `stopped`
 _RUNNABLE = ("act", "answer", "launch", "tool")
@@ -92,7 +105,7 @@ def run_config(cfg: dict, run_id: str, vs=None) -> dict:
     c = copy.deepcopy(cfg)
     c.setdefault("dev", {})
     c["dev"]["run_id"] = run_id
-    c["dev"]["deny_tools"] = list(DENY_TOOLS)
+    c["dev"]["deny_tools"] = deny_tools()
     c.setdefault("traj", {})["enabled"] = "false"
     c.setdefault("agent", {})["allow_shell"] = "false"
     if vs:
@@ -268,14 +281,20 @@ def start(cfg: dict, st, ctl: dict, path, run_listen=None, judge=None,
                          "stopped": False, "running": True,
                          "judge_capped": False,
                          "path": str(store_path(run_id))})
-        if judge is None:
-            from . import devjudge
-            judge = devjudge.Judge(cfg)
-        _thread = threading.Thread(
-            target=_run, name="dev-run", daemon=True,
-            args=(cfg, st, ctl, run_id, goals, run_listen, judge,
-                  override, vs))
-        _thread.start()
+        try:
+            if judge is None:
+                from . import devjudge
+                judge = devjudge.Judge(cfg)
+            _thread = threading.Thread(
+                target=_run, name="dev-run", daemon=True,
+                args=(cfg, st, ctl, run_id, goals, run_listen, judge,
+                      override, vs))
+            _thread.start()
+        except Exception:
+            # never leave the daemon stuck busy on a run that never ran
+            ctl["busy"].clear()
+            _summary["running"] = False
+            raise
     return {"ok": True, "run_id": run_id, "tasks": total}
 
 
@@ -336,7 +355,7 @@ def _run(cfg, st, ctl, run_id, goals, run_listen, judge=None,
     try:
         for arm, rcfg in arms:
             for i, goal in enumerate(goals):
-                if _stop.is_set():
+                if _stop.is_set() or not devsession.is_on():
                     _summary["stopped"] = True
                     return
                 row = _one(rcfg, st, ctl, run_id, i, goal, run_listen,
@@ -403,12 +422,24 @@ def _one(rcfg, st, ctl, run_id, index, goal, run_listen, judge=None,
         row["turn"] = tid
         ctl["interrupt"].clear()
         token = ctl["token"] = cancel.CancelToken()
+        # confirms the owner granted in their own session must not
+        # carry into an unattended task
+        # (empty the same set in place: st may be a proxy over the bus
+        # state, so rebinding the attribute would not reach the gate)
+        held = getattr(st, "confirmed", None)
+        granted = set(held) if held is not None else None
+        if held is not None:
+            held.clear()
         try:
             run_listen(rcfg, st, wait_for_choice=None,
                        interrupted=ctl["interrupt"].is_set,
                        turn_id=tid, cancel=token, typed=goal)
         except Exception as e:
             row["error"] = f"{type(e).__name__}: {e}"[:200]
+        finally:
+            if held is not None:
+                held.clear()
+                held.update(granted)
         d = _decision(tid)
         steps, stops, llm = _trace_steps(tid)
         row["steps"] = steps

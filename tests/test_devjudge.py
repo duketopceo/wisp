@@ -129,6 +129,15 @@ class TestVettedCapture(Base):
                 self.assertEqual(self.reqs, [])
 
 
+    def test_screenshots_off_means_no_capture_and_unjudged(self):
+        self.cfg["agent"]["screenshots"] = "false"
+        with mock.patch.object(stage_capture, "_vetted_b64") as v:
+            _, out = self.judge()
+        v.assert_not_called()
+        self.assertEqual(out["outcome"], "unjudged")
+        self.assertEqual(self.reqs, [])
+
+
 class TestParse(Base):
     def test_malformed_reply_is_unjudged(self):
         for bad in ("looks fine to me", "", "{not json}",

@@ -136,6 +136,10 @@ def _gate(name: str, arg: str, cfg: dict, confirm,
     app = _focus_app(state)
     confirmed = getattr(state, "confirmed", None)
     grants = confirmed if isinstance(confirmed, set) else frozenset()
+    # an unattended dev run never inherits the owner's session grants:
+    # every step that would ask ends as needing confirmation
+    if (cfg or {}).get("dev", {}).get("run_id"):
+        grants = frozenset()
     if decision == "handoff":
         if ctx is not None and (name, app) in ctx["declined"]:
             return f"SKIPPED ({name} declined by user)"
