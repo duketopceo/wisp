@@ -212,6 +212,28 @@
       "level": 0.9
      }
     }
+   },
+   "dev_idle": {
+    "_state": "idle",
+    "_fixture": {
+     "patch": {
+      "dev": {
+       "on": true,
+       "runs_left": 4
+      }
+     }
+    }
+   },
+   "dev_acting": {
+    "_state": "acting",
+    "_fixture": {
+     "patch": {
+      "dev": {
+       "on": true,
+       "runs_left": 4
+      }
+     }
+    }
    }
   }
  },
@@ -1213,6 +1235,775 @@
    "loading": {
     "_state": "idle",
     "loading": true
+   },
+   "runs": {
+    "_state": "idle",
+    "reply": {
+     "finished": 15,
+     "gate": {
+      "correct": 4,
+      "gate_rate": 0.8,
+      "kinds": {
+       "act": {
+        "rate": 0.27
+       },
+       "answer": {
+        "rate": 0.0
+       },
+       "launch": {
+        "rate": 0.5
+       }
+      },
+      "labelled": 8,
+      "min_turns": 20,
+      "needs": 12,
+      "rate": 0.5,
+      "status": "collecting"
+     },
+     "misses": [
+      {
+       "count": 3,
+       "examples": [],
+       "kind": "act",
+       "pattern": "rename or move a folder",
+       "retried": 1
+      },
+      {
+       "count": 2,
+       "examples": [],
+       "kind": "answer",
+       "pattern": "calendar questions without access",
+       "retried": 0
+      }
+     ],
+     "rated": 8,
+     "rated_share": 0.53,
+     "truncated": false,
+     "turns": [
+      {
+       "act_steps": 4,
+       "id": "t5",
+       "kind": "act",
+       "label": "correct",
+       "note": "",
+       "result": "ACTED: 4 steps",
+       "route": "act",
+       "stages": [
+        {
+         "ms": 420,
+         "name": "stt"
+        },
+        {
+         "ms": 90,
+         "name": "route"
+        },
+        {
+         "ms": 1100,
+         "name": "brain"
+        },
+        {
+         "ms": 790,
+         "name": "act"
+        }
+       ],
+       "total_ms": 2400,
+       "transcript": "turn on the night light",
+       "ts": "2026-10-28T12:00:00+00:00",
+       "turn": "t5"
+      },
+      {
+       "act_steps": null,
+       "id": "t4",
+       "kind": "answer",
+       "label": "none",
+       "note": "",
+       "result": "ANSWERED: two meetings",
+       "route": "answer",
+       "stages": [
+        {
+         "ms": 380,
+         "name": "stt"
+        },
+        {
+         "ms": 70,
+         "name": "route"
+        },
+        {
+         "ms": 1350,
+         "name": "brain"
+        }
+       ],
+       "total_ms": 1800,
+       "transcript": "what is on my calendar this afternoon and tomorrow morning",
+       "ts": "2026-10-28T12:00:00+00:00",
+       "turn": "t4"
+      },
+      {
+       "act_steps": 6,
+       "id": "t3",
+       "kind": "act",
+       "label": "incorrect",
+       "note": "",
+       "result": "ACTED: 6 steps",
+       "route": "act",
+       "stages": [
+        {
+         "ms": 400,
+         "name": "stt"
+        },
+        {
+         "ms": 80,
+         "name": "route"
+        },
+        {
+         "ms": 1900,
+         "name": "brain"
+        },
+        {
+         "ms": 2820,
+         "name": "act"
+        }
+       ],
+       "total_ms": 5200,
+       "transcript": "rename the project folder to wisp-v2",
+       "ts": "2026-10-28T12:00:00+00:00",
+       "turn": "t3"
+      },
+      {
+       "act_steps": 1,
+       "id": "t2",
+       "kind": "launch",
+       "label": "correct",
+       "note": "",
+       "result": "LAUNCHED: settings",
+       "route": "launch",
+       "stages": [
+        {
+         "ms": 350,
+         "name": "stt"
+        },
+        {
+         "ms": 60,
+         "name": "route"
+        },
+        {
+         "ms": 690,
+         "name": "act"
+        }
+       ],
+       "total_ms": 1100,
+       "transcript": "open the settings app",
+       "ts": "2026-10-28T12:00:00+00:00",
+       "turn": "t2"
+      },
+      {
+       "act_steps": null,
+       "id": "t1",
+       "kind": "answer",
+       "label": "none",
+       "note": "",
+       "result": "ANSWERED: about 9 hours",
+       "route": "answer",
+       "stages": [
+        {
+         "ms": 410,
+         "name": "stt"
+        },
+        {
+         "ms": 65,
+         "name": "route"
+        },
+        {
+         "ms": 1025,
+         "name": "brain"
+        }
+       ],
+       "total_ms": 1500,
+       "transcript": "how long is the flight to lisbon",
+       "ts": "2026-10-28T12:00:00+00:00",
+       "turn": "t1"
+      }
+     ]
+    },
+    "selectedId": "t3",
+    "runsReply": {
+     "runs": [
+      {
+       "run_id": "20261030T081200Z",
+       "tasks": 6,
+       "ran": 6,
+       "judged_n": 5,
+       "unjudged": 1,
+       "judge_capped": false,
+       "mix": {
+        "judged": {
+         "success": 3,
+         "stopped": 1,
+         "incomplete": 1,
+         "wrong_tries": 0,
+         "unjudged": 1
+        },
+        "confirmed": {
+         "correct": 2,
+         "incorrect": 1,
+         "unreviewed": 3
+        }
+       },
+       "accuracy": {
+        "judged": 0.6,
+        "confirmed": 0.667
+       },
+       "drift_count": 1,
+       "cost": {
+        "task_usd": 0.01,
+        "judge_usd": 0.0112,
+        "total_usd": 0.0212
+       },
+       "stage_ms": {
+        "wall": 9000
+       },
+       "started": "2026-10-30T08:12:09+00:00",
+       "ended": "2026-10-30T08:13:40+00:00",
+       "rows": []
+      }
+     ]
+    }
+   },
+   "runs_empty": {
+    "_state": "idle",
+    "reply": {
+     "finished": 15,
+     "gate": {
+      "correct": 4,
+      "gate_rate": 0.8,
+      "kinds": {
+       "act": {
+        "rate": 0.27
+       },
+       "answer": {
+        "rate": 0.0
+       },
+       "launch": {
+        "rate": 0.5
+       }
+      },
+      "labelled": 8,
+      "min_turns": 20,
+      "needs": 12,
+      "rate": 0.5,
+      "status": "collecting"
+     },
+     "misses": [
+      {
+       "count": 3,
+       "examples": [],
+       "kind": "act",
+       "pattern": "rename or move a folder",
+       "retried": 1
+      },
+      {
+       "count": 2,
+       "examples": [],
+       "kind": "answer",
+       "pattern": "calendar questions without access",
+       "retried": 0
+      }
+     ],
+     "rated": 8,
+     "rated_share": 0.53,
+     "truncated": false,
+     "turns": [
+      {
+       "act_steps": 4,
+       "id": "t5",
+       "kind": "act",
+       "label": "correct",
+       "note": "",
+       "result": "ACTED: 4 steps",
+       "route": "act",
+       "stages": [
+        {
+         "ms": 420,
+         "name": "stt"
+        },
+        {
+         "ms": 90,
+         "name": "route"
+        },
+        {
+         "ms": 1100,
+         "name": "brain"
+        },
+        {
+         "ms": 790,
+         "name": "act"
+        }
+       ],
+       "total_ms": 2400,
+       "transcript": "turn on the night light",
+       "ts": "2026-10-28T12:00:00+00:00",
+       "turn": "t5"
+      },
+      {
+       "act_steps": null,
+       "id": "t4",
+       "kind": "answer",
+       "label": "none",
+       "note": "",
+       "result": "ANSWERED: two meetings",
+       "route": "answer",
+       "stages": [
+        {
+         "ms": 380,
+         "name": "stt"
+        },
+        {
+         "ms": 70,
+         "name": "route"
+        },
+        {
+         "ms": 1350,
+         "name": "brain"
+        }
+       ],
+       "total_ms": 1800,
+       "transcript": "what is on my calendar this afternoon and tomorrow morning",
+       "ts": "2026-10-28T12:00:00+00:00",
+       "turn": "t4"
+      },
+      {
+       "act_steps": 6,
+       "id": "t3",
+       "kind": "act",
+       "label": "incorrect",
+       "note": "",
+       "result": "ACTED: 6 steps",
+       "route": "act",
+       "stages": [
+        {
+         "ms": 400,
+         "name": "stt"
+        },
+        {
+         "ms": 80,
+         "name": "route"
+        },
+        {
+         "ms": 1900,
+         "name": "brain"
+        },
+        {
+         "ms": 2820,
+         "name": "act"
+        }
+       ],
+       "total_ms": 5200,
+       "transcript": "rename the project folder to wisp-v2",
+       "ts": "2026-10-28T12:00:00+00:00",
+       "turn": "t3"
+      },
+      {
+       "act_steps": 1,
+       "id": "t2",
+       "kind": "launch",
+       "label": "correct",
+       "note": "",
+       "result": "LAUNCHED: settings",
+       "route": "launch",
+       "stages": [
+        {
+         "ms": 350,
+         "name": "stt"
+        },
+        {
+         "ms": 60,
+         "name": "route"
+        },
+        {
+         "ms": 690,
+         "name": "act"
+        }
+       ],
+       "total_ms": 1100,
+       "transcript": "open the settings app",
+       "ts": "2026-10-28T12:00:00+00:00",
+       "turn": "t2"
+      },
+      {
+       "act_steps": null,
+       "id": "t1",
+       "kind": "answer",
+       "label": "none",
+       "note": "",
+       "result": "ANSWERED: about 9 hours",
+       "route": "answer",
+       "stages": [
+        {
+         "ms": 410,
+         "name": "stt"
+        },
+        {
+         "ms": 65,
+         "name": "route"
+        },
+        {
+         "ms": 1025,
+         "name": "brain"
+        }
+       ],
+       "total_ms": 1500,
+       "transcript": "how long is the flight to lisbon",
+       "ts": "2026-10-28T12:00:00+00:00",
+       "turn": "t1"
+      }
+     ]
+    },
+    "selectedId": "t3",
+    "runsReply": {
+     "runs": []
+    }
+   },
+   "runs_ab": {
+    "_state": "idle",
+    "reply": {
+     "finished": 15,
+     "gate": {
+      "correct": 4,
+      "gate_rate": 0.8,
+      "kinds": {
+       "act": {
+        "rate": 0.27
+       },
+       "answer": {
+        "rate": 0.0
+       },
+       "launch": {
+        "rate": 0.5
+       }
+      },
+      "labelled": 8,
+      "min_turns": 20,
+      "needs": 12,
+      "rate": 0.5,
+      "status": "collecting"
+     },
+     "misses": [
+      {
+       "count": 3,
+       "examples": [],
+       "kind": "act",
+       "pattern": "rename or move a folder",
+       "retried": 1
+      },
+      {
+       "count": 2,
+       "examples": [],
+       "kind": "answer",
+       "pattern": "calendar questions without access",
+       "retried": 0
+      }
+     ],
+     "rated": 8,
+     "rated_share": 0.53,
+     "truncated": false,
+     "turns": [
+      {
+       "act_steps": 4,
+       "id": "t5",
+       "kind": "act",
+       "label": "correct",
+       "note": "",
+       "result": "ACTED: 4 steps",
+       "route": "act",
+       "stages": [
+        {
+         "ms": 420,
+         "name": "stt"
+        },
+        {
+         "ms": 90,
+         "name": "route"
+        },
+        {
+         "ms": 1100,
+         "name": "brain"
+        },
+        {
+         "ms": 790,
+         "name": "act"
+        }
+       ],
+       "total_ms": 2400,
+       "transcript": "turn on the night light",
+       "ts": "2026-10-28T12:00:00+00:00",
+       "turn": "t5"
+      },
+      {
+       "act_steps": null,
+       "id": "t4",
+       "kind": "answer",
+       "label": "none",
+       "note": "",
+       "result": "ANSWERED: two meetings",
+       "route": "answer",
+       "stages": [
+        {
+         "ms": 380,
+         "name": "stt"
+        },
+        {
+         "ms": 70,
+         "name": "route"
+        },
+        {
+         "ms": 1350,
+         "name": "brain"
+        }
+       ],
+       "total_ms": 1800,
+       "transcript": "what is on my calendar this afternoon and tomorrow morning",
+       "ts": "2026-10-28T12:00:00+00:00",
+       "turn": "t4"
+      },
+      {
+       "act_steps": 6,
+       "id": "t3",
+       "kind": "act",
+       "label": "incorrect",
+       "note": "",
+       "result": "ACTED: 6 steps",
+       "route": "act",
+       "stages": [
+        {
+         "ms": 400,
+         "name": "stt"
+        },
+        {
+         "ms": 80,
+         "name": "route"
+        },
+        {
+         "ms": 1900,
+         "name": "brain"
+        },
+        {
+         "ms": 2820,
+         "name": "act"
+        }
+       ],
+       "total_ms": 5200,
+       "transcript": "rename the project folder to wisp-v2",
+       "ts": "2026-10-28T12:00:00+00:00",
+       "turn": "t3"
+      },
+      {
+       "act_steps": 1,
+       "id": "t2",
+       "kind": "launch",
+       "label": "correct",
+       "note": "",
+       "result": "LAUNCHED: settings",
+       "route": "launch",
+       "stages": [
+        {
+         "ms": 350,
+         "name": "stt"
+        },
+        {
+         "ms": 60,
+         "name": "route"
+        },
+        {
+         "ms": 690,
+         "name": "act"
+        }
+       ],
+       "total_ms": 1100,
+       "transcript": "open the settings app",
+       "ts": "2026-10-28T12:00:00+00:00",
+       "turn": "t2"
+      },
+      {
+       "act_steps": null,
+       "id": "t1",
+       "kind": "answer",
+       "label": "none",
+       "note": "",
+       "result": "ANSWERED: about 9 hours",
+       "route": "answer",
+       "stages": [
+        {
+         "ms": 410,
+         "name": "stt"
+        },
+        {
+         "ms": 65,
+         "name": "route"
+        },
+        {
+         "ms": 1025,
+         "name": "brain"
+        }
+       ],
+       "total_ms": 1500,
+       "transcript": "how long is the flight to lisbon",
+       "ts": "2026-10-28T12:00:00+00:00",
+       "turn": "t1"
+      }
+     ]
+    },
+    "selectedId": "t3",
+    "runsReply": {
+     "runs": [
+      {
+       "run_id": "20261030T081200Z",
+       "tasks": 8,
+       "ran": 8,
+       "judged_n": 8,
+       "unjudged": 0,
+       "judge_capped": false,
+       "mix": {
+        "judged": {
+         "success": 5,
+         "stopped": 2,
+         "incomplete": 0,
+         "wrong_tries": 1,
+         "unjudged": 0
+        },
+        "confirmed": {
+         "correct": 3,
+         "incorrect": 0,
+         "unreviewed": 5
+        }
+       },
+       "accuracy": {
+        "judged": 0.625,
+        "confirmed": 1.0
+       },
+       "drift_count": 0,
+       "cost": {
+        "task_usd": 0.02,
+        "judge_usd": 0.0224,
+        "total_usd": 0.0424
+       },
+       "stage_ms": {
+        "wall": 9000
+       },
+       "started": "2026-10-30T08:12:09+00:00",
+       "ended": "2026-10-30T08:13:40+00:00",
+       "rows": [],
+       "vs": "brain.default=openrouter:acme/model",
+       "pairs": [
+        {
+         "index": 0,
+         "goal": "",
+         "a": "success",
+         "b": "stopped",
+         "better": "a"
+        },
+        {
+         "index": 1,
+         "goal": "",
+         "a": "success",
+         "b": "stopped",
+         "better": "a"
+        },
+        {
+         "index": 2,
+         "goal": "",
+         "a": "success",
+         "b": "stopped",
+         "better": "b"
+        },
+        {
+         "index": 3,
+         "goal": "",
+         "a": "success",
+         "b": "stopped",
+         "better": "tie"
+        }
+       ],
+       "arms": {
+        "a": {
+         "run_id": "20261030T081200Z",
+         "tasks": 6,
+         "ran": 6,
+         "judged_n": 5,
+         "unjudged": 1,
+         "judge_capped": false,
+         "mix": {
+          "judged": {
+           "success": 3,
+           "stopped": 1,
+           "incomplete": 1,
+           "wrong_tries": 0,
+           "unjudged": 1
+          },
+          "confirmed": {
+           "correct": 2,
+           "incorrect": 1,
+           "unreviewed": 3
+          }
+         },
+         "accuracy": {
+          "judged": 0.6,
+          "confirmed": 0.667
+         },
+         "drift_count": 1,
+         "cost": {
+          "task_usd": 0.01,
+          "judge_usd": 0.0112,
+          "total_usd": 0.0212
+         },
+         "stage_ms": {
+          "wall": 9000
+         },
+         "started": "2026-10-30T08:12:09+00:00",
+         "ended": "2026-10-30T08:13:40+00:00",
+         "rows": []
+        },
+        "b": {
+         "run_id": "20261030T081200Z",
+         "tasks": 6,
+         "ran": 6,
+         "judged_n": 5,
+         "unjudged": 1,
+         "judge_capped": false,
+         "mix": {
+          "judged": {
+           "success": 3,
+           "stopped": 1,
+           "incomplete": 1,
+           "wrong_tries": 0,
+           "unjudged": 1
+          },
+          "confirmed": {
+           "correct": 2,
+           "incorrect": 1,
+           "unreviewed": 3
+          }
+         },
+         "accuracy": {
+          "judged": 0.6,
+          "confirmed": 0.667
+         },
+         "drift_count": 1,
+         "cost": {
+          "task_usd": 0.01,
+          "judge_usd": 0.0112,
+          "total_usd": 0.0212
+         },
+         "stage_ms": {
+          "wall": 9000
+         },
+         "started": "2026-10-30T08:12:09+00:00",
+         "ended": "2026-10-30T08:13:40+00:00",
+         "rows": []
+        }
+       }
+      }
+     ]
+    }
    }
   },
   "width": 360

@@ -238,6 +238,8 @@ by turn kind (answer, act, launch, dictate, agent) and checks the
 `[eval]` gate. `wispd eval --misses` groups the turns that were not
 right first time, and `wispd eval --unlabelled` lists the turns still
 waiting for a label. `wispd learn fails` lists logged failures.
+To tune on purpose, dev mode runs a task list on your desktop and reports
+accuracy, drift and cost; see [`docs/DEV_MODE.md`](docs/DEV_MODE.md).
 
 ## Walkthroughs
 

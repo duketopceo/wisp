@@ -7,6 +7,7 @@ import qs.Ui
 import "components"
 import "lib/onboard.js" as Onboard
 import "lib/whatsnew.js" as WhatsNew
+import "lib/dev.js" as Dev
 
 // Popup panel for io.github.duketopceo.wisp, opened from the bar mark.
 // Four tabs: Now (the turn in flight), Agents (tasks), Memory (skills and
@@ -32,9 +33,10 @@ Panel {
   readonly property var service: hostWidget && hostWidget.service ? hostWidget.service : null
   readonly property string dataDir: Quickshell.env("HOME") + "/.local/share/wisp"
   readonly property var baseTabs: ["now", "agents", "memory", "settings"]
-  // Dev is index 4, after Settings (index 3), and only with the flag on
-  readonly property bool devPanelOn: service !== null && service.devPanel
-  readonly property var tabKeys: service && service.devPanel ? baseTabs.concat(["devtab"]) : baseTabs
+  // Dev is index 4, after Settings (index 3), and only with the flag or a
+  // dev session on
+  readonly property bool devPanelOn: service !== null && service.devTab
+  readonly property var tabKeys: service && service.devTab ? baseTabs.concat(["devtab"]) : baseTabs
   property int tab: 0
 
   property var skills: []
@@ -62,9 +64,9 @@ Panel {
   // the Dev data if its tab is already the open one
   Connections {
     target: wisp.service
-    function onDevPanelChanged() {
-      if (!wisp.service.devPanel && wisp.tab === 4) wisp.tab = 0
-      else if (wisp.service.devPanel && wisp.opened && wisp.tab === 4) wisp.service.loadDev()
+    function onDevTabChanged() {
+      if (!wisp.service.devTab && wisp.tab === 4) wisp.tab = 0
+      else if (wisp.service.devTab && wisp.opened && wisp.tab === 4) wisp.service.loadDev()
     }
   }
 
@@ -243,7 +245,9 @@ Panel {
               textFormat: Text.PlainText
               id: localBadge
               anchors.centerIn: parent
-              text: col.svc.ui("ui.dev.local")
+              text: Dev.badgeText(col.svc.devOn, col.svc.devRunsLeft, {
+                dev: col.svc.ui("ui.tab.devtab"), local: col.svc.ui("ui.dev.local"),
+                one: col.svc.ui("ui.dev.badge.one"), many: col.svc.ui("ui.dev.badge.many") })
               font.capitalization: Font.AllUppercase
               color: col.tk.needsYou
               font.family: col.svc.fontFamily
@@ -332,6 +336,9 @@ Panel {
           width: col.width - 2 * col.padding
           service: col.svc
           reply: col.svc.devData
+          runsReply: col.svc.devRuns
+          runsLoading: col.svc.devRunsLoading
+          runsError: col.svc.devRunsError
           loading: col.svc.devLoading
           error: col.svc.devError
           onRefresh: col.svc.loadDev()

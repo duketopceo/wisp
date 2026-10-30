@@ -6,7 +6,9 @@
 // alert in a yellow border for needs you, an x in a red border plus one
 // muted word of cause for error (it stays until the next turn starts), and
 // after a finished turn a check, "done" and two thumb buttons for the
-// service's 8 s rating window (hovering pauses it). Spend, voice and the
+// service's 8 s rating window (hovering pauses it). While a dev session is
+// on, a small yellow "dev" badge sits at the end of the pill, idle included
+// (then it is the whole pill), so the mode is never on by accident. Spend, voice and the
 // mouse map live in the hover card, not here. The word always repeats the
 // state; color is never the only signal. No Timer: the window is the
 // service's; the arc turns only while thinking and only in full motion.
@@ -33,6 +35,7 @@ Item {
     windowOpen: service ? service.ratingWindowOpen === true : false,
     rateable: service ? Rate.rateable(service.status, service.answer,
       service.result, service.errorCode) : false,
+    dev: service ? service.devOn === true : false,
     run: service ? service.run : null
   })
   readonly property real glyphSize: M.font.icon - 2
@@ -84,6 +87,7 @@ Item {
 
       // glyph slot: one of waveform / arc / triangle / icon
       Item {
+        visible: root.info.glyph !== ""
         width: root.glyphSize
         height: root.glyphSize
         anchors.verticalCenter: parent.verticalCenter
@@ -169,6 +173,7 @@ Item {
       Text {
         textFormat: Text.PlainText
         objectName: "word"
+        visible: text !== ""
         anchors.verticalCenter: parent.verticalCenter
         text: !root.service || !root.info.visible ? ""
           : root.info.thumbs && root.rated ? root.service.ui(root.tapped === "incorrect" ? "ui.rate.wrong" : "ui.rate.good")
@@ -259,6 +264,29 @@ Item {
             hoverEnabled: true
             onClicked: thumbDown.activate()
           }
+        }
+      }
+      // dev session: the mode badge, in the yellow token (a mode, not an error)
+      Rectangle {
+        id: devBadge
+        objectName: "devBadge"
+        visible: root.info.dev
+        anchors.verticalCenter: parent.verticalCenter
+        width: devWord.implicitWidth + 2 * M.spacing.md
+        height: devWord.implicitHeight + M.spacing.sm
+        radius: M.radius.chip
+        color: "transparent"
+        border.width: M.size.keyline
+        border.color: root.tk.needsYou
+        Text {
+          id: devWord
+          textFormat: Text.PlainText
+          anchors.centerIn: parent
+          text: root.service ? root.service.ui("ui.bar.badge") : ""
+          color: root.tk.needsYou
+          font.family: root.service ? root.service.fontFamily : ""
+          font.pixelSize: M.font.caption
+          font.weight: Font.DemiBold
         }
       }
     }
