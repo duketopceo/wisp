@@ -385,14 +385,53 @@ def active_window() -> dict:
     return {"class": w.get("class", ""), "title": w.get("title", "")}
 
 
+_CUA_NEG_TTL = 2.0
+_cua_neg: dict = {}  # socket path -> monotonic time of last failed probe
+
+
+def _cua_probe_reset() -> None:
+    _cua_neg.clear()
+
+
+def _cua_probe(path: str, timeout: float = 0.2) -> bool:
+    """True when something accepts a connection on the daemon socket.
+    A leftover socket file with no daemon refuses (ECONNREFUSED)."""
+    import socket
+    if not hasattr(socket, "AF_UNIX"):
+        return os.path.exists(path)  # no unix sockets: presence only
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        s.settimeout(timeout)
+        s.connect(path)
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
+
+
 def _cua_live() -> bool:
-    """cua-driver reachable. Linux: binary on PATH plus the daemon
-    socket (Wayland backend enabled server-side via
-    CUA_DRIVER_RS_ENABLE_WAYLAND)."""
+    """cua-driver reachable: binary on PATH AND the daemon answers on
+    its socket (a bounded connect — a stale socket file left by a dead
+    daemon is not live; TLY-430). Only failures are cached (2 s) so a
+    dead daemon is never reported live and the probe stays cheap; a
+    live answer is re-checked each call (a local connect, ~100 us).
+    Wayland backend is enabled server-side via
+    CUA_DRIVER_RS_ENABLE_WAYLAND."""
     if not _which("cua-driver"):
         return False
-    return os.path.exists(
-        os.path.expanduser("~/.cache/cua-driver/cua-driver.sock"))
+    import time
+    path = os.path.expanduser("~/.cache/cua-driver/cua-driver.sock")
+    if not os.path.exists(path):
+        return False
+    t = _cua_neg.get(path)
+    if t is not None and time.monotonic() - t < _CUA_NEG_TTL:
+        return False
+    if _cua_probe(path):
+        _cua_neg.pop(path, None)
+        return True
+    _cua_neg[path] = time.monotonic()
+    return False
 
 
 def pointer_backend(cfg: dict | None = None,

@@ -187,6 +187,7 @@ class TurnResult:
     spans: dict = field(default_factory=dict)    # ms timings
     violations: list = field(default_factory=list)
     launch_calls: list = field(default_factory=list)
+    media_calls: list = field(default_factory=list)
     notifications: list = field(default_factory=list)
     fake_calls: dict = field(default_factory=dict)  # cua/hypr/notify/...
     interrupt_fired: bool = False
@@ -253,6 +254,7 @@ def check_expectations(res: TurnResult) -> list:
     want("answer", res.final.get("answer"))
     want("transcript", res.final.get("transcript"))
     want("launch_calls", res.launch_calls)
+    want("media_calls", res.media_calls)
     want("error_code", res.final.get("error_code"))
     if "brain_fallback_from" in ex:
         got = [e.get("fallback_from")
@@ -448,6 +450,7 @@ def run_turn(fixture, timeout: float = 60.0,
             "catalog": fx.get("catalog"),
             "launch_results": fx.get("launch_results"),
             "tab_results": fx.get("tab_results"),
+            "media_results": fx.get("media_results"),
             "chooser": fx.get("chooser"),
             "notify_now": fx.get("notify_now"),
             "selection": fx.get("selection"),
@@ -483,6 +486,7 @@ def run_turn(fixture, timeout: float = 60.0,
         res.violations = out.get("violations", []) + fs.violations()
         res.fake_calls = fs.calls()
         res.launch_calls = out.get("launch_calls", [])
+        res.media_calls = out.get("media_calls", [])
         res.notifications = out.get("notifications", [])
         res.interrupt_fired = out.get("interrupt_fired", False)
         res.interrupt_t_ms = round((out.get("interrupt_t", 0) - out.get("t0", 0)) * 1000)
