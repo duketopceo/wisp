@@ -18,7 +18,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from . import config, util
+from . import config, private, util
 
 SCOPE_PREFIX = "wisp-task-"
 _SCOPE_RE = re.compile(r"\bwisp-task-([A-Za-z0-9_.-]+?)\.scope\b")
@@ -578,7 +578,7 @@ def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
     # [agents] model — distinct from [agent] model (that's the Jev
     # router); empty unless the user sets an agent-model override
     model = cfg.get("agents", {}).get("model", "")
-    cmd = _runtime_cmd(cfg, prompt, model)
+    cmd = _runtime_cmd(cfg, model)
     if cmd is None:
         rt = cfg.get("brain", {}).get("agent_runtime", "auto")
         if rt == "auto":
@@ -596,12 +596,13 @@ def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
     spawn_ts = datetime.now(timezone.utc).isoformat()
     try:
         with log.open("ab") as lf:
-            proc = subprocess.Popen(
-                exec_cmd, stdout=lf, stderr=subprocess.STDOUT,
-                stdin=subprocess.DEVNULL,
-                cwd=cwd or str(out_dir),
-                env=env,
-                start_new_session=True)
+            with private.text_stdin(prompt) as fin:
+                proc = subprocess.Popen(
+                    exec_cmd, stdout=lf, stderr=subprocess.STDOUT,
+                    stdin=fin,
+                    cwd=cwd or str(out_dir),
+                    env=env,
+                    start_new_session=True)
     except OSError as e:
         return f"SKIP (agent spawn failed: {e})"
     _EXIT_CODES.pop(proc.pid, None)  # drop a stale code from a prior pid owner
@@ -732,11 +733,15 @@ def _reap() -> None:
     _PROCS[:] = still
 
 
-_RUNTIMES = {  # [brain] agent_runtime → argv template, {task}/{model}
-    "opencode": ["ori", "opencode", "run", "{task}"],
-    "codex": ["codex", "exec", "{task}"],
-    "claude": ["claude", "-p", "{task}"],
-    "devin": ["devin", "run", "{task}"],
+# [brain] agent_runtime → argv. The prompt is private (a task can quote the
+# screen or a dictated message) and argv is readable by other local
+# accounts while the agent runs, so it is never in argv: each runtime reads
+# it from stdin (spawn hands it an unlinked 0600 temp file).
+_RUNTIMES = {
+    "opencode": ["ori", "opencode", "run"],
+    "codex": ["codex", "exec", "-"],
+    "claude": ["claude", "-p"],
+    "devin": ["devin", "--print", "--prompt-file", "-"],
 }
 _RUNTIME_BINS = {"opencode": "ori", "codex": "codex",
                  "claude": "claude", "devin": "devin"}
@@ -783,20 +788,21 @@ def resolve_runtime(cfg: dict) -> str:
     return ""
 
 
-def _runtime_cmd(cfg: dict, task: str, model: str) -> list | None:
-    """argv for the configured agent runtime, or None when its binary
-    isn't on PATH (U6: probe → explicit error, not a silent failure)."""
+def _runtime_cmd(cfg: dict, model: str) -> list | None:
+    """argv for the configured agent runtime (the prompt goes to stdin,
+    not argv), or None when its binary isn't on PATH (U6: probe →
+    explicit error, not a silent failure)."""
     rt = resolve_runtime(cfg)
     if not rt:
         return None
     template = _RUNTIMES.get(rt, _RUNTIMES["opencode"])
     if not shutil.which(_RUNTIME_BINS.get(rt, "ori")):
         return None
-    cmd = [a.format(task=task, model=model) for a in template]
+    cmd = list(template)
     if model and rt == "opencode":
         cmd[3:3] = ["--model", model]  # after 'run'
     elif model and rt == "codex":
-        cmd += ["-m", model]
+        cmd[2:2] = ["-m", model]       # before the "-" stdin prompt
     elif model and rt == "claude":
         cmd += ["--model", model]
     return cmd
