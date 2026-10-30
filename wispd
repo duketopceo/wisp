@@ -244,6 +244,8 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
             if op == "on":
                 s = devsession.turn_on()
             elif op == "off":
+                from wisp import devrun
+                devrun.stop()          # a live run ends after its task
                 s = devsession.turn_off()
             elif op == "status":
                 s = devsession.status()

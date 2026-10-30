@@ -340,6 +340,24 @@ class TestSessionRules(Base):
         # a stopped run still counts as a run
         self.assertEqual(devsession.status()["runs_done"], 1)
 
+    def test_dev_off_mid_run_stops_after_the_current_task(self):
+        self.after["two"] = devsession.turn_off
+        self.run_list(self.tasks("one", "two", "three"))
+        self.assertEqual([c["typed"] for c in self.calls], ["one", "two"])
+        self.assertTrue(devrun.last_summary()["stopped"])
+
+    def test_router_picked_agent_route_is_not_run_in_a_dev_run(self):
+        from wisp import agents, stage_execute
+        rcfg = devrun.run_config(self.cfg, "r1")
+        with mock.patch.object(agents, "spawn") as spawn:
+            for route in ("agent", "setting", "learn", "walkthrough",
+                          "routine", "dictation"):
+                out = stage_execute.execute(
+                    {"route": {"choice": route},
+                     "detail": {"choice": "x"}}, rcfg)
+                self.assertTrue(out.startswith("SKIPPED (dev run"), out)
+        spawn.assert_not_called()
+
     def test_stop_with_nothing_running(self):
         r = devrun.stop()
         self.assertFalse(r["ok"])
@@ -546,3 +564,26 @@ class TestAB(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RunSafetyTest(unittest.TestCase):
+    """Security review (dev mode PR): a run is an allow list, and the
+    owner's session confirm grants never reach an unattended task."""
+
+    def test_every_registry_tool_is_allowed_or_denied(self):
+        from wisp import devrun, tools
+        deny = set(devrun.deny_tools())
+        for name in tools.REGISTRY:
+            self.assertTrue(name in devrun.ALLOW_TOOLS or name in deny,
+                            name)
+        for risky in ("agent_spawn", "task_cancel", "type_text", "key",
+                      "shell", "post_send", "close", "skill_manage",
+                      "memory", "fill", "mcp_call"):
+            self.assertIn(risky, deny)
+        self.assertNotIn("media", deny)
+        self.assertNotIn("tab", deny)
+
+    def test_a_new_tool_is_denied_by_default(self):
+        from wisp import devrun, tools
+        with mock.patch.dict(tools.REGISTRY, {"future_tool": None}):
+            self.assertIn("future_tool", devrun.deny_tools())
