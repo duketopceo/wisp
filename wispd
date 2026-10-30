@@ -449,8 +449,9 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
             try:
                 out = devlog.build(cfg, n=cmd.get("n"))
                 # a spawned agent reads timings, not what the owner said
-                if agents.classify_peer(peer, tasks_file=tasks_file).get(
-                        "marked"):
+                tf = (tasks_file if tasks_file is not None
+                      else config.TASKS_FILE)
+                if agents.classify_peer(peer, tasks_file=tf).get("marked"):
                     out = devlog.redact(out)
                 return {"ok": True, **out}
             except Exception as e:
