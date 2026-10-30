@@ -102,6 +102,9 @@ def doctor_sections(cfg: dict, cua_probe=None, agents_probe=None) -> list:
         bool(shutil.which("hyprctl")))
     row("sense enabled", cfg.get("sense", {}).get("enabled", "false"))
 
+    row = section("voice")
+    _voice_rows(row, cfg)
+
     row = section("reporting")
     from .. import report as _report
     on, depth = _report.status(cfg)
@@ -134,6 +137,36 @@ def _agent_rows(row, probe=None) -> None:
         row("agent runtime", f"{label}: {r['fix']}", False)
     row("agent permission gate",
         "live check not run (needs a model call); see docs/TRUST.md")
+
+
+def _voice_rows(row, cfg: dict) -> None:
+    """Who speaks now, the last Groq error with its fix, and when Groq is
+    retried. Reads the daemon's voice_groq.json; no network call."""
+    from .. import speech, tts_groq
+    name, why = speech.backend(cfg)
+    row("voice backend", f"{name}: {why}")
+    if tts_groq.provider(cfg) != "groq":
+        return
+    err = tts_groq.last_error()
+    until = tts_groq.backoff_until()
+    if not err:
+        row("groq last error", "none")
+    else:
+        kind = err["class"]
+        if kind == "terms":
+            fix = ("accept the Orpheus terms once at "
+                   + tts_groq.TERMS_LINK)
+        elif kind == "rate_limit":
+            fix = (f"rate limited until {tts_groq.fmt_time(until)}; a paid "
+                   "Groq tier lifts the limit" if until else "rate limited")
+        elif kind == "auth":
+            fix = "Groq rejected the key; fix groq/default in omaseal"
+        else:
+            fix = err.get("detail") or "see the daemon log"
+        row("groq last error", f"{kind}: {fix}")
+    now = tts_groq._now()
+    row("groq retry", f"at {tts_groq.fmt_time(until)}" if until > now
+        else "now")
 
 
 def _cua_rows(row, cfg: dict, probe=None) -> None:

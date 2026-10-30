@@ -11,7 +11,7 @@ Nothing is sent between key presses. There is no analytics, no account and no Wi
 | Host | What it is for | What it gets | On by default | Key | What you control |
 | --- | --- | --- | --- | --- | --- |
 | `openrouter.ai` | Answer model, router and decision calls, the vision fallback for finding a control on screen, and (only if you turn `[recall] provider` on) memory embeddings. | **text, screenshot.** What you said (as text), the focused app and window names, recent turns, memory notes, a selection or copied text you pointed at, and a screenshot on answer calls (`[agent] screenshots`) and the vision fallback. Windows that look like a password manager, a keyring or authentication prompt or a sudo terminal (plus any you add under `[cua]`) are blanked first, and a capture is refused while one has focus. | Yes. It is the default answer brain. | You. `OPENROUTER_API_KEY` in your environment, `~/.config/wisp/.env` or your keyring. | `[brain] default` and `[brain] fallback` take a local model (`ollama:`, `lmstudio:`, `mlx:`) and nothing then leaves; `[agent] screenshots = false` keeps the screen out of answers. How long OpenRouter and the model provider keep a request is set by your OpenRouter account's privacy settings, not by Wisp. |
-| `api.groq.com` | Speech to text for each push-to-talk turn (any OpenAI-compatible endpoint works in its place). | **audio.** The recording of that turn, and the vocabulary prompt from `[stt] prompt`. | Yes. `[stt] provider` is `openai` with this base URL. | You. `GROQ_API_KEY` in your environment, `~/.config/wisp/.env` or your keyring. | `[stt] provider = "local"` transcribes on this machine with whisper.cpp and sends no audio; `[stt] base_url` points at any other host. The provider's retention is its own. |
+| `api.groq.com` | Speech to text for each push-to-talk turn (any OpenAI-compatible endpoint works in its place), and the voice that speaks answers aloud. | **audio, text.** The recording of that turn, and the vocabulary prompt from `[stt] prompt`. For the spoken answer, the answer text one sentence at a time (English answers only). | Yes. `[stt] provider` is `openai` with this base URL. | You. `GROQ_API_KEY` in your environment, `~/.config/wisp/.env` or your keyring. | `[stt] provider = "local"` transcribes on this machine with whisper.cpp and sends no audio; `[stt] base_url` points at any other host. `[voice] provider = "espeak"` (or `[voice] enabled = false`) sends no answer text. The provider's retention is its own. |
 | `api.github.com` | Update check and release lookup for `wispd update`. | **nothing of yours.** A plain GET with the user agent `wispd-update`. Nothing from your machine is in it. | No. Only when you run `wispd update`; the daemon never calls it. | None. | Do not run `wispd update`. A release is verified against its published SHA-256 before anything is installed. |
 | `upload.wikimedia.org` | Pictures for answer cards. | **nothing of yours.** A plain GET for one picture an answer named. Nothing from your machine is in it, but the picture's address comes from the answer. | Only when an answer shows a picture. This is the only host fetched by default for pictures. | None. | `[images] allow` is the full list of hosts that may be fetched, https only, size-capped, private addresses refused. Set it to a host you do not use to turn pictures off. |
 | `raw.githubusercontent.com` | 3D models for answer cards. | **nothing of yours.** A plain GET for one glTF or GLB file an answer named. Nothing from your machine is in it, but the model's address comes from the answer. | Only when an answer shows a 3D model. | None. | `[models] allow` is the full list of hosts that may be fetched, https only, size-capped, private addresses refused. Set it to a host you do not use to turn 3D models off. |
@@ -51,6 +51,7 @@ An OpenCode agent Wisp starts runs on this machine and reaches models through or
 | `cal.com` | A name in a list of apps Wisp can connect to, in help text. |
 | `wisp.ai` | An example in help text. |
 | `example.com` | An example address in help text. |
+| `console.groq.com` | A link shown in the voice notice and `wispd doctor` for accepting the Orpheus terms. Wisp never requests it. |
 | `amara.org` | A credit line for subtitle text in a bundled sample. |
 | `www.w3.org` | An XML namespace in a generated icon. Never requested. |
 
@@ -85,9 +86,10 @@ From the scan this page is built from.
 
 - `amara.org`: `wisp/dictate_history.py`
 - `api.github.com`: `wisp/update.py`
-- `api.groq.com`: `rs/wispd/src/config.rs`, `wisp/config.py`
+- `api.groq.com`: `rs/wispd/src/config.rs`, `wisp/config.py`, `wisp/tts_groq.py`
 - `cal.com`: `wisp/mcpauth.py`
 - `calendar.google.com`: `wisp/config.py`
+- `console.groq.com`: `wisp/tts_groq.py`
 - `example.com`: `wisp/cli/share.py`
 - `github.com`: `rs/wispd/src/brain.rs`, `wisp/agent_pins.py`, `wisp/brain.py`, `wisp/grounding.py`, `wisp/stage_route.py`, `wisp/update.py` and 1 more
 - `gmail.com`: `wisp/tools/__init__.py`

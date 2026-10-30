@@ -22,9 +22,9 @@ COMP = PLUGIN / "components"
 FIXTURE_SERVICE = ROOT / "tests" / "qml" / "harness" / "FixtureService.qml"
 
 EXPECTED = ["AskChips", "Answer", "AgentRow", "AgentsTab", "BarActions", "BarMark", "BarPill", "Beacon", "Bubble", "Buddy", "Card", "Chip",
-            "Creature", "DrawLayer", "EmptyState", "FirstRunCard",
+            "Creature", "DevTab", "DrawLayer", "EmptyState", "FirstRunCard",
             "HealthSection", "Icon", "Mark", "MemoryTab", "ModelCard", "NowTab", "OverlayLayer",
-            "PanelTab", "Pill", "RunCard", "ScribbleLayer", "SettingsTab", "StatusLine", "StepRow",
+            "PanelTab", "Pill", "RateNote", "RateRow", "RunCard", "ScribbleLayer", "SettingsTab", "StatusLine", "StepRow",
             "StopControl", "Transcript", "WhatsNewCard",
             # management app views
             "AuditView", "BindsView", "HealthView", "SpendView"]
@@ -116,9 +116,13 @@ class TestComponentRules(unittest.TestCase):
         for p in sorted(COMP.glob("*.qml")):
             src = code(p)
             if re.search(r"Animation\.Infinite|loops:\s*Animation", src):
-                self.assertEqual(p.stem, "Creature")
+                # the bar pill's thinking arc is the one other loop (U3):
+                # gated the same way, and only while thinking
+                self.assertIn(p.stem, ("Creature", "BarPill"))
                 self.assertIn("motionMode", src)
                 self.assertIn("Motion.loops", src)
+                if p.stem == "BarPill":
+                    self.assertRegex(src, r'kind === "thinking"')
 
     def test_motion_respects_service_mode(self):
         for p in sorted(COMP.glob("*.qml")):
@@ -201,8 +205,11 @@ class TestPanelW22(unittest.TestCase):
     PANEL = PLUGIN / "Panel.qml"
 
     def test_four_tabs(self):
+        # four tabs with `[dev] panel` off, five (Dev last) with it on
         src = code(self.PANEL)
         self.assertIn('["now", "agents", "memory", "settings"]', src)
+        self.assertIn('baseTabs.concat(["devtab"])', src)
+        self.assertIn("service.devPanel", src)
 
     def test_no_timer_or_polling(self):
         src = code(self.PANEL)

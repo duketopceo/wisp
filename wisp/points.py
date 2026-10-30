@@ -29,7 +29,6 @@ import json
 import math
 import re
 import shutil
-import subprocess
 
 MAX_POINTS = 32
 MAX_DRAWINGS = 16  # per turn, all drawing kinds combined

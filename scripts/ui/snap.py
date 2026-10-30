@@ -66,6 +66,7 @@ TOLERANCE = {
     "Answer": Tolerance(10, 0.012),
     "Bubble": Tolerance(10, 0.010),
     "BarPill": Tolerance(10, 0.010),
+    "BarPillWindow": Tolerance(10, 0.010),
     "Pill": Tolerance(10, 0.010),
     "Transcript": Tolerance(10, 0.012),
     "StatusLine": Tolerance(10, 0.010),

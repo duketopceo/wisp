@@ -169,6 +169,52 @@
   "pad": 8,
   "scale2": true
  },
+ "BarPillWindow": {
+  "mode": "variant",
+  "on": "desktop",
+  "pad": 8,
+  "scale2": false,
+  "source": "../../../shell-plugin/components/BarPill.qml",
+  "variants": {
+   "done_window": {
+    "_state": "done"
+   },
+   "done_collapsed": {
+    "_state": "done",
+    "_fixture": {
+     "ratingWindow": false
+    }
+   },
+   "done_cancelled": {
+    "_state": "done",
+    "_fixture": {
+     "patch": {
+      "result": "CANCELLED"
+     }
+    }
+   },
+   "done_offline": {
+    "_state": "done",
+    "_fixture": {
+     "offline": true
+    }
+   },
+   "acting_steps": {
+    "_state": "run_active"
+   },
+   "error_cause": {
+    "_state": "error"
+   },
+   "listening_loud": {
+    "_state": "listening",
+    "_fixture": {
+     "patch": {
+      "level": 0.9
+     }
+    }
+   }
+  }
+ },
  "Beacon": {
   "mode": "variant",
   "on": "desktop",
@@ -766,6 +812,14 @@
    "blocked": {
     "_state": "blocked"
    },
+   "cancelled": {
+    "_fixture": {
+     "patch": {
+      "result": "CANCELLED (user)"
+     }
+    },
+    "_state": "done"
+   },
    "confirm": {
     "_state": "confirm"
    },
@@ -937,6 +991,231 @@
     "size": 56
    }
   }
+ },
+ "DevTab": {
+  "mode": "variant",
+  "on": "canvas",
+  "pad": 10,
+  "variants": {
+   "data": {
+    "_state": "idle",
+    "reply": {
+     "finished": 15,
+     "gate": {
+      "correct": 4,
+      "gate_rate": 0.8,
+      "kinds": {
+       "act": {
+        "rate": 0.27
+       },
+       "answer": {
+        "rate": 0.0
+       },
+       "launch": {
+        "rate": 0.5
+       }
+      },
+      "labelled": 8,
+      "min_turns": 20,
+      "needs": 12,
+      "rate": 0.5,
+      "status": "collecting"
+     },
+     "misses": [
+      {
+       "count": 3,
+       "examples": [],
+       "kind": "act",
+       "pattern": "rename or move a folder",
+       "retried": 1
+      },
+      {
+       "count": 2,
+       "examples": [],
+       "kind": "answer",
+       "pattern": "calendar questions without access",
+       "retried": 0
+      }
+     ],
+     "rated": 8,
+     "rated_share": 0.53,
+     "truncated": false,
+     "turns": [
+      {
+       "act_steps": 4,
+       "id": "t5",
+       "kind": "act",
+       "label": "correct",
+       "note": "",
+       "result": "ACTED: 4 steps",
+       "route": "act",
+       "stages": [
+        {
+         "ms": 420,
+         "name": "stt"
+        },
+        {
+         "ms": 90,
+         "name": "route"
+        },
+        {
+         "ms": 1100,
+         "name": "brain"
+        },
+        {
+         "ms": 790,
+         "name": "act"
+        }
+       ],
+       "total_ms": 2400,
+       "transcript": "turn on the night light",
+       "ts": "2026-10-28T12:00:00+00:00",
+       "turn": "t5"
+      },
+      {
+       "act_steps": null,
+       "id": "t4",
+       "kind": "answer",
+       "label": "none",
+       "note": "",
+       "result": "ANSWERED: two meetings",
+       "route": "answer",
+       "stages": [
+        {
+         "ms": 380,
+         "name": "stt"
+        },
+        {
+         "ms": 70,
+         "name": "route"
+        },
+        {
+         "ms": 1350,
+         "name": "brain"
+        }
+       ],
+       "total_ms": 1800,
+       "transcript": "what is on my calendar this afternoon and tomorrow morning",
+       "ts": "2026-10-28T12:00:00+00:00",
+       "turn": "t4"
+      },
+      {
+       "act_steps": 6,
+       "id": "t3",
+       "kind": "act",
+       "label": "incorrect",
+       "note": "",
+       "result": "ACTED: 6 steps",
+       "route": "act",
+       "stages": [
+        {
+         "ms": 400,
+         "name": "stt"
+        },
+        {
+         "ms": 80,
+         "name": "route"
+        },
+        {
+         "ms": 1900,
+         "name": "brain"
+        },
+        {
+         "ms": 2820,
+         "name": "act"
+        }
+       ],
+       "total_ms": 5200,
+       "transcript": "rename the project folder to wisp-v2",
+       "ts": "2026-10-28T12:00:00+00:00",
+       "turn": "t3"
+      },
+      {
+       "act_steps": 1,
+       "id": "t2",
+       "kind": "launch",
+       "label": "correct",
+       "note": "",
+       "result": "LAUNCHED: settings",
+       "route": "launch",
+       "stages": [
+        {
+         "ms": 350,
+         "name": "stt"
+        },
+        {
+         "ms": 60,
+         "name": "route"
+        },
+        {
+         "ms": 690,
+         "name": "act"
+        }
+       ],
+       "total_ms": 1100,
+       "transcript": "open the settings app",
+       "ts": "2026-10-28T12:00:00+00:00",
+       "turn": "t2"
+      },
+      {
+       "act_steps": null,
+       "id": "t1",
+       "kind": "answer",
+       "label": "none",
+       "note": "",
+       "result": "ANSWERED: about 9 hours",
+       "route": "answer",
+       "stages": [
+        {
+         "ms": 410,
+         "name": "stt"
+        },
+        {
+         "ms": 65,
+         "name": "route"
+        },
+        {
+         "ms": 1025,
+         "name": "brain"
+        }
+       ],
+       "total_ms": 1500,
+       "transcript": "how long is the flight to lisbon",
+       "ts": "2026-10-28T12:00:00+00:00",
+       "turn": "t1"
+      }
+     ]
+    },
+    "selectedId": "t3"
+   },
+   "empty": {
+    "_state": "idle",
+    "reply": {
+     "finished": 0,
+     "gate": {
+      "gate_rate": 0.8,
+      "kinds": {},
+      "labelled": 0,
+      "min_turns": 20,
+      "rate": null
+     },
+     "misses": [],
+     "rated": 0,
+     "rated_share": null,
+     "truncated": false,
+     "turns": []
+    }
+   },
+   "error": {
+    "_state": "idle",
+    "error": "E_DAEMON_DOWN"
+   },
+   "loading": {
+    "_state": "idle",
+    "loading": true
+   }
+  },
+  "width": 360
  },
  "DrawLayer": {
   "mode": "variant",
@@ -2330,6 +2609,16 @@
     },
     "_state": "offline"
    },
+   "rate_prompt": {
+    "_fixture": {
+     "patch": {
+      "rate_prompt": {
+       "turn": "t-done"
+      }
+     }
+    },
+    "_state": "done"
+   },
    "run_active": {
     "_state": "run_active"
    },
@@ -2367,6 +2656,77 @@
   "on": "desktop",
   "pad": 12,
   "scale2": true
+ },
+ "RateNote": {
+  "mode": "variant",
+  "pad": 10,
+  "variants": {
+   "empty": {
+    "_state": "done"
+   },
+   "typed": {
+    "_state": "done",
+    "text": "opened the wrong app"
+   }
+  }
+ },
+ "RateRow": {
+  "mode": "variant",
+  "on": "desktop",
+  "pad": 10,
+  "variants": {
+   "good": {
+    "_fixture": {
+     "lastAction": {
+      "at": 1,
+      "message": "ok",
+      "ok": true,
+      "pending": false,
+      "status": "",
+      "turn": "t-done",
+      "verb": "label",
+      "verdict": "correct"
+     }
+    },
+    "_state": "done",
+    "tapped": "correct"
+   },
+   "not_ratable": {
+    "_fixture": {
+     "lastAction": {
+      "at": 1,
+      "message": "Nothing was labelled.",
+      "ok": false,
+      "pending": false,
+      "status": "not_ratable",
+      "turn": "t-done",
+      "verb": "label",
+      "verdict": "correct"
+     }
+    },
+    "_state": "done",
+    "tapped": "correct"
+   },
+   "ready": {
+    "_state": "done"
+   },
+   "wrong": {
+    "_fixture": {
+     "lastAction": {
+      "at": 1,
+      "message": "ok",
+      "ok": true,
+      "pending": false,
+      "status": "",
+      "turn": "t-done",
+      "verb": "label",
+      "verdict": "incorrect"
+     }
+    },
+    "_state": "done",
+    "tapped": "incorrect"
+   }
+  }
  },
  "RunCard": {
   "mode": "variant",

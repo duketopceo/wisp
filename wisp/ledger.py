@@ -67,6 +67,10 @@ PRICES = {
     "x-ai/grok-4.7": (1.60, 4.80),
 }
 UNKNOWN_PRICE = (10.0, 30.0)
+# USD per million characters of speech (text-to-speech models bill by
+# input characters, not tokens).
+CHAR_PRICES = {"canopylabs/orpheus-v1-english": 22.0}
+UNKNOWN_CHAR_PRICE = 22.0
 DEFAULT_DAILY_USD = 8.0
 DEFAULT_MONTHLY_USD = 160.0
 LEGACY_NAME = "spend.jsonl"
@@ -94,6 +98,11 @@ def _now():
 def price(model: str, tokens_in: int, tokens_out: int) -> float:
     pin, pout = PRICES.get(model, UNKNOWN_PRICE)
     return (tokens_in * pin + tokens_out * pout) / 1_000_000
+
+
+def price_chars(model: str, chars: int) -> float:
+    """USD for `chars` characters of speech."""
+    return chars * CHAR_PRICES.get(model, UNKNOWN_CHAR_PRICE) / 1_000_000
 
 
 def record(provider: str, model: str, tokens_in: int, tokens_out: int,
@@ -393,3 +402,12 @@ def note(provider: str, model: str, paid: bool, usage: dict):
         return None
     publish()
     return row
+
+
+def note_chars(provider: str, model: str, chars: int):
+    """Record one billed text-to-speech request: `in` is the characters
+    sent, `out` is 0, `usd` the per-character price. Same row shape and
+    ACTIVE rule as `note`, so the daily cap counts it."""
+    return note(provider, model, True,
+                {"in": int(chars), "out": 0,
+                 "cost": price_chars(model, int(chars))})

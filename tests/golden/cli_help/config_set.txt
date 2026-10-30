@@ -75,6 +75,12 @@ Settings (value, default, range):
                                default 256; 1 to 100000
   voice.captions               Show the answer text in the bubble while it is spoken (off: the voice is the answer; a muted speaker still shows it)
                                default true; true or false
+  voice.enabled                Spoken answers: auto speaks when a Groq key or a local voice exists, true always, false never
+                               default auto; auto, true, false
+  voice.provider               Who speaks: groq (Orpheus, English; espeak or [voice] cmd when Groq cannot) or espeak (never ask Groq)
+                               default groq; groq, espeak
+  voice.tts_voice              Groq Orpheus voice
+                               default hannah; autumn, diana, hannah, austin, daniel, troy
   quiet.on_calls               Hold announcements nobody asked for (a finished background agent) while a call or a screen share is on
                                default true; true or false
   browser.lane                 Browser lane: off, or extension (work in a tab group in your own browser through the paired Wisp extension)
@@ -91,6 +97,8 @@ Settings (value, default, range):
                                default 100; 0 to 100000
   packs.shots_keep_days        Days a shots/ screenshot is kept (0 disables the age bound)
                                default 30; 0 to 3650
+  dev.panel                    Show the Dev tab (gate, recent turns, stage timings) in the panel; local-only, off for everyone else
+                               default false; true or false
   verify.judge_timeout_s       Seconds the verify VLM judge may take before the step lands unverifiable
                                default 20; 1 to 300
   verify.pixel_eps             Per-channel pixel difference the verify masked diff counts as a change

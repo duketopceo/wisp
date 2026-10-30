@@ -30,10 +30,11 @@ future tray apps). Shells MUST only depend on this document.
 | `stop` | — | `{ok}` | daemon exits, socket removed; kills in-flight TTS |
 | `interrupt` | — | `{ok}` | cancels the in-flight turn only — daemon stays up; see Cancellation |
 | `config` | `set: {"section.key": "val"}` (optional) | `{ok, config}` | read config; with `set`, writes config.toml preserving comments/order and live-reloads |
-| `label` | `label: correct\|incorrect` | `{ok, result}` | tag the most recent decision (read by `wispd eval` and the trajectory join) |
+| `label` | `label: correct\|incorrect\|skip`, `turn?: string`, `note?`, `lang?` | `{ok, result, status?}`; `status` is `ok`, `not_found` (no such turn, or nothing to label) or `not_ratable` (the turn was cancelled or errored); nothing is written unless `ok` | tag the turn named by `turn`; without it, the most recent decision that is not cancelled or errored. Re-labelling appends a new line and `wispd eval` takes the latest per turn |
 | `dictate_correct` | `{"heard","meant"}` | `{ok, result}` or `{ok:false, error, result}` | record a personal dictation correction → `dictation.json` (U6); cleanup/compose prompts carry the table |
 | `context` | — | `{ok, result}` | focused app, `[windows]` workspace map, inventory counts |
 | `captures` | `turn_id?: string`, `full?: bool`, `limit?: int` | `{ok, packs}` or `{ok, manifest}` | read capture-pack list or manifest |
+| `devlog` | `n?: int` (turns, default 20, max 50) | `{ok, turns, gate, rated, finished, rated_share, misses, truncated}`; each turn is `{id, turn, ts, transcript, route, kind, result, label: correct\|incorrect\|corrected-by-retry\|none, note, total_ms, stages: [{name, ms}], act_steps}`; `gate` is `{labelled, correct, rate, gate_rate, min_turns, status, needs, kinds}` | read-only dev tab data: tail-reads the last turns from decisions.jsonl and trace.jsonl, joins stage spans and the latest label, reuses `wispd eval`'s tally and misses; reply capped at 64 KB (`truncated`), recomputed per call |
 | `task_output` | `name: string` | `{ok, name, status, exit_code, output}` | read named-agent log output (U2) |
 | `task_artifacts` | `name: string` | `{ok, name, out_dir, delivered, deliverables, artifacts}` | read named-agent output workspace + deliverable verification (U2) |
 | `agent_tool` | `token: string`, `name: string`, `args?: object` | `{ok, result}` or `{ok:false, error:"bad_token"\|"not_marked_peer"\|"tool_refused"\|"ask_pending"}` | the MCP bridge's tool call (the hidden `agent-mcp` subcommand OpenCode spawns): the one command a marked peer may send besides reads; needs a live session token and the session's own marked process; `name` must be in the agent tool allowlist (`recall`, `memory_read`, `skill_list`, `skill_view`, `task_status`, `task_output`, `task_artifacts`, `ask_user`); refusals count on the session's `refused_count` |
@@ -45,7 +46,7 @@ future tray apps). Shells MUST only depend on this document.
 
 The daemon captures `SO_PEERCRED` (`{pid, uid}`) on every AF_UNIX connection and classifies IPC commands into two sets (**deny-by-default**):
 
-- **Read class (`READ_CMDS`):** `status`, `task_status`, `context`, `subscribe`, `captures`, `suggestions`, `task_output`, `task_artifacts`. `captures` with `full: true` (transcript/state-dump fields) is refused for marked peers with `"reason": "gated_read"`.
+- **Read class (`READ_CMDS`):** `status`, `task_status`, `context`, `subscribe`, `captures`, `devlog`, `suggestions`, `task_output`, `task_artifacts`. `captures` with `full: true` (transcript/state-dump fields) is refused for marked peers with `"reason": "gated_read"`.
 - **Mutating class (`MUTATING_CMDS` + anything unlisted):** `agent`, `task_cancel`, `choice`, `config`, `memory`, `stop`, `interrupt`, `listen`, `label`, `dictate_correct`, `learn`, `harness`, and any unknown or future command not in `READ_CMDS`. `config` and `memory` are mutating as whole commands, so their get forms (`wispd config`, `wispd memory`) are refused for marked peers too: a `config` reply carries the full config, including key references.
 
 Every process spawned via `agent_spawn` is placed in a registered task scope (`wisp-task-<id>.scope` via `systemd-run --user --scope` on systemd hosts, recorded in `tasks.jsonl` alongside `WISP_TASK_ID` and root PID/start-time). On each request `_dispatch` checks the connecting peer:
@@ -125,6 +126,7 @@ round-trip — they are not IPC commands and are absent from the table:
   "health": {"<endpoint>": {"ok": true, "since": "ISO-8601", "latency_ms": 12, "code": null}},
   "mic": "\"open\" while the opt-in wake word listens (bar shows an open-mic mark), else \"\"",
   "spend": {"today_usd": 0.0, "cap_usd": 8.0, "month_usd": 0.0, "monthly_cap_usd": 160.0, "blocked": false},
+  "rate_prompt": "null, or {turn} while a wrong rating waits for its optional note (additive, U2); cleared by the note's save, a skip, or the next listening transition",
   "started_at": "ISO-8601",
   "turn_id": "string — turn that produced this write",
   "seq": 0,
@@ -168,6 +170,14 @@ primary too only when `[budget] gate_primary = "true"` (local models
 always run). A `spend` health
 row goes down with code `budget_exceeded` in the same state. `{}` on
 older cores.
+
+Rate prompt (additive; U2): a `label incorrect` that wrote a line
+publishes `rate_prompt: {turn}` for the turn it rated; shells open the
+panel's Now tab with a one-line note focused. Saving the note is another
+`label incorrect` for that `turn` carrying `note` (it re-labels the turn
+and clears the prompt). `label skip` clears it without writing, and so
+does a second `label incorrect` that names no `turn` (the hotkey pressed
+twice). `null` on older cores.
 
 Prompt ids (additive; U9): every `awaiting_choice` publishes `choices`
 together with a `prompt_id`, and clears both when the prompt resolves.
@@ -460,7 +470,8 @@ and creates an output workspace at `tasks/<id>/out/`. At reap time:
 
 ## Data files (shared by both cores, never versioned differently)
 
-- `decisions.jsonl` — one JSON per turn: `ts`, `transcript`, `answers`,
+- `decisions.jsonl` — one JSON per turn: `ts`, `turn` (the turn id, on
+  every line including cancelled and error ones), `transcript`, `answers`,
   `result`, `timing_ms{record,stt,jev,act}`, `corrected`.
 - `session.jsonl` — turns for follow-up context.
 - `corrections.jsonl` — user picks on ambiguous turns.
@@ -481,7 +492,7 @@ and creates an output workspace at `tasks/<id>/out/`. At reap time:
   tool_result/brain_call/answer/speak/points/ipc/error,
   choice_voice/interrupt_voice/interjection_dropped, plus `kind=span`
   events (`step` = press, release, stt, context, route, first_token,
-  first_step, tts_start, done, and sub-spans screenshot/hyprctl/memory/
+  first_step, tts_start, tts_start_groq (Python core: Groq first audio), done, and sub-spans screenshot/hyprctl/memory/
   goal; `ms` = duration, `data.offset_ms` from the keypress,
   `data.t0_source` client|daemon). `wispd trace show --tail N --turn
   <id> --kind <k>` on both cores; Python core adds `trace show --latency

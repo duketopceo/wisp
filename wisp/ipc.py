@@ -30,7 +30,7 @@ _TIMEOUT = 10
 # treated as mutating and refused for marked peers.
 READ_CMDS = frozenset({
     "status", "task_status", "context", "subscribe", "captures",
-    "suggestions", "task_output", "task_artifacts",
+    "suggestions", "task_output", "task_artifacts", "devlog",
 })
 MUTATING_CMDS = frozenset({
     "agent", "task_cancel", "choice", "config", "memory", "stop",

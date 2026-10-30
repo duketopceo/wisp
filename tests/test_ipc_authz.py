@@ -66,6 +66,19 @@ class IpcAuthzTest(unittest.TestCase):
         self.procs = []
         self.addCleanup(self._cleanup_procs)
 
+    def test_devlog_works_with_the_daemons_default_tasks_file(self):
+        # the live daemon builds its handler with no tasks_file; devlog's
+        # peer check must fall back to config.TASKS_FILE like every other
+        # read (2026-10-29: it called .read_text() on None)
+        from wisp import devlog
+        handle = WISPD._handler(self.st, self.cfg, self.ctl)
+        with mock.patch.object(devlog, "build",
+                               return_value={"turns": [], "misses": []}), \
+                mock.patch.object(config, "TASKS_FILE", self.tf):
+            resp = handle({"cmd": "devlog"}, {"pid": os.getpid(),
+                                               "uid": os.getuid()})
+        self.assertTrue(resp.get("ok"), resp)
+
     def _cleanup_procs(self):
         for p in self.procs:
             try:
@@ -128,6 +141,25 @@ class IpcAuthzTest(unittest.TestCase):
                 resp = self.handle({"cmd": rcmd, "name": "bg-worker"}, peer)
                 self.assertNotEqual(resp.get("error"), "marked_peer_refused")
                 self.assertTrue(resp.get("ok"), resp)
+
+        # devlog: a marked peer reads timings, never what the owner said
+        from wisp import devlog
+        full = {"turns": [{"turn": "t1", "transcript": "open my bank",
+                           "result": "ACTED (1 steps): opened",
+                           "note": "wrong tab", "stages": []}],
+                "misses": [{"kind": "other", "count": 2,
+                            "pattern": "DICTATED: my bank pin",
+                            "examples": ["open my bank"]}]}
+        with mock.patch.object(devlog, "build", return_value=full):
+            resp = self.handle({"cmd": "devlog"}, peer)
+            own = self.handle({"cmd": "devlog"}, None)
+        self.assertTrue(resp["ok"], resp)
+        self.assertEqual(resp["turns"][0]["transcript"], "")
+        self.assertEqual(resp["turns"][0]["note"], "")
+        self.assertEqual(resp["misses"][0]["examples"], [])
+        self.assertEqual(resp["misses"][0]["pattern"], "")
+        self.assertEqual(resp["misses"][0]["count"], 2)
+        self.assertEqual(own["turns"][0]["transcript"], "open my bank")
 
         # Refused count persisted on the task record
         merged = agents._find("bg-worker", self.tf)

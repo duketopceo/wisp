@@ -85,6 +85,31 @@ class TestShape(unittest.TestCase):
                 self.assertRegex(body, r"running:[^\n]*(busy|stale|Busy)",
                                  "fast timer must run only while busy")
 
+    def test_every_repeating_timer_is_gated_on_a_condition(self):
+        # nothing repeats unconditionally: each repeat:true Timer's running
+        # binding names the state that justifies it
+        for m in re.finditer(r"Timer\s*\{(.*?)\n\s*\}", SRC, re.S):
+            body = m.group(1)
+            if re.search(r"repeat:\s*true", body):
+                self.assertRegex(body, r"running:[^\n]*(busy|stale|refused|connection)",
+                                 "a repeating timer must be gated")
+
+    def test_rating_window_is_one_single_shot_timer(self):
+        # U3: the bar pill's 8 s done window. Single-shot, runs only while
+        # the window is open and the pill is not hovered; never at idle.
+        timers = [m.group(1) for m in re.finditer(r"Timer\s*\{(.*?)\n\s*\}", SRC, re.S)
+                  if "ratingTimer" in m.group(1)]
+        self.assertEqual(len(timers), 1)
+        body = timers[0]
+        self.assertRegex(body, r"interval:\s*B\.WINDOW_MS|interval:\s*8000")
+        self.assertRegex(body, r"repeat:\s*false")
+        self.assertRegex(body, r"running:[^\n]*ratingWindowOpen[^\n]*!\s*root\.pillHover"
+                               r"|running:[^\n]*!\s*root\.pillHover[^\n]*ratingWindowOpen")
+        self.assertRegex(body, r"ratingWindowOpen\s*=\s*false")
+        for prop in ("ratingWindowOpen", "pillHover"):
+            self.assertRegex(SRC, r"property\s+bool\s+" + prop)
+        self.assertIn("B.windowAction", SRC)
+
     def test_no_hex_colors(self):
         code = re.sub(r"//.*", "", SRC)
         self.assertEqual(re.findall(r"#[0-9a-fA-F]{6}\b", code), [])
@@ -170,10 +195,11 @@ class TestActionLifecycle(unittest.TestCase):
 
     def test_label_click_renders_an_ack(self):
         now = (PLUGIN / "components" / "NowTab.qml").read_text()
-        overlay = (PLUGIN / "components" / "OverlayLayer.qml").read_text()
+        # the answer card's ack moved into RateRow (U2)
+        row = (PLUGIN / "components" / "RateRow.qml").read_text()
         self.assertIn("lastAction", now)
         self.assertIn("ui.noted", now)
-        self.assertIn("lastAction", overlay)
+        self.assertIn("lastAction", row)
 
     def test_debug_shell_calls_existing_service_entrypoints(self):
         app = (ROOT / "shells" / "debug" / "shell.qml").read_text()

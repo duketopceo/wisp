@@ -279,6 +279,8 @@ def check_expectations(res: TurnResult) -> list:
     for sub in ex.get("hypr_requests_contain", []):
         if not any(sub in r for r in res.fake_calls.get("hypr", [])):
             bad.append(f"hypr_requests_contain: {sub!r} never requested")
+    if "groq_tts_calls" in ex:
+        want("groq_tts_calls", len(res.calls.get("groq_tts", [])))
     if "jev_calls" in ex:
         want("jev_calls", len(res.calls.get("jev", [])))
     if "steps_contain" in ex:
@@ -357,7 +359,7 @@ def _build_fakes(fx: dict) -> dict:
     live = {}
     for name in ("jev", "brain", "whisper"):
         live[name] = fakes.KINDS[name](dict(eps.get(name, {})))
-    for name in ("brain2", "uitars"):
+    for name in ("brain2", "uitars", "groq_tts"):
         if name in eps:
             live[name] = fakes.KINDS[name](dict(eps[name]))
     return live
@@ -378,6 +380,7 @@ def child_env(tmp: pathlib.Path, fs: FakeSet, extra: dict | None = None) -> dict
         "WISP_OS": "linux",
         "WISP_FAKE_STT_KEY": "fake-stt-key",
         "OPENROUTER_API_KEY": "fake-openrouter-key",
+        "GROQ_API_KEY": "fake-groq-key",
         "PYTHONPATH": str(ROOT),
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONIOENCODING": "utf-8",

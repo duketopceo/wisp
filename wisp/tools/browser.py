@@ -330,15 +330,6 @@ def get_lane(cfg: dict | None = None) -> Lane:
         return _LANE
 
 
-def reset_lane() -> None:
-    """Close the socket and forget the lane (tests, config change)."""
-    global _LANE
-    with _LANE_LOCK:
-        lane, _LANE = _LANE, None
-    if lane is not None:
-        lane.close()
-
-
 # -- the tool -------------------------------------------------------------------
 
 _REF = re.compile(r"^(\d+):(\d+)$")

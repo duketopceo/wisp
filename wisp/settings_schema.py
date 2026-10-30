@@ -178,6 +178,17 @@ FIELDS = (
     _f("voice.captions", "bool", "true",
        "Show the answer text in the bubble while it is spoken (off: the "
        "voice is the answer; a muted speaker still shows it)"),
+    _f("voice.enabled", "choice", "auto",
+       "Spoken answers: auto speaks when a Groq key or a local voice "
+       "exists, true always, false never",
+       choices=("auto", "true", "false")),
+    _f("voice.provider", "choice", "groq",
+       "Who speaks: groq (Orpheus, English; espeak or [voice] cmd when "
+       "Groq cannot) or espeak (never ask Groq)",
+       choices=("groq", "espeak")),
+    _f("voice.tts_voice", "choice", "hannah",
+       "Groq Orpheus voice",
+       choices=("autumn", "diana", "hannah", "austin", "daniel", "troy")),
     _f("quiet.on_calls", "bool", "true",
        "Hold announcements nobody asked for (a finished background "
        "agent) while a call or a screen share is on"),
@@ -205,6 +216,9 @@ FIELDS = (
     _f("packs.shots_keep_days", "int", "30",
        "Days a shots/ screenshot is kept (0 disables the age bound)",
        min=0, max=3650),
+    _f("dev.panel", "bool", "false",
+       "Show the Dev tab (gate, recent turns, stage timings) in the panel; "
+       "local-only, off for everyone else"),
     _f("verify.judge_timeout_s", "int", "20",
        "Seconds the verify VLM judge may take before the step lands "
        "unverifiable",
