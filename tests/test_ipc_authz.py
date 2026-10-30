@@ -66,6 +66,19 @@ class IpcAuthzTest(unittest.TestCase):
         self.procs = []
         self.addCleanup(self._cleanup_procs)
 
+    def test_devlog_works_with_the_daemons_default_tasks_file(self):
+        # the live daemon builds its handler with no tasks_file; devlog's
+        # peer check must fall back to config.TASKS_FILE like every other
+        # read (2026-10-29: it called .read_text() on None)
+        from wisp import devlog
+        handle = WISPD._handler(self.st, self.cfg, self.ctl)
+        with mock.patch.object(devlog, "build",
+                               return_value={"turns": [], "misses": []}), \
+                mock.patch.object(config, "TASKS_FILE", self.tf):
+            resp = handle({"cmd": "devlog"}, {"pid": os.getpid(),
+                                               "uid": os.getuid()})
+        self.assertTrue(resp.get("ok"), resp)
+
     def _cleanup_procs(self):
         for p in self.procs:
             try:
