@@ -90,3 +90,119 @@ TLY-427 holds four pieces: this dev mode, install everywhere on wisp.casa, a thr
 
 - Grounding dossier: existing toggles `[dev] refine`, `[dev] panel`, `[debug] trace`, `[eval] gate_rate`/`gate_min_turns`; CLI `wispd eval --misses/--unlabelled`, `wispd dev turns`, `wispd watch`, `wispd bugreport`; trace privacy rules in `docs/TRUST.md` and `tests/test_log_hygiene.py`.
 - TLY-430: live run 2026-10-30 failure findings.
+
+---
+
+## Planning Contract
+
+Product Contract preservation: Product Contract unchanged.
+
+### Key Technical Decisions
+
+- **KTD1. Dev session lives in a state file, not the owner's config.** On, off, the start time and the count of completed runs go in a daemon-owned file in the data dir, never in `config.toml`. A new mutating IPC command (`dev`, with on, off and status) and CLI verbs (`wispd dev on|off|status`) change it. The fifth completed run turns the session off (R1). While on, the Dev tab shows and tracing is on, read from the session rather than written to config, so turning it off restores the owner's settings exactly (R2).
+- **KTD2. A run is an in-daemon runner over typed turns.** `wispd dev run <list>` sends a mutating `dev_run` command. The daemon starts one runner thread. For each task it begins a turn and calls the pipeline's typed entry with a per-run config copy and **no confirmation channel**, the same as today's typed path minus the owner's broker. A confirm step then comes back as skipped, and that is recorded as `stopped` (R5). Nothing changes in `act.py`, `route.py` or `stage_route.py`.
+- **KTD3. Safety in a run is enforced, not trusted to the task text.** The run's config copy denies text entry, key presses, shell, external calls, posting and closing windows. A step that needs one of those ends the task as `stopped`. Tasks whose route pre-screens as agent, learn, setting, walkthrough or dictation are skipped as `stopped` before they run. Clicks (navigation) and the native `media` and `tab` tools stay allowed (R5, R6).
+- **KTD4. Each run is independent.** The run's config copy turns off trajectory feedback into the act prompt, so A/B arms and repeat runs don't learn from each other. Tracing stays on (R13).
+- **KTD5. The judge is new code on the existing vision-check pattern.** After each task, a privacy-vetted screenshot plus the goal and the step list go to a cheap vision model. It answers strict JSON: an outcome from the four (R8) and a one-line reason. The call goes through a run-only provider whose key reference is `omaseal://openrouter/orchestral`, the eval key (R14), with no fallback to the default key. A per-run spend cap (default $1) stops judging, not the run, and the report says so.
+- **KTD6. Judge labels never enter labels.jsonl.** Each run writes its own record store in the data dir: one line per task with goal, turn id, steps, judged outcome and reason, drift flag, cost and stage times. Owner spot-checks (`wispd dev review`) show a sample and write the owner's choice through the existing turn-scoped `label` path, so the gate counts owner labels only (R9, R10).
+- **KTD7. Drift is a narrow, measurable flag.** A task is flagged `suspected drift` when it names an app with a saved app skill and a step failed verification, or it needed wrong tries with a re-aimed click. The flag records what wisp did next and whether the task still succeeded (R11). Structural expected-versus-actual matching stays with lessons and is out of scope.
+- **KTD8. Reports and A/B are reads over run stores.** `wispd dev runs [--json]` (a read command) returns run summaries and per-task rows, including accuracy, the outcome mix, drift, cost and time. `--vs key=value` runs the list a second time with one config-copy override (the act brain model, for example) and pairs results per task. Nothing changes the owner's config (R12, R13).
+- **KTD9. Dev mode on is visible.** The bar pill gains a small "dev" badge while a session is on, as a new rule in its state mapping. The panel shows it beside the existing LOCAL badge (R3).
+
+### Assumptions
+- Text entry is denied in runs, so tasks like "search YouTube for X" end `stopped`. Lists start with open, find, navigate, tab and media tasks.
+- Three modules still read the default OpenRouter key by name: grounding, the route model call and recall. Their spend in a run bills the default key and is reported as such.
+- Leaf modules that re-read config from disk (trace flag, capture blocking, redaction, recall) ignore the run copy. That is acceptable, since none of them is an A/B dimension.
+
+### Sequencing
+U1, then U2, then U3, then U4, then U5. U6 can go anywhere.
+
+---
+
+## Implementation Units
+
+### U1. Dev session switch
+**Goal:** Turn dev mode on and off, count runs, and turn off after five.
+**Requirements:** R1, R2, R3 (state side).
+**Files:** new `wisp/devsession.py`, `wispd` dispatch (the `dev` command), `wisp/ipc.py` (`dev` in MUTATING_CMDS), `wisp/cli/` (`dev on|off|status`), `wisp/state.py` (a `dev` field: on and runs left), `docs/IPC_CONTRACT.md` (command and state rows), the CLI help goldens, `tests/test_devsession.py`, `tests/test_ipc_authz.py`.
+**Test scenarios:**
+- on, then status, then off round-trips;
+- the count reaches 5 and the session turns itself off;
+- turning off restores tracing and Dev tab visibility to the owner's own settings;
+- a spawned agent peer is refused (mutating);
+- state publishes `dev`.
+**Verification:** IPC fixture and `rs/` unchanged.
+
+### U2. Task-list runner
+**Goal:** Run a task list as typed turns with safety enforced, and record each task.
+**Requirements:** R4, R5, R6, R7, R8 (record half).
+**Files:** new `wisp/devrun.py`, `wispd` dispatch (`dev_run`, `dev_stop`), `wisp/ipc.py`, `wisp/cli/` (`dev run <file>`, `dev stop`), `docs/IPC_CONTRACT.md`, `tests/test_devrun.py`, replay-style tests using the existing harness patterns.
+**Approach:** per KTD2, KTD3 and KTD4. One run at a time. Tasks are read from a plain text file, one per line, with `#` comments. Outcome before judging: success when the turn ends ACTED; stopped on skip, refusal, a denied tool or a pre-screened route; incomplete on budget or interrupt. Each task line goes to the run store (KTD6).
+**Test scenarios:**
+- a 3-task list runs 3 turns in order with no confirmation channel;
+- a task whose step needs confirmation ends `stopped`;
+- a task needing `type_text` ends `stopped`;
+- an agent-routed task is skipped `stopped` and never runs;
+- `dev stop` ends the run after the current task, and the report still covers finished tasks;
+- a run while the session is off is refused;
+- a completed run decrements the runs left.
+**Verification:** no edits to `act.py`, `route.py` or `stage_route.py`.
+
+### U3. Judge and spot-check
+**Goal:** Judge each task with a cheap vision model on the eval key, and let the owner confirm a sample.
+**Requirements:** R8, R9, R10, R14.
+**Files:** new `wisp/devjudge.py`, `wisp/devrun.py`, `wisp/cli/` (`dev review`), `tests/test_devjudge.py`.
+**Approach:** per KTD5 and KTD6. The judge model is a run setting with a cheap default (a Gemini Flash-class vision model via OpenRouter). A strict-JSON parse failure is recorded as `unjudged`. `dev review` shows up to N (default 5) judged tasks per run, mixing successes and failures. Confirm or flip goes through `label` with the task's turn.
+**Test scenarios:**
+- the judge request uses the eval provider, never the default key (stubbed brain);
+- a malformed reply gives unjudged;
+- the per-run cap stops judging and marks the rest unjudged;
+- the screenshot is the vetted capture, so a sensitive window is blanked;
+- `dev review` confirm writes a turn-scoped owner label and flip writes the opposite;
+- judge outcomes never appear in labels.jsonl.
+**Verification:** keyless suite; no network in tests.
+
+### U4. Drift, reports and A/B
+**Goal:** Flag suspected drift, and summarize runs and paired A/B runs.
+**Requirements:** R11, R12, R13.
+**Files:** `wisp/devrun.py`, new `wisp/devreport.py`, `wispd` (the `dev_runs` read command), `wisp/ipc.py` (READ_CMDS), `wisp/cli/` (`dev runs`, and `dev run --vs`), `docs/IPC_CONTRACT.md`, `tests/test_devreport.py`.
+**Approach:** per KTD7 and KTD8. Apply the same redaction rule devlog uses for agent peers.
+**Test scenarios:**
+- drift is flagged when an app-skill task has a failed verification;
+- drift is not flagged without an app skill;
+- a report's accuracy and outcome mix match its records;
+- `--vs brain.default=X` runs twice and pairs per task, and the owner config file is unchanged;
+- a spawned agent peer gets the report with goals and reasons blanked.
+
+### U5. Dev badge and Runs in the Dev tab
+**Goal:** Show that dev mode is on, and show runs in the existing Dev tab.
+**Requirements:** R3, R12 (UI).
+**Files:** `shell-plugin/lib/bar.js`, `shell-plugin/components/BarPill.qml`, `shell-plugin/Panel.qml`, `shell-plugin/components/DevTab.qml`, `shell-plugin/lib/dev.js`, `shell-plugin/WispService.qml` (a one-shot `dev runs` load on tab open and refresh; the Dev tab shows when the session is on or `[dev] panel` is true), `tests/qml/harness/FixtureService.qml`, scenes, goldens, `tests/test_dev_tab.py`, and bar tests.
+**Test scenarios:**
+- the pill shows the dev badge only while the session is on, idle included;
+- the Dev tab appears when the session is on even if `[dev] panel` is false;
+- the Runs section renders the latest run summary, and is empty with no runs;
+- no new timer in components/.
+
+### U6. Starter task list
+**Goal:** A safe starter list for the first runs.
+**Requirements:** R4, R6.
+**Files:** new `docs/dev-tasks/starter.txt`, `docs/DEV_MODE.md` (how to run, review and compare).
+**Approach:** About 10 safe tasks: the TLY-430 tasks ("pause youtube", "open my stripe tab"), plus open, find, navigate, workspace and media tasks drawn from the owner's misses.
+**Test expectation:** a docs lint test, and a test that every starter line pre-screens as a non-skipped route.
+
+---
+
+## Verification Contract
+
+- Keyless suite: `env -u OPENROUTER_API_KEY -u GROQ_API_KEY HOME=$(mktemp -d) PYTHONPATH=tests python3 -m unittest discover -s tests`. The known local failure is `test_snap` `WhatsNewCard__headline`; the known CI flake is `test_hypr` bind_clash timeout.
+- `python3 scripts/assets/gen_settings.py --check` and `gen_copy.py --check`; `python3 scripts/ui/snap.py check`.
+- `rs/` and `tests/fixtures/ipc_commands.jsonl` stay byte-identical, and `act.py`, `route.py` and `stage_route.py` stay untouched.
+- Owner live check: `wispd dev on`, then `wispd dev run docs/dev-tasks/starter.txt`, then `wispd dev review`, then `wispd dev runs`.
+
+## Definition of Done
+
+- Every unit's tests pass, and the PR's CI is green.
+- A starter run completes unattended on the owner's desktop, ends with a report, and the session counts it.
+- No judge label is ever in labels.jsonl. The gate moves only through owner-confirmed labels.
+- No abandoned-attempt code remains in the diff.
