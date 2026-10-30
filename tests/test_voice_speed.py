@@ -39,11 +39,11 @@ class Speed(unittest.TestCase):
     def espeak(self, c):
         with mock.patch.object(platform, "tts_binary",
                                return_value="espeak-ng"):
-            return speech._argv(WORDS, c)
+            return speech._argv(c)
 
     def test_normal_speed_adds_no_flag(self):
-        self.assertEqual(self.espeak(cfg("1.0")), ["espeak-ng", WORDS])
-        self.assertEqual(self.espeak(cfg()), ["espeak-ng", WORDS])
+        self.assertEqual(self.espeak(cfg("1.0")), ["espeak-ng", "--stdin"])
+        self.assertEqual(self.espeak(cfg()), ["espeak-ng", "--stdin"])
 
     def test_1_5x_shortens_the_utterance_by_at_least_a_quarter(self):
         base = seconds(self.espeak(cfg()))
@@ -59,16 +59,13 @@ class Speed(unittest.TestCase):
 
     def test_a_custom_command_receives_the_rate(self):
         c = cfg("0.75", cmd="say --rate {rate} {text}")
-        self.assertEqual(speech._argv("hi there", c),
-                         ["say", "--rate", "0.75", "hi there"])
+        self.assertEqual(speech._argv(c), ["say", "--rate", "0.75"])
         c = cfg(None, cmd="say --rate {rate} {text}")
-        self.assertEqual(speech._argv("hi", c),
-                         ["say", "--rate", "1", "hi"])
+        self.assertEqual(speech._argv(c), ["say", "--rate", "1"])
 
-    def test_text_that_looks_like_a_placeholder_is_left_alone(self):
+    def test_the_text_placeholder_is_dropped_from_argv(self):
         c = cfg("1.5", cmd="say {text}")
-        self.assertEqual(speech._argv("literal {rate}", c),
-                         ["say", "literal {rate}"])
+        self.assertEqual(speech._argv(c), ["say"])
 
     def test_streamed_sentences_use_the_same_rate(self):
         seen = []
@@ -87,8 +84,7 @@ class Speed(unittest.TestCase):
             sp = speech.SentenceSpeaker(c)
             sp.finish("One. Two.")
             sp._worker.join(timeout=5)
-        self.assertEqual(seen, [["say", "1.25", "One."],
-                                ["say", "1.25", "Two."]])
+        self.assertEqual(seen, [["say", "1.25"], ["say", "1.25"]])
 
 
 class Intent(unittest.TestCase):
