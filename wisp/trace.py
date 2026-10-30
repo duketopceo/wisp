@@ -9,7 +9,6 @@ NEVER log secrets: callers pass endpoint/model/status — never headers
 or resolved key values.
 """
 import json
-import os
 import secrets
 import sys
 import threading

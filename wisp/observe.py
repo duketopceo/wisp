@@ -37,7 +37,7 @@ import stat
 import time
 from datetime import datetime
 
-from . import config, control, cua, record, verify
+from . import config, control, record, verify
 from . import trace as _trace
 
 SHOTS_DIR = config.DATA_DIR / "shots"
