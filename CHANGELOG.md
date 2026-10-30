@@ -27,12 +27,12 @@ How this file is kept:
 - Dictation keeps what you said: a failed insert loses nothing (`wispd dictate history`, `retry`, `copy`), a killed session is recovered on the next start, and the cleanup pass cannot change your words.
 - Your transcripts, replies and traces are private to your account: files are readable only by you, and older ones are tightened when the daemon starts.
 - Pressing the talk key before the daemon is running now records privately too: the recording is readable only by you, same as when the daemon runs.
-- Answers and other text in the panel are shown as plain text, so an answer that contains an HTML image tag no longer makes your machine request that address.
 - `wispd update` checks a release against its published SHA-256, installs only when you say yes, and refuses a release that is not newer than what you have.
 - Blank windows: Wisp paints over password managers and other sensitive windows in every screenshot, and takes none while one has focus.
 - Helpers: name a background helper, give it a folder and notes, and ask for it by name. Routines wait for the network instead of counting an offline miss as a failure.
 - The Omarchy tutor answers "how do I do this in Omarchy" from your own machine's bindings and config.
 - Answer cards can show one picture from an allow-listed host.
+- Answers and other text in the panel are shown as plain text, so an answer that contains an HTML image tag no longer makes your machine request that address.
 - `docs/TRUST.md` lists every outside host Wisp can contact, what it gets, who holds the key and what you control, and a test keeps it true.
 - Voice speed goes from 0.5 to 1.5 times, and you can say "talk slower" or "talk faster".
 - Linux only: the macOS and Windows code paths are removed.
