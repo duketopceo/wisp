@@ -33,6 +33,10 @@ def _install_args(p):
     p.add_argument("--cua", action="store_true",
                    help="also install the pinned cua-driver "
                         "(scripts/cua/install.sh)")
+    p.add_argument("--agents", action="store_true",
+                   help="only install the pinned ori and OpenCode 2.x "
+                        "background-agent runtime (user scope, checksummed, "
+                        "no sudo)")
     p.add_argument("--units", action="store_true",
                    help="only install the systemd unit templates "
                         "(scripts/units), backing up changed ones")
@@ -41,8 +45,8 @@ def _install_args(p):
                         "optional wake word needs over speakers (asks "
                         "first; --yes answers it)")
     p.add_argument("--dry-run", action="store_true",
-                   help="print the plan, change nothing "
-                        "(also with --cua, --units or --echo-cancel)")
+                   help="print the plan, change nothing (also with --cua, "
+                        "--agents, --units or --echo-cancel)")
     p.add_argument("--from-plugin", action="store_true",
                    help="the Omarchy plugin was added from the marketplace: "
                         "install the daemon only, leave the plugin "
@@ -64,11 +68,14 @@ def _install_args(p):
          ["wispd daemon install", "wispd install --dry-run",
           "wispd install --units --dry-run",
           "wispd install --ref origin/master --dry-run"],
-         {"installed": "bool", "cua": "any", "units": "any"},
+         {"installed": "bool", "cua": "any", "units": "any",
+          "agents": "any"},
          args=_install_args)
 def daemon_install(ctx, a):
     if a.cua:
         return _install_cua(ctx, a)
+    if a.agents:
+        return _install_agents(ctx, a)
     if a.units:
         return _install_units(ctx, a)
     if a.echo_cancel:
@@ -168,6 +175,35 @@ def _install_units(ctx, a):
                  "systemctl --user restart <unit>")
     return ctx.emit({"installed": not a.dry_run, "cua": None,
                      "units": acts}, text)
+
+
+def _install_agents(ctx, a):
+    """The pinned ori and OpenCode (agent_install, KTD8). Signing ori in
+    is the onboarding agents step's job, not this flag's."""
+    from .. import agent_install, agent_pins
+    tools = ("ori", "opencode")
+    if a.dry_run:
+        arch = agent_pins.machine_arch()
+        plan = {t: (agent_pins.pin(t, arch) or {}) for t in tools}
+        lines = [f"{t} {p['version']} from {p['url']}" if p
+                 else f"{t}: no build for {arch}" for t, p in plan.items()]
+        return ctx.emit({"installed": False, "agents": {
+            t: {"version": p.get("version"), "url": p.get("url")}
+            for t, p in plan.items()}},
+            "would install (sha256-verified, user scope):\n"
+            + "\n".join(lines))
+    done = {}
+    for t in tools:
+        r = agent_install.install(t)
+        done[t] = {"status": r.status, "reason": r.reason}
+        if r.status == "failed":
+            raise CliError("E_FAILED", f"Could not install {t}: "
+                           f"{r.reason}", "wispd install --agents --dry-run",
+                           data={"installed": False, "agents": done})
+    return ctx.emit({"installed": True, "agents": done},
+                    "\n".join(f"{t}: {v['status']}"
+                              for t, v in done.items())
+                    + "\nsign ori in with: wispd onboard --step agents")
 
 
 def _install_cua(ctx, a):

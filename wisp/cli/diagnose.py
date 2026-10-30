@@ -13,7 +13,7 @@ GROUPS["health"] = "Local model endpoint health"
 
 # -- doctor ---------------------------------------------------------------
 
-def doctor_sections(cfg: dict, cua_probe=None) -> list:
+def doctor_sections(cfg: dict, cua_probe=None, agents_probe=None) -> list:
     """[{name, rows:[{name, value, ok}]}] for everything wispd needs."""
     from .. import agents, brain, health as _health, ipc, \
         platform as _plat, skills
@@ -69,7 +69,11 @@ def doctor_sections(cfg: dict, cua_probe=None) -> list:
     row("tools", p.get("tools"))
     key = config.load_env_key(p.get("key_env", "")) \
         if p.get("key_env") else "n/a"
-    row("api key", "set" if key == "set" or (key and key != "n/a")
+    # name the first source that yields a value, never the value
+    src = next((c.strip() for c in str(p.get("key_env", "")).split(",")
+                if c.strip() and config.load_env_key(c.strip())), "")
+    row("api key", f"set ({src})" if src
+        else "set" if key == "set" or (key and key != "n/a")
         else key or "MISSING", bool(key))
 
     row = section("health")
@@ -85,6 +89,9 @@ def doctor_sections(cfg: dict, cua_probe=None) -> list:
     row("pointer backend", pb or "none, guide mode only")
     row("pointer mode", cfg.get("pointer", {}).get("mode", "guide"))
     _cua_rows(row, cfg, cua_probe)
+
+    row = section("agents")
+    _agent_rows(row, agents_probe)
 
     row = section("integrations")
     row("dayflow", shutil.which("dayflow") or "not installed",
@@ -110,6 +117,26 @@ def doctor_sections(cfg: dict, cua_probe=None) -> list:
         row(f, f"{fp.stat().st_size // 1024}KB" if fp.exists()
             else "absent")
     return sections
+
+
+def _agent_rows(row, probe=None) -> None:
+    """Pinned ori + OpenCode state (U2 probe). Absent is fine: the agents
+    step is optional. The permission gate row is always "not run": proving
+    OpenCode asks for every ask-ruled action takes a live model call,
+    which doctor never makes (docs/TRUST.md)."""
+    from .. import probes_agents
+    r = (probe or probes_agents.AgentsProbe()).check()
+    st = r["state"]
+    label = st.replace("_", " ")
+    if st == "absent":
+        row("agent runtime", f"not installed: {r['fix']}")
+    elif r["ok"]:
+        row("agent runtime", f"{label} (ori {r['ori']}, "
+            f"opencode {r['opencode']})")
+    else:
+        row("agent runtime", f"{label}: {r['fix']}", False)
+    row("agent permission gate",
+        "live check not run (needs a model call); see docs/TRUST.md")
 
 
 def _voice_rows(row, cfg: dict) -> None:
@@ -476,7 +503,7 @@ def _onboard_args(p):
                    help="print the checklist and exit 0 (the Panel card "
                    "reads this)")
     p.add_argument("--step", metavar="ID",
-                   help="run one step: mic, models, keys, cua, "
+                   help="run one step: mic, models, keys, agents, cua, "
                    "notifications, keybinding")
     p.add_argument("--yes", action="store_true",
                    help="with --step notifications: send the test now")

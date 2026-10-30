@@ -163,6 +163,29 @@ _STATUS = re.compile(
     r"|^\s*(?:agent|agents)\s+status[\s?.!]*$", re.IGNORECASE)
 
 
+_CONTINUE = re.compile(
+    r"^\s*(?:(?:hey\s+)?wisp[,\s]+)?(?:please\s+)?continue"
+    r"(?:\s+(?:with\s+)?(?P<name>[A-Za-z][\w-]{0,23}))?[\s.!?]*$",
+    re.IGNORECASE)
+
+
+def parse_continue(text: str, pending=None):
+    """The helper name ("" for the latest) for "continue" / "continue
+    Scout" when a restart left an agent interrupted, else None. Plain
+    "continue" is common speech, so it only counts then."""
+    m = _CONTINUE.match(text or "")
+    if not m:
+        return None
+    if pending is None:
+        from . import agents
+        pending = [r.get("agent") or r["name"] for r in agents.interrupted()]
+    have = {_slug(n): n for n in pending}
+    if not have:
+        return None
+    name = m.group("name") or ""
+    return name if not name or _slug(name) in have else None
+
+
 def parse_create(text: str):
     """{"name", "role", "task"} for "make me a research helper called
     Scout", else None."""
@@ -215,4 +238,7 @@ def route_for(text: str):
         return "agent", encode("tell", name=t[0], message=t[1])
     if is_status(text):
         return "agent", encode("status")
+    c = parse_continue(text)
+    if c is not None:
+        return "agent", encode("continue", name=c)
     return None

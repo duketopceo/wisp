@@ -258,6 +258,13 @@ act_max_seconds = 600       # wall-clock bound per run; 0 disables
 act_max_usd = 0             # per-run model-spend cap; 0 disables
 routine_wait_s = 120        # a scheduled routine waits this long for the network
 writer_queue_max = 256      # background trajectory/recall writes queued
+# OpenCode background agents (ACP). The session runs on the first of these
+# the agent runtime offers; none offered = the task fails, never a default.
+acp_models = "openrouter/deepseek/deepseek-v4-flash,openrouter/deepseek/deepseek-v4.1-flash,openrouter/google/gemini-3.5-flash-lite"
+acp_idle_s = "900"          # a named helper's process exits after this idle
+ask_timeout_s = "120"       # an unanswered agent ask is refused after this
+cancel_grace_s = "10"       # cancel waits this long, then kills the process
+mcp_memory = "true"         # agents may read USER.md/MEMORY.md (to OpenRouter)
 
 [dev]
 # refinement loop: a labeled-bad turn or a correction cue ("no",
@@ -376,7 +383,7 @@ agent_runtime = "auto"
 [brain.openrouter]
 kind = "openai_compat"
 base_url = "https://openrouter.ai/api/v1"
-key_env = "OPENROUTER_API_KEY"
+key_env = "keyring://wisp/openrouter,OPENROUTER_API_KEY"
 vision = "true"
 tools = "true"
 
@@ -580,7 +587,12 @@ def _default_cfg_dict() -> dict:
         "agents": {"act_max_steps": "12", "act_max_errors": "2",
                    "act_max_parse_misses": "1", "act_max_seconds": "600",
                    "act_max_usd": "0", "routine_wait_s": "120",
-                   "writer_queue_max": "256"},
+                   "writer_queue_max": "256",
+                   "acp_models": "openrouter/deepseek/deepseek-v4-flash,"
+                                 "openrouter/deepseek/deepseek-v4.1-flash,"
+                                 "openrouter/google/gemini-3.5-flash-lite",
+                   "acp_idle_s": "900", "ask_timeout_s": "120",
+                   "cancel_grace_s": "10", "mcp_memory": "true"},
         "dev": {"refine": "true"},
         "eval": {"gate_min_turns": "50"},
         "ui": {"theme": "dark"},
@@ -668,18 +680,35 @@ def key_label(name: str) -> str:
     (GROQ_API_KEY for `omaseal://groq/default,GROQ_API_KEY`), else the
     list itself."""
     cands = [c.strip() for c in str(name).split(",") if c.strip()]
-    return next((c for c in cands if not c.startswith("omaseal://")),
+    return next((c for c in cands
+                 if not c.startswith(("omaseal://", "keyring://"))),
                 str(name))
 
 
 def load_env_key(name: str) -> str:
     """Resolve a secret. `name` may be a comma-separated list of
-    sources tried in order — `omaseal://svc/acct` refs and plain env
+    sources tried in order — `keyring://svc/acct` (desktop Secret
+    Service via secret-tool), `omaseal://svc/acct` refs and plain env
     var names (also looked up in .env) — so an omaseal user can keep
     `omaseal://groq/default,GROQ_API_KEY` and a non-omaseal install
     still resolves the same key. "" when nothing yields a value."""
     for cand in (c.strip() for c in str(name).split(",")):
         if not cand:
+            continue
+        if cand.startswith("keyring://"):
+            ref = cand[len("keyring://"):].split("/", 1)
+            if len(ref) == 2:
+                try:
+                    from . import platform as _platform
+                    r = subprocess.run(
+                        [_platform.resolve_exe("secret-tool"), "lookup",
+                         "service", ref[0], "account", ref[1]],
+                        capture_output=True, text=True,
+                        timeout=OMASEAL_TIMEOUT_S)
+                    if r.returncode == 0 and r.stdout.strip():
+                        return r.stdout.strip()
+                except (OSError, subprocess.SubprocessError):
+                    pass
             continue
         if cand.startswith("omaseal://"):
             ref = cand[len("omaseal://"):].split("/", 1)

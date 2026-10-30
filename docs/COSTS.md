@@ -39,6 +39,19 @@ wispd eval                                     # first-time-correct rate per tur
 `site/compare.json`: every cell about another product names a source URL and
 the date it was read. Prices change; re-read before quoting them.
 
+## Background agents
+
+Background OpenCode agents bill your OpenRouter account through ori, the
+same account as every other paid call. `[agents] acp_models` lists the models
+they may use, cheapest first: `deepseek/deepseek-v4-flash`,
+`deepseek/deepseek-v4.1-flash`, then `google/gemini-3.5-flash-lite`. A session
+runs on the first one the runtime offers and never falls back to a pricier
+model; if none is offered the task fails. Wisp requests no reasoning effort,
+so no reasoning tokens are asked for. `[agents] act_max_usd` and the
+`[budget]` caps are described in `docs/CONFIG.md`; check what an agent run
+cost in your OpenRouter activity page, not in `wispd` usage, because the
+calls go through ori.
+
 ## The page
 
 Static HTML and CSS, no framework, no scripts, no analytics, no third-party

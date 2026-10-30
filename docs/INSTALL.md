@@ -227,6 +227,24 @@ wispd trigger         # run one listen cycle without the hotkey
 wispd trace show --tail 20   # recent dev trace events (stages + timings)
 ```
 
+## Background agents
+
+The onboarding agents step (`wispd onboard --step agents`, optional) and
+`wispd install --agents` download a pinned `ori` (Apache-2.0,
+`OpenRouterLabs/ori-releases`) and OpenCode 2.x (MIT, `anomalyco/opencode`)
+from their GitHub releases. Each download is checked against a SHA-256 baked
+into Wisp before anything is installed; no sudo, and ori's own installer and
+updater are never run. `wispd install --agents --dry-run` prints the two
+URLs and writes nothing. Neither tool is bundled with Wisp.
+
+They land in `~/.local/share/wisp/agent-runtime/<tool>/<version>/` behind a
+`current` link, with OpenCode's private home and config in
+`~/.local/share/wisp/agent-runtime/home/` and each named helper's folder in
+`~/.local/share/wisp/agents/`. Signing in is part of the onboarding step: it
+passes the OpenRouter key from your keyring (or opens ori's browser sign-in)
+and never edits `config.toml`. Your own OpenCode, if you have one, is not
+touched.
+
 ## Uninstall
 
 ```sh
@@ -236,4 +254,6 @@ rm -rf ~/.local/opt/wisp ~/.local/bin/wispd ~/.local/bin/wisp-trigger \
        ~/.config/omarchy/plugins/io.github.duketopceo.wisp
 # config + memory kept in ~/.config/wisp and ~/.local/share/wisp —
 # remove those too for a full wipe.
+rm -rf ~/.local/share/wisp/agent-runtime    # pinned ori + OpenCode (is under the data dir)
+secret-tool clear service wisp account openrouter   # the stored key, if any
 ```

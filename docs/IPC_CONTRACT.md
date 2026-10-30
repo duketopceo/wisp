@@ -37,6 +37,7 @@ future tray apps). Shells MUST only depend on this document.
 | `devlog` | `n?: int` (turns, default 20, max 50) | `{ok, turns, gate, rated, finished, rated_share, misses, truncated}`; each turn is `{id, turn, ts, transcript, route, kind, result, label: correct\|incorrect\|corrected-by-retry\|none, note, total_ms, stages: [{name, ms}], act_steps}`; `gate` is `{labelled, correct, rate, gate_rate, min_turns, status, needs, kinds}` | read-only dev tab data: tail-reads the last turns from decisions.jsonl and trace.jsonl, joins stage spans and the latest label, reuses `wispd eval`'s tally and misses; reply capped at 64 KB (`truncated`), recomputed per call |
 | `task_output` | `name: string` | `{ok, name, status, exit_code, output}` | read named-agent log output (U2) |
 | `task_artifacts` | `name: string` | `{ok, name, out_dir, delivered, deliverables, artifacts}` | read named-agent output workspace + deliverable verification (U2) |
+| `agent_tool` | `token: string`, `name: string`, `args?: object` | `{ok, result}` or `{ok:false, error:"bad_token"\|"not_marked_peer"\|"tool_refused"\|"ask_pending"}` | the MCP bridge's tool call (the hidden `agent-mcp` subcommand OpenCode spawns): the one command a marked peer may send besides reads; needs a live session token and the session's own marked process; `name` must be in the agent tool allowlist (`recall`, `memory_read`, `skill_list`, `skill_view`, `task_status`, `task_output`, `task_artifacts`, `ask_user`); refusals count on the session's `refused_count` |
 | `learn` | — | `{ok, result}` | no-op; weekly proposals were removed |
 | `harness` | — | `{ok, result}` | regenerate the app harness catalog |
 | unknown/malformed | — | `{ok:false, error}` | — |
@@ -51,6 +52,7 @@ The daemon captures `SO_PEERCRED` (`{pid, uid}`) on every AF_UNIX connection and
 Every process spawned via `agent_spawn` is placed in a registered task scope (`wisp-task-<id>.scope` via `systemd-run --user --scope` on systemd hosts, recorded in `tasks.jsonl` alongside `WISP_TASK_ID` and root PID/start-time). On each request `_dispatch` checks the connecting peer:
 
 1. **Marked peer (verified against `tasks.jsonl` via cgroup scope, PID/ancestry, or `WISP_TASK_ID`):** allowed `READ_CMDS` only. Any mutating or unlisted command is refused with `{"ok": false, "error": "marked_peer_refused", "reason": "mutating_cmd"|"safety_key"|"gated_read", "cmd": <cmd>, "task_id": <id>}`, and `refused_count` is incremented on the task record in `tasks.jsonl`. `config set` on safety-lowering keys (`agent.allow_shell`, `agent.autonomy`, `agent.risk_threshold`, `cua.*`, any `budget.*` key, `agents.act_max_usd`, `pointer.mode`) refuses marked peers with `"reason": "safety_key"`.
+   The one exception is `agent_tool` (`MARKED_PEER_CMDS`): it passes this check and is gated in its handler on a valid session token, a peer that is the marked process of that token's session, and the tool allowlist. It is not in the shared Rust parity fixture.
 2. **Spoofed marker (a `wisp-task-*.scope` cgroup matching no task record in `tasks.jsonl` (any status), or a `WISP_TASK_ID` not matching a running task):** refused on all commands with `{"ok": false, "error": "marked_peer_refused", "reason": "unregistered_task_id"|"unregistered_scope"}`.
 3. **Unmarked same-uid peer (normal CLI, shell widgets):** all commands pass. Arbitrary unmarked local processes and direct file writes to `config.toml`/`routines.json`/`MEMORY.md` remain outside the IPC split by design.
 4. **Non-systemd fallback limitation:** on hosts without a user systemd session, marking falls back to `WISP_TASK_ID` + `ppid` ancestry walk; a child that both clears its environment and reparents via double-fork/`setsid` can escape ancestry marking on those hosts (cgroup scope marking on Linux/systemd closes that escape).
@@ -117,7 +119,7 @@ round-trip — they are not IPC commands and are absent from the table:
   "note": "null, or {conv_id, path, raw, objects, plan, closed, rendered} — live paper surface (additive, gap-closure U1); when closed, plan is []",
   "goal": {"text": "string", "status": "open|done|failed"},
   "level": 0.0,
-  "tasks": {"name": "running|done|failed|cancelled"},
+  "tasks": {"name": "running|done|failed|cancelled|timed_out|exited|interrupted"},
   "error": "string — human-safe copy, never raw exception text",
   "error_code": "closed set, see below; \"\" when no error",
   "error_detail": "string — raw failure text, local only",
@@ -413,7 +415,30 @@ subscriber never delays state.json writes or other subscribers.
 
 `wispd watch [topic ...]` prints this stream (reconnecting forever).
 
-Agent reaper (core behaviour behind the `tasks` field; U2): every 5 s the
+Task entry fields (`tasks`): `status`, `task`, `ts` and `tail` always;
+`exit_code`, `delivered`, `deliverables`, `out_dir`, `refused_count`,
+`routine_id` and `unread` when the record has them. A live ACP session
+(`[brain] agent_runtime` resolving to `opencode`) adds, while `running`:
+`line` (its latest readable step, same text as `tail`), `seconds` (elapsed)
+and `waiting: true` when it is blocked on a question or permission ask.
+`interrupted` marks a session a daemon restart cut off; it is never
+replayed on its own. A finished session's `answer` and `stop_reason` are kept
+on its `tasks.jsonl` record only; they are not in `tasks`, and `task_output`
+returns the log tail, whose last lines include the answer.
+
+Task events (topic `tasks`): `{"type":"event","name":"task_progress",
+"data":{name,line,seconds}}` is a session's latest `PROGRESS:` line, at most
+one per 2 s per task. `{"type":"event","name":"task_question","data":{helper,
+kind,outcome,prompt_id}}` ends every agent ask: `kind` is `question` or
+`permission`, `outcome` says how it ended (answered, declined, timed out)
+and never carries the answer text.
+
+Agent asks reach you as the usual `awaiting_choice` state with a
+`prompt_id`, plus `source: "agent:<name>"` (`""` for a turn's own prompt),
+so a shell can say which helper is asking. A turn keeps priority: an ask
+waits in a queue and is offered again after the turn.
+
+Agent reaper and ACP (core behaviour behind the `tasks` field; U2): every 5 s the
 daemon closes tasks whose process is gone, SIGTERMs tasks past
 `[agent] task_timeout_s` (`timed_out`), and escalates to SIGKILL after 10 s.
 Every spawn path wraps the child in an exit-code shim (`tasks/<id>.exit`)
@@ -435,6 +460,13 @@ and creates an output workspace at `tasks/<id>/out/`. At reap time:
 - The reaper never signals a pid whose start-time differs from the one
   recorded at spawn (PID reuse). Each running to not-running transition
   publishes the new `tasks` and one `task_finished` event.
+- ACP sessions (OpenCode) are owned by the runtime manager, not the shim:
+  the reaper cancels one past `task_timeout_s` and records `timed_out`; a
+  cancel (`task_cancel`) asks the agent to stop, waits `[agents]
+  cancel_grace_s`, then kills the process group. The agent's stop reason,
+  not its own words, decides `done`/`failed`/`cancelled`. A named helper's
+  process exits after `[agents] acp_idle_s`; a follow-up to a busy session
+  is queued, never dropped.
 
 ## Data files (shared by both cores, never versioned differently)
 

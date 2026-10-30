@@ -11,10 +11,13 @@ import shutil
 import subprocess
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import cli_env  # noqa: E402
 import shorttmp  # noqa: E402
+
+from wisp import agent_install, agent_pins, cli  # noqa: E402
 
 GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com",
            "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com",
@@ -188,6 +191,49 @@ class InstallRefTest(unittest.TestCase):
                          self.v1)
         code, out, err = e.run(["status"])
         self.assertIn(self.v1[:12], out)
+
+
+class InstallAgentsTest(unittest.TestCase):
+    """`wispd install --agents`: the pinned ori and OpenCode, no network."""
+
+    def run_agents(self, *extra, results=None):
+        import contextlib
+        import io
+        calls = []
+
+        def fake_install(tool, *a, **kw):
+            calls.append(tool)
+            return (results or {}).get(tool, agent_install.Result("installed"))
+
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(agent_install, "install", fake_install), \
+                contextlib.redirect_stdout(out), \
+                contextlib.redirect_stderr(err):
+            code = cli.main(["install", "--agents", *extra], host=None)
+        return code, out.getvalue(), err.getvalue(), calls
+
+    def test_installs_both_tools(self):
+        code, out, err, calls = self.run_agents("--json")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(calls, ["ori", "opencode"])
+        data = json.loads(out)["data"]
+        self.assertTrue(data["installed"])
+        self.assertEqual(data["agents"]["ori"]["status"], "installed")
+        self.assertEqual(data["agents"]["opencode"]["status"], "installed")
+
+    def test_dry_run_names_the_pins_and_installs_nothing(self):
+        code, out, err, calls = self.run_agents("--dry-run")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(calls, [])
+        self.assertIn(agent_pins.ORI_VERSION, out)
+        self.assertIn(agent_pins.OPENCODE_VERSION, out)
+
+    def test_a_failed_download_exits_nonzero_with_the_reason(self):
+        code, out, err, calls = self.run_agents(
+            results={"ori": agent_install.Result("failed", "no network")})
+        self.assertNotEqual(code, 0)
+        self.assertIn("no network", err)
+        self.assertEqual(calls, ["ori"])   # stops at the first failure
 
 
 if __name__ == "__main__":
