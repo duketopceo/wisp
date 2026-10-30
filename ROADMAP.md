@@ -1,7 +1,7 @@
 # Wisp Roadmap
 
-State: **Phases 1–4, 6, 7 and 8 are on `master`, plus units B1–B34 of the beat-competitors plan except B3 and B31. Phase 9 and Phase 5 are partly shipped (below); what is left needs labelled turns or a fixture migration.**
-Last updated: 2026-10-28 (evening). Plan of record: `docs/plans/2026-10-26-0031-feat-wisp-v1-roadmap-plan.md`.
+State: **Phases 1–4, 6, 7 and 8 are on `master`, plus units B1–B34 of the beat-competitors plan except B3 and B31. Phase 9 and Phase 5 are partly shipped, and the bar, rating, Dev tab and voice work (phases A to D) is on `master` (below); what is left needs labelled turns or a fixture migration.**
+Last updated: 2026-10-29 (night). Plan of record: `docs/plans/2026-10-26-0031-feat-wisp-v1-roadmap-plan.md`. This is the only roadmap; `docs/ROADMAP.md` points here.
 
 ## Product target
 
@@ -28,6 +28,13 @@ Fixed decisions:
 8. Phase 8 · Agent hardening: Wisp-held credentials scrubbed from spawned agents (#155, R11).
 9. Beat-competitors plan (`docs/plans/2026-10-27-feat-wisp-beat-competitors-plan.md`), B1–B34 except B3 and B31 (#164–#204): latency gate, earlier first sentence, hand-drawn ink, image cards, walkthrough lessons, scribble to ask, voice speed, document context, named helpers, plan preview, install and trust pages, multilingual turns, dictation safety net, sharing, capture checks, one-instance daemon, self-answers, starter pack, hands-free mode, and a capped trial brain (off).
 
+9. Bar, ratings, Dev tab and voice (phases A to D, `docs/plans/2026-10-28-2233-feat-bar-feedback-devtab-voice-plan.md`):
+   - **A, one-tap ratings (#238):** every turn's decision line carries its turn id, so a rating lands on the turn it was given for. The answer card has thumb buttons, and **Super+Alt+D** rates the last finished turn wrong and opens a one-line note.
+   - **B, bar status pill (#246):** the bar pill names the state in a word with its own glyph, and a finished turn shows an 8 second rating window.
+   - **C, Dev tab (#247):** `wispd dev turns` and a local-only fifth Panel tab (`[dev] panel = true`, off by default) show the v1 gate tally, recent turns with per-stage time and the top misses.
+   - **D, talk-back (#244):** answers are spoken through Groq Orpheus when a Groq key resolves, with espeak as the fallback, and `wispd doctor` gains a voice section.
+   - **Also:** the test suite no longer reads the live desktop (#245), dead helpers and imports are gone (#248), and the no-daemon trigger fallback now records privately like the daemon: umask 077, private folders, one shared setup (#250).
+
 Also: CI flake root causes (#142), "open my email" opens Gmail when the mail handler is a browser (#147), Argus pinned at c701b2a (#151), act no longer ends a run on a narrated next step without a tool call (#153). Voice polish leftovers (B8b): captions toggle, mic failover, muted speaker keeps the answer on the clipboard, and no announcements on calls. Watchable browser lane (B14): an extension pairs with a code and works in a tab group in your own browser, off by default.  3D parts (B13): an answer can carry one small allow-listed glTF model whose parts you click to ask about.
 
 ## Next, in order
@@ -36,8 +43,9 @@ Each is one PR, planned when it starts.
 
 1. **Phase 9 · Act quality** — shipped so far: default-app resolution (#147), open-tab switching and no unconfirmed success claims (#212), "go to a site" opens in the user's browser instead of `xdg-open` (#231), and clicks that land off every monitor are refused so the loop re-aims (#232). Left: re-rank from `wispd eval --misses` once there are labelled act turns after the verification ladder (none are recorded yet, so wrong-coordinate clicks have no fresh data). Unblocks B3.
 2. **Phase 5 · Router fast path** — shipped so far: the regex fast path in front of act (#233; bare launches of catalogued apps and plain questions skip the act loop, `[brain] fast_path`), and removal of the shadow decider (#234), the flash lane and the route A/B log (#235). Left: remove the Jev router itself (`router = jev`, `route.decide`, `ask_jev`, `JEV_QUESTIONS`, the clarify prompt), which 45 replay fixtures and about 20 test files still script; `suggest` and the grounding `jev` fallback also call Jev (Q3). Do it as fixture migration first, then deletion.
-3. **Remaining plan units** — B3 (accuracy loop, after Phase 9), B31 (growth scoreboard).
-4. **Clean-box check** — `wispd onboard` and `wispd doctor` on a clean Omarchy box with hosted keys only.
+3. **Live background agents (#241)** — background agents on OpenCode become live sessions: progress you can see, spoken asks before risky steps, follow-ups, cancel and resume, and onboarding that installs the pinned runtime. Open for review.
+4. **Remaining plan units** — B3 (accuracy loop, after Phase 9), B31 (growth scoreboard).
+5. **Clean-box check** — `wispd onboard` and `wispd doctor` on a clean Omarchy box with hosted keys only.
 
 ## v1.0 gate
 

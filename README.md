@@ -90,16 +90,21 @@ notes are in `docs/INSTALL.md`; every config key is in `docs/CONFIG.md`.
   glance, plus an in-bar pill that grows while Wisp works — status word,
   mic-level meter while listening, and the same vocabulary as the overlay.
   Click toggles talk, middle-click stops the turn, right-click opens the
-  Panel.
+  Panel. The pill names the state (listening, thinking, speaking, acting,
+  needs you, error) and, after a finished turn, shows thumbs for eight
+  seconds so you can rate it in one tap.
 - **Companion overlay**: transient surfaces only (no corner orb): a
   bottom-center pill while you speak, answers in a bubble next to your
-  cursor (with `good` and `wrong` label buttons), confirm/choice chips on
+  cursor (with thumbs-up and thumbs-down rating buttons; `Super+Alt+D` rates the last turn wrong and opens a one-line note), confirm/choice chips on
   the pill, and a cursor buddy beside the pointer that flies to act targets. Step detail lives in the
   Panel Now tab, not a separate console window.
-- **Panel**: opened from the bar. Four tabs: Now (the current turn and
+- **Panel**: opened from the bar. Four tabs (five with the Dev tab): Now (the current turn and
   steps), Agents (background tasks), Memory (skills and recent
   decisions) and Settings (health, spend caps, pointer and cua safety,
   connectors). A first-run card sits on top until setup is finished.
+  With `[dev] panel = true` a fifth tab, Dev, shows the v1 gate tally,
+  recent turns with per-stage time and the top misses (local only; the
+  same data as `wispd dev turns`).
 - **Desktop entry**: "Wisp" in the app menu, with Listen, Stop and Panel
   actions. No tray icon is shipped (see `docs/INSTALL.md`).
 - **Management app and TUI**: Health, Spend, Audit and Binds views over
@@ -152,6 +157,11 @@ What a turn can do:
 Spoken settings: "talk slower", "talk faster" and "talk at normal speed"
 change `[voice] speed` (0.5 to 1.5) and are logged with the guarded calls
 (`wispd cua log --audit`).
+
+Spoken answers use Groq Orpheus when a Groq key resolves (the same key as
+speech-to-text), and fall back to espeak for the turn if Groq is slow or
+refuses. `[voice] enabled` is `auto` by default: on only with a Groq key.
+`wispd doctor` shows which voice is in use and the last Groq error.
 
 ## Computer use
 
