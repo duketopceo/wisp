@@ -20,20 +20,6 @@
     "whisper": {
       "transcript": "wisp agent click the save button"
     },
-    "jev": {
-      "answers": {
-        "route": {
-          "choice": "answer"
-        },
-        "app": {
-          "choice": "none",
-          "confidence": 0.99
-        },
-        "risk": {
-          "score": 0
-        }
-      }
-    },
     "brain": {
       "responses": [
         {

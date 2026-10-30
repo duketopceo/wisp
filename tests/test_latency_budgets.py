@@ -31,7 +31,13 @@ def slowed(stage: str, ms: int = 1500) -> dict:
     if stage == "stt":
         ep["whisper"]["latency_ms"] = ms
     elif stage == "route":
-        ep["jev"]["latency_ms"] = ms
+        # the route stage is only slow on the Jev router: pin it explicitly
+        # (Jev-only; goes away with the router)
+        fx["config"] = {"brain": {"router": "jev"}}
+        ep["jev"] = {"answers": {
+            "route": {"choice": "answer"},
+            "app": {"choice": "none", "confidence": 0.99},
+            "risk": {"score": 0}}, "latency_ms": ms}
     elif stage == "first_token":
         ep["brain"]["responses"][0]["latency_ms"] = ms
     else:

@@ -1,6 +1,11 @@
 {
   "description": "Jev replies after 2 s, past the 400 ms deadline: the heuristic routes 'what time is it' to answer, the late reply is discarded and the brain streams the answer (W11).",
   "audio": "ask.wav",
+  "config": {
+    "brain": {
+      "router": "jev"
+    }
+  },
   "endpoints": {
     "whisper": {
       "transcript": "what time is it"

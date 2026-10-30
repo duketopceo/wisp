@@ -6,20 +6,6 @@
       "transcript": "wie spät ist es",
       "language": "german"
     },
-    "jev": {
-      "answers": {
-        "route": {
-          "choice": "answer"
-        },
-        "app": {
-          "choice": "none",
-          "confidence": 0.99
-        },
-        "risk": {
-          "score": 0
-        }
-      }
-    },
     "brain": {
       "responses": [
         {
@@ -51,6 +37,9 @@
     },
     "stt": {
       "language": "auto"
+    },
+    "brain": {
+      "router": "chat"
     }
   }
 }

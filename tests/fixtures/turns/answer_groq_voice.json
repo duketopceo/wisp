@@ -5,20 +5,6 @@
     "whisper": {
       "transcript": "where do i click for display settings"
     },
-    "jev": {
-      "answers": {
-        "route": {
-          "choice": "answer"
-        },
-        "app": {
-          "choice": "none",
-          "confidence": 0.99
-        },
-        "risk": {
-          "score": 0
-        }
-      }
-    },
     "brain": {
       "responses": [
         {
@@ -40,6 +26,9 @@
   "config": {
     "voice": {
       "enabled": "true"
+    },
+    "brain": {
+      "router": "chat"
     }
   },
   "expect": {

@@ -38,6 +38,7 @@ WORD_STORES = {
     "data/wisp/session.jsonl",     # recent turns, [session]
     "data/wisp/decisions.jsonl",   # route labels for `wispd label`
     "data/wisp/trace.jsonl",       # dev trace, [debug] trace
+    "data/wisp/trajectories.jsonl",  # act-loop task + step memory
     "data/wisp/recall.db",         # memory index
     "run/wisp/state.json",         # live state for the panel (tmpfs)
 }

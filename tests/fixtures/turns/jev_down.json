@@ -1,6 +1,11 @@
 {
   "description": "Jev answers 503 on every call. The heuristic router takes over (W11): 'open firefox' is a bare launch of a catalog app, so it launches and the turn ends done, never in error. The error-path copy for a genuine brain outage lives in brain_down.",
   "audio": "ask.wav",
+  "config": {
+    "brain": {
+      "router": "jev"
+    }
+  },
   "endpoints": {
     "whisper": {
       "transcript": "open firefox"

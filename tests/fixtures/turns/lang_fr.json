@@ -5,20 +5,6 @@
     "whisper": {
       "transcript": "quelle heure est-il"
     },
-    "jev": {
-      "answers": {
-        "route": {
-          "choice": "answer"
-        },
-        "app": {
-          "choice": "none",
-          "confidence": 0.99
-        },
-        "risk": {
-          "score": 0
-        }
-      }
-    },
     "brain": {
       "responses": [
         {
@@ -50,6 +36,9 @@
     },
     "stt": {
       "language": "fr"
+    },
+    "brain": {
+      "router": "chat"
     }
   }
 }

@@ -226,7 +226,7 @@ class TurnReplayTest(unittest.TestCase):
         self.assertEqual(res.violations, [])
         # one call per fake
         self.assertEqual(len(res.calls["whisper"]), 1)
-        self.assertEqual(len(res.calls["jev"]), 1)
+        self.assertEqual(len(res.calls["jev"]), 0)   # act router, no Jev hop
         self.assertEqual(len(res.chat_calls()), 1)
 
     def test_scripted_brain_latency_shows_in_first_token_span(self):
@@ -366,7 +366,12 @@ class TurnReplayTest(unittest.TestCase):
 
     def test_cancel_during_jev_ends_idle_and_ignores_the_late_reply(self):
         fx = copy.deepcopy(runner.load_fixture(FIXTURES / "ask.json"))
-        fx["endpoints"]["jev"]["latency_ms"] = 700
+        # Jev-only behavior: pin the Jev router explicitly (deleted with it)
+        fx["config"] = {"brain": {"router": "jev"}}
+        fx["endpoints"]["jev"] = {"answers": {
+            "route": {"choice": "answer"},
+            "app": {"choice": "none", "confidence": 0.99},
+            "risk": {"score": 0}}, "latency_ms": 700}
         fx["interrupt_after_ms"] = 200
         res = runner.run_turn(fx)
         self.assertEqual(res.statuses[-1], "idle")

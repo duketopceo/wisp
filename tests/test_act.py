@@ -1081,10 +1081,6 @@ class Timing(unittest.TestCase):
         logged = {}
         cfg = {"audio": {"seconds": "0"}, "agent": {},
                "jev": {"risk_threshold": "10"}}
-        fake_resp = {"answers": {"route": {"choice": "answer"},
-                                 "confidence": {"score": 0.9},
-                                 "action": {"choice": "answer"},
-                                 "app": {"choice": ""}}}
         st = mock.Mock()
         st.state = {}
         st.transition = lambda s, **kw: st.state.update(status=s, **kw)
@@ -1093,13 +1089,11 @@ class Timing(unittest.TestCase):
              mock.patch.object(pipeline, "transcribe",
                                return_value="hello"), \
              mock.patch.object(pipeline, "ask_jev",
-                               return_value=fake_resp), \
+                               side_effect=AssertionError("no Jev hop")), \
              mock.patch.object(pipeline, "execute",
                                return_value="ANSWERED"), \
              mock.patch.object(pipeline, "ask_chat",
                                return_value="hi there"), \
-             mock.patch.object(pipeline, "build_questions",
-                               return_value={}), \
              mock.patch.object(pipeline, "notify"), \
              mock.patch.object(sys.modules["wisp.session"],
                                "append_turn"), \

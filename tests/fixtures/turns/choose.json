@@ -1,6 +1,11 @@
 {
   "description": "Low-confidence launch: pipeline offers choices, the scripted chooser picks app:discord, launch stub records it.",
   "audio": "choose.wav",
+  "config": {
+    "brain": {
+      "router": "jev"
+    }
+  },
   "endpoints": {
     "whisper": {
       "transcript": "open the chat app"

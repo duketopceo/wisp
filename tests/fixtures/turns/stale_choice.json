@@ -1,6 +1,11 @@
 {
   "description": "The chooser returns a pick that was never offered (stale prompt). U9: it is rejected (choice_rejected in the trace) and the turn falls back to the safe auto-pick.",
   "audio": "choose.wav",
+  "config": {
+    "brain": {
+      "router": "jev"
+    }
+  },
   "endpoints": {
     "whisper": {
       "transcript": "open the chat app"
