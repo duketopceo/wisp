@@ -47,20 +47,27 @@ function money(x) {
   return "$" + n.toFixed(2)
 }
 
-// "spent today $0.12 of $5.00" pieces from state.spend when the daemon
-// publishes it ({today_usd, cap_usd}); "" when absent (this contract
-// version does not carry spend yet, W14 adds it).
+// "today $0.12 · 4 turns" from state.spend ({today_usd, turns_today});
+// "" when the daemon publishes no spend. The turn count is left off when the
+// daemon does not publish one, never guessed.
 function spendLine(spend, ui) {
   if (!isObj(spend)) return ""
   var today = money(spend.today_usd)
   if (today === "") return ""
-  var cap = money(spend.cap_usd)
-  return ui("ui.bar.spend") + " " + today + (cap !== "" ? " / " + cap : "")
+  var line = ui("ui.bar.spend") + " " + today
+  var n = Number(spend.turns_today)
+  if (spend.turns_today !== undefined && spend.turns_today !== null && isFinite(n) && n >= 0) {
+    n = Math.floor(n)
+    line += " \u00b7 " + n + " " + ui(n === 1 ? "ui.bar.turn" : "ui.bar.turns")
+  }
+  return line
 }
 
-// Tooltip lines. o: {word, hint, notice, stale, offline, ui}. `word` is the
-// service's wordView word (reconnecting while stale, the typed message on
-// an error) and `hint` the error's next step, both from the copy table.
+// Hover card lines. o: {word, hint, notice, stale, offline, voice, ui}.
+// `word` is the service's wordView word (reconnecting while stale, the typed
+// message on an error) and `hint` the error's next step, both from the copy
+// table. Spend lives here and only here (never on the pill). `voice` is the
+// voice in use when the caller knows it; the line is left out otherwise.
 // Offline shows the notice and the start action only; stale keeps the rows
 // and says so.
 function tooltipLines(view, o) {
@@ -79,6 +86,7 @@ function tooltipLines(view, o) {
     if (rows.length > shown) lines.push("+" + (rows.length - shown) + " " + ui("ui.more"))
     var sp = spendLine(view.raw ? view.raw.spend : null, ui)
     if (sp) lines.push(sp)
+    if (o.voice) lines.push(ui("ui.bar.voice") + " " + o.voice)
   }
   lines.push(ui(o.offline ? "ui.bar.hint.offline" : "ui.bar.hint"))
   return lines
@@ -94,4 +102,91 @@ function dimmed(offline, stale) { return !!offline || !!stale }
 // own glyph (bar-needs-you), so it gets no dot on top of it.
 function badge(status, hasSuggestion) {
   return status === "suggestion" || !!hasSuggestion
+}
+
+// ---- pill (U3) ------------------------------------------------------
+
+// The done rating window: how long the pill keeps the thumbs up.
+var WINDOW_MS = 8000
+
+// Statuses a turn passes through; a done reached from one of these is a
+// turn finishing now (a snapshot of an old done after a reconnect is not).
+var LIVE = { listening: true, transcribing: true, deciding: true,
+  acting: true, speaking: true, awaiting_choice: true }
+
+// What the service does to the window on a state message: "open" on the
+// done edge of a rateable turn, "close" when the turn moved on, the daemon
+// went offline or the status left done, else "keep".
+function windowAction(prevStatus, status, prevTurn, turn, offline, rateable) {
+  if (offline || status !== "done") return "close"
+  if (prevStatus !== "done" && LIVE[prevStatus] === true && rateable) return "open"
+  if (turn !== prevTurn) return "close"
+  return "keep"
+}
+
+// One muted word of cause for an error pill.
+var CAUSE = { jev_down: "model", brain_down: "model", stt_down: "speech",
+  ground_down: "screen", ground_failed: "screen", timeout: "timeout",
+  busy: "busy", tool_failed: "tool", budget_exceeded: "budget",
+  key_missing: "key", restarted: "restart", stale_prompt: "stale" }
+function causeWord(code) { return CAUSE.hasOwnProperty(code) ? CAUSE[code] : "" }
+
+var HIDDEN = { kind: "idle", visible: false, glyph: "", token: "ink",
+  wordToken: "ink", border: "keyline", wordKey: "", step: "", cause: "",
+  thumbs: false }
+
+function view(kind, glyph, token, wordKey, extra) {
+  var v = { kind: kind, visible: true, glyph: glyph, token: token,
+    wordToken: "ink", border: "keyline", wordKey: wordKey, step: "",
+    cause: "", thumbs: false }
+  for (var k in extra) v[k] = extra[k]
+  return v
+}
+
+// Daemon status to the pill's state. o: {status, result, errorCode,
+// offline, confirm, windowOpen, rateable, run:{steps, stepAt}}. Idle and
+// offline are no pill (the mark alone); every other state is glyph plus a
+// word (the word repeats the state, color is never the only signal).
+function pillState(o) {
+  var status = String(o.status)
+  if (o.offline || status === "offline") {
+    var off = view("offline", "", "inkMuted", "", {})
+    off.visible = false
+    return off
+  }
+  if (status === "error")
+    return view("error", "cross", "fail", "ui.bar.state.error",
+      { border: "fail", wordToken: "fail", cause: causeWord(String(o.errorCode || "")) })
+  if (status === "awaiting_choice" || o.confirm === true
+      || (status === "done" && /^BLOCKED/.test(String(o.result || ""))))
+    return view("needsYou", "warning", "needsYou", "ui.bar.state.needs",
+      { border: "needsYou", wordToken: "needsYou" })
+  if (status === "listening")
+    return view("listening", "waveform", "ember", "ui.bar.state.listening", {})
+  if (status === "transcribing" || status === "deciding")
+    return view("thinking", "arc", "ember", "ui.bar.state.thinking", {})
+  if (status === "speaking")
+    return view("speaking", "triangle", "ember", "ui.bar.state.speaking", {})
+  if (status === "acting") {
+    var r = o.run, step = ""
+    if (r && Number(r.steps) > 0 && Number(r.stepAt) > 0)
+      step = Math.min(Number(r.stepAt), Number(r.steps)) + "/" + Number(r.steps)
+    return view("acting", "act", "ember", "ui.bar.state.acting", { step: step })
+  }
+  if (status === "done" && o.windowOpen === true && o.rateable === true)
+    return view("done", "check", "ok", "ui.bar.state.done", { thumbs: true })
+  return HIDDEN
+}
+
+// Five mic bars, heights in px, from the mic level (0 to 1). The middle
+// bar moves most; a silent mic still shows a short stub.
+var WAVE_WEIGHT = [0.45, 0.75, 1, 0.75, 0.45]
+function waveBars(level) {
+  var l = Number(level)
+  if (!isFinite(l)) l = 0
+  l = Math.max(0, Math.min(1, l))
+  var out = []
+  for (var i = 0; i < WAVE_WEIGHT.length; i++)
+    out.push(3 + Math.round(9 * WAVE_WEIGHT[i] * l))
+  return out
 }

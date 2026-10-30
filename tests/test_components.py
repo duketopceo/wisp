@@ -116,9 +116,13 @@ class TestComponentRules(unittest.TestCase):
         for p in sorted(COMP.glob("*.qml")):
             src = code(p)
             if re.search(r"Animation\.Infinite|loops:\s*Animation", src):
-                self.assertEqual(p.stem, "Creature")
+                # the bar pill's thinking arc is the one other loop (U3):
+                # gated the same way, and only while thinking
+                self.assertIn(p.stem, ("Creature", "BarPill"))
                 self.assertIn("motionMode", src)
                 self.assertIn("Motion.loops", src)
+                if p.stem == "BarPill":
+                    self.assertRegex(src, r'kind === "thinking"')
 
     def test_motion_respects_service_mode(self):
         for p in sorted(COMP.glob("*.qml")):

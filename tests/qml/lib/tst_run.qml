@@ -5,12 +5,10 @@ import "../../../shell-plugin/lib/tokens.js" as Tokens
 import "../../../shell-plugin/components"
 import "../harness"
 
-// U8 run-card model (lib/run.js) plus the BarPill run presence built on
-// it: the card reduces the action stream to intent / step cursor /
-// in-flight step / outcome / mutations / live question, and the pill
-// shows a progress dot + intent while a run is live and a brief outcome
-// tint after it resolves. Settled or stale daemons can never leave a
-// ghost "running" card.
+// U8 run-card model (lib/run.js): the card reduces the action stream to
+// intent / step cursor / in-flight step / outcome / mutations / live
+// question. Settled or stale daemons can never leave a ghost "running"
+// card. (The bar pill's own tests are tst_bar_pill.qml.)
 TestCase {
   id: tc
   name: "run"
@@ -140,50 +138,4 @@ TestCase {
                "awaiting_choice", "p9", false, "", 0)
     verify(c.question === null)
   }
-
-  function findText(item) {
-    if (item.objectName === "word") return item
-    for (var i = 0; i < item.children.length; i++) {
-      var r = findText(item.children[i])
-      if (r) return r
-    }
-    return null
-  }
-
-  function test_pill_shows_run_presence() {
-    svc.tokens = tokens
-    svc.motionConfig = "full"
-    svc.load(readJson("run_active"))
-    var pill = createTemporaryObject(pillComp, tc, { service: svc })
-    verify(pill !== null)
-    verify(pill.runActive)
-    verify(pill.live)
-    var w = findText(pill)
-    verify(w !== null)
-    verify(w.text.indexOf("open discord") >= 0)
-    pill.destroy()
-  }
-
-  function test_pill_outcome_tint_then_folds() {
-    svc.tokens = tokens
-    svc.motionConfig = "full"
-    svc.load(readJson("run_done"))
-    var pill = createTemporaryObject(pillComp, tc, { service: svc })
-    verify(pill !== null)
-    verify(!pill.runActive)
-    verify(pill.tintUp)
-    verify(pill.live)
-    // the hold runs its course, then the pill folds away for good
-    tryVerify(function () { return !pill.tintUp }, 6000)
-    tryVerify(function () { return !pill.live }, 1000)
-    pill.destroy()
-    // motion off: no tint at all — the pill never lingers
-    svc.motionConfig = "off"
-    svc.load(readJson("run_done"))
-    var still = createTemporaryObject(pillComp, tc, { service: svc })
-    verify(!still.tintUp)
-    still.destroy()
-  }
-
-  Component { id: pillComp; BarPill { } }
 }
