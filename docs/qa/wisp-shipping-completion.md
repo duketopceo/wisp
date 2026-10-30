@@ -15,7 +15,8 @@ The later owner request expands this scope to an installable Linux release
 candidate, one-line installation, onboarding, recovery and the public site.
 Owner-labelled runs follow installation; they are not prerequisites for
 publishing a clearly labelled candidate. The stable-v1 gate is unchanged.
-The five proposed DNS records still require their separate confirmation.
+The owner separately approved the final Workers-domain cutover and disabling
+Wisp's injected Real User Monitoring beacon; that scope is now completed.
 No vault unlock, Tallyline post or real desktop task is included.
 
 The work is attached to [Wisp PR #259](https://github.com/duketopceo/wisp/pull/259).
@@ -63,6 +64,12 @@ was cherry-picked as `d2a9285`; this is not a merge of either PR.
 - **Workspace inference:** complete title paths retain spaces rather than
   accepting an existing truncated prefix. Explicit configured directories
   take precedence. Browser titles cannot select an agent workspace.
+- **Watchdog handoff:** failed capture-stop or worker-start paths release
+  only the watchdog's untransferred busy admission. Successful handoffs and
+  another turn's admission remain owned; abandoned capture cleanup is one-shot.
+- **Browser profile stores:** endpoint identity must match the complete
+  selected profile/store selector set. A matching `Work` label in an
+  unconfigured personal data directory cannot authorize tab reuse.
 
 The native manual review is limited and is not a completed formal
 multi-reviewer CE pipeline. Its original seven findings were independently
@@ -143,9 +150,9 @@ a claim that local WebKit installed. ([enhanced CI job](https://github.com/duket
 
 ## Verification ledger
 
-Final integrated regression, source-freeze review and PR CI results are
-pending. Earlier diagnostic failures are retained as evidence, not
-misrepresented as the final result.
+The ledger distinguishes historical diagnostics from verified snapshots.
+App publication and representative-device checks remain pending; earlier
+diagnostic failures are not misrepresented as final results.
 
 The first integrated run observed a keyboard acknowledgement race and a
 CPU-contention-sensitive idle-budget failure. The keyboard race has
@@ -247,6 +254,16 @@ The hosting integration broad suite passed **3,989 tests in 405.641 seconds,
 21 skipped**. That run collected the four initial Worker tests before the
 single-line footer correction and its additional test; final focused/hosted
 checks cover that last change separately.
+Both hosted Python 3.11/3.13 suites, plugin validation and Rust checks passed
+at `8bfac17`. The subsequent watchdog/profile-store repairs passed a combined
+194-test parent integration slice; their final committed-source checks remain
+separate from that earlier hosted snapshot.
+([Application CI snapshot](https://github.com/duketopceo/wisp/actions/runs/41142023007))
+The committed Workers snapshot `8bfac17` passed all three website CI jobs:
+baseline build, enhanced Chromium/WebKit checks under actual Worker headers,
+and the deployable asset artifact. This is not live-domain WebKit coverage;
+the public-domain Chromium receipt above remains separate.
+([Workers website CI](https://github.com/duketopceo/wisp/actions/runs/41142023270))
 See [HOSTING.md](../HOSTING.md) for deployment and rollback boundaries.
 
 ### Owner-provided install attempt
@@ -267,8 +284,9 @@ No private addresses or login metadata from that excerpt are copied here.
   7/23 or quoted 7/26 snapshots are not current verification.
 - **R6 timing:** `buddy.js` still uses its 0.30-second entry delay.
   Reducing it needs a real screenshot-clearance and overlay check.
-- **Final hosted checks:** Worker-specific WebKit and final committed-source
-  hosted CI remain separate receipts. Domain cutover is complete, not a pending
+- **Final hosted checks:** Worker-specific Chromium/WebKit CI passed at
+  `8bfac17`; final app-source CI and required independent PR approval remain
+  separate release gates. Domain cutover is complete, not a pending
   GitHub CNAME task. The bootstrap publication path is `/install.py`, not `.sh`;
   its advertised release command must target real authenticated native assets.
 - **Native ports:** authenticated IPC, companion integration, packaging,

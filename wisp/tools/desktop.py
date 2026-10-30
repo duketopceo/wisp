@@ -515,8 +515,11 @@ def _cdp_owner_matches(port: int, browser: str) -> bool:
         for mode in ("--guest", "--incognito", "--private-window"):
             if bool(wanted_profiles.get(mode)) != bool(actual_profiles.get(mode)):
                 return False
-        return all(actual_profiles.get(key) == value
-                   for key, value in wanted_profiles.items())
+        # An extra identity selector is not neutral: Work inside a custom
+        # data directory is not Work inside the configured/default store.
+        # With no selectors on either side, ordinary default reuse remains
+        # valid; do not guess equivalence for unrequested explicit stores.
+        return actual_profiles == wanted_profiles
     except (OSError, ValueError):
         return False
 

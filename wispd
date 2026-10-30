@@ -614,6 +614,7 @@ def _rec_watchdog(ctl: dict, secs: int) -> None:
             _DAEMON_CTL["busy"].set()
     # mimic a second press: finish capture, hand wav to the pipeline —
     # state/cfg fetched at call time via the closure the daemon holds
+    worker_started = False
     try:
         tid = _DAEMON_CTL.pop("turn", None) or _DAEMON_ST.current_turn()
         if not admitted:
@@ -630,8 +631,19 @@ def _rec_watchdog(ctl: dict, secs: int) -> None:
             target=_run_listen,
             args=(_DAEMON_ST, _DAEMON_CFG, _DAEMON_CTL, wav, None, tid),
             daemon=True).start()
+        worker_started = True
     except RuntimeError as e:
         _DAEMON_ST.transition("error", error=str(e))
+    finally:
+        if admitted and not worker_started:
+            # No worker owns this admission yet. Discard a stopped-but-
+            # unclaimed stream too; record_stop's owned cleanup is one-shot.
+            with suppress(Exception):
+                pipeline.record_stop(rec, _DAEMON_ST.turn(tid), discard=True)
+            with suppress(Exception):
+                _drop_speculation(_DAEMON_CTL)
+            with ctl["rec_lock"]:
+                _DAEMON_CTL["busy"].clear()
 
 
 def _voice_answer(st, cfg: dict, ctl: dict, wav, kind: str) -> dict:
