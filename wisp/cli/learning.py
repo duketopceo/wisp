@@ -171,3 +171,70 @@ def dev_turns(ctx, a):
     ctx.expect_ok(r)
     data = {k: v for k, v in r.items() if k != "ok"}
     return ctx.emit(data, _dev_text(data))
+
+
+_DEV_SESSION = {"on": "bool", "runs_done": "int", "runs_left": "int",
+                "max_runs": "int", "started_at": "str"}
+
+
+def _dev_session_text(s):
+    if not s.get("on"):
+        return "dev mode: off"
+    return (f"dev mode: on, {s.get('runs_done', 0)} of "
+            f"{s.get('max_runs', 5)} runs done "
+            f"({s.get('runs_left', 0)} left), started {s.get('started_at')}")
+
+
+def _dev_switch(ctx, op):
+    r = ctx.expect_ok(ctx.send({"cmd": "dev", "op": op}))
+    s = r.get("dev") or {}
+    return ctx.emit(s, _dev_session_text(s))
+
+
+@command("dev on", "Turn dev mode on (tracing on; off after five runs)",
+         ["wispd dev on"], _DEV_SESSION)
+def dev_on(ctx, a):
+    return _dev_switch(ctx, "on")
+
+
+@command("dev off", "Turn dev mode off; your own settings return",
+         ["wispd dev off"], _DEV_SESSION)
+def dev_off(ctx, a):
+    return _dev_switch(ctx, "off")
+
+
+@command("dev status", "Show whether dev mode is on and how many runs are left",
+         ["wispd dev status", "wispd dev status --json"], _DEV_SESSION)
+def dev_status(ctx, a):
+    try:
+        return _dev_switch(ctx, "status")
+    except CliError as e:
+        if e.code != "E_DAEMON_DOWN":
+            raise
+        from .. import devsession
+        s = devsession.status()      # read-only: the session file answers
+        return ctx.emit(s, _dev_session_text(s))
+
+
+def _dev_run_args(p):
+    p.add_argument("file", metavar="FILE",
+                   help="task list: one task per line, # for comments")
+
+
+@command("dev run", "Run a task list on the live desktop (dev mode must be on)",
+         ["wispd dev run docs/dev-tasks/starter.txt"],
+         {"run_id": "str", "tasks": "int"}, args=_dev_run_args)
+def dev_run(ctx, a):
+    import os
+    r = ctx.expect_ok(ctx.send({"cmd": "dev_run",
+                                "path": os.path.abspath(a.file)}))
+    return ctx.emit({"run_id": r.get("run_id"), "tasks": r.get("tasks")},
+                    f"run {r.get('run_id')} started: {r.get('tasks')} tasks")
+
+
+@command("dev stop", "Stop the running task list after the current task",
+         ["wispd dev stop"], {"stopping": "bool"})
+def dev_stop(ctx, a):
+    r = ctx.expect_ok(ctx.send({"cmd": "dev_stop"}))
+    return ctx.emit({"stopping": bool(r.get("stopping"))},
+                    "stopping after the current task")

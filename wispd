@@ -237,6 +237,26 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
                              args=(st, cfg, ctl, None, None, tid, text),
                              daemon=True).start()
             return {"ok": True, "asked": True}
+        if c == "dev":
+            # dev tuning mode switch: a state file, never config.toml
+            from wisp import devsession
+            op = str(cmd.get("op", "status"))
+            if op == "on":
+                s = devsession.turn_on()
+            elif op == "off":
+                s = devsession.turn_off()
+            elif op == "status":
+                s = devsession.status()
+            else:
+                return {"ok": False, "error": f"unknown dev op {op!r}"}
+            st.publish(None, dev=devsession.state_field(s))
+            return {"ok": True, "dev": s}
+        if c == "dev_run":
+            from wisp import devrun
+            return devrun.start(cfg, st, ctl, str(cmd.get("path", "")))
+        if c == "dev_stop":
+            from wisp import devrun
+            return devrun.stop()
         if c == "choice":
             pick = cmd.get("pick", "")
             if pick.startswith("suggestion:"):
@@ -856,6 +876,8 @@ def run_daemon(cfg: dict) -> int:
         dlog(f"inventory: {len(inv.get('apps', []))} apps, "
              f"{len(inv.get('cli_tools', {}))} cli tools")
     st = state_mod.StateBus()
+    from wisp import devsession
+    st.publish(None, dev=devsession.state_field())  # a session can outlive a restart
     ctl = {"stop": threading.Event(), "busy": threading.Event(),
            "interrupt": threading.Event(),
            "choice_event": threading.Event(), "choice_pick": "",
