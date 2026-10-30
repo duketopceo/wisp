@@ -44,8 +44,9 @@ Each is one PR, planned when it starts.
 1. **Phase 9 · Act quality** — shipped so far: default-app resolution (#147), open-tab switching and no unconfirmed success claims (#212), "go to a site" opens in the user's browser instead of `xdg-open` (#231), and clicks that land off every monitor are refused so the loop re-aims (#232). Left: re-rank from `wispd eval --misses` once there are labelled act turns after the verification ladder (none are recorded yet, so wrong-coordinate clicks have no fresh data). Unblocks B3.
 2. **Phase 5 · Router fast path** — shipped so far: the regex fast path in front of act (#233; bare launches of catalogued apps and plain questions skip the act loop, `[brain] fast_path`), and removal of the shadow decider (#234), the flash lane and the route A/B log (#235). Left: remove the Jev router itself (`router = jev`, `route.decide`, `ask_jev`, `JEV_QUESTIONS`, the clarify prompt), which 45 replay fixtures and about 20 test files still script; `suggest` and the grounding `jev` fallback also call Jev (Q3). Do it as fixture migration first, then deletion.
 3. **Live background agents (#241)** — background agents on OpenCode become live sessions: progress you can see, spoken asks before risky steps, follow-ups, cancel and resume, and onboarding that installs the pinned runtime. Open for review.
-4. **Remaining plan units** — B3 (accuracy loop, after Phase 9), B31 (growth scoreboard).
-5. **Clean-box check** — `wispd onboard` and `wispd doctor` on a clean Omarchy box with hosted keys only.
+4. **Verified install and update** (`docs/plans/2026-10-29-2302-feat-verified-install-update-plan.md`) — shipped so far: a shared preflight, a backed-up and verified `wispd update` with `--rollback`, and the stage and recovery docs. Left: a one-line bootstrap (needs an independently distributed signing key), recovery of the plugin, units and bind, first-install recovery, cleanup tooling, and the local-model promotion gate (waits on #239 and owner thresholds).
+5. **Remaining plan units** — B3 (accuracy loop, after Phase 9), B31 (growth scoreboard).
+6. **Clean-box check** — `wispd onboard` and `wispd doctor` on a clean Omarchy box with hosted keys only.
 
 ## v1.0 gate
 

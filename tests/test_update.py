@@ -10,8 +10,9 @@ import unittest
 from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-from wisp import update  # noqa: E402
+from wisp import deploy, preflight, update  # noqa: E402
 
+ORIG_INSTALLED_VERSION = update.installed_version
 NAME = "wisp-linux-x86_64.tar.gz"
 URL = update.DOWNLOAD_PREFIX + "v2.0.0/" + NAME
 
@@ -45,7 +46,14 @@ class Fixture(unittest.TestCase):
         self.blob = make_tar(NEW)
         self.sha = hashlib.sha256(self.blob).hexdigest()
         self.downloads = 0
+        self.state = self.tmp / "state"
         for p in (mock.patch.object(update, "opt_dir", lambda: self.opt),
+                  mock.patch.object(update, "state_dir",
+                                    lambda: self.state),
+                  mock.patch.object(deploy, "record_path",
+                                    lambda: self.opt / "deploy.json"),
+                  mock.patch.object(update, "outside_changes",
+                                    lambda root, home=None: []),
                   mock.patch.object(update, "asset_name", lambda: NAME),
                   mock.patch.object(update, "installed_version",
                                     lambda: "v1.0.0"),
@@ -74,7 +82,23 @@ class Fixture(unittest.TestCase):
             pathlib.Path(dest).write_bytes(blob)
             return hashlib.sha256(blob).hexdigest()
         return dict(fetch_json=lambda u: rel, fetch_file=fetch_file,
-                    fetch_text=lambda u: sums)
+                    fetch_text=lambda u: sums,
+                    preflight_fn=lambda: self.pf_rows,
+                    service_active=lambda: False)
+
+    pf_rows = [{"id": "os", "level": "ok", "detail": "Linux", "fix": ""}]
+
+    def mirror(self, root):
+        """What `wispd install` does to the opt dir, for a verified tree."""
+        for rel in list(update._managed(self.opt)):
+            if rel != "deploy.json":
+                (self.opt / rel).unlink()
+        for rel in update._managed(root, staged=True):
+            src = root / ("scripts/build_harness.py"
+                          if rel == "build_harness.py" else rel)
+            (self.opt / rel).parent.mkdir(parents=True, exist_ok=True)
+            (self.opt / rel).write_bytes(src.read_bytes())
+        return 0
 
 
 class DryRun(Fixture):
@@ -170,7 +194,7 @@ class Install(Fixture):
         res = update.run_update(
             dry_run=False, emit_text=lambda t: None,
             confirm=lambda q: asked.append(q) or answer,
-            install_fn=lambda root: ran.append(root) or 0,
+            install_fn=lambda root: ran.append(root) or self.mirror(root),
             **self.seams(self.release()), **kw)
         return res, asked, ran
 
@@ -185,7 +209,7 @@ class Install(Fixture):
 
         def install_fn(root):
             seen.append((root / "wispd").read_bytes())
-            return 0
+            return self.mirror(root)
         res = update.run_update(
             dry_run=False, emit_text=lambda t: None, confirm=lambda q: True,
             install_fn=install_fn, **self.seams(self.release()))
@@ -251,7 +275,7 @@ class NeverBackwards(Fixture):
             res = update.run_update(
                 dry_run=dry_run, force=force, emit_text=lambda t: None,
                 confirm=lambda q: asked.append(q) or answer,
-                install_fn=lambda root: ran.append(root) or 0, **seams)
+                install_fn=lambda root: ran.append(root) or self.mirror(root), **seams)
         return res, asked, ran, urls
 
     def refused(self, record, **kw):
@@ -345,6 +369,342 @@ class NeverBackwards(Fixture):
         cmd.args(p)
         self.assertTrue(p.parse_args(["--force"]).force)
         self.assertFalse(p.parse_args([]).force)
+
+
+
+class Transaction(Fixture):
+    """U2: backup, verified apply, rollback. Everything in a temp tree."""
+
+    def apply(self, install_fn=None, **kw):
+        out = []
+        res = update.run_update(
+            dry_run=False, emit_text=out.append, confirm=lambda q: True,
+            install_fn=install_fn or self.mirror,
+            **self.seams(self.release()), **kw)
+        self.out = "\n".join(out)
+        return res
+
+    def manifest(self):
+        import json
+        d = sorted(self.state.iterdir())[-1]
+        return json.loads((d / "manifest.json").read_text())
+
+    def rollback(self, answer=True, **kw):
+        out = []
+        res = update.rollback(confirm=lambda q: answer, emit_text=out.append,
+                              state=self.state, **kw)
+        self.out = "\n".join(out)
+        return res
+
+    def test_a_digest_mismatch_writes_nothing_anywhere(self):
+        before = sorted(str(p) for p in self.tmp.rglob("*"))
+        rel = self.release()
+        rel["assets"][0]["digest"] = "sha256:" + "0" * 64
+        with self.assertRaises(update.UpdateError):
+            update.run_update(dry_run=False, emit_text=lambda t: None,
+                              confirm=lambda q: True, install_fn=self.mirror,
+                              **self.seams(rel))
+        self.assertEqual(sorted(str(p) for p in self.tmp.rglob("*")), before)
+        self.assertFalse(self.state.exists())
+
+    def test_no_consent_writes_no_backup(self):
+        update.run_update(dry_run=False, emit_text=lambda t: None,
+                          confirm=lambda q: False, install_fn=self.mirror,
+                          **self.seams(self.release()))
+        self.assertFalse(self.state.exists())
+
+    def test_a_verified_update_saves_a_private_backup_and_the_version(self):
+        res = self.apply()
+        self.assertTrue(res["applied"] and res["verified"])
+        self.assertEqual(self.manifest()["phase"], "verified")
+        self.assertEqual((self.opt / "wisp" / "a.py").read_bytes(), b"A2")
+        d = pathlib.Path(res["backup"])
+        self.assertEqual((d / "files" / "wisp" / "a.py").read_bytes(), b"A1")
+        self.assertEqual(oct(d.stat().st_mode & 0o777), "0o700")
+        self.assertEqual(oct((d / "manifest.json").stat().st_mode & 0o777),
+                         "0o600")
+        self.assertEqual(oct((d / "files" / "wispd").stat().st_mode & 0o777),
+                         "0o600")
+        self.assertEqual((deploy.read() or {}).get("ref"), "v2.0.0")
+        with mock.patch.object(deploy, "read", lambda: deploy_rec(self)):
+            self.assertEqual(ORIG_INSTALLED_VERSION(), "v2.0.0")
+        self.assertIn("not restarted", self.out)
+
+    def test_the_backup_holds_only_managed_files(self):
+        (self.opt / "notes.txt").write_text("mine")
+        (self.tmp / "config.toml").write_text("keep")
+        res = self.apply()
+        names = sorted(str(p.relative_to(pathlib.Path(res["backup"])
+                                         / "files"))
+                       for p in (pathlib.Path(res["backup"]) / "files")
+                       .rglob("*") if p.is_file())
+        self.assertNotIn("notes.txt", names)
+        self.assertIn("wisp/gone.py", names)
+
+    def test_an_installer_failure_leaves_an_unfinished_update_to_roll_back(
+            self):
+        def half(root):
+            (self.opt / "wisp" / "a.py").write_bytes(b"A2")
+            (self.opt / "wisp" / "gone.py").unlink()
+            (self.opt / "wisp" / "b.py").write_bytes(b"par")   # half-written
+            return 3
+        with self.assertRaises(update.UpdateError) as c:
+            self.apply(half)
+        self.assertIn("--rollback", str(c.exception))
+        self.assertEqual(self.manifest()["phase"], "applying")
+        res = self.rollback()
+        self.assertEqual((self.opt / "wisp" / "a.py").read_bytes(), b"A1")
+        self.assertEqual((self.opt / "wisp" / "gone.py").read_bytes(), b"G")
+        self.assertTrue(res["rolled_back"])
+        self.assertEqual(self.manifest()["phase"], "restored")
+
+    def test_a_pending_update_blocks_the_next_one(self):
+        with self.assertRaises(update.UpdateError):
+            self.apply(lambda root: 1)
+        self.downloads = 0
+        with self.assertRaises(update.UpdateError) as c:
+            self.apply()
+        self.assertIn("did not finish", str(c.exception))
+        self.assertEqual(self.downloads, 0)
+
+    def test_a_mismatch_after_install_is_not_reported_as_success(self):
+        def bad(root):
+            self.mirror(root)
+            (self.opt / "wisp" / "a.py").write_bytes(b"torn")
+            return 0
+        with self.assertRaises(update.UpdateError) as c:
+            self.apply(bad)
+        self.assertIn("not verified", str(c.exception))
+        self.assertIn("wisp/a.py", str(c.exception))
+        self.assertEqual(self.manifest()["phase"], "verify-failed")
+
+    def test_rollback_restores_and_is_idempotent(self):
+        self.apply()
+        res = self.rollback()
+        self.assertTrue(res["rolled_back"])
+        self.assertEqual((self.opt / "wisp" / "a.py").read_bytes(), b"A1")
+        self.assertEqual((self.opt / "wisp" / "gone.py").read_bytes(), b"G")
+        self.assertFalse((self.opt / "wisp" / "b.py").exists())
+        again = self.rollback()
+        self.assertFalse(again["rolled_back"])
+        self.assertIn("already", self.out)
+
+    def test_rollback_declined_changes_nothing(self):
+        self.apply()
+        self.rollback(answer=False)
+        self.assertEqual((self.opt / "wisp" / "a.py").read_bytes(), b"A2")
+        self.assertEqual(self.manifest()["phase"], "verified")
+
+    def test_a_file_the_user_changed_since_the_update_is_kept(self):
+        self.apply()
+        (self.opt / "wisp" / "a.py").write_bytes(b"my edit")
+        (self.opt / "wisp" / "b.py").write_bytes(b"my edit too")
+        res = self.rollback()
+        self.assertEqual((self.opt / "wisp" / "a.py").read_bytes(),
+                         b"my edit")
+        self.assertEqual((self.opt / "wisp" / "b.py").read_bytes(),
+                         b"my edit too")             # added by the update
+        self.assertEqual((self.opt / "wisp" / "gone.py").read_bytes(), b"G")
+        self.assertFalse(res["rolled_back"])
+        self.assertIn("wisp/a.py", self.out)
+        self.assertEqual(self.manifest()["phase"], "restored-partial")
+
+    def test_a_second_rollback_never_overwrites_an_edit_the_first_kept(self):
+        self.apply()
+        (self.opt / "wisp" / "a.py").write_bytes(b"my edit")
+        self.rollback()
+        self.rollback()
+        self.assertEqual((self.opt / "wisp" / "a.py").read_bytes(),
+                         b"my edit")
+        self.assertIn("kept by an earlier rollback", self.out)
+
+    def test_an_update_is_not_blocked_after_a_rollback_that_kept_edits(self):
+        self.apply()
+        (self.opt / "wisp" / "a.py").write_bytes(b"my edit")
+        self.rollback()
+        self.assertIsNone(update.unfinished(self.state))
+        self.downloads = 0
+        self.apply()
+        self.assertEqual(self.downloads, 1)
+
+    def test_a_failed_verification_is_rolled_back_in_full(self):
+        def bad(root):
+            self.mirror(root)
+            (self.opt / "wisp" / "a.py").write_bytes(b"torn")
+            return 0
+        with self.assertRaises(update.UpdateError):
+            self.apply(bad)
+        self.assertEqual(self.manifest()["phase"], "verify-failed")
+        self.assertIsNotNone(update.unfinished(self.state))
+        res = self.rollback()
+        self.assertTrue(res["rolled_back"])
+        self.assertEqual((self.opt / "wisp" / "a.py").read_bytes(), b"A1")
+
+    def test_a_failed_restore_stays_unsettled_and_never_touches_kept_files(
+            self):
+        self.apply()
+        (self.opt / "wisp" / "b.py").write_bytes(b"my edit")   # kept
+        real = update.shutil.copyfile
+
+        def boom(src, dst, **kw):
+            raise OSError("disk full")
+        with mock.patch.object(update.shutil, "copyfile", boom):
+            res = self.rollback()
+        self.assertFalse(res["rolled_back"])
+        self.assertEqual(self.manifest()["phase"], "restore-incomplete")
+        self.rollback()                         # retry now works
+        self.assertEqual((self.opt / "wisp" / "a.py").read_bytes(), b"A1")
+        self.assertEqual((self.opt / "wisp" / "b.py").read_bytes(),
+                         b"my edit")
+
+    def test_rollback_restores_the_original_file_modes(self):
+        os.chmod(self.opt / "wispd", 0o755)
+        os.chmod(self.opt / "wisp" / "a.py", 0o644)
+        res = self.apply()
+        self.assertEqual(oct((pathlib.Path(res["backup"]) / "files"
+                              / "wispd").stat().st_mode & 0o777), "0o600")
+        os.chmod(self.opt / "wispd", 0o600)      # whatever the update left
+        self.rollback()
+        self.assertEqual((self.opt / "wispd").stat().st_mode & 0o777, 0o755)
+        self.assertEqual((self.opt / "wisp" / "a.py").stat().st_mode & 0o777,
+                         0o644)
+
+    def test_unowned_and_runtime_files_are_never_touched(self):
+        self.apply()
+        (self.opt / "wisp" / "runtime.cache").write_text("x")
+        (self.opt / "notes.txt").write_text("mine")
+        (self.opt / "wisp" / "__pycache__").mkdir()
+        (self.opt / "wisp" / "__pycache__" / "a.pyc").write_bytes(b"c")
+        self.rollback()
+        for rel in ("wisp/runtime.cache", "notes.txt",
+                    "wisp/__pycache__/a.pyc"):
+            self.assertTrue((self.opt / rel).exists(), rel)
+        self.assertNotIn("runtime.cache", self.out)
+
+    def test_a_symlinked_managed_path_is_never_followed(self):
+        outside = self.tmp / "outside.txt"
+        outside.write_text("secret-ish")
+        os.symlink(outside, self.opt / "wisp" / "link.py")
+        res = self.apply()
+        files = pathlib.Path(res["backup"]) / "files" / "wisp"
+        self.assertFalse((files / "link.py").exists())
+        self.assertIsNone(update._safe(self.opt, "wisp/link.py"))
+        self.assertEqual(outside.read_text(), "secret-ish")
+
+    def test_a_tampered_manifest_path_is_skipped_and_listed(self):
+        import json
+        self.apply()
+        man = self.manifest()
+        man["before"]["../outside.txt"] = "0" * 64
+        man["before"]["/etc/passwd"] = "0" * 64
+        plan = update.plan_rollback(man, self.opt)
+        keys = [k for k, _ in plan["keep"]]
+        self.assertIn("../outside.txt", keys)
+        self.assertIn("/etc/passwd", keys)
+        self.assertNotIn("../outside.txt", plan["restore"])
+
+    def test_the_daemon_is_not_restarted_without_the_flag(self):
+        calls = []
+        with mock.patch.object(update, "restart_service",
+                               lambda run=None: calls.append(1) or True):
+            self.apply()
+        self.assertEqual(calls, [])
+
+    def test_restart_with_a_yes_checks_the_daemon_answers(self):
+        calls = []
+        seams = self.seams(self.release())
+        seams["service_active"] = lambda: True
+        with mock.patch.object(update, "restart_service",
+                               lambda run=None: calls.append(1) or True), \
+                mock.patch.object(update, "ipc_ok", lambda o, r=None: True):
+            res = update.run_update(dry_run=False, restart=True,
+                                    emit_text=lambda t: None,
+                                    confirm=lambda q: True,
+                                    install_fn=self.mirror, **seams)
+        self.assertEqual(calls, [1])
+        self.assertTrue(res["ipc_ok"])
+
+    def test_restart_declined_does_not_restart(self):
+        calls = []
+        seams = self.seams(self.release())
+        seams["service_active"] = lambda: True
+        answers = iter([True, False])
+        with mock.patch.object(update, "restart_service",
+                               lambda run=None: calls.append(1) or True):
+            update.run_update(dry_run=False, restart=True,
+                              emit_text=lambda t: None,
+                              confirm=lambda q: next(answers),
+                              install_fn=self.mirror, **seams)
+        self.assertEqual(calls, [])
+
+    def test_an_ipc_failure_after_restart_points_at_rollback(self):
+        seams = self.seams(self.release())
+        seams["service_active"] = lambda: True
+        with mock.patch.object(update, "restart_service",
+                               lambda run=None: True), \
+                mock.patch.object(update, "ipc_ok", lambda o, r=None: False):
+            with self.assertRaises(update.UpdateError) as c:
+                update.run_update(dry_run=False, restart=True,
+                                  emit_text=lambda t: None,
+                                  confirm=lambda q: True,
+                                  install_fn=self.mirror, **seams)
+        self.assertIn("--rollback --restart", str(c.exception))
+
+    def test_rollback_after_a_failed_restart_offers_one_and_verifies(self):
+        seams = self.seams(self.release())
+        seams["service_active"] = lambda: True
+        update.run_update(dry_run=False, emit_text=lambda t: None,
+                          confirm=lambda q: True, install_fn=self.mirror,
+                          **seams)
+        calls = []
+        with mock.patch.object(update, "restart_service",
+                               lambda run=None: calls.append(1) or True), \
+                mock.patch.object(update, "ipc_ok", lambda o, r=None: True):
+            res = self.rollback(restart=True)
+        self.assertEqual(calls, [1])
+        self.assertTrue(res["ipc_ok"])
+        self.assertIn("answers", self.out)
+
+    def test_rollback_without_an_update_says_so(self):
+        with self.assertRaises(update.UpdateError):
+            self.rollback()
+
+    def test_the_scope_of_rollback_is_stated(self):
+        self.apply()
+        self.rollback()
+        self.assertIn("not rolled back", self.out)
+        self.assertIn("shell plugin", self.out)
+
+    def test_changes_outside_the_opt_dir_are_called_out(self):
+        with mock.patch.object(update, "outside_changes",
+                               lambda root, home=None: ["shell plugin"]):
+            self.apply()
+        self.assertIn("also changed shell plugin", self.out)
+
+
+def deploy_rec(t):
+    import json
+    return json.loads((t.opt / "deploy.json").read_text())
+
+
+class PreflightGate(Fixture):
+    def test_a_blocking_row_stops_before_any_download(self):
+        self.pf_rows = [{"id": "disk space", "level": "block",
+                         "detail": "1 MiB free", "fix": "Free space."}]
+        with self.assertRaises(update.UpdateError) as c:
+            update.run_update(dry_run=True, emit_text=lambda t: None,
+                              **self.seams(self.release()))
+        self.assertIn("nothing was written", str(c.exception))
+        self.assertEqual(self.downloads, 0)
+
+    def test_degraded_rows_are_shown_and_do_not_stop_a_dry_run(self):
+        self.pf_rows = [{"id": "opencode", "level": "degraded",
+                         "detail": "not found", "fix": ""}]
+        out = []
+        res = update.run_update(dry_run=True, emit_text=out.append,
+                                **self.seams(self.release()))
+        self.assertIn("opencode", "\n".join(out))
+        self.assertFalse(res["applied"])
 
 
 class Versions(unittest.TestCase):

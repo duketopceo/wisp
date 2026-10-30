@@ -1249,6 +1249,11 @@ def _doctor(cfg: dict) -> int:
     from wisp.cli import diagnose as _diagnose
     _diagnose._agent_rows(row)
 
+    print("install preflight:")
+    from wisp import preflight as _pf
+    for r in _pf.run():
+        row(r["id"], r["detail"], good=r["level"] != "block")
+
     print("stt / audio:")
     from wisp import platform as _plat
     wm = config.whisper_model(cfg)
