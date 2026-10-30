@@ -385,8 +385,13 @@ def _answer(ctx) -> None:
                 return
             _publish_points(state, pts, drws)
 
-    ctx.speaker = speaker = speech.SentenceSpeaker(cfg, token=token,
-                                                   on_sentence=_fire)
+    def _audio(ms):
+        # Groq's first audio, from the first sentence handed over (the
+        # P6 Groq budget); espeak keeps the tts_start span below
+        _trace.emit(turn, "tts_start_groq", "span", {}, ms=ms)
+
+    ctx.speaker = speaker = speech.SentenceSpeaker(
+        cfg, token=token, on_sentence=_fire, on_audio=_audio)
     lang_code = getattr(ctx, "lang", "")
     if lang_code and not _lang_mod.is_english(lang_code):
         speaker.lang = lang_code

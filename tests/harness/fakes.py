@@ -22,6 +22,8 @@ FakeWhisper  script["transcript"]         -> {"text": ...} on both
              /audio/transcriptions (OpenAI shape) and /inference
              (whisper-server shape)
 FakeUiTars   FakeBrain with a grounding-style default response
+FakeGroqTts  script["wav_ms"]             -> a silent WAV per /audio/speech
+             call (U6; a fixture that declares it speaks with Groq)
 
 ``calls`` records every request (path, method, parsed body, monotonic
 arrival time) so tests can assert on what the pipeline sent.
@@ -283,6 +285,38 @@ class FakeUiTars(FakeBrain):
         super().__init__(script)
 
 
+class FakeGroqTts(FakeServer):
+    """Groq `/audio/speech`: one silent mono 16-bit WAV per call, its
+    length from script["wav_ms"][call - 1] (the last repeats, default
+    300 ms). `calls` records each request body."""
+
+    RATE = 24000
+
+    def counts(self, path: str) -> bool:
+        return path.rstrip("/").endswith("/audio/speech")
+
+    def serve(self, h, method, body, n):
+        import io
+        import wave
+        lens = self.script.get("wav_ms") or [300]
+        ms = lens[min(n, len(lens)) - 1]
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(self.RATE)
+            w.writeframes(b"\0\0" * (self.RATE * ms // 1000))
+        data = buf.getvalue()
+        h.send_response(200)
+        h.send_header("Content-Type", "audio/wav")
+        h.send_header("Content-Length", str(len(data)))
+        h.end_headers()
+        try:
+            h.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+
 KINDS = {"jev": FakeJev, "brain": FakeBrain, "brain2": FakeBrain,
          "whisper": FakeWhisper,
-         "uitars": FakeUiTars}
+         "uitars": FakeUiTars, "groq_tts": FakeGroqTts}
