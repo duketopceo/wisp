@@ -334,7 +334,7 @@ class UnitsTest(unittest.TestCase):
             ["systemctl", "--user", "start", "a.service", "b.service"])
 
 
-class JevTest(HealthBase):
+class BrainTransportTest(HealthBase):
     def _no_key(self):
         env = {k: v for k, v in os.environ.items()
                if k != "OPENROUTER_API_KEY"}
@@ -344,87 +344,68 @@ class JevTest(HealthBase):
             p.start()
             self.addCleanup(p.stop)
 
+
     def test_local_endpoint_needs_no_api_key(self):
         self._no_key()
-        jev = self.fake("jev", {"answers": {"route": {"choice": "answer"}}})
-        with mock.patch.object(config, "JEV_ENDPOINT",
-                               jev.url + "/api/alpha/decisions"):
-            out = pipeline.ask_jev("hi", "m", {})
-        self.assertEqual(out["answers"]["route"]["choice"], "answer")
-        # no Authorization header was needed or sent as "Bearer "+""
-        self.assertEqual(len(jev.calls), 1)
+        srv = self.fake("brain", {"responses": [{"content": "answer"}]})
+        out = brain.chat(ASK, brain_cfg(srv.url))
+        self.assertEqual(out["content"], "answer")
+        self.assertEqual(len(srv.calls), 1)
 
     def test_remote_endpoint_without_key_is_key_missing(self):
         self._no_key()
-        with mock.patch.object(config, "JEV_ENDPOINT",
-                               "https://openrouter.ai/api/alpha/decisions"):
-            with self.assertRaises(errors_codes.WispError) as cm:
-                pipeline.ask_jev("hi", "m", {})
+        with self.assertRaises(errors_codes.WispError) as cm:
+            brain.chat(ASK, {"brain": {"default": "openrouter:m", "fallback": ""}})
         self.assertEqual(cm.exception.code, "key_missing")
         self.assertIn("OPENROUTER_API_KEY", cm.exception.detail)
 
-    def test_http_503_is_jev_down_with_raw_detail(self):
-        jev = self.fake("jev", {"status": 503})
-        with mock.patch.object(config, "JEV_ENDPOINT",
-                               jev.url + "/api/alpha/decisions"):
-            with self.assertRaises(errors_codes.WispError) as cm:
-                pipeline.ask_jev("hi", "m", {})
-        self.assertEqual(cm.exception.code, "jev_down")
-        self.assertIn("Jev HTTP 503", cm.exception.detail)
+    def test_http_503_is_brain_down_with_raw_detail(self):
+        srv = self.fake("brain", {"status": 503})
+        with self.assertRaises(errors_codes.WispError) as cm:
+            brain.chat(ASK, brain_cfg(srv.url))
+        self.assertEqual(cm.exception.code, "brain_down")
+        self.assertIn("503", cm.exception.detail)
         self.assertNotIn("503", cm.exception.public)
-        self.assertEqual(len(jev.calls), 1)        # 5xx: no retry
+        self.assertEqual(len(srv.calls), 1)
 
-    def test_refused_retries_once_then_jev_down(self):
-        port = closed_port()
+    def test_refused_retries_once_then_brain_down(self):
         calls = []
-        real = pipeline.urllib.request.urlopen
-
-        def spy(*a, **k):
+        real = brain.urllib.request.urlopen
+        def spy(*args, **kwargs):
             calls.append(1)
-            return real(*a, **k)
-        with mock.patch.object(config, "JEV_ENDPOINT",
-                               f"http://127.0.0.1:{port}/x"), \
-                mock.patch.object(pipeline.urllib.request, "urlopen", spy):
+            return real(*args, **kwargs)
+        with mock.patch.object(brain.urllib.request, "urlopen", spy):
             with self.assertRaises(errors_codes.WispError) as cm:
-                pipeline.ask_jev("hi", "m", {})
-        self.assertEqual(cm.exception.code, "jev_down")
+                brain.chat(ASK, brain_cfg(f"http://127.0.0.1:{closed_port()}"))
+        self.assertEqual(cm.exception.code, "brain_down")
         self.assertEqual(len(calls), 2)
 
     def test_reset_once_then_success(self):
-        jev = self.fake("jev", {"drop_on_calls": [1],
-                                "answers": {"route": {"choice": "answer"}}})
-        with mock.patch.object(config, "JEV_ENDPOINT",
-                               jev.url + "/api/alpha/decisions"):
-            out = pipeline.ask_jev("hi", "m", {})
-        self.assertIn("answers", out)
-        self.assertEqual(len(jev.calls), 2)
+        srv = self.fake("brain", {"drop_on_calls": [1],
+                                 "responses": [{"content": "answer"}]})
+        self.assertEqual(brain.chat(ASK, brain_cfg(srv.url))["content"], "answer")
+        self.assertEqual(len(srv.calls), 2)
 
-    def test_timeout_is_not_retried_and_coded_timeout(self):
+    def test_timeout_is_not_retried(self):
         calls = []
-
-        def slow(*a, **k):
+        def slow(*args, **kwargs):
             calls.append(1)
             raise socket.timeout("timed out")
-        with mock.patch.object(pipeline.urllib.request, "urlopen", slow), \
-                mock.patch.object(config, "JEV_ENDPOINT",
-                                  "http://127.0.0.1:9/x"):
+        with mock.patch.object(brain.urllib.request, "urlopen", slow):
             with self.assertRaises(errors_codes.WispError) as cm:
-                pipeline.ask_jev("hi", "m", {})
-        self.assertEqual(cm.exception.code, "timeout")
+                brain.chat(ASK, brain_cfg("http://127.0.0.1:9"))
+        self.assertEqual(cm.exception.code, "brain_down")
         self.assertEqual(len(calls), 1)
 
-    def test_bad_json_is_jev_down(self):
+    def test_bad_json_is_brain_down(self):
         class R:
-            def __enter__(s): return s
-            def __exit__(s, *a): return False
-            def read(s): return b"<html>"
-        with mock.patch.object(pipeline.urllib.request, "urlopen",
-                               return_value=R()), \
-                mock.patch.object(config, "JEV_ENDPOINT",
-                                  "http://127.0.0.1:9/x"):
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def read(self): return b"<html>"
+        with mock.patch.object(brain.urllib.request, "urlopen", return_value=R()):
             with self.assertRaises(errors_codes.WispError) as cm:
-                pipeline.ask_jev("hi", "m", {})
-        self.assertEqual(cm.exception.code, "jev_down")
+                brain.chat(ASK, brain_cfg("http://127.0.0.1:9"))
+        self.assertEqual(cm.exception.code, "brain_down")
 
 
 class ChainTest(HealthBase):

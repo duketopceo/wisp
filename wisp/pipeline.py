@@ -1,4 +1,4 @@
-"""Voice pipeline: record -> transcribe -> Jev -> route -> act.
+"""Voice pipeline: record -> transcribe -> local route -> act.
 
 Runs inside the daemon on a worker thread; every stage transitions State
 so widgets see listening/deciding/awaiting_choice/done in real time.
@@ -6,7 +6,7 @@ so widgets see listening/deciding/awaiting_choice/done in real time.
 The turn is four stages around the StateBus (W30), one module each:
 
     stage_capture   mic, transcribe, screen and window context
-    stage_route     Jev / heuristic router, rescues, clarify prompt
+    stage_route     local fast paths and conversational act dispatch
     stage_execute   dispatch to tools, the act loop, agents, dictation
     stage_speak     stream + speak the answer, close the turn
 
@@ -14,7 +14,7 @@ This module keeps the orchestrator (run_listen, _listen_turn: cancel,
 error and cleanup paths) and re-exports every public name the stages
 define, so `pipeline.<name>` still resolves for callers and tests. The
 stages look patchable names up through this module at call time, so
-`mock.patch.object(pipeline, "ask_jev")` and friends keep working.
+`mock.patch.object(pipeline, "ask_chat")` and friends keep working.
 """
 import base64  # noqa: F401  (patch targets: pipeline.<module>)
 import json  # noqa: F401
@@ -45,10 +45,7 @@ from .stage_ctx import TurnCtx
 from .stage_execute import (  # noqa: F401
     _DICTATE_PREFIX, dictation_text, execute, execute_stage)
 from .stage_route import (  # noqa: F401
-    JEV_QUESTIONS, _BENIGN_ACTIONS, _COMPLEX_LAUNCH, _LAUNCH_VERBS,
-    _OPEN_VERB, _ask_prompt, _jev_is_local, ambiguous_choices,
-    apply_choice, ask_jev, auto_pick, build_questions, complex_launch, fuzzy_app,
-    is_low_confidence, route_stage)
+    fast_route, route_stage)
 from .stage_speak import (  # noqa: F401
     _end_speaking, _publish_delta, answer_text, ask_chat, log_decision,
     speak_stage)

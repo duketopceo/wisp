@@ -188,18 +188,20 @@ class WhisperCliCancelTest(unittest.TestCase):
 
 
 class HttpCancelTest(unittest.TestCase):
-    def test_cancel_during_jev_closes_the_connection(self):
-        with fakes.FakeJev({"answers": {"route": {"choice": "answer"}},
-                            "latency_ms": 700}) as srv:
+    def test_cancel_during_brain_request_closes_the_connection(self):
+        with fakes.FakeBrain({"responses": [
+                {"chunks": ["late", " reply"], "latency_ms": 700,
+                 "chunk_ms": 100}]}) as srv:
             tok = cancel.CancelToken()
             _after(0.1, tok.cancel)
             t = time.monotonic()
-            with mock.patch.object(config, "JEV_ENDPOINT",
-                                   srv.url + "/api/alpha/decisions"), \
-                    cancel.bind(tok), self.assertRaises(cancel.Cancelled):
-                pipeline.ask_jev("hi", "m", {})
+            cfg = {"brain": {"default": "local:m", "fallback": ""},
+                   "brain.local": {"base_url": srv.url + "/v1"}}
+            with cancel.bind(tok), self.assertRaises(cancel.Cancelled):
+                brain.chat_stream([{"role": "user", "content": "hi"}],
+                                  cfg, on_delta=lambda _: None)
             self.assertLess(time.monotonic() - t, 0.4)
-            time.sleep(0.8)  # let the fake finish its latency
+            time.sleep(1.0)  # let the fake finish and observe socket closure
             self.assertTrue(srv.peer_closed,
                             "the fake never saw the client hang up")
 
@@ -553,7 +555,9 @@ class WispdWiringTest(unittest.TestCase):
                     "rec": None, "rec_lock": threading.Lock(),
                     "broker": cancel.PromptBroker(),
                     "token": cancel.CancelToken()}
-        self.handle = self.w._handler(mock.Mock(), {}, self.ctl)
+        handle = self.w._handler(mock.Mock(), {}, self.ctl)
+        self.peer = {"pid": os.getpid(), "uid": getattr(os, "getuid", lambda: 0)()}
+        self.handle = lambda cmd, peer=self.peer: handle(cmd, peer)
 
     def test_interrupt_sets_the_turn_token_and_the_legacy_event(self):
         proc = subprocess.Popen(["sleep", "30"])
@@ -586,7 +590,7 @@ class WispdWiringTest(unittest.TestCase):
         self.ctl["turn"] = tid
         handle = self.w._handler(bus, {}, self.ctl)
         with mock.patch.object(self.w.speech, "stop"):
-            self.assertEqual(handle({"cmd": "interrupt"}), {"ok": True})
+            self.assertEqual(handle({"cmd": "interrupt"}, self.peer), {"ok": True})
         self.assertEqual(bus.status, "idle")
         self.assertEqual(bus.state.error_code, "cancelled")
         self.assertIsNone(self.ctl["rec"])
@@ -651,7 +655,7 @@ class WispdWiringTest(unittest.TestCase):
         dlog line attributes the command when it has them (U1)."""
         with mock.patch.object(self.w, "dlog") as dl:
             self.handle({"cmd": "bogus-cmd"}, {"pid": 4321, "uid": 1000})
-            self.handle({"cmd": "bogus-cmd"})
+            self.handle({"cmd": "bogus-cmd"}, None)
         with_peer = dl.call_args_list[0][0][0]
         without = dl.call_args_list[1][0][0]
         self.assertIn("ipc bogus-cmd", with_peer)

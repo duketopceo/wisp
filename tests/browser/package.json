@@ -1,0 +1,11 @@
+{
+  "name": "wisp-landing-browser-checks",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node site_3d.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.59.0"
+  }
+}

@@ -20,7 +20,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import fakes  # noqa: E402
 from fakes import FakeHypr, ok_handler  # noqa: E402
 
-from wisp import act, cancel, cua_safety, delivery, pointer, realinput, \
+from wisp import act, cancel, cua_safety, delivery, platform, pointer, realinput, \
     tools  # noqa: E402
 from wisp.tools import system  # noqa: E402
 
@@ -77,6 +77,10 @@ class Rig:
             "HOME": self.td.name, "USERPROFILE": self.td.name, "PATH": str(self.bins.path),
             "WISP_OS": "linux",
             "WISP_DESKTOP": "hyprland" if hypr else "x11"})
+        # Delivery fixtures run on an identified benign Notes window,
+        # not an unknown surface requiring an independent consent card.
+        self.window = mock.patch.object(platform, "active_window", return_value={
+            "class": "org.example.notes", "title": "Synthetic notes"})
 
     def shell(self):
         return self.log.read_text().splitlines() if self.log.exists() \
@@ -87,9 +91,11 @@ class Rig:
             self.hypr.__enter__()
         self.cua.start()
         self.env.start()
+        self.window.start()
         return self
 
     def __exit__(self, *a):
+        self.window.stop()
         self.env.stop()
         self.cua.stop()
         if self.hypr:
@@ -219,13 +225,16 @@ class Stamps(_Iso):
         self.assertEqual(delivery.last(), "background")
 
     def test_ydotool_click_is_pointer(self):
-        with Rig(("ydotool",), hypr=False):
+        # Direct numeric dispatch here represents a literal human request.
+        with Rig(("ydotool",), hypr=False), system.pointer_context(
+                user_request="click at 10,20@logical"):
             out = system.click("10,20@logical", DRIVE)
             self.assertTrue(out.startswith("CLICKED"), out)
         self.assertEqual(delivery.last(), "pointer")
 
     def test_cua_click_is_background_cua_move_is_pointer(self):
-        with Rig(("cua",), hypr=False):
+        with Rig(("cua",), hypr=False), system.pointer_context(
+                user_request="click at 10,20@logical"):
             out = system.click("10,20@logical", DRIVE)
             self.assertTrue(out.startswith("CLICKED"), out)
             self.assertEqual(delivery.last(), "background")
@@ -281,7 +290,8 @@ class Policy(_Iso):
     def test_background_still_uses_a_true_background_path(self):
         # cua clicks never touch the real cursor — they still dispatch
         # under delivery=background
-        with Rig(("cua",), hypr=False):
+        with Rig(("cua",), hypr=False), system.pointer_context(
+                user_request="click at 10,20@logical"):
             out = system.click("10,20@logical",
                                _cfg(cua={"delivery": "background"}))
             self.assertTrue(out.startswith("CLICKED"), out)
@@ -296,7 +306,8 @@ class Policy(_Iso):
     def test_pointer_escalates_clicks_off_cua(self):
         # escalation IS the visible behaviour: with cua live, auto would
         # click on the agent cursor — pointer mode takes ydotool instead
-        with Rig() as r:
+        with Rig() as r, system.pointer_context(
+                user_request="click at 10,20@logical"):
             cfg = _cfg(cua={"delivery": "pointer"})
             self.assertEqual(delivery.resolve_backend(cfg, "click"),
                              "hyprcursor")
@@ -517,6 +528,8 @@ class YieldMidDrive(_Iso):
         ]
         cfg = {"agent": {}, "pointer": {"mode": "drive"}}
         with mock.patch.object(realinput, "_WATCH", fake), \
+                mock.patch.object(platform, "active_window", return_value={
+                    "class": "org.example.notes", "title": "Synthetic notes"}), \
                 mock.patch.object(act, "_post", side_effect=replies), \
                 mock.patch.object(tools, "run",
                                   side_effect=drive_then_yield):
@@ -559,7 +572,8 @@ class AuditAndSteps(_Iso):
     def test_audit_line_carries_delivery(self):
         with tempfile.TemporaryDirectory() as td:
             ap = pathlib.Path(td) / "cua.jsonl"
-            with Rig(("ydotool",), hypr=False):
+            with Rig(("ydotool",), hypr=False), system.pointer_context(
+                    user_request="click at 10,20@logical"):
                 g = cua_safety.Guard(DRIVE, audit_path=ap,
                                      turn="t1")
                 r = g.run("click", "10,20",
@@ -626,7 +640,8 @@ class AuditAndSteps(_Iso):
             with mock.patch.object(act, "_post", side_effect=replies), \
                     mock.patch.object(realinput, "_WATCH", FakeWatch()):
                 r = act.run_act_loop("click it", cfg, steps_out=steps,
-                                     initial_image="aGk=")
+                                     initial_image="aGk=",
+                                     user_request="click at 10,20@logical")
             self.assertTrue(r.startswith("ACTED"), r)
             self.assertEqual(steps[0]["delivery"], "pointer")
 

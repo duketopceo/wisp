@@ -5,20 +5,6 @@
     "whisper": {
       "transcript": "where do i click for display settings"
     },
-    "jev": {
-      "answers": {
-        "route": {
-          "choice": "answer"
-        },
-        "app": {
-          "choice": "none",
-          "confidence": 0.99
-        },
-        "risk": {
-          "score": 0
-        }
-      }
-    },
     "brain": {
       "responses": [
         {
@@ -32,6 +18,9 @@
     }
   },
   "config": {
+    "brain": {
+      "router": "chat"
+    },
     "voice": {
       "enabled": "true",
       "cmd": "/bin/sh -c \"/bin/sleep 0.3\" {text}"

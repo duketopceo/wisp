@@ -17,6 +17,12 @@ def _with_os(os_name):
     """Pin the platform seam so adapter assertions are host-independent."""
     return mock.patch.dict(os.environ, {"WISP_OS": os_name})
 
+def _user_handler(wispd, *args, **kwargs):
+    """Direct harness calls represent an attributed local user, not TCP."""
+    raw = wispd._handler(*args, **kwargs)
+    peer = {"pid": os.getpid(), "uid": getattr(os, "getuid", lambda: 0)()}
+    return lambda cmd, peer=peer: raw(cmd, peer)
+
 
 class TestLoadConfig(unittest.TestCase):
     def test_parses_toml_subset(self):
@@ -186,45 +192,34 @@ class TestExecute(unittest.TestCase):
         run.assert_not_called()
 
 
-class TestConfidenceGate(unittest.TestCase):
-    """Gate is on app/target confidence only — low action confidence must
-    not kill a correct launch (the 'retro-large' regression)."""
+class TestCatalogLaunch(unittest.TestCase):
+    """The retroarch regression is catalog-backed, not probability-gated."""
 
-    def cfg(self, thresh="0.8"):
-        return {"agent": {"confidence_ambiguous": thresh}}
+    def test_known_app_launch_needs_no_action_confidence(self):
+        out = pipeline.fast_route("open retroarch", {"retroarch": {}}, {})
+        self.assertEqual(out[0]["app"]["choice"], "retroarch")
+        self.assertEqual(out[0]["route"]["choice"], "launch")
 
-    def answers(self, app_conf, act_conf):
-        return {"app": {"choice": "retroarch", "confidence": app_conf,
-                        "probabilities": {"retroarch": app_conf}},
-                "action": {"choice": "launch", "confidence": act_conf,
-                           "probabilities": {"launch": act_conf}}}
-
-    def test_high_app_low_action_not_low_confidence(self):
-        self.assertFalse(
-            pipeline.is_low_confidence(self.answers(0.9, 0.49), self.cfg()))
-
-    def test_low_app_is_low_confidence(self):
-        self.assertTrue(
-            pipeline.is_low_confidence(self.answers(0.4, 0.9), self.cfg()))
+    def test_unknown_target_is_not_guessed(self):
+        self.assertIsNone(pipeline.fast_route(
+            "open the spreadsheet app", {"retroarch": {}}, {}))
 
 
 class TestChoiceFlow(unittest.TestCase):
-    def answers(self):
-        return {"app": {"choice": "terminal", "confidence": 0.5,
-                        "probabilities": {"terminal": 0.5, "browser": 0.3}},
-                "action": {"choice": "launch", "confidence": 0.5,
-                           "probabilities": {"launch": 0.5}}}
+    def test_generic_act_question_offers_candidates(self):
+        from harness import runner
+        out = runner.run_turn("choose")
+        offered = [e["choices"] for e in out.events
+                   if e["status"] == "awaiting_choice"][0]
+        self.assertIn("app:discord", offered)
+        self.assertIn("app:browser", offered)
 
-    def test_choices_list_top_candidates(self):
-        labels = pipeline.ambiguous_choices(self.answers(), {})
-        self.assertIn("app:terminal", labels)
-        self.assertIn("app:browser", labels)
-        self.assertIn("action:launch", labels)
+    def test_generic_act_question_launches_the_user_choice(self):
+        from harness import runner
+        out = runner.run_turn("choose")
+        self.assertEqual(out.launch_calls, ["discord"])
+        self.assertEqual(out.violations, [])
 
-    def test_apply_choice_corrects_answers(self):
-        out = pipeline.apply_choice(self.answers(), "app:browser")
-        self.assertEqual(out["app"]["choice"], "browser")
-        self.assertTrue(out["corrected_by_user"])
 
 class TestLogDecision(unittest.TestCase):
     def test_appends_jsonl(self):
@@ -298,7 +293,7 @@ class TestListenSpans(unittest.TestCase):
                     "interrupt": threading.Event(),
                     "choice_event": threading.Event(), "choice_pick": "",
                     "rec": None, "rec_lock": threading.Lock()}
-        self.handle = self.w._handler(self.st, {}, self.ctl)
+        self.handle = _user_handler(self.w, self.st, {}, self.ctl)
 
     def test_press_then_release_hand_spans_to_the_pipeline(self):
         import time
@@ -342,7 +337,7 @@ class TestListenSpans(unittest.TestCase):
         bus = state_mod.StateBus(
             state_file=pathlib.Path(tempfile.mkdtemp()) / "state.json")
         self.addCleanup(bus.close)
-        handle = self.w._handler(bus, {}, self.ctl)
+        handle = _user_handler(self.w, bus, {}, self.ctl)
         seen = {}
         rec = {"proc": mock.Mock(), "sampler_stop": mock.Mock(),
                "t0": time.monotonic() - 2}
@@ -411,7 +406,7 @@ class TestHandlerActionStream(unittest.TestCase):
              "choice_pick": ""}
         if ctl:
             c.update(ctl)
-        return self.w._handler(self.bus, {}, c)
+        return _user_handler(self.w, self.bus, {}, c)
 
     def actions(self, kind=None):
         acts = self.bus.snapshot()["actions"]
@@ -772,7 +767,7 @@ class BargeInTests(unittest.TestCase):
                     "rec": None, "rec_lock": threading.Lock(),
                     "token": self.token}
         self.ctl["busy"].set()
-        self.handle = self.w._handler(self.bus, {}, self.ctl)
+        self.handle = _user_handler(self.w, self.bus, {}, self.ctl)
         self.rec = {"proc": mock.Mock(), "sampler_stop": mock.Mock(),
                     "t0": 0}
 

@@ -1,0 +1,5 @@
+{"record_type":"manifest","schema":"wisp.accuracy.trials.v1","dataset_id":"synthetic-import-test","synthetic":true,"collected_on":"2026-10-01","source_ref":"repository test fixture, invented data; NOT owner clicklab"}
+{"record_type":"trial","trial_id":"synthetic-1","task_id":"fake-menu","kind":"synthetic-menu","outcome":"aborted","verified":false,"elapsed_ms":900,"recorded_at":"2026-10-01T10:00:00Z"}
+{"record_type":"trial","trial_id":"synthetic-2","task_id":"fake-menu","kind":"synthetic-menu","outcome":"acted","verified":true,"elapsed_ms":300,"recorded_at":"2026-10-01T10:01:00Z"}
+{"record_type":"trial","trial_id":"synthetic-3","task_id":"fake-field","kind":"synthetic-field","outcome":"acted","verified":true,"elapsed_ms":100,"recorded_at":"2026-10-01T10:02:00Z"}
+{"record_type":"trial","trial_id":"synthetic-4","task_id":"fake-field","kind":"synthetic-field","outcome":"not_acted","verified":null,"elapsed_ms":200,"recorded_at":"2026-10-01T10:03:00Z"}

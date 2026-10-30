@@ -163,10 +163,12 @@ class Compare(unittest.TestCase):
 
 
 class Workflow(unittest.TestCase):
-    def test_deploy_is_gated_and_runs_only_from_master(self):
+    def test_ci_only_produces_an_artifact_after_both_site_lanes_pass(self):
         y = (ROOT / ".github/workflows/pages.yml").read_text()
-        self.assertIn("vars.PAGES_ENABLED == 'true'", y)
-        self.assertIn("github.ref == 'refs/heads/master'", y)
+        self.assertIn("needs: [build, enhanced]", y)
+        self.assertIn("name: wisp-workers-assets", y)
+        self.assertNotIn("actions/deploy-pages", y)
+        self.assertNotIn("pages: write", y)
         self.assertNotIn("cname", y.lower())
         self.assertNotIn("CNAME", "".join(p.name for p in
                                           (ROOT / "site").iterdir()))

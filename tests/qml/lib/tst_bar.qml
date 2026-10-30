@@ -136,6 +136,20 @@ TestCase {
     return B.pillState(base)
   }
 
+  // dev session badge (U5): idle shows it alone, live states keep their pill
+  function test_dev_badge_only_while_the_session_is_on() {
+    verify(!ps({ status: "idle" }).visible)
+    verify(!ps({ status: "idle" }).dev)
+    var idle = ps({ status: "idle", dev: true })
+    verify(idle.visible); verify(idle.dev); compare(idle.glyph, ""); compare(idle.wordKey, "")
+    var act = ps({ status: "acting", dev: true })
+    compare(act.kind, "acting"); verify(act.dev)
+    verify(!ps({ status: "acting" }).dev)
+    var err = ps({ status: "error", errorCode: "timeout", dev: true })
+    compare(err.border, "fail"); verify(err.dev)
+    verify(!ps({ offline: true, dev: true }).visible)
+  }
+
   function test_every_status_maps_to_a_state_word_and_token() {
     var rows = [
       [{ status: "idle" }, "idle", "", false],

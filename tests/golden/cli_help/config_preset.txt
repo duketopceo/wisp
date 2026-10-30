@@ -1,0 +1,20 @@
+usage: wispd config preset [-h] [--json] [--quiet] [--no-color]
+                           [{cloud,local,safe}]
+
+Apply a one-shot configuration preset (cloud, local, or safe)
+
+positional arguments:
+  {cloud,local,safe}  preset to apply (cloud, local, or safe); omit to list
+
+options:
+  -h, --help          show this help message and exit
+
+global options:
+  --json              machine-readable output (one JSON object)
+  --quiet, -q         print nothing on success
+  --no-color          plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd config preset
+  wispd config preset cloud
+  wispd config preset local

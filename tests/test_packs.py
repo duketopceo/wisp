@@ -704,6 +704,8 @@ class TestActLoopPack(PackCase):
             mock.patch.object(act, "_record_traj"),
             mock.patch.object(platform, "_cua_live",
                               return_value=True),
+            mock.patch.object(platform, "active_window", return_value={
+                "class": "firefox", "title": "Ordinary page"}),
             mock.patch.object(cua_safety, "audit_default_path",
                               return_value=t / "cua.jsonl"),
             mock.patch.object(cua_safety, "kill_default_path",

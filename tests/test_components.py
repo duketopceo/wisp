@@ -25,7 +25,7 @@ EXPECTED = ["AskChips", "Answer", "AgentRow", "AgentsTab", "BarActions", "BarMar
             "Creature", "DevTab", "DrawLayer", "EmptyState", "FirstRunCard",
             "HealthSection", "Icon", "Mark", "MemoryTab", "ModelCard", "NowTab", "OverlayLayer",
             "PanelTab", "Pill", "RateNote", "RateRow", "RunCard", "ScribbleLayer", "SettingsTab", "StatusLine", "StepRow",
-            "StopControl", "Transcript", "WhatsNewCard",
+            "StopControl", "Transcript", "WeeklyRecapCard", "WhatsNewCard",
             # management app views
             "AuditView", "BindsView", "HealthView", "SpendView"]
 
@@ -209,7 +209,7 @@ class TestPanelW22(unittest.TestCase):
         src = code(self.PANEL)
         self.assertIn('["now", "agents", "memory", "settings"]', src)
         self.assertIn('baseTabs.concat(["devtab"])', src)
-        self.assertIn("service.devPanel", src)
+        self.assertIn("service.devTab", src)
 
     def test_no_timer_or_polling(self):
         src = code(self.PANEL)

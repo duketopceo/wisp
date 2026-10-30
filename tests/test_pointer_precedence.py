@@ -87,7 +87,10 @@ class TestPrecedence(_Iso):
             self.assertEqual(platform.pointer_backend(CFG), "ydotool")
 
     def test_cua_live_click_uses_cua_only(self):
-        with Rig(True) as r:
+        # Bare numeric backend tests simulate explicit human coordinates;
+        # ungrounded model coordinates have their own refusal regression.
+        with Rig(True) as r, system.pointer_context(
+                user_request="click at 10,20@logical"):
             self.assertEqual(system.click("10,20@logical", CFG),
                              "CLICKED(10,20)")
             self.assertEqual(len(r.calls()), 1)
@@ -107,7 +110,8 @@ class TestPrecedence(_Iso):
             self.assertEqual(r.calls(), [])
 
     def test_cua_dead_click_uses_ydotool(self):
-        with Rig(False) as r:
+        with Rig(False) as r, system.pointer_context(
+                user_request="click at 5,6@logical"):
             self.assertEqual(system.click("5,6@logical", CFG),
                              "CLICKED(5,6)")
             self.assertTrue(all(c.startswith("ydotool") for c in r.calls()))
@@ -119,7 +123,8 @@ class TestPrecedence(_Iso):
             self.assertEqual(len(r.cursor_evals()), 1)
 
     def test_failed_cua_click_is_not_retried(self):
-        with Rig(True, cua_exit=1) as r:
+        with Rig(True, cua_exit=1) as r, system.pointer_context(
+                user_request="click at 5,6@logical"):
             out = system.click("5,6@logical", CFG)
             self.assertEqual(out, "SKIP (click failed via cua)")
             self.assertEqual(len(r.calls()), 1)  # cua only, no ydotool

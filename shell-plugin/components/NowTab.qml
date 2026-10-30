@@ -12,6 +12,10 @@ Column {
   id: root
 
   property var service: null
+  // The service must not reserve a week's delivery while another tab is
+  // selected (or while the panel is closed).
+  onVisibleChanged: { if (service) service.recapVisible = visible; }
+  Component.onCompleted: { if (service) service.recapVisible = visible; }
   signal choose(string pick)
   signal stopClicked()
   signal labelClicked(string verdict)
@@ -31,6 +35,7 @@ Column {
     && service.result === "" && service.steps.length === 0
     && service.choices.length === 0 && service.error === ""
     && !(service.note && service.note.rendered)
+    && !service.weeklyRecap
     && !runShown
   readonly property string noteBody: service.note && service.note.rendered
     ? service.note.rendered : ""
@@ -74,6 +79,15 @@ Column {
     onAnswer: function (text) { root.choose(text) }
     onStopClicked: root.stopClicked()
     onDismissed: root.dismissedRun = root.run.key
+  }
+
+  WeeklyRecapCard {
+    visible: card !== null
+    width: parent.width
+    service: root.service
+    card: root.service.weeklyRecap || null
+    onDismiss: root.service.weeklyRecap = null
+    onOffClicked: root.service.disableRecap()
   }
 
   Text {

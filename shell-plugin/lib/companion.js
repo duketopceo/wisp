@@ -6,7 +6,7 @@
 // The corner creature and console were dropped 2026-10-07 — the live
 // surface is the bar pill; these rules govern only wisp-points.
 
-var PILL_STATUSES = ["listening", "transcribing", "awaiting_choice"]
+var PILL_STATUSES = ["listening", "transcribing", "deciding", "acting", "awaiting_choice"]
 
 // The listening pill owns live progress and choices.
 function pillVisible(status) { return PILL_STATUSES.indexOf(status) >= 0 }

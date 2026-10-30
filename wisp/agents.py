@@ -530,6 +530,62 @@ def scrub_env(env: dict, cfg: dict) -> dict:
     return {k: v for k, v in env.items() if k not in drop}
 
 
+def _infer_cwd(cfg: dict | None = None) -> str | None:
+    """Infer an existing directory from `[agents] cwd` or the focused
+    window title (e.g. `~/code/wisp`, `/home/user/project — Cursor`) so
+    background OpenCode/Claude runs operate in the active repo."""
+    raw = str(((cfg or {}).get("agents") or {}).get("cwd") or "").strip()
+    if raw:
+        p = pathlib.Path(os.path.expanduser(raw))
+        if p.is_dir():
+            return str(p)
+    try:
+        from . import platform
+        win = platform.active_window() or {}
+        title = str(win.get("title") or "")
+        app = str(win.get("class") or win.get("app") or "").lower()
+    except Exception:
+        return None
+    # Remote page titles are not workspace authority. Limit this best-effort
+    # fallback to native editor, terminal and file-manager surfaces.
+    native = ("code", "cursor", "vscodium", "windsurf", "jetbrains",
+              "ghostty", "kitty", "alacritty", "foot", "wezterm", "konsole",
+              "terminal", "gnome-terminal", "nautilus", "dolphin", "thunar")
+    if not any(re.search(r"(?<!\w)" + re.escape(name) + r"(?!\w)", app)
+               for name in native):
+        return None
+    if title:
+        captions = ("Cursor", "Visual Studio Code", "Code", "VSCodium",
+                    "Windsurf", "Terminal", "Ghostty", "Kitty", "Konsole",
+                    "WezTerm", "Alacritty", "Nautilus", "Dolphin", "Thunar")
+        pattern = r"""(?P<quote>["']?)(?P<path>~/|/(?:home|Users|workspace|tmp)/)"""
+        for match in re.finditer(pattern, title):
+            raw = title[match.start("path"):].splitlines()[0]
+            quote = match.group("quote")
+            if quote:
+                if quote not in raw:
+                    continue
+                raw, suffix = raw.split(quote, 1)
+                if suffix.startswith("/"):
+                    continue
+            candidates = [raw]
+            for caption in captions:
+                for sep in (" — ", " – ", " - ", " | "):
+                    suffix = sep + caption
+                    if raw.lower().endswith(suffix.lower()):
+                        candidates.append(raw[:-len(suffix)])
+            for candidate in candidates:
+                try:
+                    cand = pathlib.Path(os.path.expanduser(candidate))
+                    if cand.is_file():
+                        cand = cand.parent
+                    if cand.is_dir():
+                        return str(cand)
+                except (OSError, ValueError):
+                    continue
+    return None
+
+
 def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
           log_dir=config.TASK_LOGS, cwd: str | None = None, *,
           delivers: list[str] | None = None,
@@ -568,6 +624,8 @@ def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
         out_dir = home / "output"
         cwd = cwd or str(home)
         prompt = agent_home.prompt(agent, task)
+    else:
+        cwd = cwd or _infer_cwd(cfg)
     out_dir.mkdir(parents=True, exist_ok=True)
     if resolve_runtime(cfg) == "opencode":
         return _spawn_acp(name, task, prompt, cwd or str(out_dir), out_dir,

@@ -303,13 +303,14 @@ class VoiceTaughtRoutinesU4Test(unittest.TestCase):
         self.assertEqual(stage_route.fixed_route(teach, "off"),
                          ("clarify", None))
 
-    def test_fixed_route_keeps_existing_router_table(self):
+    def test_fixed_route_keeps_explicit_routes_and_retires_jev(self):
         from wisp import stage_route
         self.assertEqual(stage_route.fixed_route("open firefox", "act"),
                          ("act", None))
         self.assertEqual(stage_route.fixed_route("what is this", "chat"),
                          ("answer", None))
-        self.assertIsNone(stage_route.fixed_route("open firefox", "jev"))
+        self.assertEqual(stage_route.fixed_route("open firefox", "jev"),
+                         ("act", None))
         self.assertEqual(
             stage_route.fixed_route("wisp agent: tidy downloads", "jev"),
             ("act", "tidy downloads"))

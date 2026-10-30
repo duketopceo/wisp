@@ -256,46 +256,78 @@ class TestInstall(unittest.TestCase):
                 self.assertFalse((e.unit_dir / f"{n}.service").exists(), n)
             self.assertTrue((e.unit_dir / "wispd.service").exists())
 
-    def test_install_prunes_files_the_source_no_longer_has(self):
-        # a component deleted from the repo must not linger in the
-        # installed plugin (or the opt copies) after the next install
+    @staticmethod
+    def installer():
         import importlib.machinery
         import importlib.util
-        from wisp import config
         root = pathlib.Path(__file__).resolve().parent.parent
         loader = importlib.machinery.SourceFileLoader(
             "wispd_prune", str(root / "wispd"))
         spec = importlib.util.spec_from_loader("wispd_prune", loader)
         w = importlib.util.module_from_spec(spec)
         loader.exec_module(w)
+        return w
+
+    def test_install_prunes_owned_runtime_but_preserves_unowned_plugin_files(self):
+        # Core runtime is mirrored; an untracked plugin addition is not ours.
+        from wisp import config
+        w = self.installer()
         with Env() as e:
             stub_systemctl(e.bin)
             e.fake_exes()
             plugin = (e.home / ".config" / "omarchy" / "plugins"
                       / "io.github.duketopceo.wisp")
             opt = e.home / ".local" / "opt" / "wisp"
-            stale = [plugin / "components" / "GhostCursor.qml",
-                     opt / "wisp" / "gone.py",
+            addition = plugin / "components" / "GhostCursor.qml"
+            stale = [opt / "wisp" / "gone.py",
                      opt / "shells" / "debug" / "Gone.qml"]
             cache = opt / "wisp" / "__pycache__" / "config.cpython-311.pyc"
-            for f in stale + [cache]:
+            for f in stale + [cache, addition]:
                 f.parent.mkdir(parents=True, exist_ok=True)
                 f.write_text("old\n")
-            # a stale link to a directory goes as a link; its target stays
-            elsewhere = e.home / "elsewhere"
-            elsewhere.mkdir()
-            (plugin / "linked").symlink_to(elsewhere)
             with mock.patch.object(config, "HOME", e.home), \
                  mock.patch("wisp.platform.current", return_value="linux"):
                 w.install_files()
             for f in stale:
                 self.assertFalse(f.exists(), f)
-            self.assertFalse((plugin / "linked").is_symlink())
-            self.assertTrue(elsewhere.is_dir())
+            self.assertEqual(addition.read_text(), "old\n")
             self.assertTrue((plugin / "components" / "Buddy.qml").exists())
             self.assertTrue((opt / "wisp" / "config.py").exists())
             # bytecode caches are the interpreter's, not ours to sweep
             self.assertTrue(cache.exists())
+
+    def test_install_refuses_arbitrary_plugin_symlink_before_writes(self):
+        from wisp import config
+        w = self.installer()
+        with Env() as e:
+            stub_systemctl(e.bin)
+            plugin = (e.home / ".config/omarchy/plugins"
+                      / "io.github.duketopceo.wisp")
+            plugin.mkdir(parents=True)
+            addition = plugin / "user.qml"
+            addition.write_text("user content\n")
+            elsewhere = e.root / "outside"
+            elsewhere.mkdir()
+            external = elsewhere / "keep"
+            external.write_text("outside content\n")
+            link = plugin / "linked"
+            link.symlink_to(elsewhere)
+            opt = e.home / ".local/opt/wisp"
+            opt.mkdir(parents=True)
+            sentinel = opt / "untouched"
+            sentinel.write_text("installed content\n")
+            with mock.patch.object(config, "HOME", e.home), \
+                    mock.patch("wisp.platform.current", return_value="linux"):
+                with self.assertRaisesRegex(ValueError, "symlink"):
+                    w.install_files()
+            self.assertTrue(link.is_symlink())
+            self.assertEqual(external.read_text(), "outside content\n")
+            self.assertEqual(addition.read_text(), "user content\n")
+            self.assertEqual(sentinel.read_text(), "installed content\n")
+            self.assertFalse((opt / "wispd").exists())
+            self.assertFalse((e.home / ".local/bin/wispd").exists())
+            self.assertFalse((plugin / "components/Buddy.qml").exists())
+            self.assertEqual(e.calls(), [])
 
     def test_never_enables_or_restarts(self):
         with Env() as e:

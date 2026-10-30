@@ -134,21 +134,34 @@ function causeWord(code) { return CAUSE.hasOwnProperty(code) ? CAUSE[code] : "" 
 
 var HIDDEN = { kind: "idle", visible: false, glyph: "", token: "ink",
   wordToken: "ink", border: "keyline", wordKey: "", step: "", cause: "",
-  thumbs: false }
+  thumbs: false, dev: false }
 
 function view(kind, glyph, token, wordKey, extra) {
   var v = { kind: kind, visible: true, glyph: glyph, token: token,
     wordToken: "ink", border: "keyline", wordKey: wordKey, step: "",
-    cause: "", thumbs: false }
+    cause: "", thumbs: false, dev: false }
   for (var k in extra) v[k] = extra[k]
   return v
 }
 
 // Daemon status to the pill's state. o: {status, result, errorCode,
-// offline, confirm, windowOpen, rateable, run:{steps, stepAt}}. Idle and
-// offline are no pill (the mark alone); every other state is glyph plus a
-// word (the word repeats the state, color is never the only signal).
+// offline, confirm, windowOpen, rateable, dev, run:{steps, stepAt}}. Idle
+// and offline are no pill (the mark alone); every other state is glyph plus
+// a word (the word repeats the state, color is never the only signal).
+// While the dev session is on (o.dev) every state also carries `dev`, a
+// small badge so the mode is never on by accident, and idle shows that
+// badge alone. Offline never does: the daemon's session state is unknown.
 function pillState(o) {
+  var v = _pillState(o)
+  if (o.dev !== true || v.kind === "offline") return v
+  var out = {}
+  for (var k in v) out[k] = v[k]
+  out.dev = true
+  out.visible = true
+  return out
+}
+
+function _pillState(o) {
   var status = String(o.status)
   if (o.offline || status === "offline") {
     var off = view("offline", "", "inkMuted", "", {})

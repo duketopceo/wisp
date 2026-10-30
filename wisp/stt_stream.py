@@ -15,6 +15,7 @@ Hosted providers only: the local whisper.cpp path is untouched.
 from __future__ import annotations
 
 import array
+from contextlib import suppress
 import math
 import os
 import pathlib
@@ -33,6 +34,7 @@ FRAME_S = 0.1                      # energy window for choosing the cut
 MIN_RMS = 60.0                     # quieter than this is treated as silence
 MIN_TAIL_S = 0.3                   # a shorter remainder is not worth a call
 JOIN_S = 25.0                      # most `finish` waits for the worker
+ABORT_JOIN_S = 0.25                 # discarded audio never waits for a tail
 
 _STREAMS: dict[str, "Streamer"] = {}
 
@@ -162,6 +164,8 @@ class Streamer:
             need = int((self.chunk_s + SEARCH_S) * BPS)
             while not self._stopped():
                 time.sleep(self.tick_s)
+                if self._stopped():
+                    break
                 try:
                     with self.path.open("rb") as f:
                         f.seek(off + self.cut)
@@ -172,6 +176,8 @@ class Streamer:
                     continue
                 at = quiet_cut(pcm, self.chunk_s - 1.0,
                                self.chunk_s + SEARCH_S - 0.5)
+                if self._stopped():
+                    break
                 self.texts.append(self._transcribe(pcm[:at]))
                 self.cut += at
                 if self.journal is not None:
@@ -180,6 +186,19 @@ class Streamer:
             self.failed = True
 
     # -- consumer --------------------------------------------------
+    def abort(self) -> None:
+        """Discard this watch without reading/transcribing the remaining WAV.
+
+        A request already in flight may finish later. The stop flag prevents
+        new chunks; a bounded join keeps cancellation off that request's
+        timeout. Leave the completed-chunk journal recoverable on interruption.
+        """
+        with suppress(Exception):
+            self._stop.set()
+        with suppress(Exception):
+            if self._thread is not None:
+                self._thread.join(timeout=ABORT_JOIN_S)
+
     def finish(self) -> str | None:
         """Transcript of the whole recording, or None when the caller
         should transcribe the file itself. Call after the recorder has
@@ -233,10 +252,22 @@ def begin(path, proc) -> "Streamer":
         journal.start()        # an earlier interrupted session is kept
     except Exception:
         journal = None
-    s = Streamer(path, proc, journal=journal).start()
+    s = Streamer(path, proc, journal=journal)
     _STREAMS[str(path)] = s
-    return s
+    try:
+        return s.start()
+    except BaseException:
+        with suppress(Exception):
+            discard(path)
+        raise
 
 
 def claim(path) -> "Streamer | None":
     return _STREAMS.pop(str(path), None)
+
+
+def discard(path) -> None:
+    """Release an unclaimed watch; never finalize/transcribe cancelled audio."""
+    stream = claim(path)
+    if stream is not None:
+        stream.abort()

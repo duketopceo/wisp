@@ -25,7 +25,7 @@ def main(spec_path: str) -> int:
            "interrupt_fired": False, "violations": [], "final": {}}
     result_path = pathlib.Path(spec["result"])
     try:
-        from wisp import config, pipeline, state as state_mod, \
+        from wisp import cancel, config, pipeline, state as state_mod, \
             tools, trace as trace_mod
         urls = spec["urls"]
         config.JEV_ENDPOINT = urls["jev"] + "/api/alpha/decisions"
@@ -268,9 +268,30 @@ def main(spec_path: str) -> int:
         chooser = spec.get("chooser")
         wait = None
         if chooser is not None:
-            def wait(timeout, **_kw):
+            def wait(timeout, prompt_id=None, options=None):
                 time.sleep(chooser.get("delay_ms", 0) / 1000.0)
-                return chooser.get("pick")
+                pick = chooser.get("pick")
+                if not pick:
+                    return None
+                # Use the real broker so replay cannot bypass stale-pick
+                # protections that the live IPC path enforces.
+                broker = cancel.PromptBroker()
+                def offer():
+                    result = broker.offer(pick, prompt_id=prompt_id)
+                    if not result.get("ok"):
+                        trace_mod.emit(st.current_turn(), "choice_rejected", "act",
+                                   {"pick": pick, "options": options,
+                                    "prompt_id": prompt_id})
+                        broker.offer("", prompt_id=prompt_id)
+                timer = threading.Timer(0.01, offer)
+                timer.daemon = True
+                timer.start()
+                try:
+                    return broker.waiter()(
+                        min(timeout, 0.25), prompt_id=prompt_id,
+                        options=options)
+                finally:
+                    timer.join(timeout=0.5)
 
         after = spec.get("interrupt_after_ms")
         if after is not None and (rel_delta is not None

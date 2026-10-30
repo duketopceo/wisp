@@ -226,7 +226,7 @@ class TurnReplayTest(unittest.TestCase):
         self.assertEqual(res.violations, [])
         # one call per fake
         self.assertEqual(len(res.calls["whisper"]), 1)
-        self.assertEqual(len(res.calls["jev"]), 1)
+        self.assertEqual(len(res.calls["jev"]), 0)
         self.assertEqual(len(res.chat_calls()), 1)
 
     def test_scripted_brain_latency_shows_in_first_token_span(self):
@@ -255,6 +255,17 @@ class TurnReplayTest(unittest.TestCase):
         self.assertEqual(tool_names, ["recall", "recall"])
         self.assertTrue(res.final["result"].startswith("ACTED (2 steps)"))
 
+    def test_saved_retired_router_keeps_fast_paths_and_act(self):
+        for name in ("ask", "jev_down", "router_act_default"):
+            with self.subTest(name=name):
+                fx = copy.deepcopy(runner.load_fixture(name))
+                fx.setdefault("config", {}).setdefault("brain", {})[
+                    "router"] = "jev"
+                res = runner.run_turn(fx)
+                self.assertEqual(res.exit_code, 0, res.stderr)
+                self.assertEqual(runner.check_expectations(res), [])
+                self.assertEqual(res.calls["jev"], [])
+
     def test_choose_offers_choices_then_launches_pick(self):
         res = runner.run_turn(FIXTURES / "choose.json")
         self.assertIn("awaiting_choice", res.statuses)
@@ -263,19 +274,18 @@ class TurnReplayTest(unittest.TestCase):
         self.assertIn("app:discord", offered)
         self.assertEqual(res.launch_calls, ["discord"])
 
-    def test_choice_timeout_auto_picks_top_candidate(self):
+    def test_choice_timeout_never_guesses_an_app(self):
         fx = copy.deepcopy(runner.load_fixture(FIXTURES / "choose.json"))
         fx["chooser"] = {"pick": None}
         res = runner.run_turn(fx)
-        self.assertEqual(res.launch_calls, ["discord"])
+        self.assertEqual(res.launch_calls, [])
 
     def test_stale_choice_is_rejected_not_applied(self):
-        # U9: a pick that was never offered is refused; the turn falls
-        # back to the safe auto-pick instead of launching it
+        # U9: a pick that was never offered is refused, without guessing.
         res = runner.run_turn(FIXTURES / "stale_choice.json")
         self.assertEqual(res.exit_code, 0, res.stderr)
         self.assertNotIn("ghostapp", res.launch_calls)
-        self.assertEqual(res.launch_calls, ["discord"])
+        self.assertEqual(res.launch_calls, [])
         rej = res.trace_events("choice_rejected")
         self.assertEqual(len(rej), 1)
         self.assertEqual(rej[0]["pick"], "app:ghostapp")
@@ -288,36 +298,37 @@ class TurnReplayTest(unittest.TestCase):
         self.assertEqual(len({e["prompt_id"] for e in offered}), 1)
         self.assertEqual(res.final["prompt_id"], "")
 
-    def test_jev_down_falls_back_to_heuristic_launch(self):
+    def test_retired_endpoint_outage_cannot_delay_fast_launch(self):
         res = runner.run_turn(FIXTURES / "jev_down.json")
         self.assertEqual(res.statuses[-1], "done")
         self.assertEqual(res.final["error_code"], "")
         self.assertEqual(res.launch_calls, ["firefox"])
         dec = res.trace_events("decision")[0]
-        self.assertEqual(dec["route_source"], "heuristic")
-        self.assertEqual(dec["jev_status"], "error")
+        self.assertEqual(dec["route_lane"], "fast_path")
+        self.assertEqual(dec["route_rule"], "bare_launch")
+        self.assertEqual(res.calls["jev"], [])
         self.assertEqual(runner.check_expectations(res), [])
 
     def test_route_spans_recorded_with_jev_down(self):
         res = runner.run_turn(FIXTURES / "jev_down.json")
         names = {e["step"] for e in res.trace if e.get("kind") == "span"}
-        self.assertTrue({"route", "route_heuristic", "route_jev"} <= names)
+        self.assertIn("route", names)
+        self.assertNotIn("route_jev", names)
         self.assertLess(res.trace_events("route")[0]["ms"], 200)
 
-    def test_jev_deadline_expiry_routes_by_heuristic(self):
+    def test_retired_endpoint_latency_cannot_delay_question(self):
         res = runner.run_turn(FIXTURES / "jev_slow.json")
         self.assertEqual(runner.check_expectations(res), [])
         self.assertEqual(res.final["answer"], "It is half past three.")
         route = res.trace_events("route")[0]["ms"]
-        self.assertTrue(380 <= route < 900, route)
-        jev = [e for e in res.trace if e.get("step") == "route_jev"][0]
-        self.assertEqual(jev["data"]["status"], "timeout")
+        self.assertLess(route, 200)
+        self.assertEqual(res.calls["jev"], [])
 
-    def test_ab_record_written_for_the_turn(self):
+    def test_route_diagnostics_remain_without_decision_ab_fields(self):
         res = runner.run_turn(FIXTURES / "jev_slow.json")
         dec = res.trace_events("decision")[0]
-        self.assertEqual(dec["route_source"], "heuristic")
-        self.assertEqual(dec["jev_status"], "timeout")
+        self.assertEqual(dec["route_lane"], "fast_path")
+        self.assertNotIn("jev_status", dec)
 
     def test_brain_down_without_fallback_is_typed_error(self):
         res = runner.run_turn(FIXTURES / "brain_down.json")
@@ -364,15 +375,15 @@ class TurnReplayTest(unittest.TestCase):
                         "brain socket was not closed")
         self.assertEqual(res.violations, [])
 
-    def test_cancel_during_jev_ends_idle_and_ignores_the_late_reply(self):
+    def test_cancel_during_brain_ends_idle_and_ignores_the_late_reply(self):
         fx = copy.deepcopy(runner.load_fixture(FIXTURES / "ask.json"))
-        fx["endpoints"]["jev"]["latency_ms"] = 700
+        fx["endpoints"]["brain"]["latency_ms"] = 700
         fx["interrupt_after_ms"] = 200
         res = runner.run_turn(fx)
         self.assertEqual(res.statuses[-1], "idle")
         self.assertEqual(res.final["error_code"], "cancelled")
-        self.assertEqual(res.chat_calls(), [])   # never reached the brain
-        self.assertTrue(res.peer_closed["jev"])
+        self.assertEqual(len(res.chat_calls()), 1)
+        self.assertTrue(res.peer_closed["brain"])
         self.assertLess(res.events[-1]["t_ms"] - res.interrupt_t_ms,
                         150 * runner.JITTER)
 

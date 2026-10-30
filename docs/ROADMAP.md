@@ -6,7 +6,9 @@ is kept current as work merges.
 
 Background for it:
 
-- The plan of record is `docs/plans/2026-10-26-0031-feat-wisp-v1-roadmap-plan.md`.
+- The unified alignment, latency, Particle AI, multi-profile browser, talkback, and Quickshell UX plan is
+  `docs/plans/2026-10-30-001-feat-wisp-unified-alignment-and-polish-plan.md`.
+- The v1 roadmap plan is `docs/plans/2026-10-26-0031-feat-wisp-v1-roadmap-plan.md`.
 - The phase A to D plan (ratings, bar pill, Dev tab, voice) is
   `docs/plans/2026-10-28-2233-feat-bar-feedback-devtab-voice-plan.md`.
 - `docs/research/heyclicky-features.md` and `docs/research/2026-10-25-*.md`

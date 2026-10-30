@@ -76,8 +76,10 @@ def _ts(s):
 
 
 def _spans(trace_file, want, oldest, stats):
-    """{turn: [(step, ms), ...]} in emission order for the wanted turns."""
+    """({turn: [(step, ms), ...]}, {turn: {model, provider, ttft_ms, latency_ms}})
+    in emission order for the wanted turns."""
     out = {t: [] for t in want}
+    meta = {t: {} for t in want}
     floor = (oldest - TRACE_MARGIN) if oldest else None
     seen = 0
     for raw in tail_lines(trace_file, stats, "trace_bytes"):
@@ -91,12 +93,27 @@ def _spans(trace_file, want, oldest, stats):
                 break
         if seen > TRACE_MAX_BYTES:
             break
-        if ev.get("kind") == "span" and ev.get("turn") in out \
-                and isinstance(ev.get("ms"), (int, float)):
-            out[ev["turn"]].append((str(ev.get("step", "")), ev["ms"]))
+        turn_id = ev.get("turn")
+        if turn_id not in out:
+            continue
+        kind = ev.get("kind")
+        if kind == "span" and isinstance(ev.get("ms"), (int, float)):
+            out[turn_id].append((str(ev.get("step", "")), ev["ms"]))
+        elif kind in ("brain", "act") and ev.get("step") in ("brain_call", "llm_call"):
+            data = ev.get("data") or {}
+            m = meta[turn_id]
+            # Keep the first LLM call's TTFT/model (since we iterate newest-first, overwrite)
+            if data.get("model"):
+                m["model"] = data["model"]
+            if data.get("provider") or data.get("brain"):
+                m["provider"] = data.get("provider") or data.get("brain")
+            if data.get("ttft_ms") is not None:
+                m["ttft_ms"] = data["ttft_ms"]
+            if data.get("latency_ms") is not None:
+                m["latency_ms"] = data["latency_ms"]
     for v in out.values():
         v.reverse()          # collected newest first
-    return out
+    return out, meta
 
 
 def _finished(d) -> bool:
@@ -104,7 +121,7 @@ def _finished(d) -> bool:
     return bool(r) and not r.startswith(learn._UNRATABLE)
 
 
-def _turn(d, spans, lab):
+def _turn(d, spans, lab, meta=None):
     stages, total = [], None
     seen = {}
     for name, ms in spans:
@@ -119,14 +136,26 @@ def _turn(d, spans, lab):
     m = _STEPS.search(result) if result.startswith("ACTED") else None
     label, note = lab if lab else ("none", "")
     route = ((d.get("answers") or {}).get("route") or {}).get("choice", "")
-    return {"id": str(d.get("turn") or ""), "turn": str(d.get("turn") or ""),
-            "ts": d.get("ts", ""),
-            "transcript": _clip(d.get("transcript")),
-            "route": route if isinstance(route, str) else "",
-            "kind": learn.turn_kind(result),
-            "result": _clip(result), "label": label, "note": _clip(note),
-            "total_ms": total, "stages": stages,
-            "act_steps": int(m.group(1)) if m else None}
+    meta = meta or {}
+    row = {"id": str(d.get("turn") or ""), "turn": str(d.get("turn") or ""),
+           "ts": d.get("ts", ""),
+           "transcript": _clip(d.get("transcript")),
+           "route": route if isinstance(route, str) else "",
+           "kind": learn.turn_kind(result),
+           "result": _clip(result), "label": label, "note": _clip(note),
+           "total_ms": total, "stages": stages,
+           "act_steps": int(m.group(1)) if m else None}
+    if meta.get("model"):
+        row["model"] = meta["model"]
+    if meta.get("provider"):
+        row["provider"] = meta["provider"]
+    if meta.get("ttft_ms") is not None:
+        row["ttft_ms"] = meta["ttft_ms"]
+    elif "first_token" in seen:
+        row["ttft_ms"] = seen["first_token"]
+    if meta.get("latency_ms") is not None:
+        row["latency_ms"] = meta["latency_ms"]
+    return row
 
 
 def build(cfg=None, n=None, decisions_file=None, labels_file=None,
@@ -150,10 +179,11 @@ def build(cfg=None, n=None, decisions_file=None, labels_file=None,
     labels = learn._latest_labels(labels_file)
     oldest = min((t for t in (_ts(d.get("ts")) for d in rows) if t),
                  default=None)
-    spans = _spans(trace_file, {str(d.get("turn")) for d in rows
-                                if d.get("turn")}, oldest, stats)
+    spans, meta = _spans(trace_file, {str(d.get("turn")) for d in rows
+                                      if d.get("turn")}, oldest, stats)
     turns = [_turn(d, spans.get(str(d.get("turn")), []),
-                   labels.get(d.get("ts"))) for d in rows]
+                   labels.get(d.get("ts")),
+                   meta.get(str(d.get("turn")))) for d in rows]
 
     rep = learn.eval_report(cfg or {}, decisions_file, labels_file)
     tot, g = rep["total"], rep["gate"]

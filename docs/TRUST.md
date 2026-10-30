@@ -10,7 +10,7 @@ Nothing is sent between key presses. There is no analytics, no account and no Wi
 
 | Host | What it is for | What it gets | On by default | Key | What you control |
 | --- | --- | --- | --- | --- | --- |
-| `openrouter.ai` | Answer model, router and decision calls, the vision fallback for finding a control on screen, and (only if you turn `[recall] provider` on) memory embeddings. | **text, screenshot.** What you said (as text), the focused app and window names, recent turns, memory notes, a selection or copied text you pointed at, and a screenshot on answer calls (`[agent] screenshots`) and the vision fallback. Windows that look like a password manager, a keyring or authentication prompt or a sudo terminal (plus any you add under `[cua]`) are blanked first, and a capture is refused while one has focus. | Yes. It is the default answer brain. | You. `OPENROUTER_API_KEY` in your environment, `~/.config/wisp/.env` or your keyring. | `[brain] default` and `[brain] fallback` take a local model (`ollama:`, `lmstudio:`, `mlx:`) and nothing then leaves; `[agent] screenshots = false` keeps the screen out of answers. How long OpenRouter and the model provider keep a request is set by your OpenRouter account's privacy settings, not by Wisp. |
+| `openrouter.ai` | Answer model, router and decision calls, the vision fallback for finding a control on screen, and (only if you turn `[recall] provider` on) memory embeddings. In dev mode only, the run judge (`wispd dev run`). | **text, screenshot.** What you said (as text), the focused app and window names, recent turns, memory notes, a selection or copied text you pointed at, and a screenshot on answer calls (`[agent] screenshots`) and the vision fallback. Windows that look like a password manager, a keyring or authentication prompt or a sudo terminal (plus any you add under `[cua]`) are blanked first, and a capture is refused while one has focus. | Yes. It is the default answer brain. | You. `OPENROUTER_API_KEY` in your environment, `~/.config/wisp/.env` or your keyring. The dev-mode judge uses `omaseal://openrouter/orchestral` (your eval key) instead, never the default key. | `[brain] default` and `[brain] fallback` take a local model (`ollama:`, `lmstudio:`, `mlx:`) and nothing then leaves; `[agent] screenshots = false` keeps the screen out of answers. How long OpenRouter and the model provider keep a request is set by your OpenRouter account's privacy settings, not by Wisp. |
 | `api.groq.com` | Speech to text for each push-to-talk turn (any OpenAI-compatible endpoint works in its place), and the voice that speaks answers aloud. | **audio, text.** The recording of that turn, and the vocabulary prompt from `[stt] prompt`. For the spoken answer, the answer text one sentence at a time (English answers only). | Yes. `[stt] provider` is `openai` with this base URL. | You. `GROQ_API_KEY` in your environment, `~/.config/wisp/.env` or your keyring. | `[stt] provider = "local"` transcribes on this machine with whisper.cpp and sends no audio; `[stt] base_url` points at any other host. `[voice] provider = "espeak"` (or `[voice] enabled = false`) sends no answer text. The provider's retention is its own. |
 | `api.github.com` | Update check and release lookup for `wispd update`. | **nothing of yours.** A plain GET with the user agent `wispd-update`. Nothing from your machine is in it. | No. Only when you run `wispd update`; the daemon never calls it. | None. | Do not run `wispd update`. A release is verified against its published SHA-256 before anything is installed. |
 | `upload.wikimedia.org` | Pictures for answer cards. | **nothing of yours.** A plain GET for one picture an answer named. Nothing from your machine is in it, but the picture's address comes from the answer. | Only when an answer shows a picture. This is the only host fetched by default for pictures. | None. | `[images] allow` is the full list of hosts that may be fetched, https only, size-capped, private addresses refused. Set it to a host you do not use to turn pictures off. |
@@ -46,6 +46,9 @@ An OpenCode agent Wisp starts runs on this machine and reaches models through or
 | `github.com` | Release downloads for `wispd update` (the same GET as api.github.com above) and the project address Wisp names itself with in an `HTTP-Referer` header so OpenRouter can show an app name. |
 | `mail.google.com` | Opened in your browser when you say "open mail" and no native mail client is set (`[web] mail`). |
 | `calendar.google.com` | Opened in your browser when you say "open calendar" and no native client is set (`[web] calendar`). |
+| `dashboard.stripe.com` | Opened in your browser when you say "go to Stripe" or "open Stripe". |
+| `linear.app` | Opened in your browser when you say "go to Linear" or "open Linear". |
+| `app.slack.com` | Opened in your browser when you say "open Slack" and no native client is set. |
 | `x.com` | A compose window is opened in your browser with the text filled in. Nothing is posted until you press Post. |
 | `gmail.com` | An example in help text: a domain you say is opened in your browser. |
 | `cal.com` | A name in a list of apps Wisp can connect to, in help text. |
@@ -54,6 +57,30 @@ An OpenCode agent Wisp starts runs on this machine and reaches models through or
 | `console.groq.com` | A link shown in the voice notice and `wispd doctor` for accepting the Orpheus terms. Wisp never requests it. |
 | `amara.org` | A credit line for subtitle text in a bundled sample. |
 | `www.w3.org` | An XML namespace in a generated icon. Never requested. |
+| `airtable.com` | A local app-skill routing hint for Airtable. No request is made by this lookup. |
+| `app.asana.com` | A local app-skill routing hint for Asana. No request is made by this lookup. |
+| `app.clickup.com` | A local app-skill routing hint for ClickUp. No request is made by this lookup. |
+| `atlassian.net` | A local app-skill routing hint for Jira and Confluence. No request is made by this lookup. |
+| `chatgpt.com` | A local app-skill routing hint for ChatGPT. No request is made by this lookup. |
+| `claude.ai` | A local app-skill routing hint for Claude. No request is made by this lookup. |
+| `cloudflare.com` | Matched against the focused window title to select a local app skill for Cloudflare. No request is made by this lookup. |
+| `dash.cloudflare.com` | A local app-skill routing hint for the Cloudflare dashboard. No request is made by this lookup. |
+| `discord.com` | A local app-skill routing hint for Discord, also matched against the focused window title. No request is made by this lookup. |
+| `docs.google.com` | A local app-skill routing hint for Google Docs and Sheets, also matched against the focused window title. No request is made by this lookup. |
+| `drive.google.com` | A local app-skill routing hint for Google Drive, also matched against the focused window title. No request is made by this lookup. |
+| `dropbox.com` | A local app-skill routing hint for Dropbox. No request is made by this lookup. |
+| `figma.com` | A local app-skill routing hint for Figma, also matched against the focused window title. No request is made by this lookup. |
+| `gitlab.com` | A local app-skill routing hint for GitLab. No request is made by this lookup. |
+| `open.spotify.com` | A local app-skill routing hint for Spotify. No request is made by this lookup. |
+| `outlook.office.com` | A local app-skill routing hint for Outlook. No request is made by this lookup. |
+| `perplexity.ai` | A local app-skill routing hint for Perplexity, also matched against the focused window title. No request is made by this lookup. |
+| `reddit.com` | A local app-skill routing hint for Reddit. No request is made by this lookup. |
+| `stackoverflow.com` | A local app-skill routing hint for Stack Overflow. No request is made by this lookup. |
+| `stripe.com` | Matched against the focused window title to select a local app skill for Stripe. No request is made by this lookup. |
+| `tallyline.app` | A local app-skill routing hint for Tallyline. No request is made by this lookup. |
+| `trello.com` | A local app-skill routing hint for Trello. No request is made by this lookup. |
+| `vercel.com` | A local app-skill routing hint for Vercel, also matched against the focused window title. No request is made by this lookup. |
+| `youtube.com` | A local app-skill routing hint for YouTube. No request is made by this lookup. |
 
 ## Stored on this machine
 
@@ -84,19 +111,46 @@ Everything below lives in `~/.local/share/wisp` (a 0700 folder of 0600 files), `
 
 From the scan this page is built from.
 
+- `airtable.com`: `wisp/skills.py`
 - `amara.org`: `wisp/dictate_history.py`
 - `api.github.com`: `wisp/update.py`
 - `api.groq.com`: `rs/wispd/src/config.rs`, `wisp/config.py`, `wisp/tts_groq.py`
+- `app.asana.com`: `wisp/skills.py`
+- `app.clickup.com`: `wisp/skills.py`
+- `app.slack.com`: `wisp/config.py`, `wisp/context.py`, `wisp/skills.py`
+- `atlassian.net`: `wisp/skills.py`
 - `cal.com`: `wisp/mcpauth.py`
-- `calendar.google.com`: `wisp/config.py`
+- `calendar.google.com`: `wisp/config.py`, `wisp/context.py`, `wisp/skills.py`
+- `chatgpt.com`: `wisp/skills.py`
+- `claude.ai`: `wisp/skills.py`
+- `cloudflare.com`: `wisp/context.py`
 - `console.groq.com`: `wisp/tts_groq.py`
+- `dash.cloudflare.com`: `wisp/skills.py`
+- `dashboard.stripe.com`: `wisp/config.py`, `wisp/context.py`
+- `discord.com`: `wisp/context.py`, `wisp/skills.py`
+- `docs.google.com`: `wisp/context.py`, `wisp/skills.py`
+- `drive.google.com`: `wisp/context.py`, `wisp/skills.py`
+- `dropbox.com`: `wisp/skills.py`
 - `example.com`: `wisp/cli/share.py`
-- `github.com`: `rs/wispd/src/brain.rs`, `wisp/agent_pins.py`, `wisp/brain.py`, `wisp/grounding.py`, `wisp/stage_route.py`, `wisp/update.py` and 1 more
+- `figma.com`: `wisp/context.py`, `wisp/skills.py`
+- `github.com`: `rs/wispd/src/brain.rs`, `wisp/agent_pins.py`, `wisp/brain.py`, `wisp/config.py`, `wisp/context.py`, `wisp/grounding.py` and 3 more
+- `gitlab.com`: `wisp/skills.py`
 - `gmail.com`: `wisp/tools/__init__.py`
-- `mail.google.com`: `wisp/config.py`
-- `openrouter.ai`: `rs/wispd/src/brain.rs`, `rs/wispd/src/config.rs`, `wisp/brain.py`, `wisp/config.py`, `wisp/recall.py`
+- `linear.app`: `wisp/config.py`, `wisp/context.py`, `wisp/skills.py`
+- `mail.google.com`: `wisp/config.py`, `wisp/context.py`, `wisp/skills.py`
+- `open.spotify.com`: `wisp/skills.py`
+- `openrouter.ai`: `rs/wispd/src/brain.rs`, `rs/wispd/src/config.rs`, `wisp/brain.py`, `wisp/config.py`, `wisp/context.py`, `wisp/devjudge.py` and 1 more
+- `outlook.office.com`: `wisp/skills.py`
+- `perplexity.ai`: `wisp/context.py`, `wisp/skills.py`
 - `raw.githubusercontent.com`: `wisp/tools/modelfetch.py`
+- `reddit.com`: `wisp/skills.py`
+- `stackoverflow.com`: `wisp/skills.py`
+- `stripe.com`: `wisp/context.py`
+- `tallyline.app`: `wisp/skills.py`
+- `trello.com`: `wisp/skills.py`
 - `upload.wikimedia.org`: `wisp/tools/imagefetch.py`
+- `vercel.com`: `wisp/context.py`, `wisp/skills.py`
 - `wisp.ai`: `wisp/cli/dictate.py`
 - `www.w3.org`: `wisp/tools/system.py`
-- `x.com`: `wisp/tools/social.py`
+- `x.com`: `wisp/skills.py`, `wisp/tools/social.py`
+- `youtube.com`: `wisp/skills.py`

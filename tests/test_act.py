@@ -72,11 +72,14 @@ class Gate(unittest.TestCase):
         assert out and "REFUSED" in out
 
     def test_interactive_runs_without_confirm(self):
-        # clicks/typing execute — the agent acts, it doesn't ask
-        assert act._gate("click", "10,10", {"agent": {}}, None) is None
-        assert act._gate("type_text", "hi", {"agent": {}}, None) is None
-        assert act._gate("scroll", "down", {"agent": {}}, None) is None
-        assert act._gate("key", "enter", {"agent": {}}, None) is None
+        # Known ordinary surfaces execute without confirmation; absent live
+        # identity and sensitive surfaces deliberately require confirmation.
+        with mock.patch("wisp.platform.active_window", return_value={
+                "class": "firefox", "title": "Ordinary page"}):
+            assert act._gate("click", "10,10", {"agent": {}}, None) is None
+            assert act._gate("type_text", "hi", {"agent": {}}, None) is None
+            assert act._gate("scroll", "down", {"agent": {}}, None) is None
+            assert act._gate("key", "enter", {"agent": {}}, None) is None
 
     def test_interactive_denylist_still_applies(self):
         # prompt-free tier must not type destruction into a terminal
@@ -1079,12 +1082,8 @@ class Timing(unittest.TestCase):
     def test_decisions_log_carries_stage_timings(self):
         from wisp import pipeline
         logged = {}
-        cfg = {"audio": {"seconds": "0"}, "agent": {},
-               "jev": {"risk_threshold": "10"}}
-        fake_resp = {"answers": {"route": {"choice": "answer"},
-                                 "confidence": {"score": 0.9},
-                                 "action": {"choice": "answer"},
-                                 "app": {"choice": ""}}}
+        cfg = {"audio": {"seconds": "0"},
+               "agent": {"risk_threshold": "10"}}
         st = mock.Mock()
         st.state = {}
         st.transition = lambda s, **kw: st.state.update(status=s, **kw)
@@ -1092,14 +1091,10 @@ class Timing(unittest.TestCase):
                                return_value=__import__("pathlib").Path("/tmp/x.wav")), \
              mock.patch.object(pipeline, "transcribe",
                                return_value="hello"), \
-             mock.patch.object(pipeline, "ask_jev",
-                               return_value=fake_resp), \
              mock.patch.object(pipeline, "execute",
                                return_value="ANSWERED"), \
              mock.patch.object(pipeline, "ask_chat",
                                return_value="hi there"), \
-             mock.patch.object(pipeline, "build_questions",
-                               return_value={}), \
              mock.patch.object(pipeline, "notify"), \
              mock.patch.object(sys.modules["wisp.session"],
                                "append_turn"), \
@@ -1184,6 +1179,8 @@ class ActionText(unittest.TestCase):
         replies = [_msg(content="Thought: aim\nAction: click(10, 20)"),
                    _msg(content="DONE")]
         with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch("wisp.platform.active_window", return_value={
+                 "class": "firefox", "title": "Ordinary page"}), \
              mock.patch.object(tools, "run",
                                return_value="CLICKED x") as run:
             r = act.run_act_loop("click it", cfg)

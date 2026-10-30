@@ -15,6 +15,17 @@ _MARK = "# wispd-managed sha256="
 _RESERVED = set(' \t\n"\'\\><~|&;$*?#()`')
 
 
+def refuse_links(path: pathlib.Path, *, tree=False) -> None:
+    """Refuse linked installer destinations, including ancestor links."""
+    for p in (path, *path.parents):
+        if p.is_symlink():
+            raise ValueError(f"Unsafe installer destination (symlink): {p}")
+    if tree and path.is_dir():
+        for p in path.rglob("*"):
+            if p.is_symlink():
+                raise ValueError(f"Unsafe installer destination (symlink): {p}")
+
+
 def exec_arg(s: str) -> str:
     """One Exec argument, quoted per the Desktop Entry spec (the quote
     escape and the string-level backslash doubling both applied)."""
@@ -57,7 +68,7 @@ def render(opt: pathlib.Path, src: pathlib.Path = None) -> str:
 def _backup_name(p: pathlib.Path) -> pathlib.Path:
     b = p.with_name(p.name + ".bak")
     n = 0
-    while b.exists():
+    while b.exists() or b.is_symlink():
         n += 1
         b = p.with_name(f"{p.name}.bak.{n}")
     return b
@@ -75,6 +86,12 @@ def install(src: pathlib.Path, home: pathlib.Path, opt: pathlib.Path,
     apps = home / ".local" / "share" / "applications"
     icons_dst = home / ".local" / "share" / "icons" / "hicolor"
     entry = apps / "wisp.desktop"
+    refuse_links(entry)
+    icons_src = src / "assets" / "icons" / "hicolor"
+    if icons_src.is_dir():
+        for f in icons_src.rglob("*"):
+            if f.is_file():
+                refuse_links(icons_dst / f.relative_to(icons_src))
     text = render(opt, src)
     cur = entry.read_text() if entry.is_file() else None
     if cur != text:
@@ -87,7 +104,6 @@ def install(src: pathlib.Path, home: pathlib.Path, opt: pathlib.Path,
         if not dry_run:
             apps.mkdir(parents=True, exist_ok=True)
             entry.write_text(text)
-    icons_src = src / "assets" / "icons" / "hicolor"
     changed_icons = False
     if icons_src.is_dir():
         for f in sorted(icons_src.rglob("*")):

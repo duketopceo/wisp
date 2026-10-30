@@ -558,3 +558,105 @@ def register_tools() -> None:
             # dynamic skill_* names policy resolves
             {"tier": tools.RISK_AUTONOMY.get(tier, "T2"),
              "reversible": False, "external": True})
+
+
+def migrate_routines(routines_file: Path | None = None,
+                     skills_dir: Path | None = None) -> int:
+    """Lift JSON routines (routines.json) into SKILL.md skills — same
+    shape as clacky's migrate_legacy. Each routine becomes a doc skill
+    draft named routine-<id>; existing skill dirs are skipped; the JSON
+    store is left untouched as backup. Returns count migrated."""
+    src = skills_dir or SKILLS_DIR
+    path = routines_file or (config.DATA_DIR / "routines.json")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return 0
+    entries = data.get("routines", data)
+    if not isinstance(entries, dict):
+        return 0
+    n = 0
+    for rid, entry in entries.items():
+        if not isinstance(entry, dict):
+            continue
+        slug = f"routine-{_slug(entry.get('name') or rid)}"
+        d = src / slug
+        if (d / "SKILL.md").exists():
+            continue
+        task = (entry.get("task") or "").strip()
+        if not task:
+            continue
+        sched = entry.get("schedule") or "daily"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "SKILL.md").write_text(
+            "---\n"
+            f"name: {slug}\n"
+            f"description: Routine '{entry.get('name') or rid}' "
+            f"({sched}) — {task[:80]}\n"
+            "provenance: migrated-from-routines\n"
+            "draft: unverified\n"
+            "---\n\n"
+            f"# {entry.get('name') or rid}\n\n"
+            f"Scheduled routine: **{sched}**\n\n"
+            f"Task: {task}\n",
+            encoding="utf-8")
+        n += 1
+    return n
+
+
+# slug -> url_host guesses for backfilling app skills that predate the
+# url_hosts/app_classes router. Conservative: only well-known domains.
+_HOST_GUESSES = {
+    "gmail": "mail.google.com", "outlook": "outlook.office.com",
+    "github": "github.com", "gitlab": "gitlab.com",
+    "notion": "notion.so", "slack": "app.slack.com",
+    "discord": "discord.com", "figma": "figma.com",
+    "linear": "linear.app", "perplexity": "perplexity.ai",
+    "chatgpt": "chatgpt.com", "claude": "claude.ai",
+    "calendar": "calendar.google.com", "docs": "docs.google.com",
+    "sheets": "docs.google.com", "drive": "drive.google.com",
+    "cloudflare": "dash.cloudflare.com", "vercel": "vercel.com",
+    "jira": "atlassian.net", "confluence": "atlassian.net",
+    "spotify": "open.spotify.com", "youtube": "youtube.com",
+    "twitter": "x.com", "x": "x.com", "reddit": "reddit.com",
+    "stackoverflow": "stackoverflow.com", "trello": "trello.com",
+    "asana": "app.asana.com", "clickup": "app.clickup.com",
+    "airtable": "airtable.com", "dropbox": "dropbox.com",
+    "tallyline": "tallyline.app",
+}
+
+
+def backfill_routing(skills_dir: Path | str | None = None,
+                     dry_run: bool = True) -> list[str]:
+    """Add `url_hosts` to <name>-app skills that lack any routing key
+    (url_hosts/app_classes). Guesses the host from _HOST_GUESSES keyed
+    on the slug minus the -app suffix; skips unknown slugs. Never
+    touches skills that already route. Returns slugs changed (or that
+    would change under dry_run)."""
+    src = Path(skills_dir) if skills_dir else SKILLS_DIR
+    changed = []
+    for d in sorted(src.iterdir()):
+        if not d.is_dir() or not d.name.endswith("-app"):
+            continue
+        f = d / "SKILL.md"
+        if not f.exists():
+            continue
+        text = f.read_text(encoding="utf-8", errors="replace")
+        meta = _frontmatter(text)
+        if meta.get("url_hosts") or meta.get("app_classes") \
+                or meta.get("hosts") or meta.get("classes"):
+            continue
+        base = d.name[:-4]  # strip "-app"
+        host = _HOST_GUESSES.get(base)
+        if not host:
+            continue
+        changed.append(d.name)
+        if dry_run:
+            continue
+        m = re.match(r"^---\n(.*?)\n---\n", text, re.S)
+        if not m:
+            continue
+        fm = m.group(1) + f"\nurl_hosts: {host}\n"
+        f.write_text(text[:m.start(1)] + fm + text[m.end(1):],
+                     encoding="utf-8")
+    return changed

@@ -5,10 +5,6 @@
     "whisper": {
       "status": 503
     },
-    "jev": {
-      "answers": {},
-      "status": 503
-    },
     "brain": {
       "status": 503
     }

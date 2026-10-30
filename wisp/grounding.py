@@ -91,6 +91,13 @@ class Target:
     window: str = ""
     rect: tuple | None = None      # element bounds (x,y,w,h) in `frame`
 
+    @property
+    def element_backed(self) -> bool:
+        """Only observed control/tree bounds count, not a model's label."""
+        return self.frame in ("global", "logical") \
+            and self.source in ("control", "a11y") \
+            and _contains(self.rect, self.x, self.y)
+
 
 class Shot:
     """One screen capture: full-resolution PNG b64 + its pixel size."""
@@ -126,6 +133,20 @@ class Shot:
             buf = io.BytesIO()
             im.convert("RGB").resize((w, h)).save(buf, format="PNG")
             return base64.b64encode(buf.getvalue()).decode(), w, h
+        except Exception:
+            return self.b64, self.width, self.height
+
+    def resized_pointing(self) -> tuple[str, int, int]:
+        """Resize screenshot to the closest Clicky pointing resolution
+        (`1024x768`, `1280x800`, or `1366x768`) for single-pass VLM pointing."""
+        rw, rh = pick_pointing_resolution(self.width, self.height)
+        if (self.width, self.height) == (rw, rh) or not _PIL_AVAILABLE:
+            return self.b64, self.width, self.height
+        try:
+            im = Image.open(io.BytesIO(base64.b64decode(self.b64)))
+            buf = io.BytesIO()
+            im.convert("RGB").resize((rw, rh)).save(buf, format="PNG")
+            return base64.b64encode(buf.getvalue()).decode(), rw, rh
         except Exception:
             return self.b64, self.width, self.height
 
@@ -255,7 +276,7 @@ def settings(cfg: dict | None) -> dict:
     local = config.local_enabled(cfg)
     return {
         "providers": [p.strip() for p in str(
-            gc.get("providers", "control,a11y,uitars,jev")).split(",")
+            gc.get("providers", "control,a11y,vlm,uitars,jev")).split(",")
             if p.strip() and (local or p.strip() != "uitars")],
         "min_conf": _f(gc.get("min_confidence"), 0.5),
         "budget": _f(gc.get("budget_ms"), 1200.0) / 1000.0,
@@ -399,6 +420,12 @@ def _rect(v):
     return r
 
 
+def _contains(rect, x, y):
+    r = _rect(rect)
+    return r is not None and r[0] <= x < r[0] + r[2] \
+        and r[1] <= y < r[1] + r[3]
+
+
 def _focused_window(listing):
     wins = listing.get("windows") if isinstance(listing, dict) else None
     for w in wins if isinstance(wins, list) else []:
@@ -436,6 +463,7 @@ def _a11y(ctx) -> Candidate | None:
     if not isinstance(els, list):
         return None
     want = ctx.target.strip().casefold()
+    point = getattr(ctx, "point", None)
     best, score = [], 0.0
     for el in els:
         if not isinstance(el, dict):
@@ -443,7 +471,25 @@ def _a11y(ctx) -> Candidate | None:
         rect = _rect(el.get("frame", el.get("bounds")))
         names = [el[k].strip().casefold() for k in _NAME_KEYS
                  if isinstance(el.get(k), str) and el[k].strip()]
-        if rect is None or not names:
+        if rect is None or (not names and point is None):
+            continue
+        if point is not None:
+            role = str(el.get("role", "")).casefold().removeprefix("ax")
+            if role in (
+                    "window", "application", "document", "webarea",
+                    "root", "desktop"):
+                continue
+            x, y, w, h = rect
+            if ctx.st["a11y_frame"] == "window":
+                wr = _rect(win.get("frame", win.get("bounds")))
+                if wr is None:
+                    continue
+                x, y = x + wr[0], y + wr[1]
+            rect = (x, y, w, h)
+            label = names[0] if names else str(
+                el.get("id") or el.get("role") or "")
+            if label and _contains(rect, *point):
+                best.append((rect, label))
             continue
         sc = 1.0 if want in names else (
             0.85 if any(want in n or n in want for n in names) else 0.0)
@@ -453,6 +499,11 @@ def _a11y(ctx) -> Candidate | None:
             best.append(rect)
     if not best:
         return None
+    if point is not None:
+        rect, label = min(best, key=lambda item: item[0][2] * item[0][3])
+        return Candidate(*point, 1.0, "a11y", frame="global",
+                         label=label, window=str(win.get("title") or ""),
+                         rect=rect)
     x, y, w, h = best[0]
     if ctx.st["a11y_frame"] == "window":
         wr = _rect(win.get("frame", win.get("bounds")))
@@ -508,9 +559,23 @@ def _control(ctx) -> Candidate | None:
         raise ProviderDown(f"control channel {e.code}") from None
     # match the target against element id/label, a11y-style scoring
     want = ctx.target.strip().casefold()
+    point = getattr(ctx, "point", None)
+    if point is not None and not _contains(win.get("bounds"), *point):
+        # resolve_rect confines its CENTER for named grounding. A numeric
+        # point must itself stay inside the focused app: an oversized
+        # unauthenticated control rect cannot license another window.
+        return None
     score = 0.0
     cands = []
+    ppt = (insp.get("pixelsPerPoint") if isinstance(insp, dict)
+           else None)
     for el in els:
+        if point is not None:
+            rect = _ctl.resolve_rect(el.get("rect"), win, ppt=ppt,
+                                     slack=st["slack_px"])
+            if _contains(rect, *point):
+                cands.append(el)
+            continue
         keys = [n.casefold() for n in (el.get("id"), el.get("label"))
                 if n]
         if not keys:
@@ -524,8 +589,8 @@ def _control(ctx) -> Candidate | None:
     # validate each top-scored rect against compositor bounds; the
     # first that lands inside the app's window grounds the click
     el = grect = None
-    ppt = (insp.get("pixelsPerPoint") if isinstance(insp, dict)
-           else None)
+    if point is not None:
+        cands.sort(key=lambda item: item["rect"][2] * item["rect"][3])
     for cand_el in cands:
         grect = _ctl.resolve_rect(cand_el.get("rect"), win, ppt=ppt,
                                   slack=st["slack_px"])
@@ -541,8 +606,10 @@ def _control(ctx) -> Candidate | None:
                      cap=st["element_cap"])
     if el is None:
         return None
-    cx, cy = grect[0] + grect[2] / 2.0, grect[1] + grect[3] / 2.0
-    conf = score if len(cands) == 1 else 0.4    # ambiguous tie -> low
+    cx, cy = point if point is not None else (
+        grect[0] + grect[2] / 2.0, grect[1] + grect[3] / 2.0)
+    conf = 1.0 if point is not None else (
+        score if len(cands) == 1 else 0.4)    # ambiguous name -> low
     return Candidate(cx, cy, conf, "control", frame="global",
                      label=el.get("label") or el["id"],
                      window=win.get("title") or "", rect=grect)
@@ -564,6 +631,7 @@ def _jev_locate(screenshot_b64: str, target: str, region_hint: str,
     """#77's engine: noul patch probabilities -> power-sharpened center
     of mass. Returns (x, y, max_probability) in screenshot px, or None.
     ProviderDown when the endpoint is unreachable."""
+    deadline = time.monotonic() + max(0.0, _f(timeout, 0.0))
     if not _PIL_AVAILABLE:
         raise Skip("PIL not installed")
     try:
@@ -631,8 +699,11 @@ def _jev_locate(screenshot_b64: str, target: str, region_hint: str,
         key = config.load_api_key()
     except Exception:
         key = ""
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return None
     data = _post_json(
-        config.JEV_ENDPOINT, payload, timeout,
+        config.JEV_ENDPOINT, payload, remaining,
         {"Authorization": f"Bearer {key}",
          "HTTP-Referer": "https://github.com/duketopceo/wisp",
          "X-Title": "Wisp Grounding Agent"})
@@ -673,14 +744,120 @@ def _jev_locate(screenshot_b64: str, target: str, region_hint: str,
     return int(round(center_x)), int(round(center_y)), max_p
 
 
-def _jev(ctx) -> Candidate | None:
+_VLM_POINT_PROMPT = (
+    "Locate the UI element described as: {target}{hint}.\n"
+    "The attached screenshot is {rw}x{rh} pixels (origin 0,0 at top-left).\n"
+    "Reply with ONLY a single point tag `[POINT:x,y:{target}]` "
+    "at the exact center of the element, or `NONE` if it is not visible "
+    "or the target is ambiguous. Do not add bare coordinates or prose."
+)
+
+
+def _vlm_locate(shot: Shot, target: str, region_hint: str = "",
+                cfg: dict | None = None,
+                timeout: float = 5.0) -> Tuple[int, int, float] | None:
+    """Single-shot aspect-matched VLM pointing (HeyClicky parity).
+    Resizes `shot` to `pick_pointing_resolution`, asks `brain.chat` for a
+    single target-labelled `[POINT:x,y:label]`, and scales back to `shot`
+    pixels via `scale_point_from_resolution`. Legacy bare coordinates are
+    retained only as unsupported, zero-confidence predictions."""
+    from . import brain, points as _points
+    deadline = time.monotonic() + max(0.0, _f(timeout, 5.0))
+    b64, rw, rh = shot.resized_pointing()
+    hint_str = f" (region hint: {region_hint})" if region_hint else ""
+    prompt = _VLM_POINT_PROMPT.format(
+        target=target, hint=hint_str, rw=rw, rh=rh)
+    messages = [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": prompt},
+            {"type": "image_url",
+             "image_url": {"url": f"data:image/png;base64,{b64}"}},
+        ],
+    }]
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return None
+    try:
+        res = brain.chat(messages, cfg or {}, timeout=remaining)
+        text = str((res or {}).get("content") or "").strip()
+    except Exception as e:
+        raise ProviderDown(str(e)) from None
+    if not text or text.upper() == "NONE":
+        return None
+    _, marks = _points.extract(text)
+    # Bounds alone are not target support. Bare coordinates, conflicting
+    # marks/labels and hedged prose remain untrusted predictions; only a
+    # single explicit mark naming the requested target gets the supported
+    # response score. This is not calibrated correctness or element proof:
+    # the executor still independently requires observed element evidence.
+    supported = (len(marks) == 1
+                 and re.fullmatch(r"\[POINT:[^\[\]]+\]", text) is not None
+                 and " ".join(str(marks[0].get("label", "")).casefold().split())
+                 == " ".join(target.casefold().split()))
+    px_py = None
+    if marks:
+        px_py = (float(marks[0]["x"]), float(marks[0]["y"]))
+    else:
+        xy = parse_uitars_text(text, (rw, rh), "px")
+        if xy is not None:
+            px_py = (float(xy[0]), float(xy[1]))
+    if px_py is None:
+        return None
+    if px_py[0] < 0 or px_py[1] < 0 or px_py[0] > rw or px_py[1] > rh:
+        return None
+    sx, sy = scale_point_from_resolution(
+        px_py[0], px_py[1], rw, rh, shot.width, shot.height)
+    return sx, sy, 0.85 if supported else 0.0
+
+
+def _vlm(ctx) -> Candidate | None:
     hint = ctx.region_hint or (
         "menu bar" if any(w in ctx.target.lower()
                           for w in ("menu", "bar", "top", "panel")) else "")
-    r = _jev_locate(ctx.shot.b64, ctx.target, hint, 6.0, None, ctx.cfg,
-                    ctx.timeout)
+    r = _vlm_locate(ctx.shot, ctx.target, hint, ctx.cfg, ctx.timeout)
     if r is None:
         return None
+    return Candidate(r[0], r[1], r[2], "vlm",
+                     size=(ctx.shot.width, ctx.shot.height),
+                     label=ctx.target)
+
+
+def _jev(ctx) -> Candidate | None:
+    deadline = time.monotonic() + max(0.0, _f(ctx.timeout, 0.0))
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return None
+    hint = ctx.region_hint or (
+        "menu bar" if any(w in ctx.target.lower()
+                          for w in ("menu", "bar", "top", "panel")) else "")
+    gc = (ctx.cfg or {}).get("ground", {}) or {}
+    best_low = None
+    # Older explicit "jev"-only chains retain their VLM-first fallback.
+    # An explicit vlm provider owns that attempt in a modern chain; never
+    # make the same vision request again from the patch provider.
+    if "vlm" not in ctx.st["providers"] and gc.get("jev_patches") != "true":
+        try:
+            vr = _vlm_locate(ctx.shot, ctx.target, hint, ctx.cfg, remaining)
+        except ProviderDown:
+            vr = None
+        if time.monotonic() >= deadline:
+            return None
+        if vr is not None:
+            best_low = Candidate(vr[0], vr[1], vr[2], "vlm",
+                                 size=(ctx.shot.width, ctx.shot.height),
+                                 label=ctx.target)
+            if best_low.confidence >= ctx.st["min_conf"]:
+                return best_low
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return None
+    r = _jev_locate(ctx.shot.b64, ctx.target, hint, 6.0, None, ctx.cfg,
+                    remaining)
+    if r is None:
+        return best_low
+    if best_low is not None and best_low.confidence > r[2]:
+        return best_low
     return Candidate(r[0], r[1], r[2], "jev",
                      size=(ctx.shot.width, ctx.shot.height),
                      label=ctx.target)
@@ -711,6 +888,7 @@ PROVIDERS = {
     "control": {"fn": _control, "fast": True},
     "a11y": {"fn": _a11y, "fast": True},
     "uitars": {"fn": _uitars, "fast": True},
+    "vlm": {"fn": _vlm, "fast": False},
     "jev": {"fn": _jev, "fast": False},
 }
 
@@ -718,6 +896,36 @@ PROVIDERS = {
 class _Ctx:
     def __init__(self, **kw):
         self.__dict__.update(kw)
+
+
+def target_at_point(x: int, y: int, cfg: dict | None = None) -> Target | None:
+    """Read-only element hit test in global logical coordinates.
+
+    This is evidence, not another model prediction. A named VLM/label or
+    numeric model point can use the same live control/a11y element.
+    """
+    from . import cancel
+    cfg = cfg or {}
+    st = settings(cfg)
+    try:
+        cua = _default_cua()
+    except Exception:
+        cua = None
+    ctx = _Ctx(target="", point=(x, y), cfg=cfg, st=st,
+               timeout=st["budget"], cua=cua)
+    for provider in (_control, _a11y):
+        cancel.check()
+        try:
+            c = provider(ctx)
+        except cancel.Cancelled:
+            raise
+        except Exception:
+            continue
+        if c is not None and _contains(c.rect, x, y) \
+                and c.confidence >= st["min_conf"]:
+            return Target(x, y, "global", c.confidence, c.source,
+                          c.label, c.window, c.rect)
+    return None
 
 
 def _default_capture():

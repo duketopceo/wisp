@@ -359,6 +359,16 @@ class TestEval(unittest.TestCase):
 
 
 class TestReplay(unittest.TestCase):
+    def test_act_route_prompt_carries_the_reply_language(self):
+        # Answer fixtures deliberately isolate the chat contract. Retain a
+        # separate act-path regression so router retirement cannot silently
+        # discard the same STT language metadata on the default executor.
+        spec = json.loads((FIXTURES / "lang_de.json").read_text())
+        spec["config"]["brain"]["router"] = "act"
+        res = runner.run_turn(spec | {"_dir": str(FIXTURES)})
+        system = res.chat_calls()[0]["body"]["messages"][0]["content"]
+        self.assertIn("Reply in German", system)
+
     CASES = [("lang_es", "es", "Spanish", False),
              ("lang_de", "de", "German", False),
              ("lang_pt_br", "pt-BR", "Brazilian Portuguese", False),

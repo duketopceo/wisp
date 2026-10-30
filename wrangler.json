@@ -1,0 +1,14 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "wisp-observer",
+  "compatibility_date": "2026-10-30",
+  "workers_dev": true,
+  "assets": {
+    "directory": "./build/published",
+    "not_found_handling": "none"
+  },
+  "routes": [
+    {"pattern": "wisp.observer", "custom_domain": true},
+    {"pattern": "www.wisp.observer", "custom_domain": true}
+  ]
+}

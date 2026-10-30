@@ -1,5 +1,5 @@
 {
-  "description": "Jev replies after 2 s, past the 400 ms deadline: the heuristic routes 'what time is it' to answer, the late reply is discarded and the brain streams the answer (W11).",
+  "description": "Retired decision endpoint is slow: plain question uses the fast path without waiting for it.",
   "audio": "ask.wav",
   "endpoints": {
     "whisper": {
@@ -40,8 +40,14 @@
     ],
     "transcript": "what time is it",
     "answer": "It is half past three.",
-    "brain_calls": 1
+    "brain_calls": 1,
+    "jev_calls": 0
   },
   "name": "jev_slow",
-  "scenario": "Jev slow"
+  "scenario": "Jev slow",
+  "config": {
+    "brain": {
+      "router": "act"
+    }
+  }
 }

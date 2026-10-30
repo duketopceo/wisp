@@ -104,23 +104,27 @@ Setup, the rules it keeps and Stop: `docs/BROWSER_LANE.md`.
 
 An absent or empty key uses the default, so a config file without a `[web]` section works unchanged. Values cannot contain `#`: the config parser treats it as a comment.
 
-## [jev] — routing deadline
+## [growth] — private weekly recap
 
 | key | default | meaning |
 |-----|---------|---------|
-| `deadline_ms` | `400` | Jev gets this long to route; past it, on an error, or on a malformed reply the heuristic router decides and the turn goes on |
+| `weekly_recap` | `"false"` | Opt in to a once-per-week local recap of days, turns and recorded spend; no network or remote reporting |
 
+The recap is off by default. `wispd recap --json` previews local data,
+`wispd recap --claim --json` reserves delivery, and `wispd recap --off --json`
+disables it. Recorded spend is not necessarily measured spend; see
+`docs/GROWTH.md` for provenance and missing-data limits.
 
-## [agent] — routing + action policy
+## [agent] — action policy and optional grounding
 
 | key | default | meaning |
 |-----|---------|---------|
-| `model` | `typesafe/jev-1.13` | Jev decision model |
+| `model` | `typesafe/jev-1.13` | Optional structured grounding model; not a turn-router hop |
 | `answer_model` | `meta-llama/llama-4-maverick` | model that writes answers (used when `brain.default` unset) |
 | `session_turns` | `8` | turns of chat history kept in context |
 | `screenshots` | `true` | allow screen capture for context |
 | `confirm_timeout` | `120` | seconds a confirm card waits before it resolves as deny (clamped 5 to 600) |
-| `risk_threshold` | `9` | numeric risk gate; Jev scores run about 0 to 2, so the default only blocks extreme risk. Real protection is the denylist, `allow_shell` and the confirm tier |
+| `risk_threshold` | `9` | Compatibility score gate for explicit route payloads; the denylist, `allow_shell`, confirmation tier and live-surface policy remain separate protections |
 | `confidence_instant` | `0.95` | auto-accept cutoff |
 | `confidence_ambiguous` | `0.8` | ask-choice cutoff |
 | `allow_shell` | `false` | allow free-form shell tool (commands also pass a built-in denylist that is not configurable) |
@@ -135,7 +139,7 @@ An absent or empty key uses the default, so a config file without a `[web]` sect
 
 | key | default | meaning |
 |-----|---------|---------|
-| `router` | `"act"` | `act` (default: every turn straight to the agent loop — the loop's brain decides answer-vs-work; no decision hop) / `jev` (decision API) / `chat` (straight to answer brain) / `off` (clarify) |
+| `router` | `"act"` | `act` (local fast paths, then the conversational act loop) / `chat` (answer without execution) / `off` (clarify); saved legacy `jev` or unknown values fall back to act without a decision-service request |
 | `fast_path` | `"true"` | Under `router = act`, a bare launch of a catalogued app ("open firefox") or a plain question ("what does this error mean") skips the act loop and goes straight to the launch or answer handler, with no model hop. Compound requests, unknown apps and questions that carry an action verb still go to act. `"false"` sends every turn to act |
 | `default` | `"openrouter:<answer_model>"` | `name:model` selecting a `[brain.<name>]` provider |
 | `fallback` | `""` | comma-separated `name:model` chain tried after `default` (e.g. `"mlx:ornith, ollama:ornith"`) |
@@ -252,7 +256,7 @@ and `wispd models` show current health.
 | `act_preview_min` | steps that change something in one model reply before Wisp shows the whole plan as one card and runs it on yes (0 disables, default 3). While a plan runs, each step first checks the focused window is still the one the plan was made for and stops with a spoken reason if not |
 | `routine_wait_s` | seconds a scheduled routine waits for a network connection (for example right after the machine wakes) before giving up; a run missed while offline never counts toward the three-failure pause (0 skips the wait, default 120) |
 | `writer_queue_max` | background writer queue for trajectory and recall writes; oldest dropped and counted when full (default 256) |
-| `acp_models` | comma list of OpenRouter models for background OpenCode agents, cheapest first (default `openrouter/deepseek/deepseek-v4-flash,openrouter/deepseek/deepseek-v4.1-flash,openrouter/google/gemini-3.5-flash-lite`). A session runs on the first one the agent runtime offers; if none is offered the task fails instead of falling back to another model. No reasoning effort is requested |
+| `acp_models` | comma list of OpenRouter models for background OpenCode agents, cheapest/fastest first (default `openrouter/particle-ai/particle-1,openrouter/deepseek/deepseek-v4-flash,openrouter/deepseek/deepseek-v4.1-flash,openrouter/google/gemini-3.5-flash-lite`). `particle-ai/particle-1` is Particle AI's post-trained DeepSeek V4.1 Flash agentic model. A session runs on the first one the agent runtime offers; if none is offered the task fails instead of falling back to another model. No reasoning effort is requested |
 | `acp_idle_s` | seconds a named helper's agent process may sit idle before it exits; the next request starts a fresh one (default 900) |
 | `ask_timeout_s` | seconds an agent's question or permission ask waits for your answer; a permission then counts as refused, a question as unanswered (default 120) |
 | `cancel_grace_s` | seconds a cancel waits for the agent to stop on its own before its process is killed (default 10) |
@@ -412,9 +416,9 @@ Resources: wispd under 250 MB RSS and 3% idle CPU; cua-driver
 
 | key | default | meaning |
 |-----|---------|---------|
-| `[pointer] mode` | `guide` | `guide`: Wisp points with the ghost cursor, you click. `drive`: inject real input through the backend. `auto`: drive when a backend exists, guide otherwise |
+| `[pointer] mode` | `auto` (live act) | `guide`: Wisp points with the ghost cursor, you click. `drive`: inject real input through the backend. `auto`: drive when a backend exists, guide otherwise. The template leaves this unset; standalone tools guide, while live act chooses a temporary backend-aware mode. Explicit saved choices are preserved |
 | `[pointer] backend` | `auto` | `auto`, `cua`, `hyprcursor`, `ydotool`, `wlrctl` or `none`. A named backend is used alone; if it is unavailable Wisp guides |
-| `[ground] providers` | `control,a11y,uitars,jev` | grounding chain order: app control channel, cua accessibility tree, local UI-TARS, vision fallback. `uitars` is dropped unless `[local] enabled = true` |
+| `[ground] providers` | `control,a11y,vlm,uitars,jev` | grounding chain order: app control channel, cua accessibility tree, aspect-matched VLM pointing, local UI-TARS, structured vision fallback. `uitars` is dropped unless `[local] enabled = true` |
 | `[ground] min_confidence` | `0.5` | candidates below this are re-observed once, then refused |
 | `[ground] budget_ms` | `1200` | shared budget for the fast providers |
 | `[ground] fallback_timeout_ms` | `5000` | timeout for the vision fallback |
@@ -491,6 +495,8 @@ Off by default. Local sources only (Hyprland window changes, the dayflow journal
 | `[traj] max_inject` | `3` | most prior runs injected |
 | `[dev] refine` | `true` | a labelled-bad turn or a correction ("no", "instead") retries with the failed attempt as context |
 | `[dev] panel` | `false` | when `true` the panel gains a fifth tab, Dev (v1 gate, recent turns with per-stage time, top misses); local-only. It reads `wispd dev turns --json` once when the tab opens and when you press refresh, never on a timer |
+| `[dev] judge_model` | `google/gemini-2.5-flash` | vision model that judges each task of a `wispd dev run` at its end, on the eval key (`omaseal://openrouter/orchestral`, never the default key) |
+| `[dev] judge_cap_usd` | `1.00` | most a single run may spend on judging; the rest of the run is marked unjudged and the report says so (0 judges nothing; blank or invalid uses 1.00) |
 | `[eval] gate_rate` | `60%` | first-time-correct fraction (0 to 1, or a percentage) `wispd eval` must reach for PASS; the v1 bar is 60%; unset prints "gate not set" and no PASS or FAIL |
 | `[eval] gate_min_turns` | `50` | labelled turns required before the gate can pass; fewer is FAIL with "needs N more labelled turns" |
 | `[ui] theme` | `dark` | `dark` or `light`; `wispd theme <name>` swaps live |

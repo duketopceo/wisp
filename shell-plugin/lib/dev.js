@@ -10,8 +10,9 @@ var DOT = " · "
 
 function command(wispd) { return [wispd, "dev", "turns", "--json"] }
 
-// `wispd ... --json` stdout (envelope or bare data) -> {ok, data|error}
-function parse(stdout) {
+// `wispd ... --json` stdout (envelope or bare data) -> {ok, data|error};
+// `key` is the list the reply must carry ("turns", or "runs")
+function _parse(stdout, key) {
   var o
   try { o = JSON.parse(stdout) } catch (e) { return { ok: false, error: "parse" } }
   if (!o || typeof o !== "object") return { ok: false, error: "parse" }
@@ -20,9 +21,11 @@ function parse(stdout) {
     return { ok: false, error: code }
   }
   var d = o.data && typeof o.data === "object" ? o.data : o
-  if (!d || !Array.isArray(d.turns)) return { ok: false, error: "parse" }
+  if (!d || !Array.isArray(d[key])) return { ok: false, error: "parse" }
   return { ok: true, data: d }
 }
+
+function parse(stdout) { return _parse(stdout, "turns") }
 
 // QML hands arrays over as list wrappers that Array.isArray rejects
 function _list(v) {
@@ -150,4 +153,87 @@ function stageToken(names, name) {
 
 function toneToken(tone) {
   return tone === "ok" ? "ok" : tone === "fail" ? "fail" : "inkMuted"
+}
+
+// ---- Runs section and the dev badge (U5) ---------------------------------
+
+function runsCommand(wispd) { return [wispd, "dev", "runs", "--json"] }
+
+// `wispd dev runs --json` stdout -> {ok, data:{runs}|error}
+function parseRuns(stdout) { return _parse(stdout, "runs") }
+
+function isRunsEmpty(data) { return !data || _list(data.runs).length === 0 }
+
+// newest first, as the daemon sends them
+function latestRun(data) {
+  var src = data ? _list(data.runs) : []
+  return src.length > 0 ? src[0] : null
+}
+
+// the dev session on the state stream: state.dev = {on, runs_left}
+function sessionOn(raw) {
+  return !!(raw && raw.dev && raw.dev.on === true)
+}
+
+function runsLeft(raw) {
+  var n = raw && raw.dev ? Number(raw.dev.runs_left) : 0
+  return isFinite(n) && n > 0 ? Math.floor(n) : 0
+}
+
+// "dev · 3 runs left" while the session is on, else the local badge word.
+// words: {dev, local, one, many}
+function badgeText(on, left, words) {
+  if (!on) return words.local
+  return words.dev + DOT + left + " " + (left === 1 ? words.one : words.many)
+}
+
+// outcome order and the token each segment of the mix bar draws with
+var MIX = [["success", "ok"], ["wrong_tries", "ember"],
+  ["incomplete", "needsYou"], ["stopped", "fail"],
+  ["unjudged", "inkMuted"]]
+
+function usd(x) { return _num(x) ? "$" + x.toFixed(3) : "-" }
+
+// "2026-10-30T08:12:09+00:00" -> "2026-10-30 08:12"; else the run id
+function whenText(run) {
+  var t = String(run.started || run.ended || "")
+  var m = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/.exec(t)
+  if (m) return m[1] + " " + m[2]
+  return run.run_id ? String(run.run_id) : "-"
+}
+
+// The latest run as the card draws it. words: {success, stopped,
+// incomplete, wrong_tries, unjudged, a, b, tie} (copy table words).
+function runView(run, words) {
+  var r = run || {}
+  var acc = r.accuracy || {}
+  var mix = r.mix && r.mix.judged ? r.mix.judged : {}
+  var total = 0
+  var i
+  for (i = 0; i < MIX.length; i++) total += _num(mix[MIX[i][0]]) ? Math.max(0, mix[MIX[i][0]]) : 0
+  var segs = []
+  var parts = []
+  for (i = 0; i < MIX.length; i++) {
+    var n = _num(mix[MIX[i][0]]) ? Math.max(0, mix[MIX[i][0]]) : 0
+    if (n <= 0) continue
+    segs.push({ key: MIX[i][0], n: n, ms: n, share: n / total, token: MIX[i][1] })
+    parts.push(n + " " + words[MIX[i][0]])
+  }
+  var pairs = _list(r.pairs)
+  var ab = pairs.length > 0
+  var cnt = { a: 0, b: 0, tie: 0 }
+  for (i = 0; i < pairs.length; i++)
+    if (cnt.hasOwnProperty(pairs[i].better)) cnt[pairs[i].better]++
+  return {
+    when: whenText(r),
+    tasks: _num(r.tasks) ? r.tasks : 0,
+    judgedN: _num(r.judged_n) ? r.judged_n : 0,
+    judged: pct(acc.judged), confirmed: pct(acc.confirmed),
+    segments: segs, mixLine: parts.join(DOT),
+    drift: _num(r.drift_count) ? r.drift_count : 0,
+    cost: usd(r.cost ? r.cost.total_usd : null),
+    ab: ab, vs: r.vs ? String(r.vs) : "",
+    pairLine: ab ? cnt.a + " " + words.a + DOT + cnt.b + " " + words.b
+      + DOT + cnt.tie + " " + words.tie : ""
+  }
 }

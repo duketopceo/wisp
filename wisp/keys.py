@@ -112,21 +112,23 @@ class Keys:
         except (hypr.HyprError, ValueError) as e:
             self._log(f"keys: submap unavailable, voice/mouse only: {e}")
 
-    def _leave(self) -> None:
-        self.active = False
+    def _leave(self) -> bool:
         try:
             hypr.leave_submap(force=True)
         except hypr.HyprError as e:
             self._log(f"keys: submap leave failed: {e}")
+            return False
+        self.active = False
+        return True
 
     @contextlib.contextmanager
     def suspended(self):
         """Out of the submap while the agent presses keys of its own."""
         with self._lock:
             was = self.active
+            if was and not self._leave():
+                raise RuntimeError("cannot inject keys: leaving the Wisp submap failed")
             self._suspended += 1
-            if was:
-                self._leave()
         try:
             yield
         finally:

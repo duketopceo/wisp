@@ -12,13 +12,6 @@
     "whisper": {
       "transcript": "check which window is focused"
     },
-    "jev": {
-      "answers": {
-        "route": {
-          "choice": "answer"
-        }
-      }
-    },
     "brain": {
       "responses": [
         {

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#131211">
+  <meta name="description" content="Wisp is a voice teacher and doer for Omarchy that points at your screen. Explore its desktop companion and install from source.">
+  <title>Wisp | A little more reach.</title>
+  <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+  <link rel="preload" href="assets/outfit-variable.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.mjs"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="header wrap">
+    <a class="brand" href="#main" aria-label="Wisp home"><img src="assets/mark.svg" width="28" height="32" alt="">wisp</a>
+    <nav aria-label="Primary"><a href="#how">How it works</a><a href="#install">Install</a><a href="https://github.com/duketopceo/wisp">GitHub <span aria-hidden="true">↗</span></a></nav>
+  </header>
+
+  <main id="main">
+    <section class="hero wrap" aria-labelledby="hero-title">
+      <h1 id="hero-title">Your voice.<br>A little <br class="mobile-break">more <span>reach.</span></h1>
+      <div class="hero-bottom">
+        <p>Wisp is a voice teacher and doer for Omarchy that points at your screen. Ask a question, find a control, or take the next step.</p>
+        <a class="button primary" href="#install">Install on Omarchy <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></a>
+      </div>
+    </section>
+
+    <section class="workspace-story wrap" id="how" aria-label="Explore the desktop companion">
+      <div class="workspace-sticky">
+        <div class="scene-shell">
+          <div class="scene-top"><span>Omarchy / Hyprland</span><span>Illustrative demo</span></div>
+          <div id="scene" aria-hidden="true"></div>
+          <img id="scene-fallback" src="assets/companion.png" width="1080" height="643" alt="Actual Wisp companion states, listening pill, confirmation prompt, and action console.">
+          <div class="demo-status">
+            <span class="state-light" aria-hidden="true"></span>
+            <span id="demo-state" role="status" aria-live="polite">Ready. Choose an example below.</span>
+          </div>
+          <div class="scene-note">Scroll to see the workspace unfold.</div>
+        </div>
+        <div class="demo-controls">
+          <div class="examples" role="group" aria-label="Choose an illustrative voice request">
+            <button type="button" data-scenario="mail" disabled>“Check my email.”</button>
+            <button type="button" data-scenario="work" disabled>“Open my work tasks.”</button>
+            <button type="button" data-scenario="sensitive" disabled>“Submit this payment.”</button>
+            <button type="button" data-scenario="media" disabled>“Toggle playback.”</button>
+          </div>
+          <div class="turn-controls">
+            <button type="button" id="approve-demo" class="primary" hidden>Approve example</button>
+            <button type="button" id="cancel-demo" disabled>Cancel example</button>
+            <button type="button" id="pause-motion" aria-pressed="false" disabled>Pause motion</button>
+            <button type="button" id="reset-demo" disabled>Reset example</button>
+          </div>
+        </div>
+        <p class="demo-disclaimer">This is a browser illustration, not a live desktop session. No microphone, accounts, or model calls. It shows behavior, not measured speed.</p>
+        <p class="demo-disclaimer" id="sensitive-rules" hidden>In this Stripe illustration, read and navigation steps do not need mutation approval. Clicks and typed changes pause for confirmation. Raw live secret keys are refused, not typed.</p>
+        <noscript><p class="fallback-note">JavaScript is off. The image shows the real companion; installation and documentation still work.</p></noscript>
+      </div>
+    </section>
+
+    <section class="explanation wrap" aria-labelledby="explain-title">
+      <h2 id="explain-title">Less switching.<br>More doing.</h2>
+      <div class="explain-copy">
+        <p>Hold <kbd>Super</kbd> + <kbd>D</kbd>, speak, then release. Wisp uses screen context to explain what you’re seeing, point out a control, or work through a task.</p>
+        <dl>
+          <div><dt>Know where you are.</dt><dd>Personal and work browser profiles give a request its context.</dd></div>
+          <div><dt>See what it’s doing.</dt><dd>The companion has listening, thinking, acting, and confirmation states.</dd></div>
+          <div><dt>Keep the sensitive step yours.</dt><dd>Confirmation gates protect sensitive actions. Review the <a href="https://github.com/duketopceo/wisp/blob/master/docs/TRUST.md">trust model</a> before enabling execution.</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="setup wrap" id="install" aria-labelledby="install-title">
+      <div class="setup-title"><h2 id="install-title">Give your desktop<br>a little Wisp.</h2><p>Omarchy / Hyprland is the full-app target.<br>macOS and Windows support is experimental.</p></div>
+      <div class="install-command">
+        <code id="install-code">git clone https://github.com/duketopceo/wisp &amp;&amp; cd wisp &amp;&amp; python3 wispd install</code>
+        <button type="button" id="copy-install" disabled>Copy command</button>
+      </div>
+      <p id="copy-status" role="status" aria-live="polite"></p>
+      <div class="setup-details">
+        <p>Start with the <a href="https://github.com/duketopceo/wisp/blob/master/docs/INSTALL.md">installation guide</a>. Presets: <code>wispd config preset cloud</code>, <code>wispd config preset local</code>, or <code>wispd config preset safe</code>. These set defaults, not credentials or downloaded models. A local preset alone does not make every data path local.</p>
+        <p>Early-stage software, with real-desktop evaluation still ahead. Follow the <a href="https://github.com/duketopceo/wisp/blob/master/ROADMAP.md">roadmap</a> for readiness gates and current work.</p>
+      </div>
+    </section>
+  </main>
+  <footer class="footer wrap"><a class="brand" href="#main">wisp</a><span>wisp.observer · Cloudflare Workers</span><a href="https://github.com/duketopceo/wisp">Source &amp; documentation</a></footer>
+</body>
+</html>
