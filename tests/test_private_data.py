@@ -1,4 +1,6 @@
 """Transcripts, replies and traces are private to the user."""
+import importlib.machinery
+import importlib.util
 import os
 import pathlib
 import stat
@@ -105,9 +107,84 @@ class TestDaemonAndUnit(unittest.TestCase):
         src = (ROOT / "wispd").read_text()
         a = src.index("def run_daemon")
         body = src[a:src.index("\ndef ", a + 10)]
-        self.assertIn("os.umask(0o077)", body)
-        self.assertLess(body.index("private.harden()"),
+        self.assertLess(body.index("_apply_private()"),
                         body.index("skills.seed()"))
+
+
+def load_wispd():
+    loader = importlib.machinery.SourceFileLoader("wispd_priv",
+                                                  str(ROOT / "wispd"))
+    spec = importlib.util.spec_from_loader("wispd_priv", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
+
+
+class TestApply(Base):
+    def setUp(self):
+        super().setUp()
+        self.data, self.cfg = self.root / "data", self.root / "cfg"
+
+    def test_apply_sets_umask_and_creates_private_folders(self):
+        private.apply([self.data, self.cfg])
+        self.assertEqual(os.umask(0o077), 0o077)
+        self.assertEqual(mode(self.data), 0o700)
+        self.assertEqual(mode(self.cfg), 0o700)
+
+    def test_apply_tightens_a_traversable_config_folder(self):
+        self.cfg.mkdir()
+        self.cfg.chmod(0o755)
+        (self.cfg / "utterance.wav").write_bytes(b"x")
+        (self.cfg / "utterance.wav").chmod(0o644)
+        private.apply([self.data, self.cfg])
+        self.assertEqual(mode(self.cfg), 0o700)
+        self.assertEqual(mode(self.cfg / "utterance.wav"), 0o600)
+
+
+class TestNoDaemonTrigger(Base):
+    """The trigger fallback records without a daemon; it must run the
+    same private setup run_daemon does before any audio is written."""
+
+    def test_fallback_records_privately_under_a_permissive_umask(self):
+        w = load_wispd()
+        data, cfg = self.root / "data", self.root / "cfg"
+        cfg.mkdir()
+        cfg.chmod(0o755)                 # traversable, as in the finding
+        seen = {}
+
+        def fake_run_listen(_cfg, _st, *a, **k):
+            seen["umask"] = os.umask(0)
+            os.umask(seen["umask"])
+            wav = cfg / "utterance.wav"  # what the recorder creates
+            with open(wav, "wb") as f:
+                f.write(b"audio")
+            seen["wav"] = wav
+            return 0
+
+        with mock.patch.object(config, "DATA_DIR", data), \
+                mock.patch.object(config, "CFG_DIR", cfg), \
+                mock.patch.object(w.ipc, "send",
+                                  side_effect=ConnectionError), \
+                mock.patch.object(w.state_mod, "StateBus"), \
+                mock.patch.object(w.pipeline, "run_listen",
+                                  side_effect=fake_run_listen):
+            self.assertEqual(w.cmd_trigger({}, ""), 0)
+        self.assertEqual(seen["umask"], 0o077)
+        self.assertEqual(mode(cfg), 0o700)
+        self.assertEqual(mode(seen["wav"]), 0o600)
+
+    def test_fallback_still_runs_when_hardening_fails(self):
+        w = load_wispd()
+        with mock.patch.object(private, "apply",
+                               side_effect=OSError("denied")), \
+                mock.patch.object(w, "dlog"), \
+                mock.patch.object(w.ipc, "send",
+                                  side_effect=ConnectionError), \
+                mock.patch.object(w.state_mod, "StateBus"), \
+                mock.patch.object(w.pipeline, "run_listen",
+                                  return_value=0) as run:
+            self.assertEqual(w.cmd_trigger({}, ""), 0)
+        run.assert_called_once()
 
 
 if __name__ == "__main__":
