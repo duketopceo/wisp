@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 from wisp import telemetry  # noqa: E402
 from harness import latency as hl, runner  # noqa: E402
+from harness_helpers import jev_answers  # noqa: E402
 
 
 def slowed(stage: str, ms: int = 1500) -> dict:
@@ -34,10 +35,7 @@ def slowed(stage: str, ms: int = 1500) -> dict:
         # the route stage is only slow on the Jev router: pin it explicitly
         # (Jev-only; goes away with the router)
         fx["config"] = {"brain": {"router": "jev"}}
-        ep["jev"] = {"answers": {
-            "route": {"choice": "answer"},
-            "app": {"choice": "none", "confidence": 0.99},
-            "risk": {"score": 0}}, "latency_ms": ms}
+        ep["jev"] = {"answers": jev_answers(), "latency_ms": ms}
     elif stage == "first_token":
         ep["brain"]["responses"][0]["latency_ms"] = ms
     else:

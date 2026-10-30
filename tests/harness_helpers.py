@@ -19,6 +19,13 @@ def load(name: str) -> dict:
     return copy.deepcopy(runner.load_fixture(name + ".json"))
 
 
+def jev_answers(route: str = "answer") -> dict:
+    """A confident Jev decision for `route`. Jev-only fixtures use it."""
+    return {"route": {"choice": route},
+            "app": {"choice": "none", "confidence": 0.99},
+            "risk": {"score": 0}}
+
+
 def turn(transcript: str, brain: list, *, route: str | None = None,
          fakes: dict | None = None, config: dict | None = None,
          expect: dict | None = None, name: str = "scenario",
@@ -36,10 +43,7 @@ def turn(transcript: str, brain: list, *, route: str | None = None,
         "expect": expect or {},
     }
     if jev is not None or route is not None:
-        fx["endpoints"]["jev"] = {"answers": jev or {
-            "route": {"choice": route},
-            "app": {"choice": "none", "confidence": 0.99},
-            "risk": {"score": 0}}}
+        fx["endpoints"]["jev"] = {"answers": jev or jev_answers(route)}
         config = {**(config or {}), "brain": {
             **(config or {}).get("brain", {}), "router": "jev"}}
     if fakes:

@@ -1,5 +1,5 @@
 {
-  "description": "Answer route, voice on (fake TTS, 300 ms per sentence): two streamed sentences, the first with a [RING], the second with a [POINT] and an [ARROW]. Each sentence's marks are published when it starts playing, so drawings grow 1 then 2 and points 0 then 1 while speaking, the second never early; no tag reaches the answer and everything clears at done.",
+  "description": "Plain question (fast path, no Jev hop), voice on (fake TTS, 300 ms per sentence): two streamed sentences, the first with a [RING], the second with a [POINT] and an [ARROW]. Each sentence's marks are published when it starts playing, so drawings grow 1 then 2 and points 0 then 1 while speaking, the second never early; no tag reaches the answer and everything clears at done.",
   "audio": "ask.wav",
   "endpoints": {
     "whisper": {

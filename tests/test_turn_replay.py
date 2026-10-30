@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
 from harness import fakes, runner  # noqa: E402
+from harness_helpers import jev_answers  # noqa: E402
 from wisp import errors_codes  # noqa: E402
 
 FIXTURES = ROOT / "tests" / "fixtures" / "turns"
@@ -368,10 +369,7 @@ class TurnReplayTest(unittest.TestCase):
         fx = copy.deepcopy(runner.load_fixture(FIXTURES / "ask.json"))
         # Jev-only behavior: pin the Jev router explicitly (deleted with it)
         fx["config"] = {"brain": {"router": "jev"}}
-        fx["endpoints"]["jev"] = {"answers": {
-            "route": {"choice": "answer"},
-            "app": {"choice": "none", "confidence": 0.99},
-            "risk": {"score": 0}}, "latency_ms": 700}
+        fx["endpoints"]["jev"] = {"answers": jev_answers(), "latency_ms": 700}
         fx["interrupt_after_ms"] = 200
         res = runner.run_turn(fx)
         self.assertEqual(res.statuses[-1], "idle")

@@ -1088,8 +1088,7 @@ class Timing(unittest.TestCase):
                                return_value=__import__("pathlib").Path("/tmp/x.wav")), \
              mock.patch.object(pipeline, "transcribe",
                                return_value="hello"), \
-             mock.patch.object(pipeline, "ask_jev",
-                               side_effect=AssertionError("no Jev hop")), \
+             mock.patch.object(pipeline, "ask_jev") as ask_jev, \
              mock.patch.object(pipeline, "execute",
                                return_value="ANSWERED"), \
              mock.patch.object(pipeline, "ask_chat",
@@ -1105,6 +1104,7 @@ class Timing(unittest.TestCase):
                                side_effect=lambda r: logged.update(r)):
             rc = pipeline.run_listen(cfg, st)
         assert rc == 0
+        ask_jev.assert_not_called()   # the act router has no Jev hop
         for k in ("record_ms", "stt_ms", "jev_ms", "act_ms"):
             assert k in logged["timing_ms"], f"missing {k}"
 
