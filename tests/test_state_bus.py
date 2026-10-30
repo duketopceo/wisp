@@ -46,6 +46,22 @@ class PublishTest(BusCase):
         d = self.disk()
         self.assertEqual((d["seq"], d["status"]), (s0 + 2, "deciding"))
 
+    def test_a_new_turn_clears_the_last_turns_error(self):
+        # press, interrupt (idle + cancelled), press again: the stale
+        # "cancelled" code must not reach the new listening turn, or the
+        # scribble pad never grabs again (TLY-430 review)
+        bus = self.make()
+        t1 = bus.begin_turn()
+        bus.publish(t1, status="listening")
+        bus.publish(None, status="idle", error_code="cancelled",
+                    error_detail="user")
+        self.assertEqual(bus.snapshot()["error_code"], "cancelled")
+        t2 = bus.begin_turn()
+        bus.publish(t2, status="listening")
+        snap = bus.snapshot()
+        self.assertEqual(snap["error_code"], "")
+        self.assertEqual(snap["error_detail"], "")
+
     def test_every_write_is_stamped(self):
         bus = self.make()
         t = bus.begin_turn()

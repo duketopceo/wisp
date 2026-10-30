@@ -566,6 +566,33 @@ class WispdWiringTest(unittest.TestCase):
         self.assertTrue(self.ctl["interrupt"].is_set())
         proc.wait(timeout=2)
 
+    def test_interrupt_while_recording_ends_the_capture_and_settles_idle(self):
+        """TLY-430: an interrupt during the held talk key used to be a
+        no-op (no token yet), so status stayed `listening` (and the
+        scribble pad kept the screen) until the 60 s cap. It stops the
+        recorder and settles idle/cancelled."""
+        import tempfile
+        td = tempfile.TemporaryDirectory()
+        self.addCleanup(td.cleanup)
+        bus = self.w.state_mod.StateBus(
+            state_file=pathlib.Path(td.name) / "s.json")
+        tid = bus.begin_turn()
+        bus.turn(tid).transition("listening", transcript="")
+        proc = subprocess.Popen(["sleep", "30"])
+        self.addCleanup(proc.kill)
+        stop = threading.Event()
+        self.ctl["rec"] = {"proc": proc, "sampler_stop": stop,
+                           "t0": time.monotonic()}
+        self.ctl["turn"] = tid
+        handle = self.w._handler(bus, {}, self.ctl)
+        with mock.patch.object(self.w.speech, "stop"):
+            self.assertEqual(handle({"cmd": "interrupt"}), {"ok": True})
+        self.assertEqual(bus.status, "idle")
+        self.assertEqual(bus.state.error_code, "cancelled")
+        self.assertIsNone(self.ctl["rec"])
+        self.assertTrue(stop.is_set())
+        proc.wait(timeout=3)
+
     def test_choice_passes_prompt_id_and_index_to_the_broker(self):
         th = threading.Thread(
             target=lambda: self.ctl.__setitem__(
