@@ -73,6 +73,24 @@ class TestWidth(unittest.TestCase):
         self.assertTrue(all(o.display_width(l) <= 12 for l in lines))
         self.assertTrue(all(l.startswith("  ") for l in lines))
 
+    def test_wrap_splits_a_word_longer_than_the_line(self):
+        for first in ("", "> "):
+            lines = o.wrap("ab " + "x" * 40 + " cd", 12, indent="  ",
+                           first=first)
+            self.assertTrue(all(o.display_width(l) <= 12 for l in lines))
+            self.assertEqual("".join(lines).replace(" ", "").replace(">", ""),
+                             "ab" + "x" * 40 + "cd")
+
+
+class TestWidthFloor(unittest.TestCase):
+    def test_table_never_exceeds_width_when_floors_do_not_fit(self):
+        t = o.table(["a", "b", "c", "d", "e", "f"], [["x" * 20] * 6], width=20)
+        self.assertTrue(all(o.display_width(l) <= 20 for l in t.splitlines()))
+
+    def test_kv_long_key_and_indent_stay_inside_width(self):
+        t = o.kv([("k" * 36, "v" * 40)], width=40, indent=4)
+        self.assertTrue(all(o.display_width(l) <= 40 for l in t.splitlines()))
+
 
 class TestGate(unittest.TestCase):
     def test_color_off_cases(self):

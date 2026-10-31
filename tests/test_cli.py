@@ -351,7 +351,6 @@ class TestTable(unittest.TestCase):
 
     def test_color_uses_theme_tokens_on_a_truecolor_terminal(self):
         from wisp import theme
-        t = None
         with unittest.mock.patch.dict(os.environ, {"COLORTERM": "truecolor"}):
             t = output.table(["name", "status"], [["jev", "ok"]],
                              tones=[[None, "ok"]], color=True, cfg={})

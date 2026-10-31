@@ -135,14 +135,42 @@ def glyph(name: str, on: bool) -> str:
     return GLYPHS[name][0 if on else 1]
 
 
+def _chunks(word: str, width: int) -> list:
+    """Split one word into pieces of at most `width` display columns."""
+    out, cur, w = [], "", 0
+    for ch in word:
+        cw = display_width(ch)
+        if cur and w + cw > width:
+            out.append(cur)
+            cur, w = "", 0
+        cur += ch
+        w += cw
+    return out + [cur] if cur else out
+
+
 def wrap(text: str, width: int, indent: str = "", first: str = "") -> list:
-    """Word-wrap prose to `width` display columns with a hanging indent."""
-    words, lines, cur = str(text).split(), [], first or indent
-    for w in words:
-        if display_width(cur.strip()) and display_width(cur + w) > width:
-            lines.append(cur.rstrip())
-            cur = indent
-        cur += w + " "
+    """Word-wrap prose to `width` display columns with a hanging indent.
+    A word longer than a line is split so no line exceeds `width`."""
+    lines, cur = [], first or indent
+    for word in str(text).split():
+        room = max(1, width - display_width(indent))
+        pieces = [word] if display_width(cur + word) <= width \
+            else _chunks(word, room)
+        for piece in pieces:
+            if display_width(cur.strip()) and \
+                    display_width(cur + piece) > width:
+                lines.append(cur.rstrip())
+                cur = indent
+            if display_width(cur + piece) > width and not cur.strip():
+                # first line prefix plus an unsplit word: split to fit it
+                fit = max(1, width - display_width(cur))
+                head = _chunks(piece, fit)
+                lines.append((cur + head[0]).rstrip())
+                cur = indent
+                piece = "".join(head[1:])
+                if not piece:
+                    continue
+            cur += piece + " "
     if cur.strip():
         lines.append(cur.rstrip())
     return lines or [first.rstrip()]
@@ -202,6 +230,12 @@ def _fit(widths: list, width: int | None, flex: int | None, gap: int) -> list:
         cut = min(over, w[i] - floor[i])
         w[i] -= cut
         over -= cut
+    for i in order:  # floors alone cannot fit: squeeze to one column each
+        if over <= 0:
+            break
+        cut = min(over, max(0, w[i] - 1))
+        w[i] -= cut
+        over -= cut
     return w
 
 
@@ -257,12 +291,14 @@ def kv(pairs, color: bool = False, width: int | None = None,
     if not pairs:
         return ""
     kw = max(display_width(k) for k, _ in pairs)
+    if width is not None:  # a long key may not eat the whole line
+        kw = min(kw, max(1, (width - indent) // 2))
     lines = []
     for k, v in pairs:
-        room = None if width is None else max(8, width - indent - kw - 2)
+        room = None if width is None else max(0, width - indent - kw - 2)
         if room is not None:
             v = truncate(v, room, glyphs)
-        key = pad(k, kw)
+        key = pad(truncate(k, kw, glyphs), kw)
         if color:
             key = paint(key, "muted")
             if tones and k in tones:
