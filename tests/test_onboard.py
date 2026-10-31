@@ -47,6 +47,8 @@ class Fakes:
             if keys is None else set(keys)
         self.secrets = list(secrets)
         self.stored = []
+        self.key_values = {}
+        self.configured = []
 
     def probes(self):
         def fetch(url):
@@ -64,6 +66,7 @@ class Fakes:
         def store(key_env, value):
             self.stored.append((key_env, value))
             self.keys.add(key_env)
+            self.key_values[key_env] = value
             return "fake store"
 
         def secret(prompt):
@@ -77,8 +80,9 @@ class Fakes:
             fetch=fetch, cua=cua,
             notify_ready=lambda: self.notifier, notify_send=send,
             submap=lambda: self.submap_present,
-            key=lambda env: "k" if env in self.keys else "",
-            store_key=store, secret=secret)
+            key=lambda env: self.key_values.get(env, "k" if env in self.keys else ""),
+            store_key=store, secret=secret,
+            set_source=lambda section, source: self.configured.append((section, source)))
 
 
 def tree(root):
@@ -380,17 +384,76 @@ class TestKeys(OnboardCase):
 
     def test_walk_stores_a_pasted_key_and_never_prints_it(self):
         f = Fakes(keys={"OPENROUTER_API_KEY"}, secrets=["gsk-secret-1"])
-        res, _ = self.walk(f, "s", "s", "y", "q")
+        res, _ = self.walk(f, "s", "s", "y", "f", "q")
         self.assertEqual(f.stored, [("GROQ_API_KEY", "gsk-secret-1")])
         self.assertIn("keys", res["done"])
         self.assertNotIn("gsk-secret-1", "\n".join(self.out))
         self.assertIn("GROQ_API_KEY", "\n".join(self.out))
+        self.assertIn("plaintext", "\n".join(self.out))
 
     def test_blank_paste_stores_nothing_and_leaves_the_step_todo(self):
         f = Fakes(keys=set(), secrets=["", ""])
-        res, _ = self.walk(f, "s", "s", "y", "q")
+        res, _ = self.walk(f, "s", "s", "y", "f", "f", "q")
         self.assertEqual(f.stored, [])
         self.assertIn("keys", res["failed"])
+
+    def test_walk_can_choose_secret_service_without_plaintext(self):
+        self.cfg["recall"] = {"key_env": "OPENROUTER_API_KEY",
+                              "base_url": "https://openrouter.ai/api/v1"}
+        f = Fakes(keys={"GROQ_API_KEY"}, secrets=["test-secret"])
+        res, _ = self.walk(f, "s", "s", "y", "k", "q")
+        self.assertIn("keys", res["done"])
+        self.assertEqual(len(f.stored), 1)
+        source = f.stored[0][0]
+        self.assertTrue(source.startswith("keyring://wisp/"))
+        self.assertEqual(f.configured, [("brain.openrouter", source),
+                                        ("recall", source)])
+        self.assertEqual(self.cfg["brain.openrouter"]["key_env"], source)
+        self.assertEqual(self.cfg["recall"]["key_env"], source)
+        self.assertNotIn("test-secret", "\n".join(self.out))
+
+    def test_onboarding_preserves_distinct_recall_source(self):
+        self.cfg["recall"] = {"key_env": "OTHER_RECALL_KEY",
+                              "base_url": "https://openrouter.ai/api/v1"}
+        f = Fakes(keys={"GROQ_API_KEY"}, secrets=["test-secret"])
+        self.walk(f, "s", "s", "y", "k", "q")
+        self.assertEqual(self.cfg["recall"]["key_env"], "OTHER_RECALL_KEY")
+        self.assertEqual(len(f.configured), 1)
+
+    def test_failed_keyring_verification_does_not_change_config(self):
+        f = Fakes(keys={"GROQ_API_KEY"}, secrets=["test-secret"])
+        probes = f.probes()
+        probes.key = lambda env: "k" if env == "GROQ_API_KEY" else ""
+        onboard._offer_keys(self.cfg, probes, lambda _: "k", self.out.append)
+        self.assertEqual(len(f.stored), 1)
+        self.assertEqual(f.configured, [])
+        self.assertNotIn("brain.openrouter", self.cfg)
+        self.assertIn("Could not verify", "\n".join(self.out))
+        self.assertNotIn("test-secret", "\n".join(self.out))
+
+    def test_environment_choice_does_not_store_secret(self):
+        f = Fakes(keys={"GROQ_API_KEY"}, secrets=["test-secret"])
+        onboard._offer_keys(self.cfg, f.probes(), lambda _: "e", self.out.append)
+        self.assertEqual(f.stored, [])
+        self.assertEqual(f.configured, [])
+        self.assertIn("Wisp service", "\n".join(self.out))
+
+    def test_source_update_uses_live_daemon_reload(self):
+        with mock.patch("wisp.ipc.send", return_value={"ok": True}) as send, \
+                mock.patch.object(config, "set_config") as write:
+            onboard._set_key_source("brain.openrouter", "keyring://wisp/x")
+        send.assert_called_once_with(
+            {"cmd": "config",
+             "set": {"brain.openrouter.key_env": "keyring://wisp/x"}},
+            timeout=2)
+        write.assert_not_called()
+
+    def test_source_update_writes_file_when_daemon_is_down(self):
+        with mock.patch("wisp.ipc.send", side_effect=FileNotFoundError), \
+                mock.patch.object(config, "set_config") as write:
+            onboard._set_key_source("brain.openrouter", "keyring://wisp/x")
+        write.assert_called_once_with("brain.openrouter", "key_env",
+                                      "keyring://wisp/x")
 
 
 class TestStoreKey(unittest.TestCase):
@@ -407,6 +470,31 @@ class TestStoreKey(unittest.TestCase):
         p = mock.patch("shutil.which", return_value=None)
         p.start()
         self.addCleanup(p.stop)
+
+    def test_explicit_secret_service_source_stores_via_stdin(self):
+        result = mock.Mock(returncode=0)
+        with mock.patch("shutil.which", return_value="/usr/bin/secret-tool"), \
+                mock.patch("subprocess.run", return_value=result) as run:
+            where = onboard._store_key("keyring://wisp/openrouter", "test-key")
+        self.assertIn("keyring", where)
+        self.assertEqual(run.call_args.kwargs["input"], "test-key")
+        self.assertNotIn("test-key", run.call_args.args[0])
+        self.assertFalse(self.env.exists())
+
+    def test_secret_service_failure_does_not_write_plaintext(self):
+        with mock.patch("shutil.which", return_value="/usr/bin/secret-tool"), \
+                mock.patch("subprocess.run", return_value=mock.Mock(returncode=1)):
+            with self.assertRaises(RuntimeError):
+                onboard._store_key("keyring://wisp/openrouter,OPENROUTER_API_KEY",
+                                   "test-key")
+        self.assertFalse(self.env.exists())
+
+    def test_missing_secret_service_can_use_configured_env_fallback(self):
+        self._no_omaseal()
+        where = onboard._store_key(
+            "keyring://wisp/openrouter,WISP_TEST_ENV", "test-key")
+        self.assertEqual(where, str(self.env))
+        self.assertIn("WISP_TEST_ENV=test-key", self.env.read_text())
 
     def test_without_omaseal_writes_env_file_0600_and_it_resolves(self):
         self._no_omaseal()

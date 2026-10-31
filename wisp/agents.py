@@ -443,7 +443,7 @@ def _key_env_names(cfg: dict) -> set[str]:
         if not isinstance(spec, str):
             continue
         for cand in (c.strip() for c in spec.split(",")):
-            if cand and not cand.startswith("omaseal://"):
+            if cand and not cand.startswith(("omaseal://", "keyring://")):
                 names.add(cand)
     try:
         if config.ENV_FILE.exists():

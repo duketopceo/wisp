@@ -111,6 +111,15 @@ pub fn chat_messages(messages: Value, cfg: &Cfg,
         return Err(format!("brain provider '{}' needs \
                            brain.{}.base_url", p.name, p.name));
     }
+    if !crate::config::is_openrouter_endpoint(&p.base_url) {
+        if p.name == "openrouter" {
+            return Err("OpenRouter provider requires an official HTTPS endpoint".into());
+        }
+        if crate::config::shares_key_source(
+            &p.key_env, crate::config::openrouter_key_source(cfg)) {
+            return Err("custom provider requires a separate credential".into());
+        }
+    }
     probe(&p)?;
     let base = p.base_url.trim_end_matches('/');
     if p.kind == "ollama" {
@@ -180,7 +189,7 @@ pub fn jev_question(kind: &str, text: &str, criteria: Option<Value>) -> Value {
 
 pub fn ask_jev(cfg: &Cfg, transcript: &str, context: &str,
                questions: Value) -> Result<Value, String> {
-    let key = crate::config::api_key()?;
+    let key = crate::config::api_key(cfg)?;
     // parity: Python sends `state` as a text blob, not an object
     let state_txt = if context.is_empty() {
         format!("The user said: \"{transcript}\"")
@@ -256,5 +265,24 @@ mod tests {
         let p = provider(&c);
         assert_eq!(p.base_url, "http://gpu:8000/v1");
         assert!(p.vision && p.tools);
+    }
+
+    #[test]
+    fn refuses_openrouter_key_for_a_custom_endpoint() {
+        let c = cfg_with(
+            "[brain]\ndefault=\"openrouter:m\"\n\
+             [brain.openrouter]\nbase_url=\"http://127.0.0.1:9/v1\"");
+        let err = chat_messages(json!([]), &c, None).unwrap_err();
+        assert!(err.contains("official HTTPS endpoint"), "{err}");
+    }
+
+    #[test]
+    fn custom_provider_cannot_reuse_openrouter_source() {
+        let c = cfg_with(
+            "[brain]\ndefault=\"custom:m\"\n\
+             [brain.custom]\nbase_url=\"http://127.0.0.1:9/v1\"\n\
+             key_env=\"OPENROUTER_API_KEY\"");
+        let err = chat_messages(json!([]), &c, None).unwrap_err();
+        assert!(err.contains("separate credential"), "{err}");
     }
 }

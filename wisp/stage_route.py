@@ -112,6 +112,13 @@ def _jev_is_local(url: str) -> bool:
         ("localhost", "127.0.0.1", "::1")
 
 
+def decision_auth_headers(endpoint: str, cfg: dict | None = None) -> dict:
+    """Only attach the OpenRouter credential to an official HTTPS endpoint."""
+    if not config.is_openrouter_endpoint(endpoint):
+        return {}
+    return {"Authorization": f"Bearer {config.load_api_key(cfg)}"}
+
+
 def ask_jev(transcript: str, model: str, questions: dict,
             context: str = "", cfg: dict | None = None) -> dict:
     """Jev decisions call. A loopback endpoint (jev-shim) needs no
@@ -126,15 +133,11 @@ def ask_jev(transcript: str, model: str, questions: dict,
                "HTTP-Referer": "https://github.com/duketopceo/wisp",
                "X-Title": "Wisp"}
     endpoint = config.JEV_ENDPOINT
-    if _jev_is_local(endpoint):
-        key = config.load_env_key("OPENROUTER_API_KEY")
-        if key:
-            headers["Authorization"] = f"Bearer {key}"
-    else:
-        headers["Authorization"] = f"Bearer {config.load_api_key()}"
+    headers.update(decision_auth_headers(endpoint, cfg))
     req = urllib.request.Request(
         endpoint, data=json.dumps(payload).encode(), headers=headers,
         method="POST")
+    config.protect_authorization(req)
     for attempt in (1, 2):
         try:
             with _cancel.urlopen(req, timeout=30) as resp:
@@ -174,7 +177,7 @@ def _shadow_decision(transcript: str, state_txt: str, questions: dict,
     spec = config.SHADOW_PROVIDERS.get(name)
     if not spec:
         return
-    key = config.load_env_key(spec["key_env"])
+    key = config.load_env_key(config.openrouter_key_source(cfg))
     if not key:
         return                      # no key -> nothing to compare against
     from . import trace as _trace
@@ -195,6 +198,7 @@ def _shadow_worker(name: str, spec: dict, key: str, transcript: str,
             headers={"Authorization": f"Bearer {key}",
                      "Content-Type": "application/json",
                      "User-Agent": "wisp/1.0"}, method="POST")
+        config.protect_authorization(req)
         with urllib.request.urlopen(req, timeout=60) as resp:
             shadow = json.loads(resp.read())
     except Exception:                                   # noqa: BLE001

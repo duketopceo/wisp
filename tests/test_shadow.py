@@ -75,6 +75,16 @@ class ShadowTest(unittest.TestCase):
                                       {"answers": {}}, "m")
         w.assert_not_called()
 
+    def test_shadow_uses_configured_openrouter_source(self):
+        cfg = {"jev": {"shadow": "pplx"},
+               "brain.openrouter": {"key_env": "WISP_SHADOW_TEST_KEY"}}
+        with mock.patch.dict("os.environ", {
+                "WISP_SHADOW_TEST_KEY": "shadow-sentinel",
+                "OPENROUTER_API_KEY": "legacy-sentinel"}), \
+                mock.patch.object(pipeline.threading, "Thread") as thread:
+            pipeline._shadow_decision("t", "s", {}, cfg, {"answers": {}}, "m")
+        self.assertEqual(thread.call_args.kwargs["args"][2], "shadow-sentinel")
+
     # --- the record ---------------------------------------------------
     def test_logs_both_answers_and_agreement(self):
         primary = {"answers": {"route": {"choice": "launch"},
