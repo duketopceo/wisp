@@ -136,11 +136,11 @@ class HotPath(unittest.TestCase):
 class Layout(unittest.TestCase):
     def test_stage_names_still_import_from_pipeline(self):
         for name in ("record", "record_start", "record_stop", "transcribe",
-                     "capture_screen", "turn_screenshot", "ask_jev",
-                     "ask_chat", "execute", "build_questions",
-                     "JEV_QUESTIONS", "log_decision", "notify",
+                     "capture_screen", "turn_screenshot",
+                     "ask_chat", "execute",
+                     "fast_route", "log_decision", "notify",
                      "run_listen", "_publish_error", "_end_speaking",
-                     "hypr_env", "fuzzy_app"):
+                     "hypr_env", "fast_route"):
             self.assertTrue(hasattr(pipeline, name), name)
 
 

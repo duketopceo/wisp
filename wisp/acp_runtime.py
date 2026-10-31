@@ -28,7 +28,8 @@ from datetime import datetime, timezone
 from . import (acp, agent_ask, agent_mcp, agent_ochome, agent_policy, agents,
                config)
 
-DEFAULT_MODELS = ("openrouter/deepseek/deepseek-v4-flash,"
+DEFAULT_MODELS = ("openrouter/particle-ai/particle-1,"
+                  "openrouter/deepseek/deepseek-v4-flash,"
                   "openrouter/deepseek/deepseek-v4.1-flash,"
                   "openrouter/google/gemini-3.5-flash-lite")
 PROGRESS_GAP_S = 2.0        # task_progress events: at most one per 2 s
@@ -424,8 +425,12 @@ class SessionRun:
         else:
             self._ask(tool_call, title, allow, reject, reply)
 
-    def _allowed(self, tool_call) -> None:
-        if tool_call.get("kind") in ("edit", "delete", "move"):
+    def _allowed(self, tool_call, asked: bool = False) -> None:
+        # auto-allowed calls only taint the session when they write; a
+        # call the user approved may have written anything (policy-unknown)
+        kind = tool_call.get("kind")
+        if kind in ("edit", "delete", "move") or (
+                asked and kind not in ("read", "search", "think", "fetch")):
             self.policy.note_edit(tool_call)
 
     def _ask(self, tool_call, title, allow, reject, reply) -> None:
@@ -434,7 +439,7 @@ class SessionRun:
         def on_answer(pick):
             self.mgr.ask_end(self.id)
             if pick == agent_ask.ALLOW and allow:
-                self._allowed(tool_call)
+                self._allowed(tool_call, asked=True)
                 reply(allow)
             else:
                 reply(reject)

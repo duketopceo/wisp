@@ -56,7 +56,9 @@ SYSTEM = ("You are Wisp's hands on a Linux desktop (Hyprland). Complete "
           "else a window-crop capture — inspect only, its pixels are "
           "not the click coordinate space). "
           "To switch to a browser tab that is already open, call tab "
-          "'<name or site>' — do not click the tab strip or call launch; "
+          "'<name or site>' (include 'personal' or 'work' when the user "
+          "names a profile or when the focused browser window shows "
+          "Personal/Work) — do not click the tab strip or call launch; "
           "launch opens apps, it never switches tabs. "
           "Media playback (pause, play, next, previous, volume, mute) "
           "uses the media tool — never a click on a player and never a "
@@ -109,7 +111,10 @@ def _post(messages: list, cfg: dict) -> dict:
               if p.get("type") == "image_url")
     _trace.emit(_trace.current(), "llm_call", "act",
                 {"brain": res.get("provider"),
+                 "model": res.get("model"),
                  "fallback_from": res.get("fallback_from"),
+                 "ttft_ms": res.get("ttft_ms"),
+                 "latency_ms": res.get("latency_ms"),
                  "msgs": len(messages), "img_kb": img // 1024,
                  "tools_out": [_name_arg(c)[0]
                                for c in raw.get("tool_calls") or []],
@@ -167,14 +172,17 @@ def run_act_loop(task: str, cfg: dict, state=None,
                  initial_image: str | None = None,
                  interrupted=None,
                  steps_out: list | None = None,
-                 ask=None) -> str:
+                 ask=None, *, user_request: str = "", lang: str = "") -> str:
     """Drive the chat model through the toolbelt until it finishes or a
     bound trips. `confirm(prompt)->bool` asks the user (choice widget /
     IPC) when wired; without it mutating calls skip. `ask(question,
     options)->pick|None` is the in-loop conversation channel (U4 —
     `confirm.make_ask` on the same broker); without it `ask_user` calls
     resolve NO_ANSWER. `steps_out`, if a list, receives the run's step
-    records for judging/replay."""
+    records for judging/replay. `user_request` is the caller's verbatim
+    human instruction, not a generated task/goal or model tool payload.
+    Only that trusted channel may authorize an element-free coordinate
+    click; omitted context fails closed."""
     from . import brain
     at_mode = brain.action_text(cfg)
     if not brain.supports_tools(cfg) and not at_mode:
@@ -183,6 +191,11 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 f"tools — set [brain.{p['name']}] tools=true or pick a "
                 f"capable provider)")
     system = SYSTEM
+    if lang:
+        from . import lang as _lang
+        rule = _lang.reply_rule(lang)
+        if rule:
+            system += " " + rule
     from . import trajectories, context as _ctx, action_stats as _ast
     traj_recs = trajectories._read_all()  # one parse feeds both blocks
     traj_labs = trajectories._labels()
@@ -559,8 +572,12 @@ def run_act_loop(task: str, cfg: dict, state=None,
                                     nonlocal dispatched_at, dispatch_mono
                                     dispatched_at = time.time()
                                     dispatch_mono = time.monotonic()
-                                    return tools.run(name, tool_arg, cfg,
-                                                     harness)
+                                    from .tools.system import pointer_context
+                                    with pointer_context(
+                                            target=tgt,
+                                            user_request=user_request):
+                                        return tools.run(name, tool_arg, cfg,
+                                                         harness)
                                 # kill/deny/rate/dry-run/audit around
                                 # dispatch
                                 result = guard.run(
@@ -726,11 +743,8 @@ def _aim(name: str, arg: str, cfg: dict, guard, state):
         return arg, None, None
     from .tools import system as _sys
     if _XY_ARG.match(arg or ""):
-        # explicit coordinates: no grounding; only convert for the ghost
-        # cursor when something is listening
-        if state is None or not callable(getattr(state, "emit_event",
-                                                 None)):
-            return arg, None, None
+        # Explicit model coordinates are not human provenance. Keep the
+        # typed target even when no ghost-cursor overlay is listening.
         xy = _sys._parse_xy(arg)
         if xy is None:
             return arg, None, None
@@ -966,7 +980,7 @@ def _record_step(step: dict, name: str, tool_arg: str, dispatched_at,
     if rec is not None and rec.active and dispatched_at is not None \
             and name in _CUA_TOOLS \
             and not (cfg or {}).get("screen", {}).get("dom_page") \
-            and (cfg or {}).get("pointer", {}).get("mode") == "drive":
+            and (cfg or {}).get("pointer", {}).get("mode") in ("drive", "auto"):
         try:
             # planned backend == actual backend on the dispatch path —
             # a recorded dir exists only when the driver saw the call
@@ -1072,6 +1086,10 @@ def _record_traj(task: str, harness: dict | None, steps: list, out: str,
     rotation check and the append all happen off the turn's hot path.
     `pack` is the deterministic packs/<turn> link — the pack write runs
     later in the finally, so the ref is by name, not existence."""
+    # Default act routing also handles plain questions. Empty-step replies
+    # have no action path to replay and must not expand transcript storage.
+    if not steps:
+        return
     from . import trajectories
     snap = [dict(s) for s in steps]
     record = trajectories.record     # bound now: patches stay honoured
@@ -1166,12 +1184,25 @@ def _unsupported_done(task: str, steps: list,
         return "the tab switch was skipped: " + result[len("SKIP"):].strip(" ()")
     if last["tool"] in ("launch", "focus") and result.startswith("FOCUSED"):
         cls = result.partition("->")[2].split(" (")[0].strip()
+        from . import config as _config
+        from .tools import desktop as _desktop
+        task_words = _words(task)
+        service_roles = {_desktop._resolve_service_role(w)
+                         for w in task_words} & set(_config.WEB_DEFAULTS)
+        focused = cls or result[len("FOCUSED"):].split(" (")[0].strip()
+        if focused.lower() in _desktop._BROWSER_CLASSES and service_roles:
+            return (f"{last['tool']} only focused a browser; the service "
+                    "destination needs a tab switch or URL confirmation")
         # focusing another app is a visible change (music -> spotify);
         # only a refocus of the window already in front is a no-op
         if start_focus and start_focus.lower() != cls.lower():
             return None
-        named = _words(last.get("arg")) | _words(cls)
-        if not any(_same_word(a, b) for a in _words(task) for b in named):
+        arg_words = _words(last.get("arg"))
+        alias_words = {_desktop._resolve_service_role(w) for w in arg_words}
+        task_words = _words(task) | {_desktop._resolve_service_role(w)
+                                     for w in _words(task)}
+        named = arg_words | alias_words | _words(cls)
+        if not any(_same_word(a, b) for a in task_words for b in named):
             return (f"{last['tool']} only refocused "
                     f"{(last.get('arg') or cls).strip()}, which the "
                     "request did not name")

@@ -14,6 +14,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import tempfile
 import unittest
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -230,8 +231,11 @@ def config_refs(path):
             if m:
                 for k in filter(None, m.groups()):
                     refs.append((i, section, k))
-        for m in BRACKET.finditer(" ".join(t for _, t in code_chunks_line(line))):
-            refs.append((i, m.group(1), m.group(2)))
+        # Separate inline spans are not one config reference: joining
+        # `[app_skill]` and `scripts/foo.py` invents a nonexistent key.
+        for _, chunk in code_chunks_line(line):
+            for m in BRACKET.finditer(chunk):
+                refs.append((i, m.group(1), m.group(2)))
         for m in DOTTED.finditer(line):
             refs.append((i, m.group(1), m.group(2)))
     return refs
@@ -282,6 +286,39 @@ class ConfigCoverage(unittest.TestCase):
 
 class Extractor(unittest.TestCase):
     """The lint itself must be able to fail."""
+
+    def test_config_refs_do_not_join_unrelated_inline_spans(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "example.md"
+            path.write_text(
+                "The `[app_skill]` prompt uses `scripts/skill_distill.py` "
+                "and `context.snapshot()`; set `[agent] screenshots = false`.\n"
+                "A bad setting remains visible: `[missing] bogus = true`.\n"
+                "Use `wispd config set agent.screenshots false`.\n"
+                "An explicit bad reference still counts: "
+                "`[app_skill] scripts = true`.\n",
+                encoding="utf-8")
+            self.assertEqual(config_refs(path), [
+                (1, "agent", "screenshots"),
+                (2, "missing", "bogus"),
+                (3, "agent", "screenshots"),
+                (4, "app_skill", "scripts"),
+            ])
+
+    def test_separate_dev_commands_are_each_checked(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "example.md"
+            path.write_text(
+                "`wispd dev on`, `wispd dev off`, `wispd dev run`, "
+                "`wispd dev runs`, `wispd dev review`.\n",
+                encoding="utf-8")
+            invocations = wispd_invocations(path)
+            expected = ["dev on", "dev off", "dev run", "dev runs",
+                        "dev review"]
+            self.assertEqual([" ".join(t) for _, t in invocations], expected)
+            for (_, tokens), command in zip(invocations, expected):
+                self.assertEqual(resolve(tokens, registry.commands()),
+                                 (command, ""))
 
     def test_resolver_flags_a_bad_command(self):
         cmds = registry.commands()

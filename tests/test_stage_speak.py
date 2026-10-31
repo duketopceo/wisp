@@ -241,6 +241,25 @@ class PaperAndActResultTests(StageBase):
         for t in ("[RING", "[ARROW"):
             self.assertNotIn(t, pp.call_args.args[1])
 
+    def test_direct_tool_results_have_spoken_payload(self):
+        self.assertEqual(
+            stage_speak._spoken_payload(
+                "SWITCHED tab 'Inbox — Personal' -> mail.google.com"),
+            "Switched to Inbox — Personal.")
+        self.assertEqual(
+            stage_speak._spoken_payload(
+                "OPENED https://dashboard.stripe.com -> xdg-open"),
+            "Opened dashboard.stripe.com.")
+        self.assertEqual(
+            stage_speak._spoken_payload("LAUNCHED Discord -> gtk-launch"),
+            "Opened Discord.")
+        self.assertEqual(
+            stage_speak._spoken_payload("FOCUSED firefox -> address:0x1"),
+            "Focused firefox.")
+        self.assertEqual(
+            stage_speak._spoken_payload("WORKSPACE 3 -> ok"),
+            "Switched to workspace 3.")
+
 
 class GuardTests(StageBase):
     """Stage-side guards, driven through a fake speaker."""

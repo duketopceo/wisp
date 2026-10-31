@@ -22,7 +22,7 @@ Settings (value, default, range):
   budget.gate_primary          Also stop the primary paid model at the cap, not just fallbacks
                                default false; true or false
   pointer.mode                 guide points, drive clicks for you, auto does either
-                               default guide; guide, drive, auto
+                               default auto; guide, drive, auto
   pointer.backend              Which backend injects clicks when driving
                                default auto; auto, cua, hyprcursor, ydotool, wlrctl, none
   cua.dry_run                  Plan and log every action without performing it
@@ -53,8 +53,10 @@ Settings (value, default, range):
                                default true; true or false
   ui.theme                     Fallback theme when the desktop theme is unreadable
                                default dark; dark, light
-  brain.router                 How a turn is routed: act (straight to the act loop), jev, chat or off
-                               default act; act, jev, chat, off
+  brain.router                 How a turn is routed: act (local fast paths then act), chat or off
+                               default act; act, chat, off
+  growth.weekly_recap          Show last week's local days, turns and recorded spend once each week; nothing is sent
+                               default false; true or false
   brain.allow_paid             Let the fallback chain use paid models
                                default false; true or false
   local.enabled                Allow local model servers (llama.cpp, UI-TARS, jev-shim, ollama)
@@ -99,6 +101,8 @@ Settings (value, default, range):
                                default 30; 0 to 3650
   dev.panel                    Show the Dev tab (gate, recent turns, stage timings) in the panel; local-only, off for everyone else
                                default false; true or false
+  dev.judge_cap_usd            Most one dev run may spend on judging its tasks (the rest of the run is left unjudged at the cap)
+                               default 1.00; 0 to 100000, blank for no cap
   verify.judge_timeout_s       Seconds the verify VLM judge may take before the step lands unverifiable
                                default 20; 1 to 300
   verify.pixel_eps             Per-channel pixel difference the verify masked diff counts as a change

@@ -151,6 +151,10 @@ class RecCase(unittest.TestCase):
             # cover the rec/ lifecycle, packs.write has its own suite
             mock.patch.object(act, "_write_pack"),
             mock.patch.object(platform, "_cua_live", return_value=True),
+            # Recording cases run on a known benign Notes surface. An
+            # unidentified window still needs consent (tested below).
+            mock.patch.object(platform, "active_window", return_value={
+                "class": "org.example.notes", "title": "Synthetic notes"}),
             mock.patch.object(cua_safety, "audit_default_path",
                               return_value=t / "cua.jsonl"),
             mock.patch.object(cua_safety, "kill_default_path",
@@ -253,7 +257,9 @@ class TestSessionLabel(RecCase):
     def test_system_click_argv_carries_session(self):
         # end-to-end through the toolbelt: system.click -> registry ->
         # CuaBackend -> Cua.call — the label rides the whole path
-        out = tools.run("click", "5,6@logical", DRIVE)
+        from wisp.tools import system
+        with system.pointer_context(user_request="click at 5,6@logical"):
+            out = tools.run("click", "5,6@logical", DRIVE)
         self.assertEqual(out, "CLICKED(5,6)")
         tool, args = self.driver.argv[-1]
         self.assertEqual(tool, "click")
@@ -261,6 +267,18 @@ class TestSessionLabel(RecCase):
 
 
 class TestLifecycle(RecCase):
+    def test_unknown_surface_without_consent_records_no_injected_action(self):
+        replies = [_msg(calls=[_call("click", "10,20@logical")]),
+                   _msg(content="done")]
+        with mock.patch.object(platform, "active_window", return_value={}), \
+                mock.patch.object(tools, "run") as run:
+            out, steps = self.run_loop(replies)
+        run.assert_not_called()
+        self.assertEqual(steps[0]["result"],
+                         "SKIPPED (click needs user confirmation)")
+        self.assertIsNone(steps[0]["turn_dir"])
+        self.assertEqual(self.driver.stops, 1)
+
     def test_start_stop_wrap_the_run(self):
         replies = [_msg(calls=[_call("click", "10,20@logical")]),
                    _msg(content="done")]

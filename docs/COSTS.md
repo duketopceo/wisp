@@ -43,7 +43,8 @@ the date it was read. Prices change; re-read before quoting them.
 
 Background OpenCode agents bill your OpenRouter account through ori, the
 same account as every other paid call. `[agents] acp_models` lists the models
-they may use, cheapest first: `deepseek/deepseek-v4-flash`,
+they may use, cheapest/fastest first: `particle-ai/particle-1` (Particle AI's
+post-trained DeepSeek V4.1 Flash agentic model), `deepseek/deepseek-v4-flash`,
 `deepseek/deepseek-v4.1-flash`, then `google/gemini-3.5-flash-lite`. A session
 runs on the first one the runtime offers and never falls back to a pricier
 model; if none is offered the task fails. Wisp requests no reasoning effort,

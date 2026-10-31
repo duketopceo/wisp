@@ -24,6 +24,9 @@
     }
   },
   "config": {
+    "brain": {
+      "router": "chat"
+    },
     "voice": {
       "enabled": "true"
     },

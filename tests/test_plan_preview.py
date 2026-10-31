@@ -102,7 +102,7 @@ class Preview(unittest.TestCase):
 
 
 class Loop(unittest.TestCase):
-    def run_loop(self, replies, confirm, windows=None, cfg=None):
+    def run_loop(self, replies, confirm, windows=None, cfg=None, live_window=None):
         ran = []
 
         def run(name, arg, cfg_, harness=None):
@@ -112,11 +112,25 @@ class Loop(unittest.TestCase):
         wins = iter(windows or [])
         with mock.patch.object(act, "_post", side_effect=replies), \
                 mock.patch.object(tools, "run", side_effect=run), \
+                mock.patch("wisp.platform.active_window", return_value=(
+                    live_window if live_window is not None else {
+                        "class": "org.example.notes",
+                        "title": "Synthetic notes"})), \
                 mock.patch.object(act, "_focus_class",
                                   side_effect=lambda: next(wins, "term")):
             out = act.run_act_loop("do it", cfg or {"agent": {}},
                                    confirm=confirm)
         return out, ran
+
+    def test_unknown_surface_is_not_authorized_by_the_plan_card(self):
+        cards = []
+        out, ran = self.run_loop(
+            [msg(calls=four_calls()), msg(content="done")],
+            lambda p: cards.append(p) or True, live_window={})
+        self.assertEqual(len(cards), 4)  # plan + click/type/key consent
+        self.assertTrue(cards[0].startswith("run this plan"))
+        self.assertTrue(cards[1].startswith("run click"))
+        self.assertEqual(ran, FOUR)
 
     def test_four_steps_make_exactly_one_card_listing_four_lines(self):
         cards = []

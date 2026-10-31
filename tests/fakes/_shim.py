@@ -118,7 +118,7 @@ def cua_driver(argv: list) -> int:
         return 1
     _log("cua-driver", argv, ok=bool(rep.get("ok")))
     if rep.get("ok"):
-        print(json.dumps(rep))
+        print(json.dumps(rep.get("stdout", rep)))
         return 0
     sys.stderr.write(f"{rep.get('error', 'E_CUA_FAILED')}\n")
     return 1

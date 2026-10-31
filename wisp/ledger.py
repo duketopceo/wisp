@@ -65,6 +65,12 @@ PRICES = {
     "openai/gpt-4o-mini": (0.15, 0.60),
     "qwen/qwen3-235b-a22b": (0.13, 0.60),
     "x-ai/grok-4.7": (1.60, 4.80),
+    "particle-ai/particle-1": (0.05, 0.25),
+    "openrouter/particle-ai/particle-1": (0.05, 0.25),
+    "deepseek/deepseek-v4-flash": (0.14, 0.28),
+    "deepseek/deepseek-v4.1-flash": (0.14, 0.28),
+    "openrouter/deepseek/deepseek-v4-flash": (0.14, 0.28),
+    "openrouter/deepseek/deepseek-v4.1-flash": (0.14, 0.28),
 }
 UNKNOWN_PRICE = (10.0, 30.0)
 # USD per million characters of speech (text-to-speech models bill by
@@ -106,7 +112,8 @@ def price_chars(model: str, chars: int) -> float:
 
 
 def record(provider: str, model: str, tokens_in: int, tokens_out: int,
-           usd=None, paid: bool = False, now=None, p=None, path=None):
+           usd=None, paid: bool = False, now=None, p=None, path=None,
+           ttft_ms: int | None = None, latency_ms: int | None = None):
     """Append one row and return it. `usd` None = price from the table
     (paid) or 0 (local)."""
     now = now or _now()
@@ -117,6 +124,10 @@ def record(provider: str, model: str, tokens_in: int, tokens_out: int,
     row = {"ts": now.isoformat(timespec="seconds"), "provider": provider,
            "model": model, "in": int(tokens_in), "out": int(tokens_out),
            "usd": round(float(usd), 8), "paid": bool(paid)}
+    if ttft_ms is not None:
+        row["ttft_ms"] = int(ttft_ms)
+    if latency_ms is not None:
+        row["latency_ms"] = int(latency_ms)
     target = path or p or globals()["path"]()
     line = (json.dumps(row, separators=(",", ":")) + "\n").encode()
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -375,7 +386,8 @@ def session_totals() -> dict:
     return dict(_SESSION)
 
 
-def note(provider: str, model: str, paid: bool, usage: dict):
+def note(provider: str, model: str, paid: bool, usage: dict,
+         ttft_ms: int | None = None, latency_ms: int | None = None):
     """Record one finished brain call (the single place a call is
     recorded). Never raises; the file write is a no-op unless ACTIVE.
     `usage` is {in/out or prompt_tokens/..., cost}."""
@@ -397,7 +409,7 @@ def note(provider: str, model: str, paid: bool, usage: dict):
         return None
     try:
         row = record(provider, model, tin, tout, usd=usage.get("cost"),
-                     paid=paid)
+                     paid=paid, ttft_ms=ttft_ms, latency_ms=latency_ms)
     except Exception:  # noqa: BLE001
         return None
     publish()

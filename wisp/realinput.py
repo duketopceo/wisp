@@ -287,7 +287,7 @@ def _drive_possible(cfg: dict | None) -> bool:
     c = cfg or {}
     if (c.get("screen") or {}).get("dom_page"):
         return False
-    if (c.get("pointer") or {}).get("mode") != "drive":
+    if (c.get("pointer") or {}).get("mode") not in ("drive", "auto"):
         return False
     return _delivery.mode(c) != "background"
 

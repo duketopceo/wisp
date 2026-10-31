@@ -415,12 +415,12 @@ class Chain(unittest.TestCase):
 
     def test_local_off_drops_uitars(self):
         self.assertEqual(g.settings({})["providers"],
-                         ["control", "a11y", "jev"])
+                         ["control", "a11y", "vlm", "jev"])
         self.assertEqual(g.settings(
             {"ground": {"providers": "uitars,jev"}})["providers"], ["jev"])
         self.assertEqual(g.settings(
             {"local": {"enabled": "true"}})["providers"],
-            ["control", "a11y", "uitars", "jev"])
+            ["control", "a11y", "vlm", "uitars", "jev"])
 
     def test_size_rescales_into_shot_frame(self):
         provs = {"uitars": prov("u", [cand(864, 540, 0.9, "uitars",
@@ -717,8 +717,9 @@ class ActEvents(unittest.TestCase):
         st = FakeState()
         gt = mock.Mock(side_effect=AssertionError("must not ground"))
         ran, steps = run_loop("night light", "CLICKED", gt, st,
-                              window={"class": "KeePassXC", "title": ""})
+                              window={"class": "KeePassXC", "title": "Vault"})
         self.assertEqual(ran, [])
+        gt.assert_not_called()
         res = [x for x in steps if x["tool"] == "click"][0]["result"]
         self.assertTrue(res.startswith("REFUSED"))
         self.assertNotIn("click", [p[0] for p in phases(st)])

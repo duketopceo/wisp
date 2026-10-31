@@ -1,13 +1,15 @@
 """Platform seam — every OS-specific shell-out routes through here.
-Commands are argv lists. Wisp is Linux-only (Hyprland/Omarchy);
-`current()` stays as a constant shim so callers and tests that patch
-it keep working.
+Commands are argv lists. Linux (Hyprland/Omarchy) is the primary desktop;
+macOS and Windows adapters provide telemetry-probe and action seams
+(mirrors rs/wispd/src/platform.rs) with `WISP_OS` override for testing.
 """
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from . import hypr
@@ -16,8 +18,16 @@ HOME = Path.home()
 
 
 def current() -> str:
-    """Always 'linux' — Wisp supports Linux only."""
-    return "linux"
+    """'linux' | 'macos' | 'windows' (WISP_OS wins — test/dev hook)."""
+    o = os.environ.get("WISP_OS", "")
+    if o in ("macos", "darwin"):
+        return "macos"
+    if o == "windows":
+        return "windows"
+    if o == "linux":
+        return "linux"
+    return {"darwin": "macos", "win32": "windows"}.get(
+        sys.platform, "linux")
 
 
 def _which(b: str) -> bool:
@@ -25,14 +35,20 @@ def _which(b: str) -> bool:
 
 
 def resolve_exe(argv0):
-    """Pass-through (kept for existing callers)."""
+    """Bare command name -> PATHEXT-resolved path on Windows, where
+    CreateProcess finds only .exe and .cmd/.bat tools are invisible.
+    Pass-through elsewhere or when argv0 is already a path."""
+    if os.name == "nt" and argv0 and os.sep not in str(argv0):
+        return shutil.which(str(argv0)) or argv0
     return argv0
 
 
 def desktop() -> str:
-    """Linux compositor: 'hyprland'|'gnome'|'kde'|'x11'|'unknown'.
-    `WISP_DESKTOP` env override mirrors the Rust core (tests,
-    forced fallbacks)."""
+    """Linux compositor: 'hyprland'|'gnome'|'kde'|'x11'|'unknown';
+    empty on macOS/Windows. `WISP_DESKTOP` env override mirrors the Rust
+    core (tests, forced fallbacks)."""
+    if current() != "linux":
+        return ""
     d = os.environ.get("WISP_DESKTOP", "")
     if d in ("hyprland", "gnome", "kde", "x11"):
         return d
@@ -53,6 +69,17 @@ def desktop() -> str:
 
 def dirs() -> tuple[Path, Path, Path]:
     """(config, data, runtime)."""
+    os_ = current()
+    if os_ == "macos":
+        app = HOME / "Library" / "Application Support" / "wisp"
+        run = Path(os.environ.get("TMPDIR", "/tmp")) / "wisp"
+        return app, app, run
+    if os_ == "windows":
+        app = Path(os.environ.get(
+            "APPDATA", str(HOME / "AppData" / "Roaming"))) / "wisp"
+        loc = Path(os.environ.get(
+            "LOCALAPPDATA", str(HOME / "AppData" / "Local"))) / "wisp"
+        return app, loc, loc / "run"
     return (HOME / ".config" / "wisp",
             HOME / ".local" / "share" / "wisp",
             Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp"))
@@ -68,6 +95,34 @@ def record_cmd(out: Path, seconds: float | None,
     after that many seconds. None →
     caller reports 'no recorder found'. `device` names a mic ([audio]
     device, B8b); "" records from the system default."""
+    os_ = current()
+    if os_ == "macos":
+        if _which("sox"):
+            cmd = ["sox", "-d", "-r", "16000", "-c", "1", "-b", "16",
+                   str(out)]
+            return cmd + (["trim", "0", str(seconds)] if seconds else [])
+        if _which("ffmpeg"):
+            cmd = ["ffmpeg", "-nostdin", "-loglevel", "error", "-y",
+                   "-f", "avfoundation", "-i", f":{device or '0'}",
+                   "-ar", "16000", "-ac", "1"]
+            if seconds:
+                cmd += ["-t", str(seconds)]
+            return cmd + [str(out)]
+        return None
+    if os_ == "windows":
+        if _which("sox"):
+            cmd = ["sox", "-t", "waveaudio", device or "default",
+                   "-r", "16000", "-c", "1", "-b", "16", str(out)]
+            return cmd + (["trim", "0", str(seconds)] if seconds else [])
+        if _which("ffmpeg"):
+            cmd = ["ffmpeg", "-nostdin", "-loglevel", "error", "-y",
+                   "-f", "dshow", "-i",
+                   f"audio={device or 'default'}",
+                   "-ar", "16000", "-ac", "1"]
+            if seconds:
+                cmd += ["-t", str(seconds)]
+            return cmd + [str(out)]
+        return None
     if _which("pw-record"):
         cmd = ["pw-record", "--rate", "16000", "--channels", "1",
                "--format", "s16"]
@@ -113,6 +168,21 @@ def sampler_cmd(seconds: float | None) -> list | None:
 
 
 def screenshot_cmd(out: Path, output: str | None = None) -> list | None:
+    os_ = current()
+    if os_ == "macos":
+        return ["screencapture", "-x", str(out)]
+    if os_ == "windows":
+        p = str(out).replace("'", "''")
+        ps = ("Add-Type -AssemblyName System.Windows.Forms,"
+              "System.Drawing; "
+              "$b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; "
+              "$bmp=New-Object System.Drawing.Bitmap "
+              "$b.Width,$b.Height; "
+              "$g=[System.Drawing.Graphics]::FromImage($bmp); "
+              "$g.CopyFromScreen($b.Location,"
+              "[System.Drawing.Point]::Empty,$b.Size); "
+              f"$bmp.Save('{p}')")
+        return ["powershell", "-NoProfile", "-Command", ps]
     dt = desktop()
     order = {
         "hyprland": ["grim", "gnome-screenshot", "spectacle",
@@ -188,6 +258,11 @@ def type_text_cmd() -> list | None:
 
 
 def tts_binary() -> str | None:
+    os_ = current()
+    if os_ == "macos":
+        return "say" if _which("say") else None
+    if os_ == "windows":
+        return "powershell" if _which("powershell") else None
     for b in ("espeak-ng", "espeak"):
         if _which(b):
             return b
@@ -198,6 +273,11 @@ def audio_player() -> list | None:
     """argv prefix of a program that plays a WAV file given as its last
     argument: pw-play (PipeWire), else paplay, else aplay. None when
     none is installed."""
+    os_ = current()
+    if os_ == "macos":
+        return ["afplay"] if _which("afplay") else None
+    if os_ == "windows":
+        return None
     for argv in (["pw-play"], ["paplay"], ["aplay", "-q"]):
         if _which(argv[0]):
             return argv
@@ -213,6 +293,21 @@ def tts_argv(speed: float = 1.0, voice: str = "") -> list | None:
     visible to other local accounts while the program runs.
     `speed` is a multiplier on espeak's default rate; 1.0 adds no flag.
     `voice` (an espeak voice such as `es` or `pt-br`) adds `-v`."""
+    os_ = current()
+    if os_ == "macos":
+        if not _which("say"):
+            return None
+        pre = ["say", "-v", voice] if voice else ["say"]
+        if abs(speed - 1.0) >= 1e-9:
+            pre += ["-r", str(round(ESPEAK_WPM * speed))]
+        return pre + ["-f", "-"]
+    if os_ == "windows":
+        if not _which("powershell"):
+            return None
+        ps = ("Add-Type -AssemblyName System.Speech; "
+              "$s=New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+              "$s.Speak([Console]::In.ReadToEnd())")
+        return ["powershell", "-NoProfile", "-Command", ps]
     b = tts_binary()
     if not b:
         return None
@@ -223,6 +318,14 @@ def tts_argv(speed: float = 1.0, voice: str = "") -> list | None:
 
 
 def notify_cmd(title: str, body: str) -> list | None:
+    os_ = current()
+    if os_ == "macos":
+        t = title.replace('"', '\\"')
+        b = body.replace('"', '\\"')
+        return ["osascript", "-e",
+                f'display notification "{b}" with title "{t}"']
+    if os_ == "windows":
+        return None
     return ["notify-send", title, body]
 
 
@@ -376,6 +479,54 @@ def missing_deps_hint() -> str:
 
 def active_window() -> dict:
     """Focused window as {"class","title"}; {} when unsupported/empty."""
+    os_ = current()
+    if os_ == "macos":
+        sc = ('tell application "System Events"\n'
+              '  set p to first application process whose frontmost is true\n'
+              '  set c to name of p\n'
+              '  set t to ""\n'
+              '  try\n'
+              '    set t to name of front window of p\n'
+              '  end try\n'
+              '  return c & "\\n" & t\n'
+              'end tell')
+        try:
+            r = subprocess.run(["osascript", "-e", sc],
+                               capture_output=True, text=True, timeout=3)
+            if r.returncode == 0 and r.stdout.strip():
+                lines = r.stdout.splitlines()
+                return {"class": lines[0].strip(),
+                        "title": lines[1].strip() if len(lines) > 1 else ""}
+        except Exception:
+            pass
+        return {}
+    if os_ == "windows":
+        ps = ("Add-Type @'\n"
+              "using System;\n"
+              "using System.Runtime.InteropServices;\n"
+              "using System.Text;\n"
+              "public class W {\n"
+              "  [DllImport(\"user32.dll\")] public static extern IntPtr GetForegroundWindow();\n"
+              "  [DllImport(\"user32.dll\")] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);\n"
+              "  [DllImport(\"user32.dll\")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint p);\n"
+              "}\n"
+              "'@\n"
+              "$h=[W]::GetForegroundWindow(); "
+              "$sb=New-Object System.Text.StringBuilder 512; "
+              "[void][W]::GetWindowText($h,$sb,512); "
+              "$p=0; [void][W]::GetWindowThreadProcessId($h,[ref]$p); "
+              "$n=(Get-Process -Id $p -ErrorAction SilentlyContinue).ProcessName; "
+              "@{class=[string]$n;title=$sb.ToString()} | ConvertTo-Json -Compress")
+        try:
+            r = subprocess.run(["powershell", "-NoProfile", "-Command", ps],
+                               capture_output=True, text=True, timeout=4)
+            if r.returncode == 0 and r.stdout.strip():
+                d = json.loads(r.stdout.strip())
+                return {"class": d.get("class") or "",
+                        "title": d.get("title") or ""}
+        except Exception:
+            pass
+        return {}
     try:
         w = hypr.query("activewindow")
     except hypr.HyprError:

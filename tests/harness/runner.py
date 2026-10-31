@@ -534,4 +534,3 @@ def _spans(res: TurnResult) -> dict:
     if res.events:
         spans["turn_ms"] = res.events[-1]["t_ms"] - res.events[0]["t_ms"]
     return spans
-

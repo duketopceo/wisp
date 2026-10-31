@@ -16,7 +16,7 @@ GROUPS["health"] = "Local model endpoint health"
 def doctor_sections(cfg: dict, cua_probe=None, agents_probe=None) -> list:
     """[{name, rows:[{name, value, ok}]}] for everything wispd needs."""
     from .. import agents, brain, health as _health, ipc, \
-        platform as _plat, skills
+        platform as _plat, preflight, skills
     sections = []
 
     def section(name):
@@ -27,6 +27,13 @@ def doctor_sections(cfg: dict, cua_probe=None, agents_probe=None) -> list:
             rows.append({"name": label, "value": str(value),
                          "ok": bool(ok)})
         return row
+
+    row = section("preflight")
+    for check in preflight.run():
+        detail = f"{check['level']}: {check['detail']}"
+        if check["fix"]:
+            detail += f" (Try: {check['fix']})"
+        row(check["id"], detail, check["level"] != "block")
 
     row = section("daemon")
     row("wispd", "running" if ipc.alive() else "not running")
@@ -60,7 +67,9 @@ def doctor_sections(cfg: dict, cua_probe=None, agents_probe=None) -> list:
     row("whisper model", wm.name, stt != "local" or wm.exists())
     row("stt provider", stt)
     for b in ("pw-record", "wtype", "grim"):
-        row(b, shutil.which(b) or "not on PATH", bool(shutil.which(b)))
+        found = next((path for name in preflight.ALTERNATIVES.get(b, (b,))
+                      if (path := shutil.which(name))), None)
+        row(b, found or "not on PATH", bool(found))
 
     row = section("brain / router")
     p = brain.provider(cfg)
@@ -356,7 +365,8 @@ def _latency_args(p):
 @command("latency", "p50 and p90 per budget path from recent turns",
          ["wispd latency", "wispd latency --since 6h --json",
           "wispd latency --budgets", "wispd latency --harness"],
-         {"since_h": "float", "turns": "int", "rows": "list"},
+         {"since_h": "float", "turns": "int", "rows": "list",
+          "models": "list"},
          args=_latency_args)
 def latency(ctx, a):
     from .. import telemetry
@@ -369,9 +379,10 @@ def latency(ctx, a):
         return _latency_harness(ctx, a)
     hours = telemetry.parse_since(a.since)
     rep = telemetry.latency_report(hours)
-    data = {"since_h": hours, "turns": rep["turns"], "rows": rep["rows"]}
+    data = {"since_h": hours, "turns": rep["turns"], "rows": rep["rows"],
+            "models": rep.get("models", [])}
     h = f"{hours:g}h"
-    if not rep["turns"]:
+    if not rep["turns"] and not rep.get("models"):
         return ctx.emit(data, f"no spans in the last {h} "
                               "(run a turn first)")
     rows = [[r["id"], r["label"], r["n"],
@@ -383,6 +394,16 @@ def latency(ctx, a):
              for r in rep["rows"]]
     text = f"latency {h}, {rep['turns']} turns (ms)\n" + ctx.table(
         ["id", "path", "n", "p50", "p90", "budget", "verdict"], rows, tones)
+    if rep.get("models"):
+        mrows = [[m["provider"], m["model"], m["n"],
+                  "-" if m["ttft_p50"] is None else m["ttft_p50"],
+                  "-" if m["ttft_p90"] is None else m["ttft_p90"],
+                  "-" if m["latency_p50"] is None else m["latency_p50"],
+                  "-" if m["latency_p90"] is None else m["latency_p90"]]
+                 for m in rep["models"]]
+        text += "\n\nmodels (ms)\n" + ctx.table(
+            ["provider", "model", "n", "ttft_p50", "ttft_p90",
+             "lat_p50", "lat_p90"], mrows)
     return ctx.emit(data, text)
 
 

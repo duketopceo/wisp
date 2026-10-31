@@ -311,6 +311,30 @@ class Permissions(Case):
                          {"outcome": "selected", "optionId": "allow"})
         self.assertEqual(self.spoken, [])
 
+    def test_written_test_file_makes_the_runner_ask(self):
+        """Write test_payload.py, then run it: the run must not be
+        auto-allowed (the agent's own code would execute unconfirmed)."""
+        f = self.work / "test_payload.py"
+        self.script(prompts=[[
+            {"permission": {"toolCall": {
+                "toolCallId": "p1", "title": "write test_payload.py",
+                "kind": "edit", "locations": [{"path": str(f)}],
+                "rawInput": {"filePath": str(f)}}}},
+            {"permission": {"toolCall": {
+                "toolCallId": "p2",
+                "title": "python3 -m unittest test_payload",
+                "kind": "execute",
+                "rawInput": {
+                    "command": "python3 -m unittest test_payload"}}}}]])
+        name = self.spawn().split()[1]
+        until(lambda: self.spoken, "ask spoken")
+        self.assertIn("unittest test_payload", self.spoken[0])
+        self.pick("No")
+        self.settled(name)
+        outs = [r["outcome"]["optionId"]
+                for r in self.rows("permission_outcome")]
+        self.assertEqual(outs, ["allow", "reject"])
+
     def test_refused_call_is_rejected_and_counted(self):
         self.script(prompts=[[
             {"permission": {"toolCall": {

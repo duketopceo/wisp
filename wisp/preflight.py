@@ -20,8 +20,20 @@ OPTIONAL = (("hyprctl", "the push-to-talk bind and pointer"),
             ("pw-record", "microphone capture"),
             ("wtype", "typing into other windows"),
             ("grim", "screen capture"),
+            ("quickshell", "the desktop companion"),
+            ("ffmpeg", "audio resampling"),
+            ("wpctl", "speaker ducking"),
+            ("wl-copy", "clipboard delivery"),
+            ("pw-play", "spoken audio playback"),
+            ("notify-send", "desktop notifications"),
+            ("espeak-ng", "fallback speech synthesis"),
+            ("gh", "release attestation verification"),
+            ("git", "repository installation and updates"),
             ("opencode", "background agents (optional)"),
             ("ollama", "local models (optional)"))
+ALTERNATIVES = {"wtype": ("wtype", "ydotool"),
+                "pw-play": ("pw-play", "paplay", "aplay"),
+                "espeak-ng": ("espeak-ng", "espeak")}
 
 
 def _row(id_, level, detail, fix=""):
@@ -36,8 +48,20 @@ def run(home=None, opt=None, *, system=None, machine=None, py=None, disk_free=No
     opt = opt or home / ".local" / "opt" / "wisp"
     system = system or _plat.system()
     machine = (machine or _plat.machine()).lower()
-    py = py or tuple(sys.version_info[:2])
+    py = py or tuple(sys.version_info[:3])
     rows = []
+    try:
+        resolved_home = home.resolve(strict=True)
+        safe_home = (home.is_absolute() and resolved_home != resolved_home.parent
+                     and resolved_home.is_dir()
+                     and os.access(resolved_home, os.W_OK | os.X_OK))
+    except (OSError, RuntimeError):
+        safe_home = False
+    rows.append(_row("home", "ok" if safe_home else "block",
+                     "user directory available" if safe_home else
+                     "missing, inaccessible, relative or resolves to filesystem root",
+                     "" if safe_home else "Run from your normal desktop terminal "
+                     "with HOME set to your user directory."))
     rows.append(_row("os", "ok" if system == "Linux" else "block",
                      system, "" if system == "Linux"
                      else "Only Linux (Omarchy) is supported."))
@@ -45,19 +69,18 @@ def run(home=None, opt=None, *, system=None, machine=None, py=None, disk_free=No
     rows.append(_row("architecture", "ok" if arch else "block",
                      arch or machine or "unknown",
                      "" if arch else "No release is built for this machine."))
-    rows.append(_row("python", "ok" if py >= (3, 11) else "block",
+    rows.append(_row("python", "ok" if py >= (3, 11, 4) else "block",
                      ".".join(map(str, py)),
-                     "" if py >= (3, 11) else "Wisp needs Python 3.11.4+."))
-    if disk_free is None:
-        probe = home
-        while not probe.exists() and probe != probe.parent:
-            probe = probe.parent
+                     "" if py >= (3, 11, 4) else "Wisp needs Python 3.11.4+."))
+    if disk_free is not None:
+        free = disk_free()
+    elif not safe_home:
+        free = None
+    else:
         try:
-            free = shutil.disk_usage(probe).free
+            free = shutil.disk_usage(home).free
         except OSError:
             free = None
-    else:
-        free = disk_free()
     if free is None:
         rows.append(_row("disk space", "degraded", "could not be measured"))
     else:
@@ -70,14 +93,29 @@ def run(home=None, opt=None, *, system=None, machine=None, py=None, disk_free=No
     has_sd = systemd() if systemd else bool(
         which("systemctl") and os.environ.get("XDG_RUNTIME_DIR"))
     rows.append(_row("systemd user", "ok" if has_sd else "degraded",
-                     "available" if has_sd else
-                     "not available: files install, units are not started",
+                     "session environment present; bus access not probed"
+                     if has_sd else
+                     "systemctl/session environment missing; bus access not probed",
                      "" if has_sd else "Start wispd yourself, or log in "
                      "through a systemd user session."))
+    missing_session = [name for name in ("XDG_RUNTIME_DIR", "WAYLAND_DISPLAY",
+                                        "HYPRLAND_INSTANCE_SIGNATURE")
+                       if not os.environ.get(name)]
+    rows.append(_row("desktop session", "degraded" if missing_session else "ok",
+                     ("missing " + ", ".join(missing_session) if missing_session
+                      else "environment present") + "; live desktop access not probed",
+                     "Run onboard/doctor from your normal desktop terminal. "
+                     "A headless install is still allowed." if missing_session else ""))
     for name, why in OPTIONAL:
-        found = which(name)
+        found = None
+        for candidate in ALTERNATIVES.get(name, (name,)):
+            found = which(candidate)
+            if found:
+                break
         rows.append(_row(name, "ok" if found else "degraded",
-                         found or f"not found; needed for {why}"))
+                         found or f"not found; needed for {why}",
+                         "" if found else
+                         "Install separately if you need this capability."))
     rec = record if record is not None else deploy.read()
     rows.append(_row("current install", "ok",
                      (str(rec.get("ref") or str(rec.get("commit") or "")[:12]

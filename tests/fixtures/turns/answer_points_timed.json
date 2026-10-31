@@ -18,6 +18,9 @@
     }
   },
   "config": {
+    "brain": {
+      "router": "chat"
+    },
     "voice": {
       "enabled": "true",
       "cmd": "/bin/sh -c \"/bin/sleep 0.3\" {text}"

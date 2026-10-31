@@ -89,6 +89,70 @@ class InstallRefTest(unittest.TestCase):
         self.assertEqual(rec["repo"], str(self.repo))
         self.assertTrue(rec["time"])
 
+    def test_installed_command_is_available_for_onboarding(self):
+        e = self.env()
+        code, out, err = e.run(["install"])
+        self.assertEqual(code, 0, err)
+        launcher = e.home / ".local/bin/wispd"
+        self.assertTrue(launcher.is_file(), "documented onboarding command is missing")
+        r = subprocess.run([str(launcher), "onboard", "--status"],
+                           env=e.env, cwd=e.home, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_trigger_launcher_handles_spaces_in_home(self):
+        e = self.env()
+        e.home = e.home / "space home"
+        e.home.mkdir()
+        e.env["HOME"] = str(e.home)
+        code, _, err = e.run(["install"])
+        self.assertEqual(code, 0, err)
+        r = subprocess.run([str(e.home / ".local/bin/wisp-trigger"), "--help"],
+                           env=e.env, cwd=e.home, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_symlinked_plugin_destination_is_refused_before_core_writes(self):
+        e = self.env()
+        external = self.repo.parent / "external"
+        external.mkdir()
+        (external / "my-file").write_text("keep")
+        plugin = e.home / ".config/omarchy/plugins/io.github.duketopceo.wisp"
+        plugin.parent.mkdir(parents=True)
+        plugin.symlink_to(external, target_is_directory=True)
+        code, out, err = e.run(["install"])
+        self.assertNotEqual(code, 0)
+        self.assertFalse(self.opt(e).exists())
+        self.assertEqual(list(external.iterdir()), [external / "my-file"])
+
+    def test_reinstall_preserves_unrelated_plugin_files(self):
+        e = self.env()
+        self.assertEqual(e.run(["install"])[0], 0)
+        plugin = e.home / ".config/omarchy/plugins/io.github.duketopceo.wisp"
+        mine = plugin / "user-addon.qml"
+        mine.write_text("mine")
+        self.assertEqual(e.run(["install"])[0], 0)
+        self.assertTrue(mine.exists(), "unrelated plugin file was deleted")
+        self.assertEqual(mine.read_text(), "mine")
+
+    def test_reinstall_keeps_a_user_edited_managed_plugin_file(self):
+        e = self.env()
+        self.assertEqual(e.run(["install"])[0], 0)
+        plugin = e.home / ".config/omarchy/plugins/io.github.duketopceo.wisp"
+        mine = plugin / "components/Beacon.qml"
+        mine.write_text("// custom")
+        code, out, err = e.run(["install"])
+        self.assertEqual(code, 0, err)
+        self.assertEqual(mine.read_text(), "// custom")
+        self.assertIn("kept edited plugin file", out)
+
+    def test_marketplace_mode_survives_plain_reinstall(self):
+        e = self.env()
+        plugin = e.home / ".config/omarchy/plugins/io.github.duketopceo.wisp"
+        plugin.mkdir(parents=True)
+        (plugin / "owner.txt").write_text("marketplace")
+        self.assertEqual(e.run(["install", "--from-plugin", "--yes"])[0], 0)
+        self.assertEqual(e.run(["install"])[0], 0)
+        self.assertEqual(sorted(p.name for p in plugin.iterdir()), ["owner.txt"])
+
     def test_ref_installs_its_own_unit_templates(self):
         e = self.env()
         code, out, err = e.run(["install", "--ref", "v1", "--repo",
@@ -117,6 +181,7 @@ class InstallRefTest(unittest.TestCase):
                                 str(self.repo)])
         self.assertNotEqual(code, 0)
         self.assertFalse((self.opt(e) / "deploy.json").exists())
+        self.assertFalse(self.opt(e).exists(), "incomplete input must fail before mutation")
 
     def test_uncommitted_and_later_changes_are_not_installed(self):
         (self.repo / "wisp" / "marker.py").write_text("VERSION = 'dirty'\n")
@@ -167,6 +232,8 @@ class InstallRefTest(unittest.TestCase):
                                 str(self.repo), "--dry-run"])
         self.assertEqual(code, 0, err)
         self.assertIn("dry run: nothing written", out)
+        self.assertIn(".local/bin/wispd", out)
+        self.assertIn("docs/baselines", out)
         self.assertFalse(self.opt(e).exists())
 
     def test_dry_run_shows_the_preflight_and_starts_nothing(self):
@@ -261,6 +328,62 @@ class InstallAgentsTest(unittest.TestCase):
 class InstallPreflightGate(unittest.TestCase):
     """A blocking preflight row stops a real install before any write."""
 
+    def test_real_install_reports_optional_warnings_before_applying_files(self):
+        import contextlib
+        import io
+        from wisp import preflight
+
+        class Host:
+            def install_files(self, **kw):
+                print("applying managed files")
+
+            def install_bind(self, cfg, **kw):
+                pass
+
+        rows = [{"id": "quickshell", "level": "degraded",
+                 "detail": "not found; desktop companion unavailable",
+                 "fix": "Install Quickshell separately."}]
+        out = io.StringIO()
+        with mock.patch.object(preflight, "run", return_value=rows), \
+                contextlib.redirect_stdout(out):
+            code = cli.main(["install"], host=Host())
+        self.assertEqual(code, 0)
+        text = out.getvalue()
+        self.assertIn("warn quickshell", text)
+        self.assertIn("Install Quickshell separately.", text)
+        self.assertLess(text.index("preflight:"), text.index("applying managed files"))
+        self.assertLess(text.index("preflight:"), text.index("warn quickshell"))
+        self.assertLess(text.index("warn quickshell"), text.index("applying managed files"))
+
+    def test_blocked_preview_exits_four_without_writes_or_service_actions(self):
+        import contextlib
+        import io
+        from wisp import preflight
+
+        calls = []
+
+        class Host:
+            def install_files(self, **kw):
+                self_test.assertTrue(kw["dry_run"])
+                calls.append("files")
+
+            def install_bind(self, cfg, **kw):
+                self_test.assertTrue(kw["dry_run"])
+                calls.append("bind")
+
+        self_test = self
+        rows = [{"id": "architecture", "level": "block",
+                 "detail": "unsupported", "fix": "Use Linux x86_64/aarch64."}]
+        out = io.StringIO()
+        with mock.patch.object(preflight, "run", return_value=rows), \
+                mock.patch("subprocess.run", side_effect=AssertionError("no service")), \
+                mock.patch("urllib.request.urlopen", side_effect=AssertionError("no network")), \
+                contextlib.redirect_stdout(out):
+            code = cli.main(["install", "--dry-run"], host=Host())
+        self.assertEqual(code, 4)
+        self.assertEqual(calls, ["files", "bind"])
+        self.assertIn("Try:", out.getvalue())
+
     def test_a_blocker_stops_install_before_the_host_writes(self):
         import contextlib
         import io
@@ -281,6 +404,38 @@ class InstallPreflightGate(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn("nothing was written", out.getvalue() + err.getvalue())
         self.assertIn("1 MiB free", out.getvalue() + err.getvalue())
+
+
+class UnitDestinationSafety(unittest.TestCase):
+    def test_desktop_symlink_is_refused_before_writes(self):
+        from wisp import desktop
+        with shorttmp.TemporaryDirectory() as td:
+            home = pathlib.Path(td) / "home"
+            entry = home / ".local/share/applications/wisp.desktop"
+            entry.parent.mkdir(parents=True)
+            outside = pathlib.Path(td) / "outside"
+            outside.write_text("keep")
+            entry.symlink_to(outside)
+            with mock.patch("subprocess.run", side_effect=AssertionError("no service")):
+                with self.assertRaises(ValueError):
+                    desktop.install(cli_env.ROOT, home, home / "opt")
+            self.assertEqual(outside.read_text(), "keep")
+
+    def test_unit_symlink_is_refused_in_preview_and_apply(self):
+        from wisp import svc
+        with shorttmp.TemporaryDirectory() as td:
+            home = pathlib.Path(td) / "home"
+            dest = home / ".config/systemd/user/wispd.service"
+            dest.parent.mkdir(parents=True)
+            outside = pathlib.Path(td) / "outside"
+            outside.write_text("keep")
+            dest.symlink_to(outside)
+            with mock.patch.object(svc.subprocess, "run",
+                                   side_effect=AssertionError("no service actions")):
+                for dry_run in (True, False):
+                    with self.subTest(dry_run=dry_run), self.assertRaises(ValueError):
+                        svc.install_units(home, names=["wispd"], dry_run=dry_run)
+            self.assertEqual(outside.read_text(), "keep")
 
 
 if __name__ == "__main__":

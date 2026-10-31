@@ -149,6 +149,27 @@ class TestPointingResolution(unittest.TestCase):
         x, y = grounding.scale_point_from_resolution(5, 5, 0, 0, 100, 100)
         self.assertTrue(0 <= x <= 100 and 0 <= y <= 100)
 
+    def test_vlm_provider_uses_pointing_resolution_and_scales_back(self):
+        shot = grounding.Shot("iVBORw0KGgo=", 1920, 1080)
+        ctx = grounding._Ctx(shot=shot, target="Submit button",
+                             region_hint="", cfg={}, timeout=2.0)
+        # Exercise the VLM's resize/scale contract explicitly. This short
+        # placeholder is not a decodable PNG; real resize/fallback geometry
+        # has separate coverage in test_grounding_release_feedback.
+        with mock.patch.object(shot, "resized_pointing",
+                               return_value=(shot.b64, 1366, 768)) as resize, \
+             mock.patch("wisp.brain.chat",
+                        return_value={"content": "[POINT:683,384:Submit button]"}) as chat:
+            cand = grounding._vlm(ctx)
+        resize.assert_called_once_with()
+        self.assertIsNotNone(cand)
+        self.assertEqual(cand.source, "vlm")
+        self.assertEqual((cand.x, cand.y), (960, 540))
+        self.assertGreaterEqual(cand.confidence, 0.8)
+        chat.assert_called_once()
+        prompt_text = chat.call_args[0][0][0]["content"][0]["text"]
+        self.assertIn("1366x768", prompt_text)
+
 
 # ------------------------------------------------------------------ H2
 

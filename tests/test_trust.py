@@ -110,6 +110,25 @@ class NewHost(unittest.TestCase):
 class Claims(unittest.TestCase):
     """What the page says about settings is true of the defaults."""
 
+    def test_app_skill_matching_hosts_are_explained_as_non_requests(self):
+        hosts = {
+            "airtable.com", "app.asana.com", "app.clickup.com",
+            "atlassian.net", "chatgpt.com", "claude.ai", "cloudflare.com",
+            "dash.cloudflare.com", "discord.com", "docs.google.com",
+            "drive.google.com", "dropbox.com", "figma.com", "gitlab.com",
+            "open.spotify.com", "outlook.office.com", "perplexity.ai",
+            "reddit.com", "stackoverflow.com", "stripe.com", "tallyline.app",
+            "trello.com", "vercel.com", "youtube.com",
+        }
+        found = gt.scan()
+        for host in sorted(hosts):
+            with self.subTest(host=host):
+                self.assertIn(host, found)
+                self.assertNotIn(host, gt.HOSTS)
+                self.assertIn(host, gt.MENTIONS)
+                self.assertIn("skill", gt.MENTIONS[host].lower())
+                self.assertIn("no request", gt.MENTIONS[host].lower())
+
     def test_every_named_setting_exists(self):
         cfg = tomllib.loads(config.DEFAULT_CONFIG)
         text = (ROOT / "docs" / "TRUST.md").read_text()

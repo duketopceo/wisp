@@ -10,7 +10,7 @@ import unittest
 from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-from wisp import stage_capture, stt_stream as S  # noqa: E402
+from wisp import config, dictate_history, stage_capture, stt_stream as S  # noqa: E402
 
 
 def tone(seconds, amp=8000):
@@ -173,6 +173,60 @@ class TranscribeSeamTests(Base):
         cfg = {"stt": {"provider": "openai", "streaming": "false"}}
         with mock.patch("wisp.config.load_config", return_value=cfg):
             self.assertIsNone(s._setup())
+
+
+class AbortDeterministicTests(unittest.TestCase):
+    """Cancellation timing without starting a thread or opening a WAV."""
+    def stream(self):
+        stop = mock.Mock()
+        stop.is_set.return_value = False
+        stop.set.side_effect = lambda: setattr(stop.is_set, "return_value", True)
+        with mock.patch.object(S.threading, "Event", return_value=stop):
+            s = S.Streamer("/fake/capture.wav",
+                           transcribe_fn=mock.Mock())
+        s.path = mock.MagicMock(spec=pathlib.Path)
+        s.path.open.return_value.__enter__.return_value.read.return_value = b""
+        s._thread = mock.Mock()
+        s._setup = mock.Mock(return_value=44)
+        s._transcribe = mock.Mock(return_value="must not be sent")
+        return s
+
+    def test_cancel_during_sleep_never_reads_or_submits_next_chunk(self):
+        s = self.stream()
+        with mock.patch.object(S.time, "sleep", side_effect=lambda _: s.abort()):
+            s._run()
+        s.path.open.assert_not_called()
+        s._transcribe.assert_not_called()
+        s._thread.join.assert_called_once_with(timeout=S.ABORT_JOIN_S)
+
+    def test_cancel_during_read_never_submits_the_chunk(self):
+        s = self.stream()
+        reader = s.path.open.return_value.__enter__.return_value
+        reader.read.side_effect = lambda _: (
+            s.abort(), b"\0" * int((s.chunk_s + S.SEARCH_S) * S.BPS))[1]
+        with mock.patch.object(S.time, "sleep"), \
+             mock.patch.object(S, "quiet_cut", return_value=100):
+            s._run()
+        s._transcribe.assert_not_called()
+        self.assertEqual(s.texts, [])
+
+    def test_failed_start_discards_partial_watch_preserving_error(self):
+        s = self.stream()
+        failure = OSError("stream thread startup failed")
+        s.start = mock.Mock(side_effect=failure)
+        s._thread.join.side_effect = RuntimeError("partial thread")
+        streams = {}
+        with mock.patch.object(S, "Streamer", return_value=s), \
+             mock.patch.object(S, "_STREAMS", streams), \
+             mock.patch.object(config, "load_config", return_value={}), \
+             mock.patch.object(dictate_history, "Journal"):
+            with self.assertRaises(OSError) as caught:
+                S.begin("/fake/capture.wav", mock.Mock())
+        self.assertIs(caught.exception, failure)
+        self.assertEqual(streams, {})
+        s._stop.set.assert_called_once_with()
+        s._thread.join.assert_called_once_with(timeout=S.ABORT_JOIN_S)
+        s._transcribe.assert_not_called()
 
 
 if __name__ == "__main__":

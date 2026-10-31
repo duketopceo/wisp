@@ -227,6 +227,25 @@ class TestKeysController(unittest.TestCase):
         self.k.stop()
         self.assertEqual(self.evals()[-1], golden("leave.lua"))
 
+    def test_leave_does_not_publish_inactive_before_compositor_ack(self):
+        self.k.sync("acting", 0)
+        with mock.patch.object(hypr, "leave_submap",
+                               side_effect=lambda **kwargs: self.assertTrue(self.k.active)):
+            self.k._leave()
+        self.assertFalse(self.k.active)
+
+    def test_failed_submap_leave_refuses_injected_key_body(self):
+        self.k.sync("acting", 0)
+        injected = mock.Mock()
+        with mock.patch.object(hypr, "leave_submap",
+                               side_effect=hypr.HyprError("leave refused")):
+            with self.assertRaisesRegex(RuntimeError, "submap"):
+                with self.k.suspended():
+                    injected()
+        injected.assert_not_called()
+        self.assertTrue(self.k.active)
+        self.assertEqual(self.k._suspended, 0)
+
     def test_bus_driven(self):
         td = tempfile.mkdtemp()
         bus = state_mod.StateBus(state_file=pathlib.Path(td) / "s.json")

@@ -11,21 +11,26 @@ import unittest
 from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-from wisp import act, cancel, cua_safety  # noqa: E402
+from wisp import act, cancel, cua_safety, platform  # noqa: E402
 
 # U4: the unfaked loop call below reaches a live cua-driver's
 # recording + pack write; the pack seam is stubbed module-wide
 _WRITE_PACK = None
+_LIVE_WINDOW = None
 
 
 def setUpModule():
-    global _WRITE_PACK
+    global _WRITE_PACK, _LIVE_WINDOW
     _WRITE_PACK = mock.patch.object(act, "_write_pack")
     _WRITE_PACK.start()
+    _LIVE_WINDOW = mock.patch.object(platform, "active_window", return_value={
+        "class": "firefox", "title": "Ordinary page"})
+    _LIVE_WINDOW.start()
 
 
 def tearDownModule():
     _WRITE_PACK.stop()
+    _LIVE_WINDOW.stop()
 
 
 DRIVE = {"pointer": {"mode": "drive", "backend": "auto"}}
@@ -133,6 +138,29 @@ class Policy(unittest.TestCase):
         self.assertEqual(self.r.guard().run("screenshot", "", self.r.runner),
                          "CLICKED(1,2)")
         self.assertEqual(self.r.lines(), [])
+
+
+class SensitiveSurface(unittest.TestCase):
+    def test_live_identity_replaces_turn_start_identity(self):
+        st = types.SimpleNamespace(
+            focus={"app": "chromium", "title": "Stripe"})
+        with mock.patch.object(platform, "active_window", return_value={
+                "class": "chromium", "title": "Inbox - Gmail"}):
+            self.assertEqual(cua_safety.sensitive_surface({}, state=st), "")
+
+    def test_configured_sensitive_surfaces_still_match(self):
+        window = {"app": "firefox", "title": "Treasury - Acme Bank"}
+        self.assertEqual(cua_safety.sensitive_surface(
+            {"cua": {"sensitive": "acme bank"}}, window=window), "acme bank")
+        self.assertEqual(cua_safety.sensitive_surface(
+            {"cua": {"sensitive_builtin": "false"}},
+            window={"app": "firefox", "title": "Stripe"}), "")
+
+    def test_explicit_safety_opt_out_does_not_probe(self):
+        with mock.patch.object(platform, "active_window") as live:
+            self.assertEqual(cua_safety.sensitive_surface(
+                {"cua": {"safety": "false"}}), "")
+        live.assert_not_called()
 
 
 class RateLimit(unittest.TestCase):
@@ -366,7 +394,8 @@ class ActWiring(unittest.TestCase):
                 mock.patch("wisp.context.snapshot", return_value=""), \
                 mock.patch("wisp.context.focused_app", return_value=""), \
                 mock.patch("wisp.platform.active_window",
-                           return_value={"class": "KeePassXC"}), \
+                           return_value={"class": "KeePassXC",
+                                         "title": "Password vault"}), \
                 mock.patch("wisp.trajectories.context_for",
                            return_value=""), \
                 mock.patch("wisp.trajectories.record"), \

@@ -92,7 +92,7 @@ FIELDS = (
        panel=True, label="ui.set.monthly"),
     _f("budget.gate_primary", "bool", "false",
        "Also stop the primary paid model at the cap, not just fallbacks"),
-    _f("pointer.mode", "choice", "guide",
+    _f("pointer.mode", "choice", "auto",
        "guide points, drive clicks for you, auto does either",
        choices=("guide", "drive", "auto"), panel=True,
        label="ui.set.pointer"),
@@ -147,8 +147,11 @@ FIELDS = (
        "Fallback theme when the desktop theme is unreadable",
        choices=("dark", "light")),
     _f("brain.router", "choice", "act",
-       "How a turn is routed: act (straight to the act loop), jev, chat or off",
-       choices=("act", "jev", "chat", "off")),
+       "How a turn is routed: act (local fast paths then act), chat or off",
+       choices=("act", "chat", "off")),
+    _f("growth.weekly_recap", "bool", "false",
+       "Show last week's local days, turns and recorded spend once each week; nothing is sent",
+       section="growth", panel=False),
     _f("brain.allow_paid", "bool", "false",
        "Let the fallback chain use paid models"),
     _f("local.enabled", "bool", "false",
@@ -177,18 +180,21 @@ FIELDS = (
        min=1, max=100000),
     _f("voice.captions", "bool", "true",
        "Show the answer text in the bubble while it is spoken (off: the "
-       "voice is the answer; a muted speaker still shows it)"),
+       "voice is the answer; a muted speaker still shows it)",
+       panel=True, label="ui.set.captions"),
     _f("voice.enabled", "choice", "auto",
        "Spoken answers: auto speaks when a Groq key or a local voice "
        "exists, true always, false never",
-       choices=("auto", "true", "false")),
+       choices=("auto", "true", "false"),
+       panel=True, label="ui.set.voice"),
     _f("voice.provider", "choice", "groq",
        "Who speaks: groq (Orpheus, English; espeak or [voice] cmd when "
        "Groq cannot) or espeak (never ask Groq)",
        choices=("groq", "espeak")),
     _f("voice.tts_voice", "choice", "hannah",
        "Groq Orpheus voice",
-       choices=("autumn", "diana", "hannah", "austin", "daniel", "troy")),
+       choices=("autumn", "diana", "hannah", "austin", "daniel", "troy"),
+       panel=True, label="ui.set.tts_voice"),
     _f("quiet.on_calls", "bool", "true",
        "Hold announcements nobody asked for (a finished background "
        "agent) while a call or a screen share is on"),
@@ -219,6 +225,9 @@ FIELDS = (
     _f("dev.panel", "bool", "false",
        "Show the Dev tab (gate, recent turns, stage timings) in the panel; "
        "local-only, off for everyone else"),
+    _f("dev.judge_cap_usd", "usd", "1.00",
+       "Most one dev run may spend on judging its tasks (the rest of the "
+       "run is left unjudged at the cap)"),
     _f("verify.judge_timeout_s", "int", "20",
        "Seconds the verify VLM judge may take before the step lands "
        "unverifiable",
