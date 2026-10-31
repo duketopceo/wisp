@@ -153,6 +153,22 @@ class PolicyTable(unittest.TestCase):
         self.assertEqual(sp.classify(call("execute", "pytest -q")), "ask")
         self.assertEqual(sp.classify(call("execute", "ls")), "allow")
 
+    def test_approved_pathless_or_unknown_call_taints_session(self):
+        for c in (call("other", title="run generator"),
+                  call("edit", raw={"target": CWD + "/gen.py"}),
+                  call("edit", raw={"files": [CWD + "/a.py"]})):
+            sp = agent_policy.SessionPolicy(CWD, OUT, "autonomous")
+            sp.note_edit(c)
+            self.assertEqual(
+                sp.classify(call("execute", "python3 -m unittest t")), "ask",
+                c)
+
+    def test_approved_read_class_call_does_not_taint(self):
+        for kind in ("read", "search", "think", "fetch"):
+            sp = agent_policy.SessionPolicy(CWD, OUT, "autonomous")
+            sp.note_edit(call(kind, title="look"))
+            self.assertNotIn(agent_policy._EXEC_MARK, sp.edited, kind)
+
     def test_symlink_and_dotdot_paths_resolve(self):
         sp = agent_policy.SessionPolicy(CWD, OUT, "autonomous")
         sp.note_edit(call("edit", path="src/../test_payload.py"))

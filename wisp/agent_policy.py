@@ -294,5 +294,11 @@ class SessionPolicy:
             return
         raw = tool_call.get("rawInput")
         raw = raw if isinstance(raw, dict) else {}
-        for p in _paths(tool_call, raw):
+        paths = list(_paths(tool_call, raw))
+        for p in paths:
             self.edited.add(_norm(p, os.path.realpath(self.cwd)))
+        # an approved write-class or unknown call with no path we can see
+        # may have written anything: later builds and tests ask again
+        if not paths and tool_call.get("kind") not in (
+                "read", "search", "think", "fetch"):
+            self.edited.add(_EXEC_MARK)

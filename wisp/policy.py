@@ -97,11 +97,13 @@ def preempted(name: str, arg: str, cfg: dict | None) -> str | None:
     if name in ((cfg or {}).get("dev", {}).get("deny_tools") or ()):
         return f"REFUSED (dev run denies {name})"
     tier = cua_safety.effective_tier(name, cfg)
+    # every tool that enters text refuses a live secret key, `fill` too
+    if (tier == "shell" or name in tools.TEXT_INPUT or name == "fill") \
+            and cua_safety.SENSITIVE_SECRET_RE.search(str(arg or "")):
+        return "REFUSED (live secret key in input)"
     if tier == "shell" or name in tools.TEXT_INPUT:
         if tools.denied(arg):
             return "REFUSED (denylisted command)"
-        if cua_safety.SENSITIVE_SECRET_RE.search(str(arg or "")):
-            return "REFUSED (live secret key in input)"
         if tier == "shell" and \
                 (cfg or {}).get("agent", {}).get(
                     "allow_shell", "false") != "true":
