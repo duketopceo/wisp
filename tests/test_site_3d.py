@@ -210,3 +210,143 @@ class DemoState(unittest.TestCase):
             console.log(JSON.stringify([s.scenario,s.phase]));
         """)
         self.assertEqual(["media", "done"], result)
+
+
+@unittest.skipUnless(shutil.which("node"), "Node is needed for the wisp motion sim")
+class WispSim(unittest.TestCase):
+    def evaluate(self, code):
+        module = (SITE / "wisp/sim.mjs").as_uri()
+        script = f"import {{createSim}} from {json.dumps(module)};\n{code}"
+        result = subprocess.run(
+            ["node", "--input-type=module", "-e", script],
+            text=True, capture_output=True, check=True,
+        )
+        return json.loads(result.stdout)
+
+    def test_converges_without_overshoot_and_velocity_decays(self):
+        r = self.evaluate("""
+            const s = createSim({x: 0, y: 0});
+            s.setTarget(600, 0);
+            let maxX = 0, peak = 0, peakAt = 0, speeds = [];
+            for (let i = 0; i < 600; i++) {
+              const st = s.step(1/60);
+              maxX = Math.max(maxX, st.x); speeds.push(st.speed);
+              if (st.speed > peak) { peak = st.speed; peakAt = i; }
+            }
+            let mono = true;
+            for (let i = peakAt + 1; i < speeds.length; i++) if (speeds[i] > speeds[i-1] + 1e-9) mono = false;
+            console.log(JSON.stringify({over: maxX - 600, mono, end: s.state.x}));
+        """)
+        self.assertLessEqual(r["over"], 0.5)
+        self.assertTrue(r["mono"])
+        self.assertAlmostEqual(r["end"], 600, delta=0.5)
+
+    def test_frame_time_does_not_change_the_resting_point(self):
+        r = self.evaluate("""
+            const out = [];
+            for (const dt of [0.008, 0.016, 0.05, 0.5]) {
+              const s = createSim({x: 10, y: 20});
+              s.setTarget(400, 300);
+              for (let i = 0; i < 4000; i++) s.step(dt);
+              out.push([s.state.x, s.state.y]);
+            }
+            console.log(JSON.stringify(out));
+        """)
+        for x, y in r:
+            self.assertAlmostEqual(x, 400, delta=0.01)
+            self.assertAlmostEqual(y, 300, delta=0.01)
+
+    def test_settles_stays_settled_and_tail_collapses(self):
+        r = self.evaluate("""
+            const s = createSim({x: 0, y: 0});
+            s.setTarget(500, 200);
+            let first = -1, flip = false;
+            for (let i = 0; i < 1200; i++) {
+              const st = s.step(1/60);
+              if (st.settled && first < 0) first = i;
+              if (first >= 0 && !st.settled) flip = true;
+            }
+            const tail = Math.max(...s.trail.map(Math.abs));
+            console.log(JSON.stringify({first, flip, tail, len: s.state.tailLen, settled: s.settled}));
+        """)
+        self.assertGreater(r["first"], 10)
+        self.assertFalse(r["flip"])
+        self.assertTrue(r["settled"])
+        self.assertLess(r["tail"], 1e-3)
+        self.assertLess(r["len"], 1e-3)
+
+    def test_target_change_after_settle_wakes_the_sim(self):
+        r = self.evaluate("""
+            const s = createSim({x: 0, y: 0});
+            s.setTarget(100, 0);
+            for (let i = 0; i < 1200; i++) s.step(1/60);
+            const was = s.settled;
+            s.setTarget(100, 0);
+            const same = s.settled;
+            s.setTarget(100, 300);
+            const next = s.step(1/60);
+            console.log(JSON.stringify([was, same, next.settled, s.settled]));
+        """)
+        self.assertEqual([True, True, False, False], r)
+
+    def test_retarget_toward_new_target_does_not_overshoot(self):
+        r = self.evaluate("""
+            const s = createSim({x: 0, y: 0});
+            s.setTarget(800, 0);
+            for (let i = 0; i < 20; i++) s.step(1/60);
+            s.setTarget(s.state.x + 40, 0);
+            const t = s.target.x;
+            let max = 0;
+            for (let i = 0; i < 600; i++) max = Math.max(max, s.step(1/60).x - t);
+            console.log(JSON.stringify(max));
+        """)
+        self.assertLessEqual(r, 0.5)
+
+    def test_retarget_keeps_position_and_velocity_continuous(self):
+        r = self.evaluate("""
+            const s = createSim({x: 0, y: 0});
+            s.setTarget(800, 0);
+            for (let i = 0; i < 20; i++) s.step(1/60);
+            const before = {...s.state};
+            s.setTarget(800, 200);
+            const after = {...s.state};
+            console.log(JSON.stringify([after.x - before.x, after.y - before.y, after.vx - before.vx, after.vy - before.vy]));
+        """)
+        for d in r:
+            self.assertEqual(0, d)
+
+    def test_tail_is_bounded_ordered_and_constant_length(self):
+        r = self.evaluate("""
+            const s = createSim({x: 0, y: 0, tailN: 16, maxRadius: 0.4});
+            s.setTarget(5000, 5000);
+            let maxMag = 0, lens = new Set(), ordered = true;
+            for (let i = 0; i < 240; i++) {
+              s.step(1/60);
+              lens.add(s.trail.length);
+              for (let k = 0; k < 16; k++)
+                maxMag = Math.max(maxMag, Math.hypot(s.trail[2*k], s.trail[2*k+1]));
+              for (let k = 1; k < 16; k++) if (s.trailAge[k] < s.trailAge[k-1]) ordered = false;
+            }
+            console.log(JSON.stringify({maxMag, lens: [...lens], ordered}));
+        """)
+        self.assertLessEqual(r["maxMag"], 0.4 + 1e-6)
+        self.assertEqual([32], r["lens"])
+        self.assertTrue(r["ordered"])
+
+    def test_values_stay_finite_for_hostile_frame_times(self):
+        r = self.evaluate("""
+            const s = createSim({x: 0, y: 0});
+            s.setTarget(300, 300);
+            let ok = true;
+            for (const dt of [0, -1, NaN, 1e9, 0.0001]) {
+              const st = s.step(dt);
+              for (const v of [st.x, st.y, st.vx, st.vy, st.speed, st.tailLen]) if (!Number.isFinite(v)) ok = false;
+            }
+            console.log(JSON.stringify(ok));
+        """)
+        self.assertTrue(r)
+
+    def test_module_has_no_dom_or_gl_references(self):
+        src = (SITE / "wisp/sim.mjs").read_text()
+        for word in ("document", "window", "gl.", "navigator", "requestAnimationFrame"):
+            self.assertNotIn(word, src)
