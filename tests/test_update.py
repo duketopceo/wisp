@@ -123,6 +123,8 @@ class Fixture(unittest.TestCase):
         def fetch_json(url):
             if url == update.API:
                 return rel
+            if url == update.API_LIST:
+                return [rel]
             self.assertEqual(url, "https://api.github.com/repos/duketopceo/wisp/commits/v2.0.0")
             return {"sha": self.source_commit}
 
@@ -463,6 +465,35 @@ class NeverBackwards(Fixture):
         self.assertLess(update.parse_version("v1.9.0"),
                         update.parse_version("v1.10.0"))
         self.assertIsNone(update.parse_version("master"))
+
+    def test_prerelease_ids_order_per_semver(self):
+        pv = update.parse_version
+        self.assertLess(pv("v1.0.0-rc.2"), pv("v1.0.0-rc.3"))
+        self.assertLess(pv("v1.0.0-rc.9"), pv("v1.0.0-rc.10"))
+        self.assertLess(pv("v1.0.0-rc.10"), pv("v1.0.0"))
+        self.assertLess(pv("v1.0.0-alpha"), pv("v1.0.0-beta"))
+        self.assertLess(pv("v1.0.0-1"), pv("v1.0.0-rc"))
+        self.assertEqual(pv("v1.0.0-rc.2"), pv("1.0.0-rc.2"))
+        self.assertTrue(update.is_prerelease("v1.0.0-rc.2"))
+        self.assertFalse(update.is_prerelease("v1.0.0"))
+
+    def test_an_rc_install_looks_past_githubs_latest(self):
+        # GitHub's "latest" never names a pre-release
+        seen = []
+        rels = [{"tag_name": "v1.0.0-rc.3"}, {"tag_name": "v0.9.0"},
+                {"tag_name": "v1.0.0-rc.4", "draft": True},
+                {"tag_name": "v1.0.0-rc.2"}]
+
+        def fj(url):
+            seen.append(url)
+            return rels if url == update.API_LIST else {"tag_name": "v0.9.0"}
+
+        got = update.latest_release(fj, {"ref": "v1.0.0-rc.2"})
+        self.assertEqual(got["tag_name"], "v1.0.0-rc.3")
+        self.assertEqual(seen, [update.API_LIST])
+        got = update.latest_release(fj, {"ref": "v0.9.0"})
+        self.assertEqual(got["tag_name"], "v0.9.0")
+        self.assertEqual(seen[-1], update.API)
 
     def test_a_master_install_ahead_of_the_tag_is_refused(self):
         # the install is a commit on master, past v2.0.0: compare says ahead

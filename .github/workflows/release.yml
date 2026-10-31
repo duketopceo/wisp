@@ -70,8 +70,19 @@ jobs:
           echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)" >> "$GITHUB_ENV"
           echo "RUSTFLAGS=--remap-path-prefix=$GITHUB_WORKSPACE=/wisp" >> "$GITHUB_ENV"
 
-      - name: Release packaging regression tests
-        run: python -m unittest discover -s tests -p test_release_packaging.py -v
+      - name: Release only commits that are on master
+        # a tag on an unmerged or never-reviewed commit is refused
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin master
+          git merge-base --is-ancestor HEAD FETCH_HEAD
+
+      - name: Full unit suite on the release commit
+        # attestation proves where an archive came from, not that it works
+        run: |
+          pip install sqlite-vec pillow
+          python -m unittest discover -s tests
 
       - name: Build and test wispd-rs with the checked-in lockfile
         working-directory: rs/wispd

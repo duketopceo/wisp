@@ -61,6 +61,7 @@ Every process spawned via `agent_spawn` is placed in a registered task scope (`w
 3. **Unmarked same-uid peer (normal CLI, shell widgets):** all commands pass. Arbitrary unmarked local processes and direct file writes to `config.toml`/`routines.json`/`MEMORY.md` remain outside the IPC split by design.
 4. **Non-systemd fallback limitation:** on hosts without a user systemd session, marking falls back to `WISP_TASK_ID` + `ppid` ancestry walk; a child that both clears its environment and reparents via double-fork/`setsid` can escape ancestry marking on those hosts (cgroup scope marking on Linux/systemd closes that escape).
 5. **Local-only `connect` verb:** `wispd connect` refuses when invoked from a marked peer so OAuth granting stays human-only.
+6. **Unattributed peer:** when the daemon cannot read the peer's credentials (no `SO_PEERCRED`: the TCP transport, or a non-Linux AF_UNIX socket), every command is refused with `{"ok": false, "error": "unattributed_peer"}`; a `subscribe` gets the same reply with `"type": "hello"`. In practice, the experimental macOS and Windows transports refuse all commands until they gain peer attribution.
 
 ### `listen` replies (additive; #110)
 

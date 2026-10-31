@@ -46,6 +46,9 @@ from . import config, deploy, preflight, svc
 
 REPO = "duketopceo/wisp"
 API = f"https://api.github.com/repos/{REPO}/releases/latest"
+# GitHub's "latest" never names a pre-release, so an install that is on a
+# release candidate looks for the next one in the full list instead
+API_LIST = f"https://api.github.com/repos/{REPO}/releases?per_page=30"
 DOWNLOAD_PREFIX = f"https://github.com/{REPO}/releases/download/"
 MAX_BYTES = 400 * 1024 * 1024
 TRACKED_DIRS = ("wisp", "shells", "shell-plugin", "assets", "bin", "scripts",
@@ -126,13 +129,44 @@ _VER = re.compile(r"^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?(-[0-9A-Za-z.\-]+)?(\+.*)?$"
 
 
 def parse_version(s) -> tuple | None:
-    """(major, minor, patch, release-flag) of "v1.2.3"; a pre-release
-    ("1.2.3-rc1") sorts below its release. None when `s` is no version."""
+    """(major, minor, patch, release-flag, pre-release ids) of "v1.2.3",
+    ordered per semver: a pre-release ("1.2.3-rc.2") sorts below its
+    release, and its dot-separated ids compare numerically when numeric
+    ("rc.2" < "rc.10"). None when `s` is no version."""
     m = _VER.match(str(s or "").strip())
     if not m:
         return None
     nums = tuple(int(g or 0) for g in m.groups()[:3])
-    return nums + (0 if m.group(4) else 1,)
+    if not m.group(4):
+        return nums + (1, ())
+    ids = tuple((0, int(x), "") if x.isdigit() else (1, 0, x)
+                for x in m.group(4)[1:].split("."))
+    return nums + (0, ids)
+
+
+def is_prerelease(s) -> bool:
+    v = parse_version(s)
+    return bool(v) and v[3] == 0
+
+
+def latest_release(fetch_json=None, installed=None) -> dict:
+    """The release an update should consider: GitHub's latest, or, when
+    the install is a pre-release, the highest-versioned published release
+    including pre-releases."""
+    fetch_json = fetch_json or globals()["fetch_json"]
+    rec = installed if installed is not None else installed_record()
+    if not is_prerelease(rec.get("ref")):
+        return fetch_json(API)
+    best, best_v = None, None
+    for r in fetch_json(API_LIST) or []:
+        if not isinstance(r, dict) or r.get("draft"):
+            continue
+        v = parse_version(r.get("tag_name"))
+        if v and (best_v is None or v > best_v):
+            best, best_v = r, v
+    if best is None:
+        raise UpdateError("No published release was found.")
+    return best
 
 
 def ordering(tag: str, *, fetch_json=fetch_json, installed=None) -> str:
@@ -306,7 +340,7 @@ def check(*, sha256: str | None = None, fetch_json=fetch_json,
     Raises UpdateError before anything outside `workdir` is touched; with
     `refuse_older` a release that is not newer than the install is refused
     before the download."""
-    release = fetch_json(API)
+    release = latest_release(fetch_json, installed)
     tag = str(release.get("tag_name") or "")
     if not tag:
         raise UpdateError("The latest release has no tag.")

@@ -535,8 +535,14 @@ class LoopPaths(unittest.TestCase):
         self.assertEqual(len(confirm.prompts), 1)
 
     def test_preempted_refuses_live_stripe_secret_key_in_text_input(self):
-        out = policy.preempted("type_text", "sk_live_51abcDEF1234567890xyz", {})
-        self.assertEqual(out, "REFUSED (live secret key in input)")
+        for name, arg in (("type_text", "sk_live_51abcDEF1234567890xyz"),
+                          ("key", "sk_live_51abcDEF1234567890xyz"),
+                          ("fill", "1:2|sk_live_51abcDEF1234567890xyz"),
+                          ("fill", "3:4|whsec_abcDEF1234567890xyzABC")):
+            with self.subTest(name=name):
+                self.assertEqual(policy.preempted(name, arg, {}),
+                                 "REFUSED (live secret key in input)")
+        self.assertIsNone(policy.preempted("fill", "1:2|hello", {}))
 
 
 class LiveSensitiveSurface(unittest.TestCase):
