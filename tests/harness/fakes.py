@@ -192,9 +192,9 @@ class FakeServer:
 
 
 class FakeJev(FakeServer):
-    """Tripwire for `JEV_ENDPOINT` (still read by the grounding `jev` provider and the
-    health probe; Q3 is open). The
-    router that used it is gone; the runner reports any recorded call."""
+    """Tripwire for `JEV_ENDPOINT` (still read by the grounding `jev`
+    provider and the health probe; Q3 is open). The runner reports any
+    recorded call."""
 
     def serve(self, h, method, body, n):
         self.respond(h, 200, {"answers": self.script.get("answers", {}),
