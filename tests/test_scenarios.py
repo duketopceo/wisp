@@ -91,7 +91,7 @@ class ExpectationKeysTest(unittest.TestCase):
         r = self._res(expect={}, calls=calls)
         bad = runner.check_expectations(r)
         self.assertEqual(len(bad), 1)
-        self.assertIn("stray hop", bad[0])
+        self.assertIn("undeclared request", bad[0])
         # declaring the count is the explicit opt-in, and no hop is clean
         self.assertEqual(runner.check_expectations(
             self._res(expect={"jev_calls": 1}, calls=calls)), [])
