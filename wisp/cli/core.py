@@ -127,6 +127,8 @@ def _install(ctx, a, src, repo, commit):
         if a.dry_run:
             return plan()
         rows = preflight.run()
+        print("preflight:")
+        print(preflight.format_rows(rows))
         if preflight.blockers(rows):
             raise CliError("E_FAILED", preflight.refusal(rows),
                            "wispd doctor")

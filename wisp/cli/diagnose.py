@@ -16,7 +16,7 @@ GROUPS["health"] = "Local model endpoint health"
 def doctor_sections(cfg: dict, cua_probe=None, agents_probe=None) -> list:
     """[{name, rows:[{name, value, ok}]}] for everything wispd needs."""
     from .. import agents, brain, health as _health, ipc, \
-        platform as _plat, skills
+        platform as _plat, preflight, skills
     sections = []
 
     def section(name):
@@ -27,6 +27,13 @@ def doctor_sections(cfg: dict, cua_probe=None, agents_probe=None) -> list:
             rows.append({"name": label, "value": str(value),
                          "ok": bool(ok)})
         return row
+
+    row = section("preflight")
+    for check in preflight.run():
+        detail = f"{check['level']}: {check['detail']}"
+        if check["fix"]:
+            detail += f" (Try: {check['fix']})"
+        row(check["id"], detail, check["level"] != "block")
 
     row = section("daemon")
     row("wispd", "running" if ipc.alive() else "not running")
@@ -60,7 +67,9 @@ def doctor_sections(cfg: dict, cua_probe=None, agents_probe=None) -> list:
     row("whisper model", wm.name, stt != "local" or wm.exists())
     row("stt provider", stt)
     for b in ("pw-record", "wtype", "grim"):
-        row(b, shutil.which(b) or "not on PATH", bool(shutil.which(b)))
+        found = next((path for name in preflight.ALTERNATIVES.get(b, (b,))
+                      if (path := shutil.which(name))), None)
+        row(b, found or "not on PATH", bool(found))
 
     row = section("brain / router")
     p = brain.provider(cfg)

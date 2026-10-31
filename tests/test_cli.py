@@ -365,14 +365,31 @@ class TestTable(unittest.TestCase):
 
 
 class TestNewCommands(unittest.TestCase):
+    def test_doctor_accepts_ydotool_as_the_existing_typing_fallback(self):
+        with CliEnv() as env:
+            env.shim("ydotool")
+            code, out, err = env.run(["doctor", "--json"])
+            self.assertIn(code, (0, 4), err)
+            sections = json.loads(out)["data"]["sections"]
+            audio = next(s["rows"] for s in sections if s["name"] == "stt / audio")
+            typer = next(r for r in audio if r["name"] == "wtype")
+            self.assertTrue(typer["ok"], typer)
+            self.assertIn("ydotool", typer["value"])
+
     def test_doctor_json_sections(self):
         with CliEnv() as env:
             code, out, err = env.run(["doctor", "--json"])
             j = json.loads(out)
             self.assertIn(code, (0, 4))
             names = {s["name"] for s in j["data"]["sections"]}
-            self.assertTrue({"stt / audio", "pointer",
+            self.assertTrue({"preflight", "stt / audio", "pointer",
                              "health"} <= names, names)
+            checks = next(s["rows"] for s in j["data"]["sections"]
+                          if s["name"] == "preflight")
+            verifier = next(r for r in checks if r["name"] == "gh")
+            self.assertTrue(verifier["ok"])  # optional for an existing source install
+            self.assertIn("degraded", verifier["value"])
+            self.assertIn("Install separately", verifier["value"])
 
     def test_latency_reads_spans(self):
         import datetime as dt
