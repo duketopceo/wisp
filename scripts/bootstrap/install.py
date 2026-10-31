@@ -29,6 +29,64 @@ VERIFY_FLAGS = ("--bundle", "--repo", "--cert-identity", "--cert-oidc-issuer",
                 "--deny-self-hosted-runners", "--digest-alg")
 
 
+class _UI:
+    """Presentation only; no decision in this script reads it. On a terminal:
+    the wordmark, one lit step (a single dot) that moves down the list, and
+    prose wrapped to the window. Piped: the same lines, ASCII, never wrapped
+    or colored. NO_COLOR, TERM=dumb and a non-UTF-8 locale are honored. This
+    block is deliberately self-contained: the bootstrap runs before Wisp is
+    installed and imports nothing from it."""
+
+    def __init__(self):
+        env = os.environ
+        tty = sys.stdout.isatty()
+        loc = (env.get("LC_ALL") or env.get("LC_CTYPE") or env.get("LANG")
+               or "").lower()
+        plain_term = env.get("TERM") == "dumb"
+        self.color = bool(tty and not plain_term and not env.get("NO_COLOR"))
+        self.glyphs = bool(tty and not plain_term
+                           and ("utf-8" in loc or "utf8" in loc))
+        self.width = 0
+        if tty:
+            try:
+                cols = int(env.get("COLUMNS") or 0) or \
+                    shutil.get_terminal_size().columns
+            except (ValueError, OSError):
+                cols = 80
+            self.width = max(40, min(100, cols))
+
+    def _dim(self, text):
+        return f"\x1b[2m{text}\x1b[0m" if self.color else text
+
+    def _dot(self):
+        dot = "\u25cf" if self.glyphs else "*"
+        return f"\x1b[1;33m{dot}\x1b[0m" if self.color else dot
+
+    def open(self):
+        if self.width:     # the wordmark is for a person at a terminal
+            name = "\x1b[1mwisp\x1b[0m" if self.color else "wisp"
+            print(f"{self._dot()} {name}\n  {self._dim('installer')}")
+
+    def step(self, n, total, title):
+        print(f"\n{self._dot()} {title}   {self._dim(f'step {n} of {total}')}")
+
+    def say(self, text, indent=2):
+        pad = " " * indent
+        for line in str(text).split("\n"):
+            if not self.width or len(line) + indent <= self.width \
+                    or line.startswith(" "):
+                print(pad + line)
+                continue
+            cur = pad
+            for word in line.split():
+                if cur.strip() and len(cur) + len(word) > self.width:
+                    print(cur.rstrip())
+                    cur = pad
+                cur += word + " "
+            if cur.strip():
+                print(cur.rstrip())
+
+
 def fetch(url, limit=LIMIT):
     request = urllib.request.Request(url, headers={"User-Agent": "wisp-bootstrap"})
     with urllib.request.urlopen(request, timeout=60) as response:
@@ -150,23 +208,27 @@ def main(argv=None):
     if args.sha256 and not re.fullmatch(r"[a-fA-F0-9]{64}", args.sha256):
         parser.error("--sha256 must be 64 hexadecimal characters")
     arch = {"x86_64": "x86_64", "aarch64": "aarch64"}.get(platform.machine().lower())
+    ui = _UI()
+    ui.open()
     if platform.system() != "Linux" or not arch:
-        print("Only Linux x86_64/aarch64 is supported.")
+        ui.say("Only Linux x86_64/aarch64 is supported.")
         return 4
     endpoint = API + ("/tags/" + args.version if args.version else "/latest")
-    print(f"Release metadata: {endpoint}")
-    print(f"Asset: wisp-linux-{arch}.tar.gz")
-    print("Require independent gh/Sigstore attestation verification plus SHA-256 "
-          "before safe extraction; preview installer, "
-          "then install user-scoped files. No service start or restart.")
+    ui.step(1, 6, "Plan")
+    ui.say(f"Release metadata: {endpoint}")
+    ui.say(f"Asset: wisp-linux-{arch}.tar.gz")
+    ui.say("Require independent gh/Sigstore attestation verification plus SHA-256 "
+           "before safe extraction; preview installer, "
+           "then install user-scoped files. No service start or restart.")
     if args.dry_run:
-        print("Dry run: no network, writes or service actions.")
+        ui.say("Dry run: no network, writes or service actions.")
         return 0
+    ui.step(2, 6, "Check this account")
     if os.geteuid() == 0 or os.environ.get("SUDO_USER"):
-        print("Refusing root/sudo installation. Run as your normal desktop user.")
+        ui.say("Refusing root/sudo installation. Run as your normal desktop user.")
         return 4
     if sys.version_info < (3, 11, 4):
-        print("Python 3.11.4+ is required.")
+        ui.say("Python 3.11.4+ is required.")
         return 4
     home = pathlib.Path(os.environ.get("HOME", ""))
     try:
@@ -177,21 +239,23 @@ def main(argv=None):
     except (OSError, RuntimeError):
         safe_home = False
     if not safe_home:
-        print("Refusing installation: HOME must be an existing, accessible absolute "
-              "directory that does not resolve to /. "
-              "Run from your normal desktop terminal. "
-              "Nothing was written.")
+        ui.say("Refusing installation: HOME must be an existing, accessible absolute "
+               "directory that does not resolve to /. "
+               "Run from your normal desktop terminal. "
+               "Nothing was written.")
         return 4
+    ui.step(3, 6, "Confirm")
     if not args.yes and (not sys.stdin.isatty()
                          or input("Download and install these user-scoped files? [y/N] ")
                          .strip().lower() not in ("y", "yes")):
-        print("Not installed. Use --yes only after inspecting the plan/source.")
+        ui.say("Not installed. Use --yes only after inspecting the plan/source.")
         return 2
+    ui.step(4, 6, "Verify the release")
     verifier = shutil.which("gh")
     if not verifier:
-        print("Refusing payload execution: independently install GitHub CLI "
-              "with artifact-attestation verification, or review/build the "
-              "source manually. No checksum-only fallback.")
+        ui.say("Refusing payload execution: independently install GitHub CLI "
+               "with artifact-attestation verification, or review/build the "
+               "source manually. No checksum-only fallback.")
         return 4
     try:
         trusted_root = pathlib.Path(args.trusted_root).resolve() if args.trusted_root else None
@@ -230,7 +294,7 @@ def main(argv=None):
         got = hashlib.sha256(blob).hexdigest()
         if got != want.lower():
             raise ValueError("Release SHA-256 mismatch; nothing installed.")
-        print(f"Integrity checked {tag}: {got} ({trust}); authentication pending.")
+        ui.say(f"Integrity checked {tag}: {got} ({trust}); authentication pending.")
         with tempfile.TemporaryDirectory(prefix="wisp-bootstrap-") as td:
             work = pathlib.Path(td)
             archive = work / name
@@ -239,8 +303,9 @@ def main(argv=None):
             bundle.write_bytes(fetch(release_url(bundle_asset, tag),
                                      16 * 1024 * 1024))
             verify_attestation(verifier, archive, bundle, tag, commit, work, trusted_root)
-            print(f"Keyless attestation verified for release.yml at "
-                  f"refs/tags/{tag}, source {commit}.")
+            ui.say(f"Keyless attestation verified for release.yml at "
+                   f"refs/tags/{tag}, source {commit}.")
+            ui.step(5, 6, "Install")
             root = extract(archive, work / "tree")
             command = [sys.executable, str(root / "wispd"), "install"]
             if args.from_plugin:
@@ -251,21 +316,22 @@ def main(argv=None):
                 return rc
             rc = subprocess.run(command, cwd=root).returncode
             if rc:
-                print("Installer failed; it may have written files. See docs/INSTALL.md.")
+                ui.say("Installer failed; it may have written files. See docs/INSTALL.md.")
                 return rc
-        print("Installed; no daemon started or restarted. Next:\n"
-              "  ~/.local/bin/wispd onboard --status\n"
-              "  ~/.local/bin/wispd onboard\n"
-              "  ~/.local/bin/wispd doctor\n"
-              "Start services and test the microphone only when you choose.")
+        ui.step(6, 6, "Next")
+        ui.say("Installed; no daemon started or restarted. Next:\n"
+               "  ~/.local/bin/wispd onboard --status\n"
+               "  ~/.local/bin/wispd onboard\n"
+               "  ~/.local/bin/wispd doctor\n"
+               "Start services and test the microphone only when you choose.")
         return 0
     except (OSError, ValueError, KeyError, TypeError, tarfile.TarError,
             subprocess.TimeoutExpired) as exc:
         detail = str(exc) if isinstance(exc, ValueError) else type(exc).__name__
-        print(f"Bootstrap stopped: {detail}; no success claimed. "
-              "Check the selected release and SHA-256. No service was started.")
-        print("No checksum-only downgrade. Independently install/repair gh and "
-              "its trusted roots, or inspect and build the source manually.")
+        ui.say(f"Bootstrap stopped: {detail}; no success claimed. "
+               "Check the selected release and SHA-256. No service was started.")
+        ui.say("No checksum-only downgrade. Independently install/repair gh and "
+               "its trusted roots, or inspect and build the source manually.")
         return 1
 
 
