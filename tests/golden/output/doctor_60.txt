@@ -1,0 +1,17 @@
+wisp doctor                             1 fail, 2 warn, 5 ok
+
+1 check needs attention. Fixes are listed under each one.
+
+Needs attention (3)
+  fail  dayflow    not installed
+  warn  hyprctl    not found; needed for the push-to-talk...
+                   fix: Install separately if you need this
+                   capability.
+  warn  pw-record  not found; needed for microphone capture
+                   fix: Install separately if you need this
+                   capability.
+
+Passing (5)
+  home, python, codegraph (CBM), skills, labels.jsonl
+
+wispd doctor --all lists every check.
