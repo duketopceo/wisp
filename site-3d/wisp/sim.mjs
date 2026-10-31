@@ -19,9 +19,9 @@ export function createSim(options = {}) {
     ...options,
   };
   const n = o.tailN;
-  const state = {x: o.x, y: o.y, vx: 0, vy: 0, speed: 0, tailLen: 0, settled: true};
-  const target = {x: o.x, y: o.y};
   const trail = new Float32Array(n * 2);
+  const state = {x: o.x, y: o.y, vx: 0, vy: 0, speed: 0, tailLen: 0, settled: true, trail};
+  const target = {x: o.x, y: o.y};
   const trailAge = new Float32Array(n);
   const ring = new Float32Array(n * 2);   // head positions in px, written oldest to newest
   const ringTime = new Float64Array(n);
