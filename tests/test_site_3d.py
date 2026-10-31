@@ -73,8 +73,20 @@ class GuidingLightPreview(unittest.TestCase):
     def test_threeui_mit_credit_ships_with_the_preview(self):
         self.assertIn("Copyright (c) 2026 Meng To", (SITE / "vendor/THREEUI-LICENSE.txt").read_text())
         self.assertIn("Copyright (c) 2026 Meng To", (ROOT / "THIRD_PARTY_NOTICES.md").read_text())
-        self.assertIn("MengTo/threeui", (self.LIGHT / "light.mjs").read_text())
         self.assertIn("ThreeUI Community", (self.LIGHT / "index.html").read_text())
+        notices = (ROOT / "THIRD_PARTY_NOTICES.md").read_text()
+        self.assertIn("shader rewritten", notices)
+        self.assertIn("shader rewritten", (SITE / "vendor/PROVENANCE.md").read_text())
+        self.assertNotIn("adapts the `energy-orb`", notices)
+
+    def test_stop_five_states_the_hybrid_model_story(self):
+        html = (self.LIGHT / "index.html").read_text()
+        stop = html[html.index("05 · Models"):html.index('class="stop finale"')]
+        self.assertIn("OpenRouter", stop)
+        self.assertIn("default", stop)
+        self.assertIn("local models", stop)
+        self.assertNotIn("stay on your machine", html)
+        self.assertNotRegex(stop, r"\b\d+\s*ms\b")
 
     def test_preview_claims_stay_inside_the_readme(self):
         html = (self.LIGHT / "index.html").read_text()
