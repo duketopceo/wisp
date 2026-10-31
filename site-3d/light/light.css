@@ -44,7 +44,7 @@ kbd{font:400 .78em ui-monospace,"SF Mono",Menlo,Consolas,monospace;color:var(--i
 footer{padding:40px var(--pad) 50px;font-size:14px;color:var(--faint);border-top:1px solid #15171f}
 @media(max-width:760px){
  .light{--s:240px}
- .stop{grid-template-columns:1fr;align-content:end;min-height:92svh;padding:16vh var(--pad) 12vh}
+ .stop{grid-template-columns:minmax(0,1fr);align-content:end;min-height:92svh;padding:16vh var(--pad) 12vh}
  .mark{right:calc(var(--pad) + var(--r)/2);top:calc(8vh + var(--t)/6)}
  nav a:not(:last-child){display:none}
 }

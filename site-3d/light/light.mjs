@@ -86,7 +86,7 @@ function toCss(reason) {
   host.dataset.tier = "css";
   host.dataset.reason = reason;
   host.style.transform = keep;                        // hand-off keeps the head where it was
-  cssStop = -1;
+  cssStop = keep ? nearestStop(scrollY + geo.vh / 2) : -1;   // stay put until the active stop changes
   placeCss();
   host.dataset.rendered = "true";
 }
@@ -99,7 +99,7 @@ function stopLoop() {
 }
 
 function wake() {
-  if (mode !== "gl" || awake || hidden || offscreen) return;
+  if (mode !== "gl" || awake || hidden) return;
   awake = true; skip = SETTLE_SKIP; lastMs = 0;
   host.dataset.rendering = "running";
   raf = requestAnimationFrame(tick);
@@ -120,7 +120,7 @@ function budget(dt) {
 
 function tick(ms) {
   raf = 0;
-  if (mode !== "gl" || hidden || offscreen) { awake = false; return; }
+  if (mode !== "gl" || hidden) { awake = false; return; }
   try {
     const first = lastMs === 0;
     const dt = first ? 1 / 60 : (ms - lastMs) / 1000;
@@ -132,7 +132,8 @@ function tick(ms) {
     const s = sim.step(dt);
     place(s.x, s.y);
     const rest = sim.settled;
-    if (rest || ms - lastDraw >= DRAW_GAP_MS) { view.draw(s, ms / 1000); lastDraw = ms; }
+    // An off-screen light still moves (a resize can put it there and it must come back) but is not drawn.
+    if (!offscreen && (rest || ms - lastDraw >= DRAW_GAP_MS)) { view.draw(s, ms / 1000); lastDraw = ms; }
     if (rest) { awake = false; host.dataset.rendering = "paused"; return; }   // final frame drawn, sleep
     raf = requestAnimationFrame(tick);
   } catch { toCss("draw-failed"); }
@@ -183,7 +184,7 @@ if (typeof IntersectionObserver === "function") {
   new IntersectionObserver(entries => {
     offscreen = !entries[entries.length - 1].isIntersecting;
     host.dataset.breath = hidden || offscreen ? "paused" : "running";
-    if (offscreen) stopLoop(); else wake();
+    if (!offscreen) wake();                             // redraws the resting frame it skipped
   }).observe(host);
 }
 reducedQuery.addEventListener?.("change", () => { if (reducedQuery.matches) toCss("reduced-motion"); });

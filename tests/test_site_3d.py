@@ -441,3 +441,60 @@ class WispGlView(unittest.TestCase):
             console.log(JSON.stringify([side, canvas.width, calls.filter(c => c === 'drawArrays').length]));
         """)
         self.assertEqual([450, 450, 1], r)
+
+
+class LightCostTripwires(unittest.TestCase):
+    """Cheap source checks for the regressions PR #274 had. Tripwires, not proofs: the browser gates prove."""
+    LIGHT = SITE / "light/light.mjs"
+
+    def function_body(self, src, name):
+        start = src.index(f"function {name}(")
+        depth, i = 0, src.index("{", start)
+        for j in range(i, len(src)):
+            depth += (src[j] == "{") - (src[j] == "}")
+            if depth == 0:
+                return src[start:j + 1]
+        raise AssertionError(name)
+
+    def test_the_loop_never_reads_layout(self):
+        src = self.LIGHT.read_text()
+        for name in ("tick", "liveTarget", "place", "budget"):
+            body = self.function_body(src, name)
+            for call in ("getBoundingClientRect", "clientWidth", "offsetWidth", "getComputedStyle"):
+                self.assertNotIn(call, body, f"{call} in {name}()")
+
+    def test_loop_has_a_sleep_path_and_a_visibility_handler(self):
+        src = self.LIGHT.read_text()
+        self.assertIn("cancelAnimationFrame", self.function_body(src, "stopLoop"))
+        tick = self.function_body(src, "tick")
+        self.assertIn("sim.settled", tick)
+        self.assertIn("rest", tick)
+        self.assertIn('"visibilitychange"', src)
+        self.assertIn('visibilityState === "hidden"', src)
+
+    def test_draw_is_time_gated(self):
+        src = self.LIGHT.read_text()
+        self.assertRegex(src, r"DRAW_GAP_MS = (\d+)")
+        self.assertGreaterEqual(int(re.search(r"DRAW_GAP_MS = (\d+)", src).group(1)), 32)
+
+    def test_wisp_modules_do_not_import_the_page(self):
+        for name in ("sim.mjs", "gl.mjs"):
+            src = (SITE / "wisp" / name).read_text()
+            self.assertNotRegex(src, r"""(?:from\s*|import\s*\(?\s*)["'][^"']*light/""", name)
+            self.assertNotRegex(src, r"""(?:from\s*|import\s*\(?\s*)["'][^"']*three""", name)
+        sim = (SITE / "wisp/sim.mjs").read_text()
+        for word in ("document", "window", "navigator", "requestAnimationFrame"):
+            self.assertNotIn(word, sim)
+
+    def test_every_light_and_wisp_module_ships(self):
+        spec = importlib.util.spec_from_file_location("build_3d", ROOT / "scripts/site/build_3d.py")
+        builder = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(builder)
+        for folder in ("light", "wisp"):
+            for path in (SITE / folder).rglob("*"):
+                if path.is_file() and path.name != "DESIGN.md":
+                    self.assertIn(path.relative_to(SITE).as_posix(), builder.FILES)
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out"
+            builder.build(out)
+            self.assertEqual([], builder.check(out))
