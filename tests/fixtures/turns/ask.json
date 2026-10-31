@@ -1,5 +1,5 @@
 {
-  "description": "Answer route: Jev routes to answer, brain streams a reply. Characterization baseline of today's pipeline.",
+  "description": "Plain question: the fast path routes it to the answer lane with no Jev hop, brain streams a reply. Characterization baseline of today's pipeline.",
   "audio": "ask.wav",
   "endpoints": {
     "whisper": {

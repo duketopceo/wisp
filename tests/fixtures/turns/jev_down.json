@@ -1,6 +1,11 @@
 {
   "description": "Retired decision endpoint is down: bare catalog launch uses the fast path without contacting it.",
   "audio": "ask.wav",
+  "config": {
+    "brain": {
+      "router": "jev"
+    }
+  },
   "endpoints": {
     "whisper": {
       "transcript": "open firefox"

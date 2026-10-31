@@ -19,23 +19,33 @@ def load(name: str) -> dict:
     return copy.deepcopy(runner.load_fixture(name + ".json"))
 
 
-def turn(transcript: str, brain: list, *, route: str = "answer",
+def jev_answers(route: str = "answer") -> dict:
+    """A confident Jev decision for `route`. Jev-only fixtures use it."""
+    return {"route": {"choice": route},
+            "app": {"choice": "none", "confidence": 0.99},
+            "risk": {"score": 0}}
+
+
+def turn(transcript: str, brain: list, *, route: str | None = None,
          fakes: dict | None = None, config: dict | None = None,
          expect: dict | None = None, name: str = "scenario",
          jev: dict | None = None) -> dict:
-    """Build a fixture dict: fixed ask.wav, scripted whisper/Jev/brain."""
+    """Build a fixture dict: fixed ask.wav, scripted whisper/brain. The
+    default router is `act`, so no Jev is scripted; passing `route=` or
+    `jev=` opts this turn into the Jev router explicitly (it pins
+    `router: jev` and is Jev-only behavior)."""
     fx = {
         "name": name, "audio": ASK_WAV,
         "endpoints": {
             "whisper": {"transcript": transcript},
-            "jev": {"answers": jev or {
-                "route": {"choice": route},
-                "app": {"choice": "none", "confidence": 0.99},
-                "risk": {"score": 0}}},
             "brain": {"responses": brain},
         },
         "expect": expect or {},
     }
+    if jev is not None or route is not None:
+        fx["endpoints"]["jev"] = {"answers": jev or jev_answers(route)}
+        config = {**(config or {}), "brain": {
+            **(config or {}).get("brain", {}), "router": "jev"}}
     if fakes:
         fx["fakes"] = fakes
     if config:

@@ -1,5 +1,5 @@
 {
-  "description": "Whisper answers 500: the turn ends in error before routing; Jev and the brain are never called.",
+  "description": "Whisper answers 500: the turn ends in error before routing; the brain is never called and neither is Jev.",
   "audio": "ask.wav",
   "endpoints": {
     "whisper": {
