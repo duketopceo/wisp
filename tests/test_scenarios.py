@@ -24,7 +24,7 @@ FIXTURES = sorted(p for p in DIR.glob("*.json"))
 
 # the plan's scenario list (W6) and the fixture tag that covers each.
 # Budget-blocked (W14) landed on master with the ledger, so it is required.
-REQUIRED = {"answer", "act click via cua", "cancel mid-act", "Jev down",
+REQUIRED = {"answer", "act click via cua", "cancel mid-act", "retired endpoint down",
             "budget blocked", "cua down", "deny-listed app", "rate limit hit", "kill switch",
             "dry-run", "guide mode", "choose/confirm", "notify paths",
             "STT failure", "offline daemon"}
@@ -85,6 +85,18 @@ class ExpectationKeysTest(unittest.TestCase):
         r = self._res(expect={"jev_calls": 0},
                       calls={"jev": [{"path": "/x"}]})
         self.assertTrue(runner.check_expectations(r))
+
+    def test_stray_jev_hop_fails_a_fixture_that_did_not_declare_it(self):
+        calls = {"jev": [{"path": "/x"}]}
+        r = self._res(expect={}, calls=calls)
+        bad = runner.check_expectations(r)
+        self.assertEqual(len(bad), 1)
+        self.assertIn("stray hop", bad[0])
+        # declaring the count is the explicit opt-in, and no hop is clean
+        self.assertEqual(runner.check_expectations(
+            self._res(expect={"jev_calls": 1}, calls=calls)), [])
+        self.assertEqual(runner.check_expectations(
+            self._res(expect={}, calls={"jev": []})), [])
 
     def test_stop_within_ms(self):
         ev = [{"status": "acting", "t_ms": 10},

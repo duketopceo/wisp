@@ -285,6 +285,12 @@ def check_expectations(res: TurnResult) -> list:
         want("groq_tts_calls", len(res.calls.get("groq_tts", [])))
     if "jev_calls" in ex:
         want("jev_calls", len(res.calls.get("jev", [])))
+    elif res.calls.get("jev"):
+        # the Jev router is retired: a turn that reaches the endpoint
+        # without declaring it is a stray hop, not an expectation
+        bad.append(f"jev_calls: {len(res.calls['jev'])} stray hop(s) to the "
+                   "retired decision endpoint (declare expect.jev_calls "
+                   "only for a fixture about Jev itself)")
     if "steps_contain" in ex:
         steps = res.final.get("steps", [])
         if len(steps) != len(ex["steps_contain"]):
