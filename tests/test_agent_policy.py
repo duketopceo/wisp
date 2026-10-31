@@ -106,11 +106,57 @@ class PolicyTable(unittest.TestCase):
         self.assertEqual(sp.classify(call("execute", "pytest -q")), "ask")
         self.assertEqual(sp.classify(call("execute", "ls")), "allow")
 
-    def test_edited_source_keeps_build_commands_allowed(self):
+    def test_edited_source_demotes_build_commands(self):
+        # a runner executes agent-written source too
         sp = agent_policy.SessionPolicy(CWD, OUT, "autonomous")
-        edit = call("edit", path=CWD + "/src/a.py")
-        sp.note_edit(edit)
+        sp.note_edit(call("edit", path=CWD + "/src/a.py"))
+        self.assertEqual(sp.classify(call("execute", "pytest -q")), "ask")
+
+    def test_inert_edit_keeps_build_commands_allowed(self):
+        sp = agent_policy.SessionPolicy(CWD, OUT, "autonomous")
+        for f in ("README.md", "notes.txt", "docs/a.rst", "logo.png"):
+            sp.note_edit(call("edit", path=CWD + "/" + f))
         self.assertEqual(sp.classify(call("execute", "pytest -q")), "allow")
+
+    def test_written_test_file_demotes_every_runner(self):
+        """The reviewed attack: write test_payload.py, then run it."""
+        runners = ["python3 -m unittest test_payload",
+                   "python -m pytest test_payload.py", "pytest -q",
+                   "python3 -m unittest discover", "npm test",
+                   "npm run test", "pnpm test", "yarn test", "make test",
+                   "make", "cargo test", "go test"]
+        for f in ("test_payload.py", "payload_test.py", "tests/test_x.py",
+                  "payload.test.js", "payload.spec.ts", "run_tests",
+                  "Makefile", "build.rs", "go.mod", "x.pth",
+                  "sitecustomize.py", "package.json", "conftest.py"):
+            for cmd in runners:
+                with self.subTest(file=f, cmd=cmd):
+                    sp = agent_policy.SessionPolicy(CWD, OUT, "autonomous")
+                    w = call("edit", path=CWD + "/" + f)
+                    self.assertEqual(sp.classify(w), "allow")
+                    sp.note_edit(w)
+                    self.assertEqual(sp.classify(call("execute", cmd)),
+                                     "ask")
+
+    def test_other_tool_kinds_and_move_taint(self):
+        for kind in ("edit", "delete", "move"):
+            sp = agent_policy.SessionPolicy(CWD, OUT, "autonomous")
+            sp.note_edit(call(kind, path=CWD + "/test_payload.py"))
+            self.assertEqual(
+                sp.classify(call("execute", "python3 -m unittest t")), "ask")
+
+    def test_approved_command_taints_session(self):
+        sp = agent_policy.SessionPolicy(CWD, OUT, "autonomous")
+        cmd = call("execute", "sh gen.sh")
+        self.assertEqual(sp.classify(cmd), "ask")
+        sp.note_edit(cmd)
+        self.assertEqual(sp.classify(call("execute", "pytest -q")), "ask")
+        self.assertEqual(sp.classify(call("execute", "ls")), "allow")
+
+    def test_symlink_and_dotdot_paths_resolve(self):
+        sp = agent_policy.SessionPolicy(CWD, OUT, "autonomous")
+        sp.note_edit(call("edit", path="src/../test_payload.py"))
+        self.assertEqual(sp.classify(call("execute", "pytest -q")), "ask")
 
 
 if __name__ == "__main__":
