@@ -365,6 +365,37 @@ class TestTable(unittest.TestCase):
 
 
 class TestNewCommands(unittest.TestCase):
+    def test_doctor_preserves_blocking_preflight_result(self):
+        # Fresh imports inherit CliEnv's isolated HOME/XDG and empty PATH.
+        script = """
+import json
+from unittest import mock
+from wisp import preflight
+from wisp.cli import diagnose
+checks = [
+    {"id": "blocked-home", "level": "block", "detail": "not writable",
+     "fix": "Use your own HOME."},
+    {"id": "optional-tool", "level": "degraded", "detail": "absent", "fix": ""},
+    {"id": "ready", "level": "ok", "detail": "present", "fix": ""},
+]
+with mock.patch.object(preflight, "run", return_value=checks), \\
+        mock.patch.object(diagnose, "_cua_rows"):
+    print(json.dumps(diagnose.doctor_sections({})))
+"""
+        with CliEnv() as env:
+            result = subprocess.run(
+                [sys.executable, "-c", script], cwd=ROOT, env=env.env,
+                capture_output=True, text=True, timeout=15)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            sections = json.loads(result.stdout)
+            rows = next(s["rows"] for s in sections if s["name"] == "preflight")
+            checks = {r["name"]: r for r in rows}
+            self.assertFalse(checks["blocked-home"]["ok"])
+            self.assertIn("block: not writable", checks["blocked-home"]["value"])
+            self.assertIn("Use your own HOME.", checks["blocked-home"]["value"])
+            self.assertTrue(checks["optional-tool"]["ok"])
+            self.assertTrue(checks["ready"]["ok"])
+
     def test_doctor_accepts_ydotool_as_the_existing_typing_fallback(self):
         with CliEnv() as env:
             env.shim("ydotool")

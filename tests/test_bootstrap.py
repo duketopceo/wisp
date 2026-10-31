@@ -139,6 +139,44 @@ class BootstrapTests(unittest.TestCase):
                     network.assert_not_called()
                     self.assertIn("HOME", output.getvalue())
 
+    def test_home_access_denial_refuses_before_install_probes(self):
+        bootstrap = self.load()
+        with tempfile.TemporaryDirectory() as td:
+            directory = pathlib.Path(td)
+            home = directory / "home"
+            home.mkdir()
+            alias = directory / "home-link"
+            alias.symlink_to(home, target_is_directory=True)
+            for error in (None, PermissionError(13, "denied"),
+                          OSError(5, "I/O error")):
+                with self.subTest(error=error), \
+                        mock.patch.dict(os.environ, {"HOME": str(alias), "SUDO_USER": ""}), \
+                        mock.patch("os.geteuid", return_value=1000), \
+                        mock.patch("platform.system", return_value="Linux"), \
+                        mock.patch("platform.machine", return_value="aarch64"), \
+                        mock.patch("os.access", return_value=False,
+                                   side_effect=error) as access, \
+                        mock.patch("shutil.which", return_value="/independent/gh") as which, \
+                        mock.patch("urllib.request.urlopen",
+                                   return_value=io.BytesIO(b"{}")) as network, \
+                        mock.patch("subprocess.run") as process, \
+                        mock.patch("shutil.disk_usage") as disk, \
+                        mock.patch("tempfile.TemporaryDirectory") as staging, \
+                        contextlib.redirect_stdout(io.StringIO()) as output, \
+                        contextlib.redirect_stderr(io.StringIO()):
+                    self.assertEqual(bootstrap.main(["--yes"]), 4)
+                    self.assertIn("HOME", output.getvalue())
+                    self.assertIn("desktop terminal", output.getvalue())
+                    self.assertIn("Nothing was written", output.getvalue())
+                    access.assert_called_once_with(home.resolve(),
+                                                   os.W_OK | os.X_OK)
+                    which.assert_not_called()
+                    network.assert_not_called()
+                    process.assert_not_called()
+                    disk.assert_not_called()
+                    staging.assert_not_called()
+                self.assertEqual(list(home.iterdir()), [])
+
     def test_credential_arguments_are_rejected_without_echoing_values(self):
         bootstrap = self.load()
         err = io.StringIO()

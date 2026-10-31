@@ -1,5 +1,6 @@
 """U1: the shared install/update preflight. Offline; every probe is a seam."""
 import contextlib
+import os
 import pathlib
 import sys
 import tempfile
@@ -74,6 +75,35 @@ class Preflight(unittest.TestCase):
                         self.fail(f"HOME failure escaped: {type(exc).__name__}")
                     self.assertEqual(self.level(rows, "home"), "block")
                     self.assertEqual(self.level(rows, "disk space"), "degraded")
+
+    def test_home_access_denial_blocks_without_disk_probes(self):
+        with tempfile.TemporaryDirectory() as td:
+            directory = pathlib.Path(td)
+            home = directory / "home"
+            home.mkdir()
+            alias = directory / "home-link"
+            alias.symlink_to(home, target_is_directory=True)
+            for error in (None, PermissionError(13, "denied"),
+                          OSError(5, "I/O error")):
+                with self.subTest(error=error), \
+                        mock.patch("os.access", return_value=False,
+                                   side_effect=error) as access, \
+                        mock.patch("shutil.disk_usage",
+                                   return_value=mock.Mock(free=5 * GB)) as disk, \
+                        mock.patch("urllib.request.urlopen") as network, \
+                        mock.patch("subprocess.run") as process:
+                    rows = preflight.run(alias, record={}, system="Linux",
+                                         machine="aarch64", py=(3, 14, 8),
+                                         which=lambda n: None,
+                                         systemd=lambda: False)
+                    self.assertEqual(self.level(rows, "home"), "block")
+                    self.assertEqual(self.level(rows, "disk space"), "degraded")
+                    self.assertIn("desktop terminal", preflight.refusal(rows))
+                    access.assert_called_once_with(home.resolve(),
+                                                   os.W_OK | os.X_OK)
+                    disk.assert_not_called()
+                    network.assert_not_called()
+                    process.assert_not_called()
 
     def test_unsupported_architecture_blocks_with_a_fix(self):
         rows = self.run_pf(machine="riscv64")

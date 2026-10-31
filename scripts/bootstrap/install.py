@@ -172,7 +172,8 @@ def main(argv=None):
     try:
         resolved_home = home.resolve(strict=True)
         safe_home = (home.is_absolute() and resolved_home != resolved_home.parent
-                     and resolved_home.is_dir())
+                     and resolved_home.is_dir()
+                     and os.access(resolved_home, os.W_OK | os.X_OK))
     except (OSError, RuntimeError):
         safe_home = False
     if not safe_home:

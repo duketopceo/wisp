@@ -53,7 +53,8 @@ def run(home=None, opt=None, *, system=None, machine=None, py=None, disk_free=No
     try:
         resolved_home = home.resolve(strict=True)
         safe_home = (home.is_absolute() and resolved_home != resolved_home.parent
-                     and resolved_home.is_dir())
+                     and resolved_home.is_dir()
+                     and os.access(resolved_home, os.W_OK | os.X_OK))
     except (OSError, RuntimeError):
         safe_home = False
     rows.append(_row("home", "ok" if safe_home else "block",

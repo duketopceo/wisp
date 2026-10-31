@@ -352,6 +352,8 @@ class InstallPreflightGate(unittest.TestCase):
         self.assertIn("warn quickshell", text)
         self.assertIn("Install Quickshell separately.", text)
         self.assertLess(text.index("preflight:"), text.index("applying managed files"))
+        self.assertLess(text.index("preflight:"), text.index("warn quickshell"))
+        self.assertLess(text.index("warn quickshell"), text.index("applying managed files"))
 
     def test_blocked_preview_exits_four_without_writes_or_service_actions(self):
         import contextlib
