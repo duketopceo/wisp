@@ -94,6 +94,8 @@ class DryRun(Fixture):
         self.assertIn("~ wisp/a.py", text)
         self.assertIn("+ wisp/b.py", text)
         self.assertIn("- wisp/gone.py", text)
+        self.assertIn("file diff covers the core install only", text)
+        self.assertIn("no automatic rollback or post-install health check", text)
         self.assertNotIn("shells/x.qml", text)        # unchanged
         self.assertEqual(res["changes"]["changed"], ["wisp/a.py", "wispd"])
         self.assertFalse(res["applied"])

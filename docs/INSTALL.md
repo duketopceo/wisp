@@ -143,7 +143,10 @@ from anywhere.
 
 ## Secrets
 
-`~/.config/wisp/.env`:
+Bring your own provider keys; OmaSeal is optional and no key ships with Wisp.
+`wispd onboard` can store a pasted key in `~/.config/wisp/.env` with owner-only permissions.
+This file contains plaintext secrets, not a system keyring.
+Alternatively, set environment variables for the Wisp process:
 
 ```
 OPENROUTER_API_KEY=sk-or-...
@@ -152,6 +155,9 @@ GROQ_API_KEY=gsk-...
 ```
 
 Env vars take precedence over `.env` — handy for testing.
+An interactive shell's exports do not automatically reach a systemd user service.
+Make the variables available to that service or use Wisp's user-private `.env` or a configured keyring reference instead.
+See `docs/CONFIG.md` for optional Secret Service and OmaSeal references and source ordering.
 
 ## Speech-to-text
 

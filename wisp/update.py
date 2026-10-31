@@ -217,6 +217,11 @@ def describe(res: dict) -> str:
              f"sha256:         {res['sha256']}  (verified, {res['digest_source']})",
              f"files:          {len(ch['added'])} added, "
              f"{len(ch['changed'])} changed, {len(ch['removed'])} removed"]
+    lines.append("scope:          file diff covers the core install only; "
+                 "the installer can also change the plugin, desktop files, "
+                 "user units and hotkey binding.")
+    lines.append("recovery:       no automatic rollback or post-install "
+                 "health check is provided.")
     for label, key, mark in (("added", "added", "+"),
                              ("changed", "changed", "~"),
                              ("removed", "removed", "-")):
