@@ -33,13 +33,11 @@ def ask_chat(transcript: str, cfg: dict, session_text: str = "",
     from . import brain
     if image_b64 and not brain.supports_vision(cfg):
         image_b64 = None  # provider can't see it — don't attach
-    system = ("You are Wisp, a terse desktop voice assistant on Linux. "
-              "Answer in one or two short sentences, plain speech, no "
-              "markdown.")
     from . import lang as _lang
-    rule = _lang.reply_rule(lang)
-    if rule:
-        system += " " + rule
+    system = _lang.with_reply_rule(
+        "You are Wisp, a terse desktop voice assistant on Linux. "
+        "Answer in one or two short sentences, plain speech, no "
+        "markdown.", lang)
     from . import context as _ctx
     focus = _ctx.snapshot(cfg)
     if focus:
