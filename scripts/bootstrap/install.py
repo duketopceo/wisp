@@ -168,6 +168,20 @@ def main(argv=None):
     if sys.version_info < (3, 11, 4):
         print("Python 3.11.4+ is required.")
         return 4
+    home = pathlib.Path(os.environ.get("HOME", ""))
+    try:
+        resolved_home = home.resolve(strict=True)
+        safe_home = (home.is_absolute() and resolved_home != resolved_home.parent
+                     and resolved_home.is_dir()
+                     and os.access(resolved_home, os.W_OK | os.X_OK))
+    except (OSError, RuntimeError):
+        safe_home = False
+    if not safe_home:
+        print("Refusing installation: HOME must be an existing, accessible absolute "
+              "directory that does not resolve to /. "
+              "Run from your normal desktop terminal. "
+              "Nothing was written.")
+        return 4
     if not args.yes and (not sys.stdin.isatty()
                          or input("Download and install these user-scoped files? [y/N] ")
                          .strip().lower() not in ("y", "yes")):

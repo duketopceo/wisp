@@ -328,6 +328,33 @@ class InstallAgentsTest(unittest.TestCase):
 class InstallPreflightGate(unittest.TestCase):
     """A blocking preflight row stops a real install before any write."""
 
+    def test_real_install_reports_optional_warnings_before_applying_files(self):
+        import contextlib
+        import io
+        from wisp import preflight
+
+        class Host:
+            def install_files(self, **kw):
+                print("applying managed files")
+
+            def install_bind(self, cfg, **kw):
+                pass
+
+        rows = [{"id": "quickshell", "level": "degraded",
+                 "detail": "not found; desktop companion unavailable",
+                 "fix": "Install Quickshell separately."}]
+        out = io.StringIO()
+        with mock.patch.object(preflight, "run", return_value=rows), \
+                contextlib.redirect_stdout(out):
+            code = cli.main(["install"], host=Host())
+        self.assertEqual(code, 0)
+        text = out.getvalue()
+        self.assertIn("warn quickshell", text)
+        self.assertIn("Install Quickshell separately.", text)
+        self.assertLess(text.index("preflight:"), text.index("applying managed files"))
+        self.assertLess(text.index("preflight:"), text.index("warn quickshell"))
+        self.assertLess(text.index("warn quickshell"), text.index("applying managed files"))
+
     def test_blocked_preview_exits_four_without_writes_or_service_actions(self):
         import contextlib
         import io

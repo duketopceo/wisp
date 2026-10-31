@@ -6,7 +6,7 @@ app.
 
 ## One-line verified-release bootstrap
 
-Use a published tag, including a prerelease such as `v1.0.0-rc.1`; the
+Use a published tag, including a prerelease such as `v1.0.0-rc.3`; the
 example is a candidate identifier, not a claim that this tag exists yet.
 Run as your normal Linux desktop user, never with sudo. Python 3.11.4+,
 `curl`, Linux x86_64 or aarch64, GitHub HTTPS access, and an **independently
@@ -14,6 +14,14 @@ installed GitHub CLI with artifact-attestation support** are required.
 The bootstrap never installs its own verifier. Check `gh attestation verify
 --help` for exact-identity, source-ref/source-digest, signer-digest and
 hosted-runner verification flags. ([GitHub CLI verification](https://cli.github.com/manual/gh_attestation_verify))
+
+On Omarchy/Arch, install the independent verifier from your normal terminal
+with `sudo pacman -S --needed github-cli` if it is missing. This is an
+explicit system-package operation, not something the bootstrap runs.
+An RPC/SSH shell without `HOME` or desktop-session variables is not a live
+desktop check. Run installation and interactive onboarding from your usual
+desktop terminal; the bootstrap refuses an empty, relative, nonexistent or
+filesystem-root `HOME` before downloading a payload.
 
 The bootstrap is self-contained Python, not a shell script. **This
 convenience download does not authenticate the bootstrap script itself.**
@@ -24,7 +32,7 @@ the later payload attestation cannot repair that root-entrypoint problem.
 ([bootstrap implementation](https://github.com/duketopceo/wisp/blob/master/scripts/bootstrap/install.py))
 
 ```sh
-VERSION=v1.0.0-rc.1; f=$(mktemp) && curl -fLsS "https://raw.githubusercontent.com/duketopceo/wisp/$VERSION/scripts/bootstrap/install.py" -o "$f" && python3 "$f" --version "$VERSION"
+VERSION=v1.0.0-rc.3; f=$(mktemp) && curl -fLsS "https://raw.githubusercontent.com/duketopceo/wisp/$VERSION/scripts/bootstrap/install.py" -o "$f" && python3 "$f" --version "$VERSION"
 ```
 
 For inspect-first use, stop after downloading and read the file with a
@@ -215,8 +223,9 @@ it anyway, and still asks for your yes.
 
 ### The stages of an update
 
-1. **Preflight.** OS, architecture, Python, free space, systemd, optional
-   tools and the current install are checked first. A `MISS` row stops
+1. **Preflight.** The effective home directory, OS, architecture, Python
+   3.11.4+, free space, systemd/session environment, optional tools and
+   the current install are checked first. A `MISS` row stops
    the update or install before anything is written and says what to fix;
    a `warn` row (no systemd, no OpenCode, no Ollama, no `hyprctl`) is
    shown and never blocks. `wispd doctor` and `wispd install --dry-run`
@@ -224,6 +233,13 @@ it anyway, and still asks for your yes.
    and exits 4 if any of its checks are missing; that is not a clean bill
    of health or an installation-success claim. Blocked install previews exit 4 without writes,
    network or service actions; an unblocked preview exits 0.
+   Real installs also report the rows. Desktop companion, audio capture,
+   playback/resampling/ducking, typing, clipboard, notifications, verifier,
+   repository and optional local-model/agent tools are checked on PATH;
+   supported typing, playback and speech fallbacks are accepted. A found
+   executable or session variable does not prove live device access.
+   Missing desktop-session variables warn without blocking a headless install.
+   These checks do not install packages, capture audio, inject input or start services.
 2. **Preview.** The version, digest and every file that would change. It
    also calls out external plugin and unit changes.
 3. **Consent.** Nothing is downloaded into the install, written or
