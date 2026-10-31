@@ -57,6 +57,8 @@ Packaging normalizes gzip headers, archive order, file modes, owner/group and ti
 
 The workflow pins action commits, Python 3.11.17 and Rust 1.99.1 and uses the checked-in Cargo lockfile with `--locked`; it does not update dependencies during release. Those interpreter/compiler versions match the existing successful CI run rather than introducing a toolchain upgrade. ([workflow](https://github.com/duketopceo/wisp/blob/master/.github/workflows/release.yml), [successful CI run](https://github.com/duketopceo/wisp/actions/runs/41114133191))
 
+Before building, each native job refuses a tag whose commit is not on `master`, then runs the full unit suite on the release commit. Attestation proves where an archive came from, not that it works, so a red or never-reviewed commit does not publish. ([workflow](https://github.com/duketopceo/wisp/blob/master/.github/workflows/release.yml))
+
 ## Local verification before tagging
 
 Run the focused regression tests without starting a desktop session:

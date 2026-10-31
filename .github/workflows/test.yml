@@ -23,7 +23,17 @@ jobs:
         run: python -m py_compile wispd wisp/*.py wisp/tools/*.py tests/*.py
       - name: Test deps
         run: pip install sqlite-vec pillow
+      - name: Qt tools for the QML suites
+        # without these the QML lib, lint and shader tests skip green;
+        # WISP_CI_REQUIRE_TOOLS turns a missing tool into a failure
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y qt6-declarative-dev-tools \
+            qml6-module-qttest qml6-module-qtquick qt6-shader-baker
+          echo "/usr/lib/qt6/bin" >> "$GITHUB_PATH"
       - name: Unit tests
+        env:
+          WISP_CI_REQUIRE_TOOLS: "1"
         run: python -m unittest discover -s tests -v
 
   plugin:
@@ -34,8 +44,10 @@ jobs:
       - name: qmllint
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y qt6-declarative-dev-tools || true
+          sudo apt-get install -y qt6-declarative-dev-tools
           echo "/usr/lib/qt6/bin" >> "$GITHUB_PATH"
+          # plugin_mirror --lint passes when qmllint is missing; CI must lint
+          test -x /usr/lib/qt6/bin/qmllint
       - name: Build and validate the plugin mirror
         run: python3 scripts/plugin_mirror.py --out build/mirror --version v0.0.0 --lint
 
