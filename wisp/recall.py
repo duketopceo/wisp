@@ -79,7 +79,9 @@ def _vec_provider(path=None) -> dict | None:
     global _vec_failed
     if _vec_failed:
         return None
-    cfg = config.load_config().get("recall", {})
+    all_cfg = config.load_config()
+    cfg = dict(all_cfg.get("recall", {}))
+    cfg["_openrouter_key_env"] = config.openrouter_key_source(all_cfg)
     if cfg.get("provider", "none") in ("", "none"):
         return None
     try:
@@ -92,16 +94,22 @@ def _vec_provider(path=None) -> dict | None:
 def _embed(texts: list, cfg: dict) -> list:
     """OpenAI-compatible /embeddings POST (OpenRouter default)."""
     base = cfg.get("base_url", "https://openrouter.ai/api/v1")
-    key = config.load_env_key(cfg.get("key_env", "OPENROUTER_API_KEY"))
+    source = cfg.get("key_env", "OPENROUTER_API_KEY")
+    if (not config.is_openrouter_endpoint(base)
+            and config.shares_key_source(
+                source, cfg.get("_openrouter_key_env", "OPENROUTER_API_KEY"))):
+        raise ValueError("custom embedding endpoint needs its own credential source")
+    key = config.require_key(source) if source else ""
     model = cfg.get("model", "openai/text-embedding-3-small")
     body = json.dumps({"model": model, "input": texts}).encode()
     from . import brain as _brain
     req = urllib.request.Request(
         f"{base}/embeddings", data=body,
-        headers={"Authorization": f"Bearer {key}",
+        headers={**({"Authorization": f"Bearer {key}"} if key else {}),
                  "Content-Type": "application/json",
                  "User-Agent": "wisp/1.0",
                  **_brain.app_headers(base)})
+    config.protect_authorization(req)
     with urllib.request.urlopen(req, timeout=30) as r:
         data = json.loads(r.read())
     return [d["embedding"] for d in data["data"]]

@@ -16,6 +16,7 @@ import json
 import re
 import threading
 import time
+import urllib.request
 from datetime import datetime, timezone
 
 from . import config
@@ -193,15 +194,11 @@ def _decisions_call(text: str, model: str, questions: dict, context: str,
                "X-Title": "Wisp"}
     endpoint = config.JEV_ENDPOINT
     from . import stage_route as _sr
-    if _sr._jev_is_local(endpoint):
-        key = config.load_env_key("OPENROUTER_API_KEY")
-        if key:
-            headers["Authorization"] = f"Bearer {key}"
-    else:
-        headers["Authorization"] = f"Bearer {config.load_api_key()}"
+    headers.update(_sr.decision_auth_headers(endpoint, cfg))
     req = urllib.request.Request(
         endpoint, data=json.dumps(payload).encode(), headers=headers,
         method="POST")
+    config.protect_authorization(req)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read())
 

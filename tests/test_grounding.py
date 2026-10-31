@@ -32,6 +32,20 @@ class TestGrounding(unittest.TestCase):
         self.img_b64 = base64.b64encode(buf.getvalue()).decode()
 
     @needs_pil
+    def test_grounding_uses_the_configured_openrouter_source(self):
+        cfg = {"brain.openrouter": {"key_env": "WISP_GROUND_TEST_KEY"}}
+        answer = {"answers": {"p_0": {"noul": 1.0}}}
+        with mock.patch.dict("os.environ", {
+                "WISP_GROUND_TEST_KEY": "ground-sentinel",
+                "OPENROUTER_API_KEY": "legacy-sentinel"}), \
+                mock.patch.object(config, "JEV_ENDPOINT",
+                                  "https://openrouter.ai/api/alpha/decisions"), \
+                mock.patch.object(grounding, "_post_json", return_value=answer) as post:
+            grounding.ground_element(self.img_b64, "button", cfg=cfg)
+        self.assertEqual(post.call_args.args[3]["Authorization"],
+                         "Bearer ground-sentinel")
+
+    @needs_pil
     @mock.patch("wisp.config.load_api_key", return_value="sk-test-key")
     @mock.patch("urllib.request.urlopen")
     def test_ground_element_probabilistic_centering(self, mock_urlopen, mock_key):

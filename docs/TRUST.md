@@ -14,6 +14,8 @@ Nothing is sent between key presses. There is no analytics, no account and no Wi
 | `api.groq.com` | Speech to text for each push-to-talk turn (any OpenAI-compatible endpoint works in its place). | **audio.** The recording of that turn, and the vocabulary prompt from `[stt] prompt`. | Yes. `[stt] provider` is `openai` with this base URL. | You. `GROQ_API_KEY` in your environment, `~/.config/wisp/.env` or your keyring. | `[stt] provider = "local"` transcribes on this machine with whisper.cpp and sends no audio; `[stt] base_url` points at any other host. The provider's retention is its own. |
 | `api.github.com` | Update check and release lookup for `wispd update`. | **nothing of yours.** A plain GET with the user agent `wispd-update`. Nothing from your machine is in it. | No. Only when you run `wispd update`; the daemon never calls it. | None. | Do not run `wispd update`. A release is verified against its published SHA-256 before anything is installed. |
 | `upload.wikimedia.org` | Pictures for answer cards. | **nothing of yours.** A plain GET for one picture an answer named. Nothing from your machine is in it, but the picture's address comes from the answer. | Only when an answer shows a picture. This is the only host fetched by default. | None. | `[images] allow` is the full list of hosts that may be fetched, https only, size-capped, private addresses refused. Set it to a host you do not use to turn pictures off. |
+| `eu.openrouter.ai` | OpenRouter EU regional endpoint, when configured. | **text, screenshot.** What you said (as text), the focused app and window names, recent turns, memory notes, a selection or copied text you pointed at, and a screenshot on answer calls (`[agent] screenshots`) and the vision fallback. Windows that look like a password manager, a keyring or authentication prompt or a sudo terminal (plus any you add under `[cua]`) are blanked first, and a capture is refused while one has focus. | No. Only when explicitly configured. | You. `OPENROUTER_API_KEY` in your environment, `~/.config/wisp/.env` or your keyring. | `[brain] default` and `[brain] fallback` take a local model (`ollama:`, `lmstudio:`, `mlx:`) and nothing then leaves; `[agent] screenshots = false` keeps the screen out of answers. How long OpenRouter and the model provider keep a request is set by your OpenRouter account's privacy settings, not by Wisp. |
+| `us.openrouter.ai` | OpenRouter US regional endpoint, when configured. | **text, screenshot.** What you said (as text), the focused app and window names, recent turns, memory notes, a selection or copied text you pointed at, and a screenshot on answer calls (`[agent] screenshots`) and the vision fallback. Windows that look like a password manager, a keyring or authentication prompt or a sudo terminal (plus any you add under `[cua]`) are blanked first, and a capture is refused while one has focus. | No. Only when explicitly configured. | You. `OPENROUTER_API_KEY` in your environment, `~/.config/wisp/.env` or your keyring. | `[brain] default` and `[brain] fallback` take a local model (`ollama:`, `lmstudio:`, `mlx:`) and nothing then leaves; `[agent] screenshots = false` keeps the screen out of answers. How long OpenRouter and the model provider keep a request is set by your OpenRouter account's privacy settings, not by Wisp. |
 
 ## Hosts you choose
 
@@ -47,6 +49,7 @@ Loopback addresses (`127.0.0.1`, `localhost`) are local services: whisper.cpp, a
 | `example.com` | An example address in help text. |
 | `amara.org` | A credit line for subtitle text in a bundled sample. |
 | `www.w3.org` | An XML namespace in a generated icon. Never requested. |
+| `hf.co` | A Hugging Face model namespace inside Ollama tags (`hf.co/owner/model:tag`) in the local-model catalog. It names a weight to pull, not a host Wisp opens — Ollama resolves the download. |
 | `airtable.com` | App-skill routing: matched against the frontmost window's URL to pick the Airtable skill. Nothing is sent to it. |
 | `app.asana.com` | App-skill routing: matched against the frontmost window's URL to pick the Asana skill. Nothing is sent to it. |
 | `app.clickup.com` | App-skill routing: matched against the frontmost window's URL to pick the ClickUp skill. Nothing is sent to it. |
@@ -118,15 +121,17 @@ From the scan this page is built from.
 - `docs.google.com`: `wisp/skills.py`
 - `drive.google.com`: `wisp/skills.py`
 - `dropbox.com`: `wisp/skills.py`
+- `eu.openrouter.ai`: `wisp/config.py`
 - `example.com`: `wisp/cli/share.py`
 - `figma.com`: `wisp/skills.py`
 - `github.com`: `rs/wispd/src/brain.rs`, `wisp/brain.py`, `wisp/grounding.py`, `wisp/route.py`, `wisp/skills.py`, `wisp/stage_route.py` and 2 more
 - `gitlab.com`: `wisp/skills.py`
 - `gmail.com`: `wisp/tools/__init__.py`
+- `hf.co`: `wisp/model_catalog.py`
 - `linear.app`: `wisp/skills.py`
 - `mail.google.com`: `wisp/config.py`, `wisp/skills.py`
 - `open.spotify.com`: `wisp/skills.py`
-- `openrouter.ai`: `rs/wispd/src/brain.rs`, `rs/wispd/src/config.rs`, `wisp/brain.py`, `wisp/config.py`, `wisp/recall.py`
+- `openrouter.ai`: `rs/wispd/src/brain.rs`, `rs/wispd/src/config.rs`, `wisp/brain.py`, `wisp/config.py`, `wisp/onboard.py`, `wisp/recall.py`
 - `outlook.office.com`: `wisp/skills.py`
 - `perplexity.ai`: `wisp/skills.py`
 - `reddit.com`: `wisp/skills.py`
@@ -134,6 +139,7 @@ From the scan this page is built from.
 - `tallyline.app`: `wisp/skills.py`
 - `trello.com`: `wisp/skills.py`
 - `upload.wikimedia.org`: `wisp/tools/imagefetch.py`
+- `us.openrouter.ai`: `wisp/config.py`
 - `vercel.com`: `wisp/skills.py`
 - `wisp.ai`: `wisp/cli/dictate.py`
 - `www.w3.org`: `wisp/tools/system.py`

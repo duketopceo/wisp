@@ -56,6 +56,10 @@ fn vec_provider() -> Option<()> {
 /// OpenAI-compatible /embeddings POST — parity with Python `_embed`.
 fn embed(texts: &[String]) -> Result<Vec<Vec<f64>>, String> {
     let cfg = config::load();
+    if !config::is_openrouter_endpoint(&cfg.recall_base_url)
+        && config::shares_key_source(&cfg.recall_key_env, config::openrouter_key_source(&cfg)) {
+        return Err("custom embedding endpoint requires a separate credential".into());
+    }
     let key = config::env_key(&cfg.recall_key_env)
         .ok_or_else(|| format!("no key at {}", cfg.recall_key_env))?;
     let url = format!("{}/embeddings",

@@ -262,6 +262,7 @@ def _transcribe_openai(wav: pathlib.Path, stt: dict,
                      **_brain.app_headers(base),
                      "Content-Type":
                      f"multipart/form-data; boundary={boundary}"})
+        config.protect_authorization(req)
         with _cancel.urlopen(req, timeout=60) as resp:
             return json.loads(resp.read())
 

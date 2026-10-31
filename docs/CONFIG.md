@@ -143,11 +143,22 @@ instead of falling back.
 |-----|---------|
 | `type` | `openrouter`, `openai_compat`, or `ollama` |
 | `base_url` | endpoint |
-| `key_env` | env var name; may be `omaseal://service/account` |
+| `key_env` | ordered comma-separated credential sources: env var / `.env` name, `keyring://service/account` (Linux Secret Service), or `omaseal://service/account` |
 | `paid` | `true`/`false`; defaults to true for `openrouter.ai` URLs. Paid fallback entries need `[brain] allow_paid` |
 | `vision` / `tools` | capability flags — gates screenshots and tool schemas |
 
 Built-ins: `openrouter`, `ollama`, `lmstudio`, `mlx`.
+
+`[brain.openrouter] key_env` also selects the OpenRouter credential for hosted
+decision and grounding calls. With no override it remains `OPENROUTER_API_KEY`.
+Sources are tried only in the configured order: for example,
+`keyring://wisp/openrouter,OPENROUTER_API_KEY` tries Secret Service first,
+then the environment and Wisp's `.env`. A single explicit keyring or OmaSeal
+reference does not silently fall back to a different key. For embeddings,
+`[recall] key_env` remains an independent explicit override.
+The `keyring://` backend uses `secret-tool` and a working, unlocked Secret
+Service; OmaSeal is optional. Neither is necessary for the default env/`.env`
+setup. A `.env` file stores plaintext and must be kept private.
 
 ## [budget] — spend caps (W14, reconciled with 7ec4236)
 

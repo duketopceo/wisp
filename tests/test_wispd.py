@@ -255,7 +255,10 @@ class TestSttProvider(unittest.TestCase):
 
         def fake_urlopen(req, timeout=None):
             captured["url"] = req.full_url
-            captured["auth"] = req.headers.get("Authorization")
+            # protect_authorization moves the header to unredirected
+            # headers so redirects can't leak it; accept either place.
+            captured["auth"] = (req.headers.get("Authorization") or
+                                getattr(req, "unredirected_hdrs", {}).get("Authorization"))
             captured["ctype"] = req.headers.get("Content-type")
             captured["body"] = req.data
             return Resp()

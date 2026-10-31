@@ -106,6 +106,15 @@ HOSTS = {
                 "pictures off."),
 }
 
+# Regional OpenRouter endpoints have the same payload and credential
+# semantics as the default endpoint, but are only used when configured.
+for _region in ("eu", "us"):
+    HOSTS[f"{_region}.openrouter.ai"] = {
+        **HOSTS["openrouter.ai"],
+        "what": f"OpenRouter {_region.upper()} regional endpoint, when configured.",
+        "default": "No. Only when explicitly configured.",
+    }
+
 # Names the code mentions that Wisp does not send anything to: a browser
 # is opened to them for you, or the text only appears in a message, a
 # comment, a header label or an XML namespace.
@@ -131,6 +140,10 @@ MENTIONS = {
     "amara.org": "A credit line for subtitle text in a bundled sample.",
     "www.w3.org": "An XML namespace in a generated icon. Never "
                   "requested.",
+    "hf.co": "A Hugging Face model namespace inside Ollama tags "
+             "(`hf.co/owner/model:tag`) in the local-model catalog. It "
+             "names a weight to pull, not a host Wisp opens — Ollama "
+             "resolves the download.",
     # App-skill routing. `wisp/skills.py` backfills `url_hosts` on
     # `<name>-app` skills from `_HOST_GUESSES`, so the router can pick a
     # skill by the frontmost window's URL. The host is matched, never
