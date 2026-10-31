@@ -655,30 +655,47 @@ def _offer_keys(cfg: dict, probes: Probes, out):
             out(f"  not stored: {e}")
 
 
-def walk(cfg: dict, probes: Probes, progress: Progress, ask, out) -> dict:
+def walk(cfg: dict, probes: Probes, progress: Progress, ask, out, *,
+         color: bool = False, glyphs: bool = False, version: str = "",
+         width: int = 80) -> dict:
     """Offer each unfinished step in turn. `ask(prompt)` returns the
     answer (EOFError quits); `out(line)` prints. y runs the step, s or n
-    skips it (nothing written), q stops. -> {done, skipped, failed, na,
+    skips it (nothing written), q stops. The lit step (one dot) moves down
+    the list; every other line stays quiet. -> {done, skipped, failed, na,
     resumed, quit, finished}."""
+    from .cli import onboard_view as ov
     done0 = dict(progress.done)
     res = {"done": [], "skipped": [], "failed": [], "na": [],
            "resumed": [s.id for s in STEPS if s.id in done0],
            "quit": False, "finished": False}
+    checks = {s.id: check(s.id, cfg, probes) for s in STEPS}
+    live = [s for s in STEPS if checks[s.id]["state"] != "na"]
+    for line in ov.opening(len(live), color=color, glyphs=glyphs,
+                           version=version, width=width):
+        out(line)
+    k = 0
     for s in STEPS:
         if s.id in done0:
+            k += 1
             continue
         r = check(s.id, cfg, probes)
         if r["state"] == "na":
-            out(f"{s.title}: {r['detail']}")
+            out(ov.result_line("na", f"{s.title}: {r['detail']}",
+                               color=color))
             res["na"].append(s.id)
             continue
-        out(f"{s.title}: {r['detail']}")
+        k += 1
+        for line in ov.step_header(s.title, k, len(live), color=color,
+                                   glyphs=glyphs, first=(k == 1)):
+            out(line)
+        for line in ov.detail_lines(r["detail"], width):
+            out(line)
         if s.confirm:
             prompt = f"Send a test {s.title[:-1]} now? [y/N/s/q] "
         else:
             prompt = f"Check {s.title} now? [Y/s/q] "
         try:
-            ans = ask(prompt).strip().lower()
+            ans = ask("  " + prompt).strip().lower()
         except EOFError:
             res["quit"] = True
             break
@@ -693,13 +710,14 @@ def walk(cfg: dict, probes: Probes, progress: Progress, ask, out) -> dict:
             _offer_keys(cfg, probes, out)
         got = run_step(s.id, cfg, probes, progress, confirm=True)
         if got["done"]:
-            out(f"  ok: {got['detail']}")
-            out(f"  undo with: wispd onboard --undo {s.id}")
+            out(ov.result_line("done", got["detail"], color=color))
+            out(ov.result_line("undo", f"wispd onboard --undo {s.id}",
+                               color=color))
         else:
             res["failed"].append(s.id)
-            out(f"  not yet: {got['detail']}")
+            out(ov.result_line("fail", got["detail"], color=color))
             if got["fix"]:
-                out(f"  Try: {got['fix']}")
+                out(ov.result_line("fix", got["fix"], color=color))
     now_done = progress.done
     res["done"] = [s.id for s in STEPS if s.id in now_done]
     if _required_done(now_done) and not progress.finished:

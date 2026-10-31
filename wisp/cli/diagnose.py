@@ -615,14 +615,9 @@ def _onboard_starter(ctx, a, cfg, progress):
 
 
 def _onboard_rows(ctx, st):
-    mark = {"done": "ok", "todo": "TODO", "na": "n/a"}
-    rows = [[mark[s["state"]], s["name"],
-             s["detail"] if s["state"] != "todo" or not s["try"]
-             else s["detail"] + ". Try: " + s["try"]]
-            for s in st["steps"]]
-    tones = [[{"done": "ok", "todo": "warn", "na": "muted"}[s["state"]],
-              None, "muted"] for s in st["steps"]]
-    return ctx.table(["", "", ""], rows, tones, header=False)
+    from . import onboard_view
+    return onboard_view.checklist(st, color=ctx.color, glyphs=ctx.glyphs,
+                                  width=ctx.width)
 
 
 @command("onboard", "Walk through first-run setup (every step skippable)",
@@ -672,7 +667,8 @@ def onboard(ctx, a):
                        data=r)
     if a.interactive or (sys.stdin.isatty() and sys.stdout.isatty()
                          and not ctx.json and not a.status):
-        res = ob.walk(cfg, probes, progress, input, print)
+        res = ob.walk(cfg, probes, progress, input, print,
+                      color=ctx.color, glyphs=ctx.glyphs, width=ctx.width)
         return ctx.emit(res, "setup finished" if res["finished"]
                         else "progress saved, run wispd onboard to resume")
     st = ob.status(cfg, probes, progress)
