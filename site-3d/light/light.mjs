@@ -7,7 +7,7 @@
    loop reads scrollY and nothing else from layout; it runs only while the light moves, draws at
    most about 30 times a second, and sleeps at rest and while hidden. Breathing is pure CSS. */
 import {createSim} from "../wisp/sim.mjs";
-import {createGlView} from "../wisp/gl.mjs";
+import {createGlView, TAIL_N} from "../wisp/gl.mjs";
 
 const host = document.getElementById("light");
 const canvas = document.getElementById("gl");
@@ -31,9 +31,10 @@ let activeIndex = 0;
 // --- geometry: measured on load, resize and font load, never per frame ---
 function measure() {
   const sx = scrollX, sy = scrollY;
+  const rects = marks.map(m => m.getBoundingClientRect());
   geo = {
-    mx: marks.map(m => m.getBoundingClientRect().left + sx + 0.5),
-    my: marks.map(m => m.getBoundingClientRect().top + sy + 0.5),
+    mx: rects.map(r => r.left + sx + 0.5),
+    my: rects.map(r => r.top + sy + 0.5),
     mid: stops.map(s => { const r = s.getBoundingClientRect(); return r.top + sy + r.height / 2; }),
     vw: innerWidth, vh: innerHeight, size: host.clientWidth || 400,
   };
@@ -77,6 +78,7 @@ function placeCss() {
 function toCss(reason) {
   if (mode === "css") return;
   const keep = lastTransform;
+  const atRest = sim?.settled;
   stopLoop();
   mode = "css";
   view?.dispose(); view = null; sim = null;
@@ -86,7 +88,8 @@ function toCss(reason) {
   host.dataset.tier = "css";
   host.dataset.reason = reason;
   host.style.transform = keep;                        // hand-off keeps the head where it was
-  cssStop = keep ? nearestStop(scrollY + geo.vh / 2) : -1;   // stay put until the active stop changes
+  // At rest the light stays put until the active stop changes; mid-flight it glides onto its mark.
+  cssStop = keep && atRest ? nearestStop(scrollY + geo.vh / 2) : -1;
   placeCss();
   host.dataset.rendered = "true";
 }
@@ -126,7 +129,7 @@ function tick(ms) {
     const dt = first ? 1 / 60 : (ms - lastMs) / 1000;
     if (!first) budget(ms - lastMs);
     lastMs = ms;
-    if (mode !== "gl") return;
+    if (mode !== "gl") return;                       // the budget check can hand off to the CSS orb
     const [tx, ty] = liveTarget();
     sim.setTarget(tx, ty);
     const s = sim.step(dt);
@@ -148,9 +151,11 @@ function refresh() {
   wake();
 }
 
+function syncBreath() { host.dataset.breath = hidden || offscreen ? "paused" : "running"; }
+
 function onVisibility() {
   hidden = document.visibilityState === "hidden";
-  host.dataset.breath = hidden || offscreen ? "paused" : "running";
+  syncBreath();
   if (hidden) stopLoop(); else wake();
 }
 
@@ -160,7 +165,7 @@ function start() {
   view = createGlView(canvas, {onLost: () => toCss("context-lost")});
   if (!view) { toCss("no-webgl"); return; }
   const [x, y] = liveTarget();
-  sim = createSim({x, y});
+  sim = createSim({x, y, tailN: TAIL_N});
   mode = "gl";
   place(x, y);
   try {
@@ -183,7 +188,7 @@ if (typeof ResizeObserver === "function") new ResizeObserver(refresh).observe(do
 if (typeof IntersectionObserver === "function") {
   new IntersectionObserver(entries => {
     offscreen = !entries[entries.length - 1].isIntersecting;
-    host.dataset.breath = hidden || offscreen ? "paused" : "running";
+    syncBreath();
     if (!offscreen) wake();                             // redraws the resting frame it skipped
   }).observe(host);
 }

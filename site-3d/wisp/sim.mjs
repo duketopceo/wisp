@@ -31,7 +31,7 @@ export function createSim(options = {}) {
   const error = () => Math.hypot(state.x - target.x, state.y - target.y);
 
   function setTarget(x, y) {
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    if (!Number.isFinite(x) || !Number.isFinite(y) || (x === target.x && y === target.y)) return;
     target.x = x; target.y = y;
     // A velocity toward the target faster than omega * distance would overshoot a critically
     // damped spring, so bound it. Velocity within the bound is untouched (no teleport).

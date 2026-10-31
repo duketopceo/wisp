@@ -19,7 +19,7 @@ varying float vFade;
 void main() {
   vUv = aCorner;
   vec2 c = vec2(0.0);
-  float half_ = 0.5;
+  float halfSize = 0.5;
   vKind = 1.0;
   vFade = 1.0;
   if (aSlot > -0.5) {
@@ -30,11 +30,11 @@ void main() {
     vec2 side = vec2(-dir.y, dir.x);
     float z = 1.0 - f;                                        // farther points are smaller and fainter
     c = off + side * sin(uTime * 2.1 + aSlot * 0.9) * 0.03 * uTailLen;
-    half_ = (0.14 + 0.2 * z) * (0.5 + 0.5 * uTailLen);
+    halfSize = (0.14 + 0.2 * z) * (0.5 + 0.5 * uTailLen);
     vKind = 0.0;
     vFade = pow(z, 1.4) * smoothstep(0.0, 0.35, uTailLen);
   }
-  gl_Position = vec4(c + aCorner * half_, 0.0, 1.0);
+  gl_Position = vec4(c + aCorner * halfSize, 0.0, 1.0);
 }`;
 
 export const FRAGMENT_SRC = `
@@ -131,10 +131,11 @@ export function createGlView(canvas, {onLost} = {}) {
     return gl.getShaderParameter(s, gl.COMPILE_STATUS) ? s : null;
   };
   const vs = compile(gl.VERTEX_SHADER, VERTEX_SRC), fs = compile(gl.FRAGMENT_SHADER, FRAGMENT_SRC);
-  const program = gl.createProgram();
   if (!vs || !fs) return null;
+  const program = gl.createProgram();
   gl.attachShader(program, vs); gl.attachShader(program, fs); gl.linkProgram(program);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return null;
+  gl.deleteShader(vs); gl.deleteShader(fs);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) { gl.deleteProgram(program); return null; }
   gl.useProgram(program);
 
   // One static buffer: tail quads oldest to newest, then the core last (premultiplied "over" is
@@ -143,7 +144,8 @@ export function createGlView(canvas, {onLost} = {}) {
   const data = [];
   for (let j = 0; j < TAIL_N; j++) for (const [x, y] of corners) data.push(x, y, TAIL_N - 1 - j);
   for (const [x, y] of corners) data.push(x, y, -1);
-  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  const buffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
   const aCorner = gl.getAttribLocation(program, "aCorner"), aSlot = gl.getAttribLocation(program, "aSlot");
   gl.enableVertexAttribArray(aCorner); gl.vertexAttribPointer(aCorner, 2, gl.FLOAT, false, 12, 0);
@@ -171,10 +173,9 @@ export function createGlView(canvas, {onLost} = {}) {
     if (lost || disposed) return;
     last = state; lastTime = time;
     gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.uniform2fv(uTrail, state.trail);
     gl.uniform1f(uTime, time);
-    gl.uniform1f(uTailLen, state.tailLen);
     const tail = state.tailLen > TAIL_MIN;
+    if (tail) { gl.uniform2fv(uTrail, state.trail); gl.uniform1f(uTailLen, state.tailLen); }
     gl.drawArrays(gl.TRIANGLES, tail ? 0 : TAIL_N * 6, tail ? (TAIL_N + 1) * 6 : 6);
   }
 
@@ -182,7 +183,9 @@ export function createGlView(canvas, {onLost} = {}) {
       the same call, so a resize never leaves a cleared canvas for a frame. */
   function resize(cssSize, dpr, scale = 1) {
     if (lost || disposed) return side;
-    side = Math.max(1, Math.round(cssSize * Math.min(dpr || 1, DPR_CAP) * scale));
+    const next = Math.max(1, Math.round(cssSize * Math.min(dpr || 1, DPR_CAP) * scale));
+    if (next === side && canvas.width === side) return side;     // unchanged: nothing cleared, nothing to redraw
+    side = next;
     canvas.width = canvas.height = side;
     gl.viewport(0, 0, side, side);
     if (last) draw(last, lastTime);
@@ -193,7 +196,7 @@ export function createGlView(canvas, {onLost} = {}) {
     if (disposed) return;
     disposed = true;
     canvas.removeEventListener("webglcontextlost", lose);
-    try { gl.deleteTexture(texture); gl.deleteProgram(program); } catch { /* loss may invalidate cleanup */ }
+    try { gl.deleteTexture(texture); gl.deleteBuffer(buffer); gl.deleteProgram(program); } catch { /* loss may invalidate cleanup */ }
   }
 
   return {draw, resize, dispose, get side() { return side; }, get lost() { return lost; }};

@@ -17,6 +17,7 @@ const CEIL = {maxDrawsPerSecond: 31, p95DrawIntervalMs: 50, fractionDrawInterval
   maxBlankFrames: 0, overshootDevicePx: 0.5, premultipliedViolations: 0, borderAlphaMax: 1, glowRiseMax: 2,
   restAnimationFrames: 0, restDraws: 0, maxStepDowns: 2, restPositionTolerancePx: 2};
 const B = {...budget.ceilings, ...budget.bounds};
+assert.deepEqual(budget.ceilings, CEIL, "light-budget.json ceilings must equal the plan ceilings");
 for (const [k, v] of Object.entries(CEIL)) assert.ok(B[k] <= v, `light-budget.json loosens ${k}: ${B[k]} > ${v}`);
 
 const metrics = {};
@@ -63,6 +64,7 @@ function instrument(o) {
         const cy = h >> 1, ray = [];
         for (let x = w >> 1; x < w; x++) { const i = (cy * w + x) * 4; ray.push(0.2126 * buf[i] + 0.7152 * buf[i + 1] + 0.0722 * buf[i + 2]); }
         t.lastRay = {side: w, ray};
+        t.premult = this.getContextAttributes().premultipliedAlpha;
         t.stab.push({t: performance.now(), center: buf[((cy * w) + (w >> 1)) * 4 + 3], viol, border});
       }
     };
@@ -165,7 +167,8 @@ async function budgetGate(label, o, engine) {
     assert.deepEqual(idx, [...idx].sort((a, b) => a - b), `${label}: tiers must only step down: ${tiers}`);
     const steps = new Set(tiers.filter(v => v !== "css")).size - 1;
     assert.ok(steps <= B.maxStepDowns, `${label}: ${steps} step-downs`);
-    assert.ok(tiers.filter(v => v === "css").length <= 1 + 1, `${label}: hand-off must happen once`);
+    const toCssCount = tiers.filter((v, i) => v === "css" && tiers[i - 1] !== "css").length;
+    assert.ok(toCssCount <= 1, `${label}: hand-off must happen once`);
     for (const s of states) assert.ok((s.r === "webgl" && s.canvas) || s.r === "static", `${label}: state with neither canvas nor orb ${JSON.stringify(s)}`);
     metrics[label].tiers = [...new Set(tiers)];
     noOffsets(seen);
@@ -199,6 +202,8 @@ async function stabilityGate(engine, label, viewport) {
     assert.ok(blank <= B.maxBlankFrames, `${label}: ${blank} blank frames`);
     assert.ok(viol <= B.premultipliedViolations, `${label}: ${viol} premultiplied violations`);
     assert.ok(border <= B.borderAlphaMax, `${label}: border alpha ${border}`);
+    // The readback cannot tell a non-premultiplied canvas from a premultiplied one, so pin the attribute.
+    assert.equal(await page.evaluate(() => window.__t.premult), true, `${label}: context must be premultiplied`);
     // after the scripted scroll ends: no overshoot past the rest point, no reversal toward it
     const pts = r.tf.map(s => px(s.v)).filter(Boolean);
     const fin = pts[pts.length - 1];
@@ -369,6 +374,46 @@ async function handoffGate(engine) {
   } finally { await context.close(); }
 }
 
+// Forces the runtime budget path: a slow synthetic rAF breaches the frame budget while the light is moving.
+async function breachGate(engine) {
+  const {context, page, seen} = await open(engine, {forceGl: true, hz: 12, engine: "chromium"});
+  try {
+    await waitFor(page, () => document.getElementById("light").dataset.renderer === "webgl");
+    await asleep(page);
+    const drive = page.evaluate(() => new Promise(res => {
+      const raf = window.__t.raf0, t0 = performance.now();
+      const step = () => {
+        const k = (performance.now() - t0) / 1000;
+        scrollTo({top: 600 + 500 * Math.sin(k * 0.8), behavior: "instant"});
+        if (document.getElementById("light").dataset.renderer === "static" || k > 40) res(k); else raf(step);
+      };
+      raf(step);
+    }));
+    await drive;
+    const states = await page.evaluate(() => window.__t.states);
+    const order = ["high", "mid", "low", "css"];
+    const seq = states.map(s => s.tier).filter((v, i, a) => v && v !== a[i - 1]);
+    assert.deepEqual(seq, order, `breach must step down in order and hand off once: ${seq}`);
+    for (const s of states) assert.ok((s.r === "webgl" && s.canvas) || s.r === "static", "no frame with neither canvas nor orb");
+    assert.equal(await page.locator("#gl").count(), 0, "canvas removed after hand-off");
+    // The hand-off came mid-flight; the orb must glide onto the active stop's mark, not stay parked.
+    await sleep(1500);
+    const err = await page.evaluate(() => {
+      const h = document.getElementById("light").getBoundingClientRect();
+      const stops = [...document.querySelectorAll("[data-stop]")].map(s => { const r = s.getBoundingClientRect(); return r.top + scrollY + r.height / 2; });
+      const probe = scrollY + innerHeight / 2;
+      let i = 0; stops.forEach((m, k) => { if (Math.abs(m - probe) < Math.abs(stops[i] - probe)) i = k; });
+      const m = document.querySelectorAll("[data-stop] .mark")[i].getBoundingClientRect();
+      const clamp = (v, hi) => Math.min(Math.max(v, 24), hi - 24);
+      const x = clamp(m.left + .5, innerWidth), y = clamp(m.top + scrollY + .5 - (stops[i] - innerHeight / 2), innerHeight);
+      return Math.hypot(h.left + h.width / 2 - x, h.top + h.height / 2 - y);
+    });
+    metrics.breach = {sequence: seq, handoffAlignmentErrorPx: +err.toFixed(2)};
+    assert.ok(err <= B.restPositionTolerancePx, `breach hand-off left the light ${err.toFixed(1)} px off its mark`);
+    noOffsets(seen);
+  } finally { await context.close(); }
+}
+
 async function pageGate(name, engine) {
   const {context, page, seen} = await open(engine, {forceGl: true, engine: name});
   try {
@@ -426,6 +471,7 @@ for (const name of engines) {
     await stabilityGate(browser, "stability-390", {width: 390, height: 844});
     await stopsGate(browser, "1440", {width: 1440, height: 900});
     await stopsGate(browser, "390", {width: 390, height: 844});
+    await breachGate(browser);
     await hiddenGate(browser);
     await handoffGate(browser);
   } finally {
