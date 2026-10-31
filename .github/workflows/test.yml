@@ -23,18 +23,32 @@ jobs:
         run: python -m py_compile wispd wisp/*.py wisp/tools/*.py tests/*.py
       - name: Test deps
         run: pip install sqlite-vec pillow
-      - name: Qt tools for the QML suites
-        # without these the QML lib, lint and shader tests skip green;
-        # WISP_CI_REQUIRE_TOOLS turns a missing tool into a failure
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y qt6-declarative-dev-tools \
-            qml6-module-qttest qml6-module-qtquick qt6-shader-baker
-          echo "/usr/lib/qt6/bin" >> "$GITHUB_PATH"
       - name: Unit tests
         env:
-          WISP_CI_REQUIRE_TOOLS: "1"
+          # the QML suites run in the `qml` job; here node must be present
+          WISP_CI_REQUIRE_TOOLS: node
         run: python -m unittest discover -s tests -v
+
+  qml:
+    # QML lint, shader bake and qmltestrunner suites skip without Qt and
+    # Quickshell. Ubuntu's Qt is too old and has no Quickshell, so they run
+    # on Arch (what Omarchy ships), and a missing tool fails, not skips.
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Qt, Quickshell and test deps
+        run: |
+          pacman -Syu --noconfirm --needed python python-pillow nodejs \
+            qt6-declarative qt6-shadertools quickshell git
+      - uses: actions/checkout@v4
+      - name: QML suites
+        env:
+          WISP_CI_REQUIRE_TOOLS: node,qmltestrunner,qmllint,qsb
+          PATH: /usr/lib/qt6/bin:/usr/local/sbin:/usr/local/bin:/usr/bin
+        run: |
+          python -m unittest -v test_ci_tools test_qml_lib test_components \
+            test_manage test_wisp_service test_assets_baked
+        working-directory: tests
 
   plugin:
     # the Omarchy marketplace mirror: build it and validate it (B15)
