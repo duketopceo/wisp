@@ -58,6 +58,32 @@ class LandingContract(unittest.TestCase):
         self.assertIn(":focus-visible", css)
 
 
+class GuidingLightPreview(unittest.TestCase):
+    LIGHT = SITE / "light"
+
+    def test_preview_is_csp_clean_and_self_hosted(self):
+        html = (self.LIGHT / "index.html").read_text()
+        self.assertNotRegex(html, r"<script(?![^>]*\bsrc=)")  # script-src 'self': no inline script
+        self.assertNotRegex(html, r'(?:src|href)=["\']https?://[^"\']+\.(?:js|css|woff2?)')
+        self.assertNotIn("fonts.googleapis", html + (self.LIGHT / "light.css").read_text())
+        self.assertNotIn("importmap", html)
+        self.assertIn("prefers-reduced-motion", html + (self.LIGHT / "light.css").read_text()
+                      + (self.LIGHT / "light.mjs").read_text())
+
+    def test_threeui_mit_credit_ships_with_the_preview(self):
+        self.assertIn("Copyright (c) 2026 Meng To", (SITE / "vendor/THREEUI-LICENSE.txt").read_text())
+        self.assertIn("Copyright (c) 2026 Meng To", (ROOT / "THIRD_PARTY_NOTICES.md").read_text())
+        self.assertIn("MengTo/threeui", (self.LIGHT / "light.mjs").read_text())
+        self.assertIn("ThreeUI Community", (self.LIGHT / "index.html").read_text())
+
+    def test_preview_claims_stay_inside_the_readme(self):
+        html = (self.LIGHT / "index.html").read_text()
+        self.assertIn("docs/INSTALL.md", html)
+        self.assertIn("experimental", html.lower())
+        self.assertNotRegex(html, r"\b\d+\s*ms\b")
+        self.assertNotIn("wisp.casa", html)
+
+
 class EnhancedBuild(unittest.TestCase):
     def builder(self):
         spec = importlib.util.spec_from_file_location("build_3d", ROOT / "scripts/site/build_3d.py")
