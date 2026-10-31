@@ -10,6 +10,8 @@ deepened: 2026-10-30
 
 # Verified Install and Update
 
+**Status (2026-10-31):** U1, U2, U3 and U5 merged in #256; first-run readiness validation in #264. Deferred as listed in this plan: the signed one-line bootstrap (needs an independently distributed key), U4, first-install recovery, plugin/units/desktop/bind rollback and R7 cleanup tooling.
+
 ## Goal Capsule
 
 - **Objective:** A person can install or update Wisp with clear progress, know what works, and recover safely if a change fails.
