@@ -350,3 +350,94 @@ class WispSim(unittest.TestCase):
         src = (SITE / "wisp/sim.mjs").read_text()
         for word in ("document", "window", "gl.", "navigator", "requestAnimationFrame"):
             self.assertNotIn(word, src)
+
+
+@unittest.skipUnless(shutil.which("node"), "Node is needed for the wisp GL view")
+class WispGlView(unittest.TestCase):
+    SRC = SITE / "wisp/gl.mjs"
+
+    def evaluate(self, code):
+        # A recording WebGL stub: every method is a no-op, shader and program checks succeed.
+        prelude = f"""
+            import {{createGlView, TAIL_N}} from {json.dumps(self.SRC.as_uri())};
+            const calls = [];
+            const gl = new Proxy({{}}, {{get(_, name) {{
+              if (name === 'getShaderParameter' || name === 'getProgramParameter') return () => true;
+              if (name === 'getAttribLocation') return () => 0;
+              if (typeof name === 'symbol') return undefined;
+              if (/^[A-Z_0-9]+$/.test(name)) return 1;
+              return (...a) => {{ calls.push(name); return {{}}; }};
+            }}}});
+            const listeners = {{}};
+            const canvas = {{width: 0, height: 0,
+              getContext: () => gl,
+              addEventListener: (t, f) => {{ listeners[t] = f; }},
+              removeEventListener: (t) => {{ delete listeners[t]; }}}};
+            const state = {{trail: new Float32Array(TAIL_N * 2), tailLen: 0.5}};
+        """
+        result = subprocess.run(
+            ["node", "--input-type=module", "-e", prelude + code],
+            text=True, capture_output=True, check=True,
+        )
+        return json.loads(result.stdout)
+
+    def test_header_credits_threeui(self):
+        src = self.SRC.read_text()
+        head = src[:src.index("export")]
+        self.assertIn("ThreeUI Community", head)
+        self.assertIn("MengTo/threeui", head)
+        self.assertIn("rewritten", head)
+
+    def test_cost_tripwires(self):
+        src = self.SRC.read_text()
+        fragment = src[src.index("export const FRAGMENT_SRC"):src.index("function noiseTexture")]
+        self.assertNotRegex(fragment, r"\b(for|while)\s*\(")
+        self.assertLessEqual(fragment.count("texture2D("), 2)
+        self.assertIn("premultipliedAlpha: true", src)
+        self.assertNotIn("premultipliedAlpha: false", src)
+        self.assertNotRegex(src, r"(?<!ONE_MINUS_)\bSRC_ALPHA")
+        self.assertIn("gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)", src)
+        self.assertIn("failIfMajorPerformanceCaveat: true", src)
+        self.assertLessEqual(float(re.search(r"DPR_CAP = ([\d.]+)", src).group(1)), 1.5)
+
+    def test_null_context_gives_a_null_view_not_a_throw(self):
+        r = self.evaluate("""
+            const view = createGlView({getContext: () => null, addEventListener() {}});
+            const thrower = createGlView({getContext: () => { throw new Error('boom'); }, addEventListener() {}});
+            console.log(JSON.stringify([view, thrower]));
+        """)
+        self.assertEqual([None, None], r)
+
+    def test_each_draw_is_one_draw_call(self):
+        r = self.evaluate("""
+            const view = createGlView(canvas);
+            calls.length = 0;
+            view.draw(state, 1);
+            state.tailLen = 0;
+            view.draw(state, 2);
+            console.log(JSON.stringify(calls.filter(c => c === 'drawArrays').length));
+        """)
+        self.assertEqual(2, r)
+
+    def test_context_loss_stops_draws_and_calls_back_once(self):
+        r = self.evaluate("""
+            let lost = 0, prevented = 0;
+            const view = createGlView(canvas, {onLost: () => lost++});
+            view.draw(state, 1);
+            const ev = {preventDefault: () => prevented++};
+            listeners.webglcontextlost(ev); listeners.webglcontextlost(ev);
+            calls.length = 0;
+            view.draw(state, 2); view.resize(400, 2, 1);
+            console.log(JSON.stringify([lost, prevented, calls.filter(c => c === 'drawArrays').length]));
+        """)
+        self.assertEqual([1, 2, 0], r)
+
+    def test_resize_redraws_before_returning_and_caps_the_pixel_ratio(self):
+        r = self.evaluate("""
+            const view = createGlView(canvas);
+            view.draw(state, 1);
+            calls.length = 0;
+            const side = view.resize(400, 3, 0.75);
+            console.log(JSON.stringify([side, canvas.width, calls.filter(c => c === 'drawArrays').length]));
+        """)
+        self.assertEqual([450, 450, 1], r)
