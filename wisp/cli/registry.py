@@ -322,6 +322,9 @@ class Ctx:
     def kv(self, pairs, **kw) -> str:
         return output.kv(pairs, self.color, glyphs=self.glyphs, **kw)
 
+    def paint_muted(self, text: str) -> str:
+        return output.paint(text, "muted") if self.color else text
+
     def banner(self, version: str = "") -> str:
         return output.banner(version, self.glyphs, self.color)
 
