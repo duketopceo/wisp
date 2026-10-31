@@ -33,7 +33,7 @@ function sections(health) {
 
 function usd(v) {
   var n = Number(v)
-  return isFinite(n) ? "$" + n.toFixed(2) : ""
+  return isFinite(n) ? "$" + Math.round(n) : ""
 }
 
 // Spend field -> {today, cap, month, monthCap, blocked, ratio}; empty

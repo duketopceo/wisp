@@ -25,6 +25,15 @@ jobs:
         run: pip install sqlite-vec pillow
       - name: Unit tests
         run: python -m unittest discover -s tests -v
+      - name: Personal-config leak guard
+        # Shipped surfaces must be open-source ready: no owner usernames,
+        # private repo names, or personal checkout paths in code, seeds,
+        # or the plugin mirror source. Repo identity URLs
+        # (github.com/duketopceo/wisp) are allowlisted by not matching.
+        run: |
+          ! grep -rniE 'lukekimball|luke-agents|Documents/github/personal|omarchy-max' \
+            wisp/ wispd shell-plugin/ scripts/ docs/CONFIG.md docs/INSTALL.md 2>/dev/null \
+            | grep -v 'AGENTS.md\|docs/plans/\|docs/research/\|\.md:.*//'
 
   plugin:
     # the Omarchy marketplace mirror: build it and validate it (B15)

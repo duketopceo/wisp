@@ -7,9 +7,8 @@ explicit side effect:
   - models only probes the local ladder over loopback HTTP, and only
     when [local] enabled = "true"; it never starts or stops a service
     (`wispd health start` stays a manual act),
-  - keys stores a key only when the walk is given one to store (never
-    printed), at the omaseal ref in the key's lookup list or in
-    ~/.config/wisp/.env,
+  - keys stores a key only when the user chooses a store and supplies
+    one (never printed); the walk may update its key source,
   - notifications sends one test notification, and only when the caller
     passes confirm=True,
   - keybinding needs the W24 submap and is "na" while that is absent.
@@ -17,7 +16,7 @@ explicit side effect:
 Every step is skippable and reversible. A skip is not recorded and writes
 nothing (the step is offered again next run). Only a step that passed is
 recorded, in ~/.local/share/wisp/onboard.json, so a half finished run
-resumes where it stopped. Undo removes the record. config.toml is never edited.
+resumes where it stopped. Undo removes the record, not stored keys or config.
 
 All probes are injected through `Probes`, so the tests run with fakes and
 never touch the network, services or notifications.
@@ -29,10 +28,12 @@ import json
 import os
 import pathlib
 import shutil
+import socket
 import subprocess
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 
 from . import config
 
@@ -93,17 +94,32 @@ def _whisper_ok(cfg: dict) -> bool:
 
 
 def _store_key(key_env: str, value: str) -> str:
-    """Store a key where config.load_env_key will find it and say where:
-    the omaseal ref in key_env when there is one and omaseal is on PATH,
-    else ~/.config/wisp/.env (0600). The value only ever travels on
-    omaseal's stdin or into the 0600 file. Raises ValueError for a value
-    that cannot be stored safely, OSError/RuntimeError when the store
-    itself failed."""
+    """Store a key in the configured store or an owner-only .env file.
+
+    Secret-manager commands receive the value on stdin, never in argv.
+    """
     if not value or any(c.isspace() for c in value):
         raise ValueError("a key cannot be empty or contain whitespace")
     cands = [c.strip() for c in key_env.split(",") if c.strip()]
-    ref = next((c[len("omaseal://"):].split("/", 1) for c in cands
-                if c.startswith("omaseal://")), None)
+    first_store = next((c for c in cands if c.startswith(
+        ("keyring://", "omaseal://"))), "")
+    if first_store.startswith("keyring://"):
+        keyring = first_store[len("keyring://"):].split("/", 1)
+        exe = shutil.which("secret-tool")
+        if len(keyring) == 2 and all(keyring) and exe:
+            r = subprocess.run(
+                [exe, "store", "--label=Wisp credential", "service",
+                 keyring[0], "account", keyring[1]], input=value,
+                capture_output=True, text=True,
+                timeout=config.OMASEAL_TIMEOUT_S)
+            if r.returncode != 0:
+                raise RuntimeError("Secret Service could not store the key")
+            return f"keyring {keyring[0]}/{keyring[1]}"
+        name = config.key_label(key_env)
+        if name.startswith("keyring://"):
+            raise ValueError("Secret Service keyring is unavailable")
+    ref = (first_store[len("omaseal://"):].split("/", 1)
+           if first_store.startswith("omaseal://") else None)
     exe = shutil.which("omaseal")
     if ref and len(ref) == 2 and exe:
         r = subprocess.run([exe, "set", ref[0], ref[1]], input=value,
@@ -126,6 +142,21 @@ def _store_key(key_env: str, value: str) -> str:
     from . import note  # its atomic writer is 0600, the mode a secret needs
     note._atomic_write_text(path, "\n".join(lines) + "\n")
     return str(path)
+
+
+def _set_key_source(section: str, source: str) -> None:
+    """Update a key source, reloading the daemon's config when it is live."""
+    key = f"{section}.key_env"
+    try:
+        from . import ipc
+        reply = ipc.send({"cmd": "config", "set": {key: source}}, timeout=2)
+    except (ConnectionError, FileNotFoundError):
+        config.set_config(section, "key_env", source)
+        return
+    except TimeoutError as e:
+        raise RuntimeError("the daemon did not acknowledge the config update") from e
+    if not reply.get("ok"):
+        raise RuntimeError(reply.get("error") or "daemon refused the config update")
 
 
 def _cua(cfg: dict) -> dict:
@@ -176,6 +207,7 @@ class Probes:
     submap: object = _submap
     key: object = config.load_env_key
     store_key: object = _store_key
+    set_source: object = _set_key_source
     secret: object = getpass.getpass
 
 
@@ -296,6 +328,14 @@ def _check_models(cfg, p):
                     + (f"; brain is {brain}" if brain else ""))
     up = {name: bool(p.fetch(url)) for name, url in LADDER}
     detail = ", ".join(f"{n} {'up' if up[n] else 'down'}" for n, _ in LADDER)
+    if up.get("ollama"):
+        from . import model_catalog
+        seen = sorted(
+            {o["ollama"] for lane in model_catalog.CATALOG.values()
+             for o in lane if o.get("ollama")}
+            & model_catalog.ollama_tags())
+        if seen:
+            detail += f"; catalog weights pulled: {len(seen)}"
     if any(up[b] for b in _BRAINS):
         return _res("models", "ok", detail)
     return _res("models", "todo", detail, "wispd health start")
@@ -444,11 +484,70 @@ def status(cfg: dict, probes: Probes, progress: Progress) -> dict:
 
 # -- the interactive walk -------------------------------------------------
 
-def _offer_keys(cfg: dict, probes: Probes, out):
+def _offer_keys(cfg: dict, probes: Probes, ask, out):
     """Ask for each missing key (hidden input, blank skips) and store it.
     Never prints the value."""
     for role, env in _missing_keys(cfg, probes):
         label = config.key_label(env)
+        source = env
+        configure_section = ""
+        recall = cfg.get("recall") or {}
+        shared_recall = (
+            role == "brain" and recall.get("key_env") == env
+            and config.is_openrouter_endpoint(
+                recall.get("base_url", "https://openrouter.ai/api/v1")))
+        has_store = any(c.strip().startswith(("keyring://", "omaseal://"))
+                        for c in env.split(","))
+        if not has_store:
+            out(f"  Storage for {label}: [f] private plaintext .env, "
+                "[e] set environment yourself, [s] skip.")
+            if shared_recall:
+                out("  Memory uses this same source; a secret-store choice "
+                    "updates memory too.")
+            if probes.which("secret-tool"):
+                out("  [k] Linux Secret Service keyring (recommended).")
+            if probes.which("omaseal"):
+                out("  [o] OmaSeal.")
+            try:
+                choice = ask("  Choose storage [k/f/o/e/s]: ").strip().lower()
+            except EOFError:
+                return
+            if choice in ("e", "s", ""):
+                out(f"  Set {label} for the Wisp service, then retry onboarding.")
+                continue
+            if choice in ("k", "o"):
+                program = "secret-tool" if choice == "k" else "omaseal"
+                if not probes.which(program):
+                    out(f"  {program} is unavailable; no key was stored.")
+                    continue
+                scheme = "keyring" if choice == "k" else "omaseal"
+                source = f"{scheme}://wisp/{role}-{uuid.uuid4().hex}"
+                if role == "brain":
+                    from . import brain
+                    configure_section = f"brain.{brain.provider(cfg)['name']}"
+                else:
+                    configure_section = "stt"
+            elif choice != "f":
+                out("  No storage selected; no key was stored.")
+                continue
+        else:
+            first_store = next(c.strip() for c in env.split(",")
+                               if c.strip().startswith(
+                                   ("keyring://", "omaseal://")))
+            if first_store.startswith("keyring://") and not probes.which("secret-tool"):
+                if label.startswith("keyring://"):
+                    out("  Secret Service is unavailable; no key was stored.")
+                    continue
+                out("  Secret Service is unavailable; the configured fallback "
+                    "stores the key in a private plaintext .env file.")
+            if first_store.startswith("omaseal://") and not probes.which("omaseal"):
+                if label.startswith("omaseal://"):
+                    out("  OmaSeal is unavailable; no key was stored.")
+                    continue
+                out("  OmaSeal is unavailable; the configured fallback stores "
+                    "the key in a private plaintext .env file.")
+            else:
+                out(f"  Key will be stored using the configured source for {label}.")
         try:
             value = probes.secret(f"  paste {label} ({role}), blank to "
                                   "skip: ").strip()
@@ -457,7 +556,24 @@ def _offer_keys(cfg: dict, probes: Probes, out):
         if not value:
             continue
         try:
-            out(f"  stored {label} in {probes.store_key(env, value)}")
+            where = probes.store_key(source, value)
+            if probes.key(source) != value:
+                out(f"  Could not verify the key in {where}; configuration unchanged.")
+                continue
+            if configure_section:
+                try:
+                    probes.set_source(configure_section, source)
+                except (OSError, ValueError, RuntimeError) as e:
+                    out(f"  Key stored in {where}, but configuration failed: {e}")
+                    continue
+                cfg.setdefault(configure_section, {})["key_env"] = source
+                if shared_recall and configure_section == "brain.openrouter":
+                    try:
+                        probes.set_source("recall", source)
+                        cfg["recall"]["key_env"] = source
+                    except (OSError, ValueError, RuntimeError) as e:
+                        out(f"  Brain configured; memory source update failed: {e}")
+            out(f"  stored {label} in {where}")
         except (ValueError, OSError, RuntimeError,
                 subprocess.SubprocessError) as e:
             out(f"  not stored: {e}")
@@ -498,7 +614,7 @@ def walk(cfg: dict, probes: Probes, progress: Progress, ask, out) -> dict:
             res["skipped"].append(s.id)
             continue
         if s.id == "keys":
-            _offer_keys(cfg, probes, out)
+            _offer_keys(cfg, probes, ask, out)
         got = run_step(s.id, cfg, probes, progress, confirm=True)
         if got["done"]:
             out(f"  ok: {got['detail']}")

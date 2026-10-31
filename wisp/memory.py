@@ -141,38 +141,37 @@ def edit(target: str, op: str, old: str = "", new: str = "") -> str:
     return f"FAIL ({err})" if err else f"OK ({target} {op})"
 
 
-_SYNC_BEGIN = "## luke-agents"
-_SYNC_END = "## /luke-agents"
+_SYNC_BEGIN = "## constitution"
+_SYNC_END = "## /constitution"
 
-_CONSTITUTION_FACTS = [
-    "user is Luke Kimball (Khan) — github duketopceo, machine omarchy-max (M1 Max, Asahi Linux ARM, Hyprland)",
-    "luke-agents repo (~/Documents/github/personal/luke-agents) is the canonical agent constitution — AGENTS.md is the king file, QUICK_START.md is the fast digest",
-    "voice: precise, concise, no fluff; tables over paragraphs; no emojis; disagree with weak ideas",
-    "never use the words scrape/scraping/crawl — say collect/extract/fetch",
-    "never use Reddit as a source",
-    "eval/model spend bills the orchestral OpenRouter key, never default",
-    "hyprland config is Lua; machine-specific files are stash-canonical under ~/.local/share/machine/lukekimball/ — sync-watch reverts ~/.config/hypr/",
-    "never edit /usr/share/omarchy — package-owned; user config under ~/.config/",
-    "package installs: omarchy pkg add or yay, never raw makepkg",
-    "personal knowledge brain: Kurultai personal lane (Ulaanbaatar); agent identity = codename@instance_id",
-]
+# Shipped defaults carry NO personal constitution — Wisp is open-source
+# ready, not owner-config ready. `sync_constitution` only runs when the
+# user explicitly points it at their own constitution repo
+# (`wispd settings sync-constitution --repo <path>`); facts are read from
+# that repo's CONSTITUTION.md (one "label: fact" bullet per line), never
+# bundled.
 
 
 def sync_constitution(repo: str | None = None) -> str:
-    """Refresh the managed ## luke-agents block in MEMORY.md from the
-    constitution repo, and dedupe the whole file. Idempotent — safe on
-    every daemon start."""
+    """Refresh the managed ## constitution block in MEMORY.md from an
+    explicitly configured constitution repo, and dedupe the whole file.
+    No repo configured = skip cleanly — personal memory sync is opt-in,
+    never shipped as a default."""
     import pathlib
-    base = pathlib.Path(repo).expanduser() if repo else \
-        pathlib.Path.home() / "Documents/github/personal/luke-agents"
+    if not repo:
+        return "SKIP (no constitution repo configured — opt-in only)"
+    base = pathlib.Path(repo).expanduser()
     if not (base / "AGENTS.md").exists():
-        return f"FAIL (no luke-agents repo at {base})"
-    facts = list(_CONSTITUTION_FACTS)
+        return f"FAIL (no constitution repo at {base})"
+    facts = []
+    cf = base / "CONSTITUTION.md"
+    if cf.exists():
+        facts = [l.strip() for l in cf.read_text().splitlines()
+                 if l.strip() and not l.lstrip().startswith("#")]
     qs = base / "QUICK_START.md"
     if qs.exists():
         facts.append(
-            "full digest on demand: luke-agents QUICK_START.md "
-            "(or the `luke-agents` skill index)")
+            f"full digest on demand: {base.name} QUICK_START.md")
     body_lines = ([f"- {f}" for f in facts])
     block = [_SYNC_BEGIN, *body_lines, _SYNC_END]
 

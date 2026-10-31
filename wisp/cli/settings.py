@@ -174,16 +174,19 @@ def connect_add(ctx, a):
 
 
 def _sync_args(p):
-    p.add_argument("repo", nargs="?", help="luke-agents checkout (default "
-                   "the standard location)")
+    p.add_argument("--repo", default=None,
+                   help="constitution checkout to sync (opt-in; none by default)")
+    p.add_argument("--skills-dir", default=None,
+                   help="directory of user SKILL.md files to import (opt-in)")
 
 
 @command("sync", "Refresh the MEMORY constitution block and import skills",
          ["wispd sync"], _TEXT, args=_sync_args)
 def sync(ctx, a):
     from .. import memory as _m, skills as _sk
-    lines = [_m.sync_constitution(a.repo),
-             _sk.import_dir("~/Documents/github/personal/luke-agents/_LUKE")]
+    lines = [_m.sync_constitution(a.repo)]
+    if a.skills_dir:
+        lines.append(_sk.import_dir(a.skills_dir))
     _sk.write_index_json()
     text = "\n".join(str(x) for x in lines)
     return ctx.emit({"text": text}, text)

@@ -8,9 +8,9 @@ provenance: authored
 # graphify
 
 Index a repo into `codebase-memory-mcp` so `codebase-graph`-style
-queries work. wisp's index lives at
-`.codebase-memory/graph.db.zst` (project
-`home-lukekimball-Documents-github-personal-wisp`).
+queries work. each repo's index lives at
+`.codebase-memory/graph.db.zst` (project slug derived
+from the repo path).
 
 ## Workflow
 

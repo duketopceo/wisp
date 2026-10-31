@@ -493,8 +493,8 @@ def match_app_skill(
 
 
 def import_dir(src: str, preview: bool = False) -> str:
-    """`wispd skills import <dir>` — copy */SKILL.md trees (e.g. a
-    luke-agents _LUKE checkout) into SKILLS_DIR. Skips names that
+    """`wispd skills import <dir>` — copy */SKILL.md trees (any local
+    skill checkout the user points at) into SKILLS_DIR. Skips names that
     already exist; never symlinks (a snapshot, not a live mount)."""
     import pathlib
     base = pathlib.Path(src).expanduser()

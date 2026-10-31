@@ -151,7 +151,7 @@ def _draw(win, state: dict, suggestions: list, decisions: list,
         from . import skills as _sk
         idx = _sk.index()
         put(f"  {len(idx)} installed "
-            f"(luke-agents + seeds + learned)")
+            f"(seeds + imported + learned)")
         for s in idx[:6]:
             put(f"    {'tool' if s.get('tool') else '    '} "
                 f"{s['name'][:w-14]}")
