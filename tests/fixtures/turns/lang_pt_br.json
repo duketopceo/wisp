@@ -39,6 +39,9 @@
     },
     "stt": {
       "language": "pt-BR"
+    },
+    "brain": {
+      "router": "chat"
     }
   }
 }

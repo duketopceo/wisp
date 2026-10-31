@@ -40,6 +40,9 @@
     },
     "stt": {
       "language": "auto"
+    },
+    "brain": {
+      "router": "chat"
     }
   }
 }
