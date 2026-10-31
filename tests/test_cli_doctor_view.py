@@ -91,8 +91,18 @@ class TestDoctorView(unittest.TestCase):
         text = render(80)
         self.assertLess(text.index("dayflow"), text.index("hyprctl"))
         i = text.index("hyprctl")
-        self.assertIn("fix: Install separately",
+        self.assertIn("Try: Install separately",
                       text[i:].splitlines()[1])
+        self.assertNotIn("fix:", text)
+
+    def test_a_fix_shared_by_three_rows_is_said_once(self):
+        fix = "Install separately if you need this capability."
+        more = [{"name": "tools", "rows": [
+            _row(n, "warn", "not found", fix) for n in ("a", "b", "c")]}]
+        text = render(80, sections=more)
+        self.assertEqual(text.count(fix), 1)
+        self.assertIn("For the other rows, try: " + fix, text)
+        self.assertEqual(render(80).count("Try: Install separately"), 2)
 
     def test_passes_are_collapsed_and_all_expands_them(self):
         text = render(80)

@@ -247,10 +247,16 @@ def _doctor_rows_block(ctx, rows, width, fix_lines=True) -> list:
     lines = tbl.splitlines()
     indent = " " * (2 + 4 + 2 + namew + 2)
     out = []
+    fixes = [r["fix"] for r in rows if r["fix"] and r["level"] != "ok"]
+    shared = next((f for f in fixes if fixes.count(f) >= 3), None)
     for line, r in zip(lines, rows):
         out.append("  " + line)
-        if fix_lines and r["fix"] and r["level"] != "ok":
-            out += output.wrap("fix: " + r["fix"], width, indent, indent)
+        if (fix_lines and r["fix"] and r["level"] != "ok"
+                and r["fix"] != shared):
+            out += output.wrap("Try: " + r["fix"], width, indent, indent)
+    if fix_lines and shared:
+        out += output.wrap("For the other rows, try: " + shared, width,
+                           "  ", "    ")
     return out
 
 
@@ -268,7 +274,7 @@ def _doctor_text(ctx, sections, a) -> str:
         one = n["fail"] == 1
         out.append(f"{n['fail']} check{'' if one else 's'} "
                    f"need{'s' if one else ''} attention. Fixes are "
-                   "listed under each one.")
+                   "listed below.")
     elif n["warn"]:
         out.append("Ready. Some optional tools are missing; wisp works "
                    "without them.")
