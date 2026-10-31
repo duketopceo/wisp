@@ -382,7 +382,7 @@ with mock.patch.object(preflight, "run", return_value=checks), \\
         mock.patch.object(diagnose, "_cua_rows"):
     print(json.dumps(diagnose.doctor_sections({})))
 """
-        with CliEnv() as env:
+        with CliEnv(extra_env={"WISP_JEV_ENDPOINT": ""}) as env:
             result = subprocess.run(
                 [sys.executable, "-c", script], cwd=ROOT, env=env.env,
                 capture_output=True, text=True, timeout=15)
