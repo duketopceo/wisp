@@ -16,6 +16,9 @@ FILES = (
     "assets/companion.png", "assets/mark.svg", "assets/outfit-variable.ttf",
     "vendor/three.module.js", "vendor/THREE-LICENSE.txt",
     "vendor/OFL-Outfit.txt", "vendor/PROVENANCE.md",
+    "light/index.html", "light/light.css", "light/light.mjs",
+    "light/fonts/newsreader-roman-latin.woff2", "light/fonts/newsreader-ital-latin.woff2",
+    "vendor/OFL-Newsreader.txt", "vendor/THREEUI-LICENSE.txt",
 )
 IMPORT = re.compile(r"""(?:from\s*|import\s*\(\s*|import\s*)["']([^"']+)["']""")
 CSS_URL = re.compile(r"""url\(\s*["']?([^"')\s]+)""")
