@@ -9,9 +9,12 @@ Wisp's state dir outside out_dir. Then `always_ask` asks for everything,
 `guided` asks for edits too. Allow is the narrow set in KTD6: reads
 inside cwd, edits inside cwd/out_dir, and a fixed list of simple
 build/test/read commands. Everything the matcher can't parse, and
-anything unknown, is ask — never allow. Once the session has edited a
-file that build or test commands execute, those commands become ask
-(SessionPolicy.note_edit).
+anything unknown, is ask — never allow. Once the session has written
+anything a runner could execute (any file that is not plainly inert
+text/media, or any user-approved command), build and test commands become
+ask for the rest of the session (SessionPolicy.note_edit): a test runner
+executes agent-written code, and the credential/path checks only see tool
+arguments, not what that code does.
 
 Callers select only allow_once/reject_once options from the result.
 """
@@ -21,8 +24,15 @@ import shlex
 
 from . import config, policy, tools
 
-# files build/test commands execute: editing one demotes the allow-listed
-# build commands to ask for the rest of the session
+# Writing any file build/test commands could execute demotes the
+# allow-listed build commands to ask for the rest of the session. The rule
+# is inverted on purpose: only files that are plainly inert stay quiet;
+# everything else (test_*.py, *.py, scripts, js/ts, Makefiles, configs,
+# extensionless files, ...) counts as executable.
+_INERT_EXTS = {".md", ".markdown", ".txt", ".rst", ".csv", ".log", ".png",
+               ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".pdf"}
+# recorded when a user-approved command ran: it may have written anything
+_EXEC_MARK = "<approved-command>"
 _BUILD_NAMES = {"conftest.py", "package.json", "makefile", "pyproject.toml",
                 "setup.py", "setup.cfg", "tox.ini", "noxfile.py",
                 "opencode.json"}
@@ -92,11 +102,17 @@ def _paths(tc: dict, raw: dict) -> list[str]:
 
 
 def _is_build_file(path: str) -> bool:
+    """True unless `path` is plainly inert (docs, text, images). A runner
+    can execute almost anything else, so unknown means executable."""
+    if path == _EXEC_MARK:
+        return True
     low = path.replace(os.sep, "/").lower()
     base = low.rsplit("/", 1)[-1]
-    return (base in _BUILD_NAMES or base.endswith(".sh")
+    if (base in _BUILD_NAMES
             or any(p in low + "/" if p.endswith("/") else p in low
-                   for p in _BUILD_PARTS))
+                   for p in _BUILD_PARTS)):
+        return True
+    return os.path.splitext(base)[1] not in _INERT_EXTS
 
 
 def _is_config(path: str) -> bool:
@@ -268,8 +284,13 @@ class SessionPolicy:
                         self.edited)
 
     def note_edit(self, tool_call) -> None:
-        """Record the paths of an allowed/approved edit-class call."""
+        """Record the paths of an allowed/approved edit-class call. A
+        command or tool the user approved with no path to record taints the
+        session, since it may have written executable files."""
         if not isinstance(tool_call, dict):
+            return
+        if tool_call.get("kind") == "execute":
+            self.edited.add(_EXEC_MARK)
             return
         raw = tool_call.get("rawInput")
         raw = raw if isinstance(raw, dict) else {}

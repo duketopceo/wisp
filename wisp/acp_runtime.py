@@ -425,8 +425,12 @@ class SessionRun:
         else:
             self._ask(tool_call, title, allow, reject, reply)
 
-    def _allowed(self, tool_call) -> None:
-        if tool_call.get("kind") in ("edit", "delete", "move"):
+    def _allowed(self, tool_call, asked: bool = False) -> None:
+        # auto-allowed calls only taint the session when they write; a
+        # call the user approved may have written anything (policy-unknown)
+        kind = tool_call.get("kind")
+        if kind in ("edit", "delete", "move") or (
+                asked and kind not in ("read", "search", "think", "fetch")):
             self.policy.note_edit(tool_call)
 
     def _ask(self, tool_call, title, allow, reject, reply) -> None:
@@ -435,7 +439,7 @@ class SessionRun:
         def on_answer(pick):
             self.mgr.ask_end(self.id)
             if pick == agent_ask.ALLOW and allow:
-                self._allowed(tool_call)
+                self._allowed(tool_call, asked=True)
                 reply(allow)
             else:
                 reply(reject)
