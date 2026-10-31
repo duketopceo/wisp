@@ -9,6 +9,7 @@ import re
 import shutil
 import socket
 import subprocess
+import unittest.mock
 import sys
 import tempfile
 import unittest
@@ -348,10 +349,12 @@ class TestTable(unittest.TestCase):
         self.assertEqual(len({l.index(l.split()[1]) for l in lines}), 1)
         self.assertNotIn("\x1b", t)
 
-    def test_color_uses_theme_tokens(self):
+    def test_color_uses_theme_tokens_on_a_truecolor_terminal(self):
         from wisp import theme
-        t = output.table(["name", "status"], [["jev", "ok"]],
-                         tones=[[None, "ok"]], color=True, cfg={})
+        t = None
+        with unittest.mock.patch.dict(os.environ, {"COLORTERM": "truecolor"}):
+            t = output.table(["name", "status"], [["jev", "ok"]],
+                             tones=[[None, "ok"]], color=True, cfg={})
         self.assertIn("\x1b[38;2;", t)
         r, g, b = output.hex_rgb(theme.load(None, {})["tokens"]["ok"])
         self.assertIn(f"\x1b[38;2;{r};{g};{b}m", t)
