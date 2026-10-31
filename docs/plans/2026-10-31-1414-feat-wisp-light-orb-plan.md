@@ -106,7 +106,7 @@ Considered and not built:
 
 #### Non-blocking, for the owner
 
-- Stop 05 copy. #274 says "It can stay on your machine", but ROADMAP says hosted models are the default and local servers are opt-in and off. The plan rewrites the stop to say that. Luke may prefer to drop the stop.
+- Stop 05 copy — RESOLVED 2026-10-31 (session-settled: user-directed — chosen over dropping the stop and over "It can stay on your machine"): Wisp is hybrid. New users default to hosted models through OpenRouter; small local models (for example a Liquid AI LFM vision model) are a supported option that can give lower latency and better accuracy, and the owner may run them by default; provider pinning for price and latency may come later. Stop 05 says both are available with hosted as the user default, and claims no measured latency figures. Check the wording against README/ROADMAP at U1 and update those docs if they still say local is off.
 - Reduced motion shows the CSS orb (KTD4), not one rendered GL frame, and re-places it when the active stop changes (as #274 did) rather than holding one position for the whole page. Say so if a single fixed position or a GL still is preferred.
 
 ---
@@ -230,7 +230,7 @@ Units land as atomic commits on one branch (suggested name `feat/site-wisp-light
 - Take #274's `THIRD_PARTY_NOTICES.md` section, reword it per KTD8, then overwrite the plugin copy with the top-level file (KTD9).
 - Add the new file list to `FILES` (modules from U2 to U4 are added in their own units).
 - Port #274's `GuidingLightPreview` tests, keeping the credit assertions on the notices and vendor license files only; the assertion that the module header carries the credit moves to U3.
-- Re-check each claim in the page copy against `README.md` and `ROADMAP.md`. Rewrite stop 05 to say hosted models are the default and local servers are opt-in. Replace the em dash in the page title.
+- Re-check each claim in the page copy against `README.md` and `ROADMAP.md`. Rewrite stop 05 to say hosted models via OpenRouter are the default for users and small local models are a supported option (see Open Questions, resolved). Replace the em dash in the page title.
 - Credit #274 and ThreeUI in `PROVENANCE.md` (ThreeUI) and the PR body (#274).
 
 **Patterns to follow:** `tests/test_site_3d.py` class layout; `site-3d/vendor/PROVENANCE.md` entry style.
@@ -239,7 +239,7 @@ Units land as atomic commits on one branch (suggested name `feat/site-wisp-light
 - Covers R11. `shell-plugin/THIRD_PARTY_NOTICES.md` bytes equal the top-level file (existing `TestThirdPartyNotices`).
 - Covers R11. `pm.build` mirror validates and neither notices file says "Wisp is MIT licensed" (existing mirror test).
 - Covers R9. The page HTML has no inline `<script>` and no remote `src`/`href` to js, css or fonts; the combined html, css and js mention `prefers-reduced-motion`.
-- Covers R2. The page contains `docs/INSTALL.md`, the word "experimental", no `\d+ ms` figures, no `wisp.casa`; stop 05 contains "opt-in" and not "stay on your machine".
+- Covers R2. The page contains `docs/INSTALL.md`, the word "experimental", no `\d+ ms` figures, no `wisp.casa`; stop 05 names both hosted (default) and local small models, contains no latency figures, and not "stay on your machine".
 - Covers R11. The ThreeUI license text with "Copyright (c) 2026 Meng To" is present in the vendor file and the top-level notices.
 - `builder.check(out)` returns no problems for a build that includes the new files.
 
