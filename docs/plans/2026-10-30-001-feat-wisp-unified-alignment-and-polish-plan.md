@@ -9,6 +9,8 @@ execution: code
 
 # Wisp Unified Alignment and Shipping Completion - Plan
 
+**Status (2026-10-31):** merged in #259 and tagged `v1.0.0-rc.1`; RC2 follow-ups in #262-#264 (`v1.0.0-rc.2` prerelease). Live checks the plan names (pointing quality, compositor, microphone, fresh box) are still pending the owner's reinstall; see ROADMAP.md.
+
 ## Execution Receipt
 
 At the 2026-10-30 candidate source freeze, the repaired broad Python suite

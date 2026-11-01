@@ -8,6 +8,8 @@ origin: ROADMAP.md (Next, in order, item 2) and docs/plans/2026-10-26-0031-feat-
 
 # refactor: Remove the Jev router (Phase 5), fixture migration first
 
+**Status (2026-10-31):** PR 1, the fixture migration (U1-U4), merged in #261. U5, the router deletion, is next; `ask_jev`, `suggest` and the grounding `jev` provider stay until Q3 is decided (ROADMAP.md, Open decisions).
+
 ## Goal Capsule
 
 - **Objective:** finish Phase 5 by removing the Jev router (`router = jev`, `route.decide`, the clarify prompt, `JEV_QUESTIONS`/`build_questions`) so no decision model sits on the routing path. Turns go to the act loop, with the regex fast path (`[brain] fast_path`, #233) in front.

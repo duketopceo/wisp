@@ -9,6 +9,8 @@ execution: code
 
 # Wisp v1 Roadmap - Plan
 
+**Status (2026-10-31):** the live board is ROADMAP.md; later plans (#241, #256, #259, #261) carry the work this plan sequenced. Phase 5 is half done (#261); Phase 9 and the v1.0 gate wait on owner-labelled turns.
+
 ## Goal Capsule
 
 - **Objective:** On this Hyprland/Omarchy machine, with only hosted model keys, the owner holds the hotkey, speaks, and Wisp answers by voice while pointing and drawing on screen, walks through tasks, and runs routines — right first time often enough to clear the owner's v1.0 bar in `wispd eval`.
