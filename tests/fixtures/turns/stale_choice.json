@@ -3,7 +3,7 @@
   "audio": "choose.wav",
   "config": {
     "brain": {
-      "router": "jev"
+      "router": "act"
     }
   },
   "endpoints": {
@@ -47,10 +47,5 @@
     "tool_calls": []
   },
   "name": "stale_choice",
-  "scenario": "stale choice",
-  "config": {
-    "brain": {
-      "router": "act"
-    }
-  }
+  "scenario": "stale choice"
 }

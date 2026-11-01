@@ -31,9 +31,6 @@
   "name": "lang_voice_fallback",
   "scenario": "multilingual",
   "config": {
-    "brain": {
-      "router": "chat"
-    },
     "voice": {
       "enabled": "true",
       "cmd": "/bin/sh -c \"/bin/true\" {text}"

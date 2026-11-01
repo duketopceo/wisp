@@ -31,18 +31,12 @@
   "name": "lang_de",
   "scenario": "multilingual",
   "config": {
-    "brain": {
-      "router": "chat"
-    },
     "voice": {
       "enabled": "true",
       "cmd": "/bin/sh -c \"/bin/true\" {voice} {text}"
     },
     "stt": {
       "language": "auto"
-    },
-    "brain": {
-      "router": "chat"
     }
   }
 }

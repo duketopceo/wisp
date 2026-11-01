@@ -24,7 +24,7 @@ from harness import fakes, runner  # noqa: E402
 from wisp import errors_codes  # noqa: E402
 
 FIXTURES = ROOT / "tests" / "fixtures" / "turns"
-FIXTURE_NAMES = ["ask", "ask_chip", "act", "router_act", "router_act_default", "choose", "jev_down", "jev_slow", "brain_down", "brain_fallback",
+FIXTURE_NAMES = ["ask", "ask_chip", "act", "router_act", "router_act_default", "choose", "retired_endpoint_down", "retired_endpoint_slow", "brain_down", "brain_fallback",
                  "cancel_mid_stream", "stale_choice"]
 
 
@@ -256,15 +256,18 @@ class TurnReplayTest(unittest.TestCase):
         self.assertTrue(res.final["result"].startswith("ACTED (2 steps)"))
 
     def test_saved_retired_router_keeps_fast_paths_and_act(self):
-        for name in ("ask", "jev_down", "router_act_default"):
-            with self.subTest(name=name):
-                fx = copy.deepcopy(runner.load_fixture(name))
-                fx.setdefault("config", {}).setdefault("brain", {})[
-                    "router"] = "jev"
-                res = runner.run_turn(fx)
-                self.assertEqual(res.exit_code, 0, res.stderr)
-                self.assertEqual(runner.check_expectations(res), [])
-                self.assertEqual(res.calls["jev"], [])
+        # a stored "jev" and an unknown value both normalise to act
+        for stored in ("jev", "heuristic"):
+            for name in ("ask", "retired_endpoint_down",
+                         "router_act_default"):
+                with self.subTest(name=name, stored=stored):
+                    fx = copy.deepcopy(runner.load_fixture(name))
+                    fx.setdefault("config", {}).setdefault("brain", {})[
+                        "router"] = stored
+                    res = runner.run_turn(fx)
+                    self.assertEqual(res.exit_code, 0, res.stderr)
+                    self.assertEqual(runner.check_expectations(res), [])
+                    self.assertEqual(res.calls["jev"], [])
 
     def test_choose_offers_choices_then_launches_pick(self):
         res = runner.run_turn(FIXTURES / "choose.json")
@@ -299,7 +302,7 @@ class TurnReplayTest(unittest.TestCase):
         self.assertEqual(res.final["prompt_id"], "")
 
     def test_retired_endpoint_outage_cannot_delay_fast_launch(self):
-        res = runner.run_turn(FIXTURES / "jev_down.json")
+        res = runner.run_turn(FIXTURES / "retired_endpoint_down.json")
         self.assertEqual(res.statuses[-1], "done")
         self.assertEqual(res.final["error_code"], "")
         self.assertEqual(res.launch_calls, ["firefox"])
@@ -309,15 +312,15 @@ class TurnReplayTest(unittest.TestCase):
         self.assertEqual(res.calls["jev"], [])
         self.assertEqual(runner.check_expectations(res), [])
 
-    def test_route_spans_recorded_with_jev_down(self):
-        res = runner.run_turn(FIXTURES / "jev_down.json")
+    def test_route_spans_recorded_with_retired_endpoint_down(self):
+        res = runner.run_turn(FIXTURES / "retired_endpoint_down.json")
         names = {e["step"] for e in res.trace if e.get("kind") == "span"}
         self.assertIn("route", names)
         self.assertNotIn("route_jev", names)
         self.assertLess(res.trace_events("route")[0]["ms"], 200)
 
     def test_retired_endpoint_latency_cannot_delay_question(self):
-        res = runner.run_turn(FIXTURES / "jev_slow.json")
+        res = runner.run_turn(FIXTURES / "retired_endpoint_slow.json")
         self.assertEqual(runner.check_expectations(res), [])
         self.assertEqual(res.final["answer"], "It is half past three.")
         route = res.trace_events("route")[0]["ms"]
@@ -325,7 +328,7 @@ class TurnReplayTest(unittest.TestCase):
         self.assertEqual(res.calls["jev"], [])
 
     def test_route_diagnostics_remain_without_decision_ab_fields(self):
-        res = runner.run_turn(FIXTURES / "jev_slow.json")
+        res = runner.run_turn(FIXTURES / "retired_endpoint_slow.json")
         dec = res.trace_events("decision")[0]
         self.assertEqual(dec["route_lane"], "fast_path")
         self.assertNotIn("jev_status", dec)
