@@ -1,15 +1,19 @@
-usage: wispd doctor [-h] [--json] [--quiet] [--no-color]
+usage: wispd doctor [-h] [--all] [--section NAME] [--json] [--quiet]
+                    [--no-color]
 
 Check every dependency wisp needs
 
 options:
-  -h, --help   show this help message and exit
+  -h, --help      show this help message and exit
+  --all           list every check, not just the ones that need attention
+  --section NAME  list every check in one section (see --all for the names)
 
 global options:
-  --json       machine-readable output (one JSON object)
-  --quiet, -q  print nothing on success
-  --no-color   plain output (also NO_COLOR, or not a tty)
+  --json          machine-readable output (one JSON object)
+  --quiet, -q     print nothing on success
+  --no-color      plain output (also NO_COLOR, or not a tty)
 
 Examples:
   wispd doctor
+  wispd doctor --all
   wispd doctor --json
