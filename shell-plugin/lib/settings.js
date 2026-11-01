@@ -1,6 +1,6 @@
 .pragma library
 
-// Settings editor model (W22): which config keys the Panel edits, how a
+// Settings editor model (W22): which config keys the surfaces edit, how a
 // value is validated before it is sent, and the command that writes it.
 // Writes go through `wispd config set KEY VALUE` only; the daemon reloads
 // its config live. Pure functions, no strings shown to users: validate()
@@ -17,8 +17,13 @@ var KEYS = Schema.KEYS
 
 function field(key) { return Schema.field(key) }
 
+var CATEGORIES = Schema.CATEGORIES
+
+// The Panel's quick settings in one config section. The Panel tab only
+// ever shows quick fields; every field validates (see validate), the
+// settings window renders them all by category.
 function group(name) {
-  return FIELDS.filter(function (f) { return f.group === name })
+  return FIELDS.filter(function (f) { return f.group === name && f.quick })
 }
 
 function trim(s) { return Schema.trim(s) }

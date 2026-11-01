@@ -1,7 +1,10 @@
 """The settings schema (W28): one table for every surface.
 
 Each field is declared once: key, kind, default, range or choices,
-description, section and the widget the Panel draws for it. From that
+description, section, the widget a surface draws for it, and the UI
+metadata every surface shares: category (which page of the settings
+window it lives on), a copy key for its label and one for its help line,
+a unit, and a `quick` flag for the Panel's few quick settings. From that
 table come
 
   - `wispd config set --help` / `wispd config keys` (help_table, as_dict),
@@ -18,6 +21,10 @@ Values are strings, as config.toml stores them. Kinds:
   int     whole number inside [min, max]
   bool    "true" or "false"
   choice  one of `choices`
+  text    free text without the characters TOML cannot hold; an optional
+          `pattern` (a regular expression, whole value) narrows it
+  secret  status only: the surfaces show whether a credential is set, the
+          table never holds a value and `config set` refuses a write
 """
 import dataclasses
 import re
@@ -27,10 +34,68 @@ BAD_CHARS = '"\\#\n'
 USD_MAX = 100000
 
 # problem codes; the Panel shows the copy string ui.err.<code>
-ERROR_CODES = ("unknown", "chars", "number", "range", "choice")
+ERROR_CODES = ("unknown", "chars", "number", "range", "choice", "format")
 
 _WIDGET = {"usd": "number", "int": "number", "bool": "toggle",
-           "choice": "choice"}
+           "choice": "choice", "text": "text", "secret": "status"}
+KINDS = tuple(_WIDGET)
+
+# Settings window pages, in sidebar order. Status is not a schema category
+# (it shows health, spend, audit and binds, not editable keys). A key with
+# no user-facing home lives under advanced. Titles are copy strings
+# "set.cat.<id>".
+CATEGORIES = ("voice", "pointer", "agents", "models", "budget",
+              "connectors", "advanced")
+
+# key -> category. Every schema key must appear here (tests enforce it).
+_CATEGORY = {
+    "hotkey.mod": "voice", "hotkey.key": "voice",
+    "audio.seconds": "voice", "chips.enabled": "voice",
+    "chips.days": "voice", "dictation.mode": "voice",
+    "stt.provider": "voice", "voice.captions": "voice",
+    "voice.enabled": "voice", "voice.provider": "voice",
+    "voice.tts_voice": "voice", "quiet.on_calls": "voice",
+    "pointer.mode": "pointer", "pointer.backend": "pointer",
+    "cua.dry_run": "pointer", "cua.kill_switch": "pointer",
+    "cua.confirm": "pointer", "cua.delivery": "pointer",
+    "cua.max_clicks_per_min": "pointer", "cua.max_per_turn": "pointer",
+    "cua.timeout_ms": "pointer", "keys.submap": "pointer",
+    "agent.autonomy": "agents", "agent.screenshots": "agents",
+    "brain.agent_runtime": "agents",
+    "agents.act_max_steps": "agents", "agents.act_max_errors": "agents",
+    "agents.act_max_parse_misses": "agents",
+    "agents.act_max_seconds": "agents", "agents.act_max_usd": "agents",
+    "brain.router": "models", "brain.default": "models",
+    "brain.fallback": "models", "brain.first_token_s": "models",
+    "brain.allow_paid": "models", "local.enabled": "models",
+    "budget.daily_usd": "budget", "budget.monthly_usd": "budget",
+    "budget.gate_primary": "budget",
+    "browser.lane": "connectors", "browser.port": "connectors",
+    "ui.theme": "advanced", "growth.weekly_recap": "advanced",
+    "agents.writer_queue_max": "advanced",
+    "packs.keep": "advanced", "packs.keep_days": "advanced",
+    "packs.shots_keep": "advanced", "packs.shots_keep_days": "advanced",
+    "dev.panel": "advanced", "dev.judge_cap_usd": "advanced",
+    "verify.judge_timeout_s": "advanced", "verify.pixel_eps": "advanced",
+    "verify.region_px": "advanced",
+}
+
+# key -> unit shown next to a number field
+_UNIT = {
+    "budget.daily_usd": "USD", "budget.monthly_usd": "USD",
+    "agents.act_max_usd": "USD", "dev.judge_cap_usd": "USD",
+    "audio.seconds": "seconds", "chips.days": "days",
+    "cua.max_clicks_per_min": "clicks a minute", "cua.max_per_turn": "actions",
+    "cua.timeout_ms": "ms", "agents.act_max_steps": "tool calls",
+    "agents.act_max_errors": "failed calls",
+    "agents.act_max_parse_misses": "bad replies",
+    "agents.act_max_seconds": "seconds",
+    "agents.writer_queue_max": "writes", "browser.port": "port",
+    "brain.first_token_s": "seconds", "packs.keep": "packs",
+    "packs.keep_days": "days", "packs.shots_keep": "screenshots",
+    "packs.shots_keep_days": "days", "verify.judge_timeout_s": "seconds",
+    "verify.pixel_eps": "per channel", "verify.region_px": "pixels",
+}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -43,8 +108,12 @@ class Field:
     min: int | None = None
     max: int | None = None
     choices: tuple = ()
-    panel: bool = False          # shown in the Panel settings tab
-    label: str = ""              # copy key for the Panel label
+    quick: bool = False          # shown in the Panel's quick settings
+    label: str = ""              # copy key; blank means set.<key>.label
+    category: str = ""           # settings window page (CATEGORIES)
+    unit: str = ""               # shown beside a number field
+    pattern: str = ""            # text kind: regex the whole value matches
+    hint: str = ""               # text kind: the shape, for help text
 
     def __post_init__(self):
         object.__setattr__(self, "section", self.key.split(".")[0])
@@ -53,6 +122,14 @@ class Field:
     def widget(self) -> str:
         return _WIDGET[self.kind]
 
+    @property
+    def label_key(self) -> str:
+        return self.label or f"set.{self.key}.label"
+
+    @property
+    def help_key(self) -> str:
+        return f"set.{self.key}.help"
+
     def range_text(self) -> str:
         if self.kind == "usd":
             return f"0 to {USD_MAX}, blank for no cap"
@@ -60,76 +137,101 @@ class Field:
             return f"{self.min} to {self.max}"
         if self.kind == "bool":
             return "true or false"
+        if self.kind == "text":
+            return self.hint or "text"
+        if self.kind == "secret":
+            return "set with wispd keys, never shown"
         return ", ".join(self.choices)
 
     def as_dict(self) -> dict:
-        return {"key": self.key, "kind": self.kind, "default": self.default,
+        # a secret row carries no value, not even a default
+        return {"key": self.key, "kind": self.kind,
+                "default": "" if self.kind == "secret" else self.default,
                 "description": self.description, "section": self.section,
                 "widget": self.widget, "min": self.min, "max": self.max,
-                "choices": list(self.choices), "panel": self.panel}
+                "choices": list(self.choices), "quick": self.quick,
+                "category": self.category, "label": self.label_key,
+                "help": self.help_key, "unit": self.unit}
 
-    def panel_dict(self) -> dict:
-        """The Panel field row (the shape lib/settings.js always had)."""
+    def js_dict(self) -> dict:
+        """The field row in shell-plugin/lib/settings_schema.js: the shape
+        the Panel always read (key, group, kind, label, widget, min, max,
+        options) plus the metadata the settings window reads."""
         d = {"key": self.key, "group": self.section, "kind": self.kind,
-             "label": self.label, "widget": self.widget}
+             "label": self.label_key, "widget": self.widget,
+             "category": self.category, "help": self.help_key,
+             "quick": self.quick, "unit": self.unit}
+        if self.kind != "secret":
+            d["default"] = self.default
         if self.kind == "int":
             d["min"], d["max"] = self.min, self.max
         if self.kind == "choice":
             d["options"] = list(self.choices)
+        if self.kind == "text" and self.pattern:
+            d["pattern"] = self.pattern
         return d
 
 
 def _f(key, kind, default, description, **kw):
+    kw.setdefault("category", _CATEGORY.get(key, ""))
+    kw.setdefault("unit", _UNIT.get(key, ""))
     return Field(key, kind, default, description, **kw)
 
 
 FIELDS = (
+    _f("hotkey.mod", "text", "SUPER",
+       "Modifier for push-to-talk: SUPER, ALT, SHIFT, CTRL or a keysym "
+       "like ALT_R; run wispd install to rebind",
+       pattern=r"[A-Za-z0-9_]+", hint="a modifier such as SUPER"),
+    _f("hotkey.key", "text", "D",
+       "Key for push-to-talk; run wispd install to rebind",
+       pattern=r"[A-Za-z0-9_]+", hint="a key name such as D"),
     _f("budget.daily_usd", "usd", "8.00",
        "Daily cap on paid model spend in USD",
-       panel=True, label="ui.set.daily"),
+       quick=True, label="ui.set.daily"),
     _f("budget.monthly_usd", "usd", "160.00",
        "Monthly cap on paid model spend in USD",
-       panel=True, label="ui.set.monthly"),
+       quick=True, label="ui.set.monthly"),
     _f("budget.gate_primary", "bool", "false",
        "Also stop the primary paid model at the cap, not just fallbacks"),
     _f("pointer.mode", "choice", "auto",
        "guide points, drive clicks for you, auto does either",
-       choices=("guide", "drive", "auto"), panel=True,
+       choices=("guide", "drive", "auto"), quick=True,
        label="ui.set.pointer"),
     _f("pointer.backend", "choice", "auto",
        "Which backend injects clicks when driving",
        choices=("auto", "cua", "hyprcursor", "ydotool", "wlrctl", "none")),
     _f("cua.dry_run", "bool", "false",
        "Plan and log every action without performing it",
-       panel=True, label="ui.set.dry_run"),
+       quick=True, label="ui.set.dry_run"),
     _f("cua.kill_switch", "bool", "false",
        "Refuse every injected click, key and scroll",
-       panel=True, label="ui.set.kill"),
+       quick=True, label="ui.set.kill"),
     _f("cua.confirm", "choice", "tier",
        "Confirm risky actions (tier) or every action (always)",
-       choices=("tier", "always"), panel=True, label="ui.set.confirm"),
+       choices=("tier", "always"), quick=True, label="ui.set.confirm"),
     _f("cua.delivery", "choice", "auto",
        "Input delivery: auto = background where possible, pointer "
        "escalation otherwise; background never touches the real "
        "cursor; pointer prefers it",
        choices=("auto", "background", "pointer"),
-       panel=True, label="ui.set.delivery"),
+       quick=True, label="ui.set.delivery"),
     _f("cua.max_clicks_per_min", "int", "30",
        "Most clicks allowed in one minute", min=1, max=600,
-       panel=True, label="ui.set.clicks"),
+       quick=True, label="ui.set.clicks"),
     _f("cua.max_per_turn", "int", "12",
        "Most actions allowed in one turn", min=1, max=200,
-       panel=True, label="ui.set.per_turn"),
+       quick=True, label="ui.set.per_turn"),
     _f("agent.autonomy", "choice", "autonomous",
        "Confirm policy: autonomous runs reversible steps free, guided "
        "asks on them too, always_ask confirms everything",
        choices=("autonomous", "guided", "always_ask"),
-       panel=True, label="ui.set.autonomy"),
+       quick=True, label="ui.set.autonomy"),
     _f("dictation.mode", "choice", "cleanup",
        "Dictate mode: raw is verbatim, cleanup fixes grammar, "
        "compose writes the finished text from your idea",
        choices=("raw", "cleanup", "compose"),
-       panel=True, label="ui.set.dictation"),
+       quick=True, label="ui.set.dictation"),
     _f("cua.timeout_ms", "int", "800",
        "Per call timeout for the cua driver in ms",
        min=50, max=60000),
@@ -149,9 +251,24 @@ FIELDS = (
     _f("brain.router", "choice", "act",
        "How a turn is routed: act (local fast paths then act), chat or off",
        choices=("act", "chat", "off")),
+    _f("brain.default", "text", "openrouter:meta-llama/llama-4-maverick",
+       "Answer model as name:model; the name is a [brain.<name>] provider "
+       "(openrouter, ollama, lmstudio, mlx or your own)",
+       pattern=r"[A-Za-z0-9_.-]+:[^\s,]+", hint="name:model"),
+    _f("brain.fallback", "text", "",
+       "Models tried after the default, as comma separated name:model "
+       "(blank for none)",
+       pattern=r"|[A-Za-z0-9_.-]+:[^\s,]+(?:,\s*[A-Za-z0-9_.-]+:[^\s,]+)*",
+       hint="name:model, name:model, or blank"),
+    _f("brain.first_token_s", "int", "3",
+       "Seconds a model has to start answering before the next one is tried",
+       min=1, max=60),
+    _f("brain.agent_runtime", "choice", "auto",
+       "Runtime for spawned background agents; auto picks the first one "
+       "found",
+       choices=("auto", "opencode", "codex", "claude", "devin")),
     _f("growth.weekly_recap", "bool", "false",
-       "Show last week's local days, turns and recorded spend once each week; nothing is sent",
-       section="growth", panel=False),
+       "Show last week's local days, turns and recorded spend once each week; nothing is sent"),
     _f("brain.allow_paid", "bool", "false",
        "Let the fallback chain use paid models"),
     _f("local.enabled", "bool", "false",
@@ -181,12 +298,12 @@ FIELDS = (
     _f("voice.captions", "bool", "true",
        "Show the answer text in the bubble while it is spoken (off: the "
        "voice is the answer; a muted speaker still shows it)",
-       panel=True, label="ui.set.captions"),
+       quick=True, label="ui.set.captions"),
     _f("voice.enabled", "choice", "auto",
        "Spoken answers: auto speaks when a Groq key or a local voice "
        "exists, true always, false never",
        choices=("auto", "true", "false"),
-       panel=True, label="ui.set.voice"),
+       quick=True, label="ui.set.voice"),
     _f("voice.provider", "choice", "groq",
        "Who speaks: groq (Orpheus, English; espeak or [voice] cmd when "
        "Groq cannot) or espeak (never ask Groq)",
@@ -194,7 +311,7 @@ FIELDS = (
     _f("voice.tts_voice", "choice", "hannah",
        "Groq Orpheus voice",
        choices=("autumn", "diana", "hannah", "austin", "daniel", "troy"),
-       panel=True, label="ui.set.tts_voice"),
+       quick=True, label="ui.set.tts_voice"),
     _f("quiet.on_calls", "bool", "true",
        "Hold announcements nobody asked for (a finished background "
        "agent) while a call or a screen share is on"),
@@ -250,8 +367,11 @@ def field(key: str) -> Field | None:
     return _BY_KEY.get(key)
 
 
-def panel_fields() -> list:
-    return [f for f in FIELDS if f.panel]
+def ordered() -> list:
+    """Every field grouped by category in CATEGORIES order, schema order
+    inside a category. What `config keys` and the settings window list."""
+    rank = {c: i for i, c in enumerate(CATEGORIES)}
+    return sorted(FIELDS, key=lambda f: rank[f.category])
 
 
 def problem(key: str, raw) -> str:
@@ -263,6 +383,12 @@ def problem(key: str, raw) -> str:
         return "chars"
     f = _BY_KEY.get(key)
     if f is None:
+        return ""
+    if f.kind == "secret":
+        return "unknown"
+    if f.kind == "text":
+        if f.pattern and not re.fullmatch(f.pattern, v):
+            return "format"
         return ""
     if f.kind == "usd":
         if v == "":
@@ -288,6 +414,10 @@ def message(key: str, raw) -> str:
     if code == "chars":
         return (f"{key} may not contain a quote, a backslash, # or a "
                 "newline.")
+    if code == "unknown":
+        return f"{key} is a secret and cannot be set here."
+    if code == "format":
+        return f"{key} must look like: {f.hint or 'the documented form'}."
     if code == "number":
         return f"{key} must be a plain number."
     if code == "range":
@@ -300,10 +430,15 @@ def message(key: str, raw) -> str:
 
 
 def help_table() -> str:
-    """The `wispd config keys` text, also appended to `config set --help`."""
+    """The `wispd config keys` text, also appended to `config set --help`.
+    Grouped by category in the settings window's order."""
     lines = ["Settings (value, default, range):"]
     width = max(len(f.key) for f in FIELDS)
-    for f in FIELDS:
+    cat = None
+    for f in ordered():
+        if f.category != cat:
+            cat = f.category
+            lines.append(f"{cat}:")
         lines.append(f"  {f.key:<{width}}  {f.description}")
         lines.append(f"  {'':<{width}}  default {f.default or 'blank'}; "
                      f"{f.range_text()}")
