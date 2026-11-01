@@ -139,28 +139,15 @@ def _wait_file(path, seconds: float) -> bool:
 
 
 def _frame_rect(rect, mons) -> list:
-    """Logical (x,y,w,h) -> compositor-frame px. grim composites each
-    output at logical_pos*scale, so a region lands at scale*s under
-    the monitor containing its center. Scale 1 when nothing matches."""
+    """Logical (x,y,w,h) -> compositor-frame px through the shared
+    raw-canvas model (grim draws the whole layout at the highest output
+    scale, bbox at the origin). No monitors: 1:1."""
+    from . import points
     x, y, w, h = (float(v) for v in list(rect)[:4])
-    cx, cy = x + w / 2.0, y + h / 2.0
-    s = 1.0
-    for m in mons or []:
-        if not isinstance(m, dict):
-            continue
-        try:
-            ms = float(m.get("scale", 1) or 1)
-            mx, my = float(m.get("x", 0)), float(m.get("y", 0))
-            mw, mh = float(m.get("width", 0)) / ms, \
-                float(m.get("height", 0)) / ms
-        except (TypeError, ValueError, ZeroDivisionError):
-            continue
-        if ms <= 0 or mw <= 0 or mh <= 0:
-            continue
-        if mx <= cx < mx + mw and my <= cy < my + mh:
-            s = ms
-            break
-    return [int(round(x * s)), int(round(y * s)),
+    mons = [m for m in (mons or []) if isinstance(m, dict)]
+    px, py = points.logical_to_raw_canvas(x, y, mons)
+    s = points.canvas_scale(mons)
+    return [int(round(px)), int(round(py)),
             int(round(w * s)), int(round(h * s))]
 
 

@@ -19,6 +19,7 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from wisp import config, grounding as g, points, stage_capture  # noqa: E402
+from wisp import verify  # noqa: E402
 
 try:
     from PIL import Image  # noqa: E402
@@ -191,6 +192,64 @@ class RawShot(Harness):
         self.assertLands((1828, 50), t)
         t, _ = self.ground((864, 540), capture=self._raw())
         self.assertLands((864, 540), t)
+
+
+class OneCanvasModel(unittest.TestCase):
+    """U2: grounding.convert, points.to_logical and verify._frame_rect
+    all read grim's raw canvas the same way."""
+
+    # (name, logical point, raw canvas pixel under the uniform model)
+    CASES = [("eDP-1", (864, 540), (1728, 1080)),
+             ("DP-3", (1828, 50), (3656, 100)),
+             ("DP-3 far edge", (5000, 1400), (10000, 2800))]
+
+    def test_three_callers_agree_on_both_monitors(self):
+        for name, logical, px in self.CASES:
+            with self.subTest(name):
+                c = g.convert(*px, "shot", LAYOUT)
+                t = points.to_logical([{"x": px[0], "y": px[1]}], LAYOUT)[0]
+                self.assertEqual(c, logical)
+                self.assertEqual((t["x"], t["y"]), logical)
+                # a 10x10 logical rect centred there lands on the same px
+                box = verify._frame_rect(
+                    (logical[0] - 5, logical[1] - 5, 10, 10), LAYOUT)
+                self.assertEqual((box[0] + box[2] // 2,
+                                  box[1] + box[3] // 2), px)
+                self.assertEqual(box[2:], [20, 20])
+
+    def test_dead_space_maps_off_screen_and_is_rejected(self):
+        # below eDP-1 (1080 logical tall), left of DP-3 (x < 1728)
+        px = (200, 2700)
+        lx, ly = g.convert(*px, "shot", LAYOUT)
+        self.assertEqual((lx, ly), (100, 1350))
+        self.assertFalse(points.on_screen(lx, ly, LAYOUT))
+        self.assertTrue(points.on_screen(1828, 50, LAYOUT))
+
+    def test_single_monitor_scale_1_is_unchanged(self):
+        mons = [{"name": "H", "x": 0, "y": 0, "width": 1920,
+                 "height": 1080, "scale": 1.0}]
+        self.assertEqual(g.convert(700, 300, "shot", mons), (700, 300))
+        t = points.to_logical([{"x": 700, "y": 300}], mons)[0]
+        self.assertEqual((t["x"], t["y"]), (700, 300))
+        self.assertEqual(verify._frame_rect((10, 20, 30, 40), mons),
+                         [10, 20, 30, 40])
+
+    def test_round_trip(self):
+        for lx, ly in ((0, 0), (1728, 0), (4000, 1000), (-3, 7)):
+            px = points.logical_to_raw_canvas(lx, ly, LAYOUT)
+            back = points.raw_canvas_to_logical(*px, LAYOUT)
+            self.assertAlmostEqual(back[0], lx)
+            self.assertAlmostEqual(back[1], ly)
+
+    @unittest.skipUnless(shutil.which("grim")
+                         and __import__("os").environ.get("WISP_LIVE_GRIM"),
+                         "needs grim, a compositor and WISP_LIVE_GRIM=1")
+    def test_real_grim_capture_size_matches_the_model(self):
+        import subprocess
+        mons = points.monitors()
+        out = pathlib.Path(tempfile.mkdtemp()) / "g.png"
+        subprocess.run(["grim", str(out)], check=True, timeout=20)
+        self.assertEqual(png_size(out), raw_canvas_size(mons))
 
 
 if __name__ == "__main__":

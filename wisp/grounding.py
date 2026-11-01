@@ -264,9 +264,8 @@ def convert(x: float, y: float, frame: str, mons: list,
         return (int(round(one.get("x", 0) + x / s)),
                 int(round(one.get("y", 0) + y / s)))
     # grim composites the whole layout at the highest output scale
-    s = max(_scale(m) for m in mons)
-    ox, oy, _, _ = points.logical_bbox(mons)
-    return int(round(ox + x / s)), int(round(oy + y / s))
+    lx, ly = points.raw_canvas_to_logical(x, y, mons)
+    return points.round_px(lx), points.round_px(ly)
 
 
 # ------------------------------------------------------------ settings
