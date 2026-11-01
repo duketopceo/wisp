@@ -370,7 +370,6 @@ def settings(cfg: dict | None) -> dict:
         "uitars_coords": str(gc.get("uitars_coords", "px")),
         "max_side": int(_f(gc.get("max_side"), 1280.0)),
         "a11y_frame": str(gc.get("a11y_frame", "global")),
-        "vlm_brain": str(gc.get("vlm_brain") or "").strip(),
     }
 
 
@@ -842,9 +841,10 @@ def _vlm_locate(shot: Shot, target: str, region_hint: str = "",
                 cfg: dict | None = None,
                 timeout: float = 5.0) -> Tuple[int, int, float] | None:
     """Single-shot aspect-matched VLM pointing (HeyClicky parity).
-    Resizes `shot` to `pick_pointing_resolution`, asks `brain.chat` for a
-    single target-labelled `[POINT:x,y:label]`, and scales back to `shot`
-    pixels via `scale_point_from_resolution`. Legacy bare coordinates are
+    Letterboxes `shot` into `pick_pointing_resolution` (no stretching),
+    asks `brain.chat` for a single target-labelled `[POINT:x,y:label]`, and
+    maps back to `shot` pixels via `Letterbox.to_shot` (a point in the
+    padding is refused). Legacy bare coordinates are
     retained only as unsupported, zero-confidence predictions."""
     from . import brain, points as _points
     deadline = time.monotonic() + max(0.0, _f(timeout, 5.0))
@@ -1021,8 +1021,15 @@ def target_at_point(x: int, y: int, cfg: dict | None = None) -> Target | None:
 def _default_capture(output: str | None = None):
     """Capture the screen (one output via `grim -o` when named) as a Shot
     that knows its logical origin (normalized) or its output (raw)."""
-    from . import stage_capture
-    out, origin = stage_capture.capture_screen_meta(output=output)
+    from . import points, stage_capture
+    # a one-output capture would leave its origin in the global that maps
+    # the turn's screenshot; the origin travels on the Shot instead
+    saved = points.SHOT_ORIGIN
+    try:
+        out, origin = stage_capture.capture_screen_meta(output=output)
+    finally:
+        if output:
+            points.SHOT_ORIGIN = saved
     if not out or not out.exists():
         return None
     try:
@@ -1173,13 +1180,20 @@ def ground_target(target: str, cfg: dict | None = None, *, capture=None,
             cua = None
     if output is None:
         output = (cfg.get("screen", {}) or {}).get("output") or None
-    mons = monitors if monitors is not None else points.monitors()
-    if not per_output:
-        outputs = [output]
-    elif output:
-        outputs = [output]
+    layout = []
+
+    def mons():
+        """The monitor layout, read once and only when a mapping or the
+        output order needs it."""
+        if not layout:
+            layout.append(monitors if monitors is not None
+                          else points.monitors())
+        return layout[0]
+
+    if per_output and not output:
+        outputs = output_order(mons(), focus, cursor)
     else:
-        outputs = output_order(mons, focus, cursor)
+        outputs = [output]
     best = None
     tried = down = 0
     for _attempt_no in (1, 2):
@@ -1198,7 +1212,7 @@ def ground_target(target: str, cfg: dict | None = None, *, capture=None,
                                     or got.confidence > best.confidence):
                 best = got
             if got is not None and got.confidence >= st["min_conf"]:
-                return _grounded(got, shot, mons, out_name or output, name,
+                return _grounded(got, shot, mons(), out_name or output, name,
                                  tried, down)
         if not shots:
             raise GroundRefused("ground_failed", "no_capture",

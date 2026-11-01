@@ -346,6 +346,14 @@ class PerOutputGrounding(Harness):
         self.assertLands((1828, 50), t, tol=3)          # model px = 2.5 px
         self.assertEqual(self.captured, ["DP-3"])
 
+    def test_per_output_capture_leaves_the_turns_shot_origin_alone(self):
+        self.patched()
+        points.SHOT_ORIGIN = (0, 0)       # the turn screenshot's origin
+        oracle = Oracle((1828, 50), self.region("DP-3"))
+        self.run_ground((2000, 100), (100, 100), None, oracle)
+        self.assertEqual(self.captured, ["DP-3"])
+        self.assertEqual(points.SHOT_ORIGIN, (0, 0))   # not DP-3's (1728,0)
+
     def test_pinned_output_is_the_only_capture(self):
         self.patched()
         oracle = Oracle((864, 540), self.region("eDP-1"))

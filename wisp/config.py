@@ -414,9 +414,10 @@ base_url = "http://localhost:11434"
 vision = "false"
 tools = "false"
 
+# An Ollama entry that takes screenshots, for [ground] vlm_brain.
 [brain.ollama_vision]
-kind = "ollama"          # an Ollama entry that takes screenshots, for
-base_url = "http://localhost:11434"   # [ground] vlm_brain
+kind = "ollama"
+base_url = "http://localhost:11434"
 vision = "true"
 tools = "false"
 

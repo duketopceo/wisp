@@ -836,7 +836,6 @@ class VlmBrainOverride(unittest.TestCase):
         from wisp import config, settings_schema
         dflt = tomllib.loads(config.DEFAULT_CONFIG)
         self.assertEqual(dflt["ground"]["vlm_brain"], "")
-        self.assertEqual(g.settings(dflt)["vlm_brain"], "")
         f = next(f for f in settings_schema.FIELDS
                  if f.key == "ground.vlm_brain")
         self.assertEqual(f.category, "models")

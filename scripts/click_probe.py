@@ -25,6 +25,7 @@ no browser, unknown monitor, spend cap reached).
 from __future__ import annotations
 
 import argparse
+import collections.abc
 import dataclasses
 import json
 import math
@@ -130,15 +131,15 @@ def summarize(rows: list) -> list:
 @dataclasses.dataclass
 class Rig:
     """Everything that touches the desktop, injectable for tests."""
-    monitors: callable          # () -> [monitor dict]
-    open_page: callable         # (monitor) -> handle
-    window_rect: callable       # (handle) -> (x, y, w, h) logical or None
-    ground: callable            # (name) -> (x, y); GroundRefused -> None
-    click: callable             # (x, y) -> bool
-    title: callable             # (handle) -> window title
-    close: callable             # (handle) -> None
-    spend: callable = lambda: 0.0     # () -> cumulative usd
-    sleep: callable = time.sleep
+    monitors: collections.abc.Callable          # () -> [monitor dict]
+    open_page: collections.abc.Callable         # (monitor) -> handle
+    window_rect: collections.abc.Callable       # (handle) -> (x, y, w, h) logical or None
+    ground: collections.abc.Callable            # (name) -> (x, y); GroundRefused -> None
+    click: collections.abc.Callable             # (x, y) -> bool
+    title: collections.abc.Callable             # (handle) -> window title
+    close: collections.abc.Callable             # (handle) -> None
+    spend: collections.abc.Callable = lambda: 0.0   # () -> cumulative usd
+    sleep: collections.abc.Callable = time.sleep
     settle_s: float = 0.6
 
 
