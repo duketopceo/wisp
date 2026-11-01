@@ -193,12 +193,15 @@ def _summary(rows: list, tasks: list) -> dict:
     conf = {"correct": 0, "incorrect": 0, "unreviewed": 0}
     stage: dict = {}
     task_usd = judge_usd = 0.0
+    by_provider: dict = {}
     for r, t in zip(rows, tasks):
         mix[t["judged"]] += 1
         conf[t["confirmed"] or "unreviewed"] += 1
         c = r.get("cost") if isinstance(r.get("cost"), dict) else {}
         task_usd += _num(c.get("task_usd"))
         judge_usd += _num(c.get("judge_usd"))
+        for prov, usd in (c.get("by_provider") or {}).items():
+            by_provider[prov] = by_provider.get(prov, 0.0) + _num(usd)
         for k, v in (r.get("timing_ms") or {}).items():
             stage[k] = stage.get(k, 0) + (v if isinstance(v, (int, float))
                                           else 0)
@@ -221,7 +224,9 @@ def _summary(rows: list, tasks: list) -> dict:
                                if t["drift"].get("suspected")),
             "cost": {"task_usd": round(task_usd, 6),
                      "judge_usd": round(judge_usd, 6),
-                     "total_usd": round(task_usd + judge_usd, 6)},
+                     "total_usd": round(task_usd + judge_usd, 6),
+                     "by_provider": {k: round(v, 6) for k, v in
+                                     sorted(by_provider.items())}},
             "stage_ms": stage,
             "started": min(starts) if starts else None,
             "ended": max(ends) if ends else None}
@@ -257,14 +262,19 @@ def _run(run_id: str, labels: dict) -> dict | None:
     arms = sorted({r.get("arm") for r in rows if r.get("arm")})
     if arms:
         out["vs"] = next((r.get("vs") for r in rows if r.get("vs")), None)
+        out["profiles"] = any(r.get("profile") for r in rows)
         out["arms"] = {}
         for arm in arms:
             idx = [i for i, r in enumerate(rows) if r.get("arm") == arm]
             out["arms"][arm] = _summary([rows[i] for i in idx],
                                         [tasks[i] for i in idx])
-        if "a" in arms and "b" in arms:
-            out["pairs"] = _pairs([t for t in tasks if t["arm"] == "a"],
-                                  [t for t in tasks if t["arm"] == "b"])
+        if len(arms) == 2:
+            # two arms pair per task; `a` and `b` are the first and
+            # second arm in name order (gauntlet arms: hybrid/openrouter)
+            first, second = arms
+            out["pair_arms"] = {"a": first, "b": second}
+            out["pairs"] = _pairs([t for t in tasks if t["arm"] == first],
+                                  [t for t in tasks if t["arm"] == second])
     return out
 
 
@@ -375,6 +385,52 @@ def _write(label, note, turn, label_fn) -> dict:
     return {"ok": ok, "label": label, "turn": turn, "result": text}
 
 
+# -- importing the owner's gauntlet labels -----------------------------------
+
+OWNER_LABELS = ("correct", "incorrect")
+
+
+def import_labels(src_dir, decisions_file=None, labels_file=None) -> dict:
+    """Copy the owner's labels on gauntlet turns, and only those turns'
+    decisions, from a gauntlet data directory into the owner's own data
+    (R20, KTD11). Only a `correct` or `incorrect` label counts: the
+    judge writes none, and the automatic `corrected-by-retry` mark is
+    not the owner's word. A decision already present (same `ts`) is
+    skipped, so a second run copies nothing. Returns
+    {copied, present, unlabelled}."""
+    import pathlib
+    from . import private
+    src = pathlib.Path(src_dir)
+    dest_dec = pathlib.Path(decisions_file or config.DECISIONS)
+    dest_lab = pathlib.Path(labels_file or learn.LABELS_FILE)
+    if src.resolve() == dest_dec.parent.resolve():
+        raise ValueError("that is your own data directory")
+    owner: dict = {}
+    for lab in learn._read_jsonl(src / "labels.jsonl"):
+        ref = lab.get("ref")
+        if isinstance(ref, str) and ref and lab.get("label") in OWNER_LABELS:
+            owner[ref] = lab                    # the latest owner label
+    have = {d.get("ts") for d in learn._read_jsonl(dest_dec)}
+    copied = present = 0
+    decs = learn._read_jsonl(src / "decisions.jsonl")
+    seen = set()
+    for d in decs:
+        ts = d.get("ts")
+        if ts in seen or ts not in owner:
+            continue
+        seen.add(ts)
+        if ts in have:
+            present += 1
+            continue
+        with private.open_append(dest_dec) as f:
+            f.write(json.dumps(d, separators=(",", ":")) + "\n")
+        with private.open_append(dest_lab) as f:
+            f.write(json.dumps(owner[ts], separators=(",", ":")) + "\n")
+        copied += 1
+    return {"copied": copied, "present": present,
+            "unlabelled": len({d.get("ts") for d in decs} - set(owner))}
+
+
 # -- text ------------------------------------------------------------------
 
 def _pct(x) -> str:
@@ -404,6 +460,16 @@ def render(out: dict) -> str:
         if r.get("stage_ms"):
             lines.append("  time: " + ", ".join(
                 f"{k} {round(v)}ms" for k, v in r["stage_ms"].items()))
+        for name, a in (r.get("arms") or {}).items():
+            if name in ("a", "b") and not r.get("profiles"):
+                continue
+            ac = {"total_usd": 0.0, **(a.get("cost") or {})}
+            prov = ", ".join(f"{k} ${v:.4f}" for k, v in
+                             (ac.get("by_provider") or {}).items())
+            lines.append(
+                f"  arm {name}: {a.get('tasks')} tasks  judged "
+                f"{_pct((a.get('accuracy') or {}).get('judged'))}  cost "
+                f"${ac['total_usd']:.4f}" + (f" ({prov})" if prov else ""))
         if r.get("judge_capped"):
             lines.append(f"  judge cap reached: {r.get('unjudged')} tasks "
                          "unjudged")

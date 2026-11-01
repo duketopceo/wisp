@@ -86,6 +86,7 @@ LEGACY_NAME = "spend.jsonl"
 ACTIVE = False
 
 _LOCK = threading.Lock()
+_BY_PROVIDER: dict = {}      # provider -> usd, same lifetime as _SESSION
 _SESSION = {"cost": 0.0, "prompt_tokens": 0, "completion_tokens": 0,
             "calls": 0}
 _HINTED = False
@@ -378,6 +379,15 @@ def reset_session() -> None:
     """Zero the in-process counters (tests call this between cases)."""
     for k in _SESSION:
         _SESSION[k] = 0
+    with _LOCK:
+        _BY_PROVIDER.clear()
+
+
+def provider_totals() -> dict:
+    """{provider: usd} for calls noted in this process since
+    reset_session(); a run's per-provider spend is the delta."""
+    with _LOCK:
+        return dict(_BY_PROVIDER)
 
 
 def session_totals() -> dict:
@@ -403,6 +413,7 @@ def note(provider: str, model: str, paid: bool, usage: dict,
             _SESSION["prompt_tokens"] += int(_num(tin))
             _SESSION["completion_tokens"] += int(_num(tout))
             _SESSION["cost"] += usd
+            _BY_PROVIDER[provider] = _BY_PROVIDER.get(provider, 0.0) + usd
     except Exception:  # noqa: BLE001
         pass
     if not ACTIVE:

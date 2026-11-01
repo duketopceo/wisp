@@ -259,14 +259,32 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
                 s = devsession.turn_off()
             elif op == "status":
                 s = devsession.status()
+                # the gauntlet driver polls the run through this reply
+                from wisp import devrun
+                return {"ok": True, "dev": s, "run": devrun.last_summary()}
             else:
                 return {"ok": False, "error": f"unknown dev op {op!r}"}
             st.publish(None, dev=devsession.state_field(s))
             return {"ok": True, "dev": s}
         if c == "dev_run":
             from wisp import devrun
+            profiles = cmd.get("profiles")
+            if profiles is not None and not (
+                    isinstance(profiles, list) and profiles
+                    and all(isinstance(x, str) for x in profiles)):
+                return {"ok": False, "error": "profiles must be a list"}
+            grant = None
+            if profiles:
+                wins = cmd.get("windows") or []
+                if not (isinstance(wins, list)
+                        and all(isinstance(x, str) for x in wins)):
+                    return {"ok": False, "error": "windows must be a list"}
+                grant = {"windows": wins,
+                         "spend_file": str(cmd.get("spend_file") or ""),
+                         "cap_usd": cmd.get("cap_usd", 10.0)}
             return devrun.start(cfg, st, ctl, str(cmd.get("path", "")),
-                                vs=cmd.get("vs"))
+                                vs=cmd.get("vs"), profiles=profiles,
+                                grant=grant)
         if c == "dev_stop":
             from wisp import devrun
             return devrun.stop()

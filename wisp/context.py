@@ -126,10 +126,18 @@ def snapshot(cfg: dict) -> str:
         if env:
             out += "\n" + env
         if app or title:
-            app_body = skills.match_app_skill(
+            info = skills.match_app_skill_info(
                 app, url_host=focus_url_host(app, title))
+            app_body = info["body"] if info else ""
             if app_body:
                 out += "\n\n[app_skill]\n" + app_body
+                # reuse is observable: run 2 of a gauntlet case shows
+                # whether the saved skill was injected
+                from . import trace
+                trace.emit(trace.current(), "app_skill", "context",
+                           {"name": info.get("name", ""),
+                            "matched_by": info.get("matched_by", ""),
+                            "chars": len(app_body)})
     pm = cfg.get("agent", {}).get("password_manager", "")
     if pm == "1password":
         out += ("\n[prefs] password_manager=1password — a 1Password "

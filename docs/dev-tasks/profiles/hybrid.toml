@@ -1,0 +1,28 @@
+# Gauntlet arm: hybrid. Local Ollama vision model for grounding, OpenRouter
+# for reasoning (KTD4, KTD5). Applied by `wispd dev run --profile hybrid`
+# (wisp/gauntlet.py). A checked-in file, so it may set the spend and safety
+# keys that `--vs` refuses. Ollama runs CPU-only on this machine, so the
+# grounding call and the task get more time than the OpenRouter arm.
+
+[brain]
+default = "openrouter:meta-llama/llama-4-maverick"
+fallback = ""
+
+# the eval key reaches the daemon as OPENROUTER_API_KEY (set by `orch`);
+# no keyring entry may win over it
+[brain.openrouter]
+key_env = "OPENROUTER_API_KEY"
+
+[brain.ollama]
+vision = "true"
+tools = "false"
+
+[ground]
+# the jev provider is left out; ROADMAP Q3 decides its future
+providers = "control,a11y,vlm"
+vlm_brain = "ollama:qwen2.5vl:3b-q8_0"
+fallback_timeout_ms = "60000"
+
+[agents]
+act_max_usd = "0.25"
+act_max_seconds = "900"

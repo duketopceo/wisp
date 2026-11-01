@@ -229,20 +229,78 @@ def _dev_run_args(p):
                    "changed (brain.default=openrouter:acme/model) and "
                    "pair the two runs per task; your config is never "
                    "written; both count as one run")
+    p.add_argument("--profile", action="append", default=None,
+                   metavar="NAME", dest="profile",
+                   help="gauntlet mode: run each task once per arm "
+                   "profile (a name under docs/dev-tasks/profiles/ or a "
+                   "file path), arms interleaved per task; repeat for "
+                   "more arms. Typing is allowed only into --window "
+                   "addresses; not with --vs")
+    p.add_argument("--window", action="append", default=None,
+                   metavar="ADDR", dest="window",
+                   help="a sandbox window address the gauntlet run may "
+                   "type into (repeatable)")
+    p.add_argument("--spend-file", default=None, metavar="PATH",
+                   help="cumulative gauntlet spend file (default: in "
+                   "the data folder)")
+    p.add_argument("--cap", type=float, default=None, metavar="USD",
+                   help="gauntlet spend cap across every run that "
+                   "shares the spend file (default 10)")
 
 
 @command("dev run", "Run a task list on the live desktop (dev mode must be on)",
          ["wispd dev run docs/dev-tasks/starter.txt",
-          "wispd dev run tasks.txt --vs brain.default=openrouter:acme/m"],
+          "wispd dev run tasks.txt --vs brain.default=openrouter:acme/m",
+          "wispd dev run one-task.txt --profile hybrid --profile openrouter"],
          {"run_id": "str", "tasks": "int"}, args=_dev_run_args)
 def dev_run(ctx, a):
     import os
     msg = {"cmd": "dev_run", "path": os.path.abspath(a.file)}
+    if a.profile:
+        from .. import gauntlet
+        for ref in a.profile:      # a name or a file, resolved here
+            try:
+                gauntlet.load_profile(ref)
+            except ValueError as e:
+                raise CliError("E_USAGE", str(e),
+                               "wispd dev run --help") from None
+        msg["profiles"] = [
+            r if gauntlet._NAME.fullmatch(r) else os.path.abspath(r)
+            for r in a.profile]
+        msg["windows"] = list(a.window or [])
+        if a.spend_file:
+            msg["spend_file"] = os.path.abspath(a.spend_file)
+        if a.cap is not None:
+            msg["cap_usd"] = a.cap
     if a.vs is not None:
         msg["vs"] = a.vs
     r = ctx.expect_ok(ctx.send(msg))
     return ctx.emit({"run_id": r.get("run_id"), "tasks": r.get("tasks")},
                     f"run {r.get('run_id')} started: {r.get('tasks')} tasks")
+
+
+def _import_labels_args(p):
+    p.add_argument("dir", metavar="DIR",
+                   help="a gauntlet data directory (the one "
+                   "`wispd dev review` was run against)")
+
+
+@command("dev import-labels",
+         "Copy your own labels on gauntlet turns into your data",
+         ["wispd dev import-labels ~/.local/share/wisp-gauntlet/data/wisp"],
+         {"copied": "int", "present": "int", "unlabelled": "int"},
+         args=_import_labels_args)
+def dev_import_labels(ctx, a):
+    import os
+    from .. import devreport
+    try:
+        out = devreport.import_labels(os.path.abspath(a.dir))
+    except ValueError as e:
+        raise CliError("E_USAGE", str(e),
+                       "wispd dev import-labels --help") from None
+    return ctx.emit(out, f"imported {out['copied']} labelled turns "
+                    f"({out['present']} already there, "
+                    f"{out['unlabelled']} not labelled by you)")
 
 
 @command("dev stop", "Stop the running task list after the current task",

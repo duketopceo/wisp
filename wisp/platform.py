@@ -80,7 +80,13 @@ def dirs() -> tuple[Path, Path, Path]:
         loc = Path(os.environ.get(
             "LOCALAPPDATA", str(HOME / "AppData" / "Local"))) / "wisp"
         return app, loc, loc / "run"
-    return (HOME / ".config" / "wisp",
+    # XDG_CONFIG_HOME moves the config dir (the gauntlet driver points it
+    # at a throwaway directory so its daemon never reads the owner's
+    # config or .env); a relative value is ignored, as the spec says
+    xdg_cfg = os.environ.get("XDG_CONFIG_HOME", "")
+    cfg_base = Path(xdg_cfg) if xdg_cfg and os.path.isabs(xdg_cfg) \
+        else HOME / ".config"
+    return (cfg_base / "wisp",
             HOME / ".local" / "share" / "wisp",
             Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp"))
             / "wisp")

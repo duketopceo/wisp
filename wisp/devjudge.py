@@ -21,7 +21,10 @@ import re
 
 
 PROVIDER = "orcheval"
-EVAL_KEY = "omaseal://openrouter/orchestral"
+# the omaseal ref first, then the env var `orch` injects: a headless
+# gauntlet run has no unlocked keyring, but its daemon env carries the
+# eval key. The default key's keyring entry is never in this list.
+EVAL_KEY = "omaseal://openrouter/orchestral,OPENROUTER_API_KEY"
 DEFAULT_MODEL = "google/gemini-2.5-flash"
 DEFAULT_CAP_USD = 1.0
 OUTCOMES = ("success", "stopped", "incomplete", "wrong_tries")
