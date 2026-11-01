@@ -489,7 +489,7 @@ def key(arg: str, cfg: dict | None = None) -> str:
     """Press a named key — 'enter', 'tab', 'down', 'pagedown', 'ctrl+v',
     'ctrl+shift+t' (modifier chords are ydotool-only, never DOM)."""
     from .. import gauntlet
-    refused = gauntlet.keystroke_guard(cfg or {})
+    refused = gauntlet.keystroke_guard(cfg or {}, arg)
     if refused:
         return refused
     _delivery.note("background")   # key events ride the keyboard path

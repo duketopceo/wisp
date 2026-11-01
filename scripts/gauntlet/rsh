@@ -25,13 +25,17 @@ import sys
 
 # read-only programs only; each runs from the first directory that has it
 ALLOW = ("ls", "pwd", "cat", "head", "tail", "wc", "echo", "date", "stat",
-         "file", "du", "uname", "whoami")
+         "uname", "whoami")
+# the only option letters each program accepts, as short flags only. GNU
+# getopt takes abbreviated long options and attached values (`wc
+# --files0=X`, `file -f/etc/x`), so everything not listed is refused
+OPT_LETTERS = {"ls": "alhR1dFtrS", "cat": "n", "head": "nc", "tail": "nc",
+               "wc": "lwcm", "echo": "n", "uname": "asrmo", "stat": "",
+               "pwd": "", "date": "", "whoami": ""}
 BIN_DIRS = ("/usr/bin", "/bin")
 # programs whose non-option arguments are paths
-PATH_ARGS = ("ls", "cat", "head", "tail", "wc", "stat", "file", "du", "cd")
+PATH_ARGS = ("ls", "cat", "head", "tail", "wc", "stat", "cd")
 _SYNTAX = re.compile(r"[;&|<>`$*?\[\]{}()\\\n\r!~]")
-# options that make an allowed program read a file or write something
-_BAD_OPTS = ("--files0-from", "--output", "-o")
 SAFE_ENV = ("PATH", "LANG", "LC_ALL", "TERM")
 STOP = ("exit", "quit", "logout")
 
@@ -64,8 +68,12 @@ def check(line: str, cwd: str, base: str):
     if "/" in cmd:
         return None, "run commands by bare name"
     for a in args:
-        if a.startswith(_BAD_OPTS) or a.startswith("-o"):
-            return None, f"option {a} is not allowed"
+        if cmd in OPT_LETTERS and a.startswith("-") and a != "-" \
+                and cmd != "date":
+            if not re.fullmatch(r"-[A-Za-z0-9]+", a) or any(
+                    ch not in OPT_LETTERS[cmd] + "0123456789"
+                    for ch in a[1:]):
+                return None, f"option {a} is not allowed"
     if cmd == "date" and any(not a.startswith("+") for a in args):
         return None, "date takes only a +FORMAT"
     if cmd in PATH_ARGS:
@@ -132,7 +140,11 @@ def main(argv=None) -> int:
     base = root()
     cwd = base
     if argv[:1] == ["-c"]:
-        return run_line(" ".join(argv[1:]), cwd, base)[1]
+        try:
+            return run_line(" ".join(argv[1:]), cwd, base)[1]
+        except subprocess.TimeoutExpired:
+            print("rsh: timed out", flush=True)
+            return 124
     while True:
         try:
             line = input(f"{os.path.basename(cwd) or '/'} $ ")

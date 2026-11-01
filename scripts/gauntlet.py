@@ -37,7 +37,6 @@ import json
 import os
 import pathlib
 import re
-import secrets
 import signal
 import subprocess
 import sys
@@ -69,6 +68,8 @@ _ID = re.compile(r"[a-z0-9][a-z0-9-]*")
 TASK_CHARS = 300                # a task line is cut at this many chars
 # wait this long past a run's own time limit before calling it hung
 _SLACK_S = 180
+# per-attempt reserve for the judge call when checking the cap
+JUDGE_RESERVE_USD = 0.02
 _ATTEMPT_INDEX = {1: 0, "learn": 1, 2: 2}
 
 
@@ -217,8 +218,11 @@ class Deps:
         self.clock, self.sleep = clock, sleep
 
     def systemctl(self, *argv) -> int:
-        r = subprocess.run(["systemctl", "--user", *argv],
-                           capture_output=True, text=True, timeout=30)
+        try:
+            r = subprocess.run(["systemctl", "--user", *argv],
+                               capture_output=True, text=True, timeout=30)
+        except subprocess.TimeoutExpired:
+            return 124
         return r.returncode
 
     def ollama_up(self) -> bool:
@@ -310,14 +314,15 @@ class Gauntlet:
     def run(self) -> int:
         d = self.deps
         was_active = d.systemctl("is-active", SERVICE) == 0
-        started = False
+        # a stop that fails or times out may still have stopped the unit,
+        # so the restore below runs whenever a stop was attempted
+        started = was_active
         proc = None
         code = EXIT_OK
         try:
             if was_active and d.systemctl("stop", SERVICE) != 0:
                 self.out(f"could not stop {SERVICE}; nothing was started")
                 return EXIT_FAIL
-            started = True
             if d.alive():
                 self.out("a wisp daemon still answers; refusing to share "
                          "its socket")
@@ -390,7 +395,10 @@ class Gauntlet:
 
     def _case_need(self, case) -> float:
         n = 3 if case["learnable"] else 1
-        return sum(gmode.task_stop_usd(p) for _l, _r, p in self.profiles) * n
+        stops = sum(gmode.task_stop_usd(p) for _l, _r, p in self.profiles)
+        # each attempt is also judged; reserve for it so a cap stop falls
+        # between cases, not inside one
+        return (stops + JUDGE_RESERVE_USD * len(self.profiles)) * n
 
     def _cases(self) -> None:
         for ci, case in enumerate(self.cases):

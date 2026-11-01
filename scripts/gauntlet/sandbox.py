@@ -55,7 +55,10 @@ def scrubbed_env(home, base=None) -> dict:
     base = os.environ if base is None else base
     home = pathlib.Path(home)
     env = {k: base[k] for k in ENV_KEEP if k in base and not _SECRET.search(k)}
-    env.update({"HOME": str(home),
+    # without an address, libdbus falls back to $XDG_RUNTIME_DIR/bus,
+    # the owner's own session; point it at nothing
+    env.update({"DBUS_SESSION_BUS_ADDRESS": "unix:path=/nonexistent",
+                "HOME": str(home),
                 "XDG_CONFIG_HOME": str(home / ".config"),
                 "XDG_DATA_HOME": str(home / ".local" / "share"),
                 "XDG_CACHE_HOME": str(home / ".cache"),

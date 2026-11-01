@@ -317,6 +317,16 @@ class TestServiceSlot(Base):
         self.assertEqual(self.changes(), [])
         self.assertEqual(self.sc.state("wispd"), "inactive")
 
+    def test_a_failed_stop_still_restores_the_service(self):
+        deps = self.deps()
+        deps.systemctl = lambda *a: 124 if a[0] == "stop" else \
+            G.Deps.systemctl(deps, *a)
+        g, code, _ = self.run_g([case("c1")], deps)
+        self.assertEqual(code, 1)
+        self.assertIn("start wispd.service", self.changes())
+        self.assertEqual(self.sc.state("wispd"), "active")
+        self.assertIsNone(deps.daemon_env)
+
     def test_it_will_not_share_a_socket_with_a_live_daemon(self):
         deps = self.deps()
         deps.daemon_up = True
@@ -355,7 +365,9 @@ class TestIsolation(Base):
         for s in spawned:
             env = s["env"]
             self.assertNotIn("OPENROUTER_API_KEY", env)
-            self.assertNotIn("DBUS_SESSION_BUS_ADDRESS", env)
+            # no address would fall back to the owner's runtime-dir bus
+            self.assertEqual(env["DBUS_SESSION_BUS_ADDRESS"],
+                             "unix:path=/nonexistent")
             self.assertTrue(env["HOME"].startswith(str(self.gdir)),
                             env["HOME"])
             self.assertFalse(any(KEY in v for v in env.values()))
@@ -384,8 +396,10 @@ class TestIsolation(Base):
             "PATH": "/usr/bin", "OPENROUTER_API_KEY": "x",
             "GITHUB_TOKEN": "y", "DBUS_SESSION_BUS_ADDRESS": "unix:z",
             "HOME": "/home/owner", "WAYLAND_DISPLAY": "wl"})
-        self.assertEqual(set(env) & {"OPENROUTER_API_KEY", "GITHUB_TOKEN",
-                                     "DBUS_SESSION_BUS_ADDRESS"}, set())
+        self.assertEqual(set(env) & {"OPENROUTER_API_KEY",
+                                     "GITHUB_TOKEN"}, set())
+        self.assertEqual(env["DBUS_SESSION_BUS_ADDRESS"],
+                         "unix:path=/nonexistent")
         self.assertEqual(env["HOME"], str(self.tmp / "h"))
 
     def test_no_window_for_an_app_ends_the_attempt_not_the_run(self):
@@ -655,6 +669,18 @@ class TestRestrictedShell(unittest.TestCase):
             self.assertEqual(self.rsh(bad).returncode, 126, bad)
         (self.root / "link").symlink_to("/etc")
         self.assertEqual(self.rsh("ls link").returncode, 126)
+
+    def test_option_abbreviations_and_attached_values_cannot_read_outside(self):
+        (self.root / "list0").write_bytes(b"a.txt\0")
+        for bad in ("wc --files0=list0", "wc --files0-from=list0",
+                    "file -f/etc/hostname", "file a.txt", "du -a",
+                    "du --exclude-from=/etc/hostname", "ls --color=always",
+                    "tail -f a.txt", "cat --number a.txt", "head -n1 a.txt "
+                    "--files0=x", "ls -o"):
+            self.assertEqual(self.rsh(bad).returncode, 126, bad)
+        for good in ("ls -la", "wc -l a.txt", "head -n 1 a.txt",
+                     "cat -n a.txt", "tail -n 1 a.txt", "ls -R"):
+            self.assertEqual(self.rsh(good).returncode, 0, good)
 
     def test_it_never_hands_over_the_environment(self):
         for line in ("echo hi", "date +%Y", "pwd", "whoami"):

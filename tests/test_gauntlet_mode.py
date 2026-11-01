@@ -102,6 +102,19 @@ class TestSandboxTyping(GauntletBase):
         self.assertTrue(key_out.startswith("REFUSED (gauntlet sandbox"))
         self.assertEqual(emit.call_args[0][1], "gate_stop")
 
+    def test_super_and_alt_chords_never_leave_the_window(self):
+        # they are handled by the compositor's binds, so a sandbox window
+        # in focus does not make them safe
+        for chord in ("super+q", "super+return", "alt+tab", "meta+d"):
+            out = policy.gate("key", chord, self.rcfg, None)
+            self.assertIn("compositor", out, chord)
+            with mock.patch.object(system._cancel, "run") as run:
+                self.assertIn("compositor",
+                              system.key(chord, self.rcfg))
+            run.assert_not_called()
+        self.assertIsNone(policy.gate("key", "ctrl+shift+t",
+                                      self.rcfg, None))
+
     def test_typing_stays_denied_outside_a_gauntlet_run(self):
         plain = devrun.run_config(self.cfg, "r1")
         self.assertIn("REFUSED (dev run denies type_text)",

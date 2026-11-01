@@ -212,11 +212,26 @@ def _skill_op(arg: str) -> str:
     return str(arg or "").split("|", 1)[0].strip().lower()
 
 
+_CHORD_REFUSAL = ("REFUSED (gauntlet: super and alt chords reach the "
+                  "compositor, not the window)")
+
+
+def _global_chord(arg: str) -> bool:
+    """A chord with super/meta/cmd/alt is handled by the compositor's own
+    binds (close, launch, move), not by the focused sandbox window."""
+    parts = str(arg or "").lower().replace(" ", "").split("+")
+    return len(parts) > 1 and any(
+        m in ("super", "meta", "cmd", "alt", "mod4", "win")
+        for m in parts[:-1])
+
+
 def preempt(name: str, arg: str, cfg: dict) -> str | None:
     """The gauntlet's hard preempts (policy.preempted): typing needs a
     sandbox window in focus; skill_manage is create and edit only."""
     if not is_gauntlet(cfg):
         return None
+    if name == "key" and _global_chord(arg):
+        return _CHORD_REFUSAL
     if name in TYPING_TOOLS:
         return sandbox_refusal(cfg)
     if name == "skill_manage" and _skill_op(arg) not in SKILL_OPS + ("list",):
@@ -237,14 +252,15 @@ def pre_approved(name: str, arg: str, cfg: dict, state=None) -> bool:
     return False
 
 
-def keystroke_guard(cfg: dict) -> str | None:
+def keystroke_guard(cfg: dict, arg: str = "") -> str | None:
     """The check right before a keystroke is sent: the same sandbox
     identity test as the policy gate, run again because focus can move
     in between. A refusal is traced as a gate stop, so the runner ends
     the task as stopped."""
     if not is_gauntlet(cfg):
         return None
-    out = sandbox_refusal(cfg)
+    out = (_CHORD_REFUSAL if _global_chord(arg) else None) \
+        or sandbox_refusal(cfg)
     if out and (cfg.get("dev") or {}).get("run_id"):
         from . import trace
         trace.emit(trace.current(), "gate_stop", "policy",
