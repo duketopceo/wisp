@@ -51,6 +51,13 @@ MARKED_PEER_CMDS = frozenset({"agent_tool"})
 SAFETY_CONFIG_KEYS = frozenset({
     "agent.allow_shell", "agent.autonomy", "agent.risk_threshold",
     "agents.act_max_usd", "pointer.mode",
+    # gauntlet-run internals (wisp.gauntlet): the sandbox-typing grant
+    # and the spend cap; set only on a run's own config copy
+    "dev.gauntlet", "dev.sandbox_windows", "dev.spend_file",
+    "dev.spend_cap_usd",
+    # isolated-session input (wisp.vpointer): refuses every uinput path;
+    # a run-copy setting, never settable by an agent or marked peer
+    "dev.isolated_session",
 })
 
 

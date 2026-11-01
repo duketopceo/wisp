@@ -80,7 +80,13 @@ def dirs() -> tuple[Path, Path, Path]:
         loc = Path(os.environ.get(
             "LOCALAPPDATA", str(HOME / "AppData" / "Local"))) / "wisp"
         return app, loc, loc / "run"
-    return (HOME / ".config" / "wisp",
+    # XDG_CONFIG_HOME moves the config dir (the gauntlet driver points it
+    # at a throwaway directory so its daemon never reads the owner's
+    # config or .env); a relative value is ignored, as the spec says
+    xdg_cfg = os.environ.get("XDG_CONFIG_HOME", "")
+    cfg_base = Path(xdg_cfg) if xdg_cfg and os.path.isabs(xdg_cfg) \
+        else HOME / ".config"
+    return (cfg_base / "wisp",
             HOME / ".local" / "share" / "wisp",
             Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp"))
             / "wisp")
@@ -240,13 +246,20 @@ def active_geometry() -> tuple | None:
         return None
 
 
-def type_text_cmd() -> list | None:
+def type_text_cmd(isolated: bool = False) -> list | None:
     """The typer's argv, never the text: the caller writes the text to
     its stdin, because argv is readable by other local accounts while the
     typer runs (a dictated message or a typed password would show)."""
     order = {"hyprland": ["wtype", "ydotool"],
              "x11": ["xdotool"],
              }.get(desktop(), ["ydotool", "wtype", "xdotool"])
+    if isolated:
+        # wtype speaks the compositor's virtual-keyboard protocol on the
+        # instance socket; ydotool/xdotool would reach the live seat
+        from . import vpointer
+        if not _which("wtype"):
+            vpointer.refuse("typing without wtype (no uinput fallback)")
+        return ["wtype", "-"]
     for b in order:
         if _which(b):
             if b == "wtype":

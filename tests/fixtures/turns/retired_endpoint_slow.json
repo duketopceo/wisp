@@ -1,6 +1,11 @@
 {
   "description": "Retired decision endpoint is slow: plain question uses the fast path without waiting for it.",
   "audio": "ask.wav",
+  "config": {
+    "brain": {
+      "router": "act"
+    }
+  },
   "endpoints": {
     "whisper": {
       "transcript": "what time is it"
@@ -43,11 +48,6 @@
     "brain_calls": 1,
     "jev_calls": 0
   },
-  "name": "jev_slow",
-  "scenario": "Jev slow",
-  "config": {
-    "brain": {
-      "router": "act"
-    }
-  }
+  "name": "retired_endpoint_slow",
+  "scenario": "retired endpoint slow"
 }

@@ -5,24 +5,69 @@
 // regenerate. lib/settings.js builds on this table.
 
 // every key the daemon validates, in schema order
-var KEYS = ["budget.daily_usd", "budget.monthly_usd", "budget.gate_primary", "pointer.mode", "pointer.backend", "cua.dry_run", "cua.kill_switch", "cua.confirm", "cua.delivery", "cua.max_clicks_per_min", "cua.max_per_turn", "agent.autonomy", "dictation.mode", "cua.timeout_ms", "audio.seconds", "chips.enabled", "chips.days", "agent.screenshots", "ui.theme", "brain.router", "growth.weekly_recap", "brain.allow_paid", "local.enabled", "keys.submap", "agents.act_max_steps", "agents.act_max_errors", "agents.act_max_parse_misses", "agents.act_max_seconds", "agents.act_max_usd", "agents.writer_queue_max", "voice.captions", "voice.enabled", "voice.provider", "voice.tts_voice", "quiet.on_calls", "browser.lane", "browser.port", "stt.provider", "packs.keep", "packs.keep_days", "packs.shots_keep", "packs.shots_keep_days", "dev.panel", "dev.judge_cap_usd", "verify.judge_timeout_s", "verify.pixel_eps", "verify.region_px"]
+var KEYS = ["hotkey.mod", "hotkey.key", "budget.daily_usd", "budget.monthly_usd", "budget.gate_primary", "pointer.mode", "pointer.backend", "cua.dry_run", "cua.kill_switch", "cua.confirm", "cua.delivery", "cua.max_clicks_per_min", "cua.max_per_turn", "agent.autonomy", "dictation.mode", "cua.timeout_ms", "audio.seconds", "chips.enabled", "chips.days", "agent.screenshots", "ui.theme", "brain.router", "brain.default", "brain.fallback", "ground.vlm_brain", "brain.first_token_s", "brain.agent_runtime", "growth.weekly_recap", "brain.allow_paid", "local.enabled", "keys.submap", "agents.act_max_steps", "agents.act_max_errors", "agents.act_max_parse_misses", "agents.act_max_seconds", "agents.act_max_usd", "agents.writer_queue_max", "voice.captions", "voice.enabled", "voice.provider", "voice.tts_voice", "quiet.on_calls", "browser.lane", "browser.port", "stt.provider", "packs.keep", "packs.keep_days", "packs.shots_keep", "packs.shots_keep_days", "dev.panel", "dev.judge_cap_usd", "verify.judge_timeout_s", "verify.pixel_eps", "verify.region_px"]
 
-// keys the Panel edits: kind usd, int, bool or choice
+// settings window pages, in sidebar order (titles: set.cat.<id>)
+var CATEGORIES = ["voice", "pointer", "agents", "models", "budget", "connectors", "advanced"]
+
+// every editable key: kind usd, int, bool, choice or text, or
+// secret (status only, no default and never a value); quick marks
+// the Panel's quick settings
 var FIELDS = [
-  {"key": "budget.daily_usd", "group": "budget", "kind": "usd", "label": "ui.set.daily", "widget": "number"},
-  {"key": "budget.monthly_usd", "group": "budget", "kind": "usd", "label": "ui.set.monthly", "widget": "number"},
-  {"key": "pointer.mode", "group": "pointer", "kind": "choice", "label": "ui.set.pointer", "widget": "choice", "options": ["guide", "drive", "auto"]},
-  {"key": "cua.dry_run", "group": "cua", "kind": "bool", "label": "ui.set.dry_run", "widget": "toggle"},
-  {"key": "cua.kill_switch", "group": "cua", "kind": "bool", "label": "ui.set.kill", "widget": "toggle"},
-  {"key": "cua.confirm", "group": "cua", "kind": "choice", "label": "ui.set.confirm", "widget": "choice", "options": ["tier", "always"]},
-  {"key": "cua.delivery", "group": "cua", "kind": "choice", "label": "ui.set.delivery", "widget": "choice", "options": ["auto", "background", "pointer"]},
-  {"key": "cua.max_clicks_per_min", "group": "cua", "kind": "int", "label": "ui.set.clicks", "widget": "number", "min": 1, "max": 600},
-  {"key": "cua.max_per_turn", "group": "cua", "kind": "int", "label": "ui.set.per_turn", "widget": "number", "min": 1, "max": 200},
-  {"key": "agent.autonomy", "group": "agent", "kind": "choice", "label": "ui.set.autonomy", "widget": "choice", "options": ["autonomous", "guided", "always_ask"]},
-  {"key": "dictation.mode", "group": "dictation", "kind": "choice", "label": "ui.set.dictation", "widget": "choice", "options": ["raw", "cleanup", "compose"]},
-  {"key": "voice.captions", "group": "voice", "kind": "bool", "label": "ui.set.captions", "widget": "toggle"},
-  {"key": "voice.enabled", "group": "voice", "kind": "choice", "label": "ui.set.voice", "widget": "choice", "options": ["auto", "true", "false"]},
-  {"key": "voice.tts_voice", "group": "voice", "kind": "choice", "label": "ui.set.tts_voice", "widget": "choice", "options": ["autumn", "diana", "hannah", "austin", "daniel", "troy"]}
+  {"key": "hotkey.mod", "group": "hotkey", "kind": "text", "label": "set.hotkey.mod.label", "widget": "text", "category": "voice", "help": "set.hotkey.mod.help", "quick": false, "unit": "", "default": "SUPER", "pattern": "[A-Za-z0-9_]+"},
+  {"key": "hotkey.key", "group": "hotkey", "kind": "text", "label": "set.hotkey.key.label", "widget": "text", "category": "voice", "help": "set.hotkey.key.help", "quick": false, "unit": "", "default": "D", "pattern": "[A-Za-z0-9_]+"},
+  {"key": "budget.daily_usd", "group": "budget", "kind": "usd", "label": "ui.set.daily", "widget": "number", "category": "budget", "help": "set.budget.daily_usd.help", "quick": true, "unit": "USD", "default": "8.00"},
+  {"key": "budget.monthly_usd", "group": "budget", "kind": "usd", "label": "ui.set.monthly", "widget": "number", "category": "budget", "help": "set.budget.monthly_usd.help", "quick": true, "unit": "USD", "default": "160.00"},
+  {"key": "budget.gate_primary", "group": "budget", "kind": "bool", "label": "set.budget.gate_primary.label", "widget": "toggle", "category": "budget", "help": "set.budget.gate_primary.help", "quick": false, "unit": "", "default": "false"},
+  {"key": "pointer.mode", "group": "pointer", "kind": "choice", "label": "ui.set.pointer", "widget": "choice", "category": "pointer", "help": "set.pointer.mode.help", "quick": true, "unit": "", "default": "auto", "options": ["guide", "drive", "auto"]},
+  {"key": "pointer.backend", "group": "pointer", "kind": "choice", "label": "set.pointer.backend.label", "widget": "choice", "category": "pointer", "help": "set.pointer.backend.help", "quick": false, "unit": "", "default": "auto", "options": ["auto", "cua", "hyprcursor", "ydotool", "wlrctl", "none"]},
+  {"key": "cua.dry_run", "group": "cua", "kind": "bool", "label": "ui.set.dry_run", "widget": "toggle", "category": "pointer", "help": "set.cua.dry_run.help", "quick": true, "unit": "", "default": "false"},
+  {"key": "cua.kill_switch", "group": "cua", "kind": "bool", "label": "ui.set.kill", "widget": "toggle", "category": "pointer", "help": "set.cua.kill_switch.help", "quick": true, "unit": "", "default": "false"},
+  {"key": "cua.confirm", "group": "cua", "kind": "choice", "label": "ui.set.confirm", "widget": "choice", "category": "pointer", "help": "set.cua.confirm.help", "quick": true, "unit": "", "default": "tier", "options": ["tier", "always"]},
+  {"key": "cua.delivery", "group": "cua", "kind": "choice", "label": "ui.set.delivery", "widget": "choice", "category": "pointer", "help": "set.cua.delivery.help", "quick": true, "unit": "", "default": "auto", "options": ["auto", "background", "pointer"]},
+  {"key": "cua.max_clicks_per_min", "group": "cua", "kind": "int", "label": "ui.set.clicks", "widget": "number", "category": "pointer", "help": "set.cua.max_clicks_per_min.help", "quick": true, "unit": "clicks a minute", "default": "30", "min": 1, "max": 600},
+  {"key": "cua.max_per_turn", "group": "cua", "kind": "int", "label": "ui.set.per_turn", "widget": "number", "category": "pointer", "help": "set.cua.max_per_turn.help", "quick": true, "unit": "actions", "default": "12", "min": 1, "max": 200},
+  {"key": "agent.autonomy", "group": "agent", "kind": "choice", "label": "ui.set.autonomy", "widget": "choice", "category": "agents", "help": "set.agent.autonomy.help", "quick": true, "unit": "", "default": "autonomous", "options": ["autonomous", "guided", "always_ask"]},
+  {"key": "dictation.mode", "group": "dictation", "kind": "choice", "label": "ui.set.dictation", "widget": "choice", "category": "voice", "help": "set.dictation.mode.help", "quick": true, "unit": "", "default": "cleanup", "options": ["raw", "cleanup", "compose"]},
+  {"key": "cua.timeout_ms", "group": "cua", "kind": "int", "label": "set.cua.timeout_ms.label", "widget": "number", "category": "pointer", "help": "set.cua.timeout_ms.help", "quick": false, "unit": "ms", "default": "800", "min": 50, "max": 60000},
+  {"key": "audio.seconds", "group": "audio", "kind": "int", "label": "set.audio.seconds.label", "widget": "number", "category": "voice", "help": "set.audio.seconds.help", "quick": false, "unit": "seconds", "default": "60", "min": 1, "max": 600},
+  {"key": "chips.enabled", "group": "chips", "kind": "bool", "label": "set.chips.enabled.label", "widget": "toggle", "category": "voice", "help": "set.chips.enabled.help", "quick": false, "unit": "", "default": "true"},
+  {"key": "chips.days", "group": "chips", "kind": "int", "label": "set.chips.days.label", "widget": "number", "category": "voice", "help": "set.chips.days.help", "quick": false, "unit": "days", "default": "7", "min": 1, "max": 365},
+  {"key": "agent.screenshots", "group": "agent", "kind": "bool", "label": "set.agent.screenshots.label", "widget": "toggle", "category": "agents", "help": "set.agent.screenshots.help", "quick": false, "unit": "", "default": "true"},
+  {"key": "ui.theme", "group": "ui", "kind": "choice", "label": "set.ui.theme.label", "widget": "choice", "category": "advanced", "help": "set.ui.theme.help", "quick": false, "unit": "", "default": "dark", "options": ["dark", "light"]},
+  {"key": "brain.router", "group": "brain", "kind": "choice", "label": "set.brain.router.label", "widget": "choice", "category": "models", "help": "set.brain.router.help", "quick": false, "unit": "", "default": "act", "options": ["act", "chat", "off"]},
+  {"key": "brain.default", "group": "brain", "kind": "text", "label": "set.brain.default.label", "widget": "text", "category": "models", "help": "set.brain.default.help", "quick": false, "unit": "", "default": "openrouter:meta-llama/llama-4-maverick", "pattern": "[A-Za-z0-9_.-]+:[^\\s,]+"},
+  {"key": "brain.fallback", "group": "brain", "kind": "text", "label": "set.brain.fallback.label", "widget": "text", "category": "models", "help": "set.brain.fallback.help", "quick": false, "unit": "", "default": "", "pattern": "|[A-Za-z0-9_.-]+:[^\\s,]+(?:,\\s*[A-Za-z0-9_.-]+:[^\\s,]+)*"},
+  {"key": "ground.vlm_brain", "group": "ground", "kind": "text", "label": "set.ground.vlm_brain.label", "widget": "text", "category": "models", "help": "set.ground.vlm_brain.help", "quick": false, "unit": "", "default": "", "pattern": "|[A-Za-z0-9_.-]+:[^\\s,]+"},
+  {"key": "brain.first_token_s", "group": "brain", "kind": "int", "label": "set.brain.first_token_s.label", "widget": "number", "category": "models", "help": "set.brain.first_token_s.help", "quick": false, "unit": "seconds", "default": "3", "min": 1, "max": 60},
+  {"key": "brain.agent_runtime", "group": "brain", "kind": "choice", "label": "set.brain.agent_runtime.label", "widget": "choice", "category": "agents", "help": "set.brain.agent_runtime.help", "quick": false, "unit": "", "default": "auto", "options": ["auto", "opencode", "codex", "claude", "devin"]},
+  {"key": "growth.weekly_recap", "group": "growth", "kind": "bool", "label": "set.growth.weekly_recap.label", "widget": "toggle", "category": "advanced", "help": "set.growth.weekly_recap.help", "quick": false, "unit": "", "default": "false"},
+  {"key": "brain.allow_paid", "group": "brain", "kind": "bool", "label": "set.brain.allow_paid.label", "widget": "toggle", "category": "models", "help": "set.brain.allow_paid.help", "quick": false, "unit": "", "default": "false"},
+  {"key": "local.enabled", "group": "local", "kind": "bool", "label": "set.local.enabled.label", "widget": "toggle", "category": "models", "help": "set.local.enabled.help", "quick": false, "unit": "", "default": "false"},
+  {"key": "keys.submap", "group": "keys", "kind": "bool", "label": "set.keys.submap.label", "widget": "toggle", "category": "pointer", "help": "set.keys.submap.help", "quick": false, "unit": "", "default": "true"},
+  {"key": "agents.act_max_steps", "group": "agents", "kind": "int", "label": "set.agents.act_max_steps.label", "widget": "number", "category": "agents", "help": "set.agents.act_max_steps.help", "quick": false, "unit": "tool calls", "default": "12", "min": 1, "max": 100},
+  {"key": "agents.act_max_errors", "group": "agents", "kind": "int", "label": "set.agents.act_max_errors.label", "widget": "number", "category": "agents", "help": "set.agents.act_max_errors.help", "quick": false, "unit": "failed calls", "default": "2", "min": 0, "max": 20},
+  {"key": "agents.act_max_parse_misses", "group": "agents", "kind": "int", "label": "set.agents.act_max_parse_misses.label", "widget": "number", "category": "agents", "help": "set.agents.act_max_parse_misses.help", "quick": false, "unit": "bad replies", "default": "1", "min": 0, "max": 10},
+  {"key": "agents.act_max_seconds", "group": "agents", "kind": "int", "label": "set.agents.act_max_seconds.label", "widget": "number", "category": "agents", "help": "set.agents.act_max_seconds.help", "quick": false, "unit": "seconds", "default": "600", "min": 0, "max": 86400},
+  {"key": "agents.act_max_usd", "group": "agents", "kind": "usd", "label": "set.agents.act_max_usd.label", "widget": "number", "category": "agents", "help": "set.agents.act_max_usd.help", "quick": false, "unit": "USD", "default": "0"},
+  {"key": "agents.writer_queue_max", "group": "agents", "kind": "int", "label": "set.agents.writer_queue_max.label", "widget": "number", "category": "advanced", "help": "set.agents.writer_queue_max.help", "quick": false, "unit": "writes", "default": "256", "min": 1, "max": 100000},
+  {"key": "voice.captions", "group": "voice", "kind": "bool", "label": "ui.set.captions", "widget": "toggle", "category": "voice", "help": "set.voice.captions.help", "quick": true, "unit": "", "default": "true"},
+  {"key": "voice.enabled", "group": "voice", "kind": "choice", "label": "ui.set.voice", "widget": "choice", "category": "voice", "help": "set.voice.enabled.help", "quick": true, "unit": "", "default": "auto", "options": ["auto", "true", "false"]},
+  {"key": "voice.provider", "group": "voice", "kind": "choice", "label": "set.voice.provider.label", "widget": "choice", "category": "voice", "help": "set.voice.provider.help", "quick": false, "unit": "", "default": "groq", "options": ["groq", "espeak"]},
+  {"key": "voice.tts_voice", "group": "voice", "kind": "choice", "label": "ui.set.tts_voice", "widget": "choice", "category": "voice", "help": "set.voice.tts_voice.help", "quick": true, "unit": "", "default": "hannah", "options": ["autumn", "diana", "hannah", "austin", "daniel", "troy"]},
+  {"key": "quiet.on_calls", "group": "quiet", "kind": "bool", "label": "set.quiet.on_calls.label", "widget": "toggle", "category": "voice", "help": "set.quiet.on_calls.help", "quick": false, "unit": "", "default": "true"},
+  {"key": "browser.lane", "group": "browser", "kind": "choice", "label": "set.browser.lane.label", "widget": "choice", "category": "connectors", "help": "set.browser.lane.help", "quick": false, "unit": "", "default": "off", "options": ["off", "extension"]},
+  {"key": "browser.port", "group": "browser", "kind": "int", "label": "set.browser.port.label", "widget": "number", "category": "connectors", "help": "set.browser.port.help", "quick": false, "unit": "port", "default": "47315", "min": 1024, "max": 65535},
+  {"key": "stt.provider", "group": "stt", "kind": "choice", "label": "set.stt.provider.label", "widget": "choice", "category": "voice", "help": "set.stt.provider.help", "quick": false, "unit": "", "default": "openai", "options": ["openai", "local"]},
+  {"key": "packs.keep", "group": "packs", "kind": "int", "label": "set.packs.keep.label", "widget": "number", "category": "advanced", "help": "set.packs.keep.help", "quick": false, "unit": "packs", "default": "200", "min": 0, "max": 100000},
+  {"key": "packs.keep_days", "group": "packs", "kind": "int", "label": "set.packs.keep_days.label", "widget": "number", "category": "advanced", "help": "set.packs.keep_days.help", "quick": false, "unit": "days", "default": "30", "min": 0, "max": 3650},
+  {"key": "packs.shots_keep", "group": "packs", "kind": "int", "label": "set.packs.shots_keep.label", "widget": "number", "category": "advanced", "help": "set.packs.shots_keep.help", "quick": false, "unit": "screenshots", "default": "100", "min": 0, "max": 100000},
+  {"key": "packs.shots_keep_days", "group": "packs", "kind": "int", "label": "set.packs.shots_keep_days.label", "widget": "number", "category": "advanced", "help": "set.packs.shots_keep_days.help", "quick": false, "unit": "days", "default": "30", "min": 0, "max": 3650},
+  {"key": "dev.panel", "group": "dev", "kind": "bool", "label": "set.dev.panel.label", "widget": "toggle", "category": "advanced", "help": "set.dev.panel.help", "quick": false, "unit": "", "default": "false"},
+  {"key": "dev.judge_cap_usd", "group": "dev", "kind": "usd", "label": "set.dev.judge_cap_usd.label", "widget": "number", "category": "advanced", "help": "set.dev.judge_cap_usd.help", "quick": false, "unit": "USD", "default": "1.00"},
+  {"key": "verify.judge_timeout_s", "group": "verify", "kind": "int", "label": "set.verify.judge_timeout_s.label", "widget": "number", "category": "advanced", "help": "set.verify.judge_timeout_s.help", "quick": false, "unit": "seconds", "default": "20", "min": 1, "max": 300},
+  {"key": "verify.pixel_eps", "group": "verify", "kind": "int", "label": "set.verify.pixel_eps.label", "widget": "number", "category": "advanced", "help": "set.verify.pixel_eps.help", "quick": false, "unit": "per channel", "default": "16", "min": 1, "max": 255},
+  {"key": "verify.region_px", "group": "verify", "kind": "int", "label": "set.verify.region_px.label", "widget": "number", "category": "advanced", "help": "set.verify.region_px.help", "quick": false, "unit": "pixels", "default": "96", "min": 8, "max": 1024}
 ]
 
 // characters a config value may not contain (as a regex source)
@@ -38,8 +83,8 @@ function field(key) {
 function trim(s) { return String(s === undefined || s === null ? "" : s).replace(/^\s+|\s+$/g, "") }
 
 // "" when the value may be written, else a copy key for the inline error.
-// Same rules as wisp/settings_schema.problem(); a key the Panel does not
-// edit is "ui.err.unknown".
+// Same rules as wisp/settings_schema.problem(); a key outside the table, or
+// a secret (status only, never written here), is "ui.err.unknown".
 function validate(key, raw) {
   var f = field(key)
   if (f === null) return "ui.err.unknown"
@@ -57,5 +102,9 @@ function validate(key, raw) {
   }
   if (f.kind === "bool") return v === "true" || v === "false" ? "" : "ui.err.choice"
   if (f.kind === "choice") return f.options.indexOf(v) >= 0 ? "" : "ui.err.choice"
+  if (f.kind === "text") {
+    if (f.pattern && !new RegExp("^(?:" + f.pattern + ")$").test(v)) return "ui.err.format"
+    return ""
+  }
   return "ui.err.unknown"
 }

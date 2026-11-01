@@ -770,5 +770,193 @@ class SystemResolve(unittest.TestCase):
             self.assertIsNone(system._resolve_target_xy("night light", {}))
 
 
+@_need_pil
+class VlmBrainOverride(unittest.TestCase):
+    """`[ground] vlm_brain` (KTD4): grounding may use its own brain, alone."""
+
+    ACT = {"brain": {"default": "openrouter:act-model",
+                     "fallback": "openrouter:backup-model"},
+           "ground": {}}
+
+    def locate(self, cfg, reply="[POINT:100,100:Save]"):
+        from wisp import brain
+        with mock.patch.object(brain, "chat",
+                               return_value={"content": reply}) as chat:
+            out = g._vlm_locate(shot(), "Save", cfg=cfg)
+        return out, chat
+
+    def test_empty_vlm_brain_calls_the_act_brain_as_before(self):
+        _, chat = self.locate(self.ACT)
+        self.assertIs(chat.call_args.args[1], self.ACT)
+
+    def test_set_vlm_brain_is_the_only_brain_and_act_cfg_is_untouched(self):
+        cfg = {**self.ACT, "ground": {"vlm_brain": "ollama:qwen2.5vl:3b"}}
+        _, chat = self.locate(cfg)
+        used = chat.call_args.args[1]
+        self.assertEqual(used["brain"]["default"], "ollama:qwen2.5vl:3b")
+        self.assertEqual(used["brain"]["fallback"], "")
+        self.assertEqual(cfg["brain"], self.ACT["brain"])   # no mutation
+        self.assertEqual(cfg["brain"]["default"], "openrouter:act-model")
+
+    def test_unreachable_ollama_raises_provider_down_never_the_fallback(self):
+        from wisp import brain
+        cfg = {"brain": {"default": "openrouter:act-model",
+                         "fallback": "openrouter:backup-model",
+                         "allow_paid": "true"},
+               "brain.ollama": {"base_url": "http://127.0.0.1:9",
+                                "kind": "ollama"},
+               "ground": {"vlm_brain": "ollama:qwen2.5vl:3b"}}
+        called = []
+
+        def one(p, messages, tools, timeout):
+            called.append(p["name"])
+            raise OSError("connection refused")
+
+        with mock.patch.object(brain, "_chat_one", side_effect=one), \
+                mock.patch.object(brain.time, "sleep"):
+            with self.assertRaises(g.ProviderDown):
+                g._vlm_locate(shot(), "Save", cfg=cfg)
+        self.assertEqual(set(called), {"ollama"})   # backup never reached
+
+    def test_a_down_vlm_brain_lets_the_chain_move_on(self):
+        cfg = {"ground": {"providers": "vlm,b", "vlm_brain": "ollama:x"}}
+        from wisp import brain
+        good = cand(10, 10, 0.9, "b")
+        with mock.patch.object(brain, "chat",
+                               side_effect=OSError("down")):
+            t = g.ground_target(
+                "Save", cfg, capture=lambda: shot(), monitors=[S1],
+                cua=object(), providers={
+                    "vlm": {"fn": g.PROVIDERS["vlm"]["fn"], "fast": False},
+                    "b": {"fn": lambda ctx: good, "fast": True}})
+        self.assertEqual(t.source, "b")
+
+    def test_ollama_vision_resolves_without_a_config_section(self):
+        # a config written before [brain.ollama_vision] existed must still
+        # resolve the documented "ollama_vision:..." example
+        from wisp import brain
+        p = brain.provider({"brain": {"default": "ollama_vision:q"}})
+        self.assertEqual(p["base_url"], "http://localhost:11434")
+        self.assertEqual(p["kind"], "ollama")
+        self.assertEqual(p["vision"], "true")
+
+    def test_key_is_in_the_defaults_and_the_schema(self):
+        import tomllib
+        from wisp import config, settings_schema
+        dflt = tomllib.loads(config.DEFAULT_CONFIG)
+        self.assertEqual(dflt["ground"]["vlm_brain"], "")
+        f = next(f for f in settings_schema.FIELDS
+                 if f.key == "ground.vlm_brain")
+        self.assertEqual(f.category, "models")
+        self.assertEqual(settings_schema.problem("ground.vlm_brain", ""), "")
+        self.assertEqual(settings_schema.problem(
+            "ground.vlm_brain", "ollama:qwen2.5vl:3b"), "")
+        self.assertEqual(settings_schema.problem("ground.vlm_brain", "x"),
+                         "format")
+        self.assertEqual(dflt["brain"]["ollama_vision"]["vision"], "true")
+
+
+@_need_pil
+class VlmReplyTolerance(unittest.TestCase):
+    """Replies seen from real models on the owner's screen (click-probe
+    replay): a well-formed single point naming the target is trusted
+    whatever the label phrasing or coordinate style; hedged, multi-point
+    and off-image answers stay refused (confidence 0)."""
+
+    TARGET = "the button labelled 2"
+
+    def locate(self, reply, target=None, w=3456, h=2160):
+        from wisp import brain
+        with mock.patch.object(brain, "chat",
+                               return_value={"content": reply}):
+            return g._vlm_locate(shot(w, h), target or self.TARGET, cfg={})
+
+    def conf(self, reply, target=None):
+        out = self.locate(reply, target)
+        return None if out is None else out[2]
+
+    def test_label_phrasings_that_name_the_target_are_trusted(self):
+        for label in ("the button labelled 2", "2", "button 2",
+                      "Button labelled 2", "'2'", '"2"', "the 2 button",
+                      "  The  Button   Labelled 2 "):
+            with self.subTest(label=label):
+                self.assertEqual(
+                    self.conf(f"[POINT:100,100:{label}]"), 0.85)
+
+    def test_target_inside_a_longer_label_is_trusted(self):
+        self.assertEqual(self.conf("[POINT:5,5:Save as]", "Save"), 0.85)
+        self.assertEqual(
+            self.conf("[POINT:5,5:Save]", "the Save as button"), 0.85)
+
+    def test_a_different_number_or_name_is_not_the_target(self):
+        for label in ("3", "12", "button 22", "the button labelled 3",
+                      "Cancel", ""):
+            with self.subTest(label=label):
+                self.assertEqual(
+                    self.conf(f"[POINT:100,100:{label}]"), 0.0)
+
+    def test_whitespace_around_the_tag_and_inside_it_is_fine(self):
+        self.assertEqual(self.conf("\n  [POINT: 100, 100 : 2]  \n"), 0.85)
+
+    def test_hedged_prose_or_two_points_stay_refused(self):
+        for reply in ("I think it is [POINT:100,100:2] but not sure",
+                      "[POINT:100,100:2] [POINT:300,300:2]",
+                      "[POINT:100,100:2]\nor maybe [POINT:200,200:2]",
+                      "100,100"):
+            with self.subTest(reply=reply):
+                self.assertEqual(self.conf(reply) or 0.0, 0.0)
+
+    def test_fractional_coordinates_map_onto_the_image(self):
+        # llama-4-maverick answers "[POINT:0.195,0.204:...]" unprompted
+        x, y, c = self.locate("[POINT:0.500,0.250:the button labelled 2]")
+        self.assertEqual(c, 0.85)
+        self.assertAlmostEqual(x, 3456 * 0.5, delta=2)
+        self.assertAlmostEqual(y, 2160 * 0.25, delta=2)
+
+    def test_fractions_map_through_a_letterboxed_shot(self):
+        # 3440x1440 is padded into 1366x768: 0.5,0.5 is still the centre
+        x, y, c = self.locate("[POINT:0.5,0.5:2]", w=3440, h=1440)
+        self.assertEqual(c, 0.85)
+        self.assertAlmostEqual(x, 1720, delta=3)
+        self.assertAlmostEqual(y, 720, delta=3)
+
+    def test_integer_pixels_are_not_read_as_fractions(self):
+        x, y, c = self.locate("[POINT:1,1:2]")
+        self.assertEqual(c, 0.85)
+        self.assertLess(x, 10)       # pixel (1,1), not the far corner
+
+    def test_prompt_does_not_invite_a_literal_x_y_echo(self):
+        # qwen2.5vl:3b answered "[POINT:x,y:255,163]" to a template that
+        # spelled the tag `[POINT:x,y:label]`
+        self.assertNotIn("[POINT:x,y", g._VLM_POINT_PROMPT)
+        self.assertIn("[POINT:<x>,<y>:{target}]", g._VLM_POINT_PROMPT)
+
+    def prompt_for(self, brain_spec):
+        from wisp import brain
+        cfg = {"brain": {"default": "openrouter:m"},
+               "ground": {"vlm_brain": brain_spec}}
+        with mock.patch.object(brain, "chat",
+                               return_value={"content": "NONE"}) as chat:
+            g._vlm_locate(shot(), "Save", cfg=cfg)
+        return chat.call_args.args[0][0]["content"][0]["text"]
+
+    def test_hosted_brains_are_asked_for_fractions_local_for_pixels(self):
+        # replay on the owner's screen: llama-4-maverick is exact in
+        # fractions (9/9 within 60 px) but guesses when told pixels;
+        # qwen2.5vl is trained on pixels
+        hosted = self.prompt_for("openrouter:google/gemini-2.5-flash")
+        self.assertIn("fractions", hosted)
+        self.assertNotIn("integer pixel", hosted)
+        for local in ("ollama:qwen2.5vl:3b-q8_0", "mlx:ornith"):
+            with self.subTest(local=local):
+                p = self.prompt_for(local)
+                self.assertIn("integer pixel", p)
+                self.assertNotIn("fractions", p)
+
+    def test_a_fractional_point_off_the_image_is_refused(self):
+        self.assertIsNone(self.locate("[POINT:0.5,-0.1:2]"))
+        self.assertIsNone(self.locate("[POINT:-0.2,0.5:2]"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -15,12 +15,32 @@ global options:
   --no-color   plain output (also NO_COLOR, or not a tty)
 
 Settings (value, default, range):
-  budget.daily_usd             Daily cap on paid model spend in USD
-                               default 8.00; 0 to 100000, blank for no cap
-  budget.monthly_usd           Monthly cap on paid model spend in USD
-                               default 160.00; 0 to 100000, blank for no cap
-  budget.gate_primary          Also stop the primary paid model at the cap, not just fallbacks
-                               default false; true or false
+voice:
+  hotkey.mod                   Modifier for push-to-talk: SUPER, ALT, SHIFT, CTRL or a keysym like ALT_R; run wispd install to rebind
+                               default SUPER; a modifier such as SUPER
+  hotkey.key                   Key for push-to-talk; run wispd install to rebind
+                               default D; a key name such as D
+  dictation.mode               Dictate mode: raw is verbatim, cleanup fixes grammar, compose writes the finished text from your idea
+                               default cleanup; raw, cleanup, compose
+  audio.seconds                Longest recording for one turn in seconds
+                               default 60; 1 to 600
+  chips.enabled                Show ask chips when you tap the talk key without speaking (first week only)
+                               default true; true or false
+  chips.days                   How many days from the first tap the ask chips are offered
+                               default 7; 1 to 365
+  voice.captions               Show the answer text in the bubble while it is spoken (off: the voice is the answer; a muted speaker still shows it)
+                               default true; true or false
+  voice.enabled                Spoken answers: auto speaks when a Groq key or a local voice exists, true always, false never
+                               default auto; auto, true, false
+  voice.provider               Who speaks: groq (Orpheus, English; espeak or [voice] cmd when Groq cannot) or espeak (never ask Groq)
+                               default groq; groq, espeak
+  voice.tts_voice              Groq Orpheus voice
+                               default hannah; autumn, diana, hannah, austin, daniel, troy
+  quiet.on_calls               Hold announcements nobody asked for (a finished background agent) while a call or a screen share is on
+                               default true; true or false
+  stt.provider                 Speech to text: an OpenAI-compatible API or local whisper.cpp
+                               default openai; openai, local
+pointer:
   pointer.mode                 guide points, drive clicks for you, auto does either
                                default auto; guide, drive, auto
   pointer.backend              Which backend injects clicks when driving
@@ -37,32 +57,17 @@ Settings (value, default, range):
                                default 30; 1 to 600
   cua.max_per_turn             Most actions allowed in one turn
                                default 12; 1 to 200
-  agent.autonomy               Confirm policy: autonomous runs reversible steps free, guided asks on them too, always_ask confirms everything
-                               default autonomous; autonomous, guided, always_ask
-  dictation.mode               Dictate mode: raw is verbatim, cleanup fixes grammar, compose writes the finished text from your idea
-                               default cleanup; raw, cleanup, compose
   cua.timeout_ms               Per call timeout for the cua driver in ms
                                default 800; 50 to 60000
-  audio.seconds                Longest recording for one turn in seconds
-                               default 60; 1 to 600
-  chips.enabled                Show ask chips when you tap the talk key without speaking (first week only)
-                               default true; true or false
-  chips.days                   How many days from the first tap the ask chips are offered
-                               default 7; 1 to 365
-  agent.screenshots            Attach a screenshot to answer calls
-                               default true; true or false
-  ui.theme                     Fallback theme when the desktop theme is unreadable
-                               default dark; dark, light
-  brain.router                 How a turn is routed: act (local fast paths then act), chat or off
-                               default act; act, chat, off
-  growth.weekly_recap          Show last week's local days, turns and recorded spend once each week; nothing is sent
-                               default false; true or false
-  brain.allow_paid             Let the fallback chain use paid models
-                               default false; true or false
-  local.enabled                Allow local model servers (llama.cpp, UI-TARS, jev-shim, ollama)
-                               default false; true or false
   keys.submap                  Esc stops, Enter confirms, number keys choose while a turn runs
                                default true; true or false
+agents:
+  agent.autonomy               Confirm policy: autonomous runs reversible steps free, guided asks on them too, always_ask confirms everything
+                               default autonomous; autonomous, guided, always_ask
+  agent.screenshots            Attach a screenshot to answer calls
+                               default true; true or false
+  brain.agent_runtime          Runtime for spawned background agents; auto picks the first one found
+                               default auto; auto, opencode, codex, claude, devin
   agents.act_max_steps         Most tool calls one act run may make before it aborts
                                default 12; 1 to 100
   agents.act_max_errors        Consecutive failed tool calls an act run tolerates
@@ -73,24 +78,40 @@ Settings (value, default, range):
                                default 600; 0 to 86400
   agents.act_max_usd           Per-run cap on model spend in USD added during the run (0 disables)
                                default 0; 0 to 100000, blank for no cap
-  agents.writer_queue_max      Trajectory and recall writes held in memory before the oldest is dropped
-                               default 256; 1 to 100000
-  voice.captions               Show the answer text in the bubble while it is spoken (off: the voice is the answer; a muted speaker still shows it)
-                               default true; true or false
-  voice.enabled                Spoken answers: auto speaks when a Groq key or a local voice exists, true always, false never
-                               default auto; auto, true, false
-  voice.provider               Who speaks: groq (Orpheus, English; espeak or [voice] cmd when Groq cannot) or espeak (never ask Groq)
-                               default groq; groq, espeak
-  voice.tts_voice              Groq Orpheus voice
-                               default hannah; autumn, diana, hannah, austin, daniel, troy
-  quiet.on_calls               Hold announcements nobody asked for (a finished background agent) while a call or a screen share is on
-                               default true; true or false
+models:
+  brain.router                 How a turn is routed: act (local fast paths then act), chat or off
+                               default act; act, chat, off
+  brain.default                Answer model as name:model; the name is a [brain.<name>] provider (openrouter, ollama, lmstudio, mlx or your own)
+                               default openrouter:meta-llama/llama-4-maverick; name:model
+  brain.fallback               Models tried after the default, as comma separated name:model (blank for none)
+                               default blank; name:model, name:model, or blank
+  ground.vlm_brain             Model used only to find click targets on screen, as name:model (blank to use the answer model). It runs alone: no fallbacks
+                               default blank; name:model, or blank
+  brain.first_token_s          Seconds a model has to start answering before the next one is tried
+                               default 3; 1 to 60
+  brain.allow_paid             Let the fallback chain use paid models
+                               default false; true or false
+  local.enabled                Allow local model servers (llama.cpp, UI-TARS, jev-shim, ollama)
+                               default false; true or false
+budget:
+  budget.daily_usd             Daily cap on paid model spend in USD
+                               default 8.00; 0 to 100000, blank for no cap
+  budget.monthly_usd           Monthly cap on paid model spend in USD
+                               default 160.00; 0 to 100000, blank for no cap
+  budget.gate_primary          Also stop the primary paid model at the cap, not just fallbacks
+                               default false; true or false
+connectors:
   browser.lane                 Browser lane: off, or extension (work in a tab group in your own browser through the paired Wisp extension)
                                default off; off, extension
   browser.port                 Loopback port the Wisp browser extension polls
                                default 47315; 1024 to 65535
-  stt.provider                 Speech to text: an OpenAI-compatible API or local whisper.cpp
-                               default openai; openai, local
+advanced:
+  ui.theme                     Fallback theme when the desktop theme is unreadable
+                               default dark; dark, light
+  growth.weekly_recap          Show last week's local days, turns and recorded spend once each week; nothing is sent
+                               default false; true or false
+  agents.writer_queue_max      Trajectory and recall writes held in memory before the oldest is dropped
+                               default 256; 1 to 100000
   packs.keep                   Newest capture packs retained under packs/ (0 disables the count bound)
                                default 200; 0 to 100000
   packs.keep_days              Days a capture pack is kept (0 disables the age bound)

@@ -1,7 +1,7 @@
 # Wisp Roadmap
 
-State: **v0.9 shipped; v1.0 remains a verification milestone.** Earlier merged work is listed under Shipped. Unified alignment, release completion, dev tuning, app skills and platform probe seams are on `feat/wisp-unified-alignment-and-polish` in **open PR #259**, not yet shipped.
-Last updated: 2026-10-30. Plan of record: `docs/plans/2026-10-30-001-feat-wisp-unified-alignment-and-polish-plan.md` (building on `docs/plans/2026-10-26-0031-feat-wisp-v1-roadmap-plan.md`). This is the only roadmap; `docs/ROADMAP.md` points here.
+State: **v1.0.0-rc.2 is published as a Linux prerelease (6 assets, 2026-10-30); stable v1.0 remains a verification milestone.** Unified alignment, release completion, dev tuning, app skills and platform probe seams merged in #259 (tagged `v1.0.0-rc.1`); release and install fixes followed in #262 (tagged `v1.0.0-rc.2`), #263 and #264.
+Last updated: 2026-10-31 (read from `master` at `17c3446`). Plan of record: `docs/plans/2026-10-30-001-feat-wisp-unified-alignment-and-polish-plan.md` (building on `docs/plans/2026-10-26-0031-feat-wisp-v1-roadmap-plan.md`). This is the only roadmap; `docs/ROADMAP.md` points here.
 
 ## Product target
 
@@ -13,7 +13,7 @@ Fixed decisions:
 - Linux (Omarchy/Hyprland) is the primary supported desktop. macOS/Windows probe seams in PR #259 are experimental, not supported desktop releases.
 - One end-to-end eval (`wispd eval`) is the v1 gate.
 - The Rust core in `rs/` is frozen.
-- No decision model on the routing path: turns go to the act loop, and the regex heuristic becomes a fast path in Phase 5.
+- No decision model on the routing path: turns go to the act loop, with the regex fast path (`[brain] fast_path`) in front. Phase 5 is done in `wisp/`: the Jev router, `route.decide`, the clarify prompt and `JEV_QUESTIONS` are gone (#259), the replay harness no longer pins `router = jev` (#261), and a stored `router = "jev"` or unknown value reads as `act`. The replay harness keeps a Jev fake only as a tripwire, so a stray hop to the retired endpoint fails the fixture.
 
 ## Shipped
 
@@ -35,9 +35,16 @@ Fixed decisions:
    - **D, talk-back (#244):** answers are spoken through Groq Orpheus when a Groq key resolves, with espeak as the fallback, and `wispd doctor` gains a voice section.
    - **Also:** the test suite no longer reads the live desktop (#245), dead helpers and imports are gone (#248), and the no-daemon trigger fallback now records privately like the daemon: umask 077, private folders, one shared setup (#250).
 
+11. Live background agents over ACP (#241, `docs/plans/2026-10-28-2249-feat-wisp-acp-agents-plan.md`): OpenCode helpers run as long-lived ACP sessions through pinned, SHA-256-verified ori and OpenCode 2.x in a private Wisp-owned OpenCode home, with live progress, spoken asks for risky steps within a fail-closed policy, follow-ups, cancel, Wisp tools and memory over an MCP bridge, and onboarding that installs the runtime and stores the OpenRouter key without omaseal. The agent now asks before running tests after it wrote executable files (#265).
+12. Verified install and update (#256, `docs/plans/2026-10-29-2302-feat-verified-install-update-plan.md`): a shared preflight for install, update and doctor; `wispd update` backs up, verifies every installed file against the release and records its tag; `--rollback` keeps user edits and restores failed updates. First-run readiness is validated end to end (#264).
+13. Hardening on 2026-10-30: spoken replies, typed answers, notes, agent tasks and dictated text stay off the command line (#252, #253, #255); model and daemon text render as plain text in the Panel (#254); a stale cua socket falls back and media keys go through Omarchy's own controls (#257); Esc while the talk key is held ends the capture and the scribble pad lets go (#258).
+14. Phase 5, PR 1 of 2 (#261, `docs/plans/2026-10-30-1200-refactor-remove-jev-router-plan.md`): replay fixtures no longer script Jev implicitly; 36 run on the act router and 7 answer-lane fixtures pin `router = chat`. The remaining Jev-pinned fixtures and tests are the delete list for PR 2.
+
 Also: CI flake root causes (#142), "open my email" opens Gmail when the mail handler is a browser (#147), Argus pinned at c701b2a (#151), act no longer ends a run on a narrated next step without a tool call (#153). Voice polish leftovers (B8b): captions toggle, mic failover, muted speaker keeps the answer on the clipboard, and no announcements on calls. Watchable browser lane (B14): an extension pairs with a code and works in a tab group in your own browser, off by default.  3D parts (B13): an answer can carry one small allow-listed glTF model whose parts you click to ask about.
 
-## In PR #259 — not yet shipped
+## Shipped in #259 (v1.0.0-rc.1) and the RC2 follow-ups
+
+Merged 2026-10-30. The descriptions below were written while #259 was open and are kept as its record; where they say "not verified" or "needs live evaluation", that is still true. RC2 added checksums for the two native attestation sidecars (#262) and the site's guided RC2 install and onboarding (#263).
 
 1. Unified Alignment & Polish (`docs/plans/2026-10-30-001-feat-wisp-unified-alignment-and-polish-plan.md`, #259):
     - **U1, single-shot VLM grounding (`wisp/grounding.py`):** added a `"vlm"` provider and an aspect-matched VLM attempt inside the existing `"jev"` candidate before legacy pointing fallback. The configured provider chain remains `"control,a11y,uitars,jev"`; actual pointing quality and latency still need live evaluation.
@@ -55,20 +62,21 @@ Also: CI flake root causes (#142), "open my email" opens Gmail when the mail han
 - **App skill ingestion, provenance & live `[app_skill]` injection** — `scripts/skill_distill.py` (`--ingest`, `--from-routines`, `--backfill-routing`, `--validate`), provenance-checked frontmatter (`source`, `app_classes`, `url_hosts`, `asks`), `codebase-graph` + `graphify` seed skills, and automatic `[app_skill]` prompt injection in `context.snapshot("full")` and `memory.context_block()`.
 - **Experimental macOS & Windows telemetry/action probe seams (PR #259)** — Linux (Omarchy/Hyprland) remains the primary supported desktop. `wisp/platform.py` and `wisp/ipc.py` add macOS (`screencapture`, `osascript`, `sox`/`ffmpeg`, `say`) and Windows (`CopyFromScreen`, `user32.dll`, TCP loopback IPC) probe adapters, mirroring `rs/wispd/src/platform.rs`. These seams are not proof of a verified full pipeline, packaged companion, or supported cross-OS release.
 - **U14–U18 delivery completion (PR #259):** media/capture cleanup regressions, an optional self-hosted Three.js illustration in `site-3d/`, explicit confirmation/reset/motion controls, deterministic builds, browser fixtures, and documentation checks. The no-script `site/` build remains independent. A private preview is not activation of `wisp.observer`; Linux media, QML, model-backed tasks and fresh-box checks still require real-device receipts.
-- **Release-completion work in progress:** complete extracted-archive installs, versioned one-line bootstrap, onboarding and attributable plugin/unit recovery; element-backed click provenance and an honest accuracy-data importer; replay migration before legacy router removal; a public growth snapshot and an opt-in local weekly recap. Completion requires integrated tests and independent source review, not only implementation reports.
+- **Release-completion work in progress:** complete extracted-archive installs, versioned one-line bootstrap, onboarding and attributable plugin/unit recovery; element-backed click provenance and an honest accuracy-data importer; a public growth snapshot and an opt-in local weekly recap. Completion requires integrated tests and independent source review, not only implementation reports.
 
 ## Next, in order
 
 Owner's delivery order: installable app first, owner-labelled runs second, measured tuning third. An installable release candidate is not a waiver or a pass of the stable-v1 gate.
 
-1. **Installable candidate:** finish the current release-completion work, verify actual extracted archives and recovery, pass review and CI, then publish a versioned Linux release. Provide one install line and an onboarding path. Validate drawing, pointing, rings, arrows, highlights and guided steps in the available harness; keep real compositor and microphone checks explicitly pending for the owner's reinstall.
+1. **Installable candidate — published as `v1.0.0-rc.2` (prerelease).** #259 and #262-#264 shipped the release-completion work, an install path and onboarding. Still pending for the owner's reinstall: real compositor and microphone checks (drawing, pointing, rings, arrows, highlights, guided steps), and the interactive voice and representative-machine update/rollback smoke tests in `docs/INSTALL.md`'s release checklist.
+   - **Agent-buildable meanwhile:** Phase 5 PR 2 — delete `route.decide`, the `router = jev` branch of `route_stage`, the clarify prompt, `JEV_QUESTIONS` and the Jev-pinned fixtures and tests, and normalise a stored `router = "jev"` to `act`; `ask_jev`, `suggest` and the grounding `jev` provider wait on **Q3** (replace the grounding fallback with an OpenRouter vision call, or drop it). Also fix the act loop so it applies `lang.reply_rule` (today a non-English turn on the default router is not told to reply in that language; the `lang_*` fixtures pass only on `router = chat`). The Rust daemon `rs/wispd` keeps its own `jev` router default; it is frozen, so changing it needs an owner decision.
 2. **Owner onboarding and real runs:** reinstall on Omarchy, complete `wispd onboard` and `wispd doctor` with hosted keys, then run a varied set of real tasks across apps. Collect labels with the existing feedback controls, `wispd eval`, and `wispd dev review`. Run `wispd dev run` only in an explicitly approved session. Judge output is not an owner label.
 3. **Accuracy and app-skill loop:** rank actual misses, preserve reproducible failing tasks, improve grounding/routing and provenance-checked app skills, then retest on held-out tasks. B3's historical baseline cannot be reconstructed without the original data; importing synthetic fixtures is not evidence of live improvement.
 4. **Stable v1:** pass the owner-labelled accuracy and clean-box gates below before tagging `v1.0.0`. Public snapshots and an optional private weekly recap are diagnostic surfaces, not proof of product success.
 5. **Model learning later:** consider actual fine-tuning or reinforcement learning only after clean outcome labels, safety review and a held-out evaluation exist. Do not rebuild the removed training stack merely to ship this candidate.
 6. **Post-v1 companions:** interactive scratchpad mini-explainers, richer on-screen 3D generation/inspection, and lightweight macOS/Windows menu-bar or tray companions. Experimental adapters do not constitute supported full desktop ports.
 
-`wisp.observer` remains the intended primary domain, not a verified deployment.
+`wisp.observer` remains the intended primary domain, not a verified deployment. Stable `v1.0.0` is not yet shipped: only the `v1.0.0-rc.2` prerelease is published, and the gates below decide the final tag.
 Publish the homepage and bootstrap only after authenticated DNS access, HTTPS,
 artifact checks and an actual install-command receipt. Release checksums are
 not a signature or an independent signing trust root; no signed-bootstrap
@@ -90,7 +98,9 @@ Historical tally (`wispd eval`, 2026-10-28; not a current gate result): 23 label
 
 ## Open decisions
 
+- **Q3, the grounding `jev` fallback.** Replace it with an OpenRouter vision point call, or drop it. Until decided, the grounding `jev` provider, `_jev_locate`, `JEV_ENDPOINT` and the health `jev` endpoint stay. The frozen Rust daemon (`rs/wispd`) still defaults `router` to `jev` and carries `brain::ask_jev`; that needs a separate parity follow-up.
 - **Clacky extras.** Streaming speech-to-text and barge-in shipped (#161, #162). Recommended: drop journaled organize and deferred auth for v1.
+- **Q3, Jev outside routing.** `suggest._worth_mining` calls `ask_jev`, and the grounding `jev` provider uses `JEV_ENDPOINT`. Replace the grounding fallback with an OpenRouter vision call, or drop it; Phase 5 PR 2 leaves both in place until this is decided.
 
 ## Not doing
 

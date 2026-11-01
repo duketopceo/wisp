@@ -9,6 +9,8 @@ execution: code
 
 # Wisp Background Agents over ACP - Plan
 
+**Status (2026-10-31):** merged in #241; the agent now asks before running tests after writing executable files (#265). Not verified live: whether OpenCode sends `session/request_permission` for every `ask`-ruled action (see the launch spike).
+
 ---
 
 ## Goal Capsule

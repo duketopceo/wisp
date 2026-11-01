@@ -99,14 +99,66 @@ class Target:
             and _contains(self.rect, self.x, self.y)
 
 
+@dataclasses.dataclass(frozen=True)
+class Letterbox:
+    """The image a pointing model sees, plus how to undo the fit:
+    `src` pixels -> sent pixels is `p * scale + pad`. Padding is black
+    bars; a model point inside them has no source pixel and maps to None."""
+    b64: str
+    width: int                # sent image size
+    height: int
+    scale_x: float = 1.0
+    scale_y: float = 1.0
+    pad_x: float = 0.0
+    pad_y: float = 0.0
+    src_w: int = 0            # source (pre-fit) size
+    src_h: int = 0
+
+    @classmethod
+    def stretched(cls, b64: str, width: int, height: int,
+                  src_w: int, src_h: int) -> "Letterbox":
+        """No padding, plain per-axis scaling (identity when sizes match)."""
+        return cls(b64, width, height, width / max(1, src_w),
+                   height / max(1, src_h), 0.0, 0.0, src_w, src_h)
+
+    def to_shot(self, px: float, py: float) -> tuple[int, int] | None:
+        """Point in the sent image -> source pixels, or None when it sits
+        in the padding (refused, never clamped onto the image edge)."""
+        nw, nh = self.src_w * self.scale_x, self.src_h * self.scale_y
+        if (px < self.pad_x - 1 or py < self.pad_y - 1
+                or px > self.pad_x + nw + 1 or py > self.pad_y + nh + 1):
+            return None
+        x = (px - self.pad_x) / self.scale_x
+        y = (py - self.pad_y) / self.scale_y
+        return (int(round(max(0.0, min(x, self.src_w)))),
+                int(round(max(0.0, min(y, self.src_h)))))
+
+    @property
+    def padded(self) -> bool:
+        return self.pad_x > 0 or self.pad_y > 0
+
+
 class Shot:
     """One screen capture: full-resolution PNG b64 + its pixel size."""
 
-    def __init__(self, b64: str, width: int, height: int):
+    def __init__(self, b64: str, width: int, height: int,
+                 origin: tuple | None = None, output: str | None = None):
         self.b64, self.width, self.height = b64, int(width), int(height)
+        # the output a raw `grim -o` capture shows (its pixels are that
+        # output's own scale); None for the whole-layout canvas
+        self.output = output
+        # logical (x, y) of the image's top-left when stage_capture
+        # normalized it to logical size (pixels are then logical px);
+        # None = raw grim canvas (max-scale pixels)
+        self.origin = tuple(origin) if origin is not None else None
+
+    @property
+    def normalized(self) -> bool:
+        return self.origin is not None
 
     @classmethod
-    def from_bytes(cls, raw: bytes) -> "Shot | None":
+    def from_bytes(cls, raw: bytes, origin: tuple | None = None,
+                   output: str | None = None) -> "Shot | None":
         if _PIL_AVAILABLE:
             try:
                 w, h = Image.open(io.BytesIO(raw)).size
@@ -117,7 +169,9 @@ class Shot:
             if raw[:8] != b"\x89PNG\r\n\x1a\n" or raw[12:16] != b"IHDR":
                 return None
             w, h = struct.unpack(">II", raw[16:24])
-        return cls(base64.b64encode(raw).decode(), w, h) if w and h else None
+        if not (w and h):
+            return None
+        return cls(base64.b64encode(raw).decode(), w, h, origin, output)
 
     def scaled(self, max_side: int):
         """(b64, w, h) with the long side capped at max_side. Providers
@@ -136,19 +190,31 @@ class Shot:
         except Exception:
             return self.b64, self.width, self.height
 
-    def resized_pointing(self) -> tuple[str, int, int]:
-        """Resize screenshot to the closest Clicky pointing resolution
-        (`1024x768`, `1280x800`, or `1366x768`) for single-pass VLM pointing."""
+    def letterboxed(self) -> Letterbox:
+        """Fit the screenshot into the closest Clicky pointing resolution
+        (`1024x768`, `1280x800`, or `1366x768`) WITHOUT stretching: scale
+        uniformly to fit, centre it, pad with black. A model sees an
+        undistorted monitor; `Letterbox.to_shot` removes the padding."""
         rw, rh = pick_pointing_resolution(self.width, self.height)
+        plain = Letterbox.stretched(self.b64, self.width, self.height,
+                                    self.width, self.height)
         if (self.width, self.height) == (rw, rh) or not _PIL_AVAILABLE:
-            return self.b64, self.width, self.height
+            return plain
+        k = min(rw / self.width, rh / self.height)
+        nw, nh = max(1, round(self.width * k)), max(1, round(self.height * k))
+        pad_x, pad_y = (rw - nw) // 2, (rh - nh) // 2
         try:
             im = Image.open(io.BytesIO(base64.b64decode(self.b64)))
+            canvas = Image.new("RGB", (rw, rh), (0, 0, 0))
+            canvas.paste(im.convert("RGB").resize((nw, nh)), (pad_x, pad_y))
             buf = io.BytesIO()
-            im.convert("RGB").resize((rw, rh)).save(buf, format="PNG")
-            return base64.b64encode(buf.getvalue()).decode(), rw, rh
+            canvas.save(buf, format="PNG")
+            return Letterbox(base64.b64encode(buf.getvalue()).decode(),
+                             rw, rh, nw / self.width, nh / self.height,
+                             float(pad_x), float(pad_y),
+                             self.width, self.height)
         except Exception:
-            return self.b64, self.width, self.height
+            return plain
 
 
 # ---------------------------------------------------------- frame math
@@ -229,14 +295,17 @@ def _scale(m: dict) -> float:
 
 
 def convert(x: float, y: float, frame: str, mons: list,
-            output: str | None = None) -> tuple:
-    """Point in `frame` -> compositor-global logical (int, int)."""
+            output: str | None = None, origin: tuple | None = None) -> tuple:
+    """Point in `frame` -> compositor-global logical (int, int).
+    `origin` is a canvas-frame point's logical origin when the shot knows
+    it (a normalized single-output shot); else the layout bbox origin."""
     if frame in ("global", "logical"):
         return int(round(x)), int(round(y))
     mons = [m for m in (mons or []) if isinstance(m, dict)]
     from . import points
     if frame == "canvas":
-        ox, oy, _, _ = points.logical_bbox(mons)
+        ox, oy = origin if origin is not None else \
+            points.logical_bbox(mons)[:2]
         return int(round(x + ox)), int(round(y + oy))
     if frame != "shot":
         raise ValueError(f"unknown frame {frame!r}")
@@ -249,9 +318,8 @@ def convert(x: float, y: float, frame: str, mons: list,
         return (int(round(one.get("x", 0) + x / s)),
                 int(round(one.get("y", 0) + y / s)))
     # grim composites the whole layout at the highest output scale
-    s = max(_scale(m) for m in mons)
-    ox, oy, _, _ = points.logical_bbox(mons)
-    return int(round(ox + x / s)), int(round(oy + y / s))
+    lx, ly = points.raw_canvas_to_logical(x, y, mons)
+    return points.round_px(lx), points.round_px(ly)
 
 
 # ------------------------------------------------------------ settings
@@ -262,6 +330,22 @@ def _f(v, default: float) -> float:
         return r if math.isfinite(r) else default
     except (TypeError, ValueError):
         return default
+
+
+def vlm_cfg(cfg: dict | None) -> dict:
+    """The config `_vlm_locate` calls `brain.chat` with. Empty
+    `[ground] vlm_brain` leaves it untouched (grounding uses the act
+    brain). A set `name:model` becomes the only brain in a config COPY:
+    it is the default and `[brain] fallback` is emptied, so a down or slow
+    grounding model raises ProviderDown instead of silently handing the
+    screenshot to another model. The caller's config is never changed."""
+    cfg = cfg or {}
+    spec = str((cfg.get("ground", {}) or {}).get("vlm_brain") or "").strip()
+    if not spec:
+        return cfg
+    brain = dict(cfg.get("brain", {}) or {})
+    brain["default"], brain["fallback"] = spec, ""
+    return {**cfg, "brain": brain}
 
 
 def settings(cfg: dict | None) -> dict:
@@ -444,6 +528,10 @@ def _a11y(ctx) -> Candidate | None:
     schema is unverified against a live driver (docs/LINUX.md spike), so
     parsing is tolerant and anything unexpected yields None, which sends
     the chain on to the pixel providers."""
+    from . import vpointer as _vp
+    if _vp.is_isolated(ctx.cfg):
+        # the cua daemon is bound to the owner's live compositor
+        raise Skip("isolated session: cua is not instance-scoped")
     cua = ctx.cua
     if cua is None or not cua.available():
         raise Skip("cua-driver not available")
@@ -747,26 +835,86 @@ def _jev_locate(screenshot_b64: str, target: str, region_hint: str,
 _VLM_POINT_PROMPT = (
     "Locate the UI element described as: {target}{hint}.\n"
     "The attached screenshot is {rw}x{rh} pixels (origin 0,0 at top-left).\n"
-    "Reply with ONLY a single point tag `[POINT:x,y:{target}]` "
-    "at the exact center of the element, or `NONE` if it is not visible "
-    "or the target is ambiguous. Do not add bare coordinates or prose."
+    "Reply with ONLY one tag of the form `[POINT:<x>,<y>:{target}]`, "
+    "replacing <x> and <y> with the integer pixel coordinates of the "
+    "exact center of the element (for example `[POINT:412,230:{target}]`), "
+    "or `NONE` if it is not visible or the target is ambiguous. Do not "
+    "add prose."
 )
+
+
+# One whole-reply point tag: integer pixels or decimal fractions, optional
+# label, surrounding/inner whitespace tolerated.
+_POINT_TAG = re.compile(
+    r"\[POINT:\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*"
+    r"(?::([^\[\]]*))?\]")
+_LABEL_FILLER = frozenset((
+    "the", "a", "an", "button", "labelled", "labeled", "called", "named",
+    "with", "text", "icon", "link", "field", "tab", "element"))
+
+
+def _label_tokens(text: str) -> list:
+    words = re.findall(r"[^\W_]+", str(text).casefold())
+    return [w for w in words if w not in _LABEL_FILLER]
+
+
+def _label_names_target(label: str, target: str) -> bool:
+    """The model's label names the requested target: equal after
+    normalising (case, spacing, quotes, "the button labelled" phrasing),
+    or one is a whole-word run inside the other. "2" never matches "12"."""
+    a, b = _label_tokens(label), _label_tokens(target)
+    if not a or not b:
+        return False
+    ja, jb = f" {' '.join(a)} ", f" {' '.join(b)} "
+    return ja in jb or jb in ja
+
+
+_VLM_FRACTION_PROMPT = (
+    "Locate the UI element described as: {target}{hint}.\n"
+    "The attached screenshot is {rw}x{rh} pixels (origin 0,0 at top-left).\n"
+    "Reply with ONLY one tag of the form `[POINT:<x>,<y>:{target}]`, "
+    "replacing <x> and <y> with the position of the exact center of the "
+    "element as decimal fractions of the image width and height (each "
+    "between 0.0 and 1.0, origin top-left), or `NONE` if it is not "
+    "visible or the target is ambiguous. Do not add prose."
+)
+
+
+def _wants_fractions(vcfg: dict) -> bool:
+    """Hosted models point far better in fractions of the image (replay:
+    llama-4-maverick 9/9 within 60 px, but guesses when told pixels);
+    local pixel-trained VLMs (qwen2.5vl, lfm3-vl, ui-tars) want pixels."""
+    from urllib.parse import urlparse
+    from . import brain
+    try:
+        url = str(brain.provider(vcfg).get("base_url") or "")
+    except Exception:
+        return False
+    host = (urlparse(url).hostname or "").lower()
+    return bool(host) and host not in ("localhost", "127.0.0.1", "::1")
 
 
 def _vlm_locate(shot: Shot, target: str, region_hint: str = "",
                 cfg: dict | None = None,
                 timeout: float = 5.0) -> Tuple[int, int, float] | None:
     """Single-shot aspect-matched VLM pointing (HeyClicky parity).
-    Resizes `shot` to `pick_pointing_resolution`, asks `brain.chat` for a
-    single target-labelled `[POINT:x,y:label]`, and scales back to `shot`
-    pixels via `scale_point_from_resolution`. Legacy bare coordinates are
+    Letterboxes `shot` into `pick_pointing_resolution` (no stretching),
+    asks `brain.chat` for a single target-labelled `[POINT:x,y:label]`, and
+    maps back to `shot` pixels via `Letterbox.to_shot` (a point in the
+    padding is refused). Legacy bare coordinates are
     retained only as unsupported, zero-confidence predictions."""
     from . import brain, points as _points
     deadline = time.monotonic() + max(0.0, _f(timeout, 5.0))
-    b64, rw, rh = shot.resized_pointing()
+    box = shot.letterboxed()
+    b64, rw, rh = box.b64, box.width, box.height
     hint_str = f" (region hint: {region_hint})" if region_hint else ""
-    prompt = _VLM_POINT_PROMPT.format(
+    vcfg = vlm_cfg(cfg)
+    prompt = (_VLM_FRACTION_PROMPT if _wants_fractions(vcfg)
+              else _VLM_POINT_PROMPT).format(
         target=target, hint=hint_str, rw=rw, rh=rh)
+    if box.padded:
+        prompt += (" Black bars at the edges are padding, not part of "
+                   "the screen.")
     messages = [{
         "role": "user",
         "content": [
@@ -779,36 +927,44 @@ def _vlm_locate(shot: Shot, target: str, region_hint: str = "",
     if remaining <= 0:
         return None
     try:
-        res = brain.chat(messages, cfg or {}, timeout=remaining)
+        res = brain.chat(messages, vcfg, timeout=remaining)
         text = str((res or {}).get("content") or "").strip()
     except Exception as e:
         raise ProviderDown(str(e)) from None
     if not text or text.upper() == "NONE":
         return None
-    _, marks = _points.extract(text)
     # Bounds alone are not target support. Bare coordinates, conflicting
     # marks/labels and hedged prose remain untrusted predictions; only a
     # single explicit mark naming the requested target gets the supported
     # response score. This is not calibrated correctness or element proof:
     # the executor still independently requires observed element evidence.
-    supported = (len(marks) == 1
-                 and re.fullmatch(r"\[POINT:[^\[\]]+\]", text) is not None
-                 and " ".join(str(marks[0].get("label", "")).casefold().split())
-                 == " ".join(target.casefold().split()))
-    px_py = None
-    if marks:
-        px_py = (float(marks[0]["x"]), float(marks[0]["y"]))
+    px_py, supported = None, False
+    m = _POINT_TAG.fullmatch(text)
+    if m:
+        xs, ys = m.group(1), m.group(2)
+        px_py = (float(xs), float(ys))
+        if ("." in xs or "." in ys) and 0 <= px_py[0] <= 1 \
+                and 0 <= px_py[1] <= 1:
+            # a decimal pair in 0..1 is a fraction of the image (llama-4
+            # answers this way unprompted); integers are always pixels
+            px_py = (px_py[0] * rw, px_py[1] * rh)
+        supported = _label_names_target(m.group(3) or "", target)
     else:
-        xy = parse_uitars_text(text, (rw, rh), "px")
-        if xy is not None:
-            px_py = (float(xy[0]), float(xy[1]))
+        _, marks = _points.extract(text)
+        if marks:
+            px_py = (float(marks[0]["x"]), float(marks[0]["y"]))
+        else:
+            xy = parse_uitars_text(text, (rw, rh), "px")
+            if xy is not None:
+                px_py = (float(xy[0]), float(xy[1]))
     if px_py is None:
         return None
     if px_py[0] < 0 or px_py[1] < 0 or px_py[0] > rw or px_py[1] > rh:
         return None
-    sx, sy = scale_point_from_resolution(
-        px_py[0], px_py[1], rw, rh, shot.width, shot.height)
-    return sx, sy, 0.85 if supported else 0.0
+    mapped = box.to_shot(*px_py)
+    if mapped is None:
+        return None            # a point in the padding is no target
+    return mapped[0], mapped[1], 0.85 if supported else 0.0
 
 
 def _vlm(ctx) -> Candidate | None:
@@ -928,15 +1084,73 @@ def target_at_point(x: int, y: int, cfg: dict | None = None) -> Target | None:
     return None
 
 
-def _default_capture():
-    from . import pipeline
-    out = pipeline.capture_screen()
+def _default_capture(output: str | None = None):
+    """Capture the screen (one output via `grim -o` when named) as a Shot
+    that knows its logical origin (normalized) or its output (raw)."""
+    from . import points, stage_capture
+    # a one-output capture would leave its origin in the global that maps
+    # the turn's screenshot; the origin travels on the Shot instead
+    saved = points.SHOT_ORIGIN
+    try:
+        out, origin = stage_capture.capture_screen_meta(output=output)
+    finally:
+        if output:
+            points.SHOT_ORIGIN = saved
     if not out or not out.exists():
         return None
     try:
-        return Shot.from_bytes(out.read_bytes())
+        return Shot.from_bytes(out.read_bytes(), origin, output)
     finally:
         out.unlink(missing_ok=True)
+
+
+def _output_at(mons: list, pt) -> str | None:
+    """Name of the monitor whose logical rect holds the point."""
+    if pt is None:
+        return None
+    from . import points
+    for m in mons:
+        s = points._scale_of(m)
+        x0, y0 = m.get("x", 0), m.get("y", 0)
+        if (m.get("name") and x0 <= pt[0] < x0 + m.get("width", 0) / s
+                and y0 <= pt[1] < y0 + m.get("height", 0) / s):
+            return m["name"]
+    return None
+
+
+def _focus_point():
+    """Centre of the focused window, logical px, or None."""
+    from . import platform
+    try:
+        geo = platform.active_geometry()
+    except Exception:
+        return None
+    return (geo[0] + geo[2] / 2.0, geo[1] + geo[3] / 2.0) if geo else None
+
+
+def _cursor_point():
+    """Real cursor position, logical px, or None."""
+    from . import hypr
+    try:
+        p = hypr.query("cursorpos")
+        return float(p["x"]), float(p["y"])
+    except Exception:
+        return None
+
+
+def output_order(mons: list, focus=None, cursor=None) -> list:
+    """Outputs to ground on, best first: the focused window's output, the
+    cursor's, then the rest. [None] (one whole-layout capture) when the
+    layout is unknown or a single output (nothing to choose between)."""
+    named = [m["name"] for m in mons if isinstance(m, dict) and m.get("name")]
+    if len(named) < 2:
+        return [None]
+    order = []
+    for pt in ((focus or _focus_point)(), (cursor or _cursor_point)()):
+        name = _output_at([m for m in mons if isinstance(m, dict)], pt)
+        if name and name not in order:
+            order.append(name)
+    return order + [n for n in named if n not in order]
 
 
 def _default_cua():
@@ -953,8 +1167,11 @@ def _in_bounds(c: Candidate, shot: Shot) -> bool:
     return 0 <= c.x <= w and 0 <= c.y <= h
 
 
+_ELEMENT_LANES = ("control", "a11y")   # global lanes: no pixels, no output
+
+
 def _attempt(shot: Shot, target: str, cfg: dict, st: dict, providers: dict,
-             cua, clock, region_hint: str):
+             cua, clock, region_hint: str, pixels_only: bool = False):
     """One pass over the chain. Returns (best, tried, down): `best` is
     the first candidate at/above min confidence, else the strongest
     below it (or None)."""
@@ -963,7 +1180,7 @@ def _attempt(shot: Shot, target: str, cfg: dict, st: dict, providers: dict,
     tried = down = 0
     for name in st["providers"]:
         spec = providers.get(name)
-        if not spec:
+        if not spec or (pixels_only and name in _ELEMENT_LANES):
             continue
         if spec.get("fast", True):
             remaining = deadline - clock()
@@ -1000,12 +1217,18 @@ def _attempt(shot: Shot, target: str, cfg: dict, st: dict, providers: dict,
 def ground_target(target: str, cfg: dict | None = None, *, capture=None,
                   monitors=None, providers=None, cua=None,
                   clock=time.monotonic, region_hint: str = "",
-                  output: str | None = None) -> Target:
+                  output: str | None = None, focus=None,
+                  cursor=None) -> Target:
     """Name -> compositor-global Target, or GroundRefused.
 
-    One re-observe on a missing/low-confidence result (fresh capture,
-    full chain); never a second. Cancellation (`cancel.Cancelled`)
-    propagates."""
+    With the default capture on a multi-output layout the model sees ONE
+    output at a time: the focused window's, then the cursor's, then each
+    remaining output before the target is refused (a target on the other
+    monitor stays reachable). `[screen] output` / `output=` pins a single
+    output. A caller-supplied `capture()` takes no output and is used
+    as-is. One re-observe (fresh captures, full pass) on a missing or
+    low-confidence result; never a second. Cancellation
+    (`cancel.Cancelled`) propagates."""
     from . import cancel, points
     cfg = cfg or {}
     name = (target or "").strip()
@@ -1014,6 +1237,7 @@ def ground_target(target: str, cfg: dict | None = None, *, capture=None,
     st = settings(cfg)
     use_default = providers is None
     providers = PROVIDERS if use_default else providers
+    per_output = capture is None
     capture = capture or _default_capture
     if cua is None and use_default and "a11y" in st["providers"]:
         try:
@@ -1022,38 +1246,43 @@ def ground_target(target: str, cfg: dict | None = None, *, capture=None,
             cua = None
     if output is None:
         output = (cfg.get("screen", {}) or {}).get("output") or None
+    layout = []
+
+    def mons():
+        """The monitor layout, read once and only when a mapping or the
+        output order needs it."""
+        if not layout:
+            layout.append(monitors if monitors is not None
+                          else points.monitors())
+        return layout[0]
+
+    if per_output and not output:
+        outputs = output_order(mons(), focus, cursor)
+    else:
+        outputs = [output]
     best = None
     tried = down = 0
     for _attempt_no in (1, 2):
         cancel.check()
-        shot = capture()
-        if shot is None:
+        shots = 0
+        for i, out_name in enumerate(outputs):
+            cancel.check()
+            shot = capture(output=out_name) if per_output else capture()
+            if shot is None:
+                continue
+            shots += 1
+            got, t, d = _attempt(shot, name, cfg, st, providers, cua, clock,
+                                 region_hint, pixels_only=i > 0)
+            tried, down = tried + t, down + d
+            if got is not None and (best is None
+                                    or got.confidence > best.confidence):
+                best = got
+            if got is not None and got.confidence >= st["min_conf"]:
+                return _grounded(got, shot, mons(), out_name or output, name,
+                                 tried, down)
+        if not shots:
             raise GroundRefused("ground_failed", "no_capture",
                                 "could not capture the screen")
-        best, t, d = _attempt(shot, name, cfg, st, providers, cua, clock,
-                              region_hint)
-        tried, down = tried + t, down + d
-        if best is not None and best.confidence >= st["min_conf"]:
-            mons = monitors if monitors is not None else points.monitors()
-            x, y = best.x, best.y
-            if best.frame == "shot":
-                w, h = best.size or (shot.width, shot.height)
-                x, y = x * shot.width / w, y * shot.height / h
-            gx, gy = convert(x, y, best.frame, mons, output)
-            from . import trace as _trace
-            _trace.emit(_trace.current(), "ground", "act",
-                        {"target": name, "src": best.source,
-                         "conf": round(best.confidence, 3),
-                         "x": gx, "y": gy, "tried": tried,
-                         "down": down})
-            # an element rect the a11y lane resolved rides along so the
-            # verify ladder can crop its masked diff to the real bounds
-            # instead of a point box (shot-frame rects stay None)
-            rect = best.rect if best.frame in ("global", "logical") \
-                else None
-            return Target(gx, gy, "global", round(best.confidence, 3),
-                          best.source, best.label or name, best.window,
-                          rect)
     from . import trace as _trace
     _trace.emit(_trace.current(), "ground_refused", "act",
                 {"target": name, "tried": tried, "down": down,
@@ -1067,6 +1296,35 @@ def ground_target(target: str, cfg: dict | None = None, *, capture=None,
         raise GroundRefused("ground_down", "all_down",
                             "no grounding provider reachable")
     raise GroundRefused("ground_failed", "not_found", name)
+
+
+def _grounded(best: Candidate, shot: Shot, mons: list, output,
+              name: str, tried: int, down: int) -> Target:
+    """A confident candidate in `shot` -> compositor-global Target."""
+    x, y = best.x, best.y
+    frame, origin = best.frame, None
+    if frame == "shot":
+        w, h = best.size or (shot.width, shot.height)
+        x, y = x * shot.width / w, y * shot.height / h
+        if shot.normalized:
+            # stage_capture already resized to logical size: pixels are
+            # logical, offset by the shot's origin
+            frame, origin = "canvas", shot.origin
+        elif shot.output:
+            output = shot.output     # raw `grim -o`: that output's scale
+    gx, gy = convert(x, y, frame, mons, output, origin)
+    from . import trace as _trace
+    _trace.emit(_trace.current(), "ground", "act",
+                {"target": name, "src": best.source,
+                 "conf": round(best.confidence, 3),
+                 "x": gx, "y": gy, "tried": tried, "down": down,
+                 "output": shot.output})
+    # an element rect the a11y lane resolved rides along so the
+    # verify ladder can crop its masked diff to the real bounds
+    # instead of a point box (shot-frame rects stay None)
+    rect = best.rect if best.frame in ("global", "logical") else None
+    return Target(gx, gy, "global", round(best.confidence, 3),
+                  best.source, best.label or name, best.window, rect)
 
 
 # --------------------------------------------------------------- events

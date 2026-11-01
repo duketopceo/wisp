@@ -4,8 +4,9 @@
     python scripts/assets/gen_settings.py          # write the file
     python scripts/assets/gen_settings.py --check  # exit 1 if it is stale
 
-The Panel settings tab and `wispd config` both read the schema, so the
-generated table and validators cannot drift from the daemon's check.
+The Panel settings tab, the settings window and `wispd config` all read the
+schema, so the generated table and validators cannot drift from the
+daemon's check.
 """
 import json
 import pathlib
@@ -28,8 +29,8 @@ function field(key) {
 function trim(s) { return String(s === undefined || s === null ? "" : s).replace(/^\s+|\s+$/g, "") }
 
 // "" when the value may be written, else a copy key for the inline error.
-// Same rules as wisp/settings_schema.problem(); a key the Panel does not
-// edit is "ui.err.unknown".
+// Same rules as wisp/settings_schema.problem(); a key outside the table, or
+// a secret (status only, never written here), is "ui.err.unknown".
 function validate(key, raw) {
   var f = field(key)
   if (f === null) return "ui.err.unknown"
@@ -47,6 +48,10 @@ function validate(key, raw) {
   }
   if (f.kind === "bool") return v === "true" || v === "false" ? "" : "ui.err.choice"
   if (f.kind === "choice") return f.options.indexOf(v) >= 0 ? "" : "ui.err.choice"
+  if (f.kind === "text") {
+    if (f.pattern && !new RegExp("^(?:" + f.pattern + ")$").test(v)) return "ui.err.format"
+    return ""
+  }
   return "ui.err.unknown"
 }
 """
@@ -55,7 +60,7 @@ function validate(key, raw) {
 def render() -> str:
     def js(v):
         return json.dumps(v, ensure_ascii=True)
-    fields = [f.panel_dict() for f in S.panel_fields()]
+    fields = [f.js_dict() for f in S.FIELDS]
     rows = ",\n".join("  " + js(r) for r in fields)
     return "\n".join([
         ".pragma library",
@@ -67,7 +72,12 @@ def render() -> str:
         "// every key the daemon validates, in schema order",
         f"var KEYS = {js(list(S.KEYS))}",
         "",
-        "// keys the Panel edits: kind usd, int, bool or choice",
+        "// settings window pages, in sidebar order (titles: set.cat.<id>)",
+        f"var CATEGORIES = {js(list(S.CATEGORIES))}",
+        "",
+        "// every editable key: kind usd, int, bool, choice or text, or",
+        "// secret (status only, no default and never a value); quick marks",
+        "// the Panel's quick settings",
         f"var FIELDS = [\n{rows}\n]",
         "",
         "// characters a config value may not contain (as a regex source)",

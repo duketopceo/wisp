@@ -1,0 +1,19 @@
+# Experiment arm: openrouter profile with a tool-capable reasoning brain
+# A cheap OpenRouter vision model grounds; the same reasoning model as the
+# hybrid arm runs the task, so grounding is the one difference. Applied by
+# `wispd dev run --profile openrouter` (wisp/gauntlet.py).
+
+[brain]
+default = "openrouter:google/gemini-2.5-flash"
+fallback = ""
+
+[brain.openrouter]
+key_env = "OPENROUTER_API_KEY"
+
+[ground]
+providers = "control,a11y,vlm"
+vlm_brain = "openrouter:google/gemini-2.5-flash"
+
+[agents]
+act_max_usd = "0.25"
+act_max_seconds = "600"

@@ -10,6 +10,7 @@ from .. import cancel as _cancel
 from .. import config
 from .. import delivery as _delivery
 from .. import hypr
+from .. import vpointer as _vp
 from ..pipeline import hypr_env, notify
 
 _POINTER_CONTEXT = ContextVar("wisp_pointer_context", default=None)
@@ -276,7 +277,7 @@ def _dom_shot(path, cfg: dict) -> str:
     return f"SHOT {path}"
 
 
-def _normalize_shot(path, output: str | None = None) -> None:
+def _normalize_shot(path, output: str | None = None) -> tuple | None:
     """Resize the shot to its logical size so image pixels == Hyprland
     logical coords, then overlay a labeled 100px grid (set-of-mark
     style) — models localize noticeably better when the coordinate
@@ -285,23 +286,27 @@ def _normalize_shot(path, output: str | None = None) -> None:
     emitted coords un-mappable; pinning to logical size keeps
     click/move 1:1 regardless. Records the shot's logical origin in
     points.SHOT_ORIGIN so coordinate mapping stays exact for
-    single-output captures."""
+    single-output captures.
+
+    Returns the shot's logical origin (x, y) when the image was
+    rewritten to logical size, else None: the caller then holds a raw
+    grim canvas, whose pixels are NOT logical."""
     from .. import points
     magick = shutil.which("magick")
     if not magick:
-        return
+        return None
     mons = points.monitors()
     if output:
         m = next((m for m in mons if m.get("name") == output), None)
         if not m:
-            return
+            return None
         s = float(m.get("scale", 1) or 1)
         x, y = m.get("x", 0), m.get("y", 0)
         w, h = round(m.get("width", 0) / s), round(m.get("height", 0) / s)
     else:
         x, y, w, h = points.logical_bbox(mons)
     if not w or not h:
-        return
+        return None
     points.SHOT_ORIGIN = (x, y)
     import os as _os
     import time as _time
@@ -322,7 +327,7 @@ def _normalize_shot(path, output: str | None = None) -> None:
             + [f"line 0,{gy} {w},{gy}" for gy in range(100, h, 100)]
             + [f"text {gx + 2},12 '{gx}'" for gx in range(0, w, 100)]
             + [f"text 2,{gy + 12} '{gy}'" for gy in range(0, h, 100)])
-        _cancel.run(
+        r = _cancel.run(
             [magick, str(path), "-resize", f"{w}x{h}!",
              "-stroke", "rgba(255,80,80,0.45)", "-strokewidth", "1",
              "-fill", "rgba(255,80,80,0.9)", "-pointsize", "12",
@@ -335,8 +340,9 @@ def _normalize_shot(path, output: str | None = None) -> None:
                      "out_kb": _os.path.getsize(path) // 1024,
                      "origin": [x, y]},
                     ms=round((_time.monotonic() - t0) * 1000))
+        return (x, y) if r.returncode == 0 else None
     except (OSError, subprocess.SubprocessError):
-        pass
+        return None
 
 
 def model_image(path) -> str | None:
@@ -406,6 +412,12 @@ def _dom_eval(cfg: dict, code: str) -> str:
 
 
 def type_text(text: str, cfg: dict | None = None) -> str:
+    # gauntlet runs: the sandbox identity check, run again right before
+    # the keystroke (focus can move after the policy gate)
+    from .. import gauntlet
+    refused = gauntlet.keystroke_guard(cfg or {})
+    if refused:
+        return refused
     # typing never moves the pointer — wtype/ydotool type at the
     # focused surface, the DOM path sets values over JS
     _delivery.note("background")
@@ -435,12 +447,17 @@ def type_text(text: str, cfg: dict | None = None) -> str:
         return ("TYPED" if r.startswith("typed:")
                 else f"SKIP ({r[:60]})")
     from .. import platform
-    cmd = platform.type_text_cmd()
+    iso = _vp.is_isolated(cfg)
+    try:
+        cmd = platform.type_text_cmd(isolated=iso)
+        env = _vp.isolated_env() if iso else hypr_env()
+    except _vp.UinputRefused as e:
+        return f"REFUSED ({e})"
     if not cmd:
         return (f"SKIP (no typer — {platform.missing_deps_hint()})")
     # the text goes on stdin, not argv: other local accounts can read argv
     r = _cancel.run(cmd, input=text.encode("utf-8"), capture_output=True,
-                    env=hypr_env())
+                    env=env)
     return "TYPED" if r.returncode == 0 else "SKIP (typer failed)"
 
 
@@ -479,9 +496,64 @@ def _chord(name: str) -> list | None:
         + [f"{c}:0" for c in reversed(mods)]
 
 
+# wtype spellings (XKB keysyms / modifier names) for the isolated run,
+# where ydotool's uinput codes are refused
+_WTYPE_KEYS = {"esc": "Escape", "enter": "Return", "tab": "Tab",
+               "space": "space", "backspace": "BackSpace", "up": "Up",
+               "down": "Down", "left": "Left", "right": "Right",
+               "pageup": "Prior", "pagedown": "Next", "home": "Home",
+               "end": "End"}
+_WTYPE_MODS = {"ctrl": "ctrl", "control": "ctrl", "shift": "shift",
+               "alt": "alt", "super": "logo", "meta": "logo",
+               "cmd": "logo"}
+
+
+def _wtype_argv(name: str) -> list | None:
+    """argv for a bare key or 'ctrl+shift+v' chord via wtype, or None
+    when a part is unmappable."""
+    parts = name.split("+")
+    mods = [_WTYPE_MODS.get(p) for p in parts[:-1]]
+    if any(m is None for m in mods):
+        return None
+    last = parts[-1]
+    k = _WTYPE_KEYS.get(last) or (last if len(last) == 1
+                                  and last.isalnum() else None)
+    if k is None:
+        return None
+    argv = ["wtype"]
+    for m in mods:
+        argv += ["-M", m]
+    argv += ["-k", k]
+    for m in reversed(mods):
+        argv += ["-m", m]
+    return argv
+
+
+def _iso_key(name: str) -> str:
+    """Key press for an isolated run: wtype on the instance socket only."""
+    from .. import platform
+    try:
+        if not platform._which("wtype"):
+            _vp.refuse("a key press without wtype (no ydotool fallback)")
+        env = _vp.isolated_env()
+    except _vp.UinputRefused as e:
+        return f"REFUSED ({e})"
+    argv = _wtype_argv(name)
+    if argv is None:
+        return f"SKIP (unknown key {name!r})"
+    from .. import keys as _keys
+    with _keys.suspended():
+        r = _cancel.run(argv, capture_output=True, env=env)
+    return "KEY" if r.returncode == 0 else "SKIP (wtype key failed)"
+
+
 def key(arg: str, cfg: dict | None = None) -> str:
     """Press a named key — 'enter', 'tab', 'down', 'pagedown', 'ctrl+v',
     'ctrl+shift+t' (modifier chords are ydotool-only, never DOM)."""
+    from .. import gauntlet
+    refused = gauntlet.keystroke_guard(cfg or {}, arg)
+    if refused:
+        return refused
     _delivery.note("background")   # key events ride the keyboard path
     name = (arg or "").strip().lower().replace(" ", "")
     name = {"return": "enter", "escape": "esc", "pgdn": "pagedown",
@@ -493,6 +565,8 @@ def key(arg: str, cfg: dict | None = None) -> str:
             return f"SKIP (unknown chord {name!r})"
         if (cfg or {}).get("screen", {}).get("dom_page"):
             return "SKIP (key chords are ydotool-only, not dom)"
+        if _vp.is_isolated(cfg):
+            return _iso_key(name)
         from .. import keys as _keys
         with _keys.suspended():  # the Wisp submap must not eat the chord
             r = _cancel.run(["ydotool", "key", *seq],
@@ -520,6 +594,8 @@ def key(arg: str, cfg: dict | None = None) -> str:
     code = _KEYCODES.get(name)
     if code is None:
         return f"SKIP (unknown key {name!r})"
+    if _vp.is_isolated(cfg):
+        return _iso_key(name)
     from .. import keys as _keys
     with _keys.suspended():  # the Wisp submap must not eat the agent's key
         r = _cancel.run(["ydotool", "key", f"{code}:1", f"{code}:0"],
@@ -638,6 +714,14 @@ def scroll(arg: str, cfg: dict | None = None) -> str:
         amt = 7200
     elif top:
         amt, up = 7200, True
+    if _vp.is_isolated(cfg):
+        try:
+            _vp.scroll(dy=-amt if up else amt, env=_vp.isolated_env())
+        except _vp.UinputRefused as e:
+            return f"REFUSED ({e})"
+        except _vp.VPointerError as e:
+            return f"SKIP (isolated scroll failed: {e})"
+        return "SCROLLED"
     r = _cancel.run(
         ["ydotool", "mousemove", "--wheel",
          "-y", str(-amt if up else amt)],
@@ -885,6 +969,12 @@ def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
         if not out.ok:
             return f"SKIP ({op} failed via {out.backend or backend})"
         return f"{'CLICKED' if do_click else 'MOVED'}({x},{y})"
+    if _vp.is_isolated(cfg) and mode in ("drive", "auto"):
+        # an isolated run never degrades to guide: there is no human to
+        # click, and falling back to a live-seat injector is refused
+        return ("REFUSED (isolated session: no instance-scoped pointer "
+                "backend is available; the virtual pointer needs the "
+                "instance's WAYLAND_DISPLAY)")
     # guide mode — ghost cursor carries the intent, the user clicks
     verb = "GUIDE" if do_click else "MOVE-GUIDE"
     _delivery.note("guide")

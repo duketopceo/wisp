@@ -1,0 +1,18 @@
+usage: wispd dev import-labels [-h] [--json] [--quiet] [--no-color] DIR
+
+Copy your own labels on gauntlet turns into your data
+
+positional arguments:
+  DIR          a gauntlet data directory (the one `wispd dev review` was run
+               against)
+
+options:
+  -h, --help   show this help message and exit
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd dev import-labels ~/.local/share/wisp-gauntlet/data/wisp

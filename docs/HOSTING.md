@@ -9,6 +9,10 @@ desktop sessions.
 
 - **Enhanced homepage:** `site-3d/`, with vendored Three.js, companion artwork,
   fonts and license notices.
+- **Guiding-light preview:** `site-3d/light/`, served at `/light/` by the same
+  build. A small real-time WebGL light (plain WebGL1, drawn only while it
+  moves) with a CSS-orb fallback, self-hosted font, no inline script; design in
+  `site-3d/light/DESIGN.md`, credits in `THIRD_PARTY_NOTICES.md`.
 - **Independent fallback:** `site/`, assembled at `/plain/` without JavaScript.
 - **Bootstrap:** the reviewed `scripts/bootstrap/install.py`, copied exactly to
   `/install.py`. Publication does not authenticate that initial script.

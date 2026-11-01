@@ -307,9 +307,26 @@ class Ctx:
             print(text)
         return EXIT_OK
 
-    def table(self, headers, rows, tones=None, header=True) -> str:
+    def table(self, headers, rows, tones=None, header=True, **kw) -> str:
         return output.table(headers, rows, tones, self.color, self.cfg,
-                            header)
+                            header, **kw)
+
+    @property
+    def width(self) -> int:
+        return output.term_width()
+
+    @property
+    def glyphs(self) -> bool:
+        return not self.flags.no_color and output.use_glyphs()
+
+    def kv(self, pairs, **kw) -> str:
+        return output.kv(pairs, self.color, glyphs=self.glyphs, **kw)
+
+    def paint_muted(self, text: str) -> str:
+        return output.paint(text, "muted") if self.color else text
+
+    def banner(self, version: str = "") -> str:
+        return output.banner(version, self.glyphs, self.color)
 
     def send(self, msg: dict, timeout=None) -> dict:
         """One IPC command. Daemon absent -> E_DAEMON_DOWN (exit 3)."""

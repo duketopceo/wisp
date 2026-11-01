@@ -31,6 +31,8 @@ Coordinates are logical Hyprland desktop coordinates (the `desktop`
 frame cua is told); no backend rescales them.
 """
 import dataclasses
+import os
+import struct
 import subprocess
 
 from . import cancel as _cancel
@@ -39,8 +41,9 @@ from . import delivery as _delivery
 from . import hypr
 from . import platform
 from . import realinput
+from . import vpointer as _vp
 
-NAMES = ("cua", "hyprcursor", "ydotool", "wlrctl", "guide")
+NAMES = ("cua", "hyprcursor", "ydotool", "wlrctl", "vpointer", "guide")
 _ARGV_TIMEOUT_S = 10
 
 
@@ -183,6 +186,71 @@ class WlrctlBackend(ArgvBackend):
         return bool(platform._which("wlrctl"))
 
 
+class VpointerBackend(Backend):
+    """Isolated-session pointer (KTD6): `zwlr_virtual_pointer_v1` on the
+    instance socket named by `WAYLAND_DISPLAY`. The only driving backend
+    an isolated run offers; it can never reach the live seat because it
+    only ever talks to that one compositor. Coordinates are logical
+    desktop coords, mapped over the layout's bounding box."""
+    name = "vpointer"
+    capabilities = frozenset({"background", "scroll"})
+
+    def __init__(self, env=None, layout=None):
+        self._env = env
+        self._layout = layout       # () -> (x, y, w, h) logical bbox
+
+    def _env_now(self) -> dict:
+        return _vp.isolated_env(self._env)
+
+    def _bbox(self):
+        if self._layout is not None:
+            return self._layout()
+        from . import points
+        return points.logical_bbox(points.monitors())
+
+    def available(self) -> bool:
+        try:
+            return os.path.exists(_vp.socket_path(self._env_now()))
+        except (_vp.UinputRefused, _vp.VPointerError):
+            return False
+
+    def unavailable_hint(self) -> str:
+        return ("the isolated instance's Wayland socket is not set or "
+                "missing (scripts/isolated_session.py start)")
+
+    def _geom(self):
+        x, y, w, h = self._bbox()
+        if w <= 0 or h <= 0:
+            raise _vp.VPointerError("instance layout unreadable")
+        return (w, h), (x, y)
+
+    def _do(self, fn, *a, **kw) -> bool:
+        self.last_error = ""
+        try:
+            fn(*a, env=self._env_now(), **kw)
+            return True
+        except (_vp.VPointerError, _vp.UinputRefused, struct.error) as e:
+            self.last_error = str(e)[:80]
+            return False
+
+    def _at(self, fn, x, y) -> bool:
+        try:
+            ext, org = self._geom()
+        except _vp.VPointerError as e:
+            self.last_error = str(e)
+            return False
+        return self._do(fn, x, y, ext, origin=org)
+
+    def move(self, x, y) -> bool:
+        return self._at(_vp.move, x, y)
+
+    def click(self, x, y) -> bool:
+        return self._at(_vp.click, x, y)
+
+    def scroll(self, dx, dy) -> bool:
+        return self._do(_vp.scroll, dx, dy)
+
+
 class GuideBackend(Backend):
     name = "guide"
     drives = False
@@ -194,9 +262,18 @@ class GuideBackend(Backend):
 class Registry:
     def __init__(self, cfg: dict | None = None):
         self.cfg = cfg or {}
-        self._b = {b.name: b for b in (
-            CuaBackend(timeout_s=self._cua_timeout()), HyprcursorBackend(), YdotoolBackend(),
-            WlrctlBackend(), GuideBackend())}
+        self.isolated = _vp.is_isolated(self.cfg)
+        if self.isolated:
+            # KTD6: the registry offers only the instance-scoped
+            # backend — cua (bound to the live compositor), hyprcursor,
+            # ydotool (uinput) and wlrctl are not in the table at all
+            self._b = {b.name: b for b in (VpointerBackend(),
+                                           GuideBackend())}
+        else:
+            self._b = {b.name: b for b in (
+                CuaBackend(timeout_s=self._cua_timeout()),
+                HyprcursorBackend(), YdotoolBackend(),
+                WlrctlBackend(), GuideBackend())}
 
     def _cua_timeout(self) -> float:
         try:
@@ -223,6 +300,8 @@ class Registry:
             return next((b for b in auto
                          if b.name not in exclude and b.available()), None)
         want = self.pin
+        if self.isolated and want in NAMES and want not in self._b:
+            return None     # a pin on a refused injector never falls through
         if want in self._b and self._b[want].drives:
             b = self._b[want]
             return b if b.available() else None
@@ -244,6 +323,10 @@ class Registry:
         b = self._pick(backend)
         if b is None:
             return Outcome(False, None, "no_backend", "guide")
+        if b.name == "vpointer":
+            # the instance's own cursor: no real pointer, no yield watch
+            return Outcome(b.move(x, y), b.name,
+                           getattr(b, "last_error", ""), "background")
         # every move path drives the real cursor (cua's scope:desktop
         # move included) — arm the yield watch before touching it
         realinput.arm()

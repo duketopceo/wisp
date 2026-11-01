@@ -29,6 +29,9 @@
     },
     "voice": {
       "enabled": "true"
+    },
+    "brain": {
+      "router": "chat"
     }
   },
   "expect": {

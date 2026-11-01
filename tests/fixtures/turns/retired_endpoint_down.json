@@ -1,6 +1,11 @@
 {
   "description": "Retired decision endpoint is down: bare catalog launch uses the fast path without contacting it.",
   "audio": "ask.wav",
+  "config": {
+    "brain": {
+      "router": "act"
+    }
+  },
   "endpoints": {
     "whisper": {
       "transcript": "open firefox"
@@ -31,17 +36,12 @@
     "error_code": "",
     "jev_calls": 0
   },
-  "name": "jev_down",
-  "scenario": "Jev down",
+  "name": "retired_endpoint_down",
+  "scenario": "retired endpoint down",
   "catalog": {
     "firefox": {
       "launch": "firefox",
       "cues": "web browser"
-    }
-  },
-  "config": {
-    "brain": {
-      "router": "act"
     }
   }
 }

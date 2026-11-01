@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node site_3d.mjs"
+    "test": "node site_3d.mjs && node light.mjs"
   },
   "devDependencies": {
     "playwright": "1.59.0"

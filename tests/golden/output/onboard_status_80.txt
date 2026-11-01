@@ -1,0 +1,13 @@
+wisp onboard                                                         2 of 5 done
+
+  done  microphone          parecord and the speech model are ready
+  done  models              local models off; brain is openrouter:meta-llama/...
+  *     API keys            missing OPENROUTER_API_KEY (brain), GROQ_API_KEY ...
+  o     background agents   not installed
+  n/a   cua pointer driver  cua-driver is not installed (optional)
+  o     notifications       no notifier found
+
+  next: wispd onboard --step keys
+
+  wispd onboard --step keys   do this step
+  wispd onboard               walk through them

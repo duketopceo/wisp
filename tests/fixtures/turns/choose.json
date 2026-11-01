@@ -1,6 +1,11 @@
 {
   "description": "Act asks which app through the generic question broker; only the offered reply permits launch.",
   "audio": "choose.wav",
+  "config": {
+    "brain": {
+      "router": "act"
+    }
+  },
   "endpoints": {
     "whisper": {
       "transcript": "open the chat app"
@@ -46,10 +51,5 @@
     ]
   },
   "name": "choose",
-  "scenario": "choose/confirm",
-  "config": {
-    "brain": {
-      "router": "act"
-    }
-  }
+  "scenario": "choose/confirm"
 }

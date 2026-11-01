@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wisp, a small light that shows you the way</title>
+<meta name="description" content="Wisp is a resident voice companion for Omarchy (Hyprland). Hold Super+D, speak, and Wisp hears you, decides what you meant, and acts.">
+<link rel="stylesheet" href="light.css">
+<script type="module" src="light.mjs"></script>
+</head>
+<body>
+<nav><b>wisp</b><span><a href="#places">Places</a><a href="#install">Install</a><a href="https://github.com/duketopceo/wisp">GitHub</a></span></nav>
+<div class="light" id="light" aria-hidden="true" data-renderer="static" data-rendering="paused" data-tier="css" data-breath="running"><div class="breath"><canvas id="gl"></canvas><span class="orb"></span></div></div>
+
+<main>
+<section class="stop hero" data-stop><span class="mark" style="--r:8%;--t:46%"></span><div>
+  <p class="label">Resident voice companion · Omarchy</p>
+  <h1>A small light that shows you <i>the way.</i></h1>
+  <p>Hold <kbd>Super</kbd>+<kbd>D</kbd>, speak, and Wisp hears you, decides what you meant, and acts. It keeps the conversation open across utterances, so “check the build”, “open it” and “scroll to the failure” are one task.</p>
+  <p class="meta">v0.9 shipped · Linux (Omarchy/Hyprland)</p>
+</div></section>
+
+<section class="stop" id="places" data-stop><span class="mark" style="--r:14%;--t:30%"></span><div>
+  <p class="label">01 · Voice</p>
+  <h2>It listens when you ask.</h2>
+  <p>Push-to-talk, PipeWire capture, configured speech recognition, then fast-path routing or the act loop.</p>
+</div></section>
+
+<section class="stop" data-stop><span class="mark" style="--r:6%;--t:62%"></span><div>
+  <p class="label">02 · Pointer</p>
+  <h2>It points at the thing it means.</h2>
+  <p>Replies fly the cursor buddy to the spot on your screen. In the default <code>guide</code> mode Wisp only shows the target, and you click.</p>
+</div></section>
+
+<section class="stop" data-stop><span class="mark" style="--r:18%;--t:40%"></span><div>
+  <p class="label">03 · Agents</p>
+  <h2>It hands long jobs onward.</h2>
+  <p>Say “Wisp, agent, fix the tests in wisp” and a named task starts on your runtime: <code>opencode</code>, <code>codex</code>, <code>claude</code> or <code>devin</code>. It speaks progress, and asks you out loud when it needs an answer.</p>
+</div></section>
+
+<section class="stop" data-stop><span class="mark" style="--r:8%;--t:24%"></span><div>
+  <p class="label">04 · Memory</p>
+  <h2>It remembers the thread.</h2>
+  <p>Utterances that share the focused app or the running goal join one goal. Finish a walkthrough, say “save that as a lesson”, and later “replay that lesson” speaks and points at the steps again.</p>
+</div></section>
+
+<section class="stop" data-stop><span class="mark" style="--r:16%;--t:58%"></span><div>
+  <p class="label">05 · Models</p>
+  <h2>It uses the model you choose.</h2>
+  <p>Hosted models through OpenRouter are the default. Small local models, such as a Liquid AI LFM vision model, are a supported option you turn on yourself. Providers and local tools still need setup. Set <code>[agent] screenshots = "false"</code> to keep images local.</p>
+</div></section>
+
+<section class="stop finale" id="install" data-stop><span class="mark" style="--r:10%;--t:44%"></span><div>
+  <p class="label">Begin</p>
+  <h2>Install, one step at a time.</h2>
+<pre class="term" role="img" aria-label="Install commands: git clone, cd wisp, python3 wispd install, systemctl enable, wispd onboard"><span class="on"><span class="dot">●</span>git clone https://github.com/duketopceo/wisp</span>
+cd wisp
+python3 wispd install   <span class="c"># files, shell plugin, unit, bind</span>
+systemctl --user enable --now wispd
+wispd onboard           <span class="c"># guided first run</span></pre>
+  <a class="pill" href="https://github.com/duketopceo/wisp/blob/master/docs/INSTALL.md">Read the install guide</a>
+  <p class="note">Every step of onboarding is skippable. macOS and Windows adapters are experimental. The Linux release candidate installer is on the <a href="../#install">main page</a>.</p>
+</div></section>
+</main>
+<footer>Wisp · <a href="https://github.com/duketopceo/wisp">github.com/duketopceo/wisp</a> · <a href="https://github.com/duketopceo/wisp/blob/master/THIRD_PARTY_NOTICES.md">Notices</a> · light design reference: ThreeUI Community (MIT)</footer>
+
+</body>
+</html>

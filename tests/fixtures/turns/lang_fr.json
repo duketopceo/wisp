@@ -30,9 +30,6 @@
   "name": "lang_fr",
   "scenario": "multilingual",
   "config": {
-    "brain": {
-      "router": "chat"
-    },
     "voice": {
       "enabled": "true",
       "cmd": "/bin/sh -c \"/bin/true\" {voice} {text}"

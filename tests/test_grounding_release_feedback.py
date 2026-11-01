@@ -17,8 +17,9 @@ class ResizeFallback(unittest.TestCase):
             with self.subTest(pillow_available=pillow_available), \
                     mock.patch.object(g, "_PIL_AVAILABLE", pillow_available), \
                     mock.patch.object(g, "Image", broken_image, create=True):
-                self.assertEqual(shot.resized_pointing(),
-                                 (shot.b64, 1920, 1080))
+                self.assertEqual(shot.letterboxed(),
+                                 g.Letterbox.stretched(shot.b64, 1920, 1080,
+                                                       1920, 1080))
 
 
 def context(cfg=None):
@@ -89,12 +90,13 @@ class FallbackBudget(unittest.TestCase):
 
             def resize():
                 clock.now += spent
-                return "synthetic", 1280, 800
+                return g.Letterbox.stretched("synthetic", 1280, 800,
+                                             1920, 1080)
 
             with self.subTest(spent=spent), \
                     mock.patch.object(g.time, "monotonic",
                                       side_effect=lambda: clock.now), \
-                    mock.patch.object(shot, "resized_pointing",
+                    mock.patch.object(shot, "letterboxed",
                                       side_effect=resize), \
                     mock.patch.object(brain, "chat",
                                       return_value={"content": "NONE"}) as chat:
@@ -154,16 +156,22 @@ class ProviderOrder(unittest.TestCase):
         vlm.assert_not_called()
 
 
+SAME = g.Letterbox.stretched("synthetic", 1920, 1080, 1920, 1080)
+
+
 class VlmTargetSupport(unittest.TestCase):
     def test_prompt_does_not_request_the_unsupported_bare_coordinate_form(self):
         shot = context().shot
-        with mock.patch.object(shot, "resized_pointing",
-                               return_value=("synthetic", 1920, 1080)), \
+        with mock.patch.object(shot, "letterboxed",
+                               return_value=SAME), \
                 mock.patch.object(brain, "chat", return_value={
                     "content": "NONE"}) as chat:
             self.assertIsNone(g._vlm_locate(shot, "Save"))
         prompt = chat.call_args.args[0][0]["content"][0]["text"]
-        self.assertIn("[POINT:x,y:Save]", prompt)
+        # one POINT tag naming the target, with explicit <x>,<y> slots
+        # (never the bare literal template, which models echo back)
+        self.assertIn("[POINT:<x>,<y>:Save]", prompt)
+        self.assertNotIn("[POINT:x,y:Save]", prompt)
         self.assertNotIn("or `(x,y)`", prompt)
         self.assertIn("ambiguous", prompt)
 
@@ -174,8 +182,8 @@ class VlmTargetSupport(unittest.TestCase):
         for text in replies:
             shot = context().shot
             with self.subTest(reply=text), \
-                    mock.patch.object(shot, "resized_pointing",
-                                      return_value=("synthetic", 1920, 1080)), \
+                    mock.patch.object(shot, "letterboxed",
+                                      return_value=SAME), \
                     mock.patch.object(brain, "chat", return_value={"content": text}):
                 result = g._vlm_locate(shot, "Save")
             self.assertIsNotNone(result)
@@ -184,8 +192,9 @@ class VlmTargetSupport(unittest.TestCase):
 
     def test_single_exact_target_mark_keeps_scaled_point_and_support(self):
         shot = context().shot
-        with mock.patch.object(shot, "resized_pointing",
-                               return_value=("synthetic", 960, 540)), \
+        with mock.patch.object(shot, "letterboxed",
+                               return_value=g.Letterbox.stretched(
+                                   "synthetic", 960, 540, 1920, 1080)), \
                 mock.patch.object(brain, "chat", return_value={
                     "content": "[POINT:100,120:Save]"}):
             result = g._vlm_locate(shot, "Save")

@@ -110,6 +110,13 @@ def reply_rule(code: str) -> str:
             "they ask for another language.")
 
 
+def with_reply_rule(system: str, code: str) -> str:
+    """`system` plus the reply rule for a non-English turn, unchanged for
+    English. The one place both the answer lane and the act loop add it."""
+    rule = reply_rule(code)
+    return f"{system} {rule}" if rule else system
+
+
 def local_model_english_only(cfg) -> bool:
     model = str(((cfg or {}).get("audio") or {}).get(
         "whisper_model", "ggml-small.en.bin"))

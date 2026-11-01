@@ -6,6 +6,7 @@ import shutil
 import subprocess
 
 from .. import config
+from . import output
 from .registry import CliError, GROUPS, command
 
 GROUPS["health"] = "Local model endpoint health"
@@ -23,9 +24,15 @@ def doctor_sections(cfg: dict, cua_probe=None, agents_probe=None) -> list:
         rows = []
         sections.append({"name": name, "rows": rows})
 
-        def row(label, value, ok=True):
+        def row(label, value, ok=True, level=None, detail=None, fix=""):
+            """level: ok | warn | fail (additive; `ok` still drives the
+            exit code). detail and fix are the human view's two lines;
+            `value` stays the one-string form `--json` always had."""
             rows.append({"name": label, "value": str(value),
-                         "ok": bool(ok)})
+                         "ok": bool(ok),
+                         "level": level or ("ok" if ok else "fail"),
+                         "detail": str(value if detail is None else detail),
+                         "fix": fix})
         return row
 
     row = section("preflight")
@@ -33,7 +40,10 @@ def doctor_sections(cfg: dict, cua_probe=None, agents_probe=None) -> list:
         detail = f"{check['level']}: {check['detail']}"
         if check["fix"]:
             detail += f" (Try: {check['fix']})"
-        row(check["id"], detail, check["level"] != "block")
+        row(check["id"], detail, check["level"] != "block",
+            level={"ok": "ok", "degraded": "warn"}.get(check["level"],
+                                                       "fail"),
+            detail=check["detail"], fix=check["fix"] or "")
 
     row = section("daemon")
     row("wispd", "running" if ipc.alive() else "not running")
@@ -213,27 +223,111 @@ def _cua_rows(row, cfg: dict, probe=None) -> None:
     row("turn recording", pr["detail"], pr["ok"] or pr["skipped"])
 
 
+def _doctor_args(p):
+    p.add_argument("--all", action="store_true",
+                   help="list every check, not just the ones that need "
+                        "attention")
+    p.add_argument("--section", metavar="NAME",
+                   help="list every check in one section (see --all for "
+                        "the names)")
+
+
+def _doctor_rows_block(ctx, rows, width, fix_lines=True) -> list:
+    """`  warn  name  detail` lines, the fix on its own line under a
+    problem row. One line per row: the detail is cut to fit."""
+    if not rows:
+        return []
+    namew = min(18, max(output.display_width(r["name"]) for r in rows))
+    cells = [[output.mark(r["level"], False), r["name"], r["detail"]]
+             for r in rows]
+    tones = [[r["level"] if r["level"] != "ok" else "muted",
+              None, None] for r in rows]
+    tbl = ctx.table(["", "", ""], cells, tones, header=False,
+                    width=width - 2, flex=2, glyphs=ctx.glyphs)
+    lines = tbl.splitlines()
+    indent = " " * (2 + 4 + 2 + namew + 2)
+    out = []
+    fixes = [r["fix"] for r in rows if r["fix"] and r["level"] != "ok"]
+    shared = next((f for f in fixes if fixes.count(f) >= 3), None)
+    for line, r in zip(lines, rows):
+        out.append("  " + line)
+        if (fix_lines and r["fix"] and r["level"] != "ok"
+                and r["fix"] != shared):
+            out += output.wrap("Try: " + r["fix"], width, indent, indent)
+    if fix_lines and shared:
+        out += output.wrap("For the other rows, try: " + shared, width,
+                           "  ", "    ")
+    return out
+
+
+def _doctor_text(ctx, sections, a) -> str:
+    width = ctx.width
+    allrows = [(s["name"], r) for s in sections for r in s["rows"]]
+    n = {k: sum(1 for _, r in allrows if r["level"] == k)
+         for k in ("ok", "warn", "fail")}
+    out = [output.summary("wisp doctor",
+                          [(n["fail"], "fail", "fail"),
+                           (n["warn"], "warn", "warn"),
+                           (n["ok"], "ok", "ok")],
+                          min(width, 100), ctx.color, ctx.glyphs), ""]
+    if n["fail"]:
+        one = n["fail"] == 1
+        out.append(f"{n['fail']} check{'' if one else 's'} "
+                   f"need{'s' if one else ''} attention. Fixes are "
+                   "listed below.")
+    elif n["warn"]:
+        out.append("Ready. Some optional tools are missing; wisp works "
+                   "without them.")
+    else:
+        out.append("Everything is ready.")
+    out.append("")
+    if a.section:
+        names = [s["name"] for s in sections]
+        pick = [s for s in sections if s["name"] == a.section]
+        if not pick:
+            raise CliError("E_USAGE", f"Unknown section {a.section!r}. "
+                           f"Choose {', '.join(names)}.",
+                           "wispd doctor --all")
+        sections = pick
+    if a.all or a.section:
+        for s in sections:
+            out.append(output.section(s["name"], len(s["rows"]), ctx.color))
+            out += _doctor_rows_block(ctx, s["rows"], width)
+            out.append("")
+        return "\n".join(out).rstrip()
+    probs = sorted((r for _, r in allrows if r["level"] != "ok"),
+                   key=lambda r: r["level"] != "fail")
+    if probs:
+        out.append(output.section("Needs attention", len(probs), ctx.color))
+        out += _doctor_rows_block(ctx, probs, width)
+        out.append("")
+    good = [r["name"] for _, r in allrows if r["level"] == "ok"]
+    if good:
+        out.append(output.section("Passing", len(good), ctx.color))
+        body = ", ".join(good)
+        out += [ctx.paint_muted(l) for l in
+                output.wrap(body, width, "  ", "  ")]
+        out.append("")
+    out.append("wispd doctor --all lists every check.")
+    return "\n".join(out)
+
+
 @command("doctor", "Check every dependency wisp needs",
-         ["wispd doctor", "wispd doctor --json"],
-         {"healthy": "bool", "sections": "list"})
+         ["wispd doctor", "wispd doctor --all", "wispd doctor --json"],
+         {"healthy": "bool", "sections": "list", "counts": "dict"},
+         args=_doctor_args)
 def doctor(ctx, a):
     sections = doctor_sections(ctx.cfg)
     bad = sum(1 for s in sections for r in s["rows"] if not r["ok"])
-    data = {"healthy": bad == 0, "sections": sections}
+    counts = {k: sum(1 for s in sections for r in s["rows"]
+                     if r["level"] == k) for k in ("ok", "warn", "fail")}
+    data = {"healthy": bad == 0, "sections": sections, "counts": counts}
     if not ctx.json and not ctx.flags.quiet:
-        if True:
-            for s in sections:
-                print(f"{s['name']}:")
-                rows = [["ok" if r["ok"] else "MISS", r["name"], r["value"]]
-                        for r in s["rows"]]
-                tones = [["ok" if r["ok"] else "fail", None, None]
-                         for r in s["rows"]]
-                print("\n".join("  " + ln for ln in ctx.table(
-                    ["", "", ""], rows, tones, header=False).splitlines()))
+        print(_doctor_text(ctx, sections, a))
     if bad:
         raise CliError("E_UNHEALTHY", f"{bad} check"
                        f"{'s' if bad != 1 else ''} need attention.",
-                       "Fix the MISS rows above, then run wispd doctor "
+                       "Fix the fail rows above, then run wispd doctor "
                        "again", data=data)
     return ctx.emit(data)
 
@@ -615,14 +709,9 @@ def _onboard_starter(ctx, a, cfg, progress):
 
 
 def _onboard_rows(ctx, st):
-    mark = {"done": "ok", "todo": "TODO", "na": "n/a"}
-    rows = [[mark[s["state"]], s["name"],
-             s["detail"] if s["state"] != "todo" or not s["try"]
-             else s["detail"] + ". Try: " + s["try"]]
-            for s in st["steps"]]
-    tones = [[{"done": "ok", "todo": "warn", "na": "muted"}[s["state"]],
-              None, "muted"] for s in st["steps"]]
-    return ctx.table(["", "", ""], rows, tones, header=False)
+    from . import onboard_view
+    return onboard_view.checklist(st, color=ctx.color, glyphs=ctx.glyphs,
+                                  width=ctx.width)
 
 
 @command("onboard", "Walk through first-run setup (every step skippable)",
@@ -672,7 +761,8 @@ def onboard(ctx, a):
                        data=r)
     if a.interactive or (sys.stdin.isatty() and sys.stdout.isatty()
                          and not ctx.json and not a.status):
-        res = ob.walk(cfg, probes, progress, input, print)
+        res = ob.walk(cfg, probes, progress, input, print,
+                      color=ctx.color, glyphs=ctx.glyphs, width=ctx.width)
         return ctx.emit(res, "setup finished" if res["finished"]
                         else "progress saved, run wispd onboard to resume")
     st = ob.status(cfg, probes, progress)

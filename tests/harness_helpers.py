@@ -19,19 +19,16 @@ def load(name: str) -> dict:
     return copy.deepcopy(runner.load_fixture(name + ".json"))
 
 
-def turn(transcript: str, brain: list, *, route: str = "answer",
-         fakes: dict | None = None, config: dict | None = None,
-         expect: dict | None = None, name: str = "scenario",
-         jev: dict | None = None) -> dict:
-    """Build a fixture dict: fixed ask.wav, scripted whisper/Jev/brain."""
+def turn(transcript: str, brain: list, *, fakes: dict | None = None,
+         config: dict | None = None, expect: dict | None = None,
+         name: str = "scenario") -> dict:
+    """Build a fixture dict: fixed ask.wav, scripted whisper/brain, run
+    on the default act router. No decision endpoint is scripted; the
+    harness's Jev fake is a tripwire (see tests/harness/fakes.py)."""
     fx = {
         "name": name, "audio": ASK_WAV,
         "endpoints": {
             "whisper": {"transcript": transcript},
-            "jev": {"answers": jev or {
-                "route": {"choice": route},
-                "app": {"choice": "none", "confidence": 0.99},
-                "risk": {"score": 0}}},
             "brain": {"responses": brain},
         },
         "expect": expect or {},

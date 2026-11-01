@@ -22,6 +22,15 @@ and drift is flagged (wisp.devreport). One JSON line per task goes to
 dev_runs/<run_id>.jsonl in the data dir. `--vs key=value` runs the list
 a second time on a config copy with that one override (arm `b`); both
 arms count as one run. The owner's config is never written.
+
+Gauntlet runs (wisp.gauntlet, driven by scripts/gauntlet.py) take named
+arm profiles instead of `--vs`: each profile is a TOML file of many
+section.key overrides (it may set the safety and spend keys, because it
+is a checked-in file, not a peer's message). The arms interleave per
+task, so a spend stop leaves both measured equally. A gauntlet run also
+allows typing into sandbox windows, skill create and edit and
+trajectories, keeps a persistent cumulative spend file, and does not
+count against the five-run session limit.
 """
 import copy
 import json
@@ -31,7 +40,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from . import config, devsession, ipc
+from . import config, devsession, gauntlet, ipc
 
 # A run is unattended on the owner's live desktop, so it is an allow
 # list: navigation, reading and media only. Every other tool, including
@@ -43,11 +52,15 @@ ALLOW_TOOLS = frozenset((
     "search_files", "task_status", "codegraph"))
 
 
-def deny_tools() -> list:
+def deny_tools(gauntlet_run: bool = False) -> list:
     """Every registered tool a run may not call (registry minus the
-    allow list), plus the browser lane, which runs outside the registry."""
+    allow list), plus the browser lane, which runs outside the registry.
+    A gauntlet run also allows typing and skill_manage; the sandbox
+    check (wisp.gauntlet) and policy keep those narrow."""
     from . import tools
-    return sorted((set(tools.REGISTRY) - ALLOW_TOOLS) | {"browser"})
+    allow = ALLOW_TOOLS | gauntlet.EXTRA_TOOLS if gauntlet_run \
+        else ALLOW_TOOLS
+    return sorted((set(tools.REGISTRY) - allow) | {"browser"})
 OUTCOMES = ("success", "stopped", "incomplete")   # `wrong tries`: U3
 # routes a run will drive; anything else is skipped as `stopped`
 _RUNNABLE = ("act", "answer", "launch", "tool")
@@ -98,16 +111,33 @@ def parse_vs(vs: str) -> tuple:
     return sec, key, v.strip()
 
 
-def run_config(cfg: dict, run_id: str, vs=None) -> dict:
-    """A deep copy of `cfg` for one run, with the one `--vs` override
-    applied when given. The owner's own config object is never
-    changed."""
+def run_config(cfg: dict, run_id: str, vs=None, profile=None,
+               grant=None, isolated: bool = False) -> dict:
+    """A deep copy of `cfg` for one run, with the one `--vs` override or
+    an arm `profile` ({section: {key: value}}) applied when given. A
+    `grant` dict ({windows, spend_file, cap_usd}) makes it a gauntlet
+    run. The profile goes on first and the run's own settings last, so
+    no profile can lift the shell switch or the deny list. `isolated`
+    (an isolated-session run, KTD6) turns on `dev.isolated_session` and
+    pins `[cua] delivery = background` so no evdev watch arms on the
+    owner's keyboard. The owner's own config object is never changed."""
     c = copy.deepcopy(cfg)
+    if profile:
+        gauntlet.apply_profile(c, profile)
     c.setdefault("dev", {})
     c["dev"]["run_id"] = run_id
-    c["dev"]["deny_tools"] = deny_tools()
-    c.setdefault("traj", {})["enabled"] = "false"
+    c["dev"]["deny_tools"] = deny_tools(bool(grant))
+    c.setdefault("traj", {})["enabled"] = "true" if grant else "false"
     c.setdefault("agent", {})["allow_shell"] = "false"
+    if grant:
+        c["dev"]["gauntlet"] = "true"
+        c["dev"]["sandbox_windows"] = ",".join(grant.get("windows") or ())
+        c["dev"]["spend_file"] = str(grant.get("spend_file") or "")
+        c["dev"]["spend_cap_usd"] = str(
+            grant.get("cap_usd", gauntlet.DEFAULT_CAP_USD))
+    if isolated or (grant and grant.get("isolated")):
+        c["dev"]["isolated_session"] = "true"
+        c.setdefault("cua", {})["delivery"] = "background"
     if vs:
         sec, key, val = vs
         c.setdefault(sec, {})[key] = val
@@ -119,12 +149,14 @@ def prescreen(text: str, cfg: dict) -> tuple:
     calls into the router's own pure functions."""
     from . import route as _route
     from . import stage_route
+    # a gauntlet run drives the learn route (save an app skill)
+    runnable = _RUNNABLE + (("learn",) if gauntlet.is_gauntlet(cfg) else ())
     try:
         fixed = stage_route.fixed_route(text, "act")
     except Exception:
         fixed = None
     if fixed and fixed[0] != "act":
-        return fixed[0], True
+        return fixed[0], fixed[0] not in runnable
     if fixed and fixed[1]:
         return "act", False            # an explicit "wisp agent ..." prefix
     apps = None
@@ -139,13 +171,13 @@ def prescreen(text: str, cfg: dict) -> tuple:
         pass
     if fast:
         choice = (fast[0].get("route") or {}).get("choice") or "answer"
-        return choice, choice not in _RUNNABLE
+        return choice, choice not in runnable
     try:
         h = _route.heuristic(text, apps)
     except Exception:
         return "act", False
     if h.get("route") in ("agent", "learn", "dictation"):
-        return h["route"], True
+        return h["route"], h["route"] not in runnable
     return "act", False
 
 
@@ -245,14 +277,37 @@ def store_path(run_id: str):
 
 
 def start(cfg: dict, st, ctl: dict, path, run_listen=None, judge=None,
-          vs=None) -> dict:
+          vs=None, profiles=None, grant=None) -> dict:
     """Begin a run over the task file at `path`. Refused when the
     session is off, a run is going, a turn is in flight, or the list is
     unreadable or empty. `vs` ("section.key=value") runs the list twice,
-    the second time with that one override."""
+    the second time with that one override. `profiles` (names or paths)
+    runs each task once per profile, arms interleaved per task, as a
+    gauntlet run: `grant` ({windows, spend_file, cap_usd, isolated})
+    carries what the driver registered; `isolated` runs the tasks with
+    instance-scoped input only (wisp.vpointer)."""
     global _thread
     if not devsession.is_on():
         return {"ok": False, "error": "dev_off"}
+    arms_spec = None
+    if profiles:
+        if vs is not None:
+            return {"ok": False, "error": "use --profile or --vs, not both"}
+        try:
+            arms_spec = [gauntlet.load_profile(p) for p in profiles]
+        except ValueError as e:
+            return {"ok": False, "error": str(e)}
+        labels = [a for a, _p in arms_spec]
+        if len(set(labels)) != len(labels):
+            return {"ok": False, "error": "profile names must differ"}
+        grant = dict(grant or {})
+        try:
+            grant["cap_usd"] = float(grant.get("cap_usd",
+                                               gauntlet.DEFAULT_CAP_USD))
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "cap_usd must be a number"}
+    else:
+        grant = None
     override = None
     if vs is not None:
         try:
@@ -276,7 +331,8 @@ def start(cfg: dict, st, ctl: dict, path, run_listen=None, judge=None,
                   + "-" + secrets.token_hex(2))
         _stop.clear()
         _summary.clear()
-        total = len(goals) * (2 if override else 1)
+        total = len(goals) * (len(arms_spec) if arms_spec
+                              else 2 if override else 1)
         _summary.update({"run_id": run_id, "tasks": total, "done": 0,
                          "stopped": False, "running": True,
                          "judge_capped": False,
@@ -288,7 +344,7 @@ def start(cfg: dict, st, ctl: dict, path, run_listen=None, judge=None,
             _thread = threading.Thread(
                 target=_run, name="dev-run", daemon=True,
                 args=(cfg, st, ctl, run_id, goals, run_listen, judge,
-                      override, vs))
+                      override, vs, arms_spec, grant))
             _thread.start()
         except Exception:
             # never leave the daemon stuck busy on a run that never ran
@@ -338,10 +394,16 @@ def _publish_dev(st) -> None:
 
 
 def _run(cfg, st, ctl, run_id, goals, run_listen, judge=None,
-         override=None, vs=None) -> None:
+         override=None, vs=None, profiles=None, grant=None) -> None:
     if run_listen is None:
         from . import pipeline
         run_listen = pipeline.run_listen
+    if profiles:
+        arms = [(label, run_config(cfg, run_id, profile=prof, grant=grant))
+                for label, prof in profiles]
+        _run_gauntlet(cfg, st, ctl, run_id, goals, run_listen, judge,
+                      arms, grant)
+        return
     arms = ([("a", run_config(cfg, run_id)),
              ("b", run_config(cfg, run_id, override))] if override
             else [(None, run_config(cfg, run_id))])
@@ -380,6 +442,65 @@ def _run(cfg, st, ctl, run_id, goals, run_listen, judge=None,
         _publish_dev(st)
 
 
+def _run_gauntlet(cfg, st, ctl, run_id, goals, run_listen, judge, arms,
+                  grant) -> bool:
+    """Interleaved arms: every task runs once per profile before the next
+    task starts, and the cumulative spend file decides whether the next
+    task may start at all (the cap must cover every arm's per-task stop,
+    so a cap stop leaves each arm equally measured)."""
+    out = store_path(run_id)
+    spend = gauntlet.Spend(grant.get("spend_file") or
+                           (config.DATA_DIR / "gauntlet_spend.jsonl"),
+                           grant.get("cap_usd", gauntlet.DEFAULT_CAP_USD))
+    try:
+        from . import devreport
+        apps = devreport.app_skills()
+    except Exception:
+        apps = set()
+    stops = [gauntlet.task_stop_usd(rc) for _a, rc in arms]
+    done = 0
+    try:
+        for i, goal in enumerate(goals):
+            if _stop.is_set() or not devsession.is_on():
+                _summary["stopped"] = True
+                return False
+            if not spend.can_afford(stops):
+                _summary["stopped"] = True
+                _summary["cap_stop"] = (
+                    f"spend cap: ${spend.remaining():.2f} left of "
+                    f"${spend.cap:.2f}, the next task needs "
+                    f"${sum(stops):.2f}")
+                return False
+            for arm, rcfg in arms:
+                if judge is not None and hasattr(judge, "cap"):
+                    # judge calls draw on the same cap
+                    judge.cap = min(judge.cap, judge.spent
+                                    + spend.remaining())
+                row = _one(rcfg, st, ctl, run_id, i, goal, run_listen,
+                           judge, apps)
+                row["arm"], row["profile"] = arm, arm
+                _append(out, row)
+                c = row.get("cost") or {}
+                spend.add(c.get("task_usd"), "task", run_id=run_id,
+                          arm=arm, index=i)
+                spend.add(c.get("judge_usd"), "judge", run_id=run_id,
+                          arm=arm, index=i)
+                done += 1
+                _summary["done"] = done
+                _summary["spent_usd"] = round(spend.total(), 6)
+                _summary["judge_capped"] = bool(
+                    getattr(judge, "capped", False))
+                if ctl["interrupt"].is_set():
+                    _summary["stopped"] = True
+                    return False
+        return True
+    finally:
+        # a gauntlet run does not use up the owner's five-run session
+        _summary["running"] = False
+        ctl["busy"].clear()
+        _publish_dev(st)
+
+
 def _judge(judge, goal, steps) -> dict:
     try:
         return judge.judge(goal, steps)
@@ -405,6 +526,7 @@ def _one(rcfg, st, ctl, run_id, index, goal, run_listen, judge=None,
     from . import ledger
     started = _now()
     spend0 = ledger.session_totals()["cost"]
+    prov0 = ledger.provider_totals()
     t0 = time.monotonic()
     route, skip = prescreen(goal, rcfg)
     row = {"run_id": run_id, "index": index, "goal": goal, "turn": None,
@@ -465,6 +587,13 @@ def _one(rcfg, st, ctl, run_id, index, goal, run_listen, judge=None,
         row["cost"] = {"task_usd": round(task_usd, 6),
                        "judge_usd": round(float(
                            row["judge"].get("cost_usd") or 0.0), 6)}
+        # spend by provider, from the ledger's per-provider counters
+        # (the task's brain calls; the judge rides its own provider)
+        prov1 = ledger.provider_totals()
+        by = {k: round(v - prov0.get(k, 0.0), 6) for k, v in prov1.items()
+              if v - prov0.get(k, 0.0) > 0}
+        if by:
+            row["cost"]["by_provider"] = by
     row["cost"] = row["cost"] or {"task_usd": 0.0, "judge_usd": 0.0}
     row["drift"] = _drift(goal, row, apps)
     row["timing_ms"]["wall"] = round((time.monotonic() - t0) * 1000)

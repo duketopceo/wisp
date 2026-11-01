@@ -15,7 +15,7 @@ flowchart TD
         REC["record<br/>pw-record → wav"] --> STT["transcribe<br/>stt: groq whisper / local"]
         STT --> CAP["capture<br/>trigger screenshot:<br/>grim → normalize to logical px<br/>+ 100px grid → JPEG q85"]
         CAP --> CTX["context<br/>active window · apps=<br/>defaults= (mimeapps)<br/>goal memory · session"]
-        CTX --> ROUTE["route<br/>router=act: straight to loop<br/>(jev hop optional/legacy)"]
+        CTX --> ROUTE["route<br/>router=act: fast path or straight to loop<br/>(no decision-model hop)"]
         ROUTE --> ACT["act loop — wisp/act.py<br/>conversational tool calls,<br/>max_steps/errors/seconds/usd bounds"]
         ACT --> SPK["speak<br/>TTS answer + ACTED replies<br/>[POINT] tags → beacons"]
     end

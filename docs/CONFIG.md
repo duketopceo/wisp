@@ -422,6 +422,7 @@ Resources: wispd under 250 MB RSS and 3% idle CPU; cua-driver
 | `[ground] min_confidence` | `0.5` | candidates below this are re-observed once, then refused |
 | `[ground] budget_ms` | `1200` | shared budget for the fast providers |
 | `[ground] fallback_timeout_ms` | `5000` | timeout for the vision fallback |
+| `[ground] vlm_brain` | blank | `name:model` brain used only for grounding (blank = the act brain). It runs alone: `[brain] fallback` is not consulted, so a down grounding model refuses the click rather than sending the screenshot to another model. `ollama_vision` is a built-in vision-capable Ollama entry |
 | `[ground] uitars_url` | `http://127.0.0.1:8081` | UI-TARS endpoint (also `[health] uitars`); loopback only |
 | `[ground] uitars_coords` | `px` | `px` or `rel1000`, how UI-TARS writes coordinates |
 | `[ground] a11y_frame` | `global` | `global` or `window`, the frame of accessibility element boxes |
@@ -495,8 +496,12 @@ Off by default. Local sources only (Hyprland window changes, the dayflow journal
 | `[traj] max_inject` | `3` | most prior runs injected |
 | `[dev] refine` | `true` | a labelled-bad turn or a correction ("no", "instead") retries with the failed attempt as context |
 | `[dev] panel` | `false` | when `true` the panel gains a fifth tab, Dev (v1 gate, recent turns with per-stage time, top misses); local-only. It reads `wispd dev turns --json` once when the tab opens and when you press refresh, never on a timer |
-| `[dev] judge_model` | `google/gemini-2.5-flash` | vision model that judges each task of a `wispd dev run` at its end, on the eval key (`omaseal://openrouter/orchestral`, never the default key) |
+| `[dev] judge_model` | `google/gemini-2.5-flash` | vision model that judges each task of a `wispd dev run` at its end, on the eval key (`omaseal://openrouter/orchestral`, then the `OPENROUTER_API_KEY` env var that `orch` injects; never the default key) |
 | `[dev] judge_cap_usd` | `1.00` | most a single run may spend on judging; the rest of the run is marked unjudged and the report says so (0 judges nothing; blank or invalid uses 1.00) |
+| `[dev] gauntlet` | unset | run-only: set to `true` on a gauntlet run's own config copy (never in `config.toml`); allows typing into sandbox windows, skill create and edit, and trajectories. A safety key, so `config set` and `--vs` refuse it |
+| `[dev] sandbox_windows` | unset | run-only: comma list of the Hyprland window addresses the gauntlet driver spawned; typing is allowed only while one of them is focused, re-checked before each keystroke. Safety key |
+| `[dev] spend_file` | unset | run-only: path of the gauntlet's cumulative spend file (one JSON line per task, judge or probe charge). Safety key |
+| `[dev] spend_cap_usd` | `"10"` | run-only: the cap the spend file is held to; a task starts only while the cap still covers every arm's per-task stop (`[agents] act_max_usd`). Safety key |
 | `[eval] gate_rate` | `60%` | first-time-correct fraction (0 to 1, or a percentage) `wispd eval` must reach for PASS; the v1 bar is 60%; unset prints "gate not set" and no PASS or FAIL |
 | `[eval] gate_min_turns` | `50` | labelled turns required before the gate can pass; fewer is FAIL with "needs N more labelled turns" |
 | `[ui] theme` | `dark` | `dark` or `light`; `wispd theme <name>` swaps live |

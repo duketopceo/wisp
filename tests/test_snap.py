@@ -119,9 +119,26 @@ class TestMatrix(unittest.TestCase):
                         self.assertIn(
                             f"{theme}/1x/{comp}__{fx}", ids)
                 else:
-                    for var in scene["variants"]:
+                    for var, props in scene["variants"].items():
+                        # a named viewport renders at its own scale only
+                        vp = snap.VIEWPORTS.get(props.get("_viewport", ""))
+                        scale = vp["scale"] if vp else 1
                         self.assertIn(
-                            f"{theme}/1x/{comp}__{var}", ids)
+                            f"{theme}/{scale}x/{comp}__{var}", ids)
+
+    def test_named_viewports_render_at_their_own_size_and_scale(self):
+        self.assertEqual(
+            {k: (v["width"], v["height"], v["scale"])
+             for k, v in snap.VIEWPORTS.items()},
+            {"laptop": (1728, 1080, 2), "ultrawide": (3440, 1440, 1)})
+        got = {c["id"]: c for c in snap.cases(only="ViewportProbe")}
+        self.assertEqual(set(got), {
+            "dark/2x/ViewportProbe__laptop", "light/2x/ViewportProbe__laptop",
+            "dark/1x/ViewportProbe__ultrawide",
+            "light/1x/ViewportProbe__ultrawide"})
+        lap = got["dark/2x/ViewportProbe__laptop"]
+        self.assertEqual((lap["width"], lap["height"]), (1728, 1080))
+        self.assertNotIn("_viewport", lap["props"])
 
     def test_scale_two_and_light_theme_present(self):
         ids = {c["id"] for c in snap.cases()}
