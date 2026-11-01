@@ -44,6 +44,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 PAGE = ROOT / "scripts" / "probe" / "targets.html"
+PROBE_WS = 93        # an empty workspace the page is parked on
 
 # (number, fraction of window width, fraction of window height): must
 # match BUTTONS in targets.html (a test pins this).
@@ -158,7 +159,7 @@ def run_probe(rig: Rig, monitor_names: list, *, config: str, model: str,
         mon = mons[name]
         handle = rig.open_page(mon)
         try:
-            rig.sleep(rig.settle_s)
+            rig.sleep(max(rig.settle_s, 1.5))
             rect = rig.window_rect(handle)
             want = logical_rect(mon)
             if rect is None or any(abs(a - b) > 4
@@ -298,12 +299,34 @@ def live_rig(cfg: dict) -> Rig:                     # pragma: no cover
         prof = tempfile.mkdtemp(prefix="wisp-click-probe-")
         proc = subprocess.Popen(
             [browser, f"--user-data-dir={prof}", "--no-first-run",
-             "--no-default-browser-check", "--start-fullscreen",
+             "--no-default-browser-check", "--disable-extensions",
+             "--start-fullscreen",
              f"--app={PAGE.as_uri()}"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             env={k: v for k, v in os.environ.items()
                  if "KEY" not in k and "TOKEN" not in k})
-        return {"proc": proc, "profile": prof}
+        # Workspace 1 may run the scrolling layout, where a fullscreen
+        # window can sit off-screen behind a neighbour. Park the page on
+        # an empty dwindle workspace and look at that instead.
+        h = {"proc": proc, "profile": prof, "prev": None}
+        try:
+            h["prev"] = (hypr.query("activeworkspace") or {}).get("id")
+        except Exception:
+            pass
+        for _ in range(40):
+            c = client(h)
+            if c:
+                try:
+                    hypr.eval_lua(
+                        "hl.dispatch(hl.dsp.window.move({workspace = %d, "
+                        "window = %s}))" % (PROBE_WS, hypr.lua_str(
+                            "address:" + str(c["address"]))))
+                    hypr.run_lua(hypr.focus_workspace(PROBE_WS))
+                except Exception:
+                    pass
+                break
+            time.sleep(0.25)
+        return h
 
     def client(_h):
         for c in hypr.query("clients"):
@@ -321,12 +344,19 @@ def live_rig(cfg: dict) -> Rig:                     # pragma: no cover
 
     def close(h):
         h["proc"].terminate()
+        if h.get("prev"):
+            try:
+                hypr.run_lua(hypr.focus_workspace(h["prev"]))
+            except Exception:
+                pass
         shutil.rmtree(h["profile"], ignore_errors=True)
 
     def ground(name):
         try:
             t = grounding.ground_target(name, cfg)
-        except grounding.GroundRefused:
+        except grounding.GroundRefused as e:
+            print(f"  refused: {e.code} {e.reason} {e.detail}"[:300],
+                  file=sys.stderr)
             return None
         return t.x, t.y
 
