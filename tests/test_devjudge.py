@@ -16,7 +16,7 @@ from wisp import blank, brain, config, devjudge, ledger, learn  # noqa: E402
 from wisp import stage_capture  # noqa: E402
 
 SHOT = "data:image/png;base64,VETTED"
-EVAL_KEY = "omaseal://openrouter/orchestral"
+EVAL_KEY = "omaseal://openrouter/orchestral,OPENROUTER_API_KEY"
 
 
 class Base(unittest.TestCase):

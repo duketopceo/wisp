@@ -96,6 +96,12 @@ def preempted(name: str, arg: str, cfg: dict | None) -> str | None:
     args, live secret keys, and shell needs allow_shell."""
     if name in ((cfg or {}).get("dev", {}).get("deny_tools") or ()):
         return f"REFUSED (dev run denies {name})"
+    # a gauntlet run (wisp.gauntlet) types only into sandbox windows
+    # and saves skills with create/edit only
+    from . import gauntlet
+    hit = gauntlet.preempt(name, arg, cfg)
+    if hit:
+        return hit
     tier = cua_safety.effective_tier(name, cfg)
     # every tool that enters text refuses a live secret key, `fill` too
     if (tier == "shell" or name in tools.TEXT_INPUT or name == "fill") \
@@ -104,7 +110,10 @@ def preempted(name: str, arg: str, cfg: dict | None) -> str | None:
     if tier == "shell" or name in tools.TEXT_INPUT:
         if tools.denied(arg):
             return "REFUSED (denylisted command)"
-        if tier == "shell" and \
+        # a gauntlet skill create/edit is a file write in the throwaway
+        # data folder, not a shell call, so the shell switch is not asked
+        if tier == "shell" and not (
+                name == "skill_manage" and gauntlet.is_gauntlet(cfg)) and \
                 (cfg or {}).get("agent", {}).get(
                     "allow_shell", "false") != "true":
             return "SKIPPED (shell disabled — set allow_shell=true)"
@@ -141,6 +150,9 @@ def _gate(name: str, arg: str, cfg: dict, confirm,
     hit = preempted(name, arg, cfg)
     if hit:
         return hit
+    from . import gauntlet
+    if gauntlet.pre_approved(name, arg, cfg, state):
+        return None
     tier, surface = _call_tier(name, arg, cfg, state)
     decision = _decision(tier, cfg)
     if decision == "run":

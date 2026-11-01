@@ -28,6 +28,49 @@ task. Only one setting can be changed, and safety and spend settings cannot.
 
 The session turns itself off after 5 runs. An A/B run counts as one.
 
+## Gauntlet mode
+
+`wispd dev run FILE --profile hybrid --profile openrouter` is gauntlet mode:
+each task runs once per arm profile (a TOML file of section.key overrides
+under `docs/dev-tasks/profiles/`, or a path), arms interleaved task by task,
+and the report names the arms. Profiles may set the spend and safety keys
+that `--vs` refuses, because they are checked-in files.
+
+A gauntlet run adds three allowances on its own config copy, and nothing
+else changes (the deny list, "every confirm answers no" and the shell switch
+stay):
+
+- typing and key presses, only into sandbox windows. A sandbox window is one
+  the driver spawned, named by its Hyprland window address (`--window ADDR`),
+  never by class or workspace. The focused window is read again right before
+  each keystroke; if it is not a sandbox window the task ends as `stopped`
+  and nothing is typed;
+- `skill_manage` create and edit (delete and file operations stay refused),
+  so a learn turn can save an app skill. A run that injects an `[app_skill]`
+  block writes an `app_skill` trace event (name, how it matched, characters),
+  so a second run's reuse can be seen;
+- trajectories, so a second try can build on the first.
+
+Spend is capped across invocations. Every task, judge and click-probe charge
+is appended to a spend file (`--spend-file`, `--cap`, default $10); a task
+starts only while the cap covers every arm's per-task stop
+(`[agents] act_max_usd` in the profile), so a nearly spent cap stops all arms
+at the same task. The judge falls back to the `OPENROUTER_API_KEY` env var
+(the eval key, set by `orch`) when the keyring is not unlocked. Gauntlet
+runs do not count against the five-run session limit. The report splits
+spend by provider.
+
+Do not drive this by hand. `scripts/gauntlet.py` borrows the daemon slot,
+builds the sandbox and runs the case battery; see its `--help`. Run it only
+under `orch`, in an approved session.
+
+Your own labels on gauntlet turns reach the v1 gate only through you:
+review them against the gauntlet data directory with `wispd dev review`
+(the driver prints the command), then `wispd dev import-labels DIR` copies
+the turns you labelled `correct` or `incorrect`, and those labels, into
+your own data. It skips turns already there, so running it twice copies
+nothing. The judge never writes a label.
+
 ## Safety
 
 - A run denies typing text, key presses, shell, external calls, posting and
