@@ -40,8 +40,12 @@ def bloom(im):
     return Image.merge("RGBA", (*rgb.split(), out.split()[3]))
 
 
-def loop(frames, size, path, quality):
-    imgs = [bloom(Image.open(f).convert("RGBA")) for f in frames]
+def load(path):
+    with Image.open(path) as im:
+        return bloom(im.convert("RGBA"))
+
+
+def save_loop(imgs, size, path, quality):
     if size != imgs[0].width:
         imgs = [im.resize((size, size), Image.LANCZOS) for im in imgs]
     imgs[0].save(path, save_all=True, append_images=imgs[1:], duration=round(1000 / FPS),
@@ -56,9 +60,10 @@ def main(render, export):
         frames = sorted((render / "frames" / state).glob("*.png"))
         if not frames:
             sys.exit(f"no frames for {state} in {render}")
-        loop(frames, 256, export / "loops" / f"{state}-256.webp", 70)
-        loop(frames, 64, export / "loops" / f"{state}-64.webp", 80)
-    still = bloom(Image.open(render / "still-512.png").convert("RGBA"))
+        imgs = [load(f) for f in frames]
+        save_loop(imgs, 256, export / "loops" / f"{state}-256.webp", 70)
+        save_loop(imgs, 64, export / "loops" / f"{state}-64.webp", 80)
+    still = load(render / "still-512.png")
     for size in (20, 32, 130, 512):
         im = still if size == 512 else still.resize((size, size), Image.LANCZOS)
         im.save(export / "stills" / f"wisp-flame-{size}.png", optimize=True)

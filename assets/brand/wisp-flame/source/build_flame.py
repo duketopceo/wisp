@@ -77,16 +77,16 @@ def flame_profile(n=48, belly=0.47, height=1.85, base=-0.55):
 def revolve(profile, segs=48):
     """Explicit vertices and faces (no modifier) so the shape key exports."""
     verts, faces, rings = [], [], []
-    for r, y in profile:
+    for r, z in profile:
         if r < 1e-4:
             rings.append([len(verts)])
-            verts.append((0.0, 0.0, y))
+            verts.append((0.0, 0.0, z))
             continue
         ring = []
         for s in range(segs):
             a = TAU * s / segs
             ring.append(len(verts))
-            verts.append((r * math.cos(a), r * math.sin(a), y))
+            verts.append((r * math.cos(a), r * math.sin(a), z))
         rings.append(ring)
     for lo, hi in zip(rings, rings[1:]):
         if len(lo) == 1 and len(hi) > 1:
@@ -169,7 +169,6 @@ def rim_shell_material(m):
     gives emissive glow no alpha."""
     nt = m.node_tree
     bsdf = next(n for n in nt.nodes if n.type == "BSDF_PRINCIPLED")
-    out = next(n for n in nt.nodes if n.type == "OUTPUT_MATERIAL")
     texco = nt.nodes.new("ShaderNodeTexCoord")
 
     sep = nt.nodes.new("ShaderNodeSeparateXYZ")
@@ -203,7 +202,7 @@ def rim_shell_material(m):
     dist = nt.nodes.new("ShaderNodeVectorMath")
     dist.operation = "DISTANCE"
     nt.links.new(texco.outputs["Object"], dist.inputs[0])
-    dist.inputs[1].default_value = (0.0, -0.02, -0.12)
+    dist.inputs[1].default_value = HEART_POS
     fall = nt.nodes.new("ShaderNodeMapRange")
     fall.inputs["From Min"].default_value = 0.25
     fall.inputs["From Max"].default_value = 1.0
@@ -249,6 +248,8 @@ def state_curves(state, t):
                 body=(1.0 + 0.04 * pulse, 1.0 + 0.04 * pulse))
 
 
+# A hair toward the camera so blended sorting always draws the heart over the shell.
+HEART_POS = (0.0, -0.02, -0.12)
 TAIL_BASE = [(0.0, 1.42), (0.03, 1.58), (0.07, 1.72), (0.12, 1.85)]
 
 
@@ -269,11 +270,11 @@ def push_to_track(idb, state):
     ad.action = None
 
 
-def key_states(shell, heart, tails, heart_mat, frames):
+def key_states(shell, heart, tails, heart_glow, frames):
     """Key every state on its own NLA track (see module docstring)."""
     key = shell.data.shape_keys
     bend = key.key_blocks["bend"]
-    bsdf = next(n for n in heart_mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
+    bsdf = next(n for n in heart_glow.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
     for state in STATES:
         for f in range(1, frames + 2):  # frame frames+1 == frame 1: seamless
             t = ((f - 1) % frames) / frames
@@ -295,12 +296,12 @@ def key_states(shell, heart, tails, heart_mat, frames):
                 if v["swirl"]:
                     dx = 0.14 * math.cos(TAU * (t + i * 0.25))
                     dy = 0.14 * math.sin(TAU * (t + i * 0.25))
-                ob.location = (x0 + dx, dy, 1.42 + (z0 - 1.42) * v["tail"])
+                ob.location = (x0 + dx, dy, TAIL_BASE[0][1] + (z0 - TAIL_BASE[0][1]) * v["tail"])
                 ob.keyframe_insert("location", frame=f)
         push_to_track(key, state)
         push_to_track(shell, state)
         push_to_track(heart, state)
-        push_to_track(heart_mat.node_tree, state)
+        push_to_track(heart_glow.node_tree, state)
         for ob in tails:
             push_to_track(ob, state)
 
@@ -323,8 +324,7 @@ def build(frames):
     shell = mesh_object("shell", verts, faces)
     add_bend_key(shell)
     heart = sphere_object("heart", 0.12)
-    # A hair toward the camera so blended sorting always draws it over the shell.
-    heart.location = (0.0, -0.02, -0.12)
+    heart.location = HEART_POS
     tails = []
     for i, (x, z) in enumerate(TAIL_BASE):
         ob = sphere_object(f"tail{i}", 0.06 - i * 0.011, ico=True)
@@ -369,7 +369,7 @@ def build(frames):
     scene.frame_start, scene.frame_end = 1, frames
     scene.render.fps = 24
     return dict(shell=shell, heart=heart, tails=tails,
-                shell_mat=shell_mat, heart_mat=heart_mat, heart_glow=heart_glow)
+                shell_mat=shell_mat, heart_glow=heart_glow)
 
 
 def export_glb(parts, path):
