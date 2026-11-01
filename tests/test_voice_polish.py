@@ -85,15 +85,22 @@ class DeliveryPlan(unittest.TestCase):
         self.assertEqual(d.shown("hello"), "hello")
 
     def test_voice_usable_checks_the_tts_program(self):
-        with mock.patch.object(voice_polish.shutil, "which",
-                               lambda n: "/bin/x" if n == "mytts" else None):
+        # Groq is a separate path; a host with a Groq key and a player
+        # would make every "nothing can speak" case True.
+        from wisp import speech, tts_groq
+        with mock.patch.object(tts_groq, "available", lambda cfg: False), \
+                mock.patch.object(speech.shutil, "which",
+                                  lambda n: "/bin/x" if n == "mytts"
+                                  else None):
             self.assertTrue(voice_polish.voice_usable(
                 {"voice": {"cmd": "mytts --fast {text}"}}))
             self.assertFalse(voice_polish.voice_usable(
                 {"voice": {"cmd": "nothere {text}"}}))
-        with mock.patch.object(platform, "tts_binary", lambda: None):
-            self.assertFalse(voice_polish.voice_usable({"voice": {}}))
-        with mock.patch.object(platform, "tts_binary", lambda: "espeak"):
+            with mock.patch.object(platform, "tts_binary", lambda: None):
+                self.assertFalse(voice_polish.voice_usable({"voice": {}}))
+            with mock.patch.object(platform, "tts_binary", lambda: "espeak"):
+                self.assertTrue(voice_polish.voice_usable({"voice": {}}))
+        with mock.patch.object(tts_groq, "available", lambda cfg: True):
             self.assertTrue(voice_polish.voice_usable({"voice": {}}))
 
     def test_revealed_shows_the_text_when_nothing_was_spoken(self):

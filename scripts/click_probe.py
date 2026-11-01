@@ -52,6 +52,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 PAGE = ROOT / "scripts" / "probe" / "targets.html"
+PROBE_WS = 93        # an empty workspace the page is parked on
 
 _spec = importlib.util.spec_from_file_location(
     "isolated_session_mod", ROOT / "scripts" / "isolated_session.py")
@@ -174,7 +175,7 @@ def run_probe(rig: Rig, monitor_names: list, *, config: str, model: str,
         mon = mons[name]
         handle = rig.open_page(mon)
         try:
-            rig.sleep(rig.settle_s)
+            rig.sleep(max(rig.settle_s, 1.5))
             rect = rig.window_rect(handle)
             want = logical_rect(mon)
             if rect is None or any(abs(a - b) > 4
@@ -314,6 +315,11 @@ def apply_overrides(cfg: dict, ground_brain: str, profile: dict) -> dict:
 def _model_label(cfg: dict, ground_brain: str) -> str:
     if ground_brain:
         return ground_brain
+    # grounding runs on [ground] vlm_brain (often set by --profile), and
+    # only falls back to the act brain when that is blank
+    spec = str((cfg.get("ground", {}) or {}).get("vlm_brain") or "").strip()
+    if spec:
+        return spec
     return str((cfg.get("brain", {}) or {}).get("default") or "default")
 
 
@@ -343,7 +349,7 @@ def live_rig(cfg: dict) -> Rig:                     # pragma: no cover
                if "KEY" not in k and "TOKEN" not in k}
         flags = [f"--user-data-dir={prof}", "--no-first-run",
                  "--no-default-browser-check", "--password-store=basic",
-                 "--start-fullscreen",
+                 "--disable-extensions", "--start-fullscreen",
                  f"--app={PAGE.as_uri()}"]
         if iso:
             # the process env already points at the instance (the
@@ -354,7 +360,28 @@ def live_rig(cfg: dict) -> Rig:                     # pragma: no cover
         proc = subprocess.Popen(
             argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             env=env)
-        return {"proc": proc, "profile": prof}
+        # Workspace 1 may run the scrolling layout, where a fullscreen
+        # window can sit off-screen behind a neighbour. Park the page on
+        # an empty dwindle workspace and look at that instead.
+        h = {"proc": proc, "profile": prof, "prev": None}
+        try:
+            h["prev"] = (hypr.query("activeworkspace") or {}).get("id")
+        except Exception:
+            pass
+        for _ in range(40):
+            c = client(h)
+            if c:
+                try:
+                    hypr.eval_lua(
+                        "hl.dispatch(hl.dsp.window.move({workspace = %d, "
+                        "window = %s}))" % (PROBE_WS, hypr.lua_str(
+                            "address:" + str(c["address"]))))
+                    hypr.run_lua(hypr.focus_workspace(PROBE_WS))
+                except Exception:
+                    pass
+                break
+            time.sleep(0.25)
+        return h
 
     def client(_h):
         for c in hypr.query("clients"):
@@ -372,12 +399,19 @@ def live_rig(cfg: dict) -> Rig:                     # pragma: no cover
 
     def close(h):
         h["proc"].terminate()
+        if h.get("prev"):
+            try:
+                hypr.run_lua(hypr.focus_workspace(h["prev"]))
+            except Exception:
+                pass
         shutil.rmtree(h["profile"], ignore_errors=True)
 
     def ground(name):
         try:
             t = grounding.ground_target(name, cfg)
-        except grounding.GroundRefused:
+        except grounding.GroundRefused as e:
+            print(f"  refused: {e.code} {e.reason} {e.detail}"[:300],
+                  file=sys.stderr)
             return None
         return t.x, t.y
 

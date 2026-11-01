@@ -227,6 +227,29 @@ def failure_class(a) -> str:
 
 # -- injectable system access -------------------------------------------------
 
+def _active_workspace():
+    """The owner's active workspace id, or None. The sandbox moves its
+    windows to workspaces 91/92 and Hyprland follows them, so the run
+    puts the owner back where they were."""
+    try:
+        from wisp import hypr
+        ws = hypr.query("activeworkspace")
+        v = ws.get("id") if isinstance(ws, dict) else None
+        return int(v) if v is not None else None
+    except Exception:                                   # noqa: BLE001
+        return None
+
+
+def _restore_workspace(ws) -> None:
+    if ws is None:
+        return
+    try:
+        from wisp import hypr
+        hypr.run_lua(hypr.focus_workspace(ws))
+    except Exception:                                   # noqa: BLE001
+        pass
+
+
 class Deps:
     """Everything the driver does to the system, replaceable in tests."""
 
@@ -381,6 +404,7 @@ class Gauntlet:
         started = was_active
         proc = None
         code = EXIT_OK
+        prev_ws = _active_workspace()
         try:
             if was_active and d.systemctl("stop", SERVICE) != 0:
                 self.out(f"could not stop {SERVICE}; nothing was started")
@@ -406,6 +430,7 @@ class Gauntlet:
             code = EXIT_FAIL
         finally:
             self._cleanup(proc)
+            _restore_workspace(prev_ws)
             if started and was_active:
                 d.systemctl("start", SERVICE)          # always restore
             try:

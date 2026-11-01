@@ -835,10 +835,63 @@ def _jev_locate(screenshot_b64: str, target: str, region_hint: str,
 _VLM_POINT_PROMPT = (
     "Locate the UI element described as: {target}{hint}.\n"
     "The attached screenshot is {rw}x{rh} pixels (origin 0,0 at top-left).\n"
-    "Reply with ONLY a single point tag `[POINT:x,y:{target}]` "
-    "at the exact center of the element, or `NONE` if it is not visible "
-    "or the target is ambiguous. Do not add bare coordinates or prose."
+    "Reply with ONLY one tag of the form `[POINT:<x>,<y>:{target}]`, "
+    "replacing <x> and <y> with the integer pixel coordinates of the "
+    "exact center of the element (for example `[POINT:412,230:{target}]`), "
+    "or `NONE` if it is not visible or the target is ambiguous. Do not "
+    "add prose."
 )
+
+
+# One whole-reply point tag: integer pixels or decimal fractions, optional
+# label, surrounding/inner whitespace tolerated.
+_POINT_TAG = re.compile(
+    r"\[POINT:\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*"
+    r"(?::([^\[\]]*))?\]")
+_LABEL_FILLER = frozenset((
+    "the", "a", "an", "button", "labelled", "labeled", "called", "named",
+    "with", "text", "icon", "link", "field", "tab", "element"))
+
+
+def _label_tokens(text: str) -> list:
+    words = re.findall(r"[^\W_]+", str(text).casefold())
+    return [w for w in words if w not in _LABEL_FILLER]
+
+
+def _label_names_target(label: str, target: str) -> bool:
+    """The model's label names the requested target: equal after
+    normalising (case, spacing, quotes, "the button labelled" phrasing),
+    or one is a whole-word run inside the other. "2" never matches "12"."""
+    a, b = _label_tokens(label), _label_tokens(target)
+    if not a or not b:
+        return False
+    ja, jb = f" {' '.join(a)} ", f" {' '.join(b)} "
+    return ja in jb or jb in ja
+
+
+_VLM_FRACTION_PROMPT = (
+    "Locate the UI element described as: {target}{hint}.\n"
+    "The attached screenshot is {rw}x{rh} pixels (origin 0,0 at top-left).\n"
+    "Reply with ONLY one tag of the form `[POINT:<x>,<y>:{target}]`, "
+    "replacing <x> and <y> with the position of the exact center of the "
+    "element as decimal fractions of the image width and height (each "
+    "between 0.0 and 1.0, origin top-left), or `NONE` if it is not "
+    "visible or the target is ambiguous. Do not add prose."
+)
+
+
+def _wants_fractions(vcfg: dict) -> bool:
+    """Hosted models point far better in fractions of the image (replay:
+    llama-4-maverick 9/9 within 60 px, but guesses when told pixels);
+    local pixel-trained VLMs (qwen2.5vl, lfm3-vl, ui-tars) want pixels."""
+    from urllib.parse import urlparse
+    from . import brain
+    try:
+        url = str(brain.provider(vcfg).get("base_url") or "")
+    except Exception:
+        return False
+    host = (urlparse(url).hostname or "").lower()
+    return bool(host) and host not in ("localhost", "127.0.0.1", "::1")
 
 
 def _vlm_locate(shot: Shot, target: str, region_hint: str = "",
@@ -855,7 +908,9 @@ def _vlm_locate(shot: Shot, target: str, region_hint: str = "",
     box = shot.letterboxed()
     b64, rw, rh = box.b64, box.width, box.height
     hint_str = f" (region hint: {region_hint})" if region_hint else ""
-    prompt = _VLM_POINT_PROMPT.format(
+    vcfg = vlm_cfg(cfg)
+    prompt = (_VLM_FRACTION_PROMPT if _wants_fractions(vcfg)
+              else _VLM_POINT_PROMPT).format(
         target=target, hint=hint_str, rw=rw, rh=rh)
     if box.padded:
         prompt += (" Black bars at the edges are padding, not part of "
@@ -872,29 +927,36 @@ def _vlm_locate(shot: Shot, target: str, region_hint: str = "",
     if remaining <= 0:
         return None
     try:
-        res = brain.chat(messages, vlm_cfg(cfg), timeout=remaining)
+        res = brain.chat(messages, vcfg, timeout=remaining)
         text = str((res or {}).get("content") or "").strip()
     except Exception as e:
         raise ProviderDown(str(e)) from None
     if not text or text.upper() == "NONE":
         return None
-    _, marks = _points.extract(text)
     # Bounds alone are not target support. Bare coordinates, conflicting
     # marks/labels and hedged prose remain untrusted predictions; only a
     # single explicit mark naming the requested target gets the supported
     # response score. This is not calibrated correctness or element proof:
     # the executor still independently requires observed element evidence.
-    supported = (len(marks) == 1
-                 and re.fullmatch(r"\[POINT:[^\[\]]+\]", text) is not None
-                 and " ".join(str(marks[0].get("label", "")).casefold().split())
-                 == " ".join(target.casefold().split()))
-    px_py = None
-    if marks:
-        px_py = (float(marks[0]["x"]), float(marks[0]["y"]))
+    px_py, supported = None, False
+    m = _POINT_TAG.fullmatch(text)
+    if m:
+        xs, ys = m.group(1), m.group(2)
+        px_py = (float(xs), float(ys))
+        if ("." in xs or "." in ys) and 0 <= px_py[0] <= 1 \
+                and 0 <= px_py[1] <= 1:
+            # a decimal pair in 0..1 is a fraction of the image (llama-4
+            # answers this way unprompted); integers are always pixels
+            px_py = (px_py[0] * rw, px_py[1] * rh)
+        supported = _label_names_target(m.group(3) or "", target)
     else:
-        xy = parse_uitars_text(text, (rw, rh), "px")
-        if xy is not None:
-            px_py = (float(xy[0]), float(xy[1]))
+        _, marks = _points.extract(text)
+        if marks:
+            px_py = (float(marks[0]["x"]), float(marks[0]["y"]))
+        else:
+            xy = parse_uitars_text(text, (rw, rh), "px")
+            if xy is not None:
+                px_py = (float(xy[0]), float(xy[1]))
     if px_py is None:
         return None
     if px_py[0] < 0 or px_py[1] < 0 or px_py[0] > rw or px_py[1] > rh:
