@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wisp flame preview</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Local preview only. Serve the repository root (for example
+     `python3 -m http.server -d <repo>`) and open
+     /assets/brand/wisp-flame/preview/ in a browser with WebGL. -->
+<script type="importmap">{ "imports": { "three": "../../../../site-3d/vendor/three.module.js" } }</script>
+<style>
+  :root { --bg: #0b0c11; --ink: #d8e6f0; --dim: #7c8a99; --guide: #7dcfff; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, sans-serif; }
+  #stage { position: fixed; inset: 0; }
+  nav { position: fixed; left: 16px; top: 16px; display: flex; gap: 8px; align-items: center; }
+  button { background: #141826; color: var(--ink); border: 1px solid #263048; border-radius: 8px; padding: 6px 12px; font: inherit; cursor: pointer; }
+  button[aria-pressed="true"] { border-color: var(--guide); color: var(--guide); }
+  #status { position: fixed; left: 16px; bottom: 14px; color: var(--dim); }
+  #fallback { display: none; position: fixed; inset: 0; place-items: center; text-align: center; }
+  #fallback img { width: 256px; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<nav aria-label="State"></nav>
+<p id="status">loading…</p>
+<div id="fallback"><div><img src="../export/stills/wisp-flame-512.png" alt="The Wisp flame"><p>WebGL is off in this browser; this is the still.</p></div></div>
+<script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "./vendor/loaders/GLTFLoader.js";
+
+const status = document.getElementById("status");
+const probe = document.createElement("canvas");
+if (!(probe.getContext("webgl2") || probe.getContext("webgl"))) {
+  document.getElementById("fallback").style.display = "grid";
+  status.textContent = "no WebGL";
+  console.log("wisp-flame: no-webgl");
+  throw new Error("no WebGL");
+}
+
+const stage = document.getElementById("stage");
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+stage.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 50);
+camera.position.set(0, 0.45, 6.2);
+camera.lookAt(0, 0.45, 0);
+
+function resize() {
+  renderer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+}
+addEventListener("resize", resize);
+resize();
+
+const clock = new THREE.Clock();
+let mixer = null;
+const actions = {};
+
+new GLTFLoader().load("../export/wisp-flame.glb", (gltf) => {
+  scene.add(gltf.scene);
+  mixer = new THREE.AnimationMixer(gltf.scene);
+  const nav = document.querySelector("nav");
+  for (const clip of gltf.animations) {
+    actions[clip.name] = mixer.clipAction(clip);
+    const b = document.createElement("button");
+    b.textContent = clip.name;
+    b.setAttribute("aria-pressed", "false");
+    b.onclick = () => play(clip.name);
+    nav.appendChild(b);
+  }
+  play("idle");
+  const names = gltf.animations.map((c) => c.name).join(",");
+  status.textContent = `loaded: ${names}`;
+  console.log(`wisp-flame: loaded ${names}`);
+}, undefined, (err) => {
+  status.textContent = `load failed: ${err.message || err}`;
+  console.log(`wisp-flame: error ${err.message || err}`);
+});
+
+let current = null;
+function play(name) {
+  const next = actions[name];
+  if (!next || next === current) return;
+  next.reset().play();
+  if (current) current.crossFadeTo(next, 0.35, false);
+  current = next;
+  for (const b of document.querySelectorAll("nav button")) b.setAttribute("aria-pressed", String(b.textContent === name));
+}
+
+renderer.setAnimationLoop(() => {
+  if (mixer) mixer.update(clock.getDelta());
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
