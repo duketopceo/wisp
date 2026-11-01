@@ -675,7 +675,7 @@ class TestRestrictedShell(unittest.TestCase):
         for bad in ("wc --files0=list0", "wc --files0-from=list0",
                     "file -f/etc/hostname", "file a.txt", "du -a",
                     "du --exclude-from=/etc/hostname", "ls --color=always",
-                    "tail -f a.txt", "cat --number a.txt", "head -n1 a.txt "
+                    "tail -f a.txt", "cat --number a.txt", "cat ''", "head -n1 a.txt "
                     "--files0=x", "ls -o"):
             self.assertEqual(self.rsh(bad).returncode, 126, bad)
         for good in ("ls -la", "wc -l a.txt", "head -n 1 a.txt",

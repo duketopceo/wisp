@@ -67,6 +67,8 @@ def check(line: str, cwd: str, base: str):
         return None, f"{cmd} is not allowed"
     if "/" in cmd:
         return None, "run commands by bare name"
+    if any(not a for a in args):
+        return None, "empty arguments are not allowed"
     for a in args:
         if cmd in OPT_LETTERS and a.startswith("-") and a != "-" \
                 and cmd != "date":

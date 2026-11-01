@@ -500,7 +500,7 @@ Off by default. Local sources only (Hyprland window changes, the dayflow journal
 | `[dev] gauntlet` | unset | run-only: set to `true` on a gauntlet run's own config copy (never in `config.toml`); allows typing into sandbox windows, skill create and edit, and trajectories. A safety key, so `config set` and `--vs` refuse it |
 | `[dev] sandbox_windows` | unset | run-only: comma list of the Hyprland window addresses the gauntlet driver spawned; typing is allowed only while one of them is focused, re-checked before each keystroke. Safety key |
 | `[dev] spend_file` | unset | run-only: path of the gauntlet's cumulative spend file (one JSON line per task, judge or probe charge). Safety key |
-| `[dev] spend_cap_usd` | `10` | run-only: the cap the spend file is held to; a task starts only while the cap still covers every arm's per-task stop (`[agents] act_max_usd`). Safety key |
+| `[dev] spend_cap_usd` | `"10"` | run-only: the cap the spend file is held to; a task starts only while the cap still covers every arm's per-task stop (`[agents] act_max_usd`). Safety key |
 | `[eval] gate_rate` | `60%` | first-time-correct fraction (0 to 1, or a percentage) `wispd eval` must reach for PASS; the v1 bar is 60%; unset prints "gate not set" and no PASS or FAIL |
 | `[eval] gate_min_turns` | `50` | labelled turns required before the gate can pass; fewer is FAIL with "needs N more labelled turns" |
 | `[ui] theme` | `dark` | `dark` or `light`; `wispd theme <name>` swaps live |
