@@ -3,9 +3,11 @@
 The glTF is checked by parsing its binary header and JSON chunk directly, so
 no 3D library is needed; loops and stills are read with Pillow.
 """
+import importlib.util
 import json
 import pathlib
 import struct
+import tempfile
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -69,7 +71,7 @@ class LoopsAndStillsTest(unittest.TestCase):
                 with Image.open(path) as im:
                     self.assertEqual(im.size, (size, size), path.name)
                     self.assertTrue(getattr(im, "is_animated", False), path.name)
-                    self.assertGreater(im.n_frames, 1, path.name)
+                    self.assertEqual(im.n_frames, 48, path.name)
                     self.assertEqual(im.convert("RGBA").getextrema()[3][0], 0, f"{path.name} has no transparency")
 
     def test_stills_exist_at_the_small_and_hero_sizes_with_alpha(self):
@@ -78,6 +80,72 @@ class LoopsAndStillsTest(unittest.TestCase):
             with Image.open(path) as im:
                 self.assertEqual(im.size, (size, size))
                 self.assertEqual(im.mode, "RGBA")
+
+
+def load_assembler():
+    path = ROOT / "scripts" / "brand" / "assemble_wisp_flame.py"
+    spec = importlib.util.spec_from_file_location("assemble_wisp_flame", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+@unittest.skipIf(Image is None, "Pillow not installed")
+class AssembleTest(unittest.TestCase):
+    """Runs the assembler on a tiny synthetic render (no Blender needed)."""
+
+    def setUp(self):
+        self.asm = load_assembler()
+        self.tmp = pathlib.Path(tempfile.mkdtemp())
+        self.render = self.tmp / "render"
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp)
+
+    def frame(self, size, offset=0):
+        im = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        c = size // 2 + offset
+        im.paste((230, 245, 255, 255), (c - size // 16, c - size // 16, c + size // 16, c + size // 16))
+        return im
+
+    def fake_render(self, states=STATES):
+        for state in states:
+            d = self.render / "frames" / state
+            d.mkdir(parents=True)
+            for i in range(3):
+                self.frame(256, i).save(d / f"{i:04d}.png")
+        self.frame(512).save(self.render / "still-512.png")
+
+    def test_writes_loops_and_stills_at_every_size(self):
+        self.fake_render()
+        out = self.tmp / "export"
+        self.asm.main(self.render, out)
+        for state in STATES:
+            for size in (64, 256):
+                with Image.open(out / "loops" / f"{state}-{size}.webp") as im:
+                    self.assertEqual(im.size, (size, size))
+                    self.assertEqual(im.n_frames, 3)
+                    self.assertEqual(im.convert("RGBA").getpixel((0, 0))[3], 0, "corner must stay transparent")
+        for size in (20, 32, 130, 512):
+            with Image.open(out / "stills" / f"wisp-flame-{size}.png") as im:
+                self.assertEqual(im.size, (size, size))
+
+    def test_bloom_glows_around_the_bright_heart_and_keeps_the_heart(self):
+        src = self.frame(256)
+        out = self.asm.bloom(src)
+        near = (256 // 2 + 256 // 16 + 6, 256 // 2)  # just outside the bright square
+        self.assertEqual(src.getpixel(near)[3], 0)
+        r, g, b, a = out.getpixel(near)
+        self.assertGreater(a, 0, "bloom adds alpha around the heart")
+        self.assertGreater(b, r, "the glow is tinted cyan")
+        self.assertEqual(out.getpixel((128, 128))[3], 255)
+        self.assertEqual(out.getpixel((0, 0))[3], 0)
+
+    def test_missing_state_frames_exit(self):
+        self.fake_render(states=STATES[:-1])
+        with self.assertRaises(SystemExit):
+            self.asm.main(self.render, self.tmp / "export")
 
 
 class BudgetTest(unittest.TestCase):
