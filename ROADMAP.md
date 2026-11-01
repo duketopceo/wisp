@@ -76,7 +76,7 @@ Owner's delivery order: installable app first, owner-labelled runs second, measu
 5. **Model learning later:** consider actual fine-tuning or reinforcement learning only after clean outcome labels, safety review and a held-out evaluation exist. Do not rebuild the removed training stack merely to ship this candidate.
 6. **Post-v1 companions:** interactive scratchpad mini-explainers, richer on-screen 3D generation/inspection, and lightweight macOS/Windows menu-bar or tray companions. Experimental adapters do not constitute supported full desktop ports.
 
-`wisp.observer` remains the intended primary domain, not a verified deployment.
+`wisp.observer` remains the intended primary domain, not a verified deployment. Stable `v1.0.0` is not yet shipped: only the `v1.0.0-rc.2` prerelease is published, and the gates below decide the final tag.
 Publish the homepage and bootstrap only after authenticated DNS access, HTTPS,
 artifact checks and an actual install-command receipt. Release checksums are
 not a signature or an independent signing trust root; no signed-bootstrap
