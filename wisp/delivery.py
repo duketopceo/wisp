@@ -74,6 +74,10 @@ def backend_delivery(backend: str | None, op: str) -> str:
     table, not the promise. `op` is "click" | "move"."""
     if backend in (None, "", "guide"):
         return "guide"
+    if backend == "vpointer":
+        # the isolated instance's own cursor (wisp.vpointer): the
+        # owner's real pointer is on another compositor entirely
+        return "background"
     if backend == "cua" and op == "click":
         # zwlr_virtual_pointer: the click lands at the agent cursor —
         # the user's real pointer never moves (left button only).
