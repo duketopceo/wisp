@@ -499,7 +499,8 @@ def _offer_keys(cfg: dict, probes: Probes, ask, out):
         has_store = any(c.strip().startswith(("keyring://", "omaseal://"))
                         for c in env.split(","))
         if not has_store:
-            out(f"  Storage for {label}: [f] private plaintext .env, "
+            out(f"  Storage for {label}: [f] plaintext "
+                f"{config.ENV_FILE} (0600, yours only), "
                 "[e] set environment yourself, [s] skip.")
             if shared_recall:
                 out("  Memory uses this same source; a secret-store choice "
