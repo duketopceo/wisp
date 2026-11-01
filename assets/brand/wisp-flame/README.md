@@ -39,8 +39,8 @@ with Blender (default `luke-pro-max1`, Homebrew cask) over SSH:
     scripts/brand/render_wisp_flame.sh [--host HOST] [--frames N]
 
 That copies `build_flame.py` to the host, runs Blender headless, copies the
-outputs back, and `scripts/brand/assemble_wisp_flame.py` writes the WebP loops
-and PNG stills. Edit the script, not the `.blend`: a hand edit to the `.blend`
+outputs back, and `scripts/brand/assemble_wisp_flame.py` adds the soft glow around the heart
+and writes the WebP loops and PNG stills. Edit the script, not the `.blend`: a hand edit to the `.blend`
 is overwritten on the next rebuild. If you do want to edit in Blender, make
 the `.blend` the source of truth and stop using the script.
 

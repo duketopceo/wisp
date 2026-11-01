@@ -160,40 +160,76 @@ def principled(name, base, emission, strength, alpha, blended):
 
 
 def rim_shell_material(m):
-    """Render-only: Fresnel rim in cyan over the deep-blue mid, edges more opaque."""
+    """Render-only look: the heart's light blends across the whole flame.
+
+    A vertical blend from deep blue at the base to cyan at the tip, lifted to
+    cyan at the Fresnel rim and brightest (and least see-through) nearest the
+    heart. The soft glow around the heart is added in post by
+    scripts/brand/assemble_wisp_flame.py, because a film-transparent render
+    gives emissive glow no alpha."""
     nt = m.node_tree
     bsdf = next(n for n in nt.nodes if n.type == "BSDF_PRINCIPLED")
+    out = next(n for n in nt.nodes if n.type == "OUTPUT_MATERIAL")
+    texco = nt.nodes.new("ShaderNodeTexCoord")
+
+    sep = nt.nodes.new("ShaderNodeSeparateXYZ")
+    nt.links.new(texco.outputs["Object"], sep.inputs["Vector"])
+    zmap = nt.nodes.new("ShaderNodeMapRange")
+    zmap.inputs["From Min"].default_value = -0.55
+    zmap.inputs["From Max"].default_value = 1.3
+    nt.links.new(sep.outputs["Z"], zmap.inputs["Value"])
+    vert = nt.nodes.new("ShaderNodeMix")
+    vert.data_type = "RGBA"
+    vert.inputs[6].default_value = tuple(c * 0.7 for c in MID_L[:3]) + (1.0,)
+    vert.inputs[7].default_value = GUIDE_L
+    nt.links.new(zmap.outputs["Result"], vert.inputs[0])
+
     lw = nt.nodes.new("ShaderNodeLayerWeight")
     lw.inputs["Blend"].default_value = 0.35
-    mix = nt.nodes.new("ShaderNodeMix")
-    mix.data_type = "RGBA"
-    mix.inputs[6].default_value = tuple(c * 0.8 for c in MID_L[:3]) + (1.0,)
-    mix.inputs[7].default_value = GUIDE_L
-    nt.links.new(lw.outputs["Facing"], mix.inputs[0])
-    nt.links.new(mix.outputs[2], bsdf.inputs["Emission Color"])
+    rim = nt.nodes.new("ShaderNodeMix")
+    rim.data_type = "RGBA"
+    nt.links.new(lw.outputs["Facing"], rim.inputs[0])
+    nt.links.new(vert.outputs[2], rim.inputs[6])
+    rim.inputs[7].default_value = GUIDE_L
     amap = nt.nodes.new("ShaderNodeMapRange")
-    amap.inputs["To Min"].default_value = 0.30
-    amap.inputs["To Max"].default_value = 1.0
+    amap.inputs["To Min"].default_value = 0.12
+    amap.inputs["To Max"].default_value = 0.85
     nt.links.new(lw.outputs["Facing"], amap.inputs["Value"])
-    nt.links.new(amap.outputs["Result"], bsdf.inputs["Alpha"])
-    bsdf.inputs["Emission Strength"].default_value = 1.6
+    bsdf.inputs["Emission Strength"].default_value = 1.4
     bsdf.inputs["Base Color"].default_value = (0, 0, 0, 1)
 
-
-def halo_material():
-    """Render-only soft glow: an emissive volume, so it has no transparency
-    sorting against the shell and stays smooth (thicker means brighter)."""
-    m = bpy.data.materials.new("halo")
-    m.use_nodes = True
-    nt = m.node_tree
-    for n in list(nt.nodes):
-        nt.nodes.remove(n)
-    out = nt.nodes.new("ShaderNodeOutputMaterial")
-    em = nt.nodes.new("ShaderNodeEmission")
-    em.inputs["Color"].default_value = GUIDE_L
-    em.inputs["Strength"].default_value = 1.4
-    nt.links.new(em.outputs["Emission"], out.inputs["Volume"])
-    return m
+    # The heart's light across the surface: brightest nearest the heart,
+    # added on top of the vertical blend and the rim.
+    dist = nt.nodes.new("ShaderNodeVectorMath")
+    dist.operation = "DISTANCE"
+    nt.links.new(texco.outputs["Object"], dist.inputs[0])
+    dist.inputs[1].default_value = (0.0, -0.02, -0.12)
+    fall = nt.nodes.new("ShaderNodeMapRange")
+    fall.inputs["From Min"].default_value = 0.25
+    fall.inputs["From Max"].default_value = 1.0
+    fall.inputs["To Min"].default_value = 1.0
+    fall.inputs["To Max"].default_value = 0.0
+    nt.links.new(dist.outputs["Value"], fall.inputs["Value"])
+    curve = nt.nodes.new("ShaderNodeMath")
+    curve.operation = "POWER"
+    curve.inputs[1].default_value = 1.6
+    nt.links.new(fall.outputs["Result"], curve.inputs[0])
+    glow = nt.nodes.new("ShaderNodeMix")
+    glow.data_type = "RGBA"
+    glow.blend_type = "ADD"
+    nt.links.new(curve.outputs[0], glow.inputs[0])
+    nt.links.new(rim.outputs[2], glow.inputs[6])
+    glow.inputs[7].default_value = tuple(c * 0.9 for c in GUIDE_L[:3]) + (1.0,)
+    nt.links.new(glow.outputs[2], bsdf.inputs["Emission Color"])
+    alpha_up = nt.nodes.new("ShaderNodeMath")
+    alpha_up.operation = "MAXIMUM"
+    nt.links.new(amap.outputs["Result"], alpha_up.inputs[0])
+    lift = nt.nodes.new("ShaderNodeMath")
+    lift.operation = "MULTIPLY"
+    lift.inputs[1].default_value = 0.55
+    nt.links.new(curve.outputs[0], lift.inputs[0])
+    nt.links.new(lift.outputs[0], alpha_up.inputs[1])
+    nt.links.new(alpha_up.outputs[0], bsdf.inputs["Alpha"])
 
 
 # --- animation --------------------------------------------------------------
@@ -202,14 +238,14 @@ def state_curves(state, t):
     """Per-state values at loop phase t in [0, 1). Every term is periodic in t."""
     s1, s2, s3 = math.sin(TAU * t), math.sin(2 * TAU * t), math.sin(3 * TAU * t)
     if state == "idle":
-        return dict(bend=0.55 * s1, heart=1.0 + 0.07 * s1, glow=3.5 + 0.6 * s1, tail=1.0, swirl=0.0, body=(1.0, 1.0))
+        return dict(bend=0.55 * s1, heart=1.0 + 0.07 * s1, glow=1.8 + 0.4 * s1, tail=1.0, swirl=0.0, body=(1.0, 1.0))
     if state == "listening":
-        return dict(bend=0.1 * s1, heart=1.3 + 0.04 * s2, glow=6.5 + 0.4 * s2, tail=0.7, swirl=0.0, body=(0.95, 1.08))
+        return dict(bend=0.1 * s1, heart=1.3 + 0.04 * s2, glow=3.4 + 0.3 * s2, tail=0.7, swirl=0.0, body=(0.95, 1.08))
     if state == "thinking":
-        return dict(bend=0.35 * s2, heart=1.0 + 0.2 * s3, glow=4.0 + 2.2 * s3, tail=0.85, swirl=1.0, body=(1.0, 1.0))
+        return dict(bend=0.35 * s2, heart=1.0 + 0.2 * s3, glow=2.1 + 1.2 * s3, tail=0.85, swirl=1.0, body=(1.0, 1.0))
     # speaking: syllable-like pulses
     pulse = abs(math.sin(2 * TAU * t)) * 0.7 + abs(math.sin(3 * TAU * t + 0.6)) * 0.3
-    return dict(bend=0.28 * s1, heart=1.05 + 0.32 * pulse, glow=4.0 + 4.0 * pulse, tail=1.0, swirl=0.0,
+    return dict(bend=0.28 * s1, heart=1.05 + 0.32 * pulse, glow=2.1 + 2.2 * pulse, tail=1.0, swirl=0.0,
                 body=(1.0 + 0.04 * pulse, 1.0 + 0.04 * pulse))
 
 
@@ -294,11 +330,6 @@ def build(frames):
         ob = sphere_object(f"tail{i}", 0.06 - i * 0.011, ico=True)
         ob.location = (x, 0.0, z)
         tails.append(ob)
-    # Render-only soft glow around the heart (not exported).
-    halo = sphere_object("halo", 0.36)
-    halo.location = (0.0, 0.0, -0.1)
-    halo.parent = heart
-    halo.location = (0.0, -0.01, 0.0)
 
     shell_mat = principled("shell", MID_L, GUIDE_L, 0.8, 0.38, True)
     heart_mat = principled("heart", HOT_L, HOT_L, 4.0, 1.0, False)
@@ -306,12 +337,16 @@ def build(frames):
     # static emission (the glTF exporter drops animated emission entirely).
     heart_glow = heart_mat.copy()
     heart_glow.name = "heart.render"
+    # Pale cyan, not clipped white, so the heart melts into its glow.
+    soft = tuple(0.75 * h + 0.25 * g for h, g in zip(HOT_L[:3], GUIDE_L[:3])) + (1.0,)
+    hb = next(n for n in heart_glow.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
+    hb.inputs["Emission Color"].default_value = soft
+    hb.inputs["Base Color"].default_value = soft
     tail_mat = principled("tail", GUIDE_L, GUIDE_L, 1.5, 0.85, True)
     shell.data.materials.append(shell_mat)
     heart.data.materials.append(heart_mat)
     for ob in tails:
         ob.data.materials.append(tail_mat)
-    halo.data.materials.append(halo_material())
 
     key_states(shell, heart, tails, heart_glow, frames)
 
@@ -333,7 +368,7 @@ def build(frames):
         bg.inputs["Strength"].default_value = 1.0
     scene.frame_start, scene.frame_end = 1, frames
     scene.render.fps = 24
-    return dict(shell=shell, heart=heart, tails=tails, halo=halo,
+    return dict(shell=shell, heart=heart, tails=tails,
                 shell_mat=shell_mat, heart_mat=heart_mat, heart_glow=heart_glow)
 
 

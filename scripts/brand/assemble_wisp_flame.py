@@ -10,14 +10,38 @@ from build_flame.py. EXPORT_DIR receives loops/<state>-{64,256}.webp
 import pathlib
 import sys
 
-from PIL import Image
+from PIL import Image, ImageChops, ImageFilter
+
+GUIDE = (0x7D, 0xCF, 0xFF)
 
 STATES = ("idle", "listening", "thinking", "speaking")
 FPS = 24
 
 
+def bloom(im):
+    """Soft cyan glow around the bright heart, added in post.
+
+    Blender's film-transparent render gives emissive glow no alpha, so the
+    glow is built here: blur the bright parts, tint them guide cyan, and add
+    them over the frame with matching alpha."""
+    r, g, b, a = im.split()
+    lum = Image.merge("RGB", (r, g, b)).convert("L")
+    lum = ImageChops.multiply(lum, a)
+    bright = lum.point(lambda v: max(0, v - 120) * 2)
+    glow = bright.filter(ImageFilter.GaussianBlur(im.width * 0.05))
+    glow = ImageChops.add(glow, bright.filter(ImageFilter.GaussianBlur(im.width * 0.015)))
+    glow = glow.point(lambda v: min(255, int(v * 1.4)))
+    tint = Image.merge("RGB", [glow.point(lambda v, c=c: v * c // 255) for c in GUIDE])
+    base = Image.new("RGBA", im.size, (0, 0, 0, 0))
+    base.paste(Image.merge("RGBA", (*tint.split(), glow)))
+    out = Image.alpha_composite(base, im)
+    rgb = ImageChops.add(Image.merge("RGB", out.split()[:3]),
+                         ImageChops.multiply(tint, Image.merge("RGB", [ImageChops.invert(a)] * 3)))
+    return Image.merge("RGBA", (*rgb.split(), out.split()[3]))
+
+
 def loop(frames, size, path, quality):
-    imgs = [Image.open(f).convert("RGBA") for f in frames]
+    imgs = [bloom(Image.open(f).convert("RGBA")) for f in frames]
     if size != imgs[0].width:
         imgs = [im.resize((size, size), Image.LANCZOS) for im in imgs]
     imgs[0].save(path, save_all=True, append_images=imgs[1:], duration=round(1000 / FPS),
@@ -34,7 +58,7 @@ def main(render, export):
             sys.exit(f"no frames for {state} in {render}")
         loop(frames, 256, export / "loops" / f"{state}-256.webp", 70)
         loop(frames, 64, export / "loops" / f"{state}-64.webp", 80)
-    still = Image.open(render / "still-512.png").convert("RGBA")
+    still = bloom(Image.open(render / "still-512.png").convert("RGBA"))
     for size in (20, 32, 130, 512):
         im = still if size == 512 else still.resize((size, size), Image.LANCZOS)
         im.save(export / "stills" / f"wisp-flame-{size}.png", optimize=True)
