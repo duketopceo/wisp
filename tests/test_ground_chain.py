@@ -845,7 +845,7 @@ class VlmBrainOverride(unittest.TestCase):
             "ground.vlm_brain", "ollama:qwen2.5vl:3b"), "")
         self.assertEqual(settings_schema.problem("ground.vlm_brain", "x"),
                          "format")
-        self.assertEqual(dflt["brain.ollama_vision"]["vision"], "true")
+        self.assertEqual(dflt["brain"]["ollama_vision"]["vision"], "true")
 
 
 if __name__ == "__main__":
