@@ -22,8 +22,9 @@ def bloom(im):
     """Soft cyan glow around the bright heart, added in post.
 
     Blender's film-transparent render gives emissive glow no alpha, so the
-    glow is built here: blur the bright parts, tint them guide cyan, and add
-    them over the frame with matching alpha."""
+    glow is built here: blur the bright parts and use that as the alpha of a
+    solid guide-cyan layer under the frame (straight alpha, so the colour is
+    not scaled twice)."""
     r, g, b, a = im.split()
     lum = Image.merge("RGB", (r, g, b)).convert("L")
     lum = ImageChops.multiply(lum, a)
@@ -31,13 +32,9 @@ def bloom(im):
     glow = bright.filter(ImageFilter.GaussianBlur(im.width * 0.05))
     glow = ImageChops.add(glow, bright.filter(ImageFilter.GaussianBlur(im.width * 0.015)))
     glow = glow.point(lambda v: min(255, int(v * 1.4)))
-    tint = Image.merge("RGB", [glow.point(lambda v, c=c: v * c // 255) for c in GUIDE])
-    base = Image.new("RGBA", im.size, (0, 0, 0, 0))
-    base.paste(Image.merge("RGBA", (*tint.split(), glow)))
-    out = Image.alpha_composite(base, im)
-    rgb = ImageChops.add(Image.merge("RGB", out.split()[:3]),
-                         ImageChops.multiply(tint, Image.merge("RGB", [ImageChops.invert(a)] * 3)))
-    return Image.merge("RGBA", (*rgb.split(), out.split()[3]))
+    base = Image.new("RGBA", im.size, GUIDE + (0,))
+    base.putalpha(glow)
+    return Image.alpha_composite(base, im)
 
 
 def load(path):

@@ -24,22 +24,37 @@
 <div id="stage"></div>
 <nav aria-label="State"></nav>
 <p id="status">loading…</p>
-<div id="fallback"><div><img src="../export/stills/wisp-flame-512.png" alt="The Wisp flame"><p>WebGL is off in this browser; this is the still.</p></div></div>
+<div id="fallback"><div><img src="../export/stills/wisp-flame-512.png" alt="The Wisp flame"><p id="fallback-why">WebGL 2 is off in this browser; this is the still.</p></div></div>
+<script>
+// Classic script, so the still shows even when the module below cannot load
+// (no import-map support, a missing vendored file) or three.js cannot start.
+function showStill(why) {
+  document.getElementById("fallback").style.display = "grid";
+  document.getElementById("fallback-why").textContent = why + "; this is the still.";
+  document.getElementById("status").textContent = why;
+  console.log("wisp-flame: fallback " + why);
+}
+// three r170 needs WebGL 2.
+window.wispNoGL = !document.createElement("canvas").getContext("webgl2");
+if (window.wispNoGL) showStill("WebGL 2 is off in this browser");
+else setTimeout(() => { if (!window.wispStarted) showStill("The 3D preview could not start"); }, 4000);
+</script>
 <script type="module">
 import * as THREE from "three";
 import { GLTFLoader } from "./vendor/loaders/GLTFLoader.js";
 
 const status = document.getElementById("status");
-const probe = document.createElement("canvas");
-if (!(probe.getContext("webgl2") || probe.getContext("webgl"))) {
-  document.getElementById("fallback").style.display = "grid";
-  status.textContent = "no WebGL";
-  console.log("wisp-flame: no-webgl");
-  throw new Error("no WebGL");
-}
+if (window.wispNoGL) throw new Error("no WebGL 2");
 
 const stage = document.getElementById("stage");
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+} catch (err) {
+  showStill("The 3D renderer could not start");
+  throw err;
+}
+window.wispStarted = true;
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 stage.appendChild(renderer.domElement);
 const scene = new THREE.Scene();

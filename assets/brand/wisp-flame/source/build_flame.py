@@ -44,7 +44,10 @@ def args():
     p.add_argument("--frames", type=int, default=48)
     p.add_argument("--size", type=int, default=256)
     p.add_argument("--no-render", action="store_true")
-    return p.parse_args(argv)
+    a = p.parse_args(argv)
+    if a.frames < 2:
+        p.error("--frames must be at least 2 (a loop needs more than one frame)")
+    return a
 
 
 def reset():
@@ -410,10 +413,16 @@ def set_engine(scene, size):
         scene.eevee.taa_render_samples = 128
 
 
-def render(parts, out, frames, size):
-    scene = bpy.context.scene
+def apply_look(parts, size):
+    """Switch to the render-only look (after the glTF export, which must keep
+    the plain materials) so the saved .blend matches the renders."""
     rim_shell_material(parts["shell_mat"])
     parts["heart"].data.materials[0] = parts["heart_glow"]
+    set_engine(bpy.context.scene, size)
+
+
+def render(parts, out, size):
+    scene = bpy.context.scene
     set_engine(scene, size)
     for state in STATES:
         solo_state(nla_ids(parts), state)
@@ -433,8 +442,9 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     parts = build(a.frames)
     export_glb(parts, os.path.join(a.out, "wisp-flame.glb"))
+    apply_look(parts, a.size)
     if not a.no_render:
-        render(parts, a.out, a.frames, a.size)
+        render(parts, a.out, a.size)
     bpy.ops.wm.save_as_mainfile(filepath=os.path.join(a.out, "wisp-flame.blend"), compress=True)
     print("wisp-flame: done", a.out)
 

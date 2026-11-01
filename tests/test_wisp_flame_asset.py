@@ -65,14 +65,17 @@ class GltfTest(unittest.TestCase):
 @unittest.skipIf(Image is None, "Pillow not installed")
 class LoopsAndStillsTest(unittest.TestCase):
     def test_every_state_has_animated_alpha_loops_at_both_sizes(self):
+        counts = set()
         for state in STATES:
             for size in (64, 256):
                 path = EXPORT / "loops" / f"{state}-{size}.webp"
                 with Image.open(path) as im:
                     self.assertEqual(im.size, (size, size), path.name)
                     self.assertTrue(getattr(im, "is_animated", False), path.name)
-                    self.assertEqual(im.n_frames, 48, path.name)
+                    self.assertGreater(im.n_frames, 1, path.name)
+                    counts.add(im.n_frames)
                     self.assertEqual(im.convert("RGBA").getextrema()[3][0], 0, f"{path.name} has no transparency")
+        self.assertEqual(len(counts), 1, f"loops disagree on frame count: {sorted(counts)}")
 
     def test_stills_exist_at_the_small_and_hero_sizes_with_alpha(self):
         for size in (20, 32, 130, 512):

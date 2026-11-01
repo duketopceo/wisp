@@ -22,11 +22,11 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-REMOTE=/tmp/wisp-flame-build
+# A fresh remote directory per run, so two renders on one host never share it.
+REMOTE="$(ssh -o BatchMode=yes "$HOST" 'mktemp -d /tmp/wisp-flame-build.XXXXXX')"
 LOCAL="$(mktemp -d)"
-trap 'rm -rf "$LOCAL"' EXIT
+trap 'rm -rf "$LOCAL"; ssh -o BatchMode=yes "$HOST" "rm -rf $REMOTE" || true' EXIT
 
-ssh -o BatchMode=yes "$HOST" "rm -rf $REMOTE && mkdir -p $REMOTE"
 scp -q "$ASSET/source/build_flame.py" "$HOST:$REMOTE/"
 ssh -o BatchMode=yes "$HOST" "$BLENDER --background --factory-startup --python $REMOTE/build_flame.py -- --out $REMOTE/out --frames $FRAMES" \
   | grep -E "wisp-flame: done|Error|Traceback" || true
