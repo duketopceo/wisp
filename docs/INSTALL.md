@@ -446,6 +446,10 @@ Panel settings tab (`shell-plugin/lib/settings_schema.js`, written by
 `python scripts/assets/gen_settings.py`; `--check` fails when it is
 stale) and the daemon's check in `wispd config set`, so a bad value gets
 the same `E_BAD_CONFIG` message from the CLI, the Panel and the daemon.
+Each key also carries a category, a label and a help line (labels and
+help live in `wisp/copy.py` as `set.<key>.label` and `set.<key>.help`),
+so `wispd config keys` groups the table by settings page and a later
+settings window renders every page from the same rows.
 
 ## Verifying
 

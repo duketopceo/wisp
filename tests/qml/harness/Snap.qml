@@ -78,6 +78,7 @@ Window {
       return null;
     }
     if (c.width) item.width = c.width;
+    if (c.height) item.height = c.height;
     item.x = c.pad;
     item.y = c.pad;
     host.width = Math.ceil(item.width) + 2 * c.pad;

@@ -157,7 +157,7 @@ class TestFlag(unittest.TestCase):
         f = settings_schema.field("dev.panel")
         self.assertIsNotNone(f)
         self.assertEqual((f.kind, f.default), ("bool", "false"))
-        self.assertFalse(f.panel)
+        self.assertFalse(f.quick)
         self.assertRegex(config.DEFAULT_CONFIG, r"(?m)^\[dev\]")
         self.assertRegex(config.DEFAULT_CONFIG, r"(?m)^panel\s*=\s*false")
         self.assertIn("dev.panel", read(PLUGIN / "lib" / "settings_schema.js"))

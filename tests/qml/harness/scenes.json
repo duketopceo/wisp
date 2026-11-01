@@ -4400,5 +4400,18 @@
     }
    }
   }
+ },
+ "ViewportProbe": {
+  "mode": "variant",
+  "pad": 0,
+  "source": "ViewportProbe.qml",
+  "variants": {
+   "laptop": {
+    "_viewport": "laptop"
+   },
+   "ultrawide": {
+    "_viewport": "ultrawide"
+   }
+  }
  }
 }

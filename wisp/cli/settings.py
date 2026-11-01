@@ -135,10 +135,13 @@ def config_preset(ctx, a):
 
 @command("config keys", "List the settings wispd checks, with ranges",
          ["wispd config keys", "wispd config keys --json"],
-         {"keys": "list"})
+         {"keys": "list", "categories": "list"})
 def config_keys(ctx, a):
-    return ctx.emit({"keys": [f.as_dict() for f in settings_schema.FIELDS]},
-                    settings_schema.help_table())
+    # grouped by category in the settings window's order
+    return ctx.emit(
+        {"keys": [f.as_dict() for f in settings_schema.ordered()],
+         "categories": list(settings_schema.CATEGORIES)},
+        settings_schema.help_table())
 
 
 @command("theme show", "Print the active theme and refresh theme.json",
