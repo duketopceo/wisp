@@ -479,6 +479,27 @@ class TestFlow(OnboardCase):
         self.assertFalse(any("mic" in p.lower() for p in ask.prompts))
         self.assertEqual(f2.sent, 1)
 
+    def test_walk_lights_one_step_at_a_time_and_stays_quiet(self):
+        out = []
+        ask = Scripted("y", "s", "s", "s", "s", "s")
+        onboard.walk(self.cfg, Fakes().probes(), self.progress, ask,
+                     out.append, glyphs=True, width=60)
+        text = "\n".join(out)
+        # the wordmark dot plus one lit dot per step offered
+        self.assertEqual(text.count("\u25cf"), 1 + 6)
+        self.assertIn("step 1 of 6", text)
+        self.assertIn("step 6 of 6", text)
+        self.assertNotIn("\x1b", text)
+        self.assertNotIn("\u2014", text)
+        for line in out:
+            self.assertLessEqual(len(line), 100)
+
+    def test_walk_plain_mode_is_ascii(self):
+        out = []
+        onboard.walk(self.cfg, Fakes().probes(), self.progress,
+                     Scripted("q"), out.append)
+        self.assertTrue("\n".join(out).isascii())
+
     def test_skip_writes_nothing_at_all(self):
         f = Fakes()
         res, ask = self.walk(f, "s", "s", "s", "s", "s", "s")

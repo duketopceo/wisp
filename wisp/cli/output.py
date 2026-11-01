@@ -315,9 +315,10 @@ def section(name: str, count: int | None = None, color: bool = False) -> str:
 def summary(title: str, counts, width: int, color: bool = False,
             glyphs: bool = False) -> str:
     """Title left, counts right on one line. `counts` is [(n, word, tone)];
-    zero counts are skipped."""
+    zero counts are skipped; a count of None prints the text as is."""
     sep = f" {glyph('sep', glyphs)} " if glyphs else ", "
-    parts = [(f"{n} {w}", t) for n, w, t in counts if n]
+    parts = [(w if n is None else f"{n} {w}", t) for n, w, t in counts
+             if n is None or n]
     right = sep.join(p for p, _ in parts)
     if color:
         right = sep.join(paint(p, t if t != "ok" else "muted")
