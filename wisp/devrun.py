@@ -112,13 +112,15 @@ def parse_vs(vs: str) -> tuple:
 
 
 def run_config(cfg: dict, run_id: str, vs=None, profile=None,
-               grant=None) -> dict:
+               grant=None, isolated: bool = False) -> dict:
     """A deep copy of `cfg` for one run, with the one `--vs` override or
     an arm `profile` ({section: {key: value}}) applied when given. A
     `grant` dict ({windows, spend_file, cap_usd}) makes it a gauntlet
     run. The profile goes on first and the run's own settings last, so
-    no profile can lift the shell switch or the deny list. The owner's
-    own config object is never changed."""
+    no profile can lift the shell switch or the deny list. `isolated`
+    (an isolated-session run, KTD6) turns on `dev.isolated_session` and
+    pins `[cua] delivery = background` so no evdev watch arms on the
+    owner's keyboard. The owner's own config object is never changed."""
     c = copy.deepcopy(cfg)
     if profile:
         gauntlet.apply_profile(c, profile)
@@ -133,6 +135,9 @@ def run_config(cfg: dict, run_id: str, vs=None, profile=None,
         c["dev"]["spend_file"] = str(grant.get("spend_file") or "")
         c["dev"]["spend_cap_usd"] = str(
             grant.get("cap_usd", gauntlet.DEFAULT_CAP_USD))
+    if isolated or (grant and grant.get("isolated")):
+        c["dev"]["isolated_session"] = "true"
+        c.setdefault("cua", {})["delivery"] = "background"
     if vs:
         sec, key, val = vs
         c.setdefault(sec, {})[key] = val
@@ -278,8 +283,9 @@ def start(cfg: dict, st, ctl: dict, path, run_listen=None, judge=None,
     unreadable or empty. `vs` ("section.key=value") runs the list twice,
     the second time with that one override. `profiles` (names or paths)
     runs each task once per profile, arms interleaved per task, as a
-    gauntlet run: `grant` ({windows, spend_file, cap_usd}) carries what
-    the driver registered."""
+    gauntlet run: `grant` ({windows, spend_file, cap_usd, isolated})
+    carries what the driver registered; `isolated` runs the tasks with
+    instance-scoped input only (wisp.vpointer)."""
     global _thread
     if not devsession.is_on():
         return {"ok": False, "error": "dev_off"}

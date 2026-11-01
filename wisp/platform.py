@@ -246,13 +246,20 @@ def active_geometry() -> tuple | None:
         return None
 
 
-def type_text_cmd() -> list | None:
+def type_text_cmd(isolated: bool = False) -> list | None:
     """The typer's argv, never the text: the caller writes the text to
     its stdin, because argv is readable by other local accounts while the
     typer runs (a dictated message or a typed password would show)."""
     order = {"hyprland": ["wtype", "ydotool"],
              "x11": ["xdotool"],
              }.get(desktop(), ["ydotool", "wtype", "xdotool"])
+    if isolated:
+        # wtype speaks the compositor's virtual-keyboard protocol on the
+        # instance socket; ydotool/xdotool would reach the live seat
+        from . import vpointer
+        if not _which("wtype"):
+            vpointer.refuse("typing without wtype (no uinput fallback)")
+        return ["wtype", "-"]
     for b in order:
         if _which(b):
             if b == "wtype":

@@ -10,6 +10,7 @@ from .. import cancel as _cancel
 from .. import config
 from .. import delivery as _delivery
 from .. import hypr
+from .. import vpointer as _vp
 from ..pipeline import hypr_env, notify
 
 _POINTER_CONTEXT = ContextVar("wisp_pointer_context", default=None)
@@ -446,12 +447,17 @@ def type_text(text: str, cfg: dict | None = None) -> str:
         return ("TYPED" if r.startswith("typed:")
                 else f"SKIP ({r[:60]})")
     from .. import platform
-    cmd = platform.type_text_cmd()
+    iso = _vp.is_isolated(cfg)
+    try:
+        cmd = platform.type_text_cmd(isolated=iso)
+        env = _vp.isolated_env() if iso else hypr_env()
+    except _vp.UinputRefused as e:
+        return f"REFUSED ({e})"
     if not cmd:
         return (f"SKIP (no typer — {platform.missing_deps_hint()})")
     # the text goes on stdin, not argv: other local accounts can read argv
     r = _cancel.run(cmd, input=text.encode("utf-8"), capture_output=True,
-                    env=hypr_env())
+                    env=env)
     return "TYPED" if r.returncode == 0 else "SKIP (typer failed)"
 
 
@@ -490,6 +496,57 @@ def _chord(name: str) -> list | None:
         + [f"{c}:0" for c in reversed(mods)]
 
 
+# wtype spellings (XKB keysyms / modifier names) for the isolated run,
+# where ydotool's uinput codes are refused
+_WTYPE_KEYS = {"esc": "Escape", "enter": "Return", "tab": "Tab",
+               "space": "space", "backspace": "BackSpace", "up": "Up",
+               "down": "Down", "left": "Left", "right": "Right",
+               "pageup": "Prior", "pagedown": "Next", "home": "Home",
+               "end": "End"}
+_WTYPE_MODS = {"ctrl": "ctrl", "control": "ctrl", "shift": "shift",
+               "alt": "alt", "super": "logo", "meta": "logo",
+               "cmd": "logo"}
+
+
+def _wtype_argv(name: str) -> list | None:
+    """argv for a bare key or 'ctrl+shift+v' chord via wtype, or None
+    when a part is unmappable."""
+    parts = name.split("+")
+    mods = [_WTYPE_MODS.get(p) for p in parts[:-1]]
+    if any(m is None for m in mods):
+        return None
+    last = parts[-1]
+    k = _WTYPE_KEYS.get(last) or (last if len(last) == 1
+                                  and last.isalnum() else None)
+    if k is None:
+        return None
+    argv = ["wtype"]
+    for m in mods:
+        argv += ["-M", m]
+    argv += ["-k", k]
+    for m in reversed(mods):
+        argv += ["-m", m]
+    return argv
+
+
+def _iso_key(name: str) -> str:
+    """Key press for an isolated run: wtype on the instance socket only."""
+    from .. import platform
+    try:
+        if not platform._which("wtype"):
+            _vp.refuse("a key press without wtype (no ydotool fallback)")
+        env = _vp.isolated_env()
+    except _vp.UinputRefused as e:
+        return f"REFUSED ({e})"
+    argv = _wtype_argv(name)
+    if argv is None:
+        return f"SKIP (unknown key {name!r})"
+    from .. import keys as _keys
+    with _keys.suspended():
+        r = _cancel.run(argv, capture_output=True, env=env)
+    return "KEY" if r.returncode == 0 else "SKIP (wtype key failed)"
+
+
 def key(arg: str, cfg: dict | None = None) -> str:
     """Press a named key — 'enter', 'tab', 'down', 'pagedown', 'ctrl+v',
     'ctrl+shift+t' (modifier chords are ydotool-only, never DOM)."""
@@ -508,6 +565,8 @@ def key(arg: str, cfg: dict | None = None) -> str:
             return f"SKIP (unknown chord {name!r})"
         if (cfg or {}).get("screen", {}).get("dom_page"):
             return "SKIP (key chords are ydotool-only, not dom)"
+        if _vp.is_isolated(cfg):
+            return _iso_key(name)
         from .. import keys as _keys
         with _keys.suspended():  # the Wisp submap must not eat the chord
             r = _cancel.run(["ydotool", "key", *seq],
@@ -535,6 +594,8 @@ def key(arg: str, cfg: dict | None = None) -> str:
     code = _KEYCODES.get(name)
     if code is None:
         return f"SKIP (unknown key {name!r})"
+    if _vp.is_isolated(cfg):
+        return _iso_key(name)
     from .. import keys as _keys
     with _keys.suspended():  # the Wisp submap must not eat the agent's key
         r = _cancel.run(["ydotool", "key", f"{code}:1", f"{code}:0"],
@@ -653,6 +714,14 @@ def scroll(arg: str, cfg: dict | None = None) -> str:
         amt = 7200
     elif top:
         amt, up = 7200, True
+    if _vp.is_isolated(cfg):
+        try:
+            _vp.scroll(dy=-amt if up else amt, env=_vp.isolated_env())
+        except _vp.UinputRefused as e:
+            return f"REFUSED ({e})"
+        except _vp.VPointerError as e:
+            return f"SKIP (isolated scroll failed: {e})"
+        return "SCROLLED"
     r = _cancel.run(
         ["ydotool", "mousemove", "--wheel",
          "-y", str(-amt if up else amt)],
@@ -900,6 +969,12 @@ def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
         if not out.ok:
             return f"SKIP ({op} failed via {out.backend or backend})"
         return f"{'CLICKED' if do_click else 'MOVED'}({x},{y})"
+    if _vp.is_isolated(cfg) and mode in ("drive", "auto"):
+        # an isolated run never degrades to guide: there is no human to
+        # click, and falling back to a live-seat injector is refused
+        return ("REFUSED (isolated session: no instance-scoped pointer "
+                "backend is available; the virtual pointer needs the "
+                "instance's WAYLAND_DISPLAY)")
     # guide mode — ghost cursor carries the intent, the user clicks
     verb = "GUIDE" if do_click else "MOVE-GUIDE"
     _delivery.note("guide")

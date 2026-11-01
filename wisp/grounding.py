@@ -528,6 +528,10 @@ def _a11y(ctx) -> Candidate | None:
     schema is unverified against a live driver (docs/LINUX.md spike), so
     parsing is tolerant and anything unexpected yields None, which sends
     the chain on to the pixel providers."""
+    from . import vpointer as _vp
+    if _vp.is_isolated(ctx.cfg):
+        # the cua daemon is bound to the owner's live compositor
+        raise Skip("isolated session: cua is not instance-scoped")
     cua = ctx.cua
     if cua is None or not cua.available():
         raise Skip("cua-driver not available")
