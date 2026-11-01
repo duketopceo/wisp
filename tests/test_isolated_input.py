@@ -106,7 +106,7 @@ class Backend(Base):
         self.assertEqual(out, "CLICKED(100,200)")
         ma = [a for o, r, a in self.wl.requests if r == "motion_absolute"]
         # extent = bounding box of the two logical outputs
-        self.assertEqual(ma[0][1:3], (100, 200))
+        self.assertEqual(ma[-1][1:3], (100, 200))
         self.assertEqual(self.rec.calls, [])      # nothing spawned at all
         buttons = [a for o, r, a in self.wl.requests if r == "button"]
         self.assertEqual([b[2] for b in buttons], [1, 0])

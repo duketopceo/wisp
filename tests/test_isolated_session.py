@@ -36,6 +36,10 @@ class FakeProc:
     def poll(self):
         return None
 
+    def wait(self, timeout=None):
+        self.waited = True
+        return 0
+
 
 class FakeSystem(IS.Deps):
     """The whole machine: a live session, an instance, systemctl."""
@@ -452,6 +456,39 @@ class TestCanary(Base):
         ok, detail = self.session().canary()
         self.assertFalse(ok)
         self.assertIn("isolated_session.py start", detail)
+
+
+class TestMarkerReadiness(Base):
+    def setUp(self):
+        super().setUp()
+        self.s = self.session()
+        self.state_ = {"XDG_RUNTIME_DIR": "/x"}
+
+    def test_a_reused_address_with_a_new_pid_is_the_new_marker(self):
+        old = {"address": "0xA", "pid": 1, "title": "canary-wait"}
+        new = {"address": "0xA", "pid": 2, "title": "canary-wait",
+               "at": [0, 0], "size": [10, 10]}
+        seen = iter([[old], [new]])
+        self.s.clients = lambda st: next(seen)
+        self.s._ienv = lambda st=None: {}
+        self.sysm.mkdtemp = lambda parent: "/tmp/unused-profile"
+        got = self.s._marker(self.state_, {})
+        self.assertEqual(got["pid"], 2)
+
+    def test_closing_the_marker_reaps_it_before_returning(self):
+        proc = FakeProc(888)
+        self.s._close_marker({"proc": proc})
+        self.assertTrue(proc.waited)
+
+    def test_click_waits_until_the_window_is_focused_and_still(self):
+        def rec(focus, at):
+            return [{"address": "0xM", "at": at, "size": [10, 10],
+                     "focusHistoryID": focus}]
+        seq = iter([rec(1, [0, 0]), rec(0, [0, 0]), rec(0, [50, 0]),
+                    rec(0, [50, 0]), rec(0, [50, 0])])
+        self.s.clients = lambda st: next(seq)
+        got = self.s._wait_ready(self.state_, {"address": "0xM"})
+        self.assertEqual(got["at"], [50, 0])      # the settled geometry
 
 
 class TestSmoke(Base):

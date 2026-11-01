@@ -41,12 +41,28 @@ class VPointerWire(unittest.TestCase):
         vp = [(r, a) for o, r, a in reqs
               if o == "zwlr_virtual_pointer_v1"]
         kinds = [r for r, _ in vp]
-        self.assertEqual(kinds[:6], ["motion_absolute", "frame", "button",
+        self.assertEqual(kinds[:8], ["motion_absolute", "frame",
+                                     "motion_absolute", "frame", "button",
                                      "frame", "button", "frame"])
-        ma = vp[0][1]
-        self.assertEqual(ma[1:], (100, 200, 1728, 1080))
-        self.assertEqual(vp[2][1][1:], (BTN_LEFT, 1))     # pressed
-        self.assertEqual(vp[4][1][1:], (BTN_LEFT, 0))     # released
+        # first the far-corner park (forces a pointer leave/enter), then
+        # the target
+        self.assertEqual(vp[0][1][1:], (1727, 1079, 1728, 1080))
+        self.assertEqual(vp[2][1][1:], (100, 200, 1728, 1080))
+        self.assertEqual(vp[4][1][1:], (BTN_LEFT, 1))     # pressed
+        self.assertEqual(vp[6][1][1:], (BTN_LEFT, 0))     # released
+
+    def test_click_pauses_between_motion_press_and_close(self):
+        self.server()
+        sleeps = []
+        orig = vpointer.time.sleep
+        vpointer.time.sleep = sleeps.append
+        try:
+            vpointer.click(5, 5, (10, 10), path=self.path)
+        finally:
+            vpointer.time.sleep = orig
+        self.assertEqual(sleeps[-3:], [vpointer.CLICK_SETTLE_S,
+                                       vpointer.CLICK_HOLD_S,
+                                       vpointer.CLICK_LINGER_S])
 
     def test_origin_offsets_the_absolute_point(self):
         s = self.server()

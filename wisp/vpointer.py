@@ -309,6 +309,16 @@ class VirtualPointer:
 
 # -- one-shot helpers (each opens, acts, round-trips, closes) ----------------
 
+# pauses inside click(): after each motion (the compositor delivers the
+# surface leave/enter on its next pointer-focus pass) and between press
+# and release
+CLICK_SETTLE_S = 0.15
+CLICK_HOLD_S = 0.03
+# closing the device can drop the seat's pointer before the client acts
+# on the release; linger so the click is delivered first
+CLICK_LINGER_S = 0.4
+
+
 def _norm(x, y, origin, extent):
     """Layout-relative point, clamped inside the extent (the on-screen
     check allows a 2 px margin, and the wire field is unsigned)."""
@@ -331,10 +341,41 @@ def click(x: int, y: int, extent: tuple, origin=(0, 0), env=None,
           path: str | None = None, button: int = BTN_LEFT) -> None:
     px, py = _norm(x, y, origin, extent)
     with VirtualPointer(path, env) as vp:
+        # Hyprland sends a surface wl_pointer.enter only when the pointer
+        # focus CHANGES, and a client drops a press it has had no enter
+        # for. A window that maps under a resting cursor (the cursor sits
+        # where the last window was) never gets one, so every click was
+        # lost. Park the pointer on the layout's far corner first so the
+        # move onto the target is a real leave/enter.
+        vp.motion_absolute(int(extent[0]) - 1, int(extent[1]) - 1,
+                           int(extent[0]), int(extent[1]))
+        vp.flush()
+        time.sleep(CLICK_SETTLE_S)
         vp.motion_absolute(px, py, int(extent[0]), int(extent[1]))
+        vp.flush()
+
+
+def click(x: int, y: int, extent: tuple, origin=(0, 0), env=None,
+          path: str | None = None, button: int = BTN_LEFT) -> None:
+    px, py = _norm(x, y, origin, extent)
+    with VirtualPointer(path, env) as vp:
+        # a fresh device moved onto the point the cursor already rests on
+        # produces no pointer enter, and the client then drops the press
+        # (seen live: every canary click lost). Nudge one px off first so
+        # the final motion always reaches the surface under the target.
+        vp.motion_absolute(int(extent[0]) - 1, int(extent[1]) - 1,
+                           int(extent[0]), int(extent[1]))
+        vp.flush()
+        time.sleep(CLICK_SETTLE_S)
+        vp.motion_absolute(px, py, int(extent[0]), int(extent[1]))
+        vp.flush()
+        time.sleep(CLICK_SETTLE_S)
         vp.button(button, True)
+        vp.flush()
+        time.sleep(CLICK_HOLD_S)
         vp.button(button, False)
         vp.flush()
+        time.sleep(CLICK_LINGER_S)
 
 
 def scroll(dx: float = 0, dy: float = 0, env=None,

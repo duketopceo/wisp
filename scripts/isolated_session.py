@@ -109,6 +109,9 @@ ENV_KEYS = ("HYPRLAND_INSTANCE_SIGNATURE", "WAYLAND_DISPLAY",
             "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS",
             "WISP_ISOLATED_SESSION", "WISP_ISOLATED_STATE",
             "WISP_ISOLATED_OUTPUTS", "WISP_LIVE_SIGNATURE")
+# pause after the marker window is focused and still, before clicking it
+READY_SETTLE_S = 0.3
+
 # the page the canary and smoke open: a full-window button (click ->
 # title "canary-hit") above an input pinned to the top strip (typing ->
 # title "typed-<value>")
@@ -866,14 +869,18 @@ class Session:
     def _marker(self, state, proc_holder):
         """Open the marker page in the instance; (client dict)."""
         d = self.d
-        before = {c["address"] for c in self.clients(state)}
+        # keyed on (address, pid): Hyprland addresses are heap pointers, and
+        # a dying previous marker's address is reused by the next window
+        # (seen live: the new marker was taken for the old one and "never
+        # appeared")
+        before = {(c["address"], c.get("pid")) for c in self.clients(state)}
         prof = d.mkdtemp(state["XDG_RUNTIME_DIR"])
         proc_holder["profile"] = prof
         proc_holder["proc"] = d.spawn_marker(self._ienv(state), prof)
         end = d.clock() + 20
         while True:
             for c in self.clients(state):
-                if c["address"] not in before and str(
+                if (c["address"], c.get("pid")) not in before and str(
                         c.get("title", "")).startswith(
                             ("canary-", "typed-")):
                     return c
@@ -893,6 +900,13 @@ class Session:
         if p is not None:
             try:
                 self.d.kill_group(p.pid, signal.SIGTERM)
+                # reap it: the next marker must not start while this
+                # window is still mapped
+                try:
+                    p.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self.d.kill_group(p.pid, signal.SIGKILL)
+                    p.wait(timeout=2)
             except Exception:                           # noqa: BLE001
                 pass
         if holder.get("profile"):
@@ -907,10 +921,36 @@ class Session:
                 return t
             d.sleep(0.25)
 
+    def _wait_ready(self, state, client, timeout=8.0) -> dict:
+        """The window's fresh client record once it is focused and its
+        geometry has held for two polls. `hyprctl clients` lists a window
+        as soon as it maps, but the browser has not committed a surface
+        yet; a pointer move before that is hit-tested against nothing, so
+        the client never gets a wl_pointer.enter and drops the press
+        (seen live: ~1 in 3 canary clicks lost)."""
+        d = self.d
+        end = d.clock() + timeout
+        last, stable = None, 0
+        while True:
+            cur = next((c for c in self.clients(state)
+                        if c["address"] == client["address"]), None)
+            if cur is not None:
+                geo = (tuple(cur["at"]), tuple(cur["size"]))
+                focused = cur.get("focusHistoryID", 0) == 0
+                stable = stable + 1 if (focused and geo == last) else 0
+                last, client = geo, cur
+                if stable >= 2:
+                    d.sleep(READY_SETTLE_S)
+                    return client
+            if d.clock() > end:
+                return client
+            d.sleep(0.25)
+
     def _click_center(self, state, client) -> None:
         from wisp import points, vpointer
         mons = [m for m in self.monitors(state) if not m.get("disabled")]
         bx, by, bw, bh = points.logical_bbox(mons)
+        client = self._wait_ready(state, client)
         at, size = client["at"], client["size"]
         cx, cy = at[0] + size[0] // 2, at[1] + size[1] // 2
         vpointer.click(cx, cy, (bw, bh), origin=(bx, by),
