@@ -266,6 +266,18 @@ class Cli(unittest.TestCase):
         self.assertEqual(out["brain"], {"a": "b"})
         self.assertNotIn("vlm_brain", base["ground"])
 
+    def test_model_label_names_the_grounding_brain_not_the_act_brain(self):
+        # a profile's [ground] vlm_brain (no --ground-brain flag) is what
+        # the probe actually grounds with; the rows must say so
+        cfg = {"brain": {"default": "openrouter:meta-llama/llama-4-maverick"},
+               "ground": {"vlm_brain": "openrouter:google/gemini-2.5-flash"}}
+        self.assertEqual(probe._model_label(cfg, ""),
+                         "openrouter:google/gemini-2.5-flash")
+        self.assertEqual(probe._model_label(cfg, "ollama:x"), "ollama:x")
+        self.assertEqual(
+            probe._model_label({"brain": {"default": "openrouter:m"}}, ""),
+            "openrouter:m")
+
 
 if __name__ == "__main__":
     unittest.main()
