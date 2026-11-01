@@ -332,21 +332,24 @@ def live_rig(cfg: dict) -> Rig:                     # pragma: no cover
 
     def open_page(mon):
         x, y, w, h = logical_rect(mon)
-        if not iso:
-            # the instance has no owner cursor to park; the virtual
-            # pointer addresses it directly
+        if iso:
+            # park the instance's own cursor on the target output so the
+            # new window opens there (virtual pointer, never hyprctl)
+            ptr.move(int(x + w / 2), int(y + h / 2))
+        else:
             hypr.run_lua(hypr.cursor_move(int(x + w / 2), int(y + h / 2)))
         prof = tempfile.mkdtemp(prefix="wisp-click-probe-")
         env = {k: v for k, v in os.environ.items()
                if "KEY" not in k and "TOKEN" not in k}
-        argv = [browser, f"--user-data-dir={prof}", "--no-first-run",
-                "--no-default-browser-check", "--start-fullscreen",
-                f"--app={PAGE.as_uri()}"]
+        flags = [f"--user-data-dir={prof}", "--no-first-run",
+                 "--no-default-browser-check", "--start-fullscreen",
+                 f"--app={PAGE.as_uri()}"]
         if iso:
             # the process env already points at the instance (the
             # caller ran under isolated.applied_env); never an X display
             env.pop("DISPLAY", None)
-            argv.insert(1, "--ozone-platform=wayland")
+            flags.append("--ozone-platform=wayland")
+        argv = [browser, *flags]
         proc = subprocess.Popen(
             argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             env=env)
@@ -386,8 +389,7 @@ def live_rig(cfg: dict) -> Rig:                     # pragma: no cover
 
 
 def _canary(iso: dict) -> tuple:
-    s = isolated.Session(state_dir=iso.get("WISP_ISOLATED_STATE") or None)
-    return s.canary()
+    return isolated.canary_for(iso)
 
 
 def main(argv=None, rig_factory=live_rig, canary=_canary) -> int:

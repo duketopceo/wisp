@@ -61,6 +61,7 @@ class FakeSystem(IS.Deps):
         self.move_live_cursor_on_click = False
         self.leak_new_client = False
         self.fail_output_create = False
+        self.stale_pid = False
 
     def _sleep(self, s):
         self.t += s
@@ -79,6 +80,9 @@ class FakeSystem(IS.Deps):
 
     def pid_alive(self, pid):
         return self.alive.get(int(pid), False)
+
+    def pid_is_session(self, pid):
+        return self.stale_pid is False
 
     def kill_group(self, pid, sig):
         if int(pid) == 888:                      # the marker window
@@ -390,6 +394,68 @@ class TestStop(Base):
         info = json.loads(self.lines[-1])
         self.assertTrue(info["running"])
         self.assertEqual(info["HYPRLAND_INSTANCE_SIGNATURE"], INST_SIG)
+
+
+class TestSafetyGuards(Base):
+    def test_the_runtime_dir_is_short_and_ours(self):
+        s = self.session()
+        self.assertEqual(s.start(), 0, self.say())
+        rd = IS.load_env_file(s.env_file)["XDG_RUNTIME_DIR"]
+        self.assertEqual(os.path.dirname(rd), IS.RUNTIME_ROOT)
+        self.assertTrue(os.path.basename(rd).startswith(IS.RUNTIME_PREFIX))
+        # Hyprland's longest socket path stays under sun_path (107)
+        self.assertLess(len(rd + "/hypr/" + "s" * 61 + "/.socket2.sock"),
+                        107)
+
+    def test_stop_never_kills_a_pid_that_is_not_our_session(self):
+        s = self.session()
+        self.assertEqual(s.start(), 0)
+        self.sysm.stale_pid = True        # the pid was reused
+        self.assertFalse(s.running())
+        s.stop()
+        self.assertTrue(self.sysm.alive[777])      # not signalled
+
+    def test_stop_will_not_remove_a_directory_it_did_not_make(self):
+        s = self.session()
+        s.start()
+        victim = self.tmp / "keep"
+        victim.mkdir()
+        meta = json.loads(s.meta_file.read_text())
+        meta["runtime_dir"] = str(victim)
+        s.meta_file.write_text(json.dumps(meta))
+        s.stop()
+        self.assertTrue(victim.is_dir())
+
+    def test_canary_without_a_session_record_fails_instead_of_passing(self):
+        s = self.session()
+        s.start()
+        s.meta_file.unlink()
+        ok, detail = s.canary()
+        self.assertFalse(ok)
+        self.assertIn("cannot tell the live session", detail)
+
+    def test_start_refuses_inside_an_isolated_env(self):
+        self.sysm.environ["WISP_ISOLATED_SESSION"] = "1"
+        self.assertEqual(self.session().start(), 2)
+        self.assertEqual(self.sysm.spawned, [])
+
+    def test_a_missing_binary_is_a_clean_failure_with_cleanup(self):
+        def boom(argv, env, log):
+            raise FileNotFoundError("dbus-run-session")
+        self.sysm.spawn = boom
+        s = self.session()
+        self.assertEqual(s.start(), 1)
+        self.assertFalse(s.meta_file.exists())
+
+    def test_overrides_always_mark_the_session_and_drop_the_live_bus(self):
+        env = IS.apply_overrides(
+            {"DISPLAY": ":0",
+             "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"},
+            {"HYPRLAND_INSTANCE_SIGNATURE": "s", "WAYLAND_DISPLAY": "w",
+             "XDG_RUNTIME_DIR": "/r", "DBUS_SESSION_BUS_ADDRESS": ""})
+        self.assertEqual(env["WISP_ISOLATED_SESSION"], "1")
+        self.assertNotIn("DBUS_SESSION_BUS_ADDRESS", env)
+        self.assertNotIn("DISPLAY", env)
 
 
 class TestEnvFile(unittest.TestCase):

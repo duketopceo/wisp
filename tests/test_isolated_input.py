@@ -43,7 +43,8 @@ class Base(unittest.TestCase):
         self.sock = self.dir / "wayland-iso"
         self.wl = FakeWayland(self.sock).start()
         self.addCleanup(self.wl.stop)
-        env = {"WAYLAND_DISPLAY": "wayland-iso",
+        env = {"WISP_ISOLATED_SESSION": "1",
+               "WAYLAND_DISPLAY": "wayland-iso",
                "XDG_RUNTIME_DIR": str(self.dir),
                "HYPRLAND_INSTANCE_SIGNATURE": "ISO"}
         p = mock.patch.dict(os.environ, env)
@@ -136,6 +137,19 @@ class KeysAndText(Base):
         self.assertEqual(env["WAYLAND_DISPLAY"], "wayland-iso")
         self.assertNotIn("DISPLAY", env)
         self.assertNotIn("ydotool", self.rec.bins())
+
+    def test_multi_modifier_chords_and_the_unknown_key_path(self):
+        with mock.patch("wisp.platform._which", return_value=True):
+            system.key("ctrl+shift+v", ISO)
+            system.key("super+1", ISO)
+            out = system.key("hyper+x", ISO)
+        self.assertEqual(self.rec.calls[0][0],
+                         ["wtype", "-M", "ctrl", "-M", "shift", "-k", "v",
+                          "-m", "shift", "-m", "ctrl"])
+        self.assertEqual(self.rec.calls[1][0],
+                         ["wtype", "-M", "logo", "-k", "1", "-m", "logo"])
+        self.assertTrue(out.startswith("SKIP"), out)
+        self.assertEqual(len(self.rec.calls), 2)
 
     def test_bare_key_uses_wtype(self):
         with mock.patch("wisp.platform._which", return_value=True):

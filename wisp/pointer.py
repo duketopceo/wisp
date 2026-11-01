@@ -32,6 +32,7 @@ frame cua is told); no backend rescales them.
 """
 import dataclasses
 import os
+import struct
 import subprocess
 
 from . import cancel as _cancel
@@ -228,25 +229,23 @@ class VpointerBackend(Backend):
         try:
             fn(*a, env=self._env_now(), **kw)
             return True
-        except (_vp.VPointerError, _vp.UinputRefused) as e:
+        except (_vp.VPointerError, _vp.UinputRefused, struct.error) as e:
             self.last_error = str(e)[:80]
             return False
 
-    def move(self, x, y) -> bool:
+    def _at(self, fn, x, y) -> bool:
         try:
             ext, org = self._geom()
         except _vp.VPointerError as e:
             self.last_error = str(e)
             return False
-        return self._do(_vp.move, x, y, ext, origin=org)
+        return self._do(fn, x, y, ext, origin=org)
+
+    def move(self, x, y) -> bool:
+        return self._at(_vp.move, x, y)
 
     def click(self, x, y) -> bool:
-        try:
-            ext, org = self._geom()
-        except _vp.VPointerError as e:
-            self.last_error = str(e)
-            return False
-        return self._do(_vp.click, x, y, ext, origin=org)
+        return self._at(_vp.click, x, y)
 
     def scroll(self, dx, dy) -> bool:
         return self._do(_vp.scroll, dx, dy)

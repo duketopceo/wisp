@@ -32,6 +32,11 @@ class UinputRefused(RuntimeError):
     the live seat (uinput, the cua daemon, a live hyprctl cursor)."""
 
 
+# set (with the instance's socket variables) by the isolated session's
+# env file, the gauntlet daemon env and `applied_env`; never by the owner
+SESSION_MARKER = "WISP_ISOLATED_SESSION"
+
+
 def is_isolated(cfg) -> bool:
     return str(((cfg or {}).get("dev") or {}).get("isolated_session", "")
                ).lower() == "true"
@@ -51,6 +56,12 @@ def isolated_env(base=None) -> dict:
     socket."""
     env = dict(os.environ if base is None else base)
     env.pop("DISPLAY", None)
+    if env.get(SESSION_MARKER) != "1":
+        # a process that was merely told `isolated_session = true` (a
+        # live daemon, a stale config) has the LIVE socket in its env
+        raise UinputRefused(
+            "isolated session: this process is not running inside an "
+            f"isolated instance ({SESSION_MARKER} is not set)")
     for k in ("WAYLAND_DISPLAY", "XDG_RUNTIME_DIR"):
         if not env.get(k):
             raise UinputRefused(
@@ -125,9 +136,12 @@ class VirtualPointer:
     """
 
     def __init__(self, path: str | None = None, env=None,
-                 timeout_s: float = _TIMEOUT_S):
+                 timeout_s: float = _TIMEOUT_S, settle_s: float = 0.05):
         self.path = path or socket_path(env)
         self.timeout_s = timeout_s
+        # the seat's pointer capability appears only once the virtual
+        # pointer exists; give clients a beat to bind it before events
+        self.settle_s = settle_s
         self._sock = None
         self._next = 2
         self._buf = b""
@@ -229,6 +243,8 @@ class VirtualPointer:
         # create_virtual_pointer(seat, new_id)
         self._send(_msg(mgr, 0, _u(seat, self._ptr)))
         self._roundtrip()
+        if self.settle_s:
+            time.sleep(self.settle_s)
         return self
 
     def _bind(self, iface: str, want_ver: int) -> int:
@@ -293,16 +309,19 @@ class VirtualPointer:
 
 # -- one-shot helpers (each opens, acts, round-trips, closes) ----------------
 
-def _norm(x, y, extent, origin):
+def _norm(x, y, origin, extent):
+    """Layout-relative point, clamped inside the extent (the on-screen
+    check allows a 2 px margin, and the wire field is unsigned)."""
     ox, oy = origin
-    return int(x) - int(ox), int(y) - int(oy)
+    return (min(max(int(x) - int(ox), 0), max(int(extent[0]) - 1, 0)),
+            min(max(int(y) - int(oy), 0), max(int(extent[1]) - 1, 0)))
 
 
 def move(x: int, y: int, extent: tuple, origin=(0, 0), env=None,
          path: str | None = None) -> None:
     """Move the instance cursor to logical (x, y). `extent` = (w, h) of
     the layout's logical bounding box whose top-left is `origin`."""
-    px, py = _norm(x, y, extent, origin)
+    px, py = _norm(x, y, origin, extent)
     with VirtualPointer(path, env) as vp:
         vp.motion_absolute(px, py, int(extent[0]), int(extent[1]))
         vp.flush()
@@ -310,7 +329,7 @@ def move(x: int, y: int, extent: tuple, origin=(0, 0), env=None,
 
 def click(x: int, y: int, extent: tuple, origin=(0, 0), env=None,
           path: str | None = None, button: int = BTN_LEFT) -> None:
-    px, py = _norm(x, y, extent, origin)
+    px, py = _norm(x, y, origin, extent)
     with VirtualPointer(path, env) as vp:
         vp.motion_absolute(px, py, int(extent[0]), int(extent[1]))
         vp.button(button, True)

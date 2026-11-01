@@ -41,6 +41,7 @@ Everything that touches the system is injected (see `Deps`), so the
 offline tests drive the whole flow with fakes. Live runs are U8.
 """
 import argparse
+import contextlib
 import json
 import os
 import pathlib
@@ -66,9 +67,11 @@ _spec.loader.exec_module(sandbox)
 
 _spec = importlib.util.spec_from_file_location(
     "isolated_session_mod", HERE / "isolated_session.py")
-isolated = importlib.util.module_from_spec(_spec)
-sys.modules["isolated_session_mod"] = isolated
-_spec.loader.exec_module(isolated)
+isolated = sys.modules.get("isolated_session_mod") \
+    or importlib.util.module_from_spec(_spec)
+if "isolated_session_mod" not in sys.modules:
+    sys.modules["isolated_session_mod"] = isolated
+    _spec.loader.exec_module(isolated)
 
 DEFAULT_CASES = ROOT / "docs" / "dev-tasks" / "gauntlet.jsonl"
 DEFAULT_DIR = pathlib.Path.home() / ".local" / "share" / "wisp-gauntlet"
@@ -243,9 +246,7 @@ class Deps:
 
     def canary(self) -> tuple:
         """(ok, detail): U2's input canary against the instance."""
-        s = isolated.Session(state_dir=self.iso.get("WISP_ISOLATED_STATE")
-                             or None)
-        return s.canary()
+        return isolated.canary_for(self.iso)
 
     def systemctl(self, *argv) -> int:
         try:
@@ -851,12 +852,11 @@ def main(argv=None, deps=None, out=print) -> int:
     try:
         g = Gauntlet(cases, profiles, args.dir, args.cap, deps, out, only,
                      iso=iso)
-        if iso:
-            # this process's own compositor queries and spawned tools
-            # resolve the instance, never the live session
-            with isolated.applied_env(iso):
-                return g.run()
-        return g.run()
+        # an isolated run's own compositor queries and spawned tools
+        # resolve the instance, never the live session
+        with (isolated.applied_env(iso) if iso
+              else contextlib.nullcontext()):
+            return g.run()
     finally:
         signal.signal(signal.SIGTERM, old)
 

@@ -273,6 +273,9 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
                     isinstance(profiles, list) and profiles
                     and all(isinstance(x, str) for x in profiles)):
                 return {"ok": False, "error": "profiles must be a list"}
+            if cmd.get("isolated") is True and not profiles:
+                return {"ok": False,
+                        "error": "isolated needs profiles (a gauntlet run)"}
             grant = None
             if profiles:
                 wins = cmd.get("windows") or []

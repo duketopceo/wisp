@@ -115,6 +115,7 @@ class VPointerWire(unittest.TestCase):
 class IsolatedEnv(unittest.TestCase):
     def test_env_drops_display_and_requires_the_instance_socket(self):
         env = vpointer.isolated_env({"DISPLAY": ":0",
+                                     "WISP_ISOLATED_SESSION": "1",
                                      "WAYLAND_DISPLAY": "wayland-77",
                                      "XDG_RUNTIME_DIR": "/run/iso"})
         self.assertNotIn("DISPLAY", env)
@@ -122,7 +123,21 @@ class IsolatedEnv(unittest.TestCase):
 
     def test_missing_wayland_display_is_refused_not_guessed(self):
         with self.assertRaises(vpointer.UinputRefused):
-            vpointer.isolated_env({"XDG_RUNTIME_DIR": "/run/iso"})
+            vpointer.isolated_env({"XDG_RUNTIME_DIR": "/run/iso",
+                                   "WISP_ISOLATED_SESSION": "1"})
+
+    def test_a_process_without_the_session_marker_is_refused(self):
+        # a live daemon merely told isolated_session=true has the live
+        # socket in its env: it must not drive it
+        with self.assertRaises(vpointer.UinputRefused):
+            vpointer.isolated_env({"WAYLAND_DISPLAY": "wayland-1",
+                                   "XDG_RUNTIME_DIR": "/run/user/1000"})
+
+    def test_out_of_range_points_are_clamped_not_a_struct_error(self):
+        self.assertEqual(vpointer._norm(-2, 5000, (0, 0), (100, 50)),
+                         (0, 49))
+        self.assertEqual(vpointer._norm(10, 10, (-100, -50), (500, 400)),
+                         (110, 60))
 
     def test_is_isolated(self):
         self.assertTrue(vpointer.is_isolated(

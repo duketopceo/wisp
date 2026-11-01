@@ -68,6 +68,11 @@ OUTPUTS = (
 )
 REFRESH_HZ = 60
 START_TIMEOUT_S = 30.0
+# The instance's runtime dir lives under a SHORT root: Hyprland's socket
+# is <dir>/hypr/<61-char signature>/.socket2.sock, which overflows
+# sun_path (107 bytes) under /run/user/1000/<long name>.
+RUNTIME_ROOT = "/tmp"
+RUNTIME_PREFIX = "wi-"
 SOAK_S = 1800
 SOAK_POLL_S = 30.0
 ENV_KEYS = ("HYPRLAND_INSTANCE_SIGNATURE", "WAYLAND_DISPLAY",
@@ -163,13 +168,23 @@ def check_target(state: dict, environ=None) -> None:
 
 def overrides(state: dict) -> dict:
     """The variables that point a process at the instance."""
-    out = {"XDG_RUNTIME_DIR": state["XDG_RUNTIME_DIR"],
+    out = {"WISP_ISOLATED_SESSION": "1",
+           "XDG_RUNTIME_DIR": state["XDG_RUNTIME_DIR"],
            "WAYLAND_DISPLAY": state["WAYLAND_DISPLAY"],
            "HYPRLAND_INSTANCE_SIGNATURE":
                state["HYPRLAND_INSTANCE_SIGNATURE"]}
     if state.get("DBUS_SESSION_BUS_ADDRESS"):
         out["DBUS_SESSION_BUS_ADDRESS"] = state["DBUS_SESSION_BUS_ADDRESS"]
     return out
+
+
+def apply_overrides(env: dict, state: dict) -> dict:
+    """`env` pointed at the instance, in place: no X display and no
+    leftover live D-Bus address even when the instance has no bus."""
+    env.pop("DISPLAY", None)
+    env.pop("DBUS_SESSION_BUS_ADDRESS", None)
+    env.update(overrides(state))
+    return env
 
 
 @contextlib.contextmanager
@@ -179,8 +194,7 @@ def applied_env(state: dict):
     session. `os.environ` is restored on exit."""
     saved = dict(os.environ)
     try:
-        os.environ.pop("DISPLAY", None)
-        os.environ.update(overrides(state))
+        apply_overrides(os.environ, state)
         yield
     finally:
         os.environ.clear()
@@ -221,15 +235,7 @@ def launch_argv(runtime_dir, config=CONFIG_LUA) -> list:
 def instance_env(base: dict, state: dict) -> dict:
     """The env a tool must have to talk to the instance only: the
     instance's runtime dir, display, signature and bus; no DISPLAY."""
-    env = dict(base)
-    env.pop("DISPLAY", None)
-    env.update({"XDG_RUNTIME_DIR": state["XDG_RUNTIME_DIR"],
-                "WAYLAND_DISPLAY": state["WAYLAND_DISPLAY"],
-                "HYPRLAND_INSTANCE_SIGNATURE":
-                    state["HYPRLAND_INSTANCE_SIGNATURE"]})
-    if state.get("DBUS_SESSION_BUS_ADDRESS"):
-        env["DBUS_SESSION_BUS_ADDRESS"] = state["DBUS_SESSION_BUS_ADDRESS"]
-    return env
+    return apply_overrides(dict(base), state)
 
 
 # -- system access ------------------------------------------------------------
@@ -264,6 +270,17 @@ class Deps:
             return False
         return True
 
+    def pid_is_session(self, pid) -> bool:
+        """True only when `pid` is the launcher we started (a
+        dbus-run-session group leader), not a process that inherited a
+        stale pid after a reboot."""
+        try:
+            cmd = pathlib.Path(f"/proc/{int(pid)}/cmdline").read_bytes()
+            leader = os.getpgid(int(pid)) == int(pid)
+        except (OSError, ValueError):
+            return False
+        return leader and b"dbus-run-session" in cmd
+
     def kill_group(self, pid, sig) -> None:
         try:
             os.killpg(os.getpgid(int(pid)), sig)
@@ -272,7 +289,7 @@ class Deps:
 
     # filesystem
     def mkdtemp(self, parent) -> str:
-        d = tempfile.mkdtemp(prefix="wisp-iso-", dir=parent)
+        d = tempfile.mkdtemp(prefix=RUNTIME_PREFIX, dir=parent)
         os.chmod(d, 0o700)
         return d
 
@@ -454,11 +471,16 @@ class Session:
 
     def running(self) -> bool:
         pid = self._meta().get("pid")
-        return bool(pid) and self.d.pid_alive(pid)
+        return bool(pid) and self.d.pid_alive(pid) \
+            and self.d.pid_is_session(pid)
 
     # -- start ------------------------------------------------------------------
     def start(self) -> int:
         d, env = self.d, self.d.environ
+        if env.get("WISP_ISOLATED_SESSION") == "1":
+            self.out("this shell is already inside an isolated session "
+                     "env; run start from the owner's own session")
+            return EXIT_USAGE
         if self.running():
             self.out("an isolated session is already running; "
                      "`stop` it first")
@@ -478,13 +500,13 @@ class Session:
             return EXIT_USAGE
         self.state_dir.mkdir(parents=True, exist_ok=True)
         os.chmod(self.state_dir, 0o700)
-        rdir = d.mkdtemp(rt)
+        rdir = d.mkdtemp(RUNTIME_ROOT)
         meta = {"runtime_dir": rdir, "live_signature": live_sig,
                 "live_runtime_dir": rt, "live_wayland": parent}
         self.meta_file.write_text(json.dumps(meta))
         try:
             self._launch(meta, rdir, live_sig)
-        except SessionError as e:
+        except (SessionError, OSError) as e:
             self.out(f"start failed: {e}")
             self.stop()
             return EXIT_FAIL
@@ -507,6 +529,9 @@ class Session:
         if not d.exists(os.path.join(rdir, disp)):
             raise SessionError("the instance has no wayland socket")
         bus = d.read_text(os.path.join(rdir, "bus.addr")).strip()
+        if not bus:
+            raise SessionError("the instance's private D-Bus address was "
+                               "not written")
         state = {"HYPRLAND_INSTANCE_SIGNATURE": sig,
                  "WAYLAND_DISPLAY": disp, "XDG_RUNTIME_DIR": rdir,
                  "DBUS_SESSION_BUS_ADDRESS": bus,
@@ -593,15 +618,17 @@ class Session:
         d = self.d
         m = self._meta()
         pid = m.get("pid")
-        if pid and d.pid_alive(pid):
+        if pid and d.pid_alive(pid) and d.pid_is_session(pid):
             d.kill_group(pid, signal.SIGTERM)
             end = d.clock() + 5
             while d.pid_alive(pid) and d.clock() < end:
                 d.sleep(0.1)
             if d.pid_alive(pid):
                 d.kill_group(pid, signal.SIGKILL)
-        if m.get("runtime_dir"):
-            d.rmtree(m["runtime_dir"])
+        rd = m.get("runtime_dir") or ""
+        if rd and os.path.basename(rd).startswith(RUNTIME_PREFIX) \
+                and os.path.dirname(rd) == RUNTIME_ROOT:
+            d.rmtree(rd)
         for f in (self.env_file, self.meta_file):
             try:
                 f.unlink()
@@ -688,6 +715,12 @@ class Session:
         live session."""
         try:
             state = self.state()
+            live = self._meta().get("live_signature")
+            if not live or live == state["HYPRLAND_INSTANCE_SIGNATURE"]:
+                # without a recorded live session the "live" queries
+                # would hit the instance and every assertion pass
+                return False, ("cannot tell the live session from the "
+                               "instance (no session record from start)")
             cur0, cl0 = self.live_cursor(), self.live_clients()
         except SessionError as e:
             return False, str(e)
@@ -829,8 +862,10 @@ class Session:
             title = self._wait_title(state, client["address"],
                                      "typed-isolated")
             reached = r.returncode == 0 and title == "typed-isolated"
-            leaked = self.live_clients() - cl0 or (
-                self._live_titles() != titles0)
+            leaked = (self.live_clients() - cl0
+                      or any("isolated" in t
+                             for a, t in self._live_titles().items()
+                             if "isolated" not in titles0.get(a, "")))
             check("wtype-instance-only", reached and not leaked,
                   "" if reached and not leaked else
                   f"instance title {title!r}; leaked to live: "
@@ -867,6 +902,12 @@ class Session:
             if any(n not in names for n in want):
                 bad = f"outputs changed: {names}"
         check("soak", not bad, bad or f"{soak_s}s")
+
+
+def canary_for(state: dict) -> tuple:
+    """(ok, detail): the input canary for the session `state` describes."""
+    return Session(state_dir=state.get("WISP_ISOLATED_STATE")
+                   or None).canary()
 
 
 def _lua(s) -> str:
