@@ -13,17 +13,36 @@ screenshots and windows never reach the live session (R5). Design: the
 plan's KTD5 (launch environment, headless outputs, fallbacks) and KTD6
 (instance-scoped input: wisp/vpointer.py + wtype, never uinput).
 
-Launch environment (KTD5): `DISPLAY` and `WAYLAND_DISPLAY` unset,
-`HYPRLAND_NO_SD_VARS=1`, `HYPRLAND_NO_SD_NOTIFY=1`, `AQ_BACKENDS=headless`
-(never DRM), a private `XDG_RUNTIME_DIR`, a private D-Bus via
-`dbus-run-session`, and the test-only `isolated_session/hyprland.lua`
-(xwayland off). It starts only from a live Wayland session (never from a
-tty, which would contend for DRM master) and refuses if the instance
-signature equals the live one.
+Launch modes. NESTED-HIDDEN is the default and the only one proven on
+this machine (Hyprland 0.56.2, aquamarine 0.15.0): that aquamarine has no
+`AQ_BACKENDS`, so a launch with no parent socket falls through to
+DRM/libseat and dies (`CBackend::create() failed!`). Nested mode launches
+the instance as a client of the live compositor: `WAYLAND_DISPLAY` is the
+ABSOLUTE live socket, but only for the Hyprland process itself. Its window
+(class `aquamarine`) appears on the live session and is moved at once, by
+pid, to a special workspace nobody toggles (hidden, silent: the owner's
+active workspace never changes). Headless mode (`AQ_BACKENDS=headless`,
+no parent socket) is kept only for an aquamarine that really supports it:
+`--mode headless` is refused unless libaquamarine contains `AQ_BACKENDS`.
+Neither mode ever tries DRM on purpose; nothing starts from a tty.
+
+Launch environment (KTD5): the OUTER environment (the one the private bus
+inherits as its activation environment) is the INSTANCE environment:
+private `XDG_RUNTIME_DIR`, `WAYLAND_DISPLAY=wayland-1` (relative to it),
+no `DISPLAY`, signature, `HYPRLAND_CMD`, `NOTIFY_SOCKET` or live bus;
+`HYPRLAND_NO_SD_VARS=1`, `HYPRLAND_NO_SD_NOTIFY=1`,
+`HYPRLAND_NO_CRASHREPORTER=1`. The private D-Bus is `dbus-run-session`
+with our own minimal config that lists NO service directories, so nothing
+(keyring, portals, gvfs) is ever bus-activated. A live finding: with the
+stock config a browser's Secret Service request activated the keyring
+prompter, which `systemd --user` then showed on the LIVE session. Browsers
+also get `--password-store=basic`. The test-only
+`isolated_session/hyprland.lua` (xwayland off) is the config.
 
 Two headless outputs are created through the instance socket and shaped
 like the owner's layout: 3456x2160 at scale 2 and 3440x1440 at scale 1
-(R6). `start` writes an env file (signature, wayland display, runtime
+(R6); in nested mode the nested backend's own output (WAYLAND-1) is then
+disabled. `start` writes an env file (signature, wayland display, runtime
 dir, bus address, the live signature it must differ from) that U3's
 drivers source.
 
@@ -73,6 +92,17 @@ START_TIMEOUT_S = 30.0
 # sun_path (107 bytes) under /run/user/1000/<long name>.
 RUNTIME_ROOT = "/tmp"
 RUNTIME_PREFIX = "wi-"
+MODE_NESTED, MODE_HEADLESS = "nested", "headless"
+# the instance's own socket name inside its private runtime dir
+INSTANCE_DISPLAY = "wayland-1"
+# the live special workspace the nested window is parked on (never toggled)
+HIDE_WORKSPACE = "special:wispisolated"
+HIDE_TIMEOUT_S = 15.0
+# where aquamarine ships; scanned for the AQ_BACKENDS variable
+AQ_LIB_GLOBS = ("/usr/lib/libaquamarine.so*", "/usr/lib64/libaquamarine.so*",
+                "/usr/lib/*/libaquamarine.so*")
+# every browser we start: never ask a keyring
+BROWSER_SAFE_FLAGS = ("--password-store=basic",)
 SOAK_S = 1800
 SOAK_POLL_S = 30.0
 ENV_KEYS = ("HYPRLAND_INSTANCE_SIGNATURE", "WAYLAND_DISPLAY",
@@ -203,33 +233,80 @@ def applied_env(state: dict):
 
 # -- the launch environment ---------------------------------------------------
 
-def launch_env(environ: dict, runtime_dir) -> dict:
-    """The child environment of the instance (KTD5). Nothing of the live
-    compositor survives: the display, wayland socket and signature are
-    dropped, the runtime dir is private, systemd notification is off and
-    the backend is pinned to headless so DRM is never opened."""
+def launch_env(environ: dict, runtime_dir, mode=MODE_NESTED) -> dict:
+    """The OUTER environment of the instance (KTD5): what `dbus-run-session`
+    and the private bus inherit. It is the instance environment, never the
+    live one: the display, signature, live bus and notify socket are
+    dropped, the runtime dir is private and `WAYLAND_DISPLAY` is the
+    instance's own relative socket. (The nested Hyprland process alone gets
+    the absolute live socket, in `launch_argv`.) Headless mode has no
+    wayland display at all and pins the backend."""
     env = dict(environ)
     for k in ("DISPLAY", "WAYLAND_DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE",
               "HYPRLAND_CMD", "DBUS_SESSION_BUS_ADDRESS", "WAYLAND_SOCKET",
-              "XDG_SESSION_ID", "NOTIFY_SOCKET"):
+              "XDG_SESSION_ID", "NOTIFY_SOCKET", "AQ_BACKENDS"):
         env.pop(k, None)
     env.update({"XDG_RUNTIME_DIR": str(runtime_dir),
                 "HYPRLAND_NO_SD_VARS": "1",
                 "HYPRLAND_NO_SD_NOTIFY": "1",
-                "AQ_BACKENDS": "headless",
+                "HYPRLAND_NO_CRASHREPORTER": "1",
                 "XDG_SESSION_TYPE": "wayland"})
+    if mode == MODE_HEADLESS:
+        env["AQ_BACKENDS"] = "headless"
+    else:
+        env["WAYLAND_DISPLAY"] = INSTANCE_DISPLAY
     return env
 
 
-def launch_argv(runtime_dir, config=CONFIG_LUA) -> list:
-    """dbus-run-session gives the instance its own bus; the shim writes
-    the bus address where `start` can read it back, then execs
+# no <standard_session_servicedirs/>, no <includedir>: the bus can
+# activate nothing. Policy mirrors the stock session bus (same user only,
+# EXTERNAL auth).
+DBUS_CONF = """<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <type>session</type>
+  <keep_umask/>
+  <listen>unix:path={sock}</listen>
+  <auth>EXTERNAL</auth>
+  <policy context="default">
+    <allow send_destination="*" eavesdrop="true"/>
+    <allow eavesdrop="true"/>
+    <allow own="*"/>
+  </policy>
+</busconfig>
+"""
+
+
+def write_dbus_conf(runtime_dir) -> str:
+    """Write the activation-free bus config into the runtime dir."""
+    rd = pathlib.Path(runtime_dir)
+    path = rd / "dbus.conf"
+    path.write_text(DBUS_CONF.replace("{sock}", str(rd / "bus")),
+                    encoding="utf-8")
+    return str(path)
+
+
+# written by the shim: bus address, and Hyprland's pid ($$ before exec)
+_SHIM = ('rd=$1; parent=$2; shift 2; '
+         'printf %s "$DBUS_SESSION_BUS_ADDRESS" > "$rd/bus.addr"; '
+         'printf %s "$$" > "$rd/hyprland.pid"; '
+         'if [ -n "$parent" ]; then WAYLAND_DISPLAY=$parent; '
+         'export WAYLAND_DISPLAY; fi; exec "$@"')
+
+
+def launch_argv(runtime_dir, config=CONFIG_LUA, mode=MODE_NESTED,
+                parent_socket="", dbus_conf="") -> list:
+    """dbus-run-session (our minimal config) gives the instance its own
+    bus; the shim records the bus address and its pid, sets the ABSOLUTE
+    parent socket for the Hyprland process only (nested mode), then execs
     Hyprland."""
-    addr = str(pathlib.Path(runtime_dir) / "bus.addr")
-    return ["dbus-run-session", "--", "sh", "-c",
-            'printf %s "$DBUS_SESSION_BUS_ADDRESS" > "$1"; shift; '
-            'exec "$@"', "sh", addr,
-            "Hyprland", "--config", str(config)]
+    argv = ["dbus-run-session"]
+    if dbus_conf:
+        argv.append(f"--config-file={dbus_conf}")
+    parent = parent_socket if mode == MODE_NESTED else ""
+    argv += ["--", "sh", "-c", _SHIM, "sh", str(runtime_dir), parent,
+             "Hyprland", "--config", str(config)]
+    return argv
 
 
 def instance_env(base: dict, state: dict) -> dict:
@@ -287,6 +364,19 @@ class Deps:
         except (OSError, ValueError):
             pass
 
+    def aq_supports_backends(self) -> bool:
+        """True only when the installed aquamarine really reads
+        AQ_BACKENDS (detect, never assume)."""
+        import glob
+        for pat in AQ_LIB_GLOBS:
+            for lib in glob.glob(pat):
+                try:
+                    if b"AQ_BACKENDS" in pathlib.Path(lib).read_bytes():
+                        return True
+                except OSError:
+                    continue
+        return False
+
     # filesystem
     def mkdtemp(self, parent) -> str:
         d = tempfile.mkdtemp(prefix=RUNTIME_PREFIX, dir=parent)
@@ -320,6 +410,7 @@ class Deps:
                                "window")
         argv = [exe, f"--user-data-dir={profile_dir}", "--no-first-run",
                 "--no-default-browser-check", "--ozone-platform=wayland",
+                *BROWSER_SAFE_FLAGS,
                 "--new-window", "--app=data:text/html," + _urlquote(
                     MARKER_HTML)]
         benv = {k: v for k, v in env.items()
@@ -384,7 +475,9 @@ def _urlquote(s: str) -> str:
 class Session:
     """start / status / stop / canary / smoke over one state directory."""
 
-    def __init__(self, deps=None, state_dir=None, out=print):
+    def __init__(self, deps=None, state_dir=None, out=print,
+                 mode=MODE_NESTED):
+        self.mode = mode
         self.d = deps or Deps()
         self.state_dir = pathlib.Path(
             state_dir or default_state_dir(self.d.environ))
@@ -436,12 +529,40 @@ class Session:
             raise SessionError("cannot read the live cursor position "
                                "(hyprctl cursorpos)") from None
 
-    def live_clients(self) -> set:
+    def live_client_infos(self) -> dict:
+        """address -> client dict for the LIVE session (read-only)."""
         r = self.live_hyprctl("-j", "clients")
         try:
-            return {c["address"] for c in json.loads(r.stdout.decode())}
+            return {c["address"]: c for c in json.loads(r.stdout.decode())}
         except (ValueError, KeyError, TypeError):
             raise SessionError("cannot list the live clients") from None
+
+    def live_clients(self) -> set:
+        return set(self.live_client_infos())
+
+    def live_workspace(self):
+        """The live active workspace id, or None when unreadable."""
+        r = self.live_hyprctl("-j", "activeworkspace")
+        try:
+            return json.loads(r.stdout.decode()).get("id")
+        except (ValueError, AttributeError, TypeError):
+            return None
+
+    def live_leaks(self, baseline=None) -> list:
+        """Describe every client on the LIVE session that is not in the
+        baseline recorded by `start` (plus the hidden nested window).
+        Reporting only: a stray window is never closed or touched."""
+        m = self._meta()
+        base = set(m.get("live_baseline") or []) if baseline is None \
+            else set(baseline)
+        if m.get("hidden_address"):
+            base.add(m["hidden_address"])
+        out = []
+        for a, c in sorted(self.live_client_infos().items()):
+            if a not in base:
+                out.append(f"{a} class={c.get('class', '?')!r} "
+                           f"title={c.get('title', '?')!r}")
+        return out
 
     # -- instance ---------------------------------------------------------------
     def state(self) -> dict:
@@ -498,14 +619,24 @@ class Session:
             self.out("no live HYPRLAND_INSTANCE_SIGNATURE; cannot prove "
                      "the instance differs from the live session")
             return EXIT_USAGE
+        if self.mode == MODE_HEADLESS and not d.aq_supports_backends():
+            self.out("this aquamarine has no AQ_BACKENDS, so a headless "
+                     "launch would fall through to DRM; refusing (use the "
+                     "default nested mode)")
+            return EXIT_USAGE
         self.state_dir.mkdir(parents=True, exist_ok=True)
         os.chmod(self.state_dir, 0o700)
         rdir = d.mkdtemp(RUNTIME_ROOT)
         meta = {"runtime_dir": rdir, "live_signature": live_sig,
-                "live_runtime_dir": rt, "live_wayland": parent}
+                "live_runtime_dir": rt, "live_wayland": parent,
+                "mode": self.mode}
         self.meta_file.write_text(json.dumps(meta))
         try:
-            self._launch(meta, rdir, live_sig)
+            # what is on the live session before anything of ours runs
+            meta["live_baseline"] = sorted(self.live_clients())
+            meta["live_workspace"] = self.live_workspace()
+            self.meta_file.write_text(json.dumps(meta))
+            self._launch(meta, rdir, live_sig, wsock)
         except (SessionError, OSError) as e:
             self.out(f"start failed: {e}")
             self.stop()
@@ -516,12 +647,17 @@ class Session:
                  f"env file {self.env_file}")
         return EXIT_OK
 
-    def _launch(self, meta, rdir, live_sig) -> None:
+    def _launch(self, meta, rdir, live_sig, parent_socket="") -> None:
         d = self.d
-        proc = d.spawn(launch_argv(rdir), launch_env(d.environ, rdir),
+        argv = launch_argv(rdir, mode=self.mode,
+                           parent_socket=parent_socket,
+                           dbus_conf=write_dbus_conf(rdir))
+        proc = d.spawn(argv, launch_env(d.environ, rdir, self.mode),
                        self.state_dir / "hyprland.log")
         meta["pid"] = proc.pid
         self.meta_file.write_text(json.dumps(meta))
+        if self.mode == MODE_NESTED:
+            self._hide_nested(meta, rdir, proc)
         sig, disp = self._wait_socket(rdir, proc)
         if sig == live_sig:
             raise SessionError("the instance signature equals the live "
@@ -543,6 +679,52 @@ class Session:
         res = self.canary()
         if not res[0]:
             raise SessionError("canary failed: " + res[1])
+
+    def _hide_nested(self, meta, rdir, proc) -> None:
+        """Park the nested Hyprland's window (found by ITS pid, never by
+        class) on a special workspace of the live session, silently, as
+        soon as it appears. Fails when it cannot be found or hidden, or
+        when the owner's active workspace changed."""
+        d = self.d
+        end = d.clock() + HIDE_TIMEOUT_S
+        hpid = None
+        while True:
+            if hasattr(proc, "poll") and proc.poll() is not None:
+                raise SessionError("Hyprland exited at startup (see "
+                                   f"{self.state_dir / 'hyprland.log'})")
+            txt = d.read_text(os.path.join(rdir, "hyprland.pid")).strip()
+            if txt.isdigit():
+                hpid = int(txt)
+                hit = [a for a, c in self.live_client_infos().items()
+                       if c.get("pid") == hpid
+                       and a not in meta.get("live_baseline", [])]
+                if hit:
+                    break
+            if d.clock() > end:
+                raise SessionError("the nested Hyprland's window never "
+                                   "appeared on the live session; cannot "
+                                   "hide it")
+            d.sleep(0.1)
+        addr = hit[0]
+        meta["hidden_address"] = addr
+        self.meta_file.write_text(json.dumps(meta))
+        lua = ("hl.dispatch(hl.dsp.window.move({ workspace = %s, "
+               "window = %s, silent = true }))" % (
+                   _lua(HIDE_WORKSPACE), _lua(f"address:{addr}")))
+        r = self.live_hyprctl("eval", lua)
+        if r.returncode != 0 or r.stdout.decode().strip().startswith(
+                "error"):
+            raise SessionError("could not hide the nested window: "
+                               + (r.stdout + r.stderr).decode()[:120])
+        ws = (self.live_client_infos().get(addr) or {}).get(
+            "workspace") or {}
+        if ws.get("name") != HIDE_WORKSPACE:
+            raise SessionError("the nested window is not on "
+                               f"{HIDE_WORKSPACE} (on {ws.get('name')!r})")
+        was = meta.get("live_workspace")
+        if was is not None and self.live_workspace() != was:
+            raise SessionError("the live active workspace changed while "
+                               "hiding the nested window")
 
     def _wait_socket(self, rdir, proc) -> tuple:
         d = self.d
@@ -566,6 +748,9 @@ class Session:
     def _outputs(self, state) -> None:
         """Create the two headless outputs and shape them (R6)."""
         names = []
+        # nested mode: the nested backend's own output (WAYLAND-1)
+        preexisting = [m.get("name") for m in self.monitors(state)
+                       if m.get("name")]
         for spec in OUTPUTS:
             before = {m.get("name") for m in self.monitors(state)}
             r = self.hyprctl(state, "output", "create", "headless")
@@ -585,6 +770,14 @@ class Session:
                 raise SessionError(f"could not configure {new}: "
                                    + (r.stdout + r.stderr).decode()[:120])
             names.append(new)
+        if self.mode == MODE_NESTED:
+            for n in preexisting:
+                r = self.hyprctl(state, "eval", "hl.monitor({ output = %s, "
+                                 "disabled = true })" % _lua(n))
+                if r.returncode != 0 or r.stdout.decode().strip(
+                        ).startswith("error"):
+                    raise SessionError(f"could not disable {n}: "
+                                       + (r.stdout + r.stderr).decode()[:120])
         state["WISP_ISOLATED_OUTPUTS"] = ",".join(names)
         got = {m["name"]: m for m in self.monitors(state)
                if m.get("name") in names}
@@ -619,7 +812,9 @@ class Session:
         m = self._meta()
         pid = m.get("pid")
         if pid and d.pid_alive(pid) and d.pid_is_session(pid):
-            d.kill_group(pid, signal.SIGTERM)
+            self._graceful_exit()
+            if d.pid_alive(pid):
+                d.kill_group(pid, signal.SIGTERM)
             end = d.clock() + 5
             while d.pid_alive(pid) and d.clock() < end:
                 d.sleep(0.1)
@@ -637,10 +832,24 @@ class Session:
         self.out("isolated session stopped")
         return EXIT_OK
 
+    def _graceful_exit(self) -> None:
+        """Ask the instance (its own socket only) to exit, wait briefly.
+        The caller kills just the process group it started if needed."""
+        d = self.d
+        try:
+            st = self.state()
+        except SessionError:
+            return
+        self.hyprctl(st, "eval", "hl.dispatch(hl.dsp.exit())")
+        pid = self._meta().get("pid")
+        end = d.clock() + 3
+        while pid and d.pid_alive(pid) and d.clock() < end:
+            d.sleep(0.1)
+
     # -- status -----------------------------------------------------------------
     def status(self) -> int:
         up = self.running()
-        info = {"running": up}
+        info = {"running": up, "mode": self._meta().get("mode", self.mode)}
         if up:
             try:
                 st = self.state()
@@ -722,6 +931,8 @@ class Session:
                 return False, ("cannot tell the live session from the "
                                "instance (no session record from start)")
             cur0, cl0 = self.live_cursor(), self.live_clients()
+            base = self._meta().get("live_baseline")
+            base = cl0 if base is None else set(base)
         except SessionError as e:
             return False, str(e)
         holder = {}
@@ -730,7 +941,7 @@ class Session:
             self._click_center(state, client)
             title = self._wait_title(state, client["address"],
                                      "canary-hit")
-            cur1, cl1 = self.live_cursor(), self.live_clients()
+            cur1, leaks = self.live_cursor(), self.live_leaks(base)
         except Exception as e:                          # noqa: BLE001
             return False, f"{type(e).__name__}: {e}"[:200]
         finally:
@@ -741,9 +952,9 @@ class Session:
         if cur1 != cur0:
             return False, (f"the LIVE cursor moved {cur0} -> {cur1} "
                            "during the canary")
-        if cl1 - cl0:
+        if leaks:
             return False, ("a new client appeared on the LIVE session "
-                           f"during the canary: {sorted(cl1 - cl0)}")
+                           f"since start (reported, not touched): {leaks}")
         return True, "ok"
 
     # -- smoke ------------------------------------------------------------------
@@ -783,18 +994,19 @@ class Session:
         if not self.running():
             started_here = True
             ok = self.start() == EXIT_OK
-            check("headless-start", ok,
+            check("session-start", ok,
                   "" if ok else "see the start output above; try a "
                   "fallback mode (weston-nested, then QEMU: KTD5)")
             if not ok:
                 return EXIT_FAIL
         else:
-            check("headless-start", True, "already running")
+            check("session-start", True, "already running")
         try:
             state = self.state()
             self._smoke_checks(state, check, soak_s)
             after = self.snapshot_live()
             same = before == after
+            check("live-clients-unchanged", *self._leak_result())
             check("live-environment-unchanged", same,
                   "" if same else "the systemd user environment or "
                   f"{LIVE_SERVICE} changed: "
@@ -809,8 +1021,26 @@ class Session:
                              else "passed"))
         return EXIT_FAIL if failed else EXIT_OK
 
+    def _leak_result(self) -> tuple:
+        """(ok, detail) for 'no new client on the live session since
+        start'. Any stray window (a keyring prompt, say) fails the gate and
+        is only reported."""
+        leaks = self.live_leaks()
+        return (not leaks, "new live client(s), reported and left alone "
+                "(close them yourself): " + "; ".join(leaks))
+
+    def _bus_check(self, state) -> tuple:
+        """The private bus must be able to activate nothing."""
+        conf = self.d.read_text(os.path.join(state["XDG_RUNTIME_DIR"],
+                                             "dbus.conf"))
+        bad = ("servicedir" in conf or "includedir" in conf
+               or "<include" in conf)
+        return (bool(conf) and not bad,
+                "the private bus config is missing or lists service dirs")
+
     def _smoke_checks(self, state, check, soak_s) -> None:
         d = self.d
+        check("bus-no-activation", *self._bus_check(state))
         names = [n for n in state.get("WISP_ISOLATED_OUTPUTS", "").split(
             ",") if n]
         mons = {m["name"]: m for m in self.monitors(state)}
@@ -926,6 +1156,11 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--state-dir", default="",
                     help="where the env file and session record live "
                          "(default: $XDG_STATE_HOME/wisp-isolated)")
+    ap.add_argument("--mode", choices=(MODE_NESTED, MODE_HEADLESS),
+                    default=MODE_NESTED,
+                    help="nested (default): a hidden client of the live "
+                         "compositor; headless: only when aquamarine "
+                         "supports AQ_BACKENDS (detected, else refused)")
     ap.add_argument("--soak-seconds", type=int, default=SOAK_S,
                     help="smoke: how long the soak runs (default 1800; "
                          "0 skips it)")
@@ -934,7 +1169,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv=None, deps=None, out=print) -> int:
     args = build_parser().parse_args(argv)
-    s = Session(deps, args.state_dir or None, out)
+    s = Session(deps, args.state_dir or None, out, args.mode)
     try:
         if args.command == "start":
             return s.start()

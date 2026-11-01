@@ -342,7 +342,8 @@ def live_rig(cfg: dict) -> Rig:                     # pragma: no cover
         env = {k: v for k, v in os.environ.items()
                if "KEY" not in k and "TOKEN" not in k}
         flags = [f"--user-data-dir={prof}", "--no-first-run",
-                 "--no-default-browser-check", "--start-fullscreen",
+                 "--no-default-browser-check", "--password-store=basic",
+                 "--start-fullscreen",
                  f"--app={PAGE.as_uri()}"]
         if iso:
             # the process env already points at the instance (the

@@ -207,7 +207,8 @@ class Sandbox:
                         str(prof), url]
             return [self.which(exe), f"--user-data-dir={prof}",
                     "--no-first-run", "--no-default-browser-check",
-                    "--disable-sync", f"--remote-debugging-port={port}",
+                    "--disable-sync", "--password-store=basic",
+                    f"--remote-debugging-port={port}",
                     "--ozone-platform=wayland", "--new-window", url]
         if app == "files":
             exe = next((b for b in FILE_MANAGERS if self.which(b)), None)

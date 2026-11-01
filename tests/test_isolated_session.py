@@ -62,6 +62,15 @@ class FakeSystem(IS.Deps):
         self.leak_new_client = False
         self.fail_output_create = False
         self.stale_pid = False
+        self.evals, self.exit_dispatched = [], False
+        self.aq_backends = False        # this aquamarine has no AQ_BACKENDS
+        self.preload_nested_output = False
+        self.hide_fails = False
+        self.stray_after_start = None   # a live client that shows up later
+        self.live_ws = 3
+
+    def aq_supports_backends(self):
+        return self.aq_backends
 
     def _sleep(self, s):
         self.t += s
@@ -73,6 +82,15 @@ class FakeSystem(IS.Deps):
         (rd / "hypr" / self.sig).mkdir(parents=True)
         (rd / "hypr" / self.sig / ".socket.sock").write_text("")
         (rd / "bus.addr").write_text("unix:path=/iso/bus")
+        (rd / "hyprland.pid").write_text("4242")
+        if self.preload_nested_output:
+            self.monitors_.append({"name": "WAYLAND-1", "x": 0, "y": 0,
+                                   "width": 1280, "height": 720,
+                                   "scale": 1.0})
+        if "AQ_BACKENDS" not in env:      # nested: a window on the LIVE one
+            self.live_clients_.append(
+                {"address": "0xnest", "pid": 4242, "class": "aquamarine",
+                 "title": "Hyprland", "workspace": {"id": 3, "name": "3"}})
         self.wl = FakeWayland(rd / "wayland-iso").start()
         p = FakeProc(777)
         self.alive[777] = True
@@ -126,12 +144,16 @@ class FakeSystem(IS.Deps):
     def _hyprctl(self, args, env):
         args = list(args)
         live = self._is_live(env)
+        if args[:2] == ["-j", "activeworkspace"]:
+            return json.dumps({"id": self.live_ws}).encode()
         if args[:2] == ["-j", "cursorpos"]:
             x, y = self.live_cursor
             return json.dumps({"x": x, "y": y}).encode()
         if args[:2] == ["-j", "clients"]:
             if live:
                 cl = list(self.live_clients_)
+                if self.stray_after_start and self.wl is not None:
+                    cl.append(self.stray_after_start)
                 if self.leak_new_client and self._clicked():
                     cl.append({"address": "0xnew", "title": "x"})
                 return json.dumps(cl).encode()
@@ -153,6 +175,24 @@ class FakeSystem(IS.Deps):
         if args[0] == "eval":
             import re
             code = args[1]
+            self.evals.append((live, code))
+            if "dsp.exit" in code:
+                self.exit_dispatched = True
+                return b"ok"
+            if "window.move" in code:
+                if live and not self.hide_fails:
+                    addr = re.search(r'address:(\w+)', code).group(1)
+                    for c in self.live_clients_:
+                        if c["address"] == addr:
+                            c["workspace"] = {"id": -99, "name": re.search(
+                                r'workspace = "([^"]+)"', code).group(1)}
+                return b"ok"
+            if "disabled = true" in code:
+                n = re.search(r'output = "([^"]+)"', code).group(1)
+                for m in self.monitors_:
+                    if m["name"] == n:
+                        m["disabled"] = True
+                return b"ok"
             name = re.search(r'output = "([^"]+)"', code).group(1)
             w, h = re.search(r'mode = "(\d+)x(\d+)@', code).groups()
             x, y = re.search(r'position = "(-?\d+)x(-?\d+)"',
@@ -204,12 +244,15 @@ class TestStart(Base):
         self.assertEqual(argv[0], "dbus-run-session")
         self.assertIn("Hyprland", argv)
         self.assertNotIn("DISPLAY", env)
-        self.assertNotIn("WAYLAND_DISPLAY", env)
+        # the OUTER env is the instance env, never the live socket
+        self.assertEqual(env["WAYLAND_DISPLAY"], "wayland-1")
+        self.assertFalse(os.path.isabs(env["WAYLAND_DISPLAY"]))
         self.assertNotIn("HYPRLAND_INSTANCE_SIGNATURE", env)
         self.assertNotEqual(env["XDG_RUNTIME_DIR"], str(self.live_rt))
         self.assertEqual(env["HYPRLAND_NO_SD_VARS"], "1")
         self.assertEqual(env["HYPRLAND_NO_SD_NOTIFY"], "1")
-        self.assertEqual(env["AQ_BACKENDS"], "headless")
+        self.assertEqual(env["HYPRLAND_NO_CRASHREPORTER"], "1")
+        self.assertNotIn("AQ_BACKENDS", env)
         # the env file differs from the live session on all three
         st = IS.load_env_file(s.env_file)
         self.assertNotEqual(st["HYPRLAND_INSTANCE_SIGNATURE"], LIVE_SIG)
@@ -218,6 +261,77 @@ class TestStart(Base):
         self.assertEqual(st["WISP_LIVE_SIGNATURE"], LIVE_SIG)
         self.assertEqual(st["DBUS_SESSION_BUS_ADDRESS"], "unix:path=/iso/bus")
         self.assertEqual(s.env_file.stat().st_mode & 0o777, 0o600)
+
+    def test_only_hyprland_gets_the_absolute_live_socket(self):
+        self.assertEqual(self.session().start(), 0, self.say())
+        argv, env = self.sysm.spawned[0]
+        i = argv.index("Hyprland")
+        self.assertEqual(argv[i - 1], str(self.live_rt / "wayland-1"))
+        self.assertTrue(os.path.isabs(argv[i - 1]))
+        for k in ("DBUS_SESSION_BUS_ADDRESS", "NOTIFY_SOCKET",
+                  "HYPRLAND_CMD", "DISPLAY"):
+            self.assertNotIn(k, env)
+
+    def test_private_bus_has_no_service_dirs(self):
+        self.assertEqual(self.session().start(), 0, self.say())
+        argv, env = self.sysm.spawned[0]
+        conf = [a for a in argv if a.startswith("--config-file=")]
+        self.assertEqual(len(conf), 1)
+        self.assertEqual(conf[0], "--config-file=" + os.path.join(
+            env["XDG_RUNTIME_DIR"], "dbus.conf"))
+        # the dir is removed by stop; read the template instead
+        for bad in ("servicedir", "includedir", "<include"):
+            self.assertNotIn(bad, IS.DBUS_CONF)
+        self.assertIn("unix:path=", IS.DBUS_CONF)
+
+    def test_nested_window_is_hidden_by_pid_on_the_live_session(self):
+        before = self.sysm.live_ws
+        self.assertEqual(self.session().start(), 0, self.say())
+        moves = [(live, c) for live, c in self.sysm.evals
+                 if "window.move" in c]
+        self.assertEqual(len(moves), 1)
+        live, code = moves[0]
+        self.assertTrue(live)
+        self.assertIn("address:0xnest", code)       # found by pid 4242
+        self.assertIn("special:wispisolated", code)
+        self.assertIn("silent = true", code)
+        self.assertNotIn("class:", code)
+        self.assertEqual(self.sysm.live_ws, before)
+
+    def test_start_fails_and_cleans_up_when_the_window_cannot_be_hidden(self):
+        self.sysm.hide_fails = True
+        s = self.session()
+        self.assertEqual(s.start(), 1)
+        self.assertIn("not on special:wispisolated", self.say())
+        self.assertFalse(self.sysm.alive[777])
+
+    def test_the_nested_output_is_disabled_after_the_headless_ones(self):
+        self.sysm.preload_nested_output = True
+        s = self.session()
+        self.assertEqual(s.start(), 0, self.say())
+        nested = [m for m in self.sysm.monitors_ if m["name"] == "WAYLAND-1"]
+        self.assertTrue(nested[0].get("disabled"))
+        st = IS.load_env_file(s.env_file)
+        self.assertEqual(len(st["WISP_ISOLATED_OUTPUTS"].split(",")), 2)
+
+    def test_headless_mode_is_refused_without_aq_backends(self):
+        s = IS.Session(self.sysm, self.state, self.lines.append,
+                       mode="headless")
+        self.assertEqual(s.start(), 2)
+        self.assertIn("no AQ_BACKENDS", self.say())
+        self.assertEqual(self.sysm.spawned, [])     # DRM never reachable
+
+    def test_headless_mode_when_supported_pins_the_backend(self):
+        self.sysm.aq_backends = True
+        s = IS.Session(self.sysm, self.state, self.lines.append,
+                       mode="headless")
+        self.assertEqual(s.start(), 0, self.say())
+        argv, env = self.sysm.spawned[0]
+        self.assertEqual(env["AQ_BACKENDS"], "headless")
+        self.assertNotIn("WAYLAND_DISPLAY", env)
+        self.assertEqual(argv[argv.index("Hyprland") - 1], "")
+        self.assertFalse([c for _l, c in self.sysm.evals
+                          if "window.move" in c])
 
     def test_two_headless_outputs_shaped_like_the_owners_layout(self):
         s = self.session()
@@ -233,7 +347,8 @@ class TestStart(Base):
         s = self.session()
         s.start()
         inst = [e for a, e in self.sysm.runs
-                if a[0] == "hyprctl" and a[1] in ("output", "eval")]
+                if a[0] == "hyprctl" and a[1] in ("output", "eval")
+                and "window.move" not in a[-1]]
         self.assertTrue(inst)
         for e in inst:
             self.assertEqual(e["HYPRLAND_INSTANCE_SIGNATURE"], INST_SIG)
@@ -308,6 +423,20 @@ class TestCanary(Base):
         self.assertFalse(ok)
         self.assertIn("new client appeared on the LIVE", detail)
 
+    def test_a_stray_live_window_fails_the_canary_and_is_only_reported(self):
+        s = self.session()
+        self.assertEqual(s.start(), 0)
+        self.sysm.stray_after_start = {"address": "0xdlg", "class":
+                                       "gcr-prompter", "title": "OmaSeal"}
+        before = len(self.sysm.evals)
+        ok, detail = s.canary()
+        self.assertFalse(ok)
+        self.assertIn("gcr-prompter", detail)
+        self.assertIn("OmaSeal", detail)
+        self.assertIn("not touched", detail)
+        # nothing was dispatched at the live session to close it
+        self.assertEqual(self.sysm.evals[before:], [])
+
     def test_fails_when_the_marker_never_sees_the_click(self):
         s = self.session()
         self.assertEqual(s.start(), 0)
@@ -367,6 +496,29 @@ class TestSmoke(Base):
         self.assertEqual(self.session().smoke(soak_s=0), 1)
         self.assertIn("FAIL grim:HEADLESS-2", self.say())
 
+    def test_a_stray_live_window_during_start_fails_closed(self):
+        self.sysm.stray_after_start = {"address": "0xdlg", "class":
+                                       "gcr-prompter", "title": "OmaSeal"}
+        self.assertEqual(self.session().smoke(soak_s=0), 1)
+        self.assertIn("gcr-prompter", self.say())
+        self.assertIn("FAIL session-start", self.say())
+
+    def test_a_stray_live_window_fails_smoke(self):
+        s = self.session()
+        self.assertEqual(s.start(), 0)
+        self.sysm.stray_after_start = {"address": "0xdlg", "class":
+                                       "gcr-prompter", "title": "OmaSeal"}
+        self.lines.clear()
+        self.assertEqual(s.smoke(soak_s=0), 1)
+        self.assertIn("FAIL canary", self.say())
+        self.assertIn("FAIL live-clients-unchanged", self.say())
+        self.assertIn("close them yourself", self.say())
+
+    def test_clean_smoke_checks_bus_and_live_clients(self):
+        self.assertEqual(self.session().smoke(soak_s=0), 0, self.say())
+        self.assertIn("PASS bus-no-activation", self.say())
+        self.assertIn("PASS live-clients-unchanged", self.say())
+
     def test_failed_start_names_the_fallback(self):
         self.sysm.sig = LIVE_SIG
         self.assertEqual(self.session().smoke(soak_s=0), 1)
@@ -385,6 +537,20 @@ class TestStop(Base):
         self.assertFalse(self.sysm.alive[777])
         self.assertEqual(s.stop(), 0)             # second call: no error
         self.assertEqual(s.status(), 1)
+
+    def test_stop_exits_via_the_instance_socket_then_kills_only_its_group(self):
+        s = self.session()
+        self.assertEqual(s.start(), 0)
+        killed = []
+        orig = self.sysm.kill_group
+        self.sysm.kill_group = lambda pid, sig: (killed.append(pid),
+                                                 orig(pid, sig))
+        self.sysm.evals.clear()
+        s.stop()
+        self.assertTrue(self.sysm.exit_dispatched)
+        self.assertEqual([live for live, c in self.sysm.evals
+                          if "dsp.exit" in c], [False])   # instance only
+        self.assertEqual(set(killed), {777})
 
     def test_status_reports_the_running_instance(self):
         s = self.session()
