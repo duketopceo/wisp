@@ -1,10 +1,10 @@
 """[POINT:x,y:label] extraction + screenshot→logical coordinate mapping.
 
 The model emits points in *screenshot pixel* coordinates (the image it
-saw). grim composites outputs at logical_pos*scale (later outputs draw
-over earlier on overlap), so a monitor at logical (x, y) with scale s
-occupies the image rect (x*s, y*s, w_px, h_px). Hyprland/QML want
-logical coordinates: logical = monitor.x + (px - monitor.x*s) / s.
+saw). grim composites every output at the HIGHEST output scale, with the
+layout's logical bbox at the origin, so a raw canvas pixel maps to
+logical = bbox_origin + px / max_scale on every monitor (see
+`raw_canvas_to_logical`; the one model all callers share).
 
 Grammar (canonical, both cores):
   [POINT:x,y:label]   — x,y comma-separated ints; label optional
@@ -224,17 +224,45 @@ def _add(points: list, x, y, label, screen: int | None = None) -> None:
     points.append(item)
 
 
+def canvas_scale(mons: list[dict]) -> float:
+    """Scale of grim's raw whole-layout canvas: the highest output scale
+    (grim composites every output at it). 1.0 for an empty layout."""
+    mons = [m for m in (mons or []) if isinstance(m, dict)]
+    return max((_scale_of(m) for m in mons), default=1.0)
+
+
+def raw_canvas_to_logical(x: float, y: float,
+                          mons: list[dict]) -> tuple[float, float]:
+    """The one raw-canvas model: a pixel of grim's uniform max-scale
+    whole-layout canvas -> compositor-global logical coords (floats).
+    With no monitors there is nothing to map by: 1:1."""
+    mons = [m for m in (mons or []) if isinstance(m, dict)]
+    if not mons:
+        return float(x), float(y)
+    s = canvas_scale(mons)
+    ox, oy, _, _ = logical_bbox(mons)
+    return ox + x / s, oy + y / s
+
+
+def logical_to_raw_canvas(x: float, y: float,
+                          mons: list[dict]) -> tuple[float, float]:
+    """Inverse of `raw_canvas_to_logical`."""
+    mons = [m for m in (mons or []) if isinstance(m, dict)]
+    if not mons:
+        return float(x), float(y)
+    s = canvas_scale(mons)
+    ox, oy, _, _ = logical_bbox(mons)
+    return (x - ox) * s, (y - oy) * s
+
+
+def round_px(v: float) -> int:
+    return int(math.floor(v + 0.5))
+
+
 def _map_px_point(x: int, y: int, mons: list[dict]) -> tuple[int, int, float]:
-    """Map one screenshot-pixel (x, y) to (logical_x, logical_y, scale)."""
-    for m in reversed(mons):
-        s = _scale_of(m)
-        ox, oy = m.get("x", 0) * s, m.get("y", 0) * s
-        if (ox <= x < ox + m.get("width", 0)
-                and oy <= y < oy + m.get("height", 0)):
-            lx = m.get("x", 0) + math.floor((x - ox) / s + 0.5)
-            ly = m.get("y", 0) + math.floor((y - oy) / s + 0.5)
-            return int(lx), int(ly), s
-    return int(x), int(y), 1.0
+    """Map one raw-canvas (x, y) to (logical_x, logical_y, scale)."""
+    lx, ly = raw_canvas_to_logical(x, y, mons)
+    return round_px(lx), round_px(ly), canvas_scale(mons)
 
 
 def monitors() -> list[dict]:
@@ -302,27 +330,14 @@ def canvas_to_logical(points_img: list[dict],
 
 
 def to_logical(points_px: list[dict], mons: list[dict]) -> list[dict]:
-    """Map screenshot-pixel points to Hyprland logical coords. Points
-    outside every monitor rect pass through 1:1 (scale 1 assumed)."""
+    """Map raw-canvas screenshot-pixel points to Hyprland logical coords
+    through the uniform max-scale model. A point in the layout's dead
+    space maps off-screen (`on_screen` rejects it); with no monitors
+    points pass through 1:1."""
     out = []
     for p in points_px:
-        x, y = p["x"], p["y"]
-        placed = False
-        # grim draws outputs in order — on overlap the LAST wins
-        for m in reversed(mons):
-            s = _scale_of(m)
-            ox, oy = m.get("x", 0) * s, m.get("y", 0) * s
-            if (ox <= x < ox + m.get("width", 0)
-                    and oy <= y < oy + m.get("height", 0)):
-                out.append({**p,
-                            "x": m.get("x", 0)
-                            + math.floor((x - ox) / s + 0.5),
-                            "y": m.get("y", 0)
-                            + math.floor((y - oy) / s + 0.5)})
-                placed = True
-                break
-        if not placed:
-            out.append(dict(p))
+        lx, ly = raw_canvas_to_logical(p["x"], p["y"], mons)
+        out.append({**p, "x": round_px(lx), "y": round_px(ly)})
     return out
 
 
@@ -336,8 +351,8 @@ def drawings_to_logical(drawings_px: list[dict], mons: list[dict],
     logical coords. Anchors (ring center, both arrow ends, HL top-left)
     go through the same call points use: `canvas_to_logical` when
     `canvas` (image already logical: sizes unchanged), else `to_logical`,
-    where ring r and HL w/h divide by the scale of the monitor holding
-    the anchor (rounded, at least 1)."""
+    where ring r and HL w/h divide by the canvas scale (rounded, at
+    least 1)."""
     conv = canvas_to_logical if canvas else to_logical
     out = []
     for d in drawings_px:
@@ -351,7 +366,7 @@ def drawings_to_logical(drawings_px: list[dict], mons: list[dict],
         if kind not in ("ring", "hl"):
             continue
         a = conv([{"x": d["x"], "y": d["y"]}], mons)[0]
-        s = 1.0 if canvas else _map_px_point(d["x"], d["y"], mons)[2]
+        s = 1.0 if canvas else canvas_scale(mons)
         if kind == "ring":
             out.append({"kind": kind, "x": a["x"], "y": a["y"],
                         "r": d["r"] if canvas else _scaled(d["r"], s)})

@@ -212,10 +212,10 @@ class DrawingsToLogical(unittest.TestCase):
         assert out[1] == {"kind": "hl", "x": 110, "y": 120, "w": 400,
                           "h": 200}
 
-    def test_outside_every_monitor_passes_through(self):
+    def test_outside_every_monitor_still_maps_through_the_canvas_model(self):
         out = points.drawings_to_logical(
             [{"kind": "ring", "x": 99999, "y": 5, "r": 30}], self.MON2)
-        assert out[0] == {"kind": "ring", "x": 99999, "y": 5, "r": 30}
+        assert out[0] == {"kind": "ring", "x": 50000, "y": 3, "r": 15}
 
 
 class StripPartial(unittest.TestCase):
@@ -254,16 +254,33 @@ class ToLogical(unittest.TestCase):
             [{"x": 1000, "y": 400, "label": "a"}], self.MONS)
         assert out[0]["x"] == 500 and out[0]["y"] == 200
 
-    def test_scale_1_offset_monitor(self):
-        # px on DP-3: image offset = 1728*1, 0
+    def test_scale_1_monitor_uses_the_uniform_max_scale(self):
+        # grim draws DP-3 at the layout's max scale (2): logical x 1828 is
+        # canvas px 3656, not 1828 -- the old per-monitor model said 1828
         out = points.to_logical(
-            [{"x": 2000, "y": 50, "label": ""}], self.MONS)
-        assert out[0]["x"] == 2000 and out[0]["y"] == 50
+            [{"x": 3656, "y": 100, "label": ""}], self.MONS)
+        assert out[0]["x"] == 1828 and out[0]["y"] == 50
 
-    def test_point_outside_monitors_passthrough(self):
-        out = points.to_logical([{"x": 99999, "y": 0, "label": ""}],
+    def test_dead_space_below_the_small_monitor_is_off_screen(self):
+        # eDP-1 is 1080 logical tall, DP-3 1440: below eDP-1 (x < 1728)
+        # canvas y 2800 is logical y 1400, in nobody's rect
+        out = points.to_logical([{"x": 100, "y": 2800, "label": ""}],
                                 self.MONS)
-        assert out[0]["x"] == 99999
+        assert (out[0]["x"], out[0]["y"]) == (50, 1400)
+        assert not points.on_screen(out[0]["x"], out[0]["y"], self.MONS)
+
+    def test_single_monitor_scale_1_is_identity(self):
+        mons = [{"x": 0, "y": 0, "width": 1920, "height": 1080,
+                 "scale": 1}]
+        out = points.to_logical([{"x": 700, "y": 300, "label": ""}], mons)
+        assert (out[0]["x"], out[0]["y"]) == (700, 300)
+
+    def test_negative_origin_layout_adds_the_bbox_origin(self):
+        mons = [{"x": -1920, "y": 0, "width": 1920, "height": 1080,
+                 "scale": 1},
+                {"x": 0, "y": 0, "width": 1920, "height": 1080, "scale": 1}]
+        out = points.to_logical([{"x": 10, "y": 10, "label": ""}], mons)
+        assert (out[0]["x"], out[0]["y"]) == (-1910, 10)
 
     def test_no_monitors_passthrough(self):
         out = points.to_logical([{"x": 10, "y": 20, "label": ""}], [])

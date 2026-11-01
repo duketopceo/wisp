@@ -85,6 +85,8 @@ models:
                                default openrouter:meta-llama/llama-4-maverick; name:model
   brain.fallback               Models tried after the default, as comma separated name:model (blank for none)
                                default blank; name:model, name:model, or blank
+  ground.vlm_brain             Model used only to find click targets on screen, as name:model (blank to use the answer model). It runs alone: no fallbacks
+                               default blank; name:model, or blank
   brain.first_token_s          Seconds a model has to start answering before the next one is tried
                                default 3; 1 to 60
   brain.allow_paid             Let the fallback chain use paid models

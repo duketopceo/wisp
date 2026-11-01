@@ -380,6 +380,8 @@ STRINGS = {
     "set.brain.default.help": "The model that answers you, as name:model. Hosted OpenRouter is the default. Local models such as ollama:name are supported.",
     "set.brain.fallback.label": "fallback models",
     "set.brain.fallback.help": "Models to try if the answer model fails, as name:model separated by commas. Leave blank for none.",
+    "set.ground.vlm_brain.label": "click-finding model",
+    "set.ground.vlm_brain.help": "A model used only to find where to click, as name:model. Leave blank to use the answer model. It never falls back to another model.",
     "set.brain.first_token_s.label": "model start time",
     "set.brain.first_token_s.help": "How long a model has to start answering before Wisp tries the next one, in seconds.",
     "set.brain.agent_runtime.label": "agent runtime",
