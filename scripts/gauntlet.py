@@ -25,6 +25,14 @@ What it does (KTD7-KTD12):
      prints the `wispd dev review` and `wispd dev import-labels`
      commands. The judge never writes an owner label.
 
+`--session isolated` runs the same battery against the isolated Hyprland
+instance (scripts/isolated_session.py, docs/ISOLATED_SESSION.md) instead
+of the owner's desktop: the daemon, the sandbox apps, screenshots and
+input all use the instance's runtime dir, display and private D-Bus, the
+owner's `wispd.service` is never stopped (the private runtime dir gives a
+separate `wispd.sock`), and the isolated input canary runs before the
+first case (a failure exits 2).
+
 Spend is capped across invocations by a persistent spend file in the
 gauntlet directory. Exit codes: 0 finished (a spend stop is a normal
 finish), 1 the run broke, 2 usage or a precondition failed.
@@ -55,6 +63,12 @@ _spec = importlib.util.spec_from_file_location(
 sandbox = importlib.util.module_from_spec(_spec)
 sys.modules["gauntlet_sandbox"] = sandbox
 _spec.loader.exec_module(sandbox)
+
+_spec = importlib.util.spec_from_file_location(
+    "isolated_session_mod", HERE / "isolated_session.py")
+isolated = importlib.util.module_from_spec(_spec)
+sys.modules["isolated_session_mod"] = isolated
+_spec.loader.exec_module(isolated)
 
 DEFAULT_CASES = ROOT / "docs" / "dev-tasks" / "gauntlet.jsonl"
 DEFAULT_DIR = pathlib.Path.home() / ".local" / "share" / "wisp-gauntlet"
@@ -213,9 +227,25 @@ def failure_class(a) -> str:
 class Deps:
     """Everything the driver does to the system, replaceable in tests."""
 
-    def __init__(self, env=None, clock=time.monotonic, sleep=time.sleep):
+    def __init__(self, env=None, clock=time.monotonic, sleep=time.sleep,
+                 iso=None):
         self.env = dict(os.environ if env is None else env)
         self.clock, self.sleep = clock, sleep
+        self.iso = iso              # an isolated session's env-file dict
+
+    def sock_file(self):
+        """The daemon socket this run talks to: the instance's own under
+        an isolated session, wisp's default otherwise."""
+        if not self.iso:
+            return None
+        return pathlib.Path(self.iso["XDG_RUNTIME_DIR"]) / "wisp" \
+            / "wispd.sock"
+
+    def canary(self) -> tuple:
+        """(ok, detail): U2's input canary against the instance."""
+        s = isolated.Session(state_dir=self.iso.get("WISP_ISOLATED_STATE")
+                             or None)
+        return s.canary()
 
     def systemctl(self, *argv) -> int:
         try:
@@ -243,19 +273,29 @@ class Deps:
 
     def send(self, cmd: dict) -> dict:
         from wisp import ipc
+        sf = self.sock_file()
+        if sf is not None:
+            return ipc.send(cmd, sock_file=sf, timeout=30)
         return ipc.send(cmd, timeout=30)
 
     def alive(self) -> bool:
         from wisp import ipc
-        return ipc.alive()
+        sf = self.sock_file()
+        return ipc.alive(sf) if sf is not None else ipc.alive()
 
     def make_sandbox(self, root):
+        if self.iso:
+            return sandbox.Sandbox(
+                root, base_env=session_env(self.env, self.iso),
+                dbus=self.iso.get("DBUS_SESSION_BUS_ADDRESS") or None)
         return sandbox.Sandbox(root)
 
     def screenshot(self, path) -> bool:
         try:
             r = subprocess.run(["grim", str(path)], capture_output=True,
-                               timeout=15)
+                               timeout=15,
+                               env=(session_env(self.env, self.iso)
+                                    if self.iso else None))
             return r.returncode == 0
         except (OSError, subprocess.SubprocessError):
             return False
@@ -274,12 +314,23 @@ def seed_config() -> str:
                   'key_env = "OPENROUTER_API_KEY"', text)
 
 
-def daemon_env(base: dict, gdir) -> dict:
-    """The gauntlet daemon's environment: the owner's session variables
-    the compositor needs, a throwaway HOME and XDG dirs, never the
-    owner's own."""
-    gdir = pathlib.Path(gdir)
+def session_env(base: dict, iso=None) -> dict:
+    """`base` pointed at the isolated instance: its runtime dir, wayland
+    display, signature and private bus, and no X `DISPLAY`. With no
+    `iso` it is a plain copy (the live session)."""
     env = dict(base)
+    if iso:
+        env.pop("DISPLAY", None)
+        env.update(isolated.overrides(iso))
+    return env
+
+
+def daemon_env(base: dict, gdir, iso=None) -> dict:
+    """The gauntlet daemon's environment: the owner's session variables
+    the compositor needs (or, with `iso`, the isolated instance's), a
+    throwaway HOME and XDG dirs, never the owner's own."""
+    gdir = pathlib.Path(gdir)
+    env = session_env(base, iso)
     home = gdir / "home"
     env.update({"HOME": str(home),
                 "XDG_DATA_HOME": str(gdir / "data"),
@@ -295,7 +346,7 @@ def _now_id() -> str:
 
 class Gauntlet:
     def __init__(self, cases, profiles, gdir, cap, deps, out=print,
-                 only=None):
+                 only=None, iso=None):
         self.cases = [c for c in cases if not only or c["id"] in only]
         self.profiles = profiles                      # [(label, ref, dict)]
         self.gdir = pathlib.Path(gdir)
@@ -308,12 +359,22 @@ class Gauntlet:
         self.stopped = ""
         self.seeded: set = set()
         self.box = None
+        self.iso = iso              # isolated session env, or None (live)
 
     # -- service slot ---------------------------------------------------------
 
     def run(self) -> int:
         d = self.deps
-        was_active = d.systemctl("is-active", SERVICE) == 0
+        if self.iso:
+            # nothing live is stopped or started: the private runtime
+            # dir gives the daemon its own wispd.sock
+            ok, detail = d.canary()
+            if not ok:
+                self.out("isolated input canary failed; no case was "
+                         f"run: {detail}")
+                return EXIT_USAGE
+        was_active = (not self.iso
+                      and d.systemctl("is-active", SERVICE) == 0)
         # a stop that fails or times out may still have stopped the unit,
         # so the restore below runs whenever a stop was attempted
         started = was_active
@@ -328,7 +389,7 @@ class Gauntlet:
                          "its socket")
                 return EXIT_FAIL
             self._prepare_dirs()
-            proc = d.spawn_daemon(daemon_env(d.env, self.gdir),
+            proc = d.spawn_daemon(daemon_env(d.env, self.gdir, self.iso),
                                   self.rundir / "daemon.log")
             self._wait_alive()
             self._snapshot_seed()
@@ -472,10 +533,13 @@ class Gauntlet:
         d = self.deps
         tasks = self.rundir / "tasks" / f"{tag}.txt"
         tasks.write_text(goal + "\n", encoding="utf-8")
-        r = d.send({"cmd": "dev_run", "path": str(tasks),
-                    "profiles": [ref], "windows": windows,
-                    "spend_file": str(self.spend.path),
-                    "cap_usd": self.cap})
+        msg = {"cmd": "dev_run", "path": str(tasks),
+               "profiles": [ref], "windows": windows,
+               "spend_file": str(self.spend.path),
+               "cap_usd": self.cap}
+        if self.iso:
+            msg["isolated"] = True      # run copy: uinput refused
+        r = d.send(msg)
         if not r.get("ok"):
             raise sandbox.SandboxError(
                 f"dev_run refused: {r.get('error')}")
@@ -717,6 +781,13 @@ def build_parser():
     p.add_argument("--only", default="", help="comma list of case ids")
     p.add_argument("--dry-run", action="store_true",
                    help="validate and list the plan; start nothing")
+    p.add_argument("--session", choices=("live", "isolated"),
+                   default="live",
+                   help="live (default): the owner's desktop; isolated: "
+                   "the headless Hyprland from scripts/isolated_session.py")
+    p.add_argument("--isolated-env", default="",
+                   help="the isolated session's env file (default: "
+                   "$WISP_ISOLATED_ENV or the state dir's isolated.env)")
     return p
 
 
@@ -754,6 +825,16 @@ def main(argv=None, deps=None, out=print) -> int:
                     f"{'learnable' if c['learnable'] else '':<9} "
                     f"x{len(profiles)} arms")
         return EXIT_OK
+    iso = None
+    if args.session == "isolated":
+        try:
+            iso = isolated.load_env_file(isolated.env_file_path(
+                args.isolated_env or None, deps.env))
+            isolated.check_target(iso, deps.env)
+        except isolated.SessionError as e:
+            out(f"session: {e}")
+            return EXIT_USAGE
+        deps.iso = iso
     # preconditions come before anything is stopped
     if not deps.env.get("OPENROUTER_API_KEY"):
         out("run under orch: OPENROUTER_API_KEY (the eval key) is not set")
@@ -768,7 +849,13 @@ def main(argv=None, deps=None, out=print) -> int:
         raise KeyboardInterrupt
     old = signal.signal(signal.SIGTERM, _term)
     try:
-        g = Gauntlet(cases, profiles, args.dir, args.cap, deps, out, only)
+        g = Gauntlet(cases, profiles, args.dir, args.cap, deps, out, only,
+                     iso=iso)
+        if iso:
+            # this process's own compositor queries and spawned tools
+            # resolve the instance, never the live session
+            with isolated.applied_env(iso):
+                return g.run()
         return g.run()
     finally:
         signal.signal(signal.SIGTERM, old)

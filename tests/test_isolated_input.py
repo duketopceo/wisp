@@ -226,6 +226,14 @@ class RunConfig(unittest.TestCase):
         self.assertEqual(c["dev"]["isolated_session"], "true")
         self.assertEqual(c["cua"]["delivery"], "background")
         self.assertEqual(owner, {"cua": {"delivery": "pointer"}})
+        g = devrun.run_config(owner, "r3", profile={}, grant={
+            "windows": [], "spend_file": "", "cap_usd": 1,
+            "isolated": True})
+        self.assertEqual(g["dev"]["isolated_session"], "true")
+        self.assertEqual(g["cua"]["delivery"], "background")
+        plain_g = devrun.run_config(owner, "r4", grant={
+            "windows": [], "spend_file": "", "cap_usd": 1})
+        self.assertNotIn("isolated_session", plain_g["dev"])
         plain = devrun.run_config(owner, "r2")
         self.assertNotIn("isolated_session", plain["dev"])
         self.assertEqual(plain["cua"]["delivery"], "pointer")

@@ -135,7 +135,7 @@ def run_config(cfg: dict, run_id: str, vs=None, profile=None,
         c["dev"]["spend_file"] = str(grant.get("spend_file") or "")
         c["dev"]["spend_cap_usd"] = str(
             grant.get("cap_usd", gauntlet.DEFAULT_CAP_USD))
-    if isolated:
+    if isolated or (grant and grant.get("isolated")):
         c["dev"]["isolated_session"] = "true"
         c.setdefault("cua", {})["delivery"] = "background"
     if vs:
@@ -283,8 +283,9 @@ def start(cfg: dict, st, ctl: dict, path, run_listen=None, judge=None,
     unreadable or empty. `vs` ("section.key=value") runs the list twice,
     the second time with that one override. `profiles` (names or paths)
     runs each task once per profile, arms interleaved per task, as a
-    gauntlet run: `grant` ({windows, spend_file, cap_usd}) carries what
-    the driver registered."""
+    gauntlet run: `grant` ({windows, spend_file, cap_usd, isolated})
+    carries what the driver registered; `isolated` runs the tasks with
+    instance-scoped input only (wisp.vpointer)."""
     global _thread
     if not devsession.is_on():
         return {"ok": False, "error": "dev_off"}

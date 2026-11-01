@@ -11,6 +11,13 @@ tests/test_click_harness.py.
     orch python scripts/click_probe.py --live --config hybrid \\
         --ground-brain ollama:qwen2.5vl:3b-q8_0 --monitors eDP-1,DP-3
 
+`--session isolated` drives the headless instance from
+scripts/isolated_session.py instead of the owner's monitors: pages open
+in the instance, clicks go through the virtual pointer (never uinput) and
+hit titles are read from the instance's client list. The input canary
+runs before the first target (a failure exits 2). The probe's monitors
+are the instance's two outputs.
+
 Run it under `orch` so any spend bills the eval key. Without --live it
 only prints the plan. Each run appends one JSON row per target to --out
 and prints a per-monitor, per-config, per-model summary. Spend (the usage
@@ -27,6 +34,7 @@ from __future__ import annotations
 import argparse
 import collections.abc
 import dataclasses
+import importlib.util
 import json
 import math
 import os
@@ -44,6 +52,14 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 PAGE = ROOT / "scripts" / "probe" / "targets.html"
+
+_spec = importlib.util.spec_from_file_location(
+    "isolated_session_mod", ROOT / "scripts" / "isolated_session.py")
+isolated = sys.modules.get("isolated_session_mod") \
+    or importlib.util.module_from_spec(_spec)
+if "isolated_session_mod" not in sys.modules:
+    sys.modules["isolated_session_mod"] = isolated
+    _spec.loader.exec_module(isolated)
 
 # (number, fraction of window width, fraction of window height): must
 # match BUTTONS in targets.html (a test pins this).
@@ -246,6 +262,15 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--cap-usd", type=float, default=10.0,
                     help="refuse to start when --spend-file already "
                          "totals this much")
+    ap.add_argument("--session", choices=("live", "isolated"),
+                    default="live",
+                    help="live (default): the owner's desktop; isolated: "
+                         "the headless Hyprland from "
+                         "scripts/isolated_session.py")
+    ap.add_argument("--isolated-env", default="",
+                    help="the isolated session's env file (default: "
+                         "$WISP_ISOLATED_ENV or the state dir's "
+                         "isolated.env)")
     return ap
 
 
@@ -260,6 +285,18 @@ def _numbers(text: str):
     if bad:
         raise ProbeError(f"--targets {sorted(bad)} are not buttons 1-9")
     return nums
+
+
+def isolate_config(cfg: dict) -> dict:
+    """The run copy for an isolated session (KTD6): the safety key on,
+    no real-pointer delivery, and driving (not guiding) enabled."""
+    out = {k: (dict(v) if isinstance(v, dict) else v)
+           for k, v in (cfg or {}).items()}
+    out.setdefault("dev", {})["isolated_session"] = "true"
+    out.setdefault("cua", {})["delivery"] = "background"
+    out.setdefault("pointer", {}).update({"mode": "drive",
+                                          "backend": "auto"})
+    return out
 
 
 def apply_overrides(cfg: dict, ground_brain: str, profile: dict) -> dict:
@@ -283,7 +320,7 @@ def _model_label(cfg: dict, ground_brain: str) -> str:
 def live_rig(cfg: dict) -> Rig:                     # pragma: no cover
     """The real desktop rig: Hyprland for windows and the cursor, the
     wisp pointer for clicks, a throwaway browser profile for the page."""
-    from wisp import grounding, hypr, ledger, platform, pointer
+    from wisp import grounding, hypr, ledger, platform, pointer, vpointer
     browser = next((b for b in ("chromium", "google-chrome-stable",
                                 "brave", "chrome") if shutil.which(b)), None)
     if not browser:
@@ -291,18 +328,28 @@ def live_rig(cfg: dict) -> Rig:                     # pragma: no cover
     if not hypr.available():
         raise ProbeError("Hyprland socket not reachable")
     ptr = pointer.registry(cfg)
+    iso = vpointer.is_isolated(cfg)
 
     def open_page(mon):
         x, y, w, h = logical_rect(mon)
-        hypr.run_lua(hypr.cursor_move(int(x + w / 2), int(y + h / 2)))
+        if not iso:
+            # the instance has no owner cursor to park; the virtual
+            # pointer addresses it directly
+            hypr.run_lua(hypr.cursor_move(int(x + w / 2), int(y + h / 2)))
         prof = tempfile.mkdtemp(prefix="wisp-click-probe-")
+        env = {k: v for k, v in os.environ.items()
+               if "KEY" not in k and "TOKEN" not in k}
+        argv = [browser, f"--user-data-dir={prof}", "--no-first-run",
+                "--no-default-browser-check", "--start-fullscreen",
+                f"--app={PAGE.as_uri()}"]
+        if iso:
+            # the process env already points at the instance (the
+            # caller ran under isolated.applied_env); never an X display
+            env.pop("DISPLAY", None)
+            argv.insert(1, "--ozone-platform=wayland")
         proc = subprocess.Popen(
-            [browser, f"--user-data-dir={prof}", "--no-first-run",
-             "--no-default-browser-check", "--start-fullscreen",
-             f"--app={PAGE.as_uri()}"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            env={k: v for k, v in os.environ.items()
-                 if "KEY" not in k and "TOKEN" not in k})
+            argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            env=env)
         return {"proc": proc, "profile": prof}
 
     def client(_h):
@@ -338,8 +385,28 @@ def live_rig(cfg: dict) -> Rig:                     # pragma: no cover
                spend=lambda: float(ledger.totals().get("today_usd", 0)))
 
 
-def main(argv=None, rig_factory=live_rig) -> int:
+def _canary(iso: dict) -> tuple:
+    s = isolated.Session(state_dir=iso.get("WISP_ISOLATED_STATE") or None)
+    return s.canary()
+
+
+def main(argv=None, rig_factory=live_rig, canary=_canary) -> int:
     args = build_parser().parse_args(argv)
+    iso = None
+    if args.session == "isolated":
+        try:
+            iso = isolated.load_env_file(isolated.env_file_path(
+                args.isolated_env or None))
+            isolated.check_target(iso)
+        except isolated.SessionError as e:
+            print(f"click_probe: {e}", file=sys.stderr)
+            return EXIT_USAGE
+        with isolated.applied_env(iso):
+            return _main(args, rig_factory, canary, iso)
+    return _main(args, rig_factory, canary, None)
+
+
+def _main(args, rig_factory, canary, iso) -> int:
     try:
         nums = _numbers(args.targets)
         profile = {}
@@ -349,17 +416,25 @@ def main(argv=None, rig_factory=live_rig) -> int:
         from wisp import config
         cfg = apply_overrides(config.load_config(), args.ground_brain,
                               profile)
+        if iso:
+            cfg = isolate_config(cfg)
         model = _model_label(cfg, args.ground_brain)
         names = [n for n in args.monitors.split(",") if n.strip()]
         if args.spend_file and spend_total(args.spend_file) >= args.cap_usd:
             raise ProbeError(
                 f"spend file already at the ${args.cap_usd:.2f} cap")
         if not args.live:
-            print(f"plan: config={args.config_label} model={model} "
+            print(f"plan: session={args.session} "
+                  f"config={args.config_label} model={model} "
                   f"monitors={names or 'all'} "
                   f"targets={sorted(nums) if nums else 'all 9'}; "
                   f"pass --live to run")
             return EXIT_OK
+        if iso:
+            ok, detail = canary(iso)
+            if not ok:
+                raise ProbeError("isolated input canary failed; no "
+                                 f"target was run: {detail}")
         rig = rig_factory(cfg)
         if not names:
             names = [m["name"] for m in rig.monitors() if m.get("name")]

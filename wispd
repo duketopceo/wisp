@@ -281,7 +281,8 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
                     return {"ok": False, "error": "windows must be a list"}
                 grant = {"windows": wins,
                          "spend_file": str(cmd.get("spend_file") or ""),
-                         "cap_usd": cmd.get("cap_usd", 10.0)}
+                         "cap_usd": cmd.get("cap_usd", 10.0),
+                         "isolated": cmd.get("isolated") is True}
             return devrun.start(cfg, st, ctl, str(cmd.get("path", "")),
                                 vs=cmd.get("vs"), profiles=profiles,
                                 grant=grant)

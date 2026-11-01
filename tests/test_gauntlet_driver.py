@@ -725,5 +725,153 @@ class TestRestrictedShell(unittest.TestCase):
         self.assertIn("refused", r.stdout)        # cd .. out of the root
 
 
+LIVE = "LIVE_SIG"
+ISO_STATE = {"HYPRLAND_INSTANCE_SIGNATURE": "ISO_SIG",
+             "WAYLAND_DISPLAY": "wayland-iso",
+             "XDG_RUNTIME_DIR": "/run/user/1000/wisp-iso-x",
+             "DBUS_SESSION_BUS_ADDRESS": "unix:path=/iso/bus",
+             "WISP_ISOLATED_SESSION": "1",
+             "WISP_ISOLATED_STATE": "/tmp/iso-state",
+             "WISP_LIVE_SIGNATURE": LIVE}
+
+
+class TestIsolatedSession(Base):
+    """`--session isolated` (U3): the run drives only the instance."""
+
+    def setUp(self):
+        super().setUp()
+        p = mock.patch.dict(os.environ, {
+            "HYPRLAND_INSTANCE_SIGNATURE": LIVE,
+            "WAYLAND_DISPLAY": "wayland-1", "DISPLAY": ":0"})
+        p.start()
+        self.addCleanup(p.stop)
+        self.envfile = self.tmp / "isolated.env"
+        G.isolated.write_env_file(self.envfile, ISO_STATE)
+        self.canaries = []
+
+    def deps(self, canary=(True, "ok"), **kw):
+        d = super().deps(env={"OPENROUTER_API_KEY": KEY,
+                              "HOME": "/home/owner",
+                              "DISPLAY": ":0",
+                              "XDG_RUNTIME_DIR": "/run/user/1000",
+                              "WAYLAND_DISPLAY": "wayland-1",
+                              "HYPRLAND_INSTANCE_SIGNATURE": LIVE,
+                              "DBUS_SESSION_BUS_ADDRESS":
+                                  "unix:path=/run/user/1000/bus"}, **kw)
+        d.canary = lambda: (self.canaries.append(1) or canary)
+        return d
+
+    def main(self, deps, *argv, envfile=None):
+        cf = self.tmp / "cases.jsonl"
+        cf.write_text(json.dumps(case("c1")) + "\n")
+        return G.main(["--cases", str(cf), "--dir", str(self.gdir),
+                       "--profiles", "openrouter", "--session",
+                       "isolated", "--isolated-env",
+                       str(envfile or self.envfile), *argv],
+                      deps=deps, out=self.out.append)
+
+    def test_daemon_env_carries_the_instance_and_no_display(self):
+        deps = self.deps()
+        self.assertEqual(self.main(deps), 0, self.out)
+        env = deps.daemon_env
+        self.assertEqual(env["HYPRLAND_INSTANCE_SIGNATURE"], "ISO_SIG")
+        self.assertEqual(env["WAYLAND_DISPLAY"], "wayland-iso")
+        self.assertEqual(env["XDG_RUNTIME_DIR"],
+                         "/run/user/1000/wisp-iso-x")
+        self.assertEqual(env["DBUS_SESSION_BUS_ADDRESS"],
+                         "unix:path=/iso/bus")
+        self.assertNotIn("DISPLAY", env)
+        self.assertEqual(env["OPENROUTER_API_KEY"], KEY)
+        self.assertTrue(env["HOME"].startswith(str(self.gdir)))
+
+    def test_systemctl_is_never_called(self):
+        deps = self.deps()
+        self.assertEqual(self.main(deps), 0, self.out)
+        self.assertEqual(self.sc.commands(), [])
+        self.assertEqual(self.sc.state("wispd"), "active")
+
+    def test_dev_run_carries_the_isolated_grant(self):
+        deps = self.deps()
+        self.main(deps)
+        runs = [c for c in deps.cmds if c["cmd"] == "dev_run"]
+        self.assertTrue(runs)
+        self.assertTrue(all(c["isolated"] is True for c in runs))
+
+    def test_a_failed_canary_stops_before_any_case_with_exit_2(self):
+        deps = self.deps(canary=(False, "the LIVE cursor moved"))
+        self.assertEqual(self.main(deps), 2)
+        self.assertEqual(self.canaries, [1])
+        self.assertEqual(deps.cmds, [])             # no case, no daemon
+        self.assertIsNone(deps.daemon_env)
+        self.assertEqual(self.sc.commands(), [])
+        self.assertTrue(any("canary failed" in l for l in self.out))
+
+    def test_the_canary_runs_once_before_the_first_case(self):
+        deps = self.deps()
+        self.main(deps)
+        self.assertEqual(self.canaries, [1])
+
+    def test_without_the_env_file_it_refuses_and_names_start(self):
+        deps = self.deps()
+        self.assertEqual(self.main(deps, envfile=self.tmp / "none.env"), 2)
+        self.assertTrue(any("scripts/isolated_session.py start" in l
+                            for l in self.out), self.out)
+        self.assertEqual(self.sc.commands(), [])
+        self.assertIsNone(deps.daemon_env)
+
+    def test_it_refuses_a_target_that_equals_the_live_signature(self):
+        G.isolated.write_env_file(self.envfile, {
+            **ISO_STATE, "HYPRLAND_INSTANCE_SIGNATURE": LIVE})
+        deps = self.deps()
+        self.assertEqual(self.main(deps), 2)
+        self.assertTrue(any("equals the live" in l for l in self.out))
+        self.assertIsNone(deps.daemon_env)
+
+    def test_the_process_env_is_restored_after_the_run(self):
+        before = dict(os.environ)
+        self.main(self.deps())
+        self.assertEqual(dict(os.environ), before)
+
+    def test_live_runs_do_not_ask_for_isolation(self):
+        deps = self.deps()
+        cf = self.tmp / "cases.jsonl"
+        cf.write_text(json.dumps(case("c1")) + "\n")
+        G.main(["--cases", str(cf), "--dir", str(self.gdir),
+                "--profiles", "openrouter"], deps=deps, out=self.out.append)
+        runs = [c for c in deps.cmds if c["cmd"] == "dev_run"]
+        self.assertTrue(runs)
+        self.assertTrue(all("isolated" not in c for c in runs))
+        self.assertEqual(deps.daemon_env["XDG_RUNTIME_DIR"],
+                         "/run/user/1000")
+        self.assertIn("start wispd.service", self.sc.commands())
+
+    def test_real_deps_point_the_socket_sandbox_and_grim_at_the_instance(self):
+        d = G.Deps(env={"DISPLAY": ":0", "PATH": "/usr/bin",
+                        "XDG_RUNTIME_DIR": "/run/user/1000",
+                        "WAYLAND_DISPLAY": "wayland-1"}, iso=ISO_STATE)
+        self.assertEqual(str(d.sock_file()),
+                         "/run/user/1000/wisp-iso-x/wisp/wispd.sock")
+        box = d.make_sandbox(self.tmp / "sb")
+        self.assertEqual(box.dbus, "unix:path=/iso/bus")
+        env = SB.scrubbed_env(self.tmp / "h", box.base_env, box.dbus)
+        self.assertEqual(env["WAYLAND_DISPLAY"], "wayland-iso")
+        self.assertEqual(env["XDG_RUNTIME_DIR"],
+                         "/run/user/1000/wisp-iso-x")
+        self.assertEqual(env["DBUS_SESSION_BUS_ADDRESS"],
+                         "unix:path=/iso/bus")
+        self.assertNotIn("DISPLAY", env)
+        self.assertIsNone(G.Deps(env={}).sock_file())
+
+    def test_sandbox_never_inherits_an_x_display_and_browsers_use_wayland(self):
+        env = SB.scrubbed_env(self.tmp / "h", {"DISPLAY": ":0",
+                                               "WAYLAND_DISPLAY": "w"})
+        self.assertNotIn("DISPLAY", env)
+        self.assertEqual(env["DBUS_SESSION_BUS_ADDRESS"],
+                         "unix:path=/nonexistent")
+        box = FakeDesktop().sandbox(self.tmp / "sb2")
+        argv = box.command("browser", {}, 9333)
+        self.assertIn("--ozone-platform=wayland", argv)
+
+
 if __name__ == "__main__":
     unittest.main()

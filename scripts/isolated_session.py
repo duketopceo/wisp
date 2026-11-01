@@ -42,6 +42,7 @@ flags, the `hyprctl output create headless` flow and the marker-window
 probes are verified live by `smoke` (the first live action of the plan).
 """
 import argparse
+import contextlib
 import json
 import os
 import pathlib
@@ -132,6 +133,58 @@ def load_env_file(path) -> dict:
             raise SessionError(f"{path} is missing {k}; run "
                                "scripts/isolated_session.py start")
     return env
+
+
+def env_file_path(arg=None, environ=None) -> pathlib.Path:
+    """Where a driver reads the env file: the flag, then
+    `WISP_ISOLATED_ENV`, then the default state dir."""
+    e = os.environ if environ is None else environ
+    if arg:
+        return pathlib.Path(arg)
+    if e.get("WISP_ISOLATED_ENV"):
+        return pathlib.Path(e["WISP_ISOLATED_ENV"])
+    return default_state_dir(e) / "isolated.env"
+
+
+def check_target(state: dict, environ=None) -> None:
+    """Refuse a target whose signature equals the live one (KTD6). The
+    live signature is the one `start` recorded; failing that, the
+    caller's own environment."""
+    e = os.environ if environ is None else environ
+    live = state.get("WISP_LIVE_SIGNATURE") or e.get(
+        "HYPRLAND_INSTANCE_SIGNATURE", "")
+    if not live:
+        raise SessionError("the live session's signature is unknown, so "
+                           "the target cannot be proven different")
+    if state["HYPRLAND_INSTANCE_SIGNATURE"] == live:
+        raise SessionError("the isolated session's signature equals the "
+                           "live one; refusing")
+
+
+def overrides(state: dict) -> dict:
+    """The variables that point a process at the instance."""
+    out = {"XDG_RUNTIME_DIR": state["XDG_RUNTIME_DIR"],
+           "WAYLAND_DISPLAY": state["WAYLAND_DISPLAY"],
+           "HYPRLAND_INSTANCE_SIGNATURE":
+               state["HYPRLAND_INSTANCE_SIGNATURE"]}
+    if state.get("DBUS_SESSION_BUS_ADDRESS"):
+        out["DBUS_SESSION_BUS_ADDRESS"] = state["DBUS_SESSION_BUS_ADDRESS"]
+    return out
+
+
+@contextlib.contextmanager
+def applied_env(state: dict):
+    """Run the caller's process "inside" the instance: its compositor
+    queries and spawned tools resolve the instance, never the live
+    session. `os.environ` is restored on exit."""
+    saved = dict(os.environ)
+    try:
+        os.environ.pop("DISPLAY", None)
+        os.environ.update(overrides(state))
+        yield
+    finally:
+        os.environ.clear()
+        os.environ.update(saved)
 
 
 # -- the launch environment ---------------------------------------------------
