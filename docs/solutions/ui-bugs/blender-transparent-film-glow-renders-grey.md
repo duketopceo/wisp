@@ -68,8 +68,8 @@ plus higher alpha nearer the heart).
 
 ## Why this works
 
-In a film-transparent render, alpha comes from surface coverage. Emission
-(an emissive volume above all) adds colour to the pixel but no coverage, so
+In a film-transparent render, alpha comes from surface coverage. An emissive
+volume, like the halo this scene used, adds colour to the pixel but no coverage, so
 the pixel's alpha stays near zero while its RGB is non-zero. Saved as straight
 alpha and composited, that colour is mostly thrown away or comes out wrong,
 which is the grey disc. A post bloom builds the glow and its alpha together,
