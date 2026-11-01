@@ -402,6 +402,20 @@ class TestIsolation(Base):
                          "unix:path=/nonexistent")
         self.assertEqual(env["HOME"], str(self.tmp / "h"))
 
+    def test_sandbox_browser_runs_without_extensions(self):
+        # the owner's policy force-installs an extension that opens a
+        # welcome tab and steals focus in every fresh profile (live run)
+        box = self.deps().desktop.sandbox(self.tmp / "sb")
+        argv = box.command("browser", None, 9333)
+        self.assertIn("--disable-extensions", argv)
+
+    def test_run_puts_the_owner_back_on_their_workspace(self):
+        deps = self.deps()
+        with mock.patch.object(G, "_active_workspace", return_value=7), \
+                mock.patch.object(G, "_restore_workspace") as back:
+            self.run_g([case("c1")], deps, profiles=("openrouter",))
+        back.assert_called_with(7)
+
     def test_no_window_for_an_app_ends_the_attempt_not_the_run(self):
         deps = self.deps()
         deps.desktop.sandbox = lambda root: SB.Sandbox(
