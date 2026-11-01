@@ -49,7 +49,8 @@ SCALES = (1, 2)
 # Named window sizes for scenes that must hold at real screen sizes (the
 # settings window): logical width and height, and the output scale the
 # machine runs them at. A variant picks one with `_viewport`; it renders in
-# both themes at that scale only.
+# both themes at that scale only, and its width and height replace any the
+# scene sets.
 VIEWPORTS = {
     "laptop": {"width": 1728, "height": 1080, "scale": 2},
     "ultrawide": {"width": 3440, "height": 1440, "scale": 1},

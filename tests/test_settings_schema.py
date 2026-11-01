@@ -63,6 +63,8 @@ TABLE = [
     ("brain.default", "ollama:lfm2-vl", ""),
     ("brain.default", "openrouter:meta-llama/llama-4-maverick", ""),
     ("brain.default", "just-a-name", "format"),
+    ("brain.default", "a:b,trailing", "format"),
+    ("brain.default", "a:b c", "format"),
     ("brain.default", 'a:b"c', "chars"),
     ("brain.default", "a:b#c", "chars"),
     ("brain.default", "a:b\\c", "chars"),
