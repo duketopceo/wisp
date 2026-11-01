@@ -273,6 +273,9 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
                     isinstance(profiles, list) and profiles
                     and all(isinstance(x, str) for x in profiles)):
                 return {"ok": False, "error": "profiles must be a list"}
+            if cmd.get("isolated") is True and not profiles:
+                return {"ok": False,
+                        "error": "isolated needs profiles (a gauntlet run)"}
             grant = None
             if profiles:
                 wins = cmd.get("windows") or []
@@ -281,7 +284,8 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
                     return {"ok": False, "error": "windows must be a list"}
                 grant = {"windows": wins,
                          "spend_file": str(cmd.get("spend_file") or ""),
-                         "cap_usd": cmd.get("cap_usd", 10.0)}
+                         "cap_usd": cmd.get("cap_usd", 10.0),
+                         "isolated": cmd.get("isolated") is True}
             return devrun.start(cfg, st, ctl, str(cmd.get("path", "")),
                                 vs=cmd.get("vs"), profiles=profiles,
                                 grant=grant)

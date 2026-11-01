@@ -279,5 +279,121 @@ class Cli(unittest.TestCase):
             "openrouter:m")
 
 
+ISO = {"HYPRLAND_INSTANCE_SIGNATURE": "ISO_SIG",
+       "WAYLAND_DISPLAY": "wayland-iso",
+       "XDG_RUNTIME_DIR": "/run/user/1000/wisp-iso-x",
+       "DBUS_SESSION_BUS_ADDRESS": "unix:path=/iso/bus",
+       "WISP_ISOLATED_SESSION": "1", "WISP_LIVE_SIGNATURE": "LIVE_SIG"}
+
+
+class Isolated(unittest.TestCase):
+    """`--session isolated` (U3): the instance only, behind the canary."""
+
+    def setUp(self):
+        import os
+        from unittest import mock
+        p = mock.patch.dict(os.environ, {
+            "HYPRLAND_INSTANCE_SIGNATURE": "LIVE_SIG", "DISPLAY": ":0",
+            "WAYLAND_DISPLAY": "wayland-1"})
+        p.start()
+        self.addCleanup(p.stop)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.envfile = pathlib.Path(self.tmp.name) / "iso.env"
+        probe.isolated.write_env_file(self.envfile, ISO)
+        self.cfgs, self.canaries = [], []
+
+    def main(self, argv, fake=None, canary=(True, "ok"), envfile=None):
+        out, err = io.StringIO(), io.StringIO()
+
+        def factory(cfg):
+            self.cfgs.append(cfg)
+            return fake.rig()
+        with contextlib.redirect_stdout(out), \
+                contextlib.redirect_stderr(err):
+            code = probe.main(
+                ["--session", "isolated", "--isolated-env",
+                 str(envfile or self.envfile), *argv],
+                rig_factory=factory,
+                canary=lambda iso: (self.canaries.append(iso) or canary))
+        return code, out.getvalue(), err.getvalue()
+
+    def test_run_config_is_isolated_and_drives(self):
+        fake = FakeRig(perfect)
+        out = pathlib.Path(self.tmp.name) / "o.jsonl"
+        code, _, err = self.main(["--live", "--monitors", "DP-3",
+                                  "--targets", "1", "--out", str(out),
+                                  "--max-usd", "0"], fake)
+        self.assertEqual(code, 0, err)
+        cfg = self.cfgs[0]
+        self.assertEqual(cfg["dev"]["isolated_session"], "true")
+        self.assertEqual(cfg["cua"]["delivery"], "background")
+        self.assertEqual(cfg["pointer"]["mode"], "drive")
+        self.assertEqual(len(self.canaries), 1)
+
+    def test_a_failed_canary_runs_no_target_and_exits_2(self):
+        code, _, err = self.main(["--live"], FakeRig(perfect),
+                                 canary=(False, "live cursor moved"))
+        self.assertEqual(code, 2)
+        self.assertIn("canary failed", err)
+        self.assertEqual(self.cfgs, [])             # no rig was built
+
+    def test_missing_env_file_names_the_start_command(self):
+        code, _, err = self.main(
+            ["--live"], envfile=pathlib.Path(self.tmp.name) / "none.env")
+        self.assertEqual(code, 2)
+        self.assertIn("scripts/isolated_session.py start", err)
+
+    def test_a_target_equal_to_the_live_signature_is_refused(self):
+        probe.isolated.write_env_file(self.envfile, {
+            **ISO, "HYPRLAND_INSTANCE_SIGNATURE": "LIVE_SIG"})
+        code, _, err = self.main(["--live"])
+        self.assertEqual(code, 2)
+        self.assertIn("equals the live", err)
+
+    def test_plan_only_prints_the_session_and_runs_no_canary(self):
+        code, out, _ = self.main([])
+        self.assertEqual(code, 0)
+        self.assertIn("session=isolated", out)
+        self.assertEqual(self.canaries, [])
+
+    def test_live_rig_opens_pages_and_reads_titles_in_the_instance(self):
+        import os
+        import shutil
+        from unittest import mock
+        from wisp import hypr
+        seen = {}
+
+        def query(name, *a, **k):
+            seen["sig"] = os.environ["HYPRLAND_INSTANCE_SIGNATURE"]
+            seen["wl"] = os.environ["WAYLAND_DISPLAY"]
+            return [{"title": "hit:3:1", "at": [0, 0], "size": [10, 10]}]
+        popen = mock.Mock()
+        with probe.isolated.applied_env(ISO), \
+                mock.patch.object(shutil, "which",
+                                  return_value="/usr/bin/chromium"), \
+                mock.patch.object(hypr, "available", return_value=True), \
+                mock.patch.object(hypr, "query", side_effect=query), \
+                mock.patch.object(hypr, "run_lua") as run_lua, \
+                mock.patch.object(probe.subprocess, "Popen", popen), \
+                mock.patch.object(probe.tempfile, "mkdtemp",
+                                  return_value=self.tmp.name + "/prof"):
+            rig = probe.live_rig(probe.isolate_config({}))
+            handle = rig.open_page(EDP)
+            title = rig.title(handle)
+        argv, kw = popen.call_args[0][0], popen.call_args[1]
+        self.assertIn("--ozone-platform=wayland", argv)
+        self.assertEqual(kw["env"]["WAYLAND_DISPLAY"], "wayland-iso")
+        self.assertEqual(kw["env"]["DBUS_SESSION_BUS_ADDRESS"],
+                         "unix:path=/iso/bus")
+        self.assertNotIn("DISPLAY", kw["env"])
+        run_lua.assert_not_called()             # no cursor warp
+        self.assertEqual(title, "hit:3:1")
+        self.assertEqual(seen, {"sig": "ISO_SIG", "wl": "wayland-iso"})
+
+    def test_isolation_is_opt_in_for_the_config(self):
+        self.assertNotIn("dev", probe.apply_overrides({}, "", {}))
+
+
 if __name__ == "__main__":
     unittest.main()

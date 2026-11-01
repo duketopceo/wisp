@@ -30,9 +30,11 @@ HERE = pathlib.Path(__file__).resolve().parent
 RSH = HERE / "rsh"
 # two dedicated workspaces for window-control cases
 SANDBOX_WS = (91, 92)
-# what a sandbox app may inherit: the display, never a secret
+# what a sandbox app may inherit: the Wayland display, never a secret and
+# never an X display (an isolated run has no X server; a live one must
+# not fall back to the owner's)
 ENV_KEEP = ("PATH", "LANG", "LC_ALL", "TERM", "XDG_RUNTIME_DIR",
-            "WAYLAND_DISPLAY", "DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE")
+            "WAYLAND_DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE")
 _SECRET = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|"
                      r"AUTH|SESSION_BUS)", re.I)
 BROWSERS = ("chromium", "google-chrome-stable", "brave", "firefox")
@@ -47,17 +49,18 @@ class SandboxError(RuntimeError):
     pass
 
 
-def scrubbed_env(home, base=None) -> dict:
+def scrubbed_env(home, base=None, dbus=None) -> dict:
     """The environment a sandbox app gets: the display variables, a HOME
     and XDG dirs under `home`, and nothing else. Never an API key and
-    never the session bus (a file manager would otherwise hand its
-    window to the owner's already-running instance)."""
+    never the owner's session bus (a file manager would otherwise hand
+    its window to the owner's already-running instance). An isolated run
+    passes its own private bus as `dbus`."""
     base = os.environ if base is None else base
     home = pathlib.Path(home)
     env = {k: base[k] for k in ENV_KEEP if k in base and not _SECRET.search(k)}
     # without an address, libdbus falls back to $XDG_RUNTIME_DIR/bus,
     # the owner's own session; point it at nothing
-    env.update({"DBUS_SESSION_BUS_ADDRESS": "unix:path=/nonexistent",
+    env.update({"DBUS_SESSION_BUS_ADDRESS": dbus or "unix:path=/nonexistent",
                 "HOME": str(home),
                 "XDG_CONFIG_HOME": str(home / ".config"),
                 "XDG_DATA_HOME": str(home / ".local" / "share"),
@@ -143,7 +146,7 @@ class Sandbox:
                  move=hypr_move, focused=hypr_focused, which=shutil.which,
                  killpg=os.killpg, sleep=time.sleep, clock=time.monotonic,
                  base_env=None, port=free_port, tree=descendants,
-                 fetch=None, window_timeout=15.0):
+                 fetch=None, window_timeout=15.0, dbus=None):
         self.root = pathlib.Path(root)
         self.workspace = self.root / "workspace"
         self.spawn, self.clients, self.move = spawn, clients, move
@@ -153,6 +156,7 @@ class Sandbox:
         self.port, self.tree = port, tree
         self.fetch = fetch or _fetch_json
         self.window_timeout = window_timeout
+        self.dbus = dbus                # an isolated run's private bus
         self.windows: dict = {}
         self._procs: list = []
 
@@ -204,8 +208,9 @@ class Sandbox:
             return [self.which(exe), f"--user-data-dir={prof}",
                     "--no-first-run", "--no-default-browser-check",
                     "--disable-sync", "--disable-extensions",
+                    "--password-store=basic",
                     f"--remote-debugging-port={port}",
-                    "--new-window", url]
+                    "--ozone-platform=wayland", "--new-window", url]
         if app == "files":
             exe = next((b for b in FILE_MANAGERS if self.which(b)), None)
             if exe is None:
@@ -227,7 +232,7 @@ class Sandbox:
         home.mkdir(parents=True, exist_ok=True)
         port = self.port() if app == "browser" else None
         argv = self.command(app, setup, port)
-        env = scrubbed_env(home, self.base_env)
+        env = scrubbed_env(home, self.base_env, self.dbus)
         if app == "terminal":
             env["GAUNTLET_ROOT"] = str(self.workspace)
         before = {c.get("address") for c in self.clients()}

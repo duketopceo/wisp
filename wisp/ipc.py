@@ -55,6 +55,9 @@ SAFETY_CONFIG_KEYS = frozenset({
     # and the spend cap; set only on a run's own config copy
     "dev.gauntlet", "dev.sandbox_windows", "dev.spend_file",
     "dev.spend_cap_usd",
+    # isolated-session input (wisp.vpointer): refuses every uinput path;
+    # a run-copy setting, never settable by an agent or marked peer
+    "dev.isolated_session",
 })
 
 
