@@ -143,7 +143,27 @@ class VirtualPointer:
         try:
             self._sock.sendall(data)
         except OSError as e:
-            raise VPointerError(f"send failed: {e}") from e
+            # the compositor may have closed on a protocol error it had
+            # already written to us: surface that instead of the EPIPE
+            why = self._pending_error()
+            raise VPointerError(why or f"send failed: {e}") from e
+
+    def _pending_error(self) -> str:
+        try:
+            self._sock.settimeout(0.5)
+            while True:
+                obj, op, body = self._event()
+                if obj == _DISPLAY and op == 0:
+                    return self._error_text(body)
+        except (VPointerError, OSError, struct.error):
+            return ""
+
+    @staticmethod
+    def _error_text(body: bytes) -> str:
+        oid, code = struct.unpack_from("=II", body)
+        (ln,) = struct.unpack_from("=I", body, 8)
+        text = body[12:12 + ln - 1].decode("utf-8", "replace")
+        return f"protocol error on object {oid} (code {code}): {text}"
 
     def _recv_exact(self, n: int) -> bytes:
         while len(self._buf) < n:
@@ -170,11 +190,7 @@ class VirtualPointer:
         while True:
             obj, op, body = self._event()
             if obj == _DISPLAY and op == 0:              # error
-                oid, code = struct.unpack_from("=II", body)
-                (ln,) = struct.unpack_from("=I", body, 8)
-                text = body[12:12 + ln - 1].decode("utf-8", "replace")
-                raise VPointerError(
-                    f"protocol error on object {oid} (code {code}): {text}")
+                raise VPointerError(self._error_text(body))
             if obj == 2 and op == 0:                     # registry.global
                 name, ln = struct.unpack_from("=II", body)
                 iface = body[8:8 + ln - 1].decode()
