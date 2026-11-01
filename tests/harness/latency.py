@@ -24,7 +24,7 @@ SUITE = [
     ("act_click_cua", {}),
     ("cancel_mid_act", {}),
     ("brain_down", {"offline": True}),
-    ("jev_down", {"offline": True}),
+    ("retired_endpoint_down", {"offline": True}),
 ]
 
 

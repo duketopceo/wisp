@@ -12,7 +12,10 @@ Common script keys (any fake):
   drop_on_calls   1-based call numbers where the socket is closed
                   without any response (connection reset)
 
-FakeJev      script["answers"]            -> {"answers": ...}
+FakeJev      tripwire for the retired decision endpoint: nothing routes
+             through it, so any call it records is a stray hop (the
+             runner fails the fixture). script["answers"] is only the
+             canned reply for a fixture that proves it is never called.
 FakeBrain    script["responses"][i]       -> one entry per call (last
              repeats); entry keys: content, chunks, tool_calls
              [{name,arg}], latency_ms, chunk_delay_ms. Streams SSE when
@@ -189,7 +192,9 @@ class FakeServer:
 
 
 class FakeJev(FakeServer):
-    """Jev decisions endpoint: returns scripted typed answers."""
+    """Tripwire for `JEV_ENDPOINT` (still read by the grounding `jev`
+    provider and the health probe; Q3 is open). The runner reports any
+    recorded call."""
 
     def serve(self, h, method, body, n):
         self.respond(h, 200, {"answers": self.script.get("answers", {}),

@@ -220,7 +220,7 @@ class DecisionWriterTurnTest(unittest.TestCase):
         logged = []
         st = mock.Mock()
         cfg = {"audio": {"seconds": "0"}, "agent": {},
-               "brain": {"router": "jev"}}
+               "brain": {"router": "act"}}
         with mock.patch.object(pipeline, "record",
                            return_value=pathlib.Path("/x.wav")), \
              mock.patch.object(pipeline, "transcribe", side_effect=exc), \

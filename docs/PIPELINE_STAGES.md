@@ -6,16 +6,16 @@ over four stage modules, all writing through the StateBus turn handle:
 | Module | Stage | Owns |
 |---|---|---|
 | `wisp/stage_capture.py` | capture | recorder and level sampler, transcription (local, wordink, OpenAI-compatible), trigger screenshot (checked for a black or single-colour frame by `wisp/blank.py`: one window-capture retry, then the window's accessibility text with one spoken sentence, else "I can't see that window." and no model call) and window map, `capture_stage` and `context_stage` (focus, goal, session, memory, correction) |
-| `wisp/stage_route.py` | route | `JEV_QUESTIONS`, `ask_jev`, rescues (`fuzzy_app`, `complex_launch`), clarify prompt, `route_stage` |
+| `wisp/stage_route.py` | route | `fixed_route` (local routes, with a saved `router = "jev"` or unknown value read as `act`), `fast_route` (the no-model fast path), `route_stage` |
 | `wisp/stage_execute.py` | execute | `execute` (risk gate and dispatch to tools, act loop, agents, dictation), `execute_stage` |
 | `wisp/stage_speak.py` | speak | `ask_chat`, answer streaming, TTS, ASK_USER, `log_decision`, `speak_stage` |
 | `wisp/stage_ctx.py` | shared | `TurnCtx`, the per-turn values the stages hand to each other |
 
 `wisp/pipeline.py` keeps `run_listen`, `_listen_turn` (cancel, error and
 cleanup paths), `notify`, `_publish_error`, and re-exports every public
-name, so `pipeline.ask_jev`, `pipeline.execute` and the rest still resolve.
+name, so `pipeline.execute` and the rest still resolve.
 
-Patch targets: a stage calls anything tests patch (`ask_jev`, `execute`,
+Patch targets: a stage calls anything tests patch (`execute`,
 `record`, `capture_screen`, `notify`, `log_decision`, `_ask_prompt`, ...)
 through `wisp.pipeline` at call time (`_pl()`), so
 `mock.patch.object(pipeline, "<name>")` keeps working. Do not call such a
