@@ -9,7 +9,9 @@ execution: code
 
 # Wisp light orb on the /light/ preview - Plan
 
-**Target repo:** duketopceo/wisp (branch from `master`; supersedes PR #274).
+**Target repo:** duketopceo/wisp (branch from `master`; replaces the renderer PR #274 shipped).
+
+> **Drift note (2026-10-31, ce-plan resume check):** PR #274 merged to `master` as `8140fdd` after this plan was written. `/light/` (page, CSS, fonts, old fbm renderer `light.mjs`, ThreeUI notices, `GuidingLightPreview` tests, `FILES` entries) is already on `master`, and the notices mirror is already byte-identical there. So U1 no longer carries files from `feature/site-guiding-light`; it reconciles what is on `master` instead (below). Every other unit is unchanged, except that U4 rewrites the existing `site-3d/light/light.mjs` instead of creating it. The settled decision "fresh branch superseding #274" still holds in effect: this branch replaces #274's renderer, keeps its page/copy/credits, and credits #274 in the PR body. Product Contract unchanged. Stop 05 copy is already resolved (see Open Questions).
 
 ## Goal Capsule
 
@@ -125,7 +127,7 @@ Considered and not built:
   - Stability: zero blank frames in motion; no overshoot beyond 0.5 device px once the scripted scroll has ended; premultiplied invariant (r, g, b not above alpha plus 1) and fully transparent border pixels in every sampled frame; on rest frames, luminance non-increasing outward within 2/255 along a ray opposite the tail, outside the core radius.
   - Rest: after settle, zero animation frames, zero draws, and an unchanged host transform over 2 seconds.
   - Degradation: resolution step-downs are monotone and at most two, and a hand-off to the CSS orb may follow once as a final separate transition with no blank frame. The forced-GL 1x run must finish with `data-renderer="webgl"` and `data-tier` at the top tier, so it cannot pass vacuously by handing off. CPU throttle slows the main thread only, not SwiftShader raster; the throttled runs validate the JS and tier-logic path, and fill cost rests on the SwiftShader run and the manual real-device check.
-- KTD7. **Module layout for reuse.** `site-3d/wisp/sim.mjs` (pure, no DOM or GL, testable in Node), `site-3d/wisp/gl.mjs` (plain WebGL view: init, draw, resize, dispose, loss handling), and `site-3d/light/light.mjs` (page wiring: stops, geometry cache, loop, fallback). Shader source lives in `gl.mjs` as strings the three adapter can reuse. `site-3d/light/` holds the page and its font and CSS assets.
+- KTD7. **Module layout for reuse.** `site-3d/wisp/sim.mjs` (pure, no DOM or GL, testable in Node), `site-3d/wisp/gl.mjs` (plain WebGL view: init, draw, resize, dispose, loss handling), and `site-3d/light/light.mjs` (rewritten in place; page wiring: stops, geometry cache, loop, fallback). Shader source lives in `gl.mjs` as strings the three adapter can reuse. `site-3d/light/` holds the page and its font and CSS assets.
 - KTD8. **Credit follows the work.** The new shader is a rewrite, not a copy of ThreeUI's `energy-orb`. The MIT notice stays (the visual reference and palette idea came from it) with wording changed from "adapts the fragment shader" to "design reference; shader rewritten". #274 is credited in the PR description. This is the owner's credit request applied honestly to what ships.
 - KTD9. **Notices mirror is a byte copy.** `shell-plugin/THIRD_PARTY_NOTICES.md` is overwritten with the top-level file after the edit. The tests pin byte equality, so the plugin copy carries the website section; that is accepted rather than relaxing the test.
 
@@ -212,38 +214,31 @@ These are inferred bets, not confirmed by the owner.
 
 ## Implementation Units
 
-Units land as atomic commits on one branch (suggested name `feat/site-wisp-light`) opened as one PR.
+Units land as atomic commits on one branch (`feat/wisp-light-orb`) opened as one PR.
 
-### U1. Carry #274 forward and fix the notices mirror
+### U1. Reconcile the merged #274 page: credit wording, copy and tests
 
-**Goal:** The branch has #274's page, copy, fonts and credits on current `master`, with CI's notices failure fixed and the one copy claim corrected.
+**Goal:** The `/light/` page on `master` keeps its page, fonts and credits, with the ThreeUI wording corrected to match the rewrite, the stop 05 claim corrected, and the credit tests pointed at the new modules.
 
 **Requirements:** R2, R9, R10, R11.
 
 **Dependencies:** None.
 
 **Files:**
-- Create from `origin/feature/site-guiding-light` (fetch and `git checkout <ref> -- <path>` only; never push to it): `site-3d/light/index.html`, `site-3d/light/light.css`, `site-3d/light/fonts/newsreader-roman-latin.woff2`, `site-3d/light/fonts/newsreader-ital-latin.woff2`, `site-3d/vendor/OFL-Newsreader.txt`, `site-3d/vendor/THREEUI-LICENSE.txt`
-- Modify: `THIRD_PARTY_NOTICES.md`, `shell-plugin/THIRD_PARTY_NOTICES.md`, `site-3d/vendor/PROVENANCE.md`, `docs/HOSTING.md`, `scripts/site/build_3d.py`, `tests/test_site_3d.py`
+- Modify: `THIRD_PARTY_NOTICES.md`, `shell-plugin/THIRD_PARTY_NOTICES.md` (byte copy of the top-level file, KTD9), `site-3d/vendor/PROVENANCE.md`, `site-3d/light/index.html`, `docs/HOSTING.md` (only if its `/light/` entry exists), `tests/test_site_3d.py`
 
 **Approach:**
-- Take #274's `THIRD_PARTY_NOTICES.md` section, reword it per KTD8, then overwrite the plugin copy with the top-level file (KTD9).
-- Add the new file list to `FILES` (modules from U2 to U4 are added in their own units).
-- Port #274's `GuidingLightPreview` tests, keeping the credit assertions on the notices and vendor license files only; the assertion that the module header carries the credit moves to U3.
-- Re-check each claim in the page copy against `README.md` and `ROADMAP.md`. Rewrite stop 05 to say hosted models via OpenRouter are the default for users and small local models are a supported option (see Open Questions, resolved). Replace the em dash in the page title.
-- Credit #274 and ThreeUI in `PROVENANCE.md` (ThreeUI) and the PR body (#274).
-
-**Patterns to follow:** `tests/test_site_3d.py` class layout; `site-3d/vendor/PROVENANCE.md` entry style.
+- Reword the ThreeUI notices section, the PROVENANCE entry and the page footer from "adapts the fragment shader" to "design reference; shader rewritten" (KTD8), keep the MIT text and the `lumen-cta` ghost-pill credit, then overwrite the plugin copy with the top-level file.
+- Rewrite stop 05 (label, heading and body): hosted models via OpenRouter are the default for users; small local models, for example a Liquid AI LFM vision model, are a supported option; no latency figures; keep the `[agent] screenshots = "false"` sentence only if README still supports it. Check each other claim against `README.md` and `ROADMAP.md`. Replace the em dash in the page title. Update README/ROADMAP only if they still say local is off in a way that contradicts the stop.
+- Update `GuidingLightPreview` tests: the `MengTo/threeui` header assertion moves to `site-3d/wisp/gl.mjs` in U3, and the old assertion on `light.mjs` is dropped when U4 rewrites it. Add stop 05 assertions.
 
 **Test scenarios:**
-- Covers R11. `shell-plugin/THIRD_PARTY_NOTICES.md` bytes equal the top-level file (existing `TestThirdPartyNotices`).
-- Covers R11. `pm.build` mirror validates and neither notices file says "Wisp is MIT licensed" (existing mirror test).
-- Covers R9. The page HTML has no inline `<script>` and no remote `src`/`href` to js, css or fonts; the combined html, css and js mention `prefers-reduced-motion`.
-- Covers R2. The page contains `docs/INSTALL.md`, the word "experimental", no `\d+ ms` figures, no `wisp.casa`; stop 05 names both hosted (default) and local small models, contains no latency figures, and not "stay on your machine".
-- Covers R11. The ThreeUI license text with "Copyright (c) 2026 Meng To" is present in the vendor file and the top-level notices.
-- `builder.check(out)` returns no problems for a build that includes the new files.
+- Covers R11. Plugin notices bytes equal the top-level file (existing `TestThirdPartyNotices`); the mirror build validates.
+- Covers R2. Stop 05 names hosted (default) and local small models, has no latency figures, and does not say "stay on your machine".
+- Covers R9. Existing CSP/self-hosting test still passes.
+- Covers R11. ThreeUI license text and the "shader rewritten" wording are present in the notices and PROVENANCE.
 
-**Verification:** `tests.test_plugin_manifest`, `tests.test_plugin_mirror`, `tests.test_site_3d` pass; a build contains every carried file and `inventory.json` is deterministic.
+**Verification:** `tests.test_plugin_manifest`, `tests.test_plugin_mirror`, `tests.test_site_3d` pass.
 
 ### U2. Wisp motion sim
 
@@ -322,8 +317,7 @@ Units land as atomic commits on one branch (suggested name `feat/site-wisp-light
 **Dependencies:** U1, U2, U3.
 
 **Files:**
-- Create: `site-3d/light/light.mjs`
-- Modify: `site-3d/light/index.html`, `site-3d/light/light.css`, `scripts/site/build_3d.py`, `tests/test_site_3d.py`
+- Modify (rewrite): `site-3d/light/light.mjs`, `site-3d/light/index.html`, `site-3d/light/light.css`, `scripts/site/build_3d.py`, `tests/test_site_3d.py`
 
 **Approach:**
 - Geometry cache (KTD5): mark positions in document coordinates, refreshed by `ResizeObserver`, `resize`/`orientationchange` and `document.fonts.ready`. Active stop by binary search on cached midpoints. The loop reads only `scrollY`.

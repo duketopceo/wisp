@@ -1,0 +1,53 @@
+{
+  "_comment": "Thresholds for the /light/ no-flicker gates (tests/browser/light.mjs). A bound may only tighten: the test refuses any value looser than the ceiling in the plan (KTD6). Medians are measured under SwiftShader; each bound records why.",
+  "ceilings": {
+    "maxDrawsPerSecond": 31,
+    "p95DrawIntervalMs": 50,
+    "fractionDrawIntervalsOver50ms": 0.05,
+    "maxBlankFrames": 0,
+    "overshootDevicePx": 0.5,
+    "premultipliedViolations": 0,
+    "borderAlphaMax": 1,
+    "glowRiseMax": 2,
+    "restAnimationFrames": 0,
+    "restDraws": 0,
+    "maxStepDowns": 2,
+    "restPositionTolerancePx": 2
+  },
+  "bounds": {
+    "p95DrawIntervalMs": 45,
+    "fractionDrawIntervalsOver50ms": 0.02
+  },
+  "medians": {
+    "scope": "SwiftShader, Chromium 1248 arm64, first calibration run, 3 s scripted drift",
+    "1x": {
+      "drawsPerSecondMax": 31,
+      "p95IntervalMs": 35.8,
+      "medianIntervalMs": 33.3
+    },
+    "1x-120hz": {
+      "drawsPerSecondMax": 26,
+      "p95IntervalMs": 40.3,
+      "medianIntervalMs": 40.0
+    },
+    "4x": {
+      "drawsPerSecondMax": 31,
+      "p95IntervalMs": 35.0
+    },
+    "6x": {
+      "drawsPerSecondMax": 31,
+      "p95IntervalMs": 34.9
+    },
+    "restAnimationFrames": 0,
+    "overshootCssPx": 0,
+    "glowRise": 0,
+    "blankFrames": 0,
+    "borderAlpha": 0
+  },
+  "reasons": {
+    "p95DrawIntervalMs": "Measured p95 is 40.3 ms at worst (synthetic 120 Hz timer jitter); 45 ms leaves runner noise headroom and is tighter than the 50 ms ceiling.",
+    "fractionDrawIntervalsOver50ms": "Measured 0 on every run; 0.02 tolerates a single scheduler hiccup in a 90-draw window.",
+    "maxDrawsPerSecond": "Kept at the ceiling: the time gate yields 30 draws a second; a sliding 1 s window counts 31 points at most.",
+    "others": "Kept at the plan ceilings; measured values are all at the best possible value (0)."
+  }
+}
