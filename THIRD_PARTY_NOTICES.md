@@ -112,10 +112,11 @@ license, shipped with the download.
 
 ## ThreeUI Community (website light)
 
-The guiding-light preview at `site-3d/light/` adapts the `energy-orb`
-fragment shader and the `lumen-cta` ghost-button style from ThreeUI
-Community (https://github.com/MengTo/threeui), recoloured and toned down.
-No ThreeUI Pro or remote catalog media is used. The license is reproduced
+The guiding-light preview at `site-3d/light/` uses the `energy-orb` look
+from ThreeUI Community (https://github.com/MengTo/threeui) as a design
+reference (shader rewritten; the light's shader is original code), and adapts
+the `lumen-cta` ghost-button style. No ThreeUI Pro or remote catalog media is
+used. The license is reproduced
 verbatim, and again in `site-3d/vendor/THREEUI-LICENSE.txt`.
 
 ```

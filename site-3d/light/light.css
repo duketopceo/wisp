@@ -11,9 +11,16 @@ a{color:inherit}
 nav{position:fixed;z-index:4;inset:0 0 auto;display:flex;justify-content:space-between;padding:26px var(--pad);font-size:15px;color:var(--faint)}
 nav a{text-decoration:none;margin-left:28px;transition:color .3s}nav a:hover,nav a:focus-visible{color:var(--guide)}
 nav b{font-weight:400;color:var(--muted);letter-spacing:.04em}
-.light{position:fixed;z-index:3;left:0;top:0;width:var(--s);height:var(--s);margin:calc(var(--s)/-2) 0 0 calc(var(--s)/-2);pointer-events:none;--s:200px;will-change:transform}
+.light{position:fixed;z-index:3;left:0;top:0;width:var(--s);height:var(--s);margin:calc(var(--s)/-2) 0 0 calc(var(--s)/-2);pointer-events:none;--s:400px;will-change:transform;transform:translate3d(70vw,40vh,0)}
+.light .breath{position:absolute;inset:0;animation:breathe 5.2s ease-in-out infinite alternate}
+.light[data-breath=paused] .breath{animation-play-state:paused}
 .light canvas{width:100%;height:100%;display:block}
-.light.nogl::after{content:"";position:absolute;left:50%;top:50%;width:14px;height:14px;margin:-7px;border-radius:50%;background:var(--guide);box-shadow:0 0 28px 6px rgba(125,207,255,.35)}
+.light .orb{display:none;position:absolute;left:25%;top:25%;width:50%;height:50%;border-radius:50%;
+ background:radial-gradient(circle closest-side,#d8f1ff 0,#a9defd 14%,#6fb7e6 26%,rgba(95,170,225,.55) 30%,rgba(100,180,255,.26) 48%,rgba(100,180,255,.07) 74%,rgba(100,180,255,0) 100%)}
+.light[data-renderer=static] canvas{display:none}
+.light[data-renderer=static] .orb{display:block}
+.light[data-renderer=static]{transition:transform .9s cubic-bezier(.2,.7,.2,1)}
+@keyframes breathe{from{transform:scale(.96);opacity:.86}to{transform:scale(1.04);opacity:1}}
 .stop{display:grid;grid-template-columns:minmax(0,38rem) 1fr;min-height:100svh;align-content:center;padding:14vh var(--pad);position:relative}
 .stop>div{grid-column:1}
 .mark{position:absolute;right:calc(var(--pad) + var(--r));top:var(--t);width:1px;height:1px}
@@ -36,9 +43,9 @@ kbd{font:400 .78em ui-monospace,"SF Mono",Menlo,Consolas,monospace;color:var(--i
 .note{margin-top:36px;font-size:15px;color:var(--faint)}
 footer{padding:40px var(--pad) 50px;font-size:14px;color:var(--faint);border-top:1px solid #15171f}
 @media(max-width:760px){
- .light{--s:130px}
- .stop{grid-template-columns:1fr;align-content:end;min-height:92svh;padding:16vh var(--pad) 12vh}
+ .light{--s:240px}
+ .stop{grid-template-columns:minmax(0,1fr);align-content:end;min-height:92svh;padding:16vh var(--pad) 12vh}
  .mark{right:calc(var(--pad) + var(--r)/2);top:calc(8vh + var(--t)/6)}
  nav a:not(:last-child){display:none}
 }
-@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}.light .breath{animation:none}}

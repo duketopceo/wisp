@@ -32,6 +32,14 @@ class PlatformClaims(unittest.TestCase):
         self.assertNotIn("actions/upload-pages-artifact", text)
         self.assertNotIn("PAGES_ENABLED", text)
 
+    def test_light_gates_stay_in_the_browser_test_path(self):
+        workflow = (ROOT / ".github/workflows/pages.yml").read_text()
+        package = (ROOT / "tests/browser/package.json").read_text()
+        self.assertIn("working-directory: tests/browser", workflow)
+        self.assertIn("npm test", workflow)
+        self.assertIn("node light.mjs", package)
+        self.assertTrue((ROOT / "tests/browser/light-budget.json").is_file())
+
     def test_worker_artifact_waits_for_both_lanes(self):
         text = (ROOT / ".github/workflows/pages.yml").read_text()
         self.assertIn("needs: [build, enhanced]", text)
