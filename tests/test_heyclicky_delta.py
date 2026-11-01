@@ -156,8 +156,10 @@ class TestPointingResolution(unittest.TestCase):
         # Exercise the VLM's resize/scale contract explicitly. This short
         # placeholder is not a decodable PNG; real resize/fallback geometry
         # has separate coverage in test_grounding_release_feedback.
-        with mock.patch.object(shot, "resized_pointing",
-                               return_value=(shot.b64, 1366, 768)) as resize, \
+        with mock.patch.object(
+                shot, "letterboxed",
+                return_value=grounding.Letterbox.stretched(
+                    shot.b64, 1366, 768, 1920, 1080)) as resize, \
              mock.patch("wisp.brain.chat",
                         return_value={"content": "[POINT:683,384:Submit button]"}) as chat:
             cand = grounding._vlm(ctx)

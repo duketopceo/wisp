@@ -68,6 +68,7 @@ _CATEGORY = {
     "brain.router": "models", "brain.default": "models",
     "brain.fallback": "models", "brain.first_token_s": "models",
     "brain.allow_paid": "models", "local.enabled": "models",
+    "ground.vlm_brain": "models",
     "budget.daily_usd": "budget", "budget.monthly_usd": "budget",
     "budget.gate_primary": "budget",
     "browser.lane": "connectors", "browser.port": "connectors",
@@ -260,6 +261,10 @@ FIELDS = (
        "(blank for none)",
        pattern=r"|[A-Za-z0-9_.-]+:[^\s,]+(?:,\s*[A-Za-z0-9_.-]+:[^\s,]+)*",
        hint="name:model, name:model, or blank"),
+    _f("ground.vlm_brain", "text", "",
+       "Model used only to find click targets on screen, as name:model "
+       "(blank to use the answer model). It runs alone: no fallbacks",
+       pattern=r"|[A-Za-z0-9_.-]+:[^\s,]+", hint="name:model, or blank"),
     _f("brain.first_token_s", "int", "3",
        "Seconds a model has to start answering before the next one is tried",
        min=1, max=60),

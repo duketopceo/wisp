@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>probe-ready:0</title>
+<!--
+  Click-probe target page (scripts/click_probe.py). Nine numbered buttons at
+  KNOWN fractions of the window, so a fullscreen window on a monitor puts
+  button N's centre at a computable logical point. Clicking a button sets
+  the window title to "hit:<n>:<seq>"; seq rises on every hit, so a miss
+  (title unchanged) is distinguishable from re-hitting the same button.
+  Keep the BUTTONS table in step with TARGETS in click_probe.py.
+-->
+<style>
+  html, body { margin: 0; height: 100%; background: #20242c; overflow: hidden; }
+  button {
+    position: absolute; width: 9vmin; height: 9vmin;
+    transform: translate(-50%, -50%);
+    font: 700 4vmin sans-serif; color: #fff; background: #3b6ea8;
+    border: 0.4vmin solid #fff; border-radius: 1vmin; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<script>
+  var BUTTONS = [
+    [1, 0.2, 0.2], [2, 0.5, 0.2], [3, 0.8, 0.2],
+    [4, 0.2, 0.5], [5, 0.5, 0.5], [6, 0.8, 0.5],
+    [7, 0.2, 0.8], [8, 0.5, 0.8], [9, 0.8, 0.8]
+  ];
+  var seq = 0;
+  BUTTONS.forEach(function (b) {
+    var el = document.createElement("button");
+    el.textContent = String(b[0]);
+    el.id = "t" + b[0];
+    el.style.left = (b[1] * 100) + "%";
+    el.style.top = (b[2] * 100) + "%";
+    el.addEventListener("click", function () {
+      seq += 1;
+      document.title = "hit:" + b[0] + ":" + seq;
+    });
+    document.body.appendChild(el);
+  });
+</script>
+</body>
+</html>

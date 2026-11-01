@@ -422,6 +422,7 @@ Resources: wispd under 250 MB RSS and 3% idle CPU; cua-driver
 | `[ground] min_confidence` | `0.5` | candidates below this are re-observed once, then refused |
 | `[ground] budget_ms` | `1200` | shared budget for the fast providers |
 | `[ground] fallback_timeout_ms` | `5000` | timeout for the vision fallback |
+| `[ground] vlm_brain` | blank | `name:model` brain used only for grounding (blank = the act brain). It runs alone: `[brain] fallback` is not consulted, so a down grounding model refuses the click rather than sending the screenshot to another model. `ollama_vision` is a built-in vision-capable Ollama entry |
 | `[ground] uitars_url` | `http://127.0.0.1:8081` | UI-TARS endpoint (also `[health] uitars`); loopback only |
 | `[ground] uitars_coords` | `px` | `px` or `rel1000`, how UI-TARS writes coordinates |
 | `[ground] a11y_frame` | `global` | `global` or `window`, the frame of accessibility element boxes |

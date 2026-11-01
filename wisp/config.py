@@ -163,6 +163,11 @@ min_confidence = "0.5"
 budget_ms = "1200"
 # the slow vision fallback gets its own timeout
 fallback_timeout_ms = "5000"
+# a different brain for grounding only, as "name:model" (blank = the act
+# brain). It runs alone: [brain] fallback is not consulted, so a down
+# grounding model refuses the click instead of trying another model.
+# Local vision example: "ollama_vision:qwen2.5vl:3b-q8_0"
+vlm_brain = ""
 # uitars_url = "http://127.0.0.1:8081"   # default: [health] uitars or this
 # uitars_coords = "px"                    # px | rel1000
 # a11y_frame = "global"                   # global | window (element frames)
@@ -407,6 +412,13 @@ tools = "true"
 kind = "ollama"          # native /api/chat
 base_url = "http://localhost:11434"
 vision = "false"
+tools = "false"
+
+# An Ollama entry that takes screenshots, for [ground] vlm_brain.
+[brain.ollama_vision]
+kind = "ollama"
+base_url = "http://localhost:11434"
+vision = "true"
 tools = "false"
 
 [brain.lmstudio]

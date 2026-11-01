@@ -373,20 +373,32 @@ def active_window() -> dict:
     return platform.active_window()
 
 
-def capture_screen(window: bool = False) -> pathlib.Path | None:
+def capture_screen(window: bool = False,
+                   output: str | None = None) -> pathlib.Path | None:
     """Platform screenshot → RUN_DIR/screen.png. None on fail.
-    `window=True` crops to the focused window (the blank-frame retry)."""
+    `window=True` crops to the focused window (the blank-frame retry);
+    `output` names one monitor to capture (grim -o)."""
+    return capture_screen_meta(window, output)[0]
+
+
+def capture_screen_meta(window: bool = False, output: str | None = None
+                        ) -> tuple[pathlib.Path | None, tuple | None]:
+    """`capture_screen` plus the shot's logical origin: (path, origin).
+    `origin` is (x, y) when the image was normalized to logical size
+    (image px + origin == compositor-global logical px) and None for a
+    raw capture (no `magick`) whose pixels are grim's
+    canvas, not logical."""
     from . import platform
     from . import cua_safety
     if cua_safety.capture_blocked():
-        return None   # sensitive window focused: no shot (R13)
+        return None, None   # sensitive window focused: no shot (R13)
     out = config.RUN_DIR / "screen.png"
     if window:
         cmd = platform.window_screenshot_cmd(out, platform.active_geometry())
     else:
-        cmd = platform.screenshot_cmd(out)
+        cmd = platform.screenshot_cmd(out, output or None)
     if not cmd:
-        return None
+        return None, None
     try:
         config.RUN_DIR.mkdir(parents=True, exist_ok=True)
         r = _cancel.run(cmd, capture_output=True,
@@ -396,19 +408,22 @@ def capture_screen(window: bool = False) -> pathlib.Path | None:
             # + coord grid, so model x,y maps 1:1 and HiDPI pixels don't
             # double-map — also ~4x smaller on the wire (raw 3456x2160
             # PNG was the biggest single payload in the first act call)
+            origin = None
             try:
                 from .tools.system import _normalize_shot
-                _normalize_shot(out)
+                got = _normalize_shot(out, output or None)
+                if isinstance(got, (tuple, list)) and len(got) == 2:
+                    origin = (got[0], got[1])
             except Exception:
                 pass
             from . import redact
             if redact.apply(out, config.load_config()):
                 out.unlink(missing_ok=True)   # a hidden window rides along
-                return None
-            return out
-        return None
+                return None, None
+            return out, origin
+        return None, None
     except Exception:
-        return None
+        return None, None
 
 
 def _png_b64(png: pathlib.Path | None) -> str | None:

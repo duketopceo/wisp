@@ -276,7 +276,7 @@ def _dom_shot(path, cfg: dict) -> str:
     return f"SHOT {path}"
 
 
-def _normalize_shot(path, output: str | None = None) -> None:
+def _normalize_shot(path, output: str | None = None) -> tuple | None:
     """Resize the shot to its logical size so image pixels == Hyprland
     logical coords, then overlay a labeled 100px grid (set-of-mark
     style) — models localize noticeably better when the coordinate
@@ -285,23 +285,27 @@ def _normalize_shot(path, output: str | None = None) -> None:
     emitted coords un-mappable; pinning to logical size keeps
     click/move 1:1 regardless. Records the shot's logical origin in
     points.SHOT_ORIGIN so coordinate mapping stays exact for
-    single-output captures."""
+    single-output captures.
+
+    Returns the shot's logical origin (x, y) when the image was
+    rewritten to logical size, else None: the caller then holds a raw
+    grim canvas, whose pixels are NOT logical."""
     from .. import points
     magick = shutil.which("magick")
     if not magick:
-        return
+        return None
     mons = points.monitors()
     if output:
         m = next((m for m in mons if m.get("name") == output), None)
         if not m:
-            return
+            return None
         s = float(m.get("scale", 1) or 1)
         x, y = m.get("x", 0), m.get("y", 0)
         w, h = round(m.get("width", 0) / s), round(m.get("height", 0) / s)
     else:
         x, y, w, h = points.logical_bbox(mons)
     if not w or not h:
-        return
+        return None
     points.SHOT_ORIGIN = (x, y)
     import os as _os
     import time as _time
@@ -322,7 +326,7 @@ def _normalize_shot(path, output: str | None = None) -> None:
             + [f"line 0,{gy} {w},{gy}" for gy in range(100, h, 100)]
             + [f"text {gx + 2},12 '{gx}'" for gx in range(0, w, 100)]
             + [f"text 2,{gy + 12} '{gy}'" for gy in range(0, h, 100)])
-        _cancel.run(
+        r = _cancel.run(
             [magick, str(path), "-resize", f"{w}x{h}!",
              "-stroke", "rgba(255,80,80,0.45)", "-strokewidth", "1",
              "-fill", "rgba(255,80,80,0.9)", "-pointsize", "12",
@@ -335,8 +339,9 @@ def _normalize_shot(path, output: str | None = None) -> None:
                      "out_kb": _os.path.getsize(path) // 1024,
                      "origin": [x, y]},
                     ms=round((_time.monotonic() - t0) * 1000))
+        return (x, y) if r.returncode == 0 else None
     except (OSError, subprocess.SubprocessError):
-        pass
+        return None
 
 
 def model_image(path) -> str | None:
