@@ -332,6 +332,22 @@ def _f(v, default: float) -> float:
         return default
 
 
+def vlm_cfg(cfg: dict | None) -> dict:
+    """The config `_vlm_locate` calls `brain.chat` with. Empty
+    `[ground] vlm_brain` leaves it untouched (grounding uses the act
+    brain). A set `name:model` becomes the only brain in a config COPY:
+    it is the default and `[brain] fallback` is emptied, so a down or slow
+    grounding model raises ProviderDown instead of silently handing the
+    screenshot to another model. The caller's config is never changed."""
+    cfg = cfg or {}
+    spec = str((cfg.get("ground", {}) or {}).get("vlm_brain") or "").strip()
+    if not spec:
+        return cfg
+    brain = dict(cfg.get("brain", {}) or {})
+    brain["default"], brain["fallback"] = spec, ""
+    return {**cfg, "brain": brain}
+
+
 def settings(cfg: dict | None) -> dict:
     gc = (cfg or {}).get("ground", {}) or {}
     health = (cfg or {}).get("health", {}) or {}
@@ -354,6 +370,7 @@ def settings(cfg: dict | None) -> dict:
         "uitars_coords": str(gc.get("uitars_coords", "px")),
         "max_side": int(_f(gc.get("max_side"), 1280.0)),
         "a11y_frame": str(gc.get("a11y_frame", "global")),
+        "vlm_brain": str(gc.get("vlm_brain") or "").strip(),
     }
 
 
@@ -851,7 +868,7 @@ def _vlm_locate(shot: Shot, target: str, region_hint: str = "",
     if remaining <= 0:
         return None
     try:
-        res = brain.chat(messages, cfg or {}, timeout=remaining)
+        res = brain.chat(messages, vlm_cfg(cfg), timeout=remaining)
         text = str((res or {}).get("content") or "").strip()
     except Exception as e:
         raise ProviderDown(str(e)) from None

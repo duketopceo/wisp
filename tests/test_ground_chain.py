@@ -770,5 +770,83 @@ class SystemResolve(unittest.TestCase):
             self.assertIsNone(system._resolve_target_xy("night light", {}))
 
 
+@_need_pil
+class VlmBrainOverride(unittest.TestCase):
+    """`[ground] vlm_brain` (KTD4): grounding may use its own brain, alone."""
+
+    ACT = {"brain": {"default": "openrouter:act-model",
+                     "fallback": "openrouter:backup-model"},
+           "ground": {}}
+
+    def locate(self, cfg, reply="[POINT:100,100:Save]"):
+        from wisp import brain
+        with mock.patch.object(brain, "chat",
+                               return_value={"content": reply}) as chat:
+            out = g._vlm_locate(shot(), "Save", cfg=cfg)
+        return out, chat
+
+    def test_empty_vlm_brain_calls_the_act_brain_as_before(self):
+        _, chat = self.locate(self.ACT)
+        self.assertIs(chat.call_args.args[1], self.ACT)
+
+    def test_set_vlm_brain_is_the_only_brain_and_act_cfg_is_untouched(self):
+        cfg = {**self.ACT, "ground": {"vlm_brain": "ollama:qwen2.5vl:3b"}}
+        _, chat = self.locate(cfg)
+        used = chat.call_args.args[1]
+        self.assertEqual(used["brain"]["default"], "ollama:qwen2.5vl:3b")
+        self.assertEqual(used["brain"]["fallback"], "")
+        self.assertEqual(cfg["brain"], self.ACT["brain"])   # no mutation
+        self.assertEqual(cfg["brain"]["default"], "openrouter:act-model")
+
+    def test_unreachable_ollama_raises_provider_down_never_the_fallback(self):
+        from wisp import brain
+        cfg = {"brain": {"default": "openrouter:act-model",
+                         "fallback": "openrouter:backup-model",
+                         "allow_paid": "true"},
+               "brain.ollama": {"base_url": "http://127.0.0.1:9",
+                                "kind": "ollama"},
+               "ground": {"vlm_brain": "ollama:qwen2.5vl:3b"}}
+        called = []
+
+        def one(p, messages, tools, timeout):
+            called.append(p["name"])
+            raise OSError("connection refused")
+
+        with mock.patch.object(brain, "_chat_one", side_effect=one), \
+                mock.patch.object(brain.time, "sleep"):
+            with self.assertRaises(g.ProviderDown):
+                g._vlm_locate(shot(), "Save", cfg=cfg)
+        self.assertEqual(set(called), {"ollama"})   # backup never reached
+
+    def test_a_down_vlm_brain_lets_the_chain_move_on(self):
+        cfg = {"ground": {"providers": "vlm,b", "vlm_brain": "ollama:x"}}
+        from wisp import brain
+        good = cand(10, 10, 0.9, "b")
+        with mock.patch.object(brain, "chat",
+                               side_effect=OSError("down")):
+            t = g.ground_target(
+                "Save", cfg, capture=lambda: shot(), monitors=[S1],
+                cua=object(), providers={
+                    "vlm": {"fn": g.PROVIDERS["vlm"]["fn"], "fast": False},
+                    "b": {"fn": lambda ctx: good, "fast": True}})
+        self.assertEqual(t.source, "b")
+
+    def test_key_is_in_the_defaults_and_the_schema(self):
+        import tomllib
+        from wisp import config, settings_schema
+        dflt = tomllib.loads(config.DEFAULT_CONFIG)
+        self.assertEqual(dflt["ground"]["vlm_brain"], "")
+        self.assertEqual(g.settings(dflt)["vlm_brain"], "")
+        f = next(f for f in settings_schema.FIELDS
+                 if f.key == "ground.vlm_brain")
+        self.assertEqual(f.category, "models")
+        self.assertEqual(settings_schema.problem("ground.vlm_brain", ""), "")
+        self.assertEqual(settings_schema.problem(
+            "ground.vlm_brain", "ollama:qwen2.5vl:3b"), "")
+        self.assertEqual(settings_schema.problem("ground.vlm_brain", "x"),
+                         "format")
+        self.assertEqual(dflt["brain.ollama_vision"]["vision"], "true")
+
+
 if __name__ == "__main__":
     unittest.main()
