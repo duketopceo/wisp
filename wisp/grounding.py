@@ -102,11 +102,21 @@ class Target:
 class Shot:
     """One screen capture: full-resolution PNG b64 + its pixel size."""
 
-    def __init__(self, b64: str, width: int, height: int):
+    def __init__(self, b64: str, width: int, height: int,
+                 origin: tuple | None = None):
         self.b64, self.width, self.height = b64, int(width), int(height)
+        # logical (x, y) of the image's top-left when stage_capture
+        # normalized it to logical size (pixels are then logical px);
+        # None = raw grim canvas (max-scale pixels)
+        self.origin = tuple(origin) if origin is not None else None
+
+    @property
+    def normalized(self) -> bool:
+        return self.origin is not None
 
     @classmethod
-    def from_bytes(cls, raw: bytes) -> "Shot | None":
+    def from_bytes(cls, raw: bytes,
+                   origin: tuple | None = None) -> "Shot | None":
         if _PIL_AVAILABLE:
             try:
                 w, h = Image.open(io.BytesIO(raw)).size
@@ -117,7 +127,9 @@ class Shot:
             if raw[:8] != b"\x89PNG\r\n\x1a\n" or raw[12:16] != b"IHDR":
                 return None
             w, h = struct.unpack(">II", raw[16:24])
-        return cls(base64.b64encode(raw).decode(), w, h) if w and h else None
+        if not (w and h):
+            return None
+        return cls(base64.b64encode(raw).decode(), w, h, origin)
 
     def scaled(self, max_side: int):
         """(b64, w, h) with the long side capped at max_side. Providers
@@ -229,14 +241,17 @@ def _scale(m: dict) -> float:
 
 
 def convert(x: float, y: float, frame: str, mons: list,
-            output: str | None = None) -> tuple:
-    """Point in `frame` -> compositor-global logical (int, int)."""
+            output: str | None = None, origin: tuple | None = None) -> tuple:
+    """Point in `frame` -> compositor-global logical (int, int).
+    `origin` is a canvas-frame point's logical origin when the shot knows
+    it (a normalized single-output shot); else the layout bbox origin."""
     if frame in ("global", "logical"):
         return int(round(x)), int(round(y))
     mons = [m for m in (mons or []) if isinstance(m, dict)]
     from . import points
     if frame == "canvas":
-        ox, oy, _, _ = points.logical_bbox(mons)
+        ox, oy = origin if origin is not None else \
+            points.logical_bbox(mons)[:2]
         return int(round(x + ox)), int(round(y + oy))
     if frame != "shot":
         raise ValueError(f"unknown frame {frame!r}")
@@ -929,12 +944,12 @@ def target_at_point(x: int, y: int, cfg: dict | None = None) -> Target | None:
 
 
 def _default_capture():
-    from . import pipeline
-    out = pipeline.capture_screen()
+    from . import stage_capture
+    out, origin = stage_capture.capture_screen_meta()
     if not out or not out.exists():
         return None
     try:
-        return Shot.from_bytes(out.read_bytes())
+        return Shot.from_bytes(out.read_bytes(), origin)
     finally:
         out.unlink(missing_ok=True)
 
@@ -1036,10 +1051,15 @@ def ground_target(target: str, cfg: dict | None = None, *, capture=None,
         if best is not None and best.confidence >= st["min_conf"]:
             mons = monitors if monitors is not None else points.monitors()
             x, y = best.x, best.y
-            if best.frame == "shot":
+            frame, origin = best.frame, None
+            if frame == "shot":
                 w, h = best.size or (shot.width, shot.height)
                 x, y = x * shot.width / w, y * shot.height / h
-            gx, gy = convert(x, y, best.frame, mons, output)
+                if shot.normalized:
+                    # stage_capture already resized to logical size:
+                    # pixels are logical, offset by the shot's origin
+                    frame, origin = "canvas", shot.origin
+            gx, gy = convert(x, y, frame, mons, output, origin)
             from . import trace as _trace
             _trace.emit(_trace.current(), "ground", "act",
                         {"target": name, "src": best.source,
