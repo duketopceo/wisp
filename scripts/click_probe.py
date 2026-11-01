@@ -278,6 +278,11 @@ def apply_overrides(cfg: dict, ground_brain: str, profile: dict) -> dict:
 def _model_label(cfg: dict, ground_brain: str) -> str:
     if ground_brain:
         return ground_brain
+    # grounding runs on [ground] vlm_brain (often set by --profile), and
+    # only falls back to the act brain when that is blank
+    spec = str((cfg.get("ground", {}) or {}).get("vlm_brain") or "").strip()
+    if spec:
+        return spec
     return str((cfg.get("brain", {}) or {}).get("default") or "default")
 
 
