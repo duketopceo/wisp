@@ -580,6 +580,21 @@ class TestCapAndReport(Base):
             gmode.Spend(self.gdir / "spend.jsonl", 1.0).total(), 0.604,
             places=3)
 
+    def test_a_cap_trip_inside_a_case_leaves_that_case_unscored(self):
+        # hybrid overshoots on c1, so openrouter's c1 run is refused
+        script = lambda goal, arm, n: {                  # noqa: E731
+            "usd": 0.9 if arm == "hybrid" else 0.1}
+        g, code, _ = self.run_g([case("c1"), case("c2")],
+                                self.deps(script=script), cap=1.0)
+        self.assertEqual(code, 0)
+        self.assertIn("spend cap", g.stopped)
+        self.assertEqual(g.partial_cases(), ["c1"])
+        sm = g.summary()
+        self.assertEqual(sm["hybrid"]["tuning"], [0, 0])
+        self.assertEqual(sm["openrouter"]["tuning"], [0, 0])
+        self.assertIn("not scored (not every arm ran it): c1",
+                      (g.rundir / "report.md").read_text())
+
     def test_the_report_ranks_tuning_failures_and_lists_spend_per_arm(self):
         def script(goal, arm, n):
             return {"ok": "tune-ok" in goal or "held" in goal and

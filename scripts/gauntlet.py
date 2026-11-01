@@ -457,6 +457,7 @@ class Gauntlet:
                 a["win_class"] = wins[0].cls
             row = self._drive(tag, ref, goal, [w.address for w in wins])
             a["row"] = row
+            a["capped"] = row is None and bool(self.stopped)
             if row is not None:
                 self._score(a, case, row, tag)
         except sandbox.SandboxError as e:
@@ -558,14 +559,26 @@ class Gauntlet:
 
     # -- the report -------------------------------------------------------------
 
+    def partial_cases(self) -> list:
+        """Cases run 1 reached for some arms but not all (a cap stop that
+        tripped inside a case). They are left out of every arm's score so
+        the arms are compared on the same cases."""
+        arms = {p[0] for p in self.profiles}
+        seen: dict = {}
+        for a in self.attempts:
+            if a["n"] == 1 and not a.get("capped"):
+                seen.setdefault(a["case"], set()).add(a["arm"])
+        return sorted(c for c, got in seen.items() if got != arms)
+
     def summary(self) -> dict:
-        """Per-arm scores. A case counts for an arm only when run 1 ran;
-        a spend stop leaves both arms with the same cases."""
+        """Per-arm scores over the cases every arm's run 1 reached."""
         cases = {c["id"]: c for c in self.cases}
+        partial = set(self.partial_cases())
         out = {}
         for label, _ref, _p in self.profiles:
             mine = [a for a in self.attempts if a["arm"] == label
-                    and a["n"] == 1]
+                    and a["n"] == 1 and not a.get("capped")
+                    and a["case"] not in partial]
             tally = {"tuning": [0, 0], "held_out": [0, 0],
                      "skill_wins": 0, "skill_eligible": 0,
                      "skill_excluded": 0, "usd": 0.0}
@@ -625,6 +638,10 @@ class Gauntlet:
              f" ${self.spend.total():.4f} of ${self.cap:.2f} cumulative"]
         if self.stopped:
             L.append(f"- stopped: {self.stopped}")
+        partial = self.partial_cases()
+        if partial:
+            L.append(f"- not scored (not every arm ran it): "
+                     f"{', '.join(partial)}")
         L += ["", "## Scores", "",
               "| arm | tuning | held-out | skill wins | spend | by provider |",
               "|---|---|---|---|---|---|"]
