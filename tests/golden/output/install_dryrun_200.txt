@@ -1,0 +1,9 @@
+● wisp
+  installer
+
+● Plan   step 1 of 6
+  Release metadata: https://api.github.com/repos/duketopceo/wisp/releases/latest
+  Asset: wisp-linux-x86_64.tar.gz
+  Require independent gh/Sigstore attestation verification plus SHA-256 before safe extraction;
+  preview installer, then install user-scoped files. No service start or restart.
+  Dry run: no network, writes or service actions.

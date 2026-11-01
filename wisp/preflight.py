@@ -141,6 +141,44 @@ def format_rows(rows, *, only_problems: bool = False) -> str:
     return "\n".join(out)
 
 
+def render(rows, *, width: int = 80, color: bool = False,
+           glyphs: bool = False) -> str:
+    """The install/update preflight as a short report: `preflight:`, the
+    problem rows (fail, then warn) one line each with `Try:` on its own
+    line, and every passing check collapsed to one quiet line. A Try text
+    shared by three or more rows is printed once at the end."""
+    from .cli import output
+    width = min(width, 100)
+    word = {"ok": "ok", "degraded": "warn", "block": "fail"}
+    tone = {"ok": "muted", "degraded": "warn", "block": "fail"}
+    probs = sorted((r for r in rows if r["level"] != "ok"),
+                   key=lambda r: r["level"] != "block")
+    good = [r["id"] for r in rows if r["level"] == "ok"]
+    counts = {}
+    for r in probs:
+        if r["fix"]:
+            counts[r["fix"]] = counts.get(r["fix"], 0) + 1
+    shared = [f for f, n in counts.items() if n >= 3]
+    out = [output.heading("preflight:", color)]
+    idw = min(16, max([len(r["id"]) for r in probs] or [0]))
+    ind = " " * (2 + 4 + 1 + idw + 1)
+    for r in probs:
+        mark = output.paint(word[r["level"]], tone[r["level"]]) \
+            if color else word[r["level"]]
+        mark += " " * (4 - len(word[r["level"]]))
+        head = f"  {mark} {r['id']:<{idw}} "
+        out += output.wrap(r["detail"], width, ind, head)
+        if r["fix"] and r["fix"] not in shared:
+            out += output.wrap("Try: " + r["fix"], width, ind, ind)
+    for f in shared:
+        out += output.wrap("For the other warnings, try: " + f,
+                           width, "  ", "  ")
+    if good:
+        body = output.wrap(", ".join(good), width, "       ", "  ok   ")
+        out += [output.paint(l, "muted") if color else l for l in body]
+    return "\n".join(out)
+
+
 def refusal(rows) -> str:
     return ("Cannot continue; nothing was written.\n"
             + format_rows(blockers(rows)))

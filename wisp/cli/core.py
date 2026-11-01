@@ -107,6 +107,12 @@ def _export_ref(a, tmp):
                        "wispd install --ref <git-ref> --repo <path>")
 
 
+def _preflight_text(ctx, rows) -> str:
+    from .. import preflight
+    return preflight.render(rows, width=ctx.width, color=ctx.color,
+                            glyphs=ctx.glyphs)
+
+
 def _install(ctx, a, src, repo, commit):
     deploy = ({"repo": repo, "ref": a.ref, "commit": commit}
               if src else None)
@@ -116,8 +122,7 @@ def _install(ctx, a, src, repo, commit):
 
     def plan():
         rows = preflight.run()
-        print("preflight:")
-        print(preflight.format_rows(rows))
+        print(_preflight_text(ctx, rows))
         ctx.host.install_files(dry_run=True, cfg=ctx.cfg, src=src,
                                deploy=deploy, plugin=plugin)
         ctx.host.install_bind(ctx.cfg, dry_run=True)
@@ -127,8 +132,7 @@ def _install(ctx, a, src, repo, commit):
         if a.dry_run:
             return plan()
         rows = preflight.run()
-        print("preflight:")
-        print(preflight.format_rows(rows))
+        print(_preflight_text(ctx, rows))
         if preflight.blockers(rows):
             raise CliError("E_FAILED", preflight.refusal(rows),
                            "wispd doctor")
