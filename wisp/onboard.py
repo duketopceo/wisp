@@ -676,7 +676,8 @@ def walk(cfg: dict, probes: Probes, progress: Progress, ask, out, *,
     k = 0
     for s in STEPS:
         if s.id in done0:
-            k += 1
+            if checks[s.id]["state"] != "na":
+                k += 1
             continue
         r = check(s.id, cfg, probes)
         if r["state"] == "na":
