@@ -3,7 +3,7 @@ import QtQuick.Controls
 import QtTest
 import "../../../shell-plugin/lib/metrics.js" as M
 
-// Type and spacing scale (settings overhaul U1, KTD2, R11 to R14) and the
+// Type and spacing scale (metrics.js) and the
 // scroll audit helper that later settings pages rely on.
 TestCase {
   id: tc
@@ -121,8 +121,7 @@ TestCase {
   function test_audit_fails_tall_content_outside_any_flickable() {
     var page = createTemporaryObject(tallNoFlickable, tc)
     var out = audit.audit(page)
-    verify(out.length > 0)
-    verify(out[0].indexOf("clipped:") === 0)
+    compare(out[0], "clipped:column")   // the outermost clipped item is named first
   }
 
   function test_audit_passes_content_that_fits() {

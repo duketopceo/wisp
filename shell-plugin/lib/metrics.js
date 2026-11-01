@@ -16,10 +16,11 @@ var size = {
 }
 var lineHeight = 1.35
 
-// Type and spacing scale (settings overhaul KTD2). Additive: the blocks
-// above stay until the surfaces migrate. Sizes are pixels at text scale 1.
-// minimum: body text 14, secondary text 12 (R12); a control is 32 tall in
-// the settings window and Panel, 28 on the overlay and bar (R13).
+// Type and spacing scale; the older font and spacing blocks above remain
+// for surfaces not yet moved over. Sizes are pixels at text scale 1.
+// minimum holds independent floors (checked by tests, not derived from the
+// scale): body text 14, secondary text 12; a control is 32 tall in the
+// settings window and Panel, 28 on the overlay and bar.
 var scale = {
   font: { caption: 12, label: 13, body: 14, answer: 15, title: 17, heading: 20 },
   space: { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32, huge: 48 },
@@ -28,7 +29,7 @@ var scale = {
   textScaleRange: { min: 1, max: 2 }
 }
 
-// Text-scale hook (R14): the host passes the desktop text size as a
+// Text-scale hook: the host passes the desktop text size as a
 // multiplier. Anything that is not a positive number reads as 1. The result
 // is clamped to 1..2: a larger system text size enlarges Wisp, a smaller one
 // never takes text under the minimums above.

@@ -367,10 +367,6 @@ def field(key: str) -> Field | None:
     return _BY_KEY.get(key)
 
 
-def quick_fields() -> list:
-    return [f for f in FIELDS if f.quick]
-
-
 def ordered() -> list:
     """Every field grouped by category in CATEGORIES order, schema order
     inside a category. What `config keys` and the settings window list."""

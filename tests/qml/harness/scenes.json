@@ -4405,7 +4405,6 @@
   "mode": "variant",
   "pad": 0,
   "source": "ViewportProbe.qml",
-  "viewport_only": true,
   "variants": {
    "laptop": {
     "_viewport": "laptop"

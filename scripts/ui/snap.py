@@ -144,10 +144,8 @@ def cases(only=None):
         scene = scenes()[comp]
         for theme in THEMES:
             for scale in SCALES:
-                if scale == 2 and not (scene.get("scale2")
-                                       and theme == "dark") \
-                        and not scene.get("viewport_only"):
-                    continue
+                skip_scale2 = scale == 2 and not (scene.get("scale2")
+                                                  and theme == "dark")
                 if scene["mode"] == "state":
                     items = [(n, n, {}) for n in fixtures]
                 else:
@@ -157,9 +155,9 @@ def cases(only=None):
                     props = dict(scene.get("props", {}))
                     props.update(extra)
                     vp = VIEWPORTS.get(props.pop("_viewport", ""))
-                    if vp and vp["scale"] != scale:
-                        continue
-                    if not vp and scene.get("viewport_only"):
+                    # a named viewport runs at its own scale in both themes;
+                    # any other variant follows the scale2 rule
+                    if (vp["scale"] != scale) if vp else skip_scale2:
                         continue
                     # a variant may pick another state fixture and add
                     # fixture mods (e.g. a cua.target event)

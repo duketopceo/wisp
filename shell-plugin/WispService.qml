@@ -139,10 +139,9 @@ Item {
   property string themeMode: "dark"
   // Family for text; surfaces and components bind font.family to it.
   readonly property string fontFamily: Style.fontFamily
-  // Text-size multiplier for every surface (R14), 1 to 2. One source for
+  // Text-size multiplier for every surface, 1 to 2. One source for
   // the in-shell plugin and the standalone configs: WISP_TEXT_SCALE in the
-  // shell's environment (unset or bad reads 1). Change the binding here if
-  // the host later exposes the Omarchy text size directly.
+  // shell's environment (unset or bad reads 1).
   readonly property real textScale: Metrics.textScale(Quickshell.env("WISP_TEXT_SCALE"))
   readonly property string motionMode: Motion.resolveMode(motionConfig, animationsEnabled)
 

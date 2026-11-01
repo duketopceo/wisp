@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 
-// QtTest helper (settings overhaul U1): finds content that is taller than
+// QtTest helper: finds content that is taller than
 // its viewport with no way to reach it. audit(viewport) returns a list of
 // problem strings, empty when every overflow is scrollable:
 //   "flickable-no-bar:<name>"  a Flickable whose content is taller than it

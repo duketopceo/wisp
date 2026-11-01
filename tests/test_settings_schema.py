@@ -59,6 +59,7 @@ TABLE = [
     ("hotkey.mod", "SUPER", ""),
     ("hotkey.mod", "SUPER ALT", "format"),
     ("hotkey.key", "D", ""),
+    ("hotkey.key", "D E", "format"),
     ("brain.default", "ollama:lfm2-vl", ""),
     ("brain.default", "openrouter:meta-llama/llama-4-maverick", ""),
     ("brain.default", "just-a-name", "format"),
@@ -162,7 +163,7 @@ class TestSchemaShape(unittest.TestCase):
 
 
 class TestUiMetadata(unittest.TestCase):
-    """U2: category, label, help and unit on every key, shared by the
+    """Category, label, help and unit on every key, shared by the
     settings window, `config keys` and the Panel."""
 
     def test_every_field_has_a_known_category(self):
@@ -189,11 +190,13 @@ class TestUiMetadata(unittest.TestCase):
     def test_quick_replaces_panel(self):
         self.assertFalse(hasattr(S.Field, "panel"))
         self.assertFalse(hasattr(S, "panel_fields"))
-        self.assertEqual({f.key for f in S.quick_fields()},
-                         {f.key for f in S.FIELDS if f.quick})
+
+    def test_unit_and_category_tables_name_real_keys(self):
+        self.assertLessEqual(set(S._UNIT), set(S.KEYS))
+        self.assertEqual(set(S._CATEGORY), set(S.KEYS))
 
     def test_hybrid_model_keys_are_declared_with_no_new_daemon_keys(self):
-        """R7: the keys the daemon already reads for the answer model chain
+        """The keys the daemon already reads for the answer model chain
         (hosted OpenRouter default, local models optional) are editable."""
         for key in ("brain.default", "brain.fallback", "brain.allow_paid",
                     "brain.first_token_s", "brain.agent_runtime",
