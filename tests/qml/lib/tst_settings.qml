@@ -59,7 +59,12 @@ TestCase {
     compare(S.validate("pointer.mode", "drive"), "")
     compare(S.validate("pointer.mode", "fly"), "ui.err.choice")
     compare(S.validate("cua.confirm", "always"), "")
-    compare(S.validate("keys.submap", "x"), "ui.err.unknown")
+    compare(S.validate("keys.submap", "x"), "ui.err.choice")   // every schema key validates
+    compare(S.validate("keys.submap", "true"), "")
+    compare(S.validate("hotkey.mod", "SUPER"), "")
+    compare(S.validate("brain.default", "ollama:lfm2-vl"), "")
+    compare(S.validate("brain.default", "no-colon"), "ui.err.format")
+    compare(S.validate("made.up_key", "x"), "ui.err.unknown")
   }
 
   function test_command_and_parsing() {
@@ -80,7 +85,8 @@ TestCase {
     for (var i = 0; i < S.FIELDS.length; i++) seen[S.FIELDS[i].key] = true
     verify(seen["budget.daily_usd"] && seen["budget.monthly_usd"])
     verify(seen["cua.dry_run"] && seen["cua.kill_switch"])
-    compare(S.group("budget").length, 2)
+    compare(S.group("budget").length, 2)   // the Panel only sees quick fields
+    compare(S.group("hotkey").length, 0)
   }
 
   function test_choice_chip_saves_immediately() {
