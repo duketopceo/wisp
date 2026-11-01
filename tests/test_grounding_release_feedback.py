@@ -168,7 +168,10 @@ class VlmTargetSupport(unittest.TestCase):
                     "content": "NONE"}) as chat:
             self.assertIsNone(g._vlm_locate(shot, "Save"))
         prompt = chat.call_args.args[0][0]["content"][0]["text"]
-        self.assertIn("[POINT:x,y:Save]", prompt)
+        # one POINT tag naming the target, with explicit <x>,<y> slots
+        # (never the bare literal template, which models echo back)
+        self.assertIn("[POINT:<x>,<y>:Save]", prompt)
+        self.assertNotIn("[POINT:x,y:Save]", prompt)
         self.assertNotIn("or `(x,y)`", prompt)
         self.assertIn("ambiguous", prompt)
 
