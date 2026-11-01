@@ -59,13 +59,13 @@ table to list every fixture.
 | `budget_fallback_skipped` | budget blocked | W14 reconciled policy: at the cap a paid FALLBACK is skipped but the primary still runs. The free primary returns 500, the paid fallback is refused before any request, the turn ends brain_down naming the skipped entry. |
 | `cancel_mid_act` | cancel mid-act | Act route: the fake cua-driver click hangs; the user stop lands mid-call. W9: the guard/cancel path ends the turn INTERRUPTED within 150 ms of the stop and no further step runs. |
 | `cancel_mid_stream` | cancel mid-stream | Cancel fires while the answer is still streaming. U9: the stream stops promptly, the brain socket closes, no further deltas publish and the turn ends idle with error_code cancelled. |
-| `choose` | choose/confirm | Low-confidence launch: pipeline offers choices, the scripted chooser picks app:discord, launch stub records it. |
+| `choose` | choose/confirm | The act loop asks which app through the question broker, the scripted chooser picks app:discord, launch stub records it. |
 | `cua_denied_app` | deny-listed app | Focused window is a password manager: the built-in deny list refuses the click, cua-driver is never called. |
 | `cua_dry_run` | dry-run | [cua] dry_run on: the click is reported as DRYRUN and nothing is sent to cua-driver. |
 | `cua_kill_switch` | kill switch | [cua] kill_switch on: every injected click is refused before dispatch; cua-driver sees nothing. |
 | `cua_rate_limited` | rate limit hit | Per-turn click cap of 1: the first click goes through, the second is refused and never reaches cua-driver. |
-| `jev_down` | Jev down | Jev answers 503 on every call. The heuristic router takes over (W11): a bare launch of a catalog app still launches and the turn ends done, never in error. The error-path copy for a genuine outage lives in `brain_down`. |
-| `jev_slow` | Jev slow | Jev replies after 2 s, past the 400 ms deadline: the heuristic routes the turn, the late reply is discarded and the brain streams the answer (W11). |
+| `retired_endpoint_down` | retired endpoint down | The retired decision endpoint answers 503, but nothing calls it: a bare launch of a catalog app takes the fast path, launches and ends done, never in error. The error-path copy for a genuine outage lives in `brain_down`. |
+| `retired_endpoint_slow` | retired endpoint slow | The retired decision endpoint would reply after 2 s, but nothing calls it: a plain question takes the fast path and the brain streams the answer without waiting. |
 | `notify_error_toast` | notify paths | Brain down with the notify fake installed: the error turn raises an error toast. |
 | `notify_outside_quiet` | notify paths | Control for notify_quiet_hours: same 22:00-07:00 window, fixed clock 12:00 is outside it, so the toast is sent. |
 | `notify_quiet_hours` | notify paths | Same turn inside [notify] quiet hours (22:00-07:00, fixed clock 23:30 via notify_now): the toast is suppressed, nothing reaches notify-send. |
@@ -84,5 +84,5 @@ table to list every fixture.
 ## Latency
 
 `wispd latency --baseline` shows the fake-backed budget baseline measured
-over `ask`, `act_click_cua`, `cancel_mid_act`, `brain_down` and `jev_down`
+over `ask`, `act_click_cua`, `cancel_mid_act`, `brain_down` and `retired_endpoint_down`
 (`docs/baselines/latency-harness.json`).

@@ -13,7 +13,7 @@ Fixed decisions:
 - Linux (Omarchy/Hyprland) is the primary supported desktop. macOS/Windows probe seams in PR #259 are experimental, not supported desktop releases.
 - One end-to-end eval (`wispd eval`) is the v1 gate.
 - The Rust core in `rs/` is frozen.
-- No decision model on the routing path: turns go to the act loop, and the regex heuristic becomes a fast path in Phase 5.
+- No decision model on the routing path: turns go to the act loop, with the regex fast path (`[brain] fast_path`) in front. Phase 5 is done in `wisp/`: the Jev router, `route.decide`, the clarify prompt and `JEV_QUESTIONS` are gone (#259), the replay harness no longer pins `router = jev` (#261), and a stored `router = "jev"` or unknown value reads as `act`. The replay harness keeps a Jev fake only as a tripwire, so a stray hop to the retired endpoint fails the fixture.
 
 ## Shipped
 
@@ -55,7 +55,7 @@ Also: CI flake root causes (#142), "open my email" opens Gmail when the mail han
 - **App skill ingestion, provenance & live `[app_skill]` injection** — `scripts/skill_distill.py` (`--ingest`, `--from-routines`, `--backfill-routing`, `--validate`), provenance-checked frontmatter (`source`, `app_classes`, `url_hosts`, `asks`), `codebase-graph` + `graphify` seed skills, and automatic `[app_skill]` prompt injection in `context.snapshot("full")` and `memory.context_block()`.
 - **Experimental macOS & Windows telemetry/action probe seams (PR #259)** — Linux (Omarchy/Hyprland) remains the primary supported desktop. `wisp/platform.py` and `wisp/ipc.py` add macOS (`screencapture`, `osascript`, `sox`/`ffmpeg`, `say`) and Windows (`CopyFromScreen`, `user32.dll`, TCP loopback IPC) probe adapters, mirroring `rs/wispd/src/platform.rs`. These seams are not proof of a verified full pipeline, packaged companion, or supported cross-OS release.
 - **U14–U18 delivery completion (PR #259):** media/capture cleanup regressions, an optional self-hosted Three.js illustration in `site-3d/`, explicit confirmation/reset/motion controls, deterministic builds, browser fixtures, and documentation checks. The no-script `site/` build remains independent. A private preview is not activation of `wisp.observer`; Linux media, QML, model-backed tasks and fresh-box checks still require real-device receipts.
-- **Release-completion work in progress:** complete extracted-archive installs, versioned one-line bootstrap, onboarding and attributable plugin/unit recovery; element-backed click provenance and an honest accuracy-data importer; replay migration before legacy router removal; a public growth snapshot and an opt-in local weekly recap. Completion requires integrated tests and independent source review, not only implementation reports.
+- **Release-completion work in progress:** complete extracted-archive installs, versioned one-line bootstrap, onboarding and attributable plugin/unit recovery; element-backed click provenance and an honest accuracy-data importer; a public growth snapshot and an opt-in local weekly recap. Completion requires integrated tests and independent source review, not only implementation reports.
 
 ## Next, in order
 
@@ -90,6 +90,7 @@ Historical tally (`wispd eval`, 2026-10-28; not a current gate result): 23 label
 
 ## Open decisions
 
+- **Q3, the grounding `jev` fallback.** Replace it with an OpenRouter vision point call, or drop it. Until decided, the grounding `jev` provider, `_jev_locate`, `JEV_ENDPOINT` and the health `jev` endpoint stay. The frozen Rust daemon (`rs/wispd`) still defaults `router` to `jev` and carries `brain::ask_jev`; that needs a separate parity follow-up.
 - **Clacky extras.** Streaming speech-to-text and barge-in shipped (#161, #162). Recommended: drop journaled organize and deferred auth for v1.
 
 ## Not doing

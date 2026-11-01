@@ -3,7 +3,7 @@
   "audio": "ask.wav",
   "config": {
     "brain": {
-      "router": "jev"
+      "router": "act"
     }
   },
   "endpoints": {
@@ -36,17 +36,12 @@
     "error_code": "",
     "jev_calls": 0
   },
-  "name": "jev_down",
-  "scenario": "Jev down",
+  "name": "retired_endpoint_down",
+  "scenario": "retired endpoint down",
   "catalog": {
     "firefox": {
       "launch": "firefox",
       "cues": "web browser"
-    }
-  },
-  "config": {
-    "brain": {
-      "router": "act"
     }
   }
 }

@@ -3,7 +3,7 @@
   "audio": "choose.wav",
   "config": {
     "brain": {
-      "router": "jev"
+      "router": "act"
     }
   },
   "endpoints": {
@@ -51,10 +51,5 @@
     ]
   },
   "name": "choose",
-  "scenario": "choose/confirm",
-  "config": {
-    "brain": {
-      "router": "act"
-    }
-  }
+  "scenario": "choose/confirm"
 }

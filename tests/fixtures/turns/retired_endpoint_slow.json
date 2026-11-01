@@ -3,7 +3,7 @@
   "audio": "ask.wav",
   "config": {
     "brain": {
-      "router": "jev"
+      "router": "act"
     }
   },
   "endpoints": {
@@ -48,11 +48,6 @@
     "brain_calls": 1,
     "jev_calls": 0
   },
-  "name": "jev_slow",
-  "scenario": "Jev slow",
-  "config": {
-    "brain": {
-      "router": "act"
-    }
-  }
+  "name": "retired_endpoint_slow",
+  "scenario": "retired endpoint slow"
 }

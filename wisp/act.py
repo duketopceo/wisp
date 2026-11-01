@@ -1,6 +1,6 @@
 """Act route: a bounded, guarded conversational tool-call loop.
 
-Jev decides the user wants a multi-step desktop task; this loop hands the
+The router sends a multi-step desktop task here; this loop hands the
 toolbelt to the chat model as OpenAI-style tools and lets it drive. Every
 proposed call re-enters the same gates execute() uses — denylist,
 allow_shell, risk tier — so the model can ask for anything but only

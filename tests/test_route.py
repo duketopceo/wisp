@@ -33,7 +33,7 @@ class RetiredRouterTest(unittest.TestCase):
 
     def test_retired_endpoints_never_receive_routing_traffic(self):
         from harness import runner
-        for name in ("jev_down", "jev_slow"):
+        for name in ("retired_endpoint_down", "retired_endpoint_slow"):
             with self.subTest(name=name):
                 res = runner.run_turn(name)
                 self.assertEqual(runner.check_expectations(res), [])
