@@ -18,13 +18,30 @@ class TestPlatform(unittest.TestCase):
         self.assertEqual(platform.current(), "linux")
 
     def test_linux_dirs_unchanged(self):
+        env = {k: v for k, v in os.environ.items()
+               if k != "XDG_CONFIG_HOME"}
         with _with_os("linux"), \
-                mock.patch.dict(os.environ, {},
-                                clear=False):
+                mock.patch.dict(os.environ, env, clear=True):
             cfg, data, rt = platform.dirs()
             self.assertTrue(cfg.as_posix().endswith(".config/wisp"))
             self.assertTrue(data.as_posix().endswith(
                 ".local/share/wisp"))
+
+    def test_xdg_config_home_moves_the_config_dir(self):
+        # the gauntlet driver points it at a throwaway directory so its
+        # daemon never reads the owner's config or .env
+        with _with_os("linux"), mock.patch.dict(
+                os.environ, {"XDG_CONFIG_HOME": "/tmp/gauntlet/config"}):
+            cfg, data, _ = platform.dirs()
+        self.assertEqual(cfg, Path("/tmp/gauntlet/config/wisp"))
+        self.assertTrue(data.as_posix().endswith(".local/share/wisp"))
+
+    def test_relative_or_empty_xdg_config_home_is_ignored(self):
+        for bad in ("", "relative/dir"):
+            with _with_os("linux"), mock.patch.dict(
+                    os.environ, {"XDG_CONFIG_HOME": bad}):
+                cfg, _, _ = platform.dirs()
+            self.assertTrue(cfg.as_posix().endswith(".config/wisp"), bad)
 
     def test_linux_cmds(self):
         with _with_os("linux"):

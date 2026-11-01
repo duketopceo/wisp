@@ -658,7 +658,9 @@ class WispdModelsTest(unittest.TestCase):
 
     def _run(self, *args, endpoint):
         td = tempfile.mkdtemp()
-        cfgdir = pathlib.Path(td) / ".config" / "wisp"
+        # XDG_CONFIG_HOME below is honoured (platform.dirs), so the
+        # config lives under it
+        cfgdir = pathlib.Path(td) / "config" / "wisp"
         cfgdir.mkdir(parents=True)
         (cfgdir / "config.toml").write_text(
             "[brain]\nrouter = \"jev\"\ndefault = \"openrouter:x\"\n"

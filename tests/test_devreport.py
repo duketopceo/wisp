@@ -432,6 +432,75 @@ class TestIpc(Base):
         self.assertTrue(r["ok"], r)
 
 
+class TestImportLabels(Base):
+    """`wispd dev import-labels`: only the owner's own labels on gauntlet
+    turns reach the owner's data, once (R20, KTD11)."""
+
+    def setUp(self):
+        super().setUp()
+        self.src = self.dir / "gauntlet-data"
+        self.src.mkdir()
+
+    def put(self, name, rows):
+        with (self.src / name).open("a") as f:
+            for r in rows:
+                f.write(json.dumps(r) + "\n")
+
+    def dec(self, ts, turn):
+        return {"ts": ts, "turn": turn, "transcript": "open firefox",
+                "result": "ACTED (1 steps): ok"}
+
+    def lab(self, ref, label, note="dev review"):
+        return {"ts": "2026-11-01T00:00:00+00:00", "ref": ref,
+                "label": label, "note": note}
+
+    def seed(self):
+        self.put("decisions.jsonl", [self.dec("t1", "a"), self.dec("t2", "b"),
+                                     self.dec("t3", "c"), self.dec("t4", "d")])
+        self.put("labels.jsonl", [
+            self.lab("t1", "correct"), self.lab("t2", "incorrect"),
+            # t3 is judge-only: no label row; t4 has only the automatic mark
+            self.lab("t4", "corrected-by-retry", "ACTED (3 steps)")])
+
+    def dest(self, name):
+        return learn._read_jsonl(self.dir / name)
+
+    def test_copies_only_owner_labelled_turns_and_their_labels(self):
+        self.seed()
+        out = devreport.import_labels(self.src)
+        self.assertEqual(out, {"copied": 2, "present": 0, "unlabelled": 2})
+        self.assertEqual([d["ts"] for d in self.dest("decisions.jsonl")],
+                         ["t1", "t2"])
+        self.assertEqual([(x["ref"], x["label"])
+                          for x in self.dest("labels.jsonl")],
+                         [("t1", "correct"), ("t2", "incorrect")])
+
+    def test_second_run_is_a_no_op(self):
+        self.seed()
+        devreport.import_labels(self.src)
+        again = devreport.import_labels(self.src)
+        self.assertEqual(again["copied"], 0)
+        self.assertEqual(again["present"], 2)
+        self.assertEqual(len(self.dest("decisions.jsonl")), 2)
+        self.assertEqual(len(self.dest("labels.jsonl")), 2)
+
+    def test_a_later_owner_label_wins_and_counts_in_the_gate(self):
+        self.seed()
+        self.put("labels.jsonl", [self.lab("t1", "incorrect")])
+        devreport.import_labels(self.src)
+        rep = learn.eval_report(decisions_file=self.dir / "decisions.jsonl",
+                                labels_file=self.dir / "labels.jsonl")
+        self.assertEqual((rep["total"]["labelled"], rep["total"]["incorrect"]), (2, 2))
+
+    def test_refuses_your_own_data_directory(self):
+        with self.assertRaises(ValueError):
+            devreport.import_labels(self.dir)
+
+    def test_missing_source_copies_nothing(self):
+        out = devreport.import_labels(self.dir / "nope")
+        self.assertEqual(out["copied"], 0)
+
+
 class TestCli(unittest.TestCase):
     RUN = {"run_id": "r1", "tasks": 2, "rows": [
         {"index": 0, "turn": "t0", "goal": "open firefox",
@@ -482,6 +551,25 @@ class TestCli(unittest.TestCase):
                 "dev", "review", "--set", *argv)
             self.assertNotEqual(code, 0)
             self.assertNotIn("label", [c["cmd"] for c in ipc_log])
+
+    def test_run_profiles_are_sent_with_the_sandbox_windows(self):
+        code, out, err, ipc_log = self.run_cli(
+            "dev", "run", "x.txt", "--profile", "hybrid", "--profile",
+            "openrouter", "--window", "0xaaa1", "--cap", "4")
+        self.assertEqual(code, 0, err)
+        msg = ipc_log[-1]
+        self.assertEqual(msg["profiles"], ["hybrid", "openrouter"])
+        self.assertEqual(msg["windows"], ["0xaaa1"])
+        self.assertEqual(msg["cap_usd"], 4.0)
+        code, out, err, ipc_log = self.run_cli(
+            "dev", "run", "x.txt", "--profile", "nope")
+        self.assertNotEqual(code, 0)
+
+    def test_import_labels_reports_what_it_copied(self):
+        code, out, err, _ = self.run_cli(
+            "dev", "import-labels", "--json", "/nonexistent-gauntlet-dir")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out)["data"]["copied"], 0)
 
     def test_run_vs_is_sent_to_the_daemon(self):
         code, out, err, ipc_log = self.run_cli(

@@ -1,23 +1,36 @@
-usage: wispd dev run [-h] [--vs KEY=VALUE] [--json] [--quiet] [--no-color]
+usage: wispd dev run [-h] [--vs KEY=VALUE] [--profile NAME] [--window ADDR]
+                     [--spend-file PATH] [--cap USD] [--json] [--quiet]
+                     [--no-color]
                      FILE
 
 Run a task list on the live desktop (dev mode must be on)
 
 positional arguments:
-  FILE            task list: one task per line, # for comments
+  FILE               task list: one task per line, # for comments
 
 options:
-  -h, --help      show this help message and exit
-  --vs KEY=VALUE  run the list a second time with one setting changed
-                  (brain.default=openrouter:acme/model) and pair the two runs
-                  per task; your config is never written; both count as one
-                  run
+  -h, --help         show this help message and exit
+  --vs KEY=VALUE     run the list a second time with one setting changed
+                     (brain.default=openrouter:acme/model) and pair the two
+                     runs per task; your config is never written; both count
+                     as one run
+  --profile NAME     gauntlet mode: run each task once per arm profile (a name
+                     under docs/dev-tasks/profiles/ or a file path), arms
+                     interleaved per task; repeat for more arms. Typing is
+                     allowed only into --window addresses; not with --vs
+  --window ADDR      a sandbox window address the gauntlet run may type into
+                     (repeatable)
+  --spend-file PATH  cumulative gauntlet spend file (default: in the data
+                     folder)
+  --cap USD          gauntlet spend cap across every run that shares the spend
+                     file (default 10)
 
 global options:
-  --json          machine-readable output (one JSON object)
-  --quiet, -q     print nothing on success
-  --no-color      plain output (also NO_COLOR, or not a tty)
+  --json             machine-readable output (one JSON object)
+  --quiet, -q        print nothing on success
+  --no-color         plain output (also NO_COLOR, or not a tty)
 
 Examples:
   wispd dev run docs/dev-tasks/starter.txt
   wispd dev run tasks.txt --vs brain.default=openrouter:acme/m
+  wispd dev run one-task.txt --profile hybrid --profile openrouter

@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+"""Restricted read-only shell for the gauntlet's sandbox terminal (KTD12).
+
+The sandbox terminal runs this instead of a login shell. It reads one
+command per line and runs it only when
+
+  - the command is on the allowlist of read-only programs below, run
+    from a fixed directory (never looked up through PATH);
+  - the line has no shell syntax at all (no pipes, redirects, `;`, `&`,
+    backticks, `$`, globs or newlines), so nothing can chain a second
+    command or write a file;
+  - every path argument stays inside the sandbox root (GAUNTLET_ROOT,
+    else the working directory at start);
+  - the program runs with a scrubbed environment and no stdin.
+
+Anything else prints `rsh: refused` and runs nothing. `rsh -c LINE` runs
+one line and exits 0 (ran), 126 (refused) or the program's own status.
+Every line and its verdict goes to `$GAUNTLET_ROOT/rsh.log` so the driver
+can check what the task did.
+"""
+import os
+import re
+import subprocess
+import sys
+
+# read-only programs only; each runs from the first directory that has it
+ALLOW = ("ls", "pwd", "cat", "head", "tail", "wc", "echo", "date", "stat",
+         "uname", "whoami")
+# the only option letters each program accepts, as short flags only. GNU
+# getopt takes abbreviated long options and attached values (`wc
+# --files0=X`, `file -f/etc/x`), so everything not listed is refused
+OPT_LETTERS = {"ls": "alhR1dFtrS", "cat": "n", "head": "nc", "tail": "nc",
+               "wc": "lwcm", "echo": "n", "uname": "asrmo", "stat": "",
+               "pwd": "", "date": "", "whoami": ""}
+BIN_DIRS = ("/usr/bin", "/bin")
+# programs whose non-option arguments are paths
+PATH_ARGS = ("ls", "cat", "head", "tail", "wc", "stat", "cd")
+_SYNTAX = re.compile(r"[;&|<>`$*?\[\]{}()\\\n\r!~]")
+SAFE_ENV = ("PATH", "LANG", "LC_ALL", "TERM")
+STOP = ("exit", "quit", "logout")
+
+
+def root() -> str:
+    return os.path.realpath(os.environ.get("GAUNTLET_ROOT") or os.getcwd())
+
+
+def inside(path: str, cwd: str, base: str) -> bool:
+    real = os.path.realpath(os.path.join(cwd, path))
+    return real == base or real.startswith(base + os.sep)
+
+
+def check(line: str, cwd: str, base: str):
+    """(argv, None) for a line that may run, else (None, reason). `cd`
+    comes back as argv ['cd', target]."""
+    import shlex
+    line = line.strip()
+    if not line:
+        return None, "empty"
+    if _SYNTAX.search(line):
+        return None, "shell syntax is not allowed"
+    try:
+        argv = shlex.split(line)
+    except ValueError:
+        return None, "unbalanced quotes"
+    cmd, args = argv[0], argv[1:]
+    if cmd != "cd" and cmd not in ALLOW:
+        return None, f"{cmd} is not allowed"
+    if "/" in cmd:
+        return None, "run commands by bare name"
+    if any(not a for a in args):
+        return None, "empty arguments are not allowed"
+    for a in args:
+        if cmd in OPT_LETTERS and a.startswith("-") and a != "-" \
+                and cmd != "date":
+            if not re.fullmatch(r"-[A-Za-z0-9]+", a) or any(
+                    ch not in OPT_LETTERS[cmd] + "0123456789"
+                    for ch in a[1:]):
+                return None, f"option {a} is not allowed"
+    if cmd == "date" and any(not a.startswith("+") for a in args):
+        return None, "date takes only a +FORMAT"
+    if cmd in PATH_ARGS:
+        for a in args:
+            if not a.startswith("-") and not inside(a, cwd, base):
+                return None, "path is outside the sandbox"
+    if cmd == "cd" and len(args) > 1:
+        return None, "cd takes one directory"
+    return argv, None
+
+
+def resolve(cmd: str):
+    for d in BIN_DIRS:
+        p = os.path.join(d, cmd)
+        if os.access(p, os.X_OK):
+            return p
+    return None
+
+
+def log(line: str, verdict: str) -> None:
+    path = os.path.join(root(), "rsh.log")
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        try:
+            os.write(fd, f"{verdict}\t{line.strip()}\n".encode())
+        finally:
+            os.close(fd)
+    except OSError:
+        pass
+
+
+def run_line(line: str, cwd: str, base: str):
+    """(new cwd, status). Prints the program's output or the refusal."""
+    argv, why = check(line, cwd, base)
+    if argv is None:
+        if why != "empty":
+            print(f"rsh: refused ({why})", flush=True)
+            log(line, "refused")
+            return cwd, 126
+        return cwd, 0
+    if argv[0] == "cd":
+        target = os.path.realpath(os.path.join(
+            cwd, argv[1] if len(argv) > 1 else base))
+        if os.path.isdir(target):
+            log(line, "ok")
+            return target, 0
+        print("rsh: no such directory", flush=True)
+        log(line, "failed")
+        return cwd, 1
+    exe = resolve(argv[0])
+    if exe is None:
+        print(f"rsh: {argv[0]} is not installed", flush=True)
+        log(line, "failed")
+        return cwd, 127
+    env = {k: os.environ[k] for k in SAFE_ENV if k in os.environ}
+    r = subprocess.run([exe, *argv[1:]], cwd=cwd, env=env,
+                       stdin=subprocess.DEVNULL, timeout=20)
+    log(line, "ok" if r.returncode == 0 else f"status {r.returncode}")
+    return cwd, r.returncode
+
+
+def main(argv=None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    base = root()
+    cwd = base
+    if argv[:1] == ["-c"]:
+        try:
+            return run_line(" ".join(argv[1:]), cwd, base)[1]
+        except subprocess.TimeoutExpired:
+            print("rsh: timed out", flush=True)
+            return 124
+    while True:
+        try:
+            line = input(f"{os.path.basename(cwd) or '/'} $ ")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return 0
+        if line.strip() in STOP:
+            return 0
+        try:
+            cwd, _ = run_line(line, cwd, base)
+        except subprocess.TimeoutExpired:
+            print("rsh: timed out", flush=True)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

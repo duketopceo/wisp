@@ -411,6 +411,12 @@ def _dom_eval(cfg: dict, code: str) -> str:
 
 
 def type_text(text: str, cfg: dict | None = None) -> str:
+    # gauntlet runs: the sandbox identity check, run again right before
+    # the keystroke (focus can move after the policy gate)
+    from .. import gauntlet
+    refused = gauntlet.keystroke_guard(cfg or {})
+    if refused:
+        return refused
     # typing never moves the pointer — wtype/ydotool type at the
     # focused surface, the DOM path sets values over JS
     _delivery.note("background")
@@ -487,6 +493,10 @@ def _chord(name: str) -> list | None:
 def key(arg: str, cfg: dict | None = None) -> str:
     """Press a named key — 'enter', 'tab', 'down', 'pagedown', 'ctrl+v',
     'ctrl+shift+t' (modifier chords are ydotool-only, never DOM)."""
+    from .. import gauntlet
+    refused = gauntlet.keystroke_guard(cfg or {}, arg)
+    if refused:
+        return refused
     _delivery.note("background")   # key events ride the keyboard path
     name = (arg or "").strip().lower().replace(" ", "")
     name = {"return": "enter", "escape": "esc", "pgdn": "pagedown",
