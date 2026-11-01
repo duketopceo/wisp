@@ -5,7 +5,7 @@
 # grounding call and the task get more time than the OpenRouter arm.
 
 [brain]
-default = "openrouter:meta-llama/llama-4-maverick"
+default = "openrouter:google/gemini-2.5-flash"
 fallback = ""
 
 # the eval key reaches the daemon as OPENROUTER_API_KEY (set by `orch`);

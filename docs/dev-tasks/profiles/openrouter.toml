@@ -4,7 +4,7 @@
 # `wispd dev run --profile openrouter` (wisp/gauntlet.py).
 
 [brain]
-default = "openrouter:meta-llama/llama-4-maverick"
+default = "openrouter:google/gemini-2.5-flash"
 fallback = ""
 
 [brain.openrouter]
@@ -12,7 +12,7 @@ key_env = "OPENROUTER_API_KEY"
 
 [ground]
 providers = "control,a11y,vlm"
-vlm_brain = "openrouter:google/gemini-2.5-flash"
+vlm_brain = "openrouter:meta-llama/llama-4-maverick"
 
 [agents]
 act_max_usd = "0.25"
