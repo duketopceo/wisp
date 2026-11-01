@@ -190,12 +190,8 @@ def run_act_loop(task: str, cfg: dict, state=None,
         return (f"SKIP (brain provider '{p['name']}' does not support "
                 f"tools — set [brain.{p['name']}] tools=true or pick a "
                 f"capable provider)")
-    system = SYSTEM
-    if lang:
-        from . import lang as _lang
-        rule = _lang.reply_rule(lang)
-        if rule:
-            system += " " + rule
+    from . import lang as _lang
+    system = _lang.with_reply_rule(SYSTEM, lang)
     from . import trajectories, context as _ctx, action_stats as _ast
     traj_recs = trajectories._read_all()  # one parse feeds both blocks
     traj_labs = trajectories._labels()

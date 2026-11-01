@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
 from harness import runner  # noqa: E402
-from wisp import (brain, context, dictate, lang, learn, memory, platform,  # noqa: E402
+from wisp import (act, brain, context, dictate, lang, learn, memory, platform,  # noqa: E402
                   speech, stage_capture, stage_speak, stt_stream, vocab)
 
 FIXTURES = ROOT / "tests" / "fixtures" / "turns"
@@ -359,15 +359,32 @@ class TestEval(unittest.TestCase):
 
 
 class TestReplay(unittest.TestCase):
+    ACT_CASES = [("lang_de", "de"), ("lang_pt_br", "pt-BR"),
+                 ("lang_ja", "ja"), ("lang_fr", "fr")]
+
     def test_act_route_prompt_carries_the_reply_language(self):
-        # Answer fixtures deliberately isolate the chat contract. Retain a
-        # separate act-path regression so router retirement cannot silently
-        # discard the same STT language metadata on the default executor.
-        spec = json.loads((FIXTURES / "lang_de.json").read_text())
-        spec["config"]["brain"]["router"] = "act"
-        res = runner.run_turn(spec | {"_dir": str(FIXTURES)})
+        # No router pin: these statements take the default act loop, and its
+        # system prompt must carry the same rule the answer lane does.
+        for name, code in self.ACT_CASES:
+            with self.subTest(name):
+                res = runner.run_turn(FIXTURES / f"{name}.json")
+                self.assertEqual(runner.check_expectations(res), [])
+                system = res.chat_calls()[0]["body"]["messages"][0]["content"]
+                self.assertTrue(system.startswith(act.SYSTEM), system[:80])
+                self.assertIn(lang.reply_rule(code), system)
+
+    def test_act_route_english_prompt_has_no_reply_rule(self):
+        res = runner.run_turn(FIXTURES / "router_act_default.json")
         system = res.chat_calls()[0]["body"]["messages"][0]["content"]
-        self.assertIn("Reply in German", system)
+        self.assertTrue(system.startswith(act.SYSTEM), system[:80])
+        self.assertNotIn("Reply in", system)
+        self.assertNotIn("The user spoke", system)
+
+    def test_both_lanes_share_one_rule_helper(self):
+        self.assertEqual(lang.with_reply_rule("S.", "en"), "S.")
+        self.assertEqual(lang.with_reply_rule("S.", ""), "S.")
+        self.assertEqual(lang.with_reply_rule("S.", "de"),
+                         "S. " + lang.reply_rule("de"))
 
     CASES = [("lang_es", "es", "Spanish", False),
              ("lang_de", "de", "German", False),
@@ -385,6 +402,10 @@ class TestReplay(unittest.TestCase):
                                  fx["endpoints"]["whisper"]["transcript"])
                 system = res.chat_calls()[0]["body"]["messages"][0]
                 self.assertIn(f"Reply in {full}", system["content"])
+                if system["content"].startswith(act.SYSTEM):
+                    # act replies go through the generic speak path, which
+                    # picks no per-language voice (tracked separately)
+                    continue
                 voice = res.trace_events("tts_voice")
                 self.assertEqual([(v["lang"], v["fallback"])
                                   for v in voice], [(code, fallback)])
