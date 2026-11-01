@@ -78,9 +78,14 @@ class Speed(unittest.TestCase):
                 return 0
 
         c = cfg("1.25", cmd="say {rate} {text}")
-        with mock.patch.object(speech.subprocess, "Popen",
-                               side_effect=lambda argv, **kw:
-                               seen.append(argv) or P()):
+        # Groq is the default voice provider; resolving its key shells out
+        # to omaseal through the (mocked) Popen below. This test is about
+        # the local command's rate, so keep the Groq path out of it.
+        from wisp import tts_groq
+        with mock.patch.object(tts_groq, "usable", return_value=False), \
+                mock.patch.object(speech.subprocess, "Popen",
+                                  side_effect=lambda argv, **kw:
+                                  seen.append(argv) or P()):
             sp = speech.SentenceSpeaker(c)
             sp.finish("One. Two.")
             sp._worker.join(timeout=5)

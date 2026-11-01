@@ -122,7 +122,8 @@ class TestGate(unittest.TestCase):
 
 class TestColor(unittest.TestCase):
     def test_ansi16_by_default(self):
-        t = o.table(["a"], [["x"]], tones=[["ok"]], color=True)
+        # env={} keeps the host's COLORTERM=truecolor out of the decision.
+        t = o.table(["a"], [["x"]], tones=[["ok"]], color=True, env={})
         self.assertIn("\x1b[32mx\x1b[0m", t)
         self.assertNotIn("38;2", t)
 
