@@ -16,6 +16,41 @@ var size = {
 }
 var lineHeight = 1.35
 
+// Type and spacing scale (settings overhaul KTD2). Additive: the blocks
+// above stay until the surfaces migrate. Sizes are pixels at text scale 1.
+// minimum: body text 14, secondary text 12 (R12); a control is 32 tall in
+// the settings window and Panel, 28 on the overlay and bar (R13).
+var scale = {
+  font: { caption: 12, label: 13, body: 14, answer: 15, title: 17, heading: 20 },
+  space: { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32, huge: 48 },
+  control: { window: 32, compact: 28 },
+  minimum: { body: 14, secondary: 12, control: 28, windowControl: 32 },
+  textScaleRange: { min: 1, max: 2 }
+}
+
+// Text-scale hook (R14): the host passes the desktop text size as a
+// multiplier. Anything that is not a positive number reads as 1. The result
+// is clamped to 1..2: a larger system text size enlarges Wisp, a smaller one
+// never takes text under the minimums above.
+function textScale(value) {
+  var n = Number(value)
+  if (!isFinite(n) || n <= 0) return 1
+  return Math.max(scale.textScaleRange.min, Math.min(scale.textScaleRange.max, n))
+}
+
+// Pixel size of a named step at a text scale. Text grows and shrinks;
+// hit targets do not (see controlHeight).
+function fontSize(name, ts) {
+  var base = scale.font.hasOwnProperty(name) ? scale.font[name] : scale.font.body
+  return Math.round(base * textScale(ts))
+}
+
+// Control height: never scaled by text size, so a larger font cannot move
+// the hit target (and a smaller one cannot shrink it below the minimum).
+function controlHeight(compact) {
+  return compact ? scale.control.compact : scale.control.window
+}
+
 // Pill radius: square themes stay square.
 function pillRadius(height, chromeRadius) {
   return chromeRadius === 0 ? 0 : height / 2

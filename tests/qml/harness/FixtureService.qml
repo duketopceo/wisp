@@ -17,6 +17,7 @@ Item {
   property var view: Reader.initial()
   property var tokens: ({})
   property string fontFamily: "Liberation Mono"
+  property real textScale: 1
   property string themeMode: "dark"
   // snapshot mode: motion off, so no animation can change a frame
   property string motionConfig: "off"

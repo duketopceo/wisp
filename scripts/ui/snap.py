@@ -46,6 +46,14 @@ EXIT_OK, EXIT_DIFF, EXIT_ERROR, EXIT_SKIPPED = 0, 1, 2, 3
 # the same file the token adapter tests use)
 THEMES = {"dark": "vantablack", "light": "catppuccin-latte"}
 SCALES = (1, 2)
+# Named window sizes for scenes that must hold at real screen sizes (the
+# settings window): logical width and height, and the output scale the
+# machine runs them at. A variant picks one with `_viewport`; it renders in
+# both themes at that scale only.
+VIEWPORTS = {
+    "laptop": {"width": 1728, "height": 1080, "scale": 2},
+    "ultrawide": {"width": 3440, "height": 1440, "scale": 1},
+}
 VARIANT_FIXTURE = "idle"  # state a variant-mode component renders under
 
 
@@ -137,7 +145,8 @@ def cases(only=None):
         for theme in THEMES:
             for scale in SCALES:
                 if scale == 2 and not (scene.get("scale2")
-                                       and theme == "dark"):
+                                       and theme == "dark") \
+                        and not scene.get("viewport_only"):
                     continue
                 if scene["mode"] == "state":
                     items = [(n, n, {}) for n in fixtures]
@@ -147,6 +156,11 @@ def cases(only=None):
                 for label, fx, extra in items:
                     props = dict(scene.get("props", {}))
                     props.update(extra)
+                    vp = VIEWPORTS.get(props.pop("_viewport", ""))
+                    if vp and vp["scale"] != scale:
+                        continue
+                    if not vp and scene.get("viewport_only"):
+                        continue
                     # a variant may pick another state fixture and add
                     # fixture mods (e.g. a cua.target event)
                     fx = props.pop("_state", fx)
@@ -158,7 +172,8 @@ def cases(only=None):
                         "component": comp, "theme": theme, "scale": scale,
                         "fixture": fx, "snapshot": raw, "mods": mods,
                         "tokens": theme_tokens(theme), "props": props,
-                        "width": scene.get("width"),
+                        "width": vp["width"] if vp else scene.get("width"),
+                        "height": vp["height"] if vp else scene.get("height"),
                         "pad": scene.get("pad", 10),
                         "on": scene.get("on", "canvas"),
                         "source": scene.get("source"),

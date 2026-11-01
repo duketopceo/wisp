@@ -12,6 +12,7 @@ import "lib/rate.js" as Rate
 import "lib/bar.js" as B
 import "lib/scribble.js" as Scribble
 import "lib/dev.js" as Dev
+import "lib/metrics.js" as Metrics
 
 // WispService: the one reader of wispd state for every surface (Companion,
 // Panel, bar widget). Surfaces bind to this object (shell.serviceFor(
@@ -138,6 +139,11 @@ Item {
   property string themeMode: "dark"
   // Family for text; surfaces and components bind font.family to it.
   readonly property string fontFamily: Style.fontFamily
+  // Text-size multiplier for every surface (R14), 1 to 2. One source for
+  // the in-shell plugin and the standalone configs: WISP_TEXT_SCALE in the
+  // shell's environment (unset or bad reads 1). Change the binding here if
+  // the host later exposes the Omarchy text size directly.
+  readonly property real textScale: Metrics.textScale(Quickshell.env("WISP_TEXT_SCALE"))
   readonly property string motionMode: Motion.resolveMode(motionConfig, animationsEnabled)
 
   // --- settings (W22): one-shot reads, writes through wispd config set ----
