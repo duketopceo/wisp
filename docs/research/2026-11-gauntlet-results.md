@@ -338,3 +338,14 @@ known `test_snap` fixture render mismatch (unrelated).
 ## Final state
 
 `wispd.service` active, owner on workspace 1, submap `default`, only eDP-1.
+
+# Later runs, 2026-11-02
+
+Four more live-desktop (eDP-1) runs follow in
+[2026-11-02-gauntlet-reruns.md](2026-11-02-gauntlet-reruns.md): master
+after #299-#301, PR #302 (gauntlet-only policy), #302 plus the fail-closed
+click guard, and #303 (the guard no longer counts wisp's own overlay).
+First-attempt scores went from tuning 2/12 and 3/12 on master to 7/12 on
+both arms after #302 and #303. Held-out ended at 4/7 (hybrid) and 2/7
+(openrouter). Both arms ran gemini-2.5-flash as the act brain, and each
+case ran once, so per-case flips are mostly noise.
