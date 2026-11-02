@@ -81,6 +81,7 @@ CATEGORIES = ("browser", "files", "terminal", "windows", "menu")
 APPS = sandbox.APPS + ("menu",)
 CHECK_TYPES = ("judge", "title_regex", "file_exists", "url_host", "rsh_log",
                "window_workspace", "geometry_changed", "window_focused")
+SESSIONS = ("live", "isolated")
 _ID = re.compile(r"[a-z0-9][a-z0-9-]*")
 TASK_CHARS = 300                # a task line is cut at this many chars
 # wait this long past a run's own time limit before calling it hung
@@ -129,6 +130,13 @@ def validate_case(c) -> list:
     if not isinstance(also, list) or any(a not in sandbox.APPS
                                          for a in also):
         errs.append("also must list sandbox apps")
+    sessions = c.get("sessions", list(SESSIONS))
+    if not isinstance(sessions, list) or not sessions \
+            or any(x not in SESSIONS for x in sessions):
+        errs.append(f"sessions must list some of {SESSIONS}")
+    if "skip" in c and (not isinstance(c["skip"], str)
+                        or not c["skip"].strip()):
+        errs.append("skip must be a reason")
     if c.get("learnable") is True and (
             c.get("app") not in sandbox.APPS or not c.get("skill_seed")):
         errs.append("a learnable case needs a sandbox app and a skill_seed")
@@ -160,6 +168,18 @@ def load_cases(path) -> list:
     if not out:
         raise CaseError("no cases")
     return out
+
+
+def skip_reason(case, session) -> str | None:
+    """Why a case does not run in this session, or None when it runs.
+    `skip` names a gap that keeps the case from passing anywhere (a tool
+    wisp lacks); `sessions` limits a case to the sessions that have what
+    it needs (the bare isolated compositor has no Omarchy menu)."""
+    if case.get("skip"):
+        return case["skip"]
+    if session not in case.get("sessions", SESSIONS):
+        return f"not run in the {session} session"
+    return None
 
 
 def case_apps(case) -> list:
@@ -828,6 +848,15 @@ def main(argv=None, deps=None, out=print) -> int:
     except CaseError as e:
         out(f"cases: {e}")
         return EXIT_USAGE
+    skipped = [(c["id"], skip_reason(c, args.session)) for c in cases]
+    skipped = [(i, why) for i, why in skipped if why]
+    if skipped and len(skipped) == len(cases):
+        out(f"cases: none run in the {args.session} session")
+        return EXIT_USAGE
+    gone = {i for i, _ in skipped}
+    cases = [c for c in cases if c["id"] not in gone]
+    for i, why in skipped:
+        out(f"skip {i}: {why}")
     profiles = []
     for ref in [r.strip() for r in args.profiles.split(",") if r.strip()]:
         try:

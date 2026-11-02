@@ -363,7 +363,9 @@ def evaluate(check: dict, box: Sandbox):
                         "lines": len(rows)}
         if kind == "window_workspace":
             win = box.windows[check["app"]]
-            want = SANDBOX_WS[int(check["workspace"]) - 1]
+            # the workspace id itself (91, 92), or its slot (1, 2)
+            ws = int(check["workspace"])
+            want = ws if ws in SANDBOX_WS else SANDBOX_WS[ws - 1]
             got = (box.client(win).get("workspace") or {}).get("id")
             return got == want, {"workspace": got, "want": want}
         if kind == "geometry_changed":

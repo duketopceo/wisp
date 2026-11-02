@@ -490,6 +490,11 @@ class TestChecksAndEvidence(Base):
         self.assertFalse(SB.evaluate({"type": "window_workspace",
                                       "app": "terminal", "workspace": 2},
                                      box)[0])
+        # the workspace id itself names the same slot
+        self.assertTrue(SB.evaluate({"type": "window_workspace",
+                                     "app": "terminal",
+                                     "workspace": SB.SANDBOX_WS[0]},
+                                    box)[0])
         self.assertFalse(SB.evaluate({"type": "geometry_changed",
                                       "app": "terminal", "what": "size"},
                                      box)[0])
