@@ -64,7 +64,7 @@ port = 47315
 model = "typesafe/jev-1.13"
 # OpenRouter chat model for the answer route — must accept image_url
 # content parts (vision-capable) for screen-aware answers.
-answer_model = "meta-llama/llama-4-maverick"
+answer_model = "google/gemini-2.5-flash"
 # number of prior turns fed back as context for follow-ups
 session_turns = 8
 # attach a screenshot to answer-route calls when true
@@ -387,7 +387,7 @@ gate_primary = "false"
 router = "act"
 # answer provider as "name:model" — named sections below or any
 # [brain.<name>] table you add (kind: openai_compat | ollama)
-default = "openrouter:meta-llama/llama-4-maverick"
+default = "openrouter:google/gemini-2.5-flash"
 # fallback chain tried after `default`, comma-separated name:model.
 # Paid entries (openrouter, or paid = "true" on the section) are skipped
 # unless allow_paid = "true". Example: "mlx:ornith, ollama:ornith"
@@ -580,7 +580,7 @@ def _default_cfg_dict() -> dict:
         "audio": {"seconds": "60", "whisper_model": "ggml-small.en.bin"},
         "agent": {
             "model": "typesafe/jev-1.13",
-            "answer_model": "meta-llama/llama-4-maverick",
+            "answer_model": "google/gemini-2.5-flash",
             "session_turns": "8", "screenshots": "true",
             "risk_threshold": "9",
             "confidence_instant": "0.95", "confidence_ambiguous": "0.8",
@@ -621,7 +621,7 @@ def _default_cfg_dict() -> dict:
         "ui": {"theme": "dark"},
         "brain": {
             "router": "act", "agent_runtime": "auto",
-            "default": "openrouter:meta-llama/llama-4-maverick",
+            "default": "openrouter:google/gemini-2.5-flash",
             "fallback": "", "allow_paid": "false", "first_token_s": "3",
         },
         "budget": {"monthly_usd": "160.00", "gate_primary": "false"},

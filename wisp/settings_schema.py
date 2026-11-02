@@ -252,7 +252,7 @@ FIELDS = (
     _f("brain.router", "choice", "act",
        "How a turn is routed: act (local fast paths then act), chat or off",
        choices=("act", "chat", "off")),
-    _f("brain.default", "text", "openrouter:meta-llama/llama-4-maverick",
+    _f("brain.default", "text", "openrouter:google/gemini-2.5-flash",
        "Answer model as name:model; the name is a [brain.<name>] provider "
        "(openrouter, ollama, lmstudio, mlx or your own)",
        pattern=r"[A-Za-z0-9_.-]+:[^\s,]+", hint="name:model"),
