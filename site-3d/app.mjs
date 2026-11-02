@@ -1,7 +1,9 @@
-import {initial, transition, scenarios} from "./model.mjs";
+import {initial, transition, scenarios, scriptFor} from "./model.mjs";
+import {createDesktop} from "./desktop.mjs";
 
 const scene = document.querySelector("#scene");
 const fallback = document.querySelector("#scene-fallback");
+const desktopHost = document.querySelector("#desktop");
 const story = document.querySelector(".workspace-story");
 const note = document.querySelector(".scene-note");
 const status = document.querySelector("#demo-state");
@@ -15,12 +17,16 @@ const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 let state = initial();
 let timer;
 let sceneHandle;
+let desktopHandle;
 let generation = 0;
 let motionPaused = false;
+
+desktopHandle = createDesktop(desktopHost);
 
 function renderState() {
   const focusedControl = document.activeElement;
   const target = scenarios[state.scenario].target;
+  const script = scriptFor(state);
   const messages = {
     idle: "Ready. Choose an example below.",
     listening: `Listening example: “${scenarios[state.scenario].ask}”`,
@@ -32,7 +38,7 @@ function renderState() {
       : "Example complete. Nothing on your computer was changed.",
     cancelled: "Example cancelled. Nothing was changed.",
   };
-  status.textContent = messages[state.phase];
+  status.textContent = `${messages[state.phase]} ${script.status ? `· ${script.status}` : ""}`.trim();
   status.dataset.phase = state.phase;
   approve.hidden = state.phase !== "awaiting_choice";
   cancel.disabled = !["listening", "thinking", "acting", "awaiting_choice"].includes(state.phase);
@@ -42,6 +48,7 @@ function renderState() {
     button.disabled = false;
     button.setAttribute("aria-pressed", String(state.phase !== "idle" && state.scenario === button.dataset.scenario));
   }
+  desktopHandle?.setState(state);
   sceneHandle?.setState(state);
   if ((focusedControl === cancel && cancel.disabled) || (focusedControl === reset && reset.disabled)) {
     examples.find(button => button.dataset.scenario === state.scenario).focus({preventScroll: true});
@@ -74,21 +81,32 @@ cancel.addEventListener("click", () => {
 reset.addEventListener("click", () => dispatch({type: "reset"}));
 renderState();
 
-function staticScene() {
-  scene.dataset.renderer = "static";
+function showDomDesktop() {
+  scene.dataset.renderer = "dom";
   delete scene.dataset.rendered;
-  fallback.hidden = false;
+  desktopHost.hidden = false;
+  fallback.hidden = true;
   note.hidden = true;
+  story.dataset.visual = "dom";
+}
+
+function showWebglDesktop() {
+  desktopHost.hidden = true;
+  fallback.hidden = true;
+  note.hidden = false;
+  story.dataset.visual = "webgl";
+  scene.dataset.renderer = "webgl";
 }
 
 async function mountScene() {
   const epoch = ++generation;
   sceneHandle?.dispose();
   sceneHandle = undefined;
-  staticScene();
+  showDomDesktop();
   pauseMotion.disabled = reduced.matches;
   pauseMotion.textContent = reduced.matches ? "Reduced motion on" : motionPaused ? "Resume motion" : "Pause motion";
   pauseMotion.setAttribute("aria-pressed", String(motionPaused || reduced.matches));
+  // Reduced motion and Pause motion keep the interactive DOM desktop — never a dead image.
   if (reduced.matches || motionPaused) return;
   scene.dataset.renderer = "loading";
   try {
@@ -97,15 +115,13 @@ async function mountScene() {
     if (epoch !== generation || reduced.matches || motionPaused) return;
     sceneHandle = createScene(scene, story, () => {
       sceneHandle = undefined;
-      staticScene();
+      showDomDesktop();
     });
     sceneHandle.setState(state);
-    fallback.hidden = true;
-    note.hidden = false;
-    scene.dataset.renderer = "webgl";
+    showWebglDesktop();
   } catch {
-    // The real companion image remains available if WebGL or its module fails.
-    if (epoch === generation) staticScene();
+    // DOM desktop remains the playable path if WebGL or its module fails.
+    if (epoch === generation) showDomDesktop();
   }
 }
 reduced.addEventListener("change", mountScene);
@@ -131,6 +147,7 @@ window.addEventListener("pagehide", event => {
     generation++;
     clearTimeout(timer);
     sceneHandle?.dispose();
+    desktopHandle?.dispose();
     reduced.removeEventListener("change", mountScene);
   }
 });
