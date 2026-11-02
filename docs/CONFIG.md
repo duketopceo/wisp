@@ -120,7 +120,7 @@ disables it. Recorded spend is not necessarily measured spend; see
 | key | default | meaning |
 |-----|---------|---------|
 | `model` | `typesafe/jev-1.13` | Optional structured grounding model; not a turn-router hop |
-| `answer_model` | `meta-llama/llama-4-maverick` | model that writes answers (used when `brain.default` unset) |
+| `answer_model` | `google/gemini-2.5-flash` | model that writes answers (used when `brain.default` unset) |
 | `session_turns` | `8` | turns of chat history kept in context |
 | `screenshots` | `true` | allow screen capture for context |
 | `confirm_timeout` | `120` | seconds a confirm card waits before it resolves as deny (clamped 5 to 600) |

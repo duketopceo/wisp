@@ -206,7 +206,7 @@ class TestUiMetadata(unittest.TestCase):
             self.assertEqual(S.field(key).category, "models"
                              if key != "brain.agent_runtime" else "agents")
         self.assertEqual(S.field("brain.default").default,
-                         "openrouter:meta-llama/llama-4-maverick")
+                         "openrouter:google/gemini-2.5-flash")
         self.assertEqual(S.field("local.enabled").default, "false")
 
     def test_text_field_accepts_a_model_id_and_refuses_toml_breakers(self):

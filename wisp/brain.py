@@ -99,7 +99,7 @@ def _split(cfg: dict, spec: str) -> tuple:
         name, model = spec.split(":", 1)
         return name.strip(), model.strip()
     return spec.strip(), cfg.get("agent", {}) \
-        .get("answer_model", "meta-llama/llama-4-maverick")
+        .get("answer_model", "google/gemini-2.5-flash")
 
 
 def provider(cfg: dict) -> dict:

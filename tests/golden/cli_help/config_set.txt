@@ -82,7 +82,7 @@ models:
   brain.router                 How a turn is routed: act (local fast paths then act), chat or off
                                default act; act, chat, off
   brain.default                Answer model as name:model; the name is a [brain.<name>] provider (openrouter, ollama, lmstudio, mlx or your own)
-                               default openrouter:meta-llama/llama-4-maverick; name:model
+                               default openrouter:google/gemini-2.5-flash; name:model
   brain.fallback               Models tried after the default, as comma separated name:model (blank for none)
                                default blank; name:model, name:model, or blank
   ground.vlm_brain             Model used only to find click targets on screen, as name:model (blank to use the answer model). It runs alone: no fallbacks
