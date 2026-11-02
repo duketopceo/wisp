@@ -318,7 +318,13 @@ def pre_approved(name: str, arg: str, cfg: dict, state=None) -> bool:
     return False
 
 
-_PASSIVE_LAYERS = frozenset(("omarchy-background", "omarchy-notifications"))
+# Full-screen overlays that take no input over the click point: the
+# wallpaper, the notification layer, and Wisp's own `wisp-points`
+# overlay (Companion.qml), whose input mask covers only its pill and
+# bubble. Counting them refused every gauntlet click (live run
+# gauntlet-20261102-051957: 98 refusals).
+_PASSIVE_LAYERS = frozenset(("omarchy-background", "omarchy-notifications",
+                             "wisp-points"))
 
 
 def _in_rect(x, y, at, size) -> bool:
@@ -397,9 +403,9 @@ def click_refusal(cfg: dict, x, y) -> str | None:
                         return ("REFUSED (gauntlet: unreadable layer "
                                 "surface over the click point)")
                     if _in_rect(x, y, at, size):
+                        ns = str(l.get("namespace") or "?")[:40]
                         return ("REFUSED (gauntlet: a layer surface "
-                                "(menu, launcher or bar) is over the "
-                                "click point)")
+                                f"({ns}) is over the click point)")
     return None
 
 
