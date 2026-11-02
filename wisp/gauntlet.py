@@ -19,7 +19,11 @@ granted only on the run's own config copy and only when the driver
     driver registered that workspace; `allow_shell` itself stays false;
   - clicks without a confirmation, but only while the focused window is
     a registered sandbox window and the surface is not sensitive. The
-    live hit test is skipped too (the sandbox apps expose no controls).
+    live hit test is skipped too (the sandbox apps expose no controls),
+    so `click_guard` replaces it: a click at model coordinates runs only
+    when every visible window under the point is a registered sandbox
+    window (at least one), and no clickable layer surface covers it.
+    Fails closed; the menu cases register no window and are refused.
 
 Everything else in the dev run stays: the deny list, `wait_for_choice =
 None` (every other confirm gate answers no) and the shell switch.
@@ -312,6 +316,105 @@ def pre_approved(name: str, arg: str, cfg: dict, state=None) -> bool:
             return False
         return cua_safety.sensitive_surface(cfg, state=state) in ("", "unknown")
     return False
+
+
+_PASSIVE_LAYERS = frozenset(("omarchy-background", "omarchy-notifications"))
+
+
+def _in_rect(x, y, at, size) -> bool:
+    try:
+        return (at[0] <= x < at[0] + size[0]
+                and at[1] <= y < at[1] + size[1])
+    except (TypeError, IndexError):
+        return False
+
+
+def _visible_ws(mons) -> set:
+    ids = set()
+    for m in mons:
+        for k in ("activeWorkspace", "specialWorkspace"):
+            w = m.get(k)
+            if isinstance(w, dict) and w.get("id") not in (None, 0):
+                ids.add(w["id"])
+    return ids
+
+
+def click_refusal(cfg: dict, x, y) -> str | None:
+    """None when a click at global logical (x, y) lands on a registered
+    sandbox window, else the refusal text. Reads the compositor now
+    (hyprctl clients/monitors/layers; `at`/`size` are the same logical
+    coordinates `click` converts to). Fails closed: no registered window,
+    an unreadable compositor, no window under the point, any visible
+    non-sandbox window under it, or a clickable layer surface (the bar,
+    the menu or launcher) over it all refuse."""
+    allowed = sandbox_windows(cfg)
+    if not allowed:
+        return "REFUSED (gauntlet: no sandbox window is registered)"
+    from . import hypr
+    try:
+        x, y = int(x), int(y)
+        clients = hypr.query("clients")
+        mons = hypr.query("monitors")
+        layers = hypr.query("layers")
+        if not (isinstance(clients, list) and isinstance(mons, list)
+                and isinstance(layers, dict)):
+            raise ValueError("shape")
+    except Exception:
+        return "REFUSED (gauntlet: cannot read the compositor for the click)"
+    vis = _visible_ws(mons)
+    under = []
+    for c in clients:
+        if not isinstance(c, dict) or not c.get("mapped") \
+                or c.get("hidden"):
+            continue
+        ws = (c.get("workspace") or {}).get("id")
+        if ws not in vis:
+            continue
+        if _in_rect(x, y, c.get("at"), c.get("size")):
+            under.append(_norm_addr(c.get("address")))
+    if not under:
+        return ("REFUSED (gauntlet: no sandbox window under the click "
+                "point)")
+    if any(a not in allowed for a in under):
+        return ("REFUSED (gauntlet: a window that is not a sandbox "
+                "window is under the click point)")
+    offs = [(0, 0)] + [(m.get("x", 0), m.get("y", 0)) for m in mons
+                       if isinstance(m, dict)]
+    for per_mon in layers.values():
+        levels = per_mon.get("levels") if isinstance(per_mon, dict) else None
+        for lvl, items in (levels or {}).items():
+            if str(lvl) in ("0", "1"):      # background/bottom: below windows
+                continue
+            for l in items or []:
+                if not isinstance(l, dict) \
+                        or l.get("namespace") in _PASSIVE_LAYERS:
+                    continue
+                for ox, oy in offs:
+                    try:
+                        at = (l["x"] + ox, l["y"] + oy)
+                        size = (l["w"], l["h"])
+                    except (KeyError, TypeError):
+                        return ("REFUSED (gauntlet: unreadable layer "
+                                "surface over the click point)")
+                    if _in_rect(x, y, at, size):
+                        return ("REFUSED (gauntlet: a layer surface "
+                                "(menu, launcher or bar) is over the "
+                                "click point)")
+    return None
+
+
+def click_guard(cfg: dict, x, y) -> str | None:
+    """The check right before a click is sent (see `click_refusal`). A
+    refusal is traced as a gate stop, like `keystroke_guard`, so the
+    runner ends the task as stopped. None outside a gauntlet run."""
+    if not is_gauntlet(cfg):
+        return None
+    out = click_refusal(cfg, x, y)
+    if out and (cfg.get("dev") or {}).get("run_id"):
+        from . import trace
+        trace.emit(trace.current(), "gate_stop", "policy",
+                   {"tool": "click", "result": out[:200]})
+    return out
 
 
 def keystroke_guard(cfg: dict, arg: str = "") -> str | None:

@@ -959,6 +959,13 @@ def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
     backend = _delivery.resolve_backend(cfg, op) if mode in ("drive", "auto") \
         else None
     if backend:
+        # a gauntlet click executes only on a registered sandbox window
+        # (the hit test below is off for gauntlet runs, so this is the
+        # fail-closed replacement; menu cases register none and refuse)
+        if do_click:
+            refused = _gauntlet.click_guard(cfg or {}, x, y)
+            if refused:
+                return refused
         # the hit test needs the control/a11y providers, and an isolated
         # session has neither (cua is bound to the live compositor); no
         # evidence is not "no element", so the guard stays off there. The

@@ -93,6 +93,10 @@ class TestShellThroughRsh(PolicyBase):
 class TestHitTest(PolicyBase):
     def click(self, cfg):
         mons = [{"x": 0, "y": 0, "width": 1920, "height": 1080}]
+        inside = mock.patch.object(gauntlet, "click_refusal",
+                                   return_value=None)
+        inside.start()
+        self.addCleanup(inside.stop)
         tgt = mock.Mock(x=100, y=200, element_backed=False)
         with mock.patch.object(system, "_resolve_target", return_value=tgt), \
                 mock.patch("wisp.points.monitors", return_value=mons), \
@@ -119,6 +123,138 @@ class TestHitTest(PolicyBase):
         out, hit = self.click({"pointer": {"mode": "drive"}})
         self.assertTrue(out.startswith("REFUSED (no element at model"), out)
         hit.assert_called_once()
+
+
+def _client(addr, at, size, ws=91, **kw):
+    return dict({"address": addr, "at": list(at), "size": list(size),
+                 "mapped": True, "hidden": False,
+                 "workspace": {"id": ws}}, **kw)
+
+
+MONS = [{"x": 0, "y": 0, "width": 3456, "height": 2160, "scale": 2,
+         "activeWorkspace": {"id": 91}, "specialWorkspace": {"id": 0}}]
+LAYERS = {"eDP-1": {"levels": {
+    "0": [{"namespace": "omarchy-background", "x": 0, "y": 0,
+           "w": 1728, "h": 1080}],
+    "2": [{"namespace": "omarchy-bar", "x": 0, "y": 1054,
+           "w": 1728, "h": 26}],
+    "3": [{"namespace": "omarchy-notifications", "x": 0, "y": 0,
+           "w": 1728, "h": 1080}]}}}
+
+
+class TestClickGuard(PolicyBase):
+    """A gauntlet click runs only on a registered sandbox window."""
+
+    def compositor(self, clients=None, layers=None, mons=None):
+        data = {"clients": [_client(tgm.WIN, (100, 100), (400, 300))]
+                if clients is None else clients,
+                "monitors": MONS if mons is None else mons,
+                "layers": LAYERS if layers is None else layers}
+        p = mock.patch("wisp.hypr.query", side_effect=lambda n, *a: data[n])
+        p.start()
+        self.addCleanup(p.stop)
+
+    def click(self, cfg, x=150, y=150):
+        tgt = mock.Mock(x=x, y=y, element_backed=False)
+        cfg = dict(cfg, pointer={"mode": "drive"})
+        with mock.patch.object(system, "_resolve_target", return_value=tgt), \
+                mock.patch("wisp.points.monitors", return_value=MONS), \
+                mock.patch("wisp.points.on_screen", return_value=True), \
+                mock.patch.object(system, "_human_coordinates",
+                                  return_value=False), \
+                mock.patch("wisp.delivery.resolve_backend",
+                           return_value="cua"), \
+                mock.patch("wisp.pointer.Registry") as reg:
+            reg.return_value.click.return_value = mock.Mock(
+                ok=True, delivery="", backend="cua")
+            out = system.click(f"{x},{y}", cfg)
+        return out, reg.return_value.click
+
+    def test_click_inside_a_sandbox_window_runs(self):
+        self.compositor()
+        out, clk = self.click(self.rcfg)
+        self.assertEqual(out, "CLICKED(150,150)")
+        clk.assert_called_once()
+
+    def test_click_outside_every_sandbox_window_is_refused(self):
+        self.compositor()
+        out, clk = self.click(self.rcfg, 1049, 992)
+        self.assertTrue(out.startswith("REFUSED (gauntlet:"), out)
+        clk.assert_not_called()
+
+    def test_click_on_another_window_is_refused(self):
+        self.compositor([_client(tgm.OTHER, (100, 100), (400, 300))])
+        out, clk = self.click(self.rcfg)
+        self.assertTrue(out.startswith("REFUSED (gauntlet:"), out)
+        clk.assert_not_called()
+
+    def test_a_non_sandbox_window_over_the_sandbox_is_refused(self):
+        self.compositor([_client(tgm.WIN, (100, 100), (400, 300)),
+                         _client(tgm.OTHER, (120, 120), (50, 50))])
+        out, clk = self.click(self.rcfg)
+        self.assertTrue(out.startswith("REFUSED (gauntlet:"), out)
+        clk.assert_not_called()
+
+    def test_a_window_on_a_hidden_workspace_does_not_count(self):
+        self.compositor([_client(tgm.WIN, (100, 100), (400, 300), ws=92)])
+        out, clk = self.click(self.rcfg)
+        self.assertTrue(out.startswith("REFUSED (gauntlet:"), out)
+        clk.assert_not_called()
+
+    def test_a_layer_surface_over_the_point_refuses(self):
+        layers = {"eDP-1": {"levels": {"3": [
+            {"namespace": "omarchy-menu", "x": 0, "y": 0,
+             "w": 1728, "h": 1080}]}}}
+        self.compositor(layers=layers)
+        out, clk = self.click(self.rcfg)
+        self.assertTrue(out.startswith("REFUSED (gauntlet:"), out)
+        clk.assert_not_called()
+
+    def test_no_registered_windows_refuses(self):
+        self.compositor()
+        cfg = devrun.run_config(self.cfg, "r1", grant=grant_none(self.dir))
+        out, clk = self.click(cfg)
+        self.assertEqual(
+            out, "REFUSED (gauntlet: no sandbox window is registered)")
+        clk.assert_not_called()
+
+    def test_an_unreadable_compositor_refuses(self):
+        with mock.patch("wisp.hypr.query", side_effect=OSError("down")):
+            out, clk = self.click(self.rcfg)
+        self.assertTrue(out.startswith("REFUSED (gauntlet:"), out)
+        clk.assert_not_called()
+
+    def test_a_refusal_is_traced_as_a_gate_stop(self):
+        self.compositor()
+        with mock.patch("wisp.trace.emit") as emit:
+            self.click(self.rcfg, 1049, 992)
+        self.assertEqual(emit.call_args.args[1], "gate_stop")
+        self.assertEqual(emit.call_args.args[3]["tool"], "click")
+
+    def test_the_menu_case_gets_no_allowance(self):
+        # menu cases register no sandbox window: refused, never executed
+        self.compositor()
+        cfg = devrun.run_config(self.cfg, "r1", grant=grant_none(self.dir))
+        for x, y in ((1049, 992), (920, 500)):
+            out, clk = self.click(cfg, x, y)
+            self.assertTrue(out.startswith("REFUSED (gauntlet:"), out)
+            clk.assert_not_called()
+
+    def test_owner_clicks_are_unaffected(self):
+        with mock.patch("wisp.hypr.query",
+                        side_effect=AssertionError("queried")), \
+                mock.patch("wisp.grounding.target_at_point",
+                           return_value=object()):
+            out, clk = self.click({}, 5, 5)
+        self.assertEqual(out, "CLICKED(5,5)")
+        clk.assert_called_once()
+        self.assertIsNone(gauntlet.click_guard({}, 5, 5))
+        self.assertIsNone(gauntlet.click_guard(
+            devrun.run_config(self.cfg, "r1"), 5, 5))
+
+
+def grant_none(td_dir):
+    return tgm.grant(td_dir, windows=())
 
 
 class TestClickConfirm(PolicyBase):
