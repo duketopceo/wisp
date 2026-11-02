@@ -54,7 +54,7 @@ SAFETY_CONFIG_KEYS = frozenset({
     # gauntlet-run internals (wisp.gauntlet): the sandbox-typing grant
     # and the spend cap; set only on a run's own config copy
     "dev.gauntlet", "dev.sandbox_windows", "dev.spend_file",
-    "dev.spend_cap_usd",
+    "dev.spend_cap_usd", "dev.sandbox_root", "dev.sandbox_log",
     # isolated-session input (wisp.vpointer): refuses every uinput path;
     # a run-copy setting, never settable by an agent or marked peer
     "dev.isolated_session",
