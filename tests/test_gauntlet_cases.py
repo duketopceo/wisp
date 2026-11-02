@@ -117,7 +117,37 @@ class Battery(unittest.TestCase):
         self.assertEqual(code, 0)
         for c in self.cases:
             self.assertTrue(any(c["id"] in ln for ln in lines), c["id"])
-        self.assertTrue(all("x2 arms" in ln for ln in lines))
+        self.assertTrue(all("x2 arms" in ln for ln in lines
+                            if not ln.startswith("skip ")))
+
+    def test_isolated_runs_skip_the_omarchy_menu_cases(self):
+        lines = []
+        code = G.main(["--dry-run", "--session", "isolated"],
+                      out=lines.append)
+        self.assertEqual(code, 0)
+        planned = [ln for ln in lines if not ln.startswith("skip ")]
+        for cid in ("menu-open-close", "menu-launcher-close"):
+            self.assertIn(f"skip {cid}: not run in the isolated session",
+                          lines)
+            self.assertFalse(any(ln.startswith(cid) for ln in planned))
+        live = []
+        G.main(["--dry-run"], out=live.append)
+        self.assertTrue(any(ln.startswith("menu-open-close") for ln in live))
+
+    def test_a_case_with_a_skip_reason_never_runs_and_says_why(self):
+        c = next(c for c in self.cases if c["id"] == "windows-move-workspace")
+        self.assertEqual(c["check"]["workspace"], 92)
+        for session in G.SESSIONS:
+            self.assertIn("moves a window", G.skip_reason(c, session))
+
+    def test_sessions_and_skip_are_validated(self):
+        base = dict(next(c for c in self.cases
+                         if c["id"] == "files-go-up"))
+        self.assertEqual(G.validate_case(base), [])
+        for bad in ({"sessions": []}, {"sessions": ["remote"]},
+                    {"sessions": "live"}, {"skip": ""}, {"skip": 3}):
+            self.assertTrue(G.validate_case({**base, **bad}), bad)
+        self.assertIsNone(G.skip_reason(base, "isolated"))
 
 
 class Validation(unittest.TestCase):
