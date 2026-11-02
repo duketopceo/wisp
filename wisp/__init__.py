@@ -23,6 +23,8 @@ def _isolate_test_desktop() -> None:
     import tempfile
     for k in ("HYPRLAND_INSTANCE_SIGNATURE", "WAYLAND_DISPLAY", "DISPLAY"):
         os.environ.pop(k, None)
+    if os.environ.get("WISP_TEST_HERMETIC_ROOT"):
+        return  # tests/hermetic.py already built the whole temp env
     rt = tempfile.mkdtemp(prefix="wisp-test-run-")  # 0700
     os.environ["XDG_RUNTIME_DIR"] = rt
     atexit.register(shutil.rmtree, rt, True)
