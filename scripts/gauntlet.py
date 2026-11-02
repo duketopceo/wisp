@@ -427,6 +427,9 @@ class Gauntlet:
         except Exception as e:                          # noqa: BLE001
             self.stopped = f"driver error: {type(e).__name__}: {e}"[:200]
             self.out(self.stopped)
+            import traceback
+            (self.rundir / "driver-error.txt").write_text(
+                traceback.format_exc())
             code = EXIT_FAIL
         finally:
             self._cleanup(proc)

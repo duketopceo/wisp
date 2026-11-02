@@ -111,6 +111,15 @@ class Backend(Base):
         buttons = [a for o, r, a in self.wl.requests if r == "button"]
         self.assertEqual([b[2] for b in buttons], [1, 0])
 
+    def test_model_coordinates_click_without_an_element_hit_test(self):
+        # an isolated session has no control/a11y provider, so the hit
+        # test finds nothing; that must not refuse every model point
+        with mock.patch("wisp.grounding.target_at_point",
+                        return_value=None) as hit:
+            out = system.click("100,200@logical", ISO)
+        self.assertEqual(out, "CLICKED(100,200)")
+        hit.assert_not_called()
+
     def test_click_does_not_arm_the_real_input_watch(self):
         with mock.patch("wisp.grounding.target_at_point",
                         return_value={"title": "x"}), \
@@ -186,6 +195,54 @@ class KeysAndText(Base):
         self.assertEqual(argv, ["wtype", "-"])
         self.assertEqual(stdin, b"hello")
         self.assertEqual(env["WAYLAND_DISPLAY"], "wayland-iso")
+
+    def test_type_text_steps_the_wisp_submap_aside(self):
+        # wtype's keymap matches the instance's Esc bind: typing inside
+        # the submap interrupted every turn (found live)
+        events = []
+
+        class Ctx:
+            def __enter__(s):
+                events.append("leave")
+
+            def __exit__(s, *a):
+                events.append("enter")
+
+        def run(argv, **kw):
+            events.append("wtype")
+            return subprocess.CompletedProcess(argv, 0, b"", b"")
+
+        with mock.patch("wisp.platform._which", return_value=True), \
+             mock.patch("wisp.gauntlet.keystroke_guard",
+                        return_value=None), \
+             mock.patch("wisp.keys.suspended", return_value=Ctx()), \
+             mock.patch("wisp.tools.system._cancel.run", run):
+            out = system.type_text("hello", ISO)
+        self.assertEqual(out, "TYPED")
+        self.assertEqual(events, ["leave", "wtype", "enter"])
+
+    def test_type_text_steps_the_wisp_submap_aside_live(self):
+        # live runs use wtype on Hyprland too: same Esc-bind interrupt
+        events = []
+
+        class Ctx:
+            def __enter__(s):
+                events.append("leave")
+
+            def __exit__(s, *a):
+                events.append("enter")
+
+        def run(argv, **kw):
+            events.append("typer")
+            return subprocess.CompletedProcess(argv, 0, b"", b"")
+
+        with mock.patch("wisp.platform.type_text_cmd",
+                        return_value=["wtype", "-"]), \
+             mock.patch("wisp.keys.suspended", return_value=Ctx()), \
+             mock.patch("wisp.tools.system._cancel.run", run):
+            out = system.type_text("hello", {})
+        self.assertEqual(out, "TYPED")
+        self.assertEqual(events, ["leave", "typer", "enter"])
 
     def test_scroll_emits_axis_events_and_no_ydotool(self):
         out = system.scroll("down 120", ISO)

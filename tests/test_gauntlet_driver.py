@@ -377,6 +377,9 @@ class TestIsolation(Base):
         self.assertIn(str(RSH), term["argv"])
         self.assertTrue(term["env"]["GAUNTLET_ROOT"].startswith(
             str(self.gdir)))
+        # the shell logs where the driver's rsh_log check reads
+        self.assertTrue(term["env"]["GAUNTLET_LOG"].endswith("/rsh.log"))
+        self.assertNotIn("workspace", term["env"]["GAUNTLET_LOG"])
         br = next(s for s in spawned if s["app"] == "browser")
         self.assertTrue(any(a.startswith("--user-data-dir=" + str(self.gdir))
                             for a in br["argv"]))
@@ -722,6 +725,18 @@ class TestRestrictedShell(unittest.TestCase):
         rows = [ln.split("\t") for ln in
                 (self.root / "rsh.log").read_text().splitlines()]
         self.assertEqual(rows, [["ok", "ls"], ["refused", "curl x"]])
+
+    def test_the_log_goes_to_gauntlet_log_when_set(self):
+        # the sandbox's root is the workspace; the driver reads the log
+        # one level up, so an rsh_log check saw 0 lines (found live)
+        elsewhere = self.root.parent / (self.root.name + "-log")
+        self.addCleanup(lambda: elsewhere.unlink(missing_ok=True))
+        env = {"PATH": "/usr/bin:/bin", "GAUNTLET_ROOT": str(self.root),
+               "GAUNTLET_LOG": str(elsewhere)}
+        subprocess.run([sys.executable, str(RSH), "-c", "ls"], env=env,
+                       cwd=self.root, capture_output=True, timeout=30)
+        self.assertEqual(elsewhere.read_text(), "ok\tls\n")
+        self.assertFalse((self.root / "rsh.log").exists())
 
     def test_interactive_mode_reads_lines_until_exit(self):
         r = self.rsh(None, stdin="ls\ncurl x\ncd nowhere\nexit\nls\n")
