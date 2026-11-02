@@ -210,6 +210,25 @@ class TestClickGuard(PolicyBase):
         self.assertTrue(out.startswith("REFUSED (gauntlet:"), out)
         clk.assert_not_called()
 
+    def test_wisp_overlay_over_the_point_does_not_refuse(self):
+        # wisp-points spans the screen but takes input only on its pill
+        layers = {"eDP-1": {"levels": dict(LAYERS["eDP-1"]["levels"], **{
+            "3": LAYERS["eDP-1"]["levels"]["3"] + [
+                {"namespace": "wisp-points", "x": 0, "y": 0,
+                 "w": 1728, "h": 1080}]})}}
+        self.compositor(layers=layers)
+        out, clk = self.click(self.rcfg)
+        self.assertFalse(out.startswith("REFUSED"), out)
+        clk.assert_called_once()
+
+    def test_layer_refusal_names_the_layer(self):
+        layers = {"eDP-1": {"levels": {"3": [
+            {"namespace": "omarchy-menu", "x": 0, "y": 0,
+             "w": 1728, "h": 1080}]}}}
+        self.compositor(layers=layers)
+        out, _ = self.click(self.rcfg)
+        self.assertIn("(omarchy-menu)", out)
+
     def test_no_registered_windows_refuses(self):
         self.compositor()
         cfg = devrun.run_config(self.cfg, "r1", grant=grant_none(self.dir))
