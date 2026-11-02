@@ -114,7 +114,8 @@ REGISTRY = {
                {"tier": "T1", "reversible": True, "external": False}),
     "key": (system.key, "interactive",
             "press a named key — 'enter', 'tab', 'esc', 'down', "
-            "'pageup', 'pagedown', 'backspace', arrows",
+            "'pageup', 'pagedown', 'backspace', 'delete', 'f2', "
+            "arrows",
             {"tier": "T1", "reversible": True, "external": False}),
     "mcp_call": (mcpclient.call, "mutating",
                  "call a tool on a configured MCP server — "
