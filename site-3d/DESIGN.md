@@ -23,8 +23,11 @@ seed `seed:dd29f9a7a8cdf5fe`. No new world or rebrand is approved here.
 
 One persistent renderer and animation loop. Clamp device pixel ratio to 1.5.
 Stop frames offscreen, when hidden, on WebGL loss, and for reduced motion.
-All narrative and controls remain usable with the static image or no WebGL.
-Reduced motion uses the static companion image and no continuous animation.
+All narrative and controls remain usable with the DOM desktop when WebGL is
+unavailable, paused, or reduced-motion. The companion image remains the
+no-JavaScript illustration.
+Reduced motion keeps the interactive DOM desktop and numbered drawings, with
+no continuous Three.js animation.
 
 ## Tokens
 

@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 ROOT = Path(__file__).resolve().parents[2]
 SITE = ROOT / "site-3d"
 FILES = (
-    "index.html", "style.css", "app.mjs", "model.mjs", "scene.mjs",
+    "index.html", "style.css", "app.mjs", "model.mjs", "scene.mjs", "desktop.mjs",
     "assets/companion.png", "assets/mark.svg", "assets/outfit-variable.ttf",
     "vendor/three.module.js", "vendor/THREE-LICENSE.txt",
     "vendor/OFL-Outfit.txt", "vendor/PROVENANCE.md",
