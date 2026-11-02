@@ -39,7 +39,7 @@ class LandingContract(unittest.TestCase):
         self.assertNotRegex(html, r'(?:src|href)=["\']https?://[^"\']+\.(?:js|css)')
         self.assertNotIn("importmap", html)
         self.assertNotIn("preconnect", html)
-        for filename in ("style.css", "app.mjs", "scene.mjs", "model.mjs",
+        for filename in ("style.css", "app.mjs", "scene.mjs", "model.mjs", "desktop.mjs",
                          "vendor/three.module.js", "vendor/THREE-LICENSE.txt",
                          "assets/companion.png"):
             self.assertTrue((SITE / filename).is_file(), filename)
@@ -48,6 +48,7 @@ class LandingContract(unittest.TestCase):
         html = (SITE / "index.html").read_text()
         self.assertIn("<noscript>", html)
         self.assertIn('id="scene-fallback"', html)
+        self.assertIn('id="desktop"', html)
         self.assertIn('aria-live="polite"', html)
         self.assertIn('id="cancel-demo"', html)
         self.assertIn('id="approve-demo"', html)
@@ -56,6 +57,8 @@ class LandingContract(unittest.TestCase):
         css = (SITE / "style.css").read_text()
         self.assertIn("prefers-reduced-motion", css)
         self.assertIn(":focus-visible", css)
+        self.assertIn("desk-window", css)
+        self.assertIn("draw-layer", css)
 
 
 class GuidingLightPreview(unittest.TestCase):
@@ -211,6 +214,42 @@ class DemoState(unittest.TestCase):
         """)
         self.assertEqual(["media", "done"], result)
 
+    def test_scripts_expose_control_changes_and_drawings(self):
+        module = (SITE / "model.mjs").as_uri()
+        script = f"""
+            import {{initial, transition, scriptFor}} from {json.dumps(module)};
+            let s = transition(initial(), {{type:'start', scenario:'mail'}});
+            s = transition(s, {{type:'advance'}});
+            s = transition(s, {{type:'advance'}});
+            const acting = scriptFor(s);
+            const hasHl = acting.drawings.some(d => d.type === 'hl');
+            const hasArrow = acting.drawings.some(d => d.type === 'arrow');
+            const hasNumber = acting.drawings.some(d => d.type === 'number');
+            const active = acting.controls.some(c => c.active && c.value === 'opened');
+            console.log(JSON.stringify([hasHl, hasArrow, hasNumber, active, acting.steps.length > 1]));
+        """
+        result = subprocess.run(
+            ["node", "--input-type=module", "-e", script],
+            text=True, capture_output=True, check=True,
+        )
+        self.assertEqual([True, True, True, True, True], json.loads(result.stdout))
+
+    def test_playback_toggle_changes_visible_control_value(self):
+        module = (SITE / "model.mjs").as_uri()
+        script = f"""
+            import {{initial, transition, scriptFor}} from {json.dumps(module)};
+            let s = transition(initial(), {{type:'start', scenario:'media'}});
+            const before = scriptFor(s).controls.find(c => c.id === 'play').value;
+            s = transition(s, {{type:'advance'}});
+            s = transition(s, {{type:'advance'}});
+            const after = scriptFor(s).controls.find(c => c.id === 'play').value;
+            console.log(JSON.stringify([before, after]));
+        """
+        result = subprocess.run(
+            ["node", "--input-type=module", "-e", script],
+            text=True, capture_output=True, check=True,
+        )
+        self.assertEqual(["playing", "paused"], json.loads(result.stdout))
 
 @unittest.skipUnless(shutil.which("node"), "Node is needed for the wisp motion sim")
 class WispSim(unittest.TestCase):

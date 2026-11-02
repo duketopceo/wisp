@@ -1,6 +1,8 @@
 import * as THREE from "./vendor/three.module.js";
+import {scenarios, scriptFor} from "./model.mjs";
 
 // A procedural explanation, not an imitation of any connected application.
+// Three.js is presentation-only; the DOM desktop remains the interaction path.
 export function createScene(host, story, onFailure) {
   const renderer = new THREE.WebGLRenderer({alpha: true, antialias: true, powerPreference: "low-power"});
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
@@ -18,11 +20,16 @@ export function createScene(host, story, onFailure) {
   const resources = [];
   const own = resource => (resources.push(resource), resource);
 
-  function panel(title, label, lines, accent = false) {
-    const canvas = document.createElement("canvas");
-    canvas.width = 960;
-    canvas.height = 620;
-    const ctx = canvas.getContext("2d");
+  const windowIds = ["personal", "work", "pay", "media"];
+  const panelMeta = {
+    personal: {title: "Mail — Personal", scenario: "mail"},
+    work: {title: "Tasks — Work", scenario: "work"},
+    pay: {title: "Checkout — Stripe", scenario: "sensitive"},
+    media: {title: "Player — Media", scenario: "media"},
+  };
+
+  function paintPanel(ctx, title, script, accent) {
+    ctx.clearRect(0, 0, 960, 620);
     ctx.fillStyle = "#25211d";
     ctx.beginPath();
     ctx.roundRect(0, 0, 960, 620, 28);
@@ -41,29 +48,103 @@ export function createScene(host, story, onFailure) {
     ctx.strokeStyle = "#403a33";
     ctx.beginPath(); ctx.moveTo(0, 66); ctx.lineTo(960, 66); ctx.stroke();
     ctx.fillStyle = accent ? "#f5a15b" : "#f6eee1";
-    ctx.font = "700 52px Outfit";
-    ctx.fillText(label, 64, 170);
-    ctx.font = "400 42px Outfit";
-    ctx.fillStyle = "#c1b6a6";
-    lines.forEach((line, i) => ctx.fillText(line, 64, 244 + i * 60));
-    ctx.fillStyle = accent ? "#f5a15b" : "#403a33";
-    ctx.beginPath(); ctx.roundRect(64, 456, 460, 72, 12); ctx.fill();
-    ctx.fillStyle = accent ? "#131211" : "#f6eee1";
-    ctx.font = "700 38px Outfit";
-    ctx.fillText(accent ? "Your confirmation" : "A little more reach", 88, 502);
+    ctx.font = "700 36px Outfit";
+    ctx.fillText(script.status, 64, 120);
+    const controlBoxes = {};
+    script.controls.forEach((control, i) => {
+      const y = 170 + i * 100;
+      const active = Boolean(control.active);
+      ctx.fillStyle = active ? "#3a2f24" : "#2c2823";
+      ctx.beginPath();
+      ctx.roundRect(64, y, 832, 84, 14);
+      ctx.fill();
+      if (active) {
+        ctx.strokeStyle = "#f5a15b";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+      ctx.fillStyle = "#c1b6a6";
+      ctx.font = "400 24px Outfit";
+      ctx.fillText(control.label, 92, y + 34);
+      ctx.fillStyle = active || control.sensitive ? "#f5a15b" : "#f6eee1";
+      ctx.font = "700 30px Outfit";
+      ctx.fillText(control.value, 92, y + 68);
+      controlBoxes[control.id] = {x: 64, y, w: 832, h: 84, cx: 480, cy: y + 42};
+    });
+    // Drawings: highlights, rings, numbered callouts, and arrows between controls.
+    for (const mark of script.drawings) {
+      if (mark.type === "hl" && controlBoxes[mark.target]) {
+        const box = controlBoxes[mark.target];
+        ctx.strokeStyle = "rgba(245,161,91,.85)";
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.roundRect(box.x - 6, box.y - 6, box.w + 12, box.h + 12, 16);
+        ctx.stroke();
+      } else if (mark.type === "ring" && controlBoxes[mark.target]) {
+        const box = controlBoxes[mark.target];
+        ctx.strokeStyle = "#f5a15b";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(box.x + box.w - 48, box.cy, 28, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (mark.type === "number" && controlBoxes[mark.target]) {
+        const box = controlBoxes[mark.target];
+        const nx = box.x - 8;
+        const ny = box.y - 8;
+        ctx.fillStyle = "#f5a15b";
+        ctx.beginPath();
+        ctx.arc(nx, ny, 18, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#131211";
+        ctx.font = "700 22px Outfit";
+        ctx.textAlign = "center";
+        ctx.fillText(String(mark.n), nx, ny + 7);
+        ctx.textAlign = "left";
+        if (mark.text) {
+          ctx.fillStyle = "#f6eee1";
+          ctx.font = "600 22px Outfit";
+          ctx.fillText(mark.text, nx + 28, ny + 7);
+        }
+      } else if (mark.type === "arrow") {
+        const a = mark.from === "ember"
+          ? {cx: 880, cy: 560}
+          : controlBoxes[mark.from];
+        const b = controlBoxes[mark.to];
+        if (!a || !b) continue;
+        ctx.strokeStyle = "#f5a15b";
+        ctx.fillStyle = "#f5a15b";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(a.cx, a.cy);
+        ctx.quadraticCurveTo((a.cx + b.cx) / 2, Math.min(a.cy, b.cy) - 40, b.cx, b.cy);
+        ctx.stroke();
+        const angle = Math.atan2(b.cy - (Math.min(a.cy, b.cy) - 40), b.cx - (a.cx + b.cx) / 2);
+        ctx.beginPath();
+        ctx.moveTo(b.cx, b.cy);
+        ctx.lineTo(b.cx - 14 * Math.cos(angle - .4), b.cy - 14 * Math.sin(angle - .4));
+        ctx.lineTo(b.cx - 14 * Math.cos(angle + .4), b.cy - 14 * Math.sin(angle + .4));
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+    return controlBoxes;
+  }
+
+  function panel(id) {
+    const canvas = document.createElement("canvas");
+    canvas.width = 960;
+    canvas.height = 620;
+    const ctx = canvas.getContext("2d");
     const texture = own(new THREE.CanvasTexture(canvas));
     texture.colorSpace = THREE.SRGBColorSpace;
     const material = own(new THREE.MeshBasicMaterial({map: texture, transparent: true, depthWrite: false, side: THREE.DoubleSide}));
     const mesh = new THREE.Mesh(own(new THREE.PlaneGeometry(5.2, 3.36)), material);
+    mesh.userData = {id, canvas, ctx, texture};
     desktop.add(mesh);
     return mesh;
   }
 
-  const personal = panel("Personal browser", "A task, in context.", ["Read the active window.", "Find the right browser.", "Show the next step."]);
-  const work = panel("Work browser", "Keep work in its place.", ["Use the right profile.", "Switch to the right tab.", "Keep the feedback visible."]);
-  const confirm = panel("Sensitive action", "Pause before the change.", ["Read and inspect.", "Review the proposed action.", "Confirm before it proceeds."], true);
-  const media = panel("Media player", "Toggle playback.", ["Send the playback toggle.", "Then inspect the player.", "Do not assume paused."]);
-  const panels = [personal, work, confirm, media];
+  const panels = windowIds.map(panel);
   const ember = new THREE.Group();
   desktop.add(ember);
   const material = own(new THREE.MeshStandardMaterial({color: 0xf5a15b, roughness: .45, metalness: .05}));
@@ -90,6 +171,21 @@ export function createScene(host, story, onFailure) {
   let pointerY = 0;
   const target = new THREE.Vector3();
 
+  function refreshTextures() {
+    panels.forEach(mesh => {
+      const id = mesh.userData.id;
+      const meta = panelMeta[id];
+      const localState = {
+        phase: state.scenario === meta.scenario ? state.phase : "idle",
+        scenario: meta.scenario,
+      };
+      const script = scriptFor(localState);
+      const accent = id === "pay" || (state.phase !== "idle" && scenarios[state.scenario].window === id);
+      paintPanel(mesh.userData.ctx, meta.title, script, accent);
+      mesh.userData.texture.needsUpdate = true;
+    });
+  }
+
   function resize() {
     const {width, height} = host.getBoundingClientRect();
     renderer.setSize(width, height, false);
@@ -105,10 +201,11 @@ export function createScene(host, story, onFailure) {
     const rect = story.getBoundingClientRect();
     const progress = THREE.MathUtils.clamp((innerHeight * .55 - rect.top) /
       Math.max(1, rect.height - innerHeight * .2), 0, 1);
-    // A stacked desktop opens into three depth-separated windows, then settles.
+    // A stacked desktop opens into depth-separated windows, then settles.
     const unfold = Math.sin(progress * Math.PI);
     desktop.rotation.set(-.09 + unfold * .12 + pointerY * .035, -.12 + progress * .24 + pointerX * .045, -.025);
-    const activeIndex = {mail: 0, work: 1, sensitive: 2, media: 3}[state.scenario];
+    const activeId = scenarios[state.scenario].window;
+    const activeIndex = windowIds.indexOf(activeId);
     const visiblePanels = state.scenario === "media" ? [3, 1, 2] : [0, 1, 2];
     const others = visiblePanels.filter(i => i !== activeIndex);
     panels.forEach((mesh, i) => {
@@ -120,7 +217,7 @@ export function createScene(host, story, onFailure) {
         selected ? .15 + unfold * .25 : -.15 - unfold * .2,
         selected ? 1.1 : -.2 - unfold * 1.1);
       mesh.rotation.y = -side * (.11 + unfold * .16);
-      mesh.scale.setScalar(selected ? 1 : .83);
+      mesh.scale.setScalar(selected ? 1.08 : .83);
       mesh.renderOrder = selected ? 3 : i;
       mesh.material.opacity = state.phase === "idle" || selected ? 1 : .48;
     });
@@ -194,6 +291,13 @@ export function createScene(host, story, onFailure) {
   host.addEventListener("pointermove", pointer, {passive: true});
   host.addEventListener("pointerleave", leave);
   renderer.domElement.addEventListener("webglcontextlost", lost);
+  refreshTextures();
   resize();
-  return {setState(next) { state = next; }, dispose};
+  return {
+    setState(next) {
+      state = next;
+      refreshTextures();
+    },
+    dispose,
+  };
 }
