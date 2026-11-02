@@ -5,6 +5,9 @@
 # window_workspace, geometry_changed, window_focused) and `judge` otherwise;
 # learnable cases get a learn turn and a second run (R18); held_out cases
 # score the release pass rate and never feed the failure ranking (KTD9).
+# sessions limits a case to the sessions that have what it needs (default
+# both); skip names a gap that keeps it from passing anywhere. The driver
+# prints every skipped case and scores only the cases it ran.
 # minimal_steps is the fewest steps a clean run takes: a run 1 already at
 # that count leaves a learnable case no headroom for a skill win.
 # No case touches an account, and none asks to send, submit, buy or delete.
@@ -24,7 +27,7 @@
 {"id":"terminal-where-am-i","category":"terminal","app":"terminal","goal":"show the current directory in the terminal","setup":{},"check":{"type":"rsh_log","pattern":"^pwd"},"learnable":false,"held_out":false,"minimal_steps":3}
 {"id":"terminal-count-lines","category":"terminal","app":"terminal","goal":"count the lines in a.txt using the terminal","setup":{"files":{"a.txt":"1\n2\n3\n"}},"check":{"type":"rsh_log","pattern":"^wc .*a\\.txt"},"learnable":true,"held_out":true,"minimal_steps":3,"skill_seed":"kitty"}
 {"id":"windows-focus-files","category":"windows","app":"files","also":["terminal"],"goal":"focus the file manager window","setup":{},"check":{"type":"window_focused","app":"files"},"learnable":true,"held_out":false,"minimal_steps":2,"skill_seed":"hyprland"}
-{"id":"windows-move-workspace","category":"windows","app":"terminal","also":["files"],"goal":"move the terminal window to workspace 92","setup":{},"check":{"type":"window_workspace","app":"terminal","workspace":2},"learnable":false,"held_out":false,"minimal_steps":2}
+{"id":"windows-move-workspace","category":"windows","app":"terminal","also":["files"],"goal":"move the terminal window to workspace 92","setup":{},"check":{"type":"window_workspace","app":"terminal","workspace":92},"learnable":false,"held_out":false,"minimal_steps":2,"skip":"no wisp tool moves a window to another workspace, and gauntlet runs refuse the super chord the compositor binds for it"}
 {"id":"windows-resize","category":"windows","app":"terminal","also":["files"],"goal":"make the terminal window wider","setup":{},"check":{"type":"geometry_changed","app":"terminal","what":"size"},"learnable":false,"held_out":true,"minimal_steps":3}
-{"id":"menu-open-close","category":"menu","app":"menu","goal":"open the Omarchy menu, then close it again by clicking away from it","setup":{},"check":{"type":"judge"},"learnable":false,"held_out":false,"minimal_steps":3}
-{"id":"menu-launcher-close","category":"menu","app":"menu","goal":"open the Omarchy application launcher and close it again without choosing anything","setup":{},"check":{"type":"judge"},"learnable":false,"held_out":true,"minimal_steps":3}
+{"id":"menu-open-close","category":"menu","app":"menu","goal":"open the Omarchy menu, then close it again by clicking away from it","setup":{},"check":{"type":"judge"},"learnable":false,"held_out":false,"minimal_steps":3,"sessions":["live"]}
+{"id":"menu-launcher-close","category":"menu","app":"menu","goal":"open the Omarchy application launcher and close it again without choosing anything","setup":{},"check":{"type":"judge"},"learnable":false,"held_out":true,"minimal_steps":3,"sessions":["live"]}
