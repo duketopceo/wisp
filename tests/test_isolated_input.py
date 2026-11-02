@@ -221,6 +221,29 @@ class KeysAndText(Base):
         self.assertEqual(out, "TYPED")
         self.assertEqual(events, ["leave", "wtype", "enter"])
 
+    def test_type_text_steps_the_wisp_submap_aside_live(self):
+        # live runs use wtype on Hyprland too: same Esc-bind interrupt
+        events = []
+
+        class Ctx:
+            def __enter__(s):
+                events.append("leave")
+
+            def __exit__(s, *a):
+                events.append("enter")
+
+        def run(argv, **kw):
+            events.append("typer")
+            return subprocess.CompletedProcess(argv, 0, b"", b"")
+
+        with mock.patch("wisp.platform.type_text_cmd",
+                        return_value=["wtype", "-"]), \
+             mock.patch("wisp.keys.suspended", return_value=Ctx()), \
+             mock.patch("wisp.tools.system._cancel.run", run):
+            out = system.type_text("hello", {})
+        self.assertEqual(out, "TYPED")
+        self.assertEqual(events, ["leave", "typer", "enter"])
+
     def test_scroll_emits_axis_events_and_no_ydotool(self):
         out = system.scroll("down 120", ISO)
         self.assertEqual(out, "SCROLLED")

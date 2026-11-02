@@ -249,3 +249,92 @@ touch these files.
 
 `isolated_session.py stop` was run; the live `hyprctl clients -j` has no
 `aquamarine` window and `hyprctl instances` lists only the live instance.
+
+---
+
+# Third run: live desktop (eDP-1), 2026-11-01
+
+Branch `test/hidden-gauntlet` (PR #300, head f4be4de plus the fix below). Run
+on the owner's real Hyprland session with his consent; only eDP-1 live
+(3456x2160, scale 2). ydotoold, ollama and wispd were active at start. The
+gauntlet stopped `wispd.service` and restarted it (active after the full run
+and after the rerun). The owner's workspace (1) was restored after each probe
+and after the gauntlet; submap `default` at the end. Act brain
+`openrouter:google/gemini-2.5-flash` on both arms.
+
+## Click probe (live, eDP-1, 9 targets)
+
+| config | grounding model | grounded | hits | median miss | max miss |
+|---|---|---|---|---|---|
+| hybrid (`--profile hybrid.toml`) | ollama qwen2.5vl:3b-q8_0 | 9/9 | 7/9 | 27.3 px | 165.1 px |
+| openrouter (`--profile openrouter.toml`) | meta-llama/llama-4-maverick | 9/9 | 5/9 | 30.5 px | 297.2 px |
+| hybrid, no profile (invalid, kept for the record) | same | 2/9 | 2 | 14.9 px | 23.8 px |
+
+The no-profile hybrid run used the owner's own provider list and got
+`not_found` on 7 of 9 targets; the `--profile` runs match the arms. Rows in
+`~/Downloads/claude/probe-live-{hybrid,openrouter}.jsonl`. Probe spend is
+still not metered (reports $0.00).
+
+## Gauntlet (full run `gauntlet-20261102-015708`, 20 cases)
+
+| arm | tuning | held-out | skill wins | spend |
+|---|---|---|---|---|
+| hybrid | 2/13 | 3/7 | 1 | $0.1122 |
+| openrouter | 0/13 | 2/7 | 1 | $0.1377 |
+
+Rerun of the three browser tuning cases after the fix below
+(`gauntlet-20261102-023806`, tuning only, no held-out case rerun): hybrid 2/3
+(open-page, settings-page pass; search-site fails on click grounding),
+openrouter 3/3. Folding these in, tuning is about hybrid 4/13 and openrouter
+3/13 (browser-open-page, browser-search-site, browser-settings-page replace
+the cancelled results); held-out is unchanged.
+
+Comparison against the isolated run (hybrid 8/13 tuning, 2/7 held-out;
+openrouter 4/13, 4/7): live is worse on tuning for both arms and flat or worse
+on held-out (hybrid 3/7 vs 2/7, openrouter 2/7 vs 4/7). The live-only causes
+are classes 1, 3 and 4 below. The held-out gate (60%) is not met by either arm.
+
+## Spend
+
+This run: $0.2499 (full) + $0.0558 (rerun) = $0.3057. Cumulative spend file:
+$1.0367 of the $10 cap. All paid calls through `orch` (eval key).
+
+## Failure classes (evidence under `~/.local/share/wisp-gauntlet/runs/gauntlet-20261102-015708/evidence/`)
+
+1. **`type_text` interrupted every turn on the live desktop (wisp bug,
+   fixed).** `browser-open-page-{hybrid,openrouter}-1`,
+   `browser-search-site-openrouter-1`, `browser-settings-page-openrouter-1`
+   ended `CANCELLED (user)` right after `type_text`: wtype's keymap hits the
+   Wisp submap Esc bind, the same defect the isolated run fixed, but the
+   fix was gated to isolated runs. Now always inside `keys.suspended()`.
+2. **Dev-run policy refuses the tool (case defect/env, not model).** `shell`
+   denied (`terminal-*`: 5 case-arms) and `default_click`/`default_focus`
+   skipped with "shell disabled" (`files-open-folder`, `files-rename`,
+   `windows-move-workspace`: 4). The model picks the tool; the dev policy
+   forbids it.
+3. **Model-coordinate clicks refused on live: "no element at model-chosen
+   coordinates".** `files-open-nested-hybrid-1`,
+   `browser-search-site-hybrid-1` (also in the rerun), `files-open-folder`.
+   The live hit test needs control/a11y elements; the sandbox apps do not
+   expose them, so VLM coordinates are refused even where the probe hits.
+4. **Menu cases are not possible as written.** `menu-open-close` on both arms:
+   `SKIPPED (click needs user confirmation)`; the click policy blocks the
+   action. `menu-launcher-close` fails on both arms.
+5. **Model stops early or acts and misses the check** (terminal-list-files,
+   windows-focus-files, files-new-folder, terminal-count-lines, aborts at max
+   steps on `files-open-nested`, `files-rename`).
+
+Env/case defect, recorded and not edited: `windows-move-workspace` cannot
+pass (the super chord is refused; goal says workspace 92, check wants 2; the
+window ended on 91).
+
+## Fix (branch test/hidden-gauntlet)
+
+`wisp/tools/system.py`: `type_text` runs inside `keys.suspended()` for live
+runs too. Test: `test_type_text_steps_the_wisp_submap_aside_live` in
+`tests/test_isolated_input.py`. Full suite: 4435 tests, one failure, the
+known `test_snap` fixture render mismatch (unrelated).
+
+## Final state
+
+`wispd.service` active, owner on workspace 1, submap `default`, only eDP-1.

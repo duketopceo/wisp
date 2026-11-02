@@ -455,16 +455,13 @@ def type_text(text: str, cfg: dict | None = None) -> str:
         return f"REFUSED ({e})"
     if not cmd:
         return (f"SKIP (no typer — {platform.missing_deps_hint()})")
-    # the text goes on stdin, not argv: other local accounts can read argv
-    if iso:
-        # wtype's keymap reaches the instance's Wisp submap: its keycode
-        # matches the Esc bind and every typed string interrupted the
-        # turn, so the submap steps aside as it does for a `key` step
-        from .. import keys as _keys
-        with _keys.suspended():
-            r = _cancel.run(cmd, input=text.encode("utf-8"),
-                            capture_output=True, env=env)
-    else:
+    # the text goes on stdin, not argv: other local accounts can read argv.
+    # wtype's keymap reaches the Wisp submap: its keycode matches the Esc
+    # bind and every typed string interrupted the turn (isolated run, then
+    # the live gauntlet: browser-open-page CANCELLED (user) after type_text),
+    # so the submap steps aside as it does for a `key` step.
+    from .. import keys as _keys
+    with _keys.suspended():
         r = _cancel.run(cmd, input=text.encode("utf-8"),
                         capture_output=True, env=env)
     return "TYPED" if r.returncode == 0 else "SKIP (typer failed)"
