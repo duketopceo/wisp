@@ -116,8 +116,8 @@ def models_line(cfg: dict, last=None) -> str:
     """Every model this install is configured to call, and the one the
     last recorded call really used."""
     b = cfg.get("brain", {}) or {}
-    default = _brain_entry(b.get("default") or "openrouter:meta-llama/"
-                           "llama-4-maverick")
+    default = _brain_entry(b.get("default") or "openrouter:google/"
+                           "gemini-2.5-flash")
     parts = [f"I answer with {default}"]
     backups = [e for e in (_brain_entry(s)
                            for s in (b.get("fallback") or "").split(","))

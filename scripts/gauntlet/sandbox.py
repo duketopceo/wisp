@@ -235,6 +235,7 @@ class Sandbox:
         env = scrubbed_env(home, self.base_env, self.dbus)
         if app == "terminal":
             env["GAUNTLET_ROOT"] = str(self.workspace)
+            env["GAUNTLET_LOG"] = str(self.root / "rsh.log")
         before = {c.get("address") for c in self.clients()}
         proc = self.spawn(argv, env=env, cwd=str(self.workspace),
                           stdin=subprocess.DEVNULL,

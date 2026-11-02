@@ -455,9 +455,15 @@ def type_text(text: str, cfg: dict | None = None) -> str:
         return f"REFUSED ({e})"
     if not cmd:
         return (f"SKIP (no typer — {platform.missing_deps_hint()})")
-    # the text goes on stdin, not argv: other local accounts can read argv
-    r = _cancel.run(cmd, input=text.encode("utf-8"), capture_output=True,
-                    env=env)
+    # the text goes on stdin, not argv: other local accounts can read argv.
+    # wtype's keymap reaches the Wisp submap: its keycode matches the Esc
+    # bind and every typed string interrupted the turn (isolated run, then
+    # the live gauntlet: browser-open-page CANCELLED (user) after type_text),
+    # so the submap steps aside as it does for a `key` step.
+    from .. import keys as _keys
+    with _keys.suspended():
+        r = _cancel.run(cmd, input=text.encode("utf-8"),
+                        capture_output=True, env=env)
     return "TYPED" if r.returncode == 0 else "SKIP (typer failed)"
 
 
@@ -952,7 +958,12 @@ def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
     backend = _delivery.resolve_backend(cfg, op) if mode in ("drive", "auto") \
         else None
     if backend:
-        if do_click and not target.element_backed and not _human_coordinates(arg):
+        # the hit test needs the control/a11y providers, and an isolated
+        # session has neither (cua is bound to the live compositor); no
+        # evidence is not "no element", so the guard stays off there
+        if (do_click and not target.element_backed
+                and not _human_coordinates(arg)
+                and not _vp.is_isolated(cfg)):
             from .. import grounding
             if grounding.target_at_point(x, y, cfg) is None:
                 return ("REFUSED (no element at model-chosen coordinates; "

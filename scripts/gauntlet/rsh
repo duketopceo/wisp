@@ -15,7 +15,7 @@ command per line and runs it only when
 
 Anything else prints `rsh: refused` and runs nothing. `rsh -c LINE` runs
 one line and exits 0 (ran), 126 (refused) or the program's own status.
-Every line and its verdict goes to `$GAUNTLET_ROOT/rsh.log` so the driver
+Every line and its verdict goes to `$GAUNTLET_LOG` (default `$GAUNTLET_ROOT/rsh.log`) so the driver
 can check what the task did.
 """
 import os
@@ -96,7 +96,8 @@ def resolve(cmd: str):
 
 
 def log(line: str, verdict: str) -> None:
-    path = os.path.join(root(), "rsh.log")
+    # the driver reads the log beside the workspace, not inside it
+    path = os.environ.get("GAUNTLET_LOG") or os.path.join(root(), "rsh.log")
     try:
         fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
         try:
