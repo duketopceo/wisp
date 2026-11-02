@@ -346,6 +346,12 @@ def _run_inner(name: str, arg: str, cfg: dict,
         return fn(arg, cfg)
     if fn is mcpclient.call or fn is browser.run:
         return fn(arg, cfg)
+    if fn is system.shell:
+        from .. import gauntlet
+        if gauntlet.is_gauntlet(cfg):
+            # a gauntlet run never reaches the owner's shell: rsh in the
+            # sandbox, or a refusal
+            return gauntlet.rsh_run(arg, cfg)
     return fn(arg)
 
 

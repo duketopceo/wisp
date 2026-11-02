@@ -9,6 +9,7 @@ from contextvars import ContextVar
 from .. import cancel as _cancel
 from .. import config
 from .. import delivery as _delivery
+from .. import gauntlet as _gauntlet
 from .. import hypr
 from .. import vpointer as _vp
 from ..pipeline import hypr_env, notify
@@ -958,12 +959,23 @@ def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
     backend = _delivery.resolve_backend(cfg, op) if mode in ("drive", "auto") \
         else None
     if backend:
+        # a gauntlet click executes only on a registered sandbox window
+        # (the hit test below is off for gauntlet runs, so this is the
+        # fail-closed replacement; menu cases register none and refuse)
+        if do_click:
+            refused = _gauntlet.click_guard(cfg or {}, x, y)
+            if refused:
+                return refused
         # the hit test needs the control/a11y providers, and an isolated
         # session has neither (cua is bound to the live compositor); no
-        # evidence is not "no element", so the guard stays off there
+        # evidence is not "no element", so the guard stays off there. The
+        # same holds for a gauntlet run on the live session: the sandbox
+        # apps expose no controls, and the click is already confined to a
+        # sandbox window (wisp.gauntlet). Owner use keeps the guard.
         if (do_click and not target.element_backed
                 and not _human_coordinates(arg)
-                and not _vp.is_isolated(cfg)):
+                and not _vp.is_isolated(cfg)
+                and not _gauntlet.is_gauntlet(cfg)):
             from .. import grounding
             if grounding.target_at_point(x, y, cfg) is None:
                 return ("REFUSED (no element at model-chosen coordinates; "

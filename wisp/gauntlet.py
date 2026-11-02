@@ -14,8 +14,19 @@ granted only on the run's own config copy and only when the driver
     stay refused), so a learn turn can save an app skill;
   - trajectories, so a second try can lean on the first.
 
+  - `shell`, but only through the sandbox's restricted read-only shell
+    (scripts/gauntlet/rsh) in the sandbox workspace, and only when the
+    driver registered that workspace; `allow_shell` itself stays false;
+  - clicks without a confirmation, but only while the focused window is
+    a registered sandbox window and the surface is not sensitive. The
+    live hit test is skipped too (the sandbox apps expose no controls),
+    so `click_guard` replaces it: a click at model coordinates runs only
+    when every visible window under the point is a registered sandbox
+    window (at least one), and no clickable layer surface covers it.
+    Fails closed; the menu cases register no window and are refused.
+
 Everything else in the dev run stays: the deny list, `wait_for_choice =
-None` (every confirm gate answers no) and the shell switch.
+None` (every other confirm gate answers no) and the shell switch.
 
 Also here: arm profiles (flat TOML files of section.key overrides, one
 per configuration under test) and the persistent cumulative spend file
@@ -25,6 +36,8 @@ import json
 import os
 import pathlib
 import re
+import subprocess
+import sys
 
 from . import cua_safety
 
@@ -225,6 +238,48 @@ def _global_chord(arg: str) -> bool:
         for m in parts[:-1])
 
 
+RSH = pathlib.Path(__file__).resolve().parent.parent \
+    / "scripts" / "gauntlet" / "rsh"
+RSH_SAFE_ENV = ("PATH", "LANG", "LC_ALL", "TERM")
+CLICK_TOOLS = ("click",)
+
+
+def sandbox_root(cfg: dict) -> str:
+    return str(((cfg or {}).get("dev") or {}).get("sandbox_root") or ""
+               ).strip()
+
+
+def shell_sandboxed(name: str, cfg: dict) -> bool:
+    """True for the `shell` tool in a gauntlet run that registered a
+    sandbox workspace: that call runs through rsh (`rsh_run`)."""
+    return name == "shell" and is_gauntlet(cfg) and bool(sandbox_root(cfg))
+
+
+def rsh_run(cmd: str, cfg: dict) -> str:
+    """Run one shell line through the sandbox's rsh (read-only
+    allowlist, no shell syntax, paths inside the workspace, scrubbed
+    environment) and return the `shell` tool's result text. Fails
+    closed: no gauntlet run or no sandbox root refuses."""
+    root = sandbox_root(cfg)
+    if not (is_gauntlet(cfg) and root and RSH.is_file()):
+        return "REFUSED (gauntlet: shell runs only through the sandbox rsh)"
+    if not str(cmd or "").strip():
+        return "SKIP (empty command)"
+    env = {k: os.environ[k] for k in RSH_SAFE_ENV if k in os.environ}
+    env["GAUNTLET_ROOT"] = root
+    log = str(((cfg or {}).get("dev") or {}).get("sandbox_log") or "").strip()
+    if log:
+        env["GAUNTLET_LOG"] = log
+    try:
+        r = subprocess.run([sys.executable, str(RSH), "-c", str(cmd)],
+                           cwd=root, env=env, capture_output=True,
+                           text=True, timeout=30, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return f"SKIP (sandbox shell failed: {type(e).__name__})"
+    out = (r.stdout or r.stderr).strip()[:200]
+    return f"SHELL rc={r.returncode} {out}"
+
+
 def preempt(name: str, arg: str, cfg: dict) -> str | None:
     """The gauntlet's hard preempts (policy.preempted): typing needs a
     sandbox window in focus; skill_manage is create and edit only."""
@@ -236,6 +291,8 @@ def preempt(name: str, arg: str, cfg: dict) -> str | None:
         return sandbox_refusal(cfg)
     if name == "skill_manage" and _skill_op(arg) not in SKILL_OPS + ("list",):
         return "REFUSED (gauntlet allows skill create and edit only)"
+    if name == "shell" and not sandbox_root(cfg):
+        return "REFUSED (gauntlet: no sandbox workspace for the shell)"
     return None
 
 
@@ -249,7 +306,115 @@ def pre_approved(name: str, arg: str, cfg: dict, state=None) -> bool:
         return _skill_op(arg) in SKILL_OPS
     if name in TYPING_TOOLS:
         return not cua_safety.sensitive_surface(cfg, state=state)
+    if shell_sandboxed(name, cfg):
+        return True         # rsh is read-only and confined to the sandbox
+    if name in CLICK_TOOLS:
+        # identity by window address, read now; a sensitive surface (a
+        # matched token) still stops. An unreadable title ("unknown",
+        # a popup menu) does not: the sandbox identity is already known.
+        if sandbox_refusal(cfg) is not None:
+            return False
+        return cua_safety.sensitive_surface(cfg, state=state) in ("", "unknown")
     return False
+
+
+_PASSIVE_LAYERS = frozenset(("omarchy-background", "omarchy-notifications"))
+
+
+def _in_rect(x, y, at, size) -> bool:
+    try:
+        return (at[0] <= x < at[0] + size[0]
+                and at[1] <= y < at[1] + size[1])
+    except (TypeError, IndexError):
+        return False
+
+
+def _visible_ws(mons) -> set:
+    ids = set()
+    for m in mons:
+        for k in ("activeWorkspace", "specialWorkspace"):
+            w = m.get(k)
+            if isinstance(w, dict) and w.get("id") not in (None, 0):
+                ids.add(w["id"])
+    return ids
+
+
+def click_refusal(cfg: dict, x, y) -> str | None:
+    """None when a click at global logical (x, y) lands on a registered
+    sandbox window, else the refusal text. Reads the compositor now
+    (hyprctl clients/monitors/layers; `at`/`size` are the same logical
+    coordinates `click` converts to). Fails closed: no registered window,
+    an unreadable compositor, no window under the point, any visible
+    non-sandbox window under it, or a clickable layer surface (the bar,
+    the menu or launcher) over it all refuse."""
+    allowed = sandbox_windows(cfg)
+    if not allowed:
+        return "REFUSED (gauntlet: no sandbox window is registered)"
+    from . import hypr
+    try:
+        x, y = int(x), int(y)
+        clients = hypr.query("clients")
+        mons = hypr.query("monitors")
+        layers = hypr.query("layers")
+        if not (isinstance(clients, list) and isinstance(mons, list)
+                and isinstance(layers, dict)):
+            raise ValueError("shape")
+    except Exception:
+        return "REFUSED (gauntlet: cannot read the compositor for the click)"
+    vis = _visible_ws(mons)
+    under = []
+    for c in clients:
+        if not isinstance(c, dict) or not c.get("mapped") \
+                or c.get("hidden"):
+            continue
+        ws = (c.get("workspace") or {}).get("id")
+        if ws not in vis:
+            continue
+        if _in_rect(x, y, c.get("at"), c.get("size")):
+            under.append(_norm_addr(c.get("address")))
+    if not under:
+        return ("REFUSED (gauntlet: no sandbox window under the click "
+                "point)")
+    if any(a not in allowed for a in under):
+        return ("REFUSED (gauntlet: a window that is not a sandbox "
+                "window is under the click point)")
+    offs = [(0, 0)] + [(m.get("x", 0), m.get("y", 0)) for m in mons
+                       if isinstance(m, dict)]
+    for per_mon in layers.values():
+        levels = per_mon.get("levels") if isinstance(per_mon, dict) else None
+        for lvl, items in (levels or {}).items():
+            if str(lvl) in ("0", "1"):      # background/bottom: below windows
+                continue
+            for l in items or []:
+                if not isinstance(l, dict) \
+                        or l.get("namespace") in _PASSIVE_LAYERS:
+                    continue
+                for ox, oy in offs:
+                    try:
+                        at = (l["x"] + ox, l["y"] + oy)
+                        size = (l["w"], l["h"])
+                    except (KeyError, TypeError):
+                        return ("REFUSED (gauntlet: unreadable layer "
+                                "surface over the click point)")
+                    if _in_rect(x, y, at, size):
+                        return ("REFUSED (gauntlet: a layer surface "
+                                "(menu, launcher or bar) is over the "
+                                "click point)")
+    return None
+
+
+def click_guard(cfg: dict, x, y) -> str | None:
+    """The check right before a click is sent (see `click_refusal`). A
+    refusal is traced as a gate stop, like `keystroke_guard`, so the
+    runner ends the task as stopped. None outside a gauntlet run."""
+    if not is_gauntlet(cfg):
+        return None
+    out = click_refusal(cfg, x, y)
+    if out and (cfg.get("dev") or {}).get("run_id"):
+        from . import trace
+        trace.emit(trace.current(), "gate_stop", "policy",
+                   {"tool": "click", "result": out[:200]})
+    return out
 
 
 def keystroke_guard(cfg: dict, arg: str = "") -> str | None:

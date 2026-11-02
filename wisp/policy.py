@@ -112,8 +112,11 @@ def preempted(name: str, arg: str, cfg: dict | None) -> str | None:
             return "REFUSED (denylisted command)"
         # a gauntlet skill create/edit is a file write in the throwaway
         # data folder, not a shell call, so the shell switch is not asked
+        # nor is a gauntlet shell call: it runs only through the
+        # sandbox's read-only rsh (gauntlet.rsh_run), never the owner's
         if tier == "shell" and not (
                 name == "skill_manage" and gauntlet.is_gauntlet(cfg)) and \
+                not gauntlet.shell_sandboxed(name, cfg) and \
                 (cfg or {}).get("agent", {}).get(
                     "allow_shell", "false") != "true":
             return "SKIPPED (shell disabled — set allow_shell=true)"

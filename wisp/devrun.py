@@ -52,14 +52,18 @@ ALLOW_TOOLS = frozenset((
     "search_files", "task_status", "codegraph"))
 
 
-def deny_tools(gauntlet_run: bool = False) -> list:
+def deny_tools(gauntlet_run: bool = False, shell: bool = False) -> list:
     """Every registered tool a run may not call (registry minus the
     allow list), plus the browser lane, which runs outside the registry.
     A gauntlet run also allows typing and skill_manage; the sandbox
-    check (wisp.gauntlet) and policy keep those narrow."""
+    check (wisp.gauntlet) and policy keep those narrow. `shell` (a
+    gauntlet run that registered a sandbox root) also allows the shell
+    tool, which that run executes only through the sandbox's rsh."""
     from . import tools
     allow = ALLOW_TOOLS | gauntlet.EXTRA_TOOLS if gauntlet_run \
         else ALLOW_TOOLS
+    if gauntlet_run and shell:
+        allow = allow | {"shell"}
     return sorted((set(tools.REGISTRY) - allow) | {"browser"})
 OUTCOMES = ("success", "stopped", "incomplete")   # `wrong tries`: U3
 # routes a run will drive; anything else is skipped as `stopped`
@@ -115,7 +119,8 @@ def run_config(cfg: dict, run_id: str, vs=None, profile=None,
                grant=None, isolated: bool = False) -> dict:
     """A deep copy of `cfg` for one run, with the one `--vs` override or
     an arm `profile` ({section: {key: value}}) applied when given. A
-    `grant` dict ({windows, spend_file, cap_usd}) makes it a gauntlet
+    `grant` dict ({windows, spend_file, cap_usd, sandbox_root,
+    sandbox_log}) makes it a gauntlet
     run. The profile goes on first and the run's own settings last, so
     no profile can lift the shell switch or the deny list. `isolated`
     (an isolated-session run, KTD6) turns on `dev.isolated_session` and
@@ -126,13 +131,18 @@ def run_config(cfg: dict, run_id: str, vs=None, profile=None,
         gauntlet.apply_profile(c, profile)
     c.setdefault("dev", {})
     c["dev"]["run_id"] = run_id
-    c["dev"]["deny_tools"] = deny_tools(bool(grant))
+    c["dev"]["deny_tools"] = deny_tools(
+        bool(grant), shell=bool(grant and grant.get("sandbox_root")))
     c.setdefault("traj", {})["enabled"] = "true" if grant else "false"
     c.setdefault("agent", {})["allow_shell"] = "false"
     if grant:
         c["dev"]["gauntlet"] = "true"
         c["dev"]["sandbox_windows"] = ",".join(grant.get("windows") or ())
         c["dev"]["spend_file"] = str(grant.get("spend_file") or "")
+        # the sandbox's workspace and rsh log: the only place a gauntlet
+        # shell call runs (wisp.gauntlet.rsh_run); empty keeps shell denied
+        c["dev"]["sandbox_root"] = str(grant.get("sandbox_root") or "")
+        c["dev"]["sandbox_log"] = str(grant.get("sandbox_log") or "")
         c["dev"]["spend_cap_usd"] = str(
             grant.get("cap_usd", gauntlet.DEFAULT_CAP_USD))
     if isolated or (grant and grant.get("isolated")):

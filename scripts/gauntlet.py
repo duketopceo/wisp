@@ -448,8 +448,10 @@ class Gauntlet:
             self.stopped = f"driver error: {type(e).__name__}: {e}"[:200]
             self.out(self.stopped)
             import traceback
-            (self.rundir / "driver-error.txt").write_text(
-                traceback.format_exc())
+            with contextlib.suppress(OSError):
+                self.rundir.mkdir(parents=True, exist_ok=True)
+                (self.rundir / "driver-error.txt").write_text(
+                    traceback.format_exc())
             code = EXIT_FAIL
         finally:
             self._cleanup(proc)
@@ -586,6 +588,10 @@ class Gauntlet:
                "profiles": [ref], "windows": windows,
                "spend_file": str(self.spend.path),
                "cap_usd": self.cap}
+        # the sandbox's workspace and rsh log: a gauntlet shell call runs
+        # through rsh there and nowhere else
+        msg["sandbox_root"] = str(self.box.workspace)
+        msg["sandbox_log"] = str(self.box.root / "rsh.log")
         if self.iso:
             msg["isolated"] = True      # run copy: uinput refused
         r = d.send(msg)
