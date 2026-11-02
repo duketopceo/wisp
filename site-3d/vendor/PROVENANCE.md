@@ -4,14 +4,20 @@
   `three@0.170.0`, `package/build/three.module.min.js`.
   Package: https://registry.npmjs.org/three/-/three-0.170.0.tgz
   MIT license: `THREE-LICENSE.txt`.
+- `loaders/GLTFLoader.js`, `utils/BufferGeometryUtils.js`: three@0.170.0
+  `examples/jsm/` (https://unpkg.com/three@0.170.0/examples/jsm/), the same
+  pinned package as `three.module.js`, for the hero flame. Unmodified except the
+  `from 'three'` import, now `from '../three.module.js'`. Upstream sha256
+  `45139fad...abd44` (GLTFLoader) and `c25b7930...bf6` (BufferGeometryUtils).
+  MIT license: `THREE-LICENSE.txt`.
+- `../assets/wisp-flame/*`: published from `assets/brand/wisp-flame/export/`
+  by `scripts/site/build_3d.py` (model, idle loop and stills); not stored here.
 - `../assets/outfit-variable.ttf`: unmodified Outfit variable font.
   Upstream: https://github.com/google/fonts/tree/main/ofl/outfit
   File: https://raw.githubusercontent.com/google/fonts/main/ofl/outfit/Outfit%5Bwght%5D.ttf
   SIL Open Font License 1.1: `OFL-Outfit.txt`.
 - `../assets/companion.png`: repository `assets/readme/companion.png`.
   An actual companion component sheet, not a live-run recording.
-- `../assets/mark.svg`: repository `assets/icons/src/bar-listening.svg`,
-  copied unchanged. No new brand mark.
 - `../wisp/gl.mjs`: the light's look follows ThreeUI Community `energy-orb`
   (https://github.com/MengTo/threeui, MIT, Copyright (c) 2026 Meng To) as a
   design reference; shader rewritten, with no ThreeUI code copied.

@@ -9,6 +9,9 @@ desktop sessions.
 
 - **Enhanced homepage:** `site-3d/`, with vendored Three.js, companion artwork,
   fonts and license notices.
+- **Wisp flame:** the hero model, idle loop and stills are published from
+  `assets/brand/wisp-flame/export/` by `scripts/site/build_3d.py`
+  (`site-3d/flame.mjs`, vendored `GLTFLoader`); nothing is copied into `site-3d/`.
 - **Guiding-light preview:** `site-3d/light/`, served at `/light/` by the same
   build. A small real-time WebGL light (plain WebGL1, drawn only while it
   moves) with a CSS-orb fallback, self-hosted font, no inline script; design in

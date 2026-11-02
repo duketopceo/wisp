@@ -12,12 +12,15 @@ const cancel = document.querySelector("#cancel-demo");
 const pauseMotion = document.querySelector("#pause-motion");
 const reset = document.querySelector("#reset-demo");
 const sensitiveRules = document.querySelector("#sensitive-rules");
+const flameHost = document.querySelector("#flame");
 const examples = [...document.querySelectorAll("[data-scenario]")];
 const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 let state = initial();
 let timer;
 let sceneHandle;
 let desktopHandle;
+let flameHandle;
+let flameEpoch = 0;
 let generation = 0;
 let motionPaused = false;
 
@@ -50,6 +53,7 @@ function renderState() {
   }
   desktopHandle?.setState(state);
   sceneHandle?.setState(state);
+  flameHandle?.setState(state);
   if ((focusedControl === cancel && cancel.disabled) || (focusedControl === reset && reset.disabled)) {
     examples.find(button => button.dataset.scenario === state.scenario).focus({preventScroll: true});
   }
@@ -124,12 +128,47 @@ async function mountScene() {
     if (epoch === generation) showDomDesktop();
   }
 }
+// The hero flame: a small WebGL canvas. It never blocks the page; the animated
+// WebP (or the still, under reduced motion) stays whenever WebGL or the model
+// is unavailable, motion is reduced, or Pause motion is on.
+function showFlameImage() {
+  flameHost.dataset.flame = "static";
+  delete flameHost.dataset.rendered;
+}
+
+async function mountFlame() {
+  const epoch = ++flameEpoch;
+  flameHandle?.dispose();
+  flameHandle = undefined;
+  showFlameImage();
+  if (reduced.matches || motionPaused) return;
+  try {
+    const {createFlame} = await import("./flame.mjs");
+    const handle = await createFlame(flameHost, () => {
+      flameHandle = undefined;
+      showFlameImage();
+    });
+    if (epoch !== flameEpoch || reduced.matches || motionPaused) {
+      handle.dispose();
+      return;
+    }
+    flameHandle = handle;
+    handle.setState(state);
+    flameHost.dataset.flame = "webgl";
+  } catch {
+    if (epoch === flameEpoch) showFlameImage();
+  }
+}
+
 reduced.addEventListener("change", mountScene);
+reduced.addEventListener("change", mountFlame);
 pauseMotion.addEventListener("click", () => {
   motionPaused = !motionPaused;
   mountScene();
+  mountFlame();
 });
 mountScene();
+mountFlame();
 
 const copy = document.querySelector("#copy-install");
 copy.disabled = false;
@@ -145,9 +184,12 @@ copy.addEventListener("click", async () => {
 window.addEventListener("pagehide", event => {
   if (!event.persisted) {
     generation++;
+    flameEpoch++;
+    flameHandle?.dispose();
     clearTimeout(timer);
     sceneHandle?.dispose();
     desktopHandle?.dispose();
     reduced.removeEventListener("change", mountScene);
+    reduced.removeEventListener("change", mountFlame);
   }
 });

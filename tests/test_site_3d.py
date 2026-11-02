@@ -61,6 +61,64 @@ class LandingContract(unittest.TestCase):
         self.assertIn("draw-layer", css)
 
 
+class FlameHero(unittest.TestCase):
+    FLAME = ROOT / "assets/brand/wisp-flame/export"
+
+    def test_hero_has_flame_with_image_fallback_and_icons(self):
+        html = (SITE / "index.html").read_text()
+        self.assertIn('id="flame"', html)
+        # Without JavaScript, or when WebGL or the model fails: the idle loop;
+        # under reduced motion: the still.
+        self.assertIn('src="assets/wisp-flame/idle-256.webp"', html)
+        self.assertRegex(html, r'<source media="\(prefers-reduced-motion: reduce\)" srcset="assets/wisp-flame/wisp-flame-512\.png">')
+        self.assertIn('rel="icon" href="assets/wisp-flame/wisp-flame-32.png"', html)
+        self.assertIn('rel="apple-touch-icon"', html)
+        self.assertNotIn("mark.svg", html)
+        self.assertFalse((SITE / "assets/mark.svg").exists())
+
+    def test_flame_module_is_self_hosted_and_respects_motion_preferences(self):
+        flame = (SITE / "flame.mjs").read_text()
+        self.assertNotRegex(flame, r"https?://")
+        self.assertIn("vendor/loaders/GLTFLoader.js", flame)
+        for clip in ("idle", "listening", "thinking", "speaking"):
+            self.assertIn(clip, flame)
+        app = (SITE / "app.mjs").read_text()
+        self.assertIn("flame.mjs", app)
+        mount = app[app.index("async function mountFlame"):]
+        self.assertIn("reduced.matches || motionPaused", mount[:400])
+
+    def test_vendored_loader_is_unmodified_apart_from_the_three_specifier(self):
+        for rel in ("loaders/GLTFLoader.js", "utils/BufferGeometryUtils.js"):
+            vendored = (SITE / "vendor" / rel).read_text()
+            original = (ROOT / "assets/brand/wisp-flame/preview/vendor" / rel).read_text()
+            self.assertEqual(original.replace("from 'three';", "from '../three.module.js';"),
+                             vendored, rel)
+            self.assertNotIn("from 'three'", vendored)
+
+    def test_flame_assets_ship_in_the_build(self):
+        builder = EnhancedBuild.builder(self)
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out"
+            builder.build(out)
+            glb = out / "assets/wisp-flame/wisp-flame.glb"
+            self.assertEqual((self.FLAME / "wisp-flame.glb").read_bytes(), glb.read_bytes())
+            for name in ("idle-256.webp", "wisp-flame-32.png", "wisp-flame-512.png"):
+                self.assertTrue((out / "assets/wisp-flame" / name).is_file(), name)
+            for name in ("flame.mjs", "vendor/loaders/GLTFLoader.js",
+                         "vendor/utils/BufferGeometryUtils.js"):
+                self.assertTrue((out / name).is_file(), name)
+            # Lean: the model, one loop and two stills; no unused states.
+            self.assertFalse((out / "assets/wisp-flame/listening-256.webp").exists())
+            self.assertLess(glb.stat().st_size, 256 * 1024)
+            self.assertEqual([], builder.check(out))
+
+    def test_notices_credit_the_vendored_loader(self):
+        notices = (ROOT / "THIRD_PARTY_NOTICES.md").read_text()
+        self.assertIn("GLTFLoader", notices)
+        self.assertIn("site-3d/vendor/THREE-LICENSE.txt", notices)
+        self.assertIn("GLTFLoader", (SITE / "vendor/PROVENANCE.md").read_text())
+
+
 class GuidingLightPreview(unittest.TestCase):
     LIGHT = SITE / "light"
 

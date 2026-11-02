@@ -15,3 +15,4 @@ th,td{border-bottom:1px solid var(--line);padding:.45rem .5rem;text-align:left;v
 .hero img,.hero video{max-width:100%;height:auto;border-radius:8px;border:1px solid var(--line)}
 .card{border:1px solid var(--line);border-radius:8px;padding:1rem 1.2rem}
 footer{margin-top:3rem;color:var(--mute);font-size:14px}
+.flame{display:block;margin:0 0 .5rem}
