@@ -78,8 +78,8 @@ take focus, so `Esc` stays reachable while cua acts. Design notes:
 
 | key | default | meaning |
 |-----|---------|---------|
-| `lane` | `"off"` | `"extension"` lets the `browser` tool work in your own Chromium through the paired Wisp extension, in a tab group beside your tabs. Off, the tool is not offered to the model and a call does nothing |
-| `port` | `47315` | loopback port the extension polls (1024 to 65535) |
+| `lane` | `"off"` | `"extension"` lets the `browser` tool work in your own Chromium through the Wisp extension, in a tab group beside your tabs. Off, the tool is not offered to the model and a call does nothing |
+| `port` | `47315` | loopback port an older unpacked extension polls (1024 to 65535); the current extension uses native messaging instead and needs `wispd browser install-host` |
 
 Setup, the rules it keeps and Stop: `docs/BROWSER_LANE.md`.
 
