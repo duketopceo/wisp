@@ -69,7 +69,8 @@ TERMINALS = ("ghostty", "kitty", "alacritty", "foot", "wezterm", "konsole",
              "gnome-terminal", "xterm", "terminator", "tilix", "st-256color")
 _NAMED_KEYS = {"enter", "return", "tab", "esc", "escape", "space", "up",
                "down", "left", "right", "home", "end", "pageup", "pagedown",
-               "backspace", "delete"}
+               "backspace", "delete", "insert",
+               *(f"f{i}" for i in range(1, 13))}
 _XY = re.compile(r"^\s*(-?\d+)\s*,\s*(-?\d+)")
 _VERB = re.compile(r"^[A-Za-z][A-Za-z_-]{0,15}")
 _SALT = os.urandom(8)

@@ -471,7 +471,11 @@ def type_text(text: str, cfg: dict | None = None) -> str:
 _KEYCODES = {"esc": 1, "enter": 28, "tab": 15, "space": 57,
              "backspace": 14, "up": 103, "down": 108, "left": 105,
              "right": 106, "pageup": 104, "pagedown": 109,
-             "home": 102, "end": 107}
+             "home": 102, "end": 107, "delete": 111, "insert": 110,
+             # linux/input-event-codes.h: KEY_F1..F10 = 59..68,
+             # KEY_F11 = 87, KEY_F12 = 88 (F2 renames in file managers)
+             **{f"f{i}": 58 + i for i in range(1, 11)},
+             "f11": 87, "f12": 88}
 _MODS = {"ctrl": 29, "control": 29, "shift": 42, "alt": 56,
          "super": 125, "meta": 125, "cmd": 125}
 # evdev letter/digit codes for chords like 'ctrl+v' (dictation paste):
@@ -509,7 +513,8 @@ _WTYPE_KEYS = {"esc": "Escape", "enter": "Return", "tab": "Tab",
                "space": "space", "backspace": "BackSpace", "up": "Up",
                "down": "Down", "left": "Left", "right": "Right",
                "pageup": "Prior", "pagedown": "Next", "home": "Home",
-               "end": "End"}
+               "end": "End", "delete": "Delete", "insert": "Insert",
+               **{f"f{i}": f"F{i}" for i in range(1, 13)}}
 _WTYPE_MODS = {"ctrl": "ctrl", "control": "ctrl", "shift": "shift",
                "alt": "alt", "super": "logo", "meta": "logo",
                "cmd": "logo"}
@@ -565,7 +570,7 @@ def key(arg: str, cfg: dict | None = None) -> str:
     name = (arg or "").strip().lower().replace(" ", "")
     name = {"return": "enter", "escape": "esc", "pgdn": "pagedown",
             "pgup": "pageup", "arrowdown": "down",
-            "arrowup": "up"}.get(name, name)
+            "arrowup": "up", "del": "delete"}.get(name, name)
     if "+" in name:
         seq = _chord(name)
         if seq is None:
