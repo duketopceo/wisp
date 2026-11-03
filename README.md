@@ -67,12 +67,12 @@ systemctl --user enable --now wispd
 wispd onboard                  # guided first run, every step skippable
 ```
 
-- `wispd install --units` installs only the systemd units for the local
-  model services and the daemon (oomd-safe, see `docs/LINUX.md`). Add
+- `wispd install --units` installs only the systemd units for the daemon
+  and, if `[local] enabled` is on, the optional local model services (oomd-safe, see `docs/LINUX.md`). Add
   `--dry-run` to preview. It never enables or starts anything.
 - `wispd install --cua` installs the pinned `cua-driver` (checksum
   verified, user scope, no sudo). `--dry-run` previews it.
-- `wispd onboard` checks the microphone, the local models, the cua driver,
+- `wispd onboard` checks the microphone, the local models (only if `[local] enabled`), the cua driver,
   notifications and the keyboard submap. The Panel shows the same
   checklist as a card until you finish. Nothing in it edits your config.
 - Some questions are answered from this machine with no model call: "what
@@ -229,9 +229,11 @@ and reset by local date:
 
 ## Local models
 
-Wisp runs on local OpenAI-compatible servers when you want zero marginal
-cost. Any `llama.cpp`, Ollama or LM Studio endpoint works as a
-`[brain.<name>]` provider.
+Local models are optional and off by default. Wisp uses hosted OpenRouter
+models unless you set `[local] enabled = "true"`. With it on, any
+OpenAI-compatible local server (`llama.cpp`, Ollama or LM Studio) works as a
+`[brain.<name>]` provider, at zero marginal cost. The endpoints below are
+examples, not requirements.
 
 | Endpoint | Port | Role |
 |---|---|---|
@@ -240,7 +242,7 @@ cost. Any `llama.cpp`, Ollama or LM Studio endpoint works as a
 | UI-TARS-7B (llama-server) | `:8081` | GUI grounding, emits `Action: click(x,y)` text |
 | Ollama | `:11434` | CPU or GPU brain, native `/api/chat` |
 
-`wispd health` probes these over loopback only. `wispd health start`
+Only when you opt in to local models, `wispd health` probes these over loopback only. `wispd health start`
 prints the command that starts a down endpoint (`--run` executes it).
 Turn routing uses local fast paths and the act/chat/off choice; the old Jev
 decision service is not called. The separately named optional Jev grounding
@@ -343,7 +345,7 @@ verbs and examples. Add `--json` for machine-readable output.
 | `wispd note` | show or follow the live paper (`note.md`) |
 | `wispd scribble set\|clear` | the strokes drawn on screen while holding the talk key (the overlay calls this; they reach the next screenshot only) |
 | `wispd doctor` | check every dependency |
-| `wispd health` | local model endpoint health |
+| `wispd health` | optional local model endpoint health (needs `[local] enabled`) |
 | `wispd latency` | p50 and p90 per budget path |
 | `wispd spend` | usage today and the caps |
 | `wispd recap --json` | preview the private, opt-in weekly recap; `--off` disables it |

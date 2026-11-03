@@ -1,5 +1,7 @@
 # Gauntlet live results, 2026-11-01
 
+> Note (2026-11-03): the default brain moved to gemini-2.5-flash in #299. Later runs are in [2026-11-02-gauntlet-reruns.md](2026-11-02-gauntlet-reruns.md).
+
 Tested commit: origin/master 4612657 plus the fixes on `test/live-gauntlet`
 (both `scripts/gauntlet.py` and `scripts/click_probe.py` import `wisp` from
 the worktree, not the installed wispd build). Machine: M1 Max, Hyprland

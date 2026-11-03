@@ -45,6 +45,21 @@ How this file is kept:
 - 3D parts (off unless a model host is allowed): an answer can show one small glTF model from an allow-listed host that you can turn; click a part and Wisp asks one question naming it. It needs no GPU and gives the pointer back when the answer goes.
 - `wispd config keys` now groups every setting by page (voice, pointer, agents, models, budget, connectors, advanced) and lists the push-to-talk key and the answer model keys; `wispd config set` checks them for a valid form before writing.
 
+Merged since `v1.0.0-rc.2` (#261-#305), grouped by kind:
+
+- feat: the gauntlet, a battery of live cases for `wispd dev` (#291), and an isolated Hyprland session so test runs leave your desktop alone (#295).
+- feat: the default brain is `google/gemini-2.5-flash` (#299). Hosted models stay the default and local servers stay off.
+- feat: the first step of the settings window, a type scale and settings metadata (#288).
+- feat: terminal output is shared and width-aware: `wispd doctor` leads with the verdict (#276, #277), onboarding is a checklist (#278), and the installer shows its steps (#279).
+- feat: the site gets a playable desktop with drawings (#273) and a `/light/` preview with a real-time orb (#274, #285). The Wisp flame 3D asset is added (#293).
+- fix: clicks land where aimed on mixed-scale layouts, and fractional or loosely labelled point replies are accepted (#292, #298).
+- fix: a non-English turn on the default router gets a reply in that language (#286).
+- fix: the Jev router is fully removed (#284), after replay fixtures moved to the act router (#261).
+- fix: release and install checks: attestation sidecars in checksums (#262), first-run readiness (#264), and review findings on the safety gate, RC updates and CI (#281).
+- fix: the agent asks before running tests after it wrote executable files (#265). Gauntlet runs no longer trip wisp's own policy blocks or overlay (#302, #303).
+- test: the suite is hermetic and no longer reads your desktop or environment (#296, #304), and gauntlet results and driver fixes are recorded (#297, #300, #301).
+- docs: the roadmap and plans are synced with what merged (#275, #289), plus the gauntlet, UI overhaul, grounding post-training and light orb plans (#283, #287, #290, #294), multi-OS prep notes (#282), a next-tasks handoff (#280) and the gauntlet reruns (#305).
+
 ## v0.9.0 - 2026-09-30
 
 - Hold the talk key and speak, or tap it once to start open capture and again to stop; the `[audio] seconds` limit is the safety ceiling.
