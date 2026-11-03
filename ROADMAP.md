@@ -84,14 +84,18 @@ Merged 2026-10-30. The descriptions below were written while #259 was open and a
 
 Owner's delivery order: installable app first, owner-labelled runs second, measured tuning third. A release candidate is not a waiver or a pass of the stable-v1 gate.
 
-1. **Land the open fixes and rerun the gauntlet.** Merge #307 (F1-F12 and Delete keys) and #308 (act prompt: Enter after single-line typing, verify once), both in flight. Then rerun the gauntlet on the isolated session and record the result next to `docs/research/2026-11-02-gauntlet-reruns.md`.
+1. **Land the open fixes and rerun the gauntlet.** Merge #307 (F1-F12 and Delete keys), #308 (act prompt: Enter after single-line typing, verify once) and #310 (`[eval] since` gate window; act results say "Dry run" when nothing ran). Then rerun the gauntlet on the isolated session and record the result next to `docs/research/2026-11-02-gauntlet-reruns.md`.
+   - **Choose the click finder (owner, TLY-450/TLY-451).** Click probe, 9 known targets per monitor, isolated session, 2026-11-01 to 2026-11-03: local `qwen2.5vl:3b` 7/9 and 6/9 (median miss 31-35 px, but about 30 s per click on CPU); hosted `llama-4-maverick` 4/9 and 6/9 (49-58 px); hosted `gemini-2.5-flash` 2/9 and 3/9 (102-140 px); base `lfm3-vl:2b` 0/9 grounded, because wisp cannot yet read its `[x, y]` 0-1000 answers. On 2026-11-03 the owner set every model to hosted for now, which makes clicks fast but the least accurate; local is the accurate option once it is fast. Ollama's arm64 Linux build is CPU-only, so the Apple GPU (Vulkan, Honeykrisp) is unused (TLY-485).
+   - **The owner's own config was wrong for real turns,** fixed 2026-11-03: `[cua] dry_run` was on, so clicks and typing never happened while the model reported them done, and `[ground] providers` was `a11y,jev` with the retired Jev endpoint. Now `dry_run = "false"` and `control,a11y,vlm`.
 2. **Owner reinstall from `master`,** and the real compositor and voice checks that tests cannot do: drawing, pointing, rings, arrows, highlights, guided steps, the interactive voice test, and the update/rollback smoke test in `docs/INSTALL.md`'s release checklist.
-3. **Owner-labelled real turns, to 50 or more at 60%.** Run a varied set of real tasks across apps and label them with the rating controls, `wispd dev review` and `wispd eval`. Judge output is not an owner label. Most of the 35 labels so far predate the recent fixes.
-4. **Clean-box `wispd onboard` and `wispd doctor`** on an Omarchy box with hosted keys only.
+3. **Owner-labelled real turns, to 50 or more at 60%.** Run a varied set of real tasks across apps and label them with the rating controls, `wispd dev review` and `wispd eval`. Judge output is not an owner label. The owner chose to count only turns from the shipped build: `[eval] since = "2026-11-03"` (#310). The 35 older labels (26%) stay on disk as history.
+4. **Clean-box `wispd onboard` and `wispd doctor`** on an Omarchy box with hosted keys only. Where to run it is deferred by the owner until the accuracy gate is closer.
 5. **Tag `v1.0.0`.** An `rc.3` first is optional, if the owner wants a prerelease of what is on `master` now. The tag only follows the gates below.
 
 After v1:
 
+- Debug suite (TLY-484): one opt-in switch that keeps a local, per-user record of every model call (brain, answers, grounding, speech, judge: model, prompt, reply, tokens, cost, latency) and every tool call, including OpenCode helpers. OpenCode needs no fork: its 2.x plugin hooks (`session` context and model-request hooks, `tool` execute before/after, the event stream) cover it, installed in Wisp's private OpenCode home. Brainstorm, then plan.
+- Local models on the Apple GPU (TLY-485), then teach wisp LFM-VL as the local click finder (grounding post-training below, TLY-451).
 - Grounding post-training (`docs/plans/2026-11-01-1139-feat-wisp-grounding-posttrain-plan.md`): U1-U3 are done in #295, U4-U12 are open. It ends in a measurement; switching the default grounding model is a separate decision.
 - UI overhaul (`docs/plans/2026-10-31-1754-feat-wisp-ui-overhaul-plan.md`): PR 1 of 7 is merged (#288), PRs 2-7 are open. Terminal output and TUI PRs 6-9 belong here too.
 - Multi-OS and the Rust core: parked until the Omarchy v1 gate passes (`docs/research/2026-10-31-multi-os-prep.md`, #282).
