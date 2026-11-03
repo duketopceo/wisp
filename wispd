@@ -1558,9 +1558,18 @@ def _agent_mcp() -> int:
     return 0
 
 
+def _nmhost() -> int:
+    """Hidden `wispd nmhost`: the native messaging relay Chrome starts for
+    the Wisp extension. It speaks only the framed protocol on stdio."""
+    from wisp.tools import browser_nm
+    return browser_nm.main(sys.argv[2:])
+
+
 def main() -> int:
     if sys.argv[1:2] == ["agent-mcp"]:
         return _agent_mcp()
+    if sys.argv[1:2] == ["nmhost"]:
+        return _nmhost()
     from wisp import cli, ledger
     ledger.ACTIVE = True  # real runs record usage; library use does not
     return cli.main(sys.argv[1:], host=sys.modules[__name__])

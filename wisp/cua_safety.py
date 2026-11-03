@@ -186,8 +186,9 @@ def killed(cfg: dict | None = None, path=None) -> bool:
 # -- fields wisp never fills (B14) -----------------------------------------
 # A browser field holding a password, a one-time code or a card number is
 # read (its label shows) but never filled, whatever the model asks for.
-# browser-extension/lib.js carries the same rule for the page side; a test
-# runs both over one fixture list so they cannot drift.
+# browser-extension/src/fieldrule.ts carries the same rule for the page side;
+# a test in each language runs both over tests/fixtures/sensitive_fields.json
+# so they cannot drift.
 SENSITIVE_TYPES = ("password",)
 SENSITIVE_AUTOCOMPLETE = re.compile(
     r"(?:^|\s)(?:one-time-code|current-password|new-password|cc-[a-z-]+)"

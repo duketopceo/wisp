@@ -54,10 +54,11 @@ whisper_model = "ggml-small.en.bin"
 
 [browser]
 # watchable browser lane (B14): "off" or "extension". The extension in
-# browser-extension/ pairs with a one-time code and works in a tab group
-# beside yours; see docs/BROWSER_LANE.md
+# browser-extension/ connects through native messaging (wispd browser
+# install-host) and works in a tab group beside yours; see
+# docs/BROWSER_LANE.md
 lane = "off"
-# loopback port the extension polls
+# loopback port an older unpacked extension polls
 port = 47315
 
 [agent]
