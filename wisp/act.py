@@ -97,6 +97,19 @@ SYSTEM = ("You are Wisp's hands on a Linux desktop (Hyprland). Complete "
           "meant.")
 
 
+DRY_RUN_NOTE = ("Dry run, nothing was clicked or typed ([cua] dry_run "
+                "is on): ")
+
+
+def _dry_run_note(steps: list) -> str:
+    """The model words its summary as if the steps happened ("I clicked
+    the AccuWeather result"), but under `[cua] dry_run` every input step
+    returns DRYRUN and nothing reached the desktop. Say so up front."""
+    if any(str(st.get("result", "")).startswith("DRYRUN") for st in steps):
+        return DRY_RUN_NOTE
+    return ""
+
+
 def _post(messages: list, cfg: dict) -> dict:
     """Chat call through the configured brain provider with toolbelt
     schemas (U6). Returns the provider message object."""
@@ -380,7 +393,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     _publish(state, task, steps)
                     _goals.record_steps(steps)
                     _goals.close("done")
-                    out = f"ACTED ({len(steps)} steps): {text}"
+                    out = f"ACTED ({len(steps)} steps): {_dry_run_note(steps)}{text}"
                     want_traj = True
                     return out
                 calls = [{"id": f"at-{len(steps)}-{i}", "_at": True,
@@ -423,7 +436,8 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     text = f"I could not confirm that worked \u2014 {why}."
                 else:
                     _goals.close("done")
-                out = f"ACTED ({len(steps)} steps): {text or 'done'}"
+                out = (f"ACTED ({len(steps)} steps): "
+                       f"{_dry_run_note(steps)}{text or 'done'}")
                 want_traj = True
                 return out
             messages.append(msg)

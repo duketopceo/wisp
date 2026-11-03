@@ -130,6 +130,12 @@ def eval_report(cfg: dict | None = None, decisions_file=None,
             latest[ref] = label
             if lab.get("lang"):
                 spoken[ref] = str(lab["lang"])
+    since = _eval_since(cfg)
+    if since:
+        # `[eval] since`: only turns at or after this ISO date/time (UTC)
+        # count, so the gate measures the build being shipped. Decision
+        # timestamps are UTC ISO strings, so a string compare is exact.
+        latest = {r: v for r, v in latest.items() if r >= since}
     rows, total = {}, {"labelled": 0, "correct": 0, "incorrect": 0,
                        "corrected": 0}
     langs = {}
@@ -180,7 +186,20 @@ def eval_report(cfg: dict | None = None, decisions_file=None,
         ok = gate["needs"] == 0 and (total["rate"] or 0) >= gate_rate
         gate["status"] = "PASS" if ok else "FAIL"
     return {"kinds": kinds, "total": total, "gate": gate,
-            "langs": dict(sorted(langs.items()))}
+            "langs": dict(sorted(langs.items())), "since": since}
+
+
+def _eval_since(cfg: dict | None) -> str:
+    """`[eval] since` as a validated ISO date or date-time prefix
+    ('2026-11-03' or '2026-11-03T12:00'), else '' (count every label)."""
+    raw = str(((cfg or {}).get("eval", {}) or {}).get("since", "") or "").strip()
+    if not raw:
+        return ""
+    try:
+        datetime.fromisoformat(raw)
+    except ValueError:
+        return ""
+    return raw
 
 
 def _latest_labels(labels_file=None) -> dict:
@@ -271,13 +290,18 @@ def unlabelled_text(rows: list) -> str:
 def eval_text(rep: dict) -> str:
     """Render eval_report for the terminal."""
     if not rep["total"]["labelled"]:
+        if rep.get("since"):
+            return (f"no labels since {rep['since']} ([eval] since) — use "
+                    "`wispd label set correct|incorrect`")
         return "no labels yet — use `wispd label set correct|incorrect`"
 
     def row(name, r):
         pct = "-" if r["rate"] is None else f"{100 * r['rate']:.0f}%"
         return (f"  {name:<8} {r['labelled']:>5} {r['correct']:>8} "
                 f"{r['incorrect']:>9} {r['corrected']:>9} {pct:>6}")
-    lines = ["end-to-end eval (latest label per turn):",
+    head = "end-to-end eval (latest label per turn"
+    head += f", since {rep['since']}):" if rep.get("since") else "):"
+    lines = [head,
              f"  {'kind':<8} {'turns':>5} {'correct':>8} "
              f"{'incorrect':>9} {'retried':>9} {'rate':>6}"]
     lines += [row(k, r) for k, r in rep["kinds"].items()]

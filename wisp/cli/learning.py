@@ -36,7 +36,7 @@ def _eval_args(p):
          ["wispd eval", "wispd eval --json", "wispd eval --misses",
           "wispd eval --unlabelled --limit 20"],
          {"kinds": "dict", "total": "dict", "gate": "dict",
-          "langs": "dict", "latency": "list"},
+          "langs": "dict", "since": "str", "latency": "list"},
          args=_eval_args)
 def eval_cmd(ctx, a):
     from .. import config, learn

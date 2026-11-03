@@ -302,6 +302,10 @@ judge_cap_usd = "1.00"
 # the v1 bar at 60% (2026-10-27).
 gate_rate = "60%"
 gate_min_turns = 50
+# count only turns at or after this ISO date or date-time (UTC), e.g.
+# "2026-11-03", so the gate measures the build being shipped; empty
+# counts every label on disk.
+since = ""
 
 [ui]
 # orb/overlay theme: dark | light (wispd theme <name> swaps live)
