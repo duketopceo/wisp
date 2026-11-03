@@ -1,7 +1,7 @@
 # Wisp Roadmap
 
-State: **v1.0.0-rc.2 is published as a Linux prerelease (6 assets, 2026-10-30); stable v1.0 remains a verification milestone.** Unified alignment, release completion, dev tuning, app skills and platform probe seams merged in #259 (tagged `v1.0.0-rc.1`); release and install fixes followed in #262 (tagged `v1.0.0-rc.2`), #263 and #264.
-Last updated: 2026-10-31 (read from `master` at `17c3446`). Plan of record: `docs/plans/2026-10-30-001-feat-wisp-unified-alignment-and-polish-plan.md` (building on `docs/plans/2026-10-26-0031-feat-wisp-v1-roadmap-plan.md`). This is the only roadmap; `docs/ROADMAP.md` points here.
+State: **v1.0.0-rc.2 is published as a Linux prerelease (6 assets, 2026-10-30); stable v1.0 remains a verification milestone.** GitHub's "Latest" release is still v0.9.0 because rc.2 is a prerelease. `pyproject.toml` and `wisp/__init__.py` say 1.0.0. Unified alignment, release completion, dev tuning, app skills and platform probe seams merged in #259 (tagged `v1.0.0-rc.1`); release and install fixes followed in #262 (tagged `v1.0.0-rc.2`), #263 and #264. The gauntlet, the isolated session and the default-brain change landed after rc.2 (#273-#305).
+Last updated: 2026-11-03 (read from `master` at `898258e`). Plan of record: `docs/plans/2026-10-30-001-feat-wisp-unified-alignment-and-polish-plan.md` (building on `docs/plans/2026-10-26-0031-feat-wisp-v1-roadmap-plan.md`); the gauntlet work follows `docs/plans/2026-11-01-0008-feat-wisp-gauntlet-v1-plan.md`. This is the only roadmap; `docs/ROADMAP.md` points here.
 
 ## Product target
 
@@ -9,7 +9,7 @@ A push-to-talk voice companion for Hyprland/Omarchy. You hold the hotkey and spe
 
 Fixed decisions:
 
-- Hosted models by default. Local model servers are opt-in and off (`[local] enabled`).
+- Hosted models by default: the brain is `openrouter:google/gemini-2.5-flash` (#299), and the shipped `[brain] fallback` is empty. Local model servers are opt-in and off (`[local] enabled`).
 - Linux (Omarchy/Hyprland) is the primary supported desktop. macOS/Windows probe seams in PR #259 are experimental, not supported desktop releases.
 - One end-to-end eval (`wispd eval`) is the v1 gate.
 - The Rust core in `rs/` is frozen.
@@ -38,9 +38,25 @@ Fixed decisions:
 11. Live background agents over ACP (#241, `docs/plans/2026-10-28-2249-feat-wisp-acp-agents-plan.md`): OpenCode helpers run as long-lived ACP sessions through pinned, SHA-256-verified ori and OpenCode 2.x in a private Wisp-owned OpenCode home, with live progress, spoken asks for risky steps within a fail-closed policy, follow-ups, cancel, Wisp tools and memory over an MCP bridge, and onboarding that installs the runtime and stores the OpenRouter key without omaseal. The agent now asks before running tests after it wrote executable files (#265).
 12. Verified install and update (#256, `docs/plans/2026-10-29-2302-feat-verified-install-update-plan.md`): a shared preflight for install, update and doctor; `wispd update` backs up, verifies every installed file against the release and records its tag; `--rollback` keeps user edits and restores failed updates. First-run readiness is validated end to end (#264).
 13. Hardening on 2026-10-30: spoken replies, typed answers, notes, agent tasks and dictated text stay off the command line (#252, #253, #255); model and daemon text render as plain text in the Panel (#254); a stale cua socket falls back and media keys go through Omarchy's own controls (#257); Esc while the talk key is held ends the capture and the scribble pad lets go (#258).
-14. Phase 5, PR 1 of 2 (#261, `docs/plans/2026-10-30-1200-refactor-remove-jev-router-plan.md`): replay fixtures no longer script Jev implicitly; 36 run on the act router and 7 answer-lane fixtures pin `router = chat`. The remaining Jev-pinned fixtures and tests are the delete list for PR 2.
+14. Phase 5, PR 1 of 2 (#261, `docs/plans/2026-10-30-1200-refactor-remove-jev-router-plan.md`): replay fixtures no longer script Jev implicitly; 36 run on the act router and 7 answer-lane fixtures pin `router = chat`.
 
 Also: CI flake root causes (#142), "open my email" opens Gmail when the mail handler is a browser (#147), Argus pinned at c701b2a (#151), act no longer ends a run on a narrated next step without a tool call (#153). Voice polish leftovers (B8b): captions toggle, mic failover, muted speaker keeps the answer on the clipboard, and no announcements on calls. Watchable browser lane (B14): an extension pairs with a code and works in a tab group in your own browser, off by default.  3D parts (B13): an answer can carry one small allow-listed glTF model whose parts you click to ask about.
+
+## Shipped 2026-10-31 to 2026-11-02
+
+Merged after rc.2: #273, #274 and #283-#305. None of it is in a tagged release yet.
+
+1. **Phase 5 PR 2 (#284):** the Jev router is gone from `wisp/`: `route.decide`, the `router = jev` branch, the clarify prompt, `JEV_QUESTIONS` and the Jev-pinned fixtures. Phase 5 is done.
+2. **Reply language (#286, TLY-448):** the act loop applies `lang.reply_rule`, so a non-English turn on the default router is told to reply in that language. The `lang_*` fixtures no longer pin `router = chat`.
+3. **Default brain (#299):** `openrouter:google/gemini-2.5-flash`, and gpt-4.1-mini is priced. The owner's fallback is openai/gpt-4.1-mini, but the shipped `[brain] fallback` stays empty.
+4. **Gauntlet v1** (`docs/plans/2026-11-01-0008-feat-wisp-gauntlet-v1-plan.md`; #290, #291, #297, #300-#305): a gauntlet mode in dev runs, a driver and a case battery. Cases run per session, a skip has a reason, wisp's own policy blocks are removed from gauntlet runs, and wisp's own overlay is not counted as a layer over the click. Results are in `docs/research/2026-11-02-gauntlet-reruns.md`, run on gemini-2.5-flash. Both arms scored 7/12 on the tuning cases. Held-out was 5/7 on clean master, then 4/7 and 2/7 after the click guard. The gauntlet is a diagnostic proxy, not the v1 gate.
+5. **Isolated Hyprland session (#295):** a separate session with instance-scoped input, so gauntlet and probe runs do not touch the owner's desktop. It is also U1-U3 of the grounding post-training plan.
+6. **Click grounding (#292, #298):** clicks land where aimed on mixed-scale layouts, and fractional or loosely labelled point replies are accepted.
+7. **Hermetic tests (#296, #304):** host-env tests and refreshed snapshot goldens, then a hermetic environment for the whole suite.
+8. **Settings window, step one (#288):** type scale and settings schema metadata (UI overhaul PR 1 of 7).
+9. **Terminal output and TUI (#276-#279):** a shared output core, `wispd doctor` leads with the verdict, the onboarding checklist and installer step output. PRs 1 to 5 of 9.
+10. **Site and brand:** a playable desktop with drawings (#273), the `/light/` preview (#274) and its real-time orb (#283, #285), and the flame 3D asset (#293). The site flame hero, #306, is open with changes requested.
+11. **Docs and plans:** safety-gate, RC update and CI findings from the master review (#281), multi-OS prep notes, parked (#282), the UI overhaul plan (#287), the grounding post-training plan (#294), and the stable-release gate restored (#289).
 
 ## Shipped in #259 (v1.0.0-rc.1) and the RC2 follow-ups
 
@@ -66,15 +82,25 @@ Merged 2026-10-30. The descriptions below were written while #259 was open and a
 
 ## Next, in order
 
-Owner's delivery order: installable app first, owner-labelled runs second, measured tuning third. An installable release candidate is not a waiver or a pass of the stable-v1 gate.
+Owner's delivery order: installable app first, owner-labelled runs second, measured tuning third. A release candidate is not a waiver or a pass of the stable-v1 gate.
 
-1. **Installable candidate — published as `v1.0.0-rc.2` (prerelease).** #259 and #262-#264 shipped the release-completion work, an install path and onboarding. Still pending for the owner's reinstall: real compositor and microphone checks (drawing, pointing, rings, arrows, highlights, guided steps), and the interactive voice and representative-machine update/rollback smoke tests in `docs/INSTALL.md`'s release checklist.
-   - **Agent-buildable meanwhile:** Phase 5 PR 2 — delete `route.decide`, the `router = jev` branch of `route_stage`, the clarify prompt, `JEV_QUESTIONS` and the Jev-pinned fixtures and tests, and normalise a stored `router = "jev"` to `act`; `ask_jev`, `suggest` and the grounding `jev` provider wait on **Q3** (replace the grounding fallback with an OpenRouter vision call, or drop it). Also fix the act loop so it applies `lang.reply_rule` (today a non-English turn on the default router is not told to reply in that language; the `lang_*` fixtures pass only on `router = chat`). The Rust daemon `rs/wispd` keeps its own `jev` router default; it is frozen, so changing it needs an owner decision.
-2. **Owner onboarding and real runs:** reinstall on Omarchy, complete `wispd onboard` and `wispd doctor` with hosted keys, then run a varied set of real tasks across apps. Collect labels with the existing feedback controls, `wispd eval`, and `wispd dev review`. Run `wispd dev run` only in an explicitly approved session. Judge output is not an owner label.
-3. **Accuracy and app-skill loop:** rank actual misses, preserve reproducible failing tasks, improve grounding/routing and provenance-checked app skills, then retest on held-out tasks. B3's historical baseline cannot be reconstructed without the original data; importing synthetic fixtures is not evidence of live improvement.
-4. **Stable v1:** pass the owner-labelled accuracy and clean-box gates below before tagging `v1.0.0`. Public snapshots and an optional private weekly recap are diagnostic surfaces, not proof of product success.
-5. **Model learning later:** consider actual fine-tuning or reinforcement learning only after clean outcome labels, safety review and a held-out evaluation exist. Do not rebuild the removed training stack merely to ship this candidate.
-6. **Post-v1 companions:** interactive scratchpad mini-explainers, richer on-screen 3D generation/inspection, and lightweight macOS/Windows menu-bar or tray companions. Experimental adapters do not constitute supported full desktop ports.
+1. **Land the open fixes and rerun the gauntlet.** Merge #307 (F1-F12 and Delete keys), #308 (act prompt: Enter after single-line typing, verify once) and #310 (`[eval] since` gate window; act results say "Dry run" when nothing ran). Then rerun the gauntlet on the isolated session and record the result next to `docs/research/2026-11-02-gauntlet-reruns.md`.
+   - **Choose the click finder (owner, TLY-450/TLY-451).** Click probe, 9 known targets per monitor, isolated session, 2026-11-01 to 2026-11-03: local `qwen2.5vl:3b` 7/9 and 6/9 (median miss 31-35 px, but about 30 s per click on CPU); hosted `llama-4-maverick` 4/9 and 6/9 (49-58 px); hosted `gemini-2.5-flash` 2/9 and 3/9 (102-140 px); base `lfm3-vl:2b` 0/9 grounded, because wisp cannot yet read its `[x, y]` 0-1000 answers. On 2026-11-03 the owner set every model to hosted for now, which makes clicks fast but the least accurate; local is the accurate option once it is fast. Ollama's arm64 Linux build is CPU-only, so the Apple GPU (Vulkan, Honeykrisp) is unused (TLY-485).
+   - **The owner's own config was wrong for real turns,** fixed 2026-11-03: `[cua] dry_run` was on, so clicks and typing never happened while the model reported them done, and `[ground] providers` was `a11y,jev` with the retired Jev endpoint. Now `dry_run = "false"` and `control,a11y,vlm`.
+2. **Owner reinstall from `master`,** and the real compositor and voice checks that tests cannot do: drawing, pointing, rings, arrows, highlights, guided steps, the interactive voice test, and the update/rollback smoke test in `docs/INSTALL.md`'s release checklist.
+3. **Owner-labelled real turns, to 50 or more at 60%.** Run a varied set of real tasks across apps and label them with the rating controls, `wispd dev review` and `wispd eval`. Judge output is not an owner label. The owner chose to count only turns from the shipped build: `[eval] since = "2026-11-03"` (#310). The 35 older labels (26%) stay on disk as history.
+4. **Clean-box `wispd onboard` and `wispd doctor`** on an Omarchy box with hosted keys only. Where to run it is deferred by the owner until the accuracy gate is closer.
+5. **Tag `v1.0.0`.** An `rc.3` first is optional, if the owner wants a prerelease of what is on `master` now. The tag only follows the gates below.
+
+After v1:
+
+- Debug suite (TLY-484): one opt-in switch that keeps a local, per-user record of every model call (brain, answers, grounding, speech, judge: model, prompt, reply, tokens, cost, latency) and every tool call, including OpenCode helpers. OpenCode needs no fork: its 2.x plugin hooks (`session` context and model-request hooks, `tool` execute before/after, the event stream) cover it, installed in Wisp's private OpenCode home. Brainstorm, then plan.
+- Local models on the Apple GPU (TLY-485), then teach wisp LFM-VL as the local click finder (grounding post-training below, TLY-451).
+- Grounding post-training (`docs/plans/2026-11-01-1139-feat-wisp-grounding-posttrain-plan.md`): U1-U3 are done in #295, U4-U12 are open. It ends in a measurement; switching the default grounding model is a separate decision.
+- UI overhaul (`docs/plans/2026-10-31-1754-feat-wisp-ui-overhaul-plan.md`): PR 1 of 7 is merged (#288), PRs 2-7 are open. Terminal output and TUI PRs 6-9 belong here too.
+- Multi-OS and the Rust core: parked until the Omarchy v1 gate passes (`docs/research/2026-10-31-multi-os-prep.md`, #282).
+- Model learning, only after clean outcome labels, safety review and a held-out evaluation exist. The removed training stack is not coming back for this.
+- Interactive scratchpad mini-explainers, richer on-screen 3D, and lightweight macOS/Windows menu-bar companions. Experimental adapters are not supported ports.
 
 `wisp.observer` remains the intended primary domain, not a verified deployment. Stable `v1.0.0` is not yet shipped: only the `v1.0.0-rc.2` prerelease is published, and the gates below decide the final tag.
 Publish the homepage and bootstrap only after authenticated DNS access, HTTPS,
@@ -94,13 +120,12 @@ the browser illustration.
 - [ ] `wispd onboard` and `wispd doctor` pass on a clean Omarchy box with hosted keys only.
 - [ ] Tag `v1.0.0`.
 
-Historical tally (`wispd eval`, 2026-10-28; not a current gate result): 23 labelled turns, 7 right first time (30%) — act 4/15 (9 retried), answer 0/2, launch 1/2, other 2/4. Gate set to 60% (at that snapshot, needed 27 more labelled turns and a higher rate).
+Current tally (`wispd eval`, 2026-11-03): 35 labelled turns, 9 right first time (26%): act 5/22, answer 1/4, launch 1/2, other 2/7. FAIL: the gate needs 60% over at least 50 turns, so at least 15 more labels. Most labels predate the recent fixes, so this understates the current rate.
 
 ## Open decisions
 
-- **Q3, the grounding `jev` fallback.** Replace it with an OpenRouter vision point call, or drop it. Until decided, the grounding `jev` provider, `_jev_locate`, `JEV_ENDPOINT` and the health `jev` endpoint stay. The frozen Rust daemon (`rs/wispd`) still defaults `router` to `jev` and carries `brain::ask_jev`; that needs a separate parity follow-up.
+- **Q3, the grounding `jev` fallback.** Not decided. The default `[ground] providers` in `wisp/config.py` is still `control,a11y,vlm,uitars,jev`, so `jev` is in the default chain. `JEV_ENDPOINT`, `_jev_locate` and the health `jev` endpoint still exist in `wisp/grounding.py`, `wisp/health.py` and `wisp/config.py`; `wisp/verify.py` only mentions `ask_jev` in comments. The options are to replace the fallback with an OpenRouter vision point call, or to drop it. The frozen Rust daemon (`rs/wispd`) still defaults `router` to `jev` and carries `brain::ask_jev`; that needs a separate parity follow-up.
 - **Clacky extras.** Streaming speech-to-text and barge-in shipped (#161, #162). Recommended: drop journaled organize and deferred auth for v1.
-- **Q3, Jev outside routing.** `suggest._worth_mining` calls `ask_jev`, and the grounding `jev` provider uses `JEV_ENDPOINT`. Replace the grounding fallback with an OpenRouter vision call, or drop it; Phase 5 PR 2 leaves both in place until this is decided.
 
 ## Not doing
 

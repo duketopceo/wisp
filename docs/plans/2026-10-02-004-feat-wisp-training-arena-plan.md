@@ -1,3 +1,7 @@
+---
+status: obsolete
+---
+
 # Wisp Training Arena — plan
 
 Origin: `docs/brainstorms/2026-10-02-training-arena-requirements.md` (LFG route —

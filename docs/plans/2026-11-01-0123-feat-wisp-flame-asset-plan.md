@@ -2,6 +2,7 @@
 title: Wisp Flame 3D Asset - Plan
 type: feat
 date: 2026-11-01
+status: completed
 topic: wisp-flame-asset
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
