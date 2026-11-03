@@ -504,6 +504,7 @@ Off by default. Local sources only (Hyprland window changes, the dayflow journal
 | `[dev] spend_cap_usd` | `"10"` | run-only: the cap the spend file is held to; a task starts only while the cap still covers every arm's per-task stop (`[agents] act_max_usd`). Safety key |
 | `[eval] gate_rate` | `60%` | first-time-correct fraction (0 to 1, or a percentage) `wispd eval` must reach for PASS; the v1 bar is 60%; unset prints "gate not set" and no PASS or FAIL |
 | `[eval] gate_min_turns` | `50` | labelled turns required before the gate can pass; fewer is FAIL with "needs N more labelled turns" |
+| `[eval] since` | empty | count only turns at or after this ISO date or date-time (UTC, e.g. `2026-11-03`), so the gate measures the build being shipped; older labels stay on disk; empty or invalid counts every label |
 | `[ui] theme` | `dark` | `dark` or `light`; `wispd theme <name>` swaps live |
 | `[apps]` | per OS | name to launch command map Jev resolves "open the terminal" against (`browser`, `terminal`, `files`, `vscode`, `music`, `settings`, `browser_new_tab`) |
 
