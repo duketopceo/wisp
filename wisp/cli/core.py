@@ -87,8 +87,60 @@ def daemon_install(ctx, a):
     if a.ref:
         with tempfile.TemporaryDirectory() as tmp:
             repo, commit = _export_ref(a, tmp)
-            return _install(ctx, a, pathlib.Path(tmp), repo, commit)
-    return _install(ctx, a, None, None, None)
+            src = pathlib.Path(tmp)
+            if _can_hand_off(src):
+                return _hand_off(ctx, a, src, repo, commit)
+            return _install(ctx, a, src, repo, commit)
+    return _install(ctx, a, None, None, None, _handed_deploy())
+
+
+# `install --ref` runs the exported tree's own installer in a fresh process.
+# Installing in-process overwrote the running copy's files mid-install, so a
+# module imported after the copy (new) could not find what it needed in one
+# imported before it (old) — the 2026-11-03 `refuse_links` ImportError.
+HANDOFF_ENV = "WISP_INSTALL_DEPLOY"
+
+
+def _can_hand_off(src) -> bool:
+    """Only a tree whose installer reads the handoff record can take over;
+    an older ref installs in-process, as before."""
+    core = src / "wisp" / "cli" / "core.py"
+    try:
+        return (src / "wispd").is_file() and HANDOFF_ENV in core.read_text()
+    except OSError:
+        return False
+
+
+def _hand_off(ctx, a, src, repo, commit) -> int:
+    import os
+    import subprocess
+    argv = [sys.executable, str(src / "wispd")]
+    argv += [f for f, on in (("--json", ctx.flags.json),
+                             ("--quiet", ctx.flags.quiet),
+                             ("--no-color", ctx.flags.no_color)) if on]
+    argv += ["install"]
+    argv += [f for f, on in (("--dry-run", a.dry_run),
+                             ("--from-plugin", a.from_plugin),
+                             ("--yes", a.yes)) if on]
+    env = {**os.environ, HANDOFF_ENV: json.dumps(
+        {"repo": repo, "ref": a.ref, "commit": commit})}
+    sys.stdout.flush()
+    return subprocess.run(argv, env=env).returncode
+
+
+def _handed_deploy():
+    """The deploy record a parent `install --ref` handed to this process."""
+    import os
+    raw = os.environ.get(HANDOFF_ENV)
+    if not raw:
+        return None
+    try:
+        rec = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(rec, dict) or not rec.get("commit"):
+        return None
+    return {k: rec.get(k) for k in ("repo", "ref", "commit")}
 
 
 def _export_ref(a, tmp):
@@ -113,9 +165,9 @@ def _preflight_text(ctx, rows) -> str:
                             glyphs=ctx.glyphs)
 
 
-def _install(ctx, a, src, repo, commit):
+def _install(ctx, a, src, repo, commit, handed=None):
     deploy = ({"repo": repo, "ref": a.ref, "commit": commit}
-              if src else None)
+              if src else handed)
     plugin = not a.from_plugin
 
     from .. import preflight

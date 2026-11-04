@@ -1134,7 +1134,11 @@ def install_files(dry_run: bool = False, cfg: dict | None = None,
     that `omarchy plugin update` owns)."""
     src = src or pathlib.Path(__file__).resolve().parent
     opt = config.HOME / ".local" / "opt" / "wisp"
+    # Import everything the install needs before copying over opt: when this
+    # process IS the installed copy, a module first imported after the copy
+    # would be the new version while its already-loaded peers stay old.
     from wisp import update as _update
+    from wisp import deploy as _deploy, desktop as _desktop_mod, platform as _platform, svc as _svc  # noqa: F401
     plugin = plugin and _update.plugin_managed(config.HOME, opt)
     if src == opt:
         # invoked via the ~/.local/bin symlink → __file__ resolves to
