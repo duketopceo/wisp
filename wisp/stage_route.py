@@ -5,7 +5,7 @@ wisp.pipeline.
 """
 import re
 
-def fixed_route(text: str, router: str):
+def fixed_route(text: str, router: str, teach: bool = True):
     """Routes decided locally, as (choice, detail).
     An explicit 'wisp agent ...' prefix wins,
     then router off; a voice-taught routine utterance goes to learn
@@ -51,6 +51,10 @@ def fixed_route(text: str, router: str):
     goal = walkthrough_run.walk_intent(text)
     if goal:
         return "walkthrough", goal   # a spoken, pointed lesson
+    if teach:
+        goal = walkthrough_run.teach_intent(text)
+        if goal:
+            return "walkthrough", goal   # "how do I X" teaches, not does
     if router == "act":
         return "act", None
     if router == "chat":
@@ -140,7 +144,8 @@ def route_stage(ctx) -> bool:
     route_start = sp.now()
     router = cfg.get("brain", {}).get("router", "act")
     router = router if router in ("act", "chat", "off") else "act"
-    fixed = fixed_route(text, router)
+    teach = str(cfg.get("teach", {}).get("auto", "true")).lower() != "false"
+    fixed = fixed_route(text, router, teach)
     fast_rule = None
     if fixed == ("act", None) and router == "act":
         fast = fast_route(text, harness.get("apps"), cfg)
