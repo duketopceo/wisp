@@ -127,15 +127,9 @@ Item {
     }
   }
 
-  // ask chips leave on their own a few seconds after the tap
+  // ask chips leave on their own a few seconds after the tap (the timer
+  // lives inside the window: `layer` is not in scope at the root)
   readonly property int chipsSeq: svc && svc.chips ? svc.chips.seq : 0
-  onChipsSeqChanged: chipsLeave.restart()
-  Timer {
-    id: chipsLeave
-    interval: ChipsLib.SHOW_MS
-    running: layer.chipsShown
-    onTriggered: layer.askChipsItem.expired = true
-  }
 
   Timer {
     interval: 33
@@ -193,6 +187,17 @@ Item {
         interval: Cursor.dwellMs(root.svc.answer)
         running: layer.bubbleShown && !layer.bubbleHovered && !layer.modelHovered && root.svc.confirm === null
         onTriggered: root.bubbleDismissed = true
+      }
+
+      Timer {
+        id: chipsLeave
+        interval: ChipsLib.SHOW_MS
+        running: layer.chipsShown
+        onTriggered: layer.askChipsItem.expired = true
+      }
+      Connections {
+        target: root
+        function onChipsSeqChanged() { chipsLeave.restart(); }
       }
 
       // this window's screen and the overlay's label pill size feed the

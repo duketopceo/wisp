@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import "lib/state.js" as Reader
 import "lib/copy.js" as Copy
 import "lib/tokens.js" as Tokens
@@ -590,7 +591,7 @@ Item {
   }
 
   // --- theme tokens -----------------------------------------------------
-  readonly property string themeDir: Color.currentThemePath
+  readonly property string themeDir: Commons.Color.currentThemePath
 
   function loadTokens() {
     var colors = "", shellToml = "";
@@ -622,7 +623,7 @@ Item {
   // Omarchy swaps the theme directory and then pushes only these colors,
   // so a file watch alone can miss the change: re-read on either signal.
   Connections {
-    target: Color
+    target: Commons.Color
     function onAccentChanged() { colorsView.reload(); }
     function onBackgroundChanged() { colorsView.reload(); }
     function onForegroundChanged() { colorsView.reload(); }
