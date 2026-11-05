@@ -354,6 +354,12 @@ When the default speaker is muted or at 0% (read with `wpctl`, else `pactl`), Wi
 |-----|---------|---------|
 | `on_calls` | `"true"` | hold announcements nobody asked for (a finished background agent, a routine) while a call or screen share is on. Calls and shares are read from the open windows (`hyprctl clients`: Zoom, Teams, Webex, Meet and huddle windows, "is sharing your screen" titles). Held toasts go out when it ends, checked every 20 s, at most 20 kept. Errors and the toast for a turn you started are never held. Uses the same gate as suggestion cards (`suggest_policy`) |
 
+## [teach] — learner phrasings
+
+| key | default | meaning |
+|-----|---------|---------|
+| `auto` | `"true"` | "show me how to <task>", "teach me <task>" and "I want to learn <task>" start a walkthrough, and each step adds one sentence on why it matters. `"false"` sends those phrasings down the normal route. A plain "how do I <task>" is always answered in a sentence |
+
 ## [notify] — desktop toasts
 
 | key | meaning |
