@@ -1,0 +1,95 @@
+{
+ "id": "gimp-layer-eye",
+ "app": "gimp",
+ "goal": "show me what the eye icon in Layers does",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "hover",
+ "expected_target": {
+  "label": "Layer visibility eye",
+  "rect": [
+   528,
+   52,
+   24,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "Move",
+   "rect": [
+    6,
+    30,
+    90,
+    30
+   ]
+  },
+  {
+   "label": "Crop",
+   "rect": [
+    6,
+    66,
+    90,
+    30
+   ]
+  },
+  {
+   "label": "Paintbrush",
+   "rect": [
+    6,
+    102,
+    90,
+    30
+   ]
+  },
+  {
+   "label": "Eraser",
+   "rect": [
+    6,
+    138,
+    90,
+    30
+   ]
+  },
+  {
+   "label": "Text",
+   "rect": [
+    6,
+    174,
+    90,
+    30
+   ]
+  },
+  {
+   "label": "Top-left crop handle",
+   "rect": [
+    110,
+    40,
+    12,
+    12
+   ]
+  },
+  {
+   "label": "Bottom-right crop handle",
+   "rect": [
+    498,
+    328,
+    12,
+    12
+   ]
+  },
+  {
+   "label": "Layer visibility eye",
+   "rect": [
+    528,
+    52,
+    24,
+    24
+   ]
+  }
+ ]
+}

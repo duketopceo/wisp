@@ -1,0 +1,68 @@
+{
+ "id": "omarchy-display-settings",
+ "app": "omarchy",
+ "goal": "change the display scaling in settings",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "Display",
+  "rect": [
+   10,
+   74,
+   220,
+   34
+  ]
+ },
+ "elements": [
+  {
+   "label": "Appearance",
+   "rect": [
+    10,
+    34,
+    220,
+    34
+   ]
+  },
+  {
+   "label": "Display",
+   "rect": [
+    10,
+    74,
+    220,
+    34
+   ]
+  },
+  {
+   "label": "Keyboard",
+   "rect": [
+    10,
+    114,
+    220,
+    34
+   ]
+  },
+  {
+   "label": "Network",
+   "rect": [
+    10,
+    154,
+    220,
+    34
+   ]
+  },
+  {
+   "label": "Power",
+   "rect": [
+    10,
+    194,
+    220,
+    34
+   ]
+  }
+ ]
+}

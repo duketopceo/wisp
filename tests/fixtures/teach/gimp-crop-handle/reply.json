@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Drag the corner handle to resize the crop.\", \"label\": \"Top-left crop handle\", \"why\": \"Dragging a corner resizes the box.\"}]}"
+}

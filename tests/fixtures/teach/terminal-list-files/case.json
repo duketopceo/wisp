@@ -1,0 +1,24 @@
+{
+ "id": "terminal-list-files",
+ "app": "terminal",
+ "goal": "show me how to list the files in this folder",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "voice-confirm",
+ "expected_target": null,
+ "elements": [
+  {
+   "label": "New tab",
+   "rect": [
+    600,
+    2,
+    32,
+    18
+   ]
+  }
+ ]
+}

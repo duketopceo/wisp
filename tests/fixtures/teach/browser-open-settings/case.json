@@ -1,0 +1,68 @@
+{
+ "id": "browser-open-settings",
+ "app": "browser",
+ "goal": "open the browser settings",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "Menu",
+  "rect": [
+   600,
+   28,
+   32,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "Back",
+   "rect": [
+    8,
+    28,
+    28,
+    24
+   ]
+  },
+  {
+   "label": "Address bar",
+   "rect": [
+    48,
+    28,
+    440,
+    24
+   ]
+  },
+  {
+   "label": "Bookmark this page",
+   "rect": [
+    496,
+    28,
+    28,
+    24
+   ]
+  },
+  {
+   "label": "Menu",
+   "rect": [
+    600,
+    28,
+    32,
+    24
+   ]
+  },
+  {
+   "label": "New tab",
+   "rect": [
+    560,
+    2,
+    32,
+    18
+   ]
+  }
+ ]
+}
