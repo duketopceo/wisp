@@ -343,6 +343,13 @@ When the default speaker is muted or at 0% (read with `wpctl`, else `pactl`), Wi
 |-----|---------|---------|
 | `on_calls` | `"true"` | hold announcements nobody asked for (a finished background agent, a routine) while a call or screen share is on. Calls and shares are read from the open windows (`hyprctl clients`: Zoom, Teams, Webex, Meet and huddle windows, "is sharing your screen" titles). Held toasts go out when it ends, checked every 20 s, at most 20 kept. Errors and the toast for a turn you started are never held. Uses the same gate as suggestion cards (`suggest_policy`) |
 
+## [teach] — learner phrasings
+
+| key | default | meaning |
+|-----|---------|---------|
+| `auto` | `true` | "show me how to <task>", "teach me <task>" and "I want to learn <task>" start a walkthrough, and each step adds one sentence on why it matters. `false` sends those phrasings down the normal route. With `[brain] router = "off"` they clarify instead and no walkthrough starts. A plain "how do I <task>" takes the normal route (a short answer, or the act loop when it names an action such as "open") |
+| `turn_budget` | `6` | the most planner calls one walkthrough may make (0 to 20). Wisp plans one to three steps, waits for you to do them, looks at the screen again and plans the next few; each of those looks counts as one turn. When the budget runs out Wisp wraps up out loud and says what you have done so far. `0` wraps up without planning anything |
+
 ## [notify] — desktop toasts
 
 | key | meaning |

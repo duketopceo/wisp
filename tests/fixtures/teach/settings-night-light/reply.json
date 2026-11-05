@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Open Display settings.\", \"label\": \"Display\", \"why\": \"Night light is a display setting.\", \"kind\": \"click\"}, {\"say\": \"Turn on Night light.\", \"label\": \"Night light toggle\", \"why\": \"It warms the screen colours at night.\", \"kind\": \"click\"}]}"
+}

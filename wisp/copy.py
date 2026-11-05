@@ -437,6 +437,8 @@ STRINGS = {
     "set.verify.pixel_eps.help": "How much a pixel channel must change before the verify check counts it as changed.",
     "set.verify.region_px.label": "verify region size",
     "set.verify.region_px.help": "The side of the square screen region the verify check inspects around a click, in pixels.",
+    "set.teach.turn_budget.label": "walkthrough planning turns",
+    "set.teach.turn_budget.help": "How many times Wisp may look at your screen and plan the next steps in one walkthrough. At zero it wraps up out loud.",
 }
 
 _DASH = re.compile(r"\s*[—–]\s*")

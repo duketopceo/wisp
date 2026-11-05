@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Open the File menu.\", \"label\": \"File\", \"why\": \"Export lives in the File menu.\", \"kind\": \"click\"}, {\"say\": \"Choose Export as PDF.\", \"label\": \"Export as PDF\", \"why\": \"This turns the document into a PDF file.\", \"kind\": \"click\"}, {\"say\": \"Press Save.\", \"label\": \"Save\", \"why\": \"Saving writes the file to disk.\", \"kind\": \"click\"}]}"
+}

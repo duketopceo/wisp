@@ -418,7 +418,8 @@ class PauseAndResume(unittest.TestCase):
     def test_continue_resumes_after_the_manual_step_without_repeats(self):
         self.stop_after_first_step()
         sc = Script([W("a"), W("b"), W("b"), W("c"), W("c"), W("d")])
-        out = wr.run("", {}, sc.state, env=sc.env(), resume=wr.paused())
+        with mock.patch.object(wr, "plan", return_value=[]):   # nothing left
+            out = wr.run("", {}, sc.state, env=sc.env(), resume=wr.paused())
         self.assertEqual(sc.said[0], "Picking up where we left off: "
                                      "make a repo.")
         self.assertEqual(sc.said[1:], ["two", "three"])   # "one" not again
@@ -489,7 +490,7 @@ class AskWhatYouHave(unittest.TestCase):
         seen, asked = {}, []
 
         def chat(messages, cfg, timeout=0):
-            seen["p"] = messages[0]["content"]
+            seen.setdefault("p", messages[0]["content"])   # the first plan
             return {"content": '{"steps":[{"say":"go"}]}'}
 
         def ask(q, opts=None):

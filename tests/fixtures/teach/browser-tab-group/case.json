@@ -1,0 +1,131 @@
+{
+ "id": "browser-tab-group",
+ "app": "browser",
+ "goal": "put this tab in a new tab group",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "Tab menu",
+  "rect": [
+   596,
+   28,
+   32,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "Tab menu",
+   "rect": [
+    596,
+    28,
+    32,
+    24
+   ]
+  }
+ ],
+ "after": {
+  "Tab menu": 1
+ },
+ "then": [
+  {
+   "capture": "capture-1.png",
+   "reply": "reply-1.json",
+   "elements": [
+    {
+     "label": "Tab menu",
+     "rect": [
+      596,
+      28,
+      32,
+      24
+     ]
+    },
+    {
+     "label": "Add tab to new group",
+     "rect": [
+      440,
+      56,
+      188,
+      22
+     ]
+    },
+    {
+     "label": "Close other tabs",
+     "rect": [
+      440,
+      80,
+      188,
+      22
+     ]
+    }
+   ],
+   "after": {
+    "Add tab to new group": 2
+   }
+  },
+  {
+   "capture": "capture-2.png",
+   "reply": "reply-2.json",
+   "elements": [
+    {
+     "label": "Tab menu",
+     "rect": [
+      596,
+      28,
+      32,
+      24
+     ]
+    },
+    {
+     "label": "Group name",
+     "rect": [
+      200,
+      160,
+      240,
+      24
+     ]
+    },
+    {
+     "label": "Done",
+     "rect": [
+      450,
+      160,
+      60,
+      24
+     ]
+    }
+   ],
+   "after": {
+    "Done": 3
+   }
+  },
+  {
+   "capture": "capture-3.png",
+   "reply": "reply-3.json",
+   "elements": [
+    {
+     "label": "Tab menu",
+     "rect": [
+      596,
+      28,
+      32,
+      24
+     ]
+    }
+   ],
+   "after": {}
+  }
+ ],
+ "expected_delivery": [
+  "Tab menu",
+  "Add tab to new group",
+  "Done"
+ ],
+ "expected_plans": 3
+}

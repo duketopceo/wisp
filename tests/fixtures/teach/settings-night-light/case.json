@@ -1,0 +1,122 @@
+{
+ "id": "settings-night-light",
+ "app": "settings",
+ "goal": "turn on night light on a schedule",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "Display",
+  "rect": [
+   8,
+   30,
+   120,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "Display",
+   "rect": [
+    8,
+    30,
+    120,
+    24
+   ]
+  },
+  {
+   "label": "Sound",
+   "rect": [
+    8,
+    58,
+    120,
+    24
+   ]
+  }
+ ],
+ "after": {
+  "Display": 1
+ },
+ "then": [
+  {
+   "capture": "capture-1.png",
+   "reply": "reply-1.json",
+   "elements": [
+    {
+     "label": "Display",
+     "rect": [
+      8,
+      30,
+      120,
+      24
+     ]
+    },
+    {
+     "label": "Schedule",
+     "rect": [
+      160,
+      100,
+      120,
+      24
+     ]
+    }
+   ],
+   "after": {
+    "Schedule": 2
+   }
+  },
+  {
+   "capture": "capture-2.png",
+   "reply": "reply-2.json",
+   "elements": [
+    {
+     "label": "Display",
+     "rect": [
+      8,
+      30,
+      120,
+      24
+     ]
+    },
+    {
+     "label": "Sunset to sunrise",
+     "rect": [
+      160,
+      130,
+      160,
+      24
+     ]
+    }
+   ],
+   "after": {
+    "Sunset to sunrise": 3
+   }
+  },
+  {
+   "capture": "capture-3.png",
+   "reply": "reply-3.json",
+   "elements": [
+    {
+     "label": "Display",
+     "rect": [
+      8,
+      30,
+      120,
+      24
+     ]
+    }
+   ],
+   "after": {}
+  }
+ ],
+ "expected_delivery": [
+  "Display",
+  "Schedule",
+  "Sunset to sunrise"
+ ],
+ "expected_plans": 4
+}

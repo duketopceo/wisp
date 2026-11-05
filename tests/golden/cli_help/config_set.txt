@@ -130,6 +130,8 @@ advanced:
                                default 16; 1 to 255
   verify.region_px             Side of the square pixel region the verify diff inspects around a click point
                                default 96; 8 to 1024
+  teach.turn_budget            Most planner calls one walkthrough may make before Wisp wraps up
+                               default 6; 0 to 20
 
 Examples:
   wispd config set audio.seconds 30
