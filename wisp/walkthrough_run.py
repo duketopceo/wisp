@@ -19,6 +19,7 @@ import re
 import time
 
 from . import config
+from . import step_kinds
 from . import walkthrough as _wt
 
 PAUSED_FILE = config.DATA_DIR / "walkthrough.json"
@@ -148,8 +149,14 @@ _PROMPT = (
     "spoken instruction\", \"label\": \"the exact on-screen text of the "
     "control to use, or empty\", \"why\": \"one short sentence on why "
     "this step matters or what it does, so the user learns the idea and "
-    "not just the clicks\"}]}. At most %d steps. The first step must "
-    "be doable from the current screen. Keep each \"say\" under 25 words "
+    "not just the clicks\", \"kind\": \"click, hover, area, handle, "
+    "motion or voice-confirm\"}]}. Pick each kind by one rule: if the "
+    "app will visibly react to the action, use click (press a control) or "
+    "hover (reveal something by resting on it). If it will not, use area "
+    "(a region matters), handle (something to grab), motion (a drag or "
+    "swipe) or voice-confirm (typing text or setting a value) and tell the "
+    "user to say continue when done. Never call typing a click. At most %d steps. "
+    "The first step must be doable from the current screen. Keep each \"say\" under 25 words "
     "and each \"why\" under 20, plain speech, no markdown. The desktop is "
     "Linux with Hyprland and Omarchy: there is no Activities overview or "
     "dock, apps open from the launcher (Super+Space). Task: %s")
@@ -182,7 +189,11 @@ def parse_steps(raw: str, max_steps: int = _wt.MAX_STEPS) -> list:
                 and isinstance(it.get("y"), (int, float)):
             point = {"x": int(it["x"]), "y": int(it["y"]), "label": label}
         why = " ".join(str(it.get("why") or "").split())[:200]
-        out.append(_wt.Step(text=say, point=point, label=label, why=why))
+        kind = step_kinds.settle_kind(step_kinds.parse_kind(it.get("kind")),
+                                      say, label)
+        out.append(_wt.Step(text=say, point=point, label=label, why=why,
+                            kind=kind,
+                            radius=step_kinds.parse_radius(it.get("radius"))))
         if len(out) >= max_steps:
             break
     return out
@@ -302,7 +313,8 @@ def _dump(wt, planned, current) -> dict:
     steps = []
     for s in planned:
         steps.append({"text": s.text, "label": s.label, "point": s.point,
-                      "why": s.why, "done": wt.has_completed(s)})
+                      "why": s.why, "kind": s.kind, "radius": s.radius,
+                      "done": wt.has_completed(s)})
     return {"goal": wt.goal, "steps": steps,
             "current": current.text if current is not None else "",
             "ts": time.time()}
@@ -343,10 +355,19 @@ def last_finished(path=None) -> dict | None:
     return data if isinstance(data, dict) and data.get("steps") else None
 
 
+def _kind_fields(d: dict) -> dict:
+    """Kind and radius from a saved step; dumps from before kinds existed
+    carry neither and read back as plain clicks."""
+    if "kind" not in d:
+        return {}
+    return {"kind": step_kinds.parse_kind(d.get("kind")),
+            "radius": step_kinds.parse_radius(d.get("radius"))}
+
+
 def steps_from(data: dict) -> list:
     return [_wt.Step(text=d["text"], point=d.get("point"),
                      label=d.get("label") or "",
-                     why=d.get("why") or "")
+                     why=d.get("why") or "", **_kind_fields(d))
             for d in data.get("steps", []) if d.get("text")]
 
 
@@ -407,7 +428,8 @@ def _restore(data: dict, current_done: bool = True):
     for d in data["steps"]:
         planned.append(_wt.Step(text=d["text"], point=d.get("point"),
                                 label=d.get("label") or "",
-                                why=d.get("why") or ""))
+                                why=d.get("why") or "",
+                                **_kind_fields(d)))
     wt = _wt.Walkthrough(data["goal"], planned)
     for s, d in zip(planned, data["steps"]):
         if d.get("done") or (current_done and cur and s.text == cur):

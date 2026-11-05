@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Drag report.txt onto the Documents folder in the sidebar.\", \"label\": \"Documents\", \"why\": \"Dropping a file on a folder moves it there.\"}]}"
+}

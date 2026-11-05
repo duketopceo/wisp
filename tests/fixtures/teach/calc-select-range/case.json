@@ -1,0 +1,33 @@
+{
+ "id": "calc-select-range",
+ "app": "libreoffice",
+ "goal": "select cells A1 to C3 in Calc",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "area",
+ "expected_target": {
+  "label": "A1:C3",
+  "rect": [
+   40,
+   70,
+   270,
+   84
+  ],
+  "radius": 0
+ },
+ "elements": [
+  {
+   "label": "File",
+   "rect": [
+    8,
+    26,
+    48,
+    20
+   ]
+  }
+ ]
+}

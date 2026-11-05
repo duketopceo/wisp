@@ -437,3 +437,207 @@ def keystroke_guard(cfg: dict, arg: str = "") -> str | None:
         trace.emit(trace.current(), "gate_stop", "policy",
                    {"tool": "keystroke", "result": out[:200]})
     return out
+
+
+# -- offline teaching harness (U1) ---------------------------------------------
+#
+# Scores recorded planner replies against expected kind and target region.
+# It never calls a model and never touches the network: a case without a
+# recorded reply is an error, not a skip.
+
+TEACH_FIXTURES = (pathlib.Path(__file__).resolve().parent.parent
+                  / "tests" / "fixtures" / "teach")
+# Slack, in capture pixels, around the expected region before a point counts
+# as a miss. Measured from the U1 fixtures: the smallest labelled control is
+# 24x24 px in a 640x400 capture, so one half of that. U4 owns the real
+# click radius; this is only the scoring tolerance.
+TEACH_REGION_SLACK_PX = 12
+TEACH_KINDS = ("click", "hover", "area", "handle", "motion", "voice-confirm")
+# score classes, in the order the table prints them
+CORRECT, WRONG_TARGET, WRONG_KIND, NO_ELEMENT = (
+    "correct", "wrong-target", "wrong-kind", "no-element")
+TEACH_CLASSES = (CORRECT, WRONG_TARGET, WRONG_KIND, NO_ELEMENT)
+
+
+class TeachCaseError(ValueError):
+    """A teach case is malformed or has no recorded reply."""
+
+
+def _norm(s) -> str:
+    return " ".join(str(s or "").lower().split())
+
+
+def _first_item(raw: str):
+    """The first usable step object in a reply, parsed the way
+    walkthrough_run.parse_steps does (first JSON object, fences and prose
+    tolerated, entries without text dropped). Kind is read from here
+    because parse_steps does not carry it yet."""
+    text = (raw or "").strip()
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    try:
+        data = json.loads(text[start:end + 1])
+    except ValueError:
+        return None
+    items = data.get("steps") if isinstance(data, dict) else None
+    for it in items if isinstance(items, list) else []:
+        if isinstance(it, str):
+            it = {"say": it}
+        if isinstance(it, dict) and str(it.get("say") or it.get("text") or ""
+                                        ).strip():
+            return it
+    return None
+
+
+class TeachCase:
+    """One loaded case. `ax_tree` and `guide` are hooks for later units
+    (U7 recorded accessibility tree, U9 app guide); absent by default and
+    not used by scoring yet."""
+
+    def __init__(self, root: pathlib.Path, data: dict, raw_reply: str):
+        self.root, self.data, self.raw_reply = root, data, raw_reply
+        self.id = data["id"]
+        self.app = data.get("app", "")
+        self.goal = data["goal"]
+        self.expected_kind = data.get("expected_kind")
+        self.expected_target = data.get("expected_target")
+        self.elements = data.get("elements") or []
+        self.size = tuple(data.get("size") or ())
+        self.ax_tree = data.get("ax_tree")
+        self.guide = data.get("guide")
+
+    @property
+    def capture(self) -> pathlib.Path:
+        return self.root / self.data.get("capture", "capture.png")
+
+
+def load_teach_case(case_dir) -> TeachCase:
+    d = pathlib.Path(case_dir)
+    try:
+        data = json.loads((d / "case.json").read_text())
+    except (OSError, ValueError) as e:
+        raise TeachCaseError(f"{d.name}: unreadable case.json ({e})")
+    for k in ("id", "goal", "expected_kind"):
+        if k not in data:
+            raise TeachCaseError(f"{d.name}: case.json lacks {k!r}")
+    if data["expected_kind"] not in TEACH_KINDS:
+        raise TeachCaseError(
+            f"{data['id']}: expected_kind {data['expected_kind']!r} is not "
+            f"one of {TEACH_KINDS}")
+    if data["expected_kind"] != "voice-confirm" \
+            and not data.get("expected_target"):
+        raise TeachCaseError(f"{data['id']}: expected_target is required "
+                             f"for kind {data['expected_kind']!r}")
+    if not (d / data.get("capture", "capture.png")).is_file():
+        raise TeachCaseError(f"{data['id']}: capture image is missing")
+    rp = d / data.get("reply", "reply.json")
+    if not rp.is_file():
+        raise TeachCaseError(
+            f"{data['id']}: no recorded planner reply at {rp.name}; "
+            "record one (the harness never calls a model)")
+    try:
+        raw = json.loads(rp.read_text()).get("raw")
+    except (OSError, ValueError, AttributeError) as e:
+        raise TeachCaseError(f"{data['id']}: unreadable reply ({e})")
+    if not isinstance(raw, str):
+        raise TeachCaseError(f"{data['id']}: reply.json needs a string 'raw'")
+    return TeachCase(d, data, raw)
+
+
+def _point_for(case: TeachCase, item: dict):
+    """Label-first, like walkthrough_run.snap_point: the recorded element
+    with that label, else the reply's own x/y, else None."""
+    label = _norm(item.get("label"))
+    if label:
+        for e in case.elements:
+            if _norm(e.get("label")) == label:
+                x, y, w, h = e["rect"]
+                return (x + w / 2.0, y + h / 2.0)
+    if isinstance(item.get("x"), (int, float)) \
+            and isinstance(item.get("y"), (int, float)):
+        return (float(item["x"]), float(item["y"]))
+    return None
+
+
+def _in_region(pt, target: dict) -> bool:
+    x, y, w, h = target["rect"]
+    slack = target.get("radius")
+    slack = TEACH_REGION_SLACK_PX if slack is None else slack
+    return (x - slack <= pt[0] <= x + w + slack
+            and y - slack <= pt[1] <= y + h + slack)
+
+
+def score_teach_case(case: TeachCase) -> dict:
+    """First-step verdict for one case. Order: no-element, wrong-target,
+    wrong-kind, correct. A reply that omits `kind` when the case expects
+    one is wrong-kind (the planner's kind field is optional today)."""
+    item = _first_item(case.raw_reply)
+    got_kind = _norm(item.get("kind")) if item else ""
+    pt = _point_for(case, item) if item else None
+    need_point = case.expected_kind != "voice-confirm"
+    target_ok = True
+    if item is None:
+        verdict = NO_ELEMENT
+    elif need_point and pt is None:
+        verdict = NO_ELEMENT
+    else:
+        if need_point:
+            target_ok = _in_region(pt, case.expected_target)
+        if not target_ok:
+            verdict = WRONG_TARGET
+        elif got_kind != case.expected_kind:
+            verdict = WRONG_KIND
+        else:
+            verdict = CORRECT
+    return {"id": case.id, "app": case.app, "verdict": verdict,
+            "expected_kind": case.expected_kind, "got_kind": got_kind or None,
+            "target_ok": target_ok and item is not None
+            and (pt is not None or not need_point),
+            "point": pt}
+
+
+class TeachTable:
+    def __init__(self, rows: list):
+        self.rows = rows
+
+    def counts(self) -> dict:
+        c = {k: 0 for k in TEACH_CLASSES}
+        for r in self.rows:
+            c[r["verdict"]] += 1
+        return c
+
+    def target_only(self) -> int:
+        """Cases whose first step lands on the right target, whatever the
+        kind: how much of the miss is the optional kind field."""
+        return sum(1 for r in self.rows if r["target_ok"])
+
+    def first_time_correct(self) -> float:
+        return self.counts()[CORRECT] / len(self.rows) if self.rows else 0.0
+
+    def render(self) -> str:
+        c, n = self.counts(), len(self.rows)
+        lines = [f"{'case':<28} {'app':<12} {'expect':<14} verdict"]
+        for r in self.rows:
+            lines.append(f"{r['id']:<28} {r['app']:<12} "
+                         f"{r['expected_kind']:<14} {r['verdict']}")
+        lines += ["", "| class | cases |", "|---|---|",
+                  f"| first-time-correct | {c[CORRECT]}/{n} |",
+                  f"| wrong-target | {c[WRONG_TARGET]} |",
+                  f"| wrong-kind | {c[WRONG_KIND]} |",
+                  f"| no-element | {c[NO_ELEMENT]} |",
+                  f"| (target right, any kind) | {self.target_only()}/{n} |"]
+        return "\n".join(lines)
+
+
+def score_teach_cases(directory=None) -> TeachTable:
+    """Score every case directory under `directory` (default: the checked
+    in fixtures). Raises TeachCaseError for a case with no recorded reply
+    or a malformed one. Offline: reads files only."""
+    root = pathlib.Path(directory or TEACH_FIXTURES)
+    dirs = sorted(p for p in root.iterdir()
+                  if p.is_dir() and (p / "case.json").exists()) \
+        if root.is_dir() else []
+    if not dirs:
+        raise TeachCaseError(f"no teach cases under {root}")
+    return TeachTable([score_teach_case(load_teach_case(d)) for d in dirs])
