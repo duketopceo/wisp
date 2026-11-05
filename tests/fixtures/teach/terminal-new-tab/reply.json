@@ -1,0 +1,3 @@
+{
+ "raw": "```json\n{\"steps\": [{\"say\": \"Click the plus button at the top right.\", \"label\": \"New tab\", \"why\": \"Tabs let you keep several shells open side by side.\"}]}\n```"
+}

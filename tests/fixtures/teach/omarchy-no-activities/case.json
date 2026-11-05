@@ -1,0 +1,24 @@
+{
+ "id": "omarchy-no-activities",
+ "app": "omarchy",
+ "goal": "open the Activities overview to find an app",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "voice-confirm",
+ "expected_target": null,
+ "elements": [
+  {
+   "label": "Workspace indicator",
+   "rect": [
+    4,
+    2,
+    90,
+    18
+   ]
+  }
+ ]
+}

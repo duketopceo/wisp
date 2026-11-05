@@ -840,6 +840,11 @@ def build_parser():
                    default="live",
                    help="live (default): the owner's desktop; isolated: "
                    "the headless Hyprland from scripts/isolated_session.py")
+    p.add_argument("--teach-offline", nargs="?", const="", default=None,
+                   metavar="DIR",
+                   help="score the recorded teach cases (default: "
+                   "tests/fixtures/teach) and print the table; offline, "
+                   "calls no model, ignores every other flag")
     p.add_argument("--isolated-env", default="",
                    help="the isolated session's env file (default: "
                    "$WISP_ISOLATED_ENV or the state dir's isolated.env)")
@@ -848,6 +853,13 @@ def build_parser():
 
 def main(argv=None, deps=None, out=print) -> int:
     args = build_parser().parse_args(argv)
+    if args.teach_offline is not None:
+        try:
+            out(gmode.score_teach_cases(args.teach_offline or None).render())
+        except gmode.TeachCaseError as e:
+            out(f"teach: {e}")
+            return EXIT_USAGE
+        return EXIT_OK
     deps = deps or Deps()
     try:
         cases = load_cases(args.cases)
