@@ -58,6 +58,8 @@ class Step:
     label: str = ""
     key: str = ""
     why: str = ""
+    kind: str = "click"
+    radius: int | None = None
 
     def __post_init__(self) -> None:
         if not self.label and isinstance(self.point, dict):
