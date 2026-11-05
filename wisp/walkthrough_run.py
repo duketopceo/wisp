@@ -206,7 +206,8 @@ def plan(goal: str, cfg: dict, image_b64: str | None = None,
             else f"data:image/png;base64,{image_b64}"
         content = [{"type": "text", "text": content},
                    {"type": "image_url", "image_url": {"url": url}}]
-    out = chat([{"role": "user", "content": content}], cfg, timeout=45)
+    out = chat([{"role": "user", "content": content}],
+               brain.with_role(cfg, "teach"), timeout=45)
     return parse_steps(out.get("content", ""))
 
 

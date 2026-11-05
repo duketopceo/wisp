@@ -76,6 +76,7 @@ def record_start(state=None) -> dict:
         device = voice_polish.mic_device(cfg_now)
         ducked_vol = voice_polish.duck_speaker(cfg_now)
     except Exception:
+        cfg_now = {}
         device = ""
         ducked_vol = None
     rec = {"out": out, "ducked_vol": ducked_vol}
@@ -103,6 +104,8 @@ def record_start(state=None) -> dict:
             _note_mic_failover(state, device)
         from . import stt_stream
         stt_stream.begin(out, proc)   # streams finished chunks while held
+        from . import warm
+        warm.begin(cfg_now)
         rec["t0"] = time.monotonic()
         return rec
     except BaseException:
@@ -161,9 +164,11 @@ def _record_discard(rec: dict, state=None) -> None:
     """Release audio and the unconsumed stream; never transcribe a tail."""
     rec["capture_discarded"] = True
     _record_cleanup(rec, state)
-    from . import stt_stream
+    from . import stt_stream, warm
     with suppress(Exception):
         stt_stream.discard(rec.get("out"))
+    with suppress(Exception):
+        warm.discard()
 
 
 def _record_finish(rec: dict, state=None, settled: bool = False
@@ -261,6 +266,8 @@ def transcribe(wav: pathlib.Path, cfg: dict) -> str:
     provider = stt["provider"]
     from . import stt_stream
     streamer = stt_stream.claim(wav)
+    from . import warm
+    warm.claim()            # key-up: the warm-up finishes on its own
     if streamer is not None and provider == "openai":
         text = streamer.finish()    # chunks sent while the key was held
         if text is not None:

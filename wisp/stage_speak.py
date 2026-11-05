@@ -349,6 +349,7 @@ def _answer(ctx) -> None:
     point is published when the sentence holding its tag starts playing;
     with voice off they all land with the `speaking` transition. Sets
     ctx.reply."""
+    from . import brain
     from . import points as _points
     from . import trace as _trace
     from . import voice_polish
@@ -461,8 +462,8 @@ def _answer(ctx) -> None:
                 _extra["clip_image"] = ctx.clip_image
         if getattr(ctx, "scribble_hint", ""):
             _extra["scribble_hint"] = ctx.scribble_hint
-        reply = pl.ask_chat(text, cfg, ctx.session_text,
-                            image_b64=ctx.shot_b64,
+        reply = pl.ask_chat(text, brain.with_role(cfg, "fast"),
+                            ctx.session_text, image_b64=ctx.shot_b64,
                             on_delta=_delta, meta=_meta, **_extra)
         sp.fire("first_token")  # non-streaming brains
         _trace.emit(turn, "brain_call", "brain",
