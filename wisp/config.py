@@ -532,6 +532,12 @@ captions = true
 # hold announcements nobody asked for while a call or screen share is on
 on_calls = true
 
+[teach]
+# "show me how to X", "teach me X" and "I want to learn X" start a
+# walkthrough; false sends those phrasings down the normal route.
+# [brain] router = "off" overrides it (those turns clarify instead).
+auto = true
+
 [notify]
 # desktop toasts (D-Bus org.freedesktop.Notifications; notify-send fallback)
 enabled = true
