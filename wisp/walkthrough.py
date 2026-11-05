@@ -57,6 +57,7 @@ class Step:
     point: dict | None = None
     label: str = ""
     key: str = ""
+    why: str = ""
 
     def __post_init__(self) -> None:
         if not self.label and isinstance(self.point, dict):

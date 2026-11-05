@@ -270,6 +270,12 @@ up through the app's control channel and the accessibility tree before the
 model's own coordinates are used. Wisp never clicks or types during a
 walkthrough, and Esc stops it.
 
+Asking like a learner works too: "show me how to <task>", "teach me <task>"
+or "I want to learn <task>" start a walkthrough, and each step adds one
+short sentence on why it matters. A plain "how do I <task>" is still
+answered in a sentence. `[teach] auto = "false"` sends the learner
+phrasings back to the normal route.
+
 Say "demonstrate <task>" (or "demo me <task>") and Wisp narrates and points
 at every step in one go without waiting for you. When the focused app has a
 skill (`app_classes` in its frontmatter), its notes go into the plan.

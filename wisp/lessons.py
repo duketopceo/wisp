@@ -31,7 +31,7 @@ def save(title: str, dump: dict, root=None) -> str | None:
     replaces the older lesson."""
     root = root or _dir()
     steps = [{"text": s["text"], "label": s.get("label") or "",
-              "point": s.get("point")}
+              "point": s.get("point"), "why": s.get("why") or ""}
              for s in (dump or {}).get("steps", []) if s.get("text")]
     title = (title or dump.get("goal") or "").strip()
     name = slug(title)
