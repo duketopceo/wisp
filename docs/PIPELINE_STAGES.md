@@ -59,6 +59,28 @@ whose label or wording is text entry is rewritten to `voice-confirm`. A
 click with no radius uses `DEFAULT_CLICK_RADIUS`. Steps saved before kinds
 existed read back as plain clicks.
 
+### Advancing on evidence
+
+`wisp/walkthrough_run.py` advances a step only on evidence for its kind
+(a step with nothing to point at keeps the older window-change check):
+
+| Delivered kind | Evidence | Module |
+|---|---|---|
+| `click` | pointer at rest and the screen reacted; inside the radius is clicked-in, elsewhere (after the pointer travelled) is clicked-out | `wisp/click_watch.py` |
+| `hover` | pointer rests inside the radius for `HOVER_REST_S` | `wisp/click_watch.py` |
+| `area`, `handle`, `motion` | the screen changed, then held steady for `SETTLE_WINDOW_S` | `wisp/settle.py` |
+| `voice-confirm` | the user says "continue" (the walkthrough pauses and resumes) | `wisp/walkthrough_run.py` |
+
+Hyprland gives an unprivileged process no button-press event, so a click
+is inferred from the pointer position (Hyprland socket) plus a downsampled
+`grim` frame diff; see `docs/research/2026-11-05-click-observation-spike.md`.
+A click or hover with no pointer source, or a click/area/handle/motion with
+no frame source, is delivered as `voice-confirm`: Wisp never presents a
+step as a click it cannot see. A click-out says nothing, leaves the pointer
+where it is and saves the walkthrough paused, so "continue" resumes it.
+The poll interval, rest and settle windows are named constants with their
+sources beside them.
+
 ## Latency gate
 
 `wisp/budgets.json` holds a p50 budget per path (a path's p90 may be up to

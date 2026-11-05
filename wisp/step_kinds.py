@@ -98,11 +98,11 @@ def settle_kind(kind: str, text: str = "", label: str = "") -> str:
 
 
 def effective_radius(kind: str, radius: int | None) -> int | None:
-    """The radius to test a click against: the planned one, else the
-    default for click steps, else None."""
+    """The radius to test the pointer against: the planned one, else the
+    default for click and hover steps, else None."""
     if radius is not None:
         return radius
-    return DEFAULT_CLICK_RADIUS if kind == CLICK else None
+    return DEFAULT_CLICK_RADIUS if kind in (CLICK, HOVER) else None
 
 
 def _reset_warned() -> None:

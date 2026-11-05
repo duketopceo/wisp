@@ -2,9 +2,11 @@
 
 "Walk me through setting up a git repo" plans up to 15 steps with the
 brain, then drives `walkthrough.Walkthrough` one step at a time: speak the
-step, point at its target, wait for the user to do it (the focused window
-or its title changes), advance, and ask "done, or stuck?" when nothing
-changes for 20 s. Wisp never clicks or types here; the user does.
+step, point at its target, wait for evidence the user did it (by step
+kind: a click or hover at the target, or the screen settling; or the
+user saying "continue"), advance, and ask "done, or stuck?" when nothing
+changes for 20 s. A click somewhere else ends the lesson quietly, kept
+paused. Wisp never clicks or types here; the user does.
 
 Pointing is label-first: a step names the control by its on-screen label,
 and the label is resolved through the exact grounding providers (the app's
@@ -19,6 +21,8 @@ import re
 import time
 
 from . import config
+from . import click_watch
+from . import settle
 from . import step_kinds
 from . import walkthrough as _wt
 
@@ -270,8 +274,10 @@ class _Env:
 
     def __init__(self, cfg, state=None, speak=None, window=None,
                  sleep=time.sleep, clock=time.monotonic, check=None,
-                 interrupted=None):
+                 interrupted=None, cursor=None, frame=None):
         self.cfg, self.state = cfg, state
+        # None means no source: the step is delivered as voice-confirm.
+        self.cursor, self.frame = cursor, frame
         self._speak = speak
         self._window = window
         self.sleep, self.clock = sleep, clock
@@ -474,7 +480,9 @@ def run(goal: str, cfg: dict, state=None, *, ask=None,
     at in turn without waiting for the user to act. A walkthrough that
     stops early is kept, and `resume` (a `paused()` dump) picks it up
     again with the goal and done steps intact."""
-    env = env or _Env(cfg, state, interrupted=interrupted)
+    env = env or _Env(cfg, state, interrupted=interrupted,
+                      cursor=click_watch.hypr_cursor,
+                      frame=_window_frame())
     if resume is not None:
         wt, planned = _restore(resume)
         goal = wt.goal
@@ -527,6 +535,10 @@ def run(goal: str, cfg: dict, state=None, *, ask=None,
             return finish(ev.get("spoken", ""))
         if action == "cancelled":
             return pause("stopped.")
+        if action == "await_voice":
+            return pause(VOICE_CONFIRM_LINE)
+        if action == "off_target":
+            return pause("")      # quiet: no speech, pointer stays parked
         if action == "advanced":
             ev = wt.issue_step(now=env.clock())
             continue
@@ -539,12 +551,68 @@ def spoken(step) -> str:
     return f"{step.text} {why}" if why else step.text
 
 
+VOICE_CONFIRM_LINE = "Say continue when you've done that."
+
+
+def _window_frame():
+    """Production frame source: the active window, via grim."""
+    def frame():
+        from . import hypr
+        try:
+            win = hypr.query("activewindow")
+        except Exception:
+            win = None
+        return settle.grim_frame(win if isinstance(win, dict) else None)
+    return frame
+
+
+def _delivered_kind(step, pt, env) -> str:
+    """The kind a step is delivered as. A step Wisp cannot observe is
+    delivered as voice-confirm, never as a click it would not see: click
+    needs the pointer and a frame source, hover the pointer, area,
+    handle and motion a frame source. A click or hover with nothing to
+    point at has no target to test, so it keeps the window-change
+    evidence."""
+    kind = getattr(step, "kind", "click")
+    pointed = kind in (step_kinds.CLICK, step_kinds.HOVER)
+    if kind == step_kinds.VOICE_CONFIRM or (pointed and pt is None):
+        return kind
+    pointer = env.cursor is not None and env.cursor() is not None
+    if kind == step_kinds.HOVER:
+        ok = pointer
+    elif kind == step_kinds.CLICK:
+        ok = pointer and env.frame is not None   # click is inferred from both
+    else:
+        ok = env.frame is not None
+    return kind if ok else step_kinds.VOICE_CONFIRM
+
+
+def _watcher(kind, pt, step, env):
+    """The evidence watcher for a delivered kind, or None for the
+    legacy window-change path."""
+    pointed = kind in (step_kinds.CLICK, step_kinds.HOVER)
+    if kind == step_kinds.VOICE_CONFIRM or (pointed and pt is None):
+        return None
+    if not pointed:
+        return settle.SettleWatch(env.frame)
+    target = (pt["x"], pt["y"])
+    radius = step_kinds.effective_radius(kind, getattr(step, "radius", None))
+    if kind == step_kinds.CLICK:
+        return click_watch.ClickWatch(target, radius, env.cursor, env.frame)
+    return click_watch.HoverWatch(target, radius, env.cursor)
+
+
 def _do_step(wt, ev, env: _Env, ask, ground, monitors):
-    """Announce one step and wait for the user to act. The next event
-    (a step, or a terminal one), or None to stop the walkthrough."""
+    """Announce one step and wait for evidence that the user did it. The
+    next event (a step, or a terminal one), or None to stop the
+    walkthrough."""
     step = ev["step"]
-    env.say(spoken(step), snap_point(step, env.cfg, ground=ground,
-                                  monitors=monitors))
+    pt = snap_point(step, env.cfg, ground=ground, monitors=monitors)
+    kind = _delivered_kind(step, pt, env)
+    env.say(spoken(step), pt)
+    if kind == step_kinds.VOICE_CONFIRM:
+        return {"action": "await_voice"}
+    watch = _watcher(kind, pt, step, env)
     before = {"window": env.window()}
     t0 = env.clock()
     while True:
@@ -552,9 +620,23 @@ def _do_step(wt, ev, env: _Env, ask, ground, monitors):
         if env.interrupted():
             wt.cancel(env.state)
             return {"action": "cancelled"}
-        env.sleep(POLL_S)
-        r = wt.observe(before, {"window": env.window()},
-                       elapsed_s=env.clock() - t0)
+        env.sleep(watch.poll_s if watch else POLL_S)
+        elapsed = env.clock() - t0
+        if watch is not None:
+            got = watch.poll(env.clock())
+            if got == click_watch.CLICKED_OUT:
+                return {"action": "off_target"}
+            if got:
+                wt.mark_step_done()
+                return wt.issue_step(now=env.clock())
+            # A watcher owns the evidence: a title change after a stray
+            # click must not count as the user doing the step.
+            if elapsed < wt.no_change_timeout_s:
+                continue
+            r = wt.observe(before, before, elapsed_s=elapsed)
+        else:
+            r = wt.observe(before, {"window": env.window()},
+                           elapsed_s=elapsed)
         act = r.get("action")
         if act in ("wait", "wait_load"):
             continue
