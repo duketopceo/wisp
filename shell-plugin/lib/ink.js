@@ -17,6 +17,9 @@ var REVEAL_MIN_MS = 250
 var REVEAL_MAX_MS = 1800
 var DASH_PX = 14
 var GAP_PX = 8
+var CURVE_BOW = 0.22       // how far a motion curve bows, as a share of its length
+var REGION_ALPHA = 0.10    // soft area fill, under the highlight's 0.18
+var HANDLE_INNER = 0.5     // the handle's inner ring, as a share of its radius
 var LIGHT_BELOW = 0.179    // WCAG crossover: white and black text contrast equally
 
 // ---- determinism: the same mark always wobbles the same way ----
@@ -90,10 +93,11 @@ function line(x1, y1, x2, y2, rand, bend) {
   return out
 }
 
-function arrowStrokes(d, rand) {
+function arrowStrokes(d, rand, curved) {
   var dx = d.x2 - d.x1, dy = d.y2 - d.y1
   var len = Math.sqrt(dx * dx + dy * dy)
-  var bend = (rand() - 0.5) * Math.min(len * 0.08, 14)
+  // a curve (a drag or swipe's direction) always bows, a plain arrow barely
+  var bend = curved ? len * CURVE_BOW : (rand() - 0.5) * Math.min(len * 0.08, 14)
   var shaft = line(d.x1, d.y1, d.x2, d.y2, rand, bend)
   var tip = shaft[shaft.length - 1]
   var ang = Math.atan2(tip.y - shaft[shaft.length - 4 < 0 ? 0 : shaft.length - 4].y,
@@ -132,7 +136,7 @@ function dashed(poly) {
   return out
 }
 
-function frameStrokes(d, rand) {
+function framePath(d, rand) {
   var x = d.x, y = d.y, w = d.w, h = d.h
   var corners = [[x, y], [x + w, y], [x + w, y + h], [x, y + h], [x, y]]
   var path = []
@@ -140,8 +144,10 @@ function frameStrokes(d, rand) {
     var seg = line(corners[i][0], corners[i][1], corners[i + 1][0], corners[i + 1][1], rand, 0)
     path = path.concat(i === 0 ? seg : seg.slice(1))
   }
-  return dashed(path)
+  return path
 }
+
+function frameStrokes(d, rand) { return dashed(framePath(d, rand)) }
 
 // Tapered width for each point of an n-point stroke: pen down, full, lift.
 function widths(n, base) {
@@ -163,6 +169,16 @@ function strokesFor(d) {
   if (d.kind === "ring") raw = [ringStroke(d, rand)]
   else if (d.kind === "arrow") raw = arrowStrokes(d, rand)
   else if (d.kind === "hl") { raw = frameStrokes(d, rand); fill = { x: d.x, y: d.y, w: d.w, h: d.h } }
+  else if (d.kind === "dring") raw = dashed(ringStroke(d, rand))
+  else if (d.kind === "curve") raw = arrowStrokes(d, rand, true)
+  else if (d.kind === "region") {
+    // soft: a faint wash and a solid, thin-feeling frame (not the dashed hl)
+    raw = [framePath(d, rand)]
+    fill = { x: d.x, y: d.y, w: d.w, h: d.h, alpha: REGION_ALPHA }
+  } else if (d.kind === "handle") {
+    // a small dot: two concentric pen rings
+    raw = [ringStroke(d, rand), ringStroke({ x: d.x, y: d.y, r: d.r * HANDLE_INNER }, rand)]
+  }
   var strokes = []
   for (var i = 0; i < raw.length; i++) {
     var w = widths(raw[i].length)

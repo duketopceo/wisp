@@ -13,6 +13,7 @@ import "../lib/card.js" as CardLib
 import "../lib/model3d.js" as ModelLib
 import "../lib/scribble.js" as Scribble
 import "../lib/chips.js" as ChipsLib
+import "../lib/teach.js" as Teach
 
 Item {
   id: root
@@ -71,7 +72,11 @@ Item {
   // "what can I ask here" after a quick tap: text only, never over a live turn
   readonly property bool chipsShown: service !== null && ChipsLib.quiet(service.status) && askChips.shown
   property alias askChipsItem: askChips
-  readonly property bool shown: scribbleActive || pillShown || bubbleShown || buddyShown || beacons.length > 0 || draw.count > 0 || cardShown || modelShown || chipsShown
+  // the teaching step: its marks ride the draw layer, its chip and counter
+  // sit at the bottom centre (lib/teach.js)
+  readonly property var teachView: service ? Teach.view(service.teach, service.points, service.ui) : Teach.view(null, [], function (k) { return k; })
+  readonly property bool shown: scribbleActive || pillShown || bubbleShown || buddyShown || beacons.length > 0 || draw.count > 0 || teachChip.shown || cardShown || modelShown || chipsShown
+  property alias teachChipItem: teachChip
   property alias pill: pill
   property alias bubbleHost: bubbleHost
 
@@ -135,6 +140,19 @@ Item {
     objectName: "drawLayer"
     anchors.fill: parent
     service: root.service
+    extra: root.teachView.marks
+  }
+
+  // the step's caption chip and counter, where the listening pill was; text
+  // only, so the window needs no input region for it
+  TeachChip {
+    id: teachChip
+    objectName: "teachCaption"
+    service: root.service
+    step: root.teachView
+    anchors.horizontalCenter: parent.horizontalCenter
+    anchors.bottom: parent.bottom
+    anchors.bottomMargin: 96
   }
 
   // ask chips: bottom centre, where the listening pill was

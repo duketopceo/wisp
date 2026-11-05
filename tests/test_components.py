@@ -25,7 +25,7 @@ EXPECTED = ["AskChips", "Answer", "AgentRow", "AgentsTab", "BarActions", "BarMar
             "Creature", "DevTab", "DrawLayer", "EmptyState", "FirstRunCard",
             "HealthSection", "Icon", "Mark", "MemoryTab", "ModelCard", "NowTab", "OverlayLayer",
             "PanelTab", "Pill", "RateNote", "RateRow", "RunCard", "ScribbleLayer", "SettingsTab", "StatusLine", "StepRow",
-            "StopControl", "Transcript", "WeeklyRecapCard", "WhatsNewCard",
+            "StopControl", "TeachChip", "Transcript", "WeeklyRecapCard", "WhatsNewCard",
             # management app views
             "AuditView", "BindsView", "HealthView", "SpendView"]
 
@@ -405,6 +405,32 @@ class TestPureLibs(unittest.TestCase):
                                  src, re.M):
                 self.assertGreaterEqual(int(m.group(1)), mins["control"],
                                         name)
+
+
+class TestTeachOverlayRules(unittest.TestCase):
+    """U10: the step marks and chip are click-through, never focus, no emoji."""
+
+    FILES = [COMP / "TeachChip.qml", PLUGIN / "lib" / "teach.js",
+             COMP / "DrawLayer.qml"]
+
+    def test_no_input_or_focus_handlers(self):
+        src = code(COMP / "TeachChip.qml")
+        for rx in (r"\bMouseArea\b", r"\bTapHandler\b", r"\bHoverHandler\b",
+                   r"\bPointHandler\b", r"\bKeys\.", r"\bFocusScope\b",
+                   r"focus:\s*true", r"activeFocusOnTab:\s*true",
+                   r"forceActiveFocus"):
+            self.assertIsNone(re.search(rx, src), rx)
+
+    def test_no_emoji(self):
+        emoji = re.compile("[\u2190-\u21ff\u2600-\u27bf\U0001f000-\U0001faff]")
+        for p in self.FILES:
+            self.assertIsNone(emoji.search(p.read_text()), p.name)
+
+    def test_copy_comes_from_the_copy_table(self):
+        from wisp import copy as wcopy
+        for key in ("ui.teach.say_continue", "ui.teach.of"):
+            self.assertIn(key, wcopy.STRINGS)
+        self.assertNotIn("say continue", code(COMP / "TeachChip.qml"))
 
 
 class TestPillTable(unittest.TestCase):

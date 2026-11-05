@@ -133,6 +133,8 @@ STRINGS = {
     "ui.rate.note": "what went wrong? (optional)",
     "ui.steps.none": "no steps yet",
     "ui.step.confirm": "needs your ok",
+    "ui.teach.say_continue": "say continue",
+    "ui.teach.of": "of",
     "ui.agent.queued": "queued",
     "ui.agent.running": "running",
     "ui.agent.done": "done",

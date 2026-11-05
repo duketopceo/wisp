@@ -35,6 +35,7 @@ Item {
   property var drawings: []
   property var steps: []
   property var actions: []
+  property var teach: null
   property var suggestion: null
   property var guide: null
   property var chips: null
@@ -160,6 +161,7 @@ Item {
     root.drawings = v.drawings;
     root.steps = v.steps;
     root.actions = v.actions;
+    root.teach = v.teach;
     root.suggestion = v.suggestion;
     root.guide = v.guide;
     root.chips = v.chips;

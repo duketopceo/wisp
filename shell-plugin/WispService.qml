@@ -60,6 +60,7 @@ Item {
   // target, reason, undoRef, at, options?, promptId?}]. Supersedes
   // `steps` where a v2 daemon feeds it; `steps` stays for older cores.
   property var actions: []
+  property var teach: null
   property var suggestion: null
   property var guide: null
   property var chips: null
@@ -434,6 +435,7 @@ Item {
     root.drawings = v.drawings;
     root.steps = v.steps;
     root.actions = v.actions;
+    root.teach = v.teach;
     root.suggestion = v.suggestion;
     root.guide = v.guide;
     root.chips = v.chips;

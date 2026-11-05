@@ -14,10 +14,16 @@
 // once. Only full motion animates: reduced and off draw the finished mark
 // with no animation frames. An unknown mark kind has no strokes and draws
 // nothing.
+//
+// Teaching steps (lib/teach.js) ride the same layer: the host passes the
+// step's marks as `extra` and they are drawn after state.drawings, through
+// the same ink. A click ring breathes three times in full motion and sits
+// still in reduced and off.
 pragma ComponentBehavior: Bound
 import QtQuick
 import "../lib/cursor.js" as Cursor
 import "../lib/ink.js" as Ink
+import "../lib/teach.js" as Teach
 
 Item {
   id: root
@@ -25,10 +31,12 @@ Item {
   property var service: null
   // "" follows the service; fixtures pin a mode
   property string motion: ""
+  // draw records for the current teaching step (Teach.view().marks)
+  property var extra: []
 
   readonly property var tk: service ? service.tokens : ({})
   readonly property string motionMode: motion !== "" ? motion : (service ? service.motionMode : "off")
-  readonly property var shapes: service ? Cursor.drawings(service.drawings) : []
+  readonly property var shapes: service ? Cursor.drawings((Array.isArray(service.drawings) ? service.drawings : []).concat(extra)) : []
   readonly property int count: shapeModel.count
   // speech is over (or stopped): every mark completes this frame
   readonly property bool finishing: service !== null && service.status !== "speaking"
@@ -46,7 +54,7 @@ Item {
     for (var i = plan.from; i < shapes.length; i++) {
       var d = shapes[i];
       shapeModel.append({ kind: d.kind, cx: d.x, cy: d.y, r: d.r, w: d.w, h: d.h,
-        ax1: d.x1, ay1: d.y1, ax2: d.x2, ay2: d.y2, ms: d.ms, tone: d.tone });
+        ax1: d.x1, ay1: d.y1, ax2: d.x2, ay2: d.y2, ms: d.ms, tone: d.tone, pulse: d.pulse });
     }
     synced = shapes;
   }
@@ -70,12 +78,15 @@ Item {
       required property real ay2
       required property real ms
       required property string tone
+      required property bool pulse
 
       readonly property var ink: Ink.strokesFor({ kind: kind, x: cx, y: cy, r: r, w: w, h: h,
         x1: ax1, y1: ay1, x2: ax2, y2: ay2 })
       readonly property var box: Ink.bounds(ink, Cursor.DRAW_STROKE * 4)
       readonly property bool pen: Ink.animates(root.motionMode) && !root.finishing
       readonly property bool drawing: penAnim.running
+      // the ring's breathing: full motion only, over once speech is
+      readonly property bool pulsing: pulse && Teach.pulses(root.motionMode) && !root.finishing
       // 0 -> 1 pen progress; a mark that is not animated starts (and stays) done
       property real p: Ink.animates(root.motionMode) ? 0 : 1
       readonly property color inkColor: root.tk.ember
@@ -103,6 +114,14 @@ Item {
         easing.type: Easing.OutCubic
         running: sh.pen
       }
+      SequentialAnimation {
+        id: breathe
+        running: sh.pulsing
+        loops: Teach.PULSE_COUNT
+        NumberAnimation { target: sh; property: "opacity"; to: Teach.PULSE_MIN; duration: Teach.PULSE_MS / 2; easing.type: Easing.InOutSine }
+        NumberAnimation { target: sh; property: "opacity"; to: 1; duration: Teach.PULSE_MS / 2; easing.type: Easing.InOutSine }
+        onRunningChanged: if (!running) sh.opacity = 1
+      }
       onPenChanged: if (!pen && p < 1) { penAnim.stop(); p = 1 }
       onDrawingChanged: root.animating += drawing ? 1 : -1
       onPChanged: requestPaint()
@@ -117,7 +136,7 @@ Item {
         ctx.lineJoin = "round";
         if (ink.fill) {
           ctx.globalAlpha = p;
-          ctx.fillStyle = Qt.alpha(root.tk.ember, Cursor.DRAW_HL_ALPHA);
+          ctx.fillStyle = Qt.alpha(root.tk.ember, ink.fill.alpha !== undefined ? ink.fill.alpha : Cursor.DRAW_HL_ALPHA);
           ctx.fillRect(ink.fill.x, ink.fill.y, ink.fill.w, ink.fill.h);
           ctx.globalAlpha = 1;
         }

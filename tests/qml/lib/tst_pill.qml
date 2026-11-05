@@ -47,7 +47,11 @@ TestCase {
       ["run_active", "working", "ember"],
       ["run_done", "done", "ok"],
       ["run_question", "your call", "needsYou"],
-      ["offline", "offline", "muted"]
+      ["offline", "offline", "muted"],
+      ["teach_waiting", "speaking", "ember"],
+      ["teach_voice_confirm", "speaking", "ember"],
+      ["teach_off_target", "done", "ok"],
+      ["teach_done", "done", "ok"]
     ];
   }
 

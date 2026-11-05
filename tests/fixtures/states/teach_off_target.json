@@ -1,0 +1,1 @@
+{"transcript": "show me how to turn on night light", "answer": "", "result": "", "choices": [], "points": [], "steps": [], "level": 0.0, "seq": 7, "contract_version": 1, "goal": {"text": "turn on night light", "status": "active"}, "status": "done", "teach": {"kind": "click", "radius": 28, "index": 2, "total": 5, "wait": "off-target"}, "turn_id": "t-teach-off"}
