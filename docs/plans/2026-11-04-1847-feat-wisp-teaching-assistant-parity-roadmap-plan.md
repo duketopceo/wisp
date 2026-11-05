@@ -14,7 +14,7 @@ execution: code
 - **Objective:** A Linux (Omarchy/Hyprland) user can hold the hotkey, ask how to do something in any app, and be taught it one confirmed step at a time by voice and an on-screen pointer, with first-time-correct turns clearing the existing 60% eval gate; Windows and macOS versions follow on the same behavior.
 - **Means:** Teaching becomes the default lane and pointing the default delivery (KTD1), driven by a stateless per-step loop that re-reads the live screen (KTD2), with model coordinates snapped to accessibility controls (KTD4). Phase 2 reuses the Python core behind per-OS adapters and thin native shells (KTD9).
 - **Authority:** This plan builds on open PR #313 (teach-intent routing, a one-sentence "why" per step, a Hyprland-aware planner) and assumes it merges first. Where it conflicts with `ROADMAP.md`, the fixed decisions there win (OpenRouter-only models, Rust core frozen) until the owner changes them. Phase 2 is gated by the gate in `docs/research/2026-10-31-multi-os-prep.md`.
-- **Execution profile:** Phase 1 (U1-U13) is Linux-only Python plus QML, one PR per unit, tests with no live model calls. Phase 2 (U14-U18) is gated and is planned in more detail when it opens.
+- **Execution profile:** Phase 1 (U1-U13) is Linux-only Python plus QML, one PR per unit, tests with no live model calls. Phase 2 (U14-U18) is out of scope for the current run and starts only after the KTD8 gate. U14 is specified here; U15-U18 are re-planned when the gate opens.
 - **Stop conditions:** Stop and report if a unit needs a live model call outside the capped smoke budget (KTD10), if point-only behavior regresses when the cua input module is absent, or if a unit would copy third-party code, prompts, or assets.
 - **Who finishes:** Each unit's own PR; this plan's PR carries documentation only.
 
@@ -100,14 +100,14 @@ Teaching also rarely starts. Before #313 a regex gated walkthroughs, so "how do 
 
 - KTD1. **Teaching is a delivery policy, not a new lane.** The walkthrough lane in `wisp/walkthrough_run.py` stays the owner; guide-mode delivery (`wisp/pointer.py` `GuideBackend`, `wisp/delivery.py`) becomes its enforced backend, so a teaching turn cannot reach a click backend. Governs R1. (session-settled: user-directed — chosen over a separate tutor service.)
 - KTD2. **The per-step prompt is stateless.** Each step's prompt is assembled fresh from: the new capture, the goal, the completed-steps list, the previous step's kind and outcome, a remaining-turn count, and a freshness line when the user acted during thinking. No conversation object is carried. Governs R2.
-- KTD3. **Step kinds are Wisp's own vocabulary, emitted as JSON fields, not inline text tags.** The planner already returns JSON (`parse_steps`); a `kind` field with a validator and a tolerant fallback to `click` keeps parsing in one place and avoids a second grammar. The mapping to overlay primitives is fixed in U2 and drawn in U10. Governs R3.
+- KTD3. **Step kinds are Wisp's own vocabulary, emitted as JSON fields, not inline text tags.** The planner already returns JSON (`parse_steps`); a `kind` field with a validator and a tolerant fallback to `voice-confirm` (the only kind that never claims detection, R3) keeps parsing in one place and avoids a second grammar. The mapping to overlay primitives is fixed in U2 and drawn in U10. Governs R3.
 - KTD4. **Model proposes, accessibility disposes.** Snap order is label match in the accessibility tree, then nearest control containing the model point, then the model's own box. The result carries `snap` in `ax | model | none`. AT-SPI is read directly behind an `ElementTree` adapter, because the cua `window_state` path in `wisp/grounding.py` `_a11y` depends on the plugin that is discovery-only on the current Hyprland. Governs R6.
 - KTD5. **Advance on evidence, ranked.** Click inside radius (when observable) beats hover rest beats settled-screen diff beats voice confirm. Click observation on Hyprland is a spike inside U4 with a fixed fallback ladder; the plan does not assume a mechanism. Governs R4.
 - KTD6. **Measurement before change.** The offline teaching harness (U1) lands first so every later unit reports a number, never an impression. Governs R7, R13.
 - KTD7. **Skills are data, matched by window identity.** Reuse `wisp/skills.py` `match_app_skill_info` and the `docs/research/app-skill-format.md` whitelist; teaching content goes in a body section, not new frontmatter keys. Governs R11, R14.
-- KTD8. **Phase 2 gate.** Start Phase 2 only when `wispd eval` passes its configured gate (60% over at least 50 labelled turns) and teaching first-time-correct on the U1 harness is at or above the same bar. This restates the existing gate rather than adding one. The Linux-only decision in `docs/plans/2026-10-25-2127-refactor-linux-only-plan.md` is amended by U14 to "one OS-neutral core plus per-OS adapters", not by restoring in-core OS branches. Governs R18.
+- KTD8. **Phase 2 gate.** Start Phase 2 only when `wispd eval` passes its configured gate (60% over at least 50 labelled turns) and teaching first-time-correct on the U1 harness is at or above the same bar. This adds one condition to the existing gate: the U1 harness check is an addition beyond `wispd eval`. The Linux-only decision in `docs/plans/2026-10-25-2127-refactor-linux-only-plan.md` is amended by U14 to "one OS-neutral core plus per-OS adapters", not by restoring in-core OS branches. Governs R18.
 - KTD9. **Shared Python core as a sidecar, thin native shells.** Swift on macOS, a .NET or Rust shell on Windows, one JSON event/command protocol over a local authenticated socket. A shell owns only what must be native. The shell language on Windows is deferred to U17's first spike. Governs R15, R16.
-- KTD10. **Spend rules.** CI and unit tests use recorded fixtures and fakes in `tests/fakes/` only. Live smoke: at most one explicit run per unit that changes a model prompt or provider, text-only where possible, each capped at 25 cents and logged in the PR body; the grounding bake-off (U8) has its own 5-dollar total cap set before it starts. Governs R13.
+- KTD10. **Spend rules.** CI and unit tests use recorded fixtures and fakes in `tests/fakes/` only. Live smoke: at most one explicit run per unit that changes a model prompt or provider, text-only where possible, logged in the PR body. Total live spend for the whole Phase 1 run is capped at $1, shared by the grounding bake-off (U8) and every smoke run, and the cap is set before the first run starts. Each run's spend is reported in its PR. Governs R13. (session-settled: user-directed — chosen over the earlier per-unit 25-cent and $5 bake-off caps: the owner lowered total live spend to $1.)
 
 ### High-Level Technical Design
 
@@ -225,12 +225,12 @@ Phase 1 is Linux. U1 first; U2-U5 are the core loop; U6-U9 widen it; U10-U13 are
 - **Files:** `wisp/walkthrough.py`, `wisp/walkthrough_run.py`, new `wisp/step_kinds.py`, `tests/test_walkthrough_run.py`, `tests/test_step_kinds.py` (new), `docs/PIPELINE_STAGES.md`.
 - **Approach:**
   - Add `kind` and `radius` to `Step`, persisted in pause, save, and replay dumps next to `why` (as #313 did for `why`).
-  - `step_kinds.py` owns the vocabulary, the validator, the tolerant fallback to `click`, and the table in the High-Level Technical Design.
+  - `step_kinds.py` owns the vocabulary, the validator, the tolerant fallback to `voice-confirm`, and the table in the High-Level Technical Design.
   - The planner prompt states the decision rule in Wisp's words: if the app will visibly react to the action, use a click or hover step; otherwise use area, handle, motion, or voice-confirm and ask the user to say "continue".
-  - Unknown kind or missing radius degrades to a click with a default radius; the parser never raises.
+  - An unknown kind degrades to voice-confirm (R3); a missing radius on a click degrades to a default radius; the parser never raises.
 - **Test scenarios:**
   - A reply with each of the six kinds parses to that kind.
-  - An unknown kind falls back to click and is logged once.
+  - An unknown kind falls back to voice-confirm and is logged once.
   - A save-then-replay round trip preserves kind, radius, and why.
   - A text-entry step planned as `click` by the model is rewritten to `voice-confirm` when its label matches an input field.
 - **Verification:** U1 harness wrong-kind count drops versus its baseline; unit suite green.
@@ -267,7 +267,7 @@ Phase 1 is Linux. U1 first; U2-U5 are the core loop; U6-U9 widen it; U10-U13 are
   - A frame sequence that changes then holds steady reports settled only after the hold window.
   - A continuously animating sequence times out as not-settled rather than advancing.
   - A click inside the radius returns clicked-in; one outside returns clicked-out and pauses the walkthrough without speech.
-  - With no click source available the step falls to settle, then voice, and a step still completes.
+  - With no click source available a click step is delivered as voice-confirm (R3): Wisp says what to do and waits for "continue". Settle applies only to area, handle, and motion steps.
   - A web-app step whose window title never changes advances on settle.
 - **Verification:** Unit suite green; on a real session, a four-step browser walkthrough advances on each user click and ends silently on a stray click (noted in the PR with the rung used).
 
@@ -284,7 +284,7 @@ Phase 1 is Linux. U1 first; U2-U5 are the core loop; U6-U9 widen it; U10-U13 are
   - The remaining-turn budget (configurable under `[teach]`, default a small number) forces a spoken wrap-up at zero.
 - **Test scenarios:**
   - A recapture showing the user already finished the next step yields a plan that skips it.
-  - The same opener is not planned twice in a row.
+  - The same opener is never planned or pointed at twice in one walkthrough.
   - The budget reaching zero ends the walkthrough with a wrap-up line, not a further step.
   - The user acting during planning sets the freshness flag and the prompt carries it.
   - A planner failure keeps the walkthrough paused and resumable, not lost.
@@ -318,6 +318,7 @@ Phase 1 is Linux. U1 first; U2-U5 are the core loop; U6-U9 widen it; U10-U13 are
 - **Approach:**
   - `elementtree.py` defines the `ElementTree` interface (`at_point`, `find_by_label`, `rect`, `app_name`) and a Linux AT-SPI implementation; a fake serves tests. This is the first adapter that U14 formalizes.
   - Snap order follows KTD4; confidence and `snap` are written to the turn record and to the step dump.
+  - A label match counts only when the control's extents lie inside the focused toplevel's frame and no other window occludes it. Otherwise the snap falls through to the nearest-containing-control rung. Wayland AT-SPI trees cannot always be bound to a toplevel (`docs/research/cua-tool-catalog.md`), so this rule is the binding.
   - Containers larger than a fraction of the screen are rejected as snap targets (extend `_is_container`).
   - Failure to reach AT-SPI is a quiet fall to the model box, never an error to the user.
   - The package has no runtime dependencies today, so the AT-SPI client (system GObject introspection bindings or direct D-Bus calls) is an optional system package, chosen in this unit and documented in `docs/LINUX.md`. The harness reports AT-SPI-unavailable separately from no-matching-control, so a missing client cannot hide inside the quiet fallback.
@@ -326,6 +327,7 @@ Phase 1 is Linux. U1 first; U2-U5 are the core loop; U6-U9 widen it; U10-U13 are
   - A model point 20 px from a labeled button snaps to the button's center and logs `ax`.
   - A point inside a large container with no labeled child keeps the model box and logs `model`.
   - A label with two matches picks the one nearest the model point.
+  - A label that matches only a control in a second, unfocused window of the same app is not snapped to; the point falls to the nearest-containing-control rung.
   - AT-SPI unavailable returns the model box and logs `none`.
   - The turn record contains `snap` for every pointed step.
 - **Verification:** U1 no-element failures drop on fixtures with recorded trees; per-app `snap` share is printed by the harness.
@@ -338,7 +340,7 @@ Phase 1 is Linux. U1 first; U2-U5 are the core loop; U6-U9 widen it; U10-U13 are
 - **Files:** `wisp/grounding.py` (`pick_pointing_resolution`, `_vlm_locate`), `scripts/gauntlet.py`, new `scripts/grounding_bakeoff.py`, `docs/ACCURACY.md`, `tests/test_grounding.py`.
 - **Approach:**
   - Replay recorded screenshots through candidate providers behind OpenRouter, comparing describe-then-point at aspect-matched resolution against direct coordinates, with and without accessibility labels in the prompt.
-  - Hold out a fixed case set before looking at results; the run is capped by KTD10's bake-off budget and prints cost per case.
+  - Hold out a fixed case set before looking at results; the run draws from the shared $1 Phase 1 total in KTD10, the same pool as every smoke run, and prints cost per case.
   - A winner replaces the default only through a config change plus a documented result in `docs/ACCURACY.md`.
 - **Test scenarios:**
   - The scorer ranks a synthetic provider that is right 8 of 10 above one right 5 of 10.
@@ -535,7 +537,7 @@ Phase 1 is Linux. U1 first; U2-U5 are the core loop; U6-U9 widen it; U10-U13 are
 
 ## Definition of Done
 
-- Global: all Phase 1 units merged with the suite green, the U1 harness reports first-time-correct at or above the gate, and a real teaching walkthrough of at least four steps completes on Hyprland with pointing alone.
+- Global: every Phase 1 unit has an open PR with the suite green and its verification evidence in the PR body, the U1 harness reports first-time-correct at or above the gate, and a real teaching walkthrough of at least four steps completes on Hyprland with pointing alone. Merging is the owner's action and is not part of this plan's completion.
 - Global: abandoned experiments, spike scaffolding, and dead fallbacks (for example unused click-observation rungs that were tried and rejected) are removed from the diff.
 - Global: no live-call test, no copied third-party material, no personal or machine-specific detail in code, docs, or fixtures.
 - Per unit: each unit's Verification passes and its test scenarios exist as tests.
