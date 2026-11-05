@@ -1,4 +1,4 @@
-"""Voice pipeline: record -> transcribe -> Jev -> route -> act.
+"""Voice pipeline: record -> transcribe -> local route -> act.
 
 Runs inside the daemon on a worker thread; every stage transitions State
 so widgets see listening/deciding/awaiting_choice/done in real time.
@@ -6,7 +6,7 @@ so widgets see listening/deciding/awaiting_choice/done in real time.
 The turn is four stages around the StateBus (W30), one module each:
 
     stage_capture   mic, transcribe, screen and window context
-    stage_route     Jev / heuristic router, rescues, clarify prompt
+    stage_route     local fast paths and conversational act dispatch
     stage_execute   dispatch to tools, the act loop, agents, dictation
     stage_speak     stream + speak the answer, close the turn
 
@@ -14,7 +14,7 @@ This module keeps the orchestrator (run_listen, _listen_turn: cancel,
 error and cleanup paths) and re-exports every public name the stages
 define, so `pipeline.<name>` still resolves for callers and tests. The
 stages look patchable names up through this module at call time, so
-`mock.patch.object(pipeline, "ask_jev")` and friends keep working.
+`mock.patch.object(pipeline, "ask_chat")` and friends keep working.
 """
 import base64  # noqa: F401  (patch targets: pipeline.<module>)
 import json  # noqa: F401
@@ -45,11 +45,7 @@ from .stage_ctx import TurnCtx
 from .stage_execute import (  # noqa: F401
     _DICTATE_PREFIX, dictation_text, execute, execute_stage)
 from .stage_route import (  # noqa: F401
-    JEV_QUESTIONS, _BENIGN_ACTIONS, _COMPLEX_LAUNCH, _LAUNCH_VERBS,
-    _OPEN_VERB, _ask_prompt, _jev_is_local, _shadow_agree,
-    _shadow_decision, _shadow_worker, ambiguous_choices, apply_choice,
-    ask_jev, auto_pick, build_questions, complex_launch, fuzzy_app,
-    is_low_confidence, route_stage)
+    fast_route, route_stage)
 from .stage_speak import (  # noqa: F401
     _end_speaking, _publish_delta, answer_text, ask_chat, log_decision,
     speak_stage)
@@ -102,7 +98,8 @@ def _publish_error(state, exc: BaseException) -> None:
 def run_listen(cfg: dict, state, wait_for_choice=None,
                wav: pathlib.Path | None = None,
                interrupted=None, spans=None, turn_id=None,
-               cancel=None, speculative=None) -> int:
+               cancel=None, speculative=None,
+               typed: str = "") -> int:
     """One push-to-talk cycle inside the daemon.
 
     `cancel` is the turn's CancelToken (U9; the daemon's `interrupt`
@@ -121,7 +118,9 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
     the daemon's first press) or a fresh one, and every write goes
     through the bus tagged with it. `speculative` (context.Speculative,
     started at press) supplies the screenshot and window map; the turn
-    discards whatever it did not consume when it ends.
+    discards whatever it did not consume when it ends. `typed` is a
+    question that arrived as text (a click on a 3D card part): the turn
+    skips capture and speech-to-text and starts from it.
     """
     from . import bgwriter
     bgwriter.configure(cfg)
@@ -139,7 +138,7 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
         with _cancel.bind(token):
             return _listen_turn(cfg, state, wait_for_choice, wav,
                                 interrupted, spans, turn_id, token,
-                                speculative)
+                                speculative, typed)
     finally:
         stop_watch.set()
         if speculative is not None:
@@ -147,7 +146,7 @@ def run_listen(cfg: dict, state, wait_for_choice=None,
 
 
 def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
-                 turn_id, token, speculative=None) -> int:
+                 turn_id, token, speculative=None, typed="") -> int:
     secs = int(cfg.get("audio", {}).get("seconds", "60"))
     model = cfg.get("agent", {}).get("model", "typesafe/jev-1.13")
     from . import trace as _trace
@@ -162,6 +161,7 @@ def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
     sp.bind(turn)
     ctx = TurnCtx(cfg, state, wait_for_choice, wav, interrupted, sp, turn,
                   token, speculative, secs, model)
+    ctx.typed = typed
     _trace.emit(turn, "listen_start", "lifecycle",
                 {"seconds": secs, "model": model})
     try:
@@ -188,7 +188,7 @@ def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
             fields["result"] = ctx.result
         state.transition("idle", **fields)
         log_decision({"ts": datetime.now(timezone.utc).isoformat(),
-                      "result": "CANCELLED (user)",
+                      "turn": turn, "result": "CANCELLED (user)",
                       "timing_ms": sp.legacy_timing()})
         return 0
     except Exception as e:
@@ -199,7 +199,7 @@ def _listen_turn(cfg, state, wait_for_choice, wav, interrupted, spans,
                     {"error": str(e), "error_code": err.code})
         _publish_error(state, err)
         log_decision({"ts": datetime.now(timezone.utc).isoformat(),
-                      "result": f"ERROR ({e})",
+                      "turn": turn, "result": f"ERROR ({e})",
                       "timing_ms": sp.legacy_timing()})
         notify(_copy.toast_text(err.code), "error", code=err.code,
                actions=[_open_log_action()],

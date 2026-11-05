@@ -1,0 +1,463 @@
+"""Deterministic click harness: the real capture path (stage_capture ->
+`_normalize_shot` -> grounding) on the real two-monitor layout, with a
+fake model that answers exactly right for whatever image it is handed.
+Zero math error expected: every miss here is a mapping bug, never model
+error. Offline: no grim, no compositor, no network.
+
+Layout (Luke's desk): eDP-1 3456x2160 @ scale 2 at logical (0,0), DP-3
+3440x1440 @ scale 1 at logical (1728,0). grim composites every output at
+the highest scale (2), so the raw canvas is 10336x2880.
+"""
+import io
+import pathlib
+import shutil
+import struct
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+from wisp import config, grounding as g, points, stage_capture  # noqa: E402
+from wisp import verify  # noqa: E402
+
+try:
+    from PIL import Image  # noqa: E402
+except ImportError:
+    Image = None
+
+_need_pil = unittest.skipUnless(Image, "PIL not installed")
+_need_magick = unittest.skipUnless(shutil.which("magick"),
+                                   "magick not installed")
+
+EDP = {"name": "eDP-1", "x": 0, "y": 0, "width": 3456, "height": 2160,
+       "scale": 2.0}
+DP3 = {"name": "DP-3", "x": 1728, "y": 0, "width": 3440, "height": 1440,
+       "scale": 1.0}
+LAYOUT = [EDP, DP3]
+
+
+def _png_file(path, w, h):
+    """A flat PNG of the given size (cheap to write, cheap to resize)."""
+    Image.new("RGB", (w, h), (30, 30, 30)).save(path, format="PNG")
+
+
+def png_size(path) -> tuple:
+    head = pathlib.Path(path).read_bytes()[:24]
+    return struct.unpack(">II", head[16:24])
+
+
+def raw_canvas_size(mons) -> tuple:
+    """What grim writes for the whole layout: the logical bbox at the
+    highest output scale."""
+    smax = max(float(m.get("scale", 1) or 1) for m in mons)
+    _, _, w, h = points.logical_bbox(mons)
+    return round(w * smax), round(h * smax)
+
+
+class Oracle:
+    """A model that is exactly right for the image it sees. `region` is
+    the logical rect (x, y, w, h) that image shows, uniformly scaled to
+    the image size, so the answer is the target's pixel in that image."""
+
+    def __init__(self, target_logical, region, source="vlm"):
+        self.target = target_logical
+        self.region = region
+        self.source = source
+        self.seen = []
+
+    def __call__(self, ctx):
+        rx, ry, rw, rh = self.region
+        w, h = ctx.shot.width, ctx.shot.height
+        self.seen.append((w, h))
+        px = (self.target[0] - rx) * w / rw
+        py = (self.target[1] - ry) * h / rh
+        return g.Candidate(px, py, 0.9, self.source, size=(w, h))
+
+
+class Harness(unittest.TestCase):
+    """Run the REAL capture_screen (grim command swapped for a copy of a
+    synthetic raw canvas) so `_normalize_shot` rewrites the image
+    exactly as in production, then ground through the real chain."""
+
+    mons = LAYOUT
+
+    def setUp(self):
+        self.tmp = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self._saved_origin = points.SHOT_ORIGIN
+        self.addCleanup(setattr, points, "SHOT_ORIGIN", self._saved_origin)
+
+    def patched(self, mons=None):
+        mons = self.mons if mons is None else mons
+        w, h = raw_canvas_size(mons)
+        src = self.tmp / "grim-raw.png"
+        _png_file(src, w, h)
+        per_out = {}
+        for m in mons:       # `grim -o NAME` is that output's own pixels
+            f = self.tmp / f"grim-{m['name']}.png"
+            _png_file(f, m["width"], m["height"])
+            per_out[m["name"]] = f
+        self.captured = []
+
+        def cmd(out, output=None):
+            self.captured.append(output)
+            return ["cp", str(per_out[output] if output else src), str(out)]
+
+        stack = [
+            mock.patch("wisp.cua_safety.capture_blocked", return_value=""),
+            mock.patch("wisp.platform.screenshot_cmd", side_effect=cmd),
+            mock.patch("wisp.platform.monitors", return_value=mons),
+            mock.patch("wisp.redact.apply", return_value=None),
+            mock.patch("wisp.config.load_config", return_value={}),
+            mock.patch.object(config, "RUN_DIR", self.tmp / "run"),
+        ]
+        for p in stack:
+            p.start()
+            self.addCleanup(p.stop)
+
+    def ground(self, target_logical, mons=None, providers=None,
+               region=None, capture=None):
+        mons = self.mons if mons is None else mons
+        region = region or points.logical_bbox(mons)
+        oracle = Oracle(target_logical, region)
+        t = g.ground_target(
+            "the thing", {"ground": {"providers": "vlm"}},
+            capture=capture or g._default_capture, monitors=mons,
+            providers=providers or {"vlm": {"fn": oracle, "fast": True}},
+            cua=object())
+        return t, oracle
+
+    def assertLands(self, target, got, tol=1):
+        self.assertLessEqual(abs(got.x - target[0]), tol, (target, got))
+        self.assertLessEqual(abs(got.y - target[1]), tol, (target, got))
+
+
+@_need_pil
+@_need_magick
+class NormalizedShot(Harness):
+    """stage_capture normalized the shot to logical size: image pixels ==
+    logical coords minus the shot origin."""
+
+    def test_shot_really_is_normalized(self):
+        self.patched()
+        out = stage_capture.capture_screen()
+        self.assertEqual(png_size(out), (5168, 1440))
+
+    def test_edp_centre_maps_to_edp_logical_centre(self):
+        self.patched()
+        t, _ = self.ground((864, 540))
+        self.assertLands((864, 540), t)
+
+    def test_dp3_point_maps_to_logical_x_1828(self):
+        self.patched()
+        t, _ = self.ground((1728 + 100, 50))
+        self.assertLands((1828, 50), t)
+
+    def test_candidate_size_smaller_than_shot_rescales_first(self):
+        self.patched()
+        seen = {}
+
+        def half_res(ctx):
+            w, h = ctx.shot.width, ctx.shot.height
+            tw, th = w // 2, h // 2           # the model saw a half image
+            seen["size"] = (tw, th)
+            return g.Candidate((1828 - 0) * tw / 5168, 50 * th / 1440,
+                               0.9, "vlm", size=(tw, th))
+
+        t, _ = self.ground(None, providers={"vlm": {"fn": half_res,
+                                                     "fast": True}})
+        self.assertLands((1828, 50), t, tol=2)
+
+    def test_negative_origin_layout_keeps_origin_offset(self):
+        left = {"name": "L", "x": -1920, "y": 0, "width": 1920,
+                "height": 1080, "scale": 1.0}
+        main = {"name": "M", "x": 0, "y": 0, "width": 1920,
+                "height": 1080, "scale": 1.0}
+        mons = [left, main]
+        self.patched(mons)
+        t, _ = self.ground((-1910, 10), mons=mons)
+        self.assertLands((-1910, 10), t)
+
+
+@_need_pil
+class RawShot(Harness):
+    """No magick: the shot is the raw grim canvas (max-scale, whole
+    layout) and keeps the uniform scale path."""
+
+    def _raw(self, mons=None):
+        mons = self.mons if mons is None else mons
+        w, h = raw_canvas_size(mons)
+        buf = io.BytesIO()
+        Image.new("RGB", (w // 8, h // 8)).save(buf, format="PNG")
+        s = g.Shot(g.base64.b64encode(buf.getvalue()).decode(), w, h)
+        return lambda: s
+
+    def test_raw_max_scale_canvas_uses_uniform_scale(self):
+        t, _ = self.ground((1828, 50), region=points.logical_bbox(LAYOUT),
+                           capture=self._raw())
+        self.assertLands((1828, 50), t)
+        t, _ = self.ground((864, 540), capture=self._raw())
+        self.assertLands((864, 540), t)
+
+
+def vlm_chat(target_name, point_in_view, seen):
+    """A `brain.chat` that behaves like a perfect pointing model: given
+    the image it was sent (whatever letterboxing did to it), answer with
+    the pixel `point_in_view(sent_w, sent_h)` it computed independently."""
+    def chat(messages, cfg, timeout=None):
+        url = messages[0]["content"][1]["image_url"]["url"]
+        raw = g.base64.b64decode(url.split(",", 1)[1])
+        w, h = Image.open(io.BytesIO(raw)).size
+        seen.append((w, h, cfg))
+        x, y = point_in_view(w, h)
+        return {"content": f"[POINT:{round(x)},{round(y)}:{target_name}]"}
+    return chat
+
+
+@_need_pil
+class Letterboxing(unittest.TestCase):
+    def shot(self, w, h):
+        buf = io.BytesIO()
+        Image.new("RGB", (w, h), (200, 200, 200)).save(buf, format="PNG")
+        return g.Shot.from_bytes(buf.getvalue())
+
+    def test_ultrawide_keeps_aspect_and_pads_top_and_bottom(self):
+        lb = self.shot(3440, 1440).letterboxed()
+        self.assertEqual((lb.width, lb.height), (1366, 768))
+        self.assertAlmostEqual(lb.scale_x, 1366 / 3440, places=3)
+        self.assertAlmostEqual(lb.scale_y, lb.scale_x, places=2)
+        self.assertEqual((lb.pad_x, lb.pad_y), (0, 98))
+        im = Image.open(io.BytesIO(g.base64.b64decode(lb.b64)))
+        self.assertEqual(im.size, (1366, 768))
+        self.assertEqual(im.getpixel((600, 10)), (0, 0, 0))      # padding
+        self.assertEqual(im.getpixel((600, 384)), (200, 200, 200))
+
+    def test_a_point_in_the_padded_image_maps_back_exactly(self):
+        lb = self.shot(3440, 1440).letterboxed()
+        for sx, sy in ((0, 0), (1720, 720), (3440, 1440), (100, 1300)):
+            px = sx * lb.scale_x + lb.pad_x
+            py = sy * lb.scale_y + lb.pad_y
+            got = lb.to_shot(px, py)
+            self.assertLessEqual(abs(got[0] - sx), 1, (sx, got))
+            self.assertLessEqual(abs(got[1] - sy), 1, (sy, got))
+
+    def test_a_point_inside_the_padding_is_refused_not_clamped(self):
+        lb = self.shot(3440, 1440).letterboxed()
+        self.assertIsNone(lb.to_shot(683, 10))
+        self.assertIsNone(lb.to_shot(683, 760))
+        self.assertIsNotNone(lb.to_shot(683, 384))
+
+    def test_a_padding_point_never_becomes_a_candidate(self):
+        shot = self.shot(3440, 1440)
+        chat = vlm_chat("x", lambda w, h: (w / 2, 10), [])
+        with mock.patch("wisp.brain.chat", side_effect=chat):
+            self.assertIsNone(g._vlm_locate(shot, "x", cfg={}))
+
+    def test_wide_and_exact_sizes(self):
+        lb = self.shot(1366, 768).letterboxed()
+        self.assertFalse(lb.padded)
+        self.assertEqual((lb.width, lb.height), (1366, 768))
+        lb = self.shot(1728, 1080).letterboxed()      # 16:10 -> 1280x800
+        self.assertEqual((lb.width, lb.height), (1280, 800))
+        self.assertFalse(lb.padded)
+
+
+class OutputOrder(unittest.TestCase):
+    def order(self, focus, cursor, mons=LAYOUT):
+        return g.output_order(mons, lambda: focus, lambda: cursor)
+
+    def test_focused_windows_output_first_then_cursors_then_rest(self):
+        self.assertEqual(self.order((2000, 100), (100, 100)),
+                         ["DP-3", "eDP-1"])
+        self.assertEqual(self.order((100, 100), (2000, 100)),
+                         ["eDP-1", "DP-3"])
+
+    def test_cursor_output_when_no_focused_window(self):
+        self.assertEqual(self.order(None, (2000, 100)), ["DP-3", "eDP-1"])
+
+    def test_unknown_focus_keeps_layout_order(self):
+        self.assertEqual(self.order(None, None), ["eDP-1", "DP-3"])
+
+    def test_single_or_unknown_layout_is_one_whole_capture(self):
+        self.assertEqual(self.order((5, 5), (5, 5), mons=[EDP]), [None])
+        self.assertEqual(self.order((5, 5), (5, 5), mons=[]), [None])
+
+
+@_need_pil
+@_need_magick
+class PerOutputGrounding(Harness):
+    def run_ground(self, focus, cursor, target, provider):
+        self.patched()
+        cfg = {"ground": {"providers": "vlm"}}
+        return g.ground_target(
+            "the thing", cfg, monitors=LAYOUT,
+            providers={"vlm": {"fn": provider, "fast": False}},
+            cua=object(), focus=lambda: focus, cursor=lambda: cursor)
+
+    def region(self, name):
+        m = next(m for m in LAYOUT if m["name"] == name)
+        s = m["scale"]
+        return (m["x"], m["y"], m["width"] / s, m["height"] / s)
+
+    def test_target_on_the_focused_output_needs_one_capture(self):
+        oracle = Oracle((1828, 50), self.region("DP-3"))
+        t = self.run_ground((2000, 100), (100, 100), None, oracle)
+        self.assertLands((1828, 50), t)
+        self.assertEqual(self.captured, ["DP-3"])
+        self.assertEqual(oracle.seen, [(3440, 1440)])   # one monitor only
+
+    def test_target_only_on_the_other_monitor_is_found_second(self):
+        def only_on_dp3(ctx):
+            if ctx.shot.output != "DP-3":
+                return None
+            return Oracle((1828, 50), self.region("DP-3"))(ctx)
+        # focus + cursor both on eDP-1: DP-3 is the fallback pass
+        t = self.run_ground((100, 100), (100, 100), None, only_on_dp3)
+        self.assertLands((1828, 50), t)
+        self.assertEqual(self.captured[:2], ["eDP-1", "DP-3"])
+
+    def test_other_output_target_on_edp_maps_with_edp_origin(self):
+        def only_on_edp(ctx):
+            if ctx.shot.output != "eDP-1":
+                return None
+            return Oracle((864, 540), self.region("eDP-1"))(ctx)
+        t = self.run_ground((2000, 100), (2000, 100), None, only_on_edp)
+        self.assertLands((864, 540), t)
+        self.assertEqual(self.captured[:2], ["DP-3", "eDP-1"])
+
+    def test_end_to_end_letterboxed_model_on_the_ultrawide(self):
+        self.patched()
+        # a perfect model: the DP-3 view is 3440x1440 logical shown at
+        # `k` with a top pad; the button is 100,50 logical into it
+        def where(w, h):
+            k = min(w / 3440.0, h / 1440.0)
+            return ((w - 3440 * k) / 2 + 100 * k,
+                    (h - 1440 * k) / 2 + 50 * k)
+        seen = []
+        chat = vlm_chat("the thing", where, seen)
+        with mock.patch("wisp.brain.chat", side_effect=chat):
+            t = g.ground_target(
+                "the thing", {"ground": {"providers": "vlm"}},
+                monitors=LAYOUT, cua=object(),
+                providers={"vlm": g.PROVIDERS["vlm"]},
+                focus=lambda: (2000, 100), cursor=lambda: None)
+        self.assertEqual(seen[0][:2], (1366, 768))      # never squashed
+        self.assertLands((1828, 50), t, tol=3)          # model px = 2.5 px
+        self.assertEqual(self.captured, ["DP-3"])
+
+    def test_per_output_capture_leaves_the_turns_shot_origin_alone(self):
+        self.patched()
+        points.SHOT_ORIGIN = (0, 0)       # the turn screenshot's origin
+        oracle = Oracle((1828, 50), self.region("DP-3"))
+        self.run_ground((2000, 100), (100, 100), None, oracle)
+        self.assertEqual(self.captured, ["DP-3"])
+        self.assertEqual(points.SHOT_ORIGIN, (0, 0))   # not DP-3's (1728,0)
+
+    def test_pinned_output_is_the_only_capture(self):
+        self.patched()
+        oracle = Oracle((864, 540), self.region("eDP-1"))
+        t = g.ground_target(
+            "the thing", {"ground": {"providers": "vlm"}}, monitors=LAYOUT,
+            output="eDP-1", cua=object(),
+            providers={"vlm": {"fn": oracle, "fast": False}})
+        self.assertLands((864, 540), t)
+        self.assertEqual(self.captured, ["eDP-1"])
+
+
+@_need_pil
+class RawPerOutput(Harness):
+    """No magick: `grim -o` pixels are that output's own scale, not the
+    layout's max scale."""
+
+    def raw(self, mons_entry):
+        buf = io.BytesIO()
+        Image.new("RGB", (mons_entry["width"] // 16,
+                          mons_entry["height"] // 16)).save(buf, "PNG")
+        return g.Shot(g.base64.b64encode(buf.getvalue()).decode(),
+                      mons_entry["width"], mons_entry["height"], None,
+                      mons_entry["name"])
+
+    def ground_raw(self, entry, px):
+        def prov(ctx):
+            return g.Candidate(px[0], px[1], 0.9, "vlm",
+                               size=(ctx.shot.width, ctx.shot.height))
+        with mock.patch.object(g, "_default_capture",
+                               side_effect=lambda output=None:
+                               self.raw(next(m for m in LAYOUT
+                                             if m["name"] == output))):
+            return g.ground_target(
+                "x", {"ground": {"providers": "vlm"}}, monitors=LAYOUT,
+                cua=object(), providers={"vlm": {"fn": prov, "fast": True}},
+                focus=lambda: (entry["x"] + 5, entry["y"] + 5),
+                cursor=lambda: None)
+
+    def test_dp3_raw_capture_uses_dp3_scale_1_not_layout_scale_2(self):
+        t = self.ground_raw(DP3, (200, 100))
+        self.assertEqual((t.x, t.y), (1728 + 200, 100))
+
+    def test_edp_raw_capture_uses_edp_scale_2(self):
+        t = self.ground_raw(EDP, (200, 100))
+        self.assertEqual((t.x, t.y), (100, 50))
+
+
+class OneCanvasModel(unittest.TestCase):
+    """U2: grounding.convert, points.to_logical and verify._frame_rect
+    all read grim's raw canvas the same way."""
+
+    # (name, logical point, raw canvas pixel under the uniform model)
+    CASES = [("eDP-1", (864, 540), (1728, 1080)),
+             ("DP-3", (1828, 50), (3656, 100)),
+             ("DP-3 far edge", (5000, 1400), (10000, 2800))]
+
+    def test_three_callers_agree_on_both_monitors(self):
+        for name, logical, px in self.CASES:
+            with self.subTest(name):
+                c = g.convert(*px, "shot", LAYOUT)
+                t = points.to_logical([{"x": px[0], "y": px[1]}], LAYOUT)[0]
+                self.assertEqual(c, logical)
+                self.assertEqual((t["x"], t["y"]), logical)
+                # a 10x10 logical rect centred there lands on the same px
+                box = verify._frame_rect(
+                    (logical[0] - 5, logical[1] - 5, 10, 10), LAYOUT)
+                self.assertEqual((box[0] + box[2] // 2,
+                                  box[1] + box[3] // 2), px)
+                self.assertEqual(box[2:], [20, 20])
+
+    def test_dead_space_maps_off_screen_and_is_rejected(self):
+        # below eDP-1 (1080 logical tall), left of DP-3 (x < 1728)
+        px = (200, 2700)
+        lx, ly = g.convert(*px, "shot", LAYOUT)
+        self.assertEqual((lx, ly), (100, 1350))
+        self.assertFalse(points.on_screen(lx, ly, LAYOUT))
+        self.assertTrue(points.on_screen(1828, 50, LAYOUT))
+
+    def test_single_monitor_scale_1_is_unchanged(self):
+        mons = [{"name": "H", "x": 0, "y": 0, "width": 1920,
+                 "height": 1080, "scale": 1.0}]
+        self.assertEqual(g.convert(700, 300, "shot", mons), (700, 300))
+        t = points.to_logical([{"x": 700, "y": 300}], mons)[0]
+        self.assertEqual((t["x"], t["y"]), (700, 300))
+        self.assertEqual(verify._frame_rect((10, 20, 30, 40), mons),
+                         [10, 20, 30, 40])
+
+    def test_round_trip(self):
+        for lx, ly in ((0, 0), (1728, 0), (4000, 1000), (-3, 7)):
+            px = points.logical_to_raw_canvas(lx, ly, LAYOUT)
+            back = points.raw_canvas_to_logical(*px, LAYOUT)
+            self.assertAlmostEqual(back[0], lx)
+            self.assertAlmostEqual(back[1], ly)
+
+    @unittest.skipUnless(shutil.which("grim")
+                         and __import__("os").environ.get("WISP_LIVE_GRIM"),
+                         "needs grim, a compositor and WISP_LIVE_GRIM=1")
+    def test_real_grim_capture_size_matches_the_model(self):
+        import subprocess
+        mons = points.monitors()
+        out = pathlib.Path(tempfile.mkdtemp()) / "g.png"
+        subprocess.run(["grim", str(out)], check=True, timeout=20)
+        self.assertEqual(png_size(out), raw_canvas_size(mons))
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,23 +1,9 @@
 {
-  "description": "Answer route with a press-time selection: it reaches the brain as a quoted data block (B22).",
+  "description": "Plain question (fast path, no Jev hop) with a press-time selection: it reaches the brain as a quoted data block (B22).",
   "audio": "ask.wav",
   "endpoints": {
     "whisper": {
       "transcript": "what does this mean"
-    },
-    "jev": {
-      "answers": {
-        "route": {
-          "choice": "answer"
-        },
-        "app": {
-          "choice": "none",
-          "confidence": 0.99
-        },
-        "risk": {
-          "score": 0
-        }
-      }
     },
     "brain": {
       "responses": [

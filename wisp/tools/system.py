@@ -3,12 +3,49 @@ import pathlib
 import re
 import shutil
 import subprocess
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 from .. import cancel as _cancel
 from .. import config
 from .. import delivery as _delivery
+from .. import gauntlet as _gauntlet
 from .. import hypr
+from .. import vpointer as _vp
 from ..pipeline import hypr_env, notify
+
+_POINTER_CONTEXT = ContextVar("wisp_pointer_context", default=None)
+
+
+@contextmanager
+def pointer_context(*, target=None, user_request: str = ""):
+    """Caller-owned provenance, never populated from a tool-call payload.
+
+    Scoped to one dispatch so a grounded element/coordinate instruction
+    cannot authorize the next action or leak into a concurrent turn.
+    """
+    token = _POINTER_CONTEXT.set((target, user_request))
+    try:
+        yield
+    finally:
+        _POINTER_CONTEXT.reset(token)
+
+
+def _human_coordinates(arg: str) -> bool:
+    """Narrow literal-coordinate instruction from the trusted caller only."""
+    context = _POINTER_CONTEXT.get()
+    request = context[1] if context else ""
+    if not isinstance(request, str):
+        return False
+    match = re.fullmatch(
+        r"\s*(?:please\s+)?(?:click|tap)\s+(?:at\s+)?"
+        r"(-?\d+)\s*,\s*(-?\d+)\s*(@logical)?\s*[.!]?\s*",
+        request, re.IGNORECASE)
+    chosen = re.fullmatch(r"\s*(-?\d+)\s*,\s*(-?\d+)\s*(@logical)?\s*",
+                          arg or "")
+    return bool(match and chosen
+                and (int(match[1]), int(match[2]), bool(match[3]))
+                == (int(chosen[1]), int(chosen[2]), bool(chosen[3])))
 
 # input tools that would seize the real cursor in a way the user can't
 # take back cleanly — double-click races the user's own clicks, drag
@@ -241,7 +278,7 @@ def _dom_shot(path, cfg: dict) -> str:
     return f"SHOT {path}"
 
 
-def _normalize_shot(path, output: str | None = None) -> None:
+def _normalize_shot(path, output: str | None = None) -> tuple | None:
     """Resize the shot to its logical size so image pixels == Hyprland
     logical coords, then overlay a labeled 100px grid (set-of-mark
     style) — models localize noticeably better when the coordinate
@@ -250,23 +287,27 @@ def _normalize_shot(path, output: str | None = None) -> None:
     emitted coords un-mappable; pinning to logical size keeps
     click/move 1:1 regardless. Records the shot's logical origin in
     points.SHOT_ORIGIN so coordinate mapping stays exact for
-    single-output captures."""
+    single-output captures.
+
+    Returns the shot's logical origin (x, y) when the image was
+    rewritten to logical size, else None: the caller then holds a raw
+    grim canvas, whose pixels are NOT logical."""
     from .. import points
     magick = shutil.which("magick")
     if not magick:
-        return
+        return None
     mons = points.monitors()
     if output:
         m = next((m for m in mons if m.get("name") == output), None)
         if not m:
-            return
+            return None
         s = float(m.get("scale", 1) or 1)
         x, y = m.get("x", 0), m.get("y", 0)
         w, h = round(m.get("width", 0) / s), round(m.get("height", 0) / s)
     else:
         x, y, w, h = points.logical_bbox(mons)
     if not w or not h:
-        return
+        return None
     points.SHOT_ORIGIN = (x, y)
     import os as _os
     import time as _time
@@ -287,7 +328,7 @@ def _normalize_shot(path, output: str | None = None) -> None:
             + [f"line 0,{gy} {w},{gy}" for gy in range(100, h, 100)]
             + [f"text {gx + 2},12 '{gx}'" for gx in range(0, w, 100)]
             + [f"text 2,{gy + 12} '{gy}'" for gy in range(0, h, 100)])
-        _cancel.run(
+        r = _cancel.run(
             [magick, str(path), "-resize", f"{w}x{h}!",
              "-stroke", "rgba(255,80,80,0.45)", "-strokewidth", "1",
              "-fill", "rgba(255,80,80,0.9)", "-pointsize", "12",
@@ -300,8 +341,9 @@ def _normalize_shot(path, output: str | None = None) -> None:
                      "out_kb": _os.path.getsize(path) // 1024,
                      "origin": [x, y]},
                     ms=round((_time.monotonic() - t0) * 1000))
+        return (x, y) if r.returncode == 0 else None
     except (OSError, subprocess.SubprocessError):
-        pass
+        return None
 
 
 def model_image(path) -> str | None:
@@ -371,6 +413,12 @@ def _dom_eval(cfg: dict, code: str) -> str:
 
 
 def type_text(text: str, cfg: dict | None = None) -> str:
+    # gauntlet runs: the sandbox identity check, run again right before
+    # the keystroke (focus can move after the policy gate)
+    from .. import gauntlet
+    refused = gauntlet.keystroke_guard(cfg or {})
+    if refused:
+        return refused
     # typing never moves the pointer — wtype/ydotool type at the
     # focused surface, the DOM path sets values over JS
     _delivery.note("background")
@@ -400,17 +448,34 @@ def type_text(text: str, cfg: dict | None = None) -> str:
         return ("TYPED" if r.startswith("typed:")
                 else f"SKIP ({r[:60]})")
     from .. import platform
-    cmd = platform.type_text_cmd(text)
+    iso = _vp.is_isolated(cfg)
+    try:
+        cmd = platform.type_text_cmd(isolated=iso)
+        env = _vp.isolated_env() if iso else hypr_env()
+    except _vp.UinputRefused as e:
+        return f"REFUSED ({e})"
     if not cmd:
         return (f"SKIP (no typer — {platform.missing_deps_hint()})")
-    r = _cancel.run(cmd, capture_output=True, env=hypr_env())
+    # the text goes on stdin, not argv: other local accounts can read argv.
+    # wtype's keymap reaches the Wisp submap: its keycode matches the Esc
+    # bind and every typed string interrupted the turn (isolated run, then
+    # the live gauntlet: browser-open-page CANCELLED (user) after type_text),
+    # so the submap steps aside as it does for a `key` step.
+    from .. import keys as _keys
+    with _keys.suspended():
+        r = _cancel.run(cmd, input=text.encode("utf-8"),
+                        capture_output=True, env=env)
     return "TYPED" if r.returncode == 0 else "SKIP (typer failed)"
 
 
 _KEYCODES = {"esc": 1, "enter": 28, "tab": 15, "space": 57,
              "backspace": 14, "up": 103, "down": 108, "left": 105,
              "right": 106, "pageup": 104, "pagedown": 109,
-             "home": 102, "end": 107}
+             "home": 102, "end": 107, "delete": 111, "insert": 110,
+             # linux/input-event-codes.h: KEY_F1..F10 = 59..68,
+             # KEY_F11 = 87, KEY_F12 = 88 (F2 renames in file managers)
+             **{f"f{i}": 58 + i for i in range(1, 11)},
+             "f11": 87, "f12": 88}
 _MODS = {"ctrl": 29, "control": 29, "shift": 42, "alt": 56,
          "super": 125, "meta": 125, "cmd": 125}
 # evdev letter/digit codes for chords like 'ctrl+v' (dictation paste):
@@ -442,20 +507,78 @@ def _chord(name: str) -> list | None:
         + [f"{c}:0" for c in reversed(mods)]
 
 
+# wtype spellings (XKB keysyms / modifier names) for the isolated run,
+# where ydotool's uinput codes are refused
+_WTYPE_KEYS = {"esc": "Escape", "enter": "Return", "tab": "Tab",
+               "space": "space", "backspace": "BackSpace", "up": "Up",
+               "down": "Down", "left": "Left", "right": "Right",
+               "pageup": "Prior", "pagedown": "Next", "home": "Home",
+               "end": "End", "delete": "Delete", "insert": "Insert",
+               **{f"f{i}": f"F{i}" for i in range(1, 13)}}
+_WTYPE_MODS = {"ctrl": "ctrl", "control": "ctrl", "shift": "shift",
+               "alt": "alt", "super": "logo", "meta": "logo",
+               "cmd": "logo"}
+
+
+def _wtype_argv(name: str) -> list | None:
+    """argv for a bare key or 'ctrl+shift+v' chord via wtype, or None
+    when a part is unmappable."""
+    parts = name.split("+")
+    mods = [_WTYPE_MODS.get(p) for p in parts[:-1]]
+    if any(m is None for m in mods):
+        return None
+    last = parts[-1]
+    k = _WTYPE_KEYS.get(last) or (last if len(last) == 1
+                                  and last.isalnum() else None)
+    if k is None:
+        return None
+    argv = ["wtype"]
+    for m in mods:
+        argv += ["-M", m]
+    argv += ["-k", k]
+    for m in reversed(mods):
+        argv += ["-m", m]
+    return argv
+
+
+def _iso_key(name: str) -> str:
+    """Key press for an isolated run: wtype on the instance socket only."""
+    from .. import platform
+    try:
+        if not platform._which("wtype"):
+            _vp.refuse("a key press without wtype (no ydotool fallback)")
+        env = _vp.isolated_env()
+    except _vp.UinputRefused as e:
+        return f"REFUSED ({e})"
+    argv = _wtype_argv(name)
+    if argv is None:
+        return f"SKIP (unknown key {name!r})"
+    from .. import keys as _keys
+    with _keys.suspended():
+        r = _cancel.run(argv, capture_output=True, env=env)
+    return "KEY" if r.returncode == 0 else "SKIP (wtype key failed)"
+
+
 def key(arg: str, cfg: dict | None = None) -> str:
     """Press a named key — 'enter', 'tab', 'down', 'pagedown', 'ctrl+v',
     'ctrl+shift+t' (modifier chords are ydotool-only, never DOM)."""
+    from .. import gauntlet
+    refused = gauntlet.keystroke_guard(cfg or {}, arg)
+    if refused:
+        return refused
     _delivery.note("background")   # key events ride the keyboard path
     name = (arg or "").strip().lower().replace(" ", "")
     name = {"return": "enter", "escape": "esc", "pgdn": "pagedown",
             "pgup": "pageup", "arrowdown": "down",
-            "arrowup": "up"}.get(name, name)
+            "arrowup": "up", "del": "delete"}.get(name, name)
     if "+" in name:
         seq = _chord(name)
         if seq is None:
             return f"SKIP (unknown chord {name!r})"
         if (cfg or {}).get("screen", {}).get("dom_page"):
             return "SKIP (key chords are ydotool-only, not dom)"
+        if _vp.is_isolated(cfg):
+            return _iso_key(name)
         from .. import keys as _keys
         with _keys.suspended():  # the Wisp submap must not eat the chord
             r = _cancel.run(["ydotool", "key", *seq],
@@ -483,6 +606,8 @@ def key(arg: str, cfg: dict | None = None) -> str:
     code = _KEYCODES.get(name)
     if code is None:
         return f"SKIP (unknown key {name!r})"
+    if _vp.is_isolated(cfg):
+        return _iso_key(name)
     from .. import keys as _keys
     with _keys.suspended():  # the Wisp submap must not eat the agent's key
         r = _cancel.run(["ydotool", "key", f"{code}:1", f"{code}:0"],
@@ -601,6 +726,14 @@ def scroll(arg: str, cfg: dict | None = None) -> str:
         amt = 7200
     elif top:
         amt, up = 7200, True
+    if _vp.is_isolated(cfg):
+        try:
+            _vp.scroll(dy=-amt if up else amt, env=_vp.isolated_env())
+        except _vp.UinputRefused as e:
+            return f"REFUSED ({e})"
+        except _vp.VPointerError as e:
+            return f"SKIP (isolated scroll failed: {e})"
+        return "SCROLLED"
     r = _cancel.run(
         ["ydotool", "mousemove", "--wheel",
          "-y", str(-amt if up else amt)],
@@ -663,19 +796,25 @@ def _parse_xy(arg: str):
     return pts[0]["x"], pts[0]["y"]
 
 
-def _resolve_target_xy(arg: str, cfg: dict | None = None):
+def _resolve_target(arg: str, cfg: dict | None = None):
     """Resolve 'x,y', 'x,y@logical', or a natural-language element via the
     W13 grounding adapter."""
     xy = _parse_xy(arg)
     if xy is not None:
-        return xy
+        from .. import grounding
+        context = _POINTER_CONTEXT.get()
+        target = context[0] if context else None
+        if isinstance(target, grounding.Target) \
+                and target.frame in ("global", "logical") \
+                and (target.x, target.y) == xy:
+            return target
+        return grounding.Target(*xy, "global", 1.0, "model")
     # name -> grounding adapter chain (a11y / UI-TARS / Jev). Returns
     # compositor-global (== logical) coords; a low-confidence or missing
     # target resolves to None and is never clicked.
     try:
         from .. import grounding
-        t = grounding.ground_target(arg, cfg)
-        return t.x, t.y
+        return grounding.ground_target(arg, cfg)
     except grounding.GroundRefused:
         return None
     except Exception as e:
@@ -683,6 +822,12 @@ def _resolve_target_xy(arg: str, cfg: dict | None = None):
         if isinstance(e, cancel.Cancelled):
             raise
         return None
+
+
+def _resolve_target_xy(arg: str, cfg: dict | None = None):
+    """Read-only coordinate adapter; mutation keeps the entire Target."""
+    target = _resolve_target(arg, cfg)
+    return (target.x, target.y) if target is not None else None
 
 
 def _run_cmds(cmds: list) -> bool:
@@ -695,19 +840,6 @@ def _run_cmds(cmds: list) -> bool:
         if r.returncode != 0:
             return False
     return True
-
-
-def _drive(x: int, y: int, backend: str, do_click: bool) -> bool:
-    """Pointer precedence: cua (when it is the live backend) always
-    wins, so the user's real cursor is never touched; otherwise a
-    move-only goes over the Hyprland socket eval (no fork); everything
-    else runs the backend's argv (hyprcursor+ydotool / ydotool / wlrctl).
-    """
-    from .. import platform
-    if backend != "cua" and not do_click and platform.uses_hypr() \
-            and hypr.run_lua(hypr.cursor_move(x, y)):
-        return True
-    return _run_cmds(platform.pointer_cmds(x, y, backend, click=do_click))
 
 
 def _move_fallback(x: int, y: int, cfg: dict | None) -> bool:
@@ -810,19 +942,49 @@ def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
         hm = _re.search(r"hit:([^\n]+)", out)
         return (f"CLICKED {hm.group(1).strip()}" if hm
                 else f"SKIP ({out[:60]})")
-    xy = _resolve_target_xy(arg, cfg)
-    if xy is None:
+    target = _resolve_target(arg, cfg)
+    if target is None:
         return f"FAIL (could not resolve coordinates or ground target {arg!r})"
-    x, y = xy
-    from .. import platform
+    x, y = target.x, target.y
+    from .. import platform, points
+    mons = points.monitors()
+    if not points.on_screen(x, y, mons):
+        # a coordinate from the wrong space (or invented) maps to no
+        # monitor: driving it clicks nothing, and the loop reads the
+        # click as done. Refuse so the model re-aims from the screenshot.
+        bx, by, bw, bh = points.logical_bbox(mons)
+        return (f"FAIL ({x},{y} is off every screen (screen spans "
+                f"{bx},{by} to {bx + bw},{by + bh}); re-aim from the "
+                "latest screenshot)")
     mode = (cfg or {}).get("pointer", {}).get("mode", "guide")
     op = "click" if do_click else "move"
     # [cua] delivery picks the backend (auto order, pointer-escalation
     # for `pointer`, real-pointer refusal for `background`); a DOM page
     # already returned above — everything below is a compositor op
-    backend = _delivery.resolve_backend(cfg, op) if mode == "drive" \
+    backend = _delivery.resolve_backend(cfg, op) if mode in ("drive", "auto") \
         else None
     if backend:
+        # a gauntlet click executes only on a registered sandbox window
+        # (the hit test below is off for gauntlet runs, so this is the
+        # fail-closed replacement; menu cases register none and refuse)
+        if do_click:
+            refused = _gauntlet.click_guard(cfg or {}, x, y)
+            if refused:
+                return refused
+        # the hit test needs the control/a11y providers, and an isolated
+        # session has neither (cua is bound to the live compositor); no
+        # evidence is not "no element", so the guard stays off there. The
+        # same holds for a gauntlet run on the live session: the sandbox
+        # apps expose no controls, and the click is already confined to a
+        # sandbox window (wisp.gauntlet). Owner use keeps the guard.
+        if (do_click and not target.element_backed
+                and not _human_coordinates(arg)
+                and not _vp.is_isolated(cfg)
+                and not _gauntlet.is_gauntlet(cfg)):
+            from .. import grounding
+            if grounding.target_at_point(x, y, cfg) is None:
+                return ("REFUSED (no element at model-chosen coordinates; "
+                        "re-observe or name the target)")
         # pointer.Registry owns precedence: a move falls through the
         # chain, a failed click is NOT retried elsewhere (double-click
         # risk) and the act loop re-observes instead.
@@ -835,6 +997,12 @@ def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
         if not out.ok:
             return f"SKIP ({op} failed via {out.backend or backend})"
         return f"{'CLICKED' if do_click else 'MOVED'}({x},{y})"
+    if _vp.is_isolated(cfg) and mode in ("drive", "auto"):
+        # an isolated run never degrades to guide: there is no human to
+        # click, and falling back to a live-seat injector is refused
+        return ("REFUSED (isolated session: no instance-scoped pointer "
+                "backend is available; the virtual pointer needs the "
+                "instance's WAYLAND_DISPLAY)")
     # guide mode — ghost cursor carries the intent, the user clicks
     verb = "GUIDE" if do_click else "MOVE-GUIDE"
     _delivery.note("guide")

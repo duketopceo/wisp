@@ -29,8 +29,8 @@ repo**, never from the extracted copy:
 Non-MIT corpus files — the 11 composio-coupled integration skills,
 the vendor's browser skill, `the vendor's model-instructions file`, `powerpoint.md`
 (declared Proprietary), and license-less files — contribute **nothing**:
-no text, no structure. This eliminates EULA/proprietary exposure rather
-than managing it.
+no text, no structure. These sourcing rules prohibit copying proprietary
+inputs; they are not an independent license or EULA review.
 
 ## Coverage matrix: surfaced apps → wisp backlog
 

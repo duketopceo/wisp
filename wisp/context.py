@@ -42,6 +42,29 @@ def focused_app() -> str:
     return (win.get("class") or win.get("app") or "").lower()
 
 
+def focus_url_host(app: str = "", title: str = "") -> str:
+    """Best-effort URL host from the focused window title when in a browser."""
+    raw = f"{app} {title}".lower()
+    for host in ("mail.google.com", "github.com", "linear.app",
+                 "dashboard.stripe.com", "stripe.com", "notion.so",
+                 "calendar.google.com", "docs.google.com", "drive.google.com",
+                 "app.slack.com", "discord.com", "figma.com", "perplexity.ai",
+                 "openrouter.ai", "cloudflare.com", "vercel.com"):
+        if host in raw:
+            return host
+    if "gmail" in raw:
+        return "mail.google.com"
+    if "github" in raw:
+        return "github.com"
+    if "linear" in raw:
+        return "linear.app"
+    if "stripe" in raw:
+        return "dashboard.stripe.com"
+    if "notion" in raw:
+        return "notion.so"
+    return ""
+
+
 def windows_map() -> str:
     """'ws1:BrowserOS — Personal · ws4:Godot' — every open window per
     workspace, so 'the browser' resolves by title when several are up
@@ -77,8 +100,13 @@ def snapshot(cfg: dict) -> str:
     parts = []
     if app:
         parts.append(f"app={app}")
-    if title and mode == "full":
-        parts.append(f"title={title[:80]!r}")
+    if title:
+        if mode == "full":
+            parts.append(f"title={title[:80]!r}")
+        for prof in ("personal", "work"):
+            if prof in title.lower():
+                parts.append(f"profile={prof}")
+                break
     if mode == "full":
         doing = _last_dayflow()
         if doing:
@@ -97,6 +125,19 @@ def snapshot(cfg: dict) -> str:
         env = _inv.summary(cfg)
         if env:
             out += "\n" + env
+        if app or title:
+            info = skills.match_app_skill_info(
+                app, url_host=focus_url_host(app, title))
+            app_body = info["body"] if info else ""
+            if app_body:
+                out += "\n\n[app_skill]\n" + app_body
+                # reuse is observable: run 2 of a gauntlet case shows
+                # whether the saved skill was injected
+                from . import trace
+                trace.emit(trace.current(), "app_skill", "context",
+                           {"name": info.get("name", ""),
+                            "matched_by": info.get("matched_by", ""),
+                            "chars": len(app_body)})
     pm = cfg.get("agent", {}).get("password_manager", "")
     if pm == "1password":
         out += ("\n[prefs] password_manager=1password — a 1Password "

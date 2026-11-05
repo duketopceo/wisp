@@ -18,13 +18,30 @@ class TestPlatform(unittest.TestCase):
         self.assertEqual(platform.current(), "linux")
 
     def test_linux_dirs_unchanged(self):
+        env = {k: v for k, v in os.environ.items()
+               if k != "XDG_CONFIG_HOME"}
         with _with_os("linux"), \
-                mock.patch.dict(os.environ, {},
-                                clear=False):
+                mock.patch.dict(os.environ, env, clear=True):
             cfg, data, rt = platform.dirs()
             self.assertTrue(cfg.as_posix().endswith(".config/wisp"))
             self.assertTrue(data.as_posix().endswith(
                 ".local/share/wisp"))
+
+    def test_xdg_config_home_moves_the_config_dir(self):
+        # the gauntlet driver points it at a throwaway directory so its
+        # daemon never reads the owner's config or .env
+        with _with_os("linux"), mock.patch.dict(
+                os.environ, {"XDG_CONFIG_HOME": "/tmp/gauntlet/config"}):
+            cfg, data, _ = platform.dirs()
+        self.assertEqual(cfg, Path("/tmp/gauntlet/config/wisp"))
+        self.assertTrue(data.as_posix().endswith(".local/share/wisp"))
+
+    def test_relative_or_empty_xdg_config_home_is_ignored(self):
+        for bad in ("", "relative/dir"):
+            with _with_os("linux"), mock.patch.dict(
+                    os.environ, {"XDG_CONFIG_HOME": bad}):
+                cfg, _, _ = platform.dirs()
+            self.assertTrue(cfg.as_posix().endswith(".config/wisp"), bad)
 
     def test_linux_cmds(self):
         with _with_os("linux"):
@@ -36,7 +53,7 @@ class TestPlatform(unittest.TestCase):
                 shot = platform.screenshot_cmd(Path("/t/s.png"))
                 self.assertEqual(shot[0], "grim")
                 self.assertEqual(
-                    platform.type_text_cmd("hi")[0], "wtype")
+                    platform.type_text_cmd()[0], "wtype")
                 self.assertEqual(platform.tts_binary(), "espeak-ng")
 
     def test_toggle_cmds_omit_duration(self):
@@ -66,7 +83,7 @@ class TestPlatform(unittest.TestCase):
                 self.assertEqual(
                     platform.screenshot_cmd(Path("/t/s.png"))[0], shot)
                 self.assertEqual(
-                    platform.type_text_cmd("hi")[0], typer)
+                    platform.type_text_cmd()[0], typer)
                 self.assertEqual(platform.current(), "linux")
 
     def test_desktop_fallback_order(self):
@@ -102,6 +119,29 @@ class TestPlatform(unittest.TestCase):
         p.stdout, p.returncode = "", 1
         with _with_os("linux"):
             self.assertFalse(platform.wm_ok(p))
+
+    def test_macos_and_windows_telemetry_seams(self):
+        with _with_os("macos"), \
+                mock.patch.object(platform, "_which", return_value=True):
+            self.assertEqual(platform.current(), "macos")
+            self.assertEqual(platform.desktop(), "")
+            cfg, data, _ = platform.dirs()
+            self.assertIn("Application Support/wisp", cfg.as_posix())
+            self.assertEqual(platform.screenshot_cmd(Path("/t/s.png"))[0],
+                             "screencapture")
+            self.assertEqual(platform.record_cmd(Path("/t/u.wav"), 5)[0],
+                             "sox")
+            self.assertEqual(platform.tts_binary(), "say")
+            self.assertEqual(platform.audio_player(), ["afplay"])
+        with _with_os("windows"), \
+                mock.patch.object(platform, "_which", return_value=True):
+            self.assertEqual(platform.current(), "windows")
+            self.assertEqual(platform.desktop(), "")
+            self.assertEqual(platform.screenshot_cmd(Path("/t/s.png"))[0],
+                             "powershell")
+            self.assertEqual(platform.record_cmd(Path("/t/u.wav"), 5)[0],
+                             "sox")
+            self.assertEqual(platform.tts_binary(), "powershell")
 
 
 

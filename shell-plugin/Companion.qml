@@ -28,7 +28,6 @@ Item {
     : (shell && manifest ? shell.serviceFor(manifest.id) : null)
 
   property bool bubbleDismissed: false
-  property bool labeled: false
 
   // plugin contract: the shell calls these for reasons that are not ours
   // (rescan, panel sweep); an overlay with nothing persistent has nothing
@@ -128,15 +127,9 @@ Item {
     }
   }
 
-  // ask chips leave on their own a few seconds after the tap
+  // ask chips leave on their own a few seconds after the tap (the timer
+  // lives inside the window: `layer` is not in scope at the root)
   readonly property int chipsSeq: svc && svc.chips ? svc.chips.seq : 0
-  onChipsSeqChanged: chipsLeave.restart()
-  Timer {
-    id: chipsLeave
-    interval: ChipsLib.SHOW_MS
-    running: layer.chipsShown
-    onTriggered: layer.askChipsItem.expired = true
-  }
 
   Timer {
     interval: 33
@@ -155,7 +148,6 @@ Item {
     target: root.svc
     function onTurnChanged() {
       root.bubbleDismissed = false;
-      root.labeled = false;
     }
     function onConfirmChanged() {
       if (root.svc.confirm === null) return;
@@ -182,6 +174,8 @@ Item {
         Region { item: layer.scribbleActive ? layer.scribbleItem : null }
         Region { item: layer.pillShown ? layer.pill : null }
         Region { item: layer.bubbleShown ? layer.bubbleHost : null }
+        // the 3D card takes clicks only while it is on screen
+        Region { item: layer.modelShown ? layer.modelItem : null }
       }
       WlrLayershell.namespace: "wisp-points"
       WlrLayershell.layer: WlrLayer.Overlay
@@ -191,8 +185,19 @@ Item {
       // confirm card ignores it: the daemon's own deadline ends the card.
       Timer {
         interval: Cursor.dwellMs(root.svc.answer)
-        running: layer.bubbleShown && !layer.bubbleHovered && root.svc.confirm === null
+        running: layer.bubbleShown && !layer.bubbleHovered && !layer.modelHovered && root.svc.confirm === null
         onTriggered: root.bubbleDismissed = true
+      }
+
+      Timer {
+        id: chipsLeave
+        interval: ChipsLib.SHOW_MS
+        running: layer.chipsShown
+        onTriggered: layer.askChipsItem.expired = true
+      }
+      Connections {
+        target: root
+        function onChipsSeqChanged() { chipsLeave.restart(); }
       }
 
       // this window's screen and the overlay's label pill size feed the
@@ -218,11 +223,10 @@ Item {
         gap: Style.gapsOut
         refreshHz: root.refreshOf(win.screen)
         bubbleDismissed: root.bubbleDismissed
-        labeled: root.labeled
         onChoose: function (pick, index) { root.svc.sendChoice(pick, root.svc.promptId); }
         onConfirmChosen: function (pick, promptId) { root.svc.sendChoice(pick, promptId); }
         onMoreClicked: root.bubbleDismissed = true
-        onVerdict: function (verdict) { root.labeled = true; root.svc.label(verdict); }
+        onVerdict: function (verdict, turn) { root.svc.label(verdict, turn, ""); }
         onScribbled: function (payload) { root.svc.scribble(payload); }
       }
     }

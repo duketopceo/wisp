@@ -2,12 +2,18 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import "lib/state.js" as Reader
 import "lib/copy.js" as Copy
 import "lib/tokens.js" as Tokens
 import "lib/motion.js" as Motion
 import "lib/settings.js" as Settings
 import "lib/run.js" as Run
+import "lib/rate.js" as Rate
+import "lib/bar.js" as B
+import "lib/scribble.js" as Scribble
+import "lib/dev.js" as Dev
+import "lib/metrics.js" as Metrics
 
 // WispService: the one reader of wispd state for every surface (Companion,
 // Panel, bar widget). Surfaces bind to this object (shell.serviceFor(
@@ -72,6 +78,23 @@ Item {
   property string errorCode: ""
   property var health: ({})
   property var spend: ({})
+  // {turn} while a wrong rating waits for its optional note (state.rate_prompt)
+  property var ratePrompt: null
+  // the prompted turn id, "" when none: surfaces react to this, not to the
+  // object (normalize builds a fresh {turn} on every state message)
+  readonly property string ratePromptTurn: ratePrompt ? String(ratePrompt.turn || "") : ""
+  // The bar pill's done rating window (U3): true for 8 s after a rateable
+  // turn finishes, closed by ratingTimer, a new turn or going offline.
+  // `pillHover` is set by the bar while the pointer is on the pill and
+  // pauses the window.
+  property bool ratingWindowOpen: false
+  property bool pillHover: false
+  // Scribble holds the whole screen while listening (OverlayLayer mask). The
+  // hold is the grab itself: taken on the listening edge, dropped when the
+  // turn leaves listening, is cancelled or interrupted, and by scribbleTimer
+  // a few seconds after the last stroke even if every signal is lost.
+  property bool scribbleHeld: false
+  function scribbleTouch() { if (scribbleHeld) scribbleTimer.restart(); }
   property string mic: ""     // "open" while the opt-in wake word listens
   property string turnId: ""
   property var seq: null
@@ -117,6 +140,10 @@ Item {
   property string themeMode: "dark"
   // Family for text; surfaces and components bind font.family to it.
   readonly property string fontFamily: Style.fontFamily
+  // Text-size multiplier for every surface, 1 to 2. One source for
+  // the in-shell plugin and the standalone configs: WISP_TEXT_SCALE in the
+  // shell's environment (unset or bad reads 1).
+  readonly property real textScale: Metrics.textScale(Quickshell.env("WISP_TEXT_SCALE"))
   readonly property string motionMode: Motion.resolveMode(motionConfig, animationsEnabled)
 
   // --- settings (W22): one-shot reads, writes through wispd config set ----
@@ -126,6 +153,36 @@ Item {
   property var configValues: ({})    // "section.key" -> value
   property var configErrors: ({})    // key -> message from the daemon or validator
   property string configSaved: ""    // key last written without error
+
+  // B31: one local-only recap read per panel open, never a poll.
+  // --claim reserves that completed week before the card is delivered.
+  property var weeklyRecap: null
+  property bool recapReadRequested: false
+  property bool recapSuppressed: false
+  property bool recapVisible: false
+  onRecapVisibleChanged: { if (recapVisible) root.loadRecap(); }
+  readonly property bool recapEnabled: configValues["growth.weekly_recap"] === "true"
+  onRecapEnabledChanged: {
+    if (!recapEnabled) weeklyRecap = null;
+    else recapSuppressed = false;
+  }
+
+  // --- dev tab (U5): local only, behind `[dev] panel` or a dev session ------
+  // One `wispd dev turns --json` and one `wispd dev runs --json` call per tab
+  // open and per refresh press, never on a timer and never with both off.
+  readonly property bool devPanel: configValues["dev.panel"] === "true"
+  // the dev session (state.dev), and whether the Dev tab exists: the session
+  // is on or the flag is
+  readonly property bool devOn: Dev.sessionOn(view.raw)
+  readonly property int devRunsLeft: Dev.runsLeft(view.raw)
+  readonly property bool devTab: devPanel || devOn
+  // `wispd dev runs --json`, read with the turns on tab open and refresh
+  property var devRuns: null
+  property bool devRunsLoading: false
+  property string devRunsError: ""
+  property var devData: null         // parsed reply data, null until read
+  property bool devLoading: false
+  property string devError: ""       // "" when fine, else a short code
 
   signal stateApplied(var view)
   signal turnChanged(string turnId)
@@ -153,9 +210,11 @@ Item {
         message: Copy.errorMessage("stale_prompt"), at: Date.now() };
       return false;
     }
-    var cmd = [wispd, "choice", pick];
+    // The pick can be typed free text: it goes to the child's stdin, never
+    // onto the command line, which other local accounts can read.
+    var cmd = [wispd, "choice", "--stdin"];
     if (pid) cmd = cmd.concat(["--prompt-id", pid]);
-    return runAction(cmd.concat(["--json"]), "choice");
+    return runAction(cmd.concat(["--json"]), "choice", null, String(pick));
   }
   // Bar action while offline: start the user service (no daemon to ask).
   function startDaemon() { return runAction(["systemctl", "--user", "start", "wispd.service"], "daemon"); }
@@ -163,6 +222,10 @@ Item {
   // waits for 8 pending picks is no stop at all.
   property bool stopPending: false
   function interrupt() {
+    // let go at once: the stop must not wait on the daemon to give the
+    // screen back, and a cancelled turn gets no rating window
+    scribbleHeld = false;
+    ratingWindowOpen = false;
     if (stopProc.running) return true;
     stopPending = true;
     stopProc.command = [wispd, "interrupt", "--json"];
@@ -170,6 +233,8 @@ Item {
     return true;
   }
   function trigger() { return runAction([wispd, "trigger", "--json"], "trigger"); }
+  // A click on a part of a 3D card (B13): one typed question, a normal turn.
+  function askAbout(text) { return runAction([wispd, "ask", "--stdin", "--json"], "ask", null, String(text)); }
   // Scribble to ask (B7): the strokes drawn while listening, handed to the
   // daemon as a small file (wispd scribble). Its own subprocess: it must not
   // queue behind, or flash a result in, the one action slot. A newer payload
@@ -185,13 +250,71 @@ Item {
       : [root.wispd, "scribble", "set", "--json", JSON.stringify(p)];
     scribbleProc.running = true;
   }
-  function label(verdict) { return runAction([wispd, "label", "set", verdict, "--json"], "label"); }
+  // Rate a turn (U2): `turn` names the card's turn, `note` re-labels it with
+  // a typed note. The reply's typed status and the turn ride lastAction, so
+  // the card that asked can show its own receipt.
+  function label(verdict, turn, note) {
+    return runAction(Rate.labelCommand(wispd, verdict, turn || "", note || ""),
+                     "label", { turn: turn || "", verdict: verdict },
+                     note ? String(note) : null);
+  }
+  // Esc on the note: close it without writing a label.
+  function skipRatePrompt() { return runAction(Rate.skipCommand(wispd), "label-skip"); }
 
   // Read the settings inputs once (config, cua status, spend by model).
   function loadSettings() {
     if (!cfgProc.running) cfgProc.running = true;
     if (!cuaProc.running) cuaProc.running = true;
     if (!spendProc.running) spendProc.running = true;
+  }
+
+  // Read the config alone (the Panel needs `[dev] panel` before it knows
+  // whether the Dev tab exists).
+  function loadConfig() {
+    root.weeklyRecap = null;
+    root.recapReadRequested = true;
+    if (!cfgProc.running) cfgProc.running = true;
+  }
+
+  function loadRecap() {
+    if (!root.recapVisible || !root.recapEnabled || root.recapSuppressed
+        || root.weeklyRecap || recapProc.running) return;
+    recapProc.running = true;
+  }
+
+  function finishRecap(code, text) {
+    root.weeklyRecap = null;
+    if (code !== 0 || !root.recapEnabled || root.recapSuppressed) return;
+    try {
+      var reply = JSON.parse(text);
+      if (reply.ok && reply.data && reply.data.enabled)
+        root.weeklyRecap = reply.data.card || null;
+    } catch (e) {}
+  }
+
+  function disableRecap() {
+    root.weeklyRecap = null;
+    // Do not let a claim already in flight restore the card after off.
+    root.recapSuppressed = true;
+    return runAction([root.wispd, "recap", "--off", "--json"], "recap-off");
+  }
+
+  // The Dev tab's reads (turns, then runs). Refused unless the flag or the
+  // session is on.
+  function loadDev() {
+    if (!devTab) return;
+    if (!devProc.running) {
+      devLoading = true;
+      devError = "";
+      devProc.command = Dev.command(wispd);
+      devProc.running = true;
+    }
+    if (!devRunsProc.running) {
+      devRunsLoading = true;
+      devRunsError = "";
+      devRunsProc.command = Dev.runsCommand(wispd);
+      devRunsProc.running = true;
+    }
   }
 
   // Validate, then `wispd config set KEY VALUE`. A rejected value or a
@@ -237,25 +360,41 @@ Item {
   property var actionQueue: []
   property string actionVerb: ""
 
-  function _launch(cmd, verb) {
+  property var actionMeta: ({})
+  // Private text for the in-flight action's stdin (null: none). Typed
+  // answers and notes ride here, not in argv, which other local accounts
+  // can read while the process runs. One line: newlines become spaces.
+  property var actionStdin: null
+
+  function _line(s) { return s === null || s === undefined ? null : String(s).replace(/[\r\n]+/g, " "); }
+
+  function writeActionStdin() {
+    if (root.actionStdin !== null) actionProc.write(root.actionStdin + "\n");
+    root.actionStdin = null;
+  }
+
+  function _launch(cmd, verb, meta, stdin) {
+    root.actionStdin = _line(stdin);
     root.actionVerb = verb || "";
+    root.actionMeta = meta || {};
     root.lastAction = { verb: root.actionVerb, pending: true,
-                        ok: false, message: "", at: Date.now() };
+                        ok: false, message: "", at: Date.now(),
+                        turn: root.actionMeta.turn || "", verdict: root.actionMeta.verdict || "" };
     actionProc.command = cmd;
     actionProc.running = true;
   }
 
-  function runAction(cmd, verb) {
+  function runAction(cmd, verb, meta, stdin) {
     if (actionProc.running) {
       if (actionQueue.length >= 8) {
         root.lastAction = { verb: verb || "", pending: false, ok: false,
           message: Copy.errorMessage("busy"), at: Date.now() };
         return false;
       }
-      actionQueue = actionQueue.concat([{ cmd: cmd, verb: verb || "" }]);
+      actionQueue = actionQueue.concat([{ cmd: cmd, verb: verb || "", meta: meta || {}, stdin: stdin }]);
       return true;
     }
-    _launch(cmd, verb);
+    _launch(cmd, verb, meta, stdin);
     return true;
   }
 
@@ -268,11 +407,12 @@ Item {
     if (msg === "")
       msg = r.ok ? Copy.string("ui.noted") : Copy.errorMessage("internal");
     root.lastAction = { verb: root.actionVerb, pending: false,
-                        ok: r.ok, message: msg, at: Date.now() };
+                        ok: r.ok, message: msg, at: Date.now(), status: r.status || "",
+                        turn: root.actionMeta.turn || "", verdict: root.actionMeta.verdict || "" };
     if (root.actionQueue.length > 0) {
       var nxt = root.actionQueue[0];
       root.actionQueue = root.actionQueue.slice(1);
-      _launch(nxt.cmd, nxt.verb);
+      _launch(nxt.cmd, nxt.verb, nxt.meta, nxt.stdin);
     }
   }
 
@@ -280,6 +420,7 @@ Item {
     if (r.refused) refused = true;
     var v = r.view;
     var prevTurn = root.turnId;
+    var prevStatus = root.status;
     root.view = v;
     root.status = v.status;
     root.rawStatus = v.rawStatus;
@@ -307,6 +448,9 @@ Item {
     root.errorCode = v.errorCode;
     root.health = v.health;
     root.spend = v.spend;
+    var rp = v.ratePrompt;
+    var rpTurn = rp ? String(rp.turn || "") : "";
+    if (rpTurn !== root.ratePromptTurn) root.ratePrompt = rp;
     root.mic = v.mic;
     root.seq = v.seq;
     root.contractVersion = v.contractVersion;
@@ -315,6 +459,13 @@ Item {
     root.contractNewer = v.contractNewer;
     root.stale = Reader.isStale(v, Date.now(), root.staleAfterMs);
     root.turnId = v.turnId;
+    var win = B.windowAction(prevStatus, root.status, prevTurn, v.turnId, root.offline,
+      Rate.rateable(root.status, root.answer, root.result, root.errorCode), root.errorCode);
+    var hold = Scribble.holdAction(prevStatus, root.status, root.errorCode, prevTurn, v.turnId);
+    if (hold === "grab") root.scribbleHeld = true;
+    else if (hold === "release") root.scribbleHeld = false;
+    if (win === "open") root.ratingWindowOpen = true;
+    else if (win === "close") root.ratingWindowOpen = false;
     if (v.turnId !== prevTurn) root.turnChanged(v.turnId);
     root.stateApplied(v);
     if (r.resync && root.connection === "stream") root.reconnect();
@@ -410,6 +561,27 @@ Item {
     onTriggered: stateView.reload()
   }
 
+  // The done rating window: one single-shot, armed on the done edge (the
+  // window opening), paused while the pill is hovered, off once it fires or
+  // a new turn closes the window. Never runs at idle.
+  Timer {
+    id: ratingTimer
+    interval: B.WINDOW_MS
+    repeat: false
+    running: root.ratingWindowOpen && !root.pillHover
+    onTriggered: root.ratingWindowOpen = false
+  }
+
+  // The hard cap on a scribble hold: single-shot, runs only while held, so
+  // a lost release signal gives the screen back (click-through) in seconds.
+  Timer {
+    id: scribbleTimer
+    interval: Scribble.HOLD_MS
+    repeat: false
+    running: root.scribbleHeld
+    onTriggered: root.scribbleHeld = false
+  }
+
   // Stale check ticks only while busy (nothing to age when idle).
   Timer {
     interval: 1000
@@ -419,7 +591,7 @@ Item {
   }
 
   // --- theme tokens -----------------------------------------------------
-  readonly property string themeDir: Color.currentThemePath
+  readonly property string themeDir: Commons.Color.currentThemePath
 
   function loadTokens() {
     var colors = "", shellToml = "";
@@ -451,7 +623,7 @@ Item {
   // Omarchy swaps the theme directory and then pushes only these colors,
   // so a file watch alone can miss the change: re-read on either signal.
   Connections {
-    target: Color
+    target: Commons.Color
     function onAccentChanged() { colorsView.reload(); }
     function onBackgroundChanged() { colorsView.reload(); }
     function onForegroundChanged() { colorsView.reload(); }
@@ -496,9 +668,20 @@ Item {
     command: [root.wispd, "config", "show", "--json"]
     stdout: StdioCollector { id: cfgOut }
     onExited: function (code) {
-      if (code !== 0) return;
+      if (code !== 0) { root.recapReadRequested = false; return; }
       try { root.configValues = Settings.flatten(JSON.parse(cfgOut.text)); } catch (e) {}
+      if (root.recapReadRequested) {
+        root.recapReadRequested = false;
+        root.loadRecap();
+      }
     }
+  }
+
+  Process {
+    id: recapProc
+    command: [root.wispd, "recap", "--claim", "--json"]
+    stdout: StdioCollector { id: recapOut }
+    onExited: function (code) { root.finishRecap(code, recapOut.text); }
   }
 
   Process {
@@ -521,12 +704,53 @@ Item {
     }
   }
 
+  Process {
+    id: devProc
+    command: [root.wispd, "dev", "turns", "--json"]
+    stdout: StdioCollector { id: devOut }
+    onExited: function (code) {
+      var r = Dev.parse(devOut.text);
+      root.devLoading = false;
+      if (r.ok) { root.devData = r.data; root.devError = ""; }
+      else root.devError = r.error || "error";
+    }
+    // a spawn failure flips running without exited
+    onRunningChanged: {
+      if (!devProc.running && root.devLoading) {
+        root.devLoading = false;
+        root.devError = "spawn";
+      }
+    }
+  }
+
+  Process {
+    id: devRunsProc
+    command: [root.wispd, "dev", "runs", "--json"]
+    stdout: StdioCollector { id: devRunsOut }
+    onExited: function (code) {
+      var r = Dev.parseRuns(devRunsOut.text);
+      root.devRunsLoading = false;
+      if (r.ok) { root.devRuns = r.data; root.devRunsError = ""; }
+      else root.devRunsError = r.error || "error";
+    }
+    onRunningChanged: {
+      if (!devRunsProc.running && root.devRunsLoading) {
+        root.devRunsLoading = false;
+        root.devRunsError = "spawn";
+      }
+    }
+  }
+
   // The one action subprocess (see run/lastAction): stdout+stderr are
   // collected so a daemon refusal or a spawn failure reaches the
   // surfaces as a typed result, never silence.
   Process {
     id: actionProc
     command: [root.wispd, "status"]
+    // stdin stays open for the whole run: a command that takes typed text
+    // reads one line from it (--stdin), the others never read it.
+    stdinEnabled: true
+    onStarted: root.writeActionStdin()
     stdout: StdioCollector { id: actionOut }
     stderr: StdioCollector { id: actionErr }
     onExited: function (code, status) { root.finishAction(code); }

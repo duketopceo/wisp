@@ -1,0 +1,597 @@
+"""The optional visual landing must not weaken the default no-script site."""
+import json
+import importlib.util
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import tempfile
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+SITE = ROOT / "site-3d"
+INSTALL = 'f=$(mktemp) && curl -fsSL https://wisp.observer/install.py -o "$f" && python3 "$f" --version v1.0.0-rc.2'
+
+
+class LandingContract(unittest.TestCase):
+    def test_install_uses_pinned_authenticated_candidate(self):
+        html = (SITE / "index.html").read_text()
+        self.assertIn("--version v1.0.0-rc.2", html)
+        self.assertIn("independently installed GitHub CLI", html)
+        self.assertIn("not self-authenticating", html)
+        self.assertIn("/blob/v1.0.0-rc.2/scripts/bootstrap/install.py", html)
+        self.assertIn("~/.local/bin/wispd onboard", html)
+
+    def test_install_and_demo_are_honest(self):
+        html = (SITE / "index.html").read_text()
+        self.assertIn(INSTALL.replace("&&", "&amp;&amp;"), html)
+        self.assertIn("wisp.observer", html)
+        self.assertIn("Illustrative demo", html)
+        self.assertIn("not a live desktop session", html)
+        self.assertNotIn("wisp.casa", html)
+        self.assertNotIn("/install.sh", html)
+        self.assertNotIn("real turn on the 3D", html)
+        self.assertNotRegex(html, r"\b\d+\s*ms\b")
+        self.assertIn("experimental", html.lower())
+
+    def test_all_runtime_assets_are_self_hosted(self):
+        html = (SITE / "index.html").read_text()
+        self.assertNotRegex(html, r'(?:src|href)=["\']https?://[^"\']+\.(?:js|css)')
+        self.assertNotIn("importmap", html)
+        self.assertNotIn("preconnect", html)
+        for filename in ("style.css", "app.mjs", "scene.mjs", "model.mjs", "desktop.mjs",
+                         "vendor/three.module.js", "vendor/THREE-LICENSE.txt",
+                         "assets/companion.png"):
+            self.assertTrue((SITE / filename).is_file(), filename)
+
+    def test_fallback_and_accessible_controls_exist(self):
+        html = (SITE / "index.html").read_text()
+        self.assertIn("<noscript>", html)
+        self.assertIn('id="scene-fallback"', html)
+        self.assertIn('id="desktop"', html)
+        self.assertIn('aria-live="polite"', html)
+        self.assertIn('id="cancel-demo"', html)
+        self.assertIn('id="approve-demo"', html)
+        self.assertIn('id="reset-demo"', html)
+        self.assertIn('id="sensitive-rules"', html)
+        css = (SITE / "style.css").read_text()
+        self.assertIn("prefers-reduced-motion", css)
+        self.assertIn(":focus-visible", css)
+        self.assertIn("desk-window", css)
+        self.assertIn("draw-layer", css)
+
+
+class FlameHero(unittest.TestCase):
+    FLAME = ROOT / "assets/brand/wisp-flame/export"
+
+    def test_hero_has_flame_with_image_fallback_and_icons(self):
+        html = (SITE / "index.html").read_text()
+        self.assertIn('id="flame"', html)
+        # Without JavaScript, or when WebGL or the model fails: the idle loop;
+        # under reduced motion: the still.
+        self.assertIn('src="assets/wisp-flame/idle-256.webp"', html)
+        self.assertRegex(html, r'<source media="\(prefers-reduced-motion: reduce\)" srcset="assets/wisp-flame/wisp-flame-512\.png">')
+        self.assertIn('rel="icon" href="assets/wisp-flame/wisp-flame-32.png"', html)
+        self.assertIn('rel="apple-touch-icon"', html)
+        self.assertNotIn("mark.svg", html)
+        self.assertFalse((SITE / "assets/mark.svg").exists())
+
+    def test_flame_module_is_self_hosted_and_respects_motion_preferences(self):
+        flame = (SITE / "flame.mjs").read_text()
+        self.assertNotRegex(flame, r"https?://")
+        self.assertIn("vendor/loaders/GLTFLoader.js", flame)
+        for clip in ("idle", "listening", "thinking", "speaking"):
+            self.assertIn(clip, flame)
+        app = (SITE / "app.mjs").read_text()
+        self.assertIn("flame.mjs", app)
+        mount = app[app.index("async function mountFlame"):]
+        self.assertIn("reduced.matches || motionPaused", mount[:400])
+
+    def test_vendored_loader_is_unmodified_apart_from_the_three_specifier(self):
+        for rel in ("loaders/GLTFLoader.js", "utils/BufferGeometryUtils.js"):
+            vendored = (SITE / "vendor" / rel).read_text()
+            original = (ROOT / "assets/brand/wisp-flame/preview/vendor" / rel).read_text()
+            self.assertEqual(original.replace("from 'three';", "from '../three.module.js';"),
+                             vendored, rel)
+            self.assertNotIn("from 'three'", vendored)
+
+    def test_flame_assets_ship_in_the_build(self):
+        builder = EnhancedBuild.builder(self)
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out"
+            builder.build(out)
+            glb = out / "assets/wisp-flame/wisp-flame.glb"
+            self.assertEqual((self.FLAME / "wisp-flame.glb").read_bytes(), glb.read_bytes())
+            for name in ("idle-256.webp", "wisp-flame-32.png", "wisp-flame-512.png"):
+                self.assertTrue((out / "assets/wisp-flame" / name).is_file(), name)
+            for name in ("flame.mjs", "vendor/loaders/GLTFLoader.js",
+                         "vendor/utils/BufferGeometryUtils.js"):
+                self.assertTrue((out / name).is_file(), name)
+            # Lean: the model, one loop and two stills; no unused states.
+            self.assertFalse((out / "assets/wisp-flame/listening-256.webp").exists())
+            self.assertLess(glb.stat().st_size, 256 * 1024)
+            self.assertEqual([], builder.check(out))
+
+    def test_notices_credit_the_vendored_loader(self):
+        notices = (ROOT / "THIRD_PARTY_NOTICES.md").read_text()
+        self.assertIn("GLTFLoader", notices)
+        self.assertIn("site-3d/vendor/THREE-LICENSE.txt", notices)
+        self.assertIn("GLTFLoader", (SITE / "vendor/PROVENANCE.md").read_text())
+
+
+class GuidingLightPreview(unittest.TestCase):
+    LIGHT = SITE / "light"
+
+    def test_preview_is_csp_clean_and_self_hosted(self):
+        html = (self.LIGHT / "index.html").read_text()
+        self.assertNotRegex(html, r"<script(?![^>]*\bsrc=)")  # script-src 'self': no inline script
+        self.assertNotRegex(html, r'(?:src|href)=["\']https?://[^"\']+\.(?:js|css|woff2?)')
+        self.assertNotIn("fonts.googleapis", html + (self.LIGHT / "light.css").read_text())
+        self.assertNotIn("importmap", html)
+        self.assertIn("prefers-reduced-motion", html + (self.LIGHT / "light.css").read_text()
+                      + (self.LIGHT / "light.mjs").read_text())
+
+    def test_threeui_mit_credit_ships_with_the_preview(self):
+        self.assertIn("Copyright (c) 2026 Meng To", (SITE / "vendor/THREEUI-LICENSE.txt").read_text())
+        self.assertIn("Copyright (c) 2026 Meng To", (ROOT / "THIRD_PARTY_NOTICES.md").read_text())
+        self.assertIn("ThreeUI Community", (self.LIGHT / "index.html").read_text())
+        notices = (ROOT / "THIRD_PARTY_NOTICES.md").read_text()
+        self.assertIn("shader rewritten", notices)
+        self.assertIn("shader rewritten", (SITE / "vendor/PROVENANCE.md").read_text())
+        self.assertNotIn("adapts the `energy-orb`", notices)
+
+    def test_stop_five_states_the_hybrid_model_story(self):
+        html = (self.LIGHT / "index.html").read_text()
+        stop = html[html.index("05 · Models"):html.index('class="stop finale"')]
+        self.assertIn("OpenRouter", stop)
+        self.assertIn("default", stop)
+        self.assertIn("local models", stop)
+        self.assertNotIn("stay on your machine", html)
+        self.assertNotRegex(stop, r"\b\d+\s*ms\b")
+
+    def test_preview_claims_stay_inside_the_readme(self):
+        html = (self.LIGHT / "index.html").read_text()
+        self.assertIn("docs/INSTALL.md", html)
+        self.assertIn("experimental", html.lower())
+        self.assertNotRegex(html, r"\b\d+\s*ms\b")
+        self.assertNotIn("wisp.casa", html)
+
+
+class EnhancedBuild(unittest.TestCase):
+    def builder(self):
+        spec = importlib.util.spec_from_file_location("build_3d", ROOT / "scripts/site/build_3d.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_build_is_deterministic_and_excludes_authoring_files(self):
+        builder = self.builder()
+        with tempfile.TemporaryDirectory() as tmp:
+            a, b = Path(tmp) / "a", Path(tmp) / "b"
+            builder.build(a)
+            builder.build(b)
+            self.assertEqual((a / "inventory.json").read_bytes(), (b / "inventory.json").read_bytes())
+            self.assertFalse((a / "DESIGN.md").exists())
+            self.assertEqual([], builder.check(a))
+
+    def test_missing_and_remote_runtime_assets_are_rejected(self):
+        builder = self.builder()
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out"
+            builder.build(out)
+            (out / "app.mjs").write_text('import "https://example.com/tracker.js";')
+            self.assertTrue(any("remote" in p for p in builder.check(out)))
+            (out / "app.mjs").unlink()
+            self.assertTrue(any("missing" in p for p in builder.check(out)))
+
+    def test_output_cannot_replace_the_repository_or_source(self):
+        builder = self.builder()
+        for path in (ROOT, SITE, SITE / "build"):
+            with self.assertRaises(builder.SiteError):
+                builder.build(path)
+
+
+@unittest.skipUnless(shutil.which("node"), "Node is needed for the optional web demo")
+class DemoState(unittest.TestCase):
+    def evaluate(self, code):
+        module = (SITE / "model.mjs").as_uri()
+        script = f"import {{initial, transition}} from {json.dumps(module)};\n{code}"
+        result = subprocess.run(
+            ["node", "--input-type=module", "-e", script],
+            text=True, capture_output=True, check=True,
+        )
+        return json.loads(result.stdout)
+
+    def test_sensitive_action_waits_for_explicit_confirmation(self):
+        result = self.evaluate("""
+            let s = transition(initial(), {type:'start', scenario:'sensitive'});
+            s = transition(s, {type:'advance'});
+            s = transition(s, {type:'advance'});
+            const waiting = s.phase;
+            s = transition(s, {type:'advance'});
+            const automatic = s.phase;
+            s = transition(s, {type:'approve'});
+            console.log(JSON.stringify([waiting, automatic, s.phase]));
+        """)
+        self.assertEqual(["awaiting_choice", "awaiting_choice", "acting"], result)
+
+    def test_cancelled_or_finished_turn_cannot_be_advanced(self):
+        result = self.evaluate("""
+            let s = transition(initial(), {type:'start', scenario:'mail'});
+            s = transition(s, {type:'cancel'});
+            s = transition(s, {type:'advance'});
+            s = transition(s, {type:'approve'});
+            console.log(JSON.stringify(s.phase));
+        """)
+        self.assertEqual("cancelled", result)
+
+    def test_new_turn_invalidates_stale_timer_events(self):
+        result = self.evaluate("""
+            let s = transition(initial(), {type:'start', scenario:'mail'});
+            const old = s.turn;
+            s = transition(s, {type:'start', scenario:'sensitive'});
+            s = transition(s, {type:'advance', turn:old});
+            console.log(JSON.stringify([s.phase, s.scenario, s.turn > old]));
+        """)
+        self.assertEqual(["listening", "sensitive", True], result)
+
+    def test_invalid_scenario_and_early_approval_do_nothing(self):
+        result = self.evaluate("""
+            let s = initial();
+            s = transition(s, {type:'start', scenario:'unknown'});
+            s = transition(s, {type:'approve'});
+            console.log(JSON.stringify(s.phase));
+        """)
+        self.assertEqual("idle", result)
+
+    def test_finished_turn_cannot_be_reapproved_or_advanced(self):
+        result = self.evaluate("""
+            let s = transition(initial(), {type:'start', scenario:'work'});
+            for (let i=0; i<3; i++) s=transition(s, {type:'advance'});
+            s = transition(s, {type:'approve'});
+            s = transition(s, {type:'advance'});
+            console.log(JSON.stringify(s.phase));
+        """)
+        self.assertEqual("done", result)
+
+    def test_reset_returns_idle_and_invalidates_the_previous_turn(self):
+        result = self.evaluate("""
+            let s = transition(initial(), {type:'start', scenario:'sensitive'});
+            const old=s.turn;
+            s = transition(s, {type:'reset'});
+            s = transition(s, {type:'advance', turn:old});
+            console.log(JSON.stringify([s.phase,s.scenario,s.turn>old]));
+        """)
+        self.assertEqual(["idle", "mail", True], result)
+
+    def test_media_example_is_available_without_sensitive_approval(self):
+        result = self.evaluate("""
+            let s = transition(initial(), {type:'start', scenario:'media'});
+            for(let i=0;i<3;i++) s=transition(s,{type:'advance'});
+            console.log(JSON.stringify([s.scenario,s.phase]));
+        """)
+        self.assertEqual(["media", "done"], result)
+
+    def test_scripts_expose_control_changes_and_drawings(self):
+        module = (SITE / "model.mjs").as_uri()
+        script = f"""
+            import {{initial, transition, scriptFor}} from {json.dumps(module)};
+            let s = transition(initial(), {{type:'start', scenario:'mail'}});
+            s = transition(s, {{type:'advance'}});
+            s = transition(s, {{type:'advance'}});
+            const acting = scriptFor(s);
+            const hasHl = acting.drawings.some(d => d.type === 'hl');
+            const hasArrow = acting.drawings.some(d => d.type === 'arrow');
+            const hasNumber = acting.drawings.some(d => d.type === 'number');
+            const active = acting.controls.some(c => c.active && c.value === 'opened');
+            console.log(JSON.stringify([hasHl, hasArrow, hasNumber, active, acting.steps.length > 1]));
+        """
+        result = subprocess.run(
+            ["node", "--input-type=module", "-e", script],
+            text=True, capture_output=True, check=True,
+        )
+        self.assertEqual([True, True, True, True, True], json.loads(result.stdout))
+
+    def test_playback_toggle_changes_visible_control_value(self):
+        module = (SITE / "model.mjs").as_uri()
+        script = f"""
+            import {{initial, transition, scriptFor}} from {json.dumps(module)};
+            let s = transition(initial(), {{type:'start', scenario:'media'}});
+            const before = scriptFor(s).controls.find(c => c.id === 'play').value;
+            s = transition(s, {{type:'advance'}});
+            s = transition(s, {{type:'advance'}});
+            const after = scriptFor(s).controls.find(c => c.id === 'play').value;
+            console.log(JSON.stringify([before, after]));
+        """
+        result = subprocess.run(
+            ["node", "--input-type=module", "-e", script],
+            text=True, capture_output=True, check=True,
+        )
+        self.assertEqual(["playing", "paused"], json.loads(result.stdout))
+
+@unittest.skipUnless(shutil.which("node"), "Node is needed for the wisp motion sim")
+class WispSim(unittest.TestCase):
+    def evaluate(self, code):
+        module = (SITE / "wisp/sim.mjs").as_uri()
+        script = f"import {{createSim}} from {json.dumps(module)};\n{code}"
+        result = subprocess.run(
+            ["node", "--input-type=module", "-e", script],
+            text=True, capture_output=True, check=True,
+        )
+        return json.loads(result.stdout)
+
+    def test_converges_without_overshoot_and_velocity_decays(self):
+        r = self.evaluate("""
+            const s = createSim({x: 0, y: 0});
+            s.setTarget(600, 0);
+            let maxX = 0, peak = 0, peakAt = 0, speeds = [];
+            for (let i = 0; i < 600; i++) {
+              const st = s.step(1/60);
+              maxX = Math.max(maxX, st.x); speeds.push(st.speed);
+              if (st.speed > peak) { peak = st.speed; peakAt = i; }
+            }
+            let mono = true;
+            for (let i = peakAt + 1; i < speeds.length; i++) if (speeds[i] > speeds[i-1] + 1e-9) mono = false;
+            console.log(JSON.stringify({over: maxX - 600, mono, end: s.state.x}));
+        """)
+        self.assertLessEqual(r["over"], 0.5)
+        self.assertTrue(r["mono"])
+        self.assertAlmostEqual(r["end"], 600, delta=0.5)
+
+    def test_frame_time_does_not_change_the_resting_point(self):
+        r = self.evaluate("""
+            const out = [];
+            for (const dt of [0.008, 0.016, 0.05, 0.5]) {
+              const s = createSim({x: 10, y: 20});
+              s.setTarget(400, 300);
+              for (let i = 0; i < 4000; i++) s.step(dt);
+              out.push([s.state.x, s.state.y]);
+            }
+            console.log(JSON.stringify(out));
+        """)
+        for x, y in r:
+            self.assertAlmostEqual(x, 400, delta=0.01)
+            self.assertAlmostEqual(y, 300, delta=0.01)
+
+    def test_settles_stays_settled_and_tail_collapses(self):
+        r = self.evaluate("""
+            const s = createSim({x: 0, y: 0});
+            s.setTarget(500, 200);
+            let first = -1, flip = false;
+            for (let i = 0; i < 1200; i++) {
+              const st = s.step(1/60);
+              if (st.settled && first < 0) first = i;
+              if (first >= 0 && !st.settled) flip = true;
+            }
+            const tail = Math.max(...s.trail.map(Math.abs));
+            console.log(JSON.stringify({first, flip, tail, len: s.state.tailLen, settled: s.settled}));
+        """)
+        self.assertGreater(r["first"], 10)
+        self.assertFalse(r["flip"])
+        self.assertTrue(r["settled"])
+        self.assertLess(r["tail"], 1e-3)
+        self.assertLess(r["len"], 1e-3)
+
+    def test_target_change_after_settle_wakes_the_sim(self):
+        r = self.evaluate("""
+            const s = createSim({x: 0, y: 0});
+            s.setTarget(100, 0);
+            for (let i = 0; i < 1200; i++) s.step(1/60);
+            const was = s.settled;
+            s.setTarget(100, 0);
+            const same = s.settled;
+            s.setTarget(100, 300);
+            const next = s.step(1/60);
+            console.log(JSON.stringify([was, same, next.settled, s.settled]));
+        """)
+        self.assertEqual([True, True, False, False], r)
+
+    def test_retarget_toward_new_target_does_not_overshoot(self):
+        r = self.evaluate("""
+            const s = createSim({x: 0, y: 0});
+            s.setTarget(800, 0);
+            for (let i = 0; i < 20; i++) s.step(1/60);
+            s.setTarget(s.state.x + 40, 0);
+            const t = s.target.x;
+            let max = 0;
+            for (let i = 0; i < 600; i++) max = Math.max(max, s.step(1/60).x - t);
+            console.log(JSON.stringify(max));
+        """)
+        self.assertLessEqual(r, 0.5)
+
+    def test_retarget_keeps_position_and_velocity_continuous(self):
+        r = self.evaluate("""
+            const s = createSim({x: 0, y: 0});
+            s.setTarget(800, 0);
+            for (let i = 0; i < 20; i++) s.step(1/60);
+            const before = {...s.state};
+            s.setTarget(800, 200);
+            const after = {...s.state};
+            console.log(JSON.stringify([after.x - before.x, after.y - before.y, after.vx - before.vx, after.vy - before.vy]));
+        """)
+        for d in r:
+            self.assertEqual(0, d)
+
+    def test_tail_is_bounded_ordered_and_constant_length(self):
+        r = self.evaluate("""
+            const s = createSim({x: 0, y: 0, tailN: 16, maxRadius: 0.4});
+            s.setTarget(5000, 5000);
+            let maxMag = 0, lens = new Set(), ordered = true;
+            for (let i = 0; i < 240; i++) {
+              s.step(1/60);
+              lens.add(s.trail.length);
+              for (let k = 0; k < 16; k++)
+                maxMag = Math.max(maxMag, Math.hypot(s.trail[2*k], s.trail[2*k+1]));
+              for (let k = 1; k < 16; k++) if (s.trailAge[k] < s.trailAge[k-1]) ordered = false;
+            }
+            console.log(JSON.stringify({maxMag, lens: [...lens], ordered}));
+        """)
+        self.assertLessEqual(r["maxMag"], 0.4 + 1e-6)
+        self.assertEqual([32], r["lens"])
+        self.assertTrue(r["ordered"])
+
+    def test_values_stay_finite_for_hostile_frame_times(self):
+        r = self.evaluate("""
+            const s = createSim({x: 0, y: 0});
+            s.setTarget(300, 300);
+            let ok = true;
+            for (const dt of [0, -1, NaN, 1e9, 0.0001]) {
+              const st = s.step(dt);
+              for (const v of [st.x, st.y, st.vx, st.vy, st.speed, st.tailLen]) if (!Number.isFinite(v)) ok = false;
+            }
+            console.log(JSON.stringify(ok));
+        """)
+        self.assertTrue(r)
+
+    def test_module_has_no_dom_or_gl_references(self):
+        src = (SITE / "wisp/sim.mjs").read_text()
+        for word in ("document", "window", "gl.", "navigator", "requestAnimationFrame"):
+            self.assertNotIn(word, src)
+
+
+@unittest.skipUnless(shutil.which("node"), "Node is needed for the wisp GL view")
+class WispGlView(unittest.TestCase):
+    SRC = SITE / "wisp/gl.mjs"
+
+    def evaluate(self, code):
+        # A recording WebGL stub: every method is a no-op, shader and program checks succeed.
+        prelude = f"""
+            import {{createGlView, TAIL_N}} from {json.dumps(self.SRC.as_uri())};
+            const calls = [];
+            const gl = new Proxy({{}}, {{get(_, name) {{
+              if (name === 'getShaderParameter' || name === 'getProgramParameter') return () => true;
+              if (name === 'getAttribLocation') return () => 0;
+              if (typeof name === 'symbol') return undefined;
+              if (/^[A-Z_0-9]+$/.test(name)) return 1;
+              return (...a) => {{ calls.push(name); return {{}}; }};
+            }}}});
+            const listeners = {{}};
+            const canvas = {{width: 0, height: 0,
+              getContext: () => gl,
+              addEventListener: (t, f) => {{ listeners[t] = f; }},
+              removeEventListener: (t) => {{ delete listeners[t]; }}}};
+            const state = {{trail: new Float32Array(TAIL_N * 2), tailLen: 0.5}};
+        """
+        result = subprocess.run(
+            ["node", "--input-type=module", "-e", prelude + code],
+            text=True, capture_output=True, check=True,
+        )
+        return json.loads(result.stdout)
+
+    def test_header_credits_threeui(self):
+        src = self.SRC.read_text()
+        head = src[:src.index("export")]
+        self.assertIn("ThreeUI Community", head)
+        self.assertIn("MengTo/threeui", head)
+        self.assertIn("rewritten", head)
+
+    def test_cost_tripwires(self):
+        src = self.SRC.read_text()
+        fragment = src[src.index("export const FRAGMENT_SRC"):src.index("function noiseTexture")]
+        self.assertNotRegex(fragment, r"\b(for|while)\s*\(")
+        self.assertLessEqual(fragment.count("texture2D("), 2)
+        self.assertIn("premultipliedAlpha: true", src)
+        self.assertNotIn("premultipliedAlpha: false", src)
+        self.assertNotRegex(src, r"(?<!ONE_MINUS_)\bSRC_ALPHA")
+        self.assertIn("gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)", src)
+        self.assertIn("failIfMajorPerformanceCaveat: true", src)
+        self.assertLessEqual(float(re.search(r"DPR_CAP = ([\d.]+)", src).group(1)), 1.5)
+
+    def test_null_context_gives_a_null_view_not_a_throw(self):
+        r = self.evaluate("""
+            const view = createGlView({getContext: () => null, addEventListener() {}});
+            const thrower = createGlView({getContext: () => { throw new Error('boom'); }, addEventListener() {}});
+            console.log(JSON.stringify([view, thrower]));
+        """)
+        self.assertEqual([None, None], r)
+
+    def test_each_draw_is_one_draw_call(self):
+        r = self.evaluate("""
+            const view = createGlView(canvas);
+            calls.length = 0;
+            view.draw(state, 1);
+            state.tailLen = 0;
+            view.draw(state, 2);
+            console.log(JSON.stringify(calls.filter(c => c === 'drawArrays').length));
+        """)
+        self.assertEqual(2, r)
+
+    def test_context_loss_stops_draws_and_calls_back_once(self):
+        r = self.evaluate("""
+            let lost = 0, prevented = 0;
+            const view = createGlView(canvas, {onLost: () => lost++});
+            view.draw(state, 1);
+            const ev = {preventDefault: () => prevented++};
+            listeners.webglcontextlost(ev); listeners.webglcontextlost(ev);
+            calls.length = 0;
+            view.draw(state, 2); view.resize(400, 2, 1);
+            console.log(JSON.stringify([lost, prevented, calls.filter(c => c === 'drawArrays').length]));
+        """)
+        self.assertEqual([1, 2, 0], r)
+
+    def test_resize_redraws_before_returning_and_caps_the_pixel_ratio(self):
+        r = self.evaluate("""
+            const view = createGlView(canvas);
+            view.draw(state, 1);
+            calls.length = 0;
+            const side = view.resize(400, 3, 0.75);
+            console.log(JSON.stringify([side, canvas.width, calls.filter(c => c === 'drawArrays').length]));
+        """)
+        self.assertEqual([450, 450, 1], r)
+
+
+class LightCostTripwires(unittest.TestCase):
+    """Cheap source checks for the regressions PR #274 had. Tripwires, not proofs: the browser gates prove."""
+    LIGHT = SITE / "light/light.mjs"
+
+    def function_body(self, src, name):
+        start = src.index(f"function {name}(")
+        depth, i = 0, src.index("{", start)
+        for j in range(i, len(src)):
+            depth += (src[j] == "{") - (src[j] == "}")
+            if depth == 0:
+                return src[start:j + 1]
+        raise AssertionError(name)
+
+    def test_the_loop_never_reads_layout(self):
+        src = self.LIGHT.read_text()
+        for name in ("tick", "liveTarget", "place", "budget"):
+            body = self.function_body(src, name)
+            for call in ("getBoundingClientRect", "clientWidth", "offsetWidth", "getComputedStyle"):
+                self.assertNotIn(call, body, f"{call} in {name}()")
+
+    def test_loop_has_a_sleep_path_and_a_visibility_handler(self):
+        src = self.LIGHT.read_text()
+        self.assertIn("cancelAnimationFrame", self.function_body(src, "stopLoop"))
+        tick = self.function_body(src, "tick")
+        self.assertIn("sim.settled", tick)
+        self.assertIn("rest", tick)
+        self.assertIn('"visibilitychange"', src)
+        self.assertIn('visibilityState === "hidden"', src)
+
+    def test_draw_is_time_gated(self):
+        src = self.LIGHT.read_text()
+        self.assertRegex(src, r"DRAW_GAP_MS = (\d+)")
+        self.assertGreaterEqual(int(re.search(r"DRAW_GAP_MS = (\d+)", src).group(1)), 32)
+
+    def test_wisp_modules_do_not_import_the_page(self):
+        for name in ("sim.mjs", "gl.mjs"):
+            src = (SITE / "wisp" / name).read_text()
+            self.assertNotRegex(src, r"""(?:from\s*|import\s*\(?\s*)["'][^"']*light/""", name)
+            self.assertNotRegex(src, r"""(?:from\s*|import\s*\(?\s*)["'][^"']*three""", name)
+        sim = (SITE / "wisp/sim.mjs").read_text()
+        for word in ("document", "window", "navigator", "requestAnimationFrame"):
+            self.assertNotIn(word, sim)
+
+    def test_every_light_and_wisp_module_ships(self):
+        spec = importlib.util.spec_from_file_location("build_3d", ROOT / "scripts/site/build_3d.py")
+        builder = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(builder)
+        for folder in ("light", "wisp"):
+            for path in (SITE / folder).rglob("*"):
+                if path.is_file() and path.name != "DESIGN.md":
+                    self.assertIn(path.relative_to(SITE).as_posix(), builder.FILES)
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out"
+            builder.build(out)
+            self.assertEqual([], builder.check(out))

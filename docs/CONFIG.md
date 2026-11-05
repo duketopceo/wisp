@@ -10,6 +10,11 @@ restart) or the Settings tab in the GUI. Every key has a default.
 | `mod` | `"SUPER"` | modifier for push-to-talk |
 | `key` | `"D"` | key for push-to-talk (SUPER+D) |
 
+`wispd install` also writes a second bind, `mod + ALT + key` (Super+Alt+D
+by default; `mod + CTRL + key` when `mod` already holds ALT, since Omarchy owns
+Super+Shift+D): it rates the last finished answer wrong and opens the panel's
+Now tab with a one-line note.
+
 ## [keys] — keyboard submap (Linux/Hyprland)
 
 | key | default | meaning |
@@ -67,6 +72,16 @@ take focus, so `Esc` stays reachable while cua acts. Design notes:
 |-----|---------|---------|
 | `seconds` | `60` | max capture per press — hold `Super+D` (release to send) or `wispd trigger start` then `stop`; bare `wispd trigger` toggles; this is only the safety ceiling |
 | `whisper_model` | `"ggml-small.en.bin"` | ggml model file name |
+| `device` | empty | the mic to record from, a `pw-record --target` name or an `arecord -D` device. Empty records from the system default. When the named mic is gone (the recorder exits inside about 0.35 s), the turn records from the default mic instead and one toast says so (a call does not hold that toast). Under PipeWire the named mic is recorded with `node.dont-fallback`, so a missing one fails instead of silently using the default. It tries once; if the default fails too, the turn ends with the usual "recording produced no audio" error, never a hang |
+
+## [browser] — watchable browser lane
+
+| key | default | meaning |
+|-----|---------|---------|
+| `lane` | `"off"` | `"extension"` lets the `browser` tool work in your own Chromium through the paired Wisp extension, in a tab group beside your tabs. Off, the tool is not offered to the model and a call does nothing |
+| `port` | `47315` | loopback port the extension polls (1024 to 65535) |
+
+Setup, the rules it keeps and Stop: `docs/BROWSER_LANE.md`.
 
 ## [stt] — speech-to-text
 
@@ -89,29 +104,27 @@ take focus, so `Esc` stays reachable while cua acts. Design notes:
 
 An absent or empty key uses the default, so a config file without a `[web]` section works unchanged. Values cannot contain `#`: the config parser treats it as a comment.
 
-## [jev] — routing deadline and shadow decider
+## [growth] — private weekly recap
 
 | key | default | meaning |
 |-----|---------|---------|
-| `deadline_ms` | `400` | Jev gets this long to route; past it, on an error, or on a malformed reply the heuristic router decides and the turn goes on |
-| `shadow` | `""` | second decider logged to `shadow.jsonl` (`pplx` → `perplexity/pplx-decider-v1.2` on OpenRouter); never changes what Wisp does |
-| `flash_decider` | `false` | when `true`, try `flash_model` for the route first (OpenRouter decisions); low confidence, error, or timeout falls through to Jev then heuristic within the same `deadline_ms` |
-| `flash_model` | `perplexity/pplx-decider-flash-v1.2` | decision model for the flash lane (non-flash v1.2 is too slow for the 400 ms budget) |
-| `flash_confidence` | `0.7` | accept the flash route at or above this confidence; below it, hand off to Jev |
-| `flash_deadline_ms` | `220` | sub-budget for the flash call; the remainder of `deadline_ms` is left for Jev |
+| `weekly_recap` | `"false"` | Opt in to a once-per-week local recap of days, turns and recorded spend; no network or remote reporting |
 
-Every routed turn appends Jev vs heuristic vs final route to `route_ab.jsonl`. Decisions logged to `decisions.jsonl` include an optional `route_lane` field (`flash`, `jev`, or `heuristic`).
+The recap is off by default. `wispd recap --json` previews local data,
+`wispd recap --claim --json` reserves delivery, and `wispd recap --off --json`
+disables it. Recorded spend is not necessarily measured spend; see
+`docs/GROWTH.md` for provenance and missing-data limits.
 
-## [agent] — routing + action policy
+## [agent] — action policy and optional grounding
 
 | key | default | meaning |
 |-----|---------|---------|
-| `model` | `typesafe/jev-1.13` | Jev decision model |
-| `answer_model` | `meta-llama/llama-4-maverick` | model that writes answers (used when `brain.default` unset) |
+| `model` | `typesafe/jev-1.13` | Optional structured grounding model; not a turn-router hop |
+| `answer_model` | `google/gemini-2.5-flash` | model that writes answers (used when `brain.default` unset) |
 | `session_turns` | `8` | turns of chat history kept in context |
 | `screenshots` | `true` | allow screen capture for context |
 | `confirm_timeout` | `120` | seconds a confirm card waits before it resolves as deny (clamped 5 to 600) |
-| `risk_threshold` | `9` | numeric risk gate; Jev scores run about 0 to 2, so the default only blocks extreme risk. Real protection is the denylist, `allow_shell` and the confirm tier |
+| `risk_threshold` | `9` | Compatibility score gate for explicit route payloads; the denylist, `allow_shell`, confirmation tier and live-surface policy remain separate protections |
 | `confidence_instant` | `0.95` | auto-accept cutoff |
 | `confidence_ambiguous` | `0.8` | ask-choice cutoff |
 | `allow_shell` | `false` | allow free-form shell tool (commands also pass a built-in denylist that is not configurable) |
@@ -126,12 +139,13 @@ Every routed turn appends Jev vs heuristic vs final route to `route_ab.jsonl`. D
 
 | key | default | meaning |
 |-----|---------|---------|
-| `router` | `"act"` | `act` (default: every turn straight to the agent loop — the loop's brain decides answer-vs-work; no decision hop) / `jev` (decision API) / `chat` (straight to answer brain) / `off` (clarify) |
+| `router` | `"act"` | `act` (local fast paths, then the conversational act loop) / `chat` (answer without execution) / `off` (clarify); saved legacy `jev` or unknown values fall back to act without a decision-service request |
+| `fast_path` | `"true"` | Under `router = act`, a bare launch of a catalogued app ("open firefox") or a plain question ("what does this error mean") skips the act loop and goes straight to the launch or answer handler, with no model hop. Compound requests, unknown apps and questions that carry an action verb still go to act. `"false"` sends every turn to act |
 | `default` | `"openrouter:<answer_model>"` | `name:model` selecting a `[brain.<name>]` provider |
 | `fallback` | `""` | comma-separated `name:model` chain tried after `default` (e.g. `"mlx:ornith, ollama:ornith"`) |
 | `allow_paid` | `false` | allow paid fallback entries (OpenRouter, or `paid = "true"` on the section); the U10 cap hook (`brain.budget_ok`, see `[budget]`) also applies; at a cap fallbacks are skipped, the primary runs unless `[budget] gate_primary` |
 | `first_token_s` | `3` | a streaming entry must emit a token within this many seconds or the chain moves on; all entries failing ends the turn `brain_down` |
-| `agent_runtime` | `"opencode"` | spawned-agent runtime: `opencode`/`codex`/`claude`/`devin` |
+| `agent_runtime` | `"auto"` | spawned-agent runtime: `auto`/`opencode`/`codex`/`claude`/`devin`. `auto` uses the pinned OpenCode (installed by `wispd install --agents`) when it is ready, else the first of `codex`, `claude`, `devin` found on `PATH`. Only `opencode` runs as a live ACP session (progress, questions, follow-ups, cancel); the others are one-shot CLI runs |
 
 Retries: one fast retry on connection refused/reset only; timeouts are
 never retried. Once answer text has streamed, a failure ends the turn
@@ -253,6 +267,18 @@ and `wispd models` show current health.
 | `act_preview_min` | steps that change something in one model reply before Wisp shows the whole plan as one card and runs it on yes (0 disables, default 3). While a plan runs, each step first checks the focused window is still the one the plan was made for and stops with a spoken reason if not |
 | `routine_wait_s` | seconds a scheduled routine waits for a network connection (for example right after the machine wakes) before giving up; a run missed while offline never counts toward the three-failure pause (0 skips the wait, default 120) |
 | `writer_queue_max` | background writer queue for trajectory and recall writes; oldest dropped and counted when full (default 256) |
+| `acp_models` | comma list of OpenRouter models for background OpenCode agents, cheapest/fastest first (default `openrouter/particle-ai/particle-1,openrouter/deepseek/deepseek-v4-flash,openrouter/deepseek/deepseek-v4.1-flash,openrouter/google/gemini-3.5-flash-lite`). `particle-ai/particle-1` is Particle AI's post-trained DeepSeek V4.1 Flash agentic model. A session runs on the first one the agent runtime offers; if none is offered the task fails instead of falling back to another model. No reasoning effort is requested |
+| `acp_idle_s` | seconds a named helper's agent process may sit idle before it exits; the next request starts a fresh one (default 900) |
+| `ask_timeout_s` | seconds an agent's question or permission ask waits for your answer; a permission then counts as refused, a question as unanswered (default 120) |
+| `cancel_grace_s` | seconds a cancel waits for the agent to stop on its own before its process is killed (default 10) |
+| `mcp_memory` | `true` lets agents read `USER.md` and `MEMORY.md` over the read-only bridge; those reads go to OpenRouter-routed models. `false` removes the memory tools from the list (default `true`) |
+
+Background agents authenticate to OpenRouter through ori. The key Wisp hands
+it comes from the `[brain.openrouter] key_env` list, tried in order:
+`keyring://wisp/openrouter` (the desktop Secret Service, the default first
+entry), `omaseal://svc/acct` (still works), then a plain env var such as
+`OPENROUTER_API_KEY` from your environment or `~/.config/wisp/.env`.
+`wispd onboard --step agents` stores a key in the keyring when you give it one.
 
 ## [mcp]
 
@@ -303,11 +329,30 @@ one, `wispd dictate list` shows them.
 
 | key | meaning |
 |-----|---------|
-| `enabled` | speak answers aloud |
-| `cmd` | override TTS command; `{text}` placeholder or appended arg. Empty = platform default (espeak/say/SAPI) |
+| `enabled` | `"auto"` (default): speak answers when a Groq key resolves and an audio player exists; with no key it stays off, even if espeak is installed. Espeak (or `cmd`) is the fallback while voice is on. `"true"` always speaks (espeak or `cmd` when there is no key), `"false"` never does. Speech, desktop toasts (no toast for a spoken answer) and captions all read this one setting |
+| `provider` | `"groq"` (default): speak with Groq Orpheus when a key resolves, a player (`pw-play`, else `paplay`, else `aplay`) is installed and the answer is English; `cmd`/espeak speaks whenever Groq cannot. `"espeak"`: never ask Groq. Same key as speech-to-text: `[stt] key_env` when `[stt] base_url` is Groq, else `omaseal://groq/default,GROQ_API_KEY` |
+| `tts_model` | Groq model, default `canopylabs/orpheus-v1-english` (a preview model; the id is configurable for when it changes). Not in the settings table: edit `config.toml` |
+| `tts_voice` | Orpheus voice: `autumn`, `diana`, `hannah` (default), `austin`, `daniel`, `troy` |
+| `tts_base_url` | Groq API base, default `https://api.groq.com/openai/v1`. Not in the settings table |
+| `cmd` | override TTS command. The message is written to its stdin, never put on the command line, so other local accounts cannot read it; a `{text}` token is dropped. Empty = built-in espeak |
 | `speed` | speaking speed multiplier, 0.5 to 1.5 (default 1; steps 0.5, 0.75, 1, 1.25, 1.5). The built-in espeak voice gets `-s <wpm>`; a custom `cmd` gets the multiplier wherever it writes `{rate}`. Say "talk slower", "talk faster" or "talk at normal speed" to change it by voice (logged in the audit log as a `config` entry) |
 | `lang_voices` | per-language voices, `"es=es-mx,de=de"`. Empty: the built-in espeak voice named for the language when it exists, else the default voice, and Wisp says so once. A custom `cmd` may use `{lang}` (the code, like `pt-BR`) or `{voice}` |
 | `early_clause` | `"true"` (default): while an answer streams, start speaking at the first clause break (`, ; : —`) once 28 characters are ready instead of waiting for the full stop. `"false"` waits for sentence ends |
+| `captions` | `"true"` (default): the answer text shows in the bubble while it is spoken. `"false"` hides it while the voice plays. The text shows anyway when voice is off, when no TTS program is installed, or when speech does not start. A muted speaker always shows it. Say "turn off captions" or "turn on captions" to change it (audited like any `config` change) |
+
+### Groq talk-back
+
+Each sentence goes to Groq as one request of at most 200 characters (a longer sentence splits at clause breaks, then spaces), the next sentence is fetched while the current one plays, and points and drawings start when that sentence's audio starts, timed from the WAV's real length. One voice per answer: if Groq fails (any error, a spend cap, no player), the rest of that answer is spoken by espeak or `cmd`; the next answer tries Groq again. Two failures wait first: a rate limit (429) waits out `retry-after`, and a terms error (the model's terms are accepted once per Groq org at `https://console.groq.com/playground?model=canopylabs%2Forpheus-v1-english`) waits an hour and then tries by itself. The last failure class and the wait end are kept in `voice_groq.json` in the data dir. Muted speakers and a non-English answer never reach Groq.
+
+Groq speech is paid: each request writes a `usage.jsonl` row at $22 per million characters, counts toward `[budget]` and is refused at the daily cap (espeak speaks instead). The free Groq tier allows about 100 speech requests a day, so a long answer can switch to espeak partway.
+
+When the default speaker is muted or at 0% (read with `wpctl`, else `pactl`), Wisp does not speak the answer: it copies it to the clipboard with `wl-copy` and the bubble ends with "Speaker is muted, so I copied the answer to your clipboard." Without `wl-copy` the bubble says it could not speak the answer. Nothing is probed while `[voice] enabled` is false.
+
+## [quiet] — calls and screen shares
+
+| key | default | meaning |
+|-----|---------|---------|
+| `on_calls` | `"true"` | hold announcements nobody asked for (a finished background agent, a routine) while a call or screen share is on. Calls and shares are read from the open windows (`hyprctl clients`: Zoom, Teams, Webex, Meet and huddle windows, "is sharing your screen" titles). Held toasts go out when it ends, checked every 20 s, at most 20 kept. Errors and the toast for a turn you started are never held. Uses the same gate as suggestion cards (`suggest_policy`) |
 
 ## [notify] — desktop toasts
 
@@ -364,7 +409,8 @@ also needs p90 <= 1.5x). Not revised yet from live traces.
 | P3 | transcript (key up -> text); warm whisper floor 1300 | 600 |
 | P4 | route (context + route) | 200 |
 | P5 | first answer token | 500 |
-| P6 | TTS start | 150 |
+| P6 | TTS start (espeak or `[voice] cmd`) | 150 |
+| P6G | TTS start, Groq (first sentence handed over -> first audio) | 1500 |
 | P7 | act first step (UI-TARS grounding) | 1200 |
 | P8 | agent ack | 300 |
 | P9 | stop (request -> idle) | 150 |
@@ -381,12 +427,13 @@ Resources: wispd under 250 MB RSS and 3% idle CPU; cua-driver
 
 | key | default | meaning |
 |-----|---------|---------|
-| `[pointer] mode` | `guide` | `guide`: Wisp points with the ghost cursor, you click. `drive`: inject real input through the backend. `auto`: drive when a backend exists, guide otherwise |
+| `[pointer] mode` | `auto` (live act) | `guide`: Wisp points with the ghost cursor, you click. `drive`: inject real input through the backend. `auto`: drive when a backend exists, guide otherwise. The template leaves this unset; standalone tools guide, while live act chooses a temporary backend-aware mode. Explicit saved choices are preserved |
 | `[pointer] backend` | `auto` | `auto`, `cua`, `hyprcursor`, `ydotool`, `wlrctl` or `none`. A named backend is used alone; if it is unavailable Wisp guides |
-| `[ground] providers` | `control,a11y,uitars,jev` | grounding chain order: app control channel, cua accessibility tree, local UI-TARS, vision fallback. `uitars` is dropped unless `[local] enabled = true` |
+| `[ground] providers` | `control,a11y,vlm,uitars,jev` | grounding chain order: app control channel, cua accessibility tree, aspect-matched VLM pointing, local UI-TARS, structured vision fallback. `uitars` is dropped unless `[local] enabled = true` |
 | `[ground] min_confidence` | `0.5` | candidates below this are re-observed once, then refused |
 | `[ground] budget_ms` | `1200` | shared budget for the fast providers |
 | `[ground] fallback_timeout_ms` | `5000` | timeout for the vision fallback |
+| `[ground] vlm_brain` | blank | `name:model` brain used only for grounding (blank = the act brain). It runs alone: `[brain] fallback` is not consulted, so a down grounding model refuses the click rather than sending the screenshot to another model. `ollama_vision` is a built-in vision-capable Ollama entry |
 | `[ground] uitars_url` | `http://127.0.0.1:8081` | UI-TARS endpoint (also `[health] uitars`); loopback only |
 | `[ground] uitars_coords` | `px` | `px` or `rel1000`, how UI-TARS writes coordinates |
 | `[ground] a11y_frame` | `global` | `global` or `window`, the frame of accessibility element boxes |
@@ -459,8 +506,16 @@ Off by default. Local sources only (Hyprland window changes, the dayflow journal
 | `[traj] enabled` | `true` | record act-loop runs and inject similar past runs as context |
 | `[traj] max_inject` | `3` | most prior runs injected |
 | `[dev] refine` | `true` | a labelled-bad turn or a correction ("no", "instead") retries with the failed attempt as context |
+| `[dev] panel` | `false` | when `true` the panel gains a fifth tab, Dev (v1 gate, recent turns with per-stage time, top misses); local-only. It reads `wispd dev turns --json` once when the tab opens and when you press refresh, never on a timer |
+| `[dev] judge_model` | `google/gemini-2.5-flash` | vision model that judges each task of a `wispd dev run` at its end, on the eval key (`omaseal://openrouter/orchestral`, then the `OPENROUTER_API_KEY` env var that `orch` injects; never the default key) |
+| `[dev] judge_cap_usd` | `1.00` | most a single run may spend on judging; the rest of the run is marked unjudged and the report says so (0 judges nothing; blank or invalid uses 1.00) |
+| `[dev] gauntlet` | unset | run-only: set to `true` on a gauntlet run's own config copy (never in `config.toml`); allows typing into sandbox windows, skill create and edit, and trajectories. A safety key, so `config set` and `--vs` refuse it |
+| `[dev] sandbox_windows` | unset | run-only: comma list of the Hyprland window addresses the gauntlet driver spawned; typing is allowed only while one of them is focused, re-checked before each keystroke. Safety key |
+| `[dev] spend_file` | unset | run-only: path of the gauntlet's cumulative spend file (one JSON line per task, judge or probe charge). Safety key |
+| `[dev] spend_cap_usd` | `"10"` | run-only: the cap the spend file is held to; a task starts only while the cap still covers every arm's per-task stop (`[agents] act_max_usd`). Safety key |
 | `[eval] gate_rate` | `60%` | first-time-correct fraction (0 to 1, or a percentage) `wispd eval` must reach for PASS; the v1 bar is 60%; unset prints "gate not set" and no PASS or FAIL |
 | `[eval] gate_min_turns` | `50` | labelled turns required before the gate can pass; fewer is FAIL with "needs N more labelled turns" |
+| `[eval] since` | empty | count only turns at or after this ISO date or date-time (UTC, e.g. `2026-11-03`), so the gate measures the build being shipped; older labels stay on disk; empty or invalid counts every label |
 | `[ui] theme` | `dark` | `dark` or `light`; `wispd theme <name>` swaps live |
 | `[apps]` | per OS | name to launch command map Jev resolves "open the terminal" against (`browser`, `terminal`, `files`, `vscode`, `music`, `settings`, `browser_new_tab`) |
 
@@ -563,6 +618,25 @@ WebP. Copies are kept in `<data dir>/images/`.
 | `max_kb` | `4096` | largest picture to download, in KB |
 | `timeout_s` | `8` | give up on a slow fetch after this many seconds |
 
+## [models] — 3D parts in answers
+
+An answer may carry one small 3D model, a `::model[url=...,alt=...]` line
+on the paper pointing at a glTF or GLB file. Wisp fetches it only from an
+allow-listed host over https (same rules as `[images]`: redirects checked,
+private addresses refused, size and time capped), reads the named parts
+and their bounding boxes (never the mesh data, and a file that points at
+other files is refused) and shows them as a small turnable card. Click a
+part and Wisp asks one question that names it, as a normal turn
+(`wispd ask "..."`). The card takes the pointer only while it is on
+screen; it is click-through again when the answer goes. Parts are kept in
+`<data dir>/models/`.
+
+| key | default | meaning |
+|-----|---------|---------|
+| `allow` | `""` | comma list of hosts (each also matches its subdomains); empty keeps the built-in default, `raw.githubusercontent.com` |
+| `max_kb` | `4096` | largest model file to download, in KB |
+| `timeout_s` | `8` | give up on a slow fetch after this many seconds |
+
 ## [debug]
 
 | key | meaning |
@@ -589,7 +663,7 @@ watch [topic ...]              choice [pick] [--prompt-id ID] [--index N]
 doctor  health [start [--run]]  latency [--since 24h]  spend  binds  onboard
 cua status|test|log|kill|resume|enable|disable   notify test
 task list|status|cancel|run    memory edit|write    suggest list
-label set                     context
+label set                     context  ask TEXT
 learn fails  eval [--json]      skills list|import
 trace show|digest              captures [turn] [--full]
 config show|set|keys           theme show|set|check|css

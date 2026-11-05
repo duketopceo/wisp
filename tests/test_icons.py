@@ -23,7 +23,7 @@ A3 = ["bar-idle", "bar-listening", "bar-thinking", "bar-acting",
 A4 = ["mic", "mic-off", "stop", "check", "cross", "undo", "pin", "unpin",
       "collapse", "expand", "talk", "act", "agent", "point", "guide",
       "connect", "link-broken", "eye", "skill", "history", "gauge",
-      "settings", "warning", "external"]
+      "settings", "warning", "external", "thumb-up", "thumb-down"]
 OTHER = ["mark", "ghost-cursor", "beacon"]
 
 STROKE_SVG = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="{vb}">{body}'
@@ -43,7 +43,7 @@ class TestShippedSet(unittest.TestCase):
         icons = shipped()
         for name in A3 + A4 + OTHER:
             self.assertIn(name, icons)
-        self.assertEqual(len(A4), 24)
+        self.assertEqual(len(A4), 26)
 
     def test_every_source_validates(self):
         for path in build_icons.sources():

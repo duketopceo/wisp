@@ -48,7 +48,8 @@ HOSTS = {
     "openrouter.ai": dict(
         what="Answer model, router and decision calls, the vision fallback "
              "for finding a control on screen, and (only if you turn "
-             "`[recall] provider` on) memory embeddings.",
+             "`[recall] provider` on) memory embeddings. In dev mode "
+             "only, the run judge (`wispd dev run`).",
         sends=[TEXT, SHOT],
         detail="What you said (as text), the focused app and window "
                "names, recent turns, memory notes, a selection or copied "
@@ -60,7 +61,9 @@ HOSTS = {
                "refused while one has focus.",
         default="Yes. It is the default answer brain.",
         key="You. `OPENROUTER_API_KEY` in your environment, "
-            "`~/.config/wisp/.env` or your keyring.",
+            "`~/.config/wisp/.env` or your keyring. The dev-mode judge "
+            "uses `omaseal://openrouter/orchestral` (your eval key) "
+            "instead, never the default key.",
         control="`[brain] default` and `[brain] fallback` take a local "
                 "model (`ollama:`, `lmstudio:`, `mlx:`) and nothing then "
                 "leaves; `[agent] screenshots = false` keeps the screen "
@@ -69,17 +72,21 @@ HOSTS = {
                 "account's privacy settings, not by Wisp."),
     "api.groq.com": dict(
         what="Speech to text for each push-to-talk turn (any "
-             "OpenAI-compatible endpoint works in its place).",
-        sends=[AUDIO],
+             "OpenAI-compatible endpoint works in its place), and the "
+             "voice that speaks answers aloud.",
+        sends=[AUDIO, TEXT],
         detail="The recording of that turn, and the vocabulary prompt "
-               "from `[stt] prompt`.",
+               "from `[stt] prompt`. For the spoken answer, the answer "
+               "text one sentence at a time (English answers only).",
         default="Yes. `[stt] provider` is `openai` with this base URL.",
         key="You. `GROQ_API_KEY` in your environment, "
             "`~/.config/wisp/.env` or your keyring.",
         control="`[stt] provider = \"local\"` transcribes on this "
                 "machine with whisper.cpp and sends no audio; "
-                "`[stt] base_url` points at any other host. The "
-                "provider's retention is its own."),
+                "`[stt] base_url` points at any other host. "
+                "`[voice] provider = \"espeak\"` (or `[voice] enabled = "
+                "false`) sends no answer text. The provider's retention "
+                "is its own."),
     "api.github.com": dict(
         what="Update check and release lookup for `wispd update`.",
         sends=[NONE],
@@ -98,12 +105,24 @@ HOSTS = {
                "from your machine is in it, but the picture's address "
                "comes from the answer.",
         default="Only when an answer shows a picture. This is the only "
-                "host fetched by default.",
+                "host fetched by default for pictures.",
         key="None.",
         control="`[images] allow` is the full list of hosts that may be "
                 "fetched, https only, size-capped, private addresses "
                 "refused. Set it to a host you do not use to turn "
                 "pictures off."),
+    "raw.githubusercontent.com": dict(
+        what="3D models for answer cards.",
+        sends=[NONE],
+        detail="A plain GET for one glTF or GLB file an answer named. "
+               "Nothing from your machine is in it, but the model's "
+               "address comes from the answer.",
+        default="Only when an answer shows a 3D model.",
+        key="None.",
+        control="`[models] allow` is the full list of hosts that may be "
+                "fetched, https only, size-capped, private addresses "
+                "refused. Set it to a host you do not use to turn 3D "
+                "models off."),
 }
 
 # Regional OpenRouter endpoints have the same payload and credential
@@ -129,6 +148,12 @@ MENTIONS = {
     "calendar.google.com": "Opened in your browser when you say \"open "
                            "calendar\" and no native client is set "
                            "(`[web] calendar`).",
+    "dashboard.stripe.com": "Opened in your browser when you say \"go to "
+                            "Stripe\" or \"open Stripe\".",
+    "linear.app": "Opened in your browser when you say \"go to Linear\" or "
+                  "\"open Linear\".",
+    "app.slack.com": "Opened in your browser when you say \"open Slack\" "
+                     "and no native client is set.",
     "x.com": "A compose window is opened in your browser with the text "
              "filled in. Nothing is posted until you press Post.",
     "gmail.com": "An example in help text: a domain you say is opened in "
@@ -137,100 +162,93 @@ MENTIONS = {
                "text.",
     "wisp.ai": "An example in help text.",
     "example.com": "An example address in help text.",
+    "console.groq.com": "A link shown in the voice notice and `wispd doctor` "
+                        "for accepting the Orpheus terms. Wisp never "
+                        "requests it.",
     "amara.org": "A credit line for subtitle text in a bundled sample.",
     "www.w3.org": "An XML namespace in a generated icon. Never "
                   "requested.",
     "hf.co": "A Hugging Face model namespace inside Ollama tags "
              "(`hf.co/owner/model:tag`) in the local-model catalog. It "
-             "names a weight to pull, not a host Wisp opens — Ollama "
+             "names a weight to pull, not a host Wisp opens; Ollama "
              "resolves the download.",
-    # App-skill routing. `wisp/skills.py` backfills `url_hosts` on
-    # `<name>-app` skills from `_HOST_GUESSES`, so the router can pick a
-    # skill by the frontmost window's URL. The host is matched, never
-    # contacted: nothing here opens a socket, and only a skill you run
-    # decides what happens next.
-    "airtable.com": "App-skill routing: matched against the frontmost "
-                    "window's URL to pick the Airtable skill. Nothing is "
-                    "sent to it.",
-    "app.asana.com": "App-skill routing: matched against the frontmost "
-                     "window's URL to pick the Asana skill. Nothing is "
-                     "sent to it.",
-    "app.clickup.com": "App-skill routing: matched against the frontmost "
-                       "window's URL to pick the ClickUp skill. Nothing is "
-                       "sent to it.",
-    "app.slack.com": "App-skill routing: matched against the frontmost "
-                     "window's URL to pick the Slack skill. Nothing is "
-                     "sent to it.",
-    "atlassian.net": "App-skill routing: matched against the frontmost "
-                     "window's URL to pick the Jira or Confluence skill. "
-                     "Nothing is sent to it.",
-    "chatgpt.com": "App-skill routing: matched against the frontmost "
-                   "window's URL to pick the ChatGPT skill. Nothing is "
-                   "sent to it.",
-    "claude.ai": "App-skill routing: matched against the frontmost "
-                 "window's URL to pick the Claude skill. Nothing is sent "
-                 "to it.",
-    "dash.cloudflare.com": "App-skill routing: matched against the "
-                           "frontmost window's URL to pick the Cloudflare "
-                           "skill. Nothing is sent to it.",
-    "discord.com": "App-skill routing: matched against the frontmost "
-                   "window's URL to pick the Discord skill. Nothing is "
-                   "sent to it.",
-    "docs.google.com": "App-skill routing: matched against the frontmost "
-                       "window's URL to pick the Google Docs skill. "
-                       "Nothing is sent to it.",
-    "drive.google.com": "App-skill routing: matched against the frontmost "
-                        "window's URL to pick the Google Drive skill. "
-                        "Nothing is sent to it.",
-    "dropbox.com": "App-skill routing: matched against the frontmost "
-                   "window's URL to pick the Dropbox skill. Nothing is "
-                   "sent to it.",
-    "figma.com": "App-skill routing: matched against the frontmost "
-                 "window's URL to pick the Figma skill. Nothing is sent "
-                 "to it.",
-    "gitlab.com": "App-skill routing: matched against the frontmost "
-                  "window's URL to pick the GitLab skill. Nothing is sent "
-                  "to it.",
-    "linear.app": "App-skill routing: matched against the frontmost "
-                  "window's URL to pick the Linear skill. Nothing is sent "
-                  "to it.",
-    "open.spotify.com": "App-skill routing: matched against the frontmost "
-                        "window's URL to pick the Spotify skill. Nothing "
-                        "is sent to it.",
-    "outlook.office.com": "App-skill routing: matched against the "
-                          "frontmost window's URL to pick the Outlook "
-                          "skill. Nothing is sent to it.",
-    "perplexity.ai": "App-skill routing: matched against the frontmost "
-                     "window's URL to pick the Perplexity skill. Nothing "
-                     "is sent to it.",
-    "reddit.com": "App-skill routing: matched against the frontmost "
-                  "window's URL to pick the Reddit skill. Nothing is sent "
-                  "to it.",
-    "stackoverflow.com": "App-skill routing: matched against the "
-                         "frontmost window's URL to pick the Stack "
-                         "Overflow skill. Nothing is sent to it.",
-    "tallyline.app": "App-skill routing: matched against the frontmost "
-                     "window's URL to pick the Tallyline skill. Nothing is "
-                     "sent to it.",
-    "trello.com": "App-skill routing: matched against the frontmost "
-                  "window's URL to pick the Trello skill. Nothing is sent "
-                  "to it.",
-    "vercel.com": "App-skill routing: matched against the frontmost "
-                  "window's URL to pick the Vercel skill. Nothing is sent "
-                  "to it.",
-    "youtube.com": "App-skill routing: matched against the frontmost "
-                   "window's URL to pick the YouTube skill. Nothing is "
-                   "sent to it.",
+    "airtable.com": "A local app-skill routing hint for Airtable. "
+                    "No request is made by this lookup.",
+    "app.asana.com": "A local app-skill routing hint for Asana. "
+                     "No request is made by this lookup.",
+    "app.clickup.com": "A local app-skill routing hint for ClickUp. "
+                       "No request is made by this lookup.",
+    "app.slack.com": "A local app-skill routing hint for Slack. "
+                     "No request is made by this lookup.",
+    "atlassian.net": "A local app-skill routing hint for Jira and "
+                     "Confluence. No request is made by this lookup.",
+    "chatgpt.com": "A local app-skill routing hint for ChatGPT. "
+                   "No request is made by this lookup.",
+    "claude.ai": "A local app-skill routing hint for Claude. "
+                 "No request is made by this lookup.",
+    "cloudflare.com": "Matched against the focused window title to "
+                      "select a local app skill for Cloudflare. "
+                      "No request is made by this lookup.",
+    "dash.cloudflare.com": "A local app-skill routing hint for the "
+                           "Cloudflare dashboard. No request is made "
+                           "by this lookup.",
+    "discord.com": "A local app-skill routing hint for Discord, also "
+                   "matched against the focused window title. "
+                   "No request is made by this lookup.",
+    "docs.google.com": "A local app-skill routing hint for Google Docs "
+                       "and Sheets, also matched against the focused "
+                       "window title. No request is made by this lookup.",
+    "drive.google.com": "A local app-skill routing hint for Google Drive, "
+                        "also matched against the focused window title. "
+                        "No request is made by this lookup.",
+    "dropbox.com": "A local app-skill routing hint for Dropbox. "
+                   "No request is made by this lookup.",
+    "figma.com": "A local app-skill routing hint for Figma, also matched "
+                 "against the focused window title. No request is made "
+                 "by this lookup.",
+    "gitlab.com": "A local app-skill routing hint for GitLab. "
+                  "No request is made by this lookup.",
+    "linear.app": "A local app-skill routing hint for Linear. "
+                  "No request is made by this lookup.",
+    "open.spotify.com": "A local app-skill routing hint for Spotify. "
+                        "No request is made by this lookup.",
+    "outlook.office.com": "A local app-skill routing hint for Outlook. "
+                          "No request is made by this lookup.",
+    "perplexity.ai": "A local app-skill routing hint for Perplexity, also "
+                     "matched against the focused window title. "
+                     "No request is made by this lookup.",
+    "reddit.com": "A local app-skill routing hint for Reddit. "
+                  "No request is made by this lookup.",
+    "stackoverflow.com": "A local app-skill routing hint for Stack "
+                         "Overflow. No request is made by this lookup.",
+    "stripe.com": "Matched against the focused window title to select "
+                  "a local app skill for Stripe. No request is made "
+                  "by this lookup.",
+    "tallyline.app": "A local app-skill routing hint for Tallyline. "
+                     "No request is made by this lookup.",
+    "trello.com": "A local app-skill routing hint for Trello. "
+                  "No request is made by this lookup.",
+    "vercel.com": "A local app-skill routing hint for Vercel, also "
+                  "matched against the focused window title. "
+                  "No request is made by this lookup.",
+    "youtube.com": "A local app-skill routing hint for YouTube. "
+                   "No request is made by this lookup.",
 }
 
 # What stays on this machine, and for how long.
 STORES = (
     ("session.jsonl", "Recent turns: what you said, the route, the reply.",
      "Not trimmed automatically. Delete the file any time."),
-    ("decisions.jsonl, route_ab.jsonl",
+    ("decisions.jsonl",
      "One line per turn: transcript, route choice, timings. Used to "
      "label and compare routing.",
      "Not trimmed automatically. Delete the files any time."),
+    ("trajectories.jsonl",
+     "What the act loop did for each task: the task text (your words), "
+     "the app, the steps and the outcome. Used to show the loop how a "
+     "similar task went before.",
+     "Rotates at its size cap and keeps one earlier file. Delete the "
+     "files any time."),
     ("trace.jsonl",
      "Per-stage event stream for debugging, including the transcript "
      "and answer text. Keys are never written.",
@@ -292,6 +310,7 @@ CHOOSE = (
     ("MCP servers you configure", "Receive the tool calls you "
      "approve."),
     ("`[images] allow`", "Hosts a picture may be fetched from."),
+    ("`[models] allow`", "Hosts a 3D model may be fetched from."),
     ("`wispd import <https address>`", "One GET of the address you typed "
      "(https only, 256 KB), after which nothing is written until you read "
      "the full text and say yes."),
@@ -418,6 +437,24 @@ def render(found: dict) -> str:
         "Studio, MLX), the UI-grounding model, the browser debugging "
         "port and per-app control ports. A grounding model on loopback "
         "means screenshots never leave the box for that step.",
+        "",
+        "## Background agents",
+        "",
+        "An OpenCode agent Wisp starts runs on this machine and reaches "
+        "models through ori and OpenRouter, so what it reads and writes "
+        "goes to OpenRouter-routed models like any other turn. Every "
+        "tool call it asks permission for gets one answer from Wisp's "
+        "own policy: reads inside its working folder and a fixed list "
+        "of build and test commands are allowed; credential files, "
+        "keyring tools, login flows and Wisp's state folder are refused "
+        "in every mode; everything else, and anything Wisp cannot "
+        "parse, is asked out loud and refused if you do not answer. The "
+        "only door back into Wisp is a read-only tool list (memory, "
+        "skills, task output, one question to you). `[agents] "
+        "mcp_memory = false` takes memory off that list. `wispd "
+        "doctor` does not prove the permission gate, because that "
+        "takes a live model call: its row says \"live check not "
+        "run\".",
         "",
         "## Names in the code that are not requests",
         "",

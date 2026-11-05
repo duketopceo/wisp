@@ -63,10 +63,21 @@ PRICES = {
     "google/gemini-2.5-flash": (0.30, 2.50),
     "google/gemini-2.5-flash-lite": (0.10, 0.40),
     "openai/gpt-4o-mini": (0.15, 0.60),
+    "openai/gpt-4.1-mini": (0.40, 1.60),
     "qwen/qwen3-235b-a22b": (0.13, 0.60),
     "x-ai/grok-4.7": (1.60, 4.80),
+    "particle-ai/particle-1": (0.05, 0.25),
+    "openrouter/particle-ai/particle-1": (0.05, 0.25),
+    "deepseek/deepseek-v4-flash": (0.14, 0.28),
+    "deepseek/deepseek-v4.1-flash": (0.14, 0.28),
+    "openrouter/deepseek/deepseek-v4-flash": (0.14, 0.28),
+    "openrouter/deepseek/deepseek-v4.1-flash": (0.14, 0.28),
 }
 UNKNOWN_PRICE = (10.0, 30.0)
+# USD per million characters of speech (text-to-speech models bill by
+# input characters, not tokens).
+CHAR_PRICES = {"canopylabs/orpheus-v1-english": 22.0}
+UNKNOWN_CHAR_PRICE = 22.0
 DEFAULT_DAILY_USD = 8.0
 DEFAULT_MONTHLY_USD = 160.0
 LEGACY_NAME = "spend.jsonl"
@@ -76,6 +87,7 @@ LEGACY_NAME = "spend.jsonl"
 ACTIVE = False
 
 _LOCK = threading.Lock()
+_BY_PROVIDER: dict = {}      # provider -> usd, same lifetime as _SESSION
 _SESSION = {"cost": 0.0, "prompt_tokens": 0, "completion_tokens": 0,
             "calls": 0}
 _HINTED = False
@@ -96,8 +108,14 @@ def price(model: str, tokens_in: int, tokens_out: int) -> float:
     return (tokens_in * pin + tokens_out * pout) / 1_000_000
 
 
+def price_chars(model: str, chars: int) -> float:
+    """USD for `chars` characters of speech."""
+    return chars * CHAR_PRICES.get(model, UNKNOWN_CHAR_PRICE) / 1_000_000
+
+
 def record(provider: str, model: str, tokens_in: int, tokens_out: int,
-           usd=None, paid: bool = False, now=None, p=None, path=None):
+           usd=None, paid: bool = False, now=None, p=None, path=None,
+           ttft_ms: int | None = None, latency_ms: int | None = None):
     """Append one row and return it. `usd` None = price from the table
     (paid) or 0 (local)."""
     now = now or _now()
@@ -108,6 +126,10 @@ def record(provider: str, model: str, tokens_in: int, tokens_out: int,
     row = {"ts": now.isoformat(timespec="seconds"), "provider": provider,
            "model": model, "in": int(tokens_in), "out": int(tokens_out),
            "usd": round(float(usd), 8), "paid": bool(paid)}
+    if ttft_ms is not None:
+        row["ttft_ms"] = int(ttft_ms)
+    if latency_ms is not None:
+        row["latency_ms"] = int(latency_ms)
     target = path or p or globals()["path"]()
     line = (json.dumps(row, separators=(",", ":")) + "\n").encode()
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -358,6 +380,15 @@ def reset_session() -> None:
     """Zero the in-process counters (tests call this between cases)."""
     for k in _SESSION:
         _SESSION[k] = 0
+    with _LOCK:
+        _BY_PROVIDER.clear()
+
+
+def provider_totals() -> dict:
+    """{provider: usd} for calls noted in this process since
+    reset_session(); a run's per-provider spend is the delta."""
+    with _LOCK:
+        return dict(_BY_PROVIDER)
 
 
 def session_totals() -> dict:
@@ -366,7 +397,8 @@ def session_totals() -> dict:
     return dict(_SESSION)
 
 
-def note(provider: str, model: str, paid: bool, usage: dict):
+def note(provider: str, model: str, paid: bool, usage: dict,
+         ttft_ms: int | None = None, latency_ms: int | None = None):
     """Record one finished brain call (the single place a call is
     recorded). Never raises; the file write is a no-op unless ACTIVE.
     `usage` is {in/out or prompt_tokens/..., cost}."""
@@ -382,14 +414,24 @@ def note(provider: str, model: str, paid: bool, usage: dict):
             _SESSION["prompt_tokens"] += int(_num(tin))
             _SESSION["completion_tokens"] += int(_num(tout))
             _SESSION["cost"] += usd
+            _BY_PROVIDER[provider] = _BY_PROVIDER.get(provider, 0.0) + usd
     except Exception:  # noqa: BLE001
         pass
     if not ACTIVE:
         return None
     try:
         row = record(provider, model, tin, tout, usd=usage.get("cost"),
-                     paid=paid)
+                     paid=paid, ttft_ms=ttft_ms, latency_ms=latency_ms)
     except Exception:  # noqa: BLE001
         return None
     publish()
     return row
+
+
+def note_chars(provider: str, model: str, chars: int):
+    """Record one billed text-to-speech request: `in` is the characters
+    sent, `out` is 0, `usd` the per-character price. Same row shape and
+    ACTIVE rule as `note`, so the daily cap counts it."""
+    return note(provider, model, True,
+                {"in": int(chars), "out": 0,
+                 "cost": price_chars(model, int(chars))})

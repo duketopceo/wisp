@@ -32,7 +32,7 @@ class FakeSpeaker:
     enabled = True
     started = False
 
-    def __init__(self, cfg, token=None, on_sentence=None):
+    def __init__(self, cfg, token=None, on_sentence=None, on_audio=None):
         self.on_sentence = on_sentence
         self.feeds = []
         self.finishes = []
@@ -241,6 +241,25 @@ class PaperAndActResultTests(StageBase):
         for t in ("[RING", "[ARROW"):
             self.assertNotIn(t, pp.call_args.args[1])
 
+    def test_direct_tool_results_have_spoken_payload(self):
+        self.assertEqual(
+            stage_speak._spoken_payload(
+                "SWITCHED tab 'Inbox — Personal' -> mail.google.com"),
+            "Switched to Inbox — Personal.")
+        self.assertEqual(
+            stage_speak._spoken_payload(
+                "OPENED https://dashboard.stripe.com -> xdg-open"),
+            "Opened dashboard.stripe.com.")
+        self.assertEqual(
+            stage_speak._spoken_payload("LAUNCHED Discord -> gtk-launch"),
+            "Opened Discord.")
+        self.assertEqual(
+            stage_speak._spoken_payload("FOCUSED firefox -> address:0x1"),
+            "Focused firefox.")
+        self.assertEqual(
+            stage_speak._spoken_payload("WORKSPACE 3 -> ok"),
+            "Switched to workspace 3.")
+
 
 class GuardTests(StageBase):
     """Stage-side guards, driven through a fake speaker."""
@@ -250,8 +269,8 @@ class GuardTests(StageBase):
         self.cfg = {"voice": {"enabled": "true"}, "agent": {}}
         self.spk = None
 
-        def make(cfg, token=None, on_sentence=None):
-            self.spk = FakeSpeaker(cfg, token, on_sentence)
+        def make(cfg, token=None, on_sentence=None, on_audio=None):
+            self.spk = FakeSpeaker(cfg, token, on_sentence, on_audio)
             return self.spk
         p = mock.patch.object(speech, "SentenceSpeaker", make)
         p.start()

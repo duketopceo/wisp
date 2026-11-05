@@ -1,9 +1,10 @@
 # wisp — Repo Index
 
 **What:** Hey Clicky-style desktop AI companion. Hold push-to-talk → local
-STT → Jev routing → guarded actions. Python reference daemon (`wispd` script
-+ `wisp/`) and Rust parity core (`rs/wispd/`). Pluggable `[brain.*]`
-providers (OpenRouter default; local Ollama/LM Studio/MLX supported).
+STT → fast paths and the act loop → guarded actions. Python reference daemon
+(`wispd` script + `wisp/`) and Rust parity core (`rs/wispd/`, frozen). Pluggable
+`[brain.*]` providers (hosted OpenRouter by default; local Ollama/LM Studio/MLX
+are opt-in, off unless `[local] enabled`).
 
 ## Entry points
 

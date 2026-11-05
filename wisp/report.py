@@ -7,7 +7,6 @@ Sending is stdlib-only, on a background thread, rate limited, deduped,
 and queued offline in a bounded JSONL. Nothing here raises into the
 pipeline.
 """
-import hashlib
 import json
 import os
 import pathlib

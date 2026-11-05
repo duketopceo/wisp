@@ -1,12 +1,8 @@
 {
-  "description": "Every model endpoint is down (STT, Jev, brain): the turn ends in a clean error, nothing leaves loopback.",
+  "description": "Every model endpoint is down (STT and brain; Jev is no longer on the default path): the turn ends in a clean error, nothing leaves loopback.",
   "audio": "ask.wav",
   "endpoints": {
     "whisper": {
-      "status": 503
-    },
-    "jev": {
-      "answers": {},
       "status": 503
     },
     "brain": {

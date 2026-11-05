@@ -3,6 +3,8 @@ import "../../../shell-plugin/lib/state.js" as Reader
 import "../../../shell-plugin/lib/copy.js" as Copy
 import "../../../shell-plugin/lib/motion.js" as Motion
 import "../../../shell-plugin/lib/run.js" as Run
+import "../../../shell-plugin/lib/rate.js" as Rate
+import "../../../shell-plugin/lib/dev.js" as Dev
 
 // Stand-in for WispService in the snapshot harness: the same property and
 // function names components read, filled from a lib/state.js view built from
@@ -15,6 +17,7 @@ Item {
   property var view: Reader.initial()
   property var tokens: ({})
   property string fontFamily: "Liberation Mono"
+  property real textScale: 1
   property string themeMode: "dark"
   // snapshot mode: motion off, so no animation can change a frame
   property string motionConfig: "off"
@@ -45,6 +48,40 @@ Item {
   property string errorCode: ""
   property var health: ({})
   property var spend: ({})
+  property var ratePrompt: null
+  // Dev tab (U5): the harness never runs the call; scenes pass the data
+  // straight to the component
+  property bool devPanel: false
+  readonly property bool devOn: Dev.sessionOn(view.raw)
+  readonly property int devRunsLeft: Dev.runsLeft(view.raw)
+  readonly property bool devTab: devPanel || devOn
+  property var devRuns: null
+  property bool devRunsLoading: false
+  property string devRunsError: ""
+  property var devData: null
+  property bool devLoading: false
+  property string devError: ""
+  // the prompted turn id, "" when none: surfaces react to this, not to the
+  // object (normalize builds a fresh {turn} on every state message)
+  readonly property string ratePromptTurn: ratePrompt ? String(ratePrompt.turn || "") : ""
+  // the bar pill's done rating window (WispService.ratingWindowOpen); the
+  // single-shot timer mirrors the real one. load() sets the window from the
+  // fixture alone (mods.ratingWindow overrides), never from the previous case.
+  property bool ratingWindowOpen: false
+  property bool pillHover: false
+  // the scribble grab (WispService.scribbleHeld); fixtures hold it while listening
+  property bool scribbleHeld: true
+  function scribbleTouch() {}
+  property alias ratingTimer: ratingTimerItem
+  Timer {
+    id: ratingTimerItem
+    interval: 8000
+    repeat: false
+    running: root.ratingWindowOpen && !root.pillHover
+    onTriggered: root.ratingWindowOpen = false
+  }
+  // label() calls the harness received, for the pill's thumb tests
+  property var labelCalls: []
   property string mic: ""
   property string turnId: ""
   property bool offline: true
@@ -58,6 +95,10 @@ Item {
   // {verb, pending, ok, message, at} — mirrors WispService.lastAction;
   // the harness never runs actions, so null unless a scene sets it
   property var lastAction: null
+  // B31: inert by default; recap scenes may opt in to an explicit card.
+  // No local logs, processes or delivery state are touched by the harness.
+  property var weeklyRecap: null
+  property bool recapVisible: false
 
   readonly property string statusWord: Copy.statusWord(status)
   readonly property string statusTone: Copy.statusTone(status)
@@ -72,14 +113,24 @@ Item {
   // the bar actions call these; the harness never talks to a daemon
   function trigger() {}
   function interrupt() {}
+  function askAbout(text) { return false; }
   function startDaemon() {}
   function sendChoice(pick, pid) { return false; }
+  function label(verdict, turn, note) {
+    root.labelCalls = root.labelCalls.concat([{ verdict: verdict, turn: turn, note: note }]);
+    return true;
+  }
+  function skipRatePrompt() { return false; }
+  function loadConfig() {}
+  function disableRecap() { root.weeklyRecap = null; return true; }
+  function loadDev() {}
 
   function ui(key) { return Copy.string(key); }
   function pickLabel(pick) { return Copy.pickLabel(pick); }
 
   // snapshot: raw state.json object; mods: {offline, stale}
   function load(snapshot, mods) {
+    root.weeklyRecap = mods && mods.weeklyRecap ? mods.weeklyRecap : null;
     var v = Reader.initial();
     if (mods && mods.patch) {
       // a variant overrides raw snapshot fields (health, spend, tasks)
@@ -121,10 +172,19 @@ Item {
     root.errorCode = v.errorCode;
     root.health = v.health;
     root.spend = v.spend;
+    var rp = v.ratePrompt;
+    var rpTurn = rp ? String(rp.turn || "") : "";
+    if (rpTurn !== root.ratePromptTurn) root.ratePrompt = rp;
     root.mic = v.mic;
     root.turnId = v.turnId;
     root.offline = v.offline;
     root.contractNewer = v.contractNewer;
     root.stale = !!(mods && mods.stale);
+    var win = mods && mods.ratingWindow !== undefined ? mods.ratingWindow
+      : Rate.rateable(root.status, root.answer, root.result, root.errorCode);
+    root.ratingWindowOpen = !!win && root.status === "done" && !root.offline
+      && Rate.rateable(root.status, root.answer, root.result, root.errorCode);
+    // a rated card's reply (verb label, turn, status), for receipt scenes
+    root.lastAction = mods && mods.lastAction ? mods.lastAction : null;
   }
 }

@@ -1,0 +1,47 @@
+{
+  "description": "Retired decision endpoint is down: bare catalog launch uses the fast path without contacting it.",
+  "audio": "ask.wav",
+  "config": {
+    "brain": {
+      "router": "act"
+    }
+  },
+  "endpoints": {
+    "whisper": {
+      "transcript": "open firefox"
+    },
+    "jev": {
+      "answers": {},
+      "status": 503
+    },
+    "brain": {
+      "responses": [
+        {
+          "content": ""
+        }
+      ]
+    }
+  },
+  "expect": {
+    "statuses": [
+      "listening",
+      "transcribing",
+      "deciding",
+      "acting",
+      "done"
+    ],
+    "launch_calls": [
+      "firefox"
+    ],
+    "error_code": "",
+    "jev_calls": 0
+  },
+  "name": "retired_endpoint_down",
+  "scenario": "retired endpoint down",
+  "catalog": {
+    "firefox": {
+      "launch": "firefox",
+      "cues": "web browser"
+    }
+  }
+}

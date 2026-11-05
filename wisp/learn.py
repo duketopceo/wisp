@@ -13,24 +13,49 @@ from . import config
 LABELS_FILE = config.DATA_DIR / "labels.jsonl"
 
 
-def label_last(label: str, note: str = "", lang: str = "") -> str:
-    """Tag the most recent decisions.jsonl turn correct/incorrect —
-    `wispd eval` reads labels.jsonl keyed by `ref`."""
+_UNRATABLE = ("CANCELLED", "ERROR")
+
+
+def label_status(result: str) -> str:
+    """Typed reply for a `label_last` result string: ok | not_found |
+    not_ratable. Refusals (SKIP/ERROR write failures) carry none."""
+    r = str(result or "")
+    if r.startswith("labeled "):
+        return "ok"
+    if r.startswith("not_ratable"):
+        return "not_ratable"
+    if r.startswith(("not_found", "nothing to label")):
+        return "not_found"
+    return ""
+
+
+def label_last(label: str, note: str = "", lang: str = "",
+               turn: str = "", out: dict | None = None) -> str:
+    """Tag a decisions.jsonl turn correct/incorrect — `wispd eval` reads
+    labels.jsonl keyed by `ref`. With `turn`, that turn's line; without
+    it, the most recent finished line (cancelled and error lines are
+    skipped). A cancelled or errored turn is not_ratable. `out`, when
+    given, receives {"turn": id} of the turn that was labelled."""
     label = {"ok": "correct", "good": "correct",
              "bad": "incorrect"}.get(label, label)
     if label not in ("correct", "incorrect"):
         return "SKIP (label must be correct|incorrect)"
-    try:
-        last = ""
-        with config.DECISIONS.open() as f:
-            for line in f:
-                if line.strip():
-                    last = line
-        if not last:
+    turn = str(turn or "").strip()
+    rows = _read_jsonl(config.DECISIONS)
+    if turn:
+        hit = next((d for d in reversed(rows)
+                    if d.get("turn") == turn), None)
+        if hit is None:
+            return f"not_found: no turn {turn}"
+        if str(hit.get("result", "")).startswith(_UNRATABLE):
+            return f"not_ratable: turn {turn} did not finish"
+    else:
+        hit = next((d for d in reversed(rows)
+                    if not str(d.get("result", "")).startswith(
+                        _UNRATABLE)), None)
+        if hit is None:
             return "nothing to label"
-        ref = json.loads(last).get("ts", "")
-    except OSError:
-        return "nothing to label"
+    ref = hit.get("ts", "")
     rec = {"ts": datetime.now(timezone.utc).isoformat(),
            "ref": ref, "label": label, "note": note}
     if lang:
@@ -42,6 +67,8 @@ def label_last(label: str, note: str = "", lang: str = "") -> str:
             f.write(json.dumps(rec) + "\n")
     except OSError as e:
         return f"ERROR ({e})"
+    if out is not None:
+        out["turn"] = str(hit.get("turn", "") or "")
     return f"labeled {label}: {ref}"
 
 
@@ -103,6 +130,12 @@ def eval_report(cfg: dict | None = None, decisions_file=None,
             latest[ref] = label
             if lab.get("lang"):
                 spoken[ref] = str(lab["lang"])
+    since = _eval_since(cfg)
+    if since:
+        # `[eval] since`: only turns at or after this ISO date/time (UTC)
+        # count, so the gate measures the build being shipped. Decision
+        # timestamps are UTC ISO strings, so a string compare is exact.
+        latest = {r: v for r, v in latest.items() if r >= since}
     rows, total = {}, {"labelled": 0, "correct": 0, "incorrect": 0,
                        "corrected": 0}
     langs = {}
@@ -153,7 +186,20 @@ def eval_report(cfg: dict | None = None, decisions_file=None,
         ok = gate["needs"] == 0 and (total["rate"] or 0) >= gate_rate
         gate["status"] = "PASS" if ok else "FAIL"
     return {"kinds": kinds, "total": total, "gate": gate,
-            "langs": dict(sorted(langs.items()))}
+            "langs": dict(sorted(langs.items())), "since": since}
+
+
+def _eval_since(cfg: dict | None) -> str:
+    """`[eval] since` as a validated ISO date or date-time prefix
+    ('2026-11-03' or '2026-11-03T12:00'), else '' (count every label)."""
+    raw = str(((cfg or {}).get("eval", {}) or {}).get("since", "") or "").strip()
+    if not raw:
+        return ""
+    try:
+        datetime.fromisoformat(raw)
+    except ValueError:
+        return ""
+    return raw
 
 
 def _latest_labels(labels_file=None) -> dict:
@@ -244,13 +290,18 @@ def unlabelled_text(rows: list) -> str:
 def eval_text(rep: dict) -> str:
     """Render eval_report for the terminal."""
     if not rep["total"]["labelled"]:
+        if rep.get("since"):
+            return (f"no labels since {rep['since']} ([eval] since) — use "
+                    "`wispd label set correct|incorrect`")
         return "no labels yet — use `wispd label set correct|incorrect`"
 
     def row(name, r):
         pct = "-" if r["rate"] is None else f"{100 * r['rate']:.0f}%"
         return (f"  {name:<8} {r['labelled']:>5} {r['correct']:>8} "
                 f"{r['incorrect']:>9} {r['corrected']:>9} {pct:>6}")
-    lines = ["end-to-end eval (latest label per turn):",
+    head = "end-to-end eval (latest label per turn"
+    head += f", since {rep['since']}):" if rep.get("since") else "):"
+    lines = [head,
              f"  {'kind':<8} {'turns':>5} {'correct':>8} "
              f"{'incorrect':>9} {'retried':>9} {'rate':>6}"]
     lines += [row(k, r) for k, r in rep["kinds"].items()]

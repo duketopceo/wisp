@@ -17,8 +17,6 @@ DATA_DIR = pathlib.Path(
     os.environ.get("XDG_DATA_HOME", DATA_DIR_P.parent)) / "wisp"
 CORRECTIONS = DATA_DIR / "corrections.jsonl"
 DECISIONS = DATA_DIR / "decisions.jsonl"
-SHADOW = DATA_DIR / "shadow.jsonl"
-ROUTE_AB = DATA_DIR / "route_ab.jsonl"
 _xdg_rt = os.environ.get("XDG_RUNTIME_DIR")
 RUN_DIR = (pathlib.Path(_xdg_rt) / "wisp") if _xdg_rt else RUN_DIR_P
 LEVEL_FILE = RUN_DIR / "level"
@@ -36,22 +34,10 @@ HARNESS_FILE = CFG_DIR / "harness.json"
 WHISPER_HOME = HOME / "src" / "whisper.cpp"
 WHISPER_BIN = WHISPER_HOME / "build" / "bin" / "whisper-cli"
 
+# Optional structured grounding provider, not the retired turn router.
 JEV_ENDPOINT = os.environ.get(
     "WISP_JEV_ENDPOINT", "https://openrouter.ai/api/alpha/decisions")
 CHAT_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
-
-# Second deciders, run alongside the primary purely to record agreement.
-# Selected with `[jev] shadow = "<name>"`; the primary still decides every
-# turn — a shadow never changes what the agent does, it only creates the
-# labeled-comparison data the v1.0 accuracy gate needs. The pplx shadow
-# uses OpenRouter (same key as Jev) — no separate Perplexity key.
-SHADOW_PROVIDERS = {
-    "pplx": {
-        "endpoint": "https://openrouter.ai/api/alpha/decisions",
-        "model": "perplexity/pplx-decider-v1.2",
-        "key_env": "OPENROUTER_API_KEY",
-    },
-}
 
 DEFAULT_CONFIG = """\
 [hotkey]
@@ -67,11 +53,19 @@ whisper_model = "ggml-small.en.bin"
 # small.en is English only; for other languages use a multilingual model
 # such as ggml-small.bin (or the hosted speech service).
 
+[browser]
+# watchable browser lane (B14): "off" or "extension". The extension in
+# browser-extension/ pairs with a one-time code and works in a tab group
+# beside yours; see docs/BROWSER_LANE.md
+lane = "off"
+# loopback port the extension polls
+port = 47315
+
 [agent]
 model = "typesafe/jev-1.13"
 # OpenRouter chat model for the answer route — must accept image_url
 # content parts (vision-capable) for screen-aware answers.
-answer_model = "meta-llama/llama-4-maverick"
+answer_model = "google/gemini-2.5-flash"
 # number of prior turns fed back as context for follow-ups
 session_turns = 8
 # attach a screenshot to answer-route calls when true
@@ -106,10 +100,12 @@ max_calls_per_day = 48
 model = "openrouter:google/gemini-2.5-flash"
 
 [pointer]
-# guide = Wisp points with the ghost cursor, you click (safe default).
+# With mode unset, tools guide; live act turns use auto when a backend exists.
+# Set guide explicitly to keep the ghost cursor even during live act turns.
+# guide = Wisp points with the ghost cursor, you click.
 # drive = inject real clicks via the detected backend.
 # auto  = drive when a backend exists, guide otherwise.
-mode = "guide"
+# mode = "auto"
 # auto | cua | hyprcursor | ydotool | wlrctl | none — auto prefers a
 # live cua-driver daemon (background virtual-pointer clicks on native
 # Wayland — needs the cua-hyprland plugin + CUA_DRIVER_RS_ENABLE_WAYLAND=1
@@ -154,16 +150,25 @@ delivery = "auto"
 # UI grounding adapter (wisp/grounding.py, W13): click/move target name ->
 # screen point. Chain order; control = the app's own control channel
 # (wisp/control.py — apps registered under [control], FilmCraft first),
-# a11y = cua get_window_state tree (when the driver is up), uitars =
+# a11y = cua get_window_state tree (when the driver is up), vlm =
+# aspect-matched single-image pointing through the configured brain,
+# uitars =
 # local llama-server (loopback only, screenshots never leave the box),
 # jev = the Decision-Agent patch fallback.
-providers = "control,a11y,uitars,jev"
+# WISP_JEV_ENDPOINT overrides this optional structured-grounding endpoint,
+# not the retired turn router.
+providers = "control,a11y,vlm,uitars,jev"
 # candidates below this are re-observed once, then refused (never clicked)
 min_confidence = "0.5"
 # shared budget for the fast providers (P7: act first step 1.2 s)
 budget_ms = "1200"
 # the slow vision fallback gets its own timeout
 fallback_timeout_ms = "5000"
+# a different brain for grounding only, as "name:model" (blank = the act
+# brain). It runs alone: [brain] fallback is not consulted, so a down
+# grounding model refuses the click instead of trying another model.
+# Local vision example: "ollama_vision:qwen2.5vl:3b-q8_0"
+vlm_brain = ""
 # uitars_url = "http://127.0.0.1:8081"   # default: [health] uitars or this
 # uitars_coords = "px"                    # px | rel1000
 # a11y_frame = "global"                   # global | window (element frames)
@@ -212,6 +217,10 @@ enabled = "true"
 enabled = "true"
 days = "7"
 
+# Private local usage recap. Opt-in; nothing is sent.
+[growth]
+weekly_recap = "false"
+
 [selection]
 # Selected or copied text, a copied image, or a file path you pointed at
 # (wisp/selection.py). The primary selection is read once at key press;
@@ -226,6 +235,16 @@ clipboard = "true"
 # Only https hosts in `allow` (a comma list; each entry also matches its
 # subdomains) are fetched, never more than max_kb, never longer than
 # timeout_s. Empty allow keeps the built-in default (Wikimedia's image host).
+allow = ""
+max_kb = "4096"
+timeout_s = "8"
+
+[models]
+# 3D parts cards (wisp/tools/modelfetch.py): an answer may show one small
+# glTF/GLB model whose parts can be clicked to ask about. Only https hosts
+# in `allow` (a comma list; each entry also matches its subdomains) are
+# fetched, never more than max_kb, never longer than timeout_s. Empty allow
+# keeps the built-in default (GitHub's raw host, home of the Khronos samples).
 allow = ""
 max_kb = "4096"
 timeout_s = "8"
@@ -256,12 +275,27 @@ act_max_seconds = 600       # wall-clock bound per run; 0 disables
 act_max_usd = 0             # per-run model-spend cap; 0 disables
 routine_wait_s = 120        # a scheduled routine waits this long for the network
 writer_queue_max = 256      # background trajectory/recall writes queued
+# OpenCode background agents (ACP). The session runs on the first of these
+# the agent runtime offers; none offered = the task fails, never a default.
+acp_models = "openrouter/particle-ai/particle-1,openrouter/deepseek/deepseek-v4-flash,openrouter/deepseek/deepseek-v4.1-flash,openrouter/google/gemini-3.5-flash-lite"
+acp_idle_s = "900"          # a named helper's process exits after this idle
+ask_timeout_s = "120"       # an unanswered agent ask is refused after this
+cancel_grace_s = "10"       # cancel waits this long, then kills the process
+mcp_memory = "true"         # agents may read USER.md/MEMORY.md (to OpenRouter)
 
 [dev]
 # refinement loop: a labeled-bad turn or a correction cue ("no",
 # "didn't work", "instead") makes the next utterance retry with the
 # failed attempt as context; pairs are measured via wispd fails.
 refine = true
+# the panel's Dev tab (v1 gate, recent turns with stage timings, top
+# misses). Local-only; off for everyone else.
+panel = false
+# the run judge (wispd dev run): a cheap vision model on the dedicated
+# eval key reads the screen at the end of each task. A run stops judging
+# at judge_cap_usd and marks the rest unjudged.
+judge_model = "google/gemini-2.5-flash"
+judge_cap_usd = "1.00"
 
 [eval]
 # `wispd eval` gate: the first-time-correct fraction (0-1) the owner
@@ -269,6 +303,10 @@ refine = true
 # the v1 bar at 60% (2026-10-27).
 gate_rate = "60%"
 gate_min_turns = 50
+# count only turns at or after this ISO date or date-time (UTC), e.g.
+# "2026-11-03", so the gate measures the build being shipped; empty
+# counts every label on disk.
+since = ""
 
 [ui]
 # orb/overlay theme: dark | light (wispd theme <name> swaps live)
@@ -294,7 +332,7 @@ language = "auto"
 
 # vocabulary priming — project names, jargon; whisper.cpp --prompt /
 # `prompt` param on the openai provider (huge accuracy win on names)
-prompt = "Wisp, wispd, Omarchy, Hyprland, Jev, OpenRouter, dayflow, omaseal, omarchy plugins, RetroArch, Steam, Discord, VS Code, Kubernetes, k8s, Tailscale, Waybar, Quickshell"
+prompt = "Wisp, wispd, Omarchy, Hyprland, Jev, OpenRouter, dayflow, omaseal, omarchy plugins, RetroArch, Steam, Discord, VS Code, Kubernetes, k8s, Tailscale, Waybar, Quickshell, Robinhood, TradingView, Polymarket, YouTube, Gmail, Linear, Stripe, Supabase, GitHub, Particle AI"
 
 [web]
 # Web app a role opens when its default handler is a browser (a native
@@ -348,13 +386,13 @@ monthly_usd = "160.00"
 gate_primary = "false"
 
 [brain]
-# router: "act" (every turn straight to the agent loop — default),
-# "jev" (typed decisions), "chat" (transcript+screen straight to the
-# answer brain), or "off" (always clarify via choices)
+# router: "act" (local fast paths, then the conversational act loop),
+# "chat" (answer without execution), or "off" (clarify via choices).
+# Saved legacy "jev" values fall back to act; no decision service is called.
 router = "act"
 # answer provider as "name:model" — named sections below or any
 # [brain.<name>] table you add (kind: openai_compat | ollama)
-default = "openrouter:meta-llama/llama-4-maverick"
+default = "openrouter:google/gemini-2.5-flash"
 # fallback chain tried after `default`, comma-separated name:model.
 # Paid entries (openrouter, or paid = "true" on the section) are skipped
 # unless allow_paid = "true". Example: "mlx:ornith, ollama:ornith"
@@ -371,7 +409,7 @@ agent_runtime = "auto"
 [brain.openrouter]
 kind = "openai_compat"
 base_url = "https://openrouter.ai/api/v1"
-key_env = "OPENROUTER_API_KEY"
+key_env = "keyring://wisp/openrouter,OPENROUTER_API_KEY"
 vision = "true"
 tools = "true"
 
@@ -379,6 +417,13 @@ tools = "true"
 kind = "ollama"          # native /api/chat
 base_url = "http://localhost:11434"
 vision = "false"
+tools = "false"
+
+# An Ollama entry that takes screenshots, for [ground] vlm_brain.
+[brain.ollama_vision]
+kind = "ollama"
+base_url = "http://localhost:11434"
+vision = "true"
 tools = "false"
 
 [brain.lmstudio]
@@ -454,42 +499,39 @@ timeout_ms = "500"
 # vision = "true"                          # instead of tool_calls
 # tools = "false"
 # action_text = "true"
-# Jev can also run locally: point WISP_JEV_ENDPOINT at a jev-shim
-# (e.g. http://127.0.0.1:8931/decisions → llama-jev qwen3-4b :8091).
-
-[jev]
-# Shadow decider: a second decision model answers the same questions on
-# every turn so the two can be compared against your labels later. The
-# PRIMARY still decides — a shadow never changes what Wisp does, it only
-# accumulates the agreement data the soak needs. Both answers land in
-# shadow.jsonl, keyed by the same turn id decisions.jsonl carries. "" = off.
-# Known values: "pplx" (perplexity/pplx-decider-v1.2 on OpenRouter).
-shadow = ""
-# Optional runtime route lane: flash decider before Jev (default off).
-# flash_decider = false
-# flash_model = "perplexity/pplx-decider-flash-v1.2"
-# flash_confidence = 0.7
-# flash_deadline_ms = 220   # sub-budget of deadline_ms; rest goes to Jev
-# Jev is an accelerator, never a gate: past this many ms the heuristic
-# router decides and the turn goes on (route_ab.jsonl keeps both).
-# deadline_ms = 400
-
 [debug]
 # full-fidelity event stream to ~/.local/share/wisp/trace.jsonl —
 # every stage of every turn (record/stt/decision/tools/brain/tts/ipc)
-# with ms timings, for replay-by-us-and-Jev debugging. Never logs keys.
+# with ms timings, for local replay debugging. Never logs keys.
 trace = true
 
 [voice]
-# spoken replies via espeak/espeak-ng when true; missing binary = silent no-op
-enabled = false
-# custom TTS command (e.g. piper); `{text}` is replaced with the message,
-# otherwise the message is appended as the last arg. Empty = espeak default.
+# spoken replies: "auto" (default) speaks when a Groq key resolves (and a
+# player exists), else stays off; "true" always (espeak or cmd without a
+# key), "false" never. With no usable voice it is a silent no-op
+enabled = "auto"
+# "groq" speaks with Groq Orpheus (English; needs the same Groq key as
+# speech-to-text and the model terms accepted once in the Groq console);
+# espeak or [voice] cmd speaks when Groq cannot. "espeak" never asks Groq
+provider = "groq"
+tts_model = "canopylabs/orpheus-v1-english"
+# autumn, diana, hannah, austin, daniel or troy
+tts_voice = "hannah"
+# custom TTS command (e.g. piper); the message is written to its stdin,
+# never put on the command line (other local accounts can read argv). A
+# `{text}` token is dropped. Empty = espeak default.
 cmd = ""
 # per-language voices, "es=es-mx,de=de". Empty = the built-in espeak voice
 # named for the language when it has one, else the default voice (said
 # once). A custom cmd can use {lang} or {voice}.
 lang_voices = ""
+# show the answer text in the bubble while it is spoken; false = the voice
+# is the answer (a muted speaker still shows it)
+captions = true
+
+[quiet]
+# hold announcements nobody asked for while a call or screen share is on
+on_calls = true
 
 [notify]
 # desktop toasts (D-Bus org.freedesktop.Notifications; notify-send fallback)
@@ -543,16 +585,16 @@ def _default_cfg_dict() -> dict:
         "audio": {"seconds": "60", "whisper_model": "ggml-small.en.bin"},
         "agent": {
             "model": "typesafe/jev-1.13",
-            "answer_model": "meta-llama/llama-4-maverick",
+            "answer_model": "google/gemini-2.5-flash",
             "session_turns": "8", "screenshots": "true",
             "risk_threshold": "9",
             "confidence_instant": "0.95", "confidence_ambiguous": "0.8",
             "autonomy": "autonomous",
         },
-        "voice": {"enabled": "false"},
+        "voice": {"enabled": "auto"},
         "dictation": {"mode": "cleanup", "history": "true",
                       "history_max": "100", "history_days": "7"},
-        "pointer": {"mode": "guide", "backend": "auto"},
+        "pointer": {"backend": "auto"},
         "cua": {"timeout_ms": "800", "safety": "true", "allow": "",
                 "deny": "", "max_clicks_per_min": "30",
                 "max_per_turn": "12", "dry_run": "false",
@@ -563,6 +605,7 @@ def _default_cfg_dict() -> dict:
                   "shots_keep": "100", "shots_keep_days": "30"},
         "docs": {"enabled": "true"},
         "chips": {"enabled": "true", "days": "7"},
+        "growth": {"weekly_recap": "false"},
         "selection": {"enabled": "true", "clipboard": "true"},
         "images": {"allow": "", "max_kb": "4096", "timeout_s": "8"},
         "verify": {"judge_timeout_s": "20", "pixel_landed_min": "0.02",
@@ -571,13 +614,19 @@ def _default_cfg_dict() -> dict:
         "agents": {"act_max_steps": "12", "act_max_errors": "2",
                    "act_max_parse_misses": "1", "act_max_seconds": "600",
                    "act_max_usd": "0", "routine_wait_s": "120",
-                   "writer_queue_max": "256"},
+                   "writer_queue_max": "256",
+                   "acp_models": "openrouter/particle-ai/particle-1,"
+                                 "openrouter/deepseek/deepseek-v4-flash,"
+                                 "openrouter/deepseek/deepseek-v4.1-flash,"
+                                 "openrouter/google/gemini-3.5-flash-lite",
+                   "acp_idle_s": "900", "ask_timeout_s": "120",
+                   "cancel_grace_s": "10", "mcp_memory": "true"},
         "dev": {"refine": "true"},
         "eval": {"gate_min_turns": "50"},
         "ui": {"theme": "dark"},
         "brain": {
             "router": "act", "agent_runtime": "auto",
-            "default": "openrouter:meta-llama/llama-4-maverick",
+            "default": "openrouter:google/gemini-2.5-flash",
             "fallback": "", "allow_paid": "false", "first_token_s": "3",
         },
         "budget": {"monthly_usd": "160.00", "gate_primary": "false"},
@@ -638,6 +687,11 @@ def stt_settings(cfg: dict | None) -> dict:
 WEB_DEFAULTS = {
     "mail": "https://mail.google.com",
     "calendar": "https://calendar.google.com",
+    "stripe": "https://dashboard.stripe.com",
+    "linear": "https://linear.app",
+    "github": "https://github.com",
+    "notion": "https://www.notion.so",
+    "slack": "https://app.slack.com",
 }
 
 
@@ -659,17 +713,20 @@ def key_label(name: str) -> str:
     (GROQ_API_KEY for `omaseal://groq/default,GROQ_API_KEY`), else the
     list itself."""
     cands = [c.strip() for c in str(name).split(",") if c.strip()]
-    return next((c for c in cands if not c.startswith(
-        ("omaseal://", "keyring://"))),
+    return next((c for c in cands
+                 if not c.startswith(("omaseal://", "keyring://"))),
                 str(name))
 
 
 def load_env_key(name: str) -> str:
     """Resolve a secret. `name` may be a comma-separated list of
-    sources tried in order — `keyring://svc/acct`, `omaseal://svc/acct`,
-    and plain env var names (also looked up in .env). An explicitly
-    configured fallback is tried only when the earlier source fails.
-    Returns "" when nothing yields a value."""
+    sources tried in order — `keyring://svc/acct` (desktop Secret
+    Service via secret-tool), `omaseal://svc/acct` refs and plain env
+    var names (also looked up in .env) — so an omaseal user can keep
+    `omaseal://groq/default,GROQ_API_KEY` and a non-omaseal install
+    still resolves the same key. An explicitly configured fallback is
+    tried only when the earlier source fails. "" when nothing yields a
+    value."""
     for cand in (c.strip() for c in str(name).split(",")):
         if not cand:
             continue
@@ -679,14 +736,12 @@ def load_env_key(name: str) -> str:
                 try:
                     from . import platform as _platform
                     r = subprocess.run(
-                        [_platform.resolve_exe("secret-tool"), "search",
+                        [_platform.resolve_exe("secret-tool"), "lookup",
                          "service", ref[0], "account", ref[1]],
                         capture_output=True, text=True,
                         timeout=OMASEAL_TIMEOUT_S)
-                    if r.returncode == 0:
-                        for line in r.stdout.splitlines():
-                            if line.startswith("secret = "):
-                                return line[len("secret = "):].strip()
+                    if r.returncode == 0 and r.stdout.strip():
+                        return r.stdout.strip()
                 except (OSError, subprocess.SubprocessError):
                     pass
             continue

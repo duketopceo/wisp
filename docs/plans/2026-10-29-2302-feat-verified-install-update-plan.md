@@ -5,9 +5,12 @@ date: 2026-10-29
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-plan-bootstrap
 execution: code
+deepened: 2026-10-30
 ---
 
 # Verified Install and Update
+
+**Status (2026-10-31):** U1, U2, U3 and U5 merged in #256; first-run readiness validation in #264. Deferred as listed in this plan: the signed one-line bootstrap (needs an independently distributed key), U4, first-install recovery, plugin/units/desktop/bind rollback and R7 cleanup tooling.
 
 ## Goal Capsule
 
@@ -66,53 +69,65 @@ On a first install with no previous deployment, recovery removes only newly crea
 
 ## Implementation Units
 
-### U1. Preflight and transaction inventory
+Grounding (verified against master 47d1066, after PR #241): `wisp/update.py` already verifies SHA-256 (asset digest, `SHA256SUMS` or `--sha256`), refuses non-newer releases, extracts to a temp tree and shells out to `wispd install` from that tree, which does not restart the daemon. `wispd install` (`install_files` in `wispd`) mirrors `wisp/`, `shells/`, `wispd`, the shell plugin, desktop files and units, then writes `deploy.json`. A release-tarball install records `ref=None, commit=unknown`, so `installed_version()` reads `unknown` after an update; U2 fixes that. `wisp/onboard.py` already owns the first-run checklist including the agents step (#241). `wispd doctor` prints rows; `wisp/svc.py` owns units and `doctor_rows`. Pinned-download precedent: `wisp/agent_install.py` and `scripts/cua/`.
 
-**Files:** `wisp/update.py`, `wisp/svc.py`, installer entry point `wispd`, `docs/INSTALL.md`, `tests/test_install.py`, `tests/test_update.py`.
+Scope of this plan's first delivery: U1, U2, U3 (docs, trust statement and onboarding guarantees) and U5. The one-line bootstrap script (R1, KTD3 prerequisite) and U4 (R9) are deferred; see Deferred to Follow-Up Work.
 
-Map current writes, side effects and service ownership. Add structured preflight results and an accurate no-write preview shared by install and update. Include supported platform detection, disk headroom and optional capability checks.
+### Deferred to Follow-Up Work
 
-**Tests:** clean HOME, existing customized files, insufficient space, unsupported architecture, absent systemd, and dry run with no writes or service actions. Existing update ordering and digest refusals remain intact.
+- **Bootstrap script (R1).** Blocked by KTD3: releases publish only a same-endpoint digest, with no independent signing key. This delivery documents the trust root and its limit in `docs/INSTALL.md`; it ships no `curl | sh`.
+- **U4 local-model promotion gate (R9).** Its files (`scripts/lfm_eval.py`, `tests/fixtures/lfm_gate.jsonl`, the LFM spike doc) exist only in open PR #239 and thresholds need the owner. No default changes here.
+- **First-install recovery (R6, first install branch).** Removing newly created managed artifacts needs a created-file manifest in `wispd install`; this delivery keeps the documented Uninstall steps and states that limit.
+- **R7 cleanup tooling.** This delivery builds no cleanup candidate listing; U5 documents the retained update backups under `~/.local/state/wisp/update/` and how to remove them by hand. Nothing is deleted automatically.
+- **Recovery of the shell plugin directory, unit files, desktop entry and Hyprland bind.** Not captured by the update backup; the report names them as outside rollback scope.
 
-### U2. Staging, recovery and post-update verification
+### U1. Preflight and shared preview
 
-**Files:** `wisp/update.py`, `wisp/deploy.py`, `wisp/svc.py`, `wispd`, `tests/test_update.py`, `tests/test_install.py`.
+**Goal:** One structured preflight used by `install --dry-run`, `update` and `doctor`.
 
-Stage and verify releases before mutation. Protect Wisp-managed paths and capture pre-update service state; preserve user content. Make apply, verification, restoration and interrupted-run recovery explicit, bounded and idempotent. Require approval before any restart, destructive cleanup or rollback that overwrites changed files.
+**Files:** new `wisp/preflight.py`, `wispd` (`install_files` dry run and a pre-write gate), `wisp/update.py` (`describe`), `wisp/cli/core.py`, `docs/INSTALL.md`, `tests/test_preflight.py` (new), `tests/test_install.py`, `tests/test_update.py`.
 
-**Tests:** digest mismatch before mutation; interrupted staging and apply; service/IPC failure; restoration success and failure; changed user config remains intact; repeated recovery; no deletion of unowned files; accurate installed-version reporting.
+**Approach:** `preflight.run(home, opt, ...)` returns rows `{id, level: block|degraded|ok, detail, fix}` for OS (Linux only), architecture (x86_64/aarch64), Python version, free space under `home` against a stated headroom, systemd user availability (degraded: files install, units not started), optional capabilities (hyprctl, pw-record, wtype, grim, opencode, ollama/llama endpoint) as degraded and never block, current installation (version, deploy record, customized desktop file) and the writes the install would make. Injectable seams (`machine`, `disk_free`, `which`, `systemd`) keep tests offline. A `block` row stops a real install or update before any write with a `Try:` line; `--dry-run` prints rows and the write list and exits 0 or 4 like doctor. Never reads `.env` or key values.
 
-### U3. Bootstrap and onboarding
+**Test scenarios:** clean HOME lists every would-be write and writes nothing; insufficient space and unsupported architecture block with a fix line; absent systemd degrades without blocking; edited `wisp.desktop` reported as an existing user modification; optional tools missing never block; dry run starts no service and makes no network call; existing update ordering and digest refusal tests still pass.
 
-**Files:** `docs/INSTALL.md`, release/packaging configuration discovered during implementation, `wisp/onboard.py`, `tests/test_onboard.py`, `tests/test_install.py`.
+### U2. Staging, protected apply, verification and rollback
 
-Design and ship the minimal bootstrap only after KTD3's release trust prerequisite is met. Connect it to the existing consent-based install and onboarding. Detect OpenCode and local inference without installing or enabling either automatically. Secret handling uses existing supported keyring flows and never logs values; an interactive user handles permissions and voice verification.
+**Goal:** `wispd update` becomes a recoverable transaction over Wisp-managed files in the opt dir.
 
-**Tests:** first install with no keys, user declines each optional step, unavailable OpenCode or keyring, missing microphone permission, disconnected network, retry and verified-artifact failure. Assert no paid calls or model downloads without consent.
+**Files:** `wisp/update.py`, `wisp/cli/core.py` (flags `--restart`, `--rollback`), `wisp/deploy.py`, `tests/test_update.py`, `tests/test_install.py`, golden `tests/golden/cli_help/daemon_update.txt`.
 
-### U4. Local model promotion gate
+**Approach:** Per KTD2. Stage and verify as today. Before apply, write a backup under `~/.local/state/wisp/update/<id>/` (owner-only mode) holding copies of the opt-dir managed files (the set `install_files` writes under the opt dir: `wisp/`, `shells/`, `wispd`, `build_harness.py`, `CHANGELOG.md`, `deploy.json`; this list is authoritative and the Grounding paragraph's mirror list is read as the same set) and an atomic `manifest.json`: from/to versions, per-path sha256 before and after, whether `wispd.service` was active, and a `phase` (`staged`, `applying`, `applied`, `verified`, `restored`, `restore-incomplete`). Config, keys, memories, skills and documents are not in scope and never read. After `install_fn`, record the release tag in `deploy.json` (fixes `unknown` after tarball installs) and verify that every staged file matches the install and the recorded version equals the tag. A restart happens only with `--restart` and a yes; if the daemon was active, verify IPC answers afterwards and report the result. `--rollback` restores the last manifest after a yes: outside an interrupted apply, a file is restored only when its current hash equals the expected post-update hash (unchanged since the update), and a file that differs is left and listed; a file the update added is removed only when its hash matches the staged hash. Backup, restore and added-file removal act only on regular files whose resolved path is inside the opt dir, never follow symlinks, store manifest paths relative and reject absolute or `..` paths; anything else is skipped and listed. The state tree is created 0700 and backup files and `manifest.json` (and its temp file) 0600. Expected post-update hashes come from the staged tree and are recorded before apply (`deploy.json` is hashed after its tag write); `__pycache__` is excluded everywhere. Rollback classifies each path against three hashes by phase: in `applying`, a file matching neither the pre-update nor the expected post-update hash is an interrupted-apply leftover and is restored from backup; in `applied` or `verified`, a file differing from the expected post-update hash is a user edit and is left and listed. `update.py` imports every module needed for verification and rollback before calling `install_fn`, and IPC verification runs in a fresh subprocess of the installed `wispd`. `--restart` prints the same plugin/unit scope warning before asking. Files under managed dirs that are not in the manifest (bytecode caches, runtime files) are unmanaged: left alone and not listed as user edits. After restoring, `--rollback` offers a restart (with a yes) when the manifest says the service was active, then verifies IPC and reports that as the outcome. The update preview warns when the staged tree changes the shell plugin, units or desktop files, because rollback does not cover them and a restore can leave old core code with new plugin files. For this delivery R4/R6 "managed files" means the opt-dir set above. Rerunning is idempotent; a manifest in `applying` is offered for rollback on the next `wispd update`. The report states plainly that this is a managed-file backup, not a filesystem snapshot, and that external state and user data were not rolled back.
 
-**Files:** `scripts/lfm_eval.py`, `tests/fixtures/lfm_gate.jsonl`, `tests/test_lfm_eval.py`, `docs/research/2026-10-28-lfm-local-spike.md`.
+**Test scenarios:** digest mismatch leaves opt dir and state dir untouched; installer failure mid-apply leaves manifest `applying` and rollback restores originals; verification mismatch reports failure and does not claim success; daemon not restarted without `--restart`; IPC failure after restart reports rollback available; user-edited managed file is skipped by rollback and listed; update-added file with changed content is kept; rollback twice is a no-op; unowned files under opt dir and sibling config files are never deleted; installed version reads the tag after update; backup tree modes are 0700/0600; symlinked managed path and tampered manifest path are skipped and listed; extra runtime file in `wisp/` survives rollback unlisted; rollback after a failed post-restart IPC check offers restart and reports the verified result.
 
-Extend evaluation with privacy-safe, consented realistic fixtures and identical local/cloud task inputs. Predeclare objective outcomes, latency percentiles, failure categories, cost and hardware environment. Include screen understanding and synthesis separately, repeated runs and a held-out set; report confidence and limitations. Establish thresholds with the owner before any default change.
+### U3. Trust statement and onboarding guarantees
 
-**Tests:** scoring and missing-answer handling; fixture provenance; equivalent inputs across providers; p50/p90 and per-lane aggregation; unavailable provider; no credentials in output. Actual cloud calls require explicit spending approval and the designated evaluation credential.
+**Goal:** Honest install trust documentation and tests that onboarding degrades gracefully.
 
-### U5. Operator experience and release gate
+**Files:** `docs/INSTALL.md`, `wisp/onboard.py` (only if a test exposes a gap), `tests/test_onboard.py`, `tests/test_install.py`.
 
-**Files:** `docs/INSTALL.md`, `docs/ROADMAP.md`, `tests/test_install.py`, `tests/test_update.py`, applicable CLI help golden fixtures.
+**Approach:** Document the release trust root (GitHub release over HTTPS, digest from the same publisher, `--sha256` from an independent source) and that it does not defend against a compromised publisher. Reuse the existing onboarding agents step and keyring flow; assert that declining or lacking OpenCode, keyring, microphone or network leaves the install usable, that no download or paid call happens without consent, and that failures never echo secrets.
 
-Document each stage, confirmations, failure recovery, offline and degraded operation, and retention boundaries. Add release checklist evidence for isolated first install and update, recovery failure injection and an interactive voice smoke test. Record skipped checks and manual follow-up.
+**Test scenarios:** no keys at first run; each optional step declined; OpenCode absent; keyring unavailable; no network; retry after failure; no secret value in any output.
 
-**Tests:** end-to-end temporary HOME without real user data; no consent causes no writes; malformed archives and interrupted updates; no cleanup before verification or user approval; failures displayed without secrets.
+### U5. Operator documentation and release gate
+
+**Goal:** Operators can follow each stage and know what a release must prove.
+
+**Files:** `docs/INSTALL.md`, `docs/ROADMAP.md`, `tests/test_install.py`, `tests/test_update.py`, `tests/golden/cli_help/daemon_update.txt`, `tests/golden/cli_help/daemon_install.txt`.
+
+**Approach:** Document stages, consents, failure recovery, offline and degraded operation and retention limits. Add a release checklist (isolated first install and update, failure injection, interactive voice smoke test; record OS, arch, release id, checks run and skipped). Docs must pass docs, copy and trust lint tests; regenerate goldens with `WISP_UPDATE_GOLDEN=1`.
+
+**Test scenarios:** end-to-end update in a temporary HOME with no real user data; no consent causes no writes; malformed archive refused; no cleanup before verification; error text carries no secrets.
 
 ## Verification Contract
 
-- Run targeted `tests/test_install.py`, `tests/test_update.py`, `tests/test_onboard.py`, `tests/test_lfm_eval.py`, and relevant service tests in isolated temporary homes.
+- Run targeted `tests/test_install.py`, `tests/test_update.py`, `tests/test_onboard.py`, `tests/test_preflight.py`, and relevant service tests in isolated temporary homes.
 - Verify user-facing CLI examples and goldens; exercise recovery failure injection before any real deployment.
 - For release evidence, record OS, architecture, release identifier, checks performed and skipped, and the outcome of the user-confirmed voice test.
-- Local-model results must not be described as production-ready until the agreed gate passes on real tasks.
+- Local-model work (U4) is deferred; no local-model default changes and no readiness claim here.
 
 ## Definition of Done
 
-R1-R10 have corresponding tests and honest operator-facing results; release trust and recovery are demonstrated; optional components do not silently change defaults; existing user data remains intact. Any unavailable or manual validation is explicitly recorded.
+R2-R8 and R10 have corresponding tests and honest operator-facing results for the delivered units (R6 for the update path only; R1 satisfied by the documented trust statement, not a bootstrap script; R7 by documentation); R9, the bootstrap script and first-install recovery are tracked under Deferred to Follow-Up Work and are not part of done; update recovery is demonstrated by failure injection in temporary homes; optional components do not silently change defaults; existing user data remains intact. Any unavailable or manual validation is explicitly recorded.

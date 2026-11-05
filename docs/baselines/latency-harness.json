@@ -7,7 +7,7 @@
     "act_click_cua",
     "cancel_mid_act",
     "brain_down",
-    "jev_down"
+    "retired_endpoint_down"
   ],
   "note": "Replay-harness numbers with fake models: they bound pipeline code overhead, not model latency.",
   "needs_live_baseline": [

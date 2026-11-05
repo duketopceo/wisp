@@ -10,14 +10,7 @@
   },
   "endpoints": {
     "whisper": {
-      "transcript": "what window is focused"
-    },
-    "jev": {
-      "answers": {
-        "route": {
-          "choice": "answer"
-        }
-      }
+      "transcript": "check which window is focused"
     },
     "brain": {
       "responses": [

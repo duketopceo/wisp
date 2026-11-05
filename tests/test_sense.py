@@ -103,6 +103,15 @@ class TestSuggest(unittest.TestCase):
             self.assertEqual(suggest.mine(self._cfg()), [])
         chat.assert_not_called()
 
+    def test_saved_retired_router_uses_the_local_mining_threshold(self):
+        cfg = {**self._cfg(), "brain": {"router": "jev"}}
+        with mock.patch("urllib.request.urlopen",
+                        side_effect=AssertionError("decision network call")):
+            self.assertTrue(suggest._worth_mining([{}] * 6, cfg,
+                                                 lambda _: None))
+            self.assertFalse(suggest._worth_mining([{}] * 5, cfg,
+                                                  lambda _: None))
+
     def test_jev_no_shortcircuits_model(self):
         win = [{"ts": "2999-01-01T00:00:00+00:00",
                 "window": {"app": "a", "title": "t"}}] * 6
@@ -239,12 +248,12 @@ class TestAgentGuards(unittest.TestCase):
             self.assertIn("agent limit", out)
 
     def test_model_flag_position(self):
-        # --model lands after 'run': ori opencode run --model X <task>
+        # --model lands after 'run': ori opencode run --model X
         cfg = {"brain": {"agent_runtime": "opencode"},
                "agents": {"model": "m/x"}}
         with mock.patch.object(agents.shutil, "which",
                                return_value="/usr/bin/ori"):
-            cmd = agents._runtime_cmd(cfg, "do it", "m/x")
+            cmd = agents._runtime_cmd(cfg, "m/x")
         self.assertEqual(cmd[:4], ["ori", "opencode", "run",
                                    "--model"])
 

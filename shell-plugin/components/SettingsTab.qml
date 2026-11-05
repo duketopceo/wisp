@@ -20,6 +20,7 @@ Column {
   // edits in progress by key
   property var draft: ({})
   property var connectors: []
+  property bool showAdvanced: false
   signal save(string key, string value)
   signal connectClicked(string alias)
 
@@ -56,6 +57,7 @@ Column {
   }
 
   component Group: Text {
+    textFormat: Text.PlainText
     color: root.tk.ink
     font.family: root.service.fontFamily
     font.pixelSize: M.font.body
@@ -70,6 +72,7 @@ Column {
     width: root.width
 
     Text {
+      textFormat: Text.PlainText
       text: root.service.ui(f.def.label)
       color: root.tk.inkMuted
       font.family: root.service.fontFamily
@@ -122,7 +125,9 @@ Column {
         delegate: Chip {
           service: root.service
           objectName: "opt:" + f.key + ":" + modelData
-          label: modelData
+          label: f.def.kind === "bool"
+            ? (modelData === "true" ? root.service.ui("ui.set.on") : root.service.ui("ui.set.off"))
+            : String(modelData).replace(/_/g, " ")
           selected: root.current(f.key) === modelData
           onClicked: root.save(f.key, modelData)
         }
@@ -130,6 +135,7 @@ Column {
     }
 
     Text {
+      textFormat: Text.PlainText
       visible: text !== ""
       width: parent.width
       text: root.problem(f.key)
@@ -139,6 +145,7 @@ Column {
       font.pixelSize: M.font.caption
     }
     Text {
+      textFormat: Text.PlainText
       visible: root.savedKey === f.key && root.problem(f.key) === ""
       text: root.service.ui("ui.set.saved")
       color: root.tk.ok
@@ -147,74 +154,189 @@ Column {
     }
   }
 
-  Group { text: root.service.ui("ui.settings.budget") }
-  Repeater {
-    model: S.group("budget")
-    delegate: Field { def: modelData }
-  }
-  Text {
-    text: root.service.ui("ui.set.blank")
-    color: root.tk.inkMuted
-    font.family: root.service.fontFamily
-    font.pixelSize: M.font.caption
-  }
-
-  Group { text: root.service.ui("ui.settings.pointer") }
-  Repeater {
-    model: S.group("pointer")
-    delegate: Field { def: modelData }
-  }
-
-  Group { text: root.service.ui("ui.settings.cua") }
-  Repeater {
-    model: S.group("cua")
-    delegate: Field { def: modelData }
-  }
-
-  Group { text: root.service.ui("ui.settings.agent") }
-  Repeater {
-    model: S.group("agent")
-    delegate: Field { def: modelData }
-  }
-
-  Column {
+  Rectangle {
     width: parent.width
-    spacing: M.spacing.sm
-    Group { text: root.service.ui("ui.settings.connect") }
-    Text {
-      visible: root.connectors.length === 0
-      text: root.service.ui("ui.settings.connect.none")
-      color: root.tk.inkMuted
-      font.family: root.service.fontFamily
-      font.pixelSize: M.font.label
-      width: parent.width
-      wrapMode: Text.Wrap
+    implicitHeight: voiceCol.implicitHeight + 2 * M.spacing.lg
+    radius: M.radius.chrome
+    color: root.tk.surface
+    border.width: M.size.keyline
+    border.color: root.tk.keyline
+    Column {
+      id: voiceCol
+      x: M.spacing.lg
+      y: M.spacing.lg
+      width: parent.width - 2 * M.spacing.lg
+      spacing: M.spacing.md
+      Group { text: root.service.ui("ui.settings.voice") }
+      Repeater {
+        model: S.group("voice")
+        delegate: Field { def: modelData; width: voiceCol.width }
+      }
     }
-    Repeater {
-      model: root.connectors
-      delegate: Row {
+  }
+
+  Rectangle {
+    width: parent.width
+    implicitHeight: dictCol.implicitHeight + 2 * M.spacing.lg
+    radius: M.radius.chrome
+    color: root.tk.surface
+    border.width: M.size.keyline
+    border.color: root.tk.keyline
+    Column {
+      id: dictCol
+      x: M.spacing.lg
+      y: M.spacing.lg
+      width: parent.width - 2 * M.spacing.lg
+      spacing: M.spacing.md
+      Group { text: root.service.ui("ui.settings.dictation") }
+      Repeater {
+        model: S.group("dictation")
+        delegate: Field { def: modelData; width: dictCol.width }
+      }
+    }
+  }
+
+  Rectangle {
+    width: parent.width
+    implicitHeight: ptrCol.implicitHeight + 2 * M.spacing.lg
+    radius: M.radius.chrome
+    color: root.tk.surface
+    border.width: M.size.keyline
+    border.color: root.tk.keyline
+    Column {
+      id: ptrCol
+      x: M.spacing.lg
+      y: M.spacing.lg
+      width: parent.width - 2 * M.spacing.lg
+      spacing: M.spacing.md
+      Group { text: root.service.ui("ui.settings.pointer") }
+      Repeater {
+        model: S.group("pointer")
+        delegate: Field { def: modelData; width: ptrCol.width }
+      }
+      Group { text: root.service.ui("ui.settings.agent") }
+      Repeater {
+        model: S.group("agent")
+        delegate: Field { def: modelData; width: ptrCol.width }
+      }
+    }
+  }
+
+  Rectangle {
+    width: parent.width
+    implicitHeight: cuaCol.implicitHeight + 2 * M.spacing.lg
+    radius: M.radius.chrome
+    color: root.tk.surface
+    border.width: M.size.keyline
+    border.color: root.tk.keyline
+    Column {
+      id: cuaCol
+      x: M.spacing.lg
+      y: M.spacing.lg
+      width: parent.width - 2 * M.spacing.lg
+      spacing: M.spacing.md
+      Row {
+        width: parent.width
         spacing: M.spacing.lg
-        Rectangle {
-          width: M.spacing.lg
-          height: M.spacing.lg
-          radius: width / 2
+        Group {
+          text: root.service.ui("ui.settings.cua")
           anchors.verticalCenter: parent.verticalCenter
-          color: modelData.connected ? root.tk.ok : root.tk.inkMuted
-        }
-        Text {
-          width: 180
-          text: modelData.name
-          elide: Text.ElideRight
-          anchors.verticalCenter: parent.verticalCenter
-          color: root.tk.ink
-          font.family: root.service.fontFamily
-          font.pixelSize: M.font.label
         }
         Chip {
-          visible: !modelData.connected
+          objectName: "toggle:advanced"
           service: root.service
-          label: root.service.ui("ui.settings.connect.go")
-          onClicked: root.connectClicked(modelData.alias)
+          label: root.showAdvanced
+            ? root.service.ui("ui.set.advanced.hide")
+            : root.service.ui("ui.set.advanced.show")
+          onClicked: root.showAdvanced = !root.showAdvanced
+        }
+      }
+      Repeater {
+        model: root.showAdvanced ? S.group("cua") : []
+        delegate: Field { def: modelData; width: cuaCol.width }
+      }
+    }
+  }
+
+  Rectangle {
+    width: parent.width
+    implicitHeight: budgetCol.implicitHeight + 2 * M.spacing.lg
+    radius: M.radius.chrome
+    color: root.tk.surface
+    border.width: M.size.keyline
+    border.color: root.tk.keyline
+    Column {
+      id: budgetCol
+      x: M.spacing.lg
+      y: M.spacing.lg
+      width: parent.width - 2 * M.spacing.lg
+      spacing: M.spacing.md
+      Group { text: root.service.ui("ui.settings.budget") }
+      Repeater {
+        model: S.group("budget")
+        delegate: Field { def: modelData; width: budgetCol.width }
+      }
+      Text {
+        textFormat: Text.PlainText
+        text: root.service.ui("ui.set.blank")
+        color: root.tk.inkMuted
+        font.family: root.service.fontFamily
+        font.pixelSize: M.font.caption
+      }
+    }
+  }
+
+  Rectangle {
+    width: parent.width
+    implicitHeight: connCol.implicitHeight + 2 * M.spacing.lg
+    radius: M.radius.chrome
+    color: root.tk.surface
+    border.width: M.size.keyline
+    border.color: root.tk.keyline
+    Column {
+      id: connCol
+      x: M.spacing.lg
+      y: M.spacing.lg
+      width: parent.width - 2 * M.spacing.lg
+      spacing: M.spacing.sm
+      Group { text: root.service.ui("ui.settings.connect") }
+      Text {
+        textFormat: Text.PlainText
+        visible: root.connectors.length === 0
+        text: root.service.ui("ui.settings.connect.none")
+        color: root.tk.inkMuted
+        font.family: root.service.fontFamily
+        font.pixelSize: M.font.label
+        width: parent.width
+        wrapMode: Text.Wrap
+      }
+      Repeater {
+        model: root.connectors
+        delegate: Row {
+          spacing: M.spacing.lg
+          Rectangle {
+            width: M.spacing.lg
+            height: M.spacing.lg
+            radius: width / 2
+            anchors.verticalCenter: parent.verticalCenter
+            color: modelData.connected ? root.tk.ok : root.tk.inkMuted
+          }
+          Text {
+            textFormat: Text.PlainText
+            width: 180
+            text: modelData.name
+            elide: Text.ElideRight
+            anchors.verticalCenter: parent.verticalCenter
+            color: root.tk.ink
+            font.family: root.service.fontFamily
+            font.pixelSize: M.font.label
+          }
+          Chip {
+            visible: !modelData.connected
+            service: root.service
+            label: root.service.ui("ui.settings.connect.go")
+            onClicked: root.connectClicked(modelData.alias)
+          }
         }
       }
     }

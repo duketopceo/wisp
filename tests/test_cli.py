@@ -9,6 +9,7 @@ import re
 import shutil
 import socket
 import subprocess
+import unittest.mock
 import sys
 import tempfile
 import unittest
@@ -151,6 +152,47 @@ class TestHelp(unittest.TestCase):
         for code, (msg, hint) in strings.ERRORS.items():
             self.assertNotIn("—", msg + hint)
             self.assertTrue(msg[0].isupper() and msg.endswith("."), code)
+
+
+class TestLabelTurn(unittest.TestCase):
+    """`wispd label set --turn X`: the turn rides the IPC command and a
+    not_found/not_ratable outcome is a failure, daemon up or down."""
+
+    def _seed(self, env, *rows):
+        env.data.mkdir(parents=True, exist_ok=True)
+        (env.data / "decisions.jsonl").write_text(
+            "".join(json.dumps(r) + "\n" for r in rows))
+
+    def test_turn_is_sent_over_ipc(self):
+        with CliEnv(daemon=True) as env:
+            code, out, err = env.run(["label", "set", "correct",
+                                      "--turn", "X7"])
+            self.assertEqual(code, 0, err)
+            self.assertEqual(env.ipc[-1]["turn"], "X7")
+
+    def test_daemon_refusals_exit_failed(self):
+        for status in ("not_found", "not_ratable"):
+            def handler(cmd, status=status):
+                return {"ok": True, "result": status + ": turn X",
+                        "status": status}
+            with CliEnv() as env:
+                env.start_daemon(handler)
+                with self.subTest(status):
+                    code, out, err = env.run(["label", "set", "correct",
+                                              "--turn", "X"])
+                    self.assertEqual(code, 1, err)
+                    self.assertTrue(err.startswith("E_FAILED:"), err)
+
+    def test_daemon_down_fallback_refusals_exit_failed(self):
+        with CliEnv() as env:
+            self._seed(env, {"ts": "t1", "turn": "C3",
+                             "result": "CANCELLED (user)"})
+            for turn in ("nope", "C3"):  # not_found, not_ratable
+                with self.subTest(turn):
+                    code, out, err = env.run(["label", "set", "correct",
+                                              "--turn", turn])
+                    self.assertEqual(code, 1, err)
+                    self.assertTrue(err.startswith("E_FAILED:"), err)
 
 
 class TestExitCodes(unittest.TestCase):
@@ -307,10 +349,11 @@ class TestTable(unittest.TestCase):
         self.assertEqual(len({l.index(l.split()[1]) for l in lines}), 1)
         self.assertNotIn("\x1b", t)
 
-    def test_color_uses_theme_tokens(self):
+    def test_color_uses_theme_tokens_on_a_truecolor_terminal(self):
         from wisp import theme
-        t = output.table(["name", "status"], [["jev", "ok"]],
-                         tones=[[None, "ok"]], color=True, cfg={})
+        with unittest.mock.patch.dict(os.environ, {"COLORTERM": "truecolor"}):
+            t = output.table(["name", "status"], [["jev", "ok"]],
+                             tones=[[None, "ok"]], color=True, cfg={})
         self.assertIn("\x1b[38;2;", t)
         r, g, b = output.hex_rgb(theme.load(None, {})["tokens"]["ok"])
         self.assertIn(f"\x1b[38;2;{r};{g};{b}m", t)
@@ -324,14 +367,62 @@ class TestTable(unittest.TestCase):
 
 
 class TestNewCommands(unittest.TestCase):
+    def test_doctor_preserves_blocking_preflight_result(self):
+        # Fresh imports inherit CliEnv's isolated HOME/XDG and empty PATH.
+        script = """
+import json
+from unittest import mock
+from wisp import preflight
+from wisp.cli import diagnose
+checks = [
+    {"id": "blocked-home", "level": "block", "detail": "not writable",
+     "fix": "Use your own HOME."},
+    {"id": "optional-tool", "level": "degraded", "detail": "absent", "fix": ""},
+    {"id": "ready", "level": "ok", "detail": "present", "fix": ""},
+]
+with mock.patch.object(preflight, "run", return_value=checks), \\
+        mock.patch.object(diagnose, "_cua_rows"):
+    print(json.dumps(diagnose.doctor_sections({})))
+"""
+        with CliEnv(extra_env={"WISP_JEV_ENDPOINT": ""}) as env:
+            result = subprocess.run(
+                [sys.executable, "-c", script], cwd=ROOT, env=env.env,
+                capture_output=True, text=True, timeout=15)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            sections = json.loads(result.stdout)
+            rows = next(s["rows"] for s in sections if s["name"] == "preflight")
+            checks = {r["name"]: r for r in rows}
+            self.assertFalse(checks["blocked-home"]["ok"])
+            self.assertIn("block: not writable", checks["blocked-home"]["value"])
+            self.assertIn("Use your own HOME.", checks["blocked-home"]["value"])
+            self.assertTrue(checks["optional-tool"]["ok"])
+            self.assertTrue(checks["ready"]["ok"])
+
+    def test_doctor_accepts_ydotool_as_the_existing_typing_fallback(self):
+        with CliEnv() as env:
+            env.shim("ydotool")
+            code, out, err = env.run(["doctor", "--json"])
+            self.assertIn(code, (0, 4), err)
+            sections = json.loads(out)["data"]["sections"]
+            audio = next(s["rows"] for s in sections if s["name"] == "stt / audio")
+            typer = next(r for r in audio if r["name"] == "wtype")
+            self.assertTrue(typer["ok"], typer)
+            self.assertIn("ydotool", typer["value"])
+
     def test_doctor_json_sections(self):
         with CliEnv() as env:
             code, out, err = env.run(["doctor", "--json"])
             j = json.loads(out)
             self.assertIn(code, (0, 4))
             names = {s["name"] for s in j["data"]["sections"]}
-            self.assertTrue({"stt / audio", "pointer",
+            self.assertTrue({"preflight", "stt / audio", "pointer",
                              "health"} <= names, names)
+            checks = next(s["rows"] for s in j["data"]["sections"]
+                          if s["name"] == "preflight")
+            verifier = next(r for r in checks if r["name"] == "gh")
+            self.assertTrue(verifier["ok"])  # optional for an existing source install
+            self.assertIn("degraded", verifier["value"])
+            self.assertIn("Install separately", verifier["value"])
 
     def test_latency_reads_spans(self):
         import datetime as dt
@@ -511,6 +602,30 @@ class TestNewCommands(unittest.TestCase):
             self.assertEqual(env.ipc[0], {"cmd": "choice", "pick": "yes",
                                           "prompt_id": "p9", "index": 3})
             self.assertEqual(env.ipc[1], {"cmd": "interrupt"})
+
+    def test_typed_text_comes_from_stdin_not_argv(self):
+        # the shell plugin writes private answers and notes to stdin so
+        # they never appear on the command line
+        with CliEnv(daemon=True) as env:
+            env.run(["choice", "--stdin", "--prompt-id", "p1"],
+                    stdin="my private answer\n")
+            env.run(["ask", "--stdin"], stdin="what is secret-7731?\n")
+            env.run(["label", "set", "--stdin", "--", "incorrect"],
+                    stdin="it read zebra-7731\n")
+            self.assertEqual(env.ipc[0], {"cmd": "choice",
+                                          "pick": "my private answer",
+                                          "prompt_id": "p1"})
+            self.assertEqual(env.ipc[1], {"cmd": "ask",
+                                          "text": "what is secret-7731?"})
+            self.assertEqual(env.ipc[2]["note"], "it read zebra-7731")
+            self.assertEqual(env.ipc[2]["label"], "incorrect")
+
+    def test_a_blank_stdin_pick_is_a_dismiss_and_ask_needs_text(self):
+        with CliEnv(daemon=True) as env:
+            env.run(["choice", "--stdin"], stdin="\n")
+            self.assertEqual(env.ipc[0], {"cmd": "choice", "pick": ""})
+            code, _out, _err = env.run(["ask", "--stdin"], stdin="\n")
+            self.assertNotEqual(code, 0)
 
     def test_health_start_prints_and_never_runs(self):
         with CliEnv(extra_env={"WISP_JEV_ENDPOINT":

@@ -32,6 +32,10 @@ class TaskDeliveryTest(unittest.TestCase):
         self.logs = self.td / "tasks"
         self.logs.mkdir()
         self.cfg = {"agent": {"task_timeout_s": "1800", "max_concurrent": "5"}}
+        p = mock.patch.object(agents, "_pinned_state",
+                              lambda: {"state": "absent"})
+        p.start()
+        self.addCleanup(p.stop)
 
     def _write_rec(self, name: str, *, exit_code: int | None = 0,
                    delivers: list[str] | None = None,
@@ -320,6 +324,38 @@ class TaskDeliveryTest(unittest.TestCase):
         r = store.get("hung")
         self.assertTrue(r.paused)
         self.assertEqual(r.consecutive_failures, 3)
+
+
+class AcpFinishedTest(unittest.TestCase):
+    def setUp(self):
+        self.td = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(
+            self.td, ignore_errors=True))
+        self.tf = self.td / "tasks.jsonl"
+        self.logs = self.td / "tasks"
+        self.logs.mkdir()
+        self.cfg = {"agent": {"task_timeout_s": "1800"}}
+
+    def test_finished_entry_carries_the_answer_and_stop_reason(self):
+        agents.record_process("acp-a", 2 ** 22 + 1, tasks_file=self.tf)
+        agents.record_session("a", "t", "acp-a", tasks_file=self.tf)
+        agents._log_line({"id": "a", "name": "a", "status": "done",
+                          "answer": "All sorted.", "stop_reason": "end_turn",
+                          "delivered": True}, self.tf)
+        rec = agents._find("a", self.tf)
+        cur = agents.tasks(self.tf, self.logs, recs=[rec])["a"]
+        entry = agents.finished_entry("a", cur, rec, self.logs)
+        self.assertEqual(entry["answer"], "All sorted.")
+        self.assertEqual(entry["stop_reason"], "end_turn")
+        self.assertIn("All sorted.",
+                      agents.build_done_notification(entry)["message"])
+
+    def test_reaper_fails_a_session_whose_process_died(self):
+        agents.record_process("acp-b", 2 ** 22 + 1, tasks_file=self.tf)
+        agents.record_session("b", "t", "acp-b", tasks_file=self.tf)
+        done = agents.reap_tick(self.cfg, self.tf, self.logs)
+        self.assertEqual([t["name"] for t in done], ["b"])
+        self.assertEqual(done[0]["status"], "failed")
 
 
 if __name__ == "__main__":

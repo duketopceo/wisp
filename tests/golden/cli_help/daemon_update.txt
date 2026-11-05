@@ -1,5 +1,6 @@
-usage: wispd daemon update [-h] [--dry-run] [--force] [--sha256 HEX] [--json]
-                           [--quiet] [--no-color]
+usage: wispd daemon update [-h] [--dry-run] [--force] [--sha256 HEX]
+                           [--restart] [--rollback] [--json] [--quiet]
+                           [--no-color]
 
 Fetch the latest release, verify it, and install on your yes
 
@@ -11,6 +12,10 @@ options:
                 be compared with what is installed
   --sha256 HEX  expected SHA-256 of the download, for a release that publishes
                 none
+  --restart     after a verified install, offer to restart wispd and check
+                that it answers (with --rollback: after restoring)
+  --rollback    restore the files saved before the last update (also the way
+                back from an unfinished update)
 
 global options:
   --json        machine-readable output (one JSON object)
@@ -20,4 +25,6 @@ global options:
 Examples:
   wispd update --dry-run
   wispd update
+  wispd update --restart
+  wispd update --rollback
   wispd update --force

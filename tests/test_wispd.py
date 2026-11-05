@@ -17,6 +17,12 @@ def _with_os(os_name):
     """Pin the platform seam so adapter assertions are host-independent."""
     return mock.patch.dict(os.environ, {"WISP_OS": os_name})
 
+def _user_handler(wispd, *args, **kwargs):
+    """Direct harness calls represent an attributed local user, not TCP."""
+    raw = wispd._handler(*args, **kwargs)
+    peer = {"pid": os.getpid(), "uid": getattr(os, "getuid", lambda: 0)()}
+    return lambda cmd, peer=peer: raw(cmd, peer)
+
 
 class TestLoadConfig(unittest.TestCase):
     def test_parses_toml_subset(self):
@@ -186,45 +192,34 @@ class TestExecute(unittest.TestCase):
         run.assert_not_called()
 
 
-class TestConfidenceGate(unittest.TestCase):
-    """Gate is on app/target confidence only — low action confidence must
-    not kill a correct launch (the 'retro-large' regression)."""
+class TestCatalogLaunch(unittest.TestCase):
+    """The retroarch regression is catalog-backed, not probability-gated."""
 
-    def cfg(self, thresh="0.8"):
-        return {"agent": {"confidence_ambiguous": thresh}}
+    def test_known_app_launch_needs_no_action_confidence(self):
+        out = pipeline.fast_route("open retroarch", {"retroarch": {}}, {})
+        self.assertEqual(out[0]["app"]["choice"], "retroarch")
+        self.assertEqual(out[0]["route"]["choice"], "launch")
 
-    def answers(self, app_conf, act_conf):
-        return {"app": {"choice": "retroarch", "confidence": app_conf,
-                        "probabilities": {"retroarch": app_conf}},
-                "action": {"choice": "launch", "confidence": act_conf,
-                           "probabilities": {"launch": act_conf}}}
-
-    def test_high_app_low_action_not_low_confidence(self):
-        self.assertFalse(
-            pipeline.is_low_confidence(self.answers(0.9, 0.49), self.cfg()))
-
-    def test_low_app_is_low_confidence(self):
-        self.assertTrue(
-            pipeline.is_low_confidence(self.answers(0.4, 0.9), self.cfg()))
+    def test_unknown_target_is_not_guessed(self):
+        self.assertIsNone(pipeline.fast_route(
+            "open the spreadsheet app", {"retroarch": {}}, {}))
 
 
 class TestChoiceFlow(unittest.TestCase):
-    def answers(self):
-        return {"app": {"choice": "terminal", "confidence": 0.5,
-                        "probabilities": {"terminal": 0.5, "browser": 0.3}},
-                "action": {"choice": "launch", "confidence": 0.5,
-                           "probabilities": {"launch": 0.5}}}
+    def test_generic_act_question_offers_candidates(self):
+        from harness import runner
+        out = runner.run_turn("choose")
+        offered = [e["choices"] for e in out.events
+                   if e["status"] == "awaiting_choice"][0]
+        self.assertIn("app:discord", offered)
+        self.assertIn("app:browser", offered)
 
-    def test_choices_list_top_candidates(self):
-        labels = pipeline.ambiguous_choices(self.answers(), {})
-        self.assertIn("app:terminal", labels)
-        self.assertIn("app:browser", labels)
-        self.assertIn("action:launch", labels)
+    def test_generic_act_question_launches_the_user_choice(self):
+        from harness import runner
+        out = runner.run_turn("choose")
+        self.assertEqual(out.launch_calls, ["discord"])
+        self.assertEqual(out.violations, [])
 
-    def test_apply_choice_corrects_answers(self):
-        out = pipeline.apply_choice(self.answers(), "app:browser")
-        self.assertEqual(out["app"]["choice"], "browser")
-        self.assertTrue(out["corrected_by_user"])
 
 class TestLogDecision(unittest.TestCase):
     def test_appends_jsonl(self):
@@ -301,7 +296,7 @@ class TestListenSpans(unittest.TestCase):
                     "interrupt": threading.Event(),
                     "choice_event": threading.Event(), "choice_pick": "",
                     "rec": None, "rec_lock": threading.Lock()}
-        self.handle = self.w._handler(self.st, {}, self.ctl)
+        self.handle = _user_handler(self.w, self.st, {}, self.ctl)
 
     def test_press_then_release_hand_spans_to_the_pipeline(self):
         import time
@@ -345,7 +340,7 @@ class TestListenSpans(unittest.TestCase):
         bus = state_mod.StateBus(
             state_file=pathlib.Path(tempfile.mkdtemp()) / "state.json")
         self.addCleanup(bus.close)
-        handle = self.w._handler(bus, {}, self.ctl)
+        handle = _user_handler(self.w, bus, {}, self.ctl)
         seen = {}
         rec = {"proc": mock.Mock(), "sampler_stop": mock.Mock(),
                "t0": time.monotonic() - 2}
@@ -414,7 +409,7 @@ class TestHandlerActionStream(unittest.TestCase):
              "choice_pick": ""}
         if ctl:
             c.update(ctl)
-        return self.w._handler(self.bus, {}, c)
+        return _user_handler(self.w, self.bus, {}, c)
 
     def actions(self, kind=None):
         acts = self.bus.snapshot()["actions"]
@@ -484,6 +479,103 @@ class TestHandlerActionStream(unittest.TestCase):
         self.assertTrue(r["ok"])  # command ran; the outcome failed
         self.assertEqual(self.actions("label")[-1]["status"], "failed")
 
+    def test_label_passes_turn_and_types_the_reply(self):
+        with mock.patch("wisp.learn.label_last",
+                        return_value="not_ratable: turn b2 was cancelled"
+                        ) as lab:
+            r = self.handle()({"cmd": "label", "label": "correct",
+                               "turn": "b2"})
+        self.assertEqual(lab.call_args.kwargs.get("turn"), "b2")
+        self.assertEqual(r["status"], "not_ratable")
+        self.assertEqual(self.actions("label")[-1]["status"], "failed")
+
+    def test_label_ok_reply_has_status_ok(self):
+        with mock.patch("wisp.learn.label_last",
+                        return_value="labeled correct: t1"):
+            r = self.handle()({"cmd": "label", "label": "correct"})
+        self.assertEqual(r["status"], "ok")
+
+    # -- rate_prompt (U2): the daemon asks the panel for a note ----------
+    def _decisions(self, *rows):
+        from wisp import config, learn
+        d = pathlib.Path(tempfile.mkdtemp())
+        dec, lab = d / "decisions.jsonl", d / "labels.jsonl"
+        dec.write_text("".join(json.dumps(r) + "\n" for r in rows))
+        for obj, name, val in ((config, "DECISIONS", dec),
+                               (learn, "LABELS_FILE", lab)):
+            p = mock.patch.object(obj, name, val)
+            p.start()
+            self.addCleanup(p.stop)
+        return lab
+
+    def _rows(self):
+        return [{"ts": "t1", "turn": "A1", "result": "ANSWERED x"},
+                {"ts": "t2", "turn": "B2", "result": "ANSWERED y"}]
+
+    def prompt(self):
+        return self.bus.state.snapshot().get("rate_prompt")
+
+    def test_wrong_without_turn_publishes_rate_prompt_for_that_turn(self):
+        self._decisions(*self._rows())
+        r = self.handle()({"cmd": "label", "label": "incorrect"})
+        self.assertEqual(r["status"], "ok")
+        self.assertEqual(self.prompt(), {"turn": "B2"})
+
+    def test_wrong_with_turn_prompts_for_that_turn(self):
+        self._decisions(*self._rows())
+        self.handle()({"cmd": "label", "label": "incorrect", "turn": "A1"})
+        self.assertEqual(self.prompt(), {"turn": "A1"})
+
+    def test_good_never_prompts(self):
+        self._decisions(*self._rows())
+        self.handle()({"cmd": "label", "label": "correct"})
+        self.assertIsNone(self.prompt())
+
+    def test_refused_wrong_does_not_prompt(self):
+        self._decisions({"ts": "t9", "turn": "C3",
+                         "result": "CANCELLED (user)"})
+        r = self.handle()({"cmd": "label", "label": "incorrect",
+                           "turn": "C3"})
+        self.assertEqual(r["status"], "not_ratable")
+        self.assertIsNone(self.prompt())
+
+    def test_second_press_skips_the_open_note_and_writes_nothing(self):
+        lab = self._decisions(*self._rows())
+        h = self.handle()
+        h({"cmd": "label", "label": "incorrect"})
+        n = len(lab.read_text().splitlines())
+        r = h({"cmd": "label", "label": "incorrect"})
+        self.assertTrue(r["ok"])
+        self.assertIsNone(self.prompt())
+        self.assertEqual(len(lab.read_text().splitlines()), n)
+
+    def test_saving_the_note_relabels_the_turn_and_clears_the_prompt(self):
+        lab = self._decisions(*self._rows())
+        h = self.handle()
+        h({"cmd": "label", "label": "incorrect"})
+        h({"cmd": "label", "label": "incorrect", "turn": "B2",
+           "note": "wrong app"})
+        self.assertIsNone(self.prompt())
+        last = json.loads(lab.read_text().splitlines()[-1])
+        self.assertEqual((last["ref"], last["note"]), ("t2", "wrong app"))
+
+    def test_skip_clears_the_prompt_without_a_label(self):
+        lab = self._decisions(*self._rows())
+        h = self.handle()
+        h({"cmd": "label", "label": "incorrect"})
+        n = len(lab.read_text().splitlines())
+        r = h({"cmd": "label", "label": "skip"})
+        self.assertTrue(r["ok"])
+        self.assertIsNone(self.prompt())
+        self.assertEqual(len(lab.read_text().splitlines()), n)
+
+    def test_a_new_turn_clears_the_prompt(self):
+        self._decisions(*self._rows())
+        self.handle()({"cmd": "label", "label": "incorrect"})
+        t = self.bus.begin_turn()
+        self.bus.publish(t, status="listening")
+        self.assertIsNone(self.prompt())
+
     def test_suggestion_pick_resolves_the_card_entry(self):
         # the card's stream entry resolves by kind when the pick lands
         self.bus.action_add("suggestion", "try x", status="awaiting",
@@ -539,6 +631,40 @@ class TestHandlerActionStream(unittest.TestCase):
                                "heard": "teh", "meant": "the"})
         self.assertTrue(r["ok"])
         self.assertEqual(r["error"], "")
+
+    def test_good_rating_of_the_prompted_turn_clears_the_prompt(self):
+        self._decisions(*self._rows())
+        h = self.handle()
+        h({"cmd": "label", "label": "incorrect"})
+        self.assertEqual(self.prompt(), {"turn": "B2"})
+        h({"cmd": "label", "label": "correct", "turn": "B2"})
+        self.assertIsNone(self.prompt())
+
+    def test_good_rating_of_another_turn_keeps_the_prompt(self):
+        self._decisions(*self._rows())
+        h = self.handle()
+        h({"cmd": "label", "label": "incorrect"})
+        h({"cmd": "label", "label": "correct", "turn": "A1"})
+        self.assertEqual(self.prompt(), {"turn": "B2"})
+
+    def test_noted_label_of_another_turn_keeps_the_open_prompt(self):
+        lab = self._decisions(*self._rows())
+        h = self.handle()
+        h({"cmd": "label", "label": "incorrect"})
+        h({"cmd": "label", "label": "incorrect", "turn": "A1",
+           "note": "old one"})
+        rows = [json.loads(x) for x in lab.read_text().splitlines()]
+        self.assertEqual(rows[-1]["ref"], "t1")
+        self.assertEqual(rows[-1]["note"], "old one")
+        self.assertEqual(self.prompt(), {"turn": "B2"})
+
+    def test_a_new_typed_turn_takes_the_prompt_down(self):
+        # typed `ask` never passes through status=listening
+        self._decisions(*self._rows())
+        self.handle()({"cmd": "label", "label": "incorrect"})
+        self.assertEqual(self.prompt(), {"turn": "B2"})
+        self.bus.begin_turn()
+        self.assertIsNone(self.prompt())
 
 
 class TestSuggestionRun(unittest.TestCase):
@@ -644,7 +770,7 @@ class BargeInTests(unittest.TestCase):
                     "rec": None, "rec_lock": threading.Lock(),
                     "token": self.token}
         self.ctl["busy"].set()
-        self.handle = self.w._handler(self.bus, {}, self.ctl)
+        self.handle = _user_handler(self.w, self.bus, {}, self.ctl)
         self.rec = {"proc": mock.Mock(), "sampler_stop": mock.Mock(),
                     "t0": 0}
 

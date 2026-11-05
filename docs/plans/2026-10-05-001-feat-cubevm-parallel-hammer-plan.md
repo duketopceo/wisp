@@ -1,3 +1,7 @@
+---
+status: obsolete
+---
+
 # feat: Parallel CubeVM training workers + arena cost correction
 
 Created: 2026-10-05

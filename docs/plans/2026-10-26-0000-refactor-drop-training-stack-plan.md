@@ -2,6 +2,7 @@
 title: Drop Training Stack and Add End-to-End Eval - Plan
 type: refactor
 date: 2026-10-26
+status: completed
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-plan-bootstrap
 execution: code

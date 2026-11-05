@@ -291,8 +291,8 @@ class TestReplay(unittest.TestCase):
         self.assertEqual(
             [e["status"] for e in evil.events if e["status"] != "speaking"],
             [e["status"] for e in base.events if e["status"] != "speaking"])
-        self.assertEqual(len(evil.calls.get("jev", [])),
-                         len(base.calls.get("jev", [])))
+        self.assertEqual(evil.calls.get("jev", []), [])   # no Jev hop
+        self.assertEqual(base.calls.get("jev", []), [])
 
     def test_no_selection_turn_has_no_selection_block(self):
         res = runner.run_turn(FIXTURES / "ask.json")

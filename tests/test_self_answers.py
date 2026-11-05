@@ -154,10 +154,9 @@ class Model(unittest.TestCase):
             self.assertNotIn(hidden, line.lower())
         self.assertNotIn("last call", line)
 
-    def test_the_router_model_is_named_only_when_it_is_used(self):
+    def test_saved_retired_router_does_not_claim_a_decision_model(self):
         cfg = {**CFG, "brain": {**CFG["brain"], "router": "jev"}}
-        self.assertIn("the router is typesafe/jev-1.13",
-                      selfknow.models_line(cfg))
+        self.assertNotIn("the router is", selfknow.models_line(cfg))
 
     def test_a_local_speech_setup_says_so(self):
         cfg = {**CFG, "stt": {"provider": "whisper"}}

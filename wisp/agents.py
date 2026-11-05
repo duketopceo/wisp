@@ -1,6 +1,7 @@
 """Agent manager: named, persistent ori-opencode tasks.
 
-Each spawn runs `ori opencode run <task>` detached, logs output to
+Each codex/claude/devin spawn runs one-shot, detached; opencode runs as an
+ACP session (acp_runtime). One-shot runs log output to
 tasks/<id>.log, and records a line in tasks.jsonl. Status = liveness +
 log tail; cancel kills the process group. Registry reload on daemon
 start reconciles dead pids.
@@ -14,9 +15,10 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 from datetime import datetime, timezone
 
-from . import config, util
+from . import config, private, util
 
 SCOPE_PREFIX = "wisp-task-"
 _SCOPE_RE = re.compile(r"\bwisp-task-([A-Za-z0-9_.-]+?)\.scope\b")
@@ -42,6 +44,38 @@ def _records(tasks_file=config.TASKS_FILE) -> list:
                 if l.strip()]
     except OSError:
         return []
+
+
+def record_process(proc_id: str, pid: int, scope: str = "",
+                   tasks_file=config.TASKS_FILE) -> dict:
+    """Log the one long-lived ACP process record (KTD3). It holds many
+    session records and no concurrency slot of its own."""
+    rec = {"id": proc_id, "name": proc_id, "kind": "acp_process",
+           "pid": pid, "pstart": _pstart(pid),
+           "scope": scope or _scope_unit(proc_id),
+           "status": "running", "ts": datetime.now(timezone.utc).isoformat()}
+    _log_line(rec, tasks_file)
+    return rec
+
+
+def record_session(name: str, task: str, acp_process: str,
+                   session_id: str = "", model: str = "", cwd: str = "",
+                   tasks_file=config.TASKS_FILE, **extra) -> dict:
+    """Log a session record: today's task shape minus a pid of its own
+    (liveness is its process record's), plus the ACP fields."""
+    rec = {"id": name, "name": name, "task": task, "kind": "session",
+           "acp_process": acp_process, "session_id": session_id,
+           "model": model, "cwd": cwd, "stop_reason": None,
+           "status": "running", "refused_count": 0,
+           "ts": datetime.now(timezone.utc).isoformat(), **extra}
+    _log_line(rec, tasks_file)
+    return rec
+
+
+def _proc_running(proc: dict | None) -> bool:
+    return bool(proc and proc.get("kind") == "acp_process"
+                and proc.get("status") == "running"
+                and _alive(proc.get("pid", -1), proc.get("pstart", "")))
 
 
 def _proc_stat(pid: int) -> tuple[str, str] | None:
@@ -210,7 +244,12 @@ def classify_peer(peer: dict | None, tasks_file=config.TASKS_FILE) -> dict:
         if not tid:
             continue
         rec = by_id.get(tid)
-        if rec is not None and rec.get("status") == "running":
+        if rec is not None and rec.get("kind") == "session":
+            # a session id rides its process: valid while that runs
+            if _proc_running(by_id.get(rec.get("acp_process"))):
+                return {"marked": True, "verified": True, "spoofed": False,
+                        "task_id": rec["id"], "reason": "env_verified"}
+        elif rec is not None and rec.get("status") == "running":
             rpid = int(rec.get("pid") or -1)
             rpstart = rec.get("pstart", "")
             if rpid in seen or (rpid > 0 and _alive(rpid, rpstart)):
@@ -233,16 +272,26 @@ def record_refusal(task_id: str, cmd: str,
     rec = _find(task_id, tasks_file)
     if not rec:
         return 0
-    count = int(rec.get("refused_count") or 0) + 1
-    cmds = list(rec.get("refused_cmds") or [])
-    if cmd:
-        cmds.append(str(cmd))
-    _log_line({
-        "id": rec["id"],
-        "name": rec["name"],
-        "refused_count": count,
-        "refused_cmds": cmds,
-    }, tasks_file)
+    targets = [rec]
+    if rec.get("kind") == "acp_process":
+        # a peer in the process scope is attributed to the visible
+        # sessions it is running; none running -> the process record
+        sess = [r for r in _latest(tasks_file)
+                if r.get("kind") == "session" and r.get("status") == "running"
+                and r.get("acp_process") == rec["id"]]
+        targets = sess or [rec]
+    count = 0
+    for t in targets:
+        count = int(t.get("refused_count") or 0) + 1
+        cmds = list(t.get("refused_cmds") or [])
+        if cmd:
+            cmds.append(str(cmd))
+        _log_line({
+            "id": t["id"],
+            "name": t["name"],
+            "refused_count": count,
+            "refused_cmds": cmds,
+        }, tasks_file)
     return count
 
 
@@ -296,6 +345,8 @@ def _state_of(rec: dict) -> str:
     AND the process (same start-time) is alive; a dead task whose
     record never got closed reads `exited`."""
     status = rec.get("status", "exited")
+    if rec.get("kind") == "session":
+        return status  # written by the runtime; _tick fails dead-process ones
     if status == "running":
         return "running" if _alive(rec.get("pid", -1),
                                    rec.get("pstart", "")) else "exited"
@@ -328,8 +379,14 @@ def _find(name: str, tasks_file=config.TASKS_FILE) -> dict | None:
 def _running(tasks_file=config.TASKS_FILE) -> list:
     """Tasks whose process is still alive (also one that is closing
     down after SIGTERM — it still holds a concurrency slot)."""
-    return [r for r in _latest(tasks_file)
-            if _alive(r.get("pid", -1), r.get("pstart", ""))]
+    recs = _latest(tasks_file)
+    by_id = {r["id"]: r for r in recs if r.get("id")}
+    return [r for r in recs
+            if (r.get("status") == "running"
+                and _proc_running(by_id.get(r.get("acp_process")))
+                if r.get("kind") == "session"
+                else r.get("kind") != "acp_process"
+                and _alive(r.get("pid", -1), r.get("pstart", "")))]
 
 
 def _signal(rec: dict, sig: int) -> None:
@@ -350,22 +407,29 @@ def _signal(rec: dict, sig: int) -> None:
 def _reap_expired(cfg: dict, tasks_file=config.TASKS_FILE,
                   recs: list | None = None) -> list:
     """SIGTERM running tasks past [agent] task_timeout_s — the runaway
-    guardrail. Returns names of reaped tasks."""
+    guardrail. Returns names of reaped tasks. An ACP session is
+    cancelled through its manager and recorded `timed_out`; an ACP
+    process record is never signalled from here (KTD14)."""
     timeout = int(cfg.get("agent", {}).get("task_timeout_s", "1800"))
     if timeout <= 0:
         return []
     now = datetime.now(timezone.utc)
     reaped = []
     for rec in (recs if recs is not None else _latest(tasks_file)):
-        if rec.get("status") != "running" \
-                or not _alive(rec.get("pid", -1), rec.get("pstart", "")):
+        kind = rec.get("kind")
+        if kind == "acp_process" or rec.get("status") != "running":
             continue
-        try:
-            age = (now - datetime.fromisoformat(
-                rec.get("started", ""))).total_seconds()
-        except (ValueError, TypeError):
+        acp = kind == "session"
+        if not acp and not _alive(rec.get("pid", -1), rec.get("pstart", "")):
             continue
-        if age <= timeout:
+        # a bad timestamp reads as 0 s, so the record is left alone
+        if _elapsed(rec) <= timeout:
+            continue
+        if acp:
+            from . import acp_runtime
+            mgr = acp_runtime.manager()
+            if mgr is not None and mgr.expire(rec["id"]):
+                reaped.append(rec["name"])
             continue
         _signal(rec, signal.SIGTERM)
         _log_line({"id": rec["id"], "name": rec["name"],
@@ -466,6 +530,62 @@ def scrub_env(env: dict, cfg: dict) -> dict:
     return {k: v for k, v in env.items() if k not in drop}
 
 
+def _infer_cwd(cfg: dict | None = None) -> str | None:
+    """Infer an existing directory from `[agents] cwd` or the focused
+    window title (e.g. `~/code/wisp`, `/home/user/project — Cursor`) so
+    background OpenCode/Claude runs operate in the active repo."""
+    raw = str(((cfg or {}).get("agents") or {}).get("cwd") or "").strip()
+    if raw:
+        p = pathlib.Path(os.path.expanduser(raw))
+        if p.is_dir():
+            return str(p)
+    try:
+        from . import platform
+        win = platform.active_window() or {}
+        title = str(win.get("title") or "")
+        app = str(win.get("class") or win.get("app") or "").lower()
+    except Exception:
+        return None
+    # Remote page titles are not workspace authority. Limit this best-effort
+    # fallback to native editor, terminal and file-manager surfaces.
+    native = ("code", "cursor", "vscodium", "windsurf", "jetbrains",
+              "ghostty", "kitty", "alacritty", "foot", "wezterm", "konsole",
+              "terminal", "gnome-terminal", "nautilus", "dolphin", "thunar")
+    if not any(re.search(r"(?<!\w)" + re.escape(name) + r"(?!\w)", app)
+               for name in native):
+        return None
+    if title:
+        captions = ("Cursor", "Visual Studio Code", "Code", "VSCodium",
+                    "Windsurf", "Terminal", "Ghostty", "Kitty", "Konsole",
+                    "WezTerm", "Alacritty", "Nautilus", "Dolphin", "Thunar")
+        pattern = r"""(?P<quote>["']?)(?P<path>~/|/(?:home|Users|workspace|tmp)/)"""
+        for match in re.finditer(pattern, title):
+            raw = title[match.start("path"):].splitlines()[0]
+            quote = match.group("quote")
+            if quote:
+                if quote not in raw:
+                    continue
+                raw, suffix = raw.split(quote, 1)
+                if suffix.startswith("/"):
+                    continue
+            candidates = [raw]
+            for caption in captions:
+                for sep in (" — ", " – ", " - ", " | "):
+                    suffix = sep + caption
+                    if raw.lower().endswith(suffix.lower()):
+                        candidates.append(raw[:-len(suffix)])
+            for candidate in candidates:
+                try:
+                    cand = pathlib.Path(os.path.expanduser(candidate))
+                    if cand.is_file():
+                        cand = cand.parent
+                    if cand.is_dir():
+                        return str(cand)
+                except (OSError, ValueError):
+                    continue
+    return None
+
+
 def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
           log_dir=config.TASK_LOGS, cwd: str | None = None, *,
           delivers: list[str] | None = None,
@@ -504,13 +624,19 @@ def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
         out_dir = home / "output"
         cwd = cwd or str(home)
         prompt = agent_home.prompt(agent, task)
+    else:
+        cwd = cwd or _infer_cwd(cfg)
     out_dir.mkdir(parents=True, exist_ok=True)
+    if resolve_runtime(cfg) == "opencode":
+        return _spawn_acp(name, task, prompt, cwd or str(out_dir), out_dir,
+                          cfg, tasks_file, log_dir, delivers, spawned_by,
+                          depth, routine_id, agent)
     exit_f = _exit_file(log_dir, name)
     exit_f.unlink(missing_ok=True)
     # [agents] model — distinct from [agent] model (that's the Jev
     # router); empty unless the user sets an agent-model override
     model = cfg.get("agents", {}).get("model", "")
-    cmd = _runtime_cmd(cfg, prompt, model)
+    cmd = _runtime_cmd(cfg, model)
     if cmd is None:
         rt = cfg.get("brain", {}).get("agent_runtime", "auto")
         if rt == "auto":
@@ -528,12 +654,13 @@ def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
     spawn_ts = datetime.now(timezone.utc).isoformat()
     try:
         with log.open("ab") as lf:
-            proc = subprocess.Popen(
-                exec_cmd, stdout=lf, stderr=subprocess.STDOUT,
-                stdin=subprocess.DEVNULL,
-                cwd=cwd or str(out_dir),
-                env=env,
-                start_new_session=True)
+            with private.text_stdin(prompt) as fin:
+                proc = subprocess.Popen(
+                    exec_cmd, stdout=lf, stderr=subprocess.STDOUT,
+                    stdin=fin,
+                    cwd=cwd or str(out_dir),
+                    env=env,
+                    start_new_session=True)
     except OSError as e:
         return f"SKIP (agent spawn failed: {e})"
     _EXIT_CODES.pop(proc.pid, None)  # drop a stale code from a prior pid owner
@@ -560,6 +687,26 @@ def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
     return f"SPAWNED {name} (pid {proc.pid})"
 
 
+def _spawn_acp(name, task, prompt, cwd, out_dir, cfg, tasks_file, log_dir,
+               delivers, spawned_by, depth, routine_id, agent) -> str:
+    """The opencode runtime: a session on the ACP manager (U9)."""
+    from . import acp_runtime
+    mgr = acp_runtime.manager()
+    if mgr is None:
+        return ("SKIP (agent runtime 'opencode' needs the running daemon: "
+                "start wispd)")
+    return mgr.start_task(name, task, prompt, cwd, out_dir, delivers,
+                          spawned_by, depth, routine_id, agent, cfg,
+                          tasks_file, log_dir)
+
+
+def interrupted(tasks_file=config.TASKS_FILE) -> list:
+    """Session records a restart left `interrupted`, oldest first."""
+    return [r for r in _latest(tasks_file)
+            if r.get("kind") == "session"
+            and r.get("status") == "interrupted"]
+
+
 def run_named(detail: str, cfg: dict, tasks_file=config.TASKS_FILE,
               **spawn_kw) -> str:
     """Handle a named-agent route (`agent_home.encode` payload): create a
@@ -584,6 +731,11 @@ def run_named(detail: str, cfg: dict, tasks_file=config.TASKS_FILE,
     if kind == "tell":
         name, msg = d.get("name", ""), d.get("message", "")
         slug = _slug(name)
+        from . import acp_runtime
+        mgr = acp_runtime.manager()
+        if mgr is not None and mgr.tell(slug, msg.strip()):
+            return (f"ACTED (0 steps): {name} is on it. It does that after "
+                    "its current step.")
         busy = [r for r in _running(tasks_file) if r.get("agent") == slug]
         if busy:
             agent_home.leave_message(name, msg)
@@ -592,6 +744,20 @@ def run_named(detail: str, cfg: dict, tasks_file=config.TASKS_FILE,
         out = spawn(msg, cfg, tasks_file, agent=name, **spawn_kw)
         return (f"ACTED (0 steps): {name} is on it."
                 if out.startswith("SPAWNED") else out)
+    if kind == "continue":
+        want = _slug(d.get("name") or "")
+        pend = [r for r in interrupted(tasks_file)
+                if not d.get("name") or want in (r.get("agent"), r["id"])]
+        if not pend:
+            return "ACTED (0 steps): nothing is waiting to continue."
+        from . import acp_runtime
+        mgr = acp_runtime.manager()
+        if mgr is None:
+            return "SKIP (agent runtime needs the running daemon)"
+        if len(_running(tasks_file)) >= int(
+                cfg.get("agent", {}).get("max_concurrent", "3")):
+            return "SKIP (agent limit reached)"
+        return mgr.resume(pend[-1])
     if kind == "status":
         running = _running(tasks_file)
         if not running:
@@ -625,11 +791,15 @@ def _reap() -> None:
     _PROCS[:] = still
 
 
-_RUNTIMES = {  # [brain] agent_runtime → argv template, {task}/{model}
-    "opencode": ["ori", "opencode", "run", "{task}"],
-    "codex": ["codex", "exec", "{task}"],
-    "claude": ["claude", "-p", "{task}"],
-    "devin": ["devin", "run", "{task}"],
+# [brain] agent_runtime → argv. The prompt is private (a task can quote the
+# screen or a dictated message) and argv is readable by other local
+# accounts while the agent runs, so it is never in argv: each runtime reads
+# it from stdin (spawn hands it an unlinked 0600 temp file).
+_RUNTIMES = {
+    "opencode": ["ori", "opencode", "run"],
+    "codex": ["codex", "exec", "-"],
+    "claude": ["claude", "-p"],
+    "devin": ["devin", "--print", "--prompt-file", "-"],
 }
 _RUNTIME_BINS = {"opencode": "ori", "codex": "codex",
                  "claude": "claude", "devin": "devin"}
@@ -637,10 +807,31 @@ _RUNTIME_BINS = {"opencode": "ori", "codex": "codex",
 _AUTO_ORDER = ["opencode", "codex", "claude", "devin"]
 
 
+_RUNTIME_ROOT = None     # pinned install root; None = the Wisp data dir
+
+
+def _pinned_state() -> dict:
+    """The pinned ori + OpenCode install's probe state (no sign-in check)."""
+    from . import probes_agents
+    return probes_agents.AgentsProbe(_RUNTIME_ROOT).check(auth=False)
+
+
+def _pinned_ready() -> bool:
+    return _pinned_state().get("state") in ("installed", "ready")
+
+
 def detect_runtimes() -> dict:
-    """runtime → resolved binary path for everything on PATH."""
-    return {rt: shutil.which(b)
-            for rt, b in _RUNTIME_BINS.items() if shutil.which(b)}
+    """runtime → resolved binary path for everything available: the
+    pinned install for opencode (never a `which ori`), PATH for the rest."""
+    out = {}
+    for rt, b in _RUNTIME_BINS.items():
+        if rt == "opencode":
+            if _pinned_ready():
+                from . import agent_pins
+                out[rt] = str(agent_pins.runtime_paths(_RUNTIME_ROOT)["ori"])
+        elif shutil.which(b):
+            out[rt] = shutil.which(b)
+    return out
 
 
 def resolve_runtime(cfg: dict) -> str:
@@ -649,25 +840,27 @@ def resolve_runtime(cfg: dict) -> str:
     if rt != "auto":
         return rt
     for cand in _AUTO_ORDER:
-        if shutil.which(_RUNTIME_BINS[cand]):
+        if (_pinned_ready() if cand == "opencode"
+                else shutil.which(_RUNTIME_BINS[cand])):
             return cand
     return ""
 
 
-def _runtime_cmd(cfg: dict, task: str, model: str) -> list | None:
-    """argv for the configured agent runtime, or None when its binary
-    isn't on PATH (U6: probe → explicit error, not a silent failure)."""
+def _runtime_cmd(cfg: dict, model: str) -> list | None:
+    """argv for the configured agent runtime (the prompt goes to stdin,
+    not argv), or None when its binary isn't on PATH (U6: probe →
+    explicit error, not a silent failure)."""
     rt = resolve_runtime(cfg)
     if not rt:
         return None
     template = _RUNTIMES.get(rt, _RUNTIMES["opencode"])
     if not shutil.which(_RUNTIME_BINS.get(rt, "ori")):
         return None
-    cmd = [a.format(task=task, model=model) for a in template]
+    cmd = list(template)
     if model and rt == "opencode":
         cmd[3:3] = ["--model", model]  # after 'run'
     elif model and rt == "codex":
-        cmd += ["-m", model]
+        cmd[2:2] = ["-m", model]       # before the "-" stdin prompt
     elif model and rt == "claude":
         cmd += ["--model", model]
     return cmd
@@ -678,6 +871,11 @@ def cancel(name: str, tasks_file=config.TASKS_FILE) -> str:
     rec = _find(name, tasks_file)
     if not rec:
         return f"SKIP (no task {name!r})"
+    if rec.get("kind") == "session":
+        from . import acp_runtime
+        mgr = acp_runtime.manager()
+        out = mgr.cancel(rec["id"]) if mgr is not None else None
+        return out or f"SKIP ({name} not running)"
     if not _alive(rec.get("pid", -1), rec.get("pstart", "")):
         return f"SKIP ({name} not running)"
     _signal(rec, signal.SIGTERM)
@@ -860,7 +1058,9 @@ def build_done_notification(t: dict) -> dict:
     elif status == "done" and present:
         msg = f"wisp agent '{name}' done — delivered {', '.join(present)}"
     else:
-        tail = (t.get("tail") or "")[:80]
+        answer = " ".join(str(t.get("answer") or "").split())[:300]
+        tail = answer if status == "done" and answer \
+            else (t.get("tail") or "")[:80]
         msg = f"wisp agent '{name}' {status}" + (f" — {tail}" if tail else "")
 
     if refused > 0:
@@ -985,6 +1185,15 @@ def artifacts(name: str, tasks_file=config.TASKS_FILE,
     }
 
 
+def _elapsed(rec: dict) -> int:
+    try:
+        begin = datetime.fromisoformat(rec.get("resumed")
+                                       or rec.get("started", ""))
+    except (ValueError, TypeError):
+        return 0
+    return max(0, int((datetime.now(timezone.utc) - begin).total_seconds()))
+
+
 def tasks(tasks_file=config.TASKS_FILE,
           log_dir=config.TASK_LOGS, recs: list | None = None) -> dict:
     """name -> {status, task, ts, tail, ...} for state.json publication —
@@ -996,6 +1205,8 @@ def tasks(tasks_file=config.TASKS_FILE,
         recs = _latest(tasks_file)
     out = {}
     for rec in recs:
+        if rec.get("kind") == "acp_process":
+            continue
         status = _state_of(rec)
         entry = {
             "status": status,
@@ -1018,6 +1229,13 @@ def tasks(tasks_file=config.TASKS_FILE,
             entry["routine_id"] = rec.get("routine_id")
         if "unread" in rec:
             entry["unread"] = bool(rec.get("unread"))
+        if rec.get("kind") == "session" and status == "running":
+            # the ACP session's live step and elapsed time (KTD13)
+            entry["line"] = entry["tail"]
+            entry["seconds"] = _elapsed(rec)
+            from . import acp_runtime
+            if acp_runtime.waiting(rec):
+                entry["waiting"] = True
         out[rec["name"]] = entry
     return out
 
@@ -1070,10 +1288,24 @@ def _tick(cfg: dict, tasks_file, log_dir, kill_grace_s: float,
     stamp = now.isoformat()
     if recs is None:
         recs = _latest(tasks_file)
+    by_id = {r["id"]: r for r in recs if r.get("id")}
     for rec in recs:
         pid, pstart = rec.get("pid", -1), rec.get("pstart", "")
         alive = _alive(pid, pstart)
         status = rec.get("status")
+        if rec.get("kind") == "session":
+            # status is the runtime's; only a dead process fails it
+            if status == "running" \
+                    and not _proc_running(by_id.get(rec.get("acp_process"))):
+                _log_line({"id": rec["id"], "name": rec["name"],
+                           "status": "failed", "error": "process exited",
+                           "ts": stamp}, tasks_file)
+            continue
+        if rec.get("kind") == "acp_process":
+            if status == "running" and not alive:
+                _log_line({"id": rec["id"], "name": rec["name"],
+                           "status": "exited", "ts": stamp}, tasks_file)
+            continue
         if status == "running" and not alive:
             # process gone, or its pid now belongs to someone else
             st = _proc_stat(pid) if pid > 0 else None
@@ -1158,8 +1390,13 @@ def _tick_events(cfg, tasks_file, log_dir, kill_grace_s,
     judged on the raw record, since `tasks()` already reads a dead
     unclosed task as exited."""
     recs = _latest(tasks_file)
+    by_id = {r["id"]: r for r in recs if r.get("id")}
+    # an ACP session's own runtime reports its end (finished_entry); the
+    # reaper only owns one whose process died under it
     was_running = {r["name"] for r in recs
-                   if r.get("status") == "running"}
+                   if r.get("status") == "running"
+                   and (r.get("kind") != "session"
+                        or not _proc_running(by_id.get(r.get("acp_process"))))}
     cur = _tick(cfg, tasks_file, log_dir, kill_grace_s, recs=recs,
                 routines_store=routines_store)
     # a just-finished task's tail is its final output — read it for the
@@ -1167,18 +1404,91 @@ def _tick_events(cfg, tasks_file, log_dir, kill_grace_s,
     done = []
     for n in cur:
         if n in was_running and cur[n]["status"] != "running":
-            entry = {"name": n, **cur[n]}
-            rec = _find(n, tasks_file)
-            if rec is not None:
-                if not entry["tail"]:
-                    entry["tail"] = _tail(log_dir / f"{rec['id']}.log")
-                for k in ("exit_code", "delivered", "deliverables",
-                          "open_actions", "out_dir", "refused_count",
-                          "routine_id", "routine_outcome", "unread"):
-                    if k in rec and k not in entry:
-                        entry[k] = rec[k]
-            done.append(entry)
+            done.append(finished_entry(n, cur[n], _find(n, tasks_file),
+                                       log_dir))
     return cur, done
+
+
+_FINISH_KEYS = ("exit_code", "delivered", "deliverables", "open_actions",
+                "out_dir", "refused_count", "routine_id", "routine_outcome",
+                "unread", "answer", "stop_reason")
+_EVENT_KEYS = ("exit_code", "delivered", "deliverables", "open_actions",
+               "refused_count", "routine_id")
+
+
+def finished_entry(name: str, cur: dict, rec: dict | None,
+                   log_dir=config.TASK_LOGS) -> dict:
+    """The `finished()`-shaped entry for a task that just ended."""
+    entry = {"name": name, **cur}
+    if rec is not None:
+        if not entry["tail"]:
+            entry["tail"] = _tail(log_dir / f"{rec['id']}.log")
+        for k in _FINISH_KEYS:
+            if k in rec and k not in entry:
+                entry[k] = rec[k]
+    return entry
+
+
+def emit_finished(bus, t: dict, on_finished=None) -> None:
+    """One `task_finished` event and the on_finished callback."""
+    ev_kw = {"name": t["name"], "status": t["status"], "tail": t["tail"]}
+    for k in _EVENT_KEYS:
+        if k in t:
+            ev_kw[k] = t[k]
+    bus.emit_event("task_finished", **ev_kw)
+    if on_finished:
+        on_finished(t)
+
+
+def _kill_scope(scope: str, sig: int) -> None:
+    """Best-effort signal to a systemd scope (reaches descendants that
+    left the process group); no systemd -> a no-op."""
+    if not scope or not shutil.which("systemctl"):
+        return
+    try:
+        subprocess.run(["systemctl", "--user", "kill",
+                        f"--signal={signal.Signals(sig).name}", scope],
+                       capture_output=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def sweep_orphans(tasks_file=config.TASKS_FILE,
+                  kill_grace_s: float = KILL_GRACE_S) -> list:
+    """Daemon start: every ACP process record still `running` belongs to
+    a previous daemon. A live one (pstart matching) is SIGTERMed via its
+    scope, then SIGKILLed after the grace; a record whose pid now belongs
+    to someone else is never signalled. Either way the record closes and
+    its running sessions become `interrupted` (never replayed, R12)."""
+    recs = _latest(tasks_file)
+    procs = [r for r in recs if r.get("kind") == "acp_process"
+             and r.get("status") == "running"]
+    live = [r for r in procs if r.get("pstart")
+            and _alive(r.get("pid", -1), r["pstart"])]
+    for r in live:
+        _kill_scope(r.get("scope", ""), signal.SIGTERM)
+        _signal(r, signal.SIGTERM)
+    deadline = time.monotonic() + kill_grace_s
+    while live and time.monotonic() < deadline:
+        live = [r for r in live if _alive(r["pid"], r["pstart"])]
+        if live:
+            time.sleep(0.05)
+    for r in live:
+        _kill_scope(r.get("scope", ""), signal.SIGKILL)
+        _signal(r, signal.SIGKILL)
+    stamp = datetime.now(timezone.utc).isoformat()
+    ids = {r["id"] for r in procs}
+    swept = []
+    for r in recs:
+        if r.get("kind") == "session" and r.get("status") == "running" \
+                and r.get("acp_process") in ids:
+            _log_line({"id": r["id"], "name": r["name"],
+                       "status": "interrupted", "ts": stamp}, tasks_file)
+            swept.append(r["name"])
+    for r in procs:
+        _log_line({"id": r["id"], "name": r["name"], "status": "exited",
+                   "ts": stamp}, tasks_file)
+    return swept
 
 
 def reconcile_routines(cfg: dict, tasks_file=config.TASKS_FILE,
@@ -1234,21 +1544,21 @@ def start_reaper(cfg: dict, bus, stop: threading.Event,
     whoever caused it (exit, timeout, `task_cancel`). Idle cost is one
     small file read per tick; it stops when `stop` is set."""
     def run() -> None:
+        from . import acp_runtime
+        try:
+            # a running manager already swept at its own start; sweeping
+            # again would kill the processes it has launched since
+            if acp_runtime.manager() is None:
+                sweep_orphans(tasks_file, kill_grace_s)
+        except Exception:
+            pass
         while not stop.is_set():
             try:
                 cur, done = _tick_events(cfg, tasks_file, log_dir,
                                          kill_grace_s)
                 bus.publish(None, tasks=cur)
                 for t in done:
-                    ev_kw = {"name": t["name"], "status": t["status"],
-                             "tail": t["tail"]}
-                    for k in ("exit_code", "delivered", "deliverables",
-                              "open_actions", "refused_count", "routine_id"):
-                        if k in t:
-                            ev_kw[k] = t[k]
-                    bus.emit_event("task_finished", **ev_kw)
-                    if on_finished:
-                        on_finished(t)
+                    emit_finished(bus, t, on_finished)
             except Exception:
                 pass  # a bad record must never kill the reaper
             stop.wait(interval_s)

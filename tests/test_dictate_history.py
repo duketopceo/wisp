@@ -223,7 +223,9 @@ class TestLongSession(Base):
         s = S.Streamer(path, transcribe_fn=fn, chunk_s=58.0, tick_s=0.001,
                        journal=H.Journal({})).start()
         for _ in range(2000):
-            if len(s.texts) >= 10:
+            # Quiet-boundary selection makes chunk lengths variable. Ten
+            # visible transcripts do not guarantee ten minutes were committed.
+            if len(s.texts) >= 10 and s.cut / S.BPS >= 10 * 58 - 5:
                 break
             time.sleep(0.01)
         s._stop.set()                  # the process dies: no finish()
@@ -244,8 +246,10 @@ class TestLongSession(Base):
         path.write_bytes(S.wav_bytes(tone(14)))
         s = S.Streamer(path, transcribe_fn=lambda p: "word", chunk_s=6.0,
                        tick_s=0.001, journal=H.Journal({})).start()
+        # the streamer appends to `texts` first and journals the chunk a
+        # moment later, so wait for the journal itself, not the text
         for _ in range(300):
-            if s.texts:
+            if s.texts and H.JOURNAL.exists():
                 break
             time.sleep(0.01)
         self.assertTrue(H.JOURNAL.exists())

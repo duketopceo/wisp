@@ -7,7 +7,7 @@ on:
 
 jobs:
   unit:
-    # Wisp is Linux-only; CI runs on ubuntu.
+    # Linux is the full-app target; macOS/Windows probe seams are experimental.
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -24,6 +24,9 @@ jobs:
       - name: Test deps
         run: pip install sqlite-vec pillow
       - name: Unit tests
+        env:
+          # the QML suites run in the `qml` job; here node must be present
+          WISP_CI_REQUIRE_TOOLS: node
         run: python -m unittest discover -s tests -v
       - name: Personal-config leak guard
         # Shipped surfaces must be open-source ready: no owner usernames,
@@ -35,6 +38,27 @@ jobs:
             wisp/ wispd shell-plugin/ scripts/ docs/CONFIG.md docs/INSTALL.md 2>/dev/null \
             | grep -v 'AGENTS.md\|docs/plans/\|docs/research/\|\.md:.*//'
 
+  qml:
+    # QML lint, shader bake and qmltestrunner suites skip without Qt and
+    # Quickshell. Ubuntu's Qt is too old and has no Quickshell, so they run
+    # on Arch (what Omarchy ships), and a missing tool fails, not skips.
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Qt, Quickshell and test deps
+        run: |
+          pacman -Syu --noconfirm --needed python python-pillow nodejs \
+            qt6-declarative qt6-shadertools quickshell git
+      - uses: actions/checkout@v4
+      - name: QML suites
+        env:
+          WISP_CI_REQUIRE_TOOLS: node,qmltestrunner,qmllint,qsb
+          PATH: /usr/lib/qt6/bin:/usr/local/sbin:/usr/local/bin:/usr/bin
+        run: |
+          python -m unittest -v test_ci_tools test_qml_lib test_components \
+            test_manage test_wisp_service test_assets_baked
+        working-directory: tests
+
   plugin:
     # the Omarchy marketplace mirror: build it and validate it (B15)
     runs-on: ubuntu-latest
@@ -43,8 +67,10 @@ jobs:
       - name: qmllint
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y qt6-declarative-dev-tools || true
+          sudo apt-get install -y qt6-declarative-dev-tools
           echo "/usr/lib/qt6/bin" >> "$GITHUB_PATH"
+          # plugin_mirror --lint passes when qmllint is missing; CI must lint
+          test -x /usr/lib/qt6/bin/qmllint
       - name: Build and validate the plugin mirror
         run: python3 scripts/plugin_mirror.py --out build/mirror --version v0.0.0 --lint
 

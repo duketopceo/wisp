@@ -111,29 +111,29 @@ class RuntimeProbeTest(unittest.TestCase):
     def test_missing_runtime_explicit_skip(self):
         cfg = {"brain": {"agent_runtime": "codex"}}
         with mock.patch("shutil.which", return_value=None):
-            out = agents._runtime_cmd(cfg, "task", "")
+            out = agents._runtime_cmd(cfg, "")
         self.assertIsNone(out)  # spawn() turns this into SKIP(...)
 
     def test_opencode_template(self):
         cfg = {"brain": {"agent_runtime": "opencode"}}
         with mock.patch("shutil.which", return_value="/usr/bin/ori"):
-            cmd = agents._runtime_cmd(cfg, "do thing", "m/x")
+            cmd = agents._runtime_cmd(cfg, "m/x")
         self.assertEqual(cmd[:2], ["ori", "opencode"])
         self.assertIn("--model", cmd)
         self.assertIn("run", cmd)
-        self.assertIn("do thing", cmd)
+        self.assertNotIn("do thing", cmd)   # the prompt is stdin
 
     def test_codex_template(self):
         cfg = {"brain": {"agent_runtime": "codex"}}
         with mock.patch("shutil.which", return_value="/usr/bin/codex"):
-            cmd = agents._runtime_cmd(cfg, "do thing", "m/x")
+            cmd = agents._runtime_cmd(cfg, "m/x")
         self.assertEqual(cmd[:2], ["codex", "exec"])
         self.assertIn("-m", cmd)
 
     def test_unknown_runtime_falls_back(self):
         cfg = {"brain": {"agent_runtime": "weird"}}
         with mock.patch("shutil.which", return_value="/x"):
-            cmd = agents._runtime_cmd(cfg, "t", "")
+            cmd = agents._runtime_cmd(cfg, "")
         self.assertEqual(cmd[:2], ["ori", "opencode"])
 
     def test_config_set_nested_brain_section(self):

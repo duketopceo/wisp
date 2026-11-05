@@ -33,6 +33,10 @@ def _install_args(p):
     p.add_argument("--cua", action="store_true",
                    help="also install the pinned cua-driver "
                         "(scripts/cua/install.sh)")
+    p.add_argument("--agents", action="store_true",
+                   help="only install the pinned ori and OpenCode 2.x "
+                        "background-agent runtime (user scope, checksummed, "
+                        "no sudo)")
     p.add_argument("--units", action="store_true",
                    help="only install the systemd unit templates "
                         "(scripts/units), backing up changed ones")
@@ -41,8 +45,8 @@ def _install_args(p):
                         "optional wake word needs over speakers (asks "
                         "first; --yes answers it)")
     p.add_argument("--dry-run", action="store_true",
-                   help="print the plan, change nothing "
-                        "(also with --cua, --units or --echo-cancel)")
+                   help="print the plan, change nothing (also with --cua, "
+                        "--agents, --units or --echo-cancel)")
     p.add_argument("--from-plugin", action="store_true",
                    help="the Omarchy plugin was added from the marketplace: "
                         "install the daemon only, leave the plugin "
@@ -64,11 +68,14 @@ def _install_args(p):
          ["wispd daemon install", "wispd install --dry-run",
           "wispd install --units --dry-run",
           "wispd install --ref origin/master --dry-run"],
-         {"installed": "bool", "cua": "any", "units": "any"},
+         {"installed": "bool", "cua": "any", "units": "any",
+          "agents": "any"},
          args=_install_args)
 def daemon_install(ctx, a):
     if a.cua:
         return _install_cua(ctx, a)
+    if a.agents:
+        return _install_agents(ctx, a)
     if a.units:
         return _install_units(ctx, a)
     if a.echo_cancel:
@@ -80,8 +87,60 @@ def daemon_install(ctx, a):
     if a.ref:
         with tempfile.TemporaryDirectory() as tmp:
             repo, commit = _export_ref(a, tmp)
-            return _install(ctx, a, pathlib.Path(tmp), repo, commit)
-    return _install(ctx, a, None, None, None)
+            src = pathlib.Path(tmp)
+            if _can_hand_off(src):
+                return _hand_off(ctx, a, src, repo, commit)
+            return _install(ctx, a, src, repo, commit)
+    return _install(ctx, a, None, None, None, _handed_deploy())
+
+
+# `install --ref` runs the exported tree's own installer in a fresh process.
+# Installing in-process overwrote the running copy's files mid-install, so a
+# module imported after the copy (new) could not find what it needed in one
+# imported before it (old) — the 2026-11-03 `refuse_links` ImportError.
+HANDOFF_ENV = "WISP_INSTALL_DEPLOY"
+
+
+def _can_hand_off(src) -> bool:
+    """Only a tree whose installer reads the handoff record can take over;
+    an older ref installs in-process, as before."""
+    core = src / "wisp" / "cli" / "core.py"
+    try:
+        return (src / "wispd").is_file() and HANDOFF_ENV in core.read_text()
+    except OSError:
+        return False
+
+
+def _hand_off(ctx, a, src, repo, commit) -> int:
+    import os
+    import subprocess
+    argv = [sys.executable, str(src / "wispd")]
+    argv += [f for f, on in (("--json", ctx.flags.json),
+                             ("--quiet", ctx.flags.quiet),
+                             ("--no-color", ctx.flags.no_color)) if on]
+    argv += ["install"]
+    argv += [f for f, on in (("--dry-run", a.dry_run),
+                             ("--from-plugin", a.from_plugin),
+                             ("--yes", a.yes)) if on]
+    env = {**os.environ, HANDOFF_ENV: json.dumps(
+        {"repo": repo, "ref": a.ref, "commit": commit})}
+    sys.stdout.flush()
+    return subprocess.run(argv, env=env).returncode
+
+
+def _handed_deploy():
+    """The deploy record a parent `install --ref` handed to this process."""
+    import os
+    raw = os.environ.get(HANDOFF_ENV)
+    if not raw:
+        return None
+    try:
+        rec = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(rec, dict) or not rec.get("commit"):
+        return None
+    return {k: rec.get(k) for k in ("repo", "ref", "commit")}
 
 
 def _export_ref(a, tmp):
@@ -100,20 +159,35 @@ def _export_ref(a, tmp):
                        "wispd install --ref <git-ref> --repo <path>")
 
 
-def _install(ctx, a, src, repo, commit):
+def _preflight_text(ctx, rows) -> str:
+    from .. import preflight
+    return preflight.render(rows, width=ctx.width, color=ctx.color,
+                            glyphs=ctx.glyphs)
+
+
+def _install(ctx, a, src, repo, commit, handed=None):
     deploy = ({"repo": repo, "ref": a.ref, "commit": commit}
-              if src else None)
+              if src else handed)
     plugin = not a.from_plugin
 
+    from .. import preflight
+
     def plan():
+        rows = preflight.run()
+        print(_preflight_text(ctx, rows))
         ctx.host.install_files(dry_run=True, cfg=ctx.cfg, src=src,
                                deploy=deploy, plugin=plugin)
         ctx.host.install_bind(ctx.cfg, dry_run=True)
+        return 4 if preflight.blockers(rows) else 0
 
     def go():
         if a.dry_run:
-            plan()
-            return 0
+            return plan()
+        rows = preflight.run()
+        print(_preflight_text(ctx, rows))
+        if preflight.blockers(rows):
+            raise CliError("E_FAILED", preflight.refusal(rows),
+                           "wispd doctor")
         ctx.host.install_files(dry_run=False, cfg=ctx.cfg, src=src,
                                deploy=deploy, plugin=plugin)
         ctx.host.install_bind(ctx.cfg)
@@ -126,7 +200,8 @@ def _install(ctx, a, src, repo, commit):
             return ctx.emit({"installed": False, "cua": None},
                             "not installed; nothing was changed")
     rc, text = _host_call(ctx, go)
-    return ctx.emit({"installed": rc == 0 and not a.dry_run, "cua": None})
+    ctx.emit({"installed": rc == 0 and not a.dry_run, "cua": None}, text)
+    return rc
 
 
 def _tty_yes(prompt: str) -> bool:
@@ -168,6 +243,35 @@ def _install_units(ctx, a):
                  "systemctl --user restart <unit>")
     return ctx.emit({"installed": not a.dry_run, "cua": None,
                      "units": acts}, text)
+
+
+def _install_agents(ctx, a):
+    """The pinned ori and OpenCode (agent_install, KTD8). Signing ori in
+    is the onboarding agents step's job, not this flag's."""
+    from .. import agent_install, agent_pins
+    tools = ("ori", "opencode")
+    if a.dry_run:
+        arch = agent_pins.machine_arch()
+        plan = {t: (agent_pins.pin(t, arch) or {}) for t in tools}
+        lines = [f"{t} {p['version']} from {p['url']}" if p
+                 else f"{t}: no build for {arch}" for t, p in plan.items()]
+        return ctx.emit({"installed": False, "agents": {
+            t: {"version": p.get("version"), "url": p.get("url")}
+            for t, p in plan.items()}},
+            "would install (sha256-verified, user scope):\n"
+            + "\n".join(lines))
+    done = {}
+    for t in tools:
+        r = agent_install.install(t)
+        done[t] = {"status": r.status, "reason": r.reason}
+        if r.status == "failed":
+            raise CliError("E_FAILED", f"Could not install {t}: "
+                           f"{r.reason}", "wispd install --agents --dry-run",
+                           data={"installed": False, "agents": done})
+    return ctx.emit({"installed": True, "agents": done},
+                    "\n".join(f"{t}: {v['status']}"
+                              for t, v in done.items())
+                    + "\nsign ori in with: wispd onboard --step agents")
 
 
 def _install_cua(ctx, a):
@@ -216,11 +320,19 @@ def _update_args(p):
     p.add_argument("--sha256", metavar="HEX",
                    help="expected SHA-256 of the download, for a release "
                         "that publishes none")
+    p.add_argument("--restart", action="store_true",
+                   help="after a verified install, offer to restart wispd "
+                        "and check that it answers (with --rollback: after "
+                        "restoring)")
+    p.add_argument("--rollback", action="store_true",
+                   help="restore the files saved before the last update "
+                        "(also the way back from an unfinished update)")
 
 
 @command("daemon update",
          "Fetch the latest release, verify it, and install on your yes",
          ["wispd update --dry-run", "wispd update",
+          "wispd update --restart", "wispd update --rollback",
           "wispd update --force"],
          {"version": "str", "installed_version": "str", "sha256": "str",
           "changes": "dict", "dry_run": "bool", "applied": "bool",
@@ -231,8 +343,12 @@ def daemon_update(ctx, a):
     say = (lambda t: None) if ctx.json or ctx.flags.quiet \
         else (lambda t: print(t))
     try:
+        if a.rollback:
+            res = update.rollback(confirm=update.tty_confirm,
+                                  emit_text=say, restart=a.restart)
+            return ctx.emit(res)
         res = update.run_update(dry_run=a.dry_run, sha256=a.sha256,
-                                force=a.force,
+                                force=a.force, restart=a.restart,
                                 confirm=update.tty_confirm, emit_text=say)
     except update.UpdateError as e:
         raise CliError("E_FAILED", str(e), "wispd update --dry-run")
@@ -314,6 +430,9 @@ def watch(ctx, a):
 def _choice_args(p):
     p.add_argument("pick", nargs="?", default="",
                    help="the option to pick (omit when using --index)")
+    p.add_argument("--stdin", action="store_true",
+                   help="read the pick (or typed answer) from one line of "
+                   "stdin, so private text stays off the command line")
     p.add_argument("--prompt-id", metavar="ID",
                    help="answer this prompt only")
     p.add_argument("--index", type=int, metavar="N",
@@ -325,6 +444,8 @@ def _choice_args(p):
           "wispd choice --prompt-id p1 --index 2"],
          {"pick": "str", "result": "str"}, args=_choice_args)
 def choice(ctx, a):
+    if a.stdin:
+        a.pick = registry.read_stdin_line()
     msg = {"cmd": "choice", "pick": a.pick}
     if a.prompt_id:
         msg["prompt_id"] = a.prompt_id
@@ -334,6 +455,26 @@ def choice(ctx, a):
     # the daemon's own words for picks it resolves locally (suggestion:
     # cards) — "" for a plain broker offer, which has nothing to say
     return ctx.emit({"pick": a.pick, "result": reply.get("result") or ""})
+
+
+def _ask_args(p):
+    p.add_argument("text", nargs="?", default="",
+                   help="the question to ask, as one argument")
+    p.add_argument("--stdin", action="store_true",
+                   help="read the question from one line of stdin")
+
+
+@command("ask", "Ask one typed question (starts a normal turn)",
+         ['wispd ask "what is the front wheel for?"'],
+         {"asked": "bool"}, args=_ask_args)
+def ask(ctx, a):
+    if a.stdin:
+        a.text = registry.read_stdin_line()
+    if not a.text:
+        raise CliError("E_USAGE", "Nothing to ask.",
+                       "wispd ask \"your question\"")
+    reply = ctx.expect_ok(ctx.send({"cmd": "ask", "text": a.text}))
+    return ctx.emit({"asked": bool(reply.get("asked"))})
 
 
 @command("tui", "Open the terminal UI",

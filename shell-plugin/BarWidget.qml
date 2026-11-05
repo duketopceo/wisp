@@ -52,6 +52,14 @@ BarWidget {
 
   onBarChanged: injectPanel()
 
+  // a wrong rating (card tap or hotkey) opens the panel on its note
+  Connections {
+    target: root.service
+    function onRatePromptTurnChanged() {
+      if (root.service.ratePromptTurn !== "") root.open()
+    }
+  }
+
   Loader {
     id: panelLoader
     active: true

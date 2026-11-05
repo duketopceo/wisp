@@ -1,6 +1,6 @@
 """Act route: a bounded, guarded conversational tool-call loop.
 
-Jev decides the user wants a multi-step desktop task; this loop hands the
+The router sends a multi-step desktop task here; this loop hands the
 toolbelt to the chat model as OpenAI-style tools and lets it drive. Every
 proposed call re-enters the same gates execute() uses — denylist,
 allow_shell, risk tier — so the model can ask for anything but only
@@ -34,13 +34,15 @@ MAX_ERRORS = 2
 MAX_PARSE_MISSES = 1
 # narrated-next-step replies (no tool call) nudged back into the loop
 MAX_INTENT_NUDGES = 2
+# done claims contradicted by the run's last effect step, nudged back
+MAX_DONE_NUDGES = 1
 MAX_SECONDS = 600          # wall-clock cap for one run; 0 = off
 MAX_USD = 0.0              # per-run paid-model spend cap; 0 = off
 MAX_IMAGES = 3  # cap retained screenshots in the message window
 # tools whose success may change what's on screen → re-observe before
 # the next pointer step
 _SCREEN_CHANGING = {"click", "move", "type_text", "key", "launch",
-                    "focus", "close", "workspace", "shell", "fill",
+                    "focus", "tab", "close", "workspace", "shell", "fill",
                     "post_send"}
 
 SYSTEM = ("You are Wisp's hands on a Linux desktop (Hyprland). Complete "
@@ -53,9 +55,17 @@ SYSTEM = ("You are Wisp's hands on a Linux desktop (Hyprland). Complete "
           "app to inspect (control-channel when the app ships one, "
           "else a window-crop capture — inspect only, its pixels are "
           "not the click coordinate space). "
+          "To switch to a browser tab that is already open, call tab "
+          "'<name or site>' (include 'personal' or 'work' when the user "
+          "names a profile or when the focused browser window shows "
+          "Personal/Work) — do not click the tab strip or call launch; "
+          "launch opens apps, it never switches tabs. "
+          "Media playback (pause, play, next, previous, volume, mute) "
+          "uses the media tool — never a click on a player and never a "
+          "key press. "
           "Never click twice off the same screenshot "
           "— after anything that changes the screen (click, key, type, "
-          "launch, focus, workspace, shell), re-screenshot before the "
+          "launch, focus, tab, workspace, shell), re-screenshot before the "
           "next pointer action. A GUIDE result means the ghost cursor "
           "is parked there for the user to click — treat it as done, "
           "not an error, and continue or finish. CLICKED echoes the id "
@@ -67,7 +77,17 @@ SYSTEM = ("You are Wisp's hands on a Linux desktop (Hyprland). Complete "
           "fallback, typing into a select does nothing. In DOM mode the "
           "screen caption lists element ids — click '<id>' and fill "
           "'<id> <value>' resolve elements directly, so only screenshot "
-          "when your target is not in the legend. When done, reply with "
+          "when your target is not in the legend. Typing is not "
+          "submitting: after type_text into a single-line field (a "
+          "terminal prompt, address bar, search box or file name), "
+          "press enter with the key tool to run or submit it unless the "
+          "user said not to; in a multi-line field (a chat composer or "
+          "an editor) press enter only when the task is to send. Never "
+          "report success from the typing step alone: check the result "
+          "on screen first, with at most one extra screenshot per turn "
+          "for that check. To open a file or folder in a file manager, "
+          "click it once to select it, then press enter — double-click "
+          "is unavailable. When done, reply with "
           "one short sentence describing the outcome. If a tool is "
           "refused or skipped, do not retry it; work around or report "
           "the block. A fresh screenshot after a mutating step is the "
@@ -87,13 +107,26 @@ SYSTEM = ("You are Wisp's hands on a Linux desktop (Hyprland). Complete "
           "meant.")
 
 
+DRY_RUN_NOTE = ("Dry run, nothing was clicked or typed ([cua] dry_run "
+                "is on): ")
+
+
+def _dry_run_note(steps: list) -> str:
+    """The model words its summary as if the steps happened ("I clicked
+    the AccuWeather result"), but under `[cua] dry_run` every input step
+    returns DRYRUN and nothing reached the desktop. Say so up front."""
+    if any(str(st.get("result", "")).startswith("DRYRUN") for st in steps):
+        return DRY_RUN_NOTE
+    return ""
+
+
 def _post(messages: list, cfg: dict) -> dict:
     """Chat call through the configured brain provider with toolbelt
     schemas (U6). Returns the provider message object."""
     from . import brain, trace as _trace
     t0 = time.monotonic()
     res = brain.chat(messages, cfg,
-                     tools=tools.tool_schemas(), timeout=60)
+                     tools=tools.tool_schemas(cfg), timeout=60)
     raw = res["raw"]
     img = sum(len(p.get("image_url", {}).get("url", ""))
               for m in messages if isinstance(m.get("content"), list)
@@ -101,7 +134,10 @@ def _post(messages: list, cfg: dict) -> dict:
               if p.get("type") == "image_url")
     _trace.emit(_trace.current(), "llm_call", "act",
                 {"brain": res.get("provider"),
+                 "model": res.get("model"),
                  "fallback_from": res.get("fallback_from"),
+                 "ttft_ms": res.get("ttft_ms"),
+                 "latency_ms": res.get("latency_ms"),
                  "msgs": len(messages), "img_kb": img // 1024,
                  "tools_out": [_name_arg(c)[0]
                                for c in raw.get("tool_calls") or []],
@@ -159,14 +195,17 @@ def run_act_loop(task: str, cfg: dict, state=None,
                  initial_image: str | None = None,
                  interrupted=None,
                  steps_out: list | None = None,
-                 ask=None) -> str:
+                 ask=None, *, user_request: str = "", lang: str = "") -> str:
     """Drive the chat model through the toolbelt until it finishes or a
     bound trips. `confirm(prompt)->bool` asks the user (choice widget /
     IPC) when wired; without it mutating calls skip. `ask(question,
     options)->pick|None` is the in-loop conversation channel (U4 —
     `confirm.make_ask` on the same broker); without it `ask_user` calls
     resolve NO_ANSWER. `steps_out`, if a list, receives the run's step
-    records for judging/replay."""
+    records for judging/replay. `user_request` is the caller's verbatim
+    human instruction, not a generated task/goal or model tool payload.
+    Only that trusted channel may authorize an element-free coordinate
+    click; omitted context fails closed."""
     from . import brain
     at_mode = brain.action_text(cfg)
     if not brain.supports_tools(cfg) and not at_mode:
@@ -174,7 +213,8 @@ def run_act_loop(task: str, cfg: dict, state=None,
         return (f"SKIP (brain provider '{p['name']}' does not support "
                 f"tools — set [brain.{p['name']}] tools=true or pick a "
                 f"capable provider)")
-    system = SYSTEM
+    from . import lang as _lang
+    system = _lang.with_reply_rule(SYSTEM, lang)
     from . import trajectories, context as _ctx, action_stats as _ast
     traj_recs = trajectories._read_all()  # one parse feeds both blocks
     traj_labs = trajectories._labels()
@@ -238,6 +278,11 @@ def run_act_loop(task: str, cfg: dict, state=None,
     errors = 0
     parse_misses = 0
     intent_nudges = 0
+    done_nudges = 0
+    # the window focused at trigger time (stage_capture records it):
+    # refocusing it changes nothing on screen
+    start_focus = str((getattr(state, "focus", None) or {}).get("app")
+                      or "")
     max_steps = _limit(cfg, "act_max_steps", MAX_STEPS)
     max_errors = _limit(cfg, "act_max_errors", MAX_ERRORS)
     max_parse_misses = _limit(cfg, "act_max_parse_misses", MAX_PARSE_MISSES)
@@ -358,7 +403,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     _publish(state, task, steps)
                     _goals.record_steps(steps)
                     _goals.close("done")
-                    out = f"ACTED ({len(steps)} steps): {text}"
+                    out = f"ACTED ({len(steps)} steps): {_dry_run_note(steps)}{text}"
                     want_traj = True
                     return out
                 calls = [{"id": f"at-{len(steps)}-{i}", "_at": True,
@@ -385,8 +430,24 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     _state.action_add(state, "question", text[9:].strip(),
                                       status="awaiting")
                     return "ASK_USER " + text[9:].strip()
-                _goals.close("done")
-                out = f"ACTED ({len(steps)} steps): {text or 'done'}"
+                why = _unsupported_done(task, steps, start_focus)
+                if why and done_nudges < MAX_DONE_NUDGES:
+                    done_nudges += 1
+                    messages.append({"role": "assistant", "content": text})
+                    messages.append({"role": "user", "content": (
+                        f"Not confirmed: {why}. Check the latest "
+                        "screenshot against the request. Continue with a "
+                        "tool call, or reply with what actually "
+                        "happened.")})
+                    continue
+                if why:
+                    # unconfirmed: leave the goal open so "try again"
+                    # resumes it instead of starting over
+                    text = f"I could not confirm that worked \u2014 {why}."
+                else:
+                    _goals.close("done")
+                out = (f"ACTED ({len(steps)} steps): "
+                       f"{_dry_run_note(steps)}{text or 'done'}")
                 want_traj = True
                 return out
             messages.append(msg)
@@ -531,8 +592,12 @@ def run_act_loop(task: str, cfg: dict, state=None,
                                     nonlocal dispatched_at, dispatch_mono
                                     dispatched_at = time.time()
                                     dispatch_mono = time.monotonic()
-                                    return tools.run(name, tool_arg, cfg,
-                                                     harness)
+                                    from .tools.system import pointer_context
+                                    with pointer_context(
+                                            target=tgt,
+                                            user_request=user_request):
+                                        return tools.run(name, tool_arg, cfg,
+                                                         harness)
                                 # kill/deny/rate/dry-run/audit around
                                 # dispatch
                                 result = guard.run(
@@ -698,11 +763,8 @@ def _aim(name: str, arg: str, cfg: dict, guard, state):
         return arg, None, None
     from .tools import system as _sys
     if _XY_ARG.match(arg or ""):
-        # explicit coordinates: no grounding; only convert for the ghost
-        # cursor when something is listening
-        if state is None or not callable(getattr(state, "emit_event",
-                                                 None)):
-            return arg, None, None
+        # Explicit model coordinates are not human provenance. Keep the
+        # typed target even when no ghost-cursor overlay is listening.
         xy = _sys._parse_xy(arg)
         if xy is None:
             return arg, None, None
@@ -938,7 +1000,7 @@ def _record_step(step: dict, name: str, tool_arg: str, dispatched_at,
     if rec is not None and rec.active and dispatched_at is not None \
             and name in _CUA_TOOLS \
             and not (cfg or {}).get("screen", {}).get("dom_page") \
-            and (cfg or {}).get("pointer", {}).get("mode") == "drive":
+            and (cfg or {}).get("pointer", {}).get("mode") in ("drive", "auto"):
         try:
             # planned backend == actual backend on the dispatch path —
             # a recorded dir exists only when the driver saw the call
@@ -1044,6 +1106,10 @@ def _record_traj(task: str, harness: dict | None, steps: list, out: str,
     rotation check and the append all happen off the turn's hot path.
     `pack` is the deterministic packs/<turn> link — the pack write runs
     later in the finally, so the ref is by name, not existence."""
+    # Default act routing also handles plain questions. Empty-step replies
+    # have no action path to replay and must not expand transcript storage.
+    if not steps:
+        return
     from . import trajectories
     snap = [dict(s) for s in steps]
     record = trajectories.record     # bound now: patches stay honoured
@@ -1108,6 +1174,59 @@ _NEXT_STEP_RE = re.compile(
 _CONTINUE_NUDGE = ("You described a next step but did not call a tool. "
                    "Call the tool now. If the task is already complete, "
                    "reply with one short sentence describing the outcome.")
+
+
+def _same_word(a: str, b: str) -> bool:
+    # app binaries drift from spoken names (spotify -> spotifast): a
+    # shared 5-letter stem counts as naming the app
+    return a == b or (len(a) >= 5 and len(b) >= 5 and a[:5] == b[:5])
+
+
+def _unsupported_done(task: str, steps: list,
+                      start_focus: str = "") -> "str | None":
+    """One-line reason when a tool-less 'done' is contradicted by the
+    run's last effect step, else None. Pure answers (no effect step)
+    and supported claims return None."""
+    from .goals import _tokens as _words
+    last = next((s for s in reversed(steps)
+                 if s.get("tool") in _SCREEN_CHANGING), None)
+    if last is None:
+        return None
+    result = str(last.get("result") or "")
+    # a recorded (turn_dir) step's verdict is re-checked after the loop
+    # by _terminal_verify, which may flip a mid-run "missed" to
+    # "landed" — only an unrecorded step's verdict is final here
+    missed = (not last.get("turn_dir")
+              and (last.get("verify") or {}).get("verdict") == "missed")
+    if missed or "verify FAILED" in result:
+        return f"the last step ({last['tool']}) failed verification"
+    if last["tool"] == "tab" and result.startswith("SKIP"):
+        return "the tab switch was skipped: " + result[len("SKIP"):].strip(" ()")
+    if last["tool"] in ("launch", "focus") and result.startswith("FOCUSED"):
+        cls = result.partition("->")[2].split(" (")[0].strip()
+        from . import config as _config
+        from .tools import desktop as _desktop
+        task_words = _words(task)
+        service_roles = {_desktop._resolve_service_role(w)
+                         for w in task_words} & set(_config.WEB_DEFAULTS)
+        focused = cls or result[len("FOCUSED"):].split(" (")[0].strip()
+        if focused.lower() in _desktop._BROWSER_CLASSES and service_roles:
+            return (f"{last['tool']} only focused a browser; the service "
+                    "destination needs a tab switch or URL confirmation")
+        # focusing another app is a visible change (music -> spotify);
+        # only a refocus of the window already in front is a no-op
+        if start_focus and start_focus.lower() != cls.lower():
+            return None
+        arg_words = _words(last.get("arg"))
+        alias_words = {_desktop._resolve_service_role(w) for w in arg_words}
+        task_words = _words(task) | {_desktop._resolve_service_role(w)
+                                     for w in _words(task)}
+        named = arg_words | alias_words | _words(cls)
+        if not any(_same_word(a, b) for a in task_words for b in named):
+            return (f"{last['tool']} only refocused "
+                    f"{(last.get('arg') or cls).strip()}, which the "
+                    "request did not name")
+    return None
 
 
 def _announces_next_step(text: str) -> bool:

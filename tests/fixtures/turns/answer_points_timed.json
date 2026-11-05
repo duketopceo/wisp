@@ -1,23 +1,9 @@
 {
-  "description": "Answer route, voice on (fake TTS, 300 ms per sentence): two streamed sentences each carry a [POINT] tag. Each point is published when its sentence starts playing, so points grows 1 then 2 while speaking and the second never shows early.",
+  "description": "Answer lane (router = chat), voice on (fake TTS, 300 ms per sentence): two streamed sentences each carry a [POINT] tag. Each point is published when its sentence starts playing, so points grows 1 then 2 while speaking and the second never shows early.",
   "audio": "ask.wav",
   "endpoints": {
     "whisper": {
       "transcript": "where do i click for display settings"
-    },
-    "jev": {
-      "answers": {
-        "route": {
-          "choice": "answer"
-        },
-        "app": {
-          "choice": "none",
-          "confidence": 0.99
-        },
-        "risk": {
-          "score": 0
-        }
-      }
     },
     "brain": {
       "responses": [
@@ -32,9 +18,15 @@
     }
   },
   "config": {
+    "brain": {
+      "router": "chat"
+    },
     "voice": {
       "enabled": "true",
       "cmd": "/bin/sh -c \"/bin/sleep 0.3\" {text}"
+    },
+    "brain": {
+      "router": "chat"
     }
   },
   "expect": {

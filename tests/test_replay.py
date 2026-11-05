@@ -32,11 +32,24 @@ class CuaTurnTest(unittest.TestCase):
         self.assertEqual(res.violations, [])
         calls = res.fake_calls["cua"]
         self.assertEqual([c["tool"] for c in calls],
-                         ["start_session", "start_recording", "click",
+                         ["start_session", "start_recording",
+                          "list_windows", "list_windows", "get_window_state", "click",
                           "stop_recording"])
         click = next(c for c in calls if c["tool"] == "click")
+        self.assertEqual(sum(c["tool"] == "click" for c in calls), 1)
         self.assertEqual((click["args"]["x"], click["args"]["y"]),
                          (10, 20))
+
+    def test_element_free_model_point_stays_refused(self):
+        fx = hh.load("act_click_cua")
+        # Remove only the explicitly declared window/element evidence.
+        # No fallback metadata is invented by the fake or the harness.
+        fx["fakes"]["cua"] = {}
+        res = runner.run_turn(fx)
+        self.assertFalse(any(c["tool"] == "click"
+                             for c in res.fake_calls["cua"]))
+        self.assertIn("REFUSED (no element", "\n".join(res.final["steps"]))
+        self.assertEqual(res.violations, [])
 
     def test_cua_stale_click_fails_without_retry(self):
         res = runner.run_turn(FIXTURES / "act_click_cua_down.json")
@@ -46,13 +59,14 @@ class CuaTurnTest(unittest.TestCase):
 
     def test_refusal_is_scriptable(self):
         fx = hh.load("act_click_cua")
-        fx["fakes"]["cua"]["tools"] = {"click": {"ok": False,
-                                                 "error": "E_CUA_REFUSED"}}
+        fx["fakes"]["cua"]["tools"]["click"] = {
+            "ok": False, "error": "E_CUA_REFUSED"}
         fx["expect"]["result_prefix"] = "ACTED"
         res = runner.run_turn(fx)
         self.assertEqual(res.exit_code, 0, res.stderr)
         self.assertEqual([c["tool"] for c in res.fake_calls["cua"]],
-                         ["start_session", "start_recording", "click",
+                         ["start_session", "start_recording",
+                          "list_windows", "list_windows", "get_window_state", "click",
                           "stop_recording"])
         # the tool result the brain saw on its next call
         self.assertIn("SKIP (click failed via cua)",

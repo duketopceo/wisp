@@ -80,6 +80,7 @@ class State:
         self.result = ""
         self.choices = []
         self.prompt_id = ""    # id of the offered choices/confirm (U9)
+        self.source = ""       # who raised the prompt: "agent:<name>" (U7), "" for a turn's own
         self.confirm = None    # {prompt_id, prompt, timeout_s, kind} while a confirm waits (W25; kind U3)
         self.points = []
         self.drawings = []  # on-screen shapes (ring/arrow/hl), logical coords
@@ -106,6 +107,8 @@ class State:
         self.health = {}        # {endpoint: {ok, since, latency_ms, code}}
         self.mic = ""           # "open" while the wake word listens (B33)
         self.spend = {}         # {today_usd, cap_usd, ...} from ledger.py
+        self.rate_prompt = None  # {turn}: a wrong rating wants its note
+        self.dev = {"on": False, "runs_left": 0}  # dev tuning session
         self.started_at = _now()
         self.heartbeat_at = None
         self._last_blob = None  # last written state.json body
@@ -137,6 +140,16 @@ class State:
         # (listening) takes them down
         if status == "listening" and "chips" not in fields:
             self.chips = None
+        # an open rating note belongs to the turn it rates: a new turn
+        # takes it down
+        if status == "listening" and "rate_prompt" not in fields:
+            self.rate_prompt = None
+        # an error belongs to the turn that hit it: a new turn starts
+        # clean, so a "cancelled" code can never leak into the next one
+        # (the scribble grab keys on it)
+        if status == "listening" and "error_code" not in fields:
+            self.error_code = ""
+            self.error_detail = ""
         # speak-reply point annotations only live while speaking —
         # any other status clears them so a later turn can never
         # read the previous turn's beacons
@@ -279,6 +292,7 @@ class State:
             "result": self.result,
             "choices": list(self.choices),
             "prompt_id": self.prompt_id,
+            "source": self.source,
             "confirm": dict(self.confirm) if self.confirm else None,
             "points": list(self.points),
             "drawings": list(self.drawings),
@@ -299,6 +313,9 @@ class State:
             "health": {k: dict(v) for k, v in self.health.items()},
             "mic": self.mic,
             "spend": dict(self.spend),
+            "rate_prompt": dict(self.rate_prompt)
+            if self.rate_prompt else None,
+            "dev": dict(self.dev),
             "started_at": self.started_at,
             "heartbeat_at": self.heartbeat_at,
             **self.meta,
@@ -490,6 +507,10 @@ class StateBus:
         dropped from here on."""
         with self._lock:
             self._turn = _new_turn_id()
+            # an open rating note belongs to the turn it rates: any new
+            # turn (typed ask included) takes it down
+            if self.state.rate_prompt:
+                self.publish(None, rate_prompt=None)
             return self._turn
 
     def current_turn(self) -> str:

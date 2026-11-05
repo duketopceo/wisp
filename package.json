@@ -1,0 +1,13 @@
+{
+  "name": "wisp-website",
+  "private": true,
+  "engines": {"node": ">=22"},
+  "scripts": {
+    "build:site": "python3 scripts/site/build_workers.py",
+    "preview:site": "npm run build:site && wrangler dev",
+    "deploy:site": "npm run build:site && wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "4.156.0"
+  }
+}

@@ -1,11 +1,12 @@
 """Learning and telemetry: learn, skills, trace."""
 import io
 
-from .registry import GROUPS, command
+from .registry import GROUPS, CliError, command
 
 GROUPS["learn"] = "Failure log"
 GROUPS["skills"] = "Installed skills"
 GROUPS["trace"] = "Turn trace and daily digest"
+GROUPS["dev"] = "Developer views of recent turns"
 
 _TEXT = {"text": "str"}
 LATENCY_WINDOW_H = 168   # `wispd eval` shows the last week of turns
@@ -35,7 +36,7 @@ def _eval_args(p):
          ["wispd eval", "wispd eval --json", "wispd eval --misses",
           "wispd eval --unlabelled --limit 20"],
          {"kinds": "dict", "total": "dict", "gate": "dict",
-          "langs": "dict", "latency": "list"},
+          "langs": "dict", "since": "str", "latency": "list"},
          args=_eval_args)
 def eval_cmd(ctx, a):
     from .. import config, learn
@@ -130,3 +131,305 @@ def _capture(ctx, fn):
             return rc
         return ctx.emit({"text": buf.getvalue().rstrip("\n")})
     return fn()
+
+
+def _dev_args(p):
+    p.add_argument("-n", "--limit", type=int, default=None, metavar="N",
+                   dest="n", help="turns to return (default 20, max 50)")
+
+
+def _dev_text(d):
+    rs = d.get("rated_share")
+    g = d.get("gate") or {}
+    lines = [f"gate: {g.get('correct', 0)}/{g.get('labelled', 0)} right "
+             f"first time ({g.get('status', 'unset')}), "
+             f"rated {'-' if rs is None else format(rs, '.0%')} of "
+             f"{d.get('finished', 0)} finished"]
+    for t in d.get("turns", []):
+        ms = t.get("total_ms")
+        ttft = t.get("ttft_ms")
+        mod = (t.get("model") or t.get("provider") or "")[:18]
+        extra = ""
+        if ttft is not None or mod:
+            extra = f"  ttft={'-' if ttft is None else str(ttft)+'ms':<7} {mod:<18}"
+        lines.append(f"  {t['id'] or '-':<10}{t['label']:<10}"
+                     f"{'-' if ms is None else ms:>6} ms  "
+                     f"{t['route'] or '-':<8}{t['transcript'][:40]}{extra}")
+    return "\n".join(lines)
+
+
+@command("dev turns", "Last turns with stages, labels, gate and misses",
+         ["wispd dev turns", "wispd dev turns --json -n 5"],
+         {"turns": "list", "gate": "dict", "rated": "int",
+          "finished": "int", "rated_share": "float", "misses": "list",
+          "truncated": "bool"}, args=_dev_args)
+def dev_turns(ctx, a):
+    msg = {"cmd": "devlog", **({"n": a.n} if a.n is not None else {})}
+    try:
+        r = ctx.send(msg)
+    except CliError as e:
+        if e.code != "E_DAEMON_DOWN":
+            raise
+        # read-only: answer from the files when no daemon is running
+        from .. import config, devlog
+        r = {"ok": True, **devlog.build(config.load_config(), n=a.n)}
+    ctx.expect_ok(r)
+    data = {k: v for k, v in r.items() if k != "ok"}
+    return ctx.emit(data, _dev_text(data))
+
+
+_DEV_SESSION = {"on": "bool", "runs_done": "int", "runs_left": "int",
+                "max_runs": "int", "started_at": "str"}
+
+
+def _dev_session_text(s):
+    if not s.get("on"):
+        return "dev mode: off"
+    return (f"dev mode: on, {s.get('runs_done', 0)} of "
+            f"{s.get('max_runs', 5)} runs done "
+            f"({s.get('runs_left', 0)} left), started {s.get('started_at')}")
+
+
+def _dev_switch(ctx, op):
+    r = ctx.expect_ok(ctx.send({"cmd": "dev", "op": op}))
+    s = r.get("dev") or {}
+    return ctx.emit(s, _dev_session_text(s))
+
+
+@command("dev on", "Turn dev mode on (tracing on; off after five runs)",
+         ["wispd dev on"], _DEV_SESSION)
+def dev_on(ctx, a):
+    return _dev_switch(ctx, "on")
+
+
+@command("dev off", "Turn dev mode off; your own settings return",
+         ["wispd dev off"], _DEV_SESSION)
+def dev_off(ctx, a):
+    return _dev_switch(ctx, "off")
+
+
+@command("dev status", "Show whether dev mode is on and how many runs are left",
+         ["wispd dev status", "wispd dev status --json"], _DEV_SESSION)
+def dev_status(ctx, a):
+    try:
+        return _dev_switch(ctx, "status")
+    except CliError as e:
+        if e.code != "E_DAEMON_DOWN":
+            raise
+        from .. import devsession
+        s = devsession.status()      # read-only: the session file answers
+        return ctx.emit(s, _dev_session_text(s))
+
+
+def _dev_run_args(p):
+    p.add_argument("file", metavar="FILE",
+                   help="task list: one task per line, # for comments")
+    p.add_argument("--vs", metavar="KEY=VALUE", default=None,
+                   help="run the list a second time with one setting "
+                   "changed (brain.default=openrouter:acme/model) and "
+                   "pair the two runs per task; your config is never "
+                   "written; both count as one run")
+    p.add_argument("--profile", action="append", default=None,
+                   metavar="NAME", dest="profile",
+                   help="gauntlet mode: run each task once per arm "
+                   "profile (a name under docs/dev-tasks/profiles/ or a "
+                   "file path), arms interleaved per task; repeat for "
+                   "more arms. Typing is allowed only into --window "
+                   "addresses; not with --vs")
+    p.add_argument("--window", action="append", default=None,
+                   metavar="ADDR", dest="window",
+                   help="a sandbox window address the gauntlet run may "
+                   "type into (repeatable)")
+    p.add_argument("--spend-file", default=None, metavar="PATH",
+                   help="cumulative gauntlet spend file (default: in "
+                   "the data folder)")
+    p.add_argument("--cap", type=float, default=None, metavar="USD",
+                   help="gauntlet spend cap across every run that "
+                   "shares the spend file (default 10)")
+
+
+@command("dev run", "Run a task list on the live desktop (dev mode must be on)",
+         ["wispd dev run docs/dev-tasks/starter.txt",
+          "wispd dev run tasks.txt --vs brain.default=openrouter:acme/m",
+          "wispd dev run one-task.txt --profile hybrid --profile openrouter"],
+         {"run_id": "str", "tasks": "int"}, args=_dev_run_args)
+def dev_run(ctx, a):
+    import os
+    msg = {"cmd": "dev_run", "path": os.path.abspath(a.file)}
+    if a.profile:
+        from .. import gauntlet
+        for ref in a.profile:      # a name or a file, resolved here
+            try:
+                gauntlet.load_profile(ref)
+            except ValueError as e:
+                raise CliError("E_USAGE", str(e),
+                               "wispd dev run --help") from None
+        msg["profiles"] = [
+            r if gauntlet._NAME.fullmatch(r) else os.path.abspath(r)
+            for r in a.profile]
+        msg["windows"] = list(a.window or [])
+        if a.spend_file:
+            msg["spend_file"] = os.path.abspath(a.spend_file)
+        if a.cap is not None:
+            msg["cap_usd"] = a.cap
+    if a.vs is not None:
+        msg["vs"] = a.vs
+    r = ctx.expect_ok(ctx.send(msg))
+    return ctx.emit({"run_id": r.get("run_id"), "tasks": r.get("tasks")},
+                    f"run {r.get('run_id')} started: {r.get('tasks')} tasks")
+
+
+def _import_labels_args(p):
+    p.add_argument("dir", metavar="DIR",
+                   help="a gauntlet data directory (the one "
+                   "`wispd dev review` was run against)")
+
+
+@command("dev import-labels",
+         "Copy your own labels on gauntlet turns into your data",
+         ["wispd dev import-labels ~/.local/share/wisp-gauntlet/data/wisp"],
+         {"copied": "int", "present": "int", "unlabelled": "int"},
+         args=_import_labels_args)
+def dev_import_labels(ctx, a):
+    import os
+    from .. import devreport
+    try:
+        out = devreport.import_labels(os.path.abspath(a.dir))
+    except ValueError as e:
+        raise CliError("E_USAGE", str(e),
+                       "wispd dev import-labels --help") from None
+    return ctx.emit(out, f"imported {out['copied']} labelled turns "
+                    f"({out['present']} already there, "
+                    f"{out['unlabelled']} not labelled by you)")
+
+
+@command("dev stop", "Stop the running task list after the current task",
+         ["wispd dev stop"], {"stopping": "bool"})
+def dev_stop(ctx, a):
+    r = ctx.expect_ok(ctx.send({"cmd": "dev_stop"}))
+    return ctx.emit({"stopping": bool(r.get("stopping"))},
+                    "stopping after the current task")
+
+
+def _fetch_runs(ctx, run_id):
+    """The run reports: from the daemon, or from the run stores when no
+    daemon is running (read-only)."""
+    try:
+        r = ctx.send({"cmd": "dev_runs",
+                      **({"run_id": run_id} if run_id else {})})
+    except CliError as e:
+        if e.code != "E_DAEMON_DOWN":
+            raise
+        from .. import devreport
+        r = {"ok": True, **devreport.build(run_id or None)}
+    ctx.expect_ok(r)
+    return r.get("runs") or []
+
+
+def _dev_runs_args(p):
+    p.add_argument("run_id", nargs="?", default="", metavar="RUN_ID",
+                   help="one run (default: the newest runs)")
+
+
+@command("dev runs", "Run reports: accuracy, outcome mix, drift, cost and time",
+         ["wispd dev runs", "wispd dev runs --json", "wispd dev runs RUN_ID"],
+         {"runs": "list"}, args=_dev_runs_args)
+def dev_runs(ctx, a):
+    from .. import devreport
+    runs = _fetch_runs(ctx, a.run_id)
+    return ctx.emit({"runs": runs}, devreport.render({"runs": runs}))
+
+
+def _dev_review_args(p):
+    p.add_argument("run_id", nargs="?", default="", metavar="RUN_ID",
+                   help="the run to review (default: the newest)")
+    p.add_argument("-n", type=int, default=5, metavar="N",
+                   help="tasks to show (default 5)")
+    p.add_argument("--set", nargs=2, default=None,
+                   metavar=("TURN", "LABEL"),
+                   help="write your own label for one task: correct or "
+                   "incorrect")
+
+
+def _write_label(ctx, label, turn, note):
+    """Your label through the daemon's turn-scoped label command, or
+    straight to labels.jsonl when no daemon is running."""
+    try:
+        r = ctx.send({"cmd": "label", "label": label, "turn": turn,
+                      "note": note})
+        text = str(r.get("result", "")) if r.get("ok") else \
+            str(r.get("error", "not labelled"))
+        return bool(r.get("ok")) and not text.startswith(
+            ("SKIP", "ERROR", "not_found", "not_ratable")), text
+    except CliError as e:
+        if e.code != "E_DAEMON_DOWN":
+            raise
+        from .. import learn
+        text = learn.label_last(label, note, turn=turn)
+        return learn.label_status(text) == "ok", text
+
+
+def _ask_review(t):
+    print(f"\n[{t['index']}] {t['goal']}")
+    print(f"    the judge says {t['judged']}: {t['reason']}")
+    while True:
+        try:
+            ans = input("    confirm (c), flip (f), skip (s), quit (q)? ")
+        except EOFError:
+            return "q"
+        ans = ans.strip().lower()[:1]
+        if ans in ("c", "f", "s", "q"):
+            return ans
+
+
+@command("dev review", "Check the judge on up to five tasks: confirm or flip",
+         ["wispd dev review", "wispd dev review --json",
+          "wispd dev review --set TURN correct"],
+         {"run_id": "str", "tasks": "list", "labelled": "list"},
+         args=_dev_review_args)
+def dev_review(ctx, a):
+    import sys
+    from .. import devreport
+    runs = _fetch_runs(ctx, a.run_id)
+    if not runs:
+        raise CliError("E_NOT_FOUND", "No dev run to review.",
+                       "wispd dev runs")
+    run = runs[0]
+    rows = run.get("rows") or []
+    if a.set:
+        turn, label = a.set
+        if label not in ("correct", "incorrect"):
+            raise CliError("E_USAGE", "The label is correct or incorrect.",
+                           "wispd dev review --help")
+        if not any(r.get("turn") == turn for r in rows):
+            raise CliError("E_NOT_FOUND", f"No task with turn {turn}.",
+                           "wispd dev review --json")
+        ok, text = _write_label(ctx, label, turn, "dev review")
+        if not ok:
+            raise CliError("E_FAILED", "Nothing was labelled.",
+                           "wispd dev review --json", data={"result": text})
+        return ctx.emit({"run_id": run["run_id"], "tasks": [],
+                         "labelled": [{"turn": turn, "label": label}]},
+                        f"labelled {turn} {label}")
+    pick = devreport.pick_review(rows, a.n)
+    tasks = [{k: t.get(k) for k in ("index", "turn", "goal", "judged",
+                                    "reason", "confirmed")} for t in pick]
+    data = {"run_id": run["run_id"], "tasks": tasks, "labelled": []}
+    tty = bool(sys.stdin and sys.stdin.isatty()) and not ctx.json
+    if not tty:
+        text = "\n".join(f"{t['turn']}  {t['judged']:<11} {t['goal'][:60]}"
+                         for t in tasks) or "nothing left to review"
+        return ctx.emit(data, text)
+    for t in tasks:
+        ans = _ask_review(t)
+        if ans == "q":
+            break
+        if ans == "s":
+            continue
+        label = devreport.label_for(t["judged"],
+                                    "confirm" if ans == "c" else "flip")
+        ok, text = _write_label(ctx, label, t["turn"], "dev review")
+        print(f"    {label}" if ok else f"    not labelled: {text}")
+        if ok:
+            data["labelled"].append({"turn": t["turn"], "label": label})
+    return ctx.emit(data, f"{len(data['labelled'])} labelled")

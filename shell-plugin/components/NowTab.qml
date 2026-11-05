@@ -1,6 +1,7 @@
 // Panel Now tab: the run card first (U8 — intent, live step, interrupt,
 // terminal summary), then goal, what was heard, the answer, the step
-// list, choice chips, stop, and the yes/no label row. Reads everything
+// list, choice chips, stop, the yes/no label row and, after a wrong
+// rating, its one-line note. Reads everything
 // from `service`; actions leave as signals (the Panel wires them to the
 // service).
 import QtQuick
@@ -11,9 +12,15 @@ Column {
   id: root
 
   property var service: null
+  // The service must not reserve a week's delivery while another tab is
+  // selected (or while the panel is closed).
+  onVisibleChanged: { if (service) service.recapVisible = visible; }
+  Component.onCompleted: { if (service) service.recapVisible = visible; }
   signal choose(string pick)
   signal stopClicked()
   signal labelClicked(string verdict)
+  signal noteSaved(string text)
+  signal noteSkipped()
 
   readonly property var tk: service ? service.tokens : ({})
   readonly property var run: service ? service.run : ({
@@ -28,6 +35,7 @@ Column {
     && service.result === "" && service.steps.length === 0
     && service.choices.length === 0 && service.error === ""
     && !(service.note && service.note.rendered)
+    && !service.weeklyRecap
     && !runShown
   readonly property string noteBody: service.note && service.note.rendered
     ? service.note.rendered : ""
@@ -73,7 +81,17 @@ Column {
     onDismissed: root.dismissedRun = root.run.key
   }
 
+  WeeklyRecapCard {
+    visible: card !== null
+    width: parent.width
+    service: root.service
+    card: root.service.weeklyRecap || null
+    onDismiss: root.service.weeklyRecap = null
+    onOffClicked: root.service.disableRecap()
+  }
+
   Text {
+    textFormat: Text.PlainText
     visible: root.service.goal !== ""
     width: parent.width
     text: root.service.ui("ui.goal") + ": " + root.service.goal
@@ -98,6 +116,7 @@ Column {
   // paper surface (gap-closure U2): rendered note (plan strip + tiles /
   // letter). Plan markers clear from `rendered` when the note closes.
   Text {
+    textFormat: Text.PlainText
     visible: root.noteBody !== ""
     width: parent.width
     text: root.noteBody
@@ -108,6 +127,7 @@ Column {
   }
 
   Text {
+    textFormat: Text.PlainText
     visible: root.asking
     width: parent.width
     text: root.service.ui("ui.now.asks") + ": " + root.service.result.slice(9).replace(/^[:\s]+/, "")
@@ -150,6 +170,7 @@ Column {
   }
 
   Text {
+    textFormat: Text.PlainText
     visible: root.actionNack !== null
     width: parent.width
     text: root.actionNack !== null && root.actionNack.message !== ""
@@ -161,6 +182,7 @@ Column {
   }
 
   Text {
+    textFormat: Text.PlainText
     visible: root.service.error !== "" || root.service.status === "error"
     width: parent.width
     text: root.service.errorMessage + (root.service.errorHint !== "" ? ". " + root.service.errorHint : "")
@@ -188,6 +210,7 @@ Column {
     visible: root.judgeable && root.labelAck === null
     spacing: M.spacing.lg
     Text {
+      textFormat: Text.PlainText
       anchors.verticalCenter: parent.verticalCenter
       text: root.service.ui("ui.now.right")
       color: root.tk.inkMuted
@@ -206,7 +229,18 @@ Column {
     }
   }
 
+  // a wrong rating's optional one-line note (state.rate_prompt): Enter
+  // saves it onto the rated turn, Esc skips
+  RateNote {
+    visible: root.service.ratePrompt !== null
+    width: parent.width
+    service: root.service
+    onSaved: function (text) { root.noteSaved(text); }
+    onSkipped: root.noteSkipped()
+  }
+
   Text {
+    textFormat: Text.PlainText
     visible: root.labelAck !== null
     width: parent.width
     text: root.labelAck !== null && !root.labelAck.pending && root.labelAck.message !== ""

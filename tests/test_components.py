@@ -22,10 +22,10 @@ COMP = PLUGIN / "components"
 FIXTURE_SERVICE = ROOT / "tests" / "qml" / "harness" / "FixtureService.qml"
 
 EXPECTED = ["AskChips", "Answer", "AgentRow", "AgentsTab", "BarActions", "BarMark", "BarPill", "Beacon", "Bubble", "Buddy", "Card", "Chip",
-            "Creature", "DrawLayer", "EmptyState", "FirstRunCard",
-            "HealthSection", "Icon", "Mark", "MemoryTab", "NowTab", "OverlayLayer",
-            "PanelTab", "Pill", "RunCard", "ScribbleLayer", "SettingsTab", "StatusLine", "StepRow",
-            "StopControl", "Transcript", "WhatsNewCard",
+            "Creature", "DevTab", "DrawLayer", "EmptyState", "FirstRunCard",
+            "HealthSection", "Icon", "Mark", "MemoryTab", "ModelCard", "NowTab", "OverlayLayer",
+            "PanelTab", "Pill", "RateNote", "RateRow", "RunCard", "ScribbleLayer", "SettingsTab", "StatusLine", "StepRow",
+            "StopControl", "Transcript", "WeeklyRecapCard", "WhatsNewCard",
             # management app views
             "AuditView", "BindsView", "HealthView", "SpendView"]
 
@@ -116,9 +116,13 @@ class TestComponentRules(unittest.TestCase):
         for p in sorted(COMP.glob("*.qml")):
             src = code(p)
             if re.search(r"Animation\.Infinite|loops:\s*Animation", src):
-                self.assertEqual(p.stem, "Creature")
+                # the bar pill's thinking arc is the one other loop (U3):
+                # gated the same way, and only while thinking
+                self.assertIn(p.stem, ("Creature", "BarPill"))
                 self.assertIn("motionMode", src)
                 self.assertIn("Motion.loops", src)
+                if p.stem == "BarPill":
+                    self.assertRegex(src, r'kind === "thinking"')
 
     def test_motion_respects_service_mode(self):
         for p in sorted(COMP.glob("*.qml")):
@@ -201,8 +205,11 @@ class TestPanelW22(unittest.TestCase):
     PANEL = PLUGIN / "Panel.qml"
 
     def test_four_tabs(self):
+        # four tabs with `[dev] panel` off, five (Dev last) with it on
         src = code(self.PANEL)
         self.assertIn('["now", "agents", "memory", "settings"]', src)
+        self.assertIn('baseTabs.concat(["devtab"])', src)
+        self.assertIn("service.devTab", src)
 
     def test_no_timer_or_polling(self):
         src = code(self.PANEL)
@@ -354,6 +361,50 @@ class TestPureLibs(unittest.TestCase):
     def test_pill_radius_square_theme(self):
         self.assertEqual(self.call("M.pillRadius(30, 0)", M="metrics"), 0)
         self.assertEqual(self.call("M.pillRadius(30, 8)", M="metrics"), 15)
+
+    def test_type_scale_meets_the_readability_minimums(self):
+        """R12: body at least 14, every other step at least 12."""
+        fonts = self.call("M.scale.font", M="metrics")
+        mins = self.call("M.scale.minimum", M="metrics")
+        self.assertEqual(mins["body"], 14)
+        self.assertEqual(mins["secondary"], 12)
+        for name, px in fonts.items():
+            self.assertGreaterEqual(px, mins["secondary"], name)
+        for name in ("body", "answer", "title", "heading"):
+            self.assertGreaterEqual(fonts[name], mins["body"], name)
+        # resolved at every supported text scale, no step falls under 12
+        for ts in (0.5, 1, 1.25, 2, 9, "x"):
+            for name in fonts:
+                px = self.call(f"M.fontSize({name!r}, {ts!r})", M="metrics")
+                self.assertGreaterEqual(px, 12, (name, ts))
+
+    def test_space_scale_is_a_four_pixel_rhythm(self):
+        space = self.call("M.scale.space", M="metrics")
+        self.assertEqual(sorted(space.values()),
+                         [4, 8, 12, 16, 24, 32, 48])
+
+    def test_text_scale_grows_text_not_the_hit_target(self):
+        self.assertEqual(self.call("M.fontSize('body', 1.25)", M="metrics"),
+                         18)
+        self.assertEqual(self.call("M.controlHeight(false)", M="metrics"), 32)
+        self.assertEqual(self.call("M.controlHeight(true)", M="metrics"), 28)
+
+    def test_chip_class_controls_keep_their_minimum_height(self):
+        """R13: a control is never under 28 (overlay, bar) or 32 (window)."""
+        mins = self.call("M.scale.minimum", M="metrics")
+        self.assertGreaterEqual(self.call("M.size.control", M="metrics"),
+                                mins["control"])
+        self.assertGreaterEqual(
+            self.call("M.scale.control.window", M="metrics"),
+            mins["windowControl"])
+        for name in ("Chip", "StopControl"):
+            src = code(COMP / f"{name}.qml")
+            self.assertRegex(src, r"implicitHeight:\s*M\.size\.control",
+                             name)
+            for m in re.finditer(r"(?<!implicit)[hH]eight:\s*(\d+)\s*$",
+                                 src, re.M):
+                self.assertGreaterEqual(int(m.group(1)), mins["control"],
+                                        name)
 
 
 class TestPillTable(unittest.TestCase):

@@ -56,11 +56,21 @@ BUILTIN_DENY_APPS = (
     "1password", "bitwarden", "keepassxc", "keepass", "enpass", "lastpass",
     "seahorse", "gnome-keyring", "pinentry", "polkit", "policykit",
     "hyprpolkitagent", "omaseal", "kwalletmanager", "gcr-prompter")
+# Financial / billing surfaces (Stripe, banking, brokerages) where reading,
+# explaining, pointing, scrolling, and switching tabs are allowed, but
+# mutating actions (click, type_text, key, fill) promote from T1 to T2
+# (user confirmation required).
+BUILTIN_SENSITIVE_SURFACES = (
+    "stripe", "billing", "checkout", "plaid", "mercury", "brex",
+    "robinhood", "coinbase")
+SENSITIVE_SECRET_RE = re.compile(
+    r"\b(?:sk_live_[A-Za-z0-9]{10,}|rk_live_[A-Za-z0-9]{10,}|whsec_[A-Za-z0-9]{10,})\b")
 TERMINALS = ("ghostty", "kitty", "alacritty", "foot", "wezterm", "konsole",
              "gnome-terminal", "xterm", "terminator", "tilix", "st-256color")
 _NAMED_KEYS = {"enter", "return", "tab", "esc", "escape", "space", "up",
                "down", "left", "right", "home", "end", "pageup", "pagedown",
-               "backspace", "delete"}
+               "backspace", "delete", "insert",
+               *(f"f{i}" for i in range(1, 13))}
 _XY = re.compile(r"^\s*(-?\d+)\s*,\s*(-?\d+)")
 _VERB = re.compile(r"^[A-Za-z][A-Za-z_-]{0,15}")
 _SALT = os.urandom(8)
@@ -91,6 +101,8 @@ def settings(cfg: dict | None) -> dict:
         "deny": _csv(c.get("deny")),
         "deny_titles": _csv(c.get("deny_titles")),
         "deny_builtin": _truthy(c.get("deny_builtin"), True),
+        "sensitive": _csv(c.get("sensitive")),
+        "sensitive_builtin": _truthy(c.get("sensitive_builtin"), True),
         "per_min": _num(c.get("max_clicks_per_min"), DEFAULT_MAX_PER_MIN),
         "per_turn": _num(c.get("max_per_turn"), DEFAULT_MAX_PER_TURN),
         "dry_run": _truthy(c.get("dry_run")),
@@ -98,6 +110,34 @@ def settings(cfg: dict | None) -> dict:
         "audit": _truthy(c.get("audit"), True),
         "confirm": str(c.get("confirm", "tier")).strip().lower(),
     }
+
+
+def sensitive_surface(cfg: dict | None = None, state=None,
+                      window: dict | None = None) -> str:
+    """Return the matched sensitive token, 'unknown' if live identity
+    cannot be established, or '' for a known non-sensitive surface.
+    Never authorize a mutation from the turn-start state.focus snapshot.
+    Sensitive surfaces allow observation and navigation (T0, scroll, move)
+    while promoting mutating pointer/keyboard actions (click, type_text,
+    key, fill) from T1 to T2 confirmation."""
+    s = settings(cfg)
+    if not s["safety"]:
+        return ""
+    tokens = list(s["sensitive"])
+    if s["sensitive_builtin"]:
+        tokens += list(BUILTIN_SENSITIVE_SURFACES)
+    if not tokens:
+        return ""
+    if window is None:
+        # state.focus is a turn-start snapshot, not the current surface.
+        window = _live_window()
+    if not (window.get("app") or window.get("class")) or not window.get("title"):
+        return "unknown"
+    hay = f"{window.get('app') or window.get('class') or ''} {window.get('title') or ''}".lower()
+    for tok in tokens:
+        if tok and re.search(rf"\b{re.escape(tok)}\b", hay):
+            return tok
+    return ""
 
 
 def effective_tier(name: str, cfg: dict | None) -> str:
@@ -135,6 +175,42 @@ def audit_event(tool: str, app: str, cfg: dict | None = None, *,
             f.write(json.dumps(rec, separators=(",", ":")) + "\n")
     except OSError:
         pass
+
+
+def killed(cfg: dict | None = None, path=None) -> bool:
+    """True while the kill switch is armed (config or the kill file)."""
+    p = pathlib.Path(path) if path else kill_default_path()
+    return settings(cfg)["kill"] or p.exists()
+
+
+# -- fields wisp never fills (B14) -----------------------------------------
+# A browser field holding a password, a one-time code or a card number is
+# read (its label shows) but never filled, whatever the model asks for.
+# browser-extension/lib.js carries the same rule for the page side; a test
+# runs both over one fixture list so they cannot drift.
+SENSITIVE_TYPES = ("password",)
+SENSITIVE_AUTOCOMPLETE = re.compile(
+    r"(?:^|\s)(?:one-time-code|current-password|new-password|cc-[a-z-]+)"
+    r"(?:\s|$)", re.I)
+SENSITIVE_HINT = re.compile(
+    r"(?:pass(?:word|code|phrase)|\bpin\b|one[\s_-]?time|\botp\b|\b2fa\b|"
+    r"\bmfa\b|verification[\s_-]?code|security[\s_-]?code|auth(?:entication)?"
+    r"[\s_-]?code|\bcvv\b|\bcvc\b|card[\s_-]?(?:number|no)|credit[\s_-]?card|"
+    r"\bcc[\s_-]?num)", re.I)
+
+
+def sensitive_field(f: dict) -> bool:
+    """True for a form field that must never be filled: type=password,
+    an autocomplete token for a password, one-time code or card, or a
+    name, id, label or placeholder that says so."""
+    f = f or {}
+    if str(f.get("type", "")).strip().lower() in SENSITIVE_TYPES:
+        return True
+    if SENSITIVE_AUTOCOMPLETE.search(str(f.get("autocomplete", ""))):
+        return True
+    hint = " ".join(str(f.get(k, "")) for k in
+                    ("name", "id", "label", "placeholder", "ariaLabel"))
+    return bool(SENSITIVE_HINT.search(hint))
 
 
 def kill_default_path() -> pathlib.Path:
@@ -269,8 +345,15 @@ class Guard:
     def applies(self, name: str) -> bool:
         if not self.s["safety"] or name not in GUARDED:
             return False
-        if name in POINTER and self.pointer_mode != "drive":
+        if name in POINTER and self.pointer_mode not in ("drive", "auto"):
             return False   # guide mode only moves the ghost cursor
+        if name in ("click", "move") and self.pointer_mode == "auto" \
+                and not self.cfg.get("screen", {}).get("dom_page", ""):
+            # Match tools.system._pointer's real delivery decision. Missing
+            # native injection is NOT enough: Cua may still deliver the input.
+            from . import delivery
+            if delivery.resolve_backend(self.cfg, name) is None:
+                return False  # actual auto fallback is guidance, not input
         return True
 
     # -- policy --------------------------------------------------------

@@ -56,6 +56,13 @@ class Page(unittest.TestCase):
                             r"(?i)<script|<iframe|<form|@import|"
                             r"googletagmanager|google-analytics|plausible|fonts\.g")
 
+    def test_flame_still_is_the_no_javascript_mark_and_icon(self):
+        self.assertIn('<img class="flame" src="wisp-flame-130.png"', self.page)
+        self.assertIn('rel="icon" href="wisp-flame-32.png"', self.page)
+        for name in build.FLAME_STILLS:
+            self.assertTrue((self.out / name).is_file(), name)
+        self.assertEqual(build.third_party(self.page, ""), [])
+
     def test_the_checker_catches_third_party_loads(self):
         bad = ('<img src="https://cdn.example.com/a.png">'
                '<link rel="stylesheet" href="//x.example/s.css">'
@@ -163,10 +170,12 @@ class Compare(unittest.TestCase):
 
 
 class Workflow(unittest.TestCase):
-    def test_deploy_is_gated_and_runs_only_from_master(self):
+    def test_ci_only_produces_an_artifact_after_both_site_lanes_pass(self):
         y = (ROOT / ".github/workflows/pages.yml").read_text()
-        self.assertIn("vars.PAGES_ENABLED == 'true'", y)
-        self.assertIn("github.ref == 'refs/heads/master'", y)
+        self.assertIn("needs: [build, enhanced]", y)
+        self.assertIn("name: wisp-workers-assets", y)
+        self.assertNotIn("actions/deploy-pages", y)
+        self.assertNotIn("pages: write", y)
         self.assertNotIn("cname", y.lower())
         self.assertNotIn("CNAME", "".join(p.name for p in
                                           (ROOT / "site").iterdir()))

@@ -187,6 +187,7 @@ class TurnResult:
     spans: dict = field(default_factory=dict)    # ms timings
     violations: list = field(default_factory=list)
     launch_calls: list = field(default_factory=list)
+    media_calls: list = field(default_factory=list)
     notifications: list = field(default_factory=list)
     fake_calls: dict = field(default_factory=dict)  # cua/hypr/notify/...
     interrupt_fired: bool = False
@@ -253,6 +254,7 @@ def check_expectations(res: TurnResult) -> list:
     want("answer", res.final.get("answer"))
     want("transcript", res.final.get("transcript"))
     want("launch_calls", res.launch_calls)
+    want("media_calls", res.media_calls)
     want("error_code", res.final.get("error_code"))
     if "brain_fallback_from" in ex:
         got = [e.get("fallback_from")
@@ -279,8 +281,16 @@ def check_expectations(res: TurnResult) -> list:
     for sub in ex.get("hypr_requests_contain", []):
         if not any(sub in r for r in res.fake_calls.get("hypr", [])):
             bad.append(f"hypr_requests_contain: {sub!r} never requested")
+    if "groq_tts_calls" in ex:
+        want("groq_tts_calls", len(res.calls.get("groq_tts", [])))
     if "jev_calls" in ex:
         want("jev_calls", len(res.calls.get("jev", [])))
+    elif res.calls.get("jev"):
+        # the Jev router is retired: a turn that reaches the endpoint
+        # without declaring it is a stray hop, not an expectation
+        bad.append(f"jev_calls: {len(res.calls['jev'])} undeclared request(s) "
+                   "to the Jev fake (declare expect.jev_calls for a fixture "
+                   "that exercises Jev, including grounding)")
     if "steps_contain" in ex:
         steps = res.final.get("steps", [])
         if len(steps) != len(ex["steps_contain"]):
@@ -357,7 +367,7 @@ def _build_fakes(fx: dict) -> dict:
     live = {}
     for name in ("jev", "brain", "whisper"):
         live[name] = fakes.KINDS[name](dict(eps.get(name, {})))
-    for name in ("brain2", "uitars"):
+    for name in ("brain2", "uitars", "groq_tts"):
         if name in eps:
             live[name] = fakes.KINDS[name](dict(eps[name]))
     return live
@@ -378,6 +388,7 @@ def child_env(tmp: pathlib.Path, fs: FakeSet, extra: dict | None = None) -> dict
         "WISP_OS": "linux",
         "WISP_FAKE_STT_KEY": "fake-stt-key",
         "OPENROUTER_API_KEY": "fake-openrouter-key",
+        "GROQ_API_KEY": "fake-groq-key",
         "PYTHONPATH": str(ROOT),
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONIOENCODING": "utf-8",
@@ -396,16 +407,6 @@ def child_env(tmp: pathlib.Path, fs: FakeSet, extra: dict | None = None) -> dict
     env.update(fs.env())
     env.update(extra or {})
     return env
-
-
-def _pin_jev_router(fx: dict) -> dict:
-    """Fixtures that script Jev endpoint traffic and set no router keep
-    the old ``jev`` routing (the default is ``act``) until Phase 5."""
-    cfg = fx.get("config", {})
-    if "jev" in fx.get("endpoints", {}) and \
-            "router" not in cfg.get("brain", {}):
-        cfg = {**cfg, "brain": {**cfg.get("brain", {}), "router": "jev"}}
-    return cfg
 
 
 def run_turn(fixture, timeout: float = 60.0,
@@ -441,9 +442,11 @@ def run_turn(fixture, timeout: float = 60.0,
             "real_notify": "notify" in fx.get("fakes", {}),
             "real_hypr": "hypr" in fx.get("fakes", {}),
             "urls": urls,
-            "config": _pin_jev_router(fx),
+            "config": fx.get("config", {}),
             "catalog": fx.get("catalog"),
             "launch_results": fx.get("launch_results"),
+            "tab_results": fx.get("tab_results"),
+            "media_results": fx.get("media_results"),
             "chooser": fx.get("chooser"),
             "notify_now": fx.get("notify_now"),
             "selection": fx.get("selection"),
@@ -479,6 +482,7 @@ def run_turn(fixture, timeout: float = 60.0,
         res.violations = out.get("violations", []) + fs.violations()
         res.fake_calls = fs.calls()
         res.launch_calls = out.get("launch_calls", [])
+        res.media_calls = out.get("media_calls", [])
         res.notifications = out.get("notifications", [])
         res.interrupt_fired = out.get("interrupt_fired", False)
         res.interrupt_t_ms = round((out.get("interrupt_t", 0) - out.get("t0", 0)) * 1000)
@@ -536,4 +540,3 @@ def _spans(res: TurnResult) -> dict:
     if res.events:
         spans["turn_ms"] = res.events[-1]["t_ms"] - res.events[0]["t_ms"]
     return spans
-

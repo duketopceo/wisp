@@ -1,14 +1,20 @@
 """First-run onboarding (W28): `wispd onboard` and the Panel first-run card.
 
-Six steps, in order: mic, models, keys, cua (optional), notifications
-and keybinding (optional). Each is a read-only check plus, at most, one
+Seven steps, in order: mic, models, keys, agents (optional), cua
+(optional), notifications and keybinding (optional). Each is a read-only check plus, at most, one
 explicit side effect:
 
   - models only probes the local ladder over loopback HTTP, and only
     when [local] enabled = "true"; it never starts or stops a service
     (`wispd health start` stays a manual act),
   - keys stores a key only when the user chooses a store and supplies
-    one (never printed); the walk may update its key source,
+    one (never printed): the desktop keyring or the omaseal ref in the
+    key's lookup list, else ~/.config/wisp/.env; the walk may update its
+    key source,
+  - agents downloads the pinned ori and OpenCode (checksummed, user scope,
+    no sudo), signs ori in to OpenRouter and writes the private agent
+    config, only when the walk runs it; it never re-signs an
+    authenticated ori,
   - notifications sends one test notification, and only when the caller
     passes confirm=True,
   - keybinding needs the W24 submap and is "na" while that is absent.
@@ -27,15 +33,17 @@ import getpass
 import json
 import os
 import pathlib
+import re
 import shutil
 import socket
 import subprocess
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
 
-from . import config
+from . import agent_pins, config
 
 # local model ladder, probed over loopback only: (name, url)
 LADDER = (
@@ -62,6 +70,7 @@ STEPS = (
     Step("mic", "microphone"),
     Step("models", "models"),
     Step("keys", "API keys"),
+    Step("agents", "background agents", optional=True),
     Step("cua", "cua pointer driver", optional=True),
     Step("notifications", "notifications", confirm=True),
     Step("keybinding", "keybinding", optional=True),
@@ -94,32 +103,37 @@ def _whisper_ok(cfg: dict) -> bool:
 
 
 def _store_key(key_env: str, value: str) -> str:
-    """Store a key in the configured store or an owner-only .env file.
-
-    Secret-manager commands receive the value on stdin, never in argv.
-    """
+    """Store a key where config.load_env_key will find it and say where:
+    the desktop keyring for a keyring:// ref when secret-tool stores it,
+    the omaseal ref when there is one and omaseal is on PATH, else
+    ~/.config/wisp/.env (0600). A keyring:// source with no plain
+    environment-variable fallback in its list is never written to the
+    plaintext file. The value only ever travels on the store tool's stdin
+    or into the 0600 file. Raises ValueError for a value that cannot be
+    stored safely, OSError/RuntimeError when the store itself failed."""
     if not value or any(c.isspace() for c in value):
         raise ValueError("a key cannot be empty or contain whitespace")
     cands = [c.strip() for c in key_env.split(",") if c.strip()]
-    first_store = next((c for c in cands if c.startswith(
-        ("keyring://", "omaseal://"))), "")
-    if first_store.startswith("keyring://"):
-        keyring = first_store[len("keyring://"):].split("/", 1)
-        exe = shutil.which("secret-tool")
-        if len(keyring) == 2 and all(keyring) and exe:
+    kr = next((c[len("keyring://"):].split("/", 1) for c in cands
+               if c.startswith("keyring://")), None)
+    tool = shutil.which("secret-tool")
+    if kr and len(kr) == 2 and all(kr) and tool:
+        try:
             r = subprocess.run(
-                [exe, "store", "--label=Wisp credential", "service",
-                 keyring[0], "account", keyring[1]], input=value,
-                capture_output=True, text=True,
+                [tool, "store", "--label", f"Wisp {kr[1]}",
+                 "service", kr[0], "account", kr[1]],
+                input=value, capture_output=True, text=True,
                 timeout=config.OMASEAL_TIMEOUT_S)
-            if r.returncode != 0:
-                raise RuntimeError("Secret Service could not store the key")
-            return f"keyring {keyring[0]}/{keyring[1]}"
-        name = config.key_label(key_env)
-        if name.startswith("keyring://"):
-            raise ValueError("Secret Service keyring is unavailable")
-    ref = (first_store[len("omaseal://"):].split("/", 1)
-           if first_store.startswith("omaseal://") else None)
+            if r.returncode == 0:
+                return "desktop keyring"
+        except (OSError, subprocess.SubprocessError):
+            pass  # no Secret Service answering: a configured fallback below
+    if kr and config.key_label(key_env).startswith("keyring://") \
+            and not any(c.startswith("omaseal://") for c in cands):
+        raise RuntimeError("Secret Service could not store the key and "
+                           "the source has no fallback")
+    ref = next((c[len("omaseal://"):].split("/", 1) for c in cands
+                if c.startswith("omaseal://")), None)
     exe = shutil.which("omaseal")
     if ref and len(ref) == 2 and exe:
         r = subprocess.run([exe, "set", ref[0], ref[1]], input=value,
@@ -157,6 +171,97 @@ def _set_key_source(section: str, source: str) -> None:
         raise RuntimeError("the daemon did not acknowledge the config update") from e
     if not reply.get("ok"):
         raise RuntimeError(reply.get("error") or "daemon refused the config update")
+
+
+# the browser sign-in waits this long for ori's localhost callback
+LOGIN_WAIT_S = 300
+_URL = re.compile(r"https?://\S+")
+
+
+def _agents(cfg: dict) -> dict:
+    from . import probes_agents
+    return probes_agents.AgentsProbe().check()
+
+
+def _agent_install(tool: str):
+    from . import agent_install
+    return agent_install.install(tool)
+
+
+def _ori_login_key(ori, key: str) -> tuple:
+    """`ori login --with-key` with the key on stdin only (argv and the
+    returned detail never carry it). -> (ok, detail)."""
+    try:
+        r = subprocess.run([str(ori), "login", "--with-key"],
+                           input=key + "\n", capture_output=True, text=True,
+                           timeout=30,
+                           env=agent_pins.ori_env())
+    except (OSError, subprocess.SubprocessError) as e:
+        return False, f"ori login did not run ({type(e).__name__})"
+    if r.returncode != 0:
+        return False, f"ori login exited {r.returncode}"
+    return True, "signed in with your OpenRouter key"
+
+
+def _open_url(url: str) -> None:
+    from . import mcpauth
+    mcpauth._open_auth_url(url)
+
+
+def _ori_login_browser(ori, opener=_open_url,
+                       timeout_s: float = LOGIN_WAIT_S) -> tuple:
+    """`ori login --no-browser`: open the URL it prints, then wait for its
+    localhost callback. -> (ok, detail)."""
+    try:
+        proc = subprocess.Popen(
+            [str(ori), "login", "--no-browser"], stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, text=True,
+            env=agent_pins.ori_env())
+    except OSError as e:
+        return False, f"ori login did not run ({type(e).__name__})"
+
+    def pump():
+        opened = False
+        for line in proc.stdout:
+            m = None if opened else _URL.search(line)
+            if m:
+                opened = True
+                try:
+                    opener(m.group(0))
+                except Exception:
+                    pass
+
+    t = threading.Thread(target=pump, daemon=True)
+    t.start()
+    try:
+        rc = proc.wait(timeout_s)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        return False, "sign-in did not finish in time"
+    finally:
+        t.join(2)
+        proc.stdout.close()
+    if rc != 0:
+        return False, f"ori login exited {rc}"
+    return True, "signed in through the browser"
+
+
+def _acp_smoke(cfg: dict) -> tuple:
+    """Launch `ori opencode acp` as Wisp will and run `initialize` only
+    (no session, no prompt, no model call). -> (ok, detail)."""
+    from . import acp, agent_ochome
+    argv, env = agent_ochome.launch(cfg, os.environ)
+    conn = None
+    try:
+        conn = acp.AcpConnection(argv, env, cwd=str(pathlib.Path.home()))
+        conn.initialize()
+        return True, "the agent runtime answered"
+    except (acp.AcpError, OSError) as e:
+        return False, f"the agent runtime did not answer ({e})"
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 def _cua(cfg: dict) -> dict:
@@ -209,6 +314,11 @@ class Probes:
     store_key: object = _store_key
     set_source: object = _set_key_source
     secret: object = getpass.getpass
+    agents: object = _agents
+    agent_install: object = _agent_install
+    ori_login_key: object = _ori_login_key
+    ori_login_browser: object = _ori_login_browser
+    acp_smoke: object = _acp_smoke
 
 
 # -- progress -------------------------------------------------------------
@@ -373,6 +483,74 @@ def _check_keys(cfg, p):
         "wispd onboard")
 
 
+# memory reads reach OpenRouter-routed models (KTD11): said wherever the
+# step is described, because this is where the user opts in
+_AGENT_NOTE = ("agents can read your Wisp memory; those reads go to "
+               "OpenRouter-routed models")
+_AGENT_WORDS = {
+    "absent": "not installed",
+    "opencode_v1": "OpenCode 1.x found; Wisp only drives its own pinned "
+                   "OpenCode 2.x",
+    "wrong_version": "installed versions differ from the pin",
+    "not_signed_in": "installed, not signed in to OpenRouter",
+}
+
+
+def _check_agents(cfg, p):
+    r = p.agents(cfg) or {}
+    state = r.get("state", "absent")
+    if state == "ready":
+        return _res("agents", "ok", f"ready; {_AGENT_NOTE}")
+    return _res("agents", "todo",
+                f"{_AGENT_WORDS.get(state, state.replace('_', ' '))}; "
+                f"{_AGENT_NOTE}",
+                r.get("fix") or "wispd install --agents")
+
+
+def _openrouter_key_env(cfg: dict) -> str:
+    from . import brain
+    return brain.provider({**cfg, "brain": {"default": "openrouter"}}
+                          )["key_env"]
+
+
+def _run_agents(cfg, p, r) -> dict:
+    """The agents step's side effects, each stage reporting its own
+    detail: install both pinned tools, sign ori in only when it is not
+    already, smoke-test the launch, then write the private config. A
+    failing stage returns todo and nothing after it runs."""
+    from . import agent_ochome, agent_pins
+
+    def todo(detail):
+        r.update(state="todo", ok=False, detail=detail)
+        return r
+
+    if r["state"] == "ok":
+        return r
+    state = (p.agents(cfg) or {}).get("state", "absent")
+    if state in ("absent", "opencode_v1", "wrong_version"):
+        for tool in ("ori", "opencode"):
+            got = p.agent_install(tool)
+            if got.status == "failed":
+                return todo(got.reason)
+        state = (p.agents(cfg) or {}).get("state", "absent")
+    if state == "not_signed_in":
+        ori = agent_pins.runtime_paths()["ori"]
+        key = p.key(_openrouter_key_env(cfg))
+        ok, detail = p.ori_login_key(ori, key) if key \
+            else p.ori_login_browser(ori)
+        if not ok:
+            return todo(detail)
+        state = (p.agents(cfg) or {}).get("state", "absent")
+    if state != "ready":
+        return todo(f"agent runtime is {state.replace('_', ' ')}")
+    ok, detail = p.acp_smoke(cfg)
+    if not ok:
+        return todo(detail)
+    agent_ochome.write_config(cfg)
+    r.update(state="ok", ok=True, detail=f"ready; {_AGENT_NOTE}", fix="")
+    return r
+
+
 def _check_cua(cfg, p):
     r = p.cua(cfg) or {}
     state = r.get("state", "absent")
@@ -401,7 +579,8 @@ def _check_keybinding(cfg, p):
 
 
 _CHECKS = {"mic": _check_mic, "models": _check_models,
-           "keys": _check_keys, "cua": _check_cua,
+           "keys": _check_keys, "agents": _check_agents,
+           "cua": _check_cua,
            "notifications": _check_notifications,
            "keybinding": _check_keybinding}
 
@@ -441,6 +620,11 @@ def run_step(step: str, cfg: dict, probes: Probes, progress: Progress,
             return r
         r.update(state="ok", ok=True, detail="test notification sent",
                  fix="")
+    if step == "agents" and r["state"] == "todo":
+        try:
+            r = _run_agents(cfg, probes, r)
+        except Exception as e:
+            r.update(detail=f"agent setup failed: {type(e).__name__}")
     if r["state"] == "ok":
         progress.mark(step)
         r["done"] = True
@@ -580,30 +764,48 @@ def _offer_keys(cfg: dict, probes: Probes, ask, out):
             out(f"  not stored: {e}")
 
 
-def walk(cfg: dict, probes: Probes, progress: Progress, ask, out) -> dict:
+def walk(cfg: dict, probes: Probes, progress: Progress, ask, out, *,
+         color: bool = False, glyphs: bool = False, version: str = "",
+         width: int = 80) -> dict:
     """Offer each unfinished step in turn. `ask(prompt)` returns the
     answer (EOFError quits); `out(line)` prints. y runs the step, s or n
-    skips it (nothing written), q stops. -> {done, skipped, failed, na,
+    skips it (nothing written), q stops. The lit step (one dot) moves down
+    the list; every other line stays quiet. -> {done, skipped, failed, na,
     resumed, quit, finished}."""
+    from .cli import onboard_view as ov
     done0 = dict(progress.done)
     res = {"done": [], "skipped": [], "failed": [], "na": [],
            "resumed": [s.id for s in STEPS if s.id in done0],
            "quit": False, "finished": False}
+    checks = {s.id: check(s.id, cfg, probes) for s in STEPS}
+    live = [s for s in STEPS if checks[s.id]["state"] != "na"]
+    for line in ov.opening(len(live), color=color, glyphs=glyphs,
+                           version=version, width=width):
+        out(line)
+    k = 0
     for s in STEPS:
         if s.id in done0:
+            if checks[s.id]["state"] != "na":
+                k += 1
             continue
         r = check(s.id, cfg, probes)
         if r["state"] == "na":
-            out(f"{s.title}: {r['detail']}")
+            out(ov.result_line("na", f"{s.title}: {r['detail']}",
+                               color=color))
             res["na"].append(s.id)
             continue
-        out(f"{s.title}: {r['detail']}")
+        k += 1
+        for line in ov.step_header(s.title, k, len(live), color=color,
+                                   glyphs=glyphs, first=(k == 1)):
+            out(line)
+        for line in ov.detail_lines(r["detail"], width):
+            out(line)
         if s.confirm:
             prompt = f"Send a test {s.title[:-1]} now? [y/N/s/q] "
         else:
             prompt = f"Check {s.title} now? [Y/s/q] "
         try:
-            ans = ask(prompt).strip().lower()
+            ans = ask("  " + prompt).strip().lower()
         except EOFError:
             res["quit"] = True
             break
@@ -618,13 +820,14 @@ def walk(cfg: dict, probes: Probes, progress: Progress, ask, out) -> dict:
             _offer_keys(cfg, probes, ask, out)
         got = run_step(s.id, cfg, probes, progress, confirm=True)
         if got["done"]:
-            out(f"  ok: {got['detail']}")
-            out(f"  undo with: wispd onboard --undo {s.id}")
+            out(ov.result_line("done", got["detail"], color=color))
+            out(ov.result_line("undo", f"wispd onboard --undo {s.id}",
+                               color=color))
         else:
             res["failed"].append(s.id)
-            out(f"  not yet: {got['detail']}")
+            out(ov.result_line("fail", got["detail"], color=color))
             if got["fix"]:
-                out(f"  Try: {got['fix']}")
+                out(ov.result_line("fix", got["fix"], color=color))
     now_done = progress.done
     res["done"] = [s.id for s in STEPS if s.id in now_done]
     if _required_done(now_done) and not progress.finished:

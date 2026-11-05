@@ -78,6 +78,14 @@ class WindowsInSnapshot(unittest.TestCase):
         self.assertIn("[windows]", out)
         self.assertIn("ws4=godot:proj", out)
 
+    def test_focus_includes_browser_profile_when_detected(self):
+        cfg = {"act": {"context": "minimal"}, "agent": {}}
+        with mock.patch("wisp.platform.active_window",
+                        return_value={"class": "BrowserOS",
+                                      "title": "YouTube — Personal"}):
+            out = context.snapshot(cfg)
+        self.assertIn("profile=personal", out)
+
 
 if __name__ == "__main__":
     unittest.main()

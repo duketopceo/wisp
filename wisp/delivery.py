@@ -40,7 +40,7 @@ MODES = ("auto", "background", "pointer")
 # virtual-keyboard typers, wheel scrolls, DOM ops, window/socket ops
 _BACKGROUND_TOOLS = frozenset({
     "type_text", "key", "fill", "scroll",
-    "focus", "workspace", "launch", "close",
+    "focus", "tab", "workspace", "launch", "close", "media",
 })
 _POINTER_TOOLS = frozenset({"click", "move"})
 
@@ -74,6 +74,10 @@ def backend_delivery(backend: str | None, op: str) -> str:
     table, not the promise. `op` is "click" | "move"."""
     if backend in (None, "", "guide"):
         return "guide"
+    if backend == "vpointer":
+        # the isolated instance's own cursor (wisp.vpointer): the
+        # owner's real pointer is on another compositor entirely
+        return "background"
     if backend == "cua" and op == "click":
         # zwlr_virtual_pointer: the click lands at the agent cursor —
         # the user's real pointer never moves (left button only).
@@ -117,6 +121,7 @@ def planned(name: str, cfg: dict | None) -> str:
         return ""
     if (cfg or {}).get("screen", {}).get("dom_page"):
         return "background"
-    if (cfg or {}).get("pointer", {}).get("mode") != "drive":
+    mode = (cfg or {}).get("pointer", {}).get("mode", "guide")
+    if mode not in ("drive", "auto"):
         return "guide"
     return backend_delivery(resolve_backend(cfg, name), name)

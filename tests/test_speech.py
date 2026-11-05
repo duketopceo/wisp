@@ -4,8 +4,9 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
-from wisp import speech
+from wisp import platform, speech
 
 
 def _proc():
@@ -63,7 +64,7 @@ class SpeechTests(unittest.TestCase):
             cmd = f'"{sys.executable}" -c "{py_code}" "{out}" {{text}}'
         else:
             script = pathlib.Path(self.dir.name) / "echo.sh"
-            script.write_text(f'#!/bin/sh\necho "$1" > {out}\n')
+            script.write_text(f'#!/bin/sh\necho "$(cat)" > {out}\n')
             script.chmod(script.stat().st_mode | stat.S_IXUSR)
             cmd = f"{script} {{text}}"
         speech.speak("hello world", self.cfg(cmd))
@@ -108,7 +109,7 @@ class SentencePointsTests(unittest.TestCase):
         self.dir = tempfile.TemporaryDirectory()
         self.log = pathlib.Path(self.dir.name) / "spoken.txt"
         script = pathlib.Path(self.dir.name) / "tts.sh"
-        script.write_text(f'#!/bin/sh\necho "$1" >> {self.log}\nsleep 0.2\n')
+        script.write_text(f'#!/bin/sh\necho "$(cat)" >> {self.log}\nsleep 0.2\n')
         script.chmod(script.stat().st_mode | stat.S_IXUSR)
         self.script = str(script)
         self.calls = []
@@ -210,7 +211,7 @@ class SentencePointsTests(unittest.TestCase):
         # sentence 2 cannot be dequeued) until the test releases it.
         gate = pathlib.Path(self.dir.name) / "gate"
         gated = pathlib.Path(self.dir.name) / "gated.sh"
-        gated.write_text(f'#!/bin/sh\necho "$1" >> {self.log}\n'
+        gated.write_text(f'#!/bin/sh\necho "$(cat)" >> {self.log}\n'
                          f'while [ ! -e {gate} ]; do sleep 0.02; done\n')
         gated.chmod(gated.stat().st_mode | stat.S_IXUSR)
         sp = self.speaker(cmd=str(gated))
@@ -248,6 +249,76 @@ class SentencePointsTests(unittest.TestCase):
         sp.feed(self.TEXT + " ", [(8, "p1")])
         sp.finish(self.TEXT, marks=[(19, "p2")])
         self.assertEqual(self.calls, [])
+
+SECRET = "zebra-quartz-7731 private sentence"
+
+
+class PrivateTextTests(unittest.TestCase):
+    """The reply text never appears in a TTS child's command line: other
+    local accounts can read argv while the child runs, so the text goes
+    to stdin."""
+
+    def setUp(self):
+        speech.stop()
+        self.dir = tempfile.TemporaryDirectory()
+        d = pathlib.Path(self.dir.name)
+        self.cmdlines, self.stdins = d / "cmdlines", d / "stdins"
+        script = d / "tts.sh"
+        script.write_text(
+            "#!/bin/sh\n"
+            f'tr "\\0" " " < /proc/$$/cmdline >> {self.cmdlines}\n'
+            f'echo >> {self.cmdlines}\n'
+            f'cat >> {self.stdins}\n'
+            f'echo >> {self.stdins}\n')
+        script.chmod(script.stat().st_mode | stat.S_IXUSR)
+        self.script = str(script)
+
+    def tearDown(self):
+        speech.stop()
+        self.dir.cleanup()
+
+    def wait(self, path, n):
+        for _ in range(100):
+            if path.exists() and path.read_text().count("\n") >= n:
+                return path.read_text()
+            time.sleep(0.05)
+        self.fail(f"{path.name} never got {n} lines")
+
+    def check(self, *needles):
+        argv = self.wait(self.cmdlines, 1)
+        said = self.wait(self.stdins, 1)
+        self.assertNotIn("zebra-quartz", argv)
+        for n in needles:
+            self.assertIn(n, said)
+
+    def test_a_complete_reply_goes_to_stdin_not_argv(self):
+        cfg = {"voice": {"enabled": "true", "cmd": self.script}}
+        proc = speech.speak(SECRET, cfg)
+        proc.wait(timeout=5)
+        self.check(SECRET)
+
+    def test_a_text_placeholder_is_not_put_on_argv(self):
+        cfg = {"voice": {"enabled": "true",
+                         "cmd": f"{self.script} {{text}}"}}
+        proc = speech.speak(SECRET, cfg)
+        proc.wait(timeout=5)
+        self.check(SECRET)
+
+    def test_streamed_sentences_go_to_stdin_not_argv(self):
+        cfg = {"voice": {"enabled": "true", "cmd": self.script}}
+        sp = speech.SentenceSpeaker(cfg)
+        sp.feed("zebra-quartz-7731 one. zebra-quartz-7731 two. ")
+        sp.finish("zebra-quartz-7731 one. zebra-quartz-7731 two.")
+        sp._worker.join(timeout=5)
+        self.wait(self.stdins, 2)
+        self.assertNotIn("zebra-quartz", self.wait(self.cmdlines, 2))
+        self.assertEqual(self.stdins.read_text().count("zebra-quartz"), 2)
+
+    def test_the_builtin_engine_reads_stdin(self):
+        with mock.patch.object(platform, "tts_binary",
+                               return_value="espeak-ng"):
+            argv = speech._argv({"voice": {"enabled": "true"}})
+        self.assertEqual(argv, ["espeak-ng", "--stdin"])
 
 
 if __name__ == "__main__":

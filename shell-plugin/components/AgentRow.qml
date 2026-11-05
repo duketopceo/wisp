@@ -1,5 +1,6 @@
 // Agent row: name, state word, elapsed time and the last log line.
-// States: queued, running (ember tick), done, failed, cancelled.
+// States: queued, running (ember tick), done, failed, cancelled,
+// interrupted (waiting on the user to say continue).
 import QtQuick
 import "../lib/metrics.js" as M
 
@@ -15,7 +16,8 @@ Item {
 
   readonly property var tk: service ? service.tokens : ({})
   readonly property var tokenFor: ({ queued: "inkMuted", running: "ember",
-    done: "ok", failed: "fail", cancelled: "inkMuted" })
+    done: "ok", failed: "fail", cancelled: "inkMuted",
+    interrupted: "needsYou" })
 
   implicitWidth: 340
   implicitHeight: col.implicitHeight + 2 * M.spacing.md
@@ -47,6 +49,7 @@ Item {
         color: root.tk.ember
       }
       Text {
+        textFormat: Text.PlainText
         id: title
         width: parent.width - stateWord.implicitWidth - clock.implicitWidth - (root.unread ? unreadDot.width + M.spacing.lg : 0) - 2 * M.spacing.lg
         text: root.name
@@ -56,6 +59,7 @@ Item {
         font.pixelSize: M.font.body
       }
       Text {
+        textFormat: Text.PlainText
         id: stateWord
         text: root.service.ui("ui.agent." + root.state)
         color: root.tk[root.tokenFor[root.state] || "inkMuted"]
@@ -63,6 +67,7 @@ Item {
         font.pixelSize: M.font.label
       }
       Text {
+        textFormat: Text.PlainText
         id: clock
         text: M.elapsed(root.seconds)
         color: root.tk.inkMuted
@@ -72,6 +77,7 @@ Item {
     }
 
     Text {
+      textFormat: Text.PlainText
       visible: root.line !== ""
       width: parent.width
       text: root.line

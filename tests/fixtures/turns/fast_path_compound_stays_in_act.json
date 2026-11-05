@@ -1,0 +1,43 @@
+{
+  "name": "fast_path_compound_stays_in_act",
+  "scenario": "compound request skips the fast path",
+  "description": "Default router: 'open firefox and go to github' is compound, so it is not a fast-path launch. It enters the act loop (ACTED), where the brain makes the launch step.",
+  "audio": "ask.wav",
+  "endpoints": {
+    "whisper": {
+      "transcript": "open firefox and go to github"
+    },
+    "brain": {
+      "responses": [
+        {
+          "tool_calls": [
+            {
+              "name": "launch",
+              "arg": "firefox"
+            }
+          ]
+        },
+        {
+          "content": "Opened firefox."
+        }
+      ]
+    }
+  },
+  "catalog": {
+    "firefox": {
+      "launch": "firefox",
+      "cues": "web browser"
+    }
+  },
+  "launch_results": {
+    "firefox": "LAUNCHED firefox -> firefox"
+  },
+  "expect": {
+    "jev_calls": 0,
+    "brain_calls": 2,
+    "launch_calls": [
+      "firefox"
+    ],
+    "result_prefix": "ACTED (1 steps)"
+  }
+}

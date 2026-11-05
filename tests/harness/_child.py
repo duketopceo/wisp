@@ -21,11 +21,11 @@ def main(spec_path: str) -> int:
     spec = json.loads(pathlib.Path(spec_path).read_text())
     guard = NetworkGuard()
     guard.install()
-    out = {"events": [], "launch_calls": [], "notifications": [],
+    out = {"events": [], "launch_calls": [], "media_calls": [], "notifications": [],
            "interrupt_fired": False, "violations": [], "final": {}}
     result_path = pathlib.Path(spec["result"])
     try:
-        from wisp import config, pipeline, state as state_mod, \
+        from wisp import cancel, config, pipeline, state as state_mod, \
             tools, trace as trace_mod
         urls = spec["urls"]
         config.JEV_ENDPOINT = urls["jev"] + "/api/alpha/decisions"
@@ -33,6 +33,18 @@ def main(spec_path: str) -> int:
         cfg = config.load_config()
         cfg.setdefault("agent", {}).update({"screenshots": "false"})
         cfg.setdefault("voice", {})["enabled"] = "false"
+        # Groq talk-back only for a fixture that declares the fake Groq
+        # endpoint; every other fixture keeps its espeak / [voice] cmd
+        cfg["voice"]["provider"] = "espeak"
+        if "groq_tts" in urls:
+            from wisp import tts_groq
+            cfg["voice"].update(provider="groq", tts_base_url=urls["groq_tts"]
+                                + "/openai/v1")
+            # no desktop here: a child that sleeps the WAV's real length
+            _play = ("import sys, time, wave; w = wave.open(sys.argv[1]); "
+                     "time.sleep(w.getnframes() / w.getframerate())")
+            tts_groq.player_argv = lambda path: [sys.executable, "-c",
+                                                 _play, path]
         cfg["stt"] = {"provider": "openai", "base_url": urls["whisper"],
                       "model": "fake", "key_env": "WISP_FAKE_STT_KEY",
                       "prompt": "static", "vocab_dynamic": "false"}
@@ -110,6 +122,21 @@ def main(spec_path: str) -> int:
                 arg, f"LAUNCHED {arg} (replay stub)")
         desc = tools.REGISTRY["launch"][2]
         tools.REGISTRY["launch"] = (fake_launch, "safe", desc)
+
+        # `tab` stub: no browser or CDP port in replay
+        def fake_tab(arg):
+            return (spec.get("tab_results") or {}).get(
+                arg, f"SWITCHED tab {arg!r} (replay stub)")
+        tab_entry = tools.REGISTRY["tab"]
+        tools.REGISTRY["tab"] = (fake_tab,) + tuple(tab_entry[1:])
+
+        # `media` stub: no Omarchy shell / player in replay
+        def fake_media(arg):
+            out["media_calls"].append(arg)
+            return (spec.get("media_results") or {}).get(
+                arg, f"MEDIA {arg} (replay stub)")
+        media_entry = tools.REGISTRY["media"]
+        tools.REGISTRY["media"] = (fake_media,) + tuple(media_entry[1:])
 
         # -- observe the StateBus (U2) ---------------------------------
         # Events come from a bus subscription: every write, once, in seq
@@ -241,9 +268,30 @@ def main(spec_path: str) -> int:
         chooser = spec.get("chooser")
         wait = None
         if chooser is not None:
-            def wait(timeout, **_kw):
+            def wait(timeout, prompt_id=None, options=None):
                 time.sleep(chooser.get("delay_ms", 0) / 1000.0)
-                return chooser.get("pick")
+                pick = chooser.get("pick")
+                if not pick:
+                    return None
+                # Use the real broker so replay cannot bypass stale-pick
+                # protections that the live IPC path enforces.
+                broker = cancel.PromptBroker()
+                def offer():
+                    result = broker.offer(pick, prompt_id=prompt_id)
+                    if not result.get("ok"):
+                        trace_mod.emit(st.current_turn(), "choice_rejected", "act",
+                                   {"pick": pick, "options": options,
+                                    "prompt_id": prompt_id})
+                        broker.offer("", prompt_id=prompt_id)
+                timer = threading.Timer(0.01, offer)
+                timer.daemon = True
+                timer.start()
+                try:
+                    return broker.waiter()(
+                        min(timeout, 0.25), prompt_id=prompt_id,
+                        options=options)
+                finally:
+                    timer.join(timeout=0.5)
 
         after = spec.get("interrupt_after_ms")
         if after is not None and (rel_delta is not None

@@ -99,3 +99,60 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## ori and OpenCode (downloaded, not bundled)
+
+`wispd install --agents` and the onboarding agents step download these two
+programs from their own release pages and run them as separate processes.
+Wisp does not include, modify or redistribute them; each keeps its own
+license, shipped with the download.
+
+- ori, Apache-2.0, `OpenRouterLabs/ori-releases` on GitHub.
+- OpenCode, MIT, `anomalyco/opencode` on GitHub.
+
+## three.js GLTFLoader (website flame)
+
+The homepage flame (`site-3d/flame.mjs`) loads `assets/brand/wisp-flame` with
+three.js 0.170.0 `examples/jsm/loaders/GLTFLoader.js` and
+`examples/jsm/utils/BufferGeometryUtils.js`, vendored in `site-3d/vendor/loaders/`
+and `site-3d/vendor/utils/` from the same pinned `three@0.170.0` package as
+`site-3d/vendor/three.module.js`. They are unmodified except that the bare
+`'three'` import now points at `../three.module.js` (no import map, which the
+site's CSP would block). MIT, Copyright (c) 2010-2024 three.js authors; the
+license is in `site-3d/vendor/THREE-LICENSE.txt`.
+
+## ThreeUI Community (website light)
+
+The guiding-light preview at `site-3d/light/` uses the `energy-orb` look
+from ThreeUI Community (https://github.com/MengTo/threeui) as a design
+reference (shader rewritten; the light's shader is original code), and adapts
+the `lumen-cta` ghost-button style. No ThreeUI Pro or remote catalog media is
+used. The license is reproduced
+verbatim, and again in `site-3d/vendor/THREEUI-LICENSE.txt`.
+
+```
+MIT License
+
+Copyright (c) 2026 Meng To
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+Its Newsreader typeface (SIL OFL 1.1, `site-3d/vendor/OFL-Newsreader.txt`) is
+self-hosted, as is Outfit on the main page.

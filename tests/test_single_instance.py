@@ -75,7 +75,7 @@ class Lock(unittest.TestCase):
         a = src.index("def run_daemon")
         body = src[a:src.index("\ndef ", a + 10)]
         self.assertLess(body.index("instance.acquire()"),
-                        body.index("private.harden()"))
+                        body.index("_apply_private()"))
         self.assertLess(body.index("instance.acquire()"),
                         body.index("server.start()"))
 

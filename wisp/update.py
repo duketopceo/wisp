@@ -4,37 +4,56 @@ would change, and install only on an explicit yes.
 Never automatic: nothing in the daemon calls this. A download is checked
 against the SHA-256 the release publishes (the asset digest GitHub
 records, or a `SHA256SUMS` asset, or `--sha256`); a mismatch or a missing
-digest aborts before anything is unpacked into the install. `--dry-run`
-downloads into a temp dir, prints version, digest and the files that
-would change, and deletes it again: nothing persistent is written.
+digest aborts before anything is unpacked into the install. Every download
+also requires independent GitHub/Sigstore attestation verification using
+the trusted installed bootstrap helper and independently installed gh,
+bound to this repository's release workflow, exact tag and source commit.
+Missing authentication cannot be bypassed with --force or --sha256.
+`--dry-run` downloads into a temp dir, prints authentication, digest and
+files that would change, and deletes it again: nothing persistent is written.
 
 It also never goes backwards. The release is compared with what is
 installed (version numbers when the install is a release, otherwise the
 installed commit against the release tag through GitHub's compare API);
 a release that is older, the same, diverged from the install, or cannot be
 compared is refused before anything is downloaded, unless `--force`.
+
+An applied update is a transaction over the Wisp-managed files in the opt
+dir (never config, keys, memories or other user data): they are copied to
+`~/.local/state/wisp/update/<id>/` with a manifest before anything is
+replaced, checked against the verified tree afterwards, and `--rollback`
+restores them. Attributable shell plugin files and selected unit templates
+are included. Desktop entries/icons, launchers, binds and service-manager
+state remain outside this managed-file backup, not a filesystem snapshot.
 """
 import hashlib
 import json
 import os
 import pathlib
+import shutil
 import platform as _plat
 import re
 import subprocess
 import sys
 import tarfile
 import tempfile
+import time
+import types
 import urllib.parse
 import urllib.request
 
-from . import config, deploy
+from . import config, deploy, preflight, svc
 
 REPO = "duketopceo/wisp"
 API = f"https://api.github.com/repos/{REPO}/releases/latest"
+# GitHub's "latest" never names a pre-release, so an install that is on a
+# release candidate looks for the next one in the full list instead
+API_LIST = f"https://api.github.com/repos/{REPO}/releases?per_page=30"
 DOWNLOAD_PREFIX = f"https://github.com/{REPO}/releases/download/"
 MAX_BYTES = 400 * 1024 * 1024
-TRACKED_DIRS = ("wisp", "shells", "shell-plugin")
-TRACKED_FILES = ("wispd",)
+TRACKED_DIRS = ("wisp", "shells", "shell-plugin", "assets", "bin", "scripts",
+                "docs")
+TRACKED_FILES = ("wispd", "CHANGELOG.md", "release.json", "payload.json")
 SHOW = 20
 
 
@@ -110,13 +129,44 @@ _VER = re.compile(r"^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?(-[0-9A-Za-z.\-]+)?(\+.*)?$"
 
 
 def parse_version(s) -> tuple | None:
-    """(major, minor, patch, release-flag) of "v1.2.3"; a pre-release
-    ("1.2.3-rc1") sorts below its release. None when `s` is no version."""
+    """(major, minor, patch, release-flag, pre-release ids) of "v1.2.3",
+    ordered per semver: a pre-release ("1.2.3-rc.2") sorts below its
+    release, and its dot-separated ids compare numerically when numeric
+    ("rc.2" < "rc.10"). None when `s` is no version."""
     m = _VER.match(str(s or "").strip())
     if not m:
         return None
     nums = tuple(int(g or 0) for g in m.groups()[:3])
-    return nums + (0 if m.group(4) else 1,)
+    if not m.group(4):
+        return nums + (1, ())
+    ids = tuple((0, int(x), "") if x.isdigit() else (1, 0, x)
+                for x in m.group(4)[1:].split("."))
+    return nums + (0, ids)
+
+
+def is_prerelease(s) -> bool:
+    v = parse_version(s)
+    return bool(v) and v[3] == 0
+
+
+def latest_release(fetch_json=None, installed=None) -> dict:
+    """The release an update should consider: GitHub's latest, or, when
+    the install is a pre-release, the highest-versioned published release
+    including pre-releases."""
+    fetch_json = fetch_json or globals()["fetch_json"]
+    rec = installed if installed is not None else installed_record()
+    if not is_prerelease(rec.get("ref")):
+        return fetch_json(API)
+    best, best_v = None, None
+    for r in fetch_json(API_LIST) or []:
+        if not isinstance(r, dict) or r.get("draft"):
+            continue
+        v = parse_version(r.get("tag_name"))
+        if v and (best_v is None or v > best_v):
+            best, best_v = r, v
+    if best is None:
+        raise UpdateError("No published release was found.")
+    return best
 
 
 def ordering(tag: str, *, fetch_json=fetch_json, installed=None) -> str:
@@ -188,23 +238,24 @@ def _hashes(base: pathlib.Path) -> dict:
         for p in sorted(top.rglob("*")) if top.is_dir() else []:
             if p.is_file() and "__pycache__" not in p.parts \
                     and not p.is_symlink():
-                out[str(p.relative_to(base))] = hashlib.sha256(
-                    p.read_bytes()).hexdigest()
+                out[str(p.relative_to(base))] = _sha(p)
     for f in TRACKED_FILES:
         p = base / f
         if p.is_file():
-            out[f] = hashlib.sha256(p.read_bytes()).hexdigest()
+            out[f] = _sha(p)
     return out
 
 
 def diff(new_root: pathlib.Path, installed: pathlib.Path) -> dict:
     new, old = _hashes(new_root), _hashes(installed)
-    # shell-plugin is installed elsewhere on some setups: compare only
-    # directories the install actually has
-    tracked = {d for d in TRACKED_DIRS if (installed / d).is_dir()} \
-        or set(TRACKED_DIRS)
+    # Plugin is external on installed systems; all core resources (including
+    # newly introduced resource directories) still belong in the preview.
+    tracked = set(TRACKED_DIRS)
+    if installed.is_dir() and any(installed.iterdir()) \
+            and not (installed / "shell-plugin").is_dir():
+        tracked.discard("shell-plugin")
     new = {k: v for k, v in new.items()
-           if k in TRACKED_FILES or k.split("/")[0] in tracked}
+           if k in TRACKED_FILES or any(k.startswith(d + "/") for d in tracked)}
     return {"added": sorted(k for k in new if k not in old),
             "changed": sorted(k for k in new if k in old and new[k] != old[k]),
             "removed": sorted(k for k in old if k not in new)}
@@ -215,6 +266,8 @@ def describe(res: dict) -> str:
     lines = [f"latest release: {res['version']} ({res['asset']})",
              f"installed:      {res['installed_version']}",
              f"sha256:         {res['sha256']}  (verified, {res['digest_source']})",
+             f"authentication: GitHub/Sigstore release.yml, exact tag and "
+             f"source {res['source_commit']} (verified)",
              f"files:          {len(ch['added'])} added, "
              f"{len(ch['changed'])} changed, {len(ch['removed'])} removed"]
     lines.append("scope:          file diff covers the core install only; "
@@ -240,6 +293,18 @@ def describe(res: dict) -> str:
 def _extract(tarball, dest: pathlib.Path) -> pathlib.Path:
     try:
         with tarfile.open(tarball) as tf:
+            seen, total = set(), 0
+            for m in tf:
+                p = pathlib.PurePosixPath(m.name)
+                if p.is_absolute() or ".." in p.parts or "\\" in m.name \
+                        or not (m.isfile() or m.isdir()) \
+                        or m.name in seen or len(seen) >= 50000:
+                    raise UpdateError("The release contains an unsafe archive member.")
+                seen.add(m.name)
+                total += m.size
+                if total > 1024 * 1024 * 1024:
+                    raise UpdateError("The expanded release exceeds the size limit.")
+            # All members validated before the first extraction write.
             tf.extractall(dest, filter="data")
     except (tarfile.TarError, OSError) as e:
         raise UpdateError(f"The download is not a valid archive ({e}).")
@@ -249,6 +314,30 @@ def _extract(tarball, dest: pathlib.Path) -> pathlib.Path:
     return tops[0]
 
 
+def _trusted_bootstrap():
+    """Load only this installation's helper, never a downloaded candidate.
+
+    Compile the local module directly so dry runs do not create bytecode files.
+    Its trust is inherited from the running installation/source checkout.
+    """
+    base = pathlib.Path(__file__).resolve().parents[1]
+    helper = _safe(base, "scripts/bootstrap/install.py")
+    if helper is None or not helper.is_file():
+        raise UpdateError("Authentication unavailable: trusted local bootstrap "
+                          "helper missing or unsafe. Review a source checkout "
+                          "manually; unsigned releases cannot be auto-updated.")
+    module = types.ModuleType("wisp_trusted_bootstrap")
+    module.__file__ = str(helper)
+    try:
+        exec(compile(helper.read_bytes(), str(helper), "exec"), module.__dict__)
+        if module.REPO != REPO or not callable(module.verify_attestation):
+            raise ValueError("incompatible verification helper")
+    except (OSError, SyntaxError, AttributeError, ValueError) as exc:
+        raise UpdateError("Authentication unavailable: repair the trusted "
+                          "local bootstrap helper from reviewed source.") from exc
+    return module
+
+
 def check(*, sha256: str | None = None, fetch_json=fetch_json,
           fetch_file=fetch_file, fetch_text=fetch_text, installed=None,
           workdir=None, refuse_older: bool = False) -> dict:
@@ -256,7 +345,7 @@ def check(*, sha256: str | None = None, fetch_json=fetch_json,
     Raises UpdateError before anything outside `workdir` is touched; with
     `refuse_older` a release that is not newer than the install is refused
     before the download."""
-    release = fetch_json(API)
+    release = latest_release(fetch_json, installed)
     tag = str(release.get("tag_name") or "")
     if not tag:
         raise UpdateError("The latest release has no tag.")
@@ -269,17 +358,50 @@ def check(*, sha256: str | None = None, fetch_json=fetch_json,
     if not asset:
         raise UpdateError(f"Release {tag} has no {name}.")
     want, source = _digest_for(asset, release, name, fetch_text, sha256)
+    trusted = _trusted_bootstrap()
+    verifier = shutil.which("gh")
+    if not verifier:
+        raise UpdateError("Authentication unavailable: independently install gh "
+                          "with attestation support, or manually review source. "
+                          "No checksum-only update is permitted.")
+    bundle_name = name + ".sigstore.json"
+    bundle_asset = next((a for a in release.get("assets", [])
+                         if a.get("name") == bundle_name), None)
+    if not bundle_asset:
+        raise UpdateError("Release lacks its public attestation bundle; unsigned "
+                          "releases require manual source review.")
+    try:
+        if not trusted.TAG.fullmatch(tag):
+            raise ValueError("invalid release tag")
+        archive_url = trusted.release_url(asset, tag)
+        bundle_url = trusted.release_url(bundle_asset, tag)
+        commit = fetch_json(f"https://api.github.com/repos/{REPO}/commits/{tag}").get("sha", "")
+        if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40}", commit):
+            raise ValueError("invalid source commit digest")
+    except ValueError as exc:
+        raise UpdateError(f"Attestation policy refused release metadata: {exc}") from exc
     tarball = pathlib.Path(workdir) / name
-    got = fetch_file(asset["browser_download_url"], tarball)
+    got = fetch_file(archive_url, tarball)
     if got != want:
         tarball.unlink(missing_ok=True)
         raise UpdateError(
             f"Digest mismatch for {name}: the release says {want}, the "
             f"download is {got}. Nothing was installed.")
+    bundle = pathlib.Path(workdir) / bundle_name
+    fetch_file(bundle_url, bundle)
+    try:
+        if bundle.stat().st_size > 16 * 1024 * 1024:
+            raise ValueError("attestation bundle exceeds size limit")
+        trusted.verify_attestation(verifier, tarball, bundle, tag, commit,
+                                   pathlib.Path(workdir))
+    except (ValueError, OSError, subprocess.TimeoutExpired) as exc:
+        raise UpdateError(f"Attestation authentication failed: {exc} "
+                          "Nothing was extracted or installed; manually review "
+                          "source instead. No unsigned fallback.") from exc
     root = _extract(tarball, pathlib.Path(workdir) / "tree")
     return {"version": tag, "asset": name, "sha256": got,
             "digest_source": source, "installed_version": installed_version(),
-            "ordering": order,
+            "ordering": order, "authenticated": True, "source_commit": commit,
             "changes": diff(root, installed or opt_dir()), "root": root}
 
 
@@ -290,19 +412,495 @@ def install(root: pathlib.Path, run=subprocess.run) -> int:
     return r.returncode
 
 
+# -- the transaction -----------------------------------------------------
+
+OPT_DIRS = ("wisp", "shells", "assets", "bin", "scripts/units",
+            "scripts/cua", "scripts/bootstrap", "docs")
+OPT_FILES = ("wispd", "CHANGELOG.md", "build_harness.py", "deploy.json",
+             "plugin-mode", "release.json", "payload.json",
+             "scripts/build_harness.py", "scripts/fetch_whisper.sh",
+             "plugin-files.json")
+SCOPE_NOTE = ("Rollback covers managed core files, attributable shell plugin "
+              "files and installed systemd unit templates. Desktop entry, "
+              "icons, launchers, hotkey bind and service-manager state are "
+              "not rolled back. User edits are kept and reported.")
+PLUGIN_REL = ".config/omarchy/plugins/io.github.duketopceo.wisp"
+
+
+def plugin_managed(home=None, opt=None) -> bool:
+    home, opt = home or config.HOME, opt or opt_dir()
+    mode = opt / "plugin-mode"
+    return not ((mode.is_file() and mode.read_text().strip() == "marketplace")
+                or (home / PLUGIN_REL / ".git").exists())
+
+
+def plugin_plan(root, home=None, opt=None) -> dict:
+    """Copy only source-owned files; keep additions and detected user edits."""
+    home, opt = home or config.HOME, opt or opt_dir()
+    previous = {}
+    try:
+        previous = json.loads((opt / "plugin-files.json").read_text())
+        if not isinstance(previous, dict):
+            previous = {}
+    except (OSError, ValueError):
+        pass
+    owned, kept = {}, []
+    record = dict(previous)
+    source = root / "shell-plugin"
+    if source.is_dir() and plugin_managed(home, opt):
+        for src in sorted(source.rglob("*")):
+            if not src.is_file() or "__pycache__" in src.parts:
+                continue
+            rel = src.relative_to(source).as_posix()
+            dst = _safe(home, PLUGIN_REL + "/" + rel)
+            if dst is None:
+                raise UpdateError("Unsafe shell plugin destination; nothing installed.")
+            if rel in previous and dst.is_file() and _sha(dst) != previous[rel]:
+                kept.append(rel)
+                continue
+            owned[rel] = record[rel] = _sha(src)
+    return {"owned": owned, "kept": kept, "record": record}
+
+
+def plugin_record(plan) -> bytes:
+    return (json.dumps(plan["record"], indent=1, sort_keys=True) + "\n").encode()
+
+
+def _external(root: pathlib.Path) -> dict:
+    """Expected external writes, keyed by explicit ownership namespace."""
+    out = {}
+    for rel, digest in plugin_plan(root)["owned"].items():
+        out["@plugin/" + rel] = digest
+    units = root / "scripts/units"
+    names = [n for n in svc.UNIT_NAMES if (units / f"{n}.service").is_file()]
+    if names:
+        acts = svc.install_units(config.HOME, dry_run=True, names=names,
+                                 local=config.local_enabled(config.load_config()),
+                                 units_dir=units)
+        for a in acts:
+            if a["action"] != "skip":
+                out["@units/" + a["name"] + ".service"] = _sha(
+                    units / (a["name"] + ".service"))
+    return out
+
+
+def _path(opt: pathlib.Path, rel: str) -> pathlib.Path | None:
+    if rel.startswith("@plugin/"):
+        return _safe(config.HOME, PLUGIN_REL + "/" + rel[len("@plugin/"):])
+    if rel.startswith("@units/"):
+        name = rel[len("@units/"):]
+        if name not in {n + ".service" for n in svc.UNIT_NAMES}:
+            return None
+        return _safe(config.HOME, ".config/systemd/user/" + name)
+    if rel.startswith("@"):
+        return None
+    return _safe(opt, rel)
+
+
+def state_dir() -> pathlib.Path:
+    return config.HOME / ".local" / "state" / "wisp" / "update"
+
+
+def _sha(p: pathlib.Path) -> str:
+    return hashlib.sha256(p.read_bytes()).hexdigest()
+
+
+def _managed(base: pathlib.Path, *, staged: bool = False) -> dict:
+    """{relative path: sha256} of the managed regular files under `base`.
+    `staged` reads a release tree, where build_harness.py lives in
+    scripts/ and there is no deploy.json. Symlinks and bytecode caches are
+    never managed."""
+    out = {}
+    for d in OPT_DIRS:
+        top = base / d
+        for p in sorted(top.rglob("*")) if top.is_dir() \
+                and not top.is_symlink() else []:
+            if "__pycache__" in p.parts or p.is_symlink() \
+                    or not p.is_file():
+                continue
+            out[str(p.relative_to(base))] = _sha(p)
+    for f in OPT_FILES:
+        if staged and f == "deploy.json":
+            continue
+        p = base / ("scripts/build_harness.py" if staged
+                    and f == "build_harness.py" else f)
+        if p.is_file() and not p.is_symlink():
+            out[f] = _sha(p)
+    return out
+
+
+def _safe(opt: pathlib.Path, rel: str) -> pathlib.Path | None:
+    """`opt/rel` when it is a relative path that stays inside `opt` with no
+    symlink along the way; otherwise None."""
+    r = pathlib.PurePosixPath(rel)
+    if r.is_absolute() or ".." in r.parts or not r.parts:
+        return None
+    if any(p.is_symlink() for p in (opt, *opt.parents)):
+        return None
+    cur = opt
+    for part in r.parts:
+        cur = cur / part
+        if cur.is_symlink():
+            return None
+    if cur.exists() and not cur.is_file():
+        return None
+    return cur
+
+
+def _mkdir(p: pathlib.Path) -> None:
+    if any(part.is_symlink() for part in (p, *p.parents)):
+        raise UpdateError("Unsafe update state path (symlink); stopped.")
+    p.mkdir(parents=True, exist_ok=True)
+    os.chmod(p, 0o700)
+
+
+def _write_private(p: pathlib.Path, data: bytes) -> None:
+    _mkdir(p.parent)
+    tmp = p.with_name(f".{p.name}.{os.getpid()}.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                 | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    with os.fdopen(fd, "wb") as f:
+        f.write(data)
+    os.replace(tmp, p)
+
+
+def _save(man: dict, phase: str | None = None) -> None:
+    if phase:
+        man["phase"] = phase
+    _write_private(pathlib.Path(man["dir"]) / "manifest.json",
+                   (json.dumps(man, indent=1) + "\n").encode())
+
+
+def protect(opt: pathlib.Path, root: pathlib.Path, frm: str, to: str,
+            service_active: bool, state: pathlib.Path | None = None) -> dict:
+    """Copy the managed files now in `opt` to the state dir and write the
+    manifest (phase `staged`). Reads only managed paths."""
+    state = state or state_dir()
+    for part in (state.parent, state):
+        _mkdir(part)
+    prefix = time.strftime("%Y%m%dT%H%M%S") + f"-{time.time_ns()}-{os.getpid()}-"
+    d = pathlib.Path(tempfile.mkdtemp(prefix=prefix, dir=state))
+    uid = d.name
+    external = _external(root)
+    before, modes = {}, {}
+    for rel in {**_managed(opt), **external}:
+        src = _path(opt, rel)
+        if src is None or not src.is_file():
+            continue
+        data = src.read_bytes()
+        before[rel] = hashlib.sha256(data).hexdigest()
+        modes[rel] = src.stat().st_mode & 0o777
+        _write_private(d / "files" / rel, data)
+    owned = {**_managed(root, staged=True), **external}
+    if (root / "shell-plugin").is_dir():
+        owned["plugin-mode"] = hashlib.sha256(
+            b"managed\n" if plugin_managed() else b"marketplace\n").hexdigest()
+        if plugin_managed():
+            owned["plugin-files.json"] = hashlib.sha256(
+                plugin_record(plugin_plan(root))).hexdigest()
+    man = {"id": uid, "dir": str(d), "opt": str(opt), "from": frm,
+           "to": to, "service_active": bool(service_active),
+           "before": before, "modes": modes, "owned": owned,
+           "phase": "staged"}
+    _save(man)
+    return man
+
+
+def _manifests(state: pathlib.Path) -> list:
+    out = []
+    for d in sorted(state.iterdir()) if state.is_dir() else []:
+        try:
+            m = json.loads((d / "manifest.json").read_text())
+        except (OSError, ValueError):
+            continue
+        if isinstance(m, dict) and m.get("id") == d.name:
+            m["dir"] = str(d)
+            out.append(m)
+    return out
+
+
+# Phases where the managed files may be half way between two versions.
+# `restored-partial` is settled: a rollback that only left files the user
+# changed, which stay kept on every later run.
+UNSETTLED = ("applying", "verify-failed", "restore-incomplete")
+
+
+def unfinished(state: pathlib.Path | None = None) -> dict | None:
+    """The newest manifest that is not in a settled phase."""
+    ms = _manifests(state or state_dir())
+    last = ms[-1] if ms else None
+    return last if last and last["phase"] in UNSETTLED else None
+
+
+def verify(man: dict, opt: pathlib.Path, tag: str) -> list:
+    """Reasons the install does not match the verified tree; [] when it
+    does. deploy.json is hashed after its tag write."""
+    now = _managed(opt)
+    bad = []
+    for rel, h in man["owned"].items():
+        p = _path(opt, rel)
+        actual = (_sha(p) if p and p.is_file() else None) \
+            if rel.startswith("@") else now.get(rel)
+        if actual != h:
+            bad.append(f"{rel} differs from the release")
+    rec = deploy.read() or {}
+    if rec.get("ref") != tag:
+        bad.append(f"the recorded version is {rec.get('ref')!r}, "
+                   f"not {tag}")
+    return bad
+
+
+def plan_rollback(man: dict, opt: pathlib.Path) -> dict:
+    """{restore, remove, keep}: what a rollback would do. Outside an
+    interrupted apply a file changed since the update is the user's and is
+    kept; inside one, anything that is not the old content is leftover, and a
+    path the update would have created is removed whatever it holds."""
+    interrupted = man["phase"] in UNSETTLED
+    kept = set(man.get("kept", []))
+    restore, remove, keep = [], [], []
+    for rel, was in sorted(man["before"].items()):
+        p = _path(opt, rel)
+        if rel in kept:
+            keep.append((rel, "kept by an earlier rollback"))
+            continue
+        if p is None:
+            keep.append((rel, "not a plain file inside the install"))
+            continue
+        cur = _sha(p) if p.is_file() else None
+        if cur == was:
+            continue
+        if (interrupted and not rel.startswith("@")) \
+                or (cur is None and not rel.startswith("@")) \
+                or cur == man["owned"].get(rel):
+            restore.append(rel)
+        else:
+            keep.append((rel, "changed since the update"))
+    for rel, mine in sorted(man["owned"].items()):
+        if rel in man["before"]:
+            continue
+        p = _path(opt, rel)
+        if rel in kept:
+            keep.append((rel, "kept by an earlier rollback"))
+        elif p is None:
+            keep.append((rel, "not a plain file inside the install"))
+        elif p.is_file():
+            if (interrupted and not rel.startswith("@")) or _sha(p) == mine:
+                remove.append(rel)
+            else:
+                keep.append((rel, "changed since the update"))
+    return {"restore": restore, "remove": remove, "keep": keep}
+
+
+def ipc_ok(opt: pathlib.Path, run=subprocess.run) -> bool:
+    """Does the installed daemon answer? A fresh process, so no module of
+    the replaced package is used."""
+    try:
+        r = run([sys.executable, str(opt / "wispd"), "status", "--quiet"],
+                capture_output=True, timeout=15)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return r.returncode == 0
+
+
+def _systemctl(verb: str, timeout: int, run) -> bool:
+    try:
+        return run(["systemctl", "--user", verb, "wispd"],
+                   timeout=timeout).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def service_active(run=subprocess.run) -> bool:
+    return _systemctl("is-active", 10, run)
+
+
+def restart_service(run=subprocess.run) -> bool:
+    return _systemctl("restart", 30, run)
+
+
+def outside_changes(root: pathlib.Path, home=None) -> list:
+    """External plugin/unit changes, called out separately in the preview."""
+    home = home or config.HOME
+    out = []
+    plug = home / ".config" / "omarchy" / "plugins" \
+        / "io.github.duketopceo.wisp"
+    new = root / "shell-plugin"
+    if new.is_dir() and plug.is_dir():
+        mine = {str(p.relative_to(new)): _sha(p) for p in new.rglob("*")
+                if p.is_file() and not p.is_symlink()}
+        have = {str(p.relative_to(plug)): _sha(p) for p in plug.rglob("*")
+                if p.is_file() and not p.is_symlink()}
+        if mine != have:
+            out.append("shell plugin")
+    try:
+        udir = home / ".config" / "systemd" / "user"
+        for u in sorted((root / "scripts" / "units").glob("*.service")):
+            f = udir / u.name
+            if f.is_file() and f.read_text() != u.read_text():
+                out.append(f"unit {u.name}")
+    except OSError:
+        pass
+    return out
+
+
+def _remember_kept(man: dict, plan: dict) -> None:
+    """Files a rollback left alone stay left alone on every later run."""
+    man["kept"] = sorted(set(man.get("kept", []))
+                         | {rel for rel, _ in plan["keep"]})
+
+
+def rollback(*, confirm=None, emit_text=print, restart: bool = False,
+             state: pathlib.Path | None = None, opt: pathlib.Path | None = None,
+             run=subprocess.run) -> dict:
+    """Restore the newest update's managed files, on a yes. Idempotent: a
+    restored update is reported and left alone."""
+    state = state or state_dir()
+    ms = _manifests(state)
+    if not ms:
+        raise UpdateError("There is no update to roll back.")
+    man = ms[-1]
+    opt = opt or pathlib.Path(man["opt"])
+    res = {"rolled_back": False, "id": man["id"], "restored": [],
+           "removed": [], "kept": [], "ipc_ok": None,
+           "daemon_reload_ok": None, "runtime_error": None}
+    if man["phase"] == "restored":
+        emit_text(f"update {man['id']} was already rolled back.")
+        return res
+    plan = plan_rollback(man, opt)
+    emit_text(f"rollback of the update {man['from']} -> {man['to']} "
+              f"({man['phase']}):")
+    for rel in plan["restore"]:
+        emit_text(f"  restore {rel}")
+    for rel in plan["remove"]:
+        emit_text(f"  remove  {rel} (added by the update)")
+    for rel, why in plan["keep"]:
+        emit_text(f"  keep    {rel} ({why})")
+    emit_text(SCOPE_NOTE)
+    if not plan["restore"] and not plan["remove"]:
+        emit_text("restore incomplete: files listed as keep need your "
+                  "attention." if plan["keep"] else "nothing to restore.")
+        _remember_kept(man, plan)
+        _save(man, "restored-partial" if plan["keep"] else "restored")
+        res["kept"] = [k for k, _ in plan["keep"]]
+        return res
+    if confirm is None or not confirm(
+            "Restore these files? Files listed as keep are not touched. "
+            "[y/N] "):
+        emit_text("not rolled back.")
+        return res
+    failed = []
+    for rel in plan["restore"]:
+        dst = _path(opt, rel)
+        src = _safe(pathlib.Path(man["dir"]) / "files", rel)
+        try:
+            if dst is None or src is None or not src.is_file() \
+                    or _sha(src) != man["before"][rel]:
+                raise OSError("unsafe or damaged backup; kept")
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            # Exclusive, unpredictable creation prevents a preseeded symlink
+            # redirecting recovery writes outside the managed directory.
+            fd, name = tempfile.mkstemp(prefix=f".{dst.name}.", suffix=".tmp",
+                                        dir=dst.parent)
+            tmp = pathlib.Path(name)
+            try:
+                with os.fdopen(fd, "wb") as stream, src.open("rb") as saved:
+                    shutil.copyfileobj(saved, stream)
+                    os.fchmod(stream.fileno(), man.get("modes", {}).get(rel, 0o644))
+                os.replace(tmp, dst)
+            finally:
+                tmp.unlink(missing_ok=True)
+            res["restored"].append(rel)
+        except OSError as e:
+            failed.append((rel, str(e)))
+    for rel in plan["remove"]:
+        try:
+            dst = _path(opt, rel)
+            if dst is None:
+                raise OSError("unsafe destination; kept")
+            dst.unlink()
+            res["removed"].append(rel)
+        except OSError as e:
+            failed.append((rel, str(e)))
+    res["kept"] = [k for k, _ in plan["keep"]] + [k for k, _ in failed]
+    complete = not plan["keep"] and not failed
+    _remember_kept(man, plan)
+    _save(man, "restore-incomplete" if failed else
+          "restored" if complete else "restored-partial")
+    res["rolled_back"] = complete
+    emit_text(f"restored {len(res['restored'])} file(s), removed "
+              f"{len(res['removed'])}." if complete else
+              "the restore is incomplete: "
+              + ", ".join(res["kept"]) + " still need your attention. "
+              "External state and your own data were not rolled back.")
+    units_changed = any(rel.startswith("@units/") for rel in
+                        res["restored"] + res["removed"])
+    manual = ("the daemon was running; to use the restored files: "
+              + ("systemctl --user daemon-reload && " if units_changed else "")
+              + "systemctl --user restart wispd")
+    if man["service_active"] and restart:
+        prompt = ("Reload user unit definitions and restart wispd on the "
+                  "restored files? [y/N] " if units_changed else
+                  "Restart wispd on the restored files? [y/N] ")
+        if confirm(prompt):
+            if units_changed:
+                try:
+                    res["daemon_reload_ok"] = run(
+                        ["systemctl", "--user", "daemon-reload"],
+                        capture_output=True, timeout=10).returncode == 0
+                except (OSError, subprocess.TimeoutExpired):
+                    res["daemon_reload_ok"] = False
+                if not res["daemon_reload_ok"]:
+                    res["runtime_error"] = "daemon-reload-failed"
+                    emit_text("disk restore result above is unchanged; "
+                              "daemon-reload failed. No restart or IPC check "
+                              "was attempted; runtime recovery is not verified. "
+                              "Retry systemctl --user daemon-reload before "
+                              "systemctl --user restart wispd.")
+                    return res
+            if restart_service(run):
+                res["ipc_ok"] = ipc_ok(opt, run)
+            emit_text("daemon answers after restart." if res["ipc_ok"]
+                      else "the daemon did not answer after the restart; "
+                      "see: journalctl --user -u wispd")
+        else:
+            emit_text(manual)
+    elif man["service_active"]:
+        emit_text(manual)
+    return res
+
+
 def run_update(*, dry_run: bool, sha256: str | None = None, confirm=None,
-               emit_text=print, force: bool = False, **seams) -> dict:
+               emit_text=print, force: bool = False, restart: bool = False,
+               **seams) -> dict:
     """The whole flow; returns the result dict (`applied` says whether the
     install ran). `confirm(prompt) -> bool` must be an explicit user yes."""
     install_fn = seams.pop("install_fn", install)
+    state = seams.pop("state", None)
+    probe = seams.pop("preflight_fn", None) or (lambda: preflight.run(
+        config.HOME, opt_dir()))
+    active_fn = seams.pop("service_active", service_active)
+    run = seams.pop("run", subprocess.run)
+    rows = probe()
+    if preflight.blockers(rows):
+        raise UpdateError(preflight.refusal(rows))
+    pending = unfinished(state)
+    if pending and not dry_run:
+        raise UpdateError(
+            f"The update {pending['from']} -> {pending['to']} did not "
+            "finish. Run `wispd update --rollback` to restore the previous "
+            "files, then update again.")
     with tempfile.TemporaryDirectory(prefix="wispd-update-") as td:
         res = check(sha256=sha256, workdir=td,
                     refuse_older=not dry_run and not force, **seams)
         root = res.pop("root")
         res["dry_run"], res["applied"] = dry_run, False
         res["forced"] = bool(force and res["ordering"] != "newer")
+        res["outside"] = outside_changes(root)
         n = sum(len(v) for v in res["changes"].values())
         emit_text(describe(res))
+        problems = preflight.format_rows(rows, only_problems=True)
+        if problems:
+            emit_text("preflight:\n" + problems)
         if dry_run:
             emit_text("dry run: nothing was written.")
             return res
@@ -311,16 +909,64 @@ def run_update(*, dry_run: bool, sha256: str | None = None, confirm=None,
             return res
         if confirm is None or not confirm(
                 f"Install {res['version']}? This replaces the files above "
-                "and does not restart the daemon. [y/N] "):
+                "after saving a backup of them, and does not restart the "
+                "daemon. [y/N] "):
             emit_text("not installed.")
             return res
+        opt = opt_dir()
+        man = protect(opt, root, res["installed_version"], res["version"],
+                      active_fn(), state)
+        res["backup"] = man["dir"]
+        _save(man, "applying")
         rc = install_fn(root)
+        man["after"], man["after_modes"] = {}, {}
+        for rel in man["before"].keys() | man["owned"].keys():
+            p = _path(opt, rel)
+            if p is not None and p.is_file():
+                man["after"][rel] = _sha(p)
+                man["after_modes"][rel] = p.stat().st_mode & 0o777
+        _save(man)
         if rc:
-            raise UpdateError(f"The installer exited {rc}; the previous "
-                              "install is as it was left by that run.")
-        res["applied"] = True
-        emit_text(f"installed {res['version']}. Restart the daemon to use "
-                  "it: systemctl --user restart wispd")
+            raise UpdateError(
+                f"The installer exited {rc}; the update is unfinished. "
+                "Run `wispd update --rollback` to restore the previous "
+                "files. " + SCOPE_NOTE)
+        deploy.write(None, res["version"], res["source_commit"])
+        man["owned"]["deploy.json"] = _sha(deploy.record_path())
+        man["after"]["deploy.json"] = man["owned"]["deploy.json"]
+        _save(man, "applied")
+        bad = verify(man, opt, res["version"])
+        if bad:
+            _save(man, "verify-failed")   # rollback restores every file
+            raise UpdateError(
+                "The installed files do not match the verified release ("
+                + "; ".join(bad[:5]) + "). The update is not verified. "
+                "Run `wispd update --rollback` to restore the previous "
+                "files. " + SCOPE_NOTE)
+        _save(man, "verified")
+        res["applied"], res["verified"] = True, True
+        emit_text(f"installed {res['version']} and verified managed writes "
+                  f"against the release (preserved user edits excluded). "
+                  f"Backup: {man['dir']}")
+        if res["outside"]:
+            emit_text("note: this release also changed "
+                      + ", ".join(res["outside"]) + "; " + SCOPE_NOTE)
+        if restart:
+            if man["service_active"] and confirm(
+                    "Restart wispd now on the new version? [y/N] "):
+                if not restart_service(run) or not ipc_ok(opt, run):
+                    res["ipc_ok"] = False
+                    raise UpdateError(
+                        "The daemon did not answer after the restart. Run "
+                        "`wispd update --rollback --restart` to restore the "
+                        "previous files. " + SCOPE_NOTE)
+                res["ipc_ok"] = True
+                emit_text("daemon restarted and answering.")
+            elif not man["service_active"]:
+                emit_text("wispd was not running; nothing to restart.")
+        else:
+            emit_text("The daemon was not restarted. To use the new version: "
+                      "systemctl --user restart wispd")
         return res
 
 

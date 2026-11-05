@@ -23,6 +23,7 @@ class TurnCtx:
         self.model = model
         # capture
         self.text = ""
+        self.typed = ""                     # a typed question: no capture, no STT (B13)
         self.lang = ""                      # spoken language, "" = English (B23)
         # context
         self.harness = None

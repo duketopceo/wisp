@@ -1,23 +1,9 @@
 {
-  "description": "Whisper answers 500: the turn ends in error before routing; Jev and the brain are never called.",
+  "description": "Whisper answers 500: the turn ends in error before routing; the brain is never called and neither is Jev.",
   "audio": "ask.wav",
   "endpoints": {
     "whisper": {
       "status": 500
-    },
-    "jev": {
-      "answers": {
-        "route": {
-          "choice": "answer"
-        },
-        "app": {
-          "choice": "none",
-          "confidence": 0.99
-        },
-        "risk": {
-          "score": 0
-        }
-      }
     },
     "brain": {
       "responses": [

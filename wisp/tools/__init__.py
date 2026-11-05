@@ -31,7 +31,7 @@ declare their worst case; the policy refines per call (a `memory add`
 is T1, an mcp read is T0, an OAuth/credential call is T3). The lint in
 tests/test_policy.py fails when an entry lacks it.
 """
-from . import desktop, mcpclient, social, system
+from . import browser, desktop, mcpclient, media, social, system
 
 RISK = {"safe": 0, "interactive": 1, "mutating": 2, "shell": 3}
 
@@ -60,6 +60,16 @@ REGISTRY = {
                "in the browser",
                {"tier": "T0", "reversible": True, "external": False}),
     "focus": (desktop.focus, "safe", "focus a window by class",
+              {"tier": "T0", "reversible": True, "external": False}),
+    "tab": (desktop.tab, "safe",
+            "switch to an already-open browser tab — arg: its title or "
+            "site, e.g. 'stripe' or 'gmail'",
+            {"tier": "T0", "reversible": True, "external": False}),
+    "media": (media.media, "safe",
+              "media playback and volume through Omarchy's own media "
+              "controls — arg: play_pause, pause, play, next, previous, "
+              "volume_up, volume_down or mute (pause/play are one "
+              "toggle on Omarchy)",
               {"tier": "T0", "reversible": True, "external": False}),
     "close": (desktop.close, "mutating",
               "close the active/matching window",
@@ -104,7 +114,8 @@ REGISTRY = {
                {"tier": "T1", "reversible": True, "external": False}),
     "key": (system.key, "interactive",
             "press a named key — 'enter', 'tab', 'esc', 'down', "
-            "'pageup', 'pagedown', 'backspace', arrows",
+            "'pageup', 'pagedown', 'backspace', 'delete', 'f2', "
+            "arrows",
             {"tier": "T1", "reversible": True, "external": False}),
     "mcp_call": (mcpclient.call, "mutating",
                  "call a tool on a configured MCP server — "
@@ -114,6 +125,19 @@ REGISTRY = {
                  "'<category>/<action>'. Server names/URLs are in "
                  "inventory.json and the [env] context line",
                  {"tier": "T2", "reversible": False, "external": True}),
+    "browser": (browser.run, "mutating",
+                "work in the user's own browser, in a tab group beside "
+                "theirs (needs [browser] lane = \"extension\" and a paired "
+                "extension) — a JSON batch of up to 20 steps "
+                "{\"steps\":[{\"do\":\"open\",\"url\":\"https://…\"},"
+                "{\"do\":\"snapshot\"},{\"do\":\"click\",\"ref\":\"3:7\"},"
+                "{\"do\":\"fill\",\"ref\":\"3:2\",\"value\":\"…\"},"
+                "{\"do\":\"wait_for\",\"text\":\"…\"},{\"do\":\"screenshot\"},"
+                "{\"do\":\"keep\"},{\"do\":\"done\"}]} or one line like "
+                "'snapshot'. Refs come from the latest snapshot only. "
+                "Password, one-time code and card fields are never "
+                "filled — hand those to the user",
+                {"tier": "T2", "reversible": False, "external": True}),
     "post": (social.post_draft, "safe",
              "preview an X post — 'post <text>'; always dry-run",
              {"tier": "T0", "reversible": True, "external": False}),
@@ -147,6 +171,10 @@ REGISTRY = {
     "recall": (None, "safe", "search long-term recall — "
                "'search <query>' returns top-k indexed context",
                {"tier": "T0", "reversible": True, "external": False}),
+    "memory_read": (None, "safe", "read the user's USER.md and "
+                    "MEMORY.md (read-only)",
+                    {"tier": "T0", "reversible": True,
+                     "external": False}),
     "skill_manage": (None, "mutating", "author a self-taught skill — "
                      "'create|name|description|body', 'edit|name||body', "
                      "'write_file|name|filename|body', 'delete|name', "
@@ -154,6 +182,9 @@ REGISTRY = {
                      {"tier": "T2", "reversible": False,
                       "external": False}),
     "skill_view": (None, "safe", "read a skill's full SKILL.md by name",
+                   {"tier": "T0", "reversible": True,
+                    "external": False}),
+    "skill_list": (None, "safe", "list skills with their descriptions",
                    {"tier": "T0", "reversible": True,
                     "external": False}),
     "ask_user": (None, "safe",
@@ -171,7 +202,7 @@ REGISTRY = {
 # loop, not here); tool_schemas must not drop them.
 EXTERN = frozenset({"agent_spawn", "task_status", "task_cancel",
                     "memory", "recall", "skill_manage", "skill_view",
-                    "ask_user", "observe"})
+                    "memory_read", "skill_list", "ask_user", "observe"})
 
 # loop-internal backchannels the model can call inside a run but that
 # have no route-level executor — Jev must never route to them (run()
@@ -193,6 +224,15 @@ def meta_of(name: str) -> dict:
     return {}
 
 
+# tools offered only while their feature is on: name -> cfg predicate
+CONDITIONAL = {"browser": browser.enabled}
+
+
+def _offered(name: str, cfg) -> bool:
+    gate = CONDITIONAL.get(name)
+    return gate is None or bool(gate(cfg))
+
+
 def describe() -> dict:
     """Criteria text for Jev's tool question — routable tools only;
     LOOP_ONLY entries are advertised in tool_schemas but can't be
@@ -201,13 +241,16 @@ def describe() -> dict:
             if name not in LOOP_ONLY}
 
 
-def tool_schemas() -> list:
+def tool_schemas(cfg: dict | None = None) -> list:
     """OpenAI-style tool definitions derived from the registry — one
     string arg per tool. Derived, not static, so new tools appear in the
-    act loop automatically."""
+    act loop automatically. A CONDITIONAL tool (the browser lane) is left
+    out unless `cfg` turns it on."""
     out = []
     for name, e in REGISTRY.items():
         fn, tier, desc = e[0], e[1], e[2]
+        if not _offered(name, cfg):
+            continue
         if fn is None and name not in EXTERN:
             continue
         out.append({
@@ -271,6 +314,13 @@ def _run_inner(name: str, arg: str, cfg: dict,
     if name == "recall":
         from .. import recall
         return recall.run(arg)
+    if name == "memory_read":
+        from .. import memory
+        return memory.snapshot() or "(memory is empty)"
+    if name == "skill_list":
+        from .. import skills
+        return "\n".join(f"- {s['name']}: {s['description']}"
+                         for s in skills.index()) or "(no skills)"
     if name == "skill_manage":
         from .. import skills
         return skills.run_manage(arg)
@@ -295,8 +345,14 @@ def _run_inner(name: str, arg: str, cfg: dict,
               system.scroll, system.key, system.type_text,
               system.fill):
         return fn(arg, cfg)
-    if fn is mcpclient.call:
+    if fn is mcpclient.call or fn is browser.run:
         return fn(arg, cfg)
+    if fn is system.shell:
+        from .. import gauntlet
+        if gauntlet.is_gauntlet(cfg):
+            # a gauntlet run never reaches the owner's shell: rsh in the
+            # sandbox, or a refusal
+            return gauntlet.rsh_run(arg, cfg)
     return fn(arg)
 
 

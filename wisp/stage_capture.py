@@ -6,6 +6,7 @@ module patches as `pipeline.<name>` is looked up through `_pl()` at call
 time so the patch still takes effect (see docs/PIPELINE_STAGES.md).
 """
 import base64
+from contextlib import suppress
 import json
 import os
 import pathlib
@@ -52,9 +53,12 @@ def record(seconds: int, state=None) -> pathlib.Path:
     rec = _pl().record_start(state)
     try:
         rec["proc"].wait(timeout=seconds)
-        return _record_finish(rec, state)
     except subprocess.TimeoutExpired:
         return _pl().record_stop(rec, state)
+    except BaseException:
+        _record_abort(rec, state)
+        raise
+    return _record_finish(rec, state)
 
 
 def record_start(state=None) -> dict:
@@ -63,59 +67,142 @@ def record_start(state=None) -> dict:
     out = config.CFG_DIR / "utterance.wav"
     config.RUN_DIR.mkdir(parents=True, exist_ok=True)
     out.unlink(missing_ok=True)
-    from . import platform
-    cmd = platform.record_cmd(out, None)
-    if cmd is None:
+    from . import platform, voice_polish
+    if platform.record_cmd(out, None) is None:
         raise RuntimeError(
             f"no recorder found — {platform.missing_deps_hint()}")
-    stop_ev = threading.Event()
-    sampler = threading.Thread(target=_amplitude_sampler,
-                               args=(None, state, stop_ev), daemon=True)
-    sampler.start()
-    proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL, env=_pl().hypr_env())
-    from . import stt_stream
-    stt_stream.begin(out, proc)   # streams finished chunks while held
-    return {"proc": proc, "out": out, "sampler_stop": stop_ev,
-            "sampler": sampler, "t0": time.monotonic()}
+    try:
+        cfg_now = config.load_config()
+        device = voice_polish.mic_device(cfg_now)
+        ducked_vol = voice_polish.duck_speaker(cfg_now)
+    except Exception:
+        device = ""
+        ducked_vol = None
+    rec = {"out": out, "ducked_vol": ducked_vol}
+    try:
+        rec["sampler_stop"] = threading.Event()
+        rec["sampler"] = threading.Thread(
+            target=_amplitude_sampler,
+            args=(None, state, rec["sampler_stop"]), daemon=True)
+        rec["sampler"].start()
+        env = _pl().hypr_env()
+
+        def _spawn(argv):
+            proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL, env=env)
+            # Retain ownership even if device settling/retry raises.
+            rec["proc"] = proc
+            return proc
+
+        # [audio] device gone: retry the default mic once (B8b).
+        proc, failed_over = voice_polish.spawn_recorder(
+            lambda d: platform.record_cmd(out, None, d), _spawn, device=device,
+            before_retry=lambda: out.unlink(missing_ok=True))
+        rec["proc"] = proc
+        if failed_over:
+            _note_mic_failover(state, device)
+        from . import stt_stream
+        stt_stream.begin(out, proc)   # streams finished chunks while held
+        rec["t0"] = time.monotonic()
+        return rec
+    except BaseException:
+        _record_abort(rec, state)
+        raise
 
 
-def record_stop(rec: dict, state=None) -> pathlib.Path:
-    """SIGINT the recorder (finalizes the WAV header), then validate."""
+def _note_mic_failover(state, device: str) -> None:
+    """One toast; the turn goes on with the default mic."""
+    from . import voice_polish
+    try:
+        _pl().notify(voice_polish.HINT_MIC, "info", key="mic-failover",
+                     hold=False)
+    except Exception:
+        pass
+
+
+def record_stop(rec: dict, state=None, *, discard: bool = False
+                ) -> pathlib.Path | None:
+    """Stop capture; discard cancelled/bounced audio without validating it."""
+    if discard and rec.get("capture_discarded"):
+        return rec.get("out")
     proc = rec["proc"]
-    if proc.poll() is None:
-        try:
-            proc.send_signal(signal.SIGINT)
-            proc.wait(timeout=3)
-        except (subprocess.TimeoutExpired, ProcessLookupError):
-            proc.kill()
-            proc.wait(timeout=3)
-    rec["sampler_stop"].set()
+    try:
+        if proc.poll() is None:
+            try:
+                proc.send_signal(signal.SIGINT)
+                proc.wait(timeout=3)
+            except (subprocess.TimeoutExpired, ProcessLookupError):
+                proc.kill()
+                proc.wait(timeout=3)
+    except BaseException:
+        _record_abort(rec, state)
+        raise
+    if discard:
+        _record_discard(rec, state)
+        return rec.get("out")
     return _record_finish(rec, state, settled=True)
 
 
 _SAMPLER_JOIN_S = 0.25
 
 
+def _record_abort(rec: dict, state=None) -> None:
+    """Rollback without replacing the startup/stop exception."""
+    proc = rec.get("proc")
+    if proc is not None:
+        with suppress(Exception):
+            proc.kill()
+        with suppress(Exception):
+            proc.wait(timeout=3)
+    _record_discard(rec, state)
+
+
+def _record_discard(rec: dict, state=None) -> None:
+    """Release audio and the unconsumed stream; never transcribe a tail."""
+    rec["capture_discarded"] = True
+    _record_cleanup(rec, state)
+    from . import stt_stream
+    with suppress(Exception):
+        stt_stream.discard(rec.get("out"))
+
+
 def _record_finish(rec: dict, state=None, settled: bool = False
                    ) -> pathlib.Path:
     out = rec["out"]
-    if not settled:
-        # bounded path: proc already exited or timed out
+    _record_cleanup(rec, state)
+    try:
+        if not (out.exists() and out.stat().st_size > 44):
+            raise RuntimeError(f"recording produced no audio: {out}")
+    except BaseException:
+        _record_discard(rec, state)
+        raise
+    return out
+
+
+def _record_cleanup(rec: dict, state=None) -> None:
+    """Release capture-owned audio state even if another release fails."""
+    if rec.get("audio_cleaned"):
+        return
+    rec["audio_cleaned"] = True
+    with suppress(Exception):
         rec["sampler_stop"].set()
+    try:
+        from . import voice_polish
+        voice_polish.restore_speaker(rec.pop("ducked_vol", None))
+    except Exception:
+        pass
     # the level sampler may publish one more window after the recorder
     # stops; wait for it to exit (event-driven) instead of a fixed
     # 300 ms sleep, then zero the level. Bounded in case it is stuck.
     sampler = rec.get("sampler")
-    if sampler is not None:
-        sampler.join(timeout=_SAMPLER_JOIN_S)
-    if state:
-        state.set_level(0.0)
-    else:
-        config.LEVEL_FILE.write_text("0.0")
-    if not (out.exists() and out.stat().st_size > 44):
-        raise RuntimeError(f"recording produced no audio: {out}")
-    return out
+    with suppress(Exception):
+        if sampler is not None:
+            sampler.join(timeout=_SAMPLER_JOIN_S)
+    with suppress(Exception):
+        if state:
+            state.set_level(0.0)
+        else:
+            config.LEVEL_FILE.write_text("0.0")
 
 
 _LEVEL_WINDOW = 20
@@ -147,23 +234,26 @@ def _amplitude_sampler(seconds: int | None, state=None,
             if stop_ev is not None and stop_ev.is_set():
                 break
             w = proc.stdout.read(_LEVEL_WINDOW)
+            if stop_ev is not None and stop_ev.is_set():
+                break
             if not w:
                 break
             if len(w) < _LEVEL_WINDOW:
                 continue  # short tail at EOF — next read ends the loop
             rms = sum(abs(b - 128) for b in w) / (len(w) * 128)
             publish(min(1.0, rms * 6))
-        if proc.poll() is None:
-            proc.kill()
-        proc.wait(timeout=5)
     except Exception:
         try:
             publish(0.0)
         except Exception:
             pass
     finally:
-        if proc is not None and proc.poll() is None:
-            proc.kill()
+        if proc is not None:
+            with suppress(Exception):
+                if proc.poll() is None:
+                    proc.kill()
+            with suppress(Exception):
+                proc.wait(timeout=5)
 
 
 def transcribe(wav: pathlib.Path, cfg: dict) -> str:
@@ -284,20 +374,32 @@ def active_window() -> dict:
     return platform.active_window()
 
 
-def capture_screen(window: bool = False) -> pathlib.Path | None:
+def capture_screen(window: bool = False,
+                   output: str | None = None) -> pathlib.Path | None:
     """Platform screenshot → RUN_DIR/screen.png. None on fail.
-    `window=True` crops to the focused window (the blank-frame retry)."""
+    `window=True` crops to the focused window (the blank-frame retry);
+    `output` names one monitor to capture (grim -o)."""
+    return capture_screen_meta(window, output)[0]
+
+
+def capture_screen_meta(window: bool = False, output: str | None = None
+                        ) -> tuple[pathlib.Path | None, tuple | None]:
+    """`capture_screen` plus the shot's logical origin: (path, origin).
+    `origin` is (x, y) when the image was normalized to logical size
+    (image px + origin == compositor-global logical px) and None for a
+    raw capture (no `magick`) whose pixels are grim's
+    canvas, not logical."""
     from . import platform
     from . import cua_safety
     if cua_safety.capture_blocked():
-        return None   # sensitive window focused: no shot (R13)
+        return None, None   # sensitive window focused: no shot (R13)
     out = config.RUN_DIR / "screen.png"
     if window:
         cmd = platform.window_screenshot_cmd(out, platform.active_geometry())
     else:
-        cmd = platform.screenshot_cmd(out)
+        cmd = platform.screenshot_cmd(out, output or None)
     if not cmd:
-        return None
+        return None, None
     try:
         config.RUN_DIR.mkdir(parents=True, exist_ok=True)
         r = _cancel.run(cmd, capture_output=True,
@@ -307,19 +409,22 @@ def capture_screen(window: bool = False) -> pathlib.Path | None:
             # + coord grid, so model x,y maps 1:1 and HiDPI pixels don't
             # double-map — also ~4x smaller on the wire (raw 3456x2160
             # PNG was the biggest single payload in the first act call)
+            origin = None
             try:
                 from .tools.system import _normalize_shot
-                _normalize_shot(out)
+                got = _normalize_shot(out, output or None)
+                if isinstance(got, (tuple, list)) and len(got) == 2:
+                    origin = (got[0], got[1])
             except Exception:
                 pass
             from . import redact
             if redact.apply(out, config.load_config()):
                 out.unlink(missing_ok=True)   # a hidden window rides along
-                return None
-            return out
-        return None
+                return None, None
+            return out, origin
+        return None, None
     except Exception:
-        return None
+        return None, None
 
 
 def _png_b64(png: pathlib.Path | None) -> str | None:
@@ -427,6 +532,15 @@ def capture_stage(ctx) -> bool:
     nothing was heard: the turn is already finished in that case."""
     from . import trace as _trace
     pl, state, sp, token, cfg = _pl(), ctx.state, ctx.sp, ctx.token, ctx.cfg
+    if ctx.typed:
+        # a typed question (B13): nothing to record or transcribe
+        ctx.text = ctx.typed
+        for name in ("press", "record", "release", "stt"):
+            sp.record(name, sp.now())   # zero-length: the latency table
+        state.transition("deciding", transcript=ctx.text, result="",
+                         answer="", choices=[], points=[], error="",
+                         error_code="", error_detail="")
+        return True
     if ctx.wav is None:
         state.transition("listening", transcript="", result="",
                          answer="", choices=[], points=[], error="",

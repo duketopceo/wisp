@@ -33,13 +33,10 @@ def ask_chat(transcript: str, cfg: dict, session_text: str = "",
     from . import brain
     if image_b64 and not brain.supports_vision(cfg):
         image_b64 = None  # provider can't see it — don't attach
-    system = ("You are Wisp, a terse desktop voice assistant on Linux. "
-              "Answer in one or two short sentences, plain speech, no "
-              "markdown.")
-    from . import lang as _lang
-    rule = _lang.reply_rule(lang)
-    if rule:
-        system += " " + rule
+    system = _lang_mod.with_reply_rule(
+        "You are Wisp, a terse desktop voice assistant on Linux. "
+        "Answer in one or two short sentences, plain speech, no "
+        "markdown.", lang)
     from . import context as _ctx
     focus = _ctx.snapshot(cfg)
     if focus:
@@ -103,7 +100,10 @@ def ask_chat(transcript: str, cfg: dict, session_text: str = "",
         out = brain.chat(messages, cfg, timeout=30)
     if meta is not None:
         meta.update(provider=out.get("provider"),
-                    fallback_from=out.get("fallback_from"))
+                    model=out.get("model"),
+                    fallback_from=out.get("fallback_from"),
+                    ttft_ms=out.get("ttft_ms"),
+                    latency_ms=out.get("latency_ms"))
     return out["content"].strip()
 
 
@@ -222,12 +222,42 @@ def speak_stage(ctx) -> int:
 
 
 def _spoken_payload(result: str) -> str:
-    """User-facing text inside a terminal act result: the model's final
-    reply for ACTED; empty for INTERRUPTED/other prefixes (already
-    announced by the interrupt itself, or machine-only status)."""
+    """User-facing text inside a terminal act or tool result: the model's
+    final reply for ACTED/WALKED, or a brief natural-language confirmation
+    for direct tool actions (OPENED, SWITCHED tab, LAUNCHED, FOCUSED,
+    WORKSPACE); empty for INTERRUPTED/other machine prefixes."""
     m = re.match(r"^(?:ACTED|WALKED)(?:\s*\([^)]*\))?\s*:\s*(.*)$",
                  result, re.DOTALL)
-    return m.group(1).strip() if m else ""
+    if m:
+        return m.group(1).strip()
+    m = re.match(r"^SWITCHED tab\s+'([^']+)'\s*->\s*(\S+)", result)
+    if m:
+        title, host = m.group(1).strip(), m.group(2).strip()
+        return f"Switched to {title or host}."
+    m = re.match(r"^OPENED\s+(\S+)\s*->\s*(.+)$", result)
+    if m:
+        url = m.group(1).strip()
+        host = re.sub(r"^https?://", "", url).split("/", 1)[0]
+        return f"Opened {host or url}."
+    m = re.match(r"^LAUNCHED\s+([^\s-]+?)\s*->\s*(.+)$", result)
+    if m:
+        return f"Opened {m.group(1).strip()}."
+    m = re.match(r"^FOCUSED\s+([^\s-]+?)(?:\s*->.*)?$", result)
+    if m:
+        return f"Focused {m.group(1).strip()}."
+    m = re.match(r"^WORKSPACE\s+(\d+)\b", result)
+    if m:
+        return f"Switched to workspace {m.group(1)}."
+    m = re.match(r"^MEDIA\s+([a-z_]+)\b", result)
+    if m:
+        if m.group(1) == "mute":
+            return "Sent the mute toggle."
+        if m.group(1) == "play_pause" or (
+                m.group(1) in ("play", "pause") and "via omarchy" in result):
+            return "Sent the play/pause toggle."
+        act = m.group(1).replace("_", " ")
+        return f"Media {act}."
+    return ""
 
 
 def _speak_result(ctx, payload: str) -> None:
@@ -235,9 +265,13 @@ def _speak_result(ctx, payload: str) -> None:
     into annotations, publish `speaking`, TTS the payload."""
     from . import points as _points
     from . import trace as _trace
-    pl, state, cfg, sp = _pl(), ctx.state, ctx.cfg, ctx.sp
+    from . import voice_polish
+    pl, state, sp = _pl(), ctx.state, ctx.sp
+    vp = voice_polish.begin(ctx.cfg)   # captions, muted speaker (B8b)
+    cfg = vp.cfg
     reply, raw = _points.extract(payload)  # drawing tags stripped, none drawn
     ctx.reply = reply
+    vp.finish(reply)
     pts = []
     if raw:
         _mons = _points.monitors()
@@ -248,14 +282,16 @@ def _speak_result(ctx, payload: str) -> None:
         _trace.emit(ctx.turn, "points", "act", {"points": pts})
     _publish_paper(state, _points.extract(payload)[0], ctx.turn)
     state.transition("speaking", result=ctx.result,
-                     answer=reply, points=pts)
+                     answer=vp.shown(reply), points=pts)
     tts_start = sp.now()
     proc = speech.speak(reply, cfg)
     if proc is not None:
         speech.on_exit(proc, pl._end_speaking(state))
     else:
         _close_paper(state)
-        state.transition("done", result=ctx.result)
+        # nothing was spoken: the text must not stay hidden by captions off
+        state.transition("done", result=ctx.result,
+                         answer=vp.revealed(reply))
     sp.record("tts_start", tts_start)
 
 
@@ -264,16 +300,20 @@ def _ask_user(ctx) -> int:
     utterance resumes it (goal ttl covers the pause)."""
     from . import trace as _trace
     from . import session
-    pl, state, cfg, sp = _pl(), ctx.state, ctx.cfg, ctx.sp
+    from . import voice_polish
+    pl, state, sp = _pl(), ctx.state, ctx.sp
     result, text = ctx.result, ctx.text
     q = result[9:].strip()
+    vp = voice_polish.begin(ctx.cfg)
+    cfg = vp.cfg
+    vp.finish(q)
     _trace.emit(ctx.turn, "ask_user", "speak", {"question": q})
-    state.transition("speaking", result=result, answer=q)
+    state.transition("speaking", result=result, answer=vp.shown(q))
     proc = speech.speak(q, cfg)
     if proc is not None:
         speech.on_exit(proc, pl._end_speaking(state))
     else:
-        state.transition("done", result=result)
+        state.transition("done", result=result, answer=vp.revealed(q))
     session.append_turn(text, route="act", reply=q, result=result,
                         app=ctx.app)
     pl.notify(result, "success", spoken=True,
@@ -310,7 +350,10 @@ def _answer(ctx) -> None:
     ctx.reply."""
     from . import points as _points
     from . import trace as _trace
-    pl, state, cfg, sp, token = _pl(), ctx.state, ctx.cfg, ctx.sp, ctx.token
+    from . import voice_polish
+    pl, state, sp, token = _pl(), ctx.state, ctx.sp, ctx.token
+    vp = voice_polish.begin(ctx.cfg)   # captions, muted speaker (B8b)
+    cfg = vp.cfg
     text, result, turn = ctx.text, ctx.result, ctx.turn
     pts = []        # logical points fired so far (voice on)
     drws = []       # logical drawings fired so far (voice on)
@@ -372,8 +415,13 @@ def _answer(ctx) -> None:
                 return
             _publish_points(state, pts, drws)
 
-    ctx.speaker = speaker = speech.SentenceSpeaker(cfg, token=token,
-                                                   on_sentence=_fire)
+    def _audio(ms):
+        # Groq's first audio, from the first sentence handed over (the
+        # P6 Groq budget); espeak keeps the tts_start span below
+        _trace.emit(turn, "tts_start_groq", "span", {}, ms=ms)
+
+    ctx.speaker = speaker = speech.SentenceSpeaker(
+        cfg, token=token, on_sentence=_fire, on_audio=_audio)
     lang_code = getattr(ctx, "lang", "")
     if lang_code and not _lang_mod.is_english(lang_code):
         speaker.lang = lang_code
@@ -392,7 +440,7 @@ def _answer(ctx) -> None:
         from . import note as _note
         clean, marks = _points.extract_marked(_note.strip_image_lines(
             _points.strip_partial(acc), partial=True))
-        pl._publish_delta(state, clean)
+        pl._publish_delta(state, vp.shown(clean))
         # speak each completed sentence while the rest streams
         speaker.feed(clean, marks)
 
@@ -417,10 +465,12 @@ def _answer(ctx) -> None:
         sp.fire("first_token")  # non-streaming brains
         _trace.emit(turn, "brain_call", "brain",
                     {"endpoint": "chat/completions",
-                     "model": cfg.get("agent", {})
+                     "model": _meta.get("model") or cfg.get("agent", {})
                      .get("answer_model", ""),
                      "provider": _meta.get("provider"),
                      "fallback_from": _meta.get("fallback_from"),
+                     "ttft_ms": _meta.get("ttft_ms"),
+                     "latency_ms": _meta.get("latency_ms"),
                      "reply": reply},
                     round((time.monotonic() - _t) * 1000))
     except Exception as e:
@@ -452,6 +502,7 @@ def _answer(ctx) -> None:
         if marks:
             with plock:
                 all_pts, all_drws = _split([p for _, p in marks])
+    vp.finish(reply)    # a muted speaker: the tag-free text, on the clipboard
     if all_pts or all_drws:
         _trace.emit(turn, "points", "act",
                     {"points": all_pts, "drawings": all_drws})
@@ -463,12 +514,14 @@ def _answer(ctx) -> None:
         # through the speaker so its points fire as it starts playing;
         # the transition publishes what has fired so far
         with plock:
-            state.transition("speaking", result=result, answer=reply,
+            state.transition("speaking", result=result,
+                             answer=vp.shown(reply),
                              points=list(pts), drawings=list(drws))
         speaker.finish(reply, on_done=pl._end_speaking(state), marks=marks)
         proc = True
     else:
-        state.transition("speaking", result=result, answer=reply,
+        state.transition("speaking", result=result,
+                         answer=vp.shown(reply),
                          points=all_pts, drawings=all_drws)
         proc = speech.speak(reply, cfg)
         if proc is not None:
@@ -481,7 +534,7 @@ def _answer(ctx) -> None:
                 round((time.monotonic() - _t) * 1000))
     if proc is None:
         _close_paper(state)
-        state.transition("done")
+        state.transition("done", answer=vp.revealed(reply))
 
 
 def _finish(ctx) -> int:

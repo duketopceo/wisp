@@ -80,7 +80,7 @@ class Pace(unittest.TestCase):
 
 class InTheTurn(StageBase):
     def test_each_drawing_gets_the_tone_of_the_screen_under_it(self):
-        ctx = self.ctx({"agent": {}})
+        ctx = self.ctx({"voice": {"enabled": "false"}, "agent": {}})
         # ring at (100,200) over the dark left; arrow tip (300,400) over
         # the light right
         ctx.shot_b64 = png_b64(500, 500, (6, 6, 10), (245, 245, 240), 200)
@@ -98,7 +98,7 @@ class InTheTurn(StageBase):
                          [("ring", "dark"), ("arrow", "light")])
 
     def test_no_screenshot_adds_no_tone(self):
-        ctx = self.ctx({"agent": {}})
+        ctx = self.ctx({"voice": {"enabled": "false"}, "agent": {}})
         from unittest import mock
         from wisp import pipeline, stage_speak
         with mock.patch.object(pipeline, "ask_chat",

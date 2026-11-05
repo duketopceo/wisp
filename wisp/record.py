@@ -341,7 +341,7 @@ def probe(cfg: dict | None = None) -> dict:
     state = st.get("state") or "absent"
     if state == "absent":
         return {"ok": False, "skipped": True,
-                "detail": "cua-driver not installed — nothing to record"}
+                "detail": "cua-driver not installed, nothing to record"}
     if state != "running":
         return {"ok": False, "skipped": False,
                 "detail": f"cua daemon {state} — recording unavailable"}

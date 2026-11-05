@@ -6,6 +6,7 @@ import shutil
 import subprocess
 
 from .. import config
+from . import output
 from .registry import CliError, GROUPS, command
 
 GROUPS["health"] = "Local model endpoint health"
@@ -13,20 +14,36 @@ GROUPS["health"] = "Local model endpoint health"
 
 # -- doctor ---------------------------------------------------------------
 
-def doctor_sections(cfg: dict, cua_probe=None) -> list:
+def doctor_sections(cfg: dict, cua_probe=None, agents_probe=None) -> list:
     """[{name, rows:[{name, value, ok}]}] for everything wispd needs."""
     from .. import agents, brain, health as _health, ipc, \
-        platform as _plat, skills
+        platform as _plat, preflight, skills
     sections = []
 
     def section(name):
         rows = []
         sections.append({"name": name, "rows": rows})
 
-        def row(label, value, ok=True):
+        def row(label, value, ok=True, level=None, detail=None, fix=""):
+            """level: ok | warn | fail (additive; `ok` still drives the
+            exit code). detail and fix are the human view's two lines;
+            `value` stays the one-string form `--json` always had."""
             rows.append({"name": label, "value": str(value),
-                         "ok": bool(ok)})
+                         "ok": bool(ok),
+                         "level": level or ("ok" if ok else "fail"),
+                         "detail": str(value if detail is None else detail),
+                         "fix": fix})
         return row
+
+    row = section("preflight")
+    for check in preflight.run():
+        detail = f"{check['level']}: {check['detail']}"
+        if check["fix"]:
+            detail += f" (Try: {check['fix']})"
+        row(check["id"], detail, check["level"] != "block",
+            level={"ok": "ok", "degraded": "warn"}.get(check["level"],
+                                                       "fail"),
+            detail=check["detail"], fix=check["fix"] or "")
 
     row = section("daemon")
     row("wispd", "running" if ipc.alive() else "not running")
@@ -60,7 +77,9 @@ def doctor_sections(cfg: dict, cua_probe=None) -> list:
     row("whisper model", wm.name, stt != "local" or wm.exists())
     row("stt provider", stt)
     for b in ("pw-record", "wtype", "grim"):
-        row(b, shutil.which(b) or "not on PATH", bool(shutil.which(b)))
+        found = next((path for name in preflight.ALTERNATIVES.get(b, (b,))
+                      if (path := shutil.which(name))), None)
+        row(b, found or "not on PATH", bool(found))
 
     row = section("brain / router")
     p = brain.provider(cfg)
@@ -69,7 +88,11 @@ def doctor_sections(cfg: dict, cua_probe=None) -> list:
     row("tools", p.get("tools"))
     key = config.load_env_key(p.get("key_env", "")) \
         if p.get("key_env") else "n/a"
-    row("api key", "set" if key == "set" or (key and key != "n/a")
+    # name the first source that yields a value, never the value
+    src = next((c.strip() for c in str(p.get("key_env", "")).split(",")
+                if c.strip() and config.load_env_key(c.strip())), "")
+    row("api key", f"set ({src})" if src
+        else "set" if key == "set" or (key and key != "n/a")
         else key or "MISSING", bool(key))
 
     row = section("health")
@@ -86,6 +109,9 @@ def doctor_sections(cfg: dict, cua_probe=None) -> list:
     row("pointer mode", cfg.get("pointer", {}).get("mode", "guide"))
     _cua_rows(row, cfg, cua_probe)
 
+    row = section("agents")
+    _agent_rows(row, agents_probe)
+
     row = section("integrations")
     row("dayflow", shutil.which("dayflow") or "not installed",
         bool(shutil.which("dayflow")))
@@ -94,6 +120,9 @@ def doctor_sections(cfg: dict, cua_probe=None) -> list:
     row("hyprctl", shutil.which("hyprctl") or "not on PATH",
         bool(shutil.which("hyprctl")))
     row("sense enabled", cfg.get("sense", {}).get("enabled", "false"))
+
+    row = section("voice")
+    _voice_rows(row, cfg)
 
     row = section("reporting")
     from .. import report as _report
@@ -107,6 +136,56 @@ def doctor_sections(cfg: dict, cua_probe=None) -> list:
         row(f, f"{fp.stat().st_size // 1024}KB" if fp.exists()
             else "absent")
     return sections
+
+
+def _agent_rows(row, probe=None) -> None:
+    """Pinned ori + OpenCode state (U2 probe). Absent is fine: the agents
+    step is optional. The permission gate row is always "not run": proving
+    OpenCode asks for every ask-ruled action takes a live model call,
+    which doctor never makes (docs/TRUST.md)."""
+    from .. import probes_agents
+    r = (probe or probes_agents.AgentsProbe()).check()
+    st = r["state"]
+    label = st.replace("_", " ")
+    if st == "absent":
+        row("agent runtime", f"not installed: {r['fix']}")
+    elif r["ok"]:
+        row("agent runtime", f"{label} (ori {r['ori']}, "
+            f"opencode {r['opencode']})")
+    else:
+        row("agent runtime", f"{label}: {r['fix']}", False)
+    row("agent permission gate",
+        "live check not run (needs a model call); see docs/TRUST.md")
+
+
+def _voice_rows(row, cfg: dict) -> None:
+    """Who speaks now, the last Groq error with its fix, and when Groq is
+    retried. Reads the daemon's voice_groq.json; no network call."""
+    from .. import speech, tts_groq
+    name, why = speech.backend(cfg)
+    row("voice backend", f"{name}: {why}")
+    if tts_groq.provider(cfg) != "groq":
+        return
+    err = tts_groq.last_error()
+    until = tts_groq.backoff_until()
+    if not err:
+        row("groq last error", "none")
+    else:
+        kind = err["class"]
+        if kind == "terms":
+            fix = ("accept the Orpheus terms once at "
+                   + tts_groq.TERMS_LINK)
+        elif kind == "rate_limit":
+            fix = (f"rate limited until {tts_groq.fmt_time(until)}; a paid "
+                   "Groq tier lifts the limit" if until else "rate limited")
+        elif kind == "auth":
+            fix = "Groq rejected the key; fix groq/default in omaseal"
+        else:
+            fix = err.get("detail") or "see the daemon log"
+        row("groq last error", f"{kind}: {fix}")
+    now = tts_groq._now()
+    row("groq retry", f"at {tts_groq.fmt_time(until)}" if until > now
+        else "now")
 
 
 def _cua_rows(row, cfg: dict, probe=None) -> None:
@@ -144,27 +223,111 @@ def _cua_rows(row, cfg: dict, probe=None) -> None:
     row("turn recording", pr["detail"], pr["ok"] or pr["skipped"])
 
 
+def _doctor_args(p):
+    p.add_argument("--all", action="store_true",
+                   help="list every check, not just the ones that need "
+                        "attention")
+    p.add_argument("--section", metavar="NAME",
+                   help="list every check in one section (see --all for "
+                        "the names)")
+
+
+def _doctor_rows_block(ctx, rows, width, fix_lines=True) -> list:
+    """`  warn  name  detail` lines, the fix on its own line under a
+    problem row. One line per row: the detail is cut to fit."""
+    if not rows:
+        return []
+    namew = min(18, max(output.display_width(r["name"]) for r in rows))
+    cells = [[output.mark(r["level"], False), r["name"], r["detail"]]
+             for r in rows]
+    tones = [[r["level"] if r["level"] != "ok" else "muted",
+              None, None] for r in rows]
+    tbl = ctx.table(["", "", ""], cells, tones, header=False,
+                    width=width - 2, flex=2, glyphs=ctx.glyphs)
+    lines = tbl.splitlines()
+    indent = " " * (2 + 4 + 2 + namew + 2)
+    out = []
+    fixes = [r["fix"] for r in rows if r["fix"] and r["level"] != "ok"]
+    shared = next((f for f in fixes if fixes.count(f) >= 3), None)
+    for line, r in zip(lines, rows):
+        out.append("  " + line)
+        if (fix_lines and r["fix"] and r["level"] != "ok"
+                and r["fix"] != shared):
+            out += output.wrap("Try: " + r["fix"], width, indent, indent)
+    if fix_lines and shared:
+        out += output.wrap("For the other rows, try: " + shared, width,
+                           "  ", "    ")
+    return out
+
+
+def _doctor_text(ctx, sections, a) -> str:
+    width = ctx.width
+    allrows = [(s["name"], r) for s in sections for r in s["rows"]]
+    n = {k: sum(1 for _, r in allrows if r["level"] == k)
+         for k in ("ok", "warn", "fail")}
+    out = [output.summary("wisp doctor",
+                          [(n["fail"], "fail", "fail"),
+                           (n["warn"], "warn", "warn"),
+                           (n["ok"], "ok", "ok")],
+                          min(width, 100), ctx.color, ctx.glyphs), ""]
+    if n["fail"]:
+        one = n["fail"] == 1
+        out.append(f"{n['fail']} check{'' if one else 's'} "
+                   f"need{'s' if one else ''} attention. Fixes are "
+                   "listed below.")
+    elif n["warn"]:
+        out.append("Ready. Some optional tools are missing; wisp works "
+                   "without them.")
+    else:
+        out.append("Everything is ready.")
+    out.append("")
+    if a.section:
+        names = [s["name"] for s in sections]
+        pick = [s for s in sections if s["name"] == a.section]
+        if not pick:
+            raise CliError("E_USAGE", f"Unknown section {a.section!r}. "
+                           f"Choose {', '.join(names)}.",
+                           "wispd doctor --all")
+        sections = pick
+    if a.all or a.section:
+        for s in sections:
+            out.append(output.section(s["name"], len(s["rows"]), ctx.color))
+            out += _doctor_rows_block(ctx, s["rows"], width)
+            out.append("")
+        return "\n".join(out).rstrip()
+    probs = sorted((r for _, r in allrows if r["level"] != "ok"),
+                   key=lambda r: r["level"] != "fail")
+    if probs:
+        out.append(output.section("Needs attention", len(probs), ctx.color))
+        out += _doctor_rows_block(ctx, probs, width)
+        out.append("")
+    good = [r["name"] for _, r in allrows if r["level"] == "ok"]
+    if good:
+        out.append(output.section("Passing", len(good), ctx.color))
+        body = ", ".join(good)
+        out += [ctx.paint_muted(l) for l in
+                output.wrap(body, width, "  ", "  ")]
+        out.append("")
+    out.append("wispd doctor --all lists every check.")
+    return "\n".join(out)
+
+
 @command("doctor", "Check every dependency wisp needs",
-         ["wispd doctor", "wispd doctor --json"],
-         {"healthy": "bool", "sections": "list"})
+         ["wispd doctor", "wispd doctor --all", "wispd doctor --json"],
+         {"healthy": "bool", "sections": "list", "counts": "dict"},
+         args=_doctor_args)
 def doctor(ctx, a):
     sections = doctor_sections(ctx.cfg)
     bad = sum(1 for s in sections for r in s["rows"] if not r["ok"])
-    data = {"healthy": bad == 0, "sections": sections}
+    counts = {k: sum(1 for s in sections for r in s["rows"]
+                     if r["level"] == k) for k in ("ok", "warn", "fail")}
+    data = {"healthy": bad == 0, "sections": sections, "counts": counts}
     if not ctx.json and not ctx.flags.quiet:
-        if True:
-            for s in sections:
-                print(f"{s['name']}:")
-                rows = [["ok" if r["ok"] else "MISS", r["name"], r["value"]]
-                        for r in s["rows"]]
-                tones = [["ok" if r["ok"] else "fail", None, None]
-                         for r in s["rows"]]
-                print("\n".join("  " + ln for ln in ctx.table(
-                    ["", "", ""], rows, tones, header=False).splitlines()))
+        print(_doctor_text(ctx, sections, a))
     if bad:
         raise CliError("E_UNHEALTHY", f"{bad} check"
                        f"{'s' if bad != 1 else ''} need attention.",
-                       "Fix the MISS rows above, then run wispd doctor "
+                       "Fix the fail rows above, then run wispd doctor "
                        "again", data=data)
     return ctx.emit(data)
 
@@ -296,7 +459,8 @@ def _latency_args(p):
 @command("latency", "p50 and p90 per budget path from recent turns",
          ["wispd latency", "wispd latency --since 6h --json",
           "wispd latency --budgets", "wispd latency --harness"],
-         {"since_h": "float", "turns": "int", "rows": "list"},
+         {"since_h": "float", "turns": "int", "rows": "list",
+          "models": "list"},
          args=_latency_args)
 def latency(ctx, a):
     from .. import telemetry
@@ -309,9 +473,10 @@ def latency(ctx, a):
         return _latency_harness(ctx, a)
     hours = telemetry.parse_since(a.since)
     rep = telemetry.latency_report(hours)
-    data = {"since_h": hours, "turns": rep["turns"], "rows": rep["rows"]}
+    data = {"since_h": hours, "turns": rep["turns"], "rows": rep["rows"],
+            "models": rep.get("models", [])}
     h = f"{hours:g}h"
-    if not rep["turns"]:
+    if not rep["turns"] and not rep.get("models"):
         return ctx.emit(data, f"no spans in the last {h} "
                               "(run a turn first)")
     rows = [[r["id"], r["label"], r["n"],
@@ -323,6 +488,16 @@ def latency(ctx, a):
              for r in rep["rows"]]
     text = f"latency {h}, {rep['turns']} turns (ms)\n" + ctx.table(
         ["id", "path", "n", "p50", "p90", "budget", "verdict"], rows, tones)
+    if rep.get("models"):
+        mrows = [[m["provider"], m["model"], m["n"],
+                  "-" if m["ttft_p50"] is None else m["ttft_p50"],
+                  "-" if m["ttft_p90"] is None else m["ttft_p90"],
+                  "-" if m["latency_p50"] is None else m["latency_p50"],
+                  "-" if m["latency_p90"] is None else m["latency_p90"]]
+                 for m in rep["models"]]
+        text += "\n\nmodels (ms)\n" + ctx.table(
+            ["provider", "model", "n", "ttft_p50", "ttft_p90",
+             "lat_p50", "lat_p90"], mrows)
     return ctx.emit(data, text)
 
 
@@ -443,7 +618,7 @@ def _onboard_args(p):
                    help="print the checklist and exit 0 (the Panel card "
                    "reads this)")
     p.add_argument("--step", metavar="ID",
-                   help="run one step: mic, models, keys, cua, "
+                   help="run one step: mic, models, keys, agents, cua, "
                    "notifications, keybinding")
     p.add_argument("--yes", action="store_true",
                    help="with --step notifications: send the test now")
@@ -534,14 +709,9 @@ def _onboard_starter(ctx, a, cfg, progress):
 
 
 def _onboard_rows(ctx, st):
-    mark = {"done": "ok", "todo": "TODO", "na": "n/a"}
-    rows = [[mark[s["state"]], s["name"],
-             s["detail"] if s["state"] != "todo" or not s["try"]
-             else s["detail"] + ". Try: " + s["try"]]
-            for s in st["steps"]]
-    tones = [[{"done": "ok", "todo": "warn", "na": "muted"}[s["state"]],
-              None, "muted"] for s in st["steps"]]
-    return ctx.table(["", "", ""], rows, tones, header=False)
+    from . import onboard_view
+    return onboard_view.checklist(st, color=ctx.color, glyphs=ctx.glyphs,
+                                  width=ctx.width)
 
 
 @command("onboard", "Walk through first-run setup (every step skippable)",
@@ -591,7 +761,8 @@ def onboard(ctx, a):
                        data=r)
     if a.interactive or (sys.stdin.isatty() and sys.stdout.isatty()
                          and not ctx.json and not a.status):
-        res = ob.walk(cfg, probes, progress, input, print)
+        res = ob.walk(cfg, probes, progress, input, print,
+                      color=ctx.color, glyphs=ctx.glyphs, width=ctx.width)
         return ctx.emit(res, "setup finished" if res["finished"]
                         else "progress saved, run wispd onboard to resume")
     st = ob.status(cfg, probes, progress)

@@ -10,12 +10,13 @@ Nothing is sent between key presses. There is no analytics, no account and no Wi
 
 | Host | What it is for | What it gets | On by default | Key | What you control |
 | --- | --- | --- | --- | --- | --- |
-| `openrouter.ai` | Answer model, router and decision calls, the vision fallback for finding a control on screen, and (only if you turn `[recall] provider` on) memory embeddings. | **text, screenshot.** What you said (as text), the focused app and window names, recent turns, memory notes, a selection or copied text you pointed at, and a screenshot on answer calls (`[agent] screenshots`) and the vision fallback. Windows that look like a password manager, a keyring or authentication prompt or a sudo terminal (plus any you add under `[cua]`) are blanked first, and a capture is refused while one has focus. | Yes. It is the default answer brain. | You. `OPENROUTER_API_KEY` in your environment, `~/.config/wisp/.env` or your keyring. | `[brain] default` and `[brain] fallback` take a local model (`ollama:`, `lmstudio:`, `mlx:`) and nothing then leaves; `[agent] screenshots = false` keeps the screen out of answers. How long OpenRouter and the model provider keep a request is set by your OpenRouter account's privacy settings, not by Wisp. |
-| `api.groq.com` | Speech to text for each push-to-talk turn (any OpenAI-compatible endpoint works in its place). | **audio.** The recording of that turn, and the vocabulary prompt from `[stt] prompt`. | Yes. `[stt] provider` is `openai` with this base URL. | You. `GROQ_API_KEY` in your environment, `~/.config/wisp/.env` or your keyring. | `[stt] provider = "local"` transcribes on this machine with whisper.cpp and sends no audio; `[stt] base_url` points at any other host. The provider's retention is its own. |
+| `openrouter.ai` | Answer model, router and decision calls, the vision fallback for finding a control on screen, and (only if you turn `[recall] provider` on) memory embeddings. In dev mode only, the run judge (`wispd dev run`). | **text, screenshot.** What you said (as text), the focused app and window names, recent turns, memory notes, a selection or copied text you pointed at, and a screenshot on answer calls (`[agent] screenshots`) and the vision fallback. Windows that look like a password manager, a keyring or authentication prompt or a sudo terminal (plus any you add under `[cua]`) are blanked first, and a capture is refused while one has focus. | Yes. It is the default answer brain. | You. `OPENROUTER_API_KEY` in your environment, `~/.config/wisp/.env` or your keyring. The dev-mode judge uses `omaseal://openrouter/orchestral` (your eval key) instead, never the default key. | `[brain] default` and `[brain] fallback` take a local model (`ollama:`, `lmstudio:`, `mlx:`) and nothing then leaves; `[agent] screenshots = false` keeps the screen out of answers. How long OpenRouter and the model provider keep a request is set by your OpenRouter account's privacy settings, not by Wisp. |
+| `api.groq.com` | Speech to text for each push-to-talk turn (any OpenAI-compatible endpoint works in its place), and the voice that speaks answers aloud. | **audio, text.** The recording of that turn, and the vocabulary prompt from `[stt] prompt`. For the spoken answer, the answer text one sentence at a time (English answers only). | Yes. `[stt] provider` is `openai` with this base URL. | You. `GROQ_API_KEY` in your environment, `~/.config/wisp/.env` or your keyring. | `[stt] provider = "local"` transcribes on this machine with whisper.cpp and sends no audio; `[stt] base_url` points at any other host. `[voice] provider = "espeak"` (or `[voice] enabled = false`) sends no answer text. The provider's retention is its own. |
 | `api.github.com` | Update check and release lookup for `wispd update`. | **nothing of yours.** A plain GET with the user agent `wispd-update`. Nothing from your machine is in it. | No. Only when you run `wispd update`; the daemon never calls it. | None. | Do not run `wispd update`. A release is verified against its published SHA-256 before anything is installed. |
-| `upload.wikimedia.org` | Pictures for answer cards. | **nothing of yours.** A plain GET for one picture an answer named. Nothing from your machine is in it, but the picture's address comes from the answer. | Only when an answer shows a picture. This is the only host fetched by default. | None. | `[images] allow` is the full list of hosts that may be fetched, https only, size-capped, private addresses refused. Set it to a host you do not use to turn pictures off. |
-| `eu.openrouter.ai` | OpenRouter EU regional endpoint, when configured. | **text, screenshot.** What you said (as text), the focused app and window names, recent turns, memory notes, a selection or copied text you pointed at, and a screenshot on answer calls (`[agent] screenshots`) and the vision fallback. Windows that look like a password manager, a keyring or authentication prompt or a sudo terminal (plus any you add under `[cua]`) are blanked first, and a capture is refused while one has focus. | No. Only when explicitly configured. | You. `OPENROUTER_API_KEY` in your environment, `~/.config/wisp/.env` or your keyring. | `[brain] default` and `[brain] fallback` take a local model (`ollama:`, `lmstudio:`, `mlx:`) and nothing then leaves; `[agent] screenshots = false` keeps the screen out of answers. How long OpenRouter and the model provider keep a request is set by your OpenRouter account's privacy settings, not by Wisp. |
-| `us.openrouter.ai` | OpenRouter US regional endpoint, when configured. | **text, screenshot.** What you said (as text), the focused app and window names, recent turns, memory notes, a selection or copied text you pointed at, and a screenshot on answer calls (`[agent] screenshots`) and the vision fallback. Windows that look like a password manager, a keyring or authentication prompt or a sudo terminal (plus any you add under `[cua]`) are blanked first, and a capture is refused while one has focus. | No. Only when explicitly configured. | You. `OPENROUTER_API_KEY` in your environment, `~/.config/wisp/.env` or your keyring. | `[brain] default` and `[brain] fallback` take a local model (`ollama:`, `lmstudio:`, `mlx:`) and nothing then leaves; `[agent] screenshots = false` keeps the screen out of answers. How long OpenRouter and the model provider keep a request is set by your OpenRouter account's privacy settings, not by Wisp. |
+| `upload.wikimedia.org` | Pictures for answer cards. | **nothing of yours.** A plain GET for one picture an answer named. Nothing from your machine is in it, but the picture's address comes from the answer. | Only when an answer shows a picture. This is the only host fetched by default for pictures. | None. | `[images] allow` is the full list of hosts that may be fetched, https only, size-capped, private addresses refused. Set it to a host you do not use to turn pictures off. |
+| `raw.githubusercontent.com` | 3D models for answer cards. | **nothing of yours.** A plain GET for one glTF or GLB file an answer named. Nothing from your machine is in it, but the model's address comes from the answer. | Only when an answer shows a 3D model. | None. | `[models] allow` is the full list of hosts that may be fetched, https only, size-capped, private addresses refused. Set it to a host you do not use to turn 3D models off. |
+| `eu.openrouter.ai` | OpenRouter EU regional endpoint, when configured. | **text, screenshot.** What you said (as text), the focused app and window names, recent turns, memory notes, a selection or copied text you pointed at, and a screenshot on answer calls (`[agent] screenshots`) and the vision fallback. Windows that look like a password manager, a keyring or authentication prompt or a sudo terminal (plus any you add under `[cua]`) are blanked first, and a capture is refused while one has focus. | No. Only when explicitly configured. | You. `OPENROUTER_API_KEY` in your environment, `~/.config/wisp/.env` or your keyring. The dev-mode judge uses `omaseal://openrouter/orchestral` (your eval key) instead, never the default key. | `[brain] default` and `[brain] fallback` take a local model (`ollama:`, `lmstudio:`, `mlx:`) and nothing then leaves; `[agent] screenshots = false` keeps the screen out of answers. How long OpenRouter and the model provider keep a request is set by your OpenRouter account's privacy settings, not by Wisp. |
+| `us.openrouter.ai` | OpenRouter US regional endpoint, when configured. | **text, screenshot.** What you said (as text), the focused app and window names, recent turns, memory notes, a selection or copied text you pointed at, and a screenshot on answer calls (`[agent] screenshots`) and the vision fallback. Windows that look like a password manager, a keyring or authentication prompt or a sudo terminal (plus any you add under `[cua]`) are blanked first, and a capture is refused while one has focus. | No. Only when explicitly configured. | You. `OPENROUTER_API_KEY` in your environment, `~/.config/wisp/.env` or your keyring. The dev-mode judge uses `omaseal://openrouter/orchestral` (your eval key) instead, never the default key. | `[brain] default` and `[brain] fallback` take a local model (`ollama:`, `lmstudio:`, `mlx:`) and nothing then leaves; `[agent] screenshots = false` keeps the screen out of answers. How long OpenRouter and the model provider keep a request is set by your OpenRouter account's privacy settings, not by Wisp. |
 
 ## Hosts you choose
 
@@ -29,11 +30,16 @@ These settings take any address. Whatever you put there gets what the stage send
 | `[report] dsn` | Receives typed error codes, only when set. |
 | MCP servers you configure | Receive the tool calls you approve. |
 | `[images] allow` | Hosts a picture may be fetched from. |
+| `[models] allow` | Hosts a 3D model may be fetched from. |
 | `wispd import <https address>` | One GET of the address you typed (https only, 256 KB), after which nothing is written until you read the full text and say yes. |
 
 ## On this machine only
 
 Loopback addresses (`127.0.0.1`, `localhost`) are local services: whisper.cpp, a local model server (Ollama, LM Studio, MLX), the UI-grounding model, the browser debugging port and per-app control ports. A grounding model on loopback means screenshots never leave the box for that step.
+
+## Background agents
+
+An OpenCode agent Wisp starts runs on this machine and reaches models through ori and OpenRouter, so what it reads and writes goes to OpenRouter-routed models like any other turn. Every tool call it asks permission for gets one answer from Wisp's own policy: reads inside its working folder and a fixed list of build and test commands are allowed; credential files, keyring tools, login flows and Wisp's state folder are refused in every mode; everything else, and anything Wisp cannot parse, is asked out loud and refused if you do not answer. The only door back into Wisp is a read-only tool list (memory, skills, task output, one question to you). `[agents] mcp_memory = false` takes memory off that list. `wispd doctor` does not prove the permission gate, because that takes a live model call: its row says "live check not run".
 
 ## Names in the code that are not requests
 
@@ -42,38 +48,42 @@ Loopback addresses (`127.0.0.1`, `localhost`) are local services: whisper.cpp, a
 | `github.com` | Release downloads for `wispd update` (the same GET as api.github.com above) and the project address Wisp names itself with in an `HTTP-Referer` header so OpenRouter can show an app name. |
 | `mail.google.com` | Opened in your browser when you say "open mail" and no native mail client is set (`[web] mail`). |
 | `calendar.google.com` | Opened in your browser when you say "open calendar" and no native client is set (`[web] calendar`). |
+| `dashboard.stripe.com` | Opened in your browser when you say "go to Stripe" or "open Stripe". |
+| `linear.app` | A local app-skill routing hint for Linear. No request is made by this lookup. |
+| `app.slack.com` | A local app-skill routing hint for Slack. No request is made by this lookup. |
 | `x.com` | A compose window is opened in your browser with the text filled in. Nothing is posted until you press Post. |
 | `gmail.com` | An example in help text: a domain you say is opened in your browser. |
 | `cal.com` | A name in a list of apps Wisp can connect to, in help text. |
 | `wisp.ai` | An example in help text. |
 | `example.com` | An example address in help text. |
+| `console.groq.com` | A link shown in the voice notice and `wispd doctor` for accepting the Orpheus terms. Wisp never requests it. |
 | `amara.org` | A credit line for subtitle text in a bundled sample. |
 | `www.w3.org` | An XML namespace in a generated icon. Never requested. |
-| `hf.co` | A Hugging Face model namespace inside Ollama tags (`hf.co/owner/model:tag`) in the local-model catalog. It names a weight to pull, not a host Wisp opens — Ollama resolves the download. |
-| `airtable.com` | App-skill routing: matched against the frontmost window's URL to pick the Airtable skill. Nothing is sent to it. |
-| `app.asana.com` | App-skill routing: matched against the frontmost window's URL to pick the Asana skill. Nothing is sent to it. |
-| `app.clickup.com` | App-skill routing: matched against the frontmost window's URL to pick the ClickUp skill. Nothing is sent to it. |
-| `app.slack.com` | App-skill routing: matched against the frontmost window's URL to pick the Slack skill. Nothing is sent to it. |
-| `atlassian.net` | App-skill routing: matched against the frontmost window's URL to pick the Jira or Confluence skill. Nothing is sent to it. |
-| `chatgpt.com` | App-skill routing: matched against the frontmost window's URL to pick the ChatGPT skill. Nothing is sent to it. |
-| `claude.ai` | App-skill routing: matched against the frontmost window's URL to pick the Claude skill. Nothing is sent to it. |
-| `dash.cloudflare.com` | App-skill routing: matched against the frontmost window's URL to pick the Cloudflare skill. Nothing is sent to it. |
-| `discord.com` | App-skill routing: matched against the frontmost window's URL to pick the Discord skill. Nothing is sent to it. |
-| `docs.google.com` | App-skill routing: matched against the frontmost window's URL to pick the Google Docs skill. Nothing is sent to it. |
-| `drive.google.com` | App-skill routing: matched against the frontmost window's URL to pick the Google Drive skill. Nothing is sent to it. |
-| `dropbox.com` | App-skill routing: matched against the frontmost window's URL to pick the Dropbox skill. Nothing is sent to it. |
-| `figma.com` | App-skill routing: matched against the frontmost window's URL to pick the Figma skill. Nothing is sent to it. |
-| `gitlab.com` | App-skill routing: matched against the frontmost window's URL to pick the GitLab skill. Nothing is sent to it. |
-| `linear.app` | App-skill routing: matched against the frontmost window's URL to pick the Linear skill. Nothing is sent to it. |
-| `open.spotify.com` | App-skill routing: matched against the frontmost window's URL to pick the Spotify skill. Nothing is sent to it. |
-| `outlook.office.com` | App-skill routing: matched against the frontmost window's URL to pick the Outlook skill. Nothing is sent to it. |
-| `perplexity.ai` | App-skill routing: matched against the frontmost window's URL to pick the Perplexity skill. Nothing is sent to it. |
-| `reddit.com` | App-skill routing: matched against the frontmost window's URL to pick the Reddit skill. Nothing is sent to it. |
-| `stackoverflow.com` | App-skill routing: matched against the frontmost window's URL to pick the Stack Overflow skill. Nothing is sent to it. |
-| `tallyline.app` | App-skill routing: matched against the frontmost window's URL to pick the Tallyline skill. Nothing is sent to it. |
-| `trello.com` | App-skill routing: matched against the frontmost window's URL to pick the Trello skill. Nothing is sent to it. |
-| `vercel.com` | App-skill routing: matched against the frontmost window's URL to pick the Vercel skill. Nothing is sent to it. |
-| `youtube.com` | App-skill routing: matched against the frontmost window's URL to pick the YouTube skill. Nothing is sent to it. |
+| `hf.co` | A Hugging Face model namespace inside Ollama tags (`hf.co/owner/model:tag`) in the local-model catalog. It names a weight to pull, not a host Wisp opens; Ollama resolves the download. |
+| `airtable.com` | A local app-skill routing hint for Airtable. No request is made by this lookup. |
+| `app.asana.com` | A local app-skill routing hint for Asana. No request is made by this lookup. |
+| `app.clickup.com` | A local app-skill routing hint for ClickUp. No request is made by this lookup. |
+| `atlassian.net` | A local app-skill routing hint for Jira and Confluence. No request is made by this lookup. |
+| `chatgpt.com` | A local app-skill routing hint for ChatGPT. No request is made by this lookup. |
+| `claude.ai` | A local app-skill routing hint for Claude. No request is made by this lookup. |
+| `cloudflare.com` | Matched against the focused window title to select a local app skill for Cloudflare. No request is made by this lookup. |
+| `dash.cloudflare.com` | A local app-skill routing hint for the Cloudflare dashboard. No request is made by this lookup. |
+| `discord.com` | A local app-skill routing hint for Discord, also matched against the focused window title. No request is made by this lookup. |
+| `docs.google.com` | A local app-skill routing hint for Google Docs and Sheets, also matched against the focused window title. No request is made by this lookup. |
+| `drive.google.com` | A local app-skill routing hint for Google Drive, also matched against the focused window title. No request is made by this lookup. |
+| `dropbox.com` | A local app-skill routing hint for Dropbox. No request is made by this lookup. |
+| `figma.com` | A local app-skill routing hint for Figma, also matched against the focused window title. No request is made by this lookup. |
+| `gitlab.com` | A local app-skill routing hint for GitLab. No request is made by this lookup. |
+| `open.spotify.com` | A local app-skill routing hint for Spotify. No request is made by this lookup. |
+| `outlook.office.com` | A local app-skill routing hint for Outlook. No request is made by this lookup. |
+| `perplexity.ai` | A local app-skill routing hint for Perplexity, also matched against the focused window title. No request is made by this lookup. |
+| `reddit.com` | A local app-skill routing hint for Reddit. No request is made by this lookup. |
+| `stackoverflow.com` | A local app-skill routing hint for Stack Overflow. No request is made by this lookup. |
+| `stripe.com` | Matched against the focused window title to select a local app skill for Stripe. No request is made by this lookup. |
+| `tallyline.app` | A local app-skill routing hint for Tallyline. No request is made by this lookup. |
+| `trello.com` | A local app-skill routing hint for Trello. No request is made by this lookup. |
+| `vercel.com` | A local app-skill routing hint for Vercel, also matched against the focused window title. No request is made by this lookup. |
+| `youtube.com` | A local app-skill routing hint for YouTube. No request is made by this lookup. |
 
 ## Stored on this machine
 
@@ -82,7 +92,8 @@ Everything below lives in `~/.local/share/wisp` (a 0700 folder of 0600 files), `
 | What | Holds | How long, and your control |
 | --- | --- | --- |
 | session.jsonl | Recent turns: what you said, the route, the reply. | Not trimmed automatically. Delete the file any time. |
-| decisions.jsonl, route_ab.jsonl | One line per turn: transcript, route choice, timings. Used to label and compare routing. | Not trimmed automatically. Delete the files any time. |
+| decisions.jsonl | One line per turn: transcript, route choice, timings. Used to label and compare routing. | Not trimmed automatically. Delete the files any time. |
+| trajectories.jsonl | What the act loop did for each task: the task text (your words), the app, the steps and the outcome. Used to show the loop how a similar task went before. | Rotates at its size cap and keeps one earlier file. Delete the files any time. |
 | trace.jsonl | Per-stage event stream for debugging, including the transcript and answer text. Keys are never written. | `[debug] trace = false` writes nothing. Rotates at 10 MB and keeps one earlier file. |
 | dictation history | Each finished dictation, so a failed insert loses nothing. Never sent anywhere and never put in a prompt. | `[dictation] history`, `history_max` and `history_days` bound it (100 entries, 7 days by default). `wispd dictate clear` empties it. |
 | utterance.wav | The recording of your last turn, in `~/.config/wisp`. | Overwritten by the next turn. Delete it any time. |
@@ -107,40 +118,45 @@ From the scan this page is built from.
 - `airtable.com`: `wisp/skills.py`
 - `amara.org`: `wisp/dictate_history.py`
 - `api.github.com`: `wisp/update.py`
-- `api.groq.com`: `rs/wispd/src/config.rs`, `wisp/config.py`
+- `api.groq.com`: `rs/wispd/src/config.rs`, `wisp/config.py`, `wisp/tts_groq.py`
 - `app.asana.com`: `wisp/skills.py`
 - `app.clickup.com`: `wisp/skills.py`
-- `app.slack.com`: `wisp/skills.py`
+- `app.slack.com`: `wisp/config.py`, `wisp/context.py`, `wisp/skills.py`
 - `atlassian.net`: `wisp/skills.py`
 - `cal.com`: `wisp/mcpauth.py`
-- `calendar.google.com`: `wisp/config.py`, `wisp/skills.py`
+- `calendar.google.com`: `wisp/config.py`, `wisp/context.py`, `wisp/skills.py`
 - `chatgpt.com`: `wisp/skills.py`
 - `claude.ai`: `wisp/skills.py`
+- `cloudflare.com`: `wisp/context.py`
+- `console.groq.com`: `wisp/tts_groq.py`
 - `dash.cloudflare.com`: `wisp/skills.py`
-- `discord.com`: `wisp/skills.py`
-- `docs.google.com`: `wisp/skills.py`
-- `drive.google.com`: `wisp/skills.py`
+- `dashboard.stripe.com`: `wisp/config.py`, `wisp/context.py`
+- `discord.com`: `wisp/context.py`, `wisp/skills.py`
+- `docs.google.com`: `wisp/context.py`, `wisp/skills.py`
+- `drive.google.com`: `wisp/context.py`, `wisp/skills.py`
 - `dropbox.com`: `wisp/skills.py`
 - `eu.openrouter.ai`: `wisp/config.py`
 - `example.com`: `wisp/cli/share.py`
-- `figma.com`: `wisp/skills.py`
-- `github.com`: `rs/wispd/src/brain.rs`, `wisp/brain.py`, `wisp/grounding.py`, `wisp/route.py`, `wisp/skills.py`, `wisp/stage_route.py` and 2 more
+- `figma.com`: `wisp/context.py`, `wisp/skills.py`
+- `github.com`: `rs/wispd/src/brain.rs`, `wisp/agent_pins.py`, `wisp/brain.py`, `wisp/config.py`, `wisp/context.py`, `wisp/grounding.py` and 3 more
 - `gitlab.com`: `wisp/skills.py`
 - `gmail.com`: `wisp/tools/__init__.py`
 - `hf.co`: `wisp/model_catalog.py`
-- `linear.app`: `wisp/skills.py`
-- `mail.google.com`: `wisp/config.py`, `wisp/skills.py`
+- `linear.app`: `wisp/config.py`, `wisp/context.py`, `wisp/skills.py`
+- `mail.google.com`: `wisp/config.py`, `wisp/context.py`, `wisp/skills.py`
 - `open.spotify.com`: `wisp/skills.py`
-- `openrouter.ai`: `rs/wispd/src/brain.rs`, `rs/wispd/src/config.rs`, `wisp/brain.py`, `wisp/config.py`, `wisp/onboard.py`, `wisp/recall.py`
+- `openrouter.ai`: `rs/wispd/src/brain.rs`, `rs/wispd/src/config.rs`, `wisp/brain.py`, `wisp/config.py`, `wisp/context.py`, `wisp/devjudge.py` and 2 more
 - `outlook.office.com`: `wisp/skills.py`
-- `perplexity.ai`: `wisp/skills.py`
+- `perplexity.ai`: `wisp/context.py`, `wisp/skills.py`
+- `raw.githubusercontent.com`: `wisp/tools/modelfetch.py`
 - `reddit.com`: `wisp/skills.py`
 - `stackoverflow.com`: `wisp/skills.py`
+- `stripe.com`: `wisp/context.py`
 - `tallyline.app`: `wisp/skills.py`
 - `trello.com`: `wisp/skills.py`
 - `upload.wikimedia.org`: `wisp/tools/imagefetch.py`
 - `us.openrouter.ai`: `wisp/config.py`
-- `vercel.com`: `wisp/skills.py`
+- `vercel.com`: `wisp/context.py`, `wisp/skills.py`
 - `wisp.ai`: `wisp/cli/dictate.py`
 - `www.w3.org`: `wisp/tools/system.py`
 - `x.com`: `wisp/skills.py`, `wisp/tools/social.py`

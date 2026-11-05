@@ -12,7 +12,10 @@ Common script keys (any fake):
   drop_on_calls   1-based call numbers where the socket is closed
                   without any response (connection reset)
 
-FakeJev      script["answers"]            -> {"answers": ...}
+FakeJev      tripwire for the retired decision endpoint: nothing routes
+             through it, so any call it records is a stray hop (the
+             runner fails the fixture). script["answers"] is only the
+             canned reply for a fixture that proves it is never called.
 FakeBrain    script["responses"][i]       -> one entry per call (last
              repeats); entry keys: content, chunks, tool_calls
              [{name,arg}], latency_ms, chunk_delay_ms. Streams SSE when
@@ -22,6 +25,8 @@ FakeWhisper  script["transcript"]         -> {"text": ...} on both
              /audio/transcriptions (OpenAI shape) and /inference
              (whisper-server shape)
 FakeUiTars   FakeBrain with a grounding-style default response
+FakeGroqTts  script["wav_ms"]             -> a silent WAV per /audio/speech
+             call (U6; a fixture that declares it speaks with Groq)
 
 ``calls`` records every request (path, method, parsed body, monotonic
 arrival time) so tests can assert on what the pipeline sent.
@@ -187,7 +192,9 @@ class FakeServer:
 
 
 class FakeJev(FakeServer):
-    """Jev decisions endpoint: returns scripted typed answers."""
+    """Tripwire for `JEV_ENDPOINT` (still read by the grounding `jev`
+    provider and the health probe; Q3 is open). The runner reports any
+    recorded call."""
 
     def serve(self, h, method, body, n):
         self.respond(h, 200, {"answers": self.script.get("answers", {}),
@@ -223,6 +230,13 @@ class FakeBrain(FakeServer):
 
     def serve(self, h, method, body, n):
         entry = self._entry(n)
+        # A scripted follow-up can depend on the actual broker reply,
+        # rather than unconditionally launching even after NO_ANSWER.
+        required = entry.get("requires_tool_result")
+        if required and not any(
+                m.get("role") == "tool" and m.get("content") == required
+                for m in (body or {}).get("messages", [])):
+            entry = entry.get("otherwise", {"content": ""})
         self._sleep(entry.get("latency_ms", 0))
         stream = bool(body and body.get("stream"))
         calls = entry.get("tool_calls") or []
@@ -283,6 +297,38 @@ class FakeUiTars(FakeBrain):
         super().__init__(script)
 
 
+class FakeGroqTts(FakeServer):
+    """Groq `/audio/speech`: one silent mono 16-bit WAV per call, its
+    length from script["wav_ms"][call - 1] (the last repeats, default
+    300 ms). `calls` records each request body."""
+
+    RATE = 24000
+
+    def counts(self, path: str) -> bool:
+        return path.rstrip("/").endswith("/audio/speech")
+
+    def serve(self, h, method, body, n):
+        import io
+        import wave
+        lens = self.script.get("wav_ms") or [300]
+        ms = lens[min(n, len(lens)) - 1]
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(self.RATE)
+            w.writeframes(b"\0\0" * (self.RATE * ms // 1000))
+        data = buf.getvalue()
+        h.send_response(200)
+        h.send_header("Content-Type", "audio/wav")
+        h.send_header("Content-Length", str(len(data)))
+        h.end_headers()
+        try:
+            h.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+
 KINDS = {"jev": FakeJev, "brain": FakeBrain, "brain2": FakeBrain,
          "whisper": FakeWhisper,
-         "uitars": FakeUiTars}
+         "uitars": FakeUiTars, "groq_tts": FakeGroqTts}

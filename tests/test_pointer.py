@@ -23,6 +23,13 @@ class _Iso(unittest.TestCase):
 
 class PointerTest(_Iso):
 
+    def setUp(self):
+        super().setUp()
+        # no live compositor here: an unreadable layout is "on screen"
+        p = mock.patch("wisp.points.monitors", return_value=[])
+        p.start()
+        self.addCleanup(p.stop)
+
     def test_parse_xy_screenshot(self):
         # legacy path: raw physical px (no magick to normalize)
         with mock.patch("wisp.points.monitors",
@@ -51,6 +58,44 @@ class PointerTest(_Iso):
         self.assertIsNone(system._parse_xy("nowhere"))
         self.assertIsNone(system._parse_xy(""))
 
+    # two monitors side by side: 2x laptop (logical 1000x500) + 1x at x=1000
+    MONS = [{"x": 0, "y": 0, "width": 2000, "height": 1000, "scale": 2},
+            {"x": 1000, "y": 0, "width": 1920, "height": 1080,
+             "scale": 1}]
+
+    def test_on_screen_uses_logical_rects(self):
+        from wisp import points
+        self.assertTrue(points.on_screen(10, 20, self.MONS))
+        self.assertTrue(points.on_screen(2500, 900, self.MONS))
+        # right of the 2x monitor's logical width (1000) is the 2nd one;
+        # below the 2x monitor's logical height (500) at x<1000 is nothing
+        self.assertFalse(points.on_screen(500, 800, self.MONS))
+        self.assertFalse(points.on_screen(-50, 10, self.MONS))
+        self.assertFalse(points.on_screen(5000, 10, self.MONS))
+
+    def test_on_screen_unknown_layout_never_vetoes(self):
+        from wisp import points
+        self.assertTrue(points.on_screen(99999, 99999, []))
+
+    def test_offscreen_click_is_refused_not_driven(self):
+        with mock.patch("wisp.points.monitors", return_value=self.MONS), \
+             mock.patch("wisp.pointer.Registry") as reg:
+            out = system.click("5000,10@logical", DRIVE_CFG)
+        self.assertTrue(out.startswith("FAIL (5000,10 is off every screen"),
+                        out)
+        self.assertIn("re-aim", out)
+        reg.assert_not_called()
+
+    def test_offscreen_move_is_refused_in_guide_mode_too(self):
+        with mock.patch("wisp.points.monitors", return_value=self.MONS):
+            out = system.move("500,800@logical", GUIDE_CFG)
+        self.assertTrue(out.startswith("FAIL (500,800 is off every"), out)
+
+    def test_onscreen_click_still_goes_through(self):
+        with mock.patch("wisp.points.monitors", return_value=self.MONS):
+            self.assertEqual(system.click("1500,300@logical", GUIDE_CFG),
+                             "GUIDE(1500,300)")
+
     def test_guide_mode_no_spawn(self):
         with mock.patch("subprocess.run") as run:
             out = system.click("10,20@logical", GUIDE_CFG)
@@ -73,7 +118,9 @@ class PointerTest(_Iso):
 
         with mock.patch.object(platform, "pointer_backend",
                                return_value="ydotool"), \
-             mock.patch("subprocess.run", side_effect=fake_run):
+             mock.patch("subprocess.run", side_effect=fake_run), \
+             system.pointer_context(user_request="click at 10,20@logical"):
+            # This backend-argv fixture represents a literal human request.
             out = system.click("10,20@logical", DRIVE_CFG)
         self.assertEqual(out, "CLICKED(10,20)")
         self.assertEqual(len(calls), 2)  # move + click
@@ -88,11 +135,20 @@ class PointerTest(_Iso):
         with mock.patch.object(platform, "pointer_backend",
                                return_value="wlrctl"), \
              mock.patch("subprocess.run",
-                        return_value=mock.Mock(returncode=0)) as run:
-            # auto mode isn't implemented as drive yet — mode gate is
-            # explicit 'drive'; auto still guides unless user opts in
+                        return_value=mock.Mock(returncode=0)) as run, \
+             system.pointer_context(user_request="click at 1,2@logical"):
             out = system.click("1,2@logical", AUTO)
-        self.assertTrue(out.startswith(("GUIDE", "CLICKED")))
+        self.assertEqual(out, "CLICKED(1,2)")
+        self.assertGreaterEqual(run.call_count, 1)
+
+    def test_model_coordinate_without_element_never_reaches_backend(self):
+        with mock.patch.object(platform, "pointer_backend",
+                               return_value="ydotool"), \
+             mock.patch("wisp.grounding.target_at_point", return_value=None), \
+             mock.patch("subprocess.run") as run:
+            out = system.click("10,20@logical", DRIVE_CFG)
+        self.assertTrue(out.startswith("REFUSED"), out)
+        run.assert_not_called()
 
     def test_explicit_backend_missing_falls_back(self):
         cfg = {"pointer": {"mode": "drive", "backend": "ydotool"}}

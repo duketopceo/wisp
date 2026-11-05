@@ -662,6 +662,10 @@ class Loop(LadderCase):
             # cover the verdict ladder, packs.write has its own suite
             mock.patch.object(act, "_write_pack"),
             mock.patch.object(platform, "_cua_live", return_value=True),
+            # Verdict rendering is exercised on a benign Notes surface,
+            # not on an unidentified/financial app requiring fresh consent.
+            mock.patch.object(platform, "active_window", return_value={
+                "class": "org.example.notes", "title": "Synthetic notes"}),
             mock.patch.object(cua_safety, "audit_default_path",
                               return_value=t / "cua.jsonl"),
             mock.patch.object(cua_safety, "kill_default_path",
@@ -693,6 +697,21 @@ class Loop(LadderCase):
                 return "MOVED(0,0)"
             return "OK"
         return run
+
+    def test_unknown_live_surface_without_confirmation_keeps_not_recorded(self):
+        replies = [_msg(calls=[_call("click", "100,100@logical")]),
+                   _msg(content="done")]
+        steps = []
+        with mock.patch.object(platform, "active_window", return_value={}), \
+                mock.patch.object(act, "_post", side_effect=replies), \
+                mock.patch.object(tools, "run") as run:
+            act.run_act_loop("click the thing", DRIVE, steps_out=steps)
+        run.assert_not_called()
+        self.assertEqual(steps[0]["result"],
+                         "SKIPPED (click needs user confirmation)")
+        self.assertEqual(steps[0]["verdict"], "not_recorded")
+        self.assertIsNone(steps[0]["turn_dir"])
+        self.assertEqual(self.driver.seq, 0)
 
     def test_verdict_suffix_step_record_and_terminal_recheck(self):
         replies = [_msg(calls=[_call("click", "100,100@logical")]),

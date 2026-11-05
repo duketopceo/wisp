@@ -7,14 +7,30 @@ at the thing it means, or hands a long job to a background coding agent.
 It keeps the conversation open across utterances, so "check the build",
 "open it" and "scroll to the failure" are one task.
 
-Pipeline: push-to-talk, PipeWire capture, whisper.cpp, Jev routing, then
-one of launch, tool, agent, act, dictate, answer or clarify. The result
+Pipeline: push-to-talk, PipeWire capture, configured speech recognition,
+then fast-path routing or the act loop. Cloud, local, and safe presets
+provide starting configurations; providers and local tools still need setup. The result
 shows up as the bar mark and live pill, a cursor bubble, a bottom-center
 listening pill on the overlay, and the Panel.
 
 Status: v0.9 shipped; v1.0 is a verification milestone (a labelled soak,
 a fresh-box install and the learning loop; see `ROADMAP.md`). Linux
-(Omarchy/Hyprland) is the only supported platform.
+(Omarchy/Hyprland) is the full-app target. The [macOS](docs/MACOS.md) and
+[Windows](docs/WINDOWS.md) adapters are experimental, not complete desktop ports.
+
+## Website previews
+
+`site/` remains the lightweight, no-script site. The optional interactive
+version lives in `site-3d/`; its self-hosted desktop illustration is not a
+live model call or a benchmark.
+
+```sh
+python3 scripts/site/build.py --out build/site
+python3 scripts/site/build_3d.py
+```
+
+The intended primary domain is `wisp.observer`. Domain deployment and a
+hosted bootstrap installer remain separate, unverified release work.
 
 ## What it looks like
 
@@ -51,12 +67,12 @@ systemctl --user enable --now wispd
 wispd onboard                  # guided first run, every step skippable
 ```
 
-- `wispd install --units` installs only the systemd units for the local
-  model services and the daemon (oomd-safe, see `docs/LINUX.md`). Add
+- `wispd install --units` installs only the systemd units for the daemon
+  and, if `[local] enabled` is on, the optional local model services (oomd-safe, see `docs/LINUX.md`). Add
   `--dry-run` to preview. It never enables or starts anything.
 - `wispd install --cua` installs the pinned `cua-driver` (checksum
   verified, user scope, no sudo). `--dry-run` previews it.
-- `wispd onboard` checks the microphone, the local models, the cua driver,
+- `wispd onboard` checks the microphone, the local models (only if `[local] enabled`), the cua driver,
   notifications and the keyboard submap. The Panel shows the same
   checklist as a card until you finish. Nothing in it edits your config.
 - Some questions are answered from this machine with no model call: "what
@@ -79,8 +95,9 @@ wispd onboard                  # guided first run, every step skippable
 
 Prerequisites: `pw-record` (or `arecord`), whisper.cpp at
 `~/src/whisper.cpp` with `models/ggml-small.en.bin`, `hyprctl`,
-`notify-send`. Optional: `grim`, `wtype`, `espeak-ng`, `ori` (agent
-spawning). Secrets go in `~/.config/wisp/.env` (`OPENROUTER_API_KEY=...`)
+`notify-send`. Optional: `grim`, `wtype`, `espeak-ng`. Background agents need
+nothing installed by hand: `wispd install --agents` (or the onboarding agents
+step) downloads a pinned `ori` and OpenCode. Secrets go in `~/.config/wisp/.env` (`OPENROUTER_API_KEY=...`)
 or an `omaseal` reference; nothing is committed. Full steps and per-OS
 notes are in `docs/INSTALL.md`; every config key is in `docs/CONFIG.md`.
 
@@ -90,16 +107,21 @@ notes are in `docs/INSTALL.md`; every config key is in `docs/CONFIG.md`.
   glance, plus an in-bar pill that grows while Wisp works — status word,
   mic-level meter while listening, and the same vocabulary as the overlay.
   Click toggles talk, middle-click stops the turn, right-click opens the
-  Panel.
+  Panel. The pill names the state (listening, thinking, speaking, acting,
+  needs you, error) and, after a finished turn, shows thumbs for eight
+  seconds so you can rate it in one tap.
 - **Companion overlay**: transient surfaces only (no corner orb): a
   bottom-center pill while you speak, answers in a bubble next to your
-  cursor (with `good` and `wrong` label buttons), confirm/choice chips on
+  cursor (with thumbs-up and thumbs-down rating buttons; `Super+Alt+D` rates the last turn wrong and opens a one-line note), confirm/choice chips on
   the pill, and a cursor buddy beside the pointer that flies to act targets. Step detail lives in the
   Panel Now tab, not a separate console window.
-- **Panel**: opened from the bar. Four tabs: Now (the current turn and
+- **Panel**: opened from the bar. Four tabs (five with the Dev tab): Now (the current turn and
   steps), Agents (background tasks), Memory (skills and recent
   decisions) and Settings (health, spend caps, pointer and cua safety,
   connectors). A first-run card sits on top until setup is finished.
+  With `[dev] panel = true` a fifth tab, Dev, shows the v1 gate tally,
+  recent turns with per-stage time and the top misses (local only; the
+  same data as `wispd dev turns`).
 - **Desktop entry**: "Wisp" in the app menu, with Listen, Stop and Panel
   actions. No tray icon is shipped (see `docs/INSTALL.md`).
 - **Management app and TUI**: Health, Spend, Audit and Binds views over
@@ -132,7 +154,13 @@ What a turn can do:
   No blind clicks. See [Computer use](#computer-use).
 - **Agent**: "Wisp, agent, fix the tests in wisp" starts a named task on
   your runtime (`opencode`, `codex`, `claude` or `devin`; `auto` probes
-  `PATH`). `wispd task list` shows status and a live log tail.
+  `PATH`). `wispd task list` shows status and a live log tail. With
+  OpenCode the task is a live session: it speaks progress as it goes, asks
+  you out loud when it needs an answer or a permission for a risky step
+  (silence counts as no), takes follow-ups to the same helper, can be
+  cancelled by voice or `wispd task cancel`, and speaks its answer when it
+  finishes (`wispd task output` reads it back). An interrupted session
+  resumes when you say "continue".
   **Named helpers**: "make me a research helper called Scout" gives it a
   folder in the data dir (`agents/scout/`: `AGENTS.md` identity, dated
   `notes/`, `output/`, `tmp/`). "Tell Scout to ..." starts a run that reads
@@ -146,12 +174,19 @@ What a turn can do:
   `mcp_call` to any configured MCP server. `wispd connect <service>`
   connects OAuth services through the local BrowserOS gateway.
 - **Goal memory**: utterances that share the focused app or the running
-  goal join one goal (`[agent] goal_ttl_s`, 10 minutes). Questions from
-  the agent come back through the voice backchannel without ending it.
+  goal join one goal (`[agent] goal_ttl_s`, 10 minutes). Questions and
+  permission asks from a background agent come back through the voice
+  backchannel without ending it, and a running agent can read your memory
+  (`[agents] mcp_memory`) so a task starts with what you already told Wisp.
 
 Spoken settings: "talk slower", "talk faster" and "talk at normal speed"
 change `[voice] speed` (0.5 to 1.5) and are logged with the guarded calls
 (`wispd cua log --audit`).
+
+Spoken answers use Groq Orpheus when a Groq key resolves (the same key as
+speech-to-text), and fall back to espeak for the turn if Groq is slow or
+refuses. `[voice] enabled` is `auto` by default: on only with a Groq key.
+`wispd doctor` shows which voice is in use and the last Groq error.
 
 ## Computer use
 
@@ -194,22 +229,24 @@ and reset by local date:
 
 ## Local models
 
-Wisp runs on local OpenAI-compatible servers when you want zero marginal
-cost. Any `llama.cpp`, Ollama or LM Studio endpoint works as a
-`[brain.<name>]` provider.
+Local models are optional and off by default. Wisp uses hosted OpenRouter
+models unless you set `[local] enabled = "true"`. With it on, any
+OpenAI-compatible local server (`llama.cpp`, Ollama or LM Studio) works as a
+`[brain.<name>]` provider, at zero marginal cost. The endpoints below are
+examples, not requirements.
 
 | Endpoint | Port | Role |
 |---|---|---|
 | Ornith (llama-server, GPU) | `:8080` | answer and act brain |
-| Jev (llama-jev) behind jev-shim | `:8091`, `:8931` | decisions router |
+| Jev (llama-jev) behind jev-shim | `:8091`, `:8931` | optional structured grounding |
 | UI-TARS-7B (llama-server) | `:8081` | GUI grounding, emits `Action: click(x,y)` text |
 | Ollama | `:11434` | CPU or GPU brain, native `/api/chat` |
 
-`wispd health` probes these over loopback only. `wispd health start`
+Only when you opt in to local models, `wispd health` probes these over loopback only. `wispd health start`
 prints the command that starts a down endpoint (`--run` executes it).
-Jev is an accelerator, not a gate: past `[jev] deadline_ms` a heuristic
-router decides and the turn goes on. Provider sections and flags are in
-`docs/CONFIG.md`.
+Turn routing uses local fast paths and the act/chat/off choice; the old Jev
+decision service is not called. The separately named optional Jev grounding
+provider remains available. Provider sections and flags are in `docs/CONFIG.md`.
 
 ## Learning
 
@@ -219,6 +256,8 @@ by turn kind (answer, act, launch, dictate, agent) and checks the
 `[eval]` gate. `wispd eval --misses` groups the turns that were not
 right first time, and `wispd eval --unlabelled` lists the turns still
 waiting for a label. `wispd learn fails` lists logged failures.
+To tune on purpose, dev mode runs a task list on your desktop and reports
+accuracy, drift and cost; see [`docs/DEV_MODE.md`](docs/DEV_MODE.md).
 
 ## Walkthroughs
 
@@ -230,6 +269,12 @@ stuck?". Pointing is label-first: the control's on-screen label is looked
 up through the app's control channel and the accessibility tree before the
 model's own coordinates are used. Wisp never clicks or types during a
 walkthrough, and Esc stops it.
+
+Asking like a learner works too: "show me how to <task>", "teach me <task>"
+or "I want to learn <task>" start a walkthrough, and each step adds one
+short sentence on why it matters. A plain "how do I <task>" is still
+answered in a sentence. `[teach] auto = "false"` sends the learner
+phrasings back to the normal route.
 
 Say "demonstrate <task>" (or "demo me <task>") and Wisp narrates and points
 at every step in one go without waiting for you. When the focused app has a
@@ -306,9 +351,10 @@ verbs and examples. Add `--json` for machine-readable output.
 | `wispd note` | show or follow the live paper (`note.md`) |
 | `wispd scribble set\|clear` | the strokes drawn on screen while holding the talk key (the overlay calls this; they reach the next screenshot only) |
 | `wispd doctor` | check every dependency |
-| `wispd health` | local model endpoint health |
+| `wispd health` | optional local model endpoint health (needs `[local] enabled`) |
 | `wispd latency` | p50 and p90 per budget path |
 | `wispd spend` | usage today and the caps |
+| `wispd recap --json` | preview the private, opt-in weekly recap; `--off` disables it |
 | `wispd binds` | the hotkey and its Hyprland binds |
 | `wispd onboard` | guided first run |
 | `wispd trace show` / `trace digest` | turn trace and local digest |
@@ -322,7 +368,9 @@ verbs and examples. Add `--json` for machine-readable output.
 | `wispd dictate correct` / `wispd dictate list` | teach a heard->meant dictation correction, or show them |
 | `wispd suggest list` | suggestions mined from your activity |
 | `wispd label set` / `wispd eval` | label a run, or score your labels by turn kind |
+| `wispd dev turns` | the last turns with per-stage time, labels, the v1 gate and top misses (read-only) |
 | `wispd context` | what the daemon sees right now |
+| `wispd ask TEXT` | ask one typed question as a normal turn (a click on a 3D part sends this) |
 | `wispd learn fails` | logged failures |
 | `wispd skills list` | installed skills |
 | `wispd config show` / `wispd config set` | read or change config live |

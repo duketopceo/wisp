@@ -24,6 +24,7 @@ class Base(unittest.TestCase):
         p.start()
         self.addCleanup(p.stop)
         self.popen = []
+        self.stdins = []
 
         class P:
             pid = 5000
@@ -32,6 +33,9 @@ class Base(unittest.TestCase):
                 return None
 
         def fake_popen(cmd, **kw):
+            fin = kw.get("stdin")
+            self.stdins.append(fin.read().decode()
+                               if hasattr(fin, "read") else "")
             self.popen.append((cmd, kw))
             P.pid += 1
             return P()
@@ -40,7 +44,8 @@ class Base(unittest.TestCase):
         self.alive = alive.start()
         self.addCleanup(alive.stop)
         for target, val in (
-                ("_runtime_cmd", lambda cfg, task, model: ["agent", task]),
+                ("_runtime_cmd", lambda cfg, model: ["agent", "run"]),
+                ("_pinned_state", lambda: {"state": "absent"}),
                 ("_systemd_scope_enabled", lambda cfg: False),
                 ("_pstart", lambda pid: "1"),
                 ("_PROCS", [])):
@@ -55,8 +60,10 @@ class Base(unittest.TestCase):
         self.addCleanup(q.stop)
 
     def prompt_of(self, i):
-        """The prompt argument of the i-th spawned command."""
-        return next(a for a in self.popen[i][0] if "Task: " in a)
+        """The prompt the i-th spawned agent was given. It is stdin, not
+        argv: other local accounts can read argv while it runs."""
+        self.assertNotIn("Task: ", " ".join(self.popen[i][0]))
+        return self.stdins[i]
 
     def run_named(self, detail, **kw):
         return agents.run_named(detail, {}, self.tasks, log_dir=self.logs,
@@ -242,9 +249,44 @@ class Runs(Base):
         self.assertNotIn("OPENROUTER_API_KEY", env)
         self.assertIn("WISP_TASK_ID", env)
 
+    def test_a_tell_with_no_live_session_still_uses_the_inbox(self):
+        # no ACP manager running: the one-shot inbox path is unchanged
+        self.run_named(agent_home.encode(
+            "create", name="Scout", role="r", task="long job"))
+        self.alive.return_value = True
+        out = self.run_named(agent_home.encode(
+            "tell", name="Scout", message="also B"))
+        self.assertIn("left it your message", out)
+        self.assertIn("also B", (self.root / "scout" / "inbox.md").read_text())
+
     def test_unknown_request(self):
         self.assertTrue(self.run_named(agent_home.PREFIX + "{}")
                         .startswith("SKIP"))
+
+
+class Continue(unittest.TestCase):
+    def test_plain_continue_only_counts_when_something_is_interrupted(self):
+        self.assertIsNone(agent_home.parse_continue("continue", []))
+        self.assertEqual(agent_home.parse_continue("continue", ["Scout"]), "")
+        self.assertEqual(
+            agent_home.parse_continue("wisp, continue scout.", ["Scout"]),
+            "scout")
+        self.assertIsNone(
+            agent_home.parse_continue("continue ghost", ["Scout"]))
+        self.assertIsNone(
+            agent_home.parse_continue("continue the report", ["Scout"]))
+
+    def test_route_for_continue_and_run_named_without_one(self):
+        with mock.patch.object(agents, "interrupted",
+                               return_value=[{"name": "scout",
+                                              "agent": "scout"}]):
+            route, detail = agent_home.route_for("continue")
+        self.assertEqual(route, "agent")
+        self.assertEqual(agent_home.decode(detail),
+                         {"kind": "continue", "name": ""})
+        with tempfile.TemporaryDirectory() as td:
+            out = agents.run_named(detail, {}, pathlib.Path(td) / "t.jsonl")
+        self.assertIn("nothing is waiting", out)
 
 
 if __name__ == "__main__":

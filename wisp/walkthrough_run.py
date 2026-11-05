@@ -58,6 +58,37 @@ def walk_intent(text: str) -> str | None:
     return goal or None
 
 
+# A learner says "teach me X" or "show me how to X", not "walk me through
+# X". These phrasings are teaching requests. A bare "how do I X" is not:
+# it is often a one-line fact ("how do I open a new tab"), and the answer
+# lane gives that in one sentence.
+_TEACH = re.compile(
+    r"^\s*(?:(?:hey\s+)?wisp[,\s]+)?(?:ok(?:ay)?[,\s]+)?(?:please\s+)?"
+    r"(?:(?:show\s+me\s+how\s+(?:to|i\s+(?:can|do|would))|"
+    r"teach\s+me(?:\s+how)?(?:\s+to)?|"
+    r"(?:help\s+me\s+)?learn(?:\s+how\s+to)?|"
+    r"(?:i\s+want|i'd\s+like|i\s+need)\s+to\s+learn(?:\s+how\s+to)?|"
+    r"(?:i'?m|i\s+am)\s+(?:trying|learning)\s+to)\s+)"
+    r"(.+?)[\s.!?]*$", re.IGNORECASE | re.DOTALL)
+_NOT_PROCEDURE = re.compile(
+    r"^(?:know|tell|find\s+out|decide|choose|pick|feel|think|say|"
+    r"pronounce|spell|afford|trust|stop\s+(?:worrying|caring))\b",
+    re.IGNORECASE)
+
+
+def teach_intent(text: str) -> str | None:
+    """The goal in a learner's phrasing ("show me how to rebase", "teach me
+    vim macros", "I want to learn layers"), else None. These start a
+    walkthrough so the user is taught the task instead of having it done
+    for them or getting a paragraph back."""
+    m = _TEACH.match(text or "")
+    goal = m.group(1).strip() if m else ""
+    if not goal or goal.lower() in ("it", "this", "that") \
+            or _NOT_PROCEDURE.match(goal):
+        return None
+    return goal
+
+
 def demo_intent(text: str) -> str | None:
     """The goal in "demonstrate X" requests: Wisp narrates and points at
     every step in one go, and the user does nothing."""
@@ -115,9 +146,13 @@ _PROMPT = (
     "a time. The user does every step themselves; you never click. "
     "Reply with ONLY a JSON object: {\"steps\": [{\"say\": \"one short "
     "spoken instruction\", \"label\": \"the exact on-screen text of the "
-    "control to use, or empty\"}]}. At most %d steps. The first step must "
-    "be doable from the current screen. Keep each \"say\" under 25 words, "
-    "plain speech, no markdown. Task: %s")
+    "control to use, or empty\", \"why\": \"one short sentence on why "
+    "this step matters or what it does, so the user learns the idea and "
+    "not just the clicks\"}]}. At most %d steps. The first step must "
+    "be doable from the current screen. Keep each \"say\" under 25 words "
+    "and each \"why\" under 20, plain speech, no markdown. The desktop is "
+    "Linux with Hyprland and Omarchy: there is no Activities overview or "
+    "dock, apps open from the launcher (Super+Space). Task: %s")
 
 
 def parse_steps(raw: str, max_steps: int = _wt.MAX_STEPS) -> list:
@@ -146,7 +181,8 @@ def parse_steps(raw: str, max_steps: int = _wt.MAX_STEPS) -> list:
         if isinstance(it.get("x"), (int, float)) \
                 and isinstance(it.get("y"), (int, float)):
             point = {"x": int(it["x"]), "y": int(it["y"]), "label": label}
-        out.append(_wt.Step(text=say, point=point, label=label))
+        why = " ".join(str(it.get("why") or "").split())[:200]
+        out.append(_wt.Step(text=say, point=point, label=label, why=why))
         if len(out) >= max_steps:
             break
     return out
@@ -265,7 +301,7 @@ def _dump(wt, planned, current) -> dict:
     steps = []
     for s in planned:
         steps.append({"text": s.text, "label": s.label, "point": s.point,
-                      "done": wt.has_completed(s)})
+                      "why": s.why, "done": wt.has_completed(s)})
     return {"goal": wt.goal, "steps": steps,
             "current": current.text if current is not None else "",
             "ts": time.time()}
@@ -308,7 +344,8 @@ def last_finished(path=None) -> dict | None:
 
 def steps_from(data: dict) -> list:
     return [_wt.Step(text=d["text"], point=d.get("point"),
-                     label=d.get("label") or "")
+                     label=d.get("label") or "",
+                     why=d.get("why") or "")
             for d in data.get("steps", []) if d.get("text")]
 
 
@@ -368,7 +405,8 @@ def _restore(data: dict, current_done: bool = True):
     planned, cur = [], data.get("current") or ""
     for d in data["steps"]:
         planned.append(_wt.Step(text=d["text"], point=d.get("point"),
-                                label=d.get("label") or ""))
+                                label=d.get("label") or "",
+                                why=d.get("why") or ""))
     wt = _wt.Walkthrough(data["goal"], planned)
     for s, d in zip(planned, data["steps"]):
         if d.get("done") or (current_done and cur and s.text == cur):
@@ -473,11 +511,17 @@ def run(goal: str, cfg: dict, state=None, *, ask=None,
         return finish("all done.", completed=True)
 
 
+def spoken(step) -> str:
+    """What is said for a step: the instruction, then why it matters."""
+    why = (getattr(step, "why", "") or "").strip()
+    return f"{step.text} {why}" if why else step.text
+
+
 def _do_step(wt, ev, env: _Env, ask, ground, monitors):
     """Announce one step and wait for the user to act. The next event
     (a step, or a terminal one), or None to stop the walkthrough."""
     step = ev["step"]
-    env.say(step.text, snap_point(step, env.cfg, ground=ground,
+    env.say(spoken(step), snap_point(step, env.cfg, ground=ground,
                                   monitors=monitors))
     before = {"window": env.window()}
     t0 = env.clock()
@@ -508,7 +552,7 @@ def _demo_step(wt, ev, env: _Env, ask, ground, monitors):
     """Say and point at one step, then move on: nothing is clicked, typed
     or waited for."""
     step = ev["step"]
-    env.say(step.text, snap_point(step, env.cfg, ground=ground,
+    env.say(spoken(step), snap_point(step, env.cfg, ground=ground,
                                   monitors=monitors))
     env.check()
     if env.interrupted():

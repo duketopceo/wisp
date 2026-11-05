@@ -213,6 +213,16 @@ class TestEvents(unittest.TestCase):
         r = run([["snap", snap(), 1000]])
         self.assertEqual(r["view"]["spend"], {})
 
+    def test_rate_prompt_is_carried_and_junk_degrades_to_null(self):
+        r = run([["snap", snap(rate_prompt={"turn": "b2"}), 1000]])
+        self.assertEqual(r["view"]["ratePrompt"], {"turn": "b2"})
+        for junk in (None, "b2", {"turn": ""}, {}, [1]):
+            r = run([["snap", snap(rate_prompt=junk), 1000]])
+            self.assertIsNone(r["view"]["ratePrompt"], junk)
+        r = run([["snap", snap(), 1000]])
+        self.assertIsNone(r["view"]["ratePrompt"])
+        self.assertIsNone(js("S.initial()")["ratePrompt"])
+
     def test_overflow_requests_resync(self):
         r = run(self.base + [["event", {"type": "event", "name": "overflow"}, 2]])
         self.assertTrue(r["resync"])
@@ -897,6 +907,16 @@ class TestActionResult(unittest.TestCase):
         self.assertFalse(r["ok"])
         self.assertEqual(r["error"], "stale_prompt")
         self.assertEqual(r["text"], "That prompt expired.")
+
+    def test_failed_label_envelope_carries_its_typed_status(self):
+        r = self.ar(1, '{"ok":false,"command":"label set","error":'
+                    '{"code":"E_FAILED","message":"Nothing was labelled.",'
+                    '"try":"wispd status"},"data":{"result":"not_ratable: x",'
+                    '"status":"not_ratable"}}')
+        self.assertFalse(r["ok"])
+        self.assertEqual(r["status"], "not_ratable")
+        self.assertEqual(self.ar(0, '{"ok":true,"data":{"result":"x"}}')
+                         ["status"], "")
 
     def test_raw_daemon_error_reply(self):
         # an unwrapped daemon reply line ({"ok":false,"error":"x"})

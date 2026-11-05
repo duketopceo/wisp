@@ -34,6 +34,7 @@ Rectangle {
       color: root.fg
     }
     Text {
+      textFormat: Text.PlainText
       anchors.verticalCenter: parent.verticalCenter
       text: root.service.ui("ui.stop")
       color: root.fg
@@ -41,6 +42,7 @@ Rectangle {
       font.pixelSize: M.font.label
     }
     Text {
+      textFormat: Text.PlainText
       anchors.verticalCenter: parent.verticalCenter
       text: root.service.ui("ui.esc")
       color: root.tk.inkMuted

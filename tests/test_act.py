@@ -72,11 +72,14 @@ class Gate(unittest.TestCase):
         assert out and "REFUSED" in out
 
     def test_interactive_runs_without_confirm(self):
-        # clicks/typing execute — the agent acts, it doesn't ask
-        assert act._gate("click", "10,10", {"agent": {}}, None) is None
-        assert act._gate("type_text", "hi", {"agent": {}}, None) is None
-        assert act._gate("scroll", "down", {"agent": {}}, None) is None
-        assert act._gate("key", "enter", {"agent": {}}, None) is None
+        # Known ordinary surfaces execute without confirmation; absent live
+        # identity and sensitive surfaces deliberately require confirmation.
+        with mock.patch("wisp.platform.active_window", return_value={
+                "class": "firefox", "title": "Ordinary page"}):
+            assert act._gate("click", "10,10", {"agent": {}}, None) is None
+            assert act._gate("type_text", "hi", {"agent": {}}, None) is None
+            assert act._gate("scroll", "down", {"agent": {}}, None) is None
+            assert act._gate("key", "enter", {"agent": {}}, None) is None
 
     def test_interactive_denylist_still_applies(self):
         # prompt-free tier must not type destruction into a terminal
@@ -115,6 +118,22 @@ class Loop(unittest.TestCase):
         run.assert_called_once()
         assert r.startswith("ACTED (1 steps)")
 
+    def test_unconfirmed_done_leaves_the_goal_open(self):
+        from wisp import goals
+        replies = [_msg(calls=[_call("tab", "stripe")]),
+                   _msg(content="Switched to Stripe."),
+                   _msg(content="Switched to Stripe.")]
+        self.addCleanup(setattr, goals, "CURRENT", None)
+        goals.join_or_new("open my stripe tab", "foot", self.cfg)
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run",
+                               return_value="SKIP (no open tab matches "
+                                            "'stripe')"):
+            r = act.run_act_loop("open my stripe tab", self.cfg,
+                                 initial_image="aGk=")
+        self.assertIn("could not confirm", r)
+        self.assertEqual((goals.CURRENT or {}).get("status"), "open")
+
     def test_narrated_next_step_is_nudged_back_into_loop(self):
         # live run 2026-10-27: one click, then "Now I'm taking a
         # screenshot…" with no tool call ended the turn as ACTED
@@ -132,6 +151,71 @@ class Loop(unittest.TestCase):
         self.assertEqual(post.call_count, 4)
         self.assertTrue(r.startswith("ACTED ("), r)
         self.assertIn("Settings are open", r)
+
+    def test_unsupported_done_refocus_names_wrong_app(self):
+        steps = [{"tool": "launch", "arg": "foot",
+                  "result": "FOCUSED foot -> foot (already running) "
+                            "\u2014 screen changed; verify"}]
+        why = act._unsupported_done("Open up my stripe tablet", steps)
+        self.assertEqual(
+            why, "launch only refocused foot, which the request did "
+                 "not name")
+
+    def test_unsupported_done_shared_word_is_supported(self):
+        steps = [{"tool": "launch", "arg": "terminal",
+                  "result": "FOCUSED terminal -> foot (already running)"}]
+        self.assertIsNone(act._unsupported_done("open the terminal", steps))
+
+    def test_unsupported_done_app_stem_is_supported(self):
+        steps = [{"tool": "launch", "arg": "spotifast",
+                  "result": "FOCUSED spotifast -> spotifast (already "
+                            "running)"}]
+        self.assertIsNone(act._unsupported_done("bring up spotify", steps))
+
+    def test_unsupported_done_refocus_of_the_window_in_front(self):
+        steps = [{"tool": "launch", "arg": "foot",
+                  "result": "FOCUSED foot -> foot (already running)"}]
+        self.assertTrue(act._unsupported_done(
+            "Open up my stripe tablet", steps, start_focus="foot"))
+
+    def test_unsupported_done_focusing_another_app_is_a_change(self):
+        # 'play music' -> spotify, 'open my email' -> thunderbird: the
+        # request names a role, not the app, but the screen did change
+        for task, app in (("play some music", "spotify"),
+                          ("open my email", "thunderbird")):
+            steps = [{"tool": "launch", "arg": app,
+                      "result": f"FOCUSED {app} -> {app} (already "
+                                "running)"}]
+            self.assertIsNone(act._unsupported_done(
+                task, steps, start_focus="foot"), task)
+
+    def test_unsupported_done_verify_missed(self):
+        steps = [{"tool": "click", "arg": "5,5", "result": "CLICKED",
+                  "verify": {"verdict": "missed"}}]
+        self.assertTrue(act._unsupported_done("click it", steps))
+        steps = [{"tool": "click", "arg": "x",
+                  "result": "CLICKED \u2014 verify FAILED: aimed"}]
+        self.assertTrue(act._unsupported_done("click it", steps))
+
+    def test_unsupported_done_needs_an_effect_step(self):
+        self.assertIsNone(act._unsupported_done("what is this", []))
+        self.assertIsNone(act._unsupported_done(
+            "what is this", [{"tool": "screenshot", "arg": "",
+                              "result": "SHOT x"}]))
+
+    def test_unsupported_done_uses_last_effect_step(self):
+        steps = [{"tool": "launch", "arg": "foot",
+                  "result": "FOCUSED foot -> foot (already running)"},
+                 {"tool": "tab", "arg": "stripe",
+                  "result": "SWITCHED tab 'Stripe'"},
+                 {"tool": "screenshot", "arg": "", "result": "SHOT x"}]
+        self.assertIsNone(act._unsupported_done("open my stripe tab", steps))
+
+    def test_unsupported_done_skipped_tab_switch(self):
+        steps = [{"tool": "tab", "arg": "stripe",
+                  "result": "SKIP (no open tab matches 'stripe')"}]
+        why = act._unsupported_done("open my stripe tab", steps)
+        self.assertIn("tab switch was skipped", why or "")
 
     def test_narration_nudges_are_bounded(self):
         replies = [_msg(content="Let me take a screenshot.")] * 5
@@ -998,12 +1082,8 @@ class Timing(unittest.TestCase):
     def test_decisions_log_carries_stage_timings(self):
         from wisp import pipeline
         logged = {}
-        cfg = {"audio": {"seconds": "0"}, "agent": {},
-               "jev": {"risk_threshold": "10"}}
-        fake_resp = {"answers": {"route": {"choice": "answer"},
-                                 "confidence": {"score": 0.9},
-                                 "action": {"choice": "answer"},
-                                 "app": {"choice": ""}}}
+        cfg = {"audio": {"seconds": "0"},
+               "agent": {"risk_threshold": "10"}}
         st = mock.Mock()
         st.state = {}
         st.transition = lambda s, **kw: st.state.update(status=s, **kw)
@@ -1011,14 +1091,10 @@ class Timing(unittest.TestCase):
                                return_value=__import__("pathlib").Path("/tmp/x.wav")), \
              mock.patch.object(pipeline, "transcribe",
                                return_value="hello"), \
-             mock.patch.object(pipeline, "ask_jev",
-                               return_value=fake_resp), \
              mock.patch.object(pipeline, "execute",
                                return_value="ANSWERED"), \
              mock.patch.object(pipeline, "ask_chat",
                                return_value="hi there"), \
-             mock.patch.object(pipeline, "build_questions",
-                               return_value={}), \
              mock.patch.object(pipeline, "notify"), \
              mock.patch.object(sys.modules["wisp.session"],
                                "append_turn"), \
@@ -1103,6 +1179,8 @@ class ActionText(unittest.TestCase):
         replies = [_msg(content="Thought: aim\nAction: click(10, 20)"),
                    _msg(content="DONE")]
         with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch("wisp.platform.active_window", return_value={
+                 "class": "firefox", "title": "Ordinary page"}), \
              mock.patch.object(tools, "run",
                                return_value="CLICKED x") as run:
             r = act.run_act_loop("click it", cfg)
