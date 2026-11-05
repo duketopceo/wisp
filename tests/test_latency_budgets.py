@@ -109,6 +109,90 @@ class SlowedStageTrips(unittest.TestCase):
                          series)
 
 
+def voiced(stage: str = "", ms: int = 0) -> dict:
+    """A fixture turn with the voice on (fake TTS), optionally slowed."""
+    fx = copy.deepcopy(runner.load_fixture("answer_points_timed"))
+    if stage == "stt":
+        fx["endpoints"]["whisper"]["latency_ms"] = ms
+    return fx
+
+
+class FirstVoiceComposite(unittest.TestCase):
+    """U11: key release to first voice, from the existing spans."""
+
+    def test_replayed_turn_records_the_composite_and_stages_sum_to_it(self):
+        res = runner.run_turn(voiced())
+        ms = {e["step"]: e["ms"] for e in res.trace
+              if e.get("kind") == "span" and e.get("ms") is not None}
+        self.assertIn(trace.FIRST_VOICE, ms)
+        fv = trace.first_voice(ms)
+        self.assertEqual(fv["total"], ms[trace.FIRST_VOICE])
+        self.assertAlmostEqual(sum(s["ms"] for s in fv["stages"]),
+                               fv["total"], delta=2)
+        names = [s["name"] for s in fv["stages"]]
+        self.assertEqual(names[-1], trace.FIRST_VOICE_REST)
+        self.assertIn("stt", names)
+
+    def test_stages_sum_to_the_composite_for_known_spans(self):
+        fv = trace.first_voice({"first_voice": 2000, "stt": 400,
+                                "context": 260, "route": 80,
+                                "first_token": 540})
+        self.assertEqual(fv["total"], 2000)
+        self.assertEqual(sum(s["ms"] for s in fv["stages"]), 2000)
+        self.assertEqual(fv["stages"][-1], {"name": "speech", "ms": 720})
+
+    def test_a_turn_that_never_speaks_has_no_composite_and_passes(self):
+        self.assertIsNone(trace.first_voice({"stt": 400, "route": 80}))
+        series = {"P3": [400], "P4": [80]}      # no FV sample at all
+        self.assertEqual(hl.check(series, budget_scale=1.0), [])
+        for name in ("brain_down", "ask"):      # offline; voice off
+            res = runner.run_turn(runner.load_fixture(name))
+            self.assertNotIn("FV", hl.samples(res, offline=name == "brain_down"))
+
+    def test_exceeding_the_budget_names_the_path_and_the_slow_stage(self):
+        bad = hl.check(measure_one(voiced("stt", 3000)), budget_scale=1.0)
+        self.assertTrue(any(b.startswith("FV ") for b in bad), bad)
+        self.assertTrue(any(b.startswith("P3 ") for b in bad), bad)
+
+    def test_record_once_keeps_the_first_instant(self):
+        sp = trace.Spans(clock=iter(range(0, 10**12, 5_000_000)).__next__)
+        start = sp.now()
+        self.assertTrue(sp.record_once("first_voice", start))
+        first = sp.ms["first_voice"]
+        self.assertFalse(sp.record_once("first_voice", start))
+        self.assertEqual(sp.ms["first_voice"], first)
+
+    def test_trace_baseline_is_aggregate_only_and_ignores_typed_turns(self):
+        rows = []
+        for i, (stt, ctx, fv) in enumerate(
+                [(500, 300, None), (600, 400, None), (0, 100, None),
+                 (700, 500, 2400)]):
+            spans = {"stt": stt, "context": ctx, "route": 5,
+                     "first_token": 400, "tts_start": 10}
+            if fv:
+                spans["first_voice"] = fv
+            for k, v in spans.items():
+                rows.append({"kind": "span", "turn": f"t{i}", "step": k,
+                             "ms": v, "ts": "x"})
+        with tempfile.TemporaryDirectory() as td:
+            f = pathlib.Path(td) / "trace.jsonl"
+            f.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+            rep = telemetry.trace_baseline(f)
+        self.assertEqual(rep["turns"], 3)          # the stt=0 turn is typed
+        c = rep["composite"]
+        self.assertEqual((c["n"], c["derived"]), (3, 2))
+        self.assertEqual(c["p50"], 1415)           # 600+400+5+400+10
+        self.assertEqual(c["p90"], 2400)
+        self.assertNotIn("t0", json.dumps(rep))
+
+    def test_the_budget_row_is_seeded_from_traces(self):
+        table = telemetry.load_budgets()
+        fv = next(p for p in table["paths"] if p["id"] == "FV")
+        self.assertEqual(fv["span"], "first_voice")
+        self.assertIn("p90_factor_source", table)
+        self.assertGreater(table["p90_factor"], 1.0)
+
+
 class GateMargin(unittest.TestCase):
     def test_ci_gets_the_stated_margin_and_a_desktop_none(self):
         self.assertEqual(hl.ci_scale({}), 1.0)
@@ -125,7 +209,7 @@ class GateMargin(unittest.TestCase):
     def test_no_budget_is_looser_than_the_plan(self):
         plan = {"P1": 25, "P2": 25, "P3": 600, "P4": 200, "P5": 500,
                 "P6": 150, "P6G": 1500, "P7": 1200, "P8": 300, "P9": 150,
-                "P10": 1000, "E2E": 1400}
+                "P10": 1000, "E2E": 1400, "FV": 2500}
         got = {p["id"]: p["budget_p50_ms"]
                for p in telemetry.load_budgets()["paths"]}
         for pid, ms in got.items():

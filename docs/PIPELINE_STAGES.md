@@ -38,7 +38,7 @@ on shutdown and `atexit` covers the rest.
 ## Latency gate
 
 `wisp/budgets.json` holds a p50 budget per path (a path's p90 may be up to
-1.5x). The replay harness (`tests/harness/latency.py`) runs fixture turns
+1.9x, set from recorded traces). The replay harness (`tests/harness/latency.py`) runs fixture turns
 against fake models and fails `tests.test_budgets` when a measured path goes
 over its budget; on CI the budget is multiplied by 2 (`CI_SCALE`) because
 shared runners are slower than a desktop. `tests.test_latency_budgets` proves

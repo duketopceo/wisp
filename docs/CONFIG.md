@@ -390,7 +390,9 @@ screenshots and result text are never written.
 ## Latency budgets (W2)
 
 Data, not config: `wisp/budgets.json` (p50 ceiling per path; the verdict
-also needs p90 <= 1.5x). Not revised yet from live traces.
+also needs p90 <= 1.9x). `p90_factor` and the FV row come from recorded
+traces (see `p90_factor_source` in the file); the other rows are not
+revised yet from live traces.
 
 | id | path | p50 ms |
 |---|---|---|
@@ -405,6 +407,16 @@ also needs p90 <= 1.5x). Not revised yet from live traces.
 | P9 | stop (request -> idle) | 150 |
 | P10 | offline error | 1000 |
 | E2E | answer, key up -> first token | 1400 |
+| FV | first voice, key up -> first audio (composite) | 2500 |
+
+FV is the number a user feels. The `first_voice` span runs from key release
+to the first voice child running; its stages are the existing `stt`,
+`context`, `route` and `first_token` spans plus `speech` (the rest: waiting
+for the first sentence, then the TTS fetch or spawn), so they sum to it.
+A turn that never speaks records none and is not gated. The Dev tab shows
+the composite and its stage line for the selected turn.
+`scripts/latency_baseline.py --from-trace FILE` prints aggregate numbers
+from recorded traces, read-only.
 
 Resources: wispd under 250 MB RSS and 3% idle CPU; cua-driver
 `MemoryMax=512M`; Companion under 5% CPU at 120 Hz idle.

@@ -300,11 +300,12 @@ class SentenceSpeaker:
     """
 
     def __init__(self, cfg: dict, token=None, on_sentence=None,
-                 on_audio=None):
+                 on_audio=None, on_voice=None):
         self._cfg = cfg
         self._token = token
         self._on_sentence = on_sentence
         self._on_audio = on_audio        # (ms to first Groq audio)
+        self._on_voice = on_voice        # () once, when any voice child spawns
         self._plock = threading.Lock()   # marks/items: feed vs worker
         self._items: list = []           # (span end, _Item) per sentence
         self._pending: list = []         # marks past every queued sentence
@@ -330,6 +331,7 @@ class SentenceSpeaker:
         self._groq_off = False           # latched: espeak for this turn
         self._t_first = 0                # ns the first sentence was queued
         self._audio_told = False
+        self._voice_told = False
         if self.enabled:
             with _LOCK:
                 _SPEAKERS.append(self)
@@ -498,6 +500,7 @@ class SentenceSpeaker:
         if self._stopped.is_set():
             _kill_now(proc)
         self.spoken.append(spoken)
+        self._voice_started()
         proc.wait()
         if self._token is not None:
             self._token.unregister_pid(proc)
@@ -608,6 +611,17 @@ class SentenceSpeaker:
             return path
         except OSError:
             return ""
+
+    def _voice_started(self) -> None:
+        """The first voice child of the turn is running (local or hosted):
+        the end of the key-release to first-voice span."""
+        if self._voice_told or self._on_voice is None:
+            return
+        self._voice_told = True
+        try:
+            self._on_voice()
+        except Exception:   # noqa: BLE001
+            pass
 
     def _first_audio(self) -> None:
         if self._audio_told or self._on_audio is None:

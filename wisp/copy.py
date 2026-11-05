@@ -152,6 +152,7 @@ STRINGS = {
     "ui.dev.rated": "rated",
     "ui.dev.of_turns": "of turns",
     "ui.dev.recent": "recent turns",
+    "ui.dev.first_voice": "first voice",
     "ui.dev.misses": "top misses",
     "ui.dev.step": "step",
     "ui.dev.steps": "steps",

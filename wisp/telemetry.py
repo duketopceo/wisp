@@ -237,6 +237,44 @@ def latency_report(since_hours: float = 24, trace_file=None) -> dict:
     return {"turns": len(per_turn), "rows": rows, "models": models}
 
 
+def trace_baseline(*trace_files) -> dict:
+    """Aggregate-only latency from recorded traces, read-only: per-stage
+    p50/p90 over spoken turns (stt > 0, so typed turns are left out) and
+    the key-release to first-voice composite. A turn with a `first_voice`
+    span uses it; an older one gets the derived lower bound
+    stt+context+route+first_token+tts_start (it misses the wait for the
+    first sentence). Nothing per-turn or textual is returned.
+    {turns, stages{name: {n,p50,p90}}, composite{n,p50,p90,ratio,derived}}"""
+    per_turn: dict = {}
+    for f in trace_files:
+        for e in _load(pathlib.Path(f)):
+            if e.get("kind") == "span" and isinstance(e.get("ms"),
+                                                      (int, float)):
+                per_turn.setdefault(e.get("turn"), {})[e["step"]] = e["ms"]
+    spoken = [m for m in per_turn.values() if m.get("stt", 0) > 0]
+    stages = {}
+    for name in ("stt", "context", "route", "first_token", "tts_start"):
+        v = [m[name] for m in spoken if name in m]
+        if v:
+            stages[name] = {"n": len(v), "p50": _pct(v, 50),
+                            "p90": _pct(v, 90)}
+    comp, derived = [], 0
+    for m in spoken:
+        if trace.FIRST_VOICE in m:
+            comp.append(m[trace.FIRST_VOICE])
+        elif all(k in m for k in ("route", "first_token", "tts_start")):
+            comp.append(m["stt"] + m.get("context", 0) + m["route"]
+                        + m["first_token"] + m["tts_start"])
+            derived += 1
+    out = {"turns": len(spoken), "stages": stages, "composite": None}
+    if comp:
+        p50, p90 = _pct(comp, 50), _pct(comp, 90)
+        out["composite"] = {"n": len(comp), "p50": p50, "p90": p90,
+                            "ratio": round(p90 / max(1, p50), 2),
+                            "derived": derived}
+    return out
+
+
 def latency_text(since_hours: float = 24, trace_file=None) -> str:
     rep = latency_report(since_hours, trace_file)
     h = f"{since_hours:g}h"
