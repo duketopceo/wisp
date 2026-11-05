@@ -232,6 +232,18 @@ class Fixtures(unittest.TestCase):
         with self.assertRaises(et.FixtureError):
             et.load_fixture(TREES / "missing.json")
 
+    def test_a_harness_case_becomes_a_replayable_tree(self):
+        case = {"id": "writer-bold", "app": "libreoffice", "size": [640, 400],
+                "elements": [{"label": "Bold", "rect": [8, 52, 32, 26]},
+                             {"label": "File", "rect": [8, 26, 48, 20],
+                              "role": "menu item"}]}
+        fx = et.fixture_from_case(case)
+        t = FakeElementTree(fx)
+        self.assertEqual(t.app_name(), "libreoffice")
+        self.assertEqual(t.focused_frame(), (0, 0, 640, 400))
+        self.assertEqual(t.find_by_label("Bold")[0].center, (24, 65))
+        self.assertEqual(t.find_by_label("File")[0].role, "menu item")
+
     def test_snap_share_separates_unavailable_from_no_match(self):
         rows = [{"app": "a", "snap": "ax", "ax_status": "ok"},
                 {"app": "a", "snap": "model", "ax_status": "ok"},

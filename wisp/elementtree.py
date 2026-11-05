@@ -442,6 +442,19 @@ def load_fixture(path_or_data) -> dict:
     return data
 
 
+def fixture_from_case(case: dict) -> dict:
+    """A tree fixture from a teaching-harness case dict (`app`, `size`,
+    `elements` as [{label, rect}] in capture pixels, optional `role`), so a
+    harness case can replay the snap with `FakeElementTree`. The capture is
+    one focused window at the origin. Reads a plain dict: it does not
+    import the harness."""
+    w, h = (list(case.get("size") or [0, 0]) + [0, 0])[:2]
+    els = [{"label": str(e.get("label", "")),
+            "role": str(e.get("role") or "push button"),
+            "rect": list(e["rect"])} for e in case.get("elements") or []]
+    return tree_to_fixture(str(case.get("app", "")), (0, 0, w, h), els)
+
+
 def snap_share(records) -> dict:
     """Per-app share of `ax | model | none` over snap records (each a dict
     with `app` and `snap`), for the harness report. Unavailable and

@@ -148,7 +148,10 @@ marks the toplevel the tree binds to; `above` marks an unfocused window that
 covers what lies under it; `state` may be `unavailable` or `unbound` to
 replay those cases. `tests/fakes/elementtree.py` serves one as an
 `ElementTree`, and `elementtree.load_fixture` validates it. The checked-in
-set is drawn by `tests/fixtures/trees/make_trees.py` from invented apps and
+`elementtree.fixture_from_case(case)` turns a teaching-harness case
+(`app`, `size`, `elements`) into one of these, so the harness can run its
+label-first pointing step through `snap_point` with a `FakeElementTree`.
+The checked-in set is drawn by `tests/fixtures/trees/make_trees.py` from invented apps and
 labels. Never paste a tree captured from a real session: window titles and
 control labels are the user's content.
 
