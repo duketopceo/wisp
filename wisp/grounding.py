@@ -903,7 +903,7 @@ def _vlm_locate(shot: Shot, target: str, region_hint: str = "",
     maps back to `shot` pixels via `Letterbox.to_shot` (a point in the
     padding is refused). Legacy bare coordinates are
     retained only as unsupported, zero-confidence predictions."""
-    from . import brain, points as _points
+    from . import brain
     deadline = time.monotonic() + max(0.0, _f(timeout, 5.0))
     box = shot.letterboxed()
     b64, rw, rh = box.b64, box.width, box.height
@@ -933,6 +933,15 @@ def _vlm_locate(shot: Shot, target: str, region_hint: str = "",
         raise ProviderDown(str(e)) from None
     if not text or text.upper() == "NONE":
         return None
+    return parse_vlm_reply(text, box, target)
+
+
+def parse_vlm_reply(text: str, box: Letterbox,
+                    target: str) -> Tuple[int, int, float] | None:
+    """A pointing model's reply -> (x, y, confidence) in source pixels, or
+    None (no point, out of the sent image, or inside the padding)."""
+    from . import points as _points
+    rw, rh = box.width, box.height
     # Bounds alone are not target support. Bare coordinates, conflicting
     # marks/labels and hedged prose remain untrusted predictions; only a
     # single explicit mark naming the requested target gets the supported

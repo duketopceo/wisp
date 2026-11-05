@@ -158,3 +158,89 @@ Focused offline checks:
 PYTHONDONTWRITEBYTECODE=1 python -m unittest \
   tests.test_click_provenance tests.test_accuracy_baseline -v
 ```
+
+## Grounding model bake-off (U8)
+
+Plan unit U8 in `docs/plans/2026-11-04-1847-feat-wisp-teaching-assistant-parity-roadmap-plan.md`.
+
+**Status: the harness is built and tested offline. The live run was not
+done, so there is no per-model accuracy or cost number yet.** The key
+store was locked when the run was due (`omaseal get openrouter wisp`
+returned `store locked`), so the run was skipped rather than worked
+around. Live spend: $0.00. The default model is unchanged, and no model
+is recommended: nothing was measured.
+
+### What exists
+
+`scripts/grounding_bakeoff.py` draws synthetic screens with PIL (a title
+bar and 6 to 10 labelled buttons on six canvas shapes: 16:9, 16:10, 4:3,
+ultrawide and two portraits), so most cases force a letterbox pad. Each
+case is sent the way production sends it (`Shot.letterboxed`, the
+`_VLM_POINT_PROMPT` text) and the reply goes through
+`grounding.parse_vlm_reply`, the same parser `_vlm_locate` uses. A hit is
+a point inside the target button's rectangle in source pixels. A reply
+with no point, a point outside the image or one inside the padding is a
+miss.
+
+- **Split.** A pool of 120 case ids is partitioned once by
+  `sha256(seed:id)` into a tuning set and a held-out set (40 percent).
+  Same seed, same split; the sets cannot overlap (tested). Case content
+  does not depend on the split seed. Only held-out cases are scored.
+- **Modes.** `direct` (one call, pixel coordinates) and `labels` (the
+  same prompt plus the visible control labels, standing in for an
+  accessibility tree). Describe-then-point (two calls per case) is not
+  implemented; it doubles the cost per case and should wait for a
+  direct-mode winner.
+- **Spend cap.** A hard cap in dollars. The loop is case-major so a
+  partial table stays balanced, reads the cost from OpenRouter's
+  `usage.cost` on every reply, and stops before the call whose worst case
+  (the largest cost seen so far, or a $0.01 reserve before any) could
+  cross the cap. It prints the table so far with `n` per row and exits 3.
+- **Round trip.** Tests cover `Letterbox` conversion for landscape,
+  ultrawide, portrait and exact-aspect captures, the repo's recorded
+  `tests/fixtures/images` PNGs, and an oracle provider that answers in
+  sent-image coordinates and must score 100 percent on every canvas.
+- Offline tests use fake providers only, with the network patched to fail.
+
+### Candidates and prices (from the OpenRouter models list, read 2026-11-05)
+
+Open-weight vision models only. Prices are USD per million tokens
+(prompt / completion); not measured, and they change.
+
+| model | prompt | completion |
+|---|---|---|
+| `qwen/qwen3-vl-8b-instruct` | 0.25 | 0.75 |
+| `qwen/qwen3-vl-30b-a3b-instruct` | 0.15 | 0.60 |
+| `qwen/qwen3-vl-235b-a22b-instruct` | 0.21 | 1.90 |
+| `qwen/qwen2.5-vl-72b-instruct` | 0.80 | 1.00 |
+| `bytedance/ui-tars-1.5-7b` | 0.10 | 0.20 |
+| `google/gemma-4-31b-it` | 0.20 | 0.40 |
+| `meta-llama/llama-4-maverick` | 0.35 | 1.00 |
+
+The shipped default, `google/gemini-2.5-flash` ($0.30 / $2.50), is not
+open-weight, so it is outside this run by the owner's rule. Whether it
+would win is unmeasured here.
+
+### Run it (owner)
+
+```sh
+export OPENROUTER_API_KEY=...   # from your key store; never paste it
+python scripts/grounding_bakeoff.py --live --cap 0.80 --cases 24 \
+  --models qwen/qwen3-vl-8b-instruct,qwen/qwen3-vl-30b-a3b-instruct,qwen/qwen3-vl-235b-a22b-instruct,qwen/qwen2.5-vl-72b-instruct,bytedance/ui-tars-1.5-7b,google/gemma-4-31b-it,meta-llama/llama-4-maverick
+```
+
+24 cases, 7 models and 2 modes is 336 calls. Each call is one image of
+about 1,000 tokens in and under 64 tokens out, so the cost should be
+well under the cap (an estimate from the table above, not a measurement).
+Paste the printed table here with the date and the seed.
+
+### How to read the result
+
+Synthetic cases are a weak signal: flat, high-contrast, English-only
+buttons with no real application chrome, no icons-only controls and no
+clutter. They can screen out a model that cannot do pixel pointing at
+all, and they exercise the letterbox math. They cannot establish that one
+model is better than another on real screens, and a few points of
+difference over 24 cases is noise. A change of the default model needs
+the owner's approval and a result on labelled real turns; this table
+alone is not that.
