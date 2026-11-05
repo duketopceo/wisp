@@ -13,15 +13,31 @@ ROOT = Path(__file__).resolve().parents[2]
 SITE = ROOT / "site-3d"
 FILES = (
     "index.html", "style.css", "app.mjs", "model.mjs", "scene.mjs", "desktop.mjs",
-    "assets/companion.png", "assets/mark.svg", "assets/outfit-variable.ttf",
+    "flame.mjs", "assets/companion.png", "assets/outfit-variable.ttf",
     "vendor/three.module.js", "vendor/THREE-LICENSE.txt",
+    "vendor/loaders/GLTFLoader.js", "vendor/utils/BufferGeometryUtils.js",
     "vendor/OFL-Outfit.txt", "vendor/PROVENANCE.md",
     "light/index.html", "light/light.css", "light/light.mjs",
     "light/fonts/newsreader-roman-latin.woff2", "light/fonts/newsreader-ital-latin.woff2",
     "vendor/OFL-Newsreader.txt", "vendor/THREEUI-LICENSE.txt",
     "wisp/sim.mjs", "wisp/gl.mjs",
 )
+# The Wisp flame ships from its brand source: published path -> repository path.
+# Only what the page uses: the model, the idle loop (WebGL fallback) and stills
+# (favicon, apple-touch-icon, reduced motion).
+FLAME = ROOT / "assets/brand/wisp-flame/export"
+BRAND = {
+    "assets/wisp-flame/wisp-flame.glb": FLAME / "wisp-flame.glb",
+    "assets/wisp-flame/idle-256.webp": FLAME / "loops/idle-256.webp",
+    **{f"assets/wisp-flame/wisp-flame-{size}.png": FLAME / f"stills/wisp-flame-{size}.png"
+       for size in (32, 512)},
+}
+ALL = FILES + tuple(BRAND)
+
 IMPORT = re.compile(r"""(?:from\s*|import\s*\(\s*|import\s*)["']([^"']+)["']""")
+# Vendored code is scanned for real import statements only: its strings and
+# comments quote colour-space names and example URLs.
+VENDOR_IMPORT = re.compile(r"""^(?:import\b.*?|\})\s*from\s*["']([^"']+)["']""", re.M)
 CSS_URL = re.compile(r"""url\(\s*["']?([^"')\s]+)""")
 
 
@@ -36,13 +52,20 @@ class Resources(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         for key, value in attrs:
-            if value and (key in ("src", "poster") or key == "href" and tag != "a"):
+            if value and (key in ("src", "srcset", "poster") or key == "href" and tag != "a"):
                 self.urls.append(value)
+
+
+def locate(out, name):
+    """Where an asset lives: the built tree, or its source before a build."""
+    if out == SITE and name in BRAND:
+        return BRAND[name]
+    return out / name
 
 
 def check(out):
     out = Path(out)
-    problems = [f"missing asset: {name}" for name in FILES if not (out / name).is_file()]
+    problems = [f"missing asset: {name}" for name in ALL if not locate(out, name).is_file()]
 
     def resource(value, parent):
         parts = urlsplit(value)
@@ -50,7 +73,8 @@ def check(out):
             problems.append(f"remote runtime asset: {value}")
             return
         target = (parent / parts.path).resolve()
-        if not target.is_relative_to(out.resolve()) or not target.is_file():
+        rel = target.relative_to(out.resolve()).as_posix() if target.is_relative_to(out.resolve()) else None
+        if rel is None or not locate(out, rel).is_file():
             problems.append(f"missing or escaping asset: {value}")
 
     for name in FILES:
@@ -63,7 +87,8 @@ def check(out):
             for url in parser.urls:
                 resource(url, path.parent)
         elif path.suffix in (".mjs", ".js"):
-            for url in IMPORT.findall(path.read_text()):
+            text = path.read_text()
+            for url in (VENDOR_IMPORT if name.startswith("vendor/") else IMPORT).findall(text):
                 resource(url, path.parent)
         elif path.suffix == ".css":
             for url in CSS_URL.findall(path.read_text()):
@@ -84,8 +109,8 @@ def build(out):
         shutil.rmtree(out)
     out.mkdir(parents=True)
     inventory = {}
-    for name in FILES:
-        source, target = SITE / name, out / name
+    for name in ALL:
+        source, target = BRAND.get(name, SITE / name), out / name
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, target)
         data = target.read_bytes()
@@ -102,8 +127,8 @@ def main():
         out = build(args.out)
     except SiteError as exc:
         parser.exit(1, f"site-3d: {exc}\n")
-    total = sum((out / name).stat().st_size for name in FILES)
-    print(f"site-3d built in {out}: {len(FILES)} assets, {total} bytes")
+    total = sum((out / name).stat().st_size for name in ALL)
+    print(f"site-3d built in {out}: {len(ALL)} assets, {total} bytes")
 
 
 if __name__ == "__main__":

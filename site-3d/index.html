@@ -6,7 +6,8 @@
   <meta name="theme-color" content="#131211">
   <meta name="description" content="Wisp is a voice teacher and doer for Omarchy that points at your screen. Explore its desktop companion and install the Linux release candidate.">
   <title>Wisp | A little more reach.</title>
-  <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+  <link rel="icon" href="assets/wisp-flame/wisp-flame-32.png" type="image/png" sizes="32x32">
+  <link rel="apple-touch-icon" href="assets/wisp-flame/wisp-flame-512.png">
   <link rel="preload" href="assets/outfit-variable.ttf" as="font" type="font/ttf" crossorigin>
   <link rel="stylesheet" href="style.css">
   <script type="module" src="app.mjs"></script>
@@ -14,16 +15,24 @@
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="header wrap">
-    <a class="brand" href="#main" aria-label="Wisp home"><img src="assets/mark.svg" width="28" height="32" alt="">wisp</a>
+    <a class="brand" href="#main" aria-label="Wisp home"><img src="assets/wisp-flame/wisp-flame-32.png" width="32" height="32" alt="">wisp</a>
     <nav aria-label="Primary"><a href="#how">How it works</a><a href="#install">Install</a><a href="https://github.com/duketopceo/wisp">GitHub <span aria-hidden="true">↗</span></a></nav>
   </header>
 
   <main id="main">
     <section class="hero wrap" aria-labelledby="hero-title">
+      <div class="hero-copy">
       <h1 id="hero-title">Your voice.<br>A little <br class="mobile-break">more <span>reach.</span></h1>
       <div class="hero-bottom">
         <p>Wisp is a voice teacher and doer for Omarchy that points at your screen. Ask a question, find a control, or take the next step.</p>
         <a class="button primary" href="#install">Install on Omarchy <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></a>
+      </div>
+      </div>
+      <div id="flame" class="flame" data-flame="static">
+        <picture id="flame-fallback">
+          <source media="(prefers-reduced-motion: reduce)" srcset="assets/wisp-flame/wisp-flame-512.png">
+          <img src="assets/wisp-flame/idle-256.webp" width="256" height="256" alt="The Wisp flame, a small translucent blue flame with a bright heart.">
+        </picture>
       </div>
     </section>
 

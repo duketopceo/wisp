@@ -5,10 +5,10 @@ name: website
 # Publication and custom-domain changes remain separately authorized actions.
 on:
   pull_request:
-    paths: ["site/**", "site-3d/**", "scripts/site/**", "scripts/bootstrap/**", "tests/browser/**", "tests/test_site*.py", "tests/test_shipping_claims.py", "assets/readme/**", "README.md", "wrangler.json", "package.json", "package-lock.json", ".github/workflows/pages.yml"]
+    paths: ["site/**", "site-3d/**", "scripts/site/**", "scripts/bootstrap/**", "tests/browser/**", "tests/test_site*.py", "tests/test_shipping_claims.py", "assets/readme/**", "assets/brand/wisp-flame/export/**", "README.md", "wrangler.json", "package.json", "package-lock.json", ".github/workflows/pages.yml"]
   push:
     branches: [master]
-    paths: ["site/**", "site-3d/**", "scripts/site/**", "scripts/bootstrap/**", "tests/browser/**", "tests/test_site*.py", "tests/test_shipping_claims.py", "assets/readme/**", "README.md", "wrangler.json", "package.json", "package-lock.json", ".github/workflows/pages.yml"]
+    paths: ["site/**", "site-3d/**", "scripts/site/**", "scripts/bootstrap/**", "tests/browser/**", "tests/test_site*.py", "tests/test_shipping_claims.py", "assets/readme/**", "assets/brand/wisp-flame/export/**", "README.md", "wrangler.json", "package.json", "package-lock.json", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:

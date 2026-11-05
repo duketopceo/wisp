@@ -110,6 +110,17 @@ license, shipped with the download.
 - ori, Apache-2.0, `OpenRouterLabs/ori-releases` on GitHub.
 - OpenCode, MIT, `anomalyco/opencode` on GitHub.
 
+## three.js GLTFLoader (website flame)
+
+The homepage flame (`site-3d/flame.mjs`) loads `assets/brand/wisp-flame` with
+three.js 0.170.0 `examples/jsm/loaders/GLTFLoader.js` and
+`examples/jsm/utils/BufferGeometryUtils.js`, vendored in `site-3d/vendor/loaders/`
+and `site-3d/vendor/utils/` from the same pinned `three@0.170.0` package as
+`site-3d/vendor/three.module.js`. They are unmodified except that the bare
+`'three'` import now points at `../three.module.js` (no import map, which the
+site's CSP would block). MIT, Copyright (c) 2010-2024 three.js authors; the
+license is in `site-3d/vendor/THREE-LICENSE.txt`.
+
 ## ThreeUI Community (website light)
 
 The guiding-light preview at `site-3d/light/` uses the `energy-orb` look

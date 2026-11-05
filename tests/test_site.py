@@ -56,6 +56,13 @@ class Page(unittest.TestCase):
                             r"(?i)<script|<iframe|<form|@import|"
                             r"googletagmanager|google-analytics|plausible|fonts\.g")
 
+    def test_flame_still_is_the_no_javascript_mark_and_icon(self):
+        self.assertIn('<img class="flame" src="wisp-flame-130.png"', self.page)
+        self.assertIn('rel="icon" href="wisp-flame-32.png"', self.page)
+        for name in build.FLAME_STILLS:
+            self.assertTrue((self.out / name).is_file(), name)
+        self.assertEqual(build.third_party(self.page, ""), [])
+
     def test_the_checker_catches_third_party_loads(self):
         bad = ('<img src="https://cdn.example.com/a.png">'
                '<link rel="stylesheet" href="//x.example/s.css">'

@@ -75,6 +75,19 @@ class WorkersBundle(unittest.TestCase):
             self.assertIn("scene.mjs", (out / "index.html").read_text()
                           + (out / "app.mjs").read_text())
             self.assertTrue((out / "vendor/three.module.js").is_file())
+            for name in ("assets/wisp-flame/wisp-flame.glb",
+                         "assets/wisp-flame/idle-256.webp",
+                         "assets/wisp-flame/wisp-flame-32.png",
+                         "assets/wisp-flame/wisp-flame-512.png",
+                         "vendor/loaders/GLTFLoader.js",
+                         "plain/wisp-flame-130.png", "plain/wisp-flame-32.png"):
+                self.assertTrue((out / name).is_file(), name)
+            # No external URLs in the published page or the flame module.
+            for name in ("index.html", "flame.mjs", "plain/index.html"):
+                self.assertNotRegex((out / name).read_text(),
+                                    r"""<(?:img|script|link|source)\b[^>]*\b(?:src|href|srcset)=["']https?://|(?:from|import\()\s*["']https?://""", name)
+            self.assertIn("wisp-flame-130.png", (out / "plain/index.html").read_text())
+            self.assertIn('rel="icon"', (out / "plain/index.html").read_text())
             plain = (out / "plain/index.html").read_text()
             self.assertNotIn("<script", plain)
             self.assertEqual(

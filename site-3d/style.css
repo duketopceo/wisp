@@ -15,13 +15,17 @@ button:disabled{cursor:default;color:var(--muted)}
 .wrap{max-width:1248px;margin-inline:auto;padding-inline:24px}
 .header{display:flex;align-items:center;justify-content:space-between;min-height:96px;border-bottom:1px solid var(--line)}
 .brand{display:inline-flex;align-items:center;gap:10px;font-size:var(--s5);font-weight:700;letter-spacing:-.03em;text-decoration:none}
-.brand img{filter:brightness(0) invert(1)}
+.brand img{display:block}
 .header nav{display:flex;gap:32px;align-items:center;font-size:var(--s2)}
 .header nav a{display:inline-flex;align-items:center;min-height:44px;text-decoration:none}
 .skip-link{position:absolute;z-index:10;top:10px;left:10px;padding:12px;background:var(--ink);color:var(--bg);transform:translateY(-160%)}
 .skip-link:focus{transform:translateY(0)}
 .skip-link:hover{color:var(--bg)}
-.hero{padding-block:72px 48px}
+.hero{padding-block:72px 48px;display:grid;grid-template-columns:minmax(0,1fr) 320px;align-items:center;gap:32px}
+.hero-copy{min-width:0}
+.flame{position:relative;width:320px;height:360px}
+.flame canvas,.flame img{display:block;width:100%;height:100%;object-fit:contain}
+.flame[data-flame=webgl] picture,.flame:not([data-flame=webgl]) canvas{display:none}
 h1,h2,p{margin:0}
 h1,h2{font-weight:700;letter-spacing:-.035em;line-height:1.04;text-wrap:balance}
 h1{font-size:var(--s7);max-width:900px}
@@ -108,7 +112,7 @@ code{font-family:ui-monospace,monospace;font-size:var(--s1);overflow-wrap:anywhe
 .footer .brand{color:var(--ink)}
 @media(max-width:760px){
   .wrap{padding-inline:20px}.header{min-height:80px}.header nav{gap:16px;font-size:var(--s1)}.header nav a:first-child{display:none}
-  .hero{padding-block:48px 32px}h1{font-size:var(--s6)}.mobile-break{display:initial}.hero-bottom{display:block;margin-top:24px}.hero-bottom p{font-size:var(--s3)}.hero-bottom .button{margin-top:24px}
+  .hero{padding-block:24px 32px;display:flex;flex-direction:column}.flame{order:-1;width:176px;height:200px;margin:0 0 8px -8px}h1{font-size:var(--s6)}.mobile-break{display:initial}.hero-bottom{display:block;margin-top:24px}.hero-bottom p{font-size:var(--s3)}.hero-bottom .button{margin-top:24px}
   .workspace-story{height:auto;min-height:0;padding-bottom:48px}.workspace-sticky{position:relative;top:0}.scene-shell{height:520px}.scene-top{inset:16px 16px auto;flex-direction:column;gap:4px}.scene-top span:first-child{font-size:var(--s0)}
   #desktop,.desktop-root{padding:48px 12px 92px}
   .desk-window{width:min(100%,420px);min-height:240px}

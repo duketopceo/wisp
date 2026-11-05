@@ -10,6 +10,15 @@ not a recording of the app. The default `site/` stays independent.
 The brief-pinned direction takes precedence over the exploratory surface
 seed `seed:dd29f9a7a8cdf5fe`. No new world or rebrand is approved here.
 
+## Flame
+
+The hero carries the Wisp flame (`assets/brand/wisp-flame`, glTF). It keeps its
+own guide-light blues against the warm page: the one cool object, so the eye
+lands on it. Its own small canvas, not the desktop renderer; the idle clip loops
+and the demo state selects listening, thinking or speaking. The animated WebP is
+the fallback (no JavaScript, no WebGL, failed load); reduced motion and Pause
+motion show a still. The 32 px still is the favicon and header mark.
+
 ## Choreography
 
 - **Listen:** a browser workspace sits behind an ember companion. Choosing
