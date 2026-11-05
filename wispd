@@ -930,7 +930,10 @@ def run_daemon(cfg: dict) -> int:
     skills.seed()          # bundled dayflow-bridge/self-checkup skills
     skills.write_index_json()  # panel reads this without spawning IPC
     theme.emit(cfg)        # theme.json for the QML surfaces
-    dlog(_memory.sync_constitution())  # luke-agents -> MEMORY.md block
+    # constitution sync is opt-in: set [memory] constitution_repo to your
+    # own rules checkout; shipped default syncs nothing.
+    dlog(_memory.sync_constitution(
+        (cfg.get("memory") or {}).get("constitution_repo")))
     from wisp import inventory as _inv
     if not _inv.fresh():
         inv = _inv.scan(cfg)
@@ -1220,6 +1223,7 @@ def install_files(dry_run: bool = False, cfg: dict | None = None,
               "runtime scripts, release inventory, docs including "
               "docs/baselines and docs/dev-tasks), "
               f"{config.HOME}/.local/bin/wispd, "
+              f"{config.HOME}/.local/bin/wisp (when absent), "
               f"{config.HOME}/.local/bin/wisp-trigger and the systemd user unit(s)")
         print("dry run: nothing written")
         return
@@ -1286,6 +1290,14 @@ def install_files(dry_run: bool = False, cfg: dict | None = None,
                         + " " + shlex.quote(str(opt / "wispd")) + ' "$@"\n')
     launcher.chmod(0o755)
     print(f"installed {launcher}")
+    alias = config.HOME / ".local" / "bin" / "wisp"
+    if not alias.exists():
+        # `wisp` is the package dir, so the binary stays `wispd`; this
+        # shim gives users the short name without a collision.
+        alias.write_text("#!/bin/sh\nexec " + shlex.quote(sys.executable)
+                         + " " + shlex.quote(str(opt / "wispd")) + ' "$@"\n')
+        alias.chmod(0o755)
+        print(f"installed {alias}")
     from wisp import deploy as _deploy, svc
     # templates come from the tree being installed: the installed copy has
     # no scripts/, and an exported ref must not get this checkout's units

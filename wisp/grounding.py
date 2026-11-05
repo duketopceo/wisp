@@ -383,6 +383,7 @@ def _post_json(url: str, body: dict, timeout: float,
     h.update(headers or {})
     req = urllib.request.Request(url, data=json.dumps(body).encode(),
                                  headers=h, method="POST")
+    config.protect_authorization(req)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             raw = resp.read()
@@ -783,17 +784,20 @@ def _jev_locate(screenshot_b64: str, target: str, region_hint: str,
         "state": f"Ground UI element on desktop: {target}",
         "questions": questions
     }
-    try:
-        key = config.load_api_key()
-    except Exception:
-        key = ""
+    # Only an official OpenRouter endpoint gets the OpenRouter key.
+    auth_headers = {}
+    if config.is_openrouter_endpoint(config.JEV_ENDPOINT):
+        try:
+            auth_headers = {
+                "Authorization": f"Bearer {config.load_api_key(cfg)}"}
+        except Exception:
+            auth_headers = {}
     remaining = deadline - time.monotonic()
     if remaining <= 0:
         return None
     data = _post_json(
         config.JEV_ENDPOINT, payload, remaining,
-        {"Authorization": f"Bearer {key}",
-         "HTTP-Referer": "https://github.com/duketopceo/wisp",
+        {**auth_headers, "HTTP-Referer": "https://github.com/duketopceo/wisp",
          "X-Title": "Wisp Grounding Agent"})
     answers = data.get("answers") if isinstance(data, dict) else None
     if not isinstance(answers, dict):

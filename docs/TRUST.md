@@ -15,6 +15,8 @@ Nothing is sent between key presses. There is no analytics, no account and no Wi
 | `api.github.com` | Update check and release lookup for `wispd update`. | **nothing of yours.** A plain GET with the user agent `wispd-update`. Nothing from your machine is in it. | No. Only when you run `wispd update`; the daemon never calls it. | None. | Do not run `wispd update`. A release is verified against its published SHA-256 before anything is installed. |
 | `upload.wikimedia.org` | Pictures for answer cards. | **nothing of yours.** A plain GET for one picture an answer named. Nothing from your machine is in it, but the picture's address comes from the answer. | Only when an answer shows a picture. This is the only host fetched by default for pictures. | None. | `[images] allow` is the full list of hosts that may be fetched, https only, size-capped, private addresses refused. Set it to a host you do not use to turn pictures off. |
 | `raw.githubusercontent.com` | 3D models for answer cards. | **nothing of yours.** A plain GET for one glTF or GLB file an answer named. Nothing from your machine is in it, but the model's address comes from the answer. | Only when an answer shows a 3D model. | None. | `[models] allow` is the full list of hosts that may be fetched, https only, size-capped, private addresses refused. Set it to a host you do not use to turn 3D models off. |
+| `eu.openrouter.ai` | OpenRouter EU regional endpoint, when configured. | **text, screenshot.** What you said (as text), the focused app and window names, recent turns, memory notes, a selection or copied text you pointed at, and a screenshot on answer calls (`[agent] screenshots`) and the vision fallback. Windows that look like a password manager, a keyring or authentication prompt or a sudo terminal (plus any you add under `[cua]`) are blanked first, and a capture is refused while one has focus. | No. Only when explicitly configured. | You. `OPENROUTER_API_KEY` in your environment, `~/.config/wisp/.env` or your keyring. The dev-mode judge uses `omaseal://openrouter/orchestral` (your eval key) instead, never the default key. | `[brain] default` and `[brain] fallback` take a local model (`ollama:`, `lmstudio:`, `mlx:`) and nothing then leaves; `[agent] screenshots = false` keeps the screen out of answers. How long OpenRouter and the model provider keep a request is set by your OpenRouter account's privacy settings, not by Wisp. |
+| `us.openrouter.ai` | OpenRouter US regional endpoint, when configured. | **text, screenshot.** What you said (as text), the focused app and window names, recent turns, memory notes, a selection or copied text you pointed at, and a screenshot on answer calls (`[agent] screenshots`) and the vision fallback. Windows that look like a password manager, a keyring or authentication prompt or a sudo terminal (plus any you add under `[cua]`) are blanked first, and a capture is refused while one has focus. | No. Only when explicitly configured. | You. `OPENROUTER_API_KEY` in your environment, `~/.config/wisp/.env` or your keyring. The dev-mode judge uses `omaseal://openrouter/orchestral` (your eval key) instead, never the default key. | `[brain] default` and `[brain] fallback` take a local model (`ollama:`, `lmstudio:`, `mlx:`) and nothing then leaves; `[agent] screenshots = false` keeps the screen out of answers. How long OpenRouter and the model provider keep a request is set by your OpenRouter account's privacy settings, not by Wisp. |
 
 ## Hosts you choose
 
@@ -47,8 +49,8 @@ An OpenCode agent Wisp starts runs on this machine and reaches models through or
 | `mail.google.com` | Opened in your browser when you say "open mail" and no native mail client is set (`[web] mail`). |
 | `calendar.google.com` | Opened in your browser when you say "open calendar" and no native client is set (`[web] calendar`). |
 | `dashboard.stripe.com` | Opened in your browser when you say "go to Stripe" or "open Stripe". |
-| `linear.app` | Opened in your browser when you say "go to Linear" or "open Linear". |
-| `app.slack.com` | Opened in your browser when you say "open Slack" and no native client is set. |
+| `linear.app` | A local app-skill routing hint for Linear. No request is made by this lookup. |
+| `app.slack.com` | A local app-skill routing hint for Slack. No request is made by this lookup. |
 | `x.com` | A compose window is opened in your browser with the text filled in. Nothing is posted until you press Post. |
 | `gmail.com` | An example in help text: a domain you say is opened in your browser. |
 | `cal.com` | A name in a list of apps Wisp can connect to, in help text. |
@@ -57,6 +59,7 @@ An OpenCode agent Wisp starts runs on this machine and reaches models through or
 | `console.groq.com` | A link shown in the voice notice and `wispd doctor` for accepting the Orpheus terms. Wisp never requests it. |
 | `amara.org` | A credit line for subtitle text in a bundled sample. |
 | `www.w3.org` | An XML namespace in a generated icon. Never requested. |
+| `hf.co` | A Hugging Face model namespace inside Ollama tags (`hf.co/owner/model:tag`) in the local-model catalog. It names a weight to pull, not a host Wisp opens; Ollama resolves the download. |
 | `airtable.com` | A local app-skill routing hint for Airtable. No request is made by this lookup. |
 | `app.asana.com` | A local app-skill routing hint for Asana. No request is made by this lookup. |
 | `app.clickup.com` | A local app-skill routing hint for ClickUp. No request is made by this lookup. |
@@ -132,15 +135,17 @@ From the scan this page is built from.
 - `docs.google.com`: `wisp/context.py`, `wisp/skills.py`
 - `drive.google.com`: `wisp/context.py`, `wisp/skills.py`
 - `dropbox.com`: `wisp/skills.py`
+- `eu.openrouter.ai`: `wisp/config.py`
 - `example.com`: `wisp/cli/share.py`
 - `figma.com`: `wisp/context.py`, `wisp/skills.py`
 - `github.com`: `rs/wispd/src/brain.rs`, `wisp/agent_pins.py`, `wisp/brain.py`, `wisp/config.py`, `wisp/context.py`, `wisp/grounding.py` and 3 more
 - `gitlab.com`: `wisp/skills.py`
 - `gmail.com`: `wisp/tools/__init__.py`
+- `hf.co`: `wisp/model_catalog.py`
 - `linear.app`: `wisp/config.py`, `wisp/context.py`, `wisp/skills.py`
 - `mail.google.com`: `wisp/config.py`, `wisp/context.py`, `wisp/skills.py`
 - `open.spotify.com`: `wisp/skills.py`
-- `openrouter.ai`: `rs/wispd/src/brain.rs`, `rs/wispd/src/config.rs`, `wisp/brain.py`, `wisp/config.py`, `wisp/context.py`, `wisp/devjudge.py` and 1 more
+- `openrouter.ai`: `rs/wispd/src/brain.rs`, `rs/wispd/src/config.rs`, `wisp/brain.py`, `wisp/config.py`, `wisp/context.py`, `wisp/devjudge.py` and 2 more
 - `outlook.office.com`: `wisp/skills.py`
 - `perplexity.ai`: `wisp/context.py`, `wisp/skills.py`
 - `raw.githubusercontent.com`: `wisp/tools/modelfetch.py`
@@ -150,6 +155,7 @@ From the scan this page is built from.
 - `tallyline.app`: `wisp/skills.py`
 - `trello.com`: `wisp/skills.py`
 - `upload.wikimedia.org`: `wisp/tools/imagefetch.py`
+- `us.openrouter.ai`: `wisp/config.py`
 - `vercel.com`: `wisp/context.py`, `wisp/skills.py`
 - `wisp.ai`: `wisp/cli/dictate.py`
 - `www.w3.org`: `wisp/tools/system.py`

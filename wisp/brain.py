@@ -46,7 +46,7 @@ def app_headers(url: str) -> dict:
     must carry the app name (HTTP-Referer + X-Title) so usage/limits
     report correctly."""
     return {"HTTP-Referer": APP_URL, "X-Title": APP_TITLE} \
-        if "openrouter.ai" in (url or "") else {}
+        if config.is_openrouter_endpoint(url or "") else {}
 
 _BUILTINS = {
     "openrouter": {"kind": "openai_compat",
@@ -72,6 +72,13 @@ _BUILTINS = {
     "mlx": {"kind": "openai_compat",
             "base_url": "http://localhost:8080/v1",
             "key_env": "", "vision": "false", "tools": "false"},
+    # spike/lfm-local: Liquid LFM2.5-VL on llama.cpp mtmd :8082 — the
+    # local/offline answer lane behind `scripts/lfm-serve`. Override
+    # model, URL, vision/tools per [brain.lfm]; not in any default
+    # chain. See docs/research/2026-10-28-lfm-local-spike.md.
+    "lfm": {"kind": "openai_compat",
+            "base_url": "http://127.0.0.1:8082/v1",
+            "key_env": "", "vision": "true", "tools": "false"},
 }
 
 
@@ -79,6 +86,7 @@ def _make(cfg: dict, name: str, model: str) -> dict:
     p = dict(_BUILTINS.get(name, _BUILTINS["openai_compat"]))
     p.update({k: v for k, v in cfg.get(f"brain.{name}", {}).items()})
     p["name"], p["model"] = name, model
+    p["_openrouter_key_source"] = config.openrouter_key_source(cfg)
     if name == "trial":
         from . import trial
         p["base_url"] = trial.url(cfg)     # "" while the trial is off
@@ -160,6 +168,7 @@ def _post(url: str, headers: dict, body: dict, timeout: float = 60) -> dict:
         url, data=json.dumps(body).encode(),
         headers={"User-Agent": UA, "Content-Type": "application/json",
                  **headers}, method="POST")
+    config.protect_authorization(req)
     with cancel.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read())
 
@@ -168,6 +177,19 @@ def _headers(p: dict) -> dict:
     if p["name"] == "trial":
         from . import trial
         return {"Authorization": f"Bearer {trial.token()}"}
+    if p["name"] == "openrouter" and not config.is_openrouter_endpoint(p["base_url"]):
+        from . import errors_codes
+        raise errors_codes.WispError(
+            "brain_down", "OpenRouter provider requires an official HTTPS endpoint",
+            "configure a separate provider for a custom endpoint")
+    if (not config.is_openrouter_endpoint(p["base_url"])
+            and config.shares_key_source(p.get("key_env", ""),
+                                         p.get("_openrouter_key_source",
+                                               "OPENROUTER_API_KEY"))):
+        from . import errors_codes
+        raise errors_codes.WispError(
+            "brain_down", "custom provider cannot use the OpenRouter key source",
+            "configure a separate credential for the custom provider")
     key = config.require_key(p["key_env"]) if p.get("key_env") else ""
     headers = {}
     if key:
@@ -295,6 +317,7 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
         url, data=json.dumps(body).encode(),
         headers={"User-Agent": UA, "Content-Type": "application/json",
                  **headers}, method="POST")
+    config.protect_authorization(req)
     t0 = time.monotonic()
     ttft_ms = None
     acc, msg, usage = "", {}, {}

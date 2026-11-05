@@ -3,6 +3,7 @@ import json
 import os
 import pathlib
 import subprocess
+import urllib.parse
 
 HOME = pathlib.Path.home()
 def _platform_dirs():
@@ -729,13 +730,15 @@ def load_env_key(name: str) -> str:
     Service via secret-tool), `omaseal://svc/acct` refs and plain env
     var names (also looked up in .env) — so an omaseal user can keep
     `omaseal://groq/default,GROQ_API_KEY` and a non-omaseal install
-    still resolves the same key. "" when nothing yields a value."""
+    still resolves the same key. An explicitly configured fallback is
+    tried only when the earlier source fails. "" when nothing yields a
+    value."""
     for cand in (c.strip() for c in str(name).split(",")):
         if not cand:
             continue
         if cand.startswith("keyring://"):
             ref = cand[len("keyring://"):].split("/", 1)
-            if len(ref) == 2:
+            if len(ref) == 2 and all(ref):
                 try:
                     from . import platform as _platform
                     r = subprocess.run(
@@ -780,14 +783,51 @@ def require_key(name: str) -> str:
     if not key:
         from . import errors_codes
         label = key_label(name)
+        if label.startswith(("keyring://", "omaseal://")):
+            raise errors_codes.WispError(
+                "key_missing", f"credential source {label} is unavailable",
+                f"{label} is missing, locked or unavailable; unlock it or "
+                "run wispd onboard")
         raise errors_codes.WispError(
             "key_missing", f"no {label} in {ENV_FILE} or environment",
             f"{label} is missing, run wispd onboard")
     return key
 
 
-def load_api_key() -> str:
-    return require_key("OPENROUTER_API_KEY")
+def openrouter_key_source(cfg: dict | None = None) -> str:
+    """Use the configured OpenRouter source, or the legacy default."""
+    section = (cfg or {}).get("brain.openrouter", {})
+    return section.get("key_env", "OPENROUTER_API_KEY")
+
+
+def shares_key_source(first: str, second: str) -> bool:
+    """Whether two ordered source lists name any of the same sources."""
+    a = {s.strip() for s in first.split(",") if s.strip()}
+    b = {s.strip() for s in second.split(",") if s.strip()}
+    return bool(a & b)
+
+
+def is_openrouter_endpoint(url: str) -> bool:
+    try:
+        parsed = urllib.parse.urlparse(url)
+        return (parsed.scheme == "https" and parsed.username is None
+                and parsed.port in (None, 443) and parsed.hostname in
+                ("openrouter.ai", "eu.openrouter.ai", "us.openrouter.ai"))
+    except ValueError:
+        return False
+
+
+def protect_authorization(req):
+    """Keep credentials on the initial request, not redirected requests."""
+    value = req.get_header("Authorization")
+    if value:
+        req.remove_header("Authorization")
+        req.add_unredirected_header("Authorization", value)
+    return req
+
+
+def load_api_key(cfg: dict | None = None) -> str:
+    return require_key(openrouter_key_source(cfg))
 
 
 def load_harness() -> dict | None:

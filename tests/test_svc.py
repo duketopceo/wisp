@@ -25,7 +25,7 @@ import shorttmp  # noqa: E402
 from wisp import svc  # noqa: E402
 
 UNITS = ROOT / "scripts" / "units"
-LLAMAS = ["llama-local", "llama-jev", "llama-uitars"]
+LLAMAS = ["llama-local", "llama-jev", "llama-uitars", "llama-lfm"]
 ALL = LLAMAS + ["jev-shim", "wispd"]
 
 
@@ -152,7 +152,8 @@ class Env:
         """llama wrappers present so their units are installable."""
         d = self.home / ".local" / "bin"
         d.mkdir(parents=True, exist_ok=True)
-        for n in ("llama-local", "llama-jev", "llama-uitars"):
+        for n in ("llama-local", "llama-jev", "llama-uitars",
+                  "llama-lfm"):
             (d / n).write_text("#!/bin/sh\n")
             (d / n).chmod(0o755)
         b = self.home / "bin"

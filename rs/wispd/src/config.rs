@@ -286,18 +286,30 @@ pub fn set_config(section: &str, key: &str, value: &str)
     std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
 }
 
-/// Resolve a secret: .env file first, then process environment
-/// (parity with Python load_env_key).
+/// Resolve ordered credential sources, matching Python's precedence.
 pub fn env_key(name: &str) -> Option<String> {
+    name.split(',').map(str::trim).filter(|s| !s.is_empty())
+        .find_map(env_key_one)
+}
+
+fn env_key_one(name: &str) -> Option<String> {
+    if let Some(ref_) = name.strip_prefix("keyring://") {
+        let (svc, acct) = ref_.split_once('/')?;
+        if svc.is_empty() || acct.is_empty() {
+            return None;
+        }
+        let mut cmd = Command::new("secret-tool");
+        cmd.args(["search", "service", svc, "account", acct]);
+        return read_secret_command(cmd, std::time::Duration::from_secs(2))
+            .and_then(|out| out.lines().find_map(|line|
+                line.strip_prefix("secret = ").map(|s| s.trim().to_string())))
+            .filter(|s| !s.is_empty());
+    }
     if let Some(ref_) = name.strip_prefix("omaseal://") {
         let (svc, acct) = ref_.split_once('/')?;
-        return Command::new("omaseal")
-            .args(["get", svc, acct])
-            .output().ok()
-            .filter(|o| o.status.success())
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty());
+        let mut cmd = Command::new("omaseal");
+        cmd.args(["get", svc, acct]);
+        return read_secret_command(cmd, std::time::Duration::from_secs(2));
     }
     if let Ok(v) = std::env::var(name) {
         if !v.is_empty() {
@@ -316,14 +328,76 @@ pub fn env_key(name: &str) -> Option<String> {
     None
 }
 
-pub fn api_key() -> Result<String, String> {
-    env_key("OPENROUTER_API_KEY").ok_or_else(|| "no OPENROUTER_API_KEY".into())
+fn read_secret_command(mut command: Command,
+                        timeout: std::time::Duration) -> Option<String> {
+    use std::process::Stdio;
+    use std::time::Instant;
+    let mut child = command.stdin(Stdio::null())
+        .stdout(Stdio::piped()).stderr(Stdio::null()).spawn().ok()?;
+    let start = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if start.elapsed() < timeout => {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    }
+    child.wait_with_output().ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+pub fn openrouter_key_source(cfg: &Cfg) -> &str {
+    cfg.raw.get("brain").and_then(|b| b.get("openrouter"))
+        .and_then(|p| p.get("key_env")).and_then(|v| v.as_str())
+        .unwrap_or("OPENROUTER_API_KEY")
+}
+
+pub fn shares_key_source(first: &str, second: &str) -> bool {
+    first.split(',').map(str::trim).filter(|s| !s.is_empty())
+        .any(|a| second.split(',').map(str::trim).any(|b| a == b))
+}
+
+pub fn is_openrouter_endpoint(url: &str) -> bool {
+    let Some(rest) = url.strip_prefix("https://") else { return false };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host = authority.strip_suffix(":443").unwrap_or(authority);
+    ["openrouter.ai", "eu.openrouter.ai", "us.openrouter.ai"]
+        .iter().any(|valid| host.eq_ignore_ascii_case(valid))
+}
+
+pub fn api_key(cfg: &Cfg) -> Result<String, String> {
+    env_key(openrouter_key_source(cfg))
+        .ok_or_else(|| "OpenRouter credential missing; run wispd onboard".into())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::platform::Os;
+
+    #[test]
+    fn credential_sources_try_the_next_configured_candidate() {
+        assert!(env_key("WISP_TEST_ABSENT_CREDENTIAL,PATH").is_some());
+    }
+
+    #[test]
+    fn keyring_command_timeout_does_not_block_daemon() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "exec sleep 5"]);
+        let started = std::time::Instant::now();
+        assert!(read_secret_command(command,
+            std::time::Duration::from_millis(50)).is_none());
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+    }
 
     // Exercised through the *_for(os) variants — no env mutation, so
     // these never race the parallel contract test (see platform.rs).

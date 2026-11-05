@@ -1,17 +1,18 @@
-usage: wispd sync [-h] [--json] [--quiet] [--no-color] [repo]
+usage: wispd sync [-h] [--repo REPO] [--skills-dir SKILLS_DIR] [--json]
+                  [--quiet] [--no-color]
 
 Refresh the MEMORY constitution block and import skills
 
-positional arguments:
-  repo         luke-agents checkout (default the standard location)
-
 options:
-  -h, --help   show this help message and exit
+  -h, --help               show this help message and exit
+  --repo REPO              constitution checkout to sync (opt-in; none by
+                           default)
+  --skills-dir SKILLS_DIR  directory of user SKILL.md files to import (opt-in)
 
 global options:
-  --json       machine-readable output (one JSON object)
-  --quiet, -q  print nothing on success
-  --no-color   plain output (also NO_COLOR, or not a tty)
+  --json                   machine-readable output (one JSON object)
+  --quiet, -q              print nothing on success
+  --no-color               plain output (also NO_COLOR, or not a tty)
 
 Examples:
   wispd sync

@@ -125,6 +125,15 @@ HOSTS = {
                 "models off."),
 }
 
+# Regional OpenRouter endpoints have the same payload and credential
+# semantics as the default endpoint, but are only used when configured.
+for _region in ("eu", "us"):
+    HOSTS[f"{_region}.openrouter.ai"] = {
+        **HOSTS["openrouter.ai"],
+        "what": f"OpenRouter {_region.upper()} regional endpoint, when configured.",
+        "default": "No. Only when explicitly configured.",
+    }
+
 # Names the code mentions that Wisp does not send anything to: a browser
 # is opened to them for you, or the text only appears in a message, a
 # comment, a header label or an XML namespace.
@@ -159,12 +168,18 @@ MENTIONS = {
     "amara.org": "A credit line for subtitle text in a bundled sample.",
     "www.w3.org": "An XML namespace in a generated icon. Never "
                   "requested.",
+    "hf.co": "A Hugging Face model namespace inside Ollama tags "
+             "(`hf.co/owner/model:tag`) in the local-model catalog. It "
+             "names a weight to pull, not a host Wisp opens; Ollama "
+             "resolves the download.",
     "airtable.com": "A local app-skill routing hint for Airtable. "
                     "No request is made by this lookup.",
     "app.asana.com": "A local app-skill routing hint for Asana. "
                      "No request is made by this lookup.",
     "app.clickup.com": "A local app-skill routing hint for ClickUp. "
                        "No request is made by this lookup.",
+    "app.slack.com": "A local app-skill routing hint for Slack. "
+                     "No request is made by this lookup.",
     "atlassian.net": "A local app-skill routing hint for Jira and "
                      "Confluence. No request is made by this lookup.",
     "chatgpt.com": "A local app-skill routing hint for ChatGPT. "
@@ -192,6 +207,8 @@ MENTIONS = {
                  "against the focused window title. No request is made "
                  "by this lookup.",
     "gitlab.com": "A local app-skill routing hint for GitLab. "
+                  "No request is made by this lookup.",
+    "linear.app": "A local app-skill routing hint for Linear. "
                   "No request is made by this lookup.",
     "open.spotify.com": "A local app-skill routing hint for Spotify. "
                         "No request is made by this lookup.",

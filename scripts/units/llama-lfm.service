@@ -1,0 +1,22 @@
+# wisp template — installed by `wispd install` when [local] enabled.
+# spike/lfm-local: Liquid LFM2.5-VL on llama.cpp mtmd for the `lfm`
+# brain provider (http://127.0.0.1:8082/v1). Needs
+# ~/.local/bin/llama-lfm (install scripts/lfm-serve there first).
+[Unit]
+Description=llama.cpp server for Liquid LFM2.5-VL (wisp lfm brain)
+After=graphical-session.target
+StartLimitIntervalSec=900
+StartLimitBurst=30
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/llama-lfm
+Restart=on-failure
+RestartSec=5
+RestartSteps=5
+RestartMaxDelaySec=60
+Slice=session.slice
+ManagedOOMPreference=omit
+
+[Install]
+WantedBy=default.target

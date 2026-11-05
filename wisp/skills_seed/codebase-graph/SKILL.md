@@ -7,8 +7,8 @@ provenance: authored
 ---
 # codebase-graph
 
-The wisp repo is indexed by `codebase-memory-mcp` (project
-`home-lukekimball-Documents-github-personal-wisp`, persisted at
+If `codebase-memory-mcp` is configured, the repo under test may be indexed
+(project slug derived from path, persisted at
 `.codebase-memory/graph.db.zst`). Prefer the graph over rg/read loops
 for structural questions.
 
