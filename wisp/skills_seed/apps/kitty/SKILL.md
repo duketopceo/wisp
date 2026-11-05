@@ -1,12 +1,12 @@
 ---
-name: terminal
+name: kitty
 description: Terminal emulators (kitty, Alacritty, Ghostty, foot) - tabs, splits, copy and paste. Use for teaching a task in a terminal window; not for what to type in a shell.
 tier: safe
 app_classes: kitty, alacritty, com.mitchellh.ghostty, ghostty, foot, org.codeberg.dnkl.foot, org.omarchy.terminal, xterm
 asks: How do I open a new tab; How do I split this window; How do I copy the last output
 provenance: authored: wisp seed, audited 2026-11-05
 ---
-# terminal
+# kitty
 
 ## Teaching
 

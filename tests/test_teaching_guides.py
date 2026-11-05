@@ -36,7 +36,7 @@ def planner_prompt(skill):
 class Matching(unittest.TestCase):
     def test_kitty_window_injects_the_terminal_guide_and_no_other(self):
         g = skills.teaching_guide("kitty")
-        self.assertEqual(g["name"], "terminal")
+        self.assertEqual(g["name"], "kitty")
         self.assertEqual(g["matched_by"], "window_class")
         self.assertIn("Ctrl+Shift+C", g["body"])
         text = wr.app_skill({"class": "kitty"})
@@ -47,8 +47,8 @@ class Matching(unittest.TestCase):
 
     def test_every_new_guide_is_reachable_by_its_app(self):
         for cls, name in (("blender", "blender"),
-                          ("org.omarchy.terminal", "terminal"),
-                          ("Alacritty", "terminal"),
+                          ("org.omarchy.terminal", "kitty"),
+                          ("Alacritty", "kitty"),
                           ("firefox", "firefox"), ("gimp", "gimp"),
                           ("libreoffice-writer", "libreoffice"),
                           ("org.gnome.Nautilus", "nautilus"),
