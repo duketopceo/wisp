@@ -4,6 +4,7 @@ description: Steam client library, overlay, downloads, and store navigation
 tier: safe
 app_classes: steam, steamwebhelper
 asks: How do I add a non-Steam game; Where are my downloads; How do I change the launch options
+provenance: authored: wisp seed, frontmatter audited 2026-11-05
 ---
 # steam
 

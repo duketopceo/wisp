@@ -4,6 +4,7 @@ description: Mozilla Thunderbird mail compose, reply, search, and folder navigat
 tier: safe
 app_classes: thunderbird, org.mozilla.thunderbird
 asks: How do I filter these emails; How do I add an account; Where is the spam folder
+provenance: authored: wisp seed, frontmatter audited 2026-11-05
 ---
 # thunderbird
 

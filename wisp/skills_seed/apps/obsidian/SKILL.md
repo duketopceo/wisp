@@ -4,6 +4,7 @@ description: Obsidian vault switcher, command palette, daily notes, and wikilink
 tier: safe
 app_classes: obsidian, md.obsidian.obsidian
 asks: How do I link to another note; Where is the graph view; How do I open the command palette
+provenance: authored: wisp seed, frontmatter audited 2026-11-05
 ---
 # obsidian
 

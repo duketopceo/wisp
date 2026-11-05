@@ -368,7 +368,7 @@ class SkillPriming(unittest.TestCase):
 
     def test_no_skill_means_no_notes(self):
         p = self.prompt_for(W("t", "foot"), lambda cls: "")
-        self.assertNotIn("Notes about the app", p)
+        self.assertNotIn("Reference notes", p)
 
     def test_no_window_class_never_asks_for_a_skill(self):
         def boom(cls):
