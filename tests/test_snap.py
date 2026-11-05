@@ -1,278 +1,168 @@
-#!/usr/bin/env python3
-"""Ember snapshot harness (W20, Ember U5): scripts/ui/snap.py.
+"""U7: the model proposes a point, the accessibility tree disposes.
 
-Pure parts (tolerance compare, case matrix, tolerance table, fixtures)
-always run. The render tests need qmltestrunner and PIL and are skipped
-without them. The harness never opens a Wayland or X window: the render
-environment forces Qt's offscreen platform whatever the parent has set.
-"""
+Every case runs on a recorded-tree fixture (tests/fixtures/trees, drawn by
+make_trees.py) behind FakeElementTree: no AT-SPI, no compositor."""
 import json
-import os
 import pathlib
-import shutil
 import sys
-import tempfile
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "scripts" / "ui"))
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
+from fakes.elementtree import FakeElementTree  # noqa: E402
+from wisp import elementtree as et  # noqa: E402
+from wisp import walkthrough as wt, walkthrough_run as wr  # noqa: E402
 
-try:
-    from PIL import Image
-except ImportError:  # pragma: no cover
-    Image = None
-
-import snap  # noqa: E402
-
-needs_render = unittest.skipUnless(
-    snap.find_runner() and Image, "qmltestrunner or PIL missing")
+TREES = pathlib.Path(__file__).resolve().parent / "fixtures" / "trees"
+MONS = [{"width": 1920, "height": 1080, "scale": 1}]
 
 
-def solid(size, rgb):
-    return Image.new("RGB", size, rgb)
+def tree(name):
+    return FakeElementTree.from_file(TREES / f"{name}.json")
 
 
-@unittest.skipUnless(Image, "PIL missing")
-class TestCompare(unittest.TestCase):
-    TOL = snap.Tolerance(channel=6, fraction=0.01)
-
-    def test_identical(self):
-        r = snap.compare_images(solid((20, 20), (9, 9, 9)),
-                                solid((20, 20), (9, 9, 9)), self.TOL)
-        self.assertTrue(r.ok)
-        self.assertEqual(r.bad_pixels, 0)
-
-    def test_small_channel_drift_is_ignored(self):
-        r = snap.compare_images(solid((20, 20), (9, 9, 9)),
-                                solid((20, 20), (14, 9, 9)), self.TOL)
-        self.assertTrue(r.ok)
-
-    def test_few_bad_pixels_within_fraction(self):
-        a, b = solid((20, 20), (0, 0, 0)), solid((20, 20), (0, 0, 0))
-        for x in range(3):  # 3 / 400 = 0.75 %
-            b.putpixel((x, 0), (255, 255, 255))
-        r = snap.compare_images(a, b, self.TOL)
-        self.assertTrue(r.ok)
-        self.assertEqual(r.bad_pixels, 3)
-
-    def test_too_many_bad_pixels_fail(self):
-        a, b = solid((20, 20), (0, 0, 0)), solid((20, 20), (0, 0, 0))
-        for x in range(10):
-            b.putpixel((x, 0), (255, 255, 255))
-        r = snap.compare_images(a, b, self.TOL)
-        self.assertFalse(r.ok)
-        self.assertIn("pixels", r.reason)
-
-    def test_size_mismatch_fails(self):
-        r = snap.compare_images(solid((20, 20), (0, 0, 0)),
-                                solid((20, 21), (0, 0, 0)), self.TOL)
-        self.assertFalse(r.ok)
-        self.assertIn("size", r.reason)
-
-    def test_alpha_is_compared(self):
-        a = Image.new("RGBA", (10, 10), (0, 0, 0, 255))
-        b = Image.new("RGBA", (10, 10), (0, 0, 0, 0))
-        self.assertFalse(snap.compare_images(a, b, self.TOL).ok)
+def snap(step, name, ground=None):
+    return wr.snap_point(step, {}, ground=ground or (lambda *_: None),
+                         monitors=MONS, tree=tree(name))
 
 
-class TestToleranceTable(unittest.TestCase):
-    def test_every_scene_component_resolves(self):
-        for comp in snap.scenes():
-            t = snap.tolerance_for(comp)
-            self.assertGreaterEqual(t.channel, 0)
-            self.assertGreater(t.fraction, 0)
+class AxLayer(unittest.TestCase):
+    def test_point_near_a_labelled_button_snaps_to_its_center(self):
+        step = wt.Step("Click Save", point={"x": 720, "y": 650}, label="Save")
+        pt = snap(step, "settings_dialog")
+        self.assertEqual((pt["x"], pt["y"]), (740, 656))   # Save's center
+        self.assertEqual((pt["snap"], pt["via"]), ("ax", "label"))
+        self.assertEqual(pt["ax_status"], "ok")
+        self.assertEqual(pt["app"], "fixture-settings")
+        self.assertEqual(pt["confidence"], 1.0)
 
-    def test_tolerances_stay_tight(self):
-        for name, t in snap.TOLERANCE.items():
-            self.assertLessEqual(t.channel, 24, name)
-            self.assertLessEqual(t.fraction, 0.03, name)
-        self.assertLessEqual(snap.DEFAULT_TOLERANCE.fraction, 0.01)
+    def test_point_in_a_large_container_keeps_the_model_box(self):
+        step = wt.Step("Click Zoom", point={"x": 400, "y": 300}, label="Zoom")
+        pt = snap(step, "patchy")
+        self.assertEqual((pt["x"], pt["y"]), (400, 300))
+        self.assertEqual(pt["snap"], "model")
+        self.assertEqual(pt["ax_status"], "ok")      # tree was consulted
 
-    def test_table_names_are_real_components(self):
-        for name in snap.TOLERANCE:
-            self.assertIn(name, snap.scenes(), name)
+    def test_container_role_is_never_a_target_even_when_small(self):
+        step = wt.Step("x", point={"x": 5000, "y": 5000}, label="Content")
+        # "Content" is a panel in settings_dialog: matched by label, refused
+        pt = snap(step, "settings_dialog")
+        self.assertEqual(pt["snap"], "model")
 
+    def test_two_matches_pick_the_one_nearest_the_model_point(self):
+        near_second = wt.Step("Run it", point={"x": 640, "y": 520},
+                              label="Run")
+        near_first = wt.Step("Run it", point={"x": 40, "y": 30}, label="Run")
+        self.assertEqual(snap(near_second, "two_windows")["x"], 630)
+        self.assertEqual(snap(near_first, "two_windows")["x"], 50)
 
-class TestMatrix(unittest.TestCase):
-    def test_state_fixtures_cover_every_status(self):
-        have = {json.loads(p.read_text()).get("status", "offline")
-                for p in snap.FIXTURES.glob("*.json")}
-        want = {"idle", "listening", "transcribing", "deciding",
-                "awaiting_choice", "acting", "speaking", "suggestion",
-                "done", "error", "offline"}
-        self.assertEqual(want - have, set())
+    def test_label_in_an_unfocused_window_is_not_snapped_to(self):
+        # "Apply" exists only in the second window of the same app; the
+        # model point sits on the focused window's second Run button
+        step = wt.Step("Apply", point={"x": 640, "y": 520}, label="Apply")
+        pt = snap(step, "two_windows")
+        self.assertEqual((pt["snap"], pt["via"]), ("ax", "contains"))
+        self.assertEqual(pt["label"], "Run")         # the control it holds
+        # and with no control under the point it keeps the model box
+        away = wt.Step("Apply", point={"x": 450, "y": 350}, label="Apply")
+        self.assertEqual(snap(away, "two_windows")["snap"], "model")
 
-    def test_edge_fixtures_exist(self):
-        names = {p.stem for p in snap.FIXTURES.glob("*.json")}
-        for n in ("offline", "stale", "long_answer", "blocked"):
-            self.assertIn(n, names)
+    def test_label_under_another_window_falls_through(self):
+        step = wt.Step("Export", point={"x": 600, "y": 300}, label="Export")
+        pt = snap(step, "occluded")
+        self.assertEqual((pt["snap"], pt["x"], pt["y"]), ("model", 600, 300))
+        clear = wt.Step("Open", point={"x": 600, "y": 300}, label="Open")
+        self.assertEqual(snap(clear, "occluded")["snap"], "ax")
 
-    def test_cases_cover_each_component_in_each_fixture(self):
-        cases = snap.cases()
-        ids = {c["id"] for c in cases}
-        self.assertEqual(len(ids), len(cases), "case ids are unique")
-        fixtures = {p.stem for p in snap.FIXTURES.glob("*.json")}
-        for comp, scene in snap.scenes().items():
-            for theme in snap.THEMES:
-                if scene["mode"] == "state":
-                    for fx in fixtures:
-                        self.assertIn(
-                            f"{theme}/1x/{comp}__{fx}", ids)
-                else:
-                    for var, props in scene["variants"].items():
-                        # a named viewport renders at its own scale only
-                        vp = snap.VIEWPORTS.get(props.get("_viewport", ""))
-                        scale = vp["scale"] if vp else 1
-                        self.assertIn(
-                            f"{theme}/{scale}x/{comp}__{var}", ids)
+    def test_unlabelled_step_snaps_to_the_control_holding_the_point(self):
+        step = wt.Step("this toggle", point={"x": 310, "y": 310})
+        pt = snap(step, "settings_dialog")
+        self.assertEqual((pt["snap"], pt["via"], pt["label"]),
+                         ("ax", "contains", "Dark mode"))
 
-    def test_named_viewports_render_at_their_own_size_and_scale(self):
-        self.assertEqual(
-            {k: (v["width"], v["height"], v["scale"])
-             for k, v in snap.VIEWPORTS.items()},
-            {"laptop": (1728, 1080, 2), "ultrawide": (3440, 1440, 1)})
-        got = {c["id"]: c for c in snap.cases(only="ViewportProbe")}
-        self.assertEqual(set(got), {
-            "dark/2x/ViewportProbe__laptop", "light/2x/ViewportProbe__laptop",
-            "dark/1x/ViewportProbe__ultrawide",
-            "light/1x/ViewportProbe__ultrawide"})
-        lap = got["dark/2x/ViewportProbe__laptop"]
-        self.assertEqual((lap["width"], lap["height"]), (1728, 1080))
-        self.assertNotIn("_viewport", lap["props"])
-
-    def test_scale_two_and_light_theme_present(self):
-        ids = {c["id"] for c in snap.cases()}
-        self.assertTrue(any("/2x/" in i for i in ids))
-        self.assertEqual(set(snap.THEMES), {"dark", "light"})
-
-    def test_goldens_match_cases_exactly(self):
-        gold = {str(p.relative_to(snap.GOLDEN))[:-4]
-                for p in snap.GOLDEN.rglob("*.png")}
-        ids = {c["id"] for c in snap.cases()}
-        self.assertEqual(ids - gold, set(), "missing golden (snap.py update)")
-        self.assertEqual(gold - ids, set(), "orphan golden")
+    def test_ground_providers_still_resolve_when_the_tree_cannot(self):
+        ground = lambda label, cfg: mock.Mock(x=9, y=8, rect=(0, 0, 10, 10),
+                                              confidence=0.9)
+        step = wt.Step("Save", point={"x": 1, "y": 2}, label="Save")
+        pt = snap(step, "unavailable", ground=ground)
+        self.assertEqual((pt["x"], pt["y"], pt["via"]), (9, 8, "ground"))
 
 
-class TestEnvironment(unittest.TestCase):
-    def test_render_env_is_offscreen_and_headless(self):
-        env = snap.render_env(base={"WAYLAND_DISPLAY": "wayland-1",
-                                    "DISPLAY": ":0",
-                                    "QT_QPA_PLATFORM": "wayland",
-                                    "XDG_SESSION_TYPE": "wayland"},
-                              scale=2, fonts_conf="/x/fonts.conf")
-        self.assertEqual(env["QT_QPA_PLATFORM"], "offscreen")
-        self.assertNotIn("WAYLAND_DISPLAY", env)
-        self.assertNotIn("DISPLAY", env)
-        self.assertEqual(env["QT_QUICK_BACKEND"], "software")
-        self.assertEqual(env["QT_SCALE_FACTOR"], "2")
-        self.assertEqual(env["FONTCONFIG_FILE"], "/x/fonts.conf")
-        self.assertEqual(env["TZ"], "UTC")
+class Unreachable(unittest.TestCase):
+    def test_unavailable_returns_the_model_box_and_logs_none(self):
+        step = wt.Step("Save", point={"x": 33, "y": 44}, label="Save")
+        pt = snap(step, "unavailable")
+        self.assertEqual((pt["x"], pt["y"]), (33, 44))
+        self.assertEqual(pt["snap"], "none")
+        self.assertEqual(pt["ax_status"], "unavailable")
+        self.assertIn("gi/Atspi", pt["ax_reason"])
 
-    def test_missing_runner_is_a_skip_not_a_failure(self):
-        code = snap.main(["check"], runner=None)
-        self.assertEqual(code, snap.EXIT_SKIPPED)
+    def test_unbound_is_reported_apart_from_no_match(self):
+        step = wt.Step("Save", point={"x": 33, "y": 44}, label="Save")
+        unbound = snap(step, "unbound")
+        nomatch = snap(wt.Step("Zoom", point={"x": 33, "y": 44},
+                               label="Zoom"), "patchy")
+        self.assertEqual((unbound["snap"], unbound["ax_status"]),
+                         ("none", "unbound"))
+        self.assertEqual((nomatch["snap"], nomatch["ax_status"]),
+                         ("model", "ok"))
 
-    def test_fonts_are_bundled(self):
-        for f in ("LiberationMono-Regular.ttf", "LiberationMono-Bold.ttf"):
-            self.assertTrue((snap.FONTS / f).exists(), f)
+    def test_a_tree_that_raises_is_a_quiet_fall(self):
+        class Boom(et.ElementTree):
+            def state(self):
+                raise RuntimeError("bus gone")
+        step = wt.Step("x", point={"x": 1, "y": 2}, label="Save")
+        pt = wr.snap_point(step, {}, ground=lambda *_: None,
+                           monitors=MONS, tree=Boom())
+        self.assertEqual((pt["x"], pt["snap"]), (1, "none"))
+        self.assertEqual(pt["ax_status"], "unavailable")
 
+    def test_default_tree_without_a_compositor_is_unavailable(self):
+        t = et.default_tree()           # hermetic env: no Hyprland
+        self.assertEqual(t.state()[0], et.UNAVAILABLE)
 
-@needs_render
-class TestRender(unittest.TestCase):
-    def test_render_never_uses_a_window_platform(self):
-        with tempfile.TemporaryDirectory() as d:
-            env = dict(os.environ, WAYLAND_DISPLAY="wayland-9",
-                       DISPLAY=":9", QT_QPA_PLATFORM="wayland")
-            old = os.environ.copy()
-            os.environ.update(env)
-            try:
-                out = snap.render(pathlib.Path(d), only="Mark__idle")
-            finally:
-                os.environ.clear()
-                os.environ.update(old)
-            self.assertTrue(out)
-
-    def test_render_is_deterministic(self):
-        with tempfile.TemporaryDirectory() as a, \
-                tempfile.TemporaryDirectory() as b:
-            ra = snap.render(pathlib.Path(a), only="Pill__")
-            rb = snap.render(pathlib.Path(b), only="Pill__")
-            self.assertTrue(ra)
-            self.assertEqual(sorted(p.name for p in ra),
-                             sorted(p.name for p in rb))
-            for pa in ra:
-                pb = pathlib.Path(b) / pa.relative_to(a)
-                self.assertEqual(pa.read_bytes(), pb.read_bytes(),
-                                 pa.name)
-
-    def test_outputs_are_non_empty_pngs(self):
-        with tempfile.TemporaryDirectory() as d:
-            for p in snap.render(pathlib.Path(d), only="Mark__"):
-                im = Image.open(p)
-                self.assertGreater(im.width, 4)
-                self.assertGreater(im.height, 4)
-                self.assertGreater(len(im.convert("RGB").getcolors(1 << 20)), 1,
-                                   f"{p.name} is blank")
-
-    def test_all_fixtures_match_goldens_within_tolerance(self):
-        with tempfile.TemporaryDirectory() as d:
-            report = snap.check(pathlib.Path(d))
-        self.assertEqual(report.failures, [], "\n".join(
-            f"{f.id}: {f.reason}" for f in report.failures))
-        self.assertEqual(report.missing, [])
-        self.assertGreater(report.total, 300)
-
-    def test_a_changed_render_is_caught(self):
-        with tempfile.TemporaryDirectory() as d:
-            out = pathlib.Path(d)
-            made = snap.render(out, only="Chip__normal")
-            self.assertTrue(made)
-            im = Image.open(made[0]).convert("RGB")
-            for x in range(im.width):
-                for y in range(im.height):
-                    im.putpixel((x, y), (255, 0, 255))
-            im.save(made[0])
-            report = snap.compare_dir(out, only="Chip__normal")
-            self.assertTrue(report.failures)
+    def test_no_point_and_no_match_points_nowhere(self):
+        self.assertIsNone(snap(wt.Step("Zoom", label="Zoom"), "patchy"))
 
 
-class TestCheckCleanup(unittest.TestCase):
-    """check() with no out_dir must not leave /tmp/wisp-snap-* behind when
-    everything matched."""
+class Record(unittest.TestCase):
+    def test_trace_gets_a_snap_event_for_every_step(self):
+        events = []
+        with mock.patch("wisp.trace.emit",
+                        lambda *a, **k: events.append(a)):
+            snap(wt.Step("Save", point={"x": 720, "y": 650}, label="Save"),
+                 "settings_dialog")
+            snap(wt.Step("Zoom", label="Zoom"), "unavailable")   # no point
+        self.assertEqual([e[1] for e in events], ["snap", "snap"])
+        first, second = events[0][3], events[1][3]
+        self.assertEqual((first["snap"], first["pointed"]), ("ax", True))
+        self.assertEqual((second["snap"], second["pointed"],
+                          second["ax_status"]), ("none", False,
+                                                 "unavailable"))
 
-    def test_temp_dir_removed_on_success_and_error(self):
-        from unittest import mock
-        seen = []
-
-        def fake_render(d, only=None, runner=None):
-            seen.append(pathlib.Path(d))
-            return []
-
-        ok = snap.Report()
-        with mock.patch.object(snap, "render", fake_render), \
-                mock.patch.object(snap, "compare_dir", lambda *a, **k: ok):
-            rep = snap.check()
-        self.assertTrue(rep.ok)
-        self.assertFalse(seen[0].exists())
-        with mock.patch.object(snap, "render",
-                               side_effect=RuntimeError("x")) as r:
-            r.side_effect = lambda d, **k: (seen.append(pathlib.Path(d)),
-                                            (_ for _ in ()).throw(
-                                                RuntimeError("x")))
-            with self.assertRaises(RuntimeError):
-                snap.check()
-        self.assertFalse(seen[-1].exists())
-
-    def test_failing_run_keeps_its_renders(self):
-        from unittest import mock
-        bad = snap.Report(failures=[snap.Failure("a", "b")])
-        with mock.patch.object(snap, "render", lambda d, **k: []), \
-                mock.patch.object(snap, "compare_dir", lambda *a, **k: bad):
-            rep = snap.check()
-        try:
-            self.assertTrue(rep.kept and rep.kept.exists())
-        finally:
-            shutil.rmtree(rep.kept, ignore_errors=True)
+    def test_published_point_and_step_dump_carry_snap(self):
+        published = []
+        state = mock.Mock()
+        state.transition.side_effect = \
+            lambda status, **kw: published.append(kw)
+        step = wt.Step("Click Save", point={"x": 720, "y": 650},
+                       label="Save")
+        t = [0.0]
+        env = wr._Env({}, state, speak=lambda _t: None,
+                      window=lambda: {"class": "a", "title": "t"},
+                      sleep=lambda s: t.__setitem__(0, t[0] + s),
+                      clock=lambda: t[0], check=lambda: None,
+                      tree=tree("settings_dialog"))
+        wr.run("g", {}, state, steps=[step], env=env, monitors=MONS,
+               demonstrate=True)
+        pt = published[0]["points"][0]
+        self.assertEqual((pt["snap"], pt["x"], pt["y"]), ("ax", 740, 656))
+        self.assertEqual(env.snaps[step.key]["snap"], "ax")
+        dump = wr._dump(wt.Walkthrough("g", [step]), [step], None, env.snaps)
+        self.assertEqual(dump["steps"][0]["snap"]["via"], "label")
+        json.dumps(dump)
 
 
 if __name__ == "__main__":

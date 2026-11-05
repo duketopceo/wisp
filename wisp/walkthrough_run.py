@@ -218,30 +218,148 @@ def _screen_area(monitors) -> float:
                      for m in monitors or ()))
 
 
-def snap_point(step, cfg: dict, *, ground=None, monitors=None) -> dict | None:
-    """Where to point for `step`: the labelled element first, else the
-    model's own coordinates, else nothing."""
+_DEFAULT = object()
+
+
+def snap_point(step, cfg: dict, *, ground=None, monitors=None,
+               tree=_DEFAULT) -> dict | None:
+    """Where to point for `step`, and which layer decided (KTD4).
+
+    Model proposes, accessibility disposes. In order:
+      1. a label match in the accessibility tree (`ElementTree`), nearest
+         the model's point when several match;
+      2. the same label through the `ground` providers (the app's control
+         channel, then cua's tree);
+      3. the smallest control in the tree that holds the model's point;
+      4. the model's own coordinates.
+    A tree match counts only inside the focused toplevel's frame and not
+    under another window; containers are never targets (`_is_container`).
+    The result carries `snap` (`ax` | `model` | `none`: `none` means the
+    tree could not be consulted at all), `ax_status` (`ok` | `unavailable`
+    | `unbound`, so a missing client is not read as "no such control"),
+    `ax_reason`, `via`, `confidence` and `app`. Nothing in the tree path
+    raises: unreachable AT-SPI is a quiet fall to the model box. The same
+    record goes to the trace for every step, pointed or not."""
     label = (step.label or "").strip()
-    if label:
-        if ground is None:
-            from . import grounding
-            ground = grounding.ground_target
-        gcfg = {**cfg, "ground": {**(cfg.get("ground") or {}),
-                                  "providers": EXACT_PROVIDERS}}
-        try:
-            t = ground(label, gcfg)
-        except Exception:
-            t = None
-        if t is not None and not _is_container(t, monitors):
-            return {"x": int(t.x), "y": int(t.y), "label": label}
     pt = step.point
-    if isinstance(pt, dict) and "x" in pt and "y" in pt:
-        return {"x": int(pt["x"]), "y": int(pt["y"]),
-                "label": str(pt.get("label") or label)}
-    return None
+    if not (isinstance(pt, dict) and "x" in pt and "y" in pt):
+        pt = None
+    model = (int(pt["x"]), int(pt["y"])) if pt else None
+    if tree is _DEFAULT:
+        from . import elementtree
+        tree = elementtree.default_tree()
+    status, reason, app = _tree_status(tree)
+    if monitors is None and (status == "ok" or label):
+        from . import points
+        monitors = points.monitors()      # once, not per candidate
+    rec = {"app": app, "ax_status": status, "ax_reason": reason}
+    hit = None            # (x, y, label, via, confidence)
+    if status == "ok":
+        hit = _tree_label_hit(tree, label, model, monitors) if label else None
+    if hit is None and label:
+        hit = _ground_hit(label, cfg, ground, monitors)
+    if hit is None and status == "ok" and model:
+        hit = _tree_contain_hit(tree, model, monitors)
+    if hit is not None:
+        x, y, lab, via, conf = hit
+        out = {"x": x, "y": y, "label": lab, "snap": "ax", "via": via,
+               "confidence": conf, **rec}
+    elif model:
+        out = {"x": model[0], "y": model[1],
+               "label": str(pt.get("label") or label),
+               "snap": "model" if status == "ok" else "none",
+               "via": "model", "confidence": 0.3, **rec}
+    else:
+        out = None
+    _trace_snap(step, out, rec)
+    return out
+
+
+def _tree_status(tree) -> tuple:
+    try:
+        status, reason = tree.state()
+        return status, reason, (tree.app_name() if status == "ok" else "")
+    except Exception as e:
+        return "unavailable", f"tree failed: {type(e).__name__}", ""
+
+
+def _usable(tree, el, monitors) -> bool:
+    """A tree element is a snap target when it is not a container, sits
+    inside the focused toplevel and is not covered by another window."""
+    if _is_container(el, monitors):
+        return False
+    frame = tree.focused_frame()
+    from . import elementtree
+    rect = tree.rect(el)
+    if frame is None or not elementtree.inside(rect, frame):
+        return False
+    return not tree.occluded(rect)
+
+
+def _tree_label_hit(tree, label, model, monitors):
+    try:
+        found = [e for e in tree.find_by_label(label)
+                 if _usable(tree, e, monitors)]
+    except Exception:
+        return None
+    if not found:
+        return None
+    best = found[0]
+    if model is not None:
+        top = max(_score(label, e) for e in found)
+        best = min((e for e in found if _score(label, e) == top),
+                   key=lambda e: (e.center[0] - model[0]) ** 2
+                   + (e.center[1] - model[1]) ** 2)
+    return best.center[0], best.center[1], label, "label", _score(label, best)
+
+
+def _score(label, el) -> float:
+    from . import elementtree
+    return elementtree.match_score(label, el.label)
+
+
+def _tree_contain_hit(tree, model, monitors):
+    try:
+        el = tree.at_point(*model)
+    except Exception:
+        return None
+    if el is None or not _usable(tree, el, monitors):
+        return None
+    return el.center[0], el.center[1], el.label, "contains", 0.7
+
+
+def _ground_hit(label, cfg, ground, monitors):
+    if ground is None:
+        from . import grounding
+        ground = grounding.ground_target
+    gcfg = {**cfg, "ground": {**(cfg.get("ground") or {}),
+                              "providers": EXACT_PROVIDERS}}
+    try:
+        t = ground(label, gcfg)
+    except Exception:
+        return None
+    if t is None or _is_container(t, monitors):
+        return None
+    return int(t.x), int(t.y), label, "ground", \
+        float(getattr(t, "confidence", 0.9) or 0.9)
+
+
+def _trace_snap(step, out, rec) -> None:
+    try:
+        from . import trace
+        trace.emit(trace.current(), "snap", "walkthrough", {
+            "step": step.key, "label": step.label,
+            "snap": out["snap"] if out else "none", "pointed": bool(out),
+            **({k: out[k] for k in ("via", "confidence")} if out else {}),
+            **rec})
+    except Exception:
+        pass
 
 
 def _is_container(target, monitors) -> bool:
+    from . import elementtree
+    if getattr(target, "role", "") in elementtree.CONTAINER_ROLES:
+        return True
     rect = getattr(target, "rect", None)
     if not rect or len(rect) < 4:
         return False
@@ -259,8 +377,10 @@ class _Env:
 
     def __init__(self, cfg, state=None, speak=None, window=None,
                  sleep=time.sleep, clock=time.monotonic, check=None,
-                 interrupted=None):
+                 interrupted=None, tree=_DEFAULT):
         self.cfg, self.state = cfg, state
+        self.tree = tree              # an ElementTree, or _DEFAULT: live
+        self.snaps: dict = {}         # step key -> snap record, for the dump
         self._speak = speak
         self._window = window
         self.sleep, self.clock = sleep, clock
@@ -297,30 +417,36 @@ class _Env:
 
 # -- pausing and resuming -------------------------------------------------
 
-def _dump(wt, planned, current) -> dict:
+SNAP_KEYS = ("snap", "via", "confidence", "app", "ax_status", "ax_reason")
+
+
+def _dump(wt, planned, current, snaps=None) -> dict:
     steps = []
     for s in planned:
-        steps.append({"text": s.text, "label": s.label, "point": s.point,
-                      "why": s.why, "done": wt.has_completed(s)})
+        d = {"text": s.text, "label": s.label, "point": s.point,
+             "why": s.why, "done": wt.has_completed(s)}
+        if snaps and s.key in snaps:
+            d["snap"] = snaps[s.key]
+        steps.append(d)
     return {"goal": wt.goal, "steps": steps,
             "current": current.text if current is not None else "",
             "ts": time.time()}
 
 
-def save_paused(wt, planned, current, path=None) -> None:
+def save_paused(wt, planned, current, path=None, snaps=None) -> None:
     """Keep the goal and what is done so "continue" picks up from here."""
     import os
     path = path or PAUSED_FILE
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(_dump(wt, planned, current)))
+        tmp.write_text(json.dumps(_dump(wt, planned, current, snaps)))
         os.replace(tmp, path)
     except OSError:
         pass
 
 
-def save_last(wt, planned, path=None) -> None:
+def save_last(wt, planned, path=None, snaps=None) -> None:
     """Remember the walkthrough that just finished so it can be saved as a
     lesson."""
     import os
@@ -328,7 +454,7 @@ def save_last(wt, planned, path=None) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(_dump(wt, planned, None)))
+        tmp.write_text(json.dumps(_dump(wt, planned, None, snaps)))
         os.replace(tmp, path)
     except OSError:
         pass
@@ -475,13 +601,13 @@ def run(goal: str, cfg: dict, state=None, *, ask=None,
     def pause(line):
         n = len(wt.done_log)
         if keep:
-            save_paused(wt, planned, current[0])
+            save_paused(wt, planned, current[0], snaps=env.snaps)
         return f"WALKED ({n} steps): {line}"
 
     def finish(line, completed=False):
         clear_paused()
         if completed and keep and wt.done_log:
-            save_last(wt, planned)
+            save_last(wt, planned, snaps=env.snaps)
         return f"WALKED ({len(wt.done_log)} steps): {line}"
 
     ev = wt.issue_step(now=env.clock())
@@ -517,12 +643,21 @@ def spoken(step) -> str:
     return f"{step.text} {why}" if why else step.text
 
 
+def _announce(env: _Env, step, ground, monitors) -> None:
+    """Snap the step's point, keep which layer won for the dump, then say
+    and show it."""
+    pt = snap_point(step, env.cfg, ground=ground, monitors=monitors,
+                    tree=env.tree)
+    if isinstance(pt, dict):
+        env.snaps[step.key] = {k: pt[k] for k in SNAP_KEYS if k in pt}
+    env.say(spoken(step), pt)
+
+
 def _do_step(wt, ev, env: _Env, ask, ground, monitors):
     """Announce one step and wait for the user to act. The next event
     (a step, or a terminal one), or None to stop the walkthrough."""
     step = ev["step"]
-    env.say(spoken(step), snap_point(step, env.cfg, ground=ground,
-                                  monitors=monitors))
+    _announce(env, step, ground, monitors)
     before = {"window": env.window()}
     t0 = env.clock()
     while True:
@@ -552,8 +687,7 @@ def _demo_step(wt, ev, env: _Env, ask, ground, monitors):
     """Say and point at one step, then move on: nothing is clicked, typed
     or waited for."""
     step = ev["step"]
-    env.say(spoken(step), snap_point(step, env.cfg, ground=ground,
-                                  monitors=monitors))
+    _announce(env, step, ground, monitors)
     env.check()
     if env.interrupted():
         wt.cancel(env.state)

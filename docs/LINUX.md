@@ -86,6 +86,72 @@ Consequence for W13: grounding can prefer `get_window_state` over pixels
 for apps with an accessibility tree, falling back to UI-TARS. `Cua`
 already exposes `list_windows()` and `window_state(pid, window_id)`.
 
+## Accessibility snap (AT-SPI)
+
+Teaching and walkthrough pointing snaps the model's point to a real
+control: `wisp/elementtree.py` reads the AT-SPI tree and
+`walkthrough_run.snap_point` applies it. Order: a label match in the tree
+(nearest the model's point when several match), the same label through the
+`ground` providers, the smallest control holding the model's point, then the
+model's own box. Every step records `snap` (`ax`, `model` or `none`), the
+winning rung (`via`), `confidence` and the app name, in the trace
+(`snap` event) and in the walkthrough dump.
+
+**Client choice: system GObject introspection, imported lazily.** Install
+`python-gobject` and `at-spi2-core` (Arch; `python3-gi` and
+`gir1.2-atspi-2.0` on Debian). Wisp keeps no Python runtime dependencies,
+so `gi` is looked up only when a snap runs; without it the tree reports
+`unavailable` and pointing uses the model box. Direct D-Bus was rejected: it
+would re-implement the registry walk, state sets and coordinate types that
+Atspi already provides.
+
+**Binding rule.** Wayland clients get no screen coordinates, so extents are
+read in window coordinates and moved into the logical global frame by the
+focused toplevel's origin from Hyprland. The tree binds only to the ACTIVE
+frame of the Hyprland-focused window's application (same pid, else same app
+name), or to the single frame whose title matches. A control counts only
+inside that toplevel's frame and not under a floating window; containers
+(structural roles, or larger than `CONTAINER_FRACTION` of the screen) are
+never targets. Anything else falls to the next rung.
+
+**Unavailable is not no-match.** `ax_status` is `ok` (the tree answered),
+`unavailable` (no `gi`/Atspi, bus unreachable, compositor query failed) or
+`unbound` (AT-SPI is up but no toplevel binds). Unavailable and unbound
+snap to the model box with `snap: none`; a tree that answered but had no
+match logs `model`. `elementtree.snap_share(records)` reports the
+per-app share and counts the two failures apart. The user never sees an
+error for either.
+
+**Known limits.** Many Wayland apps publish near-empty trees (GPU-drawn
+canvases, terminals, some Electron builds), and a hidden window can keep a
+full tree that is not `showing`. A read-only probe on the dev machine bound
+the focused window correctly but found few controls in most apps, so the
+model box is the common outcome until an app publishes a real tree.
+Scaling: extents are taken as logical pixels; an element that overflows its
+toplevel (a toolkit reporting physical pixels) fails the frame check and is
+skipped.
+
+**Recorded-tree fixtures** (`wisp-elementtree/1`, JSON) let a harness replay
+the snap with no desktop. Shape:
+
+```json
+{"format": "wisp-elementtree/1", "app": "fixture-settings",
+ "state": "ok", "reason": "",
+ "windows": [{"title": "main", "frame": [100, 100, 800, 600],
+              "focused": true, "above": false,
+              "elements": [{"label": "Save", "role": "push button",
+                            "rect": [700, 640, 80, 32]}]}]}
+```
+
+`rect` and `frame` are `[x, y, w, h]` in logical global pixels; `focused`
+marks the toplevel the tree binds to; `above` marks an unfocused window that
+covers what lies under it; `state` may be `unavailable` or `unbound` to
+replay those cases. `tests/fakes/elementtree.py` serves one as an
+`ElementTree`, and `elementtree.load_fixture` validates it. The checked-in
+set is drawn by `tests/fixtures/trees/make_trees.py` from invented apps and
+labels. Never paste a tree captured from a real session: window titles and
+control labels are the user's content.
+
 ## Service hygiene (W29)
 
 `scripts/units/*.service` are the templates for `llama-local`, `llama-jev`,

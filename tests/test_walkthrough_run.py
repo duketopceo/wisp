@@ -97,7 +97,8 @@ class Snap(unittest.TestCase):
             return target(300, 400, (290, 390, 20, 20))
         step = wt.Step("Click Save", point={"x": 1, "y": 2}, label="Save")
         pt = wr.snap_point(step, {}, ground=ground, monitors=MONS)
-        self.assertEqual(pt, {"x": 300, "y": 400, "label": "Save"})
+        self.assertEqual((pt["x"], pt["y"], pt["label"]), (300, 400, "Save"))
+        self.assertEqual((pt["snap"], pt["via"]), ("ax", "ground"))
         self.assertEqual(calls, [("Save", "control,a11y")])
 
     def test_container_is_skipped_for_the_model_point(self):
