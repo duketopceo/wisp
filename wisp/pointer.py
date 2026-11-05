@@ -31,6 +31,7 @@ Coordinates are logical Hyprland desktop coordinates (the `desktop`
 frame cua is told); no backend rescales them.
 """
 import dataclasses
+import logging
 import os
 import struct
 import subprocess
@@ -386,6 +387,36 @@ class Registry:
 
     def health(self) -> list:
         return [b.health() for b in self._b.values()]
+
+
+_log = logging.getLogger("wisp.pointer")
+_downgrade_logged = False
+
+
+def teaching_backend(cfg: dict | None = None,
+                     reg: Registry | None = None) -> Backend:
+    """The pointer for teaching (walkthrough, demo): the guide backend,
+    always. A registry lookup that would hand back a click-capable
+    backend is a bug in the caller: it raises when WISP_STRICT_TEACH=1
+    (the test suite sets it) and otherwise downgrades to guide with one
+    log line per process. Clicks stay guide-mode until the cua input
+    module exists (docs/CUA.md, "Click seam")."""
+    global _downgrade_logged
+    reg = reg or Registry(cfg)
+    # the lookup the other lanes use is select(): it honors the
+    # [pointer] backend pin, so a pin on a click-capable backend is what
+    # this lane must not follow ("auto" is never consulted here, which
+    # keeps the answer independent of what happens to be installed)
+    got = reg._b.get(reg.pin)
+    if got is not None and got.drives and got.available():
+        if os.environ.get("WISP_STRICT_TEACH") == "1":
+            raise AssertionError(
+                f"teaching asked for a click-capable backend: {got.name}")
+        if not _downgrade_logged:
+            _downgrade_logged = True
+            _log.warning("teaching pointer downgraded to guide "
+                         "(%s can click)", got.name)
+    return reg.get("guide")
 
 
 def registry(cfg: dict | None = None) -> Registry:

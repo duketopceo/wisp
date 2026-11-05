@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-from wisp import (stage_execute, stage_route, stage_speak,  # noqa: E402
+from wisp import (pointer, stage_execute, stage_route, stage_speak,  # noqa: E402
                   walkthrough as wt, walkthrough_run as wr)
 
 
@@ -17,14 +17,70 @@ _TMP = None
 
 def setUpModule():
     """Never touch the real paused-walkthrough file."""
-    global _TMP
+    global _TMP, _STRICT
+    _STRICT = mock.patch.dict("os.environ", {"WISP_STRICT_TEACH": "1"})
+    _STRICT.start()
     _TMP = tempfile.TemporaryDirectory()
     wr.PAUSED_FILE = pathlib.Path(_TMP.name) / "walkthrough.json"
     wr.LAST_FILE = pathlib.Path(_TMP.name) / "walkthrough_last.json"
 
 
 def tearDownModule():
+    _STRICT.stop()
     _TMP.cleanup()
+
+
+class ClickyBackend(pointer.Backend):
+    """A click-capable backend that fails the test if it is driven."""
+    name = "cua"
+    drives = True
+
+    def __init__(self):
+        self.calls = []
+
+    def available(self):
+        return True
+
+    def move(self, x, y):
+        self.calls.append(("move", x, y))
+        return True
+
+    def click(self, x, y):
+        self.calls.append(("click", x, y))
+        return True
+
+
+class PointOnly(unittest.TestCase):
+    def _registry(self, cfg):
+        reg = pointer.Registry(cfg)
+        reg._b["cua"] = self.clicky = ClickyBackend()
+        return reg
+
+    def test_pinned_click_backend_raises_under_strict_mode(self):
+        cfg = {"pointer": {"backend": "cua"}}
+        sc = Script([W("a"), W("b")])
+        with self.assertRaises(AssertionError):
+            wr._Env(cfg, sc.state, registry=self._registry(cfg))
+
+    def test_production_downgrades_to_guide_and_never_clicks(self):
+        cfg = {"pointer": {"backend": "cua"}}
+        sc = Script([W("a"), W("b")])
+        step = wt.Step("Click Save", point={"x": 4, "y": 5})
+        with mock.patch.dict("os.environ", {"WISP_STRICT_TEACH": "0"}):
+            env = wr._Env(cfg, sc.state, speak=sc.said.append,
+                          window=sc.window, sleep=sc.sleep,
+                          clock=lambda: sc.t, check=lambda: None,
+                          registry=self._registry(cfg))
+            out = wr.run("g", cfg, sc.state, steps=[step], env=env)
+        self.assertEqual(env.pointer.name, "guide")
+        self.assertEqual(self.clicky.calls, [])
+        self.assertEqual(sc.said, ["Click Save"])     # still speaks
+        self.assertEqual(sc.published[0][1]["points"][0]["x"], 4)  # points
+        self.assertTrue(out.startswith("WALKED (1 steps)"), out)  # advances
+
+    def test_auto_pin_resolves_to_guide_without_a_lookup(self):
+        sc = Script([W("a")])
+        self.assertEqual(sc.env().pointer.name, "guide")
 
 
 class Intent(unittest.TestCase):

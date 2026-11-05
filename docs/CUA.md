@@ -54,6 +54,28 @@ A cancelled turn raises before any call and during one. It is never a
 failure to fall back from. Coordinates are logical Hyprland desktop
 coordinates; no backend rescales them.
 
+## Click seam for teaching
+
+Teaching (walkthrough and demo) is point-only. `wisp/walkthrough_run.py`
+gets its pointer from `pointer.teaching_backend()`, which always returns
+the guide backend. If `[pointer] backend` pins a click-capable backend,
+the lookup logs one line and downgrades to guide; under
+`WISP_STRICT_TEACH=1` (the test suite sets it) it raises instead.
+`tests/test_pointer_precedence.py` also checks, with `ast`, that the
+walkthrough module imports no click backend.
+
+Keys stay available through `wisp/realinput.py` for an explicit
+do-it-for-me ask. Clicks stay guide-mode until the cua input module
+exists: upstream pins `CUA_HYPRLAND_INPUT` to Hyprland 0.56.2, so the
+plugin is built discovery-only. The seam: rebuild the plugin with
+`CUA_INPUT=ON` (`~/Downloads/claude/rebuild-cua-plugin.sh` on the
+maintainer machine) and the cua backend's `available()` turns true.
+Enabling it is then a config change (`[pointer] backend`) for the do
+lane; the teaching lane needs no code change and stays on guide.
+
+The do lane's closing line states only what a tool result or verify step
+confirmed. When the last input step was refused it says "attempted".
+
 ## Delivery: background, pointer, guide
 
 `wisp/delivery.py` names the channel an action actually takes.

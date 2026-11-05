@@ -259,8 +259,10 @@ class _Env:
 
     def __init__(self, cfg, state=None, speak=None, window=None,
                  sleep=time.sleep, clock=time.monotonic, check=None,
-                 interrupted=None):
+                 interrupted=None, registry=None):
         self.cfg, self.state = cfg, state
+        from . import pointer
+        self.pointer = pointer.teaching_backend(cfg, registry)
         self._speak = speak
         self._window = window
         self.sleep, self.clock = sleep, clock
