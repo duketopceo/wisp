@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click the eye icon in the layers panel.\", \"label\": \"Layer visibility eye\", \"why\": \"It hides or shows the layer.\", \"kind\": \"click\"}]}"
+}

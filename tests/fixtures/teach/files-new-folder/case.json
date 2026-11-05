@@ -1,0 +1,77 @@
+{
+ "id": "files-new-folder",
+ "app": "files",
+ "goal": "make a new folder here",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "New Folder",
+  "rect": [
+   540,
+   28,
+   92,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "Home",
+   "rect": [
+    6,
+    30,
+    110,
+    26
+   ]
+  },
+  {
+   "label": "Documents",
+   "rect": [
+    6,
+    60,
+    110,
+    26
+   ]
+  },
+  {
+   "label": "Pictures",
+   "rect": [
+    6,
+    90,
+    110,
+    26
+   ]
+  },
+  {
+   "label": "Downloads",
+   "rect": [
+    6,
+    120,
+    110,
+    26
+   ]
+  },
+  {
+   "label": "New Folder",
+   "rect": [
+    540,
+    28,
+    92,
+    24
+   ]
+  },
+  {
+   "label": "report.txt",
+   "rect": [
+    140,
+    90,
+    100,
+    60
+   ]
+  }
+ ]
+}

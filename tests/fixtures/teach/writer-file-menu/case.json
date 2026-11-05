@@ -1,0 +1,95 @@
+{
+ "id": "writer-file-menu",
+ "app": "libreoffice",
+ "goal": "where do I save this document",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "File",
+  "rect": [
+   8,
+   26,
+   48,
+   20
+  ]
+ },
+ "elements": [
+  {
+   "label": "File",
+   "rect": [
+    8,
+    26,
+    48,
+    20
+   ]
+  },
+  {
+   "label": "Edit",
+   "rect": [
+    60,
+    26,
+    48,
+    20
+   ]
+  },
+  {
+   "label": "View",
+   "rect": [
+    112,
+    26,
+    48,
+    20
+   ]
+  },
+  {
+   "label": "Insert",
+   "rect": [
+    164,
+    26,
+    48,
+    20
+   ]
+  },
+  {
+   "label": "Format",
+   "rect": [
+    216,
+    26,
+    48,
+    20
+   ]
+  },
+  {
+   "label": "Bold",
+   "rect": [
+    8,
+    52,
+    32,
+    26
+   ]
+  },
+  {
+   "label": "Italic",
+   "rect": [
+    44,
+    52,
+    32,
+    26
+   ]
+  },
+  {
+   "label": "Underline",
+   "rect": [
+    80,
+    52,
+    32,
+    26
+   ]
+  }
+ ]
+}

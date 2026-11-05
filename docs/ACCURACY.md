@@ -159,6 +159,35 @@ PYTHONDONTWRITEBYTECODE=1 python -m unittest \
   tests.test_click_provenance tests.test_accuracy_baseline -v
 ```
 
+## Teaching harness baseline (offline)
+
+`python scripts/gauntlet.py --teach-offline` (or
+`wisp.gauntlet.score_teach_cases(dir)`) scores recorded planner replies for
+the first step of each teach case in `tests/fixtures/teach/`. It reads files
+only: no model call, no network, and a case with no recorded reply is an
+error. Captures are synthetic mock UIs drawn by
+`scripts/gen_teach_fixtures.py`; the replies are **hand-authored, not real
+model output**, and four of the fifteen are deliberately wrong.
+
+A case counts as first-time-correct when the reply points inside the
+expected region (plus a small slack) and carries the expected `kind`. A
+reply that omits `kind` is wrong-kind, because the planner's `kind` field is
+optional today. Order of checks: no-element, wrong-target, wrong-kind.
+
+| class | cases (n=15) |
+|---|---|
+| first-time-correct | 0 |
+| wrong-target | 2 |
+| wrong-kind | 11 |
+| no-element | 2 |
+| target right, any kind | 11 |
+
+The 0 is the strict rule at work: no current-planner reply names a kind.
+The last row shows the pointing quality underneath. Later units add cases
+through `tests/fixtures/teach/<id>/` (`case.json`, `capture.png`,
+`reply.json`); `case.json` may also carry optional `ax_tree` (U7) and
+`guide` (U9) fields, unused by scoring until those units land.
+
 ## Grounding model bake-off (U8)
 
 Plan unit U8 in `docs/plans/2026-11-04-1847-feat-wisp-teaching-assistant-parity-roadmap-plan.md`.

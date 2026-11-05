@@ -1,0 +1,32 @@
+{
+ "id": "terminal-new-tab",
+ "app": "terminal",
+ "goal": "open a second terminal tab",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "New tab",
+  "rect": [
+   600,
+   2,
+   32,
+   18
+  ]
+ },
+ "elements": [
+  {
+   "label": "New tab",
+   "rect": [
+    600,
+    2,
+    32,
+    18
+   ]
+  }
+ ]
+}

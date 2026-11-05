@@ -35,6 +35,30 @@ on shutdown and `atexit` covers the rest.
 `act_max_steps` (12), `act_max_errors` (2), `act_max_parse_misses` (1),
 `writer_queue_max` (256).
 
+## Walkthrough step kinds
+
+Each walkthrough step carries a `kind` and an optional `radius` (logical
+px), defined in `wisp/step_kinds.py` and saved in the paused, last-finished
+and lesson dumps next to `why`. The planner picks the kind by one rule: if
+the app will visibly react to the action, use `click` or `hover`;
+otherwise use `area`, `handle`, `motion` or `voice-confirm` and ask the
+user to say "continue".
+
+| Kind | Meaning | Drawn as | Advances on |
+|---|---|---|---|
+| `click` | one atomic click the app will show | ring with radius | click in radius |
+| `hover` | reveal something by hovering | dashed ring | pointer rest |
+| `area` | a region matters, no single control | soft highlight region | settle or voice |
+| `handle` | a thing to grab or drag from | small marker | settle or voice |
+| `motion` | direction of a drag or swipe | arrow or curve | settle or voice |
+| `voice-confirm` | not detectable (type text, set a value) | none, caption chip | "continue" |
+
+An unknown kind falls back to `voice-confirm` (the only kind that never
+claims detection) and is logged once. A step the model plans as `click`
+whose label or wording is text entry is rewritten to `voice-confirm`. A
+click with no radius uses `DEFAULT_CLICK_RADIUS`. Steps saved before kinds
+existed read back as plain clicks.
+
 ## Latency gate
 
 `wisp/budgets.json` holds a p50 budget per path (a path's p90 may be up to
