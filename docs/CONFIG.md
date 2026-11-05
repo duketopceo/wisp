@@ -358,7 +358,7 @@ When the default speaker is muted or at 0% (read with `wpctl`, else `pactl`), Wi
 
 | key | default | meaning |
 |-----|---------|---------|
-| `auto` | `"true"` | "show me how to <task>", "teach me <task>" and "I want to learn <task>" start a walkthrough, and each step adds one sentence on why it matters. `"false"` sends those phrasings down the normal route. A plain "how do I <task>" is always answered in a sentence |
+| `auto` | `true` | "show me how to <task>", "teach me <task>" and "I want to learn <task>" start a walkthrough, and each step adds one sentence on why it matters. `false` sends those phrasings down the normal route. With `[brain] router = "off"` they clarify instead and no walkthrough starts. A plain "how do I <task>" takes the normal route (a short answer, or the act loop when it names an action such as "open") |
 
 ## [notify] — desktop toasts
 
