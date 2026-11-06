@@ -5,10 +5,10 @@ name: website
 # Publication and custom-domain changes remain separately authorized actions.
 on:
   pull_request:
-    paths: ["site/**", "site-3d/**", "scripts/site/**", "scripts/bootstrap/**", "tests/browser/**", "tests/test_site*.py", "tests/test_shipping_claims.py", "assets/readme/**", "assets/brand/wisp-flame/export/**", "README.md", "wrangler.json", "package.json", "package-lock.json", ".github/workflows/pages.yml"]
+    paths: ["site/**", "site-3d/**", "site-app/**", "scripts/site/**", "scripts/bootstrap/**", "tests/browser/**", "tests/test_site*.py", "tests/test_shipping_claims.py", "assets/readme/**", "assets/brand/wisp-flame/export/**", "README.md", "wrangler.json", "package.json", "package-lock.json", ".github/workflows/pages.yml"]
   push:
     branches: [master]
-    paths: ["site/**", "site-3d/**", "scripts/site/**", "scripts/bootstrap/**", "tests/browser/**", "tests/test_site*.py", "tests/test_shipping_claims.py", "assets/readme/**", "assets/brand/wisp-flame/export/**", "README.md", "wrangler.json", "package.json", "package-lock.json", ".github/workflows/pages.yml"]
+    paths: ["site/**", "site-3d/**", "site-app/**", "scripts/site/**", "scripts/bootstrap/**", "tests/browser/**", "tests/test_site*.py", "tests/test_shipping_claims.py", "assets/readme/**", "assets/brand/wisp-flame/export/**", "README.md", "wrangler.json", "package.json", "package-lock.json", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:
@@ -40,13 +40,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Test and build the optional visual landing
+      - name: Install pinned homepage build and Worker development server
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Test and build the homepage, light preview and Worker bundle
         run: |
-          python3 -m unittest tests.test_site_3d tests.test_site_workers -v
+          python3 -m unittest tests.test_site_app tests.test_site_3d tests.test_site_workers -v
           python3 scripts/site/build_3d.py
           python3 scripts/site/build_workers.py
-      - name: Install pinned Worker development server
-        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Install pinned browser tests
         working-directory: tests/browser
         run: |
@@ -77,6 +77,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install pinned homepage build
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Test complete Worker bundle
         run: python3 -m unittest tests.test_site_workers -v
       - name: Assemble reviewed assets

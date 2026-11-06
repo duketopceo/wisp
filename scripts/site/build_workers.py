@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Assemble the Three.js homepage, /plain/ and reviewed bootstrap for Workers."""
+"""Assemble the homepage (site-app/), /light/, /plain/ and the reviewed
+bootstrap for Workers. The homepage build needs `npm ci` at the repo root."""
 import argparse
 from pathlib import Path
 import shutil
@@ -22,6 +23,10 @@ def build(out):
     subprocess.run(
         [sys.executable, str(ROOT / "scripts/site/build.py"), "--out", str(out / "plain")],
         check=True,
+    )
+    subprocess.run(
+        ["node", str(ROOT / "site-app/build.mjs"), "--out", str(out)],
+        check=True, cwd=ROOT,
     )
     shutil.copyfile(ROOT / "scripts/bootstrap/install.py", out / "install.py")
     shutil.copyfile(ROOT / "site-3d/_headers", out / "_headers")

@@ -20,13 +20,14 @@ a fresh-box install and the learning loop; see `ROADMAP.md`). Linux
 
 ## Website previews
 
-`site/` remains the lightweight, no-script site. The optional interactive
-version lives in `site-3d/`; its self-hosted desktop illustration is not a
-live model call or a benchmark.
+`site/` remains the lightweight, no-script site (served at `/plain/`). The
+homepage is built from `site-app/` (launch-ui sections rendered to static
+HTML at build time, with a lazy ThreeUI WebGL hero); `site-3d/` holds the
+guiding-light preview at `/light/`. See [docs/HOSTING.md](docs/HOSTING.md).
 
 ```sh
 python3 scripts/site/build.py --out build/site
-python3 scripts/site/build_3d.py
+npm ci --ignore-scripts && npm run build:site
 ```
 
 The intended primary domain is `wisp.observer`. Domain deployment and a

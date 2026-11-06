@@ -1,0 +1,197 @@
+/* Wisp homepage theme. Structure follows launch-ui's globals.css (MIT,
+   Copyright (c) 2024 Mikolaj Dobrucki); colours and type are Wisp's own:
+   ember and amber on warm near-black, a paper light theme, and the flame's
+   cool blue as the one counter-colour. */
+@import "tailwindcss";
+@source "./";
+
+@font-face {
+  font-family: "Outfit";
+  src: url("./fonts/outfit-variable.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* dark: follows the system unless the visitor picked a theme. */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *, [data-stage="dark"], [data-stage="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+}
+
+@theme inline {
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-flame: var(--flame);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+
+  --spacing-container: 1200px;
+  --shadow-md: 0 4px 6px -1px var(--shadow), 0 2px 4px -2px var(--shadow);
+  --shadow-xl: 0 20px 25px -5px var(--shadow), 0 8px 10px -6px var(--shadow);
+  --breakpoint-xs: 30rem;
+
+  --animate-appear: appear 0.6s both ease-out;
+
+  @keyframes appear {
+    0% { opacity: 0; transform: translateY(0.75rem); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+}
+
+/* Light: warm paper, burnt-ember accent. */
+:root {
+  --background: oklch(0.975 0.008 78);
+  --foreground: oklch(0.21 0.014 50);
+  --card: oklch(0.995 0.004 78);
+  --muted: oklch(0.935 0.012 72);
+  --muted-foreground: oklch(0.47 0.022 55);
+  --primary: oklch(0.56 0.165 44);
+  --primary-foreground: oklch(0.99 0.005 78);
+  --brand: oklch(0.56 0.165 44);
+  --brand-foreground: oklch(0.7 0.16 58);
+  --flame: oklch(0.55 0.11 235);
+  --border: oklch(0.87 0.014 68);
+  --ring: oklch(0.56 0.165 44);
+  --shadow: #2a14050f;
+  --radius: 0.75rem;
+  color-scheme: light;
+}
+
+/* Dark: near-black with a warm cast, amber accent, ember glow. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --background: oklch(0.155 0.008 50);
+    --foreground: oklch(0.955 0.014 78);
+    --card: oklch(0.195 0.011 50);
+    --muted: oklch(0.24 0.012 50);
+    --muted-foreground: oklch(0.76 0.025 70);
+    --primary: oklch(0.8 0.145 66);
+    --primary-foreground: oklch(0.18 0.02 50);
+    --brand: oklch(0.8 0.145 66);
+    --brand-foreground: oklch(0.67 0.19 42);
+    --flame: oklch(0.87 0.075 222);
+    --border: oklch(0.31 0.016 52);
+    --ring: oklch(0.8 0.145 66);
+    --shadow: #00000066;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"],
+[data-stage="dark"] {
+  --background: oklch(0.155 0.008 50);
+  --foreground: oklch(0.955 0.014 78);
+  --card: oklch(0.195 0.011 50);
+  --muted: oklch(0.24 0.012 50);
+  --muted-foreground: oklch(0.76 0.025 70);
+  --primary: oklch(0.8 0.145 66);
+  --primary-foreground: oklch(0.18 0.02 50);
+  --brand: oklch(0.8 0.145 66);
+  --brand-foreground: oklch(0.67 0.19 42);
+  --flame: oklch(0.87 0.075 222);
+  --border: oklch(0.31 0.016 52);
+  --ring: oklch(0.8 0.145 66);
+  --shadow: #00000066;
+  color-scheme: dark;
+}
+
+@layer base {
+  * { @apply border-border; }
+  html { scroll-behavior: smooth; scroll-padding-top: 5rem; }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-synthesis: none;
+  }
+  ::selection { background: var(--primary); color: var(--primary-foreground); }
+  :focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; border-radius: 4px; }
+  [hidden] { display: none !important; }
+  code, kbd, pre { font-family: var(--font-mono); }
+}
+
+/* launch-ui glass and fade utilities, reduced to the ones used here. */
+@utility glass-2 {
+  border-width: 1px;
+  background-image: linear-gradient(to bottom, color-mix(in oklch, var(--card) 100%, transparent), color-mix(in oklch, var(--card) 70%, transparent));
+}
+@utility glass-4 {
+  border-width: 1px;
+  border-color: color-mix(in oklch, var(--foreground) 14%, transparent);
+  background-image: linear-gradient(to bottom, color-mix(in oklch, var(--primary) 14%, transparent), color-mix(in oklch, var(--primary) 4%, transparent));
+}
+@utility fade-bottom {
+  mask-image: linear-gradient(to top, transparent 0%, black 22%);
+}
+@utility line-b {
+  border-bottom-width: 1px;
+}
+
+/* Hero stage: the static frame is always painted; the ThreeUI ribbon field
+   fades in over it only once it has drawn a frame. */
+.hero-frame {
+  background:
+    radial-gradient(60% 70% at 78% 62%, oklch(0.67 0.19 42 / 0.34), transparent 70%),
+    radial-gradient(38% 44% at 74% 48%, oklch(0.8 0.145 66 / 0.26), transparent 72%),
+    radial-gradient(26% 30% at 78% 44%, oklch(0.87 0.075 222 / 0.16), transparent 70%),
+    radial-gradient(90% 80% at 10% 0%, oklch(0.22 0.02 50), transparent 70%),
+    oklch(0.13 0.008 50);
+}
+.hero-frame::after {
+  /* Halftone grain, echoing the shader's dot grid. */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(oklch(0.8 0.145 66 / 0.22) 1px, transparent 1.4px);
+  background-size: 7px 7px;
+  mask-image: radial-gradient(55% 60% at 76% 55%, black, transparent 75%);
+  pointer-events: none;
+}
+#hero-bg canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  opacity: 0;
+  transition: opacity 0.9s ease-out;
+}
+#hero-bg[data-rendered="true"] canvas { opacity: 1; }
+
+.flame-mark {
+  filter: drop-shadow(0 0 28px oklch(0.87 0.075 222 / 0.45)) drop-shadow(0 0 70px oklch(0.8 0.145 66 / 0.25));
+}
+
+details > summary { list-style: none; cursor: pointer; }
+details > summary::-webkit-details-marker { display: none; }
+details[open] .faq-chevron { transform: rotate(180deg); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

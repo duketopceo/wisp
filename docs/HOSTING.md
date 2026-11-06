@@ -7,11 +7,19 @@ desktop sessions.
 
 ## Source and build
 
-- **Enhanced homepage:** `site-3d/`, with vendored Three.js, companion artwork,
-  fonts and license notices.
-- **Wisp flame:** the hero model, idle loop and stills are published from
-  `assets/brand/wisp-flame/export/` by `scripts/site/build_3d.py`
-  (`site-3d/flame.mjs`, vendored `GLTFLoader`); nothing is copied into `site-3d/`.
+- **Homepage:** `site-app/`, built with Vite (`site-app/build.mjs`). Section
+  layouts and primitives are adapted from launch-ui (React, shadcn/ui,
+  Tailwind); React renders the page to static HTML at build time, so the
+  browser gets plain HTML, one stylesheet and a small first-paint module
+  (theme toggle, copy button). The hero background is ThreeUI's Ribbon Field
+  shader (`site-app/src/client/hero.ts`), fetched as a separate chunk only
+  after first paint, and skipped for reduced motion, data saver, low-power
+  devices and missing WebGL; a designed static frame (flame and gradient) is
+  always painted underneath. The build prints the bundle sizes. Credits ship
+  at `/credits.txt`.
+- **Wisp flame:** the idle loop and stills are published from
+  `assets/brand/wisp-flame/export/` by `scripts/site/build_3d.py`; nothing is
+  copied into `site-3d/` or `site-app/`.
 - **Guiding-light preview:** `site-3d/light/`, served at `/light/` by the same
   build. A small real-time WebGL light (plain WebGL1, drawn only while it
   moves) with a CSS-orb fallback, self-hosted font, no inline script; design in
@@ -24,8 +32,9 @@ desktop sessions.
 - **Worker:** `wrangler.json` declares `wisp-observer`, static assets, both custom
   domains and genuine not-found responses, not an SPA fallback.
 
-Website tooling needs Node.js 22 or newer and Python 3. Node.js is not a new
-desktop installation prerequisite.
+Website tooling needs Node.js 22 or newer and Python 3, and `npm ci` at the
+repository root before `build_workers.py` (it runs the homepage build). Node.js
+is not a new desktop installation prerequisite.
 
 ```sh
 npm ci --ignore-scripts --no-audit --no-fund
@@ -60,7 +69,7 @@ preserve asset subdirectories and include `_headers`; never upload repository
 roots, credentials or development dependencies.
 
 The historical workflow filename `.github/workflows/pages.yml` now names the
-`website` workflow. It validates baseline and enhanced sites, runs Chromium and
+`website` workflow. It validates the baseline and the homepage, runs Chromium and
 WebKit against the local Worker, then produces `wisp-workers-assets` only after
 both lanes pass. It has no GitHub Pages deployment job or Pages write permission;
 an uploaded QA artifact is not evidence of public deployment.

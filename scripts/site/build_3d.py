@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Build the optional self-contained 3D landing, independently of site/."""
+"""Build the guiding-light preview (/light/) and the Wisp flame assets the
+homepage (site-app/) links to, independently of site/."""
 import argparse
 import hashlib
 from html.parser import HTMLParser
@@ -12,22 +13,17 @@ from urllib.parse import urlsplit
 ROOT = Path(__file__).resolve().parents[2]
 SITE = ROOT / "site-3d"
 FILES = (
-    "index.html", "style.css", "app.mjs", "model.mjs", "scene.mjs", "desktop.mjs",
-    "flame.mjs", "assets/companion.png", "assets/outfit-variable.ttf",
-    "vendor/three.module.js", "vendor/THREE-LICENSE.txt",
-    "vendor/loaders/GLTFLoader.js", "vendor/utils/BufferGeometryUtils.js",
-    "vendor/OFL-Outfit.txt", "vendor/PROVENANCE.md",
+    "vendor/PROVENANCE.md",
     "light/index.html", "light/light.css", "light/light.mjs",
     "light/fonts/newsreader-roman-latin.woff2", "light/fonts/newsreader-ital-latin.woff2",
     "vendor/OFL-Newsreader.txt", "vendor/THREEUI-LICENSE.txt",
     "wisp/sim.mjs", "wisp/gl.mjs",
 )
 # The Wisp flame ships from its brand source: published path -> repository path.
-# Only what the page uses: the model, the idle loop (WebGL fallback) and stills
-# (favicon, apple-touch-icon, reduced motion).
+# Only what the pages use: the idle loop (hero) and stills (favicon,
+# apple-touch-icon, reduced motion).
 FLAME = ROOT / "assets/brand/wisp-flame/export"
 BRAND = {
-    "assets/wisp-flame/wisp-flame.glb": FLAME / "wisp-flame.glb",
     "assets/wisp-flame/idle-256.webp": FLAME / "loops/idle-256.webp",
     **{f"assets/wisp-flame/wisp-flame-{size}.png": FLAME / f"stills/wisp-flame-{size}.png"
        for size in (32, 512)},

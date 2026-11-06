@@ -9,11 +9,15 @@ import unittest
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
+# The homepage build (site-app/) needs `npm ci` at the root; the website
+# workflow installs it, the general unit job does not.
+needs_npm = unittest.skipUnless((ROOT / "node_modules/vite").is_dir(),
+                                "run `npm ci --ignore-scripts` at the repository root first")
 
 
 class WorkersBundle(unittest.TestCase):
     def test_primary_domain_footer_reflects_completed_worker_cutover(self):
-        html = (ROOT / "site-3d/index.html").read_text()
+        html = (ROOT / "site-app/src/components/sections/sections.tsx").read_text()
         self.assertNotIn("deployment pending", html)
         self.assertIn("wisp.observer · Cloudflare Workers", html)
 
@@ -31,6 +35,7 @@ class WorkersBundle(unittest.TestCase):
              if route.get("custom_domain") is True},
         )
 
+    @needs_npm
     def test_bundle_carries_security_headers_and_noncacheable_bootstrap(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "published"
@@ -62,6 +67,7 @@ class WorkersBundle(unittest.TestCase):
                 run.assert_not_called()
                 copy.assert_not_called()
 
+    @needs_npm
     def test_build_contains_enhanced_plain_and_reviewed_bootstrap(self):
         script = ROOT / "scripts/site/build_workers.py"
         self.assertTrue(script.is_file(), "missing reproducible Workers asset builder")
@@ -72,18 +78,18 @@ class WorkersBundle(unittest.TestCase):
                 capture_output=True, text=True,
             )
             self.assertEqual(0, result.returncode, result.stderr)
-            self.assertIn("scene.mjs", (out / "index.html").read_text()
-                          + (out / "app.mjs").read_text())
-            self.assertTrue((out / "vendor/three.module.js").is_file())
-            for name in ("assets/wisp-flame/wisp-flame.glb",
-                         "assets/wisp-flame/idle-256.webp",
+            # The homepage (site-app/), its lazy hero chunk, /light/ and /plain/.
+            self.assertRegex((out / "index.html").read_text(), r'src="/app/index-[\w-]+\.js"')
+            self.assertEqual(1, len(list((out / "app").glob("hero-*.js"))))
+            for name in ("assets/wisp-flame/idle-256.webp",
                          "assets/wisp-flame/wisp-flame-32.png",
                          "assets/wisp-flame/wisp-flame-512.png",
-                         "vendor/loaders/GLTFLoader.js",
+                         "theme-init.js", "credits.txt", "light/index.html",
                          "plain/wisp-flame-130.png", "plain/wisp-flame-32.png"):
                 self.assertTrue((out / name).is_file(), name)
-            # No external URLs in the published page or the flame module.
-            for name in ("index.html", "flame.mjs", "plain/index.html"):
+            # No external URLs in the published pages or modules.
+            for name in ("index.html", "light/light.mjs", "plain/index.html",
+                         *(p.relative_to(out).as_posix() for p in (out / "app").glob("*.js"))):
                 self.assertNotRegex((out / name).read_text(),
                                     r"""<(?:img|script|link|source)\b[^>]*\b(?:src|href|srcset)=["']https?://|(?:from|import\()\s*["']https?://""", name)
             self.assertIn("wisp-flame-130.png", (out / "plain/index.html").read_text())
