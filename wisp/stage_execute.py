@@ -133,6 +133,7 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
                 detail[len(walkthrough_run.REPLAY_PREFIX):].strip(), cfg,
                 state=state, interrupted=interrupted)
         goal, demo = walkthrough_run.split_mode(detail)
+        goal, one_step = walkthrough_run.split_one_step(goal)
         resume = None
         if detail == walkthrough_run.RESUME_PREFIX:
             resume = walkthrough_run.paused()
@@ -142,7 +143,9 @@ def execute(answers: dict, cfg: dict, harness: dict | None = None,
         return walkthrough_run.run(goal, cfg, state=state, ask=ask,
                                    image_b64=initial_image,
                                    interrupted=interrupted,
-                                   demonstrate=demo, resume=resume)
+                                   demonstrate=demo, resume=resume,
+                                   **({"one_step": True} if one_step
+                                      else {}))
     if route == "act":
         return _run_act(detail)
     if route == "dictation":

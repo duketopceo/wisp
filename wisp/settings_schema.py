@@ -78,7 +78,7 @@ _CATEGORY = {
     "packs.shots_keep": "advanced", "packs.shots_keep_days": "advanced",
     "dev.panel": "advanced", "dev.judge_cap_usd": "advanced",
     "verify.judge_timeout_s": "advanced", "verify.pixel_eps": "advanced",
-    "verify.region_px": "advanced",
+    "verify.region_px": "advanced", "teach.turn_budget": "advanced",
 }
 
 # key -> unit shown next to a number field
@@ -96,6 +96,7 @@ _UNIT = {
     "packs.keep_days": "days", "packs.shots_keep": "screenshots",
     "packs.shots_keep_days": "days", "verify.judge_timeout_s": "seconds",
     "verify.pixel_eps": "per channel", "verify.region_px": "pixels",
+    "teach.turn_budget": "planner calls",
 }
 
 
@@ -362,6 +363,9 @@ FIELDS = (
        "Side of the square pixel region the verify diff inspects "
        "around a click point",
        min=8, max=1024),
+    _f("teach.turn_budget", "int", "6",
+       "Most planner calls one walkthrough may make before Wisp wraps up",
+       min=0, max=20),
 )
 
 _BY_KEY = {f.key: f for f in FIELDS}

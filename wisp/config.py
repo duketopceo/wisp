@@ -537,6 +537,9 @@ on_calls = true
 # walkthrough; false sends those phrasings down the normal route.
 # [brain] router = "off" overrides it (those turns clarify instead).
 auto = true
+# most planner calls one walkthrough may make (the first plan and every
+# re-plan from a fresh screenshot); at zero Wisp wraps up out loud
+turn_budget = 6
 
 [notify]
 # desktop toasts (D-Bus org.freedesktop.Notifications; notify-send fallback)

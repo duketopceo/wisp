@@ -55,6 +55,9 @@ def fixed_route(text: str, router: str, teach: bool = True):
         goal = walkthrough_run.teach_intent(text)
         if goal:
             return "walkthrough", goal   # "how do I X" teaches, not does
+        goal = walkthrough_run.howto_intent(text)
+        if goal:       # a bare task question: one step or a walkthrough
+            return "walkthrough", walkthrough_run.ONE_STEP_PREFIX + goal
     if router == "act":
         return "act", None
     if router == "chat":

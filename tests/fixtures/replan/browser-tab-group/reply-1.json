@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Open the tab menu.\", \"label\": \"Tab menu\", \"why\": \"It is already open.\", \"kind\": \"click\"}, {\"say\": \"Choose Add tab to new group.\", \"label\": \"Add tab to new group\", \"why\": \"This starts a group with the current tab in it.\", \"kind\": \"click\"}, {\"say\": \"Press Done.\", \"label\": \"Done\", \"why\": \"Done keeps the group name.\", \"kind\": \"click\"}]}"
+}

@@ -315,6 +315,18 @@ class Walkthrough:
             "done_log": list(self.done_log),
         }
 
+    def drop_pending(self) -> list:
+        """Forget every step not yet done: the queue and the issued step
+        nobody has acted on. The plan was made from a screen that no
+        longer matches, so the caller plans again."""
+        dropped = list(self._queue)
+        if self.current_step is not None:
+            dropped.insert(0, self.current_step)
+        self._queue.clear()
+        self.current_step = None
+        self.status = "idle"
+        return dropped
+
     def mark_step_done(self, step: Step | dict | str | None = None) -> None:
         s = self._coerce_step(step) if step is not None else self.current_step
         if s is None:

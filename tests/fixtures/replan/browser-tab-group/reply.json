@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Open the tab menu.\", \"label\": \"Tab menu\", \"why\": \"Tab groups are managed from the tab menu.\", \"kind\": \"click\"}, {\"say\": \"Choose New group.\", \"label\": \"New group\", \"why\": \"A group keeps related tabs together.\", \"kind\": \"click\"}]}"
+}

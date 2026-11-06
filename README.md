@@ -273,8 +273,11 @@ walkthrough, and Esc stops it.
 
 Asking like a learner works too: "show me how to <task>", "teach me <task>"
 or "I want to learn <task>" start a walkthrough, and each step adds one
-short sentence on why it matters. A plain "how do I <task>" is still
-answered in a sentence. `[teach] auto = "false"` sends the learner
+short sentence on why it matters. "How do I <task>" works too when the
+task starts with a verb like export, set up, crop or connect: if it takes one
+step Wisp says it and points at the control and stops, and if it takes more it
+walks you through. Other "how do I" questions ("how do I undo this") are
+still answered in a sentence. `[teach] auto = "false"` sends all of these
 phrasings back to the normal route.
 
 Say "demonstrate <task>" (or "demo me <task>") and Wisp narrates and points

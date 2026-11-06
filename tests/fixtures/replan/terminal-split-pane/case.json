@@ -1,0 +1,57 @@
+{
+ "id": "terminal-split-pane",
+ "app": "terminal",
+ "goal": "split this terminal pane",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "Split pane",
+  "rect": [
+   560,
+   2,
+   70,
+   18
+  ]
+ },
+ "elements": [
+  {
+   "label": "Split pane",
+   "rect": [
+    560,
+    2,
+    70,
+    18
+   ]
+  }
+ ],
+ "after": {
+  "Split pane": 1
+ },
+ "then": [
+  {
+   "capture": "capture-1.png",
+   "reply": "reply-1.json",
+   "elements": [
+    {
+     "label": "Split pane",
+     "rect": [
+      560,
+      2,
+      70,
+      18
+     ]
+    }
+   ],
+   "after": {}
+  }
+ ],
+ "expected_delivery": [
+  "Split pane"
+ ],
+ "expected_plans": 2
+}

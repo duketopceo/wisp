@@ -1,0 +1,131 @@
+{
+ "id": "writer-export-pdf",
+ "app": "writer",
+ "goal": "export this document as a PDF",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "File",
+  "rect": [
+   8,
+   26,
+   40,
+   20
+  ]
+ },
+ "elements": [
+  {
+   "label": "File",
+   "rect": [
+    8,
+    26,
+    40,
+    20
+   ]
+  },
+  {
+   "label": "Edit",
+   "rect": [
+    52,
+    26,
+    40,
+    20
+   ]
+  }
+ ],
+ "after": {
+  "File": 1
+ },
+ "then": [
+  {
+   "capture": "capture-1.png",
+   "reply": "reply-1.json",
+   "elements": [
+    {
+     "label": "File",
+     "rect": [
+      8,
+      26,
+      40,
+      20
+     ]
+    },
+    {
+     "label": "Export as PDF",
+     "rect": [
+      8,
+      48,
+      140,
+      20
+     ]
+    },
+    {
+     "label": "Print",
+     "rect": [
+      8,
+      70,
+      140,
+      20
+     ]
+    }
+   ],
+   "after": {
+    "Export as PDF": 2
+   }
+  },
+  {
+   "capture": "capture-2.png",
+   "reply": "reply-2.json",
+   "elements": [
+    {
+     "label": "Save",
+     "rect": [
+      440,
+      340,
+      80,
+      24
+     ]
+    },
+    {
+     "label": "Cancel",
+     "rect": [
+      530,
+      340,
+      80,
+      24
+     ]
+    }
+   ],
+   "after": {
+    "Save": 3
+   }
+  },
+  {
+   "capture": "capture-3.png",
+   "reply": "reply-3.json",
+   "elements": [
+    {
+     "label": "File",
+     "rect": [
+      8,
+      26,
+      40,
+      20
+     ]
+    }
+   ],
+   "after": {}
+  }
+ ],
+ "expected_delivery": [
+  "File",
+  "Export as PDF",
+  "Save"
+ ],
+ "expected_plans": 2
+}

@@ -2,9 +2,17 @@
 
 "Walk me through setting up a git repo" plans up to 15 steps with the
 brain, then drives `walkthrough.Walkthrough` one step at a time: speak the
-step, point at its target, wait for the user to do it (the focused window
-or its title changes), advance, and ask "done, or stuck?" when nothing
-changes for 20 s. Wisp never clicks or types here; the user does.
+step, point at its target, wait for evidence the user did it (by step
+kind: a click or hover at the target, or the screen settling; or the
+user saying "continue"), advance, and ask "done, or stuck?" when nothing
+changes for 20 s. A click somewhere else ends the lesson quietly, kept
+paused. Wisp never clicks or types here; the user does.
+
+Planning is a loop, not a one-off: the planner is asked for the next one to
+three steps from a fresh capture, the user does them, and when the plan runs
+out (or the screen no longer matches the next step's target) Wisp captures
+again and plans again, up to `[teach] turn_budget` planner calls. A planner
+failure keeps the walkthrough paused so "continue" tries again.
 
 Pointing is label-first: a step names the control by its on-screen label,
 and the label is resolved through the exact grounding providers (the app's
@@ -19,6 +27,9 @@ import re
 import time
 
 from . import config
+from . import click_watch
+from . import replan
+from . import settle
 from . import step_kinds
 from . import walkthrough as _wt
 
@@ -88,6 +99,45 @@ def teach_intent(text: str) -> str | None:
             or _NOT_PROCEDURE.match(goal):
         return None
     return goal
+
+
+# A bare "how do I X" is a one-line fact more often than a lesson ("how do
+# I open a new tab", "how do I undo this"), and the fast path answers those.
+# It teaches only when X starts with a verb that names a task (probed on
+# the fast path: it answers every "how do I ..." as question_word, so
+# routing "through it first" would never reach the planner). The planner
+# then decides: one step is spoken and pointed as the whole answer, more
+# than one runs as a walkthrough. [teach] auto = "false" turns this off.
+_HOWTO = re.compile(
+    r"^\s*(?:(?:hey\s+)?wisp[,\s]+)?(?:ok(?:ay)?[,\s]+)?(?:please\s+)?"
+    r"(?:how\s+(?:do|can|would|should)\s+(?:i|we)|how\s+to)\s+"
+    r"(.+?)[\s.!?]*$", re.IGNORECASE | re.DOTALL)
+_TASK_VERB = re.compile(
+    r"^(?:export|import|set\s*up|configure|install|create|make|build|share|"
+    r"publish|merge|rebase|crop|resize|format|back\s*up|connect|enable|"
+    r"disable|change|customi[sz]e|add|remove|record|schedule|sync|transfer|"
+    r"convert|compress|extract|print|sign|split|combine|rotate)\b",
+    re.IGNORECASE)
+ONE_STEP_PREFIX = "howto: "
+
+
+def howto_intent(text: str) -> str | None:
+    """The goal in a bare "how do I <task verb> ..." question, else None.
+    Reuses the not-procedure guard, so "how do I know..." stays out."""
+    m = _HOWTO.match(text or "")
+    goal = m.group(1).strip() if m else ""
+    if not goal or _NOT_PROCEDURE.match(goal) \
+            or not _TASK_VERB.match(goal):
+        return None
+    return goal
+
+
+def split_one_step(goal: str) -> tuple:
+    """(goal, one_step) from a route detail made for `howto_intent`."""
+    g = goal or ""
+    if g.startswith(ONE_STEP_PREFIX):
+        return g[len(ONE_STEP_PREFIX):], True
+    return g, False
 
 
 def demo_intent(text: str) -> str | None:
@@ -199,26 +249,103 @@ def parse_steps(raw: str, max_steps: int = _wt.MAX_STEPS) -> list:
     return out
 
 
-def plan(goal: str, cfg: dict, image_b64: str | None = None,
-         chat=None, skill: str = "", started: bool = False) -> list:
-    from . import brain
-    if chat is None:
-        chat = brain.chat
-    content = _PROMPT % (_wt.MAX_STEPS, goal)
+class PlanError(Exception):
+    """The planner call failed or its reply had no step list."""
+
+
+# Wisp's rules for a re-planned turn, appended to `_PROMPT` when the plan is
+# a look-ahead of a few steps (not the whole-task plan a demonstration uses).
+_LOOKAHEAD = (
+    "Plan between one and %d steps, never more. You are shown the screen again "
+    "after the user acts, so never plan past what is visible right now. "
+    "Leave out any step the screen shows is already done. Opening a menu, "
+    "panel or dropdown only reveals its choices: once it is open, the next "
+    "step picks something inside it, and you never point at the opener a "
+    "second time. A choice is committed only when the step picks an item, "
+    "presses a confirm button or types a value. If the task already looks "
+    "finished on screen, reply with {\"steps\": []}.")
+
+
+def build_prompt(goal: str, max_steps: int = _wt.MAX_STEPS, *,
+                 started: bool = False, skill: str = "", completed=(),
+                 prev_kind: str = "", prev_outcome: str = "",
+                 budget: int | None = None, fresh: bool = False,
+                 pointed=()) -> str:
+    """The planner prompt for one turn. Pure: the same inputs give the same
+    text, and the capture rides separately as an image."""
+    content = _PROMPT % (max_steps, goal)
+    if max_steps <= replan.PLAN_STEPS:
+        content += "\n\n" + _LOOKAHEAD % max_steps
     if started:
         content += ("\n\nThe user has already started this. Skip anything "
                     "they have already done and begin from what the screen "
                     "shows.")
+    done = [str(c) for c in completed if str(c).strip()]
+    if done:
+        content += ("\n\nSteps the user has finished so far, oldest "
+                    "first:\n" + "\n".join(f"{i}. {t}"
+                                           for i, t in enumerate(done, 1)))
+    if prev_kind and prev_outcome:
+        how = replan.OUTCOME_TEXT.get(prev_outcome, prev_outcome)
+        content += (f"\n\nThe last step was a {prev_kind} step; {how}.")
+    if pointed:
+        content += ("\n\nControls already pointed at (never point at them "
+                    "again): " + ", ".join(pointed) + ".")
+    if fresh:
+        content += ("\n\nThe user acted while you were still planning, so "
+                    "the screenshot is newer than the one your last plan "
+                    "came from. Trust only this screenshot.")
+    if budget is not None:
+        content += (f"\n\nPlanning turns left, counting this one: "
+                    f"{budget}. On the last one, finish the task if you can, "
+                    f"or stop at a clear place for the user to carry on.")
     if skill:
         content += ("\n\nNotes about the app on screen (use them, do not "
                     "read them out):\n" + skill)
+    return content
+
+
+def _has_step_list(raw: str) -> bool:
+    text = (raw or "").strip()
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end <= start:
+        return False
+    try:
+        data = json.loads(text[start:end + 1])
+    except ValueError:
+        return False
+    return isinstance(data, dict) and isinstance(data.get("steps"), list)
+
+
+def plan(goal: str, cfg: dict, image_b64: str | None = None,
+         chat=None, skill: str = "", started: bool = False, *,
+         max_steps: int = _wt.MAX_STEPS, completed=(), prev_kind: str = "",
+         prev_outcome: str = "", budget: int | None = None,
+         fresh: bool = False, pointed=()) -> list:
+    """Steps from one planner call. Raises `PlanError` when the call fails
+    or the reply has no step list; an empty list means the planner sees
+    nothing left to do."""
+    from . import brain
+    if chat is None:
+        chat = brain.chat
+    content = build_prompt(goal, max_steps, started=started, skill=skill,
+                           completed=completed, prev_kind=prev_kind,
+                           prev_outcome=prev_outcome, budget=budget,
+                           fresh=fresh, pointed=pointed)
     if image_b64 and brain.supports_vision(cfg):
         url = image_b64 if image_b64.startswith("data:") \
             else f"data:image/png;base64,{image_b64}"
         content = [{"type": "text", "text": content},
                    {"type": "image_url", "image_url": {"url": url}}]
-    out = chat([{"role": "user", "content": content}], cfg, timeout=45)
-    return parse_steps(out.get("content", ""))
+    try:
+        out = chat([{"role": "user", "content": content}], cfg, timeout=45)
+    except Exception as e:
+        raise PlanError(str(e)) from e
+    raw = out.get("content", "") if isinstance(out, dict) else ""
+    steps = parse_steps(raw, max_steps)
+    if not steps and not _has_step_list(raw):
+        raise PlanError("no step list in the reply")
+    return steps
 
 
 # -- label-first snapping ------------------------------------------------
@@ -234,22 +361,41 @@ def snap_point(step, cfg: dict, *, ground=None, monitors=None) -> dict | None:
     model's own coordinates, else nothing."""
     label = (step.label or "").strip()
     if label:
-        if ground is None:
-            from . import grounding
-            ground = grounding.ground_target
-        gcfg = {**cfg, "ground": {**(cfg.get("ground") or {}),
-                                  "providers": EXACT_PROVIDERS}}
-        try:
-            t = ground(label, gcfg)
-        except Exception:
-            t = None
-        if t is not None and not _is_container(t, monitors):
-            return {"x": int(t.x), "y": int(t.y), "label": label}
+        pt = _exact_point(label, cfg, ground, monitors)
+        if pt is not None:
+            return pt
     pt = step.point
     if isinstance(pt, dict) and "x" in pt and "y" in pt:
         return {"x": int(pt["x"]), "y": int(pt["y"]),
                 "label": str(pt.get("label") or label)}
     return None
+
+
+def _exact_point(label: str, cfg: dict, ground, monitors) -> dict | None:
+    """Where the control named `label` is, from the exact providers only."""
+    if ground is None:
+        from . import grounding
+        ground = grounding.ground_target
+    gcfg = {**cfg, "ground": {**(cfg.get("ground") or {}),
+                              "providers": EXACT_PROVIDERS}}
+    try:
+        t = ground(label, gcfg)
+    except Exception:
+        return None
+    if t is None or _is_container(t, monitors):
+        return None
+    return {"x": int(t.x), "y": int(t.y), "label": label}
+
+
+def _still_matches(step, cfg: dict, ground, monitors) -> bool:
+    """Whether the live screen still shows the control a planned step
+    names. A step with no label to look up, or one that is not pressed or
+    hovered, has nothing to compare and is kept."""
+    label = (getattr(step, "label", "") or "").strip()
+    if not label or getattr(step, "kind", "click") not in (
+            step_kinds.CLICK, step_kinds.HOVER):
+        return True
+    return _exact_point(label, cfg, ground, monitors) is not None
 
 
 def _is_container(target, monitors) -> bool:
@@ -270,8 +416,13 @@ class _Env:
 
     def __init__(self, cfg, state=None, speak=None, window=None,
                  sleep=time.sleep, clock=time.monotonic, check=None,
-                 interrupted=None):
+                 interrupted=None, cursor=None, frame=None, capture=None):
         self.cfg, self.state = cfg, state
+        # None means no source: the step is delivered as voice-confirm.
+        self.cursor, self.frame = cursor, frame
+        # () -> screenshot data URL or None; a re-plan without one plans
+        # from the words alone.
+        self.capture = capture
         self._speak = speak
         self._window = window
         self.sleep, self.clock = sleep, clock
@@ -291,6 +442,10 @@ class _Env:
         from . import platform
         return platform.active_window() or {}
 
+    def screen(self) -> tuple:
+        """(window, frame) now, to tell whether the user acted since."""
+        return self.window(), (self.frame() if self.frame else None)
+
     def say(self, text: str, point: dict | None) -> None:
         """Publish the step (text + beacon) and speak it."""
         if self.state is not None:
@@ -308,25 +463,28 @@ class _Env:
 
 # -- pausing and resuming -------------------------------------------------
 
-def _dump(wt, planned, current) -> dict:
+def _dump(wt, planned, current, rs=None) -> dict:
     steps = []
     for s in planned:
         steps.append({"text": s.text, "label": s.label, "point": s.point,
                       "why": s.why, "kind": s.kind, "radius": s.radius,
                       "done": wt.has_completed(s)})
-    return {"goal": wt.goal, "steps": steps,
-            "current": current.text if current is not None else "",
-            "ts": time.time()}
+    out = {"goal": wt.goal, "steps": steps,
+           "current": current.text if current is not None else "",
+           "ts": time.time()}
+    if rs is not None:
+        out["replan"] = rs.dump()
+    return out
 
 
-def save_paused(wt, planned, current, path=None) -> None:
+def save_paused(wt, planned, current, path=None, rs=None) -> None:
     """Keep the goal and what is done so "continue" picks up from here."""
     import os
     path = path or PAUSED_FILE
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(_dump(wt, planned, current)))
+        tmp.write_text(json.dumps(_dump(wt, planned, current, rs)))
         os.replace(tmp, path)
     except OSError:
         pass
@@ -464,40 +622,107 @@ def _already_started(ask) -> bool:
     return str(pick or "").strip().lower() == START_OPTIONS[1]
 
 
+def _recapture(cfg: dict):
+    """Production screenshot source for a re-plan: a fresh capture, or None
+    when screenshots are off or the frame came out blind."""
+    def capture():
+        from . import stage_capture
+        try:
+            got = stage_capture.turn_screenshot(cfg)
+        except Exception:
+            return None
+        return got if isinstance(got, str) else None
+    return capture
+
+
+PLAN_FAILED_LINE = ("I lost track of the screen for a moment. Say continue "
+                    "and I'll look again.")
+
+
+def _plan_turn(goal, env, rs, done, *, image=None, skill="", started=False):
+    """One planner turn: spends budget, returns the new steps (raises
+    `PlanError`). When the screen changed while the planner was thinking
+    the user acted in the meantime, so plan once more from the newer
+    capture with the freshness flag set, if budget remains."""
+    fresh = False
+    while True:
+        shot = image if image else (env.capture() if env.capture else None)
+        image = None
+        before = env.screen()
+        steps = plan(goal, env.cfg, shot, skill=skill, started=started,
+                     max_steps=replan.PLAN_STEPS, completed=done,
+                     prev_kind=rs.prev_kind, prev_outcome=rs.prev_outcome,
+                     budget=rs.budget, fresh=fresh, pointed=rs.pointed)
+        rs.spend()
+        if fresh or rs.budget <= 0 \
+                or not replan.screen_changed(before, env.screen()):
+            return steps
+        fresh = True
+
+
 def run(goal: str, cfg: dict, state=None, *, ask=None,
         image_b64: str | None = None, interrupted=None, steps=None,
         env: _Env | None = None, ground=None, monitors=None,
         demonstrate: bool = False, skill_match=None,
-        resume: dict | None = None) -> str:
+        resume: dict | None = None, one_step: bool = False) -> str:
     """Plan and walk the user through `goal`. Returns "WALKED (n steps):
     <closing line>". With `demonstrate` every step is spoken and pointed
     at in turn without waiting for the user to act. A walkthrough that
     stops early is kept, and `resume` (a `paused()` dump) picks it up
-    again with the goal and done steps intact."""
-    env = env or _Env(cfg, state, interrupted=interrupted)
+    again with the goal and done steps intact. A walkthrough Wisp plans
+    itself (not a demonstration or a saved lesson) re-plans from a fresh
+    capture whenever its steps run out or stop matching the screen. With
+    `one_step` (a bare "how do I X"), a plan of exactly one step is spoken
+    and pointed as the whole answer, with nothing to wait for."""
+    env = env or _Env(cfg, state, interrupted=interrupted,
+                      cursor=click_watch.hypr_cursor,
+                      frame=_window_frame(), capture=_recapture(cfg))
+    live = steps is None and not demonstrate
+    rs = replan.Session.load(None, cfg)
     if resume is not None:
         wt, planned = _restore(resume)
         goal = wt.goal
+        rs = replan.Session.load(resume.get("replan"), cfg)
+        rs.prev_outcome = replan.CONFIRMED
         env.say(f"Picking up where we left off: {goal}.", None)
     else:
         if steps is not None:
             planned = steps
+        elif demonstrate:
+            try:
+                planned = plan(goal, cfg, image_b64,
+                               skill=app_skill(env.window(), skill_match))
+            except PlanError:
+                planned = []
         else:
-            started = bool(ask) and not demonstrate and _already_started(ask)
-            planned = plan(goal, cfg, image_b64,
-                           skill=app_skill(env.window(), skill_match),
-                           started=started)
+            if rs.budget <= 0:
+                return ("WALKED (0 steps): " + replan.wrap_up_line(goal, 0))
+            started = bool(ask) and _already_started(ask)
+            try:
+                planned = _plan_turn(
+                    goal, env, rs, (), image=image_b64, started=started,
+                    skill=app_skill(env.window(), skill_match))
+            except PlanError:
+                planned = []
         if not planned:
             return ("WALKED (0 steps): I couldn't work out steps for that, "
                     "try asking more specifically.")
+        if one_step and live and len(planned) == 1:
+            step = planned[0]
+            env.say(spoken(step), snap_point(step, env.cfg, ground=ground,
+                                             monitors=monitors))
+            return "WALKED (1 steps): "       # quiet close: the step was it
         wt = _wt.Walkthrough(goal, planned)
     keep = not demonstrate
     current = [None]
+    # the first step of a plan was just planned from the live screen, so
+    # only later ones are checked against it
+    fresh_plan = [resume is None]
 
     def pause(line):
         n = len(wt.done_log)
         if keep:
-            save_paused(wt, planned, current[0])
+            save_paused(wt, planned, current[0], rs=rs)
         return f"WALKED ({n} steps): {line}"
 
     def finish(line, completed=False):
@@ -505,6 +730,24 @@ def run(goal: str, cfg: dict, state=None, *, ask=None,
         if completed and keep and wt.done_log:
             save_last(wt, planned)
         return f"WALKED ({len(wt.done_log)} steps): {line}"
+
+    def replan_now():
+        """(next event, None), or (None, the closing line)."""
+        if rs.budget <= 0:
+            return None, finish(replan.wrap_up_line(goal, len(wt.done_log)))
+        try:
+            new = _plan_turn(goal, env, rs, list(wt.done_log),
+                             skill=app_skill(env.window(), skill_match))
+        except PlanError:
+            return None, pause(PLAN_FAILED_LINE)
+        added = [s for s in new if rs.admits(s, wt)]
+        if not added:
+            return None, finish("all done.", completed=True)
+        for s in added:
+            planned.append(s)
+            wt.enqueue(s)
+        fresh_plan[0] = True
+        return wt.issue_step(now=env.clock()), None
 
     ev = wt.issue_step(now=env.clock())
     while True:
@@ -514,9 +757,31 @@ def run(goal: str, cfg: dict, state=None, *, ask=None,
             return pause("stopped.")
         action = ev.get("action")
         if action == "step":
+            step = ev["step"]
+            if live and not rs.admits(step, wt):
+                ev = wt.issue_step(now=env.clock())    # opener seen already
+                continue
+            if live and not fresh_plan[0] \
+                    and not _still_matches(step, env.cfg, ground, monitors):
+                for d in wt.drop_pending():
+                    if d in planned:
+                        planned.remove(d)
+                ev, out = replan_now()
+                if out is not None:
+                    return out
+                continue
+            fresh_plan[0] = False
             current[0] = ev["step"]
+            if live:
+                rs.note_pointed(step)
+                rs.prev_kind = getattr(step, "kind", "click")
+            n_done, n_failed = len(wt.done_log), len(wt.failed_log)
             do = _demo_step if demonstrate else _do_step
             ev = do(wt, ev, env, ask, ground, monitors)
+            if live and len(wt.failed_log) > n_failed:
+                rs.prev_outcome = replan.SKIPPED
+            elif live and len(wt.done_log) > n_done:
+                rs.prev_outcome = replan.DONE
             if ev is None:
                 return pause("okay, stopping here.")
             continue
@@ -527,8 +792,17 @@ def run(goal: str, cfg: dict, state=None, *, ask=None,
             return finish(ev.get("spoken", ""))
         if action == "cancelled":
             return pause("stopped.")
+        if action == "await_voice":
+            return pause(VOICE_CONFIRM_LINE)
+        if action == "off_target":
+            return pause("")      # quiet: no speech, pointer stays parked
         if action == "advanced":
             ev = wt.issue_step(now=env.clock())
+            continue
+        if action == "complete" and live:
+            ev, out = replan_now()
+            if out is not None:
+                return out
             continue
         return finish("all done.", completed=True)
 
@@ -539,12 +813,68 @@ def spoken(step) -> str:
     return f"{step.text} {why}" if why else step.text
 
 
+VOICE_CONFIRM_LINE = "Say continue when you've done that."
+
+
+def _window_frame():
+    """Production frame source: the active window, via grim."""
+    def frame():
+        from . import hypr
+        try:
+            win = hypr.query("activewindow")
+        except Exception:
+            win = None
+        return settle.grim_frame(win if isinstance(win, dict) else None)
+    return frame
+
+
+def _delivered_kind(step, pt, env) -> str:
+    """The kind a step is delivered as. A step Wisp cannot observe is
+    delivered as voice-confirm, never as a click it would not see: click
+    needs the pointer and a frame source, hover the pointer, area,
+    handle and motion a frame source. A click or hover with nothing to
+    point at has no target to test, so it keeps the window-change
+    evidence."""
+    kind = getattr(step, "kind", "click")
+    pointed = kind in (step_kinds.CLICK, step_kinds.HOVER)
+    if kind == step_kinds.VOICE_CONFIRM or (pointed and pt is None):
+        return kind
+    pointer = env.cursor is not None and env.cursor() is not None
+    if kind == step_kinds.HOVER:
+        ok = pointer
+    elif kind == step_kinds.CLICK:
+        ok = pointer and env.frame is not None   # click is inferred from both
+    else:
+        ok = env.frame is not None
+    return kind if ok else step_kinds.VOICE_CONFIRM
+
+
+def _watcher(kind, pt, step, env):
+    """The evidence watcher for a delivered kind, or None for the
+    legacy window-change path."""
+    pointed = kind in (step_kinds.CLICK, step_kinds.HOVER)
+    if kind == step_kinds.VOICE_CONFIRM or (pointed and pt is None):
+        return None
+    if not pointed:
+        return settle.SettleWatch(env.frame)
+    target = (pt["x"], pt["y"])
+    radius = step_kinds.effective_radius(kind, getattr(step, "radius", None))
+    if kind == step_kinds.CLICK:
+        return click_watch.ClickWatch(target, radius, env.cursor, env.frame)
+    return click_watch.HoverWatch(target, radius, env.cursor)
+
+
 def _do_step(wt, ev, env: _Env, ask, ground, monitors):
-    """Announce one step and wait for the user to act. The next event
-    (a step, or a terminal one), or None to stop the walkthrough."""
+    """Announce one step and wait for evidence that the user did it. The
+    next event (a step, or a terminal one), or None to stop the
+    walkthrough."""
     step = ev["step"]
-    env.say(spoken(step), snap_point(step, env.cfg, ground=ground,
-                                  monitors=monitors))
+    pt = snap_point(step, env.cfg, ground=ground, monitors=monitors)
+    kind = _delivered_kind(step, pt, env)
+    env.say(spoken(step), pt)
+    if kind == step_kinds.VOICE_CONFIRM:
+        return {"action": "await_voice"}
+    watch = _watcher(kind, pt, step, env)
     before = {"window": env.window()}
     t0 = env.clock()
     while True:
@@ -552,9 +882,23 @@ def _do_step(wt, ev, env: _Env, ask, ground, monitors):
         if env.interrupted():
             wt.cancel(env.state)
             return {"action": "cancelled"}
-        env.sleep(POLL_S)
-        r = wt.observe(before, {"window": env.window()},
-                       elapsed_s=env.clock() - t0)
+        env.sleep(watch.poll_s if watch else POLL_S)
+        elapsed = env.clock() - t0
+        if watch is not None:
+            got = watch.poll(env.clock())
+            if got == click_watch.CLICKED_OUT:
+                return {"action": "off_target"}
+            if got:
+                wt.mark_step_done()
+                return wt.issue_step(now=env.clock())
+            # A watcher owns the evidence: a title change after a stray
+            # click must not count as the user doing the step.
+            if elapsed < wt.no_change_timeout_s:
+                continue
+            r = wt.observe(before, before, elapsed_s=elapsed)
+        else:
+            r = wt.observe(before, {"window": env.window()},
+                           elapsed_s=elapsed)
         act = r.get("action")
         if act in ("wait", "wait_load"):
             continue

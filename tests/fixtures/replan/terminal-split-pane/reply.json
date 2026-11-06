@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Press Split pane at the top right.\", \"label\": \"Split pane\", \"why\": \"A split puts a second shell beside this one.\", \"kind\": \"click\"}]}"
+}
