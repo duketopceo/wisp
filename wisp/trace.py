@@ -142,6 +142,7 @@ class Spans:
         self._end = {}
         self._pending = []
         self._armed = {}
+        self._once = set()
         self._lock = threading.Lock()
 
     def _resolve(self, t0_ns):
@@ -184,6 +185,15 @@ class Spans:
                 return ms
         emit(self.turn, ev[0], "span", ev[2], ms=ev[1])
         return ms
+
+    def record_once(self, name: str, start_ns: int, **data) -> bool:
+        """`record`, but only the first call per turn counts."""
+        with self._lock:
+            if name in self.ms or name in self._once:
+                return False
+            self._once.add(name)
+        self.record(name, start_ns, **data)
+        return True
 
     @contextmanager
     def timed(self, name: str, **data):
@@ -228,6 +238,32 @@ class Spans:
         if "done" in m:
             out["act_ms"] = m["done"]
         return out
+
+
+# The composite the user feels: key release to the first voice child
+# running. `Spans.record_once(FIRST_VOICE, sp.rel0)` writes it directly;
+# its stages are the existing spans, which chain end to end from the
+# release (stt, context, route, first_token). `speech` is the remainder
+# (rest of the reply, sentence cut, TTS fetch or spawn), so the stages sum
+# to the composite by construction. A turn that never speaks has no
+# `first_voice` span, so no composite and nothing to gate.
+FIRST_VOICE = "first_voice"
+FIRST_VOICE_STAGES = ("stt", "context", "route", "first_token")
+FIRST_VOICE_REST = "speech"
+
+
+def first_voice(ms: dict):
+    """{total, stages: [{name, ms}]} from one turn's span ms, or None when
+    the turn never spoke."""
+    total = ms.get(FIRST_VOICE)
+    if not isinstance(total, (int, float)) or isinstance(total, bool):
+        return None
+    stages = [{"name": n, "ms": ms[n]} for n in FIRST_VOICE_STAGES
+              if isinstance(ms.get(n), (int, float))]
+    rest = total - sum(s["ms"] for s in stages)
+    stages.append({"name": FIRST_VOICE_REST, "ms": max(0, rest)})
+    return {"total": max(total, sum(s["ms"] for s in stages)),
+            "stages": stages}
 
 
 def read(path=None, tail: int = 50, turn: str = "",

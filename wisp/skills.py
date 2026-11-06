@@ -371,10 +371,13 @@ def _class_score(target_cls: str, candidate_cls: str) -> int:
     return 0
 
 
-def _iter_skill_files(skills_dir: Path | str | None = None) -> list[Path]:
+def _iter_skill_files(skills_dir: Path | str | None = None,
+                      dedupe: bool = True) -> list[Path]:
     """Collect candidate SKILL.md paths. When `skills_dir` is given, scan
     `skills_dir/apps/*/SKILL.md` and `skills_dir/*/SKILL.md` only. When
-    `skills_dir` is None, scan `SKILLS_DIR` plus bundled `skills_seed/apps`."""
+    `skills_dir` is None, scan `SKILLS_DIR` plus bundled `skills_seed/apps`.
+    A user copy shadows the bundled one of the same name unless `dedupe` is
+    off (teaching lookup: see `teaching_guide`)."""
     roots: list[Path] = []
     if skills_dir is not None:
         base = Path(skills_dir)
@@ -393,7 +396,7 @@ def _iter_skill_files(skills_dir: Path | str | None = None) -> list[Path]:
             if not f.is_file():
                 continue
             key = d.name.lower()
-            if key in seen_names:
+            if dedupe and key in seen_names:
                 continue
             seen_names.add(key)
             files.append(f)
@@ -464,6 +467,121 @@ def match_app_skill_info(
     if best_cls is not None:
         return best_cls[2]
     return None
+
+
+# -- teaching guides (teaching plan U9) ----------------------------------
+
+# The only frontmatter keys an app guide may carry (docs/research/
+# app-skill-format.md). `tool:` and friends are absent on purpose: app
+# skills are documentation and never register executable tools.
+APP_FRONTMATTER_KEYS = frozenset({
+    "name", "description", "url_hosts", "app_classes", "asks", "tier",
+    "provenance", "draft",
+})
+
+# Ceiling for the guide text added to one planner prompt. 400 tokens
+# (1600 chars at 4 chars per token) is the budget `APP_SKILL_BUDGET`
+# already gave an app note, so a guide never grows the step prompt more
+# than that note did. It is not derived from a harness run yet: every
+# shipped guide's Teaching section must fit under it
+# (tests/test_teaching_guides.py), so truncation is only a safety net for
+# longer user-written guides, and the U1 per-app first-time-correct numbers
+# are what should retune it.
+CHARS_PER_TOKEN = 4
+TEACH_GUIDE_TOKEN_CAP = 400
+TEACH_GUIDE_CHAR_CAP = TEACH_GUIDE_TOKEN_CAP * CHARS_PER_TOKEN
+
+
+def frontmatter_problems(text: str) -> list[str]:
+    """Why an app guide's frontmatter is not acceptable, [] when it is:
+    keys outside the whitelist, or a missing name/description/provenance."""
+    m = re.match(r"^---\n(.*?)\n---\n", text or "", re.S)
+    if not m:
+        return ["no frontmatter"]
+    keys = [ln.partition(":")[0].strip() for ln in m.group(1).splitlines()
+            if ln.strip() and not ln.startswith((" ", "\t", "#"))]
+    out = [f"disallowed key: {k}" for k in keys
+           if k not in APP_FRONTMATTER_KEYS]
+    out += [f"missing key: {k}" for k in ("name", "description", "provenance")
+            if k not in keys]
+    return out
+
+
+def teaching_section(body: str) -> str:
+    """The text under `## Teaching` (to the next `## ` heading), else ""."""
+    m = re.search(r"^## Teaching[ \t]*\n(.*?)(?=^## |\Z)", body or "",
+                  re.S | re.M)
+    return m.group(1).strip() if m else ""
+
+
+def truncate_at_section(text: str, cap: int) -> tuple[str, bool]:
+    """`text` cut to at most `cap` chars at a section boundary: whole
+    `### ` subsections are kept while they fit, so a guide never ends
+    mid-sentence. A first section that alone exceeds the cap is cut at its
+    last whole line that fits. Returns (text, was_truncated)."""
+    text = (text or "").strip()
+    if len(text) <= cap:
+        return text, False
+    blocks = [b.strip() for b in re.split(r"(?m)^(?=#{2,3} )", text)
+              if b.strip()]
+    kept, size = [], 0
+    for b in blocks:
+        add = len(b) + (2 if kept else 0)
+        if size + add > cap:
+            break
+        kept.append(b)
+        size += add
+    if kept:
+        return "\n\n".join(kept), True
+    lines, out, size = blocks[0].splitlines(), [], 0
+    for ln in lines:
+        if size + len(ln) + 1 > cap:
+            break
+        out.append(ln)
+        size += len(ln) + 1
+    return "\n".join(out).strip(), True
+
+
+def teaching_guide(window_class: str, app_name: str = "",
+                   skills_dir: Path | str | None = None,
+                   cap_chars: int = TEACH_GUIDE_CHAR_CAP) -> dict | None:
+    """The one teaching guide for the focused app, or None.
+
+    Matches `app_classes` against the window class and the accessibility
+    app name (elementtree `app_name`), best score wins. Only skills with a
+    `## Teaching` section count, so an installed copy seeded before the
+    section existed never hides the newer bundled one; between equals the
+    user's own copy comes first. The text is that section, cut at a
+    section boundary to `cap_chars`."""
+    targets = [("window_class", (window_class or "").strip().lower()),
+               ("app_name", (app_name or "").strip().lower())]
+    targets = [(k, t) for k, t in targets if t]
+    if not targets:
+        return None
+    best = None
+    for f in _iter_skill_files(skills_dir, dedupe=False):
+        try:
+            text = f.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        section = teaching_section(_strip_frontmatter(text))
+        if not section:
+            continue
+        meta = _frontmatter(text)
+        classes = _list_field(meta.get("app_classes") or meta.get("classes"))
+        score, via = 0, ""
+        for kind, t in targets:
+            sc = max((_class_score(t, c) for c in classes), default=0)
+            if sc > score:
+                score, via = sc, kind
+        if score and (best is None or score > best[0]):
+            best = (score, via, meta, section, f)
+    if best is None:
+        return None
+    _, via, meta, section, f = best
+    body, cut = truncate_at_section(section, int(cap_chars))
+    return {"name": meta.get("name", f.parent.name), "matched_by": via,
+            "body": body, "truncated": cut, "path": str(f)}
 
 
 def match_app_skill(

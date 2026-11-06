@@ -688,6 +688,29 @@ persistent process.
 - Ceiling: beacons connect in sequence with a faint dotted path when
   order matters (multi-step instructions).
 
+### 6.7b Teaching step primitives (U10)
+One mark per step kind, drawn on the existing ink layer (`lib/ink.js`) in
+the ember token, never a new asset. Marks sit on the step's newest point;
+`lib/teach.js` is the one place that maps kind to mark.
+
+| Kind | Mark | Ink | Chip |
+|---|---|---|---|
+| `click` | ring, radius from the step (default 28 logical px) | solid wobbly ring; breathes 3 times in full motion, still otherwise | none |
+| `hover` | dashed ring | dashed ring, no pulse | none |
+| `area` | soft region (radius or 84 px square) | 10% ember wash, solid frame | say continue |
+| `handle` | small marker (7 px) | two concentric pen rings | say continue |
+| `motion` | curve with arrowhead (to the step's end point, else 3 radii right) | bowed arrow | say continue |
+| `voice-confirm` | none | none | say continue |
+
+The chip and the "2 of 5" counter are `raised` surfaces with `ink` text,
+the same pair as `Chip`: at least 4.5:1 on every fixture theme (checked in
+`tst_teach.qml`). They sit bottom centre where the listening pill sits,
+carry no pointer or focus handler and no emoji, so the overlay stays
+click-through. When a step ends (`off-target`, `done`) marks, chip and
+counter clear in the same frame; Wisp never moves the real pointer.
+Reduced and off motion: no ring pulse, and the buddy snaps to the target
+instead of flying (`buddy.js startFlight`).
+
 ### 6.8 Confirm (new, inside existing surfaces)
 - P0 (needs daemon field `state.confirm = {tool, app, summary, risk}`):
   `ConfirmCard` renders in the bubble position with `needsYou` keyline,

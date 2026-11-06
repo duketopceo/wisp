@@ -4,6 +4,7 @@ qmltestrunner. Skipped when qmltestrunner is not installed. The libs have
 no Quickshell imports, so no compositor is needed (offscreen platform)."""
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import unittest
@@ -25,6 +26,13 @@ class TestQmlLibs(unittest.TestCase):
             p = subprocess.run([RUNNER, "-input", str(f)], env=env,
                                capture_output=True, text=True, timeout=120)
             self.assertEqual(p.returncode, 0, f"{f.name}\n{p.stdout}")
+            if f.name == "tst_teach.qml":
+                # U10: no console errors while the primitives render
+                noise = [ln for ln in (p.stdout + p.stderr).splitlines()
+                         if re.search(r"TypeError|ReferenceError|is not defined|"
+                                      r"Unable to assign|Cannot read|QML .*Error|"
+                                      r"^qml: .*(error|warning)", ln, re.I)]
+                self.assertEqual(noise, [], f.name)
 
 
 if __name__ == "__main__":

@@ -149,8 +149,9 @@ class Delivery(unittest.TestCase):
             desk, out = self.run_it(reply("Split pane"))
         do_step.assert_not_called()
         self.assertEqual(desk.said, ["Press Split pane. It does the job."])
-        self.assertEqual(desk.points[-1],
-                         [{"x": 40, "y": 30, "label": "Split pane"}])
+        pt = desk.points[-1][0]
+        self.assertEqual((pt["x"], pt["y"], pt["label"]),
+                         (40, 30, "Split pane"))
         self.assertEqual(desk.slept, 0)
         self.assertEqual(out, "WALKED (1 steps): ")     # nothing more to say
         self.assertIsNone(wr.paused())

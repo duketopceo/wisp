@@ -1,11 +1,12 @@
 {
-  "recorded": "2026-10-04",
+  "recorded": "2026-11-05",
   "fakes_only": true,
   "runs_per_fixture": 5,
   "fixtures": [
     "ask",
     "act_click_cua",
     "cancel_mid_act",
+    "answer_points_timed",
     "brain_down",
     "retired_endpoint_down"
   ],
@@ -13,72 +14,81 @@
   "needs_live_baseline": [
     "P1",
     "P2",
+    "P6G",
     "P8",
     "live model time for P3 P5 P7 (STT, brain, UI-TARS), P6 (TTS), P10 (real unreachable endpoints)"
   ],
   "paths": {
     "P3": {
       "label": "transcript (key up -> text)",
-      "n": 25,
-      "p50": 12,
-      "p90": 12,
-      "max": 13,
+      "n": 30,
+      "p50": 8,
+      "p90": 9,
+      "max": 27,
       "budget_p50_ms": 600
     },
     "P5": {
       "label": "answer (route -> 1st token)",
-      "n": 5,
-      "p50": 11,
-      "p90": 11,
-      "max": 11,
+      "n": 10,
+      "p50": 33,
+      "p90": 34,
+      "max": 38,
       "budget_p50_ms": 500
     },
     "P6": {
       "label": "spoken (reply -> TTS start)",
-      "n": 5,
+      "n": 15,
       "p50": 0,
       "p90": 0,
-      "max": 0,
+      "max": 1,
       "budget_p50_ms": 150
     },
     "P4": {
       "label": "route (context + route)",
-      "n": 20,
-      "p50": 32,
-      "p90": 34,
-      "max": 35,
+      "n": 30,
+      "p50": 46,
+      "p90": 51,
+      "max": 62,
       "budget_p50_ms": 200
     },
     "E2E": {
       "label": "answer e2e (key up -> 1st token)",
-      "n": 5,
-      "p50": 56,
-      "p90": 57,
-      "max": 57,
+      "n": 10,
+      "p50": 87,
+      "p90": 93,
+      "max": 95,
       "budget_p50_ms": 1400
     },
     "P7": {
       "label": "act (route -> 1st step)",
-      "n": 10,
-      "p50": 27,
-      "p90": 30,
-      "max": 37,
+      "n": 15,
+      "p50": 109,
+      "p90": 155,
+      "max": 167,
       "budget_p50_ms": 1200
     },
     "P9": {
       "label": "stop (request -> idle)",
       "n": 5,
-      "p50": 7,
-      "p90": 8,
-      "max": 8,
+      "p50": 47,
+      "p90": 53,
+      "max": 53,
       "budget_p50_ms": 150
+    },
+    "FV": {
+      "label": "first voice (key up -> audio)",
+      "n": 5,
+      "p50": 139,
+      "p90": 147,
+      "max": 147,
+      "budget_p50_ms": 2500
     },
     "P10": {
       "label": "offline error (key up -> error)",
-      "n": 10,
-      "p50": 50,
-      "p90": 60,
-      "max": 60,
+      "n": 5,
+      "p50": 89,
+      "p90": 98,
+      "max": 98,
       "budget_p50_ms": 1000
     }
   }

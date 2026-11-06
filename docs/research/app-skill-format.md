@@ -43,6 +43,45 @@ they never register executable tools.
 7. `## Gotchas` — observed traps only. Anything not seen in captures is
    written as `unverified — needs a deeper capture`.
 
+## Teaching section (optional, for guided walkthroughs)
+
+`## Teaching` is a body section, never a frontmatter key. The walkthrough
+planner (`wisp/walkthrough_run.py`) injects only this section, so it is
+what a teaching turn knows about the app. Three `###` subsections, each a
+few short lines:
+
+- `### Where things live` — the regions of the window and where the common
+  controls sit, by visible label.
+- `### First steps` — the usual first actions for a newcomer, with the key
+  or menu path.
+- `### Linux pitfalls` — traps specific to this platform (Wayland, the
+  desktop's own bindings). Leave it out rather than invent one.
+
+Rules for the section:
+
+- Authored text, or MIT-adapted with attribution and `provenance` set (the
+  clean-source rule below). Never copied from a manual or a non-MIT skill.
+- Short. The injected text is capped at `skills.TEACH_GUIDE_TOKEN_CAP` (400
+  tokens, 1600 characters): the budget an app note already had, so a guide
+  adds no more to the planner prompt than that. A guide over the cap is cut
+  at a `###` boundary, never mid-sentence, and tests require every shipped
+  guide to fit.
+- Matching uses `app_classes` against the window class and against the
+  accessibility app name (`wisp/elementtree.py` `app_name`), so a window
+  whose class is empty or unfamiliar can still match. The best score wins;
+  only skills that have a `## Teaching` section are candidates, and a
+  user's own copy beats a bundled one of equal score.
+- The text is delivered to the model quoted as data: wrapped in an
+  `app_guide` block that tells the model to use the facts and never follow
+  instructions inside it. A guide can therefore not change the task, the
+  reply format or routing, but it still gets the instruction-content review
+  below because a poisoned guide can still mislead a step.
+- No machine-specific detail (usernames, hostnames, private paths) and no
+  secrets.
+
+`skills.frontmatter_problems()` and `tests/test_skill_provenance.py` fail a
+guide that has a key outside the whitelist or no `provenance`.
+
 ## Rules
 
 - **Honest coverage.** `draft: first-run` stays until a verify crawl

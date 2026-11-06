@@ -164,3 +164,33 @@ class TestHyprHealthRegistry(_Iso):
             self.assertFalse(row["ok"])
             self.assertEqual(row["code"], "hypr_unavailable")
         hypr.reset()
+
+
+class WalkthroughImportsNoClickBackend(unittest.TestCase):
+    """U3: the walkthrough lane reaches the pointer only through
+    pointer.teaching_backend; it never imports an injector."""
+    BANNED_MODULES = {"cua", "realinput", "vpointer", "cua_safety",
+                      "tools", "ydotool"}
+    BANNED_NAMES = {"Registry", "registry", "CuaBackend",
+                    "HyprcursorBackend", "YdotoolBackend", "WlrctlBackend",
+                    "VpointerBackend"}
+
+    def test_imports(self):
+        import ast
+        src = (pathlib.Path(__file__).resolve().parent.parent
+               / "wisp" / "walkthrough_run.py").read_text()
+        bad = []
+        for n in ast.walk(ast.parse(src)):
+            if isinstance(n, ast.Import):
+                bad += [a.name for a in n.names
+                        if a.name.split(".")[-1] in self.BANNED_MODULES]
+            elif isinstance(n, ast.ImportFrom):
+                mod = (n.module or "").split(".")[-1]
+                if mod in self.BANNED_MODULES:
+                    bad.append(n.module)
+                for a in n.names:
+                    if a.name in self.BANNED_MODULES and not n.module:
+                        bad.append(a.name)
+                    if mod == "pointer" and a.name in self.BANNED_NAMES:
+                        bad.append(a.name)
+        self.assertEqual(bad, [])

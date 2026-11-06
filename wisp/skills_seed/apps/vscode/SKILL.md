@@ -4,6 +4,7 @@ description: VS Code / VSCodium / Cursor command palette, sidebar, and terminal 
 tier: safe
 app_classes: code, code-oss, vscodium, cursor, vscode
 asks: How do I open the command palette; How do I find in all files; How do I open the terminal
+provenance: authored: wisp seed, frontmatter audited 2026-11-05
 ---
 # vscode
 

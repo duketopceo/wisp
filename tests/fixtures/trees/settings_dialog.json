@@ -1,0 +1,70 @@
+{
+ "app": "fixture-settings",
+ "format": "wisp-elementtree/1",
+ "reason": "",
+ "state": "ok",
+ "windows": [
+  {
+   "elements": [
+    {
+     "label": "Content",
+     "rect": [
+      100,
+      140,
+      800,
+      560
+     ],
+     "role": "panel"
+    },
+    {
+     "label": "Save",
+     "rect": [
+      700,
+      640,
+      80,
+      32
+     ],
+     "role": "push button"
+    },
+    {
+     "label": "Cancel",
+     "rect": [
+      790,
+      640,
+      80,
+      32
+     ],
+     "role": "push button"
+    },
+    {
+     "label": "Search",
+     "rect": [
+      120,
+      110,
+      300,
+      28
+     ],
+     "role": "entry"
+    },
+    {
+     "label": "Dark mode",
+     "rect": [
+      300,
+      300,
+      60,
+      28
+     ],
+     "role": "toggle button"
+    }
+   ],
+   "focused": true,
+   "frame": [
+    100,
+    100,
+    800,
+    600
+   ],
+   "title": "main"
+  }
+ ]
+}

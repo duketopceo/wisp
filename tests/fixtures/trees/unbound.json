@@ -1,0 +1,19 @@
+{
+ "app": "",
+ "format": "wisp-elementtree/1",
+ "reason": "no toplevel binds to the focused window",
+ "state": "unbound",
+ "windows": [
+  {
+   "elements": [],
+   "focused": true,
+   "frame": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "title": "main"
+  }
+ ]
+}

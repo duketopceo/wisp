@@ -1,0 +1,40 @@
+{
+ "app": "fixture-canvas",
+ "format": "wisp-elementtree/1",
+ "reason": "",
+ "state": "ok",
+ "windows": [
+  {
+   "elements": [
+    {
+     "label": "Canvas",
+     "rect": [
+      0,
+      0,
+      1000,
+      800
+     ],
+     "role": "canvas"
+    },
+    {
+     "label": "Document",
+     "rect": [
+      0,
+      40,
+      1000,
+      760
+     ],
+     "role": "document frame"
+    }
+   ],
+   "focused": true,
+   "frame": [
+    0,
+    0,
+    1000,
+    800
+   ],
+   "title": "main"
+  }
+ ]
+}

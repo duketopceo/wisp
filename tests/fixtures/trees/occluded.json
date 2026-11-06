@@ -1,0 +1,52 @@
+{
+ "app": "fixture-editor",
+ "format": "wisp-elementtree/1",
+ "reason": "",
+ "state": "ok",
+ "windows": [
+  {
+   "elements": [
+    {
+     "label": "Export",
+     "rect": [
+      800,
+      650,
+      80,
+      30
+     ],
+     "role": "push button"
+    },
+    {
+     "label": "Open",
+     "rect": [
+      20,
+      20,
+      60,
+      28
+     ],
+     "role": "push button"
+    }
+   ],
+   "focused": true,
+   "frame": [
+    0,
+    0,
+    900,
+    700
+   ],
+   "title": "main"
+  },
+  {
+   "above": true,
+   "elements": [],
+   "focused": false,
+   "frame": [
+    700,
+    600,
+    200,
+    100
+   ],
+   "title": "palette"
+  }
+ ]
+}

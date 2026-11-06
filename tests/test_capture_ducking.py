@@ -9,7 +9,7 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from wisp import config, pipeline, platform, stage_capture, stt_stream, voice_polish
+from wisp import config, pipeline, platform, stage_capture, stt_stream, voice_polish, warm
 
 
 class SpeakerDucking(unittest.TestCase):
@@ -135,6 +135,7 @@ class CaptureOwnership(unittest.TestCase):
         self.patch(pipeline.time, "sleep",
                    side_effect=AssertionError("real sleep forbidden"))
         self.begin = self.patch(stt_stream, "begin")
+        self.warm_begin = self.patch(warm, "begin")  # its own thread and Event
         self.record_cmd = self.patch(platform, "record_cmd",
                                      return_value=["fake-recorder"])
         self.notify = self.patch(pipeline, "notify")
@@ -178,6 +179,13 @@ class CaptureOwnership(unittest.TestCase):
         self.restore.assert_called_once_with(0.8)
         self.proc.kill.assert_called_once_with()
         self.stop.set.assert_called_once_with()
+
+    def test_key_down_starts_the_warm_up_once_and_a_discard_releases_it(self):
+        pipeline.record_start(self.state)
+        self.warm_begin.assert_called_once()
+        with mock.patch.object(warm, "discard") as d:
+            stage_capture._record_discard({"out": None})
+        d.assert_called_once()
 
     def test_duplicate_finish_releases_owned_state_once(self):
         rec = pipeline.record_start(self.state)

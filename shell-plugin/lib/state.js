@@ -42,7 +42,7 @@ function initial() {
   return {
     status: "offline", rawStatus: "offline", transcript: "", answer: "",
     result: "", choices: [], promptId: "", confirm: null, points: [], drawings: [],
-    steps: [], actions: [],
+    steps: [], actions: [], teach: null,
     suggestion: null, guide: null, chips: null, focus: {}, note: null,
     goal: "", goalStatus: "",
     level: 0, mic: "", tasks: {}, error: "", errorCode: "", health: {}, spend: {},
@@ -207,6 +207,7 @@ function normalize(raw) {
     answer: str(raw.answer), result: str(raw.result), choices: choices,
     promptId: str(raw.prompt_id), confirm: confirm, points: arr(raw.points), drawings: arr(raw.drawings),
     steps: arr(raw.steps), actions: actions,
+    teach: isObj(raw.teach) ? raw.teach : null,
     suggestion: isObj(raw.suggestion) ? raw.suggestion : null,
     guide: isObj(raw.guide) ? raw.guide : null,
     chips: isObj(raw.chips) ? raw.chips : null,

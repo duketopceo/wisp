@@ -5,6 +5,9 @@
     python scripts/latency_baseline.py --json     # machine-readable
     python scripts/latency_baseline.py --record   # rewrite the baseline
     python scripts/latency_baseline.py --check    # exit 1 past a ceiling
+    python scripts/latency_baseline.py --from-trace FILE [FILE ...]
+        # aggregate p50/p90 and the first-voice composite from recorded
+        # trace files (read-only; no per-turn data is printed)
 
 Never touches live models, hardware, hyprctl or cua-driver. The
 baseline lands in docs/baselines/latency-harness.json.
@@ -21,7 +24,25 @@ from harness import latency  # noqa: E402
 from wisp import telemetry  # noqa: E402
 
 
+def from_trace(files: list) -> int:
+    rep = telemetry.trace_baseline(*files)
+    print(f"spoken turns: {rep['turns']}")
+    print(f"{'stage':<12}{'n':>4}{'p50':>7}{'p90':>7}")
+    for name, r in rep["stages"].items():
+        print(f"{name:<12}{r['n']:>4}{r['p50']:>7}{r['p90']:>7}")
+    c = rep["composite"]
+    if c:
+        print(f"first voice  n={c['n']} p50={c['p50']} p90={c['p90']} "
+              f"p90/p50={c['ratio']} (derived lower bound for "
+              f"{c['derived']} of {c['n']})")
+    else:
+        print("first voice  no spoken turns with the needed spans")
+    return 0
+
+
 def main(argv: list) -> int:
+    if "--from-trace" in argv:
+        return from_trace(argv[argv.index("--from-trace") + 1:])
     runs = 5
     series = latency.measure(runs)
     doc = latency.baseline(runs) if "--record" in argv else None

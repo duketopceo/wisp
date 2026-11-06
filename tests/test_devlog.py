@@ -82,6 +82,23 @@ class TestTurns(Base):
         self.assertEqual(t["route"], "answer")
         self.assertEqual(t["id"], "t1")
 
+    def test_first_voice_composite_with_stage_breakdown(self):
+        self.dec(1, spans=[("stt", 400), ("context", 260), ("route", 80),
+                           ("first_token", 540), ("first_voice", 2000),
+                           ("done", 3000)])
+        t = self.build()["turns"][0]
+        fv = t["first_voice"]
+        self.assertEqual(fv["total"], 2000)
+        self.assertEqual([s["name"] for s in fv["stages"]],
+                         ["stt", "context", "route", "first_token", "speech"])
+        self.assertEqual(sum(s["ms"] for s in fv["stages"]), 2000)
+        # the composite is an aggregate, not a stage bar of its own
+        self.assertNotIn("first_voice", [s["name"] for s in t["stages"]])
+
+    def test_a_turn_that_never_spoke_has_no_first_voice(self):
+        self.dec(1, spans=[("stt", 400), ("route", 80), ("done", 900)])
+        self.assertNotIn("first_voice", self.build()["turns"][0])
+
     def test_no_spans_gives_empty_stages(self):
         self.dec(1)
         t = self.build()["turns"][0]

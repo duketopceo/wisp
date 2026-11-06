@@ -286,6 +286,7 @@ def _speak_result(ctx, payload: str) -> None:
     tts_start = sp.now()
     proc = speech.speak(reply, cfg)
     if proc is not None:
+        sp.record_once(_trace.FIRST_VOICE, sp.rel0)
         speech.on_exit(proc, pl._end_speaking(state))
     else:
         _close_paper(state)
@@ -348,6 +349,7 @@ def _answer(ctx) -> None:
     point is published when the sentence holding its tag starts playing;
     with voice off they all land with the `speaking` transition. Sets
     ctx.reply."""
+    from . import brain
     from . import points as _points
     from . import trace as _trace
     from . import voice_polish
@@ -421,7 +423,8 @@ def _answer(ctx) -> None:
         _trace.emit(turn, "tts_start_groq", "span", {}, ms=ms)
 
     ctx.speaker = speaker = speech.SentenceSpeaker(
-        cfg, token=token, on_sentence=_fire, on_audio=_audio)
+        cfg, token=token, on_sentence=_fire, on_audio=_audio,
+        on_voice=lambda: sp.record_once(_trace.FIRST_VOICE, sp.rel0))
     lang_code = getattr(ctx, "lang", "")
     if lang_code and not _lang_mod.is_english(lang_code):
         speaker.lang = lang_code
@@ -459,8 +462,8 @@ def _answer(ctx) -> None:
                 _extra["clip_image"] = ctx.clip_image
         if getattr(ctx, "scribble_hint", ""):
             _extra["scribble_hint"] = ctx.scribble_hint
-        reply = pl.ask_chat(text, cfg, ctx.session_text,
-                            image_b64=ctx.shot_b64,
+        reply = pl.ask_chat(text, brain.with_role(cfg, "fast"),
+                            ctx.session_text, image_b64=ctx.shot_b64,
                             on_delta=_delta, meta=_meta, **_extra)
         sp.fire("first_token")  # non-streaming brains
         _trace.emit(turn, "brain_call", "brain",
@@ -525,6 +528,7 @@ def _answer(ctx) -> None:
                          points=all_pts, drawings=all_drws)
         proc = speech.speak(reply, cfg)
         if proc is not None:
+            sp.record_once(_trace.FIRST_VOICE, sp.rel0)
             speech.on_exit(proc, pl._end_speaking(state))
     sp.record("tts_start", tts_start)
     _trace.emit(turn, "speak", "tts",

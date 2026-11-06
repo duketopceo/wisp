@@ -23,6 +23,7 @@ SUITE = [
     ("ask", {}),
     ("act_click_cua", {}),
     ("cancel_mid_act", {}),
+    ("answer_points_timed", {}),   # voice on: the only fixture that yields FV
     ("brain_down", {"offline": True}),
     ("retired_endpoint_down", {"offline": True}),
 ]
@@ -37,7 +38,8 @@ def samples(res, offline: bool = False) -> dict:
             sp[e["step"]] = e["ms"]
     out = {}
     for pid, name in (("P3", "stt"), ("P5", "first_token"),
-                      ("P6", "tts_start"), ("P7", "first_step")):
+                      ("P6", "tts_start"), ("P7", "first_step"),
+                      ("FV", "first_voice")):
         if name in sp:
             out[pid] = sp[name]
     if "route" in sp:

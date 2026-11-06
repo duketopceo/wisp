@@ -144,6 +144,8 @@ disables it. Recorded spend is not necessarily measured spend; see
 | `default` | `"openrouter:<answer_model>"` | `name:model` selecting a `[brain.<name>]` provider |
 | `fallback` | `""` | comma-separated `name:model` chain tried after `default` (e.g. `"mlx:ornith, ollama:ornith"`) |
 | `allow_paid` | `false` | allow paid fallback entries (OpenRouter, or `paid = "true"` on the section); the U10 cap hook (`brain.budget_ok`, see `[budget]`) also applies; at a cap fallbacks are skipped, the primary runs unless `[budget] gate_primary` |
+| `fast_model` | `""` | OpenRouter model id used for quick asks (the answer lane) instead of the `default` model, e.g. a small open-weight model for speed. Empty keeps `default`. Applies only when the `default` entry is the `openrouter` provider; fallbacks are unchanged |
+| `teach_model` | `""` | OpenRouter model id used to plan a walkthrough (teach turns) instead of the `default` model, e.g. a larger open-weight model. Empty keeps `default`. Same rule as `fast_model` |
 | `first_token_s` | `3` | a streaming entry must emit a token within this many seconds or the chain moves on; all entries failing ends the turn `brain_down` |
 | `agent_runtime` | `"auto"` | spawned-agent runtime: `auto`/`opencode`/`codex`/`claude`/`devin`. `auto` uses the pinned OpenCode (installed by `wispd install --agents`) when it is ready, else the first of `codex`, `claude`, `devin` found on `PATH`. Only `opencode` runs as a live ACP session (progress, questions, follow-ups, cancel); the others are one-shot CLI runs |
 
@@ -323,10 +325,12 @@ one, `wispd dictate list` shows them.
 | `tts_model` | Groq model, default `canopylabs/orpheus-v1-english` (a preview model; the id is configurable for when it changes). Not in the settings table: edit `config.toml` |
 | `tts_voice` | Orpheus voice: `autumn`, `diana`, `hannah` (default), `austin`, `daniel`, `troy` |
 | `tts_base_url` | Groq API base, default `https://api.groq.com/openai/v1`. Not in the settings table |
+| `alt_provider` | Name of an alternative speech provider registered in `wisp/voice_provider.py`. Empty (default) = off; no alternative ships, so any value falls back to Groq. It also falls back to Groq when the named provider lacks the direction or its key does not resolve. Not in the settings table |
 | `cmd` | override TTS command. The message is written to its stdin, never put on the command line, so other local accounts cannot read it; a `{text}` token is dropped. Empty = built-in espeak |
 | `speed` | speaking speed multiplier, 0.5 to 1.5 (default 1; steps 0.5, 0.75, 1, 1.25, 1.5). The built-in espeak voice gets `-s <wpm>`; a custom `cmd` gets the multiplier wherever it writes `{rate}`. Say "talk slower", "talk faster" or "talk at normal speed" to change it by voice (logged in the audit log as a `config` entry) |
 | `lang_voices` | per-language voices, `"es=es-mx,de=de"`. Empty: the built-in espeak voice named for the language when it exists, else the default voice, and Wisp says so once. A custom `cmd` may use `{lang}` (the code, like `pt-BR`) or `{voice}` |
 | `early_clause` | `"true"` (default): while an answer streams, start speaking at the first clause break (`, ; : —`) once 28 characters are ready instead of waiting for the full stop. `"false"` waits for sentence ends |
+| `warm` | `"true"` (default): at key-down, resolve the hosts the turn will call and play 0.25 s of silence so the audio output is awake when the first sentence plays. Nothing is sent to a host and nothing is spent. A cancelled press stops both. `"false"` skips it |
 | `captions` | `"true"` (default): the answer text shows in the bubble while it is spoken. `"false"` hides it while the voice plays. The text shows anyway when voice is off, when no TTS program is installed, or when speech does not start. A muted speaker always shows it. Say "turn off captions" or "turn on captions" to change it (audited like any `config` change) |
 
 ### Groq talk-back
@@ -397,7 +401,9 @@ screenshots and result text are never written.
 ## Latency budgets (W2)
 
 Data, not config: `wisp/budgets.json` (p50 ceiling per path; the verdict
-also needs p90 <= 1.5x). Not revised yet from live traces.
+also needs p90 <= 1.9x). `p90_factor` and the FV row come from recorded
+traces (see `p90_factor_source` in the file); the other rows are not
+revised yet from live traces.
 
 | id | path | p50 ms |
 |---|---|---|
@@ -412,6 +418,16 @@ also needs p90 <= 1.5x). Not revised yet from live traces.
 | P9 | stop (request -> idle) | 150 |
 | P10 | offline error | 1000 |
 | E2E | answer, key up -> first token | 1400 |
+| FV | first voice, key up -> first audio (composite) | 2500 |
+
+FV is the number a user feels. The `first_voice` span runs from key release
+to the first voice child running; its stages are the existing `stt`,
+`context`, `route` and `first_token` spans plus `speech` (the rest: waiting
+for the first sentence, then the TTS fetch or spawn), so they sum to it.
+A turn that never speaks records none and is not gated. The Dev tab shows
+the composite and its stage line for the selected turn.
+`scripts/latency_baseline.py --from-trace FILE` prints aggregate numbers
+from recorded traces, read-only.
 
 Resources: wispd under 250 MB RSS and 3% idle CPU; cua-driver
 `MemoryMax=512M`; Companion under 5% CPU at 120 Hz idle.

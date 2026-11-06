@@ -896,6 +896,88 @@
   },
   "width": 1280
  },
+ "CompanionTeach": {
+  "mode": "variant",
+  "on": "desktop",
+  "pad": 0,
+  "props": {
+   "height": 720
+  },
+  "scale2": true,
+  "source": "CompanionStage.qml",
+  "width": 1280,
+  "settle": 120,
+  "variants": {
+   "teach_ring": {
+    "_state": "teach_waiting"
+   },
+   "teach_hover": {
+    "_state": "teach_waiting",
+    "_fixture": {
+     "patch": {
+      "teach": {
+       "kind": "hover",
+       "radius": 28,
+       "index": 2,
+       "total": 5,
+       "wait": "rest"
+      }
+     }
+    }
+   },
+   "teach_area": {
+    "_state": "teach_waiting",
+    "_fixture": {
+     "patch": {
+      "teach": {
+       "kind": "area",
+       "radius": null,
+       "index": 2,
+       "total": 5,
+       "wait": "settle"
+      }
+     }
+    }
+   },
+   "teach_handle": {
+    "_state": "teach_waiting",
+    "_fixture": {
+     "patch": {
+      "teach": {
+       "kind": "handle",
+       "radius": null,
+       "index": 2,
+       "total": 5,
+       "wait": "settle"
+      }
+     }
+    }
+   },
+   "teach_motion": {
+    "_state": "teach_waiting",
+    "_fixture": {
+     "patch": {
+      "teach": {
+       "kind": "motion",
+       "radius": 40,
+       "index": 2,
+       "total": 5,
+       "wait": "settle"
+      }
+     }
+    }
+   },
+   "teach_voice_confirm": {
+    "_state": "teach_voice_confirm"
+   },
+   "teach_off_target": {
+    "_state": "teach_off_target"
+   },
+   "teach_done": {
+    "_state": "teach_done"
+   }
+  }
+ },
  "Creature": {
   "mode": "variant",
   "on": "desktop",
@@ -1123,6 +1205,31 @@
       },
       {
        "act_steps": 6,
+       "first_voice": {
+        "stages": [
+         {
+          "ms": 400,
+          "name": "stt"
+         },
+         {
+          "ms": 260,
+          "name": "context"
+         },
+         {
+          "ms": 80,
+          "name": "route"
+         },
+         {
+          "ms": 540,
+          "name": "first_token"
+         },
+         {
+          "ms": 720,
+          "name": "speech"
+         }
+        ],
+        "total": 2000
+       },
        "id": "t3",
        "kind": "act",
        "label": "incorrect",
@@ -4411,6 +4518,34 @@
    },
    "ultrawide": {
     "_viewport": "ultrawide"
+   }
+  }
+ },
+ "TeachChip": {
+  "mode": "variant",
+  "on": "desktop",
+  "pad": 10,
+  "variants": {
+   "continue": {
+    "step": {
+     "visible": true,
+     "chip": "say continue",
+     "counter": "3 of 5"
+    }
+   },
+   "counter": {
+    "step": {
+     "visible": true,
+     "chip": "",
+     "counter": "2 of 5"
+    }
+   },
+   "hidden": {
+    "step": {
+     "visible": false,
+     "chip": "",
+     "counter": ""
+    }
    }
   }
  }

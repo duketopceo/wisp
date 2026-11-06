@@ -85,6 +85,9 @@ class State:
         self.points = []
         self.drawings = []  # on-screen shapes (ring/arrow/hl), logical coords
         self.steps = []
+        # teaching step the overlay draws (U10): {kind, radius, index,
+        # total, wait} while a walkthrough step waits, else None
+        self.teach = None
         # unified lifecycle stream — survives turns (unlike `steps`),
         # capped at the last ACTIONS_CAP entries; entries mutate by id
         self.actions = []
@@ -159,12 +162,16 @@ class State:
         if status is not None and status != "speaking" \
                 and "drawings" not in fields:
             self.drawings = []
+        # the step marks live as long as the points they belong to
+        if status is not None and status != "speaking" \
+                and "teach" not in fields:
+            self.teach = None
         # interrupts publish with no turn id, so the turn guard can't
         # stop a late stage publish: a status-less points/drawings
         # write only lands while speaking
         if status is None and self.status != "speaking":
             fields = {k: v for k, v in fields.items()
-                      if k not in ("points", "drawings")}
+                      if k not in ("points", "drawings", "teach")}
         for k, v in fields.items():
             if hasattr(self, k):
                 setattr(self, k, v)
@@ -297,6 +304,7 @@ class State:
             "points": list(self.points),
             "drawings": list(self.drawings),
             "steps": list(self.steps),
+            "teach": dict(self.teach) if self.teach else None,
             "actions": [dict(a) for a in self.actions],
             "suggestion": self.suggestion,
             "guide": self.guide,

@@ -80,6 +80,19 @@ function routeLine(t, words) {
   return parts.join(DOT)
 }
 
+// The key-release to first-voice composite: {total, stages[{name, ms}]} from
+// the daemon, or null when the turn never spoke. Returns the headline
+// ("2.5 s") and the per-stage line ("stt 520 ms · context 300 ms ...").
+function firstVoiceView(fv) {
+  if (!fv || !_num(fv.total)) return null
+  var src = _list(fv.stages)
+  var parts = []
+  for (var i = 0; i < src.length; i++) {
+    if (_num(src[i].ms)) parts.push(String(src[i].name) + " " + Math.round(src[i].ms) + " ms")
+  }
+  return { totalText: seconds(fv.total), stagesText: parts.join(DOT) }
+}
+
 // Each stage's ms as a share of the turn total; the denominator is never
 // below the sum of the stages, so the shares add to at most 1.
 function stageShares(stages, total) {

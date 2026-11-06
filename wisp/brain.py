@@ -111,6 +111,34 @@ def provider(cfg: dict) -> dict:
     return _make(cfg, name, model)
 
 
+_ROLE_KEYS = {"fast": "fast_model", "teach": "teach_model"}
+
+
+def role_model(cfg: dict, role: str) -> str:
+    """`[brain] fast_model` / `teach_model`: an OpenRouter model id, or ""
+    when unset (the role then uses the model it always did)."""
+    key = _ROLE_KEYS.get(role)
+    if key is None:
+        return ""
+    return str(cfg.get("brain", {}).get(key, "") or "").strip()
+
+
+def with_role(cfg: dict, role: str) -> dict:
+    """`cfg` itself unless `[brain] <role>_model` is set and the primary
+    entry is the OpenRouter provider; then a copy whose `[brain] default`
+    names that model. Fallbacks and everything else are untouched, so an
+    unset key (the default) changes nothing."""
+    model = role_model(cfg, role)
+    if not model:
+        return cfg
+    default = cfg.get("brain", {}).get("default", "")
+    name, _ = _split(cfg, default or "openrouter")
+    if name != "openrouter":
+        return cfg
+    return {**cfg, "brain": {**cfg.get("brain", {}),
+                             "default": f"openrouter:{model}"}}
+
+
 def chain(cfg: dict) -> list:
     """Primary provider followed by `[brain] fallback` entries."""
     out = [provider(cfg)]

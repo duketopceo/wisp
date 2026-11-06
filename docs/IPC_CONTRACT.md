@@ -322,6 +322,19 @@ list only grows within a turn, and it resets when the status leaves
 `speaking`. A publish that carries no status while the status is not
 `speaking` never changes `points` or `drawings`.
 
+`teach` is a top-level object or `null`, additive under `contract_version`
+2 (absent on older cores: treat as `null`). It describes the teaching step
+a walkthrough is waiting on: `{"kind","radius","index","total","wait"}`.
+`kind` is one of `click`, `hover`, `area`, `handle`, `motion`,
+`voice-confirm` (a shell draws an unknown kind as `voice-confirm`);
+`radius` is logical px or `null`; `index` and `total` count the lesson's
+steps; `wait` says what ends the step: `click`, `rest`, `settle`, `voice`,
+or, on an end state, `off-target` or `done`. It rides the same publish as
+the step's `points` and clears when the status leaves `speaking`, unless an
+end state carries it (so a shell can say why the step ended). An optional
+`"to": {"x","y"}` gives a `motion` step's end point. The shell draws the
+mark at the newest point; it never sends input for the user.
+
 Every shape may also carry two optional fields, absent on older cores
 (shells that do not know them ignore them): `"ms"`, the estimated spoken
 time in milliseconds of the sentence the shape belongs to (a shell paces

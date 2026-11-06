@@ -1,0 +1,19 @@
+{
+ "app": "",
+ "format": "wisp-elementtree/1",
+ "reason": "gi/Atspi bindings not installed",
+ "state": "unavailable",
+ "windows": [
+  {
+   "elements": [],
+   "focused": true,
+   "frame": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "title": "main"
+  }
+ ]
+}

@@ -1,14 +1,22 @@
 ---
 name: nautilus
-description: GNOME Files (Nautilus) path bar, hidden files, and archive shortcuts
+description: Files (Nautilus) and Thunar - path bar, hidden files, new folder, rename. Use for teaching file-manager navigation; not for shell file commands.
 tier: safe
-app_classes: nautilus, org.gnome.nautilus, files, thunar
+app_classes: nautilus, org.gnome.nautilus, thunar
 asks: How do I show hidden files; How do I open a terminal here; How do I connect to a server
+provenance: authored: wisp seed, audited 2026-11-05
 ---
 # nautilus
 
-GNOME Files (Nautilus) shortcuts:
-- **Edit path bar:** `Ctrl+L` to type an exact path
-- **Toggle hidden files (dotfiles):** `Ctrl+H`
-- **New folder / New tab:** `Ctrl+Shift+N` / `Ctrl+T`
-- **Rename / Trash:** `F2` rename, `Delete` move to trash, `Shift+Delete` permanent delete
+## Teaching
+
+### Where things live
+- Left: the sidebar with Home, Recent, Starred and mounted drives. Top: the path bar, then the file list.
+- Nautilus puts a three-line menu at the top right; Thunar uses a menu bar along the top.
+
+### First steps
+- `Ctrl+L` type a path. `Ctrl+H` show or hide dotfiles. `Ctrl+Shift+N` new folder, `Ctrl+T` new tab.
+- `F2` renames the selected file. `Delete` moves it to the Trash.
+
+### Linux pitfalls
+- `Shift+Delete` deletes for good with no Trash step; never suggest it as the default way to remove a file.

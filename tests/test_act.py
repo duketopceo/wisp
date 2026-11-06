@@ -1,5 +1,6 @@
 """Tests for wisp/act.py — the bounded tool-call loop."""
 import json
+import pathlib
 import sys
 import unittest
 from unittest import mock
@@ -133,6 +134,21 @@ class Loop(unittest.TestCase):
                                  initial_image="aGk=")
         self.assertIn("could not confirm", r)
         self.assertEqual((goals.CURRENT or {}).get("status"), "open")
+
+    def test_refused_step_closes_with_attempted_not_done(self):
+        replies = [_msg(calls=[_call("launch", "editor")]),
+                   _msg(content="Done, I opened the editor."),
+                   _msg(content="Done, I opened the editor.")]
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run",
+                               return_value="REFUSED (guard)"):
+            r = act.run_act_loop("open the editor", self.cfg,
+                                 initial_image="aGk=")
+        self.assertIn("attempted", r)
+        self.assertNotIn("Done, I opened", r)
+        sys.path.insert(0, str(pathlib.Path(__file__).parent))
+        import copylint
+        self.assertEqual(copylint.check_string(r.split(": ", 1)[1]), [])
 
     def test_narrated_next_step_is_nudged_back_into_loop(self):
         # live run 2026-10-27: one click, then "Now I'm taking a

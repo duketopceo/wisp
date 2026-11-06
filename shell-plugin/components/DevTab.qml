@@ -600,6 +600,32 @@ Column {
         font.pixelSize: M.font.body
       }
 
+      // key release to first voice, with its stage breakdown
+      Column {
+        readonly property var fv: root.pick ? D.firstVoiceView(root.pick.first_voice) : null
+        visible: fv !== null
+        width: parent.width
+        spacing: M.spacing.xs
+        Text {
+          textFormat: Text.PlainText
+          width: parent.width
+          text: parent.fv ? root.ui("ui.dev.first_voice") + " " + parent.fv.totalText : ""
+          color: root.tk.ink
+          font.family: root.service.fontFamily
+          font.pixelSize: M.font.label
+          font.weight: Font.DemiBold
+        }
+        Text {
+          textFormat: Text.PlainText
+          width: parent.width
+          text: parent.fv ? parent.fv.stagesText : ""
+          wrapMode: Text.Wrap
+          color: root.tk.inkMuted
+          font.family: root.service.fontFamily
+          font.pixelSize: M.font.caption
+        }
+      }
+
       Repeater {
         model: root.pick ? D.stageShares(root.pick.stages, root.pick.total_ms) : []
         delegate: Item {

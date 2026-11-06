@@ -75,6 +75,15 @@ class TestDevLib(unittest.TestCase):
                          "act 27% · launch 50% · answer 0%")
         self.assertEqual(js("D.kindLine({})"), "")
 
+    def test_first_voice_view(self):
+        fv = {"total": 2000, "stages": [{"name": "stt", "ms": 400},
+                                         {"name": "speech", "ms": 1600}]}
+        v = js("D.firstVoiceView(%s)" % json.dumps(fv))
+        self.assertEqual(v["totalText"], "2.0 s")
+        self.assertEqual(v["stagesText"], "stt 400 ms · speech 1600 ms")
+        self.assertIsNone(js("D.firstVoiceView(null)"))
+        self.assertIsNone(js("D.firstVoiceView({})"))
+
     def test_stage_shares_use_total_and_never_overflow(self):
         s = js("D.stageShares(%s, 1000)" % json.dumps(turn()["stages"]))
         self.assertEqual([x["name"] for x in s], ["stt", "brain"])
@@ -250,6 +259,17 @@ class TestScenes(unittest.TestCase):
                 g = ROOT / "tests" / "qml" / "snapshots" / theme / "1x" / \
                     f"DevTab__{v}.png"
                 self.assertTrue(g.exists(), g)
+
+    def test_data_variant_shows_the_composite_and_its_stages(self):
+        scenes = json.loads(read(HARNESS / "scenes.json"))
+        d = scenes["DevTab"]["variants"]["data"]
+        pick = next(t for t in d["reply"]["turns"]
+                    if t["id"] == d["selectedId"])
+        fv = pick["first_voice"]
+        self.assertAlmostEqual(sum(s["ms"] for s in fv["stages"]),
+                               fv["total"], delta=1)
+        self.assertIn("D.firstVoiceView", read(PLUGIN / "components"
+                                               / "DevTab.qml"))
 
     def test_data_variant_selects_a_turn(self):
         scenes = json.loads(read(HARNESS / "scenes.json"))

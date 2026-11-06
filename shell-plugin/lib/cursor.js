@@ -53,11 +53,14 @@ function beaconSync(prev, next) {
 }
 
 // Drawings from state.drawings: [{kind:"ring"|"arrow"|"hl", ...}] ->
-// full records {kind,x,y,r,w,h,x1,y1,x2,y2,ms,tone} (unused fields 0 or "",
+// full records {kind,x,y,r,w,h,x1,y1,x2,y2,ms,tone,pulse} (unused fields 0 or "",
 // so a ListModel sees one role set), at most `max` (16 = the daemon's
 // per-turn cap), malformed shapes dropped. `ms` is the spoken time of the
 // sentence the mark belongs to (the pen's pace, lib/ink.js), `tone` is
-// "light" or "dark" for the screen under it; both optional.
+// "light" or "dark" for the screen under it; both optional. The teaching
+// primitives (lib/teach.js) add "dring" (dashed ring), "region" (soft
+// area, x/y/w/h), "handle" (small dot, x/y/r) and "curve" (arrow-shaped);
+// `pulse` is true on a click ring that breathes in full motion.
 function drawings(list, max) {
   var out = []
   var src = Array.isArray(list) ? list : []
@@ -72,12 +75,12 @@ function drawings(list, max) {
     if (!d || typeof d !== "object") continue
     var r = { kind: d.kind, x: 0, y: 0, r: 0, w: 0, h: 0, x1: 0, y1: 0, x2: 0, y2: 0,
       ms: (typeof d.ms === "number" && isFinite(d.ms) && d.ms > 0) ? d.ms : 0,
-      tone: (d.tone === "light" || d.tone === "dark") ? d.tone : "" }
-    if (d.kind === "ring" && nums(d, ["x", "y", "r"]) && d.r > 0) {
+      tone: (d.tone === "light" || d.tone === "dark") ? d.tone : "", pulse: d.pulse === true }
+    if ((d.kind === "ring" || d.kind === "dring" || d.kind === "handle") && nums(d, ["x", "y", "r"]) && d.r > 0) {
       r.x = d.x; r.y = d.y; r.r = d.r
-    } else if (d.kind === "hl" && nums(d, ["x", "y", "w", "h"]) && d.w > 0 && d.h > 0) {
+    } else if ((d.kind === "hl" || d.kind === "region") && nums(d, ["x", "y", "w", "h"]) && d.w > 0 && d.h > 0) {
       r.x = d.x; r.y = d.y; r.w = d.w; r.h = d.h
-    } else if (d.kind === "arrow" && nums(d, ["x1", "y1", "x2", "y2"])) {
+    } else if ((d.kind === "arrow" || d.kind === "curve") && nums(d, ["x1", "y1", "x2", "y2"])) {
       r.x1 = d.x1; r.y1 = d.y1; r.x2 = d.x2; r.y2 = d.y2
     } else continue
     out.push(r)
@@ -90,7 +93,7 @@ function drawings(list, max) {
 // (a sentence's shape landed, earlier shapes never replay their draw-on),
 // "reset" when it does not, "none" when nothing changed.
 function drawSync(prev, next) {
-  var keys = ["kind", "x", "y", "r", "w", "h", "x1", "y1", "x2", "y2", "ms", "tone"]
+  var keys = ["kind", "x", "y", "r", "w", "h", "x1", "y1", "x2", "y2", "ms", "tone", "pulse"]
   var same = next.length >= prev.length
   for (var i = 0; same && i < prev.length; i++) {
     for (var k = 0; same && k < keys.length; k++) same = prev[i][keys[k]] === next[i][keys[k]]

@@ -17,6 +17,7 @@ How this file is kept:
 
 ## Unreleased
 
+- Walkthrough steps look like what they ask: a ring to click, a dashed ring to hover, a soft area, a small handle to grab, a curve for a drag, and a "say continue" chip with a step counter when Wisp cannot see you do it. Marks hold still when your desktop has reduced motion on.
 - `wispd update` saves a backup of the Wisp files it replaces and checks them against the release afterwards; `wispd update --rollback` restores them, and `--restart` checks the daemon answers. Install, update and `wispd doctor` show a preflight and stop before writing when something blocks.
 - Background agents are live: "agent, fix the tests" starts an OpenCode session that reports progress, asks you out loud for answers and for permission on risky steps, takes follow-ups and can be cancelled. Onboarding (or `wispd install --agents`) downloads the pinned ori and OpenCode for you, and the agent can read your memory unless you set `[agents] mcp_memory = false`.
 - Draw on your screen and ask about it: Wisp draws rings, arrows and highlights, and you can scribble on the screen to point at what you mean.

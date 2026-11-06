@@ -4,6 +4,7 @@ description: Neovim / LazyVim modal editing, Telescope picker, and buffer naviga
 tier: safe
 app_classes: nvim, neovim
 asks: How do I save and quit; How do I search in this file; How do I split the window
+provenance: authored: wisp seed, frontmatter audited 2026-11-05
 ---
 # nvim
 

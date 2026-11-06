@@ -440,10 +440,10 @@ def run_act_loop(task: str, cfg: dict, state=None,
                         "tool call, or reply with what actually "
                         "happened.")})
                     continue
-                if why:
+                if why or _last_refused(steps):
                     # unconfirmed: leave the goal open so "try again"
                     # resumes it instead of starting over
-                    text = f"I could not confirm that worked \u2014 {why}."
+                    text = _attempted_line(steps, why)
                 else:
                     _goals.close("done")
                 out = (f"ACTED ({len(steps)} steps): "
@@ -1180,6 +1180,31 @@ def _same_word(a: str, b: str) -> bool:
     # app binaries drift from spoken names (spotify -> spotifast): a
     # shared 5-letter stem counts as naming the app
     return a == b or (len(a) >= 5 and len(b) >= 5 and a[:5] == b[:5])
+
+
+_REFUSED_PREFIX = ("ERROR", "REFUS", "FAIL", "BLOCKED")
+
+
+def _refused(step: dict) -> bool:
+    """The step's tool result says it did not run."""
+    return str(step.get("result") or "").startswith(_REFUSED_PREFIX)
+
+
+def _last_refused(steps: list) -> bool:
+    last = next((s for s in reversed(steps)
+                 if s.get("tool") in _SCREEN_CHANGING), None)
+    return last is not None and _refused(last)
+
+
+def _attempted_line(steps: list, why: str) -> str:
+    """Closing line when the last effect step was refused: the run
+    claims only what a tool result confirmed, so it says "attempted"."""
+    last = next((s for s in reversed(steps)
+                 if s.get("tool") in _SCREEN_CHANGING), None)
+    if last is not None and _refused(last):
+        return (f"I attempted the {last['tool']}, but it was refused, "
+                "so it is not done.")
+    return f"I could not confirm that worked \u2014 {why}."
 
 
 def _unsupported_done(task: str, steps: list,

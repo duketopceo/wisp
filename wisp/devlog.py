@@ -23,7 +23,7 @@ TRACE_MARGIN = timedelta(minutes=10)
 TRACE_MAX_BYTES = 8 * 1024 * 1024
 # Spans that are aggregates, not stages of their own.
 _TOTAL_SPAN = "done"
-_AGGREGATE = {"done", "e2e"}
+_AGGREGATE = {"done", "e2e", trace.FIRST_VOICE}
 _STEPS = re.compile(r"\((\d+) steps?\)")
 
 
@@ -137,6 +137,7 @@ def _turn(d, spans, lab, meta=None):
     label, note = lab if lab else ("none", "")
     route = ((d.get("answers") or {}).get("route") or {}).get("choice", "")
     meta = meta or {}
+    fv = trace.first_voice(dict(spans))
     row = {"id": str(d.get("turn") or ""), "turn": str(d.get("turn") or ""),
            "ts": d.get("ts", ""),
            "transcript": _clip(d.get("transcript")),
@@ -145,6 +146,8 @@ def _turn(d, spans, lab, meta=None):
            "result": _clip(result), "label": label, "note": _clip(note),
            "total_ms": total, "stages": stages,
            "act_steps": int(m.group(1)) if m else None}
+    if fv is not None:
+        row["first_voice"] = fv
     if meta.get("model"):
         row["model"] = meta["model"]
     if meta.get("provider"):
