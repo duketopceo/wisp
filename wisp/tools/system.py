@@ -77,6 +77,11 @@ def notify_tool(msg: str) -> str:
     return "NOTIFIED"
 
 
+def _log_screen(msg: str) -> None:
+    import logging
+    logging.getLogger("wisp").info(msg)
+
+
 def screenshot(arg: str = "", cfg: dict | None = None) -> str:
     out = config.DATA_DIR / "shots"
     out.mkdir(parents=True, exist_ok=True)
@@ -85,7 +90,12 @@ def screenshot(arg: str = "", cfg: dict | None = None) -> str:
     dom_page = (cfg or {}).get("screen", {}).get("dom_page")
     if dom_page:
         return _dom_shot(f, cfg)
-    from .. import cua_safety
+    from .. import cua_safety, screen_state
+    gone = screen_state.unavailable(cfg)
+    if gone:
+        screen_state.report_once(gone, _log_screen)
+        return screen_state.skip_text(gone)
+    screen_state.clear_reported()
     why = cua_safety.capture_blocked(cfg)
     if why:
         return f"SKIP (screenshot skipped: {why})"

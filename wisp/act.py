@@ -242,6 +242,9 @@ def run_act_loop(task: str, cfg: dict, state=None,
         # no trigger-time image (direct/IPC path) — observe before the
         # first model call so the loop never plans blind
         shot = tools.run("screenshot", "", cfg, harness)
+        from . import screen_state as _ss
+        if _ss.is_unavailable(shot):
+            return shot        # nothing to look at: say why once, stop
         if shot.startswith("SHOT "):
             import pathlib as _pl
             from .tools.system import model_image
@@ -623,6 +626,13 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 d = _delivery.planned(name, cfg) \
                     if refused is not None or served_cached \
                     else guard.last_delivery
+                if name == "screenshot":
+                    from . import screen_state as _ss
+                    if _ss.is_unavailable(result):
+                        _state.action_set(state, aid, status=_tool_status(result),
+                                          reason=result)
+                        _goals.record_steps(steps)
+                        return result
                 kw = {"status": _tool_status(result), "reason": result}
                 if d:
                     kw["delivery"] = d
