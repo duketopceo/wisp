@@ -262,7 +262,7 @@ FIELDS = (
        "(blank for none)",
        pattern=r"|[A-Za-z0-9_.-]+:[^\s,]+(?:,\s*[A-Za-z0-9_.-]+:[^\s,]+)*",
        hint="name:model, name:model, or blank"),
-    _f("ground.vlm_brain", "text", "openrouter:google/gemma-4-31b-it",
+    _f("ground.vlm_brain", "text", "openrouter:qwen/qwen3-vl-235b-a22b-instruct",
        "Model used only to find click targets on screen, as name:model "
        "(blank to use the answer model). It runs alone: no fallbacks",
        pattern=r"|[A-Za-z0-9_.-]+:[^\s,]+", hint="name:model, or blank"),

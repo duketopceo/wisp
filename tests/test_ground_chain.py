@@ -793,7 +793,7 @@ class VlmBrainOverride(unittest.TestCase):
         # gemma/gemini/qwen3-vl answer 0-1000 of the image, not pixels
         from wisp import brain
         cfg = {**self.ACT, "ground": {"vlm_brain":
-                                      "openrouter:google/gemma-4-31b-it"}}
+                                      "openrouter:qwen/qwen3-vl-235b-a22b-instruct"}}
         s = shot()
         with mock.patch.object(brain, "chat", return_value={
                 "content": "[POINT:500,500:Save]"}) as chat:
@@ -867,7 +867,7 @@ class VlmBrainOverride(unittest.TestCase):
         import tomllib
         from wisp import config, settings_schema
         dflt = tomllib.loads(config.DEFAULT_CONFIG)
-        self.assertEqual(dflt["ground"]["vlm_brain"], "openrouter:google/gemma-4-31b-it")
+        self.assertEqual(dflt["ground"]["vlm_brain"], "openrouter:qwen/qwen3-vl-235b-a22b-instruct")
         f = next(f for f in settings_schema.FIELDS
                  if f.key == "ground.vlm_brain")
         self.assertEqual(f.category, "models")

@@ -216,12 +216,13 @@ cost per case.
 `labels` mode (control labels in the prompt) was within noise except
 qwen2.5-vl-72b (0.88 to 1.00). Ranking is accuracy (first try), then p50
 latency, then cost. Three models tie at 1.00 on 24 easy cases, so the
-choice among them is latency and cost, not accuracy: gemma-4-31b-it wins on
-both (p50 0.73 s, $0.000045) but has the worst tail (p95 4.1 s against the
-5 s `fallback_timeout_ms`); gemini-2.5-flash (the previous default) is
-tied on accuracy with p95 0.92 s. `[ground] vlm_brain` now defaults to
-`openrouter:google/gemma-4-31b-it`; set it blank to ground with the act
-brain again. This is a screen on synthetic data, not a measured win on real
+choice among them is latency, cost and tail. The owner picked
+qwen3-vl-235b-a22b-instruct (MoE, 235B total / 22B active): 100 percent,
+p50 0.84 s, p95 1.28 s, $0.00024 per case, inside the 5 s
+`fallback_timeout_ms` with margin. gemma-4-31b-it is cheaper and a touch
+faster at p50 but has a 4.1 s p95. `[ground] vlm_brain` now defaults to
+`openrouter:qwen/qwen3-vl-235b-a22b-instruct`; set it blank to ground with
+the act brain again. This is a screen on synthetic data, not a measured win on real
 screens: confirm on real turns.
 
 ### What exists
@@ -280,10 +281,12 @@ would win is unmeasured here.
 ```sh
 export OPENROUTER_API_KEY=...   # from your key store; never paste it
 python scripts/grounding_bakeoff.py --live --cap 0.80 --cases 24 \
-  --models qwen/qwen3-vl-8b-instruct,qwen/qwen3-vl-30b-a3b-instruct,qwen/qwen3-vl-235b-a22b-instruct,qwen/qwen2.5-vl-72b-instruct,bytedance/ui-tars-1.5-7b,google/gemma-4-31b-it,meta-llama/llama-4-maverick
+  --models qwen/qwen3-vl-8b-instruct,qwen/qwen3-vl-30b-a3b-instruct,qwen/qwen3-vl-235b-a22b-instruct,qwen/qwen2.5-vl-72b-instruct,bytedance/ui-tars-1.5-7b,google/gemma-4-31b-it,meta-llama/llama-4-maverick,nvidia/nemotron-3.5-super-vl
 ```
 
-24 cases, 7 models and 2 modes is 336 calls. Each call is one image of
+`nvidia/nemotron-3.5-super-vl` is added for the next run (not yet run; its
+coordinate convention is unverified, so the harness treats it as `px`
+until checked). 24 cases, 8 models and 2 modes is 384 calls. Each call is one image of
 about 1,000 tokens in and under 64 tokens out, so the cost should be
 well under the cap (an estimate from the table above, not a measurement).
 Paste the printed table here with the date and the seed.
