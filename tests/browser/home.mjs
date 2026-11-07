@@ -15,6 +15,13 @@ const ready = page => page.waitForFunction(() =>
   document.querySelector("#hero-bg").dataset.ready === "true", null, {timeout: 15000});
 const fit = async (page, label) => assert.equal(await page.evaluate(() =>
   document.documentElement.scrollWidth <= innerWidth), true, `${label}: horizontal scroll`);
+const returnToTop = page => page.evaluate(() => {
+  const root = document.documentElement;
+  const behavior = root.style.scrollBehavior;
+  root.style.scrollBehavior = "auto";
+  scrollTo(0, 0);
+  root.style.scrollBehavior = behavior;
+});
 
 for (const name of engines) {
   const browser = await ({chromium, webkit}[name]).launch({
@@ -38,11 +45,15 @@ for (const name of engines) {
       const bg = document.querySelector("#hero-bg");
       return bg.dataset.hero === "static" || bg.dataset.rendered === "true";
     });
+    const initialTheme = await page.evaluate(() => document.documentElement.dataset.theme
+      || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
     const hero = await page.locator("#hero-bg").getAttribute("data-hero");
     assert.ok(["webgl", "static"].includes(hero), hero);
     assert.equal(await page.locator("#hero-bg canvas").count(), hero === "webgl" ? 1 : 0);
     assert.equal(await page.locator("#flame img").isVisible(), true);
     assert.match(await page.locator("h1").innerText(), /A little more\s+reach\./);
+    await fit(page, `1440x900-${initialTheme}`);
+    await page.screenshot({path: `${output}/${name}-desktop-${initialTheme}.png`});
 
     const navInstall = page.getByRole("link", {name: "Install", exact: true});
     const heroInstall = page.getByRole("link", {name: "Install on Omarchy"});
@@ -72,9 +83,6 @@ for (const name of engines) {
       "keyboard focus uses the visible focus treatment");
     assert.notEqual(await page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle), "none");
 
-    await fit(page, "1440x900");
-    await page.screenshot({path: `${output}/${name}-desktop.png`});
-
     if (hero === "webgl") {
       // Context loss drops back to the static frame without errors.
       await page.locator("#hero-bg canvas").evaluate(canvas =>
@@ -90,6 +98,10 @@ for (const name of engines) {
     assert.equal(after, before === "dark" ? "light" : "dark");
     await page.reload({waitUntil: "networkidle"});
     assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), after);
+    await returnToTop(page);
+    await page.waitForFunction(() => window.scrollY === 0);
+    await page.mouse.move(1400, 890);
+    await page.screenshot({path: `${output}/${name}-desktop-${after}.png`});
 
     // FAQ is plain <details>.
     const first = page.locator("#faq details").first();
@@ -103,6 +115,19 @@ for (const name of engines) {
       await fit(page, `${width}x${height}`);
       await page.screenshot({path: `${output}/${name}-${width}x${height}.png`});
     }
+
+    await page.setViewportSize({width: 390, height: 844});
+    await page.goto(base, {waitUntil: "networkidle"});
+    await ready(page);
+    await fit(page, `390x844-${after}`);
+    await page.mouse.move(380, 830);
+    const mobileTheme = await page.evaluate(() => document.documentElement.dataset.theme);
+    await page.screenshot({path: `${output}/${name}-390-${mobileTheme}.png`});
+    await page.locator("#theme-toggle").click();
+    await page.evaluate(() => new Promise(requestAnimationFrame));
+    const alternateMobileTheme = await page.evaluate(() => document.documentElement.dataset.theme);
+    await page.mouse.move(380, 830);
+    await page.screenshot({path: `${output}/${name}-390-${alternateMobileTheme}.png`});
 
     await page.locator("#install").scrollIntoViewIfNeeded();
     await page.getByRole("button", {name: "Copy command"}).click();
@@ -158,6 +183,7 @@ for (const name of engines) {
       await fit(p, mode);
       assert.deepEqual(errors, [], mode);
       assert.deepEqual(outside, [], mode);
+      if (mode === "reduced") await p.screenshot({path: `${output}/${name}-390-reduced.png`});
       await p.locator("#install").scrollIntoViewIfNeeded();
       assert.equal(await p.locator("#install-code").isVisible(), true, mode);
       await c.close();
