@@ -48,6 +48,7 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   --radius-2xl: calc(var(--radius) + 8px);
+  --scale-button-pressed: 0.98;
 
   --spacing-container: 1200px;
   --shadow-md: 0 4px 6px -1px var(--shadow), 0 2px 4px -2px var(--shadow);
@@ -78,7 +79,6 @@
   --ring: oklch(0.56 0.165 44);
   --shadow: #2a14050f;
   --radius: 0.75rem;
-  --button-pressed-scale: 0.98;
   color-scheme: light;
 }
 
