@@ -408,6 +408,10 @@ agent_runtime = "auto"
 [brain.openrouter]
 kind = "openai_compat"
 base_url = "https://openrouter.ai/api/v1"
+# "global" (default) or "us": us sends every OpenRouter call to
+# https://us.openrouter.ai/api/v1. It serves fewer models (no google/gemini-*
+# for one); `wispd doctor` lists configured models the region cannot serve.
+region = "global"
 key_env = "keyring://wisp/openrouter,OPENROUTER_API_KEY"
 vision = "true"
 tools = "true"
