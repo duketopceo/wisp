@@ -1,8 +1,9 @@
 name: website
 
 # Validates both landing lanes on every PR. The enhanced homepage and /plain/
-# become a Cloudflare Workers artifact only after both lanes pass.
-# Publication and custom-domain changes remain separately authorized actions.
+# become a Cloudflare Workers artifact only after both lanes pass. Master pushes
+# deploy that exact artifact; a manual run on master with `ref` set to a
+# reviewed commit rolls production back to that commit's rebuilt bundle.
 on:
   pull_request:
     paths: ["site/**", "site-3d/**", "site-app/**", "scripts/site/**", "scripts/bootstrap/**", "tests/browser/**", "tests/test_site*.py", "tests/test_shipping_claims.py", "assets/readme/**", "assets/brand/wisp-flame/export/**", "README.md", "wrangler.json", "package.json", "package-lock.json", ".github/workflows/pages.yml"]
@@ -10,13 +11,20 @@ on:
     branches: [master]
     paths: ["site/**", "site-3d/**", "site-app/**", "scripts/site/**", "scripts/bootstrap/**", "tests/browser/**", "tests/test_site*.py", "tests/test_shipping_claims.py", "assets/readme/**", "assets/brand/wisp-flame/export/**", "README.md", "wrangler.json", "package.json", "package-lock.json", ".github/workflows/pages.yml"]
   workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit SHA to build and deploy (rollback). Empty deploys master HEAD. Dispatch from master only."
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
 
+# Master runs queue instead of cancelling, so a publish is never killed mid-upload.
 concurrency:
   group: website-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
   build:
@@ -24,6 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
       - name: Test the page rules
         run: python3 -m unittest tests.test_site -v
@@ -36,6 +45,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -76,6 +86,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -92,3 +103,47 @@ jobs:
           path: build/published
           include-hidden-files: true
           if-no-files-found: error
+
+  deploy:
+    # Publishes only the bundle that passed every lane above. Runs for master
+    # pushes and for master dispatches; a dispatch from any other branch is skipped.
+    needs: [build, enhanced, assets]
+    if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://wisp.observer
+    concurrency:
+      group: website-production-deploy
+      cancel-in-progress: false
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install pinned Wrangler from package-lock
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - uses: actions/download-artifact@v4
+        with:
+          name: wisp-workers-assets
+          path: build/published
+      - name: Deploy the tested bundle
+        run: npx --no-install wrangler deploy
+      - name: Smoke-check the public site
+        run: |
+          set -euo pipefail
+          code=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --retry 12 --retry-all-errors --retry-delay 5 https://wisp.observer/)
+          if [ "$code" != "200" ]; then
+            echo "wisp.observer returned HTTP $code"
+            exit 1
+          fi
+          curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 --output "$RUNNER_TEMP/install.py" https://wisp.observer/install.py
+          cmp "$RUNNER_TEMP/install.py" scripts/bootstrap/install.py
+          echo "wisp.observer is 200 and /install.py matches scripts/bootstrap/install.py"
