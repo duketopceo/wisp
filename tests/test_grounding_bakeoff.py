@@ -192,5 +192,55 @@ class LetterboxRoundTrip(unittest.TestCase):
         self.assertEqual(res["rows"][0]["accuracy"], 1.0)
 
 
+@needs_pil
+class Conventions(unittest.TestCase):
+    def test_every_convention_round_trips_on_every_canvas(self):
+        cases = [bo.make_case(i) for i in range(len(bo.CANVASES))]
+        for conv in bo.CONVENTIONS:
+            res = bo.run(cases, [bo.FakeProvider("o", 10, convention=conv)],
+                         modes=("direct",))
+            self.assertEqual(res["rows"][0]["accuracy"], 1.0, conv)
+
+    def test_a_normalized_reply_scored_as_pixels_would_miss(self):
+        # the old harness bug: 0-1000 answers read as pixels
+        c = bo.make_case(0)
+        box = grounding.Shot.from_bytes(bo.render(c)).letterboxed()
+        reply = bo.FakeProvider("o", 10, convention="norm1000").ask(
+            c, box, "", "", "direct").text
+        self.assertFalse(bo.score(c, box, reply)["hit"])
+        self.assertTrue(bo.score(
+            c, box, bo.to_pixel_reply(reply, box, "norm1000"))["hit"])
+
+    def test_out_of_range_and_prose_are_left_alone(self):
+        box = grounding.Shot.from_bytes(bo.render(bo.make_case(0))).letterboxed()
+        for t in ("[POINT:1500,5:x]", "NONE", "left of the page"):
+            self.assertEqual(bo.to_pixel_reply(t, box, "norm1000"), t)
+        self.assertEqual(bo.to_pixel_reply("[POINT:1.5,0.2:x]", box, "frac"),
+                         "[POINT:1.5,0.2:x]")
+
+    def test_model_families_map_to_their_documented_convention(self):
+        self.assertEqual(bo.convention_for("qwen/qwen3-vl-8b-instruct"),
+                         "norm1000")
+        self.assertEqual(bo.convention_for("google/gemini-2.5-flash"),
+                         "norm1000")
+        self.assertEqual(bo.convention_for("qwen/qwen2.5-vl-72b-instruct"),
+                         "px")
+        self.assertEqual(bo.convention_for("meta-llama/llama-4-maverick"),
+                         "frac")
+
+    def test_latency_percentiles_and_ranking(self):
+        self.assertEqual(bo.pctl([1, 2, 3, 4], .5), 2)
+        self.assertEqual(bo.pctl([1, 2, 3, 4], .95), 4)
+        rows = {("a", "direct"): {"n": 2, "hits": 2, "cost": .2,
+                                  "lat": [3.0, 3.0]},
+                ("b", "direct"): {"n": 2, "hits": 2, "cost": .4,
+                                  "lat": [1.0, 1.0]},
+                ("c", "direct"): {"n": 2, "hits": 1, "cost": .0,
+                                  "lat": [.1, .1]}}
+        t = bo.table(rows)
+        self.assertEqual([r["model"] for r in t], ["b", "a", "c"])
+        self.assertEqual(bo.pick_default({"rows": t})["model"], "b")
+
+
 if __name__ == "__main__":
     unittest.main()

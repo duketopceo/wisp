@@ -167,7 +167,9 @@ fallback_timeout_ms = "5000"
 # brain). It runs alone: [brain] fallback is not consulted, so a down
 # grounding model refuses the click instead of trying another model.
 # Local vision example: "ollama_vision:qwen2.5vl:3b-q8_0"
-vlm_brain = ""
+# Default from the grounding bake-off (docs/ACCURACY.md): first-try accuracy,
+# then median latency, then cost. Blank = the act brain.
+vlm_brain = "openrouter:google/gemma-4-31b-it"
 # uitars_url = "http://127.0.0.1:8081"   # default: [health] uitars or this
 # uitars_coords = "px"                    # px | rel1000
 # a11y_frame = "global"                   # global | window (element frames)

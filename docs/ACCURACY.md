@@ -192,12 +192,37 @@ through `tests/fixtures/teach/<id>/` (`case.json`, `capture.png`,
 
 Plan unit U8 in `docs/plans/2026-11-04-1847-feat-wisp-teaching-assistant-parity-roadmap-plan.md`.
 
-**Status: the harness is built and tested offline. The live run was not
-done, so there is no per-model accuracy or cost number yet.** The key
-store was locked when the run was due (`omaseal get openrouter wisp`
-returned `store locked`), so the run was skipped rather than worked
-around. Live spend: $0.00. The default model is unchanged, and no model
-is recommended: nothing was measured.
+**Status: run live 2026-11-07, seed 20261105, 24 held-out synthetic
+cases, 8 models x 2 modes = 384 calls, spend $0.117 (cap $0.80, orch key).**
+An earlier run (qwen2.5-vl-72b 0.917, UI-TARS 0.75, llama-4 ~0.5, and
+**0 for Gemini 2.5 Flash, gemma-4 and every qwen3-vl size**) was a harness
+bug: those families answer in 0-1000 normalized coordinates and the harness
+scored them as pixels. The harness now asks each model for its documented
+convention (`px`, `norm1000`, `frac`), converts through the same
+`grounding.to_pixel_reply` production uses, and records p50/p95 latency and
+cost per case.
+
+| model (mode) | convention | acc | p50 s | p95 s | $/case |
+|---|---|---|---|---|---|
+| google/gemma-4-31b-it (direct) | norm1000 | 1.00 | 0.73 | 4.11 | 0.000045 |
+| google/gemini-2.5-flash (direct) | norm1000 | 1.00 | 0.80 | 0.92 | 0.000146 |
+| qwen/qwen3-vl-235b-a22b (direct) | norm1000 | 1.00 | 0.84 | 1.28 | 0.000243 |
+| qwen/qwen3-vl-8b (direct) | norm1000 | 0.96 | 0.88 | 1.23 | 0.000269 |
+| qwen/qwen2.5-vl-72b (direct) | px | 0.88 | 0.95 | 1.34 | 0.000921 |
+| qwen/qwen3-vl-30b-a3b (direct) | norm1000 | 0.79 | 0.60 | 0.94 | 0.000164 |
+| meta-llama/llama-4-maverick (direct) | frac | 0.79 | 1.30 | 1.66 | 0.000470 |
+| bytedance/ui-tars-1.5-7b (direct) | px | 0.75 | 0.69 | 0.83 | 0.000134 |
+
+`labels` mode (control labels in the prompt) was within noise except
+qwen2.5-vl-72b (0.88 to 1.00). Ranking is accuracy (first try), then p50
+latency, then cost. Three models tie at 1.00 on 24 easy cases, so the
+choice among them is latency and cost, not accuracy: gemma-4-31b-it wins on
+both (p50 0.73 s, $0.000045) but has the worst tail (p95 4.1 s against the
+5 s `fallback_timeout_ms`); gemini-2.5-flash (the previous default) is
+tied on accuracy with p95 0.92 s. `[ground] vlm_brain` now defaults to
+`openrouter:google/gemma-4-31b-it`; set it blank to ground with the act
+brain again. This is a screen on synthetic data, not a measured win on real
+screens: confirm on real turns.
 
 ### What exists
 
