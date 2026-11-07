@@ -192,12 +192,29 @@ through `tests/fixtures/teach/<id>/` (`case.json`, `capture.png`,
 
 Plan unit U8 in `docs/plans/2026-11-04-1847-feat-wisp-teaching-assistant-parity-roadmap-plan.md`.
 
-**Status: the harness is built and tested offline. The live run was not
-done, so there is no per-model accuracy or cost number yet.** The key
-store was locked when the run was due (`omaseal get openrouter wisp`
-returned `store locked`), so the run was skipped rather than worked
-around. Live spend: $0.00. The default model is unchanged, and no model
-is recommended: nothing was measured.
+**Status: live run done 2026-11-07 (seed 20261105, 24 held-out synthetic
+cases, orch key `openrouter/orchestral`). Spend $0.111 of the $0.80 cap,
+wall 436 s for all 16 rows (per-call latency is not recorded by the
+harness; only wall time).** The default model is unchanged: see caveats.
+
+| model | mode | hits/24 | accuracy | USD/case |
+|---|---|---|---|---|
+| qwen/qwen2.5-vl-72b-instruct | labels | 22 | 0.917 | 0.00096 |
+| qwen/qwen2.5-vl-72b-instruct | direct | 20 | 0.833 | 0.00088 |
+| bytedance/ui-tars-1.5-7b | direct / labels | 18 / 18 | 0.750 | 0.00013 |
+| meta-llama/llama-4-maverick | labels / direct | 13 / 12 | 0.54 / 0.50 | 0.00041 |
+| google/gemma-4-31b-it, google/gemini-2.5-flash (shipped default), qwen3-vl 8b/30b-a3b/235b-a22b | both | 0 | 0.000 | 0.00005-0.00027 |
+
+Caveats: the all-zero rows (including the shipped default and every
+qwen3-vl size) are almost certainly a reply-format mismatch, not true
+0 percent pointing: Gemini and Qwen3-VL answer in normalized 0-1000
+coordinates, which `grounding.parse_vlm_reply` scores as outside the
+image when the prompt asks for pixels. Treat those rows as "not
+measured" until the parser/prompt is checked per model. Only the three
+pixel-coordinate models are comparable: qwen2.5-vl-72b leads, UI-TARS
+1.5 7b is within 2 hits of it at about 7x lower cost. Not wired as the
+default: the incumbent was not measured fairly and the owner approves a
+default change on labelled real turns.
 
 ### What exists
 
