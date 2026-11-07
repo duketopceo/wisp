@@ -180,6 +180,28 @@ class Watch:
         """A real-pointer dispatch is about to run (or just did)."""
         self._armed.set()
 
+    def arm_background(self, grace: float = 1.0) -> None:
+        """A drive run that may only use background (cua) delivery: the
+        real cursor and keyboard are the human's, so ANY real input
+        yields. Arms after `grace` seconds (the push-to-talk key's own
+        release must not trip it) and baselines the drift path at the
+        cursor's current position."""
+        if self._expected is None:
+            try:
+                self._expected = self._cursor_pos()
+            except Exception:
+                self._expected = None
+
+        def _go():
+            if not self._stop.is_set():
+                self._armed.set()
+        if grace <= 0:
+            _go()
+            return
+        t = threading.Timer(grace, _go)
+        t.daemon = True
+        t.start()
+
     def expect(self, x, y) -> None:
         """The drive commanded the cursor to (x,y) — the drift baseline."""
         self._armed.set()
@@ -292,6 +314,17 @@ def _drive_possible(cfg: dict | None) -> bool:
     return _delivery.mode(c) != "background"
 
 
+def _watch_wanted(cfg: dict | None) -> bool:
+    """Any run that injects input (drive/auto), background or not."""
+    c = cfg or {}
+    if (c.get("screen") or {}).get("dom_page"):
+        return False
+    return (c.get("pointer") or {}).get("mode") in ("drive", "auto")
+
+
+BACKGROUND_GRACE_S = 1.0
+
+
 def begin(cfg: dict | None) -> str:
     """Reset the watch for a new act run; returns its mode
     ("evdev"|"drift"|"off") so the run can log the active mechanism.
@@ -299,9 +332,12 @@ def begin(cfg: dict | None) -> str:
     try:
         if _WATCH is not None:
             _WATCH.begin()
-        if not _drive_possible(cfg):
+        if not _watch_wanted(cfg):
             return "off"
-        return _watch().mode
+        w = _watch()
+        if w is not None and w.mode != "off":
+            w.arm_background(BACKGROUND_GRACE_S)   # TLY-520
+        return w.mode
     except Exception:
         return "off"
 
