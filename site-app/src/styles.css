@@ -78,6 +78,7 @@
   --ring: oklch(0.56 0.165 44);
   --shadow: #2a14050f;
   --radius: 0.75rem;
+  --button-pressed-scale: 0.98;
   color-scheme: light;
 }
 

@@ -43,6 +43,35 @@ for (const name of engines) {
     assert.equal(await page.locator("#hero-bg canvas").count(), hero === "webgl" ? 1 : 0);
     assert.equal(await page.locator("#flame img").isVisible(), true);
     assert.match(await page.locator("h1").innerText(), /A little more\s+reach\./);
+
+    const navInstall = page.getByRole("link", {name: "Install", exact: true});
+    const heroInstall = page.getByRole("link", {name: "Install on Omarchy"});
+    await heroInstall.hover();
+    await page.mouse.down();
+    assert.notEqual(await heroInstall.evaluate(el => getComputedStyle(el).scale), "none",
+      "a pressed CTA responds immediately");
+    await page.mouse.up();
+
+    const navRest = await navInstall.evaluate(el => getComputedStyle(el).backgroundImage);
+    const heroRest = await heroInstall.evaluate(el => getComputedStyle(el).backgroundImage);
+    assert.equal(navRest, "none", "the sticky Install link is secondary");
+    assert.match(heroRest, /linear-gradient/, "the hero CTA is the primary action");
+    assert.equal(await navInstall.evaluate(el => getComputedStyle(el).transitionDuration), "0s",
+      "hover feedback is immediate");
+    const navBaseColor = await navInstall.evaluate(el => getComputedStyle(el).backgroundColor);
+    await navInstall.hover();
+    const navHoverColor = await navInstall.evaluate(el => getComputedStyle(el).backgroundColor);
+    assert.notEqual(navHoverColor, navBaseColor, "the actionable nav link has a hover state");
+    const passiveCard = page.locator("#what .glass-2").first();
+    await passiveCard.hover();
+    assert.equal(await passiveCard.evaluate(el => getComputedStyle(el).transform), "none",
+      "a passive feature card does not look clickable");
+
+    await page.keyboard.press("Tab");
+    assert.equal(await page.evaluate(() => document.activeElement.matches(":focus-visible")), true,
+      "keyboard focus uses the visible focus treatment");
+    assert.notEqual(await page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle), "none");
+
     await fit(page, "1440x900");
     await page.screenshot({path: `${output}/${name}-desktop.png`});
 
