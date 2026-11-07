@@ -1093,6 +1093,51 @@ def target_at_point(x: int, y: int, cfg: dict | None = None) -> Target | None:
     return None
 
 
+_PIXEL_SOURCES = ("vlm", "uitars", "jev")
+_BLIND_CONTAINERS = frozenset({
+    "window", "application", "document", "webarea", "root", "desktop",
+    "group", "panel", "pane", "generic", "unknown", "frame", "section"})
+
+
+def a11y_blind(cfg: dict | None = None) -> bool:
+    """True when the focused window exposes no interactive accessibility
+    elements at all (Electron/Chromium/Firefox without a11y, canvases,
+    games). Absence of a tree is not evidence that no control is under a
+    pixel-grounded point, so the click guard may trust a confident
+    pixel-grounded NAMED target there. Fail closed: no cua, no focused
+    window, or any error is "not blind"."""
+    try:
+        cua = _default_cua()
+        if cua is None or not cua.available():
+            return False
+        fw = _focused_window(cua.list_windows(timeout=0.5))
+        if fw is None:
+            return False
+        _win, pid, wid = fw
+        tree = cua.window_state(pid, wid, timeout=1.0)
+    except Exception:
+        return False
+    els = tree.get("elements") if isinstance(tree, dict) else None
+    if not isinstance(els, list) or not els:
+        return False     # an empty reply is a failed read, not blindness
+    for el in els:
+        if not isinstance(el, dict) or _rect(
+                el.get("frame", el.get("bounds"))) is None:
+            continue
+        role = str(el.get("role", "")).casefold().removeprefix("ax")
+        if role not in _BLIND_CONTAINERS:
+            return False
+    return True
+
+
+def pixel_grounded_ok(target: "Target", cfg: dict | None = None) -> bool:
+    """A named, confident VLM/UI-TARS/Jev point on a window whose a11y
+    tree is blind. Numeric model clicks (source "model") never qualify."""
+    if target.source not in _PIXEL_SOURCES or target.confidence < 0.8:
+        return False
+    return a11y_blind(cfg)
+
+
 def _default_capture(output: str | None = None):
     """Capture the screen (one output via `grim -o` when named) as a Shot
     that knows its logical origin (normalized) or its output (raw)."""
