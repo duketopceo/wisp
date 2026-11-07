@@ -58,7 +58,7 @@ MODES = ("direct", "labels")   # labels: prompt also lists visible labels
 # Per-call reserve before any cost is observed: bounds the first call's
 # overshoot. Measured in the pilot call, see docs/ACCURACY.md.
 FIRST_CALL_RESERVE_USD = 0.01
-MAX_TOKENS = 64
+MAX_TOKENS = 256               # room for a short reasoning preamble
 CHAT = "https://openrouter.ai/api/v1/chat/completions"
 
 
@@ -150,11 +150,74 @@ def render(case: Case) -> bytes:
     return buf.getvalue()
 
 
+# ------------------------------------------------- coordinate conventions
+#
+# Each model family documents its own pointing coordinates. Scoring them all
+# as absolute pixels of the sent image made every normalized model read as
+# a miss (a harness bug, not a model score). The prompt asks each model for
+# its documented convention and `to_pixel_reply` converts the answer back to
+# pixels of the SENT image before `grounding.parse_vlm_reply` maps it home.
+#   px       absolute pixels of the sent image   (Qwen2.5-VL, UI-TARS)
+#   norm1000 integers 0-1000 of width/height     (Qwen3-VL, Gemini, Gemma)
+#   frac     decimals 0.0-1.0                    (Llama 4 answers this way)
+CONVENTIONS = ("px", "norm1000", "frac")
+MODEL_CONVENTION = (
+    ("qwen3-vl", "norm1000"), ("gemini", "norm1000"), ("gemma", "norm1000"),
+    ("qwen2.5-vl", "px"), ("ui-tars", "px"), ("llama-4", "frac"),
+)
+
+
+def convention_for(model: str, default: str = "px") -> str:
+    m = model.lower()
+    for key, conv in MODEL_CONVENTION:
+        if key in m:
+            return conv
+    return default
+
+
+_TAG = grounding._POINT_TAG
+
+
+def to_pixel_reply(text: str, box, convention: str) -> str:
+    """`[POINT:a,b:label]` in `convention` -> the same tag in pixels of the
+    sent image. norm1000 is production's own conversion
+    (`grounding.to_pixel_reply`); frac is handled here because production
+    parses decimals natively. Prose, NONE and out-of-range numbers come
+    back untouched and score as the miss they are."""
+    if convention == "norm1000":
+        return grounding.to_pixel_reply(text, box, convention)
+    if convention != "frac" or not text:
+        return text
+    m = _TAG.fullmatch(text.strip())
+    if not m:
+        return text
+    a, b = float(m.group(1)), float(m.group(2))
+    if not (0 <= a <= 1 and 0 <= b <= 1):
+        return text
+    return f"[POINT:{a * box.width:.1f},{b * box.height:.1f}:{m.group(3) or ''}]"
+
+
+_RANGE_TEXT = {
+    "norm1000": ("integers from 0 to 1000 (0,0 is the top-left corner, "
+                 "1000,1000 the bottom-right, whatever the image size)"),
+    "frac": ("decimal fractions of the image width and height, each "
+             "between 0.0 and 1.0, origin top-left"),
+}
+
+
 # ----------------------------------------------------------- prompts
 
-def build_prompt(case: Case, box: "grounding.Letterbox", mode: str) -> str:
+def build_prompt(case: Case, box: "grounding.Letterbox", mode: str,
+                 convention: str = "px") -> str:
     p = grounding._VLM_POINT_PROMPT.format(
         target=case.target, hint="", rw=box.width, rh=box.height)
+    if convention in _RANGE_TEXT:
+        p = (f"Locate the UI element described as: {case.target}.\n"
+             f"The attached screenshot is {box.width}x{box.height} pixels. "
+             f"Reply with ONLY one tag of the form "
+             f"`[POINT:<x>,<y>:{case.target}]` where <x> and <y> are the "
+             f"exact center of the element as {_RANGE_TEXT[convention]}, "
+             f"or `NONE` if it is not visible or ambiguous. No prose.")
     if box.padded:
         p += " Black bars at the edges are padding, not part of the screen."
     if mode == "labels":
@@ -169,6 +232,8 @@ def build_prompt(case: Case, box: "grounding.Letterbox", mode: str) -> str:
 class Reply:
     text: str
     cost_usd: float = 0.0
+    latency_s: float = 0.0
+    error: str = ""
 
 
 class SpendCapReached(Exception):
@@ -180,8 +245,10 @@ class FakeProvider:
     target in the SENT image's coordinates; otherwise points at the
     opposite corner. Never touches the network."""
 
-    def __init__(self, name: str, right: int, cost_usd: float = 0.0001):
+    def __init__(self, name: str, right: int, cost_usd: float = 0.0001,
+                 convention: str = "px"):
         self.name, self.right, self.cost = name, right, cost_usd
+        self.convention = convention
 
     def ask(self, case, box, png_b64, prompt, mode) -> Reply:
         if case.cid % 10 < self.right:
@@ -190,21 +257,29 @@ class FakeProvider:
             y = cy * box.scale_y + box.pad_y
         else:
             x, y = 1.0, 1.0
-        return Reply(f"[POINT:{round(x)},{round(y)}:{case.target}]",
-                     self.cost)
+        if self.convention == "norm1000":
+            x, y = x / box.width * 1000, y / box.height * 1000
+        elif self.convention == "frac":
+            x, y = x / box.width, y / box.height
+        a, b = (f"{x:.3f}", f"{y:.3f}") if self.convention == "frac" \
+            else (str(round(x)), str(round(y)))
+        return Reply(f"[POINT:{a},{b}:{case.target}]", self.cost, 0.01)
 
 
 class OpenRouterProvider:
     """Live provider through OpenRouter chat completions. The key comes
     from the environment and is never printed or logged."""
 
-    def __init__(self, model: str, key: str, timeout: float = 60.0):
+    def __init__(self, model: str, key: str, timeout: float = 60.0,
+                 convention: str | None = None):
         self.name, self._key, self.timeout = model, key, timeout
+        self.convention = convention or convention_for(model)
 
     def ask(self, case, box, png_b64, prompt, mode) -> Reply:
         body = json.dumps({
             "model": self.name, "temperature": 0, "max_tokens": MAX_TOKENS,
             "usage": {"include": True},
+            "reasoning": {"enabled": False},
             "messages": [{"role": "user", "content": [
                 {"type": "text", "text": prompt},
                 {"type": "image_url", "image_url": {
@@ -213,15 +288,19 @@ class OpenRouterProvider:
         req = urllib.request.Request(CHAT, data=body, headers={
             "Authorization": "Bearer " + self._key,
             "Content-Type": "application/json"})
+        t0 = time.monotonic()
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as r:
                 doc = json.load(r)
-        except (urllib.error.URLError, OSError, ValueError):
-            return Reply("", 0.0)       # counted as a miss, cost unknown
+        except urllib.error.HTTPError as e:
+            return Reply("", 0.0, time.monotonic() - t0, f"http {e.code}")
+        except (urllib.error.URLError, OSError, ValueError) as e:
+            return Reply("", 0.0, time.monotonic() - t0,
+                         type(e).__name__)   # a miss, cost unknown
         text = ((doc.get("choices") or [{}])[0].get("message") or {}
                 ).get("content") or ""
         cost = float((doc.get("usage") or {}).get("cost") or 0.0)
-        return Reply(str(text).strip(), cost)
+        return Reply(str(text).strip(), cost, time.monotonic() - t0)
 
 
 # ------------------------------------------------------------- scoring
@@ -238,21 +317,47 @@ def score(case: Case, box, reply_text: str) -> dict:
             "err_px": round(((r[0] - cx) ** 2 + (r[1] - cy) ** 2) ** .5, 1)}
 
 
+def pctl(vals: list, q: float):
+    """Nearest-rank percentile of `vals` (None when empty)."""
+    if not vals:
+        return None
+    v = sorted(vals)
+    return v[min(len(v) - 1, max(0, int(-(-q * len(v) // 1)) - 1))]
+
+
 def table(rows: dict) -> list:
-    """Rank rows {(model, mode): {n, hits, cost}} best accuracy first,
-    ties broken by lower cost per case."""
+    """Rank rows {(model, mode): {n, hits, cost, lat}} by first-try
+    accuracy (every case is one attempt), then median latency, then cost
+    per case."""
     out = []
     for (model, mode), r in rows.items():
         n = r["n"]
+        lat = r.get("lat", [])
         out.append({"model": model, "mode": mode, "n": n,
                     "hits": r["hits"],
+                    "convention": r.get("conv", "px"),
+                    "empty": r.get("empty", 0),
+                    "latency_p50_s": None if not lat
+                    else round(pctl(lat, .5), 2),
+                    "latency_p95_s": None if not lat
+                    else round(pctl(lat, .95), 2),
                     "accuracy": round(r["hits"] / n, 3) if n else None,
                     "cost_total_usd": round(r["cost"], 6),
                     "cost_per_case_usd": round(r["cost"] / n, 6)
                     if n else None})
     out.sort(key=lambda x: (-(x["accuracy"] or 0),
+                            x["latency_p50_s"] or 0,
                             x["cost_per_case_usd"] or 0))
     return out
+
+
+def pick_default(res: dict, mode: str = "direct"):
+    """The winning row for `mode` (production sends no label list):
+    rows are already ranked accuracy, p50 latency, cost."""
+    for r in res["rows"]:
+        if r["mode"] == mode and r["n"]:
+            return r
+    return None
 
 
 def run(cases, providers, modes=MODES, cap_usd: float = 0.80,
@@ -261,7 +366,9 @@ def run(cases, providers, modes=MODES, cap_usd: float = 0.80,
     Stops BEFORE a call whose worst-case cost could cross `cap_usd`
     (the largest cost seen so far, or FIRST_CALL_RESERVE_USD before any)
     and returns what it has with `stopped=True`."""
-    rows = {(p.name, m): {"n": 0, "hits": 0, "cost": 0.0}
+    rows = {(p.name, m): {"n": 0, "hits": 0, "cost": 0.0, "lat": [],
+                          "empty": 0,
+                          "conv": getattr(p, "convention", "px")}
             for p in providers for m in modes}
     spent, biggest, stopped = 0.0, 0.0, False
     for case in cases:
@@ -272,9 +379,12 @@ def run(cases, providers, modes=MODES, cap_usd: float = 0.80,
                 if spent + (biggest or FIRST_CALL_RESERVE_USD) > cap_usd:
                     stopped = True
                     break
-                prompt = build_prompt(case, box, m)
+                conv = getattr(p, "convention", "px")
+                prompt = build_prompt(case, box, m, conv)
                 rep = p.ask(case, box, box.b64, prompt, m)
-                s = score(case, box, rep.text)
+                s = score(case, box, to_pixel_reply(rep.text, box, conv))
+                rows[(p.name, m)]["lat"].append(rep.latency_s)
+                rows[(p.name, m)]["empty"] += int(not rep.text)
                 row = rows[(p.name, m)]
                 row["n"] += 1
                 row["hits"] += int(s["hit"])
@@ -292,14 +402,17 @@ def run(cases, providers, modes=MODES, cap_usd: float = 0.80,
 
 
 def render_table(res: dict) -> str:
-    lines = [f"{'model':<44}{'mode':<8}{'n':>4}{'acc':>7}"
-             f"{'$/case':>11}{'total $':>10}"]
+    lines = [f"{'model':<40}{'mode':<8}{'conv':<10}{'n':>4}{'acc':>6}"
+             f"{'p50 s':>7}{'p95 s':>7}{'$/case':>10}{'empty':>6}"]
     for r in res["rows"]:
         acc = "-" if r["accuracy"] is None else f"{r['accuracy']:.2f}"
         pc = "-" if r["cost_per_case_usd"] is None \
             else f"{r['cost_per_case_usd']:.6f}"
-        lines.append(f"{r['model']:<44}{r['mode']:<8}{r['n']:>4}{acc:>7}"
-                     f"{pc:>11}{r['cost_total_usd']:>10.4f}")
+        p50 = "-" if r["latency_p50_s"] is None else f"{r['latency_p50_s']:.2f}"
+        p95 = "-" if r["latency_p95_s"] is None else f"{r['latency_p95_s']:.2f}"
+        lines.append(f"{r['model']:<40}{r['mode']:<8}{r['convention']:<10}"
+                     f"{r['n']:>4}{acc:>6}{p50:>7}{p95:>7}{pc:>10}"
+                     f"{r['empty']:>6}")
     tail = f"spent ${res['spent_usd']:.4f} of cap ${res['cap_usd']:.2f}"
     if res["stopped"]:
         tail += "  -- STOPPED AT THE CAP, partial table"
@@ -319,6 +432,9 @@ def main(argv=None) -> int:
     ap.add_argument("--fake", action="store_true", help="offline fakes")
     ap.add_argument("--list-cases", action="store_true")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--convention", default="",
+                    help="force one convention for every model (default: "
+                         "per model, see MODEL_CONVENTION)")
     a = ap.parse_args(argv)
     tuning, held = split(a.seed)
     held = held[:a.cases]
@@ -339,7 +455,8 @@ def main(argv=None) -> int:
         if not models:
             print("--models is required with --live", file=sys.stderr)
             return 2
-        providers = [OpenRouterProvider(m, key) for m in models]
+        providers = [OpenRouterProvider(m, key, convention=a.convention or None)
+                     for m in models]
     else:
         providers = [FakeProvider("fake/good", 8),
                      FakeProvider("fake/poor", 5)]
