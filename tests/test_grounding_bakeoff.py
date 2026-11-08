@@ -242,5 +242,13 @@ class Conventions(unittest.TestCase):
         self.assertEqual(bo.pick_default({"rows": t})["model"], "b")
 
 
+class Candidates(unittest.TestCase):
+    @needs_pil
+    def test_owner_named_candidates(self):
+        self.assertEqual(set(bo.CANDIDATES), {
+            "qwen/qwen3-vl-235b-a22b-instruct",
+            "nvidia/nemotron-3.5-super-vl", "google/gemma-4-31b-it"})
+
+
 if __name__ == "__main__":
     unittest.main()
