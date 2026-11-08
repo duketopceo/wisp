@@ -7,6 +7,7 @@ import {mkdir} from "node:fs/promises";
 import {chromium, webkit} from "playwright";
 
 const base = process.env.WISP_SITE_URL || "http://127.0.0.1:3000/";
+const baseOrigin = new URL(base).origin;
 const engines = (process.env.WISP_BROWSERS || "chromium").split(",");
 const output = process.env.WISP_QA_OUTPUT || "../../build/browser-qa";
 await mkdir(output, {recursive: true});
@@ -15,6 +16,22 @@ const ready = page => page.waitForFunction(() =>
   document.querySelector("#hero-bg").dataset.ready === "true", null, {timeout: 15000});
 const fit = async (page, label) => assert.equal(await page.evaluate(() =>
   document.documentElement.scrollWidth <= innerWidth), true, `${label}: horizontal scroll`);
+const readTheme = page => page.evaluate(() => document.documentElement.dataset.theme
+  || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+const trackExternalRequests = page => {
+  const outside = [];
+  page.on("request", request => {
+    if (new URL(request.url()).origin !== baseOrigin) outside.push(request.url());
+  });
+  return outside;
+};
+const returnToTop = page => page.evaluate(() => {
+  const root = document.documentElement;
+  const behavior = root.style.scrollBehavior;
+  root.style.scrollBehavior = "auto";
+  scrollTo(0, 0);
+  root.style.scrollBehavior = behavior;
+});
 
 for (const name of engines) {
   const browser = await ({chromium, webkit}[name]).launch({
@@ -26,11 +43,9 @@ for (const name of engines) {
   try {
     const context = await browser.newContext({viewport: {width: 1440, height: 900}});
     const page = await context.newPage();
-    const uncaught = [], external = [];
+    const uncaught = [];
+    const external = trackExternalRequests(page);
     page.on("pageerror", error => uncaught.push(error.stack || error.message));
-    page.on("request", request => {
-      if (new URL(request.url()).origin !== new URL(base).origin) external.push(request.url());
-    });
     await page.goto(base, {waitUntil: "networkidle"});
     await ready(page);
     // A mounted hero either draws its first frame or falls back to the static frame.
@@ -38,13 +53,44 @@ for (const name of engines) {
       const bg = document.querySelector("#hero-bg");
       return bg.dataset.hero === "static" || bg.dataset.rendered === "true";
     });
+    const initialTheme = await readTheme(page);
     const hero = await page.locator("#hero-bg").getAttribute("data-hero");
     assert.ok(["webgl", "static"].includes(hero), hero);
     assert.equal(await page.locator("#hero-bg canvas").count(), hero === "webgl" ? 1 : 0);
     assert.equal(await page.locator("#flame img").isVisible(), true);
     assert.match(await page.locator("h1").innerText(), /A little more\s+reach\./);
-    await fit(page, "1440x900");
-    await page.screenshot({path: `${output}/${name}-desktop.png`});
+    await fit(page, `1440x900-${initialTheme}`);
+    await page.screenshot({path: `${output}/${name}-desktop-${initialTheme}.png`});
+
+    const navInstall = page.getByRole("link", {name: "Install", exact: true});
+    const heroInstall = page.getByRole("link", {name: "Install on Omarchy"});
+    const heroBox = await heroInstall.boundingBox();
+    assert.ok(heroBox, "the hero install CTA is visible");
+    await page.mouse.move(heroBox.x + heroBox.width / 2, heroBox.y + heroBox.height / 2);
+    await page.mouse.down();
+    assert.notEqual(await heroInstall.evaluate(el => getComputedStyle(el).scale), "none",
+      "a pressed CTA responds immediately");
+    await page.mouse.up();
+
+    const navRest = await navInstall.evaluate(el => getComputedStyle(el).backgroundImage);
+    const heroRest = await heroInstall.evaluate(el => getComputedStyle(el).backgroundImage);
+    assert.equal(navRest, "none", "the sticky Install link is secondary");
+    assert.match(heroRest, /linear-gradient/, "the hero CTA is the primary action");
+    assert.equal(await navInstall.evaluate(el => getComputedStyle(el).transitionDuration), "0s",
+      "hover feedback is immediate");
+    const navBaseColor = await navInstall.evaluate(el => getComputedStyle(el).backgroundColor);
+    await navInstall.hover();
+    const navHoverColor = await navInstall.evaluate(el => getComputedStyle(el).backgroundColor);
+    assert.notEqual(navHoverColor, navBaseColor, "the actionable nav link has a hover state");
+    const passiveCard = page.locator("#what .glass-2").first();
+    await passiveCard.hover();
+    assert.equal(await passiveCard.evaluate(el => getComputedStyle(el).transform), "none",
+      "a passive feature card does not look clickable");
+
+    await page.keyboard.press("Tab");
+    assert.equal(await page.evaluate(() => document.activeElement.matches(":focus-visible")), true,
+      "keyboard focus uses the visible focus treatment");
+    assert.notEqual(await page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle), "none");
 
     if (hero === "webgl") {
       // Context loss drops back to the static frame without errors.
@@ -55,25 +101,41 @@ for (const name of engines) {
     }
 
     // Theme toggle: flips, and the choice survives a reload.
-    const before = await page.evaluate(() => matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    const before = initialTheme;
     await page.locator("#theme-toggle").click();
-    const after = await page.evaluate(() => document.documentElement.dataset.theme);
+    const after = await readTheme(page);
     assert.equal(after, before === "dark" ? "light" : "dark");
     await page.reload({waitUntil: "networkidle"});
-    assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), after);
+    assert.equal(await readTheme(page), after);
+    await returnToTop(page);
+    await page.waitForFunction(() => window.scrollY === 0);
+    await page.mouse.move(1400, 890);
+    await page.screenshot({path: `${output}/${name}-desktop-${after}.png`});
 
     // FAQ is plain <details>.
     const first = page.locator("#faq details").first();
     await first.locator("summary").click();
     assert.equal(await first.evaluate(d => d.open), true);
 
-    for (const [width, height] of [[390, 844], [320, 740], [1440, 540]]) {
+    for (const [width, height] of [[320, 740], [1440, 540]]) {
       await page.setViewportSize({width, height});
-      await page.goto(base, {waitUntil: "networkidle"});
-      await ready(page);
       await fit(page, `${width}x${height}`);
       await page.screenshot({path: `${output}/${name}-${width}x${height}.png`});
     }
+
+    await page.setViewportSize({width: 390, height: 844});
+    await page.goto(base, {waitUntil: "networkidle"});
+    await ready(page);
+    await fit(page, `390x844-${after}`);
+    await page.mouse.move(380, 830);
+    const mobileTheme = await readTheme(page);
+    await page.screenshot({path: `${output}/${name}-390-${mobileTheme}.png`});
+    await page.locator("#theme-toggle").click();
+    await page.evaluate(() => new Promise(requestAnimationFrame));
+    const alternateMobileTheme = await readTheme(page);
+    await fit(page, `390x844-${alternateMobileTheme}`);
+    await page.mouse.move(380, 830);
+    await page.screenshot({path: `${output}/${name}-390-${alternateMobileTheme}.png`});
 
     await page.locator("#install").scrollIntoViewIfNeeded();
     await page.getByRole("button", {name: "Copy command"}).click();
@@ -110,11 +172,9 @@ for (const name of engines) {
         if (prototype) prototype.drawArrays = () => { throw new Error("Injected renderer failure"); };
       });
       const p = await c.newPage();
-      const errors = [], outside = [];
+      const errors = [];
+      const outside = trackExternalRequests(p);
       p.on("pageerror", error => errors.push(error.stack || error.message));
-      p.on("request", request => {
-        if (new URL(request.url()).origin !== new URL(base).origin) outside.push(request.url());
-      });
       await p.goto(base, {waitUntil: "networkidle"});
       if (mode !== "no-js") await ready(p);
       assert.equal(await p.locator("#hero-bg").getAttribute("data-hero"), "static", mode);
@@ -129,6 +189,7 @@ for (const name of engines) {
       await fit(p, mode);
       assert.deepEqual(errors, [], mode);
       assert.deepEqual(outside, [], mode);
+      if (mode === "reduced") await p.screenshot({path: `${output}/${name}-390-reduced.png`});
       await p.locator("#install").scrollIntoViewIfNeeded();
       assert.equal(await p.locator("#install-code").isVisible(), true, mode);
       await c.close();
