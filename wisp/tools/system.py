@@ -982,7 +982,8 @@ def _pointer(arg: str, cfg: dict | None, do_click: bool) -> str:
                 and not _vp.is_isolated(cfg)
                 and not _gauntlet.is_gauntlet(cfg)):
             from .. import grounding
-            if grounding.target_at_point(x, y, cfg) is None:
+            if grounding.target_at_point(x, y, cfg) is None \
+                    and not grounding.pixel_grounded_ok(target, cfg):
                 return ("REFUSED (no element at model-chosen coordinates; "
                         "re-observe or name the target)")
         # pointer.Registry owns precedence: a move falls through the
