@@ -60,6 +60,9 @@ MODES = ("direct", "labels")   # labels: prompt also lists visible labels
 FIRST_CALL_RESERVE_USD = 0.01
 MAX_TOKENS = 256               # room for a short reasoning preamble
 CHAT = "https://openrouter.ai/api/v1/chat/completions"
+# Owner-named v2 candidates (plan 2026-11-07, U1). `--models candidates`.
+CANDIDATES = ("qwen/qwen3-vl-235b-a22b-instruct",
+              "nvidia/nemotron-3.5-super-vl", "google/gemma-4-31b-it")
 
 
 # ------------------------------------------------------------- cases
@@ -452,6 +455,8 @@ def main(argv=None) -> int:
                   file=sys.stderr)
             return 2
         models = [m for m in a.models.split(",") if m]
+        if models == ["candidates"]:
+            models = list(CANDIDATES)
         if not models:
             print("--models is required with --live", file=sys.stderr)
             return 2
@@ -462,6 +467,14 @@ def main(argv=None) -> int:
                      FakeProvider("fake/poor", 5)]
     t0 = time.monotonic()
     res = run([make_case(i) for i in held], providers, cap_usd=a.cap)
+    if a.live:
+        # An all-empty row means the calls failed, not that the model
+        # missed: say so instead of publishing a 0% accuracy.
+        for r in res["rows"]:
+            if r["n"] and r.get("empty") == r["n"]:
+                print(f"WARNING: {r['model']} [{r['mode']}] returned no "
+                      "reply for every case (auth or model error); this "
+                      "is not an accuracy result", file=sys.stderr)
     res["seed"], res["held_out_ids"] = a.seed, held
     res["wall_s"] = round(time.monotonic() - t0, 1)
     print(json.dumps(res, indent=2) if a.json else render_table(res))

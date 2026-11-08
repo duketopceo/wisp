@@ -291,6 +291,23 @@ about 1,000 tokens in and under 64 tokens out, so the cost should be
 well under the cap (an estimate from the table above, not a measurement).
 Paste the printed table here with the date and the seed.
 
+### Live run attempt, 2026-11-07 (blocked, no result)
+
+The v2 plan approved a live run (cap $1.00, `orch` wrapper). It did not
+produce data: OpenRouter answered HTTP 401 to every call ("API keys without
+an expiration date are not allowed for this account"), so the stored
+`openrouter/orchestral` key is rejected under the account's key-lifetime
+policy. Spend: $0.00. Every row came back empty, which the harness now
+flags as "not an accuracy result". Unblock: the owner mints an expiring
+key for `orchestral-eval-v3` and re-stores it in OmaSeal, then runs
+`orch python3 scripts/grounding_bakeoff.py --live --cap 1.00 --models candidates`.
+For `nvidia/nemotron-3.5-super-vl` the model card does not document a
+pointing convention; probe `--convention px|norm1000|frac` on 8 cases
+first (about $0.02 each) and add the winner to `MODEL_CONVENTION`. The
+vision default stays as it is until a live result beats
+`qwen3-vl-235b-a22b-instruct`. Real-screen fixtures were not captured:
+they need hand-labelled targets and stay local-only.
+
 ### How to read the result
 
 Synthetic cases are a weak signal: flat, high-contrast, English-only
