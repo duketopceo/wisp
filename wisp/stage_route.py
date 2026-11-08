@@ -150,6 +150,7 @@ def route_stage(ctx) -> bool:
     teach = str(cfg.get("teach", {}).get("auto", "true")).lower() != "false"
     fixed = fixed_route(text, router, teach)
     fast_rule = None
+    decision = None
     if fixed == ("act", None) and router == "act":
         fast = fast_route(text, harness.get("apps"), cfg)
         if fast:
@@ -157,6 +158,13 @@ def route_stage(ctx) -> bool:
             resp = {"answers": fast[0]}
             if fast[0].get("media_arg"):
                 ctx.detail = fast[0]["media_arg"]
+        else:
+            # rules left it open: one small-model call, at turn start,
+            # only when [router] ambiguity_model is set (wisp/turn_router)
+            from . import turn_router
+            decision = turn_router.resolve(text, cfg, harness.get("apps"))
+            if decision and decision.lane == "model":
+                fixed = turn_router.as_route(decision, text)
     if fixed:
         choice, detail = fixed
         if detail:
@@ -173,7 +181,12 @@ def route_stage(ctx) -> bool:
     _trace.emit(turn, "decision", "thought",
                 {"answers": answers,
                  **({"route_lane": "fast_path", "route_rule": fast_rule}
-                    if fast_rule else {"route_lane": ctx.route_lane})},
+                    if fast_rule else {"route_lane": ctx.route_lane}),
+                 **({"router": {"lane": decision.lane,
+                                "rule": decision.rule,
+                                "ms": round(decision.ms, 1),
+                                "model_ms": round(decision.model_ms, 1)}}
+                    if decision else {})},
                 sp.ms["context"] + sp.ms["route"])
     ctx.answers = answers
     return True
