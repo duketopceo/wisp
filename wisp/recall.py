@@ -79,14 +79,17 @@ def _vec_provider(path=None) -> dict | None:
     global _vec_failed
     if _vec_failed:
         return None
-    cfg = config.load_config().get("recall", {})
+    full = config.load_config()
+    cfg = full.get("recall", {})
     if cfg.get("provider", "none") in ("", "none"):
         return None
     try:
         import sqlite_vec  # noqa: F401
     except ImportError:
         return None
-    return cfg
+    from . import region
+    return {**cfg, "base_url": region.apply(
+        full, cfg.get("base_url", "https://openrouter.ai/api/v1"))}
 
 
 def _embed(texts: list, cfg: dict) -> list:

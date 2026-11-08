@@ -444,10 +444,14 @@ def _check_keys(cfg, p):
     if not need:
         return _res("keys", "ok", "no API keys needed")
     miss = _missing_keys(cfg, p)
+    from . import region
+    note = ("  " + region.NOTE) if any(
+        "OPENROUTER" in e.upper() or "openrouter" in e for _r, e in need) \
+        and region.region(cfg) == "global" else ""
     if not miss:
-        return _res("keys", "ok", "all API keys found")
+        return _res("keys", "ok", "all API keys found" + note)
     return _res("keys", "todo", "missing " + ", ".join(
-        f"{config.key_label(e)} ({r})" for r, e in miss),
+        f"{config.key_label(e)} ({r})" for r, e in miss) + note,
         "wispd onboard")
 
 

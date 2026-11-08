@@ -46,7 +46,7 @@ def app_headers(url: str) -> dict:
     must carry the app name (HTTP-Referer + X-Title) so usage/limits
     report correctly."""
     return {"HTTP-Referer": APP_URL, "X-Title": APP_TITLE} \
-        if "openrouter.ai" in (url or "") else {}
+        if "openrouter.ai" in (url or "") else {}  # also us.openrouter.ai
 
 _BUILTINS = {
     "openrouter": {"kind": "openai_compat",
@@ -79,6 +79,8 @@ def _make(cfg: dict, name: str, model: str) -> dict:
     p = dict(_BUILTINS.get(name, _BUILTINS["openai_compat"]))
     p.update({k: v for k, v in cfg.get(f"brain.{name}", {}).items()})
     p["name"], p["model"] = name, model
+    from . import region
+    p["base_url"] = region.apply(cfg, p.get("base_url") or "")
     if name == "trial":
         from . import trial
         p["base_url"] = trial.url(cfg)     # "" while the trial is off

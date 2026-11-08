@@ -95,6 +95,8 @@ def doctor_sections(cfg: dict, cua_probe=None, agents_probe=None) -> list:
         else "set" if key == "set" or (key and key != "n/a")
         else key or "MISSING", bool(key))
 
+    _region_rows(section("openrouter region"), cfg)
+
     row = section("health")
     snap = _health.HealthRegistry(cfg).probe_all()
     if not snap:
@@ -136,6 +138,34 @@ def doctor_sections(cfg: dict, cua_probe=None, agents_probe=None) -> list:
         row(f, f"{fp.stat().st_size // 1024}KB" if fp.exists()
             else "absent")
     return sections
+
+
+def _region_rows(row, cfg: dict, fetch=None) -> None:
+    """The OpenRouter region and the configured models it cannot serve.
+    The one network read (GET <base>/models) only happens in US mode, where
+    a model can be missing; `fetch(cfg, key)` is injectable for tests."""
+    from .. import region
+    sel = region.apply(cfg, "https://openrouter.ai/api/v1")
+    row("region", f"{region.region(cfg)} ({sel})")
+    if region.region(cfg) != "us":
+        return
+    env = str((cfg.get("brain.openrouter") or {}).get(
+        "key_env", "keyring://wisp/openrouter,OPENROUTER_API_KEY"))
+    key = config.load_env_key(env) or ""
+    try:
+        have = (fetch or region.fetch_models)(cfg, key)
+    except (OSError, ValueError) as e:
+        row("us model list", f"could not read {sel}/models: {e}",
+            level="warn", ok=True)
+        return
+    missing = region.models_missing(cfg, have)
+    if not missing:
+        row("models in region", "every configured model is served")
+        return
+    for setting, model in missing:
+        row(f"not in us: {setting}", model, ok=False,
+            fix='pick a US-served model, or set [brain.openrouter] '
+                'region = "global"')
 
 
 def _agent_rows(row, probe=None) -> None:

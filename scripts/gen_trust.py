@@ -70,6 +70,18 @@ HOSTS = {
                 "out of answers. How long OpenRouter and the model "
                 "provider keep a request is set by your OpenRouter "
                 "account's privacy settings, not by Wisp."),
+    "us.openrouter.ai": dict(
+        what="The same OpenRouter calls as `openrouter.ai`, sent to its "
+             "US endpoint instead when `[brain.openrouter] region = "
+             "\"us\"`.",
+        sends=[TEXT, SHOT],
+        detail="Exactly what `openrouter.ai` gets (see above); the host "
+               "is the only difference.",
+        default="No. `region` is `global` until you change it.",
+        key="You. The same OpenRouter key as `openrouter.ai`.",
+        control="`[brain.openrouter] region` (`global` or `us`). The US "
+                "endpoint serves fewer models; `wispd doctor` lists any "
+                "of yours it cannot serve."),
     "api.groq.com": dict(
         what="Speech to text for each push-to-talk turn (any "
              "OpenAI-compatible endpoint works in its place), and the "
