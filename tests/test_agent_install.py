@@ -149,6 +149,17 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(r.tree(), [])
 
 
+class VersionOfTests(unittest.TestCase):
+    def test_build_metadata_is_dropped(self):
+        import os, stat, tempfile
+        with tempfile.TemporaryDirectory() as td:
+            b = os.path.join(td, "ori")
+            with open(b, "w") as f:
+                f.write("#!/bin/sh\necho 'ori 0.16.1+91f9f29'\n")
+            os.chmod(b, os.stat(b).st_mode | stat.S_IEXEC)
+            self.assertEqual(agent_install.version_of(b), "0.16.1")
+
+
 class PinsTests(unittest.TestCase):
     def test_pin_table_shape(self):
         p = agent_pins.pin("opencode", "arm64")
