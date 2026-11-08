@@ -261,6 +261,14 @@ def _amplitude_sampler(seconds: int | None, state=None,
                 proc.wait(timeout=5)
 
 
+def _wordink_fallback_note(err) -> None:
+    """One trace-free log line (no token, no path) when WordInk could not
+    transcribe and the hosted STT takes over."""
+    import sys
+    print(f"stt: wordink unavailable ({err}); using hosted speech to text",
+          file=sys.stderr)
+
+
 def transcribe(wav: pathlib.Path, cfg: dict) -> str:
     stt = config.stt_settings(cfg)
     provider = stt["provider"]
@@ -273,15 +281,22 @@ def transcribe(wav: pathlib.Path, cfg: dict) -> str:
         if text is not None:
             return text
     if provider == "wordink":
+        # optional local engine: the running WordInk app's local API
+        # (wisp/wordink_local.py), else the `wordink` Python module. Any
+        # failure falls back to the hosted STT below, never to silence.
+        from . import wordink_local
+        try:
+            return wordink_local.transcribe(wav, cfg)
+        except wordink_local.WordinkError as e:
+            _wordink_fallback_note(e)
         try:
             import wordink
             return wordink.transcribe(str(wav))
-        except ImportError:
-            raise RuntimeError(
-                "stt provider 'wordink' requested but the wordink "
-                "module is not installed")
         except Exception:
             pass
+        return _transcribe_openai(wav, {**config.STT_DEFAULTS,
+                                        **{k: v for k, v in stt.items()
+                                           if k != "provider"}}, cfg)
     if provider == "openai":
         return _transcribe_openai(wav, stt, cfg)
     model = config.whisper_model(cfg)

@@ -93,6 +93,16 @@ def http_up(url: str, timeout: float = 0.5) -> bool:
         return False
 
 
+def _wordink() -> bool:
+    """True when a running WordInk app has an installed model. Optional:
+    nothing in onboarding requires it."""
+    from . import wordink_local
+    try:
+        return wordink_local.available()
+    except Exception:
+        return False
+
+
 def _whisper_ok(cfg: dict) -> bool:
     if config.stt_settings(cfg)["provider"] != "local":
         return True
@@ -295,6 +305,7 @@ class Probes:
     ori_login_key: object = _ori_login_key
     ori_login_browser: object = _ori_login_browser
     acp_smoke: object = _acp_smoke
+    wordink: object = _wordink
 
 
 # -- progress -------------------------------------------------------------
@@ -404,7 +415,11 @@ def _check_mic(cfg, p):
     if not p.whisper_ok(cfg):
         return _res("mic", "todo", f"{rec} found, speech model missing",
                     "scripts/fetch_whisper.sh")
-    return _res("mic", "ok", f"{rec} and the speech model are ready")
+    note = ""
+    if config.stt_settings(cfg)["provider"] != "wordink" and p.wordink():
+        from . import wordink_local
+        note = "  " + wordink_local.HINT
+    return _res("mic", "ok", f"{rec} and the speech model are ready" + note)
 
 
 def _check_models(cfg, p):
