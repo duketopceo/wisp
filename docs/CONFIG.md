@@ -162,6 +162,7 @@ instead of falling back.
 | `key_env` | env var name; may be `omaseal://service/account` |
 | `paid` | `true`/`false`; defaults to true for `openrouter.ai` URLs. Paid fallback entries need `[brain] allow_paid` |
 | `vision` / `tools` | capability flags — gates screenshots and tool schemas |
+| `region` | `[brain.openrouter]` only: `global` (default) or `us`. `us` moves every OpenRouter call (answers, fallback, sense, grounding, recall embeddings, the eval judge) to `https://us.openrouter.ai/api/v1`; only the exact `openrouter.ai` host is rewritten. The US endpoint serves a subset of models (roughly 131 today; for example qwen/qwen3-vl-235b-a22b-instruct and google/gemma-4-31b-it yes, google/gemini-* and openai/gpt-4.1-mini no). `wispd doctor` reads `GET <base>/models` in US mode and lists each configured model the region cannot serve. Agent runtimes get no OpenRouter URL from Wisp, so they are unaffected. Onboarding mentions the setting at the keys step |
 
 Built-ins: `openrouter`, `ollama`, `lmstudio`, `mlx`.
 
