@@ -210,5 +210,50 @@ class BackgroundArm(unittest.TestCase):
         arm.assert_called_once()
 
 
+class StopLatency(unittest.TestCase):
+    """The sensing half of the 300 ms interrupt budget (the plan, U3):
+    real input -> `yielded()`. The act loop polls `stopped()` between
+    sub-actions, so this plus one sub-action bounds the stop."""
+    BUDGET_S = 0.300
+    TRIALS = 20
+
+    def _times(self, make_watch, poke):
+        out = []
+        for _ in range(self.TRIALS):
+            w = make_watch()
+            w.start()
+            try:
+                w.arm_background(grace=0)
+                t0 = time.monotonic()
+                poke()
+                self.assertTrue(_wait_for(w.yielded, 1.0))
+                out.append(time.monotonic() - t0)
+            finally:
+                w.close()
+        return sorted(out)
+
+    def test_evdev_bytes_flag_a_yield_well_inside_budget(self):
+        holder = {}
+
+        def make():
+            r, wfd = _pipe()
+            holder["w"] = wfd
+            self.addCleanup(lambda: os.close(wfd))
+            return realinput.Watch(devices=[r])
+        ts = self._times(make, lambda: os.write(holder["w"], b"x"))
+        p95 = ts[int(len(ts) * 0.95) - 1]
+        self.assertLess(p95, self.BUDGET_S, ts)
+
+    def test_drift_path_worst_case_is_one_poll_plus_slack(self):
+        pos = {"p": (100, 100)}
+
+        def make():
+            pos["p"] = (100, 100)
+            return realinput.Watch(devices=[], cursor_pos=lambda: pos["p"],
+                                   poll_s=realinput.POLL_S)
+        ts = self._times(make, lambda: pos.update(p=(400, 400)))
+        self.assertLess(max(ts), self.BUDGET_S, ts)
+
+
 if __name__ == "__main__":
     unittest.main()
