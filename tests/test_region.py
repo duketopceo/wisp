@@ -78,9 +78,11 @@ class Models(unittest.TestCase):
 
         def opener(req, timeout):
             seen["url"] = req.full_url
+            seen["ua"] = req.get_header("User-agent")
             return Resp(json.dumps(FIXTURE).encode())
         have = region.fetch_models(self.CFG, "k", opener=opener)
         self.assertEqual(seen["url"], "https://us.openrouter.ai/api/v1/models")
+        self.assertEqual(seen["ua"], "wisp/1.0")
         missing = {m for _s, m in region.models_missing(self.CFG, have)}
         self.assertEqual(missing, {"google/gemini-2.5-flash",
                                    "openai/gpt-4.1-mini",

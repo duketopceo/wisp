@@ -98,7 +98,10 @@ def fetch_models(cfg: dict | None, key: str = "", timeout: float = 8.0,
     ValueError on a network or parse failure (the caller reports it)."""
     req = urllib.request.Request(
         base_url(cfg) + "/models",
-        headers={"Authorization": f"Bearer {key}"} if key else {})
+        # Cloudflare in front of OpenRouter rejects Python's default
+        # `Python-urllib` user agent with 403; name the client.
+        headers={"User-Agent": "wisp/1.0",
+                 **({"Authorization": f"Bearer {key}"} if key else {})})
     with opener(req, timeout=timeout) as r:
         data = json.loads(r.read().decode("utf-8"))
     return {str(m["id"]) for m in data.get("data", []) if m.get("id")}
