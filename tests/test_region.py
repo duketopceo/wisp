@@ -1,3 +1,4 @@
+import http.client
 import io
 import json
 import unittest
@@ -201,6 +202,29 @@ class Denied(unittest.TestCase):
             self.chat(cfg, errs)
         self.assertEqual(cm.exception.code, "region_denied")
 
+    def test_fallback_without_key_does_not_hide_region_denied(self):
+        # the fallback's key is missing, so it fails before any request
+        # goes out: only the US refusal counts, and it names the fix
+        cfg = self.cfg({"fallback": "openrouter:c/d", "allow_paid": "true"})
+        keys = iter(["k"])
+
+        def require_key(name):
+            k = next(keys, None)
+            if k is None:
+                raise errors_codes.WispError("key_missing", "no key")
+            return k
+        sent = []
+
+        def fake(req, timeout=60):
+            sent.append(req.full_url)
+            raise _http_error(US_URL, 403, b"{}")
+        with mock.patch.object(brain.cancel, "urlopen", fake), \
+                mock.patch.object(brain.config, "require_key", require_key):
+            with self.assertRaises(errors_codes.WispError) as cm:
+                brain.chat(self.MSGS, cfg)
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(cm.exception.code, "region_denied")
+
     def test_mixed_chain_stays_brain_down(self):
         cfg = self.cfg({"fallback": "openrouter:c/d", "allow_paid": "true"})
         errs = [_http_error(US_URL, 403, b"{}"), TimeoutError("slow")]
@@ -256,6 +280,21 @@ class LiveRow(unittest.TestCase):
         self.assertIn("zone blocked", r[0][1])
         self.assertIn("Business", r[0][1])
         self.assertIn('region = "global"', r[0][4])
+
+    def test_truncated_body_is_a_row_and_the_rest_continue(self):
+        calls = []
+
+        class Short(Resp):
+            def read(self, *a):
+                raise http.client.IncompleteRead(b"par", 100)
+
+        def opener(req, timeout):
+            calls.append(json.loads(req.data)["model"])
+            return Short(b"") if len(calls) == 1 else Resp(b"{}")
+        r = self.rows(self.CFG, True, opener)
+        self.assertEqual(calls, ["a/b", "c/d"])
+        self.assertEqual([x[2] for x in r], [False, True])
+        self.assertIn("IncompleteRead", r[0][1])
 
     def test_skips_in_global_mode(self):
         def boom(*a, **k):

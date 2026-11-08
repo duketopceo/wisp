@@ -496,13 +496,14 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
                         or isinstance(e, cancel.Cancelled):
                     raise
                 failures.append(_describe(p, e))
-                attempted += 1
-                if _regional_denied(p, e):
-                    denied += 1
                 if getattr(e, "code", "") == "key_missing":
-                    # not an outage: the next entry may have its key
+                    # not an outage: the next entry may have its key; it
+                    # failed before any request, so it is not attempted
                     missing = missing or e
                 else:
+                    attempted += 1
+                    if _regional_denied(p, e):
+                        denied += 1
                     errored = True
                     if HEALTH is not None:
                         HEALTH.report_failure(f"brain_{p['name']}",
@@ -529,6 +530,8 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
     if capped and not errored:
         raise errors_codes.WispError("budget_exceeded",
                                      "; ".join(failures))
+    # a key_missing entry sent nothing, so a regional refusal still names
+    # the region even when a fallback had no key
     if denied and denied == attempted:
         # every entry was refused by the regional host: name the region
         raise errors_codes.WispError("region_denied", "; ".join(failures))

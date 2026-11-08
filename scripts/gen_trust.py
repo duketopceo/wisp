@@ -82,9 +82,10 @@ HOSTS = {
         control="`[brain.openrouter] region` (`global` or `us`). The US "
                 "endpoint serves fewer models; `wispd doctor` lists any "
                 "of yours it cannot serve. `wispd doctor` makes no model "
-                "call; `wispd doctor --live` sends one 1-token chat "
-                "request per configured OpenRouter model to prove the "
-                "region (a fraction of a cent each)."),
+                "call; with `region = \"us\"`, `wispd doctor --live` sends "
+                "one 1-token chat request per configured OpenRouter model "
+                "to the US endpoint to prove the region (a fraction of a "
+                "cent each), and in global mode it makes none."),
     "api.groq.com": dict(
         what="Speech to text for each push-to-talk turn (any "
              "OpenAI-compatible endpoint works in its place), and the "

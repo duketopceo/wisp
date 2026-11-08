@@ -1,6 +1,7 @@
 """Diagnostics: doctor, health, latency, spend, binds, onboard, whatsnew,
 bugreport."""
 import datetime
+import http.client
 import json
 import shutil
 import subprocess
@@ -207,8 +208,11 @@ def _region_live_rows(row, cfg: dict, key: str, opener) -> None:
             row(f"us chat: {model}", value, ok=False,
                 fix='set [brain.openrouter] region = "global"' if denied
                 else "")
-        except (OSError, ValueError) as e:
-            row(f"us chat: {model}", scrub_text(str(e)), ok=False)
+        except (OSError, ValueError, http.client.HTTPException) as e:
+            # a response that ends early (IncompleteRead) is a row, not a
+            # traceback that skips the remaining models
+            row(f"us chat: {model}",
+                scrub_text(f"{type(e).__name__}: {e}"), ok=False)
         else:
             row(f"us chat: {model}", "ok (1 token; a call costs a "
                 "fraction of a cent)")
@@ -304,9 +308,10 @@ def _doctor_args(p):
                    help="list every check, not just the ones that need "
                         "attention")
     p.add_argument("--live", action="store_true",
-                   help="also prove the OpenRouter region with one tiny "
-                        "model call per configured model (costs a "
-                        "fraction of a cent)")
+                   help="with region = \"us\", also prove the US endpoint "
+                        "with one tiny model call per configured model "
+                        "(costs a fraction of a cent); makes no call "
+                        "in global mode")
     p.add_argument("--section", metavar="NAME",
                    help="list every check in one section (see --all for "
                         "the names)")

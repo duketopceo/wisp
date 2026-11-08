@@ -6,8 +6,9 @@ Check every dependency wisp needs
 options:
   -h, --help      show this help message and exit
   --all           list every check, not just the ones that need attention
-  --live          also prove the OpenRouter region with one tiny model call
-                  per configured model (costs a fraction of a cent)
+  --live          with region = "us", also prove the US endpoint with one tiny
+                  model call per configured model (costs a fraction of a
+                  cent); makes no call in global mode
   --section NAME  list every check in one section (see --all for the names)
 
 global options:
