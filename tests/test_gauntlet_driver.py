@@ -907,5 +907,25 @@ class TestIsolatedSession(Base):
         self.assertIn("--ozone-platform=wayland", argv)
 
 
+class TestSeedSilent(unittest.TestCase):
+    """KTD11: a gauntlet's throwaway config is silent by construction."""
+
+    def test_seeded_config_disables_voice(self):
+        import tomllib
+        cfg = tomllib.loads(G.seed_config())
+        self.assertEqual(cfg["voice"]["enabled"], "false")
+
+    def test_seeded_config_launches_no_speech_binary(self):
+        import tomllib
+        from wisp import speech
+        cfg = tomllib.loads(G.seed_config())
+        self.assertFalse(speech.voice_enabled(cfg))
+        with mock.patch("subprocess.Popen") as popen, \
+                mock.patch("subprocess.run") as run:
+            speech.speak("hello", cfg)
+        popen.assert_not_called()
+        run.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

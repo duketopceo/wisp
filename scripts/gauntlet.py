@@ -353,9 +353,11 @@ def seed_config() -> str:
     the owner's settings are read."""
     from wisp import config
     text = config.DEFAULT_CONFIG
-    return re.sub(r'(?m)^key_env = "keyring://wisp/openrouter,'
+    text = re.sub(r'(?m)^key_env = "keyring://wisp/openrouter,'
                   r'OPENROUTER_API_KEY"$',
                   'key_env = "OPENROUTER_API_KEY"', text)
+    # KTD11: a run never speaks (silent by construction)
+    return re.sub(r'(?m)^enabled = "auto"$', 'enabled = "false"', text)
 
 
 def session_env(base: dict, iso=None) -> dict:
