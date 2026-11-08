@@ -364,3 +364,35 @@ console.log(JSON.stringify({result:result,injected:injected}));
             self.assertEqual(result, "CLICKED save" if exists
                              else "SKIP (miss:empty)")
             driver.click.assert_not_called()
+
+
+class PixelGroundedBlindWindowTests(unittest.TestCase):
+    """Real failing turns (t132a30be, tcc29fa36, t70a7f9bb): a confident
+    VLM point (conf 0.9) on a window with an empty a11y tree was REFUSED."""
+
+    def _click(self, elements, target):
+        pc = system._POINTER_CONTEXT
+        tok = pc.set((target, ""))
+        try:
+            with desktop(elements) as reg:
+                out = system.click("100,120", CFG)
+                return out, reg
+        finally:
+            pc.reset(tok)
+
+    def test_vlm_point_allowed_when_tree_blind(self):
+        t = grounding.Target(100, 120, "global", 0.9, "vlm", "the thing")
+        out, reg = self._click([{"role": "AXWindow", "frame": [0, 0, 800, 600]}], t)
+        self.assertTrue(out.startswith("CLICKED"), out)
+
+    def test_vlm_point_refused_when_tree_has_controls_elsewhere(self):
+        t = grounding.Target(100, 120, "global", 0.9, "vlm", "the thing")
+        out, _ = self._click([{"role": "AXButton", "label": "Other",
+                               "frame": [400, 400, 50, 20]}], t)
+        self.assertTrue(out.startswith("REFUSED"), out)
+
+    def test_low_confidence_or_numeric_still_refused(self):
+        for t in (grounding.Target(100, 120, "global", 0.6, "vlm", "x"),
+                  grounding.Target(100, 120, "global", 1.0, "model")):
+            out, _ = self._click([], t)
+            self.assertTrue(out.startswith("REFUSED"), out)
