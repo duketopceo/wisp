@@ -111,7 +111,46 @@ def _pixel_rung(ctx) -> dict:
     return _abstain(f"ambiguous change {frac:.2%}")
 
 
-RUNGS = {"pixel": _pixel_rung}
+# Readers return the visible text of the field a step just wrote to
+# (an a11y value, a DOM value), or None when they cannot see it. The
+# a11y and browser lanes register one; none registered = abstain.
+READERS: dict = {}
+
+
+def register_reader(name: str, fn) -> None:
+    """Add/replace a readback source: fn(ctx) -> str | None."""
+    READERS[str(name)] = fn
+
+
+def _norm_text(t: str) -> str:
+    return " ".join(str(t or "").split()).casefold()
+
+
+def _readback_rung(ctx) -> dict:
+    """Typed text read back from the target field. Seen = landed, a
+    readable field without the text = missed, unreadable = abstain."""
+    step = ctx.step or {}
+    if (step.get("tool") or (ctx.claim or {}).get("tool")) \
+            not in ("type", "fill", "paste"):
+        return _abstain("not a text step")
+    want = _norm_text(step.get("arg"))
+    if not want:
+        return _abstain("no text to read back")
+    for rname in sorted(READERS):
+        try:
+            got = READERS[rname](ctx)
+        except Exception as e:
+            return _abstain(f"reader {rname} error: {e}")
+        if got is None:
+            continue
+        if want in _norm_text(got):
+            return {"vote": "landed", "detail": f"{rname} read it back"}
+        return {"vote": "missed",
+                "detail": f"{rname} field lacks the typed text"}
+    return _abstain("no reader could see the field")
+
+
+RUNGS = {"pixel": _pixel_rung, "readback": _readback_rung}
 
 
 def register_rung(name: str, fn) -> None:
