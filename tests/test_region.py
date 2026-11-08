@@ -192,6 +192,15 @@ class Denied(unittest.TestCase):
         self.assertEqual(cm.exception.code, "brain_down")
         self.assertNotIn("region", cm.exception.detail.lower())
 
+    def test_skipped_fallback_does_not_hide_region_denied(self):
+        # default allow_paid = "false": the openrouter fallback is skipped
+        # without a request, so the only refusal came from the US region
+        cfg = self.cfg({"fallback": "openrouter:c/d", "allow_paid": "false"})
+        errs = [_http_error(US_URL, 403, b"{}")]
+        with self.assertRaises(errors_codes.WispError) as cm:
+            self.chat(cfg, errs)
+        self.assertEqual(cm.exception.code, "region_denied")
+
     def test_mixed_chain_stays_brain_down(self):
         cfg = self.cfg({"fallback": "openrouter:c/d", "allow_paid": "true"})
         errs = [_http_error(US_URL, 403, b"{}"), TimeoutError("slow")]

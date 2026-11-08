@@ -26,7 +26,6 @@ falling back (a second answer would be spliced onto the first). When
 every entry fails the turn ends `brain_down`.
 """
 import json
-import re
 import time
 import urllib.request
 import urllib.error
@@ -188,39 +187,24 @@ def _first_token_s(cfg: dict) -> float:
         return 3.0
 
 
-_SECRET = re.compile(r"(?i)bearer\s+\S+|sk-[a-z0-9_\-]{8,}")
-
-
-def _redact(text: str) -> str:
-    """Drop anything that looks like a bearer token or an API key."""
-    return _SECRET.sub("[redacted]", text)
-
-
-def _http_body(e) -> str:
-    """A short, redacted slice of an HTTP error body: OpenRouter's JSON
-    `error.message` only. Free-text bodies are dropped, because a provider
-    can echo the request (what the user said) back in them and this text
-    reaches stderr. Read once and kept on the exception; "" otherwise."""
+def http_error_message(e) -> str:
+    """OpenRouter's JSON `error.message` from an HTTP error, scrubbed of
+    secrets and capped; "" for any other body. For `wispd doctor --live`
+    output only, whose probe sends a fixed prompt: a turn never shows it,
+    because a provider can echo what the user said in its error body."""
     if not isinstance(e, urllib.error.HTTPError):
         return ""
-    cached = getattr(e, "wisp_body", None)
-    if cached is not None:
-        return cached
     text = ""
     try:
-        raw = e.read(2048).decode("utf-8", "replace").strip()
-        try:
-            err = json.loads(raw).get("error")
-            text = str(err.get("message", "") if isinstance(err, dict)
-                       else err or "")
-        except (ValueError, AttributeError):
-            text = ""
+        err = json.loads(e.read(2048).decode("utf-8", "replace")).get("error")
+        text = str(err.get("message", "") if isinstance(err, dict)
+                   else err or "")
     except Exception:
         pass
-    text = _redact(" ".join(text.split()))[:200]
-    e.wisp_body = text
-    e.close()
-    return text
+    finally:
+        e.close()
+    from .report import scrub_text
+    return scrub_text(" ".join(text.split()))[:200]
 
 
 def _regional_denied(p: dict, e) -> bool:
@@ -234,12 +218,8 @@ def _post(url: str, headers: dict, body: dict, timeout: float = 60) -> dict:
         url, data=json.dumps(body).encode(),
         headers={"User-Agent": UA, "Content-Type": "application/json",
                  **headers}, method="POST")
-    try:
-        with cancel.urlopen(req, timeout=timeout) as r:
-            return json.loads(r.read())
-    except urllib.error.HTTPError as e:
-        _http_body(e)
-        raise
+    with cancel.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read())
 
 
 def _headers(p: dict) -> dict:
@@ -427,7 +407,6 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
     except Exception as e:
         if cancel.is_cancelled():
             raise cancel.Cancelled() from e
-        _http_body(e)
         if acc:  # the caller already saw text: never splice a 2nd answer
             err = errors_codes.classify(e, "brain_down")
             err.committed = True
@@ -483,7 +462,9 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
     failures: list = []
     first_failed = None
     capped = errored = False
-    denied = 0
+    # region_denied needs every request that went out refused by the
+    # regional host; skipped entries made no request and do not count
+    attempted = denied = 0
     missing = None
     for i, p in enumerate(chain(cfg)):
         cancel.check()  # a cancelled turn never moves to the next brain
@@ -515,7 +496,9 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
                         or isinstance(e, cancel.Cancelled):
                     raise
                 failures.append(_describe(p, e))
-                denied += _regional_denied(p, e)
+                attempted += 1
+                if _regional_denied(p, e):
+                    denied += 1
                 if getattr(e, "code", "") == "key_missing":
                     # not an outage: the next entry may have its key
                     missing = missing or e
@@ -546,7 +529,7 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
     if capped and not errored:
         raise errors_codes.WispError("budget_exceeded",
                                      "; ".join(failures))
-    if denied and denied == len(failures):
+    if denied and denied == attempted:
         # every entry was refused by the regional host: name the region
         raise errors_codes.WispError("region_denied", "; ".join(failures))
     raise errors_codes.WispError("brain_down", "; ".join(failures))

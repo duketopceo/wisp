@@ -182,32 +182,33 @@ def _region_rows(row, cfg: dict, fetch=None, live: bool = False,
 def _region_live_rows(row, cfg: dict, key: str, opener) -> None:
     """One minimal authenticated chat call per configured OpenRouter model
     at the US host. Costs a fraction of a cent per model; never prints the
-    key, and error bodies are redacted by brain._http_body."""
-    import json
+    key, and error bodies are scrubbed by brain.http_error_message."""
     from .. import brain, region
+    from ..report import scrub_text
     url = region.base_url(cfg) + "/chat/completions"
+    # the same headers a real turn sends (UA plus OpenRouter attribution)
+    headers = {"User-Agent": brain.UA, "Content-Type": "application/json",
+               **brain.app_headers(url),
+               **({"Authorization": f"Bearer {key}"} if key else {})}
     for model in region.live_models(cfg):
         body = {"model": model, "max_tokens": 1,
                 "messages": [{"role": "user", "content": "hi"}]}
-        req = urllib.request.Request(
-            url, data=json.dumps(body).encode(), method="POST",
-            headers={"User-Agent": "wisp/1.0",
-                     "Content-Type": "application/json",
-                     **({"Authorization": f"Bearer {key}"} if key else {})})
+        req = urllib.request.Request(url, data=json.dumps(body).encode(),
+                                     method="POST", headers=headers)
         try:
             with opener(req, timeout=20) as r:
                 r.read()
         except urllib.error.HTTPError as e:
-            msg = brain._http_body(e) or str(e)
-            if e.code in (401, 403):
-                row(f"us chat: {model}",
-                    f"HTTP {e.code}: {msg} (the US endpoint may need a "
-                    "Business/Enterprise account)", ok=False,
-                    fix='set [brain.openrouter] region = "global"')
-            else:
-                row(f"us chat: {model}", f"HTTP {e.code}: {msg}", ok=False)
+            value = f"HTTP {e.code}: {brain.http_error_message(e) or e}"
+            denied = e.code in (401, 403)
+            if denied:
+                value += (" (the US endpoint may need a Business/Enterprise "
+                          "account)")
+            row(f"us chat: {model}", value, ok=False,
+                fix='set [brain.openrouter] region = "global"' if denied
+                else "")
         except (OSError, ValueError) as e:
-            row(f"us chat: {model}", brain._redact(str(e)), ok=False)
+            row(f"us chat: {model}", scrub_text(str(e)), ok=False)
         else:
             row(f"us chat: {model}", "ok (1 token; a call costs a "
                 "fraction of a cent)")
