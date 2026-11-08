@@ -87,7 +87,8 @@ Setup, the rules it keeps and Stop: `docs/BROWSER_LANE.md`.
 
 | key | default | meaning |
 |-----|---------|---------|
-| `provider` | `"openai"` | `openai` (compatible audio API, hosted Groq by default) or `local` (whisper.cpp) |
+| `provider` | `"openai"` | `openai` (compatible audio API, hosted Groq by default), `local` (whisper.cpp) or `wordink` (optional: a running [WordInk](https://github.com/duketopceo/WordInk) desktop app on this machine, through its loopback local API; Neural Engine or GPU, no audio leaves the computer). With `wordink`, any failure (app not running, no installed model, error) falls back to the hosted `openai` settings below, so it can never leave you without speech to text. Install and onboarding never need WordInk; onboarding only suggests it when it finds the app running with a model installed. Streaming is off with `wordink` |
+| `wordink_model` | blank | with `provider = "wordink"`: the WordInk model id to use; blank picks an installed Parakeet, else the first installed model |
 | `base_url` | groq URL | endpoint for `openai` provider |
 | `model` | `whisper-large-v3-turbo` | STT model id |
 | `key_env` | `GROQ_API_KEY` | env var / `.env` key name holding the key |
