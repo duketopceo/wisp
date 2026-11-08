@@ -1,0 +1,17 @@
+[
+ {"text": "open firefox", "expect": "rule"},
+ {"text": "pause the music", "expect": "rule"},
+ {"text": "what does this error mean", "expect": "rule"},
+ {"text": "what time is it in Tokyo", "expect": "rule"},
+ {"text": "click the save button", "expect": "rule"},
+ {"text": "scroll down", "expect": "rule"},
+ {"text": "why is the sky blue?", "expect": "rule"},
+ {"text": "show me how to crop an image in GIMP", "expect": "rule"},
+ {"text": "wisp agent research three laptops and compare them", "expect": "rule"},
+ {"text": "mute", "expect": "rule"},
+ {"text": "the build keeps failing on the second step", "expect": "ambiguous"},
+ {"text": "open the quarterly deck from last week", "expect": "ambiguous"},
+ {"text": "my screen looks too bright", "expect": "ambiguous"},
+ {"text": "can you take care of the invoices", "expect": "ambiguous"},
+ {"text": "is it possible to open the logs and tail them", "expect": "ambiguous"}
+]
