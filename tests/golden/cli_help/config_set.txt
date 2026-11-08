@@ -38,8 +38,8 @@ voice:
                                default hannah; autumn, diana, hannah, austin, daniel, troy
   quiet.on_calls               Hold announcements nobody asked for (a finished background agent) while a call or a screen share is on
                                default true; true or false
-  stt.provider                 Speech to text: an OpenAI-compatible API or local whisper.cpp
-                               default openai; openai, local
+  stt.provider                 Speech to text: an OpenAI-compatible API, local whisper.cpp, or WordInk (a running WordInk app, on this machine; the hosted API is the fallback)
+                               default openai; openai, local, wordink
 pointer:
   pointer.mode                 guide points, drive clicks for you, auto does either
                                default auto; guide, drive, auto
