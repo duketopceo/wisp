@@ -26,11 +26,14 @@ falling back (a second answer would be spliced onto the first). When
 every entry fails the turn ends `brain_down`.
 """
 import json
+import re
 import time
 import urllib.request
 import urllib.error
+from urllib.parse import urlparse
 
 from . import cancel, config, errors_codes, ledger
+from . import region as _region
 
 # set by the daemon: a health.HealthRegistry; entries it knows are down
 # are skipped without a connection attempt
@@ -185,13 +188,58 @@ def _first_token_s(cfg: dict) -> float:
         return 3.0
 
 
+_SECRET = re.compile(r"(?i)bearer\s+\S+|sk-[a-z0-9_\-]{8,}")
+
+
+def _redact(text: str) -> str:
+    """Drop anything that looks like a bearer token or an API key."""
+    return _SECRET.sub("[redacted]", text)
+
+
+def _http_body(e) -> str:
+    """A short, redacted slice of an HTTP error body: OpenRouter's JSON
+    `error.message` only. Free-text bodies are dropped, because a provider
+    can echo the request (what the user said) back in them and this text
+    reaches stderr. Read once and kept on the exception; "" otherwise."""
+    if not isinstance(e, urllib.error.HTTPError):
+        return ""
+    cached = getattr(e, "wisp_body", None)
+    if cached is not None:
+        return cached
+    text = ""
+    try:
+        raw = e.read(2048).decode("utf-8", "replace").strip()
+        try:
+            err = json.loads(raw).get("error")
+            text = str(err.get("message", "") if isinstance(err, dict)
+                       else err or "")
+        except (ValueError, AttributeError):
+            text = ""
+    except Exception:
+        pass
+    text = _redact(" ".join(text.split()))[:200]
+    e.wisp_body = text
+    e.close()
+    return text
+
+
+def _regional_denied(p: dict, e) -> bool:
+    """A 401/403 from the US regional host (KTD13)."""
+    return isinstance(e, urllib.error.HTTPError) and e.code in (401, 403) \
+        and urlparse(p.get("base_url") or "").hostname == _region.US_HOST
+
+
 def _post(url: str, headers: dict, body: dict, timeout: float = 60) -> dict:
     req = urllib.request.Request(
         url, data=json.dumps(body).encode(),
         headers={"User-Agent": UA, "Content-Type": "application/json",
                  **headers}, method="POST")
-    with cancel.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read())
+    try:
+        with cancel.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        _http_body(e)
+        raise
 
 
 def _headers(p: dict) -> dict:
@@ -379,6 +427,7 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
     except Exception as e:
         if cancel.is_cancelled():
             raise cancel.Cancelled() from e
+        _http_body(e)
         if acc:  # the caller already saw text: never splice a 2nd answer
             err = errors_codes.classify(e, "brain_down")
             err.committed = True
@@ -398,6 +447,14 @@ def _describe(p: dict, e: Exception) -> str:
         from . import trial
         if trial.limit_reached(e):
             return f"brain provider 'trial': {trial.LIMIT_LINE}"
+    # The provider's error body is never put here: this text reaches
+    # stderr, and a provider can echo the request (what the user said)
+    # back in its error. `wispd doctor --live` shows the body instead,
+    # because its probe sends a fixed prompt.
+    if _regional_denied(p, e):
+        return (f"brain provider '{p['name']}' was refused by the "
+                f"{_region.US_HOST} region (HTTP {e.code}); run "
+                f"`wispd doctor --live` for OpenRouter's reason")
     if errors_codes.is_connection_failure(e):
         return (f"brain provider '{p['name']}' unreachable at "
                 f"{p['base_url']} ({e})")
@@ -426,6 +483,7 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
     failures: list = []
     first_failed = None
     capped = errored = False
+    denied = 0
     missing = None
     for i, p in enumerate(chain(cfg)):
         cancel.check()  # a cancelled turn never moves to the next brain
@@ -457,6 +515,7 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
                         or isinstance(e, cancel.Cancelled):
                     raise
                 failures.append(_describe(p, e))
+                denied += _regional_denied(p, e)
                 if getattr(e, "code", "") == "key_missing":
                     # not an outage: the next entry may have its key
                     missing = missing or e
@@ -487,6 +546,9 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
     if capped and not errored:
         raise errors_codes.WispError("budget_exceeded",
                                      "; ".join(failures))
+    if denied and denied == len(failures):
+        # every entry was refused by the regional host: name the region
+        raise errors_codes.WispError("region_denied", "; ".join(failures))
     raise errors_codes.WispError("brain_down", "; ".join(failures))
 
 

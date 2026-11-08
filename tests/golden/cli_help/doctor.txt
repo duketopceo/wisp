@@ -1,4 +1,4 @@
-usage: wispd doctor [-h] [--all] [--section NAME] [--json] [--quiet]
+usage: wispd doctor [-h] [--all] [--live] [--section NAME] [--json] [--quiet]
                     [--no-color]
 
 Check every dependency wisp needs
@@ -6,6 +6,8 @@ Check every dependency wisp needs
 options:
   -h, --help      show this help message and exit
   --all           list every check, not just the ones that need attention
+  --live          also prove the OpenRouter region with one tiny model call
+                  per configured model (costs a fraction of a cent)
   --section NAME  list every check in one section (see --all for the names)
 
 global options:
