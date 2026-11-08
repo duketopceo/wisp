@@ -115,6 +115,24 @@ The recap is off by default. `wispd recap --json` previews local data,
 disables it. Recorded spend is not necessarily measured spend; see
 `docs/GROWTH.md` for provenance and missing-data limits.
 
+## [router] — turn-type router
+
+Wisp decides what kind of turn this is (act, teach, answer, or hand-off to the computer-use agent) with rules first. A model is asked only when the rules cannot tell.
+
+| key | default | meaning |
+|-----|---------|---------|
+| `ambiguity_model` | blank | `name:model` of a small fast model asked ONCE, at the start of the turn, for the turns the rules leave open (a statement with no verb, an unknown app, a question that carries an action verb). Blank never asks a model and the turn goes to the act loop as before. Example: `openrouter:nvidia/nemotron-3.5-lightning`. A slow, failing or unparseable answer falls back to act |
+| `ambiguity_timeout_s` | `1.5` | how long that one call may take (0.1 to 10) |
+
+No model is ever called between the steps of a running job or walkthrough, and a turn that arrives while a walkthrough is paused is decided by rules alone. `python scripts/router_latency.py` measures decision latency over `tests/fixtures/router_turns.json` with a stub model (no network); the model round trip it adds is an assumption you set with `--model-ms`.
+
+## [grader] — end-of-task grader
+
+| key | default | meaning |
+|-----|---------|---------|
+| `enabled` | `false` | after an act-loop task finishes, one model grades the run (ok, partial, fail) and a short lesson is appended to `grades.jsonl` in the data dir. It runs in the background writer, after the task, never on the turn's critical path, and changes no label or route |
+| `model` | blank | `name:model` for the grader; blank uses `[agent] model` |
+
 ## [agent] — action policy and optional grounding
 
 | key | default | meaning |

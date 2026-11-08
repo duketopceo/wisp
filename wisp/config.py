@@ -83,6 +83,22 @@ task_timeout_s = 1800
 # ones; guided confirms reversible steps too; always_ask confirms all
 autonomy = "autonomous"
 
+[router]
+# Turn-type router (wisp/turn_router.py): rules decide act / teach /
+# answer / agent first. Only when the rules cannot tell is ONE small model
+# asked, at the start of the turn, never between steps of a running job.
+# Blank (default) = never ask a model. Example:
+# ambiguity_model = "openrouter:nvidia/nemotron-3.5-lightning"
+ambiguity_model = ""
+ambiguity_timeout_s = "1.5"
+
+[grader]
+# End-of-task grader (wisp/grader.py): after a task finishes, off the
+# critical path, one model grades the run and a lesson is logged to
+# grades.jsonl. Blank model = [agent] model.
+enabled = "false"
+model = ""
+
 [sense]
 # Passive activity sense + proactive suggestions. Off by default —
 # opt in. Sources are local: hyprctl window deltas + dayflow journal.

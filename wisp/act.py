@@ -1119,6 +1119,10 @@ def _record_traj(task: str, harness: dict | None, steps: list, out: str,
     def write():
         record(task, _app(harness), snap, out, surface=_surface(cfg),
                pack=pack)
+        # end-of-task grader (wisp/grader.py): off the turn's hot path,
+        # after the run finished; a no-op unless [grader] enabled = "true"
+        from . import grader
+        grader.grade(task, snap, out, cfg or {})
     bgwriter.submit(write)
 
 
