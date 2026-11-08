@@ -43,6 +43,7 @@ class Fakes:
         self.submap_present = submap
         self.recorder = recorder
         self.model = model
+        self.wordink = False
         self.notifier = notifier
         self.keys = {"OPENROUTER_API_KEY", "GROQ_API_KEY"} \
             if keys is None else set(keys)
@@ -115,7 +116,8 @@ class Fakes:
             key=lambda env: "k" if env in self.keys else "",
             store_key=store, secret=secret, agents=agents,
             agent_install=install, ori_login_key=login_key,
-            ori_login_browser=login_browser, acp_smoke=smoke)
+            ori_login_browser=login_browser, acp_smoke=smoke,
+            wordink=lambda: self.wordink)
 
 
 def tree(root):
