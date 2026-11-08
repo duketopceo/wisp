@@ -397,6 +397,60 @@ class Terminal(LadderCase):
         self.assertEqual(s["verify"]["verdict"], "missed")
 
 
+@unittest.skipUnless(_HAVE_DIFF, "no PIL or ImageMagick diff backend")
+class Readback(LadderCase):
+    def _run(self, reader, changed, judge=None):
+        d = _turn_dir(self.root)
+        self.frames(d, changed=changed)
+        step = _step(d, name="type", arg="hello world")
+        with mock.patch.dict(verify.READERS, clear=True):
+            if reader is not None:
+                verify.register_reader("a11y", reader)
+            return call(step, judge=judge, claim={
+                "kind": "region", "tool": "type", "rect": [50, 50, 100, 100]})
+
+    def test_text_read_back_corroborates_a_changed_region(self):
+        vd = self._run(lambda c: "Hello   World!", changed=True)
+        self.assertEqual(vd["verdict"], "landed")
+        self.assertEqual(vd["source"], "pixel+readback")
+        self.assertTrue(vd["corroborated"])
+
+    def test_field_without_the_text_is_a_corroborated_miss(self):
+        vd = self._run(lambda c: "", changed=False)
+        self.assertEqual(vd["verdict"], "missed")
+        self.assertTrue(vd["corroborated"])
+
+    def test_readback_overrules_a_busy_screen_via_the_judge(self):
+        seen = []
+
+        def judge(*a):
+            seen.append(1)
+            return {"verdict": "missed", "detail": "field empty"}
+        vd = self._run(lambda c: "other", changed=True, judge=judge)
+        self.assertEqual(seen, [1])
+        self.assertEqual(vd["verdict"], "missed")
+
+    def test_unreadable_field_abstains(self):
+        vd = self._run(lambda c: None, changed=True)
+        self.assertEqual(vd["source"], "pixel")
+        self.assertFalse(vd["corroborated"])
+
+    def test_reader_error_abstains_never_lands(self):
+        def boom(c):
+            raise RuntimeError("atspi down")
+        vd = self._run(boom, changed=False)
+        self.assertEqual(vd["verdict"], "missed")
+        self.assertEqual(vd["source"], "pixel")
+
+    def test_click_steps_ignore_readers(self):
+        d = _turn_dir(self.root)
+        self.frames(d, changed=True)
+        with mock.patch.dict(verify.READERS, clear=True):
+            verify.register_reader("a11y", lambda c: "")
+            vd = call(_step(d))
+        self.assertEqual(vd["source"], "pixel")
+
+
 class Postcondition(unittest.TestCase):
     def test_element_rect_from_target(self):
         tgt = SimpleNamespace(x=50, y=60, rect=(40, 50, 20, 12),
