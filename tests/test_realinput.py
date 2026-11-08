@@ -9,6 +9,7 @@ import pathlib
 import sys
 import time
 import unittest
+import unittest.mock
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -154,6 +155,59 @@ class BeginGuards(unittest.TestCase):
         # no pointer drive config → begin() is "off" and no Watch exists
         self.assertEqual(realinput.begin({"agent": {}}), "off")
         self.assertIsNone(realinput._WATCH)
+
+
+class BackgroundArm(unittest.TestCase):
+    """TLY-520: background (cua) runs yield to real input too."""
+
+    def test_evdev_input_after_grace_yields(self):
+        r, wfd = _pipe()
+        w = realinput.Watch(devices=[r], poll_s=0.02)
+        self.addCleanup(w.close)
+        w.start()
+        w.begin()
+        w.arm_background(grace=0.05)
+        time.sleep(0.15)
+        os.write(wfd, b"x")
+        self.assertTrue(_wait_for(w.yielded))
+        with self.assertRaises(cancel.Cancelled):
+            w.check()
+
+    def test_input_inside_grace_is_ignored(self):
+        r, wfd = _pipe()
+        w = realinput.Watch(devices=[r], poll_s=0.02)
+        self.addCleanup(w.close)
+        w.start()
+        w.begin()
+        w.arm_background(grace=5)
+        os.write(wfd, b"x")                # the PTT key release
+        time.sleep(0.2)
+        self.assertFalse(w.yielded())
+        w.finish()
+
+    def test_cursor_drift_yields_without_any_drive_dispatch(self):
+        pos = {"p": (300, 300)}
+        w = realinput.Watch(devices=[], cursor_pos=lambda: pos["p"],
+                            poll_s=0.02)
+        self.addCleanup(w.close)
+        w.start()
+        w.begin()
+        w.arm_background(grace=0)
+        pos["p"] = (300 + w._drift_px + 9, 300)
+        self.assertTrue(_wait_for(w.yielded))
+
+    def test_begin_covers_a_background_delivery_run(self):
+        realinput._stop_for_test()
+        self.addCleanup(realinput._stop_for_test)
+        cfg = {"pointer": {"mode": "drive"}, "cua": {"delivery": "background"}}
+        fake = realinput.Watch(devices=[], cursor_pos=lambda: (1, 1))
+        fake.mode = "drift"
+        with unittest.mock.patch.object(realinput, "_create",
+                                        return_value=fake), \
+                unittest.mock.patch.object(realinput.Watch,
+                                           "arm_background") as arm:
+            realinput.begin(cfg)
+        arm.assert_called_once()
 
 
 if __name__ == "__main__":
