@@ -391,14 +391,16 @@ HeyClicky currently leads on polish, voice robustness, packaging and a Mac-first
 
 ## Owner decisions
 
-1. **Default vision model:** switch to `qwen3-vl-235b-a22b` only after U1 and a labelled check; approve the live bake-off spend (cap $0.80, orchestral key).
-2. **SDK packaging (U12):** private venv or vendored copy, and whether the SDK becomes a default or stays optional.
-3. **Secret store (U13):** Secret Service plus omaseal-when-present, or omaseal only.
-4. **US routing (U14):** it is Business/Enterprise per OpenRouter docs; keep as an off-by-default advanced option or drop for now.
-5. **Browser lane:** make BrowserOS MCP the primary backend on this machine, or install the Wisp extension (U9); confirm 9010 versus 9200.
-6. **rune:** confirm the verdict (stay on Quickshell; revisit after the v1 gate).
-7. **Router small model:** approve `nvidia/nemotron-3.5-lightning` for ambiguity and grading (price and ID unverified here).
-8. **Resizable window (U17):** in v2 or defer behind the notch work.
+Resolved 2026-11-07 ("go with your picks"):
+
+1. **Default vision model / live bake-off:** live run approved, cap $1.00, via the `orch` wrapper only (omaseal `openrouter/orchestral`). The default changes only if the live result beats `qwen/qwen3-vl-235b-a22b-instruct`.
+2. **SDK packaging (U12):** optional extra (`pip install wisp[openrouter]` style). The one-line install stays dependency-free.
+3. **Secret store (U13):** system keyring (Secret Service), OmaSeal when present.
+4. **US routing (U14):** opt-in, off by default (PR #340). It may require an OpenRouter Business/Enterprise plan; `wispd doctor` says so on 401/403 from `us.openrouter.ai`.
+5. **Browser lane:** BrowserOS neo MCP is the primary backend (`http://127.0.0.1:9010/mcp` on the owner's machine, configurable); the Wisp extension is the alternative.
+6. **rune:** not adopted now; stay on Quickshell/QML; revisit after the Omarchy v1 gate.
+7. **Router small model:** `nvidia/nemotron-3.5-lightning` (PR #341).
+8. **Resizable window (U17):** in v2, after the notch rewrite.
 
 ## Appendix
 
