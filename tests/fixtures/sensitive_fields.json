@@ -1,0 +1,146 @@
+{
+ "_comment": "Shared by tests/test_browser_lane.py and browser-extension/tests/fieldrule.test.ts. `sensitive` is the authority: a field the lane must never fill.",
+ "cases": [
+  {
+   "field": {
+    "type": "password"
+   },
+   "sensitive": true
+  },
+  {
+   "field": {
+    "type": "PASSWORD"
+   },
+   "sensitive": true
+  },
+  {
+   "field": {
+    "type": "text",
+    "autocomplete": "one-time-code"
+   },
+   "sensitive": true
+  },
+  {
+   "field": {
+    "type": "text",
+    "autocomplete": "cc-number"
+   },
+   "sensitive": true
+  },
+  {
+   "field": {
+    "type": "text",
+    "autocomplete": "cc-csc"
+   },
+   "sensitive": true
+  },
+  {
+   "field": {
+    "type": "text",
+    "autocomplete": "new-password"
+   },
+   "sensitive": true
+  },
+  {
+   "field": {
+    "type": "text",
+    "autocomplete": "current-password"
+   },
+   "sensitive": true
+  },
+  {
+   "field": {
+    "type": "text",
+    "name": "otp"
+   },
+   "sensitive": true
+  },
+  {
+   "field": {
+    "type": "text",
+    "id": "cvv"
+   },
+   "sensitive": true
+  },
+  {
+   "field": {
+    "type": "text",
+    "label": "Card number"
+   },
+   "sensitive": true
+  },
+  {
+   "field": {
+    "type": "text",
+    "placeholder": "6 digit verification code"
+   },
+   "sensitive": true
+  },
+  {
+   "field": {
+    "type": "text",
+    "ariaLabel": "Enter your PIN"
+   },
+   "sensitive": true
+  },
+  {
+   "field": {
+    "type": "text",
+    "label": "Credit card"
+   },
+   "sensitive": true
+  },
+  {
+   "field": {
+    "type": "text",
+    "name": "email"
+   },
+   "sensitive": false
+  },
+  {
+   "field": {
+    "type": "search"
+   },
+   "sensitive": false
+  },
+  {
+   "field": {
+    "type": "text",
+    "label": "Search pinterest"
+   },
+   "sensitive": false
+  },
+  {
+   "field": {
+    "type": "text",
+    "autocomplete": "email"
+   },
+   "sensitive": false
+  },
+  {
+   "field": {
+    "type": "text",
+    "autocomplete": "username"
+   },
+   "sensitive": false
+  },
+  {
+   "field": {
+    "type": "text",
+    "name": "first_name"
+   },
+   "sensitive": false
+  },
+  {
+   "field": {
+    "type": "textarea",
+    "label": "Message"
+   },
+   "sensitive": false
+  },
+  {
+   "field": {},
+   "sensitive": false
+  }
+ ]
+}

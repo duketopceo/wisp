@@ -63,9 +63,12 @@ class ReleasePackagingTest(unittest.TestCase):
                 "scripts/cua/install.sh", "scripts/cua/cua-driver.service",
                 "scripts/build_harness.py", "scripts/fetch_whisper.sh",
                 "scripts/bootstrap/install.py",
-                "browser-extension/manifest.json", "browser-extension/lib.js",
-                "browser-extension/background.js", "browser-extension/popup.js",
-                "browser-extension/popup.html",
+                "browser-extension/package.json",
+                "browser-extension/package-lock.json",
+                "browser-extension/wxt.config.ts",
+                "browser-extension/entrypoints/background.ts",
+                "browser-extension/src/lane.ts",
+                "browser-extension/src/native.ts",
                 "release.json", "payload.json", "docs/INSTALL.md",
             }
             self.assertFalse(required - names, sorted(required - names))
@@ -201,7 +204,9 @@ class ReleasePackagingTest(unittest.TestCase):
                      "browser-extension"):
             shutil.copytree(ROOT / name, source / name, symlinks=True,
                             ignore=shutil.ignore_patterns("__pycache__", "*.pyc",
-                                                         "release", "build"))
+                                                         "release", "build",
+                                                         "node_modules",
+                                                         ".output", ".wxt"))
         for name in ("wispd", "LICENSE", "README.md", "CHANGELOG.md",
                      "THIRD_PARTY_NOTICES.md", "pyproject.toml"):
             shutil.copy2(ROOT / name, source / name)

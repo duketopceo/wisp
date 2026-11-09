@@ -1,0 +1,61 @@
+/* One small calm light on dark. Four status colors only; blue is for the
+   primary action. No glow, no gradients. */
+:root {
+  color-scheme: dark;
+  --bg: #14161a;
+  --fg: #e6e8eb;
+  --muted: #9aa1ab;
+  --line: #2a2e35;
+  --light: #f0e6c8;
+  --red: #ff6b6b;
+  --amber: #f0b44c;
+  --green: #5fd38d;
+  --gray: #9aa1ab;
+  --action: #5aa2ff;
+  --on-action: #0b1220;
+  font: 13px/1.45 system-ui, sans-serif;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --bg: #fbfbfa;
+    --fg: #1d2127;
+    --muted: #5b626c;
+    --line: #dcdfe3;
+    --light: #8a6d1d;
+    --red: #b3261e;
+    --amber: #8a5a00;
+    --green: #1b6e3c;
+    --gray: #5b626c;
+    --action: #0b57d0;
+    --on-action: #ffffff;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); }
+.panel { display: flex; flex-direction: column; gap: 12px; padding: 12px; min-height: 100vh; }
+h1 { font-size: 14px; margin: 0 0 4px; }
+h2 { font-size: 12px; margin: 0 0 6px; color: var(--muted); font-weight: 600; }
+p { margin: 0 0 6px; }
+code { font: 12px ui-monospace, monospace; background: var(--line); padding: 1px 4px; border-radius: 3px; }
+.status { border-left: 3px solid var(--gray); padding: 4px 0 4px 10px; }
+.status-red { border-color: var(--red); }
+.status-amber { border-color: var(--amber); }
+.status-green { border-color: var(--green); }
+.status-gray { border-color: var(--gray); }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+button { font: inherit; color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px; cursor: pointer; }
+button.primary { background: var(--action); border-color: var(--action); color: var(--on-action); }
+button.stop { width: 100%; border-color: var(--red); color: var(--red); font-weight: 600; }
+button:disabled { opacity: 0.45; cursor: default; }
+button:focus-visible { outline: 2px solid var(--light); outline-offset: 2px; }
+.log ol { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.log li { display: grid; grid-template-columns: 5.5em 1fr auto; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.log .op { font: 12px ui-monospace, monospace; }
+.log .host { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.log li.ok .mark { color: var(--green); }
+.log li.bad .mark { color: var(--red); }
+.log .err { grid-column: 1 / -1; color: var(--red); margin: 0; }
+.empty { color: var(--muted); }
+footer { margin-top: auto; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

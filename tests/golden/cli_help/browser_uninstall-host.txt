@@ -1,0 +1,14 @@
+usage: wispd browser uninstall-host [-h] [--json] [--quiet] [--no-color]
+
+Remove the native host files wispd browser install-host wrote
+
+options:
+  -h, --help   show this help message and exit
+
+global options:
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd browser uninstall-host

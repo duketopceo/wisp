@@ -1,10 +1,13 @@
 """Watchable browser lane (B14): work in the user's own Chromium.
 
 Ships behind `[browser] lane = "extension"`, off by default. The Wisp
-extension (browser-extension/, an original MV3 extension) polls a socket
-this module serves on 127.0.0.1 only. Nothing runs until the user pairs
-the extension with a one-time code, each task gets its own tab group beside
-the user's tabs, and Stop in the extension ends the lane for the turn.
+extension (browser-extension/, an original MV3 extension) reaches this
+module through Chrome native messaging: the browser starts `wispd nmhost`,
+which relays to a 0600 Unix socket (browser_nm.py). Nothing runs until the
+user presses Connect in the extension, each task gets its own tab group
+beside the user's tabs, and Stop in the extension ends the lane for the
+turn. The older loopback HTTP transport with a one-time pairing code stays
+for one release so an already-loaded unpacked extension keeps working.
 
 Rules this module keeps (docs/BROWSER_LANE.md):
   - without pairing, every call fails with a setup message and does nothing
@@ -20,6 +23,7 @@ import hmac
 import http.server
 import json
 import queue
+import pathlib
 import re
 import secrets
 import threading
@@ -65,8 +69,9 @@ def port_of(cfg: dict | None) -> int:
 
 def setup_message(code: str) -> str:
     return (f"SKIP (the browser lane is not paired: open the Wisp extension "
-            f"in your browser, press Pair and enter {code}. It works for "
-            f"{CODE_TTL_S // 60} minutes. Nothing was done.)")
+            f"in your browser and press Connect. An older unpacked "
+            f"extension pairs instead: press Pair and enter {code}, which "
+            f"works for {CODE_TTL_S // 60} minutes. Nothing was done.)")
 
 
 class Lane:
@@ -86,6 +91,8 @@ class Lane:
         self._cmds: queue.Queue = queue.Queue()
         self._waiting: dict = {}          # command id -> (event, [result])
         self._seq = 0
+        self._native = None               # the connected native client, if any
+        self._native_server = None
         self.stopped = threading.Event()  # Stop pressed in the extension
         self.turn = ""
         self.epoch = 0                    # latest snapshot epoch seen
@@ -184,6 +191,45 @@ class Lane:
         if srv is not None:
             srv.shutdown()
             srv.server_close()
+        ns, self._native_server = self._native_server, None
+        if ns is not None:
+            ns.close()
+
+    # -- native messaging transport -----------------------------------------
+    def start_native(self, path=None, **kw) -> pathlib.Path:
+        """Serve the native messaging relay on a 0600 Unix socket."""
+        from . import browser_nm
+        with self._lock:
+            if self._native_server is not None:
+                return self._native_server.path
+        server = browser_nm.NativeServer(
+            self, path or config.RUN_DIR / browser_nm.SOCKET_NAME, **kw)
+        server.start()
+        with self._lock:
+            self._native_server = server
+        return server.path
+
+    def native_attach(self, token: object) -> None:
+        """A native client is connected: that is a paired lane."""
+        with self._lock:
+            self._native = token
+
+    def native_detach(self, token: object) -> None:
+        """The client is gone. Calls still waiting on it end now with a
+        reason, not after the call timeout."""
+        with self._lock:
+            if self._native is not token:
+                return
+            self._native = None
+            slots = list(self._waiting.items())
+        for cid, (ev, res) in slots:
+            res.append({"id": cid, "ok": False,
+                        "error": "the browser disconnected"})
+            ev.set()
+
+    def requeue(self, cmd: dict) -> None:
+        """Put a command back that was taken but could not be sent."""
+        self._cmds.put(cmd)
 
     # -- pairing ----------------------------------------------------------
     def new_code(self) -> str:
@@ -226,6 +272,8 @@ class Lane:
     @property
     def paired(self) -> bool:
         with self._lock:
+            if self._native is not None:
+                return True
             return bool(self._token) and self._last_poll is not None \
                 and self._clock() - self._last_poll < ALIVE_S
 
@@ -327,6 +375,11 @@ def get_lane(cfg: dict | None = None) -> Lane:
         if _LANE is None:
             _LANE = Lane(port_of(cfg))
         _LANE.start()
+        try:
+            _LANE.start_native()
+        except OSError as e:     # the legacy transport still works
+            from .. import errlog
+            errlog.record("tool_failed", e)
         return _LANE
 
 

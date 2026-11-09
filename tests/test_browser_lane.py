@@ -7,7 +7,6 @@ import http.client
 import json
 import pathlib
 import shutil
-import subprocess
 import tempfile
 import threading
 import time
@@ -18,7 +17,6 @@ from wisp import cua_safety, tools, trace
 from wisp.tools import browser
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-EXT = ROOT / "browser-extension"
 ORIGIN = "chrome-extension://abcdefghijklmnopabcdefghijklmnop"
 CFG = {"browser": {"lane": "extension"}, "cua": {"audit": "false"}}
 
@@ -350,90 +348,23 @@ class Turns(LaneCase):
         self.assertTrue(self.batch_cmds(ext)[-1]["resume"])
 
 
-@unittest.skipUnless(shutil.which("node"), "node not installed")
-class ExtensionSide(unittest.TestCase):
-    def node(self, expr):
-        p = subprocess.run(
-            ["node", "-e", f"const L=require({json.dumps(str(EXT / 'lib.js'))});"
-             f"process.stdout.write(JSON.stringify({expr}))"],
-            capture_output=True, text=True, timeout=30)
-        self.assertEqual(p.returncode, 0, p.stderr)
-        return json.loads(p.stdout)
+class FieldRule(unittest.TestCase):
+    """The field rule has one fixture. The extension's unit test
+    (browser-extension/tests/fieldrule.test.ts) reads the same file, so
+    the Python and TypeScript rules cannot drift apart."""
 
-    FIELDS = [
-        {"type": "password"}, {"type": "PASSWORD"},
-        {"type": "text", "autocomplete": "one-time-code"},
-        {"type": "text", "autocomplete": "cc-number"},
-        {"type": "text", "autocomplete": "cc-csc"},
-        {"type": "text", "autocomplete": "new-password"},
-        {"type": "text", "name": "otp"}, {"type": "text", "id": "cvv"},
-        {"type": "text", "label": "Card number"},
-        {"type": "text", "placeholder": "6 digit verification code"},
-        {"type": "text", "ariaLabel": "Enter your PIN"},
-        {"type": "text", "name": "email"}, {"type": "search"},
-        {"type": "text", "label": "Search pinterest"},
-        {"type": "text", "autocomplete": "email"}, {},
-    ]
+    CASES = json.loads((ROOT / "tests" / "fixtures"
+                        / "sensitive_fields.json").read_text())["cases"]
 
-    def test_the_field_rule_matches_cua_safety(self):
-        js = self.node(f"{json.dumps(self.FIELDS)}.map(L.isSensitiveField)")
-        py = [cua_safety.sensitive_field(f) for f in self.FIELDS]
-        self.assertEqual(js, py)
-        self.assertEqual(sum(py), 11)
+    def test_the_field_rule_matches_the_shared_fixture(self):
+        for c in self.CASES:
+            self.assertEqual(bool(cua_safety.sensitive_field(c["field"])),
+                             c["sensitive"], c["field"])
 
-    def test_epoch_refs(self):
-        self.assertEqual(self.node(
-            "(()=>{const e=new L.Epoch();e.next();e.next();"
-            "return [e.parse('2:5'), e.parse('1:5').ok, e.parse('x').ok]})()"),
-            [{"ok": True, "epoch": 2, "index": 5}, False, False])
-
-    def test_step_cap_and_urls(self):
-        self.assertEqual(self.node("L.checkSteps(new Array(21).fill({}))")[:8],
-                         "too many")
-        self.assertEqual(self.node("L.checkSteps([{}])"), "")
-        self.assertEqual(self.node(
-            "['https://a.test','http://a.test','file:///x','javascript:1',"
-            "'chrome://x','data:,x','nope'].map(L.safeUrl)"),
-            [True, True, False, False, False, False, False])
-
-
-class Manifest(unittest.TestCase):
-    M = json.loads((EXT / "manifest.json").read_text())
-
-    def test_only_the_listed_permissions(self):
-        self.assertEqual(self.M["manifest_version"], 3)
-        self.assertEqual(sorted(self.M["permissions"]),
-                         ["scripting", "tabGroups", "tabs"])
-        self.assertEqual(self.M["host_permissions"], ["<all_urls>"])
-
-    def test_nothing_else_is_requested(self):
-        for key in ("optional_permissions", "optional_host_permissions",
-                    "content_scripts", "externally_connectable",
-                    "web_accessible_resources", "commands",
-                    "content_security_policy", "devtools_page",
-                    "chrome_url_overrides"):
-            self.assertNotIn(key, self.M, key)
-        for bad in ("debugger", "nativeMessaging", "cookies", "history",
-                    "webRequest", "storage", "downloads", "management",
-                    "clipboardRead", "activeTab"):
-            self.assertNotIn(bad, self.M["permissions"], bad)
-
-    def test_files_named_by_the_manifest_exist(self):
-        files = [self.M["background"]["service_worker"],
-                 self.M["action"]["default_popup"]]
-        for f in files:
-            self.assertTrue((EXT / f).is_file(), f)
-
-    def test_background_loads_only_its_own_lib_and_talks_to_loopback(self):
-        src = (EXT / "background.js").read_text()
-        self.assertIn('importScripts("lib.js")', src)
-        self.assertNotIn("eval(", src)
-        self.assertNotIn("new Function", src)
-        hosts = set()
-        import re
-        for m in re.finditer(r"https?://[A-Za-z0-9._-]+", src):
-            hosts.add(m.group(0))
-        self.assertEqual(hosts - {"http://127.0.0.1"}, set())
+    def test_the_fixture_has_both_kinds_of_field(self):
+        flags = [c["sensitive"] for c in self.CASES]
+        self.assertGreaterEqual(sum(flags), 10)
+        self.assertGreaterEqual(len(flags) - sum(flags), 8)
 
 
 if __name__ == "__main__":

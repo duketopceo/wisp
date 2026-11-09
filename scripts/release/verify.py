@@ -26,9 +26,10 @@ REQUIRED = {
     "scripts/units/wispd.service", "scripts/build_harness.py",
     "scripts/fetch_whisper.sh", "scripts/cua/PIN", "scripts/cua/install.sh",
     "scripts/cua/cua-driver.service", "CHANGELOG.md", "LICENSE",
-    "scripts/bootstrap/install.py", "browser-extension/manifest.json",
-    "browser-extension/background.js", "browser-extension/lib.js",
-    "browser-extension/popup.js", "browser-extension/popup.html",
+    "scripts/bootstrap/install.py", "browser-extension/package.json",
+    "browser-extension/package-lock.json", "browser-extension/wxt.config.ts",
+    "browser-extension/entrypoints/background.ts",
+    "browser-extension/src/lane.ts", "browser-extension/src/native.ts",
     "THIRD_PARTY_NOTICES.md", "release.json", "payload.json",
 }
 MAX_BYTES = 400 * 1024 * 1024

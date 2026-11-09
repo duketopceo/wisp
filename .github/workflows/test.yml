@@ -29,6 +29,35 @@ jobs:
           WISP_CI_REQUIRE_TOOLS: node
         run: python -m unittest discover -s tests -v
 
+  extension:
+    # The Chrome extension: types, unit tests, the built manifest against
+    # its committed snapshot, then a headless Chromium (with the real native
+    # host and wispd lane) on local fixture pages. No network after install.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: browser-extension
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: browser-extension/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm run build:e2e
+      - run: npm run check:build
+      - name: Chromium for the e2e
+        run: npx playwright install --with-deps chromium
+      - name: Headless e2e
+        run: npm run e2e
+
   qml:
     # QML lint, shader bake and qmltestrunner suites skip without Qt and
     # Quickshell. Ubuntu's Qt is too old and has no Quickshell, so they run

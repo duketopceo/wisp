@@ -18,7 +18,8 @@ FILES = ("wispd", "LICENSE", "README.md", "CHANGELOG.md",
          "THIRD_PARTY_NOTICES.md", "pyproject.toml",
          "scripts/build_harness.py", "scripts/fetch_whisper.sh")
 SCRIPT_TREES = ("scripts/units", "scripts/cua", "scripts/bootstrap")
-SKIP = {".git", ".env", ".venv", "venv", "node_modules", "build", "dist",
+SKIP = {".git", ".env", ".venv", "venv", "node_modules", ".output", ".wxt",
+        "build", "dist",
         "target", "__pycache__", ".cache", "cache", ".pytest_cache",
         ".mypy_cache", ".ruff_cache", ".DS_Store"}
 
