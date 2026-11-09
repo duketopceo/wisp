@@ -251,15 +251,10 @@ def monitor_of(w: dict, mons) -> int | None:
     except (KeyError, TypeError, ValueError, IndexError):
         cx = cy = None
     if cx is not None:
-        for i, m in enumerate(mons, 1):
-            try:
-                s = float(m.get("scale", 1) or 1)
-                x0, y0 = m.get("x", 0), m.get("y", 0)
-                if (x0 <= cx < x0 + m.get("width", 0) / s
-                        and y0 <= cy < y0 + m.get("height", 0) / s):
-                    return i
-            except (TypeError, ValueError, ZeroDivisionError):
-                continue
+        from . import points
+        hit = points.monitor_at(cx, cy, mons)
+        if hit is not None:
+            return hit
     mid = w.get("monitor")
     for i, m in enumerate(mons, 1):
         if mid is not None and m.get("id") == mid:

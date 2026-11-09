@@ -203,6 +203,23 @@ def _scale_of(m: dict) -> float:
     return v if math.isfinite(v) and v > 0 else 1.0
 
 
+def monitor_at(x, y, mons) -> int | None:
+    """1-based number (the `:screenN` numbering) of the monitor whose
+    logical rect holds the logical point (x, y); None when none does."""
+    for i, m in enumerate(mons or [], 1):
+        if not isinstance(m, dict):
+            continue
+        try:
+            s = _scale_of(m)
+            x0, y0 = m.get("x", 0), m.get("y", 0)
+            if (x0 <= x < x0 + m.get("width", 0) / s
+                    and y0 <= y < y0 + m.get("height", 0) / s):
+                return i
+        except TypeError:
+            continue
+    return None
+
+
 def _split_screen_label(label, screen: int | None = None):
     """Move a trailing `:screenN` out of `label` -> (label, screen)."""
     lbl = str(label).strip()

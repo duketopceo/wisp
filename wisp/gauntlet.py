@@ -725,16 +725,6 @@ def parse_answer_point_case(data) -> AnswerPointCase:
                            [_norm(a) for a in ans], rect, mon)
 
 
-def _monitor_of(x, y, mons):
-    """1-based index of the monitor whose logical rect holds (x, y)."""
-    for i, m in enumerate(mons, 1):
-        s = points._scale_of(m)
-        if (m["x"] <= x < m["x"] + m["width"] / s
-                and m["y"] <= y < m["y"] + m["height"] / s):
-            return i
-    return None
-
-
 def score_answer_point(case: AnswerPointCase) -> dict:
     """Verdict for one case. Order: wrong-answer, no-point, wrong-monitor,
     wrong-point, correct."""
@@ -748,7 +738,7 @@ def score_answer_point(case: AnswerPointCase) -> dict:
     lx, ly = points.raw_canvas_to_logical(pts[0]["x"], pts[0]["y"],
                                           case.monitors)
     pt = (points.round_px(lx), points.round_px(ly))
-    mon = _monitor_of(pt[0], pt[1], case.monitors)
+    mon = points.monitor_at(pt[0], pt[1], case.monitors)
     base.update(point=pt, monitor=mon)
     if case.expect_monitor is not None and mon != case.expect_monitor:
         return {**base, "verdict": AP_WRONG_MONITOR}
