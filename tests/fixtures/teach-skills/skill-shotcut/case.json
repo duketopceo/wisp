@@ -1,0 +1,41 @@
+{
+ "id": "skill-shotcut",
+ "app": "shotcut",
+ "goal": "export the video from Shotcut",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "Export",
+  "rect": [
+   126,
+   28,
+   112,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "Open File",
+   "rect": [
+    8,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Export",
+   "rect": [
+    126,
+    28,
+    112,
+    24
+   ]
+  }
+ ]
+}

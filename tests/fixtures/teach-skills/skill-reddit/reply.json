@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click Create in the top bar.\", \"label\": \"Create\", \"why\": \"Pick a community first.\", \"kind\": \"click\"}]}"
+}

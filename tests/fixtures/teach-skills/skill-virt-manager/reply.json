@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click the New button at the top left.\", \"label\": \"New\", \"why\": \"The wizard walks through the setup.\", \"kind\": \"click\"}]}"
+}

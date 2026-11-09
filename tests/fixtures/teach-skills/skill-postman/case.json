@@ -1,0 +1,59 @@
+{
+ "id": "skill-postman",
+ "app": "postman",
+ "goal": "send a request in Postman",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "Send",
+  "rect": [
+   362,
+   28,
+   112,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "Params",
+   "rect": [
+    8,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Headers",
+   "rect": [
+    126,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Body",
+   "rect": [
+    244,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Send",
+   "rect": [
+    362,
+    28,
+    112,
+    24
+   ]
+  }
+ ]
+}

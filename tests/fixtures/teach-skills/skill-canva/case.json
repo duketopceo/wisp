@@ -1,0 +1,59 @@
+{
+ "id": "skill-canva",
+ "app": "canva",
+ "goal": "download the design from Canva",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "Share",
+  "rect": [
+   244,
+   28,
+   112,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "Elements",
+   "rect": [
+    8,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Text",
+   "rect": [
+    126,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Share",
+   "rect": [
+    244,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Download",
+   "rect": [
+    362,
+    28,
+    112,
+    24
+   ]
+  }
+ ]
+}

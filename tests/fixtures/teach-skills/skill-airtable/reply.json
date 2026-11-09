@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click the plus at the end of the column headers.\", \"label\": \"Add field\", \"why\": \"Choose the field type next.\", \"kind\": \"click\"}]}"
+}

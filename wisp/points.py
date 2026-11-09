@@ -203,6 +203,23 @@ def _scale_of(m: dict) -> float:
     return v if math.isfinite(v) and v > 0 else 1.0
 
 
+def monitor_at(x, y, mons) -> int | None:
+    """1-based number (the `:screenN` numbering) of the monitor whose
+    logical rect holds the logical point (x, y); None when none does."""
+    for i, m in enumerate(mons or [], 1):
+        if not isinstance(m, dict):
+            continue
+        try:
+            s = _scale_of(m)
+            x0, y0 = m.get("x", 0), m.get("y", 0)
+            if (x0 <= x < x0 + m.get("width", 0) / s
+                    and y0 <= y < y0 + m.get("height", 0) / s):
+                return i
+        except TypeError:
+            continue
+    return None
+
+
 def _split_screen_label(label, screen: int | None = None):
     """Move a trailing `:screenN` out of `label` -> (label, screen)."""
     lbl = str(label).strip()
@@ -317,6 +334,29 @@ SHOT_ORIGIN: tuple | None = None
 set by the screenshot tool; falls back to the canvas bbox origin."""
 
 
+def _focus_screen(mons: list[dict]) -> int | None:
+    """The focused window's monitor number (1-based, the `:screenN`
+    numbering), or None with one monitor or when it cannot be read."""
+    if len([m for m in (mons or []) if isinstance(m, dict)]) < 2:
+        return None
+    try:
+        from . import platform
+        n = (platform.active_window() or {}).get("monitor")
+        return int(n) if n else None
+    except Exception:
+        return None
+
+
+def _default_screen(items: list[dict], mons: list[dict]) -> list[dict]:
+    """A point with no `:screenN` label targets the focused monitor;
+    an explicit label wins. Coordinates are untouched: they stay on the
+    shared whole-canvas screenshot."""
+    focus = _focus_screen(mons)
+    if focus is None:
+        return items
+    return [p if "screen" in p else {**p, "screen": focus} for p in items]
+
+
 def canvas_to_logical(points_img: list[dict],
                       mons: list[dict]) -> list[dict]:
     """Map points in *normalized* image space to logical coords —
@@ -325,8 +365,8 @@ def canvas_to_logical(points_img: list[dict],
         ox, oy = SHOT_ORIGIN
     else:
         ox, oy, _, _ = logical_bbox(mons)
-    return [{**p, "x": p["x"] + ox, "y": p["y"] + oy}
-            for p in points_img]
+    return _default_screen([{**p, "x": p["x"] + ox, "y": p["y"] + oy}
+                            for p in points_img], mons)
 
 
 def to_logical(points_px: list[dict], mons: list[dict]) -> list[dict]:
@@ -338,7 +378,7 @@ def to_logical(points_px: list[dict], mons: list[dict]) -> list[dict]:
     for p in points_px:
         lx, ly = raw_canvas_to_logical(p["x"], p["y"], mons)
         out.append({**p, "x": round_px(lx), "y": round_px(ly)})
-    return out
+    return _default_screen(out, mons)
 
 
 def _scaled(v: int, scale: float) -> int:

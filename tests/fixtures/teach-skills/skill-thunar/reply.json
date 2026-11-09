@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Open the File menu and pick Open Terminal Here.\", \"label\": \"File\", \"why\": \"The terminal starts in this folder.\", \"kind\": \"click\"}]}"
+}

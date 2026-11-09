@@ -1,0 +1,59 @@
+{
+ "id": "skill-trello",
+ "app": "trello",
+ "goal": "add a card to the first list",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "Add a card",
+  "rect": [
+   8,
+   28,
+   112,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "Add a card",
+   "rect": [
+    8,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Filter",
+   "rect": [
+    126,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Share",
+   "rect": [
+    244,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Menu",
+   "rect": [
+    362,
+    28,
+    112,
+    24
+   ]
+  }
+ ]
+}

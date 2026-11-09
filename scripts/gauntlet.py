@@ -158,6 +158,8 @@ def load_cases(path) -> list:
             c = json.loads(line)
         except ValueError:
             raise CaseError(f"line {n}: not JSON") from None
+        if isinstance(c, dict) and c.get("kind") == "answer_point":
+            continue        # scored offline by wisp.gauntlet (U10)
         errs = validate_case(c)
         if not errs and c["id"] in seen:
             errs = [f"duplicate id {c['id']}"]

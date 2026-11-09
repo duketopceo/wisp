@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click View history at the top of the article.\", \"label\": \"View history\", \"why\": \"It lists past edits.\", \"kind\": \"click\"}]}"
+}

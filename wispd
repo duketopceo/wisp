@@ -247,6 +247,28 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
                              args=(st, cfg, ctl, None, None, tid, text),
                              daemon=True).start()
             return {"ok": True, "asked": True}
+        if c == "tap":
+            # lone-Control press/release (or the fallback chord): a double
+            # tap opens the typed composer; the panel gets a stream event.
+            # The submit is an ordinary `ask`, so it is the same turn path
+            # and conversation as a spoken question.
+            phase = str(cmd.get("phase", ""))
+            if phase not in ("down", "up", "open"):
+                return {"ok": False, "error": "bad_phase"}
+            from wisp import composer
+            opened = composer.handle_tap(
+                cfg, phase, talk_held=ctl.get("rec") is not None)
+            if opened:
+                # prefetch the screen and window text now, while the
+                # window the question is about still has focus; the
+                # submitted `ask` takes it like a spoken turn does
+                _drop_speculation(ctl)
+                try:
+                    ctl["spec"] = pipeline.speculative_context(cfg).start()
+                except Exception as e:  # speculation is best-effort
+                    dlog(f"speculative context off: {e}")
+                st.emit_event("composer", action="open")
+            return {"ok": True, "opened": opened}
         if c == "dev":
             # dev tuning mode switch: a state file, never config.toml
             from wisp import devsession
@@ -900,6 +922,20 @@ def _start_keys(st, cfg: dict):
         return None
 
 
+def _start_composer_binds(cfg: dict) -> None:
+    """Double-Control composer binds (U1). Linux/Hyprland only; falls back
+    to `[composer] fallback_chord` and never blocks a start."""
+    from wisp import composer, hypr, keys, platform
+    if not platform.uses_hypr():
+        return
+    try:
+        res = composer.install(cfg, keys.runner_for(config.SOCK_FILE), hypr)
+        dlog(f"composer: {res['mode']}"
+             + (f" ({res['error']})" if res["error"] else ""))
+    except Exception as e:
+        dlog(f"composer: disabled: {e}")
+
+
 def _apply_private() -> None:
     """umask 077 and private data/config folders (wisp/private.py), shared
     by the daemon and the no-daemon trigger fallback so every path that
@@ -1008,6 +1044,7 @@ def run_daemon(cfg: dict) -> int:
     except Exception as e:
         dlog(f"dictation recover failed: {e}")
     _keys = _start_keys(st, cfg)
+    _start_composer_binds(cfg)
     # systemd Type=notify + WatchdogSec: no-ops outside systemd
     from wisp import svc as _svc
     _svc.notify("READY=1\nSTATUS=listening")

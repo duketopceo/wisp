@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click SQL Editor in the toolbar.\", \"label\": \"SQL Editor\", \"why\": \"That opens a script for the selected connection.\", \"kind\": \"click\"}]}"
+}

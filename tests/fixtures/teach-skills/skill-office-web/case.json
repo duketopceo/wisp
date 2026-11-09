@@ -1,0 +1,59 @@
+{
+ "id": "skill-office-web",
+ "app": "office-web",
+ "goal": "upload a file to OneDrive",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "Upload",
+  "rect": [
+   126,
+   28,
+   112,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "New",
+   "rect": [
+    8,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Upload",
+   "rect": [
+    126,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Share",
+   "rect": [
+    244,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Sort",
+   "rect": [
+    362,
+    28,
+    112,
+    24
+   ]
+  }
+ ]
+}

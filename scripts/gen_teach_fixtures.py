@@ -20,6 +20,10 @@ import sys
 from PIL import Image, ImageDraw, ImageFont
 
 OUT = pathlib.Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "teach"
+# U9 app-skill cases live apart from the baseline battery above: their
+# replies are written to be correct, so mixing them in would inflate the
+# measured teach baseline (docs/ACCURACY.md).
+SKILL_OUT = OUT.parent / "teach-skills"
 W, H = 640, 400
 BG, BAR, FG = (30, 32, 38), (52, 56, 66), (225, 228, 235)
 CTRL, EDGE, ACC = (74, 80, 94), (110, 118, 136), (90, 150, 230)
@@ -228,6 +232,119 @@ case("omarchy-display-settings", "omarchy", "change the display scaling in setti
      "scaling option there.")
 
 
+# U9: one synthetic case per skill added from docs/research/app-skill-targets.md.
+# Each draws a generic mock window (a menu row, a tool column, a work area)
+# and asks for one labelled control; every reply is correct.
+# (skill, window title, goal, [menu labels], target label, say, why)
+_APP_CASES = [
+    ("alacritty", "Terminal", "open a second Alacritty window", ["New window"],
+     "New window", "Click New window at the top.", "Alacritty has no tabs, so a second window is the way."),
+    ("ghostty", "Terminal", "split this Ghostty window to the right", ["Split right", "New tab"],
+     "Split right", "Click Split right.", "A split puts two shells side by side."),
+    ("gnome-terminal", "Terminal", "open a new tab in GNOME Terminal", ["New tab", "Menu"],
+     "New tab", "Click the plus in the tab bar.", "Tabs keep several shells open."),
+    ("konsole", "Terminal", "split the Konsole view in two", ["View", "Settings"],
+     "View", "Open the View menu and choose Split View.", "Split View shows two shells together."),
+    ("dolphin", "Files", "split Dolphin into two panes", ["Split", "Places"],
+     "Split", "Click Split in the toolbar.", "Two panes make copying between folders easy."),
+    ("thunar", "Files", "open a terminal in this Thunar folder", ["File", "Edit", "View"],
+     "File", "Open the File menu and pick Open Terminal Here.", "The terminal starts in this folder."),
+    ("vlc", "Media Player", "add a subtitle file in VLC", ["Media", "Subtitle", "Tools"],
+     "Subtitle", "Open the Subtitle menu and pick Add Subtitle File.", "That loads the file for this video."),
+    ("mpv", "Video", "show the on-screen controls in mpv", ["Seek bar", "Volume"],
+     "Seek bar", "Move the pointer near the bottom to reveal the seek bar.", "The controller appears on pointer movement."),
+    ("evince", "Document Viewer", "show the page thumbnails", ["Sidebar", "Find", "Menu"],
+     "Sidebar", "Click the sidebar toggle at the top left.", "The sidebar lists page thumbnails."),
+    ("gnome-text-editor", "Text Editor", "open the preferences", ["Open", "Menu"],
+     "Menu", "Click the menu button at the top right.", "Preferences is listed in that menu."),
+    ("inkscape", "Vector Editor", "draw a rectangle in Inkscape", ["Select", "Rectangle", "Ellipse", "Text"],
+     "Rectangle", "Click the rectangle tool in the toolbox.", "Then drag on the canvas to draw it."),
+    ("krita", "Painting", "pick the eraser in Krita", ["Brush", "Eraser", "Fill"],
+     "Eraser", "Click the eraser in the toolbox.", "The eraser removes paint from the layer."),
+    ("kdenlive", "Video Editor", "open the render dialog", ["Project", "Render"],
+     "Render", "Click Render in the toolbar.", "Render writes the finished video file."),
+    ("obs-studio", "Recorder", "start a recording in OBS", ["Start Streaming", "Start Recording", "Settings"],
+     "Start Recording", "Click Start Recording in the Controls dock.", "Recording saves a file locally."),
+    ("audacity", "Audio Editor", "start recording audio", ["Play", "Record", "Stop"],
+     "Record", "Click the red record button.", "Recording begins on a new track."),
+    ("darktable", "Photos", "switch to the darkroom to edit a photo", ["Lighttable", "Darkroom"],
+     "Darkroom", "Click Darkroom at the top right.", "Editing happens in the darkroom view."),
+    ("shotcut", "Video Editor", "export the video from Shotcut", ["Open File", "Export"],
+     "Export", "Click Export in the toolbar.", "Export renders the finished video."),
+    ("okular", "Document Viewer", "start annotating a PDF in Okular", ["File", "Tools", "Settings"],
+     "Tools", "Open the Tools menu and choose Review.", "Review shows the annotation tools."),
+    ("calibre", "Library", "add a book to calibre", ["Add books", "Convert books", "View"],
+     "Add books", "Click Add books in the toolbar.", "That copies the book into the library."),
+    ("flameshot", "Capture", "save the Flameshot capture to a file", ["Copy", "Save", "Cancel"],
+     "Save", "Click the save button in the tool bar.", "That writes the capture to a file."),
+    ("zed", "Editor", "open the command palette in Zed", ['Project', 'Search', 'Terminal', 'Palette'], "Palette", "Press Control Shift P, or open the command palette from the menu.", "The palette runs any command by name."),
+    ("sublime-text", "Editor", "open the sidebar in Sublime Text", ['File', 'Edit', 'View', 'Goto'], "View", "Open the View menu and pick Side Bar.", "That shows the project folders."),
+    ("intellij-idea", "IDE", "run the project in IntelliJ IDEA", ['Project', 'Run', 'Debug', 'Git'], "Run", "Click the Run button in the toolbar.", "Run starts the selected configuration."),
+    ("emacs", "Editor", "switch buffers in Emacs", ['File', 'Edit', 'Options', 'Buffers'], "Buffers", "Open the Buffers menu to switch buffers.", "Split commands also live in the File menu."),
+    ("kate", "Editor", "open the terminal in Kate", ['Documents', 'Projects', 'Terminal'], "Terminal", "Click Terminal at the bottom.", "That opens the embedded terminal panel."),
+    ("postman", "API Client", "send a request in Postman", ['Params', 'Headers', 'Body', 'Send'], "Send", "Click Send beside the URL bar.", "The response appears below the request."),
+    ("dbeaver", "Database", "open a SQL editor in DBeaver", ['Navigator', 'SQL Editor', 'Run'], "SQL Editor", "Click SQL Editor in the toolbar.", "That opens a script for the selected connection."),
+    ("virt-manager", "Virtual Machines", "create a new virtual machine", ['New', 'Open', 'Run', 'Shut Down'], "New", "Click the New button at the top left.", "The wizard walks through the setup."),
+    ("gitlab", "Merge Request", "open the changes of a merge request", ['Overview', 'Commits', 'Pipelines', 'Changes'], "Changes", "Click the Changes tab.", "It shows the diff to review."),
+    ("stack-overflow", "Questions", "ask a new question", ['Home', 'Questions', 'Tags', 'Ask Question'], "Ask Question", "Click the Ask Question button.", "It opens the form for a title and details."),
+    ("slack", "Workspace", "search messages in Slack", ['Home', 'DMs', 'Search', 'Threads'], "Search", "Click the search bar at the top.", "Search covers messages and files."),
+    ("discord", "Server", "open user settings in Discord", ['Servers', 'Channels', 'Voice', 'Settings'], "Settings", "Click the gear next to your name.", "User Settings opens from there."),
+    ("signal", "Chats", "attach a file in Signal", ['Chats', 'Search', 'Attach', 'Send'], "Attach", "Click the plus beside the message box.", "It lets you pick a file to attach."),
+    ("telegram", "Chats", "open Saved Messages in Telegram", ['Menu', 'Search', 'Folders'], "Menu", "Click the menu button at the top left.", "Saved Messages is listed in that menu."),
+    ("element", "Rooms", "start a new chat in Element", ['Home', 'Explore', 'Start chat', 'Settings'], "Start chat", "Click the plus above the room list.", "It offers a new chat or room."),
+    ("zoom", "Home", "join a meeting in Zoom", ['New meeting', 'Join', 'Schedule', 'Share screen'], "Join", "Click Join on the home screen.", "Enter the meeting ID or link there."),
+    ("google-meet", "Meeting", "turn on captions in Meet", ['Mic', 'Camera', 'Captions', 'Present'], "Captions", "Click the captions button in the bottom bar.", "Captions show what people say."),
+    ("microsoft-teams", "Teams", "start a chat in Teams", ['Activity', 'Chat', 'Teams', 'Calendar'], "Chat", "Click Chat in the left rail.", "The new chat button is above the list."),
+    ("whatsapp-web", "Chats", "attach a file in WhatsApp Web", ['Chats', 'Status', 'Attach', 'Send'], "Attach", "Click the attach button beside the message box.", "It lets you pick a file."),
+    ("gmail", "Inbox", "compose a new email in Gmail", ['Compose', 'Inbox', 'Sent', 'Labels'], "Compose", "Click Compose at the top left.", "A new message window opens."),
+    ("google-docs-editors", "Document", "share this document", ['File', 'Edit', 'View', 'Share'], "Share", "Click the Share button at the top right.", "It sets who can view or edit."),
+    ("google-drive", "My Drive", "upload a file to Drive", ['New', 'My Drive', 'Shared', 'Trash'], "New", "Click New at the top left, then File upload.", "The file goes into the open folder."),
+    ("google-calendar", "Calendar", "create a new event", ['Create', 'Today', 'Week', 'Settings'], "Create", "Click the Create button at the top left.", "It opens a new event."),
+    ("outlook-web", "Mail", "write a new message in Outlook", ['New mail', 'Reply', 'Delete', 'Archive'], "New mail", "Click New mail above the message list.", "A compose pane opens."),
+    ("office-web", "OneDrive", "upload a file to OneDrive", ['New', 'Upload', 'Share', 'Sort'], "Upload", "Click Upload in the command bar.", "Choose Files or Folder."),
+    ("dropbox", "Files", "upload a file to Dropbox", ['Upload', 'Create', 'Share', 'Search'], "Upload", "Click Upload at the top right.", "Pick Files or Folder."),
+    ("notion", "Page", "share a Notion page", ['Share', 'Comments', 'Updates', 'More'], "Share", "Click Share at the top right.", "It sets who can view or edit."),
+    ("overleaf", "Project", "compile the Overleaf project", ['Menu', 'Share', 'History', 'Recompile'], "Recompile", "Click Recompile above the preview.", "The PDF refreshes after the compile."),
+    ("zotero", "Library", "add a new item in Zotero", ['New Item', 'New Note', 'Attach', 'Search'], "New Item", "Click New Item in the toolbar.", "It adds an item to the library."),
+    ("joplin", "Notes", "create a new notebook in Joplin", ['New note', 'New to-do', 'New notebook', 'Sync'], "New notebook", "Click New notebook in the toolbar.", "Give it a name to create it."),
+    ("linear", "Issues", "create a new issue in Linear", ['New issue', 'Inbox', 'My issues', 'Filter'], "New issue", "Click New issue at the top of the sidebar.", "It opens the issue form."),
+    ("jira", "Board", "create an issue in Jira", ['Create', 'Board', 'Backlog', 'Filters'], "Create", "Click Create in the top bar.", "Pick the project and issue type."),
+    ("trello", "Board", "add a card to the first list", ['Add a card', 'Filter', 'Share', 'Menu'], "Add a card", "Click Add a card at the bottom of the list.", "Type the card title and press Enter."),
+    ("asana", "Project", "add a task in Asana", ['Add task', 'List', 'Board', 'Timeline'], "Add task", "Click Add task at the top of the project.", "Type a name and press Enter."),
+    ("airtable", "Base", "add a new field in Airtable", ['Grid view', 'Filter', 'Sort', 'Add field'], "Add field", "Click the plus at the end of the column headers.", "Choose the field type next."),
+    ("figma", "Design", "draw a rectangle in Figma", ['Move', 'Frame', 'Rectangle', 'Text'], "Rectangle", "Click the rectangle tool in the toolbar.", "Then drag on the canvas."),
+    ("canva", "Editor", "download the design from Canva", ['Elements', 'Text', 'Share', 'Download'], "Share", "Click Share at the top right.", "Download is in the menu that opens."),
+    ("miro", "Board", "add a sticky note in Miro", ['Select', 'Sticky note', 'Shapes', 'Share'], "Sticky note", "Click the sticky note icon in the left toolbar.", "Then click the board to place it."),
+    ("excalidraw", "Canvas", "draw an arrow in Excalidraw", ['Selection', 'Rectangle', 'Arrow', 'Text'], "Arrow", "Click the arrow tool in the top toolbar.", "Then drag on the canvas."),
+    ("clickup", "List", "add a task in ClickUp", ['Add Task', 'List', 'Board', 'Calendar'], "Add Task", "Click Add Task at the top right of the list.", "Type a name and press Enter."),
+    ("youtube", "Video", "turn on captions in YouTube", ['Play', 'Captions', 'Settings', 'Fullscreen'], "Captions", "Click the CC button in the player.", "Captions appear over the video."),
+    ("google-search", "Search", "search for images", ['All', 'Images', 'News', 'Tools'], "Images", "Click Images under the search box.", "Picture results replace the web results."),
+    ("google-maps", "Map", "get directions in Google Maps", ['Search', 'Directions', 'Saved', 'Layers'], "Directions", "Click Directions beside the search box.", "Then enter a start and a destination."),
+    ("wikipedia", "Article", "see the history of an article", ['Read', 'Edit', 'View history', 'Tools'], "View history", "Click View history at the top of the article.", "It lists past edits."),
+    ("reddit", "Subreddit", "create a post on Reddit", ['Home', 'Popular', 'Create', 'Search'], "Create", "Click Create in the top bar.", "Pick a community first."),
+    ("x", "Home", "write a post on X", ['Home', 'Explore', 'Bookmarks', 'Post'], "Post", "Click Post in the left list.", "It opens the composer."),
+    ("linkedin", "Feed", "search for jobs on LinkedIn", ['Home', 'My Network', 'Jobs', 'Messaging'], "Jobs", "Click Jobs in the top bar.", "Job search and filters open there."),
+    ("amazon", "Product", "add this item to the cart", ['Add to Cart', 'Buy Now', 'Orders', 'Cart'], "Add to Cart", "Click Add to Cart on the right.", "It only adds the item; nothing is bought."),
+    ("chatgpt", "Chat", "start a new chat in ChatGPT", ['New chat', 'Search chats', 'Library', 'Settings'], "New chat", "Click New chat at the top of the sidebar.", "It opens an empty conversation."),
+    ("claude", "Chat", "start a new chat in Claude", ['New chat', 'Chats', 'Projects', 'Settings'], "New chat", "Click New chat at the top of the sidebar.", "It opens an empty conversation."),
+    ("bitwarden", "Vault", "add a new login in Bitwarden", ['Vaults', 'Send', 'Tools', 'New'], "New", "Click New at the top right.", "Choose Item, then Login."),
+    ("keepassxc", "Database", "add a new entry in KeePassXC", ['Database', 'Entries', 'Groups', 'Tools'], "Entries", "Open the Entries menu and choose New Entry.", "It opens the entry form."),
+]
+
+
+def app_scene(title, labels):
+    s = Scene(title)
+    for i, n in enumerate(labels):
+        s.control(n, [8 + i * 118, 28, 112, 24])
+    s.plain([8, 64, W - 16, H - 76], (40, 43, 50), "")
+    return s
+
+
+for _id, _title, _goal, _labels, _target, _say, _why in _APP_CASES:
+    case(f"skill-{_id}", _id, _goal, (lambda t=_title, l=_labels: app_scene(t, l)),
+         "click", _target, reply(step(_say, _target, _why, kind="click")))
+
+
 def rect_of(scene, label):
     if label == "A1:C3":
         return [40, 70, 270, 84]
@@ -240,7 +357,7 @@ def rect_of(scene, label):
 def main():
     for c in CASES:
         sc = c["scene"]()
-        d = OUT / c["id"]
+        d = (SKILL_OUT if c["id"].startswith("skill-") else OUT) / c["id"]
         d.mkdir(parents=True, exist_ok=True)
         sc.img.convert("P", palette=Image.ADAPTIVE, colors=32).save(
             d / "capture.png", optimize=True)
@@ -256,7 +373,7 @@ def main():
                      "expected_target": target, "elements": sc.els}
         (d / "case.json").write_text(json.dumps(case_json, indent=1) + "\n")
         (d / "reply.json").write_text(json.dumps({"raw": c["reply"]}, indent=1) + "\n")
-    print(f"wrote {len(CASES)} cases to {OUT}")
+    print(f"wrote {len(CASES)} cases to {OUT} and {SKILL_OUT}")
 
 
 if __name__ == "__main__":

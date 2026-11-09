@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click Directions beside the search box.\", \"label\": \"Directions\", \"why\": \"Then enter a start and a destination.\", \"kind\": \"click\"}]}"
+}

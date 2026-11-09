@@ -1,0 +1,41 @@
+{
+ "id": "skill-gnome-text-editor",
+ "app": "gnome-text-editor",
+ "goal": "open the preferences",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "Menu",
+  "rect": [
+   126,
+   28,
+   112,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "Open",
+   "rect": [
+    8,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Menu",
+   "rect": [
+    126,
+    28,
+    112,
+    24
+   ]
+  }
+ ]
+}

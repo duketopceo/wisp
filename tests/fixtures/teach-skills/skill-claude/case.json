@@ -1,0 +1,59 @@
+{
+ "id": "skill-claude",
+ "app": "claude",
+ "goal": "start a new chat in Claude",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "New chat",
+  "rect": [
+   8,
+   28,
+   112,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "New chat",
+   "rect": [
+    8,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Chats",
+   "rect": [
+    126,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Projects",
+   "rect": [
+    244,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Settings",
+   "rect": [
+    362,
+    28,
+    112,
+    24
+   ]
+  }
+ ]
+}

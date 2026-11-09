@@ -1,0 +1,59 @@
+{
+ "id": "skill-excalidraw",
+ "app": "excalidraw",
+ "goal": "draw an arrow in Excalidraw",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "Arrow",
+  "rect": [
+   244,
+   28,
+   112,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "Selection",
+   "rect": [
+    8,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Rectangle",
+   "rect": [
+    126,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Arrow",
+   "rect": [
+    244,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Text",
+   "rect": [
+    362,
+    28,
+    112,
+    24
+   ]
+  }
+ ]
+}

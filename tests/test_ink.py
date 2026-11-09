@@ -68,6 +68,37 @@ class Tone(unittest.TestCase):
             self.assertEqual(txt, ink.text_on(ink.luminance(g, g, g)), g)
 
 
+class Seed(unittest.TestCase):
+    """The daemon's per-stroke seed: stable for a turn and slot, different
+    across slots and turns, and what lib/ink.js turns into the same path."""
+
+    def test_stable_per_turn_and_slot_and_distinct_otherwise(self):
+        self.assertEqual(ink.stroke_seed("t1", 0), ink.stroke_seed("t1", 0))
+        self.assertNotEqual(ink.stroke_seed("t1", 0), ink.stroke_seed("t1", 1))
+        self.assertNotEqual(ink.stroke_seed("t1", 0), ink.stroke_seed("t2", 0))
+        self.assertTrue(0 <= ink.stroke_seed("t1", 0) < 2 ** 32)
+
+    def test_the_same_seed_draws_the_same_path_and_another_differs(self):
+        if not jsnode.NODE:
+            self.skipTest("node not installed")
+
+        def path(seed):
+            return jsnode.call(
+                "Ink.strokesFor({kind:'ring',x:100,y:100,r:40,seed:%s})"
+                % seed, Ink="ink")
+        self.assertEqual(path(7), path(7))
+        self.assertNotEqual(path(7), path(8))
+
+    def test_no_seed_still_draws_from_the_geometry(self):
+        if not jsnode.NODE:
+            self.skipTest("node not installed")
+        m = "{kind:'arrow',x1:0,y1:0,x2:100,y2:50%s}"
+        plain = jsnode.call("Ink.strokesFor(%s)" % (m % ""), Ink="ink")
+        self.assertEqual(len(plain["strokes"]), 3)
+        self.assertEqual(plain, jsnode.call(
+            "Ink.strokesFor(%s)" % (m % ",seed:-1"), Ink="ink"))
+
+
 class Pace(unittest.TestCase):
     def test_longer_sentences_take_longer_and_speed_scales_it(self):
         short = speech.sentence_ms("Look here.", {})

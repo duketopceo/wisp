@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click the sticky note icon in the left toolbar.\", \"label\": \"Sticky note\", \"why\": \"Then click the board to place it.\", \"kind\": \"click\"}]}"
+}

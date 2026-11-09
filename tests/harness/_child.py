@@ -303,11 +303,18 @@ def main(spec_path: str) -> int:
             arm(after)
 
         sp_ctx = None
+        gatherers = {}
         if spec.get("selection"):
             # the press-time primary selection (B22)
+            gatherers["selection"] = lambda: spec["selection"]
+        if spec.get("window_text"):
+            # the focused window's text read at key press (U3)
+            from wisp import window_text as _wt
+            gatherers["window_text"] = lambda: _wt.Result(
+                spec["window_text"], "tree", 0.0)
+        if gatherers:
             from wisp import context as _context
-            sp_ctx = _context.Speculative(
-                {"selection": lambda: spec["selection"]}).start()
+            sp_ctx = _context.Speculative(gatherers).start()
         code = pipeline.run_listen(cfg, st, wait_for_choice=wait,
                                    interrupted=interrupt.is_set,
                                    speculative=sp_ctx)

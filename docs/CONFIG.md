@@ -587,6 +587,19 @@ escalates to a VLM judge.
 | `region_px` | `96` | side of the square pixel region diffed around a click point |
 | `frame_wait_s` | `0.5` | bound on waiting for the driver's before/after frames |
 
+## [composer] — type a question
+
+Double-tap Control to type a question instead of speaking it. A tap is a
+press and release of Control with no other key; two taps close together
+open a one-line box next to the companion. Enter sends it as an ordinary
+ask (same turn path and conversation as a spoken one); Esc closes it.
+If the Control binds cannot be installed, the fallback chord opens it.
+
+| key | default | meaning |
+|-----|---------|---------|
+| `enabled` | `true` | set `false` to turn the double-tap and the fallback chord off |
+| `fallback_chord` | `SUPER + SHIFT + SPACE` | chord that opens the composer when the Control binds are unavailable |
+
 ## [selection] — what you selected, copied or pointed at
 
 "What does this mean" can use the exact words you highlighted, the image

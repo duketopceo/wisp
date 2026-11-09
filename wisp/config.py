@@ -239,6 +239,15 @@ days = "7"
 [growth]
 weekly_recap = "false"
 
+[composer]
+# Double-tap Control to type a question instead of speaking it. A tap is a
+# press and release of Control with no other key; two taps close together
+# open a one-line box next to the companion. Enter sends it as an ordinary
+# ask, Esc closes it. If the Control binds cannot be installed,
+# `fallback_chord` opens it instead. false turns it off.
+enabled = "true"
+fallback_chord = "SUPER + SHIFT + SPACE"
+
 [selection]
 # Selected or copied text, a copied image, or a file path you pointed at
 # (wisp/selection.py). The primary selection is read once at key press;
@@ -637,6 +646,8 @@ def _default_cfg_dict() -> dict:
         "docs": {"enabled": "true"},
         "chips": {"enabled": "true", "days": "7"},
         "growth": {"weekly_recap": "false"},
+        "composer": {"enabled": "true",
+                     "fallback_chord": "SUPER + SHIFT + SPACE"},
         "selection": {"enabled": "true", "clipboard": "true"},
         "images": {"allow": "", "max_kb": "4096", "timeout_s": "8"},
         "verify": {"judge_timeout_s": "20", "pixel_landed_min": "0.02",

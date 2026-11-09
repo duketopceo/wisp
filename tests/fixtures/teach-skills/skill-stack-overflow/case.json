@@ -1,0 +1,59 @@
+{
+ "id": "skill-stack-overflow",
+ "app": "stack-overflow",
+ "goal": "ask a new question",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "Ask Question",
+  "rect": [
+   362,
+   28,
+   112,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "Home",
+   "rect": [
+    8,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Questions",
+   "rect": [
+    126,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Tags",
+   "rect": [
+    244,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Ask Question",
+   "rect": [
+    362,
+    28,
+    112,
+    24
+   ]
+  }
+ ]
+}

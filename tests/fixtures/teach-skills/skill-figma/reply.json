@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click the rectangle tool in the toolbar.\", \"label\": \"Rectangle\", \"why\": \"Then drag on the canvas.\", \"kind\": \"click\"}]}"
+}

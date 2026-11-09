@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click the menu button at the top left.\", \"label\": \"Menu\", \"why\": \"Saved Messages is listed in that menu.\", \"kind\": \"click\"}]}"
+}

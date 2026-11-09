@@ -1,0 +1,41 @@
+{
+ "id": "skill-mpv",
+ "app": "mpv",
+ "goal": "show the on-screen controls in mpv",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "Seek bar",
+  "rect": [
+   8,
+   28,
+   112,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "Seek bar",
+   "rect": [
+    8,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Volume",
+   "rect": [
+    126,
+    28,
+    112,
+    24
+   ]
+  }
+ ]
+}

@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click the plus above the room list.\", \"label\": \"Start chat\", \"why\": \"It offers a new chat or room.\", \"kind\": \"click\"}]}"
+}

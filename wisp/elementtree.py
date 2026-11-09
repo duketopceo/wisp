@@ -62,6 +62,14 @@ CONTAINER_ROLES = frozenset({
     "tree", "tree table", "menu", "popup menu", "canvas", "terminal",
     "landmark",
 })
+# Roles whose Text interface holds readable content (window_text).
+TEXT_ROLES = frozenset({
+    "document frame", "document web", "document text", "document email",
+    "document spreadsheet", "document presentation", "text", "paragraph",
+    "terminal", "entry", "heading", "static", "label", "list item",
+    "table cell", "block quote", "article",
+})
+TEXT_CHAR_CAP = 20000           # per node, before the collector's own cap
 # Not groups, but not controls either: text and pictures can be named by a
 # label match, yet a model point landing on one is not a control to snap to.
 NON_CONTROL_ROLES = frozenset({
@@ -137,6 +145,11 @@ class ElementTree:
     def _elements(self) -> list:
         return []
 
+    def texts(self) -> list:
+        """Text-interface content of the text-bearing elements (window
+        text collector). Empty unless the tree can read it."""
+        return []
+
     def rect(self, element) -> Rect:
         return element.rect
 
@@ -186,6 +199,7 @@ class AtspiTree(ElementTree):
         self._name = ""
         self._frame = None
         self._els: list = []
+        self._texts: list = []
         self._focus: dict = {}
         self.truncated = False
 
@@ -234,6 +248,10 @@ class AtspiTree(ElementTree):
     def _elements(self) -> list:
         self._load()
         return self._els
+
+    def texts(self) -> list:
+        self._load()
+        return self._texts
 
     def occluded(self, rect) -> bool:
         """Another mapped window on the focused workspace covers the rect's
@@ -354,12 +372,27 @@ class AtspiTree(ElementTree):
                 el = self._element(atspi, node, ox, oy, title)
                 if el is not None:
                     self._els.append(el)
+                    if el.role in TEXT_ROLES:
+                        self._read_text(node)
             if depth >= MAX_DEPTH:
                 continue
             for k in range(node.get_child_count() - 1, -1, -1):
                 child = node.get_child_at_index(k)
                 if child is not None:
                     stack.append((child, depth + 1))
+
+    def _read_text(self, node) -> None:
+        """Visible node's Text-interface content, if it has any."""
+        try:
+            iface = node.get_text_iface()
+            if iface is None:
+                return
+            n = min(iface.get_character_count(), TEXT_CHAR_CAP)
+            got = iface.get_text(0, n) if n > 0 else ""
+        except Exception:
+            return
+        if got and got.strip():
+            self._texts.append(got)
 
     @staticmethod
     def _element(atspi, node, ox, oy, title):

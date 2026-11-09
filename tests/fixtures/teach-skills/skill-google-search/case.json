@@ -1,0 +1,59 @@
+{
+ "id": "skill-google-search",
+ "app": "google-search",
+ "goal": "search for images",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "Images",
+  "rect": [
+   126,
+   28,
+   112,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "All",
+   "rect": [
+    8,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Images",
+   "rect": [
+    126,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "News",
+   "rect": [
+    244,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Tools",
+   "rect": [
+    362,
+    28,
+    112,
+    24
+   ]
+  }
+ ]
+}

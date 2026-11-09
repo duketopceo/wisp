@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Open the Tools menu and choose Review.\", \"label\": \"Tools\", \"why\": \"Review shows the annotation tools.\", \"kind\": \"click\"}]}"
+}

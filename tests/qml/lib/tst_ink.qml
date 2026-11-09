@@ -23,6 +23,23 @@ TestCase {
     verify(JSON.stringify(a) !== JSON.stringify(c))
   }
 
+  function test_the_same_seed_gives_the_same_path_and_another_seed_differs() {
+    function withSeed(seed) { return Ink.strokesFor({ kind: "ring", x: 100, y: 100, r: 40, seed: seed }) }
+    compare(JSON.stringify(withSeed(7)), JSON.stringify(withSeed(7)))
+    verify(JSON.stringify(withSeed(7)) !== JSON.stringify(withSeed(8)))
+    // the seed, not the geometry, decides the wobble
+    var moved = Ink.strokesFor({ kind: "ring", x: 100, y: 100, r: 40, seed: 7 })
+    compare(JSON.stringify(moved), JSON.stringify(withSeed(7)))
+  }
+
+  function test_a_mark_without_a_seed_still_draws_from_its_geometry() {
+    var m = { kind: "arrow", x1: 0, y1: 0, x2: 100, y2: 50 }
+    var plain = Ink.strokesFor(m)
+    compare(plain.strokes.length, 3)
+    compare(JSON.stringify(plain), JSON.stringify(Ink.strokesFor({ kind: "arrow", x1: 0, y1: 0, x2: 100, y2: 50, seed: -1 })))
+    compare(JSON.stringify(plain), JSON.stringify(Ink.strokesFor({ kind: "arrow", x1: 0, y1: 0, x2: 100, y2: 50, seed: "x" })))
+  }
+
   function test_pen_is_tapered() {
     var w = Ink.widths(20)
     verify(w[0] < w[10])

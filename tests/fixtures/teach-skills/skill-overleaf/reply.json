@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click Recompile above the preview.\", \"label\": \"Recompile\", \"why\": \"The PDF refreshes after the compile.\", \"kind\": \"click\"}]}"
+}

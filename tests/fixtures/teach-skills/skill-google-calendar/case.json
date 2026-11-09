@@ -1,0 +1,59 @@
+{
+ "id": "skill-google-calendar",
+ "app": "google-calendar",
+ "goal": "create a new event",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "Create",
+  "rect": [
+   8,
+   28,
+   112,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "Create",
+   "rect": [
+    8,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Today",
+   "rect": [
+    126,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Week",
+   "rect": [
+    244,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Settings",
+   "rect": [
+    362,
+    28,
+    112,
+    24
+   ]
+  }
+ ]
+}

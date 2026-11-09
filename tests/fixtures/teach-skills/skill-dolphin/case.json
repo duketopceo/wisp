@@ -1,0 +1,41 @@
+{
+ "id": "skill-dolphin",
+ "app": "dolphin",
+ "goal": "split Dolphin into two panes",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "Split",
+  "rect": [
+   8,
+   28,
+   112,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "Split",
+   "rect": [
+    8,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Places",
+   "rect": [
+    126,
+    28,
+    112,
+    24
+   ]
+  }
+ ]
+}

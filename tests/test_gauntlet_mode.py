@@ -381,6 +381,149 @@ class TestAppSkillEvent(unittest.TestCase):
         self.assertFalse([c for c in emit.call_args_list
                           if c[0][1] == "app_skill"])
 
+ONE = [{"x": 0, "y": 0, "width": 1920, "height": 1080, "scale": 1}]
+# a scale-2 laptop panel (logical 1728x1080) with a scale-1 monitor to its
+# right: the screenshot is one canvas at the highest scale (2)
+TWO = [{"x": 0, "y": 0, "width": 3456, "height": 2160, "scale": 2},
+       {"x": 1728, "y": 0, "width": 2560, "height": 1440, "scale": 1}]
+
+
+def ap_case(reply, **over):
+    c = {"id": "t1", "kind": "answer_point", "question": "what year?",
+         "monitors": ONE, "reply": reply,
+         "expect_answer": ["1969"],
+         "expect_point": {"rect": [100, 100, 200, 50]}}
+    c.update(over)
+    return c
+
+
+GOOD = "It was 1969. [POINT:150,120:infobox]"
+
+
+class TestAnswerPointScoring(unittest.TestCase):
+    def score(self, reply, **over):
+        case = gauntlet.parse_answer_point_case(ap_case(reply, **over))
+        return gauntlet.score_answer_point(case)["verdict"]
+
+    def test_a_correct_reply_scores_correct(self):
+        self.assertEqual(self.score(GOOD), "correct")
+
+    def test_answer_check_is_case_insensitive_and_needs_every_substring(self):
+        self.assertEqual(self.score(
+            "THE MOON landing was 1969. [POINT:150,120:x]",
+            expect_answer=["moon", "1969"]), "correct")
+        self.assertEqual(self.score(
+            "The landing was 1969. [POINT:150,120:x]",
+            expect_answer=["moon", "1969"]), "wrong-answer")
+
+    def test_missing_answer_text_is_wrong_answer(self):
+        self.assertEqual(self.score("Not sure. [POINT:150,120:x]"),
+                         "wrong-answer")
+
+    def test_tag_text_does_not_count_as_the_answer(self):
+        self.assertEqual(self.score("[POINT:150,120:1969]"), "wrong-answer")
+
+    def test_point_outside_the_rect_is_wrong_point(self):
+        self.assertEqual(self.score("It was 1969. [POINT:900,900:x]"),
+                         "wrong-point")
+
+    def test_reply_without_a_point_is_no_point(self):
+        self.assertEqual(self.score("It was 1969."), "no-point")
+
+    def test_the_first_point_is_the_one_scored(self):
+        self.assertEqual(self.score(
+            "1969 [POINT:900,900:a] [POINT:150,120:b]"), "wrong-point")
+
+    def test_two_monitor_point_on_the_first_monitor_is_wrong_monitor(self):
+        over = dict(monitors=TWO, expect_point={
+            "rect": [2300, 300, 200, 60], "monitor": 2})
+        # canvas px (4800, 660) -> logical (2400, 330), on monitor 2
+        self.assertEqual(self.score("1969 [POINT:4800,660:x]", **over),
+                         "correct")
+        # canvas px (800, 660) -> logical (400, 330), on monitor 1
+        self.assertEqual(self.score("1969 [POINT:800,660:x]", **over),
+                         "wrong-monitor")
+        # right monitor, wrong spot
+        self.assertEqual(self.score("1969 [POINT:4400,1500:x]", **over),
+                         "wrong-point")
+
+    def test_a_point_in_dead_space_misses_the_expected_monitor(self):
+        over = dict(monitors=TWO, expect_point={
+            "rect": [2300, 300, 200, 60], "monitor": 2})
+        self.assertEqual(self.score("1969 [POINT:9000,9000:x]", **over),
+                         "wrong-monitor")
+
+    def test_table_counts_and_renders_rows(self):
+        rows = [gauntlet.score_answer_point(gauntlet.parse_answer_point_case(
+            ap_case(r, id=f"c{i}")))
+            for i, r in enumerate([GOOD, "no", "1969"])]
+        t = gauntlet.AnswerPointTable(rows)
+        self.assertEqual(t.counts()["correct"], 1)
+        self.assertEqual(t.counts()["wrong-answer"], 1)
+        self.assertEqual(t.counts()["no-point"], 1)
+        self.assertAlmostEqual(t.pass_rate(), 1 / 3)
+        self.assertIn("first owner-run live baseline", t.render())
+        self.assertIsNone(gauntlet.ANSWER_POINT_GATE)
+
+
+class TestAnswerPointParsing(unittest.TestCase):
+    def bad(self, **over):
+        c = ap_case(GOOD)
+        for k, v in over.items():
+            if v is None:
+                c.pop(k, None)
+            else:
+                c[k] = v
+        with self.assertRaises(gauntlet.TeachCaseError):
+            gauntlet.parse_answer_point_case(c)
+
+    def test_malformed_cases_raise_the_case_error(self):
+        self.bad(id=None)
+        self.bad(question="")
+        self.bad(reply=None)
+        self.bad(reply=7)
+        self.bad(expect_answer=[])
+        self.bad(expect_answer="1969")
+        self.bad(expect_point=None)
+        self.bad(expect_point={"rect": [1, 2, 3]})
+        self.bad(expect_point={"rect": [1, 2, 0, 5]})
+        self.bad(expect_point={"rect": [1, 2, 3, 4], "monitor": 0})
+        self.bad(expect_point={"rect": [1, 2, 3, 4], "monitor": 3})
+        self.bad(monitors=[])
+        self.bad(monitors=[{"x": 0}])
+
+    def test_a_non_object_is_an_error(self):
+        with self.assertRaises(gauntlet.TeachCaseError):
+            gauntlet.parse_answer_point_case(["x"])
+
+    def test_shipped_cases_load_and_score_correct(self):
+        cases = gauntlet.load_answer_point_cases()
+        self.assertEqual(len(cases), 4)
+        ids = {c.id for c in cases}
+        self.assertEqual(len(ids), 4)
+        multi = [c for c in cases if len(c.monitors) > 1]
+        self.assertEqual(len(multi), 1)
+        self.assertEqual(multi[0].expect_monitor, 2)
+        t = gauntlet.score_answer_point_cases()
+        self.assertEqual([r["verdict"] for r in t.rows], ["correct"] * 4)
+
+    def test_loader_skips_other_rows_and_names_the_bad_line(self):
+        d = shorttmp.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        p = pathlib.Path(d.name) / "c.jsonl"
+        good = json.dumps(ap_case(GOOD))
+        p.write_text("# note\n" + json.dumps({"id": "x", "category": "menu"})
+                     + "\n" + good + "\n")
+        self.assertEqual([c.id for c in gauntlet.load_answer_point_cases(p)],
+                         ["t1"])
+        p.write_text(good + "\n" + json.dumps(ap_case(GOOD, question="")) + "\n")
+        with self.assertRaises(gauntlet.TeachCaseError) as cm:
+            gauntlet.load_answer_point_cases(p)
+        self.assertIn("line 2", str(cm.exception))
+        p.write_text("# only a note\n")
+        with self.assertRaises(gauntlet.TeachCaseError):
+            gauntlet.load_answer_point_cases(p)
+
 
 if __name__ == "__main__":
     unittest.main()

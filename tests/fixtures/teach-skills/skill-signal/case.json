@@ -1,0 +1,59 @@
+{
+ "id": "skill-signal",
+ "app": "signal",
+ "goal": "attach a file in Signal",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "Attach",
+  "rect": [
+   244,
+   28,
+   112,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "Chats",
+   "rect": [
+    8,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Search",
+   "rect": [
+    126,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Attach",
+   "rect": [
+    244,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Send",
+   "rect": [
+    362,
+    28,
+    112,
+    24
+   ]
+  }
+ ]
+}
