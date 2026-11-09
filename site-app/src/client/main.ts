@@ -1,11 +1,26 @@
+import type { Mark } from "./mark";
 // First-paint module: theme toggle, copy button, and the decision to load the
-// WebGL hero. Everything here is optional; the page works without it.
+// live comet. Everything here is optional; the page works without it.
 const root = document.documentElement;
+let mark: Mark | null = null;
 
 function theme(): "light" | "dark" {
   const set = root.dataset.theme;
   if (set === "light" || set === "dark") return set;
   return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+// Browser chrome follows an explicit choice; with none saved the two media-scoped
+// theme-color tags in index.html follow the system.
+function chrome(t: "light" | "dark") {
+  let m = document.head.querySelector<HTMLMetaElement>("meta[data-wisp-chrome]");
+  if (!m) {
+    m = document.createElement("meta");
+    m.name = "theme-color";
+    m.dataset.wispChrome = "";
+    document.head.prepend(m);
+  }
+  m.content = t === "dark" ? "#15110E" : "#F2ECE0";
 }
 
 const toggle = document.querySelector<HTMLButtonElement>("#theme-toggle");
@@ -21,10 +36,13 @@ if (toggle) {
   toggle.addEventListener("click", () => {
     const next = theme() === "dark" ? "light" : "dark";
     root.dataset.theme = next;
+    chrome(next);
     try { localStorage.setItem("wisp-theme", next); } catch { /* private mode: not remembered */ }
     paint();
+    mark?.recolor();
   });
 }
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => mark?.recolor());
 
 const copy = document.querySelector<HTMLButtonElement>("#copy-install");
 const code = document.querySelector<HTMLElement>("#install-code");
@@ -46,32 +64,39 @@ if (copy && code && status) {
   });
 }
 
-// The WebGL hero is a nicety: skip it for reduced motion, data saver and
-// low-power devices, and only fetch it after the page has painted.
-const host = document.querySelector<HTMLElement>("#hero-bg");
+// The live comet is a nicety: skip it for reduced motion, data saver and
+// low-power devices, and only fetch it after the page has painted. The SVG still
+// in the stage stays when anything here is skipped or fails.
+const host = document.querySelector<HTMLElement>("#hero-mark");
 const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 const nav = navigator as Navigator & { connection?: { saveData?: boolean }; deviceMemory?: number };
 const lowPower = nav.connection?.saveData === true
   || (nav.hardwareConcurrency ?? 8) <= 2
   || (nav.deviceMemory ?? 8) <= 2;
 
-// data-ready marks that the hero decision is made (tests and screenshots wait on it).
+// data-ready marks that the decision is made (tests and screenshots wait on it);
+// data-mark is "live" only once the canvas has drawn its first frame.
 if (host && (lowPower || reduced.matches)) host.dataset.ready = "true";
 if (host && !lowPower) {
-  let stop: (() => void) | null = null;
+  const still = () => { mark?.stop(); mark = null; host.dataset.mark = "still"; };
+  let starting = false;
   const start = async () => {
-    if (stop || reduced.matches) { host.dataset.ready = "true"; return; }
+    if (mark || starting || reduced.matches) { host.dataset.ready = "true"; return; }
+    starting = true;
     try {
-      const { mountRibbonField } = await import("./hero");
-      if (!reduced.matches) stop = mountRibbonField(host, { onLost: () => { stop = null; } });
+      const { mountMark } = await import("./mark");
+      if (!reduced.matches) {
+        mark = mountMark(host, { onLive: () => { host.dataset.mark = "live"; }, onLost: still });
+      }
     } catch {
-      host.dataset.hero = "static"; // module failed: keep the designed frame
+      still(); // module or canvas failed: keep the designed still
     } finally {
+      starting = false;
       host.dataset.ready = "true";
     }
   };
   reduced.addEventListener("change", () => {
-    if (reduced.matches) { stop?.(); stop = null; } else { void start(); }
+    if (reduced.matches) still(); else void start();
   });
   const later = () => ("requestIdleCallback" in window
     ? requestIdleCallback(() => void start(), { timeout: 1500 })

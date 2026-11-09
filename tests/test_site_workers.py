@@ -78,13 +78,14 @@ class WorkersBundle(unittest.TestCase):
                 capture_output=True, text=True,
             )
             self.assertEqual(0, result.returncode, result.stderr)
-            # The homepage (site-app/), its lazy hero chunk, /light/ and /plain/.
+            # The homepage (site-app/), its lazy mark chunk, /light/ and /plain/.
             self.assertRegex((out / "index.html").read_text(), r'src="/app/index-[\w-]+\.js"')
-            self.assertEqual(1, len(list((out / "app").glob("hero-*.js"))))
+            self.assertEqual(1, len(list((out / "app").glob("mark-*.js"))))
+            self.assertEqual(0, len(list((out / "app").glob("hero-*.js"))))
             for name in ("assets/wisp-flame/idle-256.webp",
                          "assets/wisp-flame/wisp-flame-32.png",
                          "assets/wisp-flame/wisp-flame-512.png",
-                         "theme-init.js", "credits.txt", "light/index.html",
+                         "favicon.svg", "theme-init.js", "credits.txt", "light/index.html",
                          "plain/wisp-flame-130.png", "plain/wisp-flame-32.png"):
                 self.assertTrue((out / name).is_file(), name)
             # No external URLs in the published pages or modules.

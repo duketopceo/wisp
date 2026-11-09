@@ -21,11 +21,9 @@ import { costs, faq, features, hero, INSTALL, REPO, steps, trust, VERSION } from
 
 import { Badge } from "../ui/badge";
 import { Button, LinkButton } from "../ui/button";
-import { Glow } from "../ui/glow";
 import { Item, ItemDescription, ItemIcon, ItemTitle } from "../ui/item";
+import { Mark } from "../ui/mark";
 import { Section, SectionHeading } from "../ui/section";
-
-const FLAME = "/assets/wisp-flame";
 
 function Github(props: { className?: string }) {
   // launch-ui components/logos/github.tsx
@@ -39,7 +37,7 @@ function Github(props: { className?: string }) {
 function Logo({ className }: { className?: string }) {
   return (
     <a href="#main" className={`inline-flex items-center gap-2 text-xl font-bold tracking-tight ${className ?? ""}`} aria-label="Wisp home">
-      <img src={`${FLAME}/wisp-flame-32.png`} width={28} height={28} alt="" className="flame-mark" />
+      <Mark size="small" className="size-7" />
       wisp
     </a>
   );
@@ -47,15 +45,15 @@ function Logo({ className }: { className?: string }) {
 
 export function Navbar() {
   return (
-    <header data-stage="dark" className="bg-background/70 text-foreground sticky top-0 z-50 border-b border-foreground/10 backdrop-blur-lg">
+    <header className="bg-background/70 text-foreground sticky top-0 z-50 border-b border-foreground/10 backdrop-blur-lg">
       <a href="#main" className="bg-foreground text-background absolute top-2 left-2 -translate-y-24 rounded-md px-3 py-2 focus:translate-y-0">Skip to content</a>
       <nav aria-label="Primary" className="max-w-container mx-auto flex h-16 items-center justify-between gap-4 px-4">
         <Logo />
         <div className="flex items-center gap-1 text-sm sm:gap-2">
-          <a href="#how" className="hover:text-primary hidden px-3 py-2 sm:inline">How it works</a>
-          <a href="#trust" className="hover:text-primary hidden px-3 py-2 md:inline">Trust</a>
-          <a href="#faq" className="hover:text-primary hidden px-3 py-2 md:inline">FAQ</a>
-          <a href={REPO} className="hover:text-primary inline-flex items-center gap-1.5 px-3 py-2">
+          <a href="#how" className="hover:underline hidden px-3 py-2 sm:inline">How it works</a>
+          <a href="#trust" className="hover:underline hidden px-3 py-2 md:inline">Trust</a>
+          <a href="#faq" className="hover:underline hidden px-3 py-2 md:inline">FAQ</a>
+          <a href={REPO} className="hover:underline inline-flex items-center gap-1.5 px-3 py-2">
             <Github className="size-4" /><span>GitHub</span>
           </a>
           <Button id="theme-toggle" variant="ghost" size="icon" aria-label="Switch to light theme" hidden>
@@ -70,32 +68,28 @@ export function Navbar() {
 
 export function Hero() {
   return (
-    <section data-stage="dark" aria-labelledby="hero-title" className="bg-background text-foreground relative isolate overflow-hidden">
-      {/* ThreeUI ribbon field mounts here after first paint; the frame below is the fallback. */}
-      <div id="hero-bg" data-hero="static" aria-hidden="true" className="hero-frame absolute inset-0 -z-10" />
-      <div className="from-background/0 to-background pointer-events-none absolute inset-x-0 bottom-0 -z-10 h-24 bg-linear-to-b" />
+    <section aria-labelledby="hero-title" className="bg-background text-foreground relative isolate overflow-hidden">
       <div className="max-w-container mx-auto grid min-h-[min(760px,92svh)] items-center gap-10 px-4 pt-16 pb-20 md:grid-cols-[minmax(0,1fr)_minmax(0,360px)] md:pt-20">
         <div className="flex min-w-0 flex-col items-start gap-6 sm:gap-8">
           <Badge className="animate-appear">
             <span className="bg-primary size-1.5 rounded-full" aria-hidden="true" />
             <span className="text-muted-foreground">{hero.badge}</span>
-            <a href={`${REPO}/releases/tag/${VERSION}`} className="text-primary inline-flex items-center gap-1">Notes<ArrowUpRightIcon className="size-3" /></a>
+            <a href={`${REPO}/releases/tag/${VERSION}`} className="text-foreground inline-flex items-center gap-1 underline underline-offset-4">Notes<ArrowUpRightIcon className="size-3" /></a>
           </Badge>
           <h1 id="hero-title" className="animate-appear text-5xl leading-[1.02] font-semibold tracking-tight text-balance sm:text-7xl lg:text-8xl">
-            {hero.titleLead}<br />{hero.titleTail} <span className="from-primary to-brand-foreground bg-linear-to-r bg-clip-text text-transparent">{hero.titleAccent}</span>
+            {hero.titleLead}<br />{hero.titleTail} <span className="decoration-primary underline decoration-[0.08em] underline-offset-[0.12em]">{hero.titleAccent}</span>
           </h1>
           <p className="animate-appear text-muted-foreground max-w-[600px] text-lg font-medium text-pretty [animation-delay:100ms] sm:text-xl">{hero.description}</p>
           <div className="animate-appear flex flex-wrap gap-3 [animation-delay:200ms]">
             <LinkButton href="#install">Install on Omarchy<ArrowUpRightIcon /></LinkButton>
-            <LinkButton href={REPO} variant="glow"><Github className="size-4" />Source on GitHub</LinkButton>
+            <LinkButton href={REPO} variant="outline"><Github className="size-4" />Source on GitHub</LinkButton>
           </div>
           <p className="text-muted-foreground text-sm">Omarchy / Hyprland is the full-app target. macOS and Windows support is experimental.</p>
         </div>
-        <div className="relative order-first mx-auto md:order-none">
-          <picture id="flame">
-            <source media="(prefers-reduced-motion: reduce)" srcSet={`${FLAME}/wisp-flame-512.png`} />
-            <img src={`${FLAME}/idle-256.webp`} width={256} height={256} alt="The Wisp flame, a small translucent blue flame with a bright heart." className="flame-mark size-40 object-contain sm:size-56 md:size-72" />
-          </picture>
+        <div className="order-first mx-auto w-full max-w-[360px] md:order-none">
+          <div id="hero-mark" data-mark="still" aria-hidden="true" className="relative h-56 sm:h-72 md:h-[360px]">
+            <Mark className="mark-still absolute inset-0 size-full" />
+          </div>
         </div>
       </div>
     </section>
@@ -118,7 +112,7 @@ export function Features() {
                   <ItemIcon><Icon className="size-5" strokeWidth={1.5} /></ItemIcon>{f.title}
                 </ItemTitle>
                 <ItemDescription>
-                  <p>{f.body}{f.href && <> <a className="text-foreground underline underline-offset-4 hover:text-primary" href={f.href}>{f.cite}</a></>}</p>
+                  <p>{f.body}{f.href && <> <a className="text-foreground underline underline-offset-4" href={f.href}>{f.cite}</a></>}</p>
                 </ItemDescription>
               </Item>
             );
@@ -132,13 +126,12 @@ export function Features() {
 export function Steps() {
   return (
     <Section id="how" aria-labelledby="how-title" className="relative overflow-hidden">
-      <Glow className="top-1/2" />
       <div className="max-w-container relative mx-auto flex flex-col gap-12">
         <div id="how-title"><SectionHeading eyebrow="How it works" title="Hold, speak, release." /></div>
         <ol className="grid gap-4 md:grid-cols-3">
           {steps.map((s, i) => (
             <li key={s.title} className="glass-2 flex flex-col gap-3 rounded-xl p-6">
-              <span className="text-primary font-mono text-sm">0{i + 1}</span>
+              <span className="text-foreground font-mono text-sm">0{i + 1}</span>
               <h3 className="text-lg font-semibold tracking-tight">
                 {i === 0 ? <>Hold <kbd className="bg-muted rounded border px-1.5 py-0.5 text-sm">Super</kbd> + <kbd className="bg-muted rounded border px-1.5 py-0.5 text-sm">D</kbd> and speak</> : s.title}
               </h3>
@@ -161,10 +154,10 @@ export function Trust() {
         <div className="flex flex-col gap-4">
           <ul className="flex flex-col gap-3">
             {trust.points.map((p) => (
-              <li key={p} className="flex gap-3 text-pretty"><ShieldCheckIcon className="text-flame mt-1 size-4 shrink-0" strokeWidth={1.75} aria-hidden="true" /><span>{p}</span></li>
+              <li key={p} className="flex gap-3 text-pretty"><ShieldCheckIcon className="text-foreground mt-1 size-4 shrink-0" strokeWidth={1.75} aria-hidden="true" /><span>{p}</span></li>
             ))}
           </ul>
-          <a href={trust.href} className="text-primary inline-flex items-center gap-1 font-semibold underline-offset-4 hover:underline">{trust.linkText}<ArrowUpRightIcon className="size-4" /></a>
+          <a href={trust.href} className="text-foreground inline-flex items-center gap-1 font-semibold underline underline-offset-4">{trust.linkText}<ArrowUpRightIcon className="size-4" /></a>
         </div>
       </div>
     </Section>
@@ -202,7 +195,6 @@ export function CostCard() {
 export function Install() {
   return (
     <Section id="install" aria-labelledby="install-title" className="relative overflow-hidden">
-      <Glow className="-top-10" />
       <div className="max-w-container relative mx-auto flex flex-col gap-8">
         <div id="install-title"><SectionHeading eyebrow="Install" title="Give your desktop a little Wisp.">
           <p>Omarchy / Hyprland is the full-app target. macOS and Windows support is experimental.</p>
@@ -231,7 +223,7 @@ export function Faq() {
         <div className="divide-y border-y">
           {faq.map((item) => (
             <details key={item.q} className="group">
-              <summary className="flex items-center justify-between gap-4 py-5 text-left text-base font-semibold hover:text-primary">
+              <summary className="flex items-center justify-between gap-4 py-5 text-left text-base font-semibold hover:underline">
                 {item.q}<ChevronDownIcon className="faq-chevron text-muted-foreground size-4 shrink-0 transition-transform" aria-hidden="true" />
               </summary>
               <div className="text-muted-foreground flex flex-col gap-2 pb-5 text-pretty">{item.a.map((p) => <p key={p}>{p}</p>)}</div>
