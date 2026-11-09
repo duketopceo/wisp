@@ -23,14 +23,19 @@ const live = page => page.waitForFunction(() =>
 const inspectCanvas = page => page.locator("#hero-mark canvas").evaluate(canvas => {
   const {width, height} = canvas;
   const data = canvas.getContext("2d").getImageData(0, 0, width, height).data;
-  let pop = 0, sx = 0, count = 0;
+  let pop = 0, sx = 0, count = 0, minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] === 0) continue; // the glow counts toward the extent, not the mean
+    const px = (i / 4) % width, py = Math.floor(i / 4 / width);
+    minX = Math.min(minX, px); maxX = Math.max(maxX, px); minY = Math.min(minY, py); maxY = Math.max(maxY, py);
     if (data[i + 3] < 250) continue;
     count++;
-    sx += (i / 4) % width;
+    sx += px;
     if (Math.abs(data[i] - 255) < 3 && Math.abs(data[i + 1] - 91) < 3 && Math.abs(data[i + 2] - 31) < 3) pop++;
   }
-  return {pop, x: count ? sx / count * canvas.clientWidth / width : null};
+  const k = canvas.clientWidth / width;
+  return {pop, x: count ? sx / count * k : null, extent: {minX: minX * k, maxX: (maxX + 1) * k, minY: minY * k, maxY: (maxY + 1) * k},
+    size: {w: canvas.clientWidth, h: canvas.clientHeight}};
 });
 // WCAG contrast of what the browser really computed: body text, muted text and the CTA label.
 const contrast = page => page.evaluate(() => {
@@ -142,13 +147,14 @@ for (const name of engines) {
       const xs = [];
       let drawn = 0;
       for (let i = 0; i < 8; i++) {
-        const {pop, x} = await inspectCanvas(page);
+        const {pop, x, extent, size} = await inspectCanvas(page);
         drawn += pop;
         xs.push(x);
+        assert.ok(extent.minX > 2 && extent.maxX < size.w - 2 && extent.minY > 2 && extent.maxY < size.h - 2,
+          `the comet and its glow stay inside the stage ${JSON.stringify(extent)} in ${size.w}x${size.h}`);
         await page.waitForTimeout(1100);
       }
       assert.ok(drawn > 0, "the comet is drawn in the pop colour");
-      assert.ok(Math.min(...xs) > 0 && Math.max(...xs) < stage.width, "the comet stays inside its stage");
       return xs.reduce((a, b) => a + b, 0) / xs.length;
     };
     const leftMean = await meanX("left");
@@ -236,7 +242,7 @@ for (const name of engines) {
       await c.close();
     }
 
-    for (const mode of ["reduced", "no-js", "no-canvas", "module-failed", "data-saver"]) {
+    for (const mode of ["reduced", "no-js", "no-canvas", "module-failed", "data-saver", "draw-failed"]) {
       const c = await browser.newContext({
         viewport: {width: 390, height: 844},
         javaScriptEnabled: mode !== "no-js",
@@ -246,6 +252,15 @@ for (const name of engines) {
         const original = HTMLCanvasElement.prototype.getContext;
         HTMLCanvasElement.prototype.getContext = function (type, ...args) {
           return type === "2d" ? null : original.call(this, type, ...args);
+        };
+      });
+      // The canvas works at mount, then a later draw throws: the still must come back.
+      if (mode === "draw-failed") await c.addInitScript(() => {
+        const original = CanvasRenderingContext2D.prototype.createRadialGradient;
+        let calls = 0;
+        CanvasRenderingContext2D.prototype.createRadialGradient = function (...args) {
+          if (++calls > 2) throw new Error("draw failed");
+          return original.apply(this, args);
         };
       });
       if (mode === "data-saver") await c.addInitScript(() => {
@@ -258,6 +273,7 @@ for (const name of engines) {
       p.on("pageerror", error => errors.push(error.stack || error.message));
       await p.goto(base, {waitUntil: "networkidle"});
       if (mode !== "no-js") await ready(p);
+      if (mode === "draw-failed") await p.waitForTimeout(1500); // first frame draws, a later one throws
       assert.equal(await p.locator("#hero-mark").getAttribute("data-mark"), "still", mode);
       assert.equal(await p.locator("#hero-mark canvas").count(), 0, mode);
       assert.equal(await p.locator("#hero-mark svg").isVisible(), true, mode);

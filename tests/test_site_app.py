@@ -35,8 +35,10 @@ def _theme_tokens(css, theme_selector):
     palette = dict(re.findall(r"--([\w-]+):\s*([^;]+);", css[:css.index("/* Light")]))
     light = css[css.index("/* Light"):css.index("/* Dark")]
     raw = {**palette, **dict(re.findall(r"--([\w-]+):\s*([^;]+);", light))}
-    if theme_selector == "dark":
-        block = css[css.index(':root[data-theme="dark"]'):]
+    if theme_selector in ("dark", "dark-media"):
+        start = (':root[data-theme="dark"]' if theme_selector == "dark"
+                 else '  :root:not([data-theme="light"]) {')
+        block = css[css.index(start):]
         raw.update(dict(re.findall(r"--([\w-]+):\s*([^;]+);", block[:block.index("}")])))
 
     def resolve(name):
@@ -147,7 +149,7 @@ class Homepage(unittest.TestCase):
         self.assertEqual({INK, PAPER, POP}, {c.upper() for c in re.findall(r"#[0-9A-Fa-f]{3,8}\b", source)})
         self.assertNotIn("oklch(", source)
         self.assertNotRegex(source, r"(?<![\w-])(?:rgb|hsl|hwb|lab|lch)a?\(")
-        for name, ground in (("light", PAPER), ("dark", INK)):
+        for name, ground in (("light", PAPER), ("dark", INK), ("dark-media", INK)):  # dark-media: what an OS-dark visitor gets
             token = _theme_tokens(source, name)
             self.assertEqual(ground, token("background"))
             for text in ("foreground", "muted-foreground"):
