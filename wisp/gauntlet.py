@@ -39,7 +39,7 @@ import re
 import subprocess
 import sys
 
-from . import cua_safety
+from . import cua_safety, points
 
 PROFILE_DIR = (pathlib.Path(__file__).resolve().parent.parent
                / "docs" / "dev-tasks" / "profiles")
@@ -641,3 +641,180 @@ def score_teach_cases(directory=None) -> TeachTable:
     if not dirs:
         raise TeachCaseError(f"no teach cases under {root}")
     return TeachTable([score_teach_case(load_teach_case(d)) for d in dirs])
+
+
+# -- offline answer-and-point harness (U10) ----------------------------------
+#
+# Scores a recorded companion reply (answer text plus point tags in the
+# wisp/points.py grammar) against answer-contains checks and a point-in-region
+# check. Offline like the teach harness: a case carries its own reply, which is
+# HAND-AUTHORED (like scripts/gen_teach_fixtures.py output), not a model
+# recording. The hermetic suite only proves the scoring works; the pass-rate
+# gate is NOT set here. It comes from the first owner-run live baseline, so
+# ANSWER_POINT_GATE stays None until then.
+#
+# A case is one JSONL row of docs/dev-tasks/gauntlet.jsonl with
+# "kind": "answer_point" (the sandbox driver's loader skips those rows):
+#   id, question, reply (raw model text), monitors ([{x,y,width,height,scale}],
+#   the layout the screenshot was taken on), expect_answer (substrings, all
+#   must appear, case-insensitive), expect_point {rect: [x,y,w,h] in logical
+#   coords, monitor: optional 1-based index into `monitors`}.
+# The reply's point is a raw-canvas pixel of the shared screenshot, mapped to
+# logical coords with points.raw_canvas_to_logical; the first point is scored.
+
+ANSWER_POINT_KIND = "answer_point"
+ANSWER_POINT_CASES = (pathlib.Path(__file__).resolve().parent.parent
+                      / "docs" / "dev-tasks" / "gauntlet.jsonl")
+ANSWER_POINT_GATE = None    # set from the first owner-run live baseline
+(AP_CORRECT, AP_WRONG_ANSWER, AP_WRONG_POINT, AP_WRONG_MONITOR,
+ AP_NO_POINT) = ("correct", "wrong-answer", "wrong-point", "wrong-monitor",
+                 "no-point")
+AP_CLASSES = (AP_CORRECT, AP_WRONG_ANSWER, AP_WRONG_POINT, AP_WRONG_MONITOR,
+              AP_NO_POINT)
+
+
+class AnswerPointCase:
+    def __init__(self, id, question, reply, monitors, expect_answer,
+                 expect_rect, expect_monitor):
+        self.id, self.question, self.reply = id, question, reply
+        self.monitors, self.expect_answer = monitors, expect_answer
+        self.expect_rect, self.expect_monitor = expect_rect, expect_monitor
+
+
+def _is_num(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def parse_answer_point_case(data) -> AnswerPointCase:
+    """Validate one case dict. Raises TeachCaseError when malformed."""
+    if not isinstance(data, dict):
+        raise TeachCaseError("an answer-point case is a JSON object")
+    cid = data.get("id")
+    if not isinstance(cid, str) or not cid.strip():
+        raise TeachCaseError("answer-point case lacks an id")
+
+    def bad(msg):
+        return TeachCaseError(f"{cid}: {msg}")
+    for k in ("question", "reply"):
+        if not isinstance(data.get(k), str) or not data[k].strip():
+            raise bad(f"{k!r} must be a non-empty string")
+    mons = data.get("monitors")
+    if not isinstance(mons, list) or not mons:
+        raise bad("monitors must list at least one monitor")
+    for m in mons:
+        if not isinstance(m, dict) or not all(
+                _is_num(m.get(k)) for k in ("x", "y", "width", "height")) \
+                or m["width"] <= 0 or m["height"] <= 0:
+            raise bad("each monitor needs numeric x, y, width, height")
+    ans = data.get("expect_answer")
+    if not isinstance(ans, list) or not ans or not all(
+            isinstance(a, str) and a.strip() for a in ans):
+        raise bad("expect_answer must list non-empty substrings")
+    ep = data.get("expect_point")
+    rect = ep.get("rect") if isinstance(ep, dict) else None
+    if not (isinstance(rect, list) and len(rect) == 4
+            and all(_is_num(v) for v in rect)
+            and rect[2] > 0 and rect[3] > 0):
+        raise bad("expect_point.rect must be [x, y, w, h] with w, h > 0")
+    mon = ep.get("monitor")
+    if mon is not None and (not isinstance(mon, int)
+                            or isinstance(mon, bool)
+                            or not 1 <= mon <= len(mons)):
+        raise bad("expect_point.monitor must be a 1-based monitor index")
+    return AnswerPointCase(cid, data["question"], data["reply"], mons,
+                           [_norm(a) for a in ans], rect, mon)
+
+
+def _monitor_of(x, y, mons):
+    """1-based index of the monitor whose logical rect holds (x, y)."""
+    for i, m in enumerate(mons, 1):
+        s = points._scale_of(m)
+        if (m["x"] <= x < m["x"] + m["width"] / s
+                and m["y"] <= y < m["y"] + m["height"] / s):
+            return i
+    return None
+
+
+def score_answer_point(case: AnswerPointCase) -> dict:
+    """Verdict for one case. Order: wrong-answer, no-point, wrong-monitor,
+    wrong-point, correct."""
+    text, pts = points.extract(case.reply)
+    got = _norm(text)
+    base = {"id": case.id, "point": None, "monitor": None}
+    if not all(a in got for a in case.expect_answer):
+        return {**base, "verdict": AP_WRONG_ANSWER}
+    if not pts:
+        return {**base, "verdict": AP_NO_POINT}
+    lx, ly = points.raw_canvas_to_logical(pts[0]["x"], pts[0]["y"],
+                                          case.monitors)
+    pt = (points.round_px(lx), points.round_px(ly))
+    mon = _monitor_of(pt[0], pt[1], case.monitors)
+    base.update(point=pt, monitor=mon)
+    if case.expect_monitor is not None and mon != case.expect_monitor:
+        return {**base, "verdict": AP_WRONG_MONITOR}
+    x, y, w, h = case.expect_rect
+    if not (x <= pt[0] <= x + w and y <= pt[1] <= y + h):
+        return {**base, "verdict": AP_WRONG_POINT}
+    return {**base, "verdict": AP_CORRECT}
+
+
+class AnswerPointTable:
+    def __init__(self, rows: list):
+        self.rows = rows
+
+    def counts(self) -> dict:
+        c = {k: 0 for k in AP_CLASSES}
+        for r in self.rows:
+            c[r["verdict"]] += 1
+        return c
+
+    def pass_rate(self) -> float:
+        return self.counts()[AP_CORRECT] / len(self.rows) if self.rows \
+            else 0.0
+
+    def render(self) -> str:
+        c, n = self.counts(), len(self.rows)
+        lines = [f"{'case':<28} verdict"]
+        lines += [f"{r['id']:<28} {r['verdict']}" for r in self.rows]
+        lines += ["", "| class | cases |", "|---|---|"]
+        lines += [f"| {k} | {c[k]}/{n} |" for k in AP_CLASSES]
+        lines.append("gate: unset until the first owner-run live baseline"
+                     if ANSWER_POINT_GATE is None
+                     else f"gate: {ANSWER_POINT_GATE:.0%}")
+        return "\n".join(lines)
+
+
+def load_answer_point_cases(path=None) -> list:
+    """The answer-point rows of a JSONL file (comment, blank and other-kind
+    rows skipped). Raises TeachCaseError naming the line."""
+    p = pathlib.Path(path or ANSWER_POINT_CASES)
+    try:
+        lines = p.read_text(encoding="utf-8").splitlines()
+    except OSError as e:
+        raise TeachCaseError(f"cannot read {p.name}: {e.strerror}") from None
+    out, seen = [], set()
+    for n, line in enumerate(lines, 1):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError:
+            raise TeachCaseError(f"line {n}: not JSON") from None
+        if not isinstance(row, dict) or row.get("kind") != ANSWER_POINT_KIND:
+            continue
+        try:
+            case = parse_answer_point_case(row)
+        except TeachCaseError as e:
+            raise TeachCaseError(f"line {n}: {e}") from None
+        if case.id in seen:
+            raise TeachCaseError(f"line {n}: duplicate id {case.id}")
+        seen.add(case.id)
+        out.append(case)
+    if not out:
+        raise TeachCaseError(f"no answer-point cases in {p.name}")
+    return out
+
+
+def score_answer_point_cases(path=None) -> AnswerPointTable:
+    return AnswerPointTable([score_answer_point(c)
+                             for c in load_answer_point_cases(path)])

@@ -31,3 +31,15 @@
 {"id":"windows-resize","category":"windows","app":"terminal","also":["files"],"goal":"make the terminal window wider","setup":{},"check":{"type":"geometry_changed","app":"terminal","what":"size"},"learnable":false,"held_out":true,"minimal_steps":3}
 {"id":"menu-open-close","category":"menu","app":"menu","goal":"open the Omarchy menu, then close it again by clicking away from it","setup":{},"check":{"type":"judge"},"learnable":false,"held_out":false,"minimal_steps":3,"sessions":["live"]}
 {"id":"menu-launcher-close","category":"menu","app":"menu","goal":"open the Omarchy application launcher and close it again without choosing anything","setup":{},"check":{"type":"judge"},"learnable":false,"held_out":true,"minimal_steps":3,"sessions":["live"]}
+# Answer-and-point cases (U10, kind "answer_point"). Scored offline by
+# wisp/gauntlet.py (score_answer_point_cases), not by the sandbox driver, whose
+# loader skips these rows. `reply` is a HAND-AUTHORED recorded model reply (not a
+# model recording; same convention as scripts/gen_teach_fixtures.py). Points are
+# raw-canvas screenshot px; expect_point.rect is in logical coords; the two
+# monitor case also checks the monitor index. Public, generic content only.
+# The pass-rate gate is not set here: it comes from the first owner-run live
+# baseline (ANSWER_POINT_GATE in wisp/gauntlet.py).
+{"kind":"answer_point","id":"ap-web-article-year","question":"On this encyclopedia article about a famous bridge, what year did it open, and where is that shown?","reply":"It opened in 1937, according to the infobox at the right. [POINT:1560,330:Opened row in the infobox]","monitors":[{"x":0,"y":0,"width":1920,"height":1080,"scale":1}],"expect_answer":["1937"],"expect_point":{"rect":[1450,300,230,60]}}
+{"kind":"answer_point","id":"ap-pdf-total-due","question":"In this PDF invoice template, what is the total amount due and where is it?","reply":"The total due is $1,250.00, in the summary box at the bottom right of the page. [POINT:1380,920:Total due]","monitors":[{"x":0,"y":0,"width":1920,"height":1080,"scale":1}],"expect_answer":["1,250.00"],"expect_point":{"rect":[1250,880,250,70]}}
+{"kind":"answer_point","id":"ap-terminal-error","question":"The terminal shows an error. What is it and which line says so?","reply":"It says ModuleNotFoundError: No module named 'requests', on the last line of the traceback. [POINT:420,760:ModuleNotFoundError line]","monitors":[{"x":0,"y":0,"width":1920,"height":1080,"scale":1}],"expect_answer":["modulenotfounderror","requests"],"expect_point":{"rect":[100,740,700,40]}}
+{"kind":"answer_point","id":"ap-two-monitors-second","question":"The settings window is on my second monitor. What is the name of the selected tab, and where is it?","reply":"The selected tab is Display. [POINT:4800,660:Display tab]","monitors":[{"x":0,"y":0,"width":3456,"height":2160,"scale":2},{"x":1728,"y":0,"width":2560,"height":1440,"scale":1}],"expect_answer":["display"],"expect_point":{"rect":[2300,300,200,60],"monitor":2}}
