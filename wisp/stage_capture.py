@@ -517,7 +517,8 @@ def speculative_context(cfg: dict):
     """Press-time speculation (W4): screenshot and window map, gathered
     concurrently. Not started — the daemon calls `.start()`."""
     from . import context as _context
-    g = {"windows": _context.windows_map}
+    g = {"windows": _context.windows_map,
+         "window_text": _context.window_text_gatherer(cfg)}
     from . import selection as _selection
     if _selection._enabled(cfg):
         g["selection"] = lambda: _selection.read_primary(cfg)
@@ -655,6 +656,7 @@ def context_stage(ctx) -> bool:
     # asking which one.
     ctx.shot_b64 = None
     ctx.blind = None
+    qa_skip = False
     from . import scribble as _scribble
     marks = _scribble.take()          # consumed by this turn, used or not
     if cfg.get("agent", {}).get("screenshots", "true") == "true":
@@ -732,6 +734,20 @@ def context_stage(ctx) -> bool:
         ctx.doc_text = docread.context_for(text, win, cfg)
     except Exception:
         ctx.doc_text = ""            # a document read never fails a turn
+    try:
+        # the window's own text (U3): a quoted block after the document
+        # block, answer route only; the screenshot stays attached
+        from . import context as _context
+        found = speculative.take("window_text", wait=_SPEC_WAIT_S,
+                                 ttl=600) if speculative else None
+        block = "" if qa_skip else _context.window_text_block(found)
+        if block:
+            ctx.doc_text = (ctx.doc_text + "\n\n" + block
+                            if ctx.doc_text else block)
+            _trace.emit(turn, "window_text", "act",
+                        {"source": found.source, "chars": len(block)})
+    except Exception:
+        pass                         # a text read never fails a turn
     try:
         from . import selection as _selection
         prim = speculative.take("selection", wait=_SPEC_WAIT_S, ttl=600) \
