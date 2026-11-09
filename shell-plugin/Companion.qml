@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Hyprland
 import Quickshell.Wayland
 import qs.Commons
 import "components"
@@ -48,6 +49,20 @@ Item {
       if (list[i].name === shellScreen.name && typeof rate === "number" && isFinite(rate)) return rate;
     }
     return 60;
+  }
+
+  // The overlay follows the focused monitor (R4): the screen the compositor
+  // reports as focused, found by name among the shell's screens; null when
+  // unknown, so the window keeps the screen the shell gave it. The
+  // screenshot stays one canvas; only where the buddy and ink show moves.
+  readonly property var focusScreen: {
+    var mon = Hyprland.focusedMonitor;
+    var list = Quickshell.screens;
+    if (!mon || !list) return null;
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].name === mon.name) return list[i];
+    }
+    return null;
   }
 
   // --- cursor buddy feed (U2) -------------------------------------------
@@ -200,6 +215,13 @@ Item {
         function onChipsSeqChanged() { chipsLeave.restart(); }
       }
 
+      Binding {
+        target: win
+        property: "screen"
+        value: root.focusScreen
+        when: root.focusScreen !== null
+      }
+
       // this window's screen and the overlay's label pill size feed the
       // buddy model at the root
       Binding {
@@ -229,6 +251,23 @@ Item {
         onVerdict: function (verdict, turn) { root.svc.label(verdict, turn, ""); }
         onScribbled: function (payload) { root.svc.scribble(payload); }
       }
+
+    }
+  }
+
+  // the typed question a double tap of Control opens (U1): its own small
+  // window, alive only while open, so the overlay never takes the keyboard
+  property bool composerOpen: false
+  Connections {
+    target: root.svc
+    function onComposerSeqChanged() { root.composerOpen = true; }
+  }
+  LazyLoader {
+    active: root.svc !== null && root.composerOpen
+    ComposerWindow {
+      service: root.svc
+      screen: root.focusScreen !== null ? root.focusScreen : Quickshell.screens[0]
+      onClosed: root.composerOpen = false
     }
   }
 }
