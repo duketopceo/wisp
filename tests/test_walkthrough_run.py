@@ -581,5 +581,143 @@ class AskWhatYouHave(unittest.TestCase):
         self.assertEqual(asked, [])
 
 
+RECT = (0, 0, 20, 20)
+
+
+class Evidence(unittest.TestCase):
+    """U8: a click in the target rectangle, or a window-text change near
+    it, completes the step; a click elsewhere does not."""
+
+    def walk(self, label="Save"):
+        w = wt.Walkthrough("g", [wt.Step("press save", label=label),
+                                 wt.Step("then close")])
+        w.issue_step()
+        return w
+
+    def test_click_inside_the_target_marks_the_step_done(self):
+        w = self.walk()
+        r = w.observe(click=(10, 10), rect=RECT)
+        self.assertEqual(w.done_log, ["press save"])
+        self.assertEqual(r["action"], "step")
+        self.assertEqual(r["step"].text, "then close")
+
+    def test_click_outside_the_target_does_not(self):
+        w = self.walk()
+        r = w.observe(click=(300, 300), rect=RECT)
+        self.assertEqual(w.done_log, [])
+        self.assertEqual(r["action"], "off_target")
+        self.assertEqual(w.current_step.text, "press save")
+
+    def test_text_change_near_the_target_without_a_click_marks_it_done(self):
+        w = self.walk()
+        r = w.observe(text_before="Save\nCancel", text_after="Saved\nCancel",
+                      rect=RECT)
+        self.assertEqual(w.done_log, ["press save"])
+        self.assertEqual(r["action"], "step")
+
+    def test_positioned_text_change_is_near_only_inside_the_rect(self):
+        w = self.walk(label="")
+        far = [{"text": "clock 10:01", "x": 900, "y": 700}]
+        r = w.observe(text_before=[], text_after=far, rect=RECT)
+        self.assertEqual(r["action"], "wait")
+        self.assertEqual(w.done_log, [])
+        near = [{"text": "dialog opened", "x": 25, "y": 12}]
+        w.observe(text_before=[], text_after=near, rect=RECT)
+        self.assertEqual(w.done_log, ["press save"])
+
+    def test_unrelated_text_change_is_not_evidence(self):
+        w = self.walk()
+        r = w.observe(text_before="Save\n10:01", text_after="Save\n10:02",
+                      rect=RECT)
+        self.assertEqual(r["action"], "wait")
+        self.assertEqual(w.done_log, [])
+
+    def test_no_text_read_is_not_evidence(self):
+        from wisp import window_text
+        w = self.walk()
+        none = window_text.Result("", window_text.NONE, 0.0)
+        got = window_text.Result("Saved", window_text.ATSPI, 0.0)
+        r = w.observe(text_before=none, text_after=got, rect=RECT)
+        self.assertEqual(r["action"], "wait")
+
+    def desk(self, cursor, frames, texts):
+        """A run with a pointer, frames and window text on a script."""
+        sc = Script([W("same")])
+        calls = {"f": 0, "t": 0}
+
+        def frame():
+            calls["f"] += 1
+            return frames(calls["f"])
+
+        def text():
+            calls["t"] += 1
+            return texts(calls["t"])
+        env = wr._Env({}, sc.state, speak=sc.said.append, window=sc.window,
+                      sleep=sc.sleep, clock=lambda: sc.t,
+                      check=lambda: None, cursor=lambda: cursor,
+                      frame=frame, text=text)
+        step = wt.Step("press save", point={"x": 10, "y": 10},
+                       label="Save")
+        out = wr.run("g", {}, sc.state, steps=[step], env=env)
+        return out, sc
+
+    def test_run_completes_on_a_click_in_the_target(self):
+        out, sc = self.desk(
+            (10, 10), lambda n: b"\x00" * 64 if n < 3 else b"\xff" * 64,
+            lambda n: "Save")
+        self.assertTrue(out.startswith("WALKED (1 steps)"), out)
+
+    def test_run_completes_on_a_text_change_near_the_target(self):
+        out, sc = self.desk((500, 500), lambda n: b"\x00" * 64,
+                            lambda n: "Save" if n < 2 else "Saved")
+        self.assertTrue(out.startswith("WALKED (1 steps)"), out)
+
+    def test_run_ignores_a_click_elsewhere(self):
+        sc = Script([W("same")])
+        pos = iter([(10, 10)] * 2 + [(500, 500)] * 50)
+        last = [(10, 10)]
+
+        def cursor():
+            last[0] = next(pos, last[0])
+            return last[0]
+        n = [0]
+
+        def frame():
+            n[0] += 1
+            return b"\x00" * 64 if n[0] < 6 else b"\xff" * 64
+        env = wr._Env({}, sc.state, speak=sc.said.append, window=sc.window,
+                      sleep=sc.sleep, clock=lambda: sc.t,
+                      check=lambda: None, cursor=cursor, frame=frame)
+        step = wt.Step("press save", point={"x": 10, "y": 10})
+        out = wr.run("g", {}, sc.state, steps=[step], env=env)
+        self.assertTrue(out.startswith("WALKED (0 steps)"), out)
+
+
+class HalfwayStart(unittest.TestCase):
+    def test_finished_steps_are_not_asked_again_on_later_plans(self):
+        prompts, asked = [], []
+        replies = iter(['{"steps":[{"say":"go"}]}', '{"steps":[]}'])
+
+        def chat(messages, cfg, timeout=0):
+            prompts.append(messages[0]["content"])
+            return {"content": next(replies, '{"steps":[]}')}
+
+        def ask(q, opts=None):
+            asked.append(q)
+            return "already started"
+        sc = Script([W("a"), W("b")])
+        with mock.patch("wisp.brain.chat", chat), \
+                mock.patch("wisp.brain.supports_vision", return_value=False):
+            out = wr.run("g", {}, sc.state, env=sc.env(), ask=ask,
+                         skill_match=lambda c: "")
+        self.assertEqual(asked, [wr.START_QUESTION])      # asked once
+        self.assertGreaterEqual(len(prompts), 2)
+        for p in prompts:
+            self.assertIn("The user has already started this", p)
+        self.assertIn("1. go", prompts[1])      # done steps are listed
+        self.assertEqual(sc.said, ["go"])
+        self.assertTrue(out.startswith("WALKED (1 steps)"), out)
+
+
 if __name__ == "__main__":
     unittest.main()

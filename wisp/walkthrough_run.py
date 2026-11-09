@@ -560,10 +560,13 @@ class _Env:
     def __init__(self, cfg, state=None, speak=None, window=None,
                  sleep=time.sleep, clock=time.monotonic, check=None,
                  interrupted=None, cursor=None, frame=None, capture=None,
-                 tree=_DEFAULT, registry=None):
+                 tree=_DEFAULT, registry=None, text=None):
         self.cfg, self.state = cfg, state
         # None means no source: the step is delivered as voice-confirm.
         self.cursor, self.frame = cursor, frame
+        # () -> the focused window's text (window_text.collect result or
+        # a string) or None: a change near the target is evidence too.
+        self.text = text
         # () -> screenshot data URL or None; a re-plan without one plans
         # from the words alone.
         self.capture = capture
@@ -863,9 +866,11 @@ def run(goal: str, cfg: dict, state=None, *, ask=None,
     and pointed as the whole answer, with nothing to wait for."""
     env = env or _Env(cfg, state, interrupted=interrupted,
                       cursor=click_watch.hypr_cursor,
-                      frame=_window_frame(), capture=_recapture(cfg))
+                      frame=_window_frame(), capture=_recapture(cfg),
+                      text=_window_text(cfg))
     live = steps is None and not demonstrate
     rs = replan.Session.load(None, cfg)
+    started = False
     if resume is not None:
         wt, planned = _restore(resume)
         goal = wt.goal
@@ -923,7 +928,8 @@ def run(goal: str, cfg: dict, state=None, *, ask=None,
             return None, finish(replan.wrap_up_line(goal, len(wt.done_log)))
         try:
             new = _plan_turn(goal, env, rs, list(wt.done_log),
-                             skill=_env_skill(env, skill_match))
+                             skill=_env_skill(env, skill_match),
+                             started=started)
         except PlanError:
             return None, pause(PLAN_FAILED_LINE)
         added = [s for s in new if rs.admits(s, wt)]
@@ -1031,6 +1037,26 @@ def spoken(step) -> str:
 VOICE_CONFIRM_LINE = "Say continue when you've done that."
 
 
+TEXT_POLL_S = 1.0      # how often a pointed step re-reads the window text
+
+
+def _window_text(cfg):
+    """Production window-text source: the U2 collector, never raising."""
+    def read():
+        from . import window_text
+        try:
+            return window_text.collect(cfg)
+        except Exception:
+            return None
+    return read
+
+
+def _rect(pt, kind, step):
+    """The target rectangle (x0, y0, x1, y1) of a pointed step."""
+    r = step_kinds.effective_radius(kind, getattr(step, "radius", None))
+    return (pt["x"] - r, pt["y"] - r, pt["x"] + r, pt["y"] + r)
+
+
 def _window_frame():
     """Production frame source: the active window, via grim."""
     def frame():
@@ -1102,6 +1128,11 @@ def _do_step(wt, ev, env: _Env, ask, ground, monitors):
     watch = _watcher(kind, pt, step, env)
     before = {"window": env.window()}
     t0 = env.clock()
+    rect = (_rect(pt, kind, step) if watch is not None and pt
+            and kind in (step_kinds.CLICK, step_kinds.HOVER) else None)
+    read = env.text if rect else None
+    seen = read() if read else None
+    text_at = t0
     while True:
         env.check()
         if env.interrupted():
@@ -1113,9 +1144,18 @@ def _do_step(wt, ev, env: _Env, ask, ground, monitors):
             got = watch.poll(env.clock())
             if got == click_watch.CLICKED_OUT:
                 return {"action": "off_target"}
+            if got == click_watch.CLICKED_IN:
+                pos = env.cursor() if env.cursor else None
+                return wt.observe(click=pos or (pt["x"], pt["y"]), rect=rect)
             if got:
                 wt.mark_step_done()
                 return wt.issue_step(now=env.clock())
+            if read and env.clock() - text_at >= TEXT_POLL_S:
+                now_text, text_at = read(), env.clock()
+                if _wt.text_changed_near(seen, now_text, rect, step):
+                    return wt.observe(text_before=seen,
+                                      text_after=now_text, rect=rect)
+                seen = now_text if now_text is not None else seen
             # A watcher owns the evidence: a title change after a stray
             # click must not count as the user doing the step.
             if elapsed < wt.no_change_timeout_s:
