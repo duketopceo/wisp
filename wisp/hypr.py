@@ -240,10 +240,16 @@ def cursor_move(x, y) -> str:
 
 # ── bind registry ───────────────────────────────────────────────────
 
-def parse_chord(chord: str) -> tuple[int, str, str]:
+# Keysym Hyprland reports for a modifier pressed alone, by modifier bit.
+_LONE_KEY = {4: "CONTROL_L", 8: "ALT_L", 1: "SHIFT_L", 64: "SUPER_L"}
+
+
+def parse_chord(chord: str, lone: bool = False) -> tuple[int, str, str]:
     """-> (modmask, KEY, canonical 'SUPER + SHIFT + X'). Raises
     ValueError for no modifier, no key, or anything that is not a plain
-    modifier/key token."""
+    modifier/key token. With `lone=True` the chord is ONE modifier alone
+    ('CONTROL'): the key is that modifier's own keysym ('CONTROL_L'), so
+    the bind fires when the modifier itself is pressed or released."""
     toks = [t.strip(" ") for t in str(chord or "").split("+")]
     toks = [t for t in toks if t != ""]
     if not toks:
@@ -251,6 +257,13 @@ def parse_chord(chord: str) -> tuple[int, str, str]:
     for t in toks:
         if not _KEY_RE.fullmatch(t):
             raise ValueError(f"bad chord token {t!r}")
+    if lone:
+        if len(toks) != 1 or toks[0].upper() not in MODS:
+            raise ValueError("a lone-modifier chord is one modifier")
+        mask = MODS[toks[0].upper()]
+        key = _LONE_KEY[mask]
+        canon = [n for n, bit in _ORDER if mask & bit] + [key]
+        return mask, key, " + ".join(canon)
     *mods, key = toks
     if key.upper() in MODS:
         raise ValueError("chord has no key")
@@ -265,11 +278,19 @@ def parse_chord(chord: str) -> tuple[int, str, str]:
     return mask, key.upper(), " + ".join(canon)
 
 
-def bind_lua(handle: str, chord: str, action) -> str:
+def bind_lua(handle: str, chord: str, action, release: bool = False,
+             non_consuming: bool = False) -> str:
+    """`release` fires on key-up; `non_consuming` passes the key on to
+    the focused app (a lone Control bind must not eat Control)."""
     c, h = lua_str(chord), lua_str(handle)
+    opts = [f"description = {h}"]
+    if release:
+        opts.append("release = true")
+    if non_consuming:
+        opts.append("non_consuming = true")
     return ("_G.wisp_binds = _G.wisp_binds or {}; "
             f"hl.bind({c}, hl.dsp.exec_cmd({lua_str(_cmd(action))}), "
-            f"{{description = {h}}}); _G.wisp_binds[{h}] = {c}")
+            f"{{{', '.join(opts)}}}); _G.wisp_binds[{h}] = {c}")
 
 
 def unbind_lua(handle: str) -> str:
@@ -301,25 +322,31 @@ def reset_binds() -> None:
     _exit_hooked = False
 
 
-def _clashes(mask: int, key: str) -> bool:
+def _clashes(mask: int, key: str, release: bool = False) -> bool:
     for b in query("binds"):
         if (b.get("submap") or "") != "":
             continue  # a submap bind cannot fire in the global map
         if b.get("modmask") == mask and str(b.get("key", "")).upper() == key:
+            if bool(b.get("release")) != release:
+                continue  # press and release binds do not shadow
             return True
     return False
 
 
-def bind(chord: str, action) -> str:
+def bind(chord: str, action, *, lone: bool = False, release: bool = False,
+         non_consuming: bool = False) -> str:
     """Register a transient bind running `action` (command line or argv).
     Returns the handle. Raises ValueError for a bad chord and
-    HyprError('bind_clash') when the chord is already bound."""
+    HyprError('bind_clash') when the chord is already bound. `lone` takes
+    a single modifier ('CONTROL'); `release` fires on key-up;
+    `non_consuming` leaves the key for the focused app."""
     global _exit_hooked
-    mask, key, canon = parse_chord(chord)
-    if _clashes(mask, key):
+    mask, key, canon = parse_chord(chord, lone=lone)
+    if _clashes(mask, key, release):
         raise HyprError("bind_clash", canon)
     handle = HANDLE_PREFIX + uuid.uuid4().hex[:8]
-    eval_lua(bind_lua(handle, canon, action))
+    eval_lua(bind_lua(handle, canon, action, release=release,
+                      non_consuming=non_consuming))
     _binds[handle] = canon
     if not _exit_hooked:
         _exit_hooked = True
