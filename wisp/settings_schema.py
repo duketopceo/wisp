@@ -262,7 +262,7 @@ FIELDS = (
        "(blank for none)",
        pattern=r"|[A-Za-z0-9_.-]+:[^\s,]+(?:,\s*[A-Za-z0-9_.-]+:[^\s,]+)*",
        hint="name:model, name:model, or blank"),
-    _f("ground.vlm_brain", "text", "",
+    _f("ground.vlm_brain", "text", "openrouter:qwen/qwen3-vl-235b-a22b-instruct",
        "Model used only to find click targets on screen, as name:model "
        "(blank to use the answer model). It runs alone: no fallbacks",
        pattern=r"|[A-Za-z0-9_.-]+:[^\s,]+", hint="name:model, or blank"),
@@ -329,8 +329,10 @@ FIELDS = (
        "Loopback port the Wisp browser extension polls", min=1024,
        max=65535),
     _f("stt.provider", "choice", "openai",
-       "Speech to text: an OpenAI-compatible API or local whisper.cpp",
-       choices=("openai", "local")),
+       "Speech to text: an OpenAI-compatible API, local whisper.cpp, or "
+       "WordInk (a running WordInk app, on this machine; the hosted API "
+       "is the fallback)",
+       choices=("openai", "local", "wordink")),
     _f("packs.keep", "int", "200",
        "Newest capture packs retained under packs/ (0 disables the "
        "count bound)",

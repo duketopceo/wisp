@@ -88,6 +88,15 @@ class TestHarden(Base):
         private.harden([d, self.root / "nope", None])
         self.assertEqual(mode(f), 0o400)
 
+    def test_harden_keeps_owner_execute_on_binaries(self):
+        d = self.root / "agent-runtime"
+        d.mkdir()
+        b = d / "ori"
+        b.write_text("#!/bin/sh\n")
+        b.chmod(0o755)
+        private.harden([d])
+        self.assertEqual(mode(b), 0o700)
+
     def test_symlinked_root_is_left_alone(self):
         real = self.root / "real"
         real.mkdir()

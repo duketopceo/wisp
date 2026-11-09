@@ -259,6 +259,14 @@ class PrivateTextTests(unittest.TestCase):
     to stdin."""
 
     def setUp(self):
+        # KTD11: never real audio or network. The tests below pick the
+        # silent command provider, and the Groq path is shut off too, so
+        # a key or player on this machine changes nothing.
+        from wisp import tts_groq
+        for name in ("available", "usable"):
+            p = mock.patch.object(tts_groq, name, return_value=False)
+            p.start()
+            self.addCleanup(p.stop)
         speech.stop()
         self.dir = tempfile.TemporaryDirectory()
         d = pathlib.Path(self.dir.name)
@@ -272,6 +280,10 @@ class PrivateTextTests(unittest.TestCase):
             f'echo >> {self.stdins}\n')
         script.chmod(script.stat().st_mode | stat.S_IXUSR)
         self.script = str(script)
+
+    def cfg(self, cmd=None):
+        return {"voice": {"enabled": "true", "provider": "cmd",
+                          "cmd": cmd or self.script}}
 
     def tearDown(self):
         speech.stop()
@@ -292,20 +304,19 @@ class PrivateTextTests(unittest.TestCase):
             self.assertIn(n, said)
 
     def test_a_complete_reply_goes_to_stdin_not_argv(self):
-        cfg = {"voice": {"enabled": "true", "cmd": self.script}}
+        cfg = self.cfg()
         proc = speech.speak(SECRET, cfg)
         proc.wait(timeout=5)
         self.check(SECRET)
 
     def test_a_text_placeholder_is_not_put_on_argv(self):
-        cfg = {"voice": {"enabled": "true",
-                         "cmd": f"{self.script} {{text}}"}}
+        cfg = self.cfg(f"{self.script} {{text}}")
         proc = speech.speak(SECRET, cfg)
         proc.wait(timeout=5)
         self.check(SECRET)
 
     def test_streamed_sentences_go_to_stdin_not_argv(self):
-        cfg = {"voice": {"enabled": "true", "cmd": self.script}}
+        cfg = self.cfg()
         sp = speech.SentenceSpeaker(cfg)
         sp.feed("zebra-quartz-7731 one. zebra-quartz-7731 two. ")
         sp.finish("zebra-quartz-7731 one. zebra-quartz-7731 two.")
@@ -314,10 +325,25 @@ class PrivateTextTests(unittest.TestCase):
         self.assertNotIn("zebra-quartz", self.wait(self.cmdlines, 2))
         self.assertEqual(self.stdins.read_text().count("zebra-quartz"), 2)
 
+    def test_a_groq_key_and_player_never_reach_audio_or_network(self):
+        """KTD11: even with a Groq key and an audio player present, these
+        tests use the silent command provider; Groq is never reached."""
+        from wisp import tts_groq
+        with mock.patch.object(tts_groq, "key", return_value="gsk-fake"), \
+                mock.patch.object(tts_groq, "player_argv",
+                                  return_value=["/bin/false"]), \
+                mock.patch.object(tts_groq, "Fetcher") as fetcher:
+            self.assertEqual(speech.backend(self.cfg())[0], "cmd")
+            proc = speech.speak(SECRET, self.cfg())
+            proc.wait(timeout=5)
+        fetcher.assert_not_called()
+        self.check(SECRET)
+
     def test_the_builtin_engine_reads_stdin(self):
         with mock.patch.object(platform, "tts_binary",
                                return_value="espeak-ng"):
-            argv = speech._argv({"voice": {"enabled": "true"}})
+            argv = speech._argv({"voice": {"enabled": "true",
+                                           "provider": "cmd"}})
         self.assertEqual(argv, ["espeak-ng", "--stdin"])
 
 

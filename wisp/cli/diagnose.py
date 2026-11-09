@@ -1,9 +1,12 @@
 """Diagnostics: doctor, health, latency, spend, binds, onboard, whatsnew,
 bugreport."""
 import datetime
+import http.client
 import json
 import shutil
 import subprocess
+import urllib.error
+import urllib.request
 
 from .. import config
 from . import output
@@ -14,7 +17,8 @@ GROUPS["health"] = "Local model endpoint health"
 
 # -- doctor ---------------------------------------------------------------
 
-def doctor_sections(cfg: dict, cua_probe=None, agents_probe=None) -> list:
+def doctor_sections(cfg: dict, cua_probe=None, agents_probe=None,
+                    live: bool = False, opener=None) -> list:
     """[{name, rows:[{name, value, ok}]}] for everything wispd needs."""
     from .. import agents, brain, health as _health, ipc, \
         platform as _plat, preflight, skills
@@ -95,6 +99,9 @@ def doctor_sections(cfg: dict, cua_probe=None, agents_probe=None) -> list:
         else "set" if key == "set" or (key and key != "n/a")
         else key or "MISSING", bool(key))
 
+    _region_rows(section("openrouter region"), cfg, live=live,
+                 opener=opener)
+
     row = section("health")
     snap = _health.HealthRegistry(cfg).probe_all()
     if not snap:
@@ -136,6 +143,79 @@ def doctor_sections(cfg: dict, cua_probe=None, agents_probe=None) -> list:
         row(f, f"{fp.stat().st_size // 1024}KB" if fp.exists()
             else "absent")
     return sections
+
+
+def _region_rows(row, cfg: dict, fetch=None, live: bool = False,
+                 opener=None) -> None:
+    """The OpenRouter region and the configured models it cannot serve.
+    The one network read (GET <base>/models) only happens in US mode, where
+    a model can be missing; `fetch(cfg, key)` is injectable for tests.
+    `live` (`wispd doctor --live`) also sends one 1-token chat call per
+    configured model through `opener`; without it the row says not run."""
+    from .. import region
+    sel = region.apply(cfg, "https://openrouter.ai/api/v1")
+    row("region", f"{region.region(cfg)} ({sel})")
+    if region.region(cfg) != "us":
+        return
+    env = str((cfg.get("brain.openrouter") or {}).get(
+        "key_env", "keyring://wisp/openrouter,OPENROUTER_API_KEY"))
+    key = config.load_env_key(env) or ""
+    if live:
+        _region_live_rows(row, cfg, key, opener or urllib.request.urlopen)
+    else:
+        row("us chat", "live check not run (needs a model call); run "
+            "wispd doctor --live")
+    try:
+        have = (fetch or region.fetch_models)(cfg, key)
+    except (OSError, ValueError) as e:
+        row("us model list", f"could not read {sel}/models: {e}",
+            level="warn", ok=True)
+        return
+    missing = region.models_missing(cfg, have)
+    if not missing:
+        row("models in region", "every configured model is served")
+    for setting, model in missing:
+        row(f"not in us: {setting}", model, ok=False,
+            fix='pick a US-served model, or set [brain.openrouter] '
+                'region = "global"')
+
+
+def _region_live_rows(row, cfg: dict, key: str, opener) -> None:
+    """One minimal authenticated chat call per configured OpenRouter model
+    at the US host. Costs a fraction of a cent per model; never prints the
+    key, and error bodies are scrubbed by brain.http_error_message."""
+    from .. import brain, region
+    from ..report import scrub_text
+    url = region.base_url(cfg) + "/chat/completions"
+    # the same headers a real turn sends (UA plus OpenRouter attribution)
+    headers = {"User-Agent": brain.UA, "Content-Type": "application/json",
+               **brain.app_headers(url),
+               **({"Authorization": f"Bearer {key}"} if key else {})}
+    for model in region.live_models(cfg):
+        body = {"model": model, "max_tokens": 1,
+                "messages": [{"role": "user", "content": "hi"}]}
+        req = urllib.request.Request(url, data=json.dumps(body).encode(),
+                                     method="POST", headers=headers)
+        try:
+            with opener(req, timeout=20) as r:
+                r.read()
+        except urllib.error.HTTPError as e:
+            value = f"HTTP {e.code}: {brain.http_error_message(e) or e}"
+            denied = e.code in (401, 403)
+            if denied:
+                value += (" (the US endpoint may need a Business/Enterprise "
+                          "account)")
+            row(f"us chat: {model}", value, ok=False,
+                fix='set [brain.openrouter] region = "global"' if denied
+                else "")
+        except (OSError, ValueError, http.client.HTTPException) as e:
+            # a response that ends early (IncompleteRead) is a row, not a
+            # traceback that skips the remaining models
+            row(f"us chat: {model}",
+                scrub_text(f"{type(e).__name__}: {e}"), ok=False)
+        else:
+            row(f"us chat: {model}", "ok (1 token; a call costs a "
+                "fraction of a cent)")
 
 
 def _agent_rows(row, probe=None) -> None:
@@ -227,6 +307,11 @@ def _doctor_args(p):
     p.add_argument("--all", action="store_true",
                    help="list every check, not just the ones that need "
                         "attention")
+    p.add_argument("--live", action="store_true",
+                   help="with region = \"us\", also prove the US endpoint "
+                        "with one tiny model call per configured model "
+                        "(costs a fraction of a cent); makes no call "
+                        "in global mode")
     p.add_argument("--section", metavar="NAME",
                    help="list every check in one section (see --all for "
                         "the names)")
@@ -317,7 +402,7 @@ def _doctor_text(ctx, sections, a) -> str:
          {"healthy": "bool", "sections": "list", "counts": "dict"},
          args=_doctor_args)
 def doctor(ctx, a):
-    sections = doctor_sections(ctx.cfg)
+    sections = doctor_sections(ctx.cfg, live=bool(getattr(a, "live", False)))
     bad = sum(1 for s in sections for r in s["rows"] if not r["ok"])
     counts = {k: sum(1 for s in sections for r in s["rows"]
                      if r["level"] == k) for k in ("ok", "warn", "fail")}

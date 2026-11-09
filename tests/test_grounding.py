@@ -93,20 +93,26 @@ class TestGrounding(unittest.TestCase):
         # resolves without the real package.
         stub = mock.MagicMock()
         stub.transcribe.return_value = "hello from wordink"
-        with mock.patch.dict("sys.modules", {"wordink": stub}):
+        from wisp import wordink_local
+        with mock.patch.dict("sys.modules", {"wordink": stub}), \
+                mock.patch.object(wordink_local, "find", return_value=None):
             dummy_wav = pathlib.Path("dummy.wav")
             cfg = {"stt": {"provider": "wordink"}}
             result = pipeline.transcribe(dummy_wav, cfg)
         self.assertEqual(result, "hello from wordink")
 
-    def test_wordink_missing_raises_clear_error(self):
-        # provider=wordink with no module must fail loudly, not fall
-        # through to a confusing whisper.cpp-missing error.
-        with mock.patch.dict("sys.modules", {"wordink": None}):
-            with self.assertRaises(RuntimeError) as ctx:
-                pipeline.transcribe(pathlib.Path("dummy.wav"),
-                                    {"stt": {"provider": "wordink"}})
-        self.assertIn("wordink", str(ctx.exception))
+    def test_wordink_missing_falls_back_to_the_hosted_stt(self):
+        # provider=wordink with no app and no module is optional: the
+        # hosted STT answers instead of an error (wisp/wordink_local.py).
+        from wisp import stage_capture, wordink_local
+        with mock.patch.dict("sys.modules", {"wordink": None}), \
+                mock.patch.object(wordink_local, "find", return_value=None), \
+                mock.patch.object(stage_capture, "_transcribe_openai",
+                                  return_value="hosted") as hosted:
+            out = pipeline.transcribe(pathlib.Path("dummy.wav"),
+                                      {"stt": {"provider": "wordink"}})
+        self.assertEqual(out, "hosted")
+        self.assertEqual(hosted.call_args[0][1]["provider"], "openai")
 
 
 if __name__ == "__main__":

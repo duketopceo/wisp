@@ -76,7 +76,9 @@ def harden(roots=None) -> int:
             for d in dirs:
                 n += _fix(pathlib.Path(dirpath) / d, DIR_MODE)
             for f in files:
-                n += _fix(pathlib.Path(dirpath) / f, FILE_MODE)
+                # Keep the owner's execute bit: the pinned agent runtimes
+                # (agent-runtime/*/current/*) live under the data folder.
+                n += _fix(pathlib.Path(dirpath) / f, FILE_MODE | 0o100)
     return n
 
 

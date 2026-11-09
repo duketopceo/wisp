@@ -789,6 +789,29 @@ class VlmBrainOverride(unittest.TestCase):
         _, chat = self.locate(self.ACT)
         self.assertIs(chat.call_args.args[1], self.ACT)
 
+    def test_normalized_model_gets_a_0_1000_prompt_and_pixel_conversion(self):
+        # gemma/gemini/qwen3-vl answer 0-1000 of the image, not pixels
+        from wisp import brain
+        cfg = {**self.ACT, "ground": {"vlm_brain":
+                                      "openrouter:qwen/qwen3-vl-235b-a22b-instruct"}}
+        s = shot()
+        with mock.patch.object(brain, "chat", return_value={
+                "content": "[POINT:500,500:Save]"}) as chat:
+            out = g._vlm_locate(s, "Save", cfg=cfg)
+        sent = chat.call_args.args[0][0]["content"][0]["text"]
+        self.assertIn("0 to 1000", sent)
+        self.assertAlmostEqual(out[0], s.width / 2, delta=3)
+        self.assertAlmostEqual(out[1], s.height / 2, delta=3)
+
+    def test_pixel_model_keeps_the_pixel_prompt(self):
+        from wisp import brain
+        cfg = {**self.ACT, "ground": {"vlm_brain": "ollama:qwen2.5vl:3b"}}
+        with mock.patch.object(brain, "chat", return_value={
+                "content": "[POINT:10,10:Save]"}) as chat:
+            g._vlm_locate(shot(), "Save", cfg=cfg)
+        self.assertNotIn("0 to 1000",
+                         chat.call_args.args[0][0]["content"][0]["text"])
+
     def test_set_vlm_brain_is_the_only_brain_and_act_cfg_is_untouched(self):
         cfg = {**self.ACT, "ground": {"vlm_brain": "ollama:qwen2.5vl:3b"}}
         _, chat = self.locate(cfg)
@@ -844,7 +867,7 @@ class VlmBrainOverride(unittest.TestCase):
         import tomllib
         from wisp import config, settings_schema
         dflt = tomllib.loads(config.DEFAULT_CONFIG)
-        self.assertEqual(dflt["ground"]["vlm_brain"], "")
+        self.assertEqual(dflt["ground"]["vlm_brain"], "openrouter:qwen/qwen3-vl-235b-a22b-instruct")
         f = next(f for f in settings_schema.FIELDS
                  if f.key == "ground.vlm_brain")
         self.assertEqual(f.category, "models")
@@ -944,7 +967,7 @@ class VlmReplyTolerance(unittest.TestCase):
         # replay on the owner's screen: llama-4-maverick is exact in
         # fractions (9/9 within 60 px) but guesses when told pixels;
         # qwen2.5vl is trained on pixels
-        hosted = self.prompt_for("openrouter:google/gemini-2.5-flash")
+        hosted = self.prompt_for("openrouter:meta-llama/llama-4-maverick")
         self.assertIn("fractions", hosted)
         self.assertNotIn("integer pixel", hosted)
         for local in ("ollama:qwen2.5vl:3b-q8_0", "mlx:ornith"):

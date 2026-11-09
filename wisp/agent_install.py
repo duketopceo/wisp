@@ -40,7 +40,10 @@ def version_of(binary) -> str | None:
                            text=True, timeout=5, env=env)
     except (OSError, subprocess.TimeoutExpired):
         return None
-    return parse_version(r.stdout or r.stderr)
+    v = parse_version(r.stdout or r.stderr)
+    # Semver build metadata (ori prints `0.16.1+91f9f29`) is not part of the
+    # version; compare the pin against the core only.
+    return v.split("+", 1)[0] if v else None
 
 
 def _sha256(path) -> str:

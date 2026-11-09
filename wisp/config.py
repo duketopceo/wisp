@@ -83,6 +83,22 @@ task_timeout_s = 1800
 # ones; guided confirms reversible steps too; always_ask confirms all
 autonomy = "autonomous"
 
+[router]
+# Turn-type router (wisp/turn_router.py): rules decide act / teach /
+# answer / agent first. Only when the rules cannot tell is ONE small model
+# asked, at the start of the turn, never between steps of a running job.
+# Blank (default) = never ask a model. Example:
+# ambiguity_model = "openrouter:nvidia/nemotron-3.5-lightning"
+ambiguity_model = ""
+ambiguity_timeout_s = "1.5"
+
+[grader]
+# End-of-task grader (wisp/grader.py): after a task finishes, off the
+# critical path, one model grades the run and a lesson is logged to
+# grades.jsonl. Blank model = [agent] model.
+enabled = "false"
+model = ""
+
 [sense]
 # Passive activity sense + proactive suggestions. Off by default —
 # opt in. Sources are local: hyprctl window deltas + dayflow journal.
@@ -167,7 +183,9 @@ fallback_timeout_ms = "5000"
 # brain). It runs alone: [brain] fallback is not consulted, so a down
 # grounding model refuses the click instead of trying another model.
 # Local vision example: "ollama_vision:qwen2.5vl:3b-q8_0"
-vlm_brain = ""
+# Default from the grounding bake-off (docs/ACCURACY.md): first-try accuracy,
+# then median latency, then cost. Blank = the act brain.
+vlm_brain = "openrouter:qwen/qwen3-vl-235b-a22b-instruct"
 # uitars_url = "http://127.0.0.1:8081"   # default: [health] uitars or this
 # uitars_coords = "px"                    # px | rel1000
 # a11y_frame = "global"                   # global | window (element frames)
@@ -408,6 +426,10 @@ agent_runtime = "auto"
 [brain.openrouter]
 kind = "openai_compat"
 base_url = "https://openrouter.ai/api/v1"
+# "global" (default) or "us": us sends every OpenRouter call to
+# https://us.openrouter.ai/api/v1. It serves fewer models (no google/gemini-*
+# for one); `wispd doctor` lists configured models the region cannot serve.
+region = "global"
 key_env = "keyring://wisp/openrouter,OPENROUTER_API_KEY"
 vision = "true"
 tools = "true"

@@ -880,6 +880,46 @@ _VLM_FRACTION_PROMPT = (
 )
 
 
+# Pointing coordinates each hosted model family documents (see
+# scripts/grounding_bakeoff.py: scoring a 0-1000 answer as pixels read as a
+# total miss). A match overrides the host-based fraction/pixel guess below.
+_NORM1000_MODELS = ("gemini", "gemma", "qwen3-vl", "qwen3vl")
+_NORM1000_PROMPT = (
+    "Locate the UI element described as: {target}{hint}.\n"
+    "The attached screenshot is {rw}x{rh} pixels. Reply with ONLY one tag "
+    "of the form `[POINT:<x>,<y>:{target}]` where <x> and <y> are the exact "
+    "center of the element as integers from 0 to 1000 (0,0 is the top-left "
+    "corner, 1000,1000 the bottom-right, whatever the image size), or "
+    "`NONE` if it is not visible or the target is ambiguous. No prose."
+)
+
+
+def _model_of(vcfg: dict) -> str:
+    spec = str(((vcfg or {}).get("brain", {}) or {}).get("default") or "")
+    return spec.split(":", 1)[1].lower() if ":" in spec else spec.lower()
+
+
+def _wants_norm1000(vcfg: dict) -> bool:
+    m = _model_of(vcfg)
+    return any(k in m for k in _NORM1000_MODELS)
+
+
+def to_pixel_reply(text: str, box: Letterbox, convention: str) -> str:
+    """Rewrite a lone `[POINT:a,b:label]` answer given as `norm1000` into
+    pixels of the sent image. Anything else (prose, NONE, a number outside
+    0..1000) is returned unchanged and then fails to parse as a point."""
+    if convention != "norm1000" or not text:
+        return text
+    m = _POINT_TAG.fullmatch(text.strip())
+    if not m:
+        return text
+    a, b = float(m.group(1)), float(m.group(2))
+    if not (0 <= a <= 1000 and 0 <= b <= 1000):
+        return text
+    return (f"[POINT:{a / 1000 * box.width:.1f},"
+            f"{b / 1000 * box.height:.1f}:{m.group(3) or ''}]")
+
+
 def _wants_fractions(vcfg: dict) -> bool:
     """Hosted models point far better in fractions of the image (replay:
     llama-4-maverick 9/9 within 60 px, but guesses when told pixels);
@@ -909,8 +949,9 @@ def _vlm_locate(shot: Shot, target: str, region_hint: str = "",
     b64, rw, rh = box.b64, box.width, box.height
     hint_str = f" (region hint: {region_hint})" if region_hint else ""
     vcfg = vlm_cfg(cfg)
-    prompt = (_VLM_FRACTION_PROMPT if _wants_fractions(vcfg)
-              else _VLM_POINT_PROMPT).format(
+    norm = _wants_norm1000(vcfg)
+    prompt = (_NORM1000_PROMPT if norm else _VLM_FRACTION_PROMPT
+              if _wants_fractions(vcfg) else _VLM_POINT_PROMPT).format(
         target=target, hint=hint_str, rw=rw, rh=rh)
     if box.padded:
         prompt += (" Black bars at the edges are padding, not part of "
@@ -933,6 +974,8 @@ def _vlm_locate(shot: Shot, target: str, region_hint: str = "",
         raise ProviderDown(str(e)) from None
     if not text or text.upper() == "NONE":
         return None
+    if norm:
+        text = to_pixel_reply(text, box, "norm1000")
     return parse_vlm_reply(text, box, target)
 
 
@@ -1091,6 +1134,51 @@ def target_at_point(x: int, y: int, cfg: dict | None = None) -> Target | None:
             return Target(x, y, "global", c.confidence, c.source,
                           c.label, c.window, c.rect)
     return None
+
+
+_PIXEL_SOURCES = ("vlm", "uitars", "jev")
+_BLIND_CONTAINERS = frozenset({
+    "window", "application", "document", "webarea", "root", "desktop",
+    "group", "panel", "pane", "generic", "unknown", "frame", "section"})
+
+
+def a11y_blind(cfg: dict | None = None) -> bool:
+    """True when the focused window exposes no interactive accessibility
+    elements at all (Electron/Chromium/Firefox without a11y, canvases,
+    games). Absence of a tree is not evidence that no control is under a
+    pixel-grounded point, so the click guard may trust a confident
+    pixel-grounded NAMED target there. Fail closed: no cua, no focused
+    window, or any error is "not blind"."""
+    try:
+        cua = _default_cua()
+        if cua is None or not cua.available():
+            return False
+        fw = _focused_window(cua.list_windows(timeout=0.5))
+        if fw is None:
+            return False
+        _win, pid, wid = fw
+        tree = cua.window_state(pid, wid, timeout=1.0)
+    except Exception:
+        return False
+    els = tree.get("elements") if isinstance(tree, dict) else None
+    if not isinstance(els, list) or not els:
+        return False     # an empty reply is a failed read, not blindness
+    for el in els:
+        if not isinstance(el, dict) or _rect(
+                el.get("frame", el.get("bounds"))) is None:
+            continue
+        role = str(el.get("role", "")).casefold().removeprefix("ax")
+        if role not in _BLIND_CONTAINERS:
+            return False
+    return True
+
+
+def pixel_grounded_ok(target: "Target", cfg: dict | None = None) -> bool:
+    """A named, confident VLM/UI-TARS/Jev point on a window whose a11y
+    tree is blind. Numeric model clicks (source "model") never qualify."""
+    if target.source not in _PIXEL_SOURCES or target.confidence < 0.8:
+        return False
+    return a11y_blind(cfg)
 
 
 def _default_capture(output: str | None = None):

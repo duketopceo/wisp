@@ -87,7 +87,8 @@ Setup, the rules it keeps and Stop: `docs/BROWSER_LANE.md`.
 
 | key | default | meaning |
 |-----|---------|---------|
-| `provider` | `"openai"` | `openai` (compatible audio API, hosted Groq by default) or `local` (whisper.cpp) |
+| `provider` | `"openai"` | `openai` (compatible audio API, hosted Groq by default), `local` (whisper.cpp) or `wordink` (optional: a running [WordInk](https://github.com/duketopceo/WordInk) desktop app on this machine, through its loopback local API; Neural Engine or GPU, no audio leaves the computer). With `wordink`, any failure (app not running, no installed model, error) falls back to the hosted `openai` settings below, so it can never leave you without speech to text. Install and onboarding never need WordInk; onboarding only suggests it when it finds the app running with a model installed. Streaming is off with `wordink` |
+| `wordink_model` | blank | with `provider = "wordink"`: the WordInk model id to use; blank picks an installed Parakeet, else the first installed model |
 | `base_url` | groq URL | endpoint for `openai` provider |
 | `model` | `whisper-large-v3-turbo` | STT model id |
 | `key_env` | `GROQ_API_KEY` | env var / `.env` key name holding the key |
@@ -114,6 +115,24 @@ The recap is off by default. `wispd recap --json` previews local data,
 `wispd recap --claim --json` reserves delivery, and `wispd recap --off --json`
 disables it. Recorded spend is not necessarily measured spend; see
 `docs/GROWTH.md` for provenance and missing-data limits.
+
+## [router] — turn-type router
+
+Wisp decides what kind of turn this is (act, teach, answer, or hand-off to the computer-use agent) with rules first. A model is asked only when the rules cannot tell.
+
+| key | default | meaning |
+|-----|---------|---------|
+| `ambiguity_model` | blank | `name:model` of a small fast model asked ONCE, at the start of the turn, for the turns the rules leave open (a statement with no verb, an unknown app, a question that carries an action verb). Blank never asks a model and the turn goes to the act loop as before. Example: `openrouter:nvidia/nemotron-3.5-lightning`. A slow, failing or unparseable answer falls back to act |
+| `ambiguity_timeout_s` | `1.5` | how long that one call may take (0.1 to 10) |
+
+No model is ever called between the steps of a running job or walkthrough, and a turn that arrives while a walkthrough is paused is decided by rules alone. `python scripts/router_latency.py` measures decision latency over `tests/fixtures/router_turns.json` with a stub model (no network); the model round trip it adds is an assumption you set with `--model-ms`.
+
+## [grader] — end-of-task grader
+
+| key | default | meaning |
+|-----|---------|---------|
+| `enabled` | `false` | after an act-loop task finishes, one model grades the run (ok, partial, fail) and a short lesson is appended to `grades.jsonl` in the data dir. It runs in the background writer, after the task, never on the turn's critical path, and changes no label or route |
+| `model` | blank | `name:model` for the grader; blank uses `[agent] model` |
 
 ## [agent] — action policy and optional grounding
 
@@ -162,6 +181,7 @@ instead of falling back.
 | `key_env` | env var name; may be `omaseal://service/account` |
 | `paid` | `true`/`false`; defaults to true for `openrouter.ai` URLs. Paid fallback entries need `[brain] allow_paid` |
 | `vision` / `tools` | capability flags — gates screenshots and tool schemas |
+| `region` | `[brain.openrouter]` only: `global` (default) or `us`. `us` moves every OpenRouter call (answers, fallback, sense, grounding, recall embeddings, the eval judge) to `https://us.openrouter.ai/api/v1`; only the exact `openrouter.ai` host is rewritten. The US endpoint serves a subset of models (roughly 131 today; for example qwen/qwen3-vl-235b-a22b-instruct and google/gemma-4-31b-it yes, google/gemini-* and openai/gpt-4.1-mini no). `wispd doctor` reads `GET <base>/models` in US mode and lists each configured model the region cannot serve. Agent runtimes get no OpenRouter URL from Wisp, so they are unaffected. If the US host answers a call with 401 or 403 (for example an account without access to the US endpoint), Wisp reads OpenRouter's error message, logs it with the key redacted, and speaks "the us openrouter region refused the request" with the fix: set `region = "global"`. It never falls back to the global host on its own, so in-region traffic stays in region. With `region = "us"`, `wispd doctor --live` sends one 1-token chat call per configured OpenRouter model (`[brain] default`, `fallback`, `[ground] vlm_brain`, `[router] ambiguity_model`) to the US endpoint to prove the region; each costs a fraction of a cent. In global mode it makes no model call, and plain `wispd doctor` never makes one. Onboarding mentions the setting at the keys step |
 
 Built-ins: `openrouter`, `ollama`, `lmstudio`, `mlx`.
 
@@ -445,7 +465,7 @@ Resources: wispd under 250 MB RSS and 3% idle CPU; cua-driver
 | `[ground] min_confidence` | `0.5` | candidates below this are re-observed once, then refused |
 | `[ground] budget_ms` | `1200` | shared budget for the fast providers |
 | `[ground] fallback_timeout_ms` | `5000` | timeout for the vision fallback |
-| `[ground] vlm_brain` | blank | `name:model` brain used only for grounding (blank = the act brain). It runs alone: `[brain] fallback` is not consulted, so a down grounding model refuses the click rather than sending the screenshot to another model. `ollama_vision` is a built-in vision-capable Ollama entry |
+| `[ground] vlm_brain` | `openrouter:qwen/qwen3-vl-235b-a22b-instruct` | `name:model` brain used only for grounding (blank = the act brain). It runs alone: `[brain] fallback` is not consulted, so a down grounding model refuses the click rather than sending the screenshot to another model. `ollama_vision` is a built-in vision-capable Ollama entry |
 | `[ground] uitars_url` | `http://127.0.0.1:8081` | UI-TARS endpoint (also `[health] uitars`); loopback only |
 | `[ground] uitars_coords` | `px` | `px` or `rel1000`, how UI-TARS writes coordinates |
 | `[ground] a11y_frame` | `global` | `global` or `window`, the frame of accessibility element boxes |

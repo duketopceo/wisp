@@ -101,6 +101,9 @@ ERRORS = {
                         "raise the budget in settings or wait until tomorrow"),
     "key_missing": ("an api key is missing",
                     "run wispd onboard to add it"),
+    "region_denied": ("the us openrouter region refused the request",
+                      'set [brain.openrouter] region = "global", '
+                      "then try again"),
     "internal": ("something went wrong", "open details, then try again"),
 }
 UNKNOWN_ERROR = "internal"
@@ -421,7 +424,7 @@ STRINGS = {
     "set.browser.port.label": "browser extension port",
     "set.browser.port.help": "The local port the Wisp browser extension connects to.",
     "set.stt.provider.label": "speech to text",
-    "set.stt.provider.help": "Speech to text: an OpenAI-compatible service, or local whisper.cpp.",
+    "set.stt.provider.help": "Speech to text: an OpenAI-compatible service, local whisper.cpp, or WordInk (optional, runs on this machine; the hosted service is the fallback).",
     "set.packs.keep.label": "capture packs kept",
     "set.packs.keep.help": "How many of the newest capture packs to keep. Zero turns the count limit off.",
     "set.packs.keep_days.label": "capture pack days",

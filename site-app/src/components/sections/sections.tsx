@@ -61,7 +61,7 @@ export function Navbar() {
           <Button id="theme-toggle" variant="ghost" size="icon" aria-label="Switch to light theme" hidden>
             <SunIcon className="theme-sun" /><MoonIcon className="theme-moon" />
           </Button>
-          <LinkButton href="#install" size="sm" className="ml-1">Install</LinkButton>
+          <LinkButton href="#install" variant="ghost" size="sm" className="ml-1">Install</LinkButton>
         </div>
       </nav>
     </header>
