@@ -1,5 +1,8 @@
 # Handoff — current (2026-10-11)
 
+> Historical snapshot from 2026-10-11. It is not kept up to date; for the
+> current state and direction read [`ROADMAP.md`](../ROADMAP.md).
+
 Short checklist for someone picking up Wisp on a live Omarchy box or
 continuing toward the v1.0 gate in `ROADMAP.md`. The September 2025
 M1→max migration note is archived at
