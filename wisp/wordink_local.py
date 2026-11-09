@@ -17,17 +17,39 @@ import json
 import os
 import pathlib
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 
 API_VERSIONS = ("2",)
-TIMEOUT_S = 30
+# First-result deadline for the local WordInk API. The P3 transcript
+# budget is 600 ms (warm floor 1300); waiting the old 30 s left turns
+# stuck on a hung ANE worker before the hosted Groq fallback could run.
+# A slow-but-successful reply at or past this deadline is treated as a
+# failure so the caller falls back. Override with [stt] wordink_timeout_s.
+TIMEOUT_S = 2.5
 PROBE_TIMEOUT_S = 0.6
 MAX_WAV = 64 * 1024 * 1024
 HINT = ('WordInk is running: set [stt] provider = "wordink" to transcribe '
         "on this machine with no cloud (the hosted speech to text stays "
         "the fallback).")
+
+
+def _timeout_s(cfg: dict | None) -> float:
+    """Seconds to wait for WordInk's first transcript before failing over.
+    `[stt] wordink_timeout_s` overrides TIMEOUT_S when it is a number in
+    (0.2, 10]."""
+    raw = str(((cfg or {}).get("stt") or {}).get("wordink_timeout_s", "")
+              ).strip()
+    if raw:
+        try:
+            got = float(raw)
+        except ValueError:
+            got = TIMEOUT_S
+        if 0.2 < got <= 10:
+            return got
+    return TIMEOUT_S
 
 
 class WordinkError(Exception):
@@ -163,10 +185,17 @@ def transcribe(wav, cfg: dict | None = None, *, path=None, opener=None):
     pinned = _lang.base(_lang.configured(cfg or {}))
     if pinned and pinned != "auto":
         q += "&language=" + urllib.parse.quote(pinned, safe="")
+    deadline = _timeout_s(cfg)
+    t0 = time.monotonic()
     try:
         out = json.loads(_request(
             conn, "/transcriptions" + q, data=audio,
-            headers={"Content-Type": "audio/wav"}, opener=opener))
+            headers={"Content-Type": "audio/wav"}, opener=opener,
+            timeout=deadline))
+    except TimeoutError as e:
+        raise WordinkError(
+            f"WordInk exceeded {deadline:.1f}s first-result deadline"
+        ) from e
     except urllib.error.HTTPError as e:
         code = ""
         try:
@@ -175,6 +204,21 @@ def transcribe(wav, cfg: dict | None = None, *, path=None, opener=None):
             pass
         raise WordinkError(f"WordInk answered {e.code} {code}".strip()) from e
     except (OSError, ValueError, urllib.error.URLError) as e:
-        raise WordinkError(f"transcription failed: {type(e).__name__}") from e
+        # socket.timeout subclasses OSError / TimeoutError depending on
+        # Python; map any slow-path failure to the hosted fallback.
+        name = type(e).__name__
+        if "timeout" in name.lower() or "timed out" in str(e).lower():
+            raise WordinkError(
+                f"WordInk exceeded {deadline:.1f}s first-result deadline"
+            ) from e
+        raise WordinkError(f"transcription failed: {name}") from e
+    elapsed = time.monotonic() - t0
+    # A reply that lands at/after the deadline still burns the budget;
+    # refuse it so Groq can take over instead of a near-miss success.
+    if elapsed >= deadline:
+        raise WordinkError(
+            f"WordInk took {elapsed*1000:.0f}ms (>= {deadline*1000:.0f}ms "
+            f"deadline); failing over"
+        )
     text = " ".join(str(out.get("transcript", "")).split())
     return _lang.Transcript(text, "")

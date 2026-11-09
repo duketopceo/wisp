@@ -193,5 +193,86 @@ class Onboarding(unittest.TestCase):
                                     True)["detail"])
 
 
+
+
+
+class Deadline(unittest.TestCase):
+    def wav(self, d):
+        path = pathlib.Path(d) / "u.wav"
+        path.write_bytes(b"RIFFfake")
+        return path
+
+    def _conn(self):
+        return {"base": "http://127.0.0.1:9", "token": TOKEN, "apiVersion": "2"}
+
+    def test_default_timeout_is_under_three_seconds(self):
+        self.assertLessEqual(wordink_local.TIMEOUT_S, 3.0)
+        self.assertGreater(wordink_local.TIMEOUT_S, 0.2)
+        self.assertEqual(wordink_local._timeout_s({}), wordink_local.TIMEOUT_S)
+        self.assertEqual(
+            wordink_local._timeout_s({"stt": {"wordink_timeout_s": "3"}}), 3.0)
+        self.assertEqual(
+            wordink_local._timeout_s({"stt": {"wordink_timeout_s": "nope"}}),
+            wordink_local.TIMEOUT_S)
+
+    def test_slow_wordink_raises_so_hosted_stt_can_run(self):
+        """A hung local API must fail inside the deadline, not wait 30s."""
+        def slow_request(*a, **kw):
+            import time as _t
+            _t.sleep(float(kw.get("timeout", wordink_local.TIMEOUT_S)) + 0.05)
+            raise TimeoutError("simulated hang")
+
+        patches = (
+            mock.patch.object(wordink_local, "find", return_value=self._conn()),
+            mock.patch.object(
+                wordink_local, "installed_models",
+                return_value=[{"id": "parakeet_v2", "installed": True}]),
+            mock.patch.object(wordink_local, "_request", side_effect=slow_request),
+        )
+        with tempfile.TemporaryDirectory() as d, patches[0], patches[1], patches[2]:
+            t0 = __import__("time").monotonic()
+            with self.assertRaises(wordink_local.WordinkError) as cm:
+                wordink_local.transcribe(self.wav(d), {})
+            elapsed = __import__("time").monotonic() - t0
+        self.assertIn("deadline", str(cm.exception).lower())
+        self.assertLess(elapsed, 5.0)
+        self.assertNotIn(TOKEN, str(cm.exception))
+
+    def test_near_deadline_success_is_refused(self):
+        """A reply that burns the whole budget still fails over to Groq."""
+        def late_ok(conn, path, *, data=None, headers=None, timeout=None,
+                    opener=None):
+            import time as _t
+            _t.sleep(float(timeout))
+            return json.dumps({"transcript": "too late"}).encode()
+
+        cfg = {"stt": {"wordink_timeout_s": "0.25"}}
+        patches = (
+            mock.patch.object(wordink_local, "find", return_value=self._conn()),
+            mock.patch.object(
+                wordink_local, "installed_models",
+                return_value=[{"id": "parakeet_v2", "installed": True}]),
+            mock.patch.object(wordink_local, "_request", side_effect=late_ok),
+        )
+        with tempfile.TemporaryDirectory() as d, patches[0], patches[1], patches[2]:
+            with self.assertRaises(wordink_local.WordinkError) as cm:
+                wordink_local.transcribe(self.wav(d), cfg)
+        self.assertIn("failing over", str(cm.exception).lower())
+
+    def test_timeout_falls_back_to_hosted_in_stage_capture(self):
+        err = wordink_local.WordinkError(
+            "WordInk exceeded 2.5s first-result deadline")
+        patches = (
+            mock.patch.object(wordink_local, "transcribe", side_effect=err),
+            mock.patch.dict("sys.modules", {"wordink": None}),
+            mock.patch.object(stage_capture, "_transcribe_openai",
+                              return_value="groq-fast"),
+        )
+        with patches[0], patches[1], patches[2] as hosted:
+            got = stage_capture.transcribe(
+                pathlib.Path("u.wav"), {"stt": {"provider": "wordink"}})
+            self.assertEqual(got, "groq-fast")
+        self.assertEqual(hosted.call_args[0][1]["provider"], "openai")
+
 if __name__ == "__main__":
     unittest.main()
