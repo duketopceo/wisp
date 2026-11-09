@@ -57,22 +57,44 @@ Worker-managed domain routing. Both hostnames are connected to the production
 Worker, and the obsolete GitHub Pages custom-domain association is cleared.
 Do not restore the old GitHub A records or GitHub `www` CNAME.
 
-After publication is explicitly authorized, an authenticated maintainer can use:
+**Merging to `master` publishes the website.** The `website` workflow
+(`.github/workflows/pages.yml`) validates the baseline and the homepage, runs
+Chromium and WebKit against the local Worker, and assembles
+`wisp-workers-assets`. Only when every lane passes does its `deploy` job run:
 
-```sh
-npm run deploy:site
-```
+- It runs only for pushes to `master` (path-filtered to website inputs) and
+  for manual `master` dispatches. Pull requests never deploy.
+- It uses the `production` environment. The owner can require reviewer
+  approval there before a deploy starts.
+- It uploads the exact `wisp-workers-assets` artifact that passed the tests
+  with the Wrangler version pinned in `package-lock.json`
+  (`npx --no-install wrangler deploy`).
+- It then checks that `https://wisp.observer/` returns 200 and that
+  `https://wisp.observer/install.py` is byte-identical to
+  `scripts/bootstrap/install.py`. A failed check fails the run but does not
+  roll back the Worker automatically.
+- Repository secrets: `CLOUDFLARE_API_TOKEN` (an API token with Workers Scripts:
+  Edit, account-scoped) and `CLOUDFLARE_ACCOUNT_ID`.
+
+Runs on `master` queue rather than cancel each other, so a publish is never
+killed mid-upload.
+
+**Rollback:** run the `website` workflow manually from `master` with the `ref`
+input set to a reviewed commit SHA. The workflow rebuilds and retests that
+commit, then deploys it. Leave `ref` empty to deploy the current `master` HEAD.
+
+A manual local publish with `npm run deploy:site` is an emergency fallback
+only. Authenticate first, and do not use it when the workflow can run.
 
 Alternatively, upload the assembled assets through this Worker's **New
 deployment** dashboard flow. The archive must have `index.html` at its root,
 preserve asset subdirectories and include `_headers`; never upload repository
 roots, credentials or development dependencies.
 
-The historical workflow filename `.github/workflows/pages.yml` now names the
-`website` workflow. It validates the baseline and the homepage, runs Chromium and
-WebKit against the local Worker, then produces `wisp-workers-assets` only after
-both lanes pass. It has no GitHub Pages deployment job or Pages write permission;
-an uploaded QA artifact is not evidence of public deployment.
+The `pages.yml` filename is historical; the workflow is named `website`. It has
+no GitHub Pages deployment job or Pages write permission. Its Worker deploy job
+is the only publication path, and an uploaded QA artifact is not evidence of
+public deployment by itself.
 
 ## Headers and privacy
 
@@ -93,6 +115,6 @@ been published and verified. `/install.py` requires the independently trusted
 `gh` verifier and exact release identity; it cannot authenticate itself, so follow
 the separate source-trust step in [INSTALL.md](INSTALL.md).
 
-To roll back a website deployment, use a previously verified asset bundle or
-rebuild a reviewed commit. Website publication is not a stable-v1 release,
+To roll back a website deployment, dispatch the `website` workflow with a reviewed
+commit in `ref` (see above), or use a previously verified asset bundle. Website publication is not a stable-v1 release,
 hardware validation or evidence that the owner-labelled success gate passed.
