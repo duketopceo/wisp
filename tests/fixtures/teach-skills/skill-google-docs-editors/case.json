@@ -1,0 +1,59 @@
+{
+ "id": "skill-google-docs-editors",
+ "app": "google-docs-editors",
+ "goal": "share this document",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "Share",
+  "rect": [
+   362,
+   28,
+   112,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "File",
+   "rect": [
+    8,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Edit",
+   "rect": [
+    126,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "View",
+   "rect": [
+    244,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Share",
+   "rect": [
+    362,
+    28,
+    112,
+    24
+   ]
+  }
+ ]
+}

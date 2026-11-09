@@ -75,7 +75,9 @@ function drawings(list, max) {
     if (!d || typeof d !== "object") continue
     var r = { kind: d.kind, x: 0, y: 0, r: 0, w: 0, h: 0, x1: 0, y1: 0, x2: 0, y2: 0,
       ms: (typeof d.ms === "number" && isFinite(d.ms) && d.ms > 0) ? d.ms : 0,
-      tone: (d.tone === "light" || d.tone === "dark") ? d.tone : "", pulse: d.pulse === true }
+      tone: (d.tone === "light" || d.tone === "dark") ? d.tone : "", pulse: d.pulse === true,
+      // the daemon's pen seed for lib/ink.js; -1 seeds from the geometry
+      seed: (typeof d.seed === "number" && isFinite(d.seed) && d.seed >= 0) ? d.seed : -1 }
     if ((d.kind === "ring" || d.kind === "dring" || d.kind === "handle") && nums(d, ["x", "y", "r"]) && d.r > 0) {
       r.x = d.x; r.y = d.y; r.r = d.r
     } else if ((d.kind === "hl" || d.kind === "region") && nums(d, ["x", "y", "w", "h"]) && d.w > 0 && d.h > 0) {

@@ -1,0 +1,59 @@
+{
+ "id": "skill-element",
+ "app": "element",
+ "goal": "start a new chat in Element",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "Start chat",
+  "rect": [
+   244,
+   28,
+   112,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "Home",
+   "rect": [
+    8,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Explore",
+   "rect": [
+    126,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Start chat",
+   "rect": [
+    244,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Settings",
+   "rect": [
+    362,
+    28,
+    112,
+    24
+   ]
+  }
+ ]
+}

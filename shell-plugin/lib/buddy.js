@@ -1,4 +1,5 @@
 .pragma library
+.import "copy.js" as Copy
 
 // Cursor buddy model. The geometry, spring and timing constants follow
 // Clacky 0.2.0 (clacky/shell/ui/overlay.py, MIT, Raynan Wuyep; see
@@ -13,6 +14,10 @@
 // and not "returning". view(model, { screen:{w,h}, pill:{w,h}?, motion })
 // -> what to draw.
 
+// Lean by subtraction (U6): no halo, no click ripple, a small flight swell.
+// Reduced and off motion never animate movement: follow, flight and return
+// snap, and scale, heading, spinner and label pop stay at rest.
+
 var LIVE = ["listening", "transcribing", "deciding", "acting", "awaiting_choice", "speaking"]
 
 var OFFSET = { x: 35, y: 25 }
@@ -23,6 +28,7 @@ var DWELL_S = 4
 var RETURN_S = 1.4
 var LABEL_POP_S = 0.2
 var TICK = 1 / 60
+var FLIGHT_SWELL = 0.1         // calm: the buddy barely grows in flight
 
 function init(over) {
   var m = { phase: "hidden", live: false, placed: false, entryT: 0,
@@ -108,7 +114,7 @@ function fly(n, toX, toY, dt) {
   n.x = a.x; n.y = a.y
   var sw = Math.sin(Math.PI * p)
   n.rot = REST_DEG + wrap180(a.heading - REST_DEG) * sw
-  n.scale = 1 + 0.25 * sw
+  n.scale = 1 + FLIGHT_SWELL * sw
   return p >= 1
 }
 
@@ -215,6 +221,10 @@ function labelBox(tx, ty, pill, screen) {
   return { x: x, y: cy - pill.h / 2 }
 }
 
+// The one short label for a daemon status (idle, offline and every LIVE
+// status included), from the shared copy table. Unknown reads offline.
+function stateLabel(status) { return Copy.statusWord(status) }
+
 function view(m, ctx) {
   var full = ctx.motion === "full"
   var away = m.phase === "held" || m.phase === "dwelling"
@@ -235,6 +245,7 @@ function view(m, ctx) {
   return { visible: visible && fade > 0, phase: m.phase, x: m.x, y: m.y,
     rotation: m.rot, scale: m.scale, opacity: fade, mode: m.phase === "hidden" ? "hidden" : mode,
     clicking: m.clicking, label: lab,
+    state: { text: stateLabel(m.status) },
     spinAngle: spinnerAngle(m.spinT, ctx.motion),
     bars: mode === "waveform" ? waveHeights(m.level, m.wavePhase, ctx.motion) : IDLE_BARS }
 }

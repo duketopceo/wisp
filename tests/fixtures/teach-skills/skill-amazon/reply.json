@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click Add to Cart on the right.\", \"label\": \"Add to Cart\", \"why\": \"It only adds the item; nothing is bought.\", \"kind\": \"click\"}]}"
+}

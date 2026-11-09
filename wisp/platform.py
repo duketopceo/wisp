@@ -231,8 +231,47 @@ def window_screenshot_cmd(out: Path, geometry: tuple | None) -> list | None:
     return None
 
 
+class Geometry(tuple):
+    """A window rectangle (x, y, w, h) that also knows its monitor: a
+    plain 4-tuple everywhere else, `.monitor` is the 1-based `:screenN`
+    number of the monitor holding the window's center, or None."""
+    monitor = None
+
+
+def monitor_of(w: dict, mons) -> int | None:
+    """1-based number (position in `monitors()`) of the monitor holding
+    the center of compositor window `w`; the compositor's own monitor id
+    when the center is in no monitor's rect; None when unknown."""
+    if not isinstance(mons, list):
+        return None
+    mons = [m for m in mons if isinstance(m, dict)]
+    try:
+        cx = int(w["at"][0]) + int(w["size"][0]) / 2.0
+        cy = int(w["at"][1]) + int(w["size"][1]) / 2.0
+    except (KeyError, TypeError, ValueError, IndexError):
+        cx = cy = None
+    if cx is not None:
+        from . import points
+        hit = points.monitor_at(cx, cy, mons)
+        if hit is not None:
+            return hit
+    mid = w.get("monitor")
+    for i, m in enumerate(mons, 1):
+        if mid is not None and m.get("id") == mid:
+            return i
+    return None
+
+
+def _focused_monitor(w: dict) -> int | None:
+    try:
+        return monitor_of(w, hypr.query("monitors"))
+    except (hypr.HyprError, ValueError):
+        return None
+
+
 def active_geometry() -> tuple | None:
-    """Focused window rectangle (x, y, w, h) in layout pixels, or None."""
+    """Focused window rectangle (x, y, w, h) in layout pixels, or None.
+    The result's `.monitor` is the focused window's monitor number."""
     try:
         w = hypr.query("activewindow")
     except hypr.HyprError:
@@ -241,9 +280,11 @@ def active_geometry() -> tuple | None:
         return None
     at, size = w.get("at"), w.get("size")
     try:
-        return (int(at[0]), int(at[1]), int(size[0]), int(size[1]))
+        g = Geometry((int(at[0]), int(at[1]), int(size[0]), int(size[1])))
     except (TypeError, ValueError, IndexError):
         return None
+    g.monitor = _focused_monitor(w)
+    return g
 
 
 def type_text_cmd(isolated: bool = False) -> list | None:
@@ -491,7 +532,8 @@ def missing_deps_hint() -> str:
 
 
 def active_window() -> dict:
-    """Focused window as {"class","title"}; {} when unsupported/empty."""
+    """Focused window as {"class","title","monitor"} (monitor: the
+    1-based `:screenN` number or None); {} when unsupported/empty."""
     os_ = current()
     if os_ == "macos":
         sc = ('tell application "System Events"\n'
@@ -546,7 +588,8 @@ def active_window() -> dict:
         return {}
     if not isinstance(w, dict):
         return {}
-    return {"class": w.get("class", ""), "title": w.get("title", "")}
+    return {"class": w.get("class", ""), "title": w.get("title", ""),
+            "monitor": _focused_monitor(w)}
 
 
 _CUA_NEG_TTL = 2.0

@@ -9,6 +9,8 @@ commands do.
 
     fastkey.py --sock PATH interrupt
     fastkey.py --sock PATH choice N        (1-based option index)
+    fastkey.py --sock PATH tap down|up     (lone-Control press / release)
+    fastkey.py --sock PATH tap open        (fallback chord: open the composer)
 """
 import json
 import socket
@@ -22,6 +24,9 @@ def build(args: list):
     if len(args) == 2 and args[0] == "choice" and args[1].isdigit() \
             and int(args[1]) >= 1:
         return {"cmd": "choice", "pick": "", "index": int(args[1])}
+    if len(args) == 2 and args[0] == "tap" \
+            and args[1] in ("down", "up", "open"):
+        return {"cmd": "tap", "phase": args[1]}
     return None
 
 

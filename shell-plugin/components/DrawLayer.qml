@@ -54,7 +54,8 @@ Item {
     for (var i = plan.from; i < shapes.length; i++) {
       var d = shapes[i];
       shapeModel.append({ kind: d.kind, cx: d.x, cy: d.y, r: d.r, w: d.w, h: d.h,
-        ax1: d.x1, ay1: d.y1, ax2: d.x2, ay2: d.y2, ms: d.ms, tone: d.tone, pulse: d.pulse });
+        ax1: d.x1, ay1: d.y1, ax2: d.x2, ay2: d.y2, ms: d.ms, tone: d.tone, pulse: d.pulse,
+        seed: d.seed });
     }
     synced = shapes;
   }
@@ -79,9 +80,10 @@ Item {
       required property real ms
       required property string tone
       required property bool pulse
+      required property real seed
 
       readonly property var ink: Ink.strokesFor({ kind: kind, x: cx, y: cy, r: r, w: w, h: h,
-        x1: ax1, y1: ay1, x2: ax2, y2: ay2 })
+        x1: ax1, y1: ay1, x2: ax2, y2: ay2, seed: seed })
       readonly property var box: Ink.bounds(ink, Cursor.DRAW_STROKE * 4)
       readonly property bool pen: Ink.animates(root.motionMode) && !root.finishing
       readonly property bool drawing: penAnim.running

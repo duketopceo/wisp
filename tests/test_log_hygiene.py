@@ -44,8 +44,11 @@ WORD_STORES = {
 }
 
 
-def turn(name, trace="true", status=None, error_body=None, words=WORDS):
+def turn(name, trace="true", status=None, error_body=None, words=WORDS,
+         window_text=None):
     fx = runner.load_fixture(name)
+    if window_text:
+        fx["window_text"] = window_text
     fx["endpoints"]["whisper"]["transcript"] = words
     fx["env"] = {"OPENROUTER_API_KEY": KEY, "WISP_FAKE_STT_KEY": KEY}
     fx["config"] = {"debug": {"trace": trace}}
@@ -103,6 +106,20 @@ class Hygiene(unittest.TestCase):
         carrying = {p for p, t in res.files.items() if WORDS_TOKEN in t}
         self.assertTrue(carrying <= WORD_STORES, carrying - WORD_STORES)
         self.assertIn("data/wisp/session.jsonl", carrying)
+
+    def test_window_text_words_never_reach_stderr_or_unlisted_files(self):
+        res = turn("ask", window_text="WINDOWSENTINEL quarterly table "
+                                      "WINDOWSENTINEL totals")
+        self.assertEqual(res.exit_code, 0, res.stderr)
+        self.audit(res)
+        # the text really entered the turn (else this proves nothing)
+        self.assertIn('"window_text"', res.files["data/wisp/trace.jsonl"])
+        self.assertNotIn("WINDOWSENTINEL", res.stderr)
+        for path, text in res.files.items():
+            if "WINDOWSENTINEL" in text:
+                self.assertIn(path, WORD_STORES,
+                              f"window text written to an unlisted file "
+                              f"{path}")
 
 
 class ErrorReports(unittest.TestCase):

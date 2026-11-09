@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Press Control Shift P, or open the command palette from the menu.\", \"label\": \"Palette\", \"why\": \"The palette runs any command by name.\", \"kind\": \"click\"}]}"
+}

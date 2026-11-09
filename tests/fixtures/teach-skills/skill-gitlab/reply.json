@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click the Changes tab.\", \"label\": \"Changes\", \"why\": \"It shows the diff to review.\", \"kind\": \"click\"}]}"
+}

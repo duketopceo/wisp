@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click the plus in the tab bar.\", \"label\": \"New tab\", \"why\": \"Tabs keep several shells open.\", \"kind\": \"click\"}]}"
+}

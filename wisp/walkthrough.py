@@ -49,6 +49,69 @@ def _norm_key(text: str) -> str:
     return " ".join((text or "").strip().lower().split())
 
 
+def _read_lines(text) -> list | None:
+    """(line, (x, y) | None) pairs from a window-text read, or None when
+    nothing was read. Accepts a `window_text.Result`, a string, or a list
+    of strings / {"text", "x", "y"} dicts (lines that know where they
+    sit)."""
+    if text is None:
+        return None
+    if hasattr(text, "text") and hasattr(text, "source"):
+        if getattr(text, "source", "none") == "none":
+            return None
+        text = text.text
+    if isinstance(text, str):
+        text = text.splitlines()
+    out = []
+    for item in text:
+        if isinstance(item, dict):
+            pos = None
+            if item.get("x") is not None and item.get("y") is not None:
+                pos = (float(item["x"]), float(item["y"]))
+            line = str(item.get("text") or "")
+        else:
+            pos, line = None, str(item)
+        line = " ".join(line.split())
+        if line:
+            out.append((line, pos))
+    return out
+
+
+def _words(text: str) -> set:
+    return {w for w in re.findall(r"\w+", text.lower()) if len(w) >= 4}
+
+
+def text_changed_near(before, after, rect, step: "Step | None" = None
+                      ) -> bool:
+    """True when the window text changed near the target. A changed line
+    that knows its position is near when it sits within one target size
+    of `rect` (x0, y0, x1, y1). The window-text collector returns
+    unpositioned lines, so those are near only when they contain a whole
+    word (four letters or more) of the step's target label: the target's
+    own caption changing, not a chat line or a clock that happens to
+    share a word with the instruction. A step with no label has no
+    unpositioned evidence. Nothing read on either side is no evidence."""
+    b, a = _read_lines(before), _read_lines(after)
+    if b is None or a is None:
+        return False
+    b_set, a_set = {t for t, _ in b}, {t for t, _ in a}
+    changed = [(t, p) for t, p in a if t not in b_set]
+    changed += [(t, p) for t, p in b if t not in a_set]
+    if not changed:
+        return False
+    cap = _words(step.label or "") if step is not None else set()
+    x0, y0, x1, y1 = rect if rect else (0, 0, 0, 0)
+    pad = max(x1 - x0, y1 - y0)
+    for line, pos in changed:
+        if pos is not None and rect:
+            if x0 - pad <= pos[0] <= x1 + pad \
+                    and y0 - pad <= pos[1] <= y1 + pad:
+                return True
+        elif pos is None and cap and _words(line) & cap:
+            return True
+    return False
+
+
 @dataclasses.dataclass
 class Step:
     """One walkthrough step: spoken text + optional target point."""
@@ -347,6 +410,20 @@ class Walkthrough:
         if self.current_step and self.current_step.key == s.key:
             self.current_step = None
 
+    def _advance(self) -> dict:
+        """The active step is done: issue the next, or report advanced."""
+        done_step = self.current_step
+        self.mark_step_done(done_step)
+        if self._queue:
+            return self.issue_step()
+        self.status = "step_done"
+        return {
+            "action": "advanced",
+            "completed_step": done_step,
+            "done_log": list(self.done_log),
+            "step_index": len(self.done_log),
+        }
+
     def observe(
         self,
         before_state: dict | None = None,
@@ -355,12 +432,28 @@ class Walkthrough:
         elapsed_s: float = 0.0,
         hypr_event: tuple[str, str] | str | None = None,
         verified: bool = True,
+        click: tuple | None = None,
+        rect: tuple | None = None,
+        text_before=None,
+        text_after=None,
     ) -> dict:
-        """Evaluate user progress on the active step."""
+        """Evaluate user progress on the active step. Beyond the window
+        diff there are two completion signals for a step with a target
+        `rect` (x0, y0, x1, y1): a `click` position (from click_watch)
+        inside it finishes the step and one outside it does not, and a
+        window-text change near it (`text_before` / `text_after`, from
+        the window-text collector) finishes it without a click."""
         if self.status == "cancelled":
             return {"action": "cancelled", "spoken": "stopped"}
         if self.current_step is None:
             return {"action": "idle", "spoken": ""}
+
+        if click is not None and rect:
+            x0, y0, x1, y1 = rect
+            if x0 <= click[0] <= x1 and y0 <= click[1] <= y1:
+                return self._advance()
+            return {"action": "off_target", "spoken": "",
+                    "step": self.current_step}
 
         win = (
             after_state.get("window")
@@ -376,6 +469,10 @@ class Walkthrough:
                 "spoken": "",
                 "step": self.current_step,
             }
+
+        if rect and text_changed_near(text_before, text_after, rect,
+                                      self.current_step):
+            return self._advance()
 
         diff = diff_window_state(before_state, after_state)
         ev_changed = False
@@ -403,17 +500,7 @@ class Walkthrough:
                 failed = self.current_step
                 self.mark_step_failed(failed)
                 return self.issue_step()
-            done_step = self.current_step
-            self.mark_step_done(done_step)
-            if self._queue:
-                return self.issue_step()
-            self.status = "step_done"
-            return {
-                "action": "advanced",
-                "completed_step": done_step,
-                "done_log": list(self.done_log),
-                "step_index": len(self.done_log),
-            }
+            return self._advance()
 
         if elapsed_s >= self.no_change_timeout_s:
             self.status = "prompting_stuck"

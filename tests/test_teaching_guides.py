@@ -48,7 +48,12 @@ class Matching(unittest.TestCase):
     def test_every_new_guide_is_reachable_by_its_app(self):
         for cls, name in (("blender", "blender"),
                           ("org.omarchy.terminal", "kitty"),
-                          ("Alacritty", "kitty"),
+                          ("Alacritty", "alacritty"),
+                          ("com.mitchellh.ghostty", "ghostty"),
+                          ("org.kde.dolphin", "dolphin"),
+                          ("thunar", "thunar"),
+                          ("mpv", "mpv"),
+                          ("org.inkscape.Inkscape", "inkscape"),
                           ("firefox", "firefox"), ("gimp", "gimp"),
                           ("libreoffice-writer", "libreoffice"),
                           ("org.gnome.Nautilus", "nautilus"),

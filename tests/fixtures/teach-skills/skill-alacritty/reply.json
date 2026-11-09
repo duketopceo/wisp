@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click New window at the top.\", \"label\": \"New window\", \"why\": \"Alacritty has no tabs, so a second window is the way.\", \"kind\": \"click\"}]}"
+}

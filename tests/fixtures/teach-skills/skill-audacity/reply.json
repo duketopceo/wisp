@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click the red record button.\", \"label\": \"Record\", \"why\": \"Recording begins on a new track.\", \"kind\": \"click\"}]}"
+}

@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click Darkroom at the top right.\", \"label\": \"Darkroom\", \"why\": \"Editing happens in the darkroom view.\", \"kind\": \"click\"}]}"
+}

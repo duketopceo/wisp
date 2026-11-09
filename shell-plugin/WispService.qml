@@ -70,6 +70,9 @@ Item {
   // cua.target stream event (docs/IPC_CONTRACT.md): where a CUA click
   // will land, or null. Drives the cursor buddy; nothing renders when null.
   property var cuaTarget: null
+  // composer stream event: bumped each time the daemon asks the companion
+  // to open the typed composer (double Control); the host reacts to it.
+  property int composerSeq: 0
   property var windowFocus: ({})
   property string goal: ""
   property string goalStatus: ""
@@ -508,6 +511,13 @@ Item {
     }
     parser: SplitParser {
       onRead: function (line) {
+        if (line.indexOf("\"composer\"") >= 0) {
+          try {
+            var m = JSON.parse(line);
+            if (m && m.type === "event" && m.name === "composer" && m.data && m.data.action === "open")
+              root.composerSeq = root.composerSeq + 1;
+          } catch (e) {}
+        }
         root.adopt(Reader.applyMessage(root.view, line, Date.now(), "stream"));
       }
     }

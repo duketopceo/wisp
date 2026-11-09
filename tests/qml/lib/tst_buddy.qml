@@ -88,7 +88,7 @@ TestCase {
     m = Buddy.step(m, i, dur / 2 - 1 / 1000)
     near(m.x, 135 + 200, 1)
     near(m.y, 125 - Math.min(0.22 * 400, 90) / 2, 1)
-    near(m.scale, 1.25, 0.01)
+    near(m.scale, 1.1, 0.01)
   }
 
   function test_holds_while_target_live() {
@@ -201,6 +201,37 @@ TestCase {
     compare(mode("awaiting_choice"), "triangleNeedsYou")
     compare(mode("idle"), "hidden")
     compare(mode("bogus"), "hidden")
+  }
+
+  // every daemon status reads one short label from shared copy
+  function test_state_label_is_short_for_every_status() {
+    var all = Buddy.LIVE.concat(["idle", "offline"])
+    for (var k = 0; k < all.length; k++) {
+      var t = Buddy.stateLabel(all[k])
+      verify(t !== "", all[k] + " has a label")
+      verify(t.length <= 18, all[k] + " label too long: " + t)
+      verify(t.split(" ").length <= 3, all[k] + " label too wordy: " + t)
+    }
+    compare(Buddy.stateLabel("bogus"), "offline")
+  }
+
+  function test_view_carries_the_state_label() {
+    var m = Buddy.step(Buddy.init(), inp("awaiting_choice"), 1 / 60)
+    compare(Buddy.view(m, { screen: screen, motion: "full" }).state.text, "your call")
+  }
+
+  // reduced motion: no flight, no return, no swell, no label pop
+  function test_reduced_motion_never_animates_movement() {
+    var i = inp("speaking", undefined, aim(800, 500, "Save"), { motion: "reduced" })
+    var m = Buddy.step(Buddy.init(), i, 1 / 60)
+    m = Buddy.step(m, i, 1 / 60)
+    compare(m.phase, "held")
+    compare(m.x, 800); compare(m.y, 500)
+    var v = Buddy.view(m, { screen: screen, motion: "reduced" })
+    compare(v.scale, 1)
+    compare(v.label.scale, 1)
+    var r = run(m, inp("done", undefined, null, { motion: "reduced" }), 6, 60)
+    compare(r.frames.some(function (f) { return f.phase === "returning" || f.phase === "flying" }), false)
   }
 
   function test_entry_delay_hides_the_press_time_screenshot() {

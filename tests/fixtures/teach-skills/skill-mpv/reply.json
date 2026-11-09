@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Move the pointer near the bottom to reveal the seek bar.\", \"label\": \"Seek bar\", \"why\": \"The controller appears on pointer movement.\", \"kind\": \"click\"}]}"
+}

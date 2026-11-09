@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click New mail above the message list.\", \"label\": \"New mail\", \"why\": \"A compose pane opens.\", \"kind\": \"click\"}]}"
+}

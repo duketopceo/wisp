@@ -335,7 +335,8 @@ class TestProbeAndTools(unittest.TestCase):
              mock.patch("subprocess.run") as run:
             self.assertEqual(desktop.clients(), [{"class": "a"}])
             self.assertEqual(platform.active_window(),
-                             {"class": "foot", "title": "~"})
+                             {"class": "foot", "title": "~",
+                              "monitor": None})  # fixture has no geometry
             self.assertEqual(platform.monitors()[0]["name"], "eDP-1")
         run.assert_not_called()
 
@@ -414,6 +415,46 @@ class TestBindRegistry(unittest.TestCase):
             with self.assertRaises(ValueError) as cm:
                 hypr.parse_chord(bad)
             self.assertIn("modifier", str(cm.exception))
+
+    def test_lone_control_release_bind_is_non_consuming(self):
+        mask, key, canon = hypr.parse_chord("CONTROL", lone=True)
+        self.assertEqual(mask, 4)
+        self.assertEqual(key, "CONTROL_L")
+        lua = hypr.bind_lua("wisp:c1", canon, "x tap down",
+                            release=True, non_consuming=True)
+        skel, lits = lua_literals(lua)
+        self.assertIn("release = true", skel)
+        self.assertIn("non_consuming = true", skel)
+        self.assertIn(canon, lits)
+
+    def test_press_bind_has_no_release_flag(self):
+        lua = hypr.bind_lua("wisp:c1", "CTRL + CONTROL_L", "x",
+                            non_consuming=True)
+        self.assertNotIn("release", lua)
+        self.assertIn("non_consuming = true", lua)
+        plain = hypr.bind_lua("wisp:c1", "SUPER + X", "x")
+        self.assertNotIn("non_consuming", plain)
+
+    def test_lone_only_when_asked_and_malformed_still_rejected(self):
+        with self.assertRaises(ValueError):
+            hypr.parse_chord("CONTROL")          # not lone: needs a key
+        for bad in ("", "FOO", 'CONTROL"); x() --', "CTRL + ALT",
+                    "CTRL + X + "):
+            with self.assertRaises(ValueError):
+                hypr.parse_chord(bad, lone=True)
+
+    def test_bind_registers_lone_control_pair(self):
+        with FakeHypr(self.binds_handler()) as f, \
+             mock.patch("atexit.register"):
+            hypr.reset_binds()
+            hypr.bind("CONTROL", "t down", lone=True, non_consuming=True)
+            hypr.bind("CONTROL", "t up", lone=True, non_consuming=True,
+                      release=True)
+        creates = [e for e in self.evals(f) if "hl.bind(" in e]
+        self.assertEqual(len(creates), 2)
+        self.assertNotIn("release", creates[0])
+        self.assertIn("release = true", creates[1])
+        self.assertTrue(all("non_consuming = true" in c for c in creates))
 
     def test_chord_rejects_garbage(self):
         for bad in ('SUPER + "); os.exit() --', "SUPER + A B",

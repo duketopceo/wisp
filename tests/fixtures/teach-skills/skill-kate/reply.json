@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click Terminal at the bottom.\", \"label\": \"Terminal\", \"why\": \"That opens the embedded terminal panel.\", \"kind\": \"click\"}]}"
+}

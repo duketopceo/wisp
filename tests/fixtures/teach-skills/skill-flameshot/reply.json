@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click the save button in the tool bar.\", \"label\": \"Save\", \"why\": \"That writes the capture to a file.\", \"kind\": \"click\"}]}"
+}

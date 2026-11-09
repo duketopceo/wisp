@@ -154,6 +154,36 @@ def snapshot(cfg: dict) -> str:
 SPECULATIVE_TTL_S = 5.0
 
 
+WINDOW_TEXT_CAP = 4000
+
+
+def window_text_block(result) -> str:
+    """The focused window's text as a quoted reference block for the
+    answer model, or "" when there is none (source `none`). Untrusted
+    screen data: delimiters defanged, control characters stripped, size
+    capped. Never traced or logged."""
+    text = getattr(result, "text", "") or ""
+    if not text.strip() or getattr(result, "source", "none") == "none":
+        return ""
+    from . import selection
+    body, n = selection.clean(text, WINDOW_TEXT_CAP)
+    if not body:
+        return ""
+    return selection._data_block(
+        "window", f"This is the text of the user's focused window "
+        f"({n} characters). Their question may be about it; answer "
+        "from these exact words and quote the relevant ones.", body)
+
+
+def window_text_gatherer(cfg: dict):
+    """Gatherer for `Speculative`: the focused window's text, read at
+    key press (wisp.window_text.collect; a miss is a `none` Result)."""
+    def gather():
+        from . import window_text
+        return window_text.collect(cfg)
+    return gather
+
+
 class Speculative:
     """Context gathered at key press, while the user is still talking
     (W4). Each gatherer runs on its own thread so the screenshot and the

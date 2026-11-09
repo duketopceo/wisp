@@ -978,6 +978,14 @@
    }
   }
  },
+ "Composer": {
+  "mode": "state",
+  "pad": 10,
+  "props": {
+   "open": true
+  },
+  "width": 360
+ },
  "Creature": {
   "mode": "variant",
   "on": "desktop",

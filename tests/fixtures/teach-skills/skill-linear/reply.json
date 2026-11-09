@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click New issue at the top of the sidebar.\", \"label\": \"New issue\", \"why\": \"It opens the issue form.\", \"kind\": \"click\"}]}"
+}

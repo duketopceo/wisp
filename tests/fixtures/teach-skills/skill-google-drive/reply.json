@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click New at the top left, then File upload.\", \"label\": \"New\", \"why\": \"The file goes into the open folder.\", \"kind\": \"click\"}]}"
+}

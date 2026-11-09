@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click the Run button in the toolbar.\", \"label\": \"Run\", \"why\": \"Run starts the selected configuration.\", \"kind\": \"click\"}]}"
+}

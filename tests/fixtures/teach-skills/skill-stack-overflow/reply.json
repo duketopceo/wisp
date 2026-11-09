@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click the Ask Question button.\", \"label\": \"Ask Question\", \"why\": \"It opens the form for a title and details.\", \"kind\": \"click\"}]}"
+}

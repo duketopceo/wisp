@@ -24,7 +24,10 @@ var LIGHT_BELOW = 0.179    // WCAG crossover: white and black text contrast equa
 
 // ---- determinism: the same mark always wobbles the same way ----
 
+// The daemon's per-stroke `seed` (a non-negative number) wins; a mark
+// without one (an older event, a teaching step) is seeded from its geometry.
 function seedOf(d) {
+  if (typeof d.seed === "number" && isFinite(d.seed) && d.seed >= 0) return d.seed >>> 0
   var s = String(d.kind)
   var keys = ["x", "y", "r", "w", "h", "x1", "y1", "x2", "y2"]
   for (var i = 0; i < keys.length; i++) s += "|" + Math.round(Number(d[keys[i]]) || 0)

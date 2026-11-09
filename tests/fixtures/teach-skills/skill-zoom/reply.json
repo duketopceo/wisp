@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click Join on the home screen.\", \"label\": \"Join\", \"why\": \"Enter the meeting ID or link there.\", \"kind\": \"click\"}]}"
+}
