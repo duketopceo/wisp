@@ -391,7 +391,7 @@ class TestIsolation(Base):
         addrs = [c["address"] for c in deps.desktop.clients_]
         self.assertEqual(run["windows"], addrs)
         self.assertEqual(len(run["windows"]), 2)
-        self.assertEqual(run["profiles"], ["openrouter"])
+        self.assertEqual(run["profiles"], [str(g.gdir / "profiles" / "openrouter.toml")])
         self.assertEqual(run["spend_file"], str(self.gdir / "spend.jsonl"))
 
     def test_scrubbed_env_drops_secrets_and_the_session_bus(self):
@@ -905,6 +905,107 @@ class TestIsolatedSession(Base):
         box = FakeDesktop().sandbox(self.tmp / "sb2")
         argv = box.command("browser", {}, 9333)
         self.assertIn("--ozone-platform=wayland", argv)
+
+
+class TestSeedSilent(unittest.TestCase):
+    """KTD11: a gauntlet's throwaway config is silent by construction."""
+
+    def test_seeded_config_disables_voice(self):
+        import tomllib
+        cfg = tomllib.loads(G.seed_config())
+        self.assertEqual(cfg["voice"]["enabled"], "false")
+
+    def test_seeded_config_launches_no_speech_binary(self):
+        import tomllib
+        from wisp import speech
+        cfg = tomllib.loads(G.seed_config())
+        self.assertFalse(speech.voice_enabled(cfg))
+        with mock.patch("subprocess.Popen") as popen, \
+                mock.patch("subprocess.run") as run:
+            speech.speak("hello", cfg)
+        popen.assert_not_called()
+        run.assert_not_called()
+
+
+class TestTurnConfigSilent(Base):
+    """KTD11 at the shared boundary: the configuration a gauntlet turn
+    runs with (the seeded config.toml plus the arm profile, as the daemon
+    builds it in devrun.run_config) has voice off, whatever --dir or the
+    profile says, and no speech binary launches."""
+
+    def prepare(self, rel_dir, profile_text):
+        import tomllib
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.tmp)
+        pf = self.tmp / "loud.toml"
+        pf.write_text(profile_text, encoding="utf-8")
+        label, prof = gmode.load_profile(str(pf))
+        g = G.Gauntlet([case("c1")], [(label, str(pf), prof)], rel_dir,
+                       10.0, self.deps(), out=self.out.append)
+        g._prepare_dirs()
+        return g, tomllib
+
+    def turn_config(self, g, tomllib):
+        from wisp import devrun
+        seed = tomllib.loads((g.gdir / "config" / "wisp"
+                              / "config.toml").read_text())
+        ref = g.profile_ref(g.profiles[0][1])
+        return devrun.run_config(seed, "r1", profile=gmode.load_profile(
+            ref)[1], grant={"windows": [], "spend_file": "s",
+                            "cap_usd": 1.0})
+
+    def test_relative_dir_and_a_voice_on_profile_end_silent(self):
+        from wisp import speech
+        g, tomllib = self.prepare(
+            "rel-gauntlet", '[agents]\nact_max_usd = "0.25"\n'
+            '[voice]\nenabled = "true"\ncmd = "/bin/true"\n')
+        self.assertTrue(g.gdir.is_absolute())
+        env = G.daemon_env({}, "rel-gauntlet")
+        for k in ("HOME", "XDG_DATA_HOME", "XDG_CONFIG_HOME",
+                  "XDG_STATE_HOME", "XDG_CACHE_HOME"):
+            self.assertTrue(os.path.isabs(env[k]), k)
+        cfg = self.turn_config(g, tomllib)
+        self.assertEqual(cfg["voice"]["enabled"], "false")
+        self.assertEqual(cfg["agents"]["act_max_usd"], "0.25")
+        from wisp import speech
+        self.assertFalse(speech.voice_enabled(cfg))
+        with mock.patch("subprocess.Popen") as popen, \
+                mock.patch("subprocess.run") as run:
+            self.assertIsNone(speech.speak("hello", cfg))
+        popen.assert_not_called()
+        run.assert_not_called()
+
+    def test_the_driver_sends_the_silenced_profile_not_the_original(self):
+        g, tomllib = self.prepare(
+            "rel-gauntlet", '[voice]\nenabled = "true"\n'
+            '[agents]\nact_max_usd = "0.25"\n')
+        sent = g.profile_ref(g.profiles[0][1])
+        self.assertNotEqual(sent, g.profiles[0][1])
+        self.assertTrue(os.path.isabs(sent))
+        self.assertEqual(gmode.load_profile(sent)[1]["voice"]["enabled"],
+                         "false")
+
+
+class TestOwnerBatteryFitsCap(Base):
+    """The owner-run live battery in docs/research/2026-11-08-gauntlet-
+    hermetic.md must start within its $1.00 cap: the first case's reserve
+    fits for one arm, and does not for both arms (the reason it names one)."""
+
+    def need(self, *names):
+        g = G.Gauntlet(G.load_cases(G.DEFAULT_CASES), self.profiles(*names),
+                       self.gdir, 1.0, self.deps())
+        return g, g._case_need(g.cases[0])
+
+    def test_one_arm_starts_within_the_cap(self):
+        g, need = self.need("openrouter")
+        self.assertTrue(g.cases[0]["learnable"])
+        self.assertAlmostEqual(need, 0.81)
+        self.assertTrue(g.spend.can_afford([need]))
+
+    def test_both_arms_would_stop_before_the_first_case(self):
+        g, need = self.need("hybrid", "openrouter")
+        self.assertAlmostEqual(need, 1.62)
+        self.assertFalse(g.spend.can_afford([need]))
 
 
 if __name__ == "__main__":

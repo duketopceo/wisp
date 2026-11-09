@@ -366,6 +366,7 @@ verbs and examples. Add `--json` for machine-readable output.
 | `wispd cua status` | whether the cua pointer backend is usable |
 | `wispd cua kill` / `wispd cua resume` | arm or clear the kill switch |
 | `wispd cua log` | the driver journal, or the audit log |
+| `wispd browser install-host` / `wispd browser status` | set up, or check, the native host the browser extension connects through (`docs/BROWSER_LANE.md`) |
 | `wispd notify test` | send one test notification |
 | `wispd task list` | background agents |
 | `wispd memory edit` | edit the MEMORY and USER notes |

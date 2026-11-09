@@ -51,7 +51,8 @@ def brain_cfg(primary, fallback=(), **extra):
 class ErrorCodesTest(unittest.TestCase):
     def test_closed_code_set(self):
         self.assertEqual(set(errors_codes.CODES), {
-            "jev_down", "brain_down", "stt_down", "ground_down",
+            "jev_down", "brain_down", "region_denied", "stt_down",
+            "ground_down",
             "ground_failed", "timeout", "cancelled", "busy",
             "stale_prompt", "restarted", "tool_failed",
             "budget_exceeded", "key_missing", "internal"})

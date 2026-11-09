@@ -355,9 +355,11 @@ def seed_config() -> str:
     the owner's settings are read."""
     from wisp import config
     text = config.DEFAULT_CONFIG
-    return re.sub(r'(?m)^key_env = "keyring://wisp/openrouter,'
+    text = re.sub(r'(?m)^key_env = "keyring://wisp/openrouter,'
                   r'OPENROUTER_API_KEY"$',
                   'key_env = "OPENROUTER_API_KEY"', text)
+    # KTD11: a run never speaks (silent by construction)
+    return re.sub(r'(?m)^enabled = "auto"$', 'enabled = "false"', text)
 
 
 def session_env(base: dict, iso=None) -> dict:
@@ -375,7 +377,9 @@ def daemon_env(base: dict, gdir, iso=None) -> dict:
     """The gauntlet daemon's environment: the owner's session variables
     the compositor needs (or, with `iso`, the isolated instance's), a
     throwaway HOME and XDG dirs, never the owner's own."""
-    gdir = pathlib.Path(gdir)
+    # an XDG dir must be absolute or the daemon ignores it (and would
+    # read the seeded config from nowhere, leaving voice on auto)
+    gdir = pathlib.Path(os.path.abspath(gdir))
     env = session_env(base, iso)
     home = gdir / "home"
     env.update({"HOME": str(home),
@@ -395,7 +399,7 @@ class Gauntlet:
                  only=None, iso=None):
         self.cases = [c for c in cases if not only or c["id"] in only]
         self.profiles = profiles                      # [(label, ref, dict)]
-        self.gdir = pathlib.Path(gdir)
+        self.gdir = pathlib.Path(os.path.abspath(gdir))
         self.data = self.gdir / "data" / "wisp"
         self.cap, self.deps, self.out = cap, deps, out
         self.run_id = "gauntlet-" + _now_id()
@@ -406,6 +410,7 @@ class Gauntlet:
         self.seeded: set = set()
         self.box = None
         self.iso = iso              # isolated session env, or None (live)
+        self._profile_refs: dict = {}
 
     # -- service slot ---------------------------------------------------------
 
@@ -476,6 +481,31 @@ class Gauntlet:
         cfg = self.gdir / "config" / "wisp" / "config.toml"
         cfg.write_text(seed_config(), encoding="utf-8")
         os.chmod(cfg, 0o600)
+        self._write_profiles()
+
+    def _write_profiles(self) -> None:
+        """KTD11: the daemon overlays the arm profile on the seed, so a
+        profile that sets [voice] would undo it. Each arm gets a copy
+        here with voice forced off, and that copy is what dev_run names."""
+        pdir = self.gdir / "profiles"
+        pdir.mkdir(parents=True, exist_ok=True)
+        self._profile_refs = {}
+        for label, ref, prof in self.profiles:
+            safe = {sec: dict(kv) for sec, kv in prof.items()}
+            safe.setdefault("voice", {})["enabled"] = "false"
+            lines = []
+            for sec, kv in safe.items():
+                lines.append(f"[{sec}]")
+                lines += [f"{k} = {json.dumps(str(v))}"
+                          for k, v in kv.items()]
+                lines.append("")
+            path = pdir / f"{label}.toml"
+            path.write_text("\n".join(lines), encoding="utf-8")
+            self._profile_refs[ref] = str(path)
+
+    def profile_ref(self, ref) -> str:
+        """The profile path dev_run is told: the silenced copy."""
+        return self._profile_refs.get(ref, ref)
 
     def _wait_alive(self, timeout=30.0) -> None:
         end = self.deps.clock() + timeout
@@ -587,7 +617,7 @@ class Gauntlet:
         tasks = self.rundir / "tasks" / f"{tag}.txt"
         tasks.write_text(goal + "\n", encoding="utf-8")
         msg = {"cmd": "dev_run", "path": str(tasks),
-               "profiles": [ref], "windows": windows,
+               "profiles": [self.profile_ref(ref)], "windows": windows,
                "spend_file": str(self.spend.path),
                "cap_usd": self.cap}
         # the sandbox's workspace and rsh log: a gauntlet shell call runs

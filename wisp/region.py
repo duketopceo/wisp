@@ -107,6 +107,19 @@ def fetch_models(cfg: dict | None, key: str = "", timeout: float = 8.0,
     return {str(m["id"]) for m in data.get("data", []) if m.get("id")}
 
 
+def live_models(cfg: dict | None) -> list[str]:
+    """OpenRouter model ids `wispd doctor --live` probes: `[brain] default`,
+    `fallback`, `[ground] vlm_brain` and `[router] ambiguity_model`, as
+    present, deduplicated."""
+    cfg = cfg or {}
+    wanted = {"brain.default", "brain.fallback", "ground.vlm_brain"}
+    found = [m for s, m in configured_models(cfg) if s in wanted]
+    m = _spec_model(str((cfg.get("router") or {}).get("ambiguity_model", "")))
+    if m:
+        found.append(m)
+    return list(dict.fromkeys(found))
+
+
 def models_missing(cfg: dict | None, available) -> list[tuple[str, str]]:
     """Configured OpenRouter models that `available` does not list."""
     have = set(available)

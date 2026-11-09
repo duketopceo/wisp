@@ -1,0 +1,21 @@
+usage: wispd browser install-host [-h] [--browser NAME] [--extension-id ID]
+                                  [--dev] [--json] [--quiet] [--no-color]
+
+Set up the native host so the Wisp extension can connect
+
+options:
+  -h, --help         show this help message and exit
+  --browser NAME     browser to set up (repeatable); default: every supported
+                     browser found
+  --extension-id ID  an extension id allowed to connect (repeatable)
+  --dev              also allow the unpacked development build (pinned id
+                     cbbeeaamnkogifjkglfcklifijjnjpma)
+
+global options:
+  --json             machine-readable output (one JSON object)
+  --quiet, -q        print nothing on success
+  --no-color         plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd browser install-host --dev
+  wispd browser install-host --extension-id <id> --browser chromium

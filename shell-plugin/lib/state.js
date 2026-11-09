@@ -19,7 +19,7 @@ var BUSY = ["transcribing", "deciding", "acting"]
 var ERROR_CODES = ["jev_down", "brain_down", "stt_down", "ground_down",
   "ground_failed", "timeout", "cancelled", "busy", "stale_prompt",
   "restarted", "tool_failed", "budget_exceeded", "key_missing",
-  "internal"]
+  "region_denied", "internal"]
 var TOPICS = ["state", "health", "tasks", "events"]
 var CUA_PHASES = ["aim", "click", "done"]
 var META_KEYS = ["seq", "updated_at", "turn_id"]

@@ -1,0 +1,36 @@
+{
+  "name": "wisp-browser-lane",
+  "private": true,
+  "version": "0.2.0",
+  "description": "Wisp browser lane: work in a tab group beside yours, in plain sight.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "prepare": "wxt prepare",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "wxt build",
+    "build:e2e": "wxt build --mode e2e && wxt build --mode e2e-all",
+    "e2e": "npm run build:e2e && node --test e2e/*.test.mjs",
+    "check:build": "node --test scripts/*.test.mjs",
+    "verify": "npm run typecheck && npm test && npm run build && npm run check:build && npm run e2e"
+  },
+  "dependencies": {
+    "@wxt-dev/module-react": "1.2.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "wxt": "0.21.5"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.3.7",
+    "@types/node": "26.6.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "axe-core": "4.14.0",
+    "playwright": "1.64.1",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
+  }
+}
