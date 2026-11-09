@@ -154,6 +154,15 @@ def snapshot(cfg: dict) -> str:
 SPECULATIVE_TTL_S = 5.0
 
 
+def window_text_gatherer(cfg: dict):
+    """Gatherer for `Speculative`: the focused window's text, read at
+    key press (wisp.window_text.collect; a miss is a `none` Result)."""
+    def gather():
+        from . import window_text
+        return window_text.collect(cfg)
+    return gather
+
+
 class Speculative:
     """Context gathered at key press, while the user is still talking
     (W4). Each gatherer runs on its own thread so the screenshot and the
