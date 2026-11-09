@@ -17,6 +17,12 @@ How this file is kept:
 
 ## Unreleased
 
+- Double-tap Control to type a question instead of speaking it: a small box opens, Enter asks through the same conversation as voice, and Esc closes it. If your desktop cannot bind a lone Control key, `[composer] fallback_chord` (default `SUPER + SHIFT + SPACE`) opens it.
+- Answers use the text of the window you are in: Wisp reads it from the accessibility tree, then the cua tree, then OCR when `tesseract` is installed, and quotes it to the model as untrusted reference. Sensitive windows give nothing, and that text stays out of logs.
+- On more than one monitor, points, the cursor buddy and your ink follow the monitor of the window you are in. Walkthrough steps finish when you click the target or when its label text changes, so they notice what you actually did.
+- The cursor buddy is smaller and calmer (no ripple or glow, one short label per state, still in reduced motion), and your ink is drawn from a fixed hand-drawn wobble, so a replay traces the same path.
+- Wisp knows 89 apps, up from 17: Linux desktop apps first, then common web apps, each with its own shortcuts and walkthrough lessons.
+- wisp.observer has a new minimal hero: a comet mark on a three-color palette of ink, paper and ember (#353).
 - Walkthrough steps look like what they ask: a ring to click, a dashed ring to hover, a soft area, a small handle to grab, a curve for a drag, and a "say continue" chip with a step counter when Wisp cannot see you do it. Marks hold still when your desktop has reduced motion on.
 - `wispd update` saves a backup of the Wisp files it replaces and checks them against the release afterwards; `wispd update --rollback` restores them, and `--restart` checks the daemon answers. Install, update and `wispd doctor` show a preflight and stop before writing when something blocks.
 - Background agents are live: "agent, fix the tests" starts an OpenCode session that reports progress, asks you out loud for answers and for permission on risky steps, takes follow-ups and can be cancelled. Onboarding (or `wispd install --agents`) downloads the pinned ori and OpenCode for you, and the agent can read your memory unless you set `[agents] mcp_memory = false`.
