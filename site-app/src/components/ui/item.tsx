@@ -16,5 +16,5 @@ export function ItemDescription({ className, ...props }: ComponentProps<"div">) 
 }
 
 export function ItemIcon({ className, ...props }: ComponentProps<"div">) {
-  return <div className={cn("text-brand flex items-center self-start", className)} {...props} />;
+  return <div className={cn("text-foreground flex items-center self-start", className)} {...props} />;
 }

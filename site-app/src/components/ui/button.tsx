@@ -12,9 +12,8 @@ export const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "text-primary-foreground shadow-md bg-linear-to-b from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70",
-        glow: "glass-4 text-foreground shadow-md hover:bg-primary/10",
-        outline: "border border-border bg-background hover:bg-muted",
+          "border-2 border-foreground bg-primary text-primary-foreground hover:bg-foreground hover:text-background",
+        outline: "border border-foreground/40 bg-transparent hover:bg-muted",
         ghost: "hover:bg-muted",
       },
       size: {

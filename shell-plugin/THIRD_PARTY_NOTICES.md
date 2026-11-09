@@ -136,20 +136,14 @@ The homepage also renders Lucide icons (ISC, https://lucide.dev) to inline SVG
 at build time and self-hosts the Outfit typeface (SIL OFL 1.1,
 `site-app/licenses/OFL-Outfit.txt`).
 
-## ThreeUI Community (website light and homepage hero)
-
-The homepage hero background (`site-app/src/client/hero.ts`) is ThreeUI
-Community's Ribbon Field background (`src/shaders/ribbon-field/`, fork
-`duketopceo/threeui`): its shader structure and render loop, recoloured to the
-Wisp palette and unwrapped from React into one mount function.
+## ThreeUI Community (guiding-light preview)
 
 The guiding-light preview at `site-3d/light/` uses the `energy-orb` look
 from ThreeUI Community (https://github.com/MengTo/threeui) as a design
 reference (shader rewritten; the light's shader is original code), and adapts
 the `lumen-cta` ghost-button style. No ThreeUI Pro or remote catalog media is
 used. The license is reproduced
-verbatim, and again in `site-3d/vendor/THREEUI-LICENSE.txt`,
-`site-app/licenses/THREEUI-LICENSE.txt` and the published `/credits.txt`.
+verbatim, and again in `site-3d/vendor/THREEUI-LICENSE.txt`.
 
 ```
 MIT License

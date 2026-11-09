@@ -10,7 +10,7 @@ export function Section({ className, ...props }: ComponentProps<"section">) {
 export function SectionHeading({ eyebrow, title, children }: { eyebrow: string; title: string; children?: ReactNode }) {
   return (
     <div className="flex max-w-[640px] flex-col gap-4">
-      <p className="text-brand text-sm font-semibold tracking-wide uppercase">{eyebrow}</p>
+      <p className="text-foreground text-sm font-semibold tracking-wide uppercase">{eyebrow}</p>
       <h2 className="text-3xl leading-tight font-semibold tracking-tight text-balance sm:text-5xl sm:leading-tight">{title}</h2>
       {children && <div className="text-muted-foreground text-base text-pretty sm:text-lg">{children}</div>}
     </div>
