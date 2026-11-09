@@ -6,7 +6,7 @@ This page is built from site-app/ in that repository. It bundles the
 following third-party work; their notices are reproduced in full below.
 
 - launch-ui (https://github.com/launch-ui/launch-ui, fork duketopceo/launch-ui):
-  section layouts, button/badge/section/item/glow primitives and theme
+  section layouts, button/badge/section/item primitives and theme
   structure, adapted. MIT.
 - Lucide icons (https://lucide.dev), rendered to inline SVG at build time. ISC.
 - React and React DOM (https://react.dev), used at build time only. MIT.

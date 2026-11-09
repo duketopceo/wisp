@@ -1,7 +1,8 @@
+import type { Mark } from "./mark";
 // First-paint module: theme toggle, copy button, and the decision to load the
 // live comet. Everything here is optional; the page works without it.
 const root = document.documentElement;
-let recolor: () => void = () => {};
+let mark: Mark | null = null;
 
 function theme(): "light" | "dark" {
   const set = root.dataset.theme;
@@ -24,10 +25,10 @@ if (toggle) {
     root.dataset.theme = next;
     try { localStorage.setItem("wisp-theme", next); } catch { /* private mode: not remembered */ }
     paint();
-    recolor();
+    mark?.recolor();
   });
 }
-matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => recolor());
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => mark?.recolor());
 
 const copy = document.querySelector<HTMLButtonElement>("#copy-install");
 const code = document.querySelector<HTMLElement>("#install-code");
@@ -63,7 +64,6 @@ const lowPower = nav.connection?.saveData === true
 // data-mark is "live" only once the canvas has drawn its first frame.
 if (host && (lowPower || reduced.matches)) host.dataset.ready = "true";
 if (host && !lowPower) {
-  let mark: { stop: () => void; recolor: () => void } | null = null;
   const still = () => { mark?.stop(); mark = null; host.dataset.mark = "still"; };
   const start = async () => {
     if (mark || reduced.matches) { host.dataset.ready = "true"; return; }
@@ -71,7 +71,6 @@ if (host && !lowPower) {
       const { mountMark } = await import("./mark");
       if (!reduced.matches) {
         mark = mountMark(host, { onLive: () => { host.dataset.mark = "live"; }, onLost: still });
-        recolor = () => mark?.recolor();
       }
     } catch {
       still(); // module or canvas failed: keep the designed still

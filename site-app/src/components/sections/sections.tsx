@@ -87,7 +87,7 @@ export function Hero() {
           <p className="text-muted-foreground text-sm">Omarchy / Hyprland is the full-app target. macOS and Windows support is experimental.</p>
         </div>
         <div className="order-first mx-auto w-full max-w-[360px] md:order-none">
-          <div id="hero-mark" data-mark="still" aria-hidden="true" className="relative h-56 w-full max-w-[360px] sm:h-72 md:h-[360px]">
+          <div id="hero-mark" data-mark="still" aria-hidden="true" className="relative h-56 sm:h-72 md:h-[360px]">
             <Mark className="mark-still absolute inset-0 size-full" />
           </div>
         </div>
@@ -112,7 +112,7 @@ export function Features() {
                   <ItemIcon><Icon className="size-5" strokeWidth={1.5} /></ItemIcon>{f.title}
                 </ItemTitle>
                 <ItemDescription>
-                  <p>{f.body}{f.href && <> <a className="text-foreground underline underline-offset-4 hover:underline" href={f.href}>{f.cite}</a></>}</p>
+                  <p>{f.body}{f.href && <> <a className="text-foreground underline underline-offset-4" href={f.href}>{f.cite}</a></>}</p>
                 </ItemDescription>
               </Item>
             );

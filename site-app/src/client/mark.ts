@@ -10,6 +10,8 @@
 const STEP = 1 / 60;
 const CAP = 420;
 const MAX_TAIL = 96;
+const TAU = Math.PI * 2;
+const GLOW = 2.6; // glow radius in u
 
 export type Mark = { stop: () => void; recolor: () => void };
 
@@ -56,7 +58,7 @@ export function mountMark(stage: HTMLElement, hooks: { onLive: () => void; onLos
   const step = () => {
     t += STEP;
     const rx = w / 2, ry = h / 2;
-    const gx = px === null ? rx : rx + clamp((px - rx) * 0.3, 2.6 * u);
+    const gx = px === null ? rx : rx + clamp((px - rx) * 0.3, GLOW * u);
     const gy = py === null ? ry : ry + clamp((py - ry) * 0.3, 2 * u);
     const k = 1 - Math.exp(-STEP * 4);
     ax += (gx - ax) * k;
@@ -101,16 +103,16 @@ export function mountMark(stage: HTMLElement, hooks: { onLive: () => void; onLos
       ctx.lineTo(tx[i + 1], ty[i + 1]);
       ctx.stroke();
     }
-    const g = ctx.createRadialGradient(x, y, 0, x, y, 2.6 * u);
+    const g = ctx.createRadialGradient(x, y, 0, x, y, GLOW * u);
     g.addColorStop(0, glow0);
     g.addColorStop(1, glow1);
     ctx.fillStyle = g;
     ctx.beginPath();
-    ctx.arc(x, y, 2.6 * u, 0, 7);
+    ctx.arc(x, y, GLOW * u, 0, TAU);
     ctx.fill();
     ctx.fillStyle = solid;
     ctx.beginPath();
-    ctx.arc(x, y, u, 0, 7);
+    ctx.arc(x, y, u, 0, TAU);
     ctx.fill();
   };
 
