@@ -8,9 +8,16 @@ crossover as shell-plugin/lib/ink.js (a parity test keeps them equal).
 """
 import base64
 import io
+import zlib
 
 LIGHT_BELOW = 0.179   # white and black text have equal contrast here
 POINT_BOX = 40        # px square sampled around a point or an arrow tip
+
+
+def stroke_seed(turn, index: int) -> int:
+    """The seed lib/ink.js wobbles one stroke from: stable for a turn and
+    the stroke's slot in it, so a replay draws the same pen path."""
+    return zlib.crc32(f"{turn}:{index}".encode()) & 0xFFFFFFFF
 
 
 def _channel(v: float) -> float:

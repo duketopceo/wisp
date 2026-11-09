@@ -379,8 +379,10 @@ def _answer(ctx) -> None:
             if _points.img_space_is_logical() else _points.to_logical
         return conv(raw, _mons[0])
 
-    def _split(marks_px):
-        """Fired marks -> (logical points, logical drawings)."""
+    def _split(marks_px, slot=0):
+        """Fired marks -> (logical points, logical drawings). Each drawing
+        carries the pen seed for its slot in the turn (`slot` is how many
+        drawings came before), so a replay wobbles the same way."""
         if not marks_px:
             return [], []
         if not _mons:
@@ -395,13 +397,16 @@ def _answer(ctx) -> None:
             for d, t in zip(d_log, tones):
                 if t:
                     d["tone"] = t
+        from . import ink as _ink
+        for i, d in enumerate(d_log):
+            d["seed"] = _ink.stroke_seed(turn, slot + i)
         return (_logical(p_px) if p_px else [], d_log)
 
     def _fire(raw):
         # a sentence just started playing: grow the list, publish only
         # if this turn is still the live, speaking one
         with plock:
-            p, d = _split(raw)
+            p, d = _split(raw, len(drws))
             ms = int(getattr(speaker, "sentence_ms", 0) or 0)
             if ms > 0:        # the pen's pace: this sentence's spoken time
                 for one in d:

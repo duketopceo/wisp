@@ -26,6 +26,14 @@ RING1 = {"kind": "ring", "x": 100, "y": 200, "r": 30}
 ARROW1 = {"kind": "arrow", "x1": 1, "y1": 2, "x2": 300, "y2": 400}
 
 
+def geom(ds, drop=("seed",)):
+    """Drawings without their pen seed (checked present and an int here;
+    its value is pinned by test_each_drawing_carries_its_slot_seed)."""
+    ds = list(ds)
+    assert all(isinstance(d.get("seed"), int) for d in ds), ds
+    return [{k: v for k, v in d.items() if k not in drop} for d in ds]
+
+
 class FakeSpeaker:
     """Stands in for SentenceSpeaker: records what the stage hands it and
     lets a test fire `on_sentence` by hand."""
@@ -152,12 +160,22 @@ class VoiceOnTimingTests(StageBase):
         shown = pubs[-1]["drawings"]
         # each mark carries the spoken time of its own sentence (the
         # pen's pace); the geometry is untouched
-        self.assertEqual([{k: v for k, v in d.items() if k != "ms"}
-                          for d in shown], [RING1, ARROW1])
+        self.assertEqual(geom(shown, ("ms", "seed")), [RING1, ARROW1])
         self.assertTrue(all(isinstance(d["ms"], int) and d["ms"] > 0
                             for d in shown))
         self.assertEqual([len(x["points"]) for x in pubs], [0, 1])
         self.assertGreaterEqual(len(self.pubs[1][1]), 1)
+
+    def test_each_drawing_carries_its_slot_seed(self):
+        # U7: the pen seed is stable for the turn and the stroke's slot,
+        # counted across sentences, so a replay wobbles the same way
+        from wisp import ink
+        self.run_answer(self.cfg, DRAW_REPLY)
+        self.wait_done()
+        shown = self.pubs[-1][0]["drawings"]
+        self.assertEqual([d["seed"] for d in shown],
+                         [ink.stroke_seed(self.turn, 0),
+                          ink.stroke_seed(self.turn, 1)])
         self.assertEqual(self.bus.state.drawings, [])
         for line in self.spoken():
             self.assertNotIn("[", line)
@@ -201,7 +219,7 @@ class VoiceOffTests(StageBase):
                                              real(s, **kw))):
             self.run_answer(cfg, DRAW_REPLY)
         speaking = [kw for s, kw in seen if s == "speaking"][-1]
-        self.assertEqual(speaking["drawings"], [RING1, ARROW1])
+        self.assertEqual(geom(speaking["drawings"]), [RING1, ARROW1])
         self.assertEqual(speaking["points"], [P2])
         self.assertNotIn("[", speaking["answer"])
         self.assertEqual(self.bus.state.drawings, [])
@@ -319,14 +337,14 @@ class GuardTests(StageBase):
         self.armed()
         self.fire([ARROW1, P2])
         (kw, _), = self.pubs
-        self.assertEqual(kw["drawings"], [ARROW1])
+        self.assertEqual(geom(kw["drawings"]), [ARROW1])
         self.assertEqual(kw["points"], [P2])
 
     def test_trailing_tag_fires_with_tail(self):
         self.armed()
         self.fire([RING1])
         self.assertEqual(self.shown(), [])
-        self.assertEqual(list(self.bus.state.drawings), [RING1])
+        self.assertEqual(geom(self.bus.state.drawings), [RING1])
 
     def test_drawing_mapping_scale_2_on_screen_edge(self):
         mons = [{"x": 0, "y": 0, "width": 2000, "height": 1200, "scale": 2}]
@@ -336,7 +354,7 @@ class GuardTests(StageBase):
             self.armed()
             self.fire([{"kind": "hl", "x": 1000, "y": 600,
                         "w": 1000, "h": 600}, RING1])
-        d = self.bus.state.drawings
+        d = geom(self.bus.state.drawings)
         self.assertEqual(d[0], {"kind": "hl", "x": 500, "y": 300,
                                 "w": 500, "h": 300})
         self.assertEqual(d[1], {"kind": "ring", "x": 50, "y": 100, "r": 15})
