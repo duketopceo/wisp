@@ -77,6 +77,13 @@ const returnToTop = page => page.evaluate(() => {
   root.style.scrollBehavior = behavior;
 });
 
+// main.ts keeps the still on hosts reporting <= 2 cores or <= 2 GB, which a small CI
+// runner can: pin a capable host wherever the test expects a live comet.
+const hardware = ([cores, memory]) => {
+  Object.defineProperty(navigator, "hardwareConcurrency", {value: cores, configurable: true});
+  Object.defineProperty(navigator, "deviceMemory", {value: memory, configurable: true});
+};
+
 for (const name of engines) {
   const browser = await ({chromium, webkit}[name]).launch({
     headless: true,
@@ -86,6 +93,7 @@ for (const name of engines) {
   });
   try {
     const context = await browser.newContext({viewport: {width: 1440, height: 900}});
+    await context.addInitScript(hardware, [8, 8]);
     const page = await context.newPage();
     const uncaught = [];
     const external = trackExternalRequests(page);
@@ -227,6 +235,7 @@ for (const name of engines) {
     // A stage that is never on screen never runs the sim: the still stays.
     {
       const c = await browser.newContext({viewport: {width: 390, height: 844}});
+      await c.addInitScript(hardware, [8, 8]);
       const p = await c.newPage();
       const errors = [];
       p.on("pageerror", error => errors.push(error.stack || error.message));
@@ -242,12 +251,13 @@ for (const name of engines) {
       await c.close();
     }
 
-    for (const mode of ["reduced", "no-js", "no-canvas", "module-failed", "data-saver", "draw-failed"]) {
+    for (const mode of ["reduced", "no-js", "no-canvas", "module-failed", "data-saver", "low-power", "draw-failed"]) {
       const c = await browser.newContext({
         viewport: {width: 390, height: 844},
         javaScriptEnabled: mode !== "no-js",
         reducedMotion: mode === "reduced" ? "reduce" : "no-preference",
       });
+      await c.addInitScript(hardware, mode === "low-power" ? [2, 8] : [8, 8]);
       if (mode === "no-canvas") await c.addInitScript(() => {
         const original = HTMLCanvasElement.prototype.getContext;
         HTMLCanvasElement.prototype.getContext = function (type, ...args) {

@@ -10,6 +10,19 @@ function theme(): "light" | "dark" {
   return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
+// Browser chrome follows an explicit choice; with none saved the two media-scoped
+// theme-color tags in index.html follow the system.
+function chrome(t: "light" | "dark") {
+  let m = document.head.querySelector<HTMLMetaElement>("meta[data-wisp-chrome]");
+  if (!m) {
+    m = document.createElement("meta");
+    m.name = "theme-color";
+    m.dataset.wispChrome = "";
+    document.head.prepend(m);
+  }
+  m.content = t === "dark" ? "#15110E" : "#F2ECE0";
+}
+
 const toggle = document.querySelector<HTMLButtonElement>("#theme-toggle");
 if (toggle) {
   const paint = () => {
@@ -23,6 +36,7 @@ if (toggle) {
   toggle.addEventListener("click", () => {
     const next = theme() === "dark" ? "light" : "dark";
     root.dataset.theme = next;
+    chrome(next);
     try { localStorage.setItem("wisp-theme", next); } catch { /* private mode: not remembered */ }
     paint();
     mark?.recolor();
@@ -65,8 +79,10 @@ const lowPower = nav.connection?.saveData === true
 if (host && (lowPower || reduced.matches)) host.dataset.ready = "true";
 if (host && !lowPower) {
   const still = () => { mark?.stop(); mark = null; host.dataset.mark = "still"; };
+  let starting = false;
   const start = async () => {
-    if (mark || reduced.matches) { host.dataset.ready = "true"; return; }
+    if (mark || starting || reduced.matches) { host.dataset.ready = "true"; return; }
+    starting = true;
     try {
       const { mountMark } = await import("./mark");
       if (!reduced.matches) {
@@ -75,6 +91,7 @@ if (host && !lowPower) {
     } catch {
       still(); // module or canvas failed: keep the designed still
     } finally {
+      starting = false;
       host.dataset.ready = "true";
     }
   };

@@ -152,10 +152,16 @@ export function mountMark(stage: HTMLElement, hooks: { onLive: () => void; onLos
 
   const io = new IntersectionObserver((entries) => {
     visible = entries[entries.length - 1].isIntersecting;
-    if (visible && !seen) first();
+    if (visible && !seen && !document.hidden) first();
     if (visible) run();
   }, { rootMargin: "80px" });
-  const onVisibility = () => { if (!document.hidden) run(); };
+  const onVisibility = () => {
+    if (document.hidden) return;
+    if (visible && !seen) first(); // the first frame waits for a visible tab
+    run();
+  };
+  // A lost 2D context draws nothing and comes back blank: give the still back.
+  const onContextLost = (e: Event) => { e.preventDefault(); stop(); hooks.onLost(); };
   const onMove = (e: PointerEvent) => {
     const r = stage.getBoundingClientRect();
     px = e.clientX - r.left;
@@ -175,6 +181,7 @@ export function mountMark(stage: HTMLElement, hooks: { onLive: () => void; onLos
     io.disconnect();
     ro.disconnect();
     document.removeEventListener("visibilitychange", onVisibility);
+    canvas.removeEventListener("contextlost", onContextLost);
     stage.removeEventListener("pointermove", onMove);
     stage.removeEventListener("pointerleave", onLeave);
     canvas.remove();
@@ -184,6 +191,7 @@ export function mountMark(stage: HTMLElement, hooks: { onLive: () => void; onLos
   size();
   stage.addEventListener("pointermove", onMove);
   stage.addEventListener("pointerleave", onLeave);
+  canvas.addEventListener("contextlost", onContextLost);
   document.addEventListener("visibilitychange", onVisibility);
   ro.observe(stage);
   io.observe(stage);
