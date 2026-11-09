@@ -1040,6 +1040,12 @@ VOICE_CONFIRM_LINE = "Say continue when you've done that."
 TEXT_POLL_S = 1.0      # how often a pointed step re-reads the window text
 
 
+def _no_tesseract(name):
+    """`shutil.which` with tesseract hidden: the step poll skips OCR."""
+    import shutil
+    return None if name == "tesseract" else shutil.which(name)
+
+
 def _window_text(cfg):
     """Production window-text source for the step poll: the U2 collector
     without its OCR tier (a window capture plus tesseract can take over a
@@ -1047,7 +1053,7 @@ def _window_text(cfg):
     def read():
         from . import window_text
         try:
-            return window_text.collect(cfg, which=lambda _name: None)
+            return window_text.collect(cfg, which=_no_tesseract)
         except Exception:
             return None
     return read

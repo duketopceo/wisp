@@ -112,13 +112,13 @@ class Routing(unittest.TestCase):
             head, _, tail = cell.partition("host `")
             tail = "`" + tail if tail else ""
             if "class" in head:
-                self.assertEqual(set(classes),
-                                 set(re.findall(r"`([^`]+)`", head)), name)
+                self.assertEqual(sorted(classes),
+                                 sorted(re.findall(r"`([^`]+)`", head)), name)
             else:
                 self.assertEqual(classes, [], name)
             if tail:
-                self.assertEqual(set(hosts),
-                                 set(re.findall(r"`([^`]+)`", tail)), name)
+                self.assertEqual(sorted(hosts),
+                                 sorted(re.findall(r"`([^`]+)`", tail)), name)
             else:
                 self.assertEqual(hosts, [], name)
 

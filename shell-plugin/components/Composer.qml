@@ -55,12 +55,13 @@ Rectangle {
     root.dismissed();
   }
 
+  // state settles before the signal: the host may unload this window
   function finish() {
     var t = field.text.replace(/^\s+|\s+$/g, "");
     if (t === "") { root.close(); return; }
-    root.submitted(t);
-    if (root.service) root.service.askAbout(t);
     field.text = "";
     root.open = false;
+    if (root.service) root.service.askAbout(t);
+    root.submitted(t);
   }
 }

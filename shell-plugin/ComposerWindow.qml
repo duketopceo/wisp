@@ -29,8 +29,9 @@ PanelWindow {
     id: composer
     anchors.fill: parent
     service: win.service
-    onSubmitted: win.closed()
-    onDismissed: win.closed()
+    // unload after the composer's handler returns, never inside it
+    onSubmitted: Qt.callLater(win.closed)
+    onDismissed: Qt.callLater(win.closed)
   }
 
   // opening after creation runs the composer's own reset and focus grab
