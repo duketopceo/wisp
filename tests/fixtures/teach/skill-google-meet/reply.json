@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click the captions button in the bottom bar.\", \"label\": \"Captions\", \"why\": \"Captions show what people say.\", \"kind\": \"click\"}]}"
+}

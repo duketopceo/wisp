@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click New notebook in the toolbar.\", \"label\": \"New notebook\", \"why\": \"Give it a name to create it.\", \"kind\": \"click\"}]}"
+}

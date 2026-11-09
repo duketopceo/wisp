@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Open the Buffers menu to switch buffers.\", \"label\": \"Buffers\", \"why\": \"Split commands also live in the File menu.\", \"kind\": \"click\"}]}"
+}

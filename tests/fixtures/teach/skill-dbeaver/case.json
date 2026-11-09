@@ -1,0 +1,50 @@
+{
+ "id": "skill-dbeaver",
+ "app": "dbeaver",
+ "goal": "open a SQL editor in DBeaver",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "SQL Editor",
+  "rect": [
+   126,
+   28,
+   112,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "Navigator",
+   "rect": [
+    8,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "SQL Editor",
+   "rect": [
+    126,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Run",
+   "rect": [
+    244,
+    28,
+    112,
+    24
+   ]
+  }
+ ]
+}

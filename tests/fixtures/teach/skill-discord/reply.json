@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click the gear next to your name.\", \"label\": \"Settings\", \"why\": \"User Settings opens from there.\", \"kind\": \"click\"}]}"
+}

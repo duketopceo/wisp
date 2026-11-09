@@ -1,0 +1,59 @@
+{
+ "id": "skill-discord",
+ "app": "discord",
+ "goal": "open user settings in Discord",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "Settings",
+  "rect": [
+   362,
+   28,
+   112,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "Servers",
+   "rect": [
+    8,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Channels",
+   "rect": [
+    126,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Voice",
+   "rect": [
+    244,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Settings",
+   "rect": [
+    362,
+    28,
+    112,
+    24
+   ]
+  }
+ ]
+}

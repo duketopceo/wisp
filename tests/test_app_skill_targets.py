@@ -16,11 +16,9 @@ DOC = ROOT / "docs" / "research" / "app-skill-targets.md"
 TEACH = ROOT / "tests" / "fixtures" / "teach"
 
 # Batches of the targets doc whose skills are implemented so far.
-IMPLEMENTED_BATCHES = (1, 2)
-# Shipped skills that predate the targets doc and name classes a later
-# batch skill also claims (kitty lists alacritty and ghostty, nautilus
-# lists thunar). Overlap with exactly these is tolerated until the shipped
-# skill is trimmed; see the U9 report.
+IMPLEMENTED_BATCHES = (1, 2, 3, 4, 5)
+
+
 def doc_text():
     return DOC.read_text()
 
@@ -133,6 +131,26 @@ class Routing(unittest.TestCase):
                     owners.setdefault((key, v.lower()), []).append(name)
         clashes = {k: v for k, v in owners.items() if len(v) > 1}
         self.assertEqual(clashes, {})
+
+
+class Reachable(unittest.TestCase):
+    """Every implemented skill is the one that wins for its own keys:
+    desktop classes by window class alone, web hosts through a browser
+    window (class chromium) plus the page host."""
+
+    def _match(self, **kw):
+        return skills.match_app_skill_info(skills_dir=SEED.parent, **kw)
+
+    def test_each_skill_is_reachable_by_every_class_and_host_it_claims(self):
+        for name, _ in implemented_rows():
+            _, meta = load(name)
+            for cls in skills._list_field(meta.get("app_classes")):
+                got = self._match(window_class=cls)
+                self.assertEqual(got and got["name"], name, f"{name}:{cls}")
+            for host in skills._list_field(meta.get("url_hosts")):
+                got = self._match(window_class="chromium", url_host=host)
+                self.assertEqual(got and got["name"], name, f"{name}:{host}")
+                self.assertEqual(got["matched_by"], "url_host", name)
 
 
 class TeachCases(unittest.TestCase):

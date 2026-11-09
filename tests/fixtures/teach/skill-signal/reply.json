@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click the plus beside the message box.\", \"label\": \"Attach\", \"why\": \"It lets you pick a file to attach.\", \"kind\": \"click\"}]}"
+}
