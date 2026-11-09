@@ -2,6 +2,7 @@
 title: Wisp v2 - Computer Use at Scale, Browser Lane, OpenRouter SDK, Notch UI - Plan
 type: feat
 date: 2026-11-07
+status: active (partly shipped: #340 #341 #345 #347)
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-plan-bootstrap
 execution: code

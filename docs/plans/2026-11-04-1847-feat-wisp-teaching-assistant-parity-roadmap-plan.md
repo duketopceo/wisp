@@ -2,6 +2,7 @@
 title: Wisp Teaching and Pointing Assistant Parity Roadmap - Plan
 type: feat
 date: 2026-11-04
+status: active (Phase 1 U1-U13 shipped: #317 #319 #329 #331; open: Phase 2 U14-U18)
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-plan-bootstrap
 execution: code

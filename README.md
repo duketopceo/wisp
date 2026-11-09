@@ -13,6 +13,9 @@ provide starting configurations; providers and local tools still need setup. The
 shows up as the bar mark and live pill, a cursor bubble, a bottom-center
 listening pill on the overlay, and the Panel.
 
+Wisp needs an OpenRouter API key: OpenRouter is the main engine for the brain,
+vision and routing. Local models are optional (see Local models below).
+
 Status: v0.9 shipped; v1.0 is a verification milestone (a labelled soak,
 a fresh-box install and the learning loop; see `ROADMAP.md`). Linux
 (Omarchy/Hyprland) is the full-app target. The [macOS](docs/MACOS.md) and

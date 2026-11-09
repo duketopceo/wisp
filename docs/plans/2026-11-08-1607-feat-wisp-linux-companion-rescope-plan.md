@@ -2,6 +2,7 @@
 title: Wisp rescope - the Linux voice companion for any window, any user - Plan
 type: feat
 date: 2026-11-08
+status: active (direction of record, merged in #348; units still open)
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-plan-bootstrap
 execution: code
