@@ -152,7 +152,10 @@ Error codes (additive, Python core; U7): when `status` is `error`,
 `ground_down`, `ground_failed`, `timeout`, `cancelled`, `busy`,
 `stale_prompt`, `restarted`, `tool_failed`, `budget_exceeded`,
 `key_missing` (a required API key did not resolve; `error` names the
-key and tells the user to run `wispd onboard`), `internal`. Shells
+key and tells the user to run `wispd onboard`), `region_denied` (every
+model call was refused with 401/403 by the US OpenRouter host; the copy
+names the region and says to set `[brain.openrouter] region = "global"`),
+`internal`. Shells
 render copy from the code and must treat unknown codes as `internal`. `error_detail` is for logs and `wispd watch`, not
 for display. A turn that starts (`listening`) clears all three.
 

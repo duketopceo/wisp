@@ -101,6 +101,9 @@ ERRORS = {
                         "raise the budget in settings or wait until tomorrow"),
     "key_missing": ("an api key is missing",
                     "run wispd onboard to add it"),
+    "region_denied": ("the us openrouter region refused the request",
+                      'set [brain.openrouter] region = "global", '
+                      "then try again"),
     "internal": ("something went wrong", "open details, then try again"),
 }
 UNKNOWN_ERROR = "internal"

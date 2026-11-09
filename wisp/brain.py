@@ -29,8 +29,10 @@ import json
 import time
 import urllib.request
 import urllib.error
+from urllib.parse import urlparse
 
 from . import cancel, config, errors_codes, ledger
+from . import region as _region
 
 # set by the daemon: a health.HealthRegistry; entries it knows are down
 # are skipped without a connection attempt
@@ -183,6 +185,32 @@ def _first_token_s(cfg: dict) -> float:
         return float(cfg.get("brain", {}).get("first_token_s", "3"))
     except ValueError:
         return 3.0
+
+
+def http_error_message(e) -> str:
+    """OpenRouter's JSON `error.message` from an HTTP error, scrubbed of
+    secrets and capped; "" for any other body. For `wispd doctor --live`
+    output only, whose probe sends a fixed prompt: a turn never shows it,
+    because a provider can echo what the user said in its error body."""
+    if not isinstance(e, urllib.error.HTTPError):
+        return ""
+    text = ""
+    try:
+        err = json.loads(e.read(2048).decode("utf-8", "replace")).get("error")
+        text = str(err.get("message", "") if isinstance(err, dict)
+                   else err or "")
+    except Exception:
+        pass
+    finally:
+        e.close()
+    from .report import scrub_text
+    return scrub_text(" ".join(text.split()))[:200]
+
+
+def _regional_denied(p: dict, e) -> bool:
+    """A 401/403 from the US regional host (KTD13)."""
+    return isinstance(e, urllib.error.HTTPError) and e.code in (401, 403) \
+        and urlparse(p.get("base_url") or "").hostname == _region.US_HOST
 
 
 def _post(url: str, headers: dict, body: dict, timeout: float = 60) -> dict:
@@ -398,6 +426,14 @@ def _describe(p: dict, e: Exception) -> str:
         from . import trial
         if trial.limit_reached(e):
             return f"brain provider 'trial': {trial.LIMIT_LINE}"
+    # The provider's error body is never put here: this text reaches
+    # stderr, and a provider can echo the request (what the user said)
+    # back in its error. `wispd doctor --live` shows the body instead,
+    # because its probe sends a fixed prompt.
+    if _regional_denied(p, e):
+        return (f"brain provider '{p['name']}' was refused by the "
+                f"{_region.US_HOST} region (HTTP {e.code}); run "
+                f"`wispd doctor --live` for OpenRouter's reason")
     if errors_codes.is_connection_failure(e):
         return (f"brain provider '{p['name']}' unreachable at "
                 f"{p['base_url']} ({e})")
@@ -426,6 +462,9 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
     failures: list = []
     first_failed = None
     capped = errored = False
+    # region_denied needs every request that went out refused by the
+    # regional host; skipped entries made no request and do not count
+    attempted = denied = 0
     missing = None
     for i, p in enumerate(chain(cfg)):
         cancel.check()  # a cancelled turn never moves to the next brain
@@ -458,9 +497,13 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
                     raise
                 failures.append(_describe(p, e))
                 if getattr(e, "code", "") == "key_missing":
-                    # not an outage: the next entry may have its key
+                    # not an outage: the next entry may have its key; it
+                    # failed before any request, so it is not attempted
                     missing = missing or e
                 else:
+                    attempted += 1
+                    if _regional_denied(p, e):
+                        denied += 1
                     errored = True
                     if HEALTH is not None:
                         HEALTH.report_failure(f"brain_{p['name']}",
@@ -487,6 +530,11 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
     if capped and not errored:
         raise errors_codes.WispError("budget_exceeded",
                                      "; ".join(failures))
+    # a key_missing entry sent nothing, so a regional refusal still names
+    # the region even when a fallback had no key
+    if denied and denied == attempted:
+        # every entry was refused by the regional host: name the region
+        raise errors_codes.WispError("region_denied", "; ".join(failures))
     raise errors_codes.WispError("brain_down", "; ".join(failures))
 
 
