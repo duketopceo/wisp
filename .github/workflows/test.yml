@@ -57,6 +57,13 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Headless e2e
         run: npm run e2e
+      - name: Upload the built extension (load unpacked from chrome-mv3)
+        uses: actions/upload-artifact@v4
+        with:
+          name: wisp-chrome-extension
+          path: browser-extension/.output/chrome-mv3
+          if-no-files-found: error
+          retention-days: 30
 
   qml:
     # QML lint, shader bake and qmltestrunner suites skip without Qt and
