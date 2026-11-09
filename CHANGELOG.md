@@ -24,6 +24,7 @@ How this file is kept:
 - Your agent tasks and short dictations no longer appear in a command line another account on the machine could read: Wisp hands them to the agent runtime and to the typer on stdin.
 - "Show me how to rebase", "teach me vim macros" and "I want to learn layers" now start a walkthrough, and every step says why it matters, not only what to click. `[teach] auto = "false"` turns the new routing off.
 - Walkthroughs: Wisp can teach you a task step by step, spoken and pointed, and you can save a lesson, replay it and resume one you paused.
+- The browser lane has a proper extension: connect it from a side panel with a Stop button and a step log, allow Wisp one site at a time, and it stays connected across browser restarts (`wispd browser install-host --dev`, then press Connect). It is built from source for now: see `docs/BROWSER_LANE.md`.
 - Answers start sooner: the first clause is spoken as soon as it is ready, speech is transcribed while you still hold the key, and pressing the key while Wisp thinks cancels that turn and starts a new one.
 - Ask chips: a quick tap of the talk key shows up to three things you can ask in the app you are in, for your first seven days.
 - Selected text, a copied image or a file you pointed at can ride along with a question that says "this" or "that". Nothing is read between key presses.
