@@ -2,6 +2,7 @@
 title: Wisp Chrome Extension - Plan
 type: feat
 date: 2026-11-02
+status: "active (shipped in #350: U2-U5, U7; open: U1 research, U6, U8 trust docs, U9, U10, U11)"
 execution: code
 ---
 
