@@ -1,7 +1,8 @@
 /* Wisp homepage theme. Structure follows launch-ui's globals.css (MIT,
-   Copyright (c) 2024 Mikolaj Dobrucki); colours and type are Wisp's own:
-   ember and amber on warm near-black, a paper light theme, and the flame's
-   cool blue as the one counter-colour. */
+   Copyright (c) 2024 Mikolaj Dobrucki); colours and type are Wisp's own.
+   Three colours and no others: ink, paper and one pop. Every other tone is a
+   blend of ink and paper. The pop is a fill or a graphic, never text colour
+   (2.6:1 on paper). */
 @import "tailwindcss";
 @source "./";
 
@@ -15,7 +16,7 @@
 
 /* dark: follows the system unless the visitor picked a theme. */
 @custom-variant dark {
-  &:where([data-theme="dark"], [data-theme="dark"] *, [data-stage="dark"], [data-stage="dark"] *) {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
     @slot;
   }
   @media (prefers-color-scheme: dark) {
@@ -37,9 +38,6 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
-  --color-brand: var(--brand);
-  --color-brand-foreground: var(--brand-foreground);
-  --color-flame: var(--flame);
   --color-border: var(--border);
   --color-ring: var(--ring);
 
@@ -63,59 +61,52 @@
   }
 }
 
-/* Light: warm paper, burnt-ember accent. */
+/* The whole palette. */
 :root {
-  --background: oklch(0.975 0.008 78);
-  --foreground: oklch(0.21 0.014 50);
-  --card: oklch(0.995 0.004 78);
-  --muted: oklch(0.935 0.012 72);
-  --muted-foreground: oklch(0.47 0.022 55);
-  --primary: oklch(0.56 0.165 44);
-  --primary-foreground: oklch(0.99 0.005 78);
-  --brand: oklch(0.56 0.165 44);
-  --brand-foreground: oklch(0.7 0.16 58);
-  --flame: oklch(0.55 0.11 235);
-  --border: oklch(0.87 0.014 68);
-  --ring: oklch(0.56 0.165 44);
-  --shadow: #2a14050f;
+  --ink: #15110E;
+  --paper: #F2ECE0;
+  --pop: #FF5B1F;
   --radius: 0.75rem;
+}
+
+/* Light: paper ground, ink text. */
+:root {
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: color-mix(in srgb, var(--paper) 96%, var(--ink));
+  --muted: color-mix(in srgb, var(--paper) 92%, var(--ink));
+  --muted-foreground: color-mix(in srgb, var(--ink) 76%, var(--paper));
+  --primary: var(--pop);
+  --primary-foreground: var(--ink);
+  --border: color-mix(in srgb, var(--paper) 82%, var(--ink));
+  --ring: var(--ink);
+  --shadow: color-mix(in srgb, var(--ink) 10%, transparent);
   color-scheme: light;
 }
 
-/* Dark: near-black with a warm cast, amber accent, ember glow. */
+/* Dark: ink ground, paper text. Follows the system unless the visitor chose. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --background: oklch(0.155 0.008 50);
-    --foreground: oklch(0.955 0.014 78);
-    --card: oklch(0.195 0.011 50);
-    --muted: oklch(0.24 0.012 50);
-    --muted-foreground: oklch(0.76 0.025 70);
-    --primary: oklch(0.8 0.145 66);
-    --primary-foreground: oklch(0.18 0.02 50);
-    --brand: oklch(0.8 0.145 66);
-    --brand-foreground: oklch(0.67 0.19 42);
-    --flame: oklch(0.87 0.075 222);
-    --border: oklch(0.31 0.016 52);
-    --ring: oklch(0.8 0.145 66);
-    --shadow: #00000066;
+    --background: var(--ink);
+    --foreground: var(--paper);
+    --card: color-mix(in srgb, var(--ink) 94%, var(--paper));
+    --muted: color-mix(in srgb, var(--ink) 90%, var(--paper));
+    --muted-foreground: color-mix(in srgb, var(--paper) 76%, var(--ink));
+    --border: color-mix(in srgb, var(--ink) 82%, var(--paper));
+    --ring: var(--paper);
+    --shadow: color-mix(in srgb, var(--ink) 60%, transparent);
     color-scheme: dark;
   }
 }
-:root[data-theme="dark"],
-[data-stage="dark"] {
-  --background: oklch(0.155 0.008 50);
-  --foreground: oklch(0.955 0.014 78);
-  --card: oklch(0.195 0.011 50);
-  --muted: oklch(0.24 0.012 50);
-  --muted-foreground: oklch(0.76 0.025 70);
-  --primary: oklch(0.8 0.145 66);
-  --primary-foreground: oklch(0.18 0.02 50);
-  --brand: oklch(0.8 0.145 66);
-  --brand-foreground: oklch(0.67 0.19 42);
-  --flame: oklch(0.87 0.075 222);
-  --border: oklch(0.31 0.016 52);
-  --ring: oklch(0.8 0.145 66);
-  --shadow: #00000066;
+:root[data-theme="dark"] {
+  --background: var(--ink);
+  --foreground: var(--paper);
+  --card: color-mix(in srgb, var(--ink) 94%, var(--paper));
+  --muted: color-mix(in srgb, var(--ink) 90%, var(--paper));
+  --muted-foreground: color-mix(in srgb, var(--paper) 76%, var(--ink));
+  --border: color-mix(in srgb, var(--ink) 82%, var(--paper));
+  --ring: var(--paper);
+  --shadow: color-mix(in srgb, var(--ink) 60%, transparent);
   color-scheme: dark;
 }
 
@@ -126,63 +117,33 @@
     @apply bg-background text-foreground font-sans antialiased;
     font-synthesis: none;
   }
-  ::selection { background: var(--primary); color: var(--primary-foreground); }
+  ::selection { background: var(--pop); color: var(--ink); }
   :focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; border-radius: 4px; }
   [hidden] { display: none !important; }
   code, kbd, pre { font-family: var(--font-mono); }
 }
 
-/* launch-ui glass and fade utilities, reduced to the ones used here. */
+/* launch-ui glass utilities, reduced to the ones used here. */
 @utility glass-2 {
   border-width: 1px;
-  background-image: linear-gradient(to bottom, color-mix(in oklch, var(--card) 100%, transparent), color-mix(in oklch, var(--card) 70%, transparent));
+  background-image: linear-gradient(to bottom, var(--card), color-mix(in srgb, var(--card) 70%, transparent));
 }
 @utility glass-4 {
   border-width: 1px;
-  border-color: color-mix(in oklch, var(--foreground) 14%, transparent);
-  background-image: linear-gradient(to bottom, color-mix(in oklch, var(--primary) 14%, transparent), color-mix(in oklch, var(--primary) 4%, transparent));
-}
-@utility fade-bottom {
-  mask-image: linear-gradient(to top, transparent 0%, black 22%);
+  border-color: color-mix(in srgb, var(--foreground) 24%, transparent);
+  background-color: var(--muted);
 }
 @utility line-b {
   border-bottom-width: 1px;
 }
 
-/* Hero stage: the static frame is always painted; the ThreeUI ribbon field
-   fades in over it only once it has drawn a frame. */
-.hero-frame {
-  background:
-    radial-gradient(60% 70% at 78% 62%, oklch(0.67 0.19 42 / 0.34), transparent 70%),
-    radial-gradient(38% 44% at 74% 48%, oklch(0.8 0.145 66 / 0.26), transparent 72%),
-    radial-gradient(26% 30% at 78% 44%, oklch(0.87 0.075 222 / 0.16), transparent 70%),
-    radial-gradient(90% 80% at 10% 0%, oklch(0.22 0.02 50), transparent 70%),
-    oklch(0.13 0.008 50);
-}
-.hero-frame::after {
-  /* Halftone grain, echoing the shader's dot grid. */
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image: radial-gradient(oklch(0.8 0.145 66 / 0.22) 1px, transparent 1.4px);
-  background-size: 7px 7px;
-  mask-image: radial-gradient(55% 60% at 76% 55%, black, transparent 75%);
-  pointer-events: none;
-}
-#hero-bg canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-  opacity: 0;
-  transition: opacity 0.9s ease-out;
-}
-#hero-bg[data-rendered="true"] canvas { opacity: 1; }
-
-.flame-mark {
-  filter: drop-shadow(0 0 28px oklch(0.87 0.075 222 / 0.45)) drop-shadow(0 0 70px oklch(0.8 0.145 66 / 0.25));
-}
+/* Hero stage: the SVG still is always painted at the stage's size; the canvas
+   comet mounts over it and the still hides only after the canvas has drawn its
+   first frame, so nothing shifts. */
+.mark-glow-a { stop-color: var(--pop); stop-opacity: 0.22; }
+.mark-glow-b { stop-color: var(--pop); stop-opacity: 0; }
+#hero-mark canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#hero-mark[data-mark="live"] .mark-still { visibility: hidden; }
 
 details > summary { list-style: none; cursor: pointer; }
 details > summary::-webkit-details-marker { display: none; }

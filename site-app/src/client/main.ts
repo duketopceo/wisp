@@ -1,6 +1,7 @@
 // First-paint module: theme toggle, copy button, and the decision to load the
-// WebGL hero. Everything here is optional; the page works without it.
+// live comet. Everything here is optional; the page works without it.
 const root = document.documentElement;
+let recolor: () => void = () => {};
 
 function theme(): "light" | "dark" {
   const set = root.dataset.theme;
@@ -23,8 +24,10 @@ if (toggle) {
     root.dataset.theme = next;
     try { localStorage.setItem("wisp-theme", next); } catch { /* private mode: not remembered */ }
     paint();
+    recolor();
   });
 }
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => recolor());
 
 const copy = document.querySelector<HTMLButtonElement>("#copy-install");
 const code = document.querySelector<HTMLElement>("#install-code");
@@ -46,32 +49,38 @@ if (copy && code && status) {
   });
 }
 
-// The WebGL hero is a nicety: skip it for reduced motion, data saver and
-// low-power devices, and only fetch it after the page has painted.
-const host = document.querySelector<HTMLElement>("#hero-bg");
+// The live comet is a nicety: skip it for reduced motion, data saver and
+// low-power devices, and only fetch it after the page has painted. The SVG still
+// in the stage stays when anything here is skipped or fails.
+const host = document.querySelector<HTMLElement>("#hero-mark");
 const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 const nav = navigator as Navigator & { connection?: { saveData?: boolean }; deviceMemory?: number };
 const lowPower = nav.connection?.saveData === true
   || (nav.hardwareConcurrency ?? 8) <= 2
   || (nav.deviceMemory ?? 8) <= 2;
 
-// data-ready marks that the hero decision is made (tests and screenshots wait on it).
+// data-ready marks that the decision is made (tests and screenshots wait on it);
+// data-mark is "live" only once the canvas has drawn its first frame.
 if (host && (lowPower || reduced.matches)) host.dataset.ready = "true";
 if (host && !lowPower) {
-  let stop: (() => void) | null = null;
+  let mark: { stop: () => void; recolor: () => void } | null = null;
+  const still = () => { mark?.stop(); mark = null; host.dataset.mark = "still"; };
   const start = async () => {
-    if (stop || reduced.matches) { host.dataset.ready = "true"; return; }
+    if (mark || reduced.matches) { host.dataset.ready = "true"; return; }
     try {
-      const { mountRibbonField } = await import("./hero");
-      if (!reduced.matches) stop = mountRibbonField(host, { onLost: () => { stop = null; } });
+      const { mountMark } = await import("./mark");
+      if (!reduced.matches) {
+        mark = mountMark(host, { onLive: () => { host.dataset.mark = "live"; }, onLost: still });
+        recolor = () => mark?.recolor();
+      }
     } catch {
-      host.dataset.hero = "static"; // module failed: keep the designed frame
+      still(); // module or canvas failed: keep the designed still
     } finally {
       host.dataset.ready = "true";
     }
   };
   reduced.addEventListener("change", () => {
-    if (reduced.matches) { stop?.(); stop = null; } else { void start(); }
+    if (reduced.matches) still(); else void start();
   });
   const later = () => ("requestIdleCallback" in window
     ? requestIdleCallback(() => void start(), { timeout: 1500 })
