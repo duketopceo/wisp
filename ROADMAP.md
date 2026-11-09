@@ -1,19 +1,43 @@
 # Wisp Roadmap
 
 State: **v1.0.0-rc.2 is published as a Linux prerelease (6 assets, 2026-10-30); stable v1.0 remains a verification milestone.** GitHub's "Latest" release is still v0.9.0 because rc.2 is a prerelease. `pyproject.toml` and `wisp/__init__.py` say 1.0.0. Unified alignment, release completion, dev tuning, app skills and platform probe seams merged in #259 (tagged `v1.0.0-rc.1`); release and install fixes followed in #262 (tagged `v1.0.0-rc.2`), #263 and #264. The gauntlet, the isolated session and the default-brain change landed after rc.2 (#273-#305).
-Last updated: 2026-11-03 (read from `master` at `898258e`). Plan of record: `docs/plans/2026-10-30-001-feat-wisp-unified-alignment-and-polish-plan.md` (building on `docs/plans/2026-10-26-0031-feat-wisp-v1-roadmap-plan.md`); the gauntlet work follows `docs/plans/2026-11-01-0008-feat-wisp-gauntlet-v1-plan.md`. This is the only roadmap; `docs/ROADMAP.md` points here.
+Last updated: 2026-11-08 (read from `master` at `e3e010d`). Direction of record: `docs/plans/2026-11-08-1607-feat-wisp-linux-companion-rescope-plan.md`; the first area's plan is `docs/plans/2026-11-08-1749-feat-wisp-companion-core-plan.md`. Earlier plans of record (`docs/plans/2026-10-30-001-feat-wisp-unified-alignment-and-polish-plan.md`, `docs/plans/2026-11-07-1500-feat-wisp-v2-computer-use-plan.md`) stay valid for the units they still own. This is the only roadmap; `docs/ROADMAP.md` points here.
 
 ## Product target
 
-A push-to-talk voice companion for Hyprland/Omarchy. You hold the hotkey and speak. Wisp answers by voice while pointing and drawing on the screen, walks you through multi-step tasks, and runs background agents and routines. Autonomous clicking (act/cua) stays, but it is secondary.
+The Linux voice companion for any window and any user. Hold a key or double-tap Control, ask about whatever window you are in, and Wisp answers aloud from that window's text while pointing and drawing by hand on the right monitor. It teaches multi-step tasks in the apps people use, writes dictation that fits what is on screen, and runs background agents whose results come back as files. It works on a stock install with an OpenRouter key and a microphone. HeyClicky (macOS and Windows) is the reference for where things go and how they behave; Wisp keeps its own look. Autonomous clicking stays, and it comes last.
 
 Fixed decisions:
 
-- Hosted models by default: the brain is `openrouter:google/gemini-2.5-flash` (#299), and the shipped `[brain] fallback` is empty. Local model servers are opt-in and off (`[local] enabled`).
-- Linux (Omarchy/Hyprland) is the primary supported desktop. macOS/Windows probe seams in PR #259 are experimental, not supported desktop releases.
+- OpenRouter is the required engine: the brain, vision and routing go through it, starting with the first-party OpenRouter SDK. An Ollama brain is an optional config. Coding-agent runtimes (OpenCode by default; Codex and Claude Code optional) run on top.
+- Linux first; macOS next. The core targets Hyprland desktops, Omarchy or not; other Linux desktops follow. Omarchy ships as a plugin.
+- No personal information in the repository beyond the copyright holder in `LICENSE`.
+- Clicking for the user comes after the companion, dictation, voice, agents and connectors.
 - One end-to-end eval (`wispd eval`) is the v1 gate.
 - The Rust core in `rs/` is frozen.
 - No decision model on the routing path: turns go to the act loop, with the regex fast path (`[brain] fast_path`) in front. Phase 5 is done in `wisp/`: the Jev router, `route.decide`, the clarify prompt and `JEV_QUESTIONS` are gone (#259), the replay harness no longer pins `router = jev` (#261), and a stored `router = "jev"` or unknown value reads as `act`. The replay harness keeps a Jev fake only as a tripwire, so a stray hop to the retired endpoint fails the fixture.
+
+## Areas and order
+
+Each area gets its own brainstorm and plan, then lands as separate PRs with tests planned up front. "Lean HC" means following HeyClicky's placement and behavior with Wisp's own look.
+
+| # | Area | What it delivers | Stance vs HeyClicky | Plan |
+|---|---|---|---|---|
+| 1 | Companion core | Double-Control typed composer; lean cursor buddy; hand-drawn ink; answers from window text (accessibility text, then OCR, then screenshot); follows the focused monitor; tested circle-to-ask; walkthroughs that complete on evidence (15 steps); app skills from 17 to about 89 (Linux and web first) | Lean HC, combined with Wisp's walkthroughs | `docs/plans/2026-11-08-1749-feat-wisp-companion-core-plan.md` |
+| 2 | Hygiene and defaults | Personal-info scrub with a CI guard; stock install with an OpenRouter key and a microphone; local speech by default | Wisp's own | `docs/plans/2026-11-08-1607-feat-wisp-linux-companion-rescope-plan.md` (U2-U4) |
+| 3 | Dictation | Keep Wisp's dictation, add what HeyClicky does better; screen-aware compose reads the focused window | Full HC for screen-aware compose | to brainstorm |
+| 4 | Voice | A new talk-back voice; the current one is not good enough | Better than HC's bar | to brainstorm (provider open) |
+| 5 | Agents | Named persistent agents with faces, named after classical literature; progress cards with files and Retry on a typed thread/turn/item event model; routines and a suggested feed with Do it / Adjust / No; fail-closed permissions that never buy, send or delete without asking | Lean HC, Wisp's style | to brainstorm |
+| 6 | Connectors | A built-in app catalog plus custom MCP servers | 100% | to brainstorm (provider open) |
+| 7 | Memory | A full memory system | Own design informed by HC's profile notes | to brainstorm (backend open) |
+| 8 | Home screen | Chats and agents in one home; notch placement; full notch integration on Omarchy | HC's placement, Wisp's look | to brainstorm |
+| 9 | Engine | First-party OpenRouter SDK; optional Ollama; coding runtimes on top; then macOS | Wisp's own | to brainstorm |
+| 10 | Clicking | Grounding, click rule, verify-after-act, recovery | Lean HC plus Wisp's work | `docs/plans/2026-11-07-1500-feat-wisp-v2-computer-use-plan.md` (U1, U2, U4-U6) |
+| 11 | Paid bundle | Optional Wisp-issued key through a proxy, alongside bring-your-own-key | Like HC's proxy, optional | later |
+
+Stretch goals: live step-by-step diagrams beside answers, an interview-based agent setup, other Linux desktops (wlroots, then GNOME and KDE, then X11), and a warm "getting ready" state.
+
+Quality stays measured: `wispd eval`, replay fixtures and the gauntlet, extended with generic answer-and-point cases.
 
 ## Shipped
 
@@ -82,11 +106,10 @@ Merged 2026-10-30. The descriptions below were written while #259 was open and a
 
 ## Next, in order
 
-Owner's delivery order: installable app first, owner-labelled runs second, measured tuning third. A release candidate is not a waiver or a pass of the stable-v1 gate.
+New work follows "Areas and order" above, starting with areas 1 and 2. The release steps below still decide the stable v1 tag. A release candidate is not a waiver or a pass of the stable-v1 gate.
 
 1. **Land the open fixes and rerun the gauntlet.** Merge #307 (F1-F12 and Delete keys), #308 (act prompt: Enter after single-line typing, verify once) and #310 (`[eval] since` gate window; act results say "Dry run" when nothing ran). Then rerun the gauntlet on the isolated session and record the result next to `docs/research/2026-11-02-gauntlet-reruns.md`.
    - **Choose the click finder (owner, TLY-450/TLY-451).** Click probe, 9 known targets per monitor, isolated session, 2026-11-01 to 2026-11-03: local `qwen2.5vl:3b` 7/9 and 6/9 (median miss 31-35 px, but about 30 s per click on CPU); hosted `llama-4-maverick` 4/9 and 6/9 (49-58 px); hosted `gemini-2.5-flash` 2/9 and 3/9 (102-140 px); base `lfm3-vl:2b` 0/9 grounded, because wisp cannot yet read its `[x, y]` 0-1000 answers. On 2026-11-03 the owner set every model to hosted for now, which makes clicks fast but the least accurate; local is the accurate option once it is fast. Ollama's arm64 Linux build is CPU-only, so the Apple GPU (Vulkan, Honeykrisp) is unused (TLY-485).
-   - **The owner's own config was wrong for real turns,** fixed 2026-11-03: `[cua] dry_run` was on, so clicks and typing never happened while the model reported them done, and `[ground] providers` was `a11y,jev` with the retired Jev endpoint. Now `dry_run = "false"` and `control,a11y,vlm`.
 2. **Owner reinstall from `master`,** and the real compositor and voice checks that tests cannot do: drawing, pointing, rings, arrows, highlights, guided steps, the interactive voice test, and the update/rollback smoke test in `docs/INSTALL.md`'s release checklist.
 3. **Owner-labelled real turns, to 50 or more at 60%.** Run a varied set of real tasks across apps and label them with the rating controls, `wispd dev review` and `wispd eval`. Judge output is not an owner label. The owner chose to count only turns from the shipped build: `[eval] since = "2026-11-03"` (#310). The 35 older labels (26%) stay on disk as history.
 4. **Clean-box `wispd onboard` and `wispd doctor`** on an Omarchy box with hosted keys only. Where to run it is deferred by the owner until the accuracy gate is closer.
