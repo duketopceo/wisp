@@ -183,15 +183,18 @@ class Homepage(unittest.TestCase):
 
     def test_first_paint_javascript_stays_small(self):
         import gzip
-        first = sum(len(c.encode()) for n, c in self.js.items() if not n.startswith("mark-"))
+        first = sum(len(c.encode()) for n, c in self.js.items() if not n.startswith(("mark-", "hero-")))
         marks = [c for n, c in self.js.items() if n.startswith("mark-")]
         self.assertEqual(1, len(marks))
         self.assertLess(len(gzip.compress(marks[0].encode())), 3 * 1024)
         self.assertLess(first, 8 * 1024)
+        ribbon = [c for n, c in self.js.items() if n.startswith("hero-")]
+        self.assertLess(len(gzip.compress(ribbon[0].encode())), 6 * 1024)
         self.assertLess(len(self.css.encode()), 64 * 1024)
         self.assertNotIn("react", " ".join(self.js.values()).lower().replace("reactive", ""))
         self.assertIn("first-paint JS", self.log)
         self.assertIn("lazy mark JS", self.log)
+        self.assertIn("lazy ribbon JS", self.log)
 
     def test_mark_respects_motion_power_and_failure(self):
         main = (APP / "src/client/main.ts").read_text()
@@ -203,19 +206,33 @@ class Homepage(unittest.TestCase):
             self.assertIn(needle, mark)
         self.assertLessEqual(float(re.search(r"Math\.min\(devicePixelRatio \|\| 1, ([\d.]+)\)", mark).group(1)), 2)
 
-    def test_no_shader_or_ribbon_code_ships(self):
-        self.assertFalse((APP / "src/client/hero.ts").exists())
-        self.assertEqual([], [n for n in self.js if n.startswith("hero-")])
+    def test_ribbon_shader_is_one_lazy_chunk_with_fallbacks(self):
+        self.assertTrue((APP / "src/client/hero.ts").exists())
+        ribbon = [n for n in self.js if n.startswith("hero-")]
+        self.assertEqual(1, len(ribbon), ribbon)
         for name, code in self.js.items():
-            self.assertNotRegex(code, r"(?i)webgl|getExtension|gl_FragColor|precision\s+(?:high|medium)p", name)
+            if name not in ribbon:
+                self.assertNotRegex(code, r"(?i)webgl|getExtension|gl_FragColor|precision\s+(?:high|medium)p", name)
+        hero = (APP / "src/client/hero.ts").read_text()
+        for needle in ("failIfMajorPerformanceCaveat", "webglcontextlost", "IntersectionObserver",
+                       "visibilitychange", "still"):
+            self.assertIn(needle, hero)
+        self.assertLessEqual(float(re.search(r"DPR_CAP = ([\d.]+)", hero).group(1)), 1.5)
+        main = (APP / "src/client/main.ts").read_text()
+        self.assertIn('import("./hero")', main)
+        self.assertIn("lowPower", main[main.index("#hero-bg"):])
 
-    def test_third_party_branding_removed_and_notices_kept(self):
+    def test_third_party_notices_kept(self):
         self.assertNotRegex(self.text, r"(?i)launch ui|launch-ui|threeui")
         credits = (self.out / "credits.txt").read_text()
+        threeui = (APP / "licenses/THREEUI-LICENSE.txt").read_text()
         self.assertIn("Copyright (c) 2024 Mikolaj Dobrucki", credits)
-        self.assertIn("Copyright (c) 2024 Mikolaj Dobrucki", (ROOT / "THIRD_PARTY_NOTICES.md").read_text())
-        self.assertNotRegex(credits, r"(?i)threeui|Meng To")
-        self.assertFalse((APP / "licenses/THREEUI-LICENSE.txt").exists())
+        self.assertIn("Copyright (c) 2026 Meng To", credits)
+        self.assertIn(threeui.strip(), credits)
+        for notices in ("THIRD_PARTY_NOTICES.md", "shell-plugin/THIRD_PARTY_NOTICES.md"):
+            text = (ROOT / notices).read_text()
+            self.assertIn("Copyright (c) 2024 Mikolaj Dobrucki", text)
+            self.assertIn("site-app/src/client/hero.ts", text)
 
 if __name__ == "__main__":
     unittest.main()

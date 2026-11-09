@@ -69,6 +69,8 @@ export function Navbar() {
 export function Hero() {
   return (
     <section aria-labelledby="hero-title" className="bg-background text-foreground relative isolate overflow-hidden">
+      {/* ThreeUI ribbon field mounts here after first paint; the CSS frame is the fallback. */}
+      <div id="hero-bg" data-hero="static" aria-hidden="true" className="hero-frame absolute inset-0 -z-10" />
       <div className="max-w-container mx-auto grid min-h-[min(760px,92svh)] items-center gap-10 px-4 pt-16 pb-20 md:grid-cols-[minmax(0,1fr)_minmax(0,360px)] md:pt-20">
         <div className="flex min-w-0 flex-col items-start gap-6 sm:gap-8">
           <Badge className="animate-appear">

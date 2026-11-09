@@ -104,3 +104,29 @@ if (host && !lowPower) {
   if (document.readyState === "complete") later();
   else addEventListener("load", later, { once: true });
 }
+
+// The ribbon field behind the mark: same gates as the mark. Reduced motion
+// draws one still frame instead of a loop; low power, no WebGL, a lost context
+// or a failed module keep the CSS frame.
+const bg = document.querySelector<HTMLElement>("#hero-bg");
+if (bg && !lowPower) {
+  let stopRibbon: (() => void) | null = null;
+  const startRibbon = async () => {
+    stopRibbon?.();
+    stopRibbon = null;
+    try {
+      const { mountRibbonField } = await import("./hero");
+      stopRibbon = mountRibbonField(bg, { still: reduced.matches, onLost: () => { stopRibbon = null; } });
+    } catch {
+      bg.dataset.hero = "static";
+    } finally {
+      bg.dataset.ready = "true";
+    }
+  };
+  reduced.addEventListener("change", () => void startRibbon());
+  const laterRibbon = () => ("requestIdleCallback" in window
+    ? requestIdleCallback(() => void startRibbon(), { timeout: 2000 })
+    : setTimeout(() => void startRibbon(), 300));
+  if (document.readyState === "complete") laterRibbon();
+  else addEventListener("load", laterRibbon, { once: true });
+} else if (bg) bg.dataset.ready = "true";
