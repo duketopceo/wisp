@@ -1,0 +1,59 @@
+{
+ "id": "skill-wikipedia",
+ "app": "wikipedia",
+ "goal": "see the history of an article",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "View history",
+  "rect": [
+   244,
+   28,
+   112,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "Read",
+   "rect": [
+    8,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Edit",
+   "rect": [
+    126,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "View history",
+   "rect": [
+    244,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Tools",
+   "rect": [
+    362,
+    28,
+    112,
+    24
+   ]
+  }
+ ]
+}

@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click Add task at the top of the project.\", \"label\": \"Add task\", \"why\": \"Type a name and press Enter.\", \"kind\": \"click\"}]}"
+}

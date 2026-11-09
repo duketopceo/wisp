@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click New chat at the top of the sidebar.\", \"label\": \"New chat\", \"why\": \"It opens an empty conversation.\", \"kind\": \"click\"}]}"
+}

@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click the CC button in the player.\", \"label\": \"Captions\", \"why\": \"Captions appear over the video.\", \"kind\": \"click\"}]}"
+}

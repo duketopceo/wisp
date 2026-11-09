@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click Images under the search box.\", \"label\": \"Images\", \"why\": \"Picture results replace the web results.\", \"kind\": \"click\"}]}"
+}

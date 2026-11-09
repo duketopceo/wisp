@@ -1,0 +1,59 @@
+{
+ "id": "skill-x",
+ "app": "x",
+ "goal": "write a post on X",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "Post",
+  "rect": [
+   362,
+   28,
+   112,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "Home",
+   "rect": [
+    8,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Explore",
+   "rect": [
+    126,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Bookmarks",
+   "rect": [
+    244,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Post",
+   "rect": [
+    362,
+    28,
+    112,
+    24
+   ]
+  }
+ ]
+}

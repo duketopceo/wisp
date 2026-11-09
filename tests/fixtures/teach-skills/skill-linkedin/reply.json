@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click Jobs in the top bar.\", \"label\": \"Jobs\", \"why\": \"Job search and filters open there.\", \"kind\": \"click\"}]}"
+}

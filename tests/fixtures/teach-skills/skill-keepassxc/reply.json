@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Open the Entries menu and choose New Entry.\", \"label\": \"Entries\", \"why\": \"It opens the entry form.\", \"kind\": \"click\"}]}"
+}

@@ -20,6 +20,10 @@ import sys
 from PIL import Image, ImageDraw, ImageFont
 
 OUT = pathlib.Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "teach"
+# U9 app-skill cases live apart from the baseline battery above: their
+# replies are written to be correct, so mixing them in would inflate the
+# measured teach baseline (docs/ACCURACY.md).
+SKILL_OUT = OUT.parent / "teach-skills"
 W, H = 640, 400
 BG, BAR, FG = (30, 32, 38), (52, 56, 66), (225, 228, 235)
 CTRL, EDGE, ACC = (74, 80, 94), (110, 118, 136), (90, 150, 230)
@@ -303,6 +307,28 @@ _APP_CASES = [
     ("overleaf", "Project", "compile the Overleaf project", ['Menu', 'Share', 'History', 'Recompile'], "Recompile", "Click Recompile above the preview.", "The PDF refreshes after the compile."),
     ("zotero", "Library", "add a new item in Zotero", ['New Item', 'New Note', 'Attach', 'Search'], "New Item", "Click New Item in the toolbar.", "It adds an item to the library."),
     ("joplin", "Notes", "create a new notebook in Joplin", ['New note', 'New to-do', 'New notebook', 'Sync'], "New notebook", "Click New notebook in the toolbar.", "Give it a name to create it."),
+    ("linear", "Issues", "create a new issue in Linear", ['New issue', 'Inbox', 'My issues', 'Filter'], "New issue", "Click New issue at the top of the sidebar.", "It opens the issue form."),
+    ("jira", "Board", "create an issue in Jira", ['Create', 'Board', 'Backlog', 'Filters'], "Create", "Click Create in the top bar.", "Pick the project and issue type."),
+    ("trello", "Board", "add a card to the first list", ['Add a card', 'Filter', 'Share', 'Menu'], "Add a card", "Click Add a card at the bottom of the list.", "Type the card title and press Enter."),
+    ("asana", "Project", "add a task in Asana", ['Add task', 'List', 'Board', 'Timeline'], "Add task", "Click Add task at the top of the project.", "Type a name and press Enter."),
+    ("airtable", "Base", "add a new field in Airtable", ['Grid view', 'Filter', 'Sort', 'Add field'], "Add field", "Click the plus at the end of the column headers.", "Choose the field type next."),
+    ("figma", "Design", "draw a rectangle in Figma", ['Move', 'Frame', 'Rectangle', 'Text'], "Rectangle", "Click the rectangle tool in the toolbar.", "Then drag on the canvas."),
+    ("canva", "Editor", "download the design from Canva", ['Elements', 'Text', 'Share', 'Download'], "Share", "Click Share at the top right.", "Download is in the menu that opens."),
+    ("miro", "Board", "add a sticky note in Miro", ['Select', 'Sticky note', 'Shapes', 'Share'], "Sticky note", "Click the sticky note icon in the left toolbar.", "Then click the board to place it."),
+    ("excalidraw", "Canvas", "draw an arrow in Excalidraw", ['Selection', 'Rectangle', 'Arrow', 'Text'], "Arrow", "Click the arrow tool in the top toolbar.", "Then drag on the canvas."),
+    ("clickup", "List", "add a task in ClickUp", ['Add Task', 'List', 'Board', 'Calendar'], "Add Task", "Click Add Task at the top right of the list.", "Type a name and press Enter."),
+    ("youtube", "Video", "turn on captions in YouTube", ['Play', 'Captions', 'Settings', 'Fullscreen'], "Captions", "Click the CC button in the player.", "Captions appear over the video."),
+    ("google-search", "Search", "search for images", ['All', 'Images', 'News', 'Tools'], "Images", "Click Images under the search box.", "Picture results replace the web results."),
+    ("google-maps", "Map", "get directions in Google Maps", ['Search', 'Directions', 'Saved', 'Layers'], "Directions", "Click Directions beside the search box.", "Then enter a start and a destination."),
+    ("wikipedia", "Article", "see the history of an article", ['Read', 'Edit', 'View history', 'Tools'], "View history", "Click View history at the top of the article.", "It lists past edits."),
+    ("reddit", "Subreddit", "create a post on Reddit", ['Home', 'Popular', 'Create', 'Search'], "Create", "Click Create in the top bar.", "Pick a community first."),
+    ("x", "Home", "write a post on X", ['Home', 'Explore', 'Bookmarks', 'Post'], "Post", "Click Post in the left list.", "It opens the composer."),
+    ("linkedin", "Feed", "search for jobs on LinkedIn", ['Home', 'My Network', 'Jobs', 'Messaging'], "Jobs", "Click Jobs in the top bar.", "Job search and filters open there."),
+    ("amazon", "Product", "add this item to the cart", ['Add to Cart', 'Buy Now', 'Orders', 'Cart'], "Add to Cart", "Click Add to Cart on the right.", "It only adds the item; nothing is bought."),
+    ("chatgpt", "Chat", "start a new chat in ChatGPT", ['New chat', 'Search chats', 'Library', 'Settings'], "New chat", "Click New chat at the top of the sidebar.", "It opens an empty conversation."),
+    ("claude", "Chat", "start a new chat in Claude", ['New chat', 'Chats', 'Projects', 'Settings'], "New chat", "Click New chat at the top of the sidebar.", "It opens an empty conversation."),
+    ("bitwarden", "Vault", "add a new login in Bitwarden", ['Vaults', 'Send', 'Tools', 'New'], "New", "Click New at the top right.", "Choose Item, then Login."),
+    ("keepassxc", "Database", "add a new entry in KeePassXC", ['Database', 'Entries', 'Groups', 'Tools'], "Entries", "Open the Entries menu and choose New Entry.", "It opens the entry form."),
 ]
 
 
@@ -331,7 +357,7 @@ def rect_of(scene, label):
 def main():
     for c in CASES:
         sc = c["scene"]()
-        d = OUT / c["id"]
+        d = (SKILL_OUT if c["id"].startswith("skill-") else OUT) / c["id"]
         d.mkdir(parents=True, exist_ok=True)
         sc.img.convert("P", palette=Image.ADAPTIVE, colors=32).save(
             d / "capture.png", optimize=True)
@@ -347,7 +373,7 @@ def main():
                      "expected_target": target, "elements": sc.els}
         (d / "case.json").write_text(json.dumps(case_json, indent=1) + "\n")
         (d / "reply.json").write_text(json.dumps({"raw": c["reply"]}, indent=1) + "\n")
-    print(f"wrote {len(CASES)} cases to {OUT}")
+    print(f"wrote {len(CASES)} cases to {OUT} and {SKILL_OUT}")
 
 
 if __name__ == "__main__":

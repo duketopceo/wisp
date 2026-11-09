@@ -13,10 +13,10 @@ from wisp import gauntlet, skills  # noqa: E402
 
 SEED = ROOT / "wisp" / "skills_seed" / "apps"
 DOC = ROOT / "docs" / "research" / "app-skill-targets.md"
-TEACH = ROOT / "tests" / "fixtures" / "teach"
+TEACH = ROOT / "tests" / "fixtures" / "teach-skills"
 
 # Batches of the targets doc whose skills are implemented so far.
-IMPLEMENTED_BATCHES = (1, 2, 3, 4, 5)
+IMPLEMENTED_BATCHES = (1, 2, 3, 4, 5, 6, 7)
 
 
 def doc_text():
