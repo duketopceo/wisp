@@ -13,8 +13,11 @@ provide starting configurations; providers and local tools still need setup. The
 shows up as the bar mark and live pill, a cursor bubble, a bottom-center
 listening pill on the overlay, and the Panel.
 
-Wisp needs an OpenRouter API key: OpenRouter is the main engine for the brain,
-vision and routing. Local models are optional (see Local models below).
+Wisp uses OpenRouter by default and needs an API key for OpenRouter calls: it
+is the main engine for the brain and vision. Turn-type routing uses local rules
+by default; an optional `[router] ambiguity_model` can resolve ambiguous turns.
+Local models are optional (see Local models below); a local brain can answer
+text questions without an OpenRouter key.
 
 Status: v0.9 shipped; v1.0 is a verification milestone (a labelled soak,
 a fresh-box install and the learning loop; see `ROADMAP.md`). Linux
