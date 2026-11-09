@@ -89,17 +89,19 @@ Owner decisions are listed at the end of the plan. Deferred implementation quest
 
 ### Key Technical Decisions
 
-- KTD1. **Measure before switching grounding models.** Run the existing U8 harness live once (cap $0.80, owner-run, `openrouter/orchestral` key via the `orch` wrapper), adding `qwen/qwen3-vl-235b-a22b-instruct`, `nvidia/nemotron-3.5-super-vl` and `google/gemma-4-31b-it` to the candidate list; `qwen3-vl-235b` becomes the vision-brain default only if it wins the held-out set and a labelled real-turn check. Synthetic cases are a screen, not proof (`docs/ACCURACY.md`).
+- KTD1. **Measure before switching grounding models.** Run the existing harness (`docs/ACCURACY.md` U8) live once (cap $1.00 per Owner decision 1, owner-run, `openrouter/orchestral` key via the `orch` wrapper), adding `qwen/qwen3-vl-235b-a22b-instruct`, `nvidia/nemotron-3.5-super-vl` and `google/gemma-4-31b-it` to the candidate list; `qwen3-vl-235b` becomes the vision-brain default only if it wins the held-out set and a labelled real-turn check. Synthetic cases are a screen, not proof (`docs/ACCURACY.md`).
 - KTD2. **Verify-after-act is a ladder, not a prompt.** Reuse the `[verify]` verdict ladder (`docs/CONFIG.md`) and extend it with settle-diff and element readback. Claude's docs warn the model "sometimes acts as if its actions succeeded", and OpenAI's `status: completed` means generated, not executed, so Wisp's runtime must decide the verdict.
 - KTD3. **Rule-based router first.** The regex/fast-path layer stays in front; a small fast model (`nvidia/nemotron-3.5-lightning`) is called only when rules return "ambiguous", with a hard timeout and a rule default. No decision model mid-job (honors `ROADMAP.md`). An end-of-task grader (same small model, rubric from the task text and verify verdicts) feeds `wispd eval` as a suggestion, never as an owner label.
 - KTD4. **Model roles.** Vision brain: `qwen/qwen3-vl-235b-a22b-instruct` pending KTD1. Agents (ACP/OpenCode): `particle-ai/particle-1` (already first in the ACP candidate list). Fast text/routing: small model per KTD3. All roles configurable under `[models]`-style keys and priced in `wisp/ledger.py`.
-- KTD5. **SDK without a hard dependency.** `pyproject.toml` stays `dependencies = []`. The installer offers the `openrouter` SDK (Apache-2.0, Python 3.10+, sync/async/streaming, typed) into Wisp's own private venv or vendored directory; `wisp/llm.py` prefers it and falls back to the current stdlib HTTP path. Deferred: whether to vendor or venv (decide in U12 after measuring install time).
+- KTD5. **SDK without a hard dependency.** `pyproject.toml` stays `dependencies = []`. The `openrouter` SDK (Apache-2.0, Python 3.10+, sync/async/streaming, typed) ships as an optional extra (`wisp[openrouter]`, Owner decision 2); `wisp/llm.py` prefers it and falls back to the current stdlib HTTP path.
 - KTD6. **PKCE through the loopback, headless fallback.** Auth URL `https://openrouter.ai/auth` with `code_challenge` (S256), `callback_url` on a loopback port; exchange at `POST https://openrouter.ai/api/v1/auth/keys` with `code`, `code_verifier`, `code_challenge_method`. Headless mode omits `callback_url` and shows a code (single-use, 10 minute expiry). Store via Secret Service first, omaseal when installed, never plaintext config. Key labelled "Wisp".
 - KTD7. **Two browser lanes, one tool.** The `browser` tool keeps one interface and chooses a backend: the Wisp extension (Chromium, tab group, pairing code) or BrowserOS MCP (`http://127.0.0.1:9010/mcp` here; confirm port in U9). Chromium only: the extension requires `tabGroups`, which Firefox does not provide, so Firefox is out of scope for v2 (UNVERIFIED for future Firefox support). Opening Wisp's own extension is not required if BrowserOS is detected.
 - KTD8. **Stay on Quickshell/QML for the notch.** See the rune section below. Resizable window is a second QML surface in the same plugin.
 - KTD9. **Regional routing is an option, not a default.** `us.openrouter.ai` and `eu.openrouter.ai` are Business/Enterprise per OpenRouter's docs (read 2026-11-07, UNVERIFIED for individual accounts), so the setting is off by default and the availability check handles the error plainly; a model with no in-region endpoint errors rather than leaving the region.
 - KTD10. **Interrupt is a first-class input.** The drive loop polls a stop flag fed by real-pointer motion, speech start and Esc between every sub-action, not only between steps.
-
+- KTD11. **Test and gauntlet runs are silent.** Every test, gauntlet and bake-off run in this program sets `[voice] enabled = "false"` in its throwaway config (a gauntlet profile or seed flag), never touches the owner's system audio, and asserts no speech binary is launched. (session-settled: user-directed — chosen over audible runs: owner is away from the laptop during autonomous runs, 2026-11-08)
+- KTD12. **Outage first, then measurement.** The 2026-11-08 run executes U14 (region 403 hardening) first, then U19 (gauntlet), then the remaining units in dependency order. (session-settled: user-directed — chosen over unit-number order: the US-region 403 breaks every voice turn on the owner's machine right now)
+- KTD13. **A region 403 is explained, not silently rerouted.** On a 401/403 from a regional host, Wisp reads OpenRouter's error body, names the region in the spoken and logged error, and tells the user how to switch back (`region = "global"`); it does not fall back to the global host on its own, because KTD9 promises in-region traffic stays in region. The spoken text comes from a dedicated closed-set error code (`region_denied`), because surfaces speak `copy.ERRORS[code]`, never `error_detail`. `wispd doctor --live` proves the region with one minimal authenticated chat call per configured role model; plain `wispd doctor` stays free of model calls (docs/TRUST.md) and says the live check was not run.
 ### Agent loop comparison (summary)
 
 | Aspect | Claude computer use | OpenAI/Codex computer use | Perplexity Computer | HeyClicky | Wisp v2 target |
@@ -166,12 +168,12 @@ flowchart TB
 | U11 | Single LLM client module | P0 | M | none |
 | U12 | OpenRouter SDK as optional backend | P1 | M | U11 |
 | U13 | Connect OpenRouter (PKCE) and key storage | P0 | M | U11 |
-| U14 | US routing and model availability checks | P2 | M | U11, U13 |
+| U14 | US routing and model availability checks | P0 (2026-11-08 outage) | M | none (region.py from #340/#346) |
 | U15 | Notch home: chats and agent cards | P1 | L | U3 |
 | U16 | Captions, quick peek, file piles | P2 | M | U15 |
 | U17 | Resizable window | P2 | L | U15 |
 | U18 | Onboarding and doctor: optional integrations | P1 | M | U9, U13 |
-| U19 | Computer-use eval suite and benchmark gate | P0 | L | U4 |
+| U19 | Computer-use eval suite and benchmark gate | P0 | L | none (first slice); U4 (full suite) |
 | U20 | Rune and cross-OS shell spike (post v1 gate) | P3 | S | v1 gate |
 
 ### U1. Live grounding bake-off and default decision
@@ -180,7 +182,7 @@ flowchart TB
 - **Requirements:** R6.
 - **Files:** `scripts/grounding_bakeoff.py`, `docs/ACCURACY.md`, `wisp/config.py`.
 - **Approach:** Add the three owner-named candidates to the harness defaults and keep `gemini-2.5-flash` as the reference row (not open weight, labelled). Owner runs the documented live command under the orchestral key with the cap. Record the table, date and seed in `docs/ACCURACY.md`. Switching `[ground]`/vision defaults is a separate PR gated on owner approval and a labelled real-turn check.
-- **Test scenarios:** Harness stays hermetic (network patched to fail); candidate list parses; oracle provider still scores 100% on every canvas; spend cap exit code 3 unchanged.
+- **Test scenarios:** Harness stays hermetic (network patched to fail); the bake-off's throwaway config has `[voice] enabled = "false"` and no speech binary is launched (KTD11); candidate list parses; oracle provider still scores 100% on every canvas; spend cap exit code 3 unchanged.
 - **Verification:** Offline tests pass; table pasted with `n` per row.
 
 ### U2. Land #334 click rule with held-out measurement
@@ -278,7 +280,7 @@ flowchart TB
 - **Goal:** Use the official SDK when present.
 - **Requirements:** R9; KTD5.
 - **Files:** `wisp/llm.py`, installer scripts, `docs/INSTALL.md`.
-- **Approach:** Backend selected at import; installer offers the SDK in a private environment and reports install time; fallback is the stdlib path. Provider options (`zdr`, `sort`, `data_collection`) map to the SDK `provider` argument.
+- **Approach:** Backend selected at import; installer offers the SDK as the optional `openrouter` extra and reports install time; fallback is the stdlib path. Provider options (`zdr`, `sort`, `data_collection`) map to the SDK `provider` argument.
 - **Test scenarios:** SDK absent falls back; SDK present is used; same results on a recorded fixture.
 - **Verification:** One-line install time before and after recorded; install still succeeds offline from the SDK's side.
 
@@ -294,11 +296,13 @@ flowchart TB
 ### U14. US routing and model availability checks
 
 - **Goal:** Optional in-region routing with plain errors.
-- **Requirements:** R11; KTD9.
-- **Files:** `wisp/llm.py`, `wisp/health.py`, `wisp/settings_schema.py`.
-- **Approach:** `[openrouter] region = ""|"us"|"eu"` switches the base URL; availability check uses `GET /api/v1/models` (endpoints and providers filters) and a regional probe; the exact per-model endpoint path comes from each model's `links.details` (not guessed). A missing in-region model gives a spoken explanation and a fallback offer.
-- **Test scenarios:** Region switches URL only; regional error mapped; no network in tests.
-- **Verification:** Doctor shows region and per-role availability.
+- **Requirements:** R11; KTD9, KTD12, KTD13.
+- **State on master (e3e010d):** `[brain.openrouter] region = "global"|"us"` and the `/models` availability rows already shipped (`wisp/region.py`, `wisp/cli/diagnose.py` `_region_rows`, #340, #346). Missing: error bodies, a chat probe, and the plain region-403 message.
+- **Incident (2026-11-08):** with `region = "us"` every chat call returned HTTP 403 for hours while `wispd doctor` passed 62/62; the key was valid with credit and unauthenticated calls to both hosts returned a normal 401. `wisp/brain.py` `_post` and `_stream_one` never read an error body, so `_describe` printed only "HTTP Error 403: Forbidden".
+- **Files:** `wisp/brain.py`, `wisp/errors_codes.py` (and the IPC error-code contract doc it names), `wisp/copy.py`, `wisp/cli/diagnose.py`, `wispd` (doctor flag), `wisp/region.py`, `docs/TRUST.md`, `docs/CONFIG.md`, `tests/test_region.py`, `tests/test_brain.py`.
+- **Approach:** Read a short, redacted slice of the HTTP error body (OpenRouter's `error.message`) in both request paths and carry it into `_describe` for logs and `error_detail`. Add closed-set code `region_denied` with a `copy.ERRORS` entry naming the region and the fix (`set [brain.openrouter] region = "global"`); `_run_chain` raises it when every chain failure was a 401/403 from a regional host (KTD13), otherwise `brain_down` as today. Doctor gains `--live`: in US mode it sends one 1-token chat request per OpenRouter model named in the current brain config (`[brain] default`, `fallback`, `vlm_brain`, `ambiguity_model`; U8's role keys extend the set later) and reports pass, the error message, or "needs Business/Enterprise" on 401/403, with the per-call cost noted; without `--live` the row reads "live check not run (needs a model call)". No key text in any message.
+- **Test scenarios:** A regional 403 with a JSON error body raises `region_denied`, whose spoken copy names the region and fix and whose detail carries the body text; a 403 with an empty or non-JSON body still produces a clean message; a body containing the bearer token is redacted; the global host's 403 stays `brain_down` with no region hint; a mixed chain (one regional 403, one timeout) stays `brain_down`; doctor `region chat` passes, fails with the body, skips in global mode, and is not run without `--live` (injected opener, no network).
+- **Verification:** Unit tests; a live doctor run against the owner's US config is an owner step (keys are not materialized by the agent).
 
 ### U15. Notch home: chats and agent cards
 
@@ -340,9 +344,9 @@ flowchart TB
 
 - **Goal:** Make "reliable at scale" a number.
 - **Requirements:** R1, R2, R6.
-- **Files:** `wisp/gauntlet.py`, `scripts/gauntlet/`, `docs/research/`.
-- **Approach:** Extend gauntlet cases to multi-step, cross-app and browser tasks; report success, verified rate, steps, time per step and cost per task; publish a table per release. Judge output is not an owner label.
-- **Test scenarios:** Case battery runs on the isolated session; skips carry reasons; results reproducible by seed.
+- **Files:** `wisp/gauntlet.py`, `scripts/gauntlet.py` (`seed_config`), `scripts/gauntlet/`, the gauntlet test module covering the seed, `docs/research/`.
+- **Approach:** Extend gauntlet cases to multi-step, cross-app and browser tasks; report success, verified rate, steps, time per step and cost per task; publish a table per release. Judge output is not an owner label. First slice (2026-11-08, KTD11, KTD12): add a silent seed so `scripts/gauntlet.py` writes `[voice] enabled = "false"` into its throwaway config, run `--teach-offline` and the hermetic `tests/test_gauntlet_*` suites, and record results beside `docs/research/2026-11-02-gauntlet-reruns.md` in the same layout, with verified rate marked "not measured" until U4 lands. The live battery is an owner-run step (Execution profile: live model calls are owner-run and capped): `orch python scripts/gauntlet.py --session isolated --profiles openrouter --cap 1.00` (one arm: two arms reserve $1.62 for the first case, above the cap), which must never stop the owner's `wispd`; the autonomous run records it as not run, with that command.
+- **Test scenarios:** The seeded throwaway config has voice disabled and no speech binary is launched; case battery runs on the isolated session; skips carry reasons; results reproducible by seed.
 - **Verification:** Table committed with date and model IDs.
 
 ### U20. Rune and cross-OS shell spike
@@ -372,11 +376,11 @@ HeyClicky currently leads on polish, voice robustness, packaging and a Mac-first
 
 | Gate | Command or evidence | Applies to |
 |---|---|---|
-| Unit tests | `uv run pytest` (hermetic, no network) | all units |
+| Unit tests | `python -m unittest discover -s tests -v` plus `python -m py_compile wispd wisp/*.py wisp/tools/*.py tests/*.py`, as CI runs them (hermetic, no network) | all units |
 | Docs lint | repo docs-lint config check | docs changes |
 | Replay fixtures | existing 36 act and 7 answer fixtures stay green | U7, U11 |
 | Gauntlet | isolated session held-out set, results next to `docs/research/2026-11-02-gauntlet-reruns.md` | U2, U6, U19 |
-| Bake-off | `python scripts/grounding_bakeoff.py --live --cap 0.80 ...` (owner) | U1 |
+| Bake-off | `python scripts/grounding_bakeoff.py --live --cap 1.00 ...` (owner) | U1 |
 | UI capture | primary-display capture per `DESIGN-v2.md` | U15-U17 |
 | v1 gate | `wispd eval`: 60% over 50 labelled turns since 2026-11-03 | release |
 

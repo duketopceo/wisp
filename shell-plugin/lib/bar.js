@@ -129,7 +129,7 @@ function windowAction(prevStatus, status, prevTurn, turn, offline, rateable, err
 var CAUSE = { jev_down: "model", brain_down: "model", stt_down: "speech",
   ground_down: "screen", ground_failed: "screen", timeout: "timeout",
   busy: "busy", tool_failed: "tool", budget_exceeded: "budget",
-  key_missing: "key", restarted: "restart", stale_prompt: "stale" }
+  key_missing: "key", region_denied: "region", restarted: "restart", stale_prompt: "stale" }
 function causeWord(code) { return CAUSE.hasOwnProperty(code) ? CAUSE[code] : "" }
 
 var HIDDEN = { kind: "idle", visible: false, glyph: "", token: "ink",
