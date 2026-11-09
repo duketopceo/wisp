@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click the eraser in the toolbox.\", \"label\": \"Eraser\", \"why\": \"The eraser removes paint from the layer.\", \"kind\": \"click\"}]}"
+}

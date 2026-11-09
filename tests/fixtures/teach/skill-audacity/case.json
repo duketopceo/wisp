@@ -1,0 +1,50 @@
+{
+ "id": "skill-audacity",
+ "app": "audacity",
+ "goal": "start recording audio",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "Record",
+  "rect": [
+   126,
+   28,
+   112,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "Play",
+   "rect": [
+    8,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Record",
+   "rect": [
+    126,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Stop",
+   "rect": [
+    244,
+    28,
+    112,
+    24
+   ]
+  }
+ ]
+}

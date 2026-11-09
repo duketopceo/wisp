@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Open the View menu and choose Split View.\", \"label\": \"View\", \"why\": \"Split View shows two shells together.\", \"kind\": \"click\"}]}"
+}

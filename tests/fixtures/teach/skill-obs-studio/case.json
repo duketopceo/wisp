@@ -1,0 +1,50 @@
+{
+ "id": "skill-obs-studio",
+ "app": "obs-studio",
+ "goal": "start a recording in OBS",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "Start Recording",
+  "rect": [
+   126,
+   28,
+   112,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "Start Streaming",
+   "rect": [
+    8,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Start Recording",
+   "rect": [
+    126,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Settings",
+   "rect": [
+    244,
+    28,
+    112,
+    24
+   ]
+  }
+ ]
+}

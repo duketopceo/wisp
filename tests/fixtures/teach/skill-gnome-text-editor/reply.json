@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click the menu button at the top right.\", \"label\": \"Menu\", \"why\": \"Preferences is listed in that menu.\", \"kind\": \"click\"}]}"
+}

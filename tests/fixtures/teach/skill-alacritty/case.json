@@ -1,0 +1,32 @@
+{
+ "id": "skill-alacritty",
+ "app": "alacritty",
+ "goal": "open a second Alacritty window",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "New window",
+  "rect": [
+   8,
+   28,
+   112,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "New window",
+   "rect": [
+    8,
+    28,
+    112,
+    24
+   ]
+  }
+ ]
+}

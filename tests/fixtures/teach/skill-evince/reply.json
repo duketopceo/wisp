@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click the sidebar toggle at the top left.\", \"label\": \"Sidebar\", \"why\": \"The sidebar lists page thumbnails.\", \"kind\": \"click\"}]}"
+}

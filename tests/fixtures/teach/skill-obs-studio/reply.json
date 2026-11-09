@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click Start Recording in the Controls dock.\", \"label\": \"Start Recording\", \"why\": \"Recording saves a file locally.\", \"kind\": \"click\"}]}"
+}

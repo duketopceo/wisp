@@ -1,0 +1,41 @@
+{
+ "id": "skill-gnome-terminal",
+ "app": "gnome-terminal",
+ "goal": "open a new tab in GNOME Terminal",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "New tab",
+  "rect": [
+   8,
+   28,
+   112,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "New tab",
+   "rect": [
+    8,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Menu",
+   "rect": [
+    126,
+    28,
+    112,
+    24
+   ]
+  }
+ ]
+}

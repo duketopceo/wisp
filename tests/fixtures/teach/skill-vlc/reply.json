@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Open the Subtitle menu and pick Add Subtitle File.\", \"label\": \"Subtitle\", \"why\": \"That loads the file for this video.\", \"kind\": \"click\"}]}"
+}

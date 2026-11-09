@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click Add books in the toolbar.\", \"label\": \"Add books\", \"why\": \"That copies the book into the library.\", \"kind\": \"click\"}]}"
+}

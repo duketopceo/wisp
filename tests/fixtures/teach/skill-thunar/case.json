@@ -1,0 +1,50 @@
+{
+ "id": "skill-thunar",
+ "app": "thunar",
+ "goal": "open a terminal in this Thunar folder",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "File",
+  "rect": [
+   8,
+   28,
+   112,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "File",
+   "rect": [
+    8,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Edit",
+   "rect": [
+    126,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "View",
+   "rect": [
+    244,
+    28,
+    112,
+    24
+   ]
+  }
+ ]
+}

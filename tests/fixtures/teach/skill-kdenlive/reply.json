@@ -1,0 +1,3 @@
+{
+ "raw": "{\"steps\": [{\"say\": \"Click Render in the toolbar.\", \"label\": \"Render\", \"why\": \"Render writes the finished video file.\", \"kind\": \"click\"}]}"
+}

@@ -1,0 +1,50 @@
+{
+ "id": "skill-evince",
+ "app": "evince",
+ "goal": "show the page thumbnails",
+ "capture": "capture.png",
+ "reply": "reply.json",
+ "size": [
+  640,
+  400
+ ],
+ "expected_kind": "click",
+ "expected_target": {
+  "label": "Sidebar",
+  "rect": [
+   8,
+   28,
+   112,
+   24
+  ]
+ },
+ "elements": [
+  {
+   "label": "Sidebar",
+   "rect": [
+    8,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Find",
+   "rect": [
+    126,
+    28,
+    112,
+    24
+   ]
+  },
+  {
+   "label": "Menu",
+   "rect": [
+    244,
+    28,
+    112,
+    24
+   ]
+  }
+ ]
+}

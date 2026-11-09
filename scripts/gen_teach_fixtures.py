@@ -228,6 +228,67 @@ case("omarchy-display-settings", "omarchy", "change the display scaling in setti
      "scaling option there.")
 
 
+# U9: one synthetic case per skill added from docs/research/app-skill-targets.md.
+# Each draws a generic mock window (a menu row, a tool column, a work area)
+# and asks for one labelled control; every reply is correct.
+# (skill, window title, goal, [menu labels], target label, say, why)
+_APP_CASES = [
+    ("alacritty", "Terminal", "open a second Alacritty window", ["New window"],
+     "New window", "Click New window at the top.", "Alacritty has no tabs, so a second window is the way."),
+    ("ghostty", "Terminal", "split this Ghostty window to the right", ["Split right", "New tab"],
+     "Split right", "Click Split right.", "A split puts two shells side by side."),
+    ("gnome-terminal", "Terminal", "open a new tab in GNOME Terminal", ["New tab", "Menu"],
+     "New tab", "Click the plus in the tab bar.", "Tabs keep several shells open."),
+    ("konsole", "Terminal", "split the Konsole view in two", ["View", "Settings"],
+     "View", "Open the View menu and choose Split View.", "Split View shows two shells together."),
+    ("dolphin", "Files", "split Dolphin into two panes", ["Split", "Places"],
+     "Split", "Click Split in the toolbar.", "Two panes make copying between folders easy."),
+    ("thunar", "Files", "open a terminal in this Thunar folder", ["File", "Edit", "View"],
+     "File", "Open the File menu and pick Open Terminal Here.", "The terminal starts in this folder."),
+    ("vlc", "Media Player", "add a subtitle file in VLC", ["Media", "Subtitle", "Tools"],
+     "Subtitle", "Open the Subtitle menu and pick Add Subtitle File.", "That loads the file for this video."),
+    ("mpv", "Video", "show the on-screen controls in mpv", ["Seek bar", "Volume"],
+     "Seek bar", "Move the pointer near the bottom to reveal the seek bar.", "The controller appears on pointer movement."),
+    ("evince", "Document Viewer", "show the page thumbnails", ["Sidebar", "Find", "Menu"],
+     "Sidebar", "Click the sidebar toggle at the top left.", "The sidebar lists page thumbnails."),
+    ("gnome-text-editor", "Text Editor", "open the preferences", ["Open", "Menu"],
+     "Menu", "Click the menu button at the top right.", "Preferences is listed in that menu."),
+    ("inkscape", "Vector Editor", "draw a rectangle in Inkscape", ["Select", "Rectangle", "Ellipse", "Text"],
+     "Rectangle", "Click the rectangle tool in the toolbox.", "Then drag on the canvas to draw it."),
+    ("krita", "Painting", "pick the eraser in Krita", ["Brush", "Eraser", "Fill"],
+     "Eraser", "Click the eraser in the toolbox.", "The eraser removes paint from the layer."),
+    ("kdenlive", "Video Editor", "open the render dialog", ["Project", "Render"],
+     "Render", "Click Render in the toolbar.", "Render writes the finished video file."),
+    ("obs-studio", "Recorder", "start a recording in OBS", ["Start Streaming", "Start Recording", "Settings"],
+     "Start Recording", "Click Start Recording in the Controls dock.", "Recording saves a file locally."),
+    ("audacity", "Audio Editor", "start recording audio", ["Play", "Record", "Stop"],
+     "Record", "Click the red record button.", "Recording begins on a new track."),
+    ("darktable", "Photos", "switch to the darkroom to edit a photo", ["Lighttable", "Darkroom"],
+     "Darkroom", "Click Darkroom at the top right.", "Editing happens in the darkroom view."),
+    ("shotcut", "Video Editor", "export the video from Shotcut", ["Open File", "Export"],
+     "Export", "Click Export in the toolbar.", "Export renders the finished video."),
+    ("okular", "Document Viewer", "start annotating a PDF in Okular", ["File", "Tools", "Settings"],
+     "Tools", "Open the Tools menu and choose Review.", "Review shows the annotation tools."),
+    ("calibre", "Library", "add a book to calibre", ["Add books", "Convert books", "View"],
+     "Add books", "Click Add books in the toolbar.", "That copies the book into the library."),
+    ("flameshot", "Capture", "save the Flameshot capture to a file", ["Copy", "Save", "Cancel"],
+     "Save", "Click the save button in the tool bar.", "That writes the capture to a file."),
+]
+
+
+def app_scene(title, labels):
+    s = Scene(title)
+    for i, n in enumerate(labels):
+        s.control(n, [8 + i * 118, 28, 112, 24])
+    s.plain([8, 64, W - 16, H - 76], (40, 43, 50), "")
+    return s
+
+
+for _id, _title, _goal, _labels, _target, _say, _why in _APP_CASES:
+    case(f"skill-{_id}", _id, _goal, (lambda t=_title, l=_labels: app_scene(t, l)),
+         "click", _target, reply(step(_say, _target, _why, kind="click")))
+
+
 def rect_of(scene, label):
     if label == "A1:C3":
         return [40, 70, 270, 84]
