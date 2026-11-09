@@ -1,7 +1,8 @@
 // Homepage (site-app/) against the local Worker: no page errors, no external
-// requests, no horizontal scroll, working copy/theme/FAQ controls, and the
-// static hero frame for reduced motion, no JavaScript, no WebGL, a failed
-// hero module and a failing renderer.
+// requests, no horizontal scroll, working copy/theme/FAQ controls, a live
+// Canvas 2D mark that leans toward the pointer and keeps the pop colour across
+// themes, and the SVG still for reduced motion, no JavaScript, no canvas, a
+// failed mark module and data saver.
 import assert from "node:assert/strict";
 import {mkdir} from "node:fs/promises";
 import {chromium, webkit} from "playwright";
@@ -12,8 +13,46 @@ const engines = (process.env.WISP_BROWSERS || "chromium").split(",");
 const output = process.env.WISP_QA_OUTPUT || "../../build/browser-qa";
 await mkdir(output, {recursive: true});
 
+const POP = [255, 91, 31];
+const ground = {dark: "rgb(21, 17, 14)", light: "rgb(242, 236, 224)"};
 const ready = page => page.waitForFunction(() =>
-  document.querySelector("#hero-bg").dataset.ready === "true", null, {timeout: 15000});
+  document.querySelector("#hero-mark").dataset.ready === "true", null, {timeout: 15000});
+const live = page => page.waitForFunction(() =>
+  document.querySelector("#hero-mark").dataset.mark === "live", null, {timeout: 15000});
+// Opaque pixels of the live canvas: how many are the pop colour, and their mean x in CSS px.
+const inspectCanvas = page => page.locator("#hero-mark canvas").evaluate(canvas => {
+  const {width, height} = canvas;
+  const data = canvas.getContext("2d").getImageData(0, 0, width, height).data;
+  let pop = 0, sx = 0, count = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] < 250) continue;
+    count++;
+    sx += (i / 4) % width;
+    if (Math.abs(data[i] - 255) < 3 && Math.abs(data[i + 1] - 91) < 3 && Math.abs(data[i + 2] - 31) < 3) pop++;
+  }
+  return {pop, x: count ? sx / count * canvas.clientWidth / width : null};
+});
+// WCAG contrast of what the browser really computed: body text, muted text and the CTA label.
+const contrast = page => page.evaluate(() => {
+  const px = css => {
+    const c = document.createElement("canvas").getContext("2d", {willReadFrequently: true});
+    c.fillStyle = css;
+    c.fillRect(0, 0, 1, 1);
+    return [...c.getImageData(0, 0, 1, 1).data.slice(0, 3)];
+  };
+  const lum = ([r, g, b]) => [r, g, b].map(v => v / 255).map(v => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
+    .reduce((acc, v, i) => acc + v * [0.2126, 0.7152, 0.0722][i], 0);
+  const ratio = (a, b) => { const [hi, lo] = [lum(px(a)), lum(px(b))].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); };
+  const color = el => getComputedStyle(el).color;
+  const bg = getComputedStyle(document.body).backgroundColor;
+  const cta = [...document.querySelectorAll("a")].find(a => a.textContent.includes("Install on Omarchy"));
+  return {
+    body: ratio(color(document.querySelector("h1")), bg),
+    muted: ratio(color(document.querySelector("#hero-title ~ p")), bg),
+    cta: ratio(color(cta), getComputedStyle(cta).backgroundColor),
+  };
+});
+const stageBox = page => page.locator("#hero-mark").boundingBox();
 const fit = async (page, label) => assert.equal(await page.evaluate(() =>
   document.documentElement.scrollWidth <= innerWidth), true, `${label}: horizontal scroll`);
 const readTheme = page => page.evaluate(() => document.documentElement.dataset.theme
@@ -48,16 +87,11 @@ for (const name of engines) {
     page.on("pageerror", error => uncaught.push(error.stack || error.message));
     await page.goto(base, {waitUntil: "networkidle"});
     await ready(page);
-    // A mounted hero either draws its first frame or falls back to the static frame.
-    await page.waitForFunction(() => {
-      const bg = document.querySelector("#hero-bg");
-      return bg.dataset.hero === "static" || bg.dataset.rendered === "true";
-    });
+    // The still stays until the canvas has drawn its first frame.
+    await live(page);
     const initialTheme = await readTheme(page);
-    const hero = await page.locator("#hero-bg").getAttribute("data-hero");
-    assert.ok(["webgl", "static"].includes(hero), hero);
-    assert.equal(await page.locator("#hero-bg canvas").count(), hero === "webgl" ? 1 : 0);
-    assert.equal(await page.locator("#flame img").isVisible(), true);
+    assert.equal(await page.locator("#hero-mark canvas").count(), 1);
+    assert.equal(await page.locator("#hero-mark svg").isVisible(), false, "the still hides once live");
     assert.match(await page.locator("h1").innerText(), /A little more\s+reach\./);
     await fit(page, `1440x900-${initialTheme}`);
     await page.screenshot({path: `${output}/${name}-desktop-${initialTheme}.png`});
@@ -71,11 +105,14 @@ for (const name of engines) {
     assert.notEqual(await heroInstall.evaluate(el => getComputedStyle(el).scale), "none",
       "a pressed CTA responds immediately");
     await page.mouse.up();
+    await page.mouse.move(720, 4); // off the CTA, so it is measured at rest
 
     const navRest = await navInstall.evaluate(el => getComputedStyle(el).backgroundImage);
     const heroRest = await heroInstall.evaluate(el => getComputedStyle(el).backgroundImage);
     assert.equal(navRest, "none", "the sticky Install link is secondary");
-    assert.match(heroRest, /linear-gradient/, "the hero CTA is the primary action");
+    assert.equal(heroRest, "none", "the hero CTA is a flat fill");
+    assert.equal(await heroInstall.evaluate(el => getComputedStyle(el).backgroundColor), "rgb(255, 91, 31)",
+      "the hero CTA is the primary action in the pop colour");
     assert.equal(await navInstall.evaluate(el => getComputedStyle(el).transitionDuration), "0s",
       "hover feedback is immediate");
     const navBaseColor = await navInstall.evaluate(el => getComputedStyle(el).backgroundColor);
@@ -92,19 +129,44 @@ for (const name of engines) {
       "keyboard focus uses the visible focus treatment");
     assert.notEqual(await page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle), "none");
 
-    if (hero === "webgl") {
-      // Context loss drops back to the static frame without errors.
-      await page.locator("#hero-bg canvas").evaluate(canvas =>
-        canvas.getContext("webgl").getExtension("WEBGL_lose_context").loseContext());
-      await page.waitForFunction(() => document.querySelector("#hero-bg").dataset.hero === "static");
-      assert.equal(await page.locator("#hero-bg canvas").count(), 0);
-    }
+    // The comet leans toward the pointer while it hovers the stage, and stays inside it.
+    // The drift swings about +-55 px over a ~9 s period, so each side is sampled for
+    // one period; the lean (~100 px between the two edges) then shows in the mean.
+    await returnToTop(page);
+    await page.waitForFunction(() => scrollY === 0);
+    const stage = await stageBox(page);
+    assert.ok(stage, "the stage is laid out");
+    const meanX = async edge => {
+      await page.mouse.move(edge === "left" ? stage.x + 6 : stage.x + stage.width - 6, stage.y + stage.height / 2);
+      await page.waitForTimeout(1200);
+      const xs = [];
+      let drawn = 0;
+      for (let i = 0; i < 8; i++) {
+        const {pop, x} = await inspectCanvas(page);
+        drawn += pop;
+        xs.push(x);
+        await page.waitForTimeout(1100);
+      }
+      assert.ok(drawn > 0, "the comet is drawn in the pop colour");
+      assert.ok(Math.min(...xs) > 0 && Math.max(...xs) < stage.width, "the comet stays inside its stage");
+      return xs.reduce((a, b) => a + b, 0) / xs.length;
+    };
+    const leftMean = await meanX("left");
+    const rightMean = await meanX("right");
+    assert.ok(rightMean - leftMean > 40, `the comet leans with the pointer (${leftMean} -> ${rightMean})`);
+    await page.mouse.move(1400, 890);
 
+    const firstContrast = await contrast(page);
     // Theme toggle: flips, and the choice survives a reload.
     const before = initialTheme;
     await page.locator("#theme-toggle").click();
     const after = await readTheme(page);
     assert.equal(after, before === "dark" ? "light" : "dark");
+    // Recolour: the ground flips, the comet keeps the one pop colour.
+    assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), ground[after]);
+    assert.ok((await inspectCanvas(page)).pop > 0, "the comet is still the pop colour after a theme change");
+    for (const [theme, ratios] of [[before, firstContrast], [after, await contrast(page)]])
+      for (const [what, value] of Object.entries(ratios)) assert.ok(value >= 4.5, `${theme} ${what} contrast ${value}`);
     await page.reload({waitUntil: "networkidle"});
     assert.equal(await readTheme(page), after);
     await returnToTop(page);
@@ -126,6 +188,8 @@ for (const name of engines) {
     await page.setViewportSize({width: 390, height: 844});
     await page.goto(base, {waitUntil: "networkidle"});
     await ready(page);
+    await live(page);
+    const liveBox = await stageBox(page);
     await fit(page, `390x844-${after}`);
     await page.mouse.move(380, 830);
     const mobileTheme = await readTheme(page);
@@ -154,34 +218,50 @@ for (const name of engines) {
     assert.deepEqual(external, []);
     await context.close();
 
-    for (const mode of ["reduced", "no-js", "no-webgl", "module-failed", "render-failed"]) {
+    // A stage that is never on screen never runs the sim: the still stays.
+    {
+      const c = await browser.newContext({viewport: {width: 390, height: 844}});
+      const p = await c.newPage();
+      const errors = [];
+      p.on("pageerror", error => errors.push(error.stack || error.message));
+      await p.goto(`${base}#faq`, {waitUntil: "networkidle"});
+      await p.waitForFunction(() => scrollY > 1000);
+      await p.reload({waitUntil: "networkidle"}); // restored scroll: the stage is never in view
+      await ready(p);
+      await p.waitForTimeout(800);
+      assert.equal(await p.locator("#hero-mark").getAttribute("data-mark"), "still", "off-screen stage stays still");
+      await returnToTop(p);
+      await live(p);
+      assert.deepEqual(errors, []);
+      await c.close();
+    }
+
+    for (const mode of ["reduced", "no-js", "no-canvas", "module-failed", "data-saver"]) {
       const c = await browser.newContext({
         viewport: {width: 390, height: 844},
         javaScriptEnabled: mode !== "no-js",
         reducedMotion: mode === "reduced" ? "reduce" : "no-preference",
       });
-      if (mode === "no-webgl") await c.addInitScript(() => {
+      if (mode === "no-canvas") await c.addInitScript(() => {
         const original = HTMLCanvasElement.prototype.getContext;
         HTMLCanvasElement.prototype.getContext = function (type, ...args) {
-          return String(type).startsWith("webgl") ? null : original.call(this, type, ...args);
+          return type === "2d" ? null : original.call(this, type, ...args);
         };
       });
-      if (mode === "module-failed") await c.route("**/app/hero-*.js", route => route.abort());
-      if (mode === "render-failed") await c.addInitScript(() => {
-        const prototype = window.WebGLRenderingContext?.prototype;
-        if (prototype) prototype.drawArrays = () => { throw new Error("Injected renderer failure"); };
+      if (mode === "data-saver") await c.addInitScript(() => {
+        Object.defineProperty(navigator, "connection", {value: {saveData: true}});
       });
+      if (mode === "module-failed") await c.route("**/app/mark-*.js", route => route.abort());
       const p = await c.newPage();
       const errors = [];
       const outside = trackExternalRequests(p);
       p.on("pageerror", error => errors.push(error.stack || error.message));
       await p.goto(base, {waitUntil: "networkidle"});
       if (mode !== "no-js") await ready(p);
-      assert.equal(await p.locator("#hero-bg").getAttribute("data-hero"), "static", mode);
-      assert.equal(await p.locator("#hero-bg canvas").count(), 0, mode);
-      assert.equal(await p.locator("#flame img").isVisible(), true, mode);
-      assert.match(await p.locator("#flame img").evaluate(img => img.currentSrc),
-        mode === "reduced" ? /wisp-flame-512\.png$/ : /idle-256\.webp$/, mode);
+      assert.equal(await p.locator("#hero-mark").getAttribute("data-mark"), "still", mode);
+      assert.equal(await p.locator("#hero-mark canvas").count(), 0, mode);
+      assert.equal(await p.locator("#hero-mark svg").isVisible(), true, mode);
+      assert.deepEqual(await stageBox(p), liveBox, `${mode}: the still has the live stage's box`);
       if (mode === "no-js") {
         assert.equal(await p.locator("#copy-install").isDisabled(), true);
         assert.equal(await p.locator("#theme-toggle").isVisible(), false);
@@ -194,7 +274,7 @@ for (const name of engines) {
       assert.equal(await p.locator("#install-code").isVisible(), true, mode);
       await c.close();
     }
-    console.log(JSON.stringify({browser: name, version: browser.version(), hero,
+    console.log(JSON.stringify({browser: name, version: browser.version(),
       fallbacks: "pass", clipboard: copyResult, externalRequests: external.length,
       pageErrors: uncaught.length}));
   } finally {
