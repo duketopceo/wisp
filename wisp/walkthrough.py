@@ -78,11 +78,7 @@ def _read_lines(text) -> list | None:
 
 
 def _words(text: str) -> set:
-    return {w for w in re.findall(r"\w+", text.lower()) if len(w) >= 3}
-
-
-def _same_word(a: set, b: set) -> bool:
-    return any(x.startswith(y) or y.startswith(x) for x in a for y in b)
+    return {w for w in re.findall(r"\w+", text.lower()) if len(w) >= 4}
 
 
 def text_changed_near(before, after, rect, step: "Step | None" = None
@@ -90,10 +86,11 @@ def text_changed_near(before, after, rect, step: "Step | None" = None
     """True when the window text changed near the target. A changed line
     that knows its position is near when it sits within one target size
     of `rect` (x0, y0, x1, y1). The window-text collector returns
-    unpositioned lines, so those are near when they share a word with
-    the step's label (its text when it has no label): the target's own
-    caption changing, not a clock ticking. Nothing read on either side
-    is no evidence."""
+    unpositioned lines, so those are near only when they contain a whole
+    word (four letters or more) of the step's target label: the target's
+    own caption changing, not a chat line or a clock that happens to
+    share a word with the instruction. A step with no label has no
+    unpositioned evidence. Nothing read on either side is no evidence."""
     b, a = _read_lines(before), _read_lines(after)
     if b is None or a is None:
         return False
@@ -102,7 +99,7 @@ def text_changed_near(before, after, rect, step: "Step | None" = None
     changed += [(t, p) for t, p in b if t not in a_set]
     if not changed:
         return False
-    cap = _words(step.label or step.text) if step is not None else set()
+    cap = _words(step.label or "") if step is not None else set()
     x0, y0, x1, y1 = rect if rect else (0, 0, 0, 0)
     pad = max(x1 - x0, y1 - y0)
     for line, pos in changed:
@@ -110,7 +107,7 @@ def text_changed_near(before, after, rect, step: "Step | None" = None
             if x0 - pad <= pos[0] <= x1 + pad \
                     and y0 - pad <= pos[1] <= y1 + pad:
                 return True
-        elif pos is None and _same_word(_words(line), cap):
+        elif pos is None and cap and _words(line) & cap:
             return True
     return False
 

@@ -615,6 +615,39 @@ class Evidence(unittest.TestCase):
         self.assertEqual(w.done_log, ["press save"])
         self.assertEqual(r["action"], "step")
 
+    def test_unlabelled_step_ignores_unpositioned_text(self):
+        # review #4: a chat line sharing a word with the instruction is
+        # not the target changing
+        w = wt.Walkthrough("g", [wt.Step("Click the Send button", label=""),
+                                 wt.Step("then close")])
+        w.issue_step()
+        r = w.observe(text_before="hello", text_after="hello\nsend me the file",
+                      rect=RECT)
+        self.assertEqual(r["action"], "wait")
+        self.assertEqual(w.done_log, [])
+
+    def test_a_shared_prefix_is_not_the_label(self):
+        w = self.walk(label="Export")
+        r = w.observe(text_before="", text_after="Exporter logs ready",
+                      rect=RECT)
+        self.assertEqual(r["action"], "wait")
+        self.assertEqual(w.done_log, [])
+        w.observe(text_before="", text_after="Export finished", rect=RECT)
+        self.assertEqual(w.done_log, ["press save"])
+
+    def test_step_poll_reads_text_without_ocr(self):
+        # review #5: the once-a-second poll must not run a window capture
+        # plus tesseract, which can stall the click watch for over a second
+        seen = {}
+
+        def fake_collect(cfg, **kw):
+            seen["tesseract"] = kw["which"]("tesseract")
+            return None
+        from wisp import window_text
+        with mock.patch.object(window_text, "collect", fake_collect):
+            wr._window_text({})()
+        self.assertIsNone(seen["tesseract"])
+
     def test_positioned_text_change_is_near_only_inside_the_rect(self):
         w = self.walk(label="")
         far = [{"text": "clock 10:01", "x": 900, "y": 700}]

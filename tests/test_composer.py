@@ -226,6 +226,26 @@ class TestDaemonPath(unittest.TestCase):
         self.assertTrue(self.h({"cmd": "tap", "phase": "open"})["opened"])
         self.assertEqual(self.events, [("composer", {"action": "open"})])
 
+    def test_open_prefetches_context_for_the_typed_question(self):
+        # review #3: the submitted `ask` takes ctl["spec"] like a spoken
+        # turn, so the composer's question gets the window text too
+        old, new = mock.Mock(), mock.Mock()
+        self.ctl["spec"] = old
+        spec = mock.Mock()
+        spec.start.return_value = new
+        with mock.patch.object(self.w.pipeline, "speculative_context",
+                               return_value=spec):
+            self._taps(("down", "up", "down", "up"), [0.0, 0.05, 0.2, 0.25])
+        old.cancel.assert_called_once()
+        self.assertIs(self.ctl["spec"], new)
+
+    def test_no_prefetch_without_an_open(self):
+        with mock.patch.object(self.w.pipeline,
+                               "speculative_context") as sc:
+            self._taps(("down", "up"), [0.0, 0.05])
+        sc.assert_not_called()
+        self.assertNotIn("spec", self.ctl)
+
     def test_bad_phase_is_an_error(self):
         self.assertFalse(self.h({"cmd": "tap", "phase": "sideways"})["ok"])
 
@@ -247,9 +267,6 @@ class TestDaemonPath(unittest.TestCase):
         self.assertEqual(tid, self.bus.current_turn())
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class TestComposerWindow(unittest.TestCase):
     """The composer types in its own window; the overlay never takes keys."""
@@ -266,3 +283,6 @@ class TestComposerWindow(unittest.TestCase):
         self.assertIn("active: root.svc !== null && root.composerOpen", host)
         self.assertIn("onClosed: root.composerOpen = false", host)
         self.assertNotIn("Composer {", host)
+
+if __name__ == "__main__":
+    unittest.main()

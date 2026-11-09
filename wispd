@@ -259,6 +259,14 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
             opened = composer.handle_tap(
                 cfg, phase, talk_held=ctl.get("rec") is not None)
             if opened:
+                # prefetch the screen and window text now, while the
+                # window the question is about still has focus; the
+                # submitted `ask` takes it like a spoken turn does
+                _drop_speculation(ctl)
+                try:
+                    ctl["spec"] = pipeline.speculative_context(cfg).start()
+                except Exception as e:  # speculation is best-effort
+                    dlog(f"speculative context off: {e}")
                 st.emit_event("composer", action="open")
             return {"ok": True, "opened": opened}
         if c == "dev":

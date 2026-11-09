@@ -1041,11 +1041,13 @@ TEXT_POLL_S = 1.0      # how often a pointed step re-reads the window text
 
 
 def _window_text(cfg):
-    """Production window-text source: the U2 collector, never raising."""
+    """Production window-text source for the step poll: the U2 collector
+    without its OCR tier (a window capture plus tesseract can take over a
+    second, which would stall the click watch and Esc), never raising."""
     def read():
         from . import window_text
         try:
-            return window_text.collect(cfg)
+            return window_text.collect(cfg, which=lambda _name: None)
         except Exception:
             return None
     return read
