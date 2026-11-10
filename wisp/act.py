@@ -234,7 +234,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
     # a follow-up turn sees the previous turn's outcome, not just
     # the open goal — corrections already carry the failed attempt, so
     # this is the general "previous turn did X" context
-    prev_txt = _prev_turn(state)
+    prev_txt = _prev_turn(state, cfg)
     user_msg = "\n\n".join(t for t in (goal_txt, prev_txt, task) if t)
     p = brain.provider(cfg)
     vision = p.get("vision", "false") == "true"
@@ -905,9 +905,11 @@ def _budget_abort(state, task: str, steps: list, why: str) -> str:
     return f"ABORTED ({why}): {_last(steps)}"
 
 
-def _prev_turn(state=None) -> str:
+def _prev_turn(state=None, cfg=None) -> str:
     """'[previous turn] user: "x" → wisp: y' — every follow-up turn gets
     the prior turn's outcome, not just labeled corrections (U4)."""
+    if ((cfg or {}).get("dev") or {}).get("run_id"):
+        return ""                      # a dev task starts clean
     try:
         from . import session
         focus = getattr(state, "focus", None)

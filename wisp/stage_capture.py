@@ -704,7 +704,8 @@ def context_stage(ctx) -> bool:
                 {"joined": joined, "goal": goal["text"][:160]})
     from . import session
     n_turns = int(cfg.get("agent", {}).get("session_turns", "8"))
-    ctx.session_text = session.as_text(session.tail(n_turns, app=ctx.app))
+    ctx.session_text = "" if (cfg.get("dev") or {}).get("run_id") else \
+        session.as_text(session.tail(n_turns, app=ctx.app))
     if ctx.session_text:
         context += f"\nRecent conversation:\n{ctx.session_text}"
     from . import memory

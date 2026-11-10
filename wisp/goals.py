@@ -43,7 +43,11 @@ def join_or_new(text: str, app: str, cfg: dict) -> tuple:
     """Return (goal, joined). Continues the open goal when same focus app
     or the utterance is topically related; else starts a new one."""
     global CURRENT
-    if _fresh(cfg) and CURRENT.get("status") == "open":
+    # a dev/gauntlet task is measured alone: a failed or aborted task
+    # leaves its goal open, and the next task in the same app would
+    # otherwise join it ("open inner in docs ; then: rename draft.txt")
+    isolated = bool(((cfg or {}).get("dev") or {}).get("run_id"))
+    if not isolated and _fresh(cfg) and CURRENT.get("status") == "open":
         same_app = app and app == CURRENT.get("app")
         if same_app or related(CURRENT.get("text", ""), text):
             CURRENT["text"] += " ; then: " + text
