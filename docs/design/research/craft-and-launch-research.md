@@ -8,7 +8,7 @@ WCAG 2.2, AI-native UX patterns and anti-slop tells. None of that is repeated he
 Inputs read: `Argus/DESIGN.md` ("Ocellus"), `orchestral/DESIGN.md` ("The Score"),
 `Pace-Server/DESIGN.md` ("Master Clock"), `wisp/DESIGN-v2.md` ("Ember in the terminal").
 
-**Verified on this machine (<host>, aarch64):**
+**Verified on this machine (the owner's machine, aarch64):**
 - **Remotion 4.0.532 renders on Linux arm64.** `npx remotion browser ensure` downloaded
   Chrome Headless Shell 149 for `linux-arm64` (88 MB, about 3 s). A 60-frame 1080x1080 at 60 fps
   spring-title composition rendered to H.264 in 13.8 s wall time, bundling included. I checked a
@@ -219,7 +219,7 @@ Export a high-bitrate master, then encode a deliverable yourself so X's transcod
 
 ### B.4 Recommended pipeline (one)
 
-**Remotion 4 + Playwright-scripted capture + VHS + local assets, rendered on <host>.**
+**Remotion 4 + Playwright-scripted capture + VHS + local assets, rendered on the owner's machine.**
 
 1. **Script** (`script.md`): one sentence, beats with seconds, and on-screen text per beat. Budget a 30 to 45 s hero.
 2. **Capture** (deterministic, re-runnable):

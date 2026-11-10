@@ -40,7 +40,7 @@ quickshell plugin. Then macOS + Windows + generic Linux shells.
 - **Cursor pointing via `[POINT:x,y:label]` tags** parsed from model
   output → layer-shell fullscreen transparent overlay draws the pointer.
   Logical-vs-physical coords handled via compositor scale (eDP-1 is
-  scale 2 on <host>). Cursor *pointing* ships; cursor *clicking*
+  scale 2 on the owner's machine). Cursor *pointing* ships; cursor *clicking*
   is deferred — the pointer is guidance, not control.
 - **Python is not deleted at parity** — it stays as the reference/test
   oracle until the Rust core has lived a full release cycle.
@@ -72,7 +72,7 @@ quickshell plugin. Then macOS + Windows + generic Linux shells.
 - Port `act` loop: same bounds (8 steps / 2 consecutive errors).
 - Test: `rs/tests/` parity suite driven by U1 fixtures; run existing
   Python suite unchanged against Python (regression oracle).
-- Gate: `wispd-rs` serves `listen→done` on <host> against real
+- Gate: `wispd-rs` serves `listen→done` on the owner's machine against real
   whisper/Jev/OpenRouter, plugin unchanged.
 
 ### Wave 2 — Clicky UX on the proven shell

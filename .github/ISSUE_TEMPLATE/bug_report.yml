@@ -1,0 +1,33 @@
+name: Bug report
+description: Something in Wisp is broken
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you saw.
+    validations: {required: true}
+  - type: input
+    id: version
+    attributes:
+      label: Wisp version
+      description: Release tag or commit hash.
+    validations: {required: true}
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `wispd doctor`
+      description: Paste it all. Check it for anything private first.
+      render: text
+    validations: {required: true}
+  - type: input
+    id: env
+    attributes:
+      label: Distro, compositor and hardware
+      placeholder: Arch / Hyprland 0.5x / aarch64
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Redact API keys, window titles and personal data.

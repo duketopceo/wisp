@@ -1,7 +1,7 @@
 # Wisp Roadmap
 
-State: **v1.0.0-rc.2 is published as a Linux prerelease (6 assets, 2026-10-30); stable v1.0 remains a verification milestone.** GitHub's "Latest" release is still v0.9.0 because rc.2 is a prerelease. `pyproject.toml` and `wisp/__init__.py` say 1.0.0. Unified alignment, release completion, dev tuning, app skills and platform probe seams merged in #259 (tagged `v1.0.0-rc.1`); release and install fixes followed in #262 (tagged `v1.0.0-rc.2`), #263 and #264. The gauntlet, the isolated session and the default-brain change landed after rc.2 (#273-#305).
-Last updated: 2026-11-08 (read from `master` at `02da464`). Merged since the last sync: #347 (OpenRouter US-region refusals are explained: `region_denied` and `wispd doctor --live`), #348 (the rescope to the Linux companion, already the direction of record) and #350 (Chrome extension with a side panel and a native messaging host). The companion core is in progress as draft PR #349 and is not shipped. Direction of record: `docs/plans/2026-11-08-1607-feat-wisp-linux-companion-rescope-plan.md`; the first area's plan is `docs/plans/2026-11-08-1749-feat-wisp-companion-core-plan.md`. Earlier plans of record (`docs/plans/2026-10-30-001-feat-wisp-unified-alignment-and-polish-plan.md`, `docs/plans/2026-11-07-1500-feat-wisp-v2-computer-use-plan.md`) stay valid for the units they still own. This is the only roadmap; `docs/ROADMAP.md` points here.
+State: **v1.0.0-rc.3 is published as a Linux prerelease (2026-11-09; rc.2 was 2026-10-30); stable v1.0 remains a verification milestone.** GitHub's "Latest" release is still v0.9.0 because the rcs are prereleases. `pyproject.toml` and `wisp/__init__.py` say 1.0.0. Unified alignment, release completion, dev tuning, app skills and platform probe seams merged in #259 (tagged `v1.0.0-rc.1`); release and install fixes followed in #262 (tagged `v1.0.0-rc.2`), #263 and #264. The gauntlet, the isolated session and the default-brain change landed after rc.2 (#273-#305).
+Last updated: 2026-11-08 (read from `master` at `02da464`). Merged since the last sync: #347 (OpenRouter US-region refusals are explained: `region_denied` and `wispd doctor --live`), #348 (the rescope to the Linux companion, already the direction of record) and #350 (Chrome extension with a side panel and a native messaging host). The companion core merged in #349 and shipped in `v1.0.0-rc.3`. Direction of record: `docs/plans/2026-11-08-1607-feat-wisp-linux-companion-rescope-plan.md`; the first area's plan is `docs/plans/2026-11-08-1749-feat-wisp-companion-core-plan.md`. Earlier plans of record (`docs/plans/2026-10-30-001-feat-wisp-unified-alignment-and-polish-plan.md`, `docs/plans/2026-11-07-1500-feat-wisp-v2-computer-use-plan.md`) stay valid for the units they still own. This is the only roadmap; `docs/ROADMAP.md` points here.
 
 ## Product target
 
@@ -68,7 +68,7 @@ Also: CI flake root causes (#142), "open my email" opens Gmail when the mail han
 
 ## Shipped 2026-10-31 to 2026-11-02
 
-Merged after rc.2: #273, #274 and #283-#305. None of it is in a tagged release yet.
+Merged after rc.2: #273, #274 and #283-#305. It shipped in the `v1.0.0-rc.3` prerelease.
 
 1. **Phase 5 PR 2 (#284):** the Jev router is gone from `wisp/`: `route.decide`, the `router = jev` branch, the clarify prompt, `JEV_QUESTIONS` and the Jev-pinned fixtures. Phase 5 is done.
 2. **Reply language (#286, TLY-448):** the act loop applies `lang.reply_rule`, so a non-English turn on the default router is told to reply in that language. The `lang_*` fixtures no longer pin `router = chat`.
@@ -125,7 +125,7 @@ After v1:
 - Model learning, only after clean outcome labels, safety review and a held-out evaluation exist. The removed training stack is not coming back for this.
 - Interactive scratchpad mini-explainers, richer on-screen 3D, and lightweight macOS/Windows menu-bar companions. Experimental adapters are not supported ports.
 
-`wisp.observer` remains the intended primary domain, not a verified deployment. Stable `v1.0.0` is not yet shipped: only the `v1.0.0-rc.2` prerelease is published, and the gates below decide the final tag.
+`wisp.observer` remains the intended primary domain, not a verified deployment. Stable `v1.0.0` is not yet shipped: only the `v1.0.0-rc.3` prerelease is published, and the gates below decide the final tag.
 Publish the homepage and bootstrap only after authenticated DNS access, HTTPS,
 artifact checks and an actual install-command receipt. Release checksums are
 not a signature or an independent signing trust root; no signed-bootstrap

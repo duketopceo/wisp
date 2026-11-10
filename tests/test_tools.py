@@ -591,11 +591,11 @@ class MultiProfileBrowserTests(unittest.TestCase):
     def test_tab_prefers_matching_browser_profile(self):
         pages = [
             {"id": "p1", "type": "page",
-             "title": "Inbox - <email> — Personal",
+             "title": "Inbox - me@example.com — Personal",
              "url": "https://mail.google.com/mail/u/0/#inbox",
              "_cdp_port": 9100},
             {"id": "p2", "type": "page",
-             "title": "Inbox - luke@<work>.com — Work",
+             "title": "Inbox - me@work.example.com — Work",
              "url": "https://mail.google.com/mail/u/0/#inbox",
              "_cdp_port": 9101},
         ]

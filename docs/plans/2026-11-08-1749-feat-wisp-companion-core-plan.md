@@ -2,7 +2,7 @@
 title: Wisp companion core - see the window, answer, point and teach - Plan
 type: feat
 date: 2026-11-08
-status: "active (draft PR #349 open)"
+status: "completed (merged in #349, shipped in v1.0.0-rc.3)"
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code

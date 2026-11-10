@@ -3,7 +3,7 @@
 Verdict: **GO, with one required repair first** — the CubeProxy data plane
 (`cube-sandbox-cube-proxy.service`) is crash-looping (restart #1569) because
 `tailscaled` holds `100.74.41.80:443` via Tailscale Funnel
-(`<host>.tailaf1559.ts.net → 127.0.0.1:8787`). Everything else is in
+(`<host>.<tailnet>.ts.net → 127.0.0.1:8787`). Everything else is in
 place: control plane live and authenticated, READY template, `/dev/kvm`
 present, `*.cube.app` wildcard DNS works, outbound egress is default-allow,
 `SandboxIP` is directly routable from the host so the data plane can be

@@ -13,7 +13,7 @@ wave: 1
 
 The parity core exists and its contract tests pass. This unit covers the
 remainder before wispd-rs can replace the Python daemon as the default on
-<host>.
+the owner's machine.
 
 ## Steps
 
@@ -25,7 +25,7 @@ remainder before wispd-rs can replace the Python daemon as the default on
    mid-step; Rust asks the choice IPC instead. Decide which semantics the
    contract blesses (recommend: Rust's IPC-confirm, it's non-blocking)
    and port the loser.
-3. **Dual-daemon soak** — run `wispd-rs daemon` on <host> as the
+3. **Dual-daemon soak** — run `wispd-rs daemon` on the owner's machine as the
    systemd unit for a day; compare `decisions.jsonl`/`session.jsonl`
    shapes byte-for-byte against Python output.
 4. **Gate** — `wispd-rs` serves real `listen→done` (record → whisper →
@@ -48,5 +48,5 @@ remainder before wispd-rs can replace the Python daemon as the default on
 
 ## Done when
 
-wispd-rs runs the daemon role on <host> for 24h with zero contract
+wispd-rs runs the daemon role on the owner's machine for 24h with zero contract
 violations and the plugin needs no changes.

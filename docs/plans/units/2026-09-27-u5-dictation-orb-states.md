@@ -40,4 +40,4 @@ speaking/pointing states.
 
 ## Done when
 
-"Dictate" types the transcript into the focused app on <host>.
+"Dictate" types the transcript into the focused app on the owner's machine.

@@ -322,5 +322,5 @@ U1 → U2 → U3. U4 → U5. U6 → U7. Phase D can start at once; B and C start
 
 - The owner's `~/.config/wisp/config.toml` has `[voice] enabled = false`; change it to `auto` (or delete the line) after PR D.
 - The owner's Groq org must accept the Orpheus terms once at the Groq console playground for `canopylabs/orpheus-v1-english`.
-- `~/.config/hypr/bindings.lua` is stash-canonical on the owner's machine: `sync-watch` reverts it from `~/.local/share/machine/<user>/bindings.lua`. Add the rate hotkey to the stash copy too, or it reverts.
+- `~/.config/hypr/bindings.lua` is stash-canonical on the owner's machine: `sync-watch` reverts it from `~/.local/share/machine/<host>/bindings.lua`. Add the rate hotkey to the stash copy too, or it reverts.
 - Free-tier Groq limits (about 100 TTS requests a day, 10 a minute) make daily talk-back need the paid Developer tier; on a free key a multi-sentence answer can switch to espeak mid-answer. The espeak fallback covers the gap. U6's live call also records time to first byte for a 200-character chunk, since it decides whether the 1.5 s start goal holds.

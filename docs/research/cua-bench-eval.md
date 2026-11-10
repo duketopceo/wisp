@@ -103,7 +103,7 @@ cb dataset build <run dir>                               # export trajectories
   `summary.json` has pass@k + per-target breakdown.
 - Training exports: `cb dataset build` emits aguvis-stage-1 and gui-r1.
 
-## Requirements / aarch64 feasibility (<host>)
+## Requirements / aarch64 feasibility (the owner's machine)
 
 - Python `>=3.12,<3.14`; MIT; deps modest (cua-sandbox, cua-agent, aiohttp,
   rich, datasets, pillow…). `pipx`/`uv tool` install is clean.
