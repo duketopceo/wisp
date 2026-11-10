@@ -32,10 +32,13 @@ def _norm_app(app) -> str:
 
 
 def tail(n: int = 8, path=config.SESSION_FILE,
-         app: str | None = None) -> list[dict]:
+         app: str | None = None, cfg: dict | None = None) -> list[dict]:
     """The last `n` turns. With `app` (a window class) only that app's
     turns; an empty `app` matches turns logged with no app. None is the
-    unscoped tail."""
+    unscoped tail. A dev/gauntlet run (`cfg["dev"]["run_id"]`) sees no
+    earlier turns, so one task never leaks into the next."""
+    if ((cfg or {}).get("dev") or {}).get("run_id"):
+        return []
     scoped = app is not None
     want = _norm_app(app)
     # a scoped tail reads further back: other apps' turns are skipped
