@@ -57,6 +57,10 @@ def _sock_dir() -> pathlib.Path | None:
     sig = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE")
     if sig and (root / sig / ".socket.sock").exists():
         return root / sig
+    if os.environ.get("WISP_ISOLATED_SESSION") == "1":
+        # an isolated run names its instance; never fall back to "newest",
+        # which is the owner's live compositor
+        return None
     try:  # signature missing or stale (compositor restarted): newest wins
         live = [d for d in root.iterdir() if (d / ".socket.sock").exists()]
     except OSError:
