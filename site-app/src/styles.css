@@ -137,6 +137,36 @@
   border-bottom-width: 1px;
 }
 
+/* Hero background: a soft pop-colour frame is always painted; the ThreeUI ribbon
+   field (transparent canvas) fades in over it once it has drawn a frame. Both
+   are tints of the pop only, quiet where the copy and the mark sit. */
+.hero-frame {
+  background:
+    radial-gradient(60% 55% at 70% 60%, color-mix(in srgb, var(--pop) 16%, transparent), transparent 70%),
+    radial-gradient(40% 40% at 82% 40%, color-mix(in srgb, var(--pop) 9%, transparent), transparent 72%);
+}
+.hero-frame::after {
+  /* Halftone grain, echoing the shader's dot grid. */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(color-mix(in srgb, var(--pop) 22%, transparent) 1px, transparent 1.4px);
+  background-size: 7px 7px;
+  mask-image: radial-gradient(50% 45% at 62% 62%, black, transparent 75%);
+  pointer-events: none;
+}
+#hero-bg canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  opacity: 0;
+  transition: opacity 0.9s ease-out;
+}
+#hero-bg[data-rendered="true"] canvas { opacity: 1; }
+#hero-bg[data-rendered="true"]::after { opacity: 0; }
+
 /* Hero stage: the SVG still is always painted at the stage's size; the canvas
    comet mounts over it and the still hides only after the canvas has drawn its
    first frame, so nothing shifts. */

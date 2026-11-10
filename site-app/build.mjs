@@ -34,13 +34,14 @@ try {
   await rm(ssrDir, { recursive: true, force: true });
 }
 
-// Report what a first visit downloads before the lazy mark is requested.
+// Report what a first visit downloads before the lazy mark and ribbon are requested.
 const files = await readdir(join(out, "app"));
 const size = async (name) => (await stat(join(out, "app", name))).size;
 const js = files.filter((f) => f.endsWith(".js"));
 const mark = js.filter((f) => f.startsWith("mark-"));
-const first = js.filter((f) => !mark.includes(f));
+const hero = js.filter((f) => f.startsWith("hero-"));
+const first = js.filter((f) => !mark.includes(f) && !hero.includes(f));
 const sum = async (list) => (await Promise.all(list.map(size))).reduce((a, b) => a + b, 0);
 const css = await sum(files.filter((f) => f.endsWith(".css")));
 console.log(`site-app built in ${out}: first-paint JS ${await sum(first)} B, `
-  + `lazy mark JS ${await sum(mark)} B, CSS ${css} B`);
+  + `lazy mark JS ${await sum(mark)} B, lazy ribbon JS ${await sum(hero)} B, CSS ${css} B`);
