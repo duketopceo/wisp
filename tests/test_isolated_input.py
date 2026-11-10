@@ -20,6 +20,9 @@ MON = [{"x": 0, "y": 0, "width": 3456, "height": 2160, "scale": 2},
        {"x": 1728, "y": 0, "width": 3440, "height": 1440, "scale": 1}]
 
 
+REL = ["-m", "logo", "-m", "ctrl", "-m", "alt", "-m", "shift"]
+
+
 class Recorder:
     """Stands in for `_cancel.run`: records argv + env, never spawns."""
 
@@ -141,7 +144,7 @@ class KeysAndText(Base):
             out = system.key("ctrl+s", ISO)
         self.assertEqual(out, "KEY")
         argv, env, _ = self.rec.calls[0]
-        self.assertEqual(argv, ["wtype", "-M", "ctrl", "-k", "s",
+        self.assertEqual(argv, ["wtype", *REL, "-M", "ctrl", "-k", "s",
                                 "-m", "ctrl"])
         self.assertEqual(env["WAYLAND_DISPLAY"], "wayland-iso")
         self.assertNotIn("DISPLAY", env)
@@ -153,10 +156,10 @@ class KeysAndText(Base):
             system.key("super+1", ISO)
             out = system.key("hyper+x", ISO)
         self.assertEqual(self.rec.calls[0][0],
-                         ["wtype", "-M", "ctrl", "-M", "shift", "-k", "v",
+                         ["wtype", *REL, "-M", "ctrl", "-M", "shift", "-k", "v",
                           "-m", "shift", "-m", "ctrl"])
         self.assertEqual(self.rec.calls[1][0],
-                         ["wtype", "-M", "logo", "-k", "1", "-m", "logo"])
+                         ["wtype", *REL, "-M", "logo", "-k", "1", "-m", "logo"])
         self.assertTrue(out.startswith("SKIP"), out)
         self.assertEqual(len(self.rec.calls), 2)
 
@@ -165,8 +168,8 @@ class KeysAndText(Base):
             system.key("enter", ISO)
             system.key("pagedown", ISO)
         self.assertEqual([c[0] for c in self.rec.calls],
-                         [["wtype", "-k", "Return"],
-                          ["wtype", "-k", "Next"]])
+                         [["wtype", *REL, "-k", "Return"],
+                          ["wtype", *REL, "-k", "Next"]])
 
     def test_key_without_wtype_is_refused_not_ydotool(self):
         with mock.patch("wisp.platform._which",
@@ -192,7 +195,7 @@ class KeysAndText(Base):
             out = system.type_text("hello", ISO)
         self.assertEqual(out, "TYPED")
         argv, env, stdin = self.rec.calls[0]
-        self.assertEqual(argv, ["wtype", "-"])
+        self.assertEqual(argv, ["wtype", *REL, "-"])
         self.assertEqual(stdin, b"hello")
         self.assertEqual(env["WAYLAND_DISPLAY"], "wayland-iso")
 

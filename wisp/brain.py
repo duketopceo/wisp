@@ -442,17 +442,28 @@ def _describe(p: dict, e: Exception) -> str:
     return f"brain provider '{p['name']}' failed ({e})"
 
 
+def _transient_http(e) -> bool:
+    """A 502/503/504 from the provider's edge: the request was not
+    served (nothing streamed, nothing billed), so one retry is safe.
+    Gauntlet 20261110-032017: one OpenRouter 503 ended a turn as an
+    error with a single-entry chain."""
+    return isinstance(e, urllib.error.HTTPError) \
+        and e.code in (502, 503, 504)
+
+
 def _attempt(p: dict, fn):
-    """Call fn(p); one fast retry on connection refused/reset only."""
+    """Call fn(p); one retry on connection refused/reset or a transient
+    502/503/504 (never a timeout: that would double the wait)."""
     try:
         return fn(p)
     except Exception as e:
         if cancel.is_cancelled():
             raise cancel.Cancelled() from e
         if getattr(e, "committed", False) \
-                or not errors_codes.is_connection_failure(e):
+                or not (errors_codes.is_connection_failure(e)
+                        or _transient_http(e)):
             raise
-        time.sleep(0.05)
+        time.sleep(0.05 if not _transient_http(e) else 1.0)
         return fn(p)
 
 
