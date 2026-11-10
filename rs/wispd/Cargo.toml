@@ -8,7 +8,7 @@ description = "Wisp — cross-platform AI companion core daemon (Hey Clicky clon
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-toml = "0.8"
+toml = "1.2"
 ureq = { version = "2", features = ["json"] }
 base64 = "0.22"
 rusqlite = { version = "0.32", features = ["bundled"] }
