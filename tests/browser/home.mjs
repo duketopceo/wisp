@@ -17,6 +17,8 @@ const POP = [255, 91, 31];
 const ground = {dark: "rgb(21, 17, 14)", light: "rgb(242, 236, 224)"};
 const ready = page => page.waitForFunction(() =>
   document.querySelector("#hero-mark").dataset.ready === "true", null, {timeout: 15000});
+const ribbonReady = page => page.waitForFunction(() =>
+  document.querySelector("#hero-bg").dataset.ready === "true", null, {timeout: 15000});
 const live = page => page.waitForFunction(() =>
   document.querySelector("#hero-mark").dataset.mark === "live", null, {timeout: 15000});
 // Opaque pixels of the live canvas: how many are the pop colour, and their mean x in CSS px.
@@ -105,6 +107,12 @@ for (const name of engines) {
     const initialTheme = await readTheme(page);
     assert.equal(await page.locator("#hero-mark canvas").count(), 1);
     assert.equal(await page.locator("#hero-mark svg").isVisible(), false, "the still hides once live");
+    // The ribbon field is WebGL: a runner without it (or with only a slow software
+    // renderer) keeps the CSS frame, so either end state is valid, never a broken one.
+    await ribbonReady(page);
+    const ribbon = await page.locator("#hero-bg").getAttribute("data-hero");
+    assert.ok(["webgl", "static"].includes(ribbon), `ribbon state ${ribbon}`);
+    assert.equal(await page.locator("#hero-bg canvas").count(), ribbon === "webgl" ? 1 : 0);
     assert.match(await page.locator("h1").innerText(), /A little more\s+reach\./);
     await fit(page, `1440x900-${initialTheme}`);
     await page.screenshot({path: `${output}/${name}-desktop-${initialTheme}.png`});
@@ -288,6 +296,8 @@ for (const name of engines) {
       assert.equal(await p.locator("#hero-mark canvas").count(), 0, mode);
       assert.equal(await p.locator("#hero-mark svg").isVisible(), true, mode);
       assert.deepEqual(await stageBox(p), liveBox, `${mode}: the still has the live stage's box`);
+      if (["no-js", "data-saver", "low-power"].includes(mode))
+        assert.equal(await p.locator("#hero-bg canvas").count(), 0, `${mode}: no ribbon canvas`);
       if (mode === "no-js") {
         assert.equal(await p.locator("#copy-install").isDisabled(), true);
         assert.equal(await p.locator("#theme-toggle").isVisible(), false);
