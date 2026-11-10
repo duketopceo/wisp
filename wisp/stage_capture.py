@@ -36,11 +36,12 @@ def hypr_env() -> dict:
     env = dict(os.environ)
     uid = os.getuid() if hasattr(os, "getuid") else 1000
     rd = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{uid}")
-    if not env.get("HYPRLAND_INSTANCE_SIGNATURE"):
+    iso = env.get("WISP_ISOLATED_SESSION") == "1"   # never guess the live one
+    if not iso and not env.get("HYPRLAND_INSTANCE_SIGNATURE"):
         hypr = pathlib.Path(rd) / "hypr"
         if hypr.is_dir():
             env["HYPRLAND_INSTANCE_SIGNATURE"] = sorted(hypr.iterdir())[0].name
-    if not env.get("WAYLAND_DISPLAY"):
+    if not iso and not env.get("WAYLAND_DISPLAY"):
         for s in sorted(pathlib.Path(rd).glob("wayland-*")):
             env["WAYLAND_DISPLAY"] = s.name
             break

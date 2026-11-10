@@ -303,11 +303,18 @@ def _watch() -> Watch | None:
     return _WATCH
 
 
+def _isolated(cfg: dict | None) -> bool:
+    from . import vpointer
+    return vpointer.is_isolated(cfg)
+
+
 def _drive_possible(cfg: dict | None) -> bool:
     """Could this run touch the real cursor? DOM runs and
     background-policy runs never do; guide mode injects nothing."""
     c = cfg or {}
     if (c.get("screen") or {}).get("dom_page"):
+        return False
+    if _isolated(c):
         return False
     if (c.get("pointer") or {}).get("mode") not in ("drive", "auto"):
         return False
@@ -318,6 +325,10 @@ def _watch_wanted(cfg: dict | None) -> bool:
     """Any run that injects input (drive/auto), background or not."""
     c = cfg or {}
     if (c.get("screen") or {}).get("dom_page"):
+        return False
+    if _isolated(c):
+        # instance input is virtual (vpointer/wtype); the owner's physical
+        # devices and the instance cursor's own motion are not a takeover
         return False
     return (c.get("pointer") or {}).get("mode") in ("drive", "auto")
 
