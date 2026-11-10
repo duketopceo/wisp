@@ -389,7 +389,8 @@ def _env(extra: dict | None = None) -> dict:
     """Env for spawned cmds — discovers the Hyprland instance dir
     when HIS isn't exported (systemd-launched daemon case)."""
     e = dict(os.environ)
-    if "HYPRLAND_INSTANCE_SIGNATURE" not in e:
+    if ("HYPRLAND_INSTANCE_SIGNATURE" not in e
+            and e.get("WISP_ISOLATED_SESSION") != "1"):
         hypr = Path(e.get("XDG_RUNTIME_DIR", "/tmp")) / "hypr"
         if hypr.is_dir():
             kids = sorted(hypr.iterdir())
