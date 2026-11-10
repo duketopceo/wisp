@@ -16,7 +16,7 @@ execution: code
 - **Objective:** Wisp has one finished 3D mark, a translucent flame with a bright heart in the guide-light colors, that reads as Wisp from a hero image down to a 20 px bar icon, with an idle loop and listening, thinking and speaking states ready for the web and the desktop to adopt.
 - **Product authority:** this Product Contract. The silhouette was chosen from live sketches on 2026-11-01 (option C2).
 - **Means:** a scripted Blender scene, rendered headless on the M1 Max Mac, exported to glTF for live 3D and to animated WebP and PNG for everything else (KTD1–KTD4).
-- **Open blockers:** none. Blender has no Linux ARM64 build, so it runs on `luke-pro-max1` (Homebrew cask) over SSH.
+- **Open blockers:** none. Blender has no Linux ARM64 build, so it runs on `<mac-host>` (Homebrew cask) over SSH.
 - **Stop conditions:** stop and report if Blender cannot run headless on the Mac, if a state cannot be told apart from idle at 32 px after the critique loop's iteration cap, or if the glTF will not load in Qt Quick 3D or three.js.
 - **Execution profile:** `code`, interactive owner available for the visual sign-off; everything else hands-off.
 - **Who finishes:** `ce-work` builds and verifies, `lfg` reviews and opens the PR; the owner merges.
@@ -68,7 +68,7 @@ Wisp's identity today is a 2D guide light on the web (`site-3d/light/`), a decor
 
 - Side by side at 20 px and 32 px, the owner can tell the four states apart and still sees the same flame.
 - Each loop plays without a visible jump at the loop point.
-- The real-time form loads in a three.js page and in a Qt Quick 3D scene on omarchy-max without errors.
+- The real-time form loads in a three.js page and in a Qt Quick 3D scene on the owner's machine without errors.
 
 ### Scope Boundaries
 
@@ -79,9 +79,9 @@ Wisp's identity today is a 2D guide light on the web (`site-3d/light/`), a decor
 
 ### Dependencies and Assumptions
 
-- Blender 5.2.3 runs on the M1 Max Mac (`luke-pro-max1`, Homebrew cask, Metal GPU) over SSH. blender.org ships no Linux ARM64 build and Arch Linux ARM has no package.
+- Blender 5.2.3 runs on the M1 Max Mac (`<mac-host>`, Homebrew cask, Metal GPU) over SSH. blender.org ships no Linux ARM64 build and Arch Linux ARM has no package.
 - The local skill `ce-3d-reel` (in luke-agents `_LUKE/`) supplies the headless Blender render, critique and fix loop.
-- Qt Quick 3D 6.12 with its asset loader, and Qt Multimedia, are installed on omarchy-max.
+- Qt Quick 3D 6.12 with its asset loader, and Qt Multimedia, are installed on the owner's machine.
 
 **Product Contract preservation:** Product Contract unchanged except the Dependencies line, corrected to where Blender actually runs.
 
@@ -97,9 +97,9 @@ Wisp's identity today is a 2D guide light on the web (`site-3d/light/`), a decor
 ### Key Technical Decisions
 
 - KTD1. **The bpy build script is the source of truth; the `.blend` is a saved output of it.** The script rebuilds the scene from nothing, so changes are reviewable as text, and the committed `.blend` (R9) lets the owner open and tweak it in Blender. If the owner edits the `.blend` by hand, the script stops being authoritative and the README says so.
-- KTD2. **Render on the Mac over SSH.** A small runner copies the script to `luke-pro-max1`, runs `Blender --background` there, and copies the outputs back. No Linux build exists, and the Mac's Metal GPU makes EEVEE practical.
+- KTD2. **Render on the Mac over SSH.** A small runner copies the script to `<mac-host>`, runs `Blender --background` there, and copies the outputs back. No Linux build exists, and the Mac's Metal GPU makes EEVEE practical.
 - KTD3. **Motion as shape keys plus transforms, one glTF animation per state** (`idle`, `listening`, `thinking`, `speaking`). Each state is one NLA track of that name holding the per-object actions (shell shape keys, heart, tail spheres), exported with the glTF animation mode `NLA_TRACKS`. In the `.glb`, states differ only through transform and morph-weight channels (heart scale amplitude and rate, tip bend weight and rate, tail spacing), because glTF players do not animate material values. Emission-strength keys (a brighter heart, a speaking pulse) exist only in the Blender renders and so only in the loops. Every state loops over the same frame count so a player can cross-fade.
-- KTD4. **Loops are animated WebP with alpha; stills are PNG.** Qt's `AnimatedImage` plays WebP with transparency (qt6-imageformats is installed) and Chromium does too, so one format serves both without a video pipeline. Two sizes per state: 64 px (bar and cursor at 2x) and 256 px (lock orb at 2x). Pillow is the only WebP encoder on omarchy-max (no `img2webp`/`cwebp`), and it writes animated RGBA WebP; encode lossy with alpha at a modest frame rate so the budgets in KTD6 hold. PNG frame sequences are intermediate and not committed.
+- KTD4. **Loops are animated WebP with alpha; stills are PNG.** Qt's `AnimatedImage` plays WebP with transparency (qt6-imageformats is installed) and Chromium does too, so one format serves both without a video pipeline. Two sizes per state: 64 px (bar and cursor at 2x) and 256 px (lock orb at 2x). Pillow is the only WebP encoder on the owner's machine (no `img2webp`/`cwebp`), and it writes animated RGBA WebP; encode lossy with alpha at a modest frame rate so the budgets in KTD6 hold. PNG frame sequences are intermediate and not committed.
 - KTD5. **glTF materials approximate the look; renders carry the full look.** The shell is an alpha-blended emissive material with depth write off; the heart is an opaque emissive sphere with `KHR_materials_emissive_strength`, so players draw the heart first and blend the shell over it (a blended heart would break the see-through). The Fresnel rim exists only in the Blender renders (Layer Weight node), so live 3D is slightly flatter than the loops. Surfaces that need the exact look use the loops.
 - KTD6. **Size budgets (no Git LFS in this repo):** `.glb` ≤ 1.5 MB, each 256 px WebP ≤ 400 KB, each 64 px WebP ≤ 120 KB, `.blend` ≤ 5 MB, the whole asset folder ≤ 10 MB. A test enforces them.
 - KTD7. **Verification viewers stay out of the product.** The three.js preview page and the Qt check live with the asset, not in `site-3d/` or `shell-plugin/`, because surface wiring is out of scope. The preview imports the vendored three 0.170.0 plus its matching `GLTFLoader`, vendored next to the preview with provenance.
@@ -108,7 +108,7 @@ Wisp's identity today is a 2D guide light on the web (`site-3d/light/`), a decor
 
 ```mermaid
 flowchart LR
-  script["build script (bpy)"] -->|ssh + copy| mac["Blender 5.2.3 headless on luke-pro-max1"]
+  script["build script (bpy)"] -->|ssh + copy| mac["Blender 5.2.3 headless on <mac-host>"]
   mac --> blend[".blend (saved scene)"]
   mac --> glb[".glb, 4 animations"]
   mac --> frames["PNG frames per state, 2 sizes"]
@@ -195,7 +195,7 @@ tests/test_wisp_flame_asset.py
 **Test scenarios:**
 - The preview page, opened headless in Chromium with software GL, logs that the model loaded and lists four animation names.
 - The Qt check, run in the live session, prints a successful `RuntimeLoader` status.
-**Verification:** both checks pass on omarchy-max; the owner views the preview in Chromium.
+**Verification:** both checks pass on the owner's machine; the owner views the preview in Chromium.
 
 ### U4. Asset tests, budgets and README
 
@@ -228,7 +228,7 @@ tests/test_wisp_flame_asset.py
 
 - Keyless suite: `env -u OPENROUTER_API_KEY -u GROQ_API_KEY HOME=$(mktemp -d) PYTHONPATH=tests python3 -m unittest discover -s tests`. Known local failures `test_snap` WhatsNewCard__headline and `test_voice_polish` voice_usable are unrelated.
 - `rs/` and `tests/fixtures/ipc_commands.jsonl` unchanged; `wisp/act.py`, `wisp/route.py`, `wisp/stage_route.py` untouched.
-- The runner (U2), the preview check and the Qt check (U3) pass on omarchy-max with `luke-pro-max1` reachable.
+- The runner (U2), the preview check and the Qt check (U3) pass on the owner's machine with `<mac-host>` reachable.
 - Visual review pages are local only.
 
 ## Definition of Done

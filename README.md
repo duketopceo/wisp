@@ -19,7 +19,7 @@ by default; an optional `[router] ambiguity_model` can resolve ambiguous turns.
 Local models are optional (see Local models below); a local brain can answer
 text questions without an OpenRouter key.
 
-Status: v0.9 shipped; v1.0 is a verification milestone (a labelled soak,
+Status: v0.9.0 is the latest stable release and `v1.0.0-rc.3` the latest prerelease; v1.0 is a verification milestone (a labelled soak,
 a fresh-box install and the learning loop; see `ROADMAP.md`). Linux
 (Omarchy/Hyprland) is the full-app target. The [macOS](docs/MACOS.md) and
 [Windows](docs/WINDOWS.md) adapters are experimental, not complete desktop ports.
@@ -446,6 +446,6 @@ management app), `scripts/` (harness, snapshot and asset tools), `docs/`
 
 ## License
 
-AGPL-3.0. Free to use and modify, including privately. If you host or distribute a modified version, you must publish your source under the same license. See [`LICENSE`](LICENSE).
+AGPL-3.0. Free to use and modify, including privately. If you host or distribute a modified version, you must publish your source under the same license. See [`LICENSE`](LICENSE) for the license text and [`NOTICE`](NOTICE) for the copyright notice.
 
 Releases up to and including v0.9.0 were published under the MIT License and remain available under MIT. Icons and artwork in `assets/` stay CC0 (see `assets/LICENSE`), and the bundled test fonts keep their own license (`tests/qml/fonts/LICENSE-Liberation`).

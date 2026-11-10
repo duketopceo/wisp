@@ -41,5 +41,5 @@ let a new `listen` kill in-flight speech.
 
 ## Done when
 
-An answer speaks aloud on omarchy-max, and tapping the hotkey mid-speech
+An answer speaks aloud on the owner's machine, and tapping the hotkey mid-speech
 cuts it instantly.

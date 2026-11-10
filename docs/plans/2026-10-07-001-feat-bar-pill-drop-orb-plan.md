@@ -2,7 +2,7 @@
 title: Wisp bar-pill live activity — drop the corner orb
 type: feat
 date: 2026-10-07
-status: active
+status: "completed (merged in #109)"
 ---
 
 # Bar-pill live activity — drop the corner orb

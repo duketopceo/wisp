@@ -21,7 +21,7 @@ needed — headless chromium + evaluate).
 
 ## Verified foundation (do not re-spike)
 
-From the live investigation on omarchy-max (luke-agents `_LUKE/cua/SKILL.md`,
+From the live investigation on the owner's machine (luke-agents `_LUKE/cua/SKILL.md`,
 commit `31f00b8`):
 
 - `cua-driver` 0.33.1 aarch64 binary at `~/.local/share/cua-driver/`, owned by
@@ -31,7 +31,7 @@ commit `31f00b8`):
 - `cua-hyprland-plugin.so` built from the release build-kit against exact
   Hyprland 0.56.2, loaded into the live compositor (`hyprctl "cua:status"` →
   `transport: ready`); `plugin.cua.enabled = true` in the stash
-  `~/.local/share/machine/lukekimball/hyprland.lua` + autostart `hyprctl
+  `~/.local/share/machine/<host>/hyprland.lua` + autostart `hyprctl
   plugin load`. Both survive reload and sync-watch.
 - Verified end-to-end: `list_windows` → 8 real windows with bounds/pids,
   `get_desktop_state` → live screencopy capture, background `click`/`move`

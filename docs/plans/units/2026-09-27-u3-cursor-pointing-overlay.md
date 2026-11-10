@@ -48,4 +48,4 @@ an animated pointer on a layer-shell overlay.
 ## Done when
 
 "Wisp, where do I click to mute" produces a visible pointer at the right
-control on omarchy-max.
+control on the owner's machine.

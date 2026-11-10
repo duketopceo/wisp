@@ -220,7 +220,7 @@ plan/issue.
 **Requirements:** R4
 **Dependencies:** U1–U4
 **Files:** `docs/HANDOFF.md` (update), `README.md` (verified-usage notes)
-**Approach:** manual verification checklist run on omarchy-max (or
+**Approach:** manual verification checklist run on the owner's machine (or
 whichever host): launch route, tool route (screenshot/notify), answer
 route with and without screenshot, choice flow via bar widget, agent
 spawn via `ori opencode`. Record transcripts + results; file fixes as
