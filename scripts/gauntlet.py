@@ -760,12 +760,8 @@ class Gauntlet:
                 groups.setdefault(failure_class(a), []).append(a)
         return sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0]))
 
-    def env_cmd(self) -> str:
-        return (f"XDG_DATA_HOME={self.gdir / 'data'} "
-                f"XDG_CONFIG_HOME={self.gdir / 'config'}")
-
     def review_commands(self) -> list:
-        return [f"{self.env_cmd()} wispd dev review {self.run_id}",
+        return [f"wispd dev review --data-dir {self.data} {self.run_id}",
                 f"wispd dev import-labels {self.data}"]
 
     def _report(self) -> None:

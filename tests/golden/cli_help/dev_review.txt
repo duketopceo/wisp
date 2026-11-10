@@ -1,5 +1,5 @@
-usage: wispd dev review [-h] [-n N] [--set TURN LABEL] [--json] [--quiet]
-                        [--no-color]
+usage: wispd dev review [-h] [--data-dir DIR] [-n N] [--set TURN LABEL]
+                        [--json] [--quiet] [--no-color]
                         [RUN_ID]
 
 Check the judge on up to five tasks: confirm or flip
@@ -9,6 +9,8 @@ positional arguments:
 
 options:
   -h, --help        show this help message and exit
+  --data-dir DIR    read (and label) this wisp data directory directly,
+                    without the daemon (a gauntlet's <gauntlet>/data/wisp)
   -n N              tasks to show (default 5)
   --set TURN LABEL  write your own label for one task: correct or incorrect
 

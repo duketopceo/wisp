@@ -636,9 +636,10 @@ class TestCapAndReport(Base):
         self.assertIn("| hybrid |", text)
         self.assertIn("| openrouter |", text)
         self.assertIn("openrouter $", text)           # spend by provider
-        self.assertIn("wispd dev review " + g.run_id, text)
+        self.assertIn(f"wispd dev review --data-dir {g.data} {g.run_id}",
+                      text)
         self.assertIn(f"wispd dev import-labels {g.data}", text)
-        self.assertIn("XDG_DATA_HOME=" + str(self.gdir / "data"), text)
+        self.assertNotIn("XDG_DATA_HOME=", text)   # no env, no daemon IPC
 
     def test_the_merged_run_store_reports_with_named_arms(self):
         g, code, deps = self.run_g([case("c1"), case("c2")])

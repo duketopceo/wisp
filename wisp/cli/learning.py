@@ -311,9 +311,39 @@ def dev_stop(ctx, a):
                     "stopping after the current task")
 
 
-def _fetch_runs(ctx, run_id):
+def _data_dir_arg(p):
+    p.add_argument("--data-dir", default="", metavar="DIR",
+                   help="read (and label) this wisp data directory "
+                   "directly, without the daemon (a gauntlet's "
+                   "<gauntlet>/data/wisp)")
+
+
+def _use_data_dir(a) -> bool:
+    """Point this one-shot process at --data-dir: the run stores, the
+    decisions and the labels all resolve there, and no daemon is asked
+    (the daemon on the socket serves its own data, not this one)."""
+    d = getattr(a, "data_dir", "")
+    if not d:
+        return False
+    import os
+    import pathlib
+    from .. import config, learn
+    path = pathlib.Path(os.path.abspath(os.path.expanduser(d)))
+    if not path.is_dir():
+        raise CliError("E_USAGE", f"No data directory at {path}.",
+                       "wispd dev review --help")
+    config.DATA_DIR = path
+    config.DECISIONS = path / "decisions.jsonl"
+    learn.LABELS_FILE = path / "labels.jsonl"
+    return True
+
+
+def _fetch_runs(ctx, run_id, direct=False):
     """The run reports: from the daemon, or from the run stores when no
-    daemon is running (read-only)."""
+    daemon is running or `direct` (read-only)."""
+    if direct:
+        from .. import devreport
+        return devreport.build(run_id or None).get("runs") or []
     try:
         r = ctx.send({"cmd": "dev_runs",
                       **({"run_id": run_id} if run_id else {})})
@@ -327,6 +357,7 @@ def _fetch_runs(ctx, run_id):
 
 
 def _dev_runs_args(p):
+    _data_dir_arg(p)
     p.add_argument("run_id", nargs="?", default="", metavar="RUN_ID",
                    help="one run (default: the newest runs)")
 
@@ -336,11 +367,12 @@ def _dev_runs_args(p):
          {"runs": "list"}, args=_dev_runs_args)
 def dev_runs(ctx, a):
     from .. import devreport
-    runs = _fetch_runs(ctx, a.run_id)
+    runs = _fetch_runs(ctx, a.run_id, _use_data_dir(a))
     return ctx.emit({"runs": runs}, devreport.render({"runs": runs}))
 
 
 def _dev_review_args(p):
+    _data_dir_arg(p)
     p.add_argument("run_id", nargs="?", default="", metavar="RUN_ID",
                    help="the run to review (default: the newest)")
     p.add_argument("-n", type=int, default=5, metavar="N",
@@ -351,10 +383,12 @@ def _dev_review_args(p):
                    "incorrect")
 
 
-def _write_label(ctx, label, turn, note):
+def _write_label(ctx, label, turn, note, direct=False):
     """Your label through the daemon's turn-scoped label command, or
-    straight to labels.jsonl when no daemon is running."""
+    straight to labels.jsonl when no daemon is running or `direct`."""
     try:
+        if direct:
+            raise CliError("E_DAEMON_DOWN", "direct")
         r = ctx.send({"cmd": "label", "label": label, "turn": turn,
                       "note": note})
         text = str(r.get("result", "")) if r.get("ok") else \
@@ -390,7 +424,8 @@ def _ask_review(t):
 def dev_review(ctx, a):
     import sys
     from .. import devreport
-    runs = _fetch_runs(ctx, a.run_id)
+    direct = _use_data_dir(a)
+    runs = _fetch_runs(ctx, a.run_id, direct)
     if not runs:
         raise CliError("E_NOT_FOUND", "No dev run to review.",
                        "wispd dev runs")
@@ -404,7 +439,7 @@ def dev_review(ctx, a):
         if not any(r.get("turn") == turn for r in rows):
             raise CliError("E_NOT_FOUND", f"No task with turn {turn}.",
                            "wispd dev review --json")
-        ok, text = _write_label(ctx, label, turn, "dev review")
+        ok, text = _write_label(ctx, label, turn, "dev review", direct)
         if not ok:
             raise CliError("E_FAILED", "Nothing was labelled.",
                            "wispd dev review --json", data={"result": text})
@@ -428,7 +463,7 @@ def dev_review(ctx, a):
             continue
         label = devreport.label_for(t["judged"],
                                     "confirm" if ans == "c" else "flip")
-        ok, text = _write_label(ctx, label, t["turn"], "dev review")
+        ok, text = _write_label(ctx, label, t["turn"], "dev review", direct)
         print(f"    {label}" if ok else f"    not labelled: {text}")
         if ok:
             data["labelled"].append({"turn": t["turn"], "label": label})
