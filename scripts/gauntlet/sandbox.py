@@ -126,6 +126,33 @@ def hypr_focused() -> str:
     return str(w.get("address") or "") if isinstance(w, dict) else ""
 
 
+def procs_under(root, proc="/proc") -> list:
+    """Pids whose command line names `root` (a sandbox's own paths:
+    its Chromium's --user-data-dir). A browser's helper and relaunched
+    processes leave the spawned process group, so the group kill alone
+    leaves them running: their windows stay on the instance and, once
+    `prepare` wipes the profile, show "Something went wrong when
+    opening your profile" over the next attempt's apps (gauntlet
+    20261110-032017: a stack of them covered the sandbox windows, so
+    every click was refused as "not a sandbox window")."""
+    needle = os.fsencode(str(root))
+    me, out = os.getpid(), []
+    try:
+        names = os.listdir(proc)
+    except OSError:
+        return out
+    for n in names:
+        if not n.isdigit() or int(n) == me:
+            continue
+        try:
+            with open(f"{proc}/{n}/cmdline", "rb") as f:
+                if needle in f.read():
+                    out.append(int(n))
+        except OSError:
+            continue
+    return out
+
+
 class Window:
     def __init__(self, app, address, pid, proc, port=None):
         self.app, self.address, self.pid = app, address, pid
@@ -146,7 +173,8 @@ class Sandbox:
                  move=hypr_move, focused=hypr_focused, which=shutil.which,
                  killpg=os.killpg, sleep=time.sleep, clock=time.monotonic,
                  base_env=None, port=free_port, tree=descendants,
-                 fetch=None, window_timeout=15.0, dbus=None):
+                 fetch=None, window_timeout=15.0, dbus=None,
+                 stragglers=procs_under, kill=os.kill):
         self.root = pathlib.Path(root)
         self.workspace = self.root / "workspace"
         self.spawn, self.clients, self.move = spawn, clients, move
@@ -156,6 +184,7 @@ class Sandbox:
         self.port, self.tree = port, tree
         self.fetch = fetch or _fetch_json
         self.window_timeout = window_timeout
+        self.stragglers, self.kill = stragglers, kill
         self.dbus = dbus                # an isolated run's private bus
         self.windows: dict = {}
         self._procs: list = []
@@ -287,7 +316,22 @@ class Sandbox:
                     self.killpg(os.getpgid(p.pid), signal.SIGKILL)
                 except Exception:
                     pass
+        self._reap_stragglers()
         self._procs, self.windows = [], {}
+
+    def _reap_stragglers(self) -> None:
+        """SIGKILL what still names this sandbox's root after the group
+        kill (only this sandbox's own paths match)."""
+        for _ in range(2):
+            pids = self.stragglers(self.root)
+            if not pids:
+                return
+            for pid in pids:
+                try:
+                    self.kill(pid, signal.SIGKILL)
+                except OSError:
+                    pass
+            self.sleep(0.2)
 
     # -- reading state ----------------------------------------------------
 

@@ -367,7 +367,8 @@ class BrainTransportTest(HealthBase):
         self.assertEqual(cm.exception.code, "brain_down")
         self.assertIn("503", cm.exception.detail)
         self.assertNotIn("503", cm.exception.public)
-        self.assertEqual(len(srv.calls), 1)
+        # a transient 503 is retried once before the turn reports brain_down
+        self.assertEqual(len(srv.calls), 2)
 
     def test_refused_retries_once_then_brain_down(self):
         calls = []

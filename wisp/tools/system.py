@@ -464,6 +464,8 @@ def type_text(text: str, cfg: dict | None = None) -> str:
         env = _vp.isolated_env() if iso else hypr_env()
     except _vp.UinputRefused as e:
         return f"REFUSED ({e})"
+    if iso and cmd and cmd[0] == "wtype":
+        cmd = cmd[:1] + _ISO_RELEASE + cmd[1:]
     if not cmd:
         return (f"SKIP (no typer — {platform.missing_deps_hint()})")
     # the text goes on stdin, not argv: other local accounts can read argv.
@@ -530,6 +532,13 @@ _WTYPE_MODS = {"ctrl": "ctrl", "control": "ctrl", "shift": "shift",
                "cmd": "logo"}
 
 
+# The nested instance is a client of the live compositor: the owner's
+# own Super presses can reach its seat without the release, and foot then
+# reads Return as ESC[27;9;13~ (gauntlet 20261110-032017). Isolated wtype
+# calls release every modifier first; releasing an unpressed one is a no-op.
+_ISO_RELEASE = ["-m", "logo", "-m", "ctrl", "-m", "alt", "-m", "shift"]
+
+
 def _wtype_argv(name: str) -> list | None:
     """argv for a bare key or 'ctrl+shift+v' chord via wtype, or None
     when a part is unmappable."""
@@ -563,6 +572,7 @@ def _iso_key(name: str) -> str:
     argv = _wtype_argv(name)
     if argv is None:
         return f"SKIP (unknown key {name!r})"
+    argv = argv[:1] + _ISO_RELEASE + argv[1:]
     from .. import keys as _keys
     with _keys.suspended():
         r = _cancel.run(argv, capture_output=True, env=env)
