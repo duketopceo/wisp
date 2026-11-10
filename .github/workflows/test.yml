@@ -58,7 +58,7 @@ jobs:
       - name: Headless e2e
         run: npm run e2e
       - name: Upload the built extension (load unpacked from chrome-mv3)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wisp-chrome-extension
           path: browser-extension/.output/chrome-mv3
