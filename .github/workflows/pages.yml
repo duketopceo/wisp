@@ -130,7 +130,7 @@ jobs:
           node-version: "22"
       - name: Install pinned Wrangler from package-lock
         run: npm ci --ignore-scripts --no-audit --no-fund
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: wisp-workers-assets
           path: build/published
