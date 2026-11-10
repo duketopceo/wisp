@@ -55,7 +55,7 @@ jobs:
 
       - name: Run published Argus action
         id: review
-        uses: duketopceo/Argus/action@c701b2a8dd7f8a8eaa728ea1f5f4e4bb751a482f
+        uses: duketopceo/Argus/action@1c7caae463910956a5402e21fe7565228134de1c
         with:
           openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
           cli: ${{ steps.trusted-cli.outputs.cli }}
