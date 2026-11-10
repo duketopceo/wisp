@@ -10,7 +10,7 @@ provenance: authored
 Index a repo into `codebase-memory-mcp` so `codebase-graph`-style
 queries work. wisp's index lives at
 `.codebase-memory/graph.db.zst` (project
-`home-lukekimball-Documents-github-personal-wisp`).
+`home-<user>-Documents-github-personal-wisp`).
 
 ## Workflow
 

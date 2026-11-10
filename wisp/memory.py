@@ -145,13 +145,13 @@ _SYNC_BEGIN = "## luke-agents"
 _SYNC_END = "## /luke-agents"
 
 _CONSTITUTION_FACTS = [
-    "user is Luke Kimball (Khan) — github duketopceo, machine omarchy-max (M1 Max, Asahi Linux ARM, Hyprland)",
+    "user is the repo owner (github duketopceo); machine runs Asahi Linux ARM with Hyprland",
     "luke-agents repo (~/Documents/github/personal/luke-agents) is the canonical agent constitution — AGENTS.md is the king file, QUICK_START.md is the fast digest",
     "voice: precise, concise, no fluff; tables over paragraphs; no emojis; disagree with weak ideas",
     "never use the words scrape/scraping/crawl — say collect/extract/fetch",
     "never use Reddit as a source",
     "eval/model spend bills the orchestral OpenRouter key, never default",
-    "hyprland config is Lua; machine-specific files are stash-canonical under ~/.local/share/machine/lukekimball/ — sync-watch reverts ~/.config/hypr/",
+    "hyprland config is Lua; machine-specific files are stash-canonical under ~/.local/share/machine/<host>/ — sync-watch reverts ~/.config/hypr/",
     "never edit /usr/share/omarchy — package-owned; user config under ~/.config/",
     "package installs: omarchy pkg add or yay, never raw makepkg",
     "personal knowledge brain: Kurultai personal lane (Ulaanbaatar); agent identity = codename@instance_id",

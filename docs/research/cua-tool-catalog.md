@@ -1,6 +1,6 @@
 # cua-driver 0.33.1 — Tool Surface Catalog (research agent R1)
 
-Probed live on `omarchy-max` (Asahi Linux aarch64, Hyprland 0.56.2, native Wayland,
+Probed live on the owner's machine (Asahi Linux aarch64, Hyprland 0.56.2, native Wayland,
 `CUA_DRIVER_RS_ENABLE_WAYLAND=1`, daemon running as `cua-driver.service`,
 socket `~/.cache/cua-driver/cua-driver.sock`). All probes were read-only —
 no click/type/key/drag input was injected. `move_cursor` was exercised

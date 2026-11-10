@@ -8,7 +8,7 @@ provenance: authored
 # codebase-graph
 
 The wisp repo is indexed by `codebase-memory-mcp` (project
-`home-lukekimball-Documents-github-personal-wisp`, persisted at
+`home-<user>-Documents-github-personal-wisp`, persisted at
 `.codebase-memory/graph.db.zst`). Prefer the graph over rg/read loops
 for structural questions.
 

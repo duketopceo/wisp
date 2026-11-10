@@ -34,7 +34,7 @@ look matters.
 ## Rebuild
 
 Blender has no Linux ARM64 build, so the scene is built and rendered on a Mac
-with Blender (default `luke-pro-max1`, Homebrew cask) over SSH:
+with Blender (default `<mac-host>`, Homebrew cask) over SSH:
 
     scripts/brand/render_wisp_flame.sh [--host HOST] [--frames N]
 

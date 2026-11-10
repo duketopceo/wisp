@@ -1,4 +1,4 @@
-# Handoff — machine migration (omarchy-macbook-m1 → omarchy-max)
+# Handoff — machine migration (the previous laptop → the owner's machine)
 
 Written 2026-09-19 during migration off the M1 MacBook. Branch: `feat/dim-assistant`.
 
@@ -15,7 +15,7 @@ v2 (launch/tool/agent/answer/clarify), risk-tiered toolbelt, `ori opencode`
 named agents, Omarchy Quickshell plugin (bar icon + dim overlay + choices),
 weekly human-gated learning loop, generic install. 54/54 tests pass.
 
-## Live state on the M1 (had to be redone on omarchy-max)
+## Live state on the M1 (had to be redone on the owner's machine)
 
 - `wispd install` + `systemctl --user enable --now wispd`
 - `Super+D` bind lives in `~/.config/hypr/bindings.lua` **and** the

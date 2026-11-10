@@ -1,4 +1,4 @@
-# Ops — running wisp on omarchy-max
+# Ops — running wisp on the owner's machine
 
 ## Services and ports
 

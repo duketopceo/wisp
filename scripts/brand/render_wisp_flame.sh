@@ -2,7 +2,7 @@
 # Rebuild the Wisp flame asset (assets/brand/wisp-flame) from its build script.
 #
 # Blender has no Linux ARM64 build, so the scene is built and rendered on a Mac
-# with Blender installed (default host luke-pro-max1, Homebrew cask), then the
+# with Blender installed (default host <mac-host>, Homebrew cask), then the
 # outputs are copied back and assembled here.
 #
 #   scripts/brand/render_wisp_flame.sh [--host HOST] [--frames N]
@@ -10,7 +10,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ASSET="$ROOT/assets/brand/wisp-flame"
-HOST="${WISP_FLAME_HOST:-luke-pro-max1}"
+HOST="${WISP_FLAME_HOST:-<mac-host>}"
 BLENDER="${WISP_FLAME_BLENDER:-/opt/homebrew/bin/blender}"
 FRAMES=48
 while [ $# -gt 0 ]; do

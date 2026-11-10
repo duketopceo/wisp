@@ -3,7 +3,7 @@
 Verdict: **GO, with one required repair first** — the CubeProxy data plane
 (`cube-sandbox-cube-proxy.service`) is crash-looping (restart #1569) because
 `tailscaled` holds `100.74.41.80:443` via Tailscale Funnel
-(`omarchy-max.tailaf1559.ts.net → 127.0.0.1:8787`). Everything else is in
+(`<host>.<tailnet>.ts.net → 127.0.0.1:8787`). Everything else is in
 place: control plane live and authenticated, READY template, `/dev/kvm`
 present, `*.cube.app` wildcard DNS works, outbound egress is default-allow,
 `SandboxIP` is directly routable from the host so the data plane can be
@@ -39,7 +39,7 @@ export CUBE_API_KEY="$(sudo grep -oP '^CUBE_API_KEY=\K.*' \
 
 `journalctl -u cube-sandbox-cube-proxy`: `port 443 is already in use; cube-proxy
 uses host networking ... Set CUBE_PROXY_HTTPS_PORT to a free port`. The squatter
-is tailscaled's Funnel listener (serve config: `https://omarchy-max... →
+is tailscaled's Funnel listener (serve config: `https://<host>... →
 127.0.0.1:8787`; nothing is on :8787 now, so the funnel looks stale, but do not
 touch it without asking).
 
