@@ -9,6 +9,7 @@ prints a skip notice and exits 0.
 """
 import os
 import pathlib
+import re
 import sys
 
 _SKIP = "personal-info scan skipped: no denylist set"
@@ -24,23 +25,16 @@ def _parse(text: str) -> list[str]:
 
 
 def _redact(text: str, tokens: list[str]) -> str:
+    """Replace tokens using spans on the original string.
+
+    casefold() can be longer than the source (U+0130), so indexes from
+    the folded string must not slice the original.
+    """
     out = text
     for token in tokens:
         if not token:
             continue
-        folded = out.casefold()
-        needle = token.casefold()
-        pieces = []
-        start = 0
-        while True:
-            at = folded.find(needle, start)
-            if at < 0:
-                pieces.append(out[start:])
-                break
-            pieces.append(out[start:at])
-            pieces.append("[redacted]")
-            start = at + len(needle)
-        out = "".join(pieces)
+        out = re.sub(re.escape(token), "[redacted]", out, flags=re.IGNORECASE)
     return out
 
 
@@ -114,6 +108,10 @@ def main(argv: list[str]) -> int:
     root = pathlib.Path(argv[1])
     redact_with = sorted(
         dict.fromkeys(inline + tokens), key=len, reverse=True)
+    if not root.is_dir():
+        print(_redact(f"scan root is not a directory: {root}", redact_with),
+              file=sys.stderr)
+        return 2
     hits = _hits(root, tokens)
     for hit in hits:
         print(_redact(hit, redact_with))

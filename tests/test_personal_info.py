@@ -105,3 +105,27 @@ class PersonalInfoScanTest(unittest.TestCase):
         blob = (out + err).lower()
         self.assertNotIn(TOKEN.lower(), blob)
         self.assertNotIn("clean", blob)
+
+    def test_casefold_expansion_does_not_print_token(self):
+        # U+0130 casefolds to two code points. Folded indexes would
+        # slice past the prefix and print the token.
+        mark = "\u0130" * len(TOKEN)
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            nested = root / mark
+            nested.mkdir()
+            (nested / f"{TOKEN}.txt").write_text(TOKEN + "\n", encoding="utf-8")
+            code, out, err = _run(root, {"WISP_PERSONAL_DENYLIST": TOKEN})
+        self.assertNotEqual(code, 0)
+        blob = out + err
+        self.assertNotIn(TOKEN, blob)
+        self.assertNotIn(TOKEN.lower(), blob.lower())
+        self.assertIn("[redacted]", out)
+
+    def test_missing_root_fails_without_claiming_clean(self):
+        missing = pathlib.Path(tempfile.mkdtemp()) / "no-such-root"
+        code, out, err = _run(missing, {"WISP_PERSONAL_DENYLIST": TOKEN})
+        self.assertNotEqual(code, 0)
+        blob = (out + err).lower()
+        self.assertNotIn("clean", blob)
+        self.assertNotIn(TOKEN.lower(), blob)
