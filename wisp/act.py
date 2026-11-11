@@ -21,7 +21,7 @@ import pathlib
 import re
 import time
 
-from . import bgwriter, cancel, cua_safety, grounding, ledger, \
+from . import act_guards, bgwriter, cancel, cua_safety, grounding, ledger, \
     policy, realinput, tools
 from . import delivery as _delivery
 from . import state as _state
@@ -87,7 +87,11 @@ SYSTEM = ("You are Wisp's hands on a Linux desktop (Hyprland). Complete "
           "on screen first, with at most one extra screenshot per turn "
           "for that check. To open a file or folder in a file manager, "
           "click it once to select it, then press enter — double-click "
-          "is unavailable. When done, reply with "
+          "is unavailable. Never type an absolute path you were not "
+          "given: use a path from the task or from text on screen, and "
+          "when a [app_skill] lists a keyboard route for the step "
+          "(Ctrl+L path, Alt+Up, Ctrl+Shift+N, F2), use it instead of "
+          "clicking an icon. When done, reply with "
           "one short sentence describing the outcome. If a tool is "
           "refused or skipped, do not retry it; work around or report "
           "the block. A fresh screenshot after a mutating step is the "
@@ -357,6 +361,8 @@ def run_act_loop(task: str, cfg: dict, state=None,
 
     guard = cua_safety.Guard(cfg, state=state,
                            interrupted=_user_interrupted)
+    # U3/U4: keyboard routes from the app skill, no invented paths
+    route_guards = act_guards.RunGuards(task, user_request, cfg)
     gate_ctx = policy.gate_ctx()   # per-run declines (U3)
 
     # U1: turn-scoped recording — the cua driver writes one
@@ -433,7 +439,8 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     _state.action_add(state, "question", text[9:].strip(),
                                       status="awaiting")
                     return "ASK_USER " + text[9:].strip()
-                why = _unsupported_done(task, steps, start_focus)
+                why = (_unsupported_done(task, steps, start_focus)
+                       or route_guards.unverified_done(steps))
                 if why and done_nudges < MAX_DONE_NUDGES:
                     done_nudges += 1
                     messages.append({"role": "assistant", "content": text})
@@ -521,6 +528,8 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     name, arg, cfg, confirm, state=state,
                     batch=[_name_arg(c) for c in calls[ci + 1:]],
                     ctx=gate_ctx)
+                if refused is None:
+                    refused = route_guards.pre_dispatch(name, arg, steps)
                 served_cached = False
                 # the arg actually dispatched and its wall-clock stamp —
                 # the recorder attributes a step to its turn dir on

@@ -21,3 +21,9 @@ provenance: authored: wisp seed, 2026-11-08
 
 ### Linux pitfalls
 - `Delete` moves to the Trash; `Shift+Delete` removes for good. Never suggest it as the default way to delete.
+
+## Keyboard routes
+- open path: `ctrl+l`, type the full path, `enter`. Only a path the user gave or the window shows.
+- go up: `alt+Up`. The title changes to the parent folder.
+- new folder: `ctrl+shift+n`, wait for the name field, type the name, `enter`.
+- rename: select the item, `F2`, type the new name, `enter`.

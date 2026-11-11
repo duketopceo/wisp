@@ -6,6 +6,8 @@ Every clarify-widget pick is logged to corrections.jsonl by the pipeline
 """
 import json
 import math
+import pathlib
+import re
 from datetime import datetime, timezone
 
 from . import config
@@ -264,6 +266,147 @@ def eval_unlabelled(decisions_file=None, labels_file=None,
         if len(rows) >= max(1, int(limit)):
             break
     return rows
+
+
+# U2 (R6): why a turn was not right first time. Order matters: the first
+# category whose cue matches wins, so a policy refusal is never counted
+# as a wrong target just because the run also clicked something.
+CATEGORIES = ("wrong target", "wrong app/window", "guessed input",
+              "timeout/max steps", "refused by policy", "speech garbage")
+OTHER_CATEGORY = "uncategorised"
+
+_SPEECH_RESULT = ("UNCLEAR", "NO_SPEECH", "NOSPEECH", "GARBLED", "EMPTY")
+_POLICY_RESULT = ("REFUS", "BLOCKED", "DENIED", "DECLINED")
+_CUES_BY_CATEGORY = (
+    ("speech garbage", re.compile(
+        r"misheard|mis-heard|misrecogni|garbl|gibberish|transcri|"
+        r"\bstt\b|speech|heard me|heard \w+ instead")),
+    ("refused by policy", re.compile(
+        r"refus|declin|denied|blocked|not allowed|policy|permission")),
+    ("timeout/max steps", re.compile(
+        r"max \d+ steps|budget|stalled|timed? ?out|too slow|"
+        r"repeated failures|took too long|ran out of")),
+    ("guessed input", re.compile(
+        r"guess|invent|made up|made-up|hallucinat|no such file|path guard|"
+        r"does(?:n't| not) exist|nonexistent|non-existent|"
+        r"typed (?:a |the )?(?:wrong|home|absolute) path")),
+    ("wrong app/window", re.compile(
+        r"wrong (?:app|window|workspace|monitor|screen|tab|program)|"
+        r"different (?:app|window)|in a browser|in the browser|"
+        r"not (?:a|the) (?:file (?:manager|explorer)|terminal|browser)|"
+        r"other monitor|refocused|focused the wrong")),
+    ("wrong target", re.compile(
+        r"wrong (?:file|folder|button|link|element|item|target|icon|"
+        r"place|one|name|result)|back arrow|not (?:the|visible|open|"
+        r"opened|created|renamed|found)|still (?:shows?|open|in)|"
+        r"instead of|clicked|search bar|not executed|did(?:n't| not) "
+        r"(?:open|land|create|rename|work)|failed")),
+)
+
+
+def categorize(result: str = "", note: str = "", steps=None,
+               reason: str = "", transcript: str = "") -> str:
+    """The failure category of one turn that was not right first time.
+    Reads the decision result, the owner's note, the judge's reason and
+    the step results; returns one of CATEGORIES or "uncategorised"."""
+    result = str(result or "")
+    steps = [s for s in (steps or []) if isinstance(s, dict)]
+    if result.upper().startswith(_SPEECH_RESULT):
+        return "speech garbage"
+    if result.upper().startswith(_POLICY_RESULT) or any(
+            str(s.get("result") or "").upper().startswith(_POLICY_RESULT)
+            for s in steps if s.get("tool") != "screenshot"):
+        return "refused by policy"
+    text = " ".join([result, str(note or ""), str(reason or "")]
+                    + [str(s.get("result") or "") for s in steps]).lower()
+    typed_path = any(
+        s.get("tool") == "type_text"
+        and re.match(r"\s*(/|~/)", str(s.get("arg") or ""))
+        for s in steps)
+    if typed_path and re.search(r"no such file|not found|does(?:n't| not)"
+                                r" exist|cannot find|invalid path", text):
+        return "guessed input"
+    for name, rx in _CUES_BY_CATEGORY:
+        if rx.search(text):
+            return name
+    return OTHER_CATEGORY
+
+
+def _gauntlet_rows(paths) -> list:
+    """Failed attempts from gauntlet `rows.jsonl` files (a run dir or
+    the file). Passed attempts and attempts that never ran are left
+    out: they are not failures of the action path."""
+    out = []
+    for raw in paths or ():
+        p = pathlib.Path(raw)
+        if p.is_dir():
+            p = p / "rows.jsonl"
+        for rec in _read_jsonl(p):
+            row = rec.get("row") or {}
+            judge = row.get("judge") or {}
+            reason = str(judge.get("reason") or "")
+            if rec.get("passed") or not row or reason == "not run" \
+                    or str(row.get("result") or "").startswith("SKIP (route"):
+                continue
+            out.append({"id": f"{rec.get('case', '?')}#{rec.get('rep', '')}",
+                        "result": row.get("result", ""),
+                        "steps": row.get("steps") or [],
+                        "reason": reason,
+                        "transcript": rec.get("goal", "")})
+    return out
+
+
+def eval_by_category(decisions_file=None, labels_file=None,
+                     gauntlet=(), cfg: dict | None = None) -> dict:
+    """Roll the owner's non-correct labels (and any gauntlet failures)
+    up into failure categories, biggest first, so the largest category
+    is fixed first. Owner and gauntlet counts are kept apart."""
+    decs = {d.get("ts"): d for d in _read_jsonl(
+        decisions_file or config.DECISIONS)}
+    since = _eval_since(cfg)
+    items = []
+    for ref, (label, note) in _latest_labels(labels_file).items():
+        if label == "correct" or (since and ref < since):
+            continue
+        d = decs.get(ref) or {}
+        items.append(("owner", ref, d, categorize(
+            d.get("result", ""), note=note,
+            transcript=d.get("transcript", "")), note))
+    for g in _gauntlet_rows(gauntlet):
+        items.append(("gauntlet", g["id"], g, categorize(
+            g["result"], steps=g["steps"], reason=g["reason"],
+            transcript=g["transcript"]), g["reason"]))
+    cats = {}
+    for source, ref, d, cat, _ in items:
+        c = cats.setdefault(cat, {"category": cat, "count": 0,
+                                  "owner": 0, "gauntlet": 0,
+                                  "examples": []})
+        c["count"] += 1
+        c[source] += 1
+        t = str(d.get("transcript") or "").strip()
+        if t and len(c["examples"]) < 3:
+            c["examples"].append(t[:60])
+    ranked = sorted(cats.values(),
+                    key=lambda c: (-c["count"], c["category"]))
+    total = len(items)
+    for c in ranked:
+        c["share"] = c["count"] / total if total else 0.0
+    return {"categories": ranked, "total": total,
+            "owner": sum(c["owner"] for c in ranked),
+            "gauntlet": sum(c["gauntlet"] for c in ranked)}
+
+
+def by_category_text(rep: dict) -> str:
+    if not rep["total"]:
+        return "no misses: every labelled turn was right first time"
+    lines = [f"failures by category ({rep['owner']} owner-labelled, "
+             f"{rep['gauntlet']} gauntlet):"]
+    for c in rep["categories"]:
+        ex = "; ".join(repr(e) for e in c["examples"])
+        lines.append(f"  {c['count']:>3}x {100 * c['share']:>3.0f}%  "
+                     f"{c['category']:<18} owner {c['owner']}, gauntlet "
+                     f"{c['gauntlet']}" + (f"  e.g. {ex}" if ex else ""))
+    return "\n".join(lines)
 
 
 def misses_text(rows: list) -> str:
