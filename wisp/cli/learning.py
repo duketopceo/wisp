@@ -1,5 +1,6 @@
 """Learning and telemetry: learn, skills, trace."""
 import io
+import os
 
 from .registry import GROUPS, CliError, command
 
@@ -28,18 +29,29 @@ def _eval_args(p):
                    help="group the turns that were not right first time")
     p.add_argument("--unlabelled", action="store_true",
                    help="list recent turns that still need a label")
+    p.add_argument("--by-category", action="store_true",
+                   help="roll the misses up into failure categories")
+    p.add_argument("--gauntlet", action="append", default=[], metavar="RUN",
+                   help="with --by-category: also count the failed attempts "
+                        "of this gauntlet run dir or rows.jsonl (repeatable)")
     p.add_argument("--limit", type=int, default=10, metavar="N",
                    help="groups or turns to list (default 10)")
 
 
 @command("eval", "End-to-end eval: first-time-correct rate per turn kind",
          ["wispd eval", "wispd eval --json", "wispd eval --misses",
-          "wispd eval --unlabelled --limit 20"],
+          "wispd eval --unlabelled --limit 20",
+          "wispd eval --by-category --gauntlet ~/runs/gauntlet-1"],
          {"kinds": "dict", "total": "dict", "gate": "dict",
           "langs": "dict", "since": "str", "latency": "list"},
          args=_eval_args)
 def eval_cmd(ctx, a):
     from .. import config, learn
+    if a.by_category:
+        rep = learn.eval_by_category(
+            gauntlet=[os.path.abspath(os.path.expanduser(g))
+                      for g in a.gauntlet], cfg=config.load_config())
+        return ctx.emit(rep, learn.by_category_text(rep))
     if a.misses:
         rows = learn.eval_misses(top=a.limit)
         return ctx.emit({"misses": rows}, learn.misses_text(rows))
