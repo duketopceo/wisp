@@ -86,7 +86,13 @@ IFS= read -r k
 # which the host's build lacks)
 export XDG_RUNTIME_DIR=\"/run/user/\$(id -u)\" WAYLAND_DISPLAY=wayland-1 XDG_SESSION_TYPE=wayland
 export HYPRLAND_INSTANCE_SIGNATURE=\"\$(ls -t \"\$XDG_RUNTIME_DIR/hypr\" | grep -v lock | head -1)\"
-python3 scripts/isolated_session.py start >&2 || exit 2
+# the nested window sometimes does not map in time on slow GPUs: retry
+up=0
+for i in 1 2 3; do
+  if python3 scripts/isolated_session.py start >&2; then up=1; break; fi
+  python3 scripts/isolated_session.py stop >&2 || true
+done
+[ \"\$up\" = 1 ] || exit 2
 rc=0
 OPENROUTER_API_KEY=\"\$k\" python3 scripts/gauntlet.py --session isolated$gargs || rc=\$?
 unset k
