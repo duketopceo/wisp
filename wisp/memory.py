@@ -208,6 +208,8 @@ def sync_constitution(constitution: str | None = None) -> str:
     except FileNotFoundError:
         current = None
         lines = _MEMORY_HEAD.splitlines()
+    except OSError:
+        return f"FAIL (cannot read memory file at {MEMORY_FILE})"
     kept = _drop_managed_region(lines)
     while kept and kept[-1] == "":
         kept.pop()

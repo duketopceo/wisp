@@ -162,6 +162,15 @@ class MemoryTest(unittest.TestCase):
         self.assertIn(str(missing), out)
         self.assertFalse(self.mf.exists())
 
+    def test_sync_unreadable_memory_fails_without_writing(self):
+        self.mf.mkdir()
+        const = self.tmp / "constitution.md"
+        const.write_text("a fact\n")
+        out = memory.sync_constitution(str(const))
+        self.assertIn("FAIL", out)
+        self.assertIn(str(self.mf), out)
+        self.assertEqual(list(self.mf.iterdir()), [])
+
     def test_sync_over_budget_does_not_write(self):
         original = b"# Memory\n\n- keep me\n"
         self.mf.write_bytes(original)
