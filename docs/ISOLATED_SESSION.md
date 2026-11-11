@@ -138,3 +138,21 @@ Live smoke command (from the owner's Hyprland session, with its own
     python scripts/isolated_session.py smoke --soak-seconds 0
 
 then, once that passes, without `--soak-seconds 0` for the 30-minute soak.
+
+## Unattended runs on a separate host
+
+`scripts/gauntlet/remote.sh` runs the gauntlet on another machine so the
+owner's desktop is never used:
+
+    WISP_GAUNTLET_HOST=<host> scripts/gauntlet/remote.sh --ref <branch> -- \
+        --repeats 3 --profiles openrouter --cap 10
+
+It syncs the host checkout (`~/wisp-gauntlet`) to the ref, starts the
+isolated session there (nested mode from the host's logged-in Hyprland
+seat when its aquamarine has no `AQ_BACKENDS`), runs the gauntlet with
+`--session isolated`, stops the session and copies the run directory to
+`~/.local/share/wisp-gauntlet/runs/`. The eval key is read locally
+(`omaseal get openrouter orchestral`, or `$WISP_GAUNTLET_KEY_CMD`) and
+sent only over the ssh stdin pipe; the host stores no secret. With
+`--repeats N` the report adds a per-case pass rate and spread table and
+writes `stats.jsonl`.

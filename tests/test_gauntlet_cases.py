@@ -36,7 +36,7 @@ class Battery(unittest.TestCase):
 
     def test_every_case_parses_and_validates(self):
         self.assertGreaterEqual(len(self.cases), 18)
-        self.assertLessEqual(len(self.cases), 24)
+        self.assertLessEqual(len(self.cases), 40)
         ids = [c["id"] for c in self.cases]
         self.assertEqual(len(ids), len(set(ids)))
         for c in self.cases:
@@ -89,7 +89,16 @@ class Battery(unittest.TestCase):
         self.assertEqual({c["category"] for c in held},
                          set(G.CATEGORIES))
         share = len(held) / len(self.cases)
-        self.assertTrue(0.25 <= share <= 0.45, share)
+        # R2: at least 15 held-out cases, so the share runs higher than
+        # the original 25-45% band
+        self.assertGreaterEqual(len(held), 15)
+        self.assertTrue(0.25 <= share <= 0.65, share)
+
+    def test_two_monitor_case_runs_only_where_outputs_exist(self):
+        c = next(c for c in self.cases
+                 if c["check"]["type"] == "window_monitor")
+        self.assertTrue(c["held_out"])
+        self.assertEqual(c["sessions"], ["isolated"])
 
     def test_every_category_has_tuning_cases_to_rank_failures_from(self):
         tuning = {c["category"] for c in self.cases if not c["held_out"]}
