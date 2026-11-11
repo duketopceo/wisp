@@ -3,6 +3,7 @@ name: dayflow-bridge
 description: Query the local dayflow work journal — timelines, blocks, insights, agent sessions — for context and pattern questions
 tool: dayflow.sh
 tier: safe
+requires_bin: dayflow
 ---
 # dayflow-bridge
 

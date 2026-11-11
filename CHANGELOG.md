@@ -17,6 +17,7 @@ How this file is kept:
 
 ## Unreleased
 
+- A new install does not copy personal skills or a private constitution into memory. `wispd sync` writes a memory block only when `[memory] constitution` names a file, and it imports skills only from `[skills] import_dir`. The default speech prompt is a short product list.
 - Double-tap Control to type a question instead of speaking it: a small box opens, Enter asks through the same conversation as voice, and Esc closes it. If your desktop cannot bind a lone Control key, `[composer] fallback_chord` (default `SUPER + SHIFT + SPACE`) opens it.
 - Answers use the text of the window you are in: Wisp reads it from the accessibility tree, then the cua tree, then OCR when `tesseract` is installed, and quotes it to the model as untrusted reference. Sensitive windows give nothing, and that text stays out of logs.
 - On more than one monitor, points, the cursor buddy and your ink follow the monitor of the window you are in. Walkthrough steps finish when you click the target or when its label text changes, so they notice what you actually did.

@@ -240,16 +240,22 @@ def connect_add(ctx, a):
 
 
 def _sync_args(p):
-    p.add_argument("repo", nargs="?", help="luke-agents checkout (default "
-                   "the standard location)")
+    p.add_argument("constitution", nargs="?",
+                   help="constitution file; overrides [memory] constitution")
 
 
 @command("sync", "Refresh the MEMORY constitution block and import skills",
          ["wispd sync"], _TEXT, args=_sync_args)
 def sync(ctx, a):
     from .. import memory as _m, skills as _sk
-    lines = [_m.sync_constitution(a.repo),
-             _sk.import_dir("~/Documents/github/personal/luke-agents/_LUKE")]
+    configured = ((ctx.cfg.get("memory") or {}).get("constitution") or "")
+    constitution = a.constitution if a.constitution else configured
+    import_dir = ((ctx.cfg.get("skills") or {}).get("import_dir") or "").strip()
+    lines = [_m.sync_constitution(constitution or None)]
+    if import_dir:
+        lines.append(_sk.import_dir(import_dir))
+    else:
+        lines.append("import is not configured")
     _sk.write_index_json()
     text = "\n".join(str(x) for x in lines)
     return ctx.emit({"text": text}, text)

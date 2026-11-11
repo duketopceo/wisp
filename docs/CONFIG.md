@@ -93,7 +93,7 @@ Setup, the rules it keeps and Stop: `docs/BROWSER_LANE.md`.
 | `base_url` | groq URL | endpoint for `openai` provider |
 | `model` | `whisper-large-v3-turbo` | STT model id |
 | `key_env` | `GROQ_API_KEY` | env var / `.env` key name holding the key |
-| `prompt` | `""` | vocab priming (names, jargon) |
+| `prompt` | `Wisp, wispd, Omarchy, Hyprland, OpenRouter` | vocab priming (names, jargon). A short product list; set your own comma-separated terms to extend it. The recognizer keeps at most 14 terms |
 | `language` | `auto` | the language you speak. `auto`: the hosted model detects it and the answer and the spoken voice follow it. Or pin one (`es`, `de`, `fr`, `ja`, `pt-BR`, ...). English changes nothing. The local `small.en` model is English only: with `provider = "local"` and a `.en` model a non-English language is refused out loud, not guessed. Dictation is typed in the language you spoke and never translated |
 | `streaming` | `true` | with the `openai` provider, send finished chunks of a long utterance while the key is held, so only the last part is left to transcribe on release; any failure falls back to one request for the whole recording |
 
@@ -105,6 +105,18 @@ Setup, the rules it keeps and Stop: `docs/BROWSER_LANE.md`.
 | `calendar` | `"https://calendar.google.com"` | same, for the `calendar` role |
 
 An absent or empty key uses the default, so a config file without a `[web]` section works unchanged. Values cannot contain `#`: the config parser treats it as a comment.
+
+## [memory] — opt-in constitution
+
+| key | default | meaning |
+|-----|---------|---------|
+| `constitution` | empty | File whose own lines become the managed block in `MEMORY.md`. Empty means `wispd sync` and daemon start do not read a checkout or write that block |
+
+## [skills] — opt-in skill import
+
+| key | default | meaning |
+|-----|---------|---------|
+| `import_dir` | empty | Directory of `*/SKILL.md` trees. Empty means `wispd sync` imports nothing. The positional `wispd sync` argument overrides `constitution`; it is not an import directory |
 
 ## [growth] — private weekly recap
 
