@@ -3,7 +3,7 @@ usage: wispd sync [-h] [--json] [--quiet] [--no-color] [repo]
 Refresh the MEMORY constitution block and import skills
 
 positional arguments:
-  repo         luke-agents checkout (default the standard location)
+  repo         constitution file; overrides [memory] constitution
 
 options:
   -h, --help   show this help message and exit

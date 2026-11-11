@@ -368,6 +368,15 @@ prompt = "Wisp, wispd, Omarchy, Hyprland, Jev, OpenRouter, dayflow, omaseal, oma
 mail = "https://mail.google.com"
 calendar = "https://calendar.google.com"
 
+[memory]
+# Opt-in constitution file. Empty means sync does not read or write
+# a managed block in MEMORY.md.
+constitution = ""
+
+[skills]
+# Opt-in directory of */SKILL.md trees. Empty means sync imports nothing.
+import_dir = ""
+
 [dictation]
 # what `dictate` does with the transcript: raw (verbatim), cleanup
 # (grammar/spelling pass, words preserved), compose (ramble -> finished

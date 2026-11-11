@@ -992,7 +992,8 @@ def run_daemon(cfg: dict) -> int:
     skills.seed()          # bundled dayflow-bridge/self-checkup skills
     skills.write_index_json()  # panel reads this without spawning IPC
     theme.emit(cfg)        # theme.json for the QML surfaces
-    dlog(_memory.sync_constitution())  # luke-agents -> MEMORY.md block
+    constitution = ((cfg.get("memory") or {}).get("constitution") or "").strip()
+    dlog(_memory.sync_constitution(constitution or None))
     from wisp import inventory as _inv
     if not _inv.fresh():
         inv = _inv.scan(cfg)
