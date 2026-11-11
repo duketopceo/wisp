@@ -202,6 +202,59 @@ class Seed(unittest.TestCase):
             self.assertTrue(self.seeded(str(b)))
         self.assertFalse(self.seeded("/nonexistent"))
 
+    def _seed_into(self, path):
+        td = tempfile.TemporaryDirectory()
+        dst = pathlib.Path(td.name) / "skills"
+        patch = mock.patch.object(skills, "SKILLS_DIR", dst)
+        env = mock.patch.dict(os.environ, {"PATH": path})
+        patch.start()
+        env.start()
+        try:
+            skills.seed()
+        finally:
+            env.stop()
+            patch.stop()
+        return td, dst
+
+    def test_empty_path_skips_personal_and_gated_seeds(self):
+        td, dst = self._seed_into("")
+        try:
+            for name in ("luke-agents", "omarchy-bridge", "design-md",
+                         "dayflow-bridge", "omarchy"):
+                self.assertFalse((dst / name).exists(), name)
+        finally:
+            td.cleanup()
+
+    def test_dayflow_on_path_copies_dayflow_bridge(self):
+        with tempfile.TemporaryDirectory() as bin_td:
+            b = pathlib.Path(bin_td)
+            (b / "dayflow").write_text("#!/bin/sh\n")
+            (b / "dayflow").chmod(0o755)
+            td, dst = self._seed_into(str(b))
+            try:
+                self.assertTrue((dst / "dayflow-bridge" / "SKILL.md").is_file())
+                self.assertTrue((dst / "dayflow-bridge" / "dayflow.sh").is_file())
+                self.assertFalse((dst / "omarchy").exists())
+            finally:
+                td.cleanup()
+
+    def test_an_existing_user_skill_is_not_overwritten(self):
+        with tempfile.TemporaryDirectory() as td:
+            dst = pathlib.Path(td) / "skills"
+            marker = dst / "self-checkup" / "SKILL.md"
+            marker.parent.mkdir(parents=True)
+            original = "---\nname: self-checkup\n---\nUSER COPY\n"
+            marker.write_text(original)
+            with mock.patch.object(skills, "SKILLS_DIR", dst), \
+                    mock.patch.dict(os.environ, {"PATH": ""}):
+                skills.seed()
+            self.assertEqual(marker.read_text(), original)
+
+    def test_personal_seed_directories_are_not_bundled(self):
+        seed = ROOT / "wisp/skills_seed"
+        for name in ("luke-agents", "omarchy-bridge", "design-md"):
+            self.assertFalse((seed / name).exists(), name)
+
 
 class IntoTheTurn(Fixture):
     def test_context_stage_adds_it_and_ask_chat_carries_it(self):
