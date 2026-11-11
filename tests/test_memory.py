@@ -176,7 +176,7 @@ class MemoryTest(unittest.TestCase):
         ctx._cfg = cfg
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            rc = settings_cli.sync(ctx, mock.Mock(repo=repo))
+            rc = settings_cli.sync(ctx, mock.Mock(constitution=repo))
         return rc, buf.getvalue()
 
     def test_sync_import_dir_unset_copies_nothing(self):

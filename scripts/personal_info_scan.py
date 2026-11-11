@@ -25,7 +25,7 @@ def _parse(text: str) -> list[str]:
 
 def _redact(text: str, tokens: list[str]) -> str:
     out = text
-    for token in sorted(tokens, key=len, reverse=True):
+    for token in tokens:
         if not token:
             continue
         folded = out.casefold()
@@ -53,7 +53,8 @@ def _load(redact_tokens: list[str]) -> tuple[str, list[str]]:
             text = path.read_text(encoding="utf-8")
         except OSError:
             message = _redact(
-                f"cannot read denylist file: {path}", redact_tokens)
+                f"cannot read denylist file: {path}",
+                sorted(redact_tokens, key=len, reverse=True))
             print(message, file=sys.stderr)
             return "fail", []
         return "scan", _parse(text)
@@ -64,12 +65,19 @@ def _load(redact_tokens: list[str]) -> tuple[str, list[str]]:
     return "scan", _parse(inline)
 
 
-def _binary(path: pathlib.Path) -> bool:
+def _text(path: pathlib.Path) -> str | None:
     try:
-        chunk = path.read_bytes()[:8192]
+        with path.open("rb") as handle:
+            chunk = handle.read(8192)
+            if b"\x00" in chunk:
+                return None
+            rest = handle.read()
     except OSError:
-        return True
-    return b"\x00" in chunk
+        return None
+    try:
+        return (chunk + rest).decode("utf-8")
+    except UnicodeError:
+        return None
 
 
 def _hits(root: pathlib.Path, tokens: list[str]) -> list[str]:
@@ -82,11 +90,8 @@ def _hits(root: pathlib.Path, tokens: list[str]) -> list[str]:
             if name == "LICENSE":
                 continue
             path = pathlib.Path(dirpath) / name
-            if _binary(path):
-                continue
-            try:
-                text = path.read_text(encoding="utf-8")
-            except (OSError, UnicodeError):
+            text = _text(path)
+            if text is None:
                 continue
             rel = path.relative_to(root).as_posix()
             for number, line in enumerate(text.splitlines(), 1):
@@ -107,7 +112,8 @@ def main(argv: list[str]) -> int:
     if mode == "fail":
         return 2
     root = pathlib.Path(argv[1])
-    redact_with = list(dict.fromkeys(inline + tokens))
+    redact_with = sorted(
+        dict.fromkeys(inline + tokens), key=len, reverse=True)
     hits = _hits(root, tokens)
     for hit in hits:
         print(_redact(hit, redact_with))

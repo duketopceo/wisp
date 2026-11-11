@@ -240,7 +240,7 @@ def connect_add(ctx, a):
 
 
 def _sync_args(p):
-    p.add_argument("repo", nargs="?",
+    p.add_argument("constitution", nargs="?",
                    help="constitution file; overrides [memory] constitution")
 
 
@@ -249,7 +249,7 @@ def _sync_args(p):
 def sync(ctx, a):
     from .. import memory as _m, skills as _sk
     configured = ((ctx.cfg.get("memory") or {}).get("constitution") or "")
-    constitution = a.repo if a.repo else configured
+    constitution = a.constitution if a.constitution else configured
     import_dir = ((ctx.cfg.get("skills") or {}).get("import_dir") or "").strip()
     lines = [_m.sync_constitution(constitution or None)]
     if import_dir:

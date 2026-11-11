@@ -182,7 +182,7 @@ def _drop_managed_region(lines: list[str]) -> list[str]:
     return out
 
 
-def sync_constitution(repo: str | None = None) -> str:
+def sync_constitution(constitution: str | None = None) -> str:
     """Write a managed constitution block from a file's own lines.
 
     No path (None or empty) reports not configured and does not create
@@ -190,26 +190,30 @@ def sync_constitution(repo: str | None = None) -> str:
     not write. The result must fit MEMORY_BUDGET or the call fails
     without writing. Other memory lines stay; the file is not deduped.
     """
-    path = (repo or "").strip()
-    if not path:
+    raw = (constitution or "").strip()
+    if not raw:
         return "not configured"
-    base = pathlib.Path(path).expanduser()
-    if not base.is_file():
-        return f"FAIL (no constitution file at {base})"
+    file = pathlib.Path(raw).expanduser()
     try:
-        bullets = _constitution_bullets(
-            base.read_text(encoding="utf-8", errors="replace"))
+        source = file.read_text(encoding="utf-8", errors="replace")
+    except (FileNotFoundError, IsADirectoryError):
+        return f"FAIL (no constitution file at {file})"
     except OSError:
-        return f"FAIL (cannot read constitution file at {base})"
+        return f"FAIL (cannot read constitution file at {file})"
+    bullets = _constitution_bullets(source)
     block = [_SYNC_BEGIN, *bullets, _SYNC_END]
-    if MEMORY_FILE.exists():
-        lines = MEMORY_FILE.read_text(encoding="utf-8", errors="replace").splitlines()
-    else:
+    try:
+        current = MEMORY_FILE.read_text(encoding="utf-8", errors="replace")
+        lines = current.splitlines()
+    except FileNotFoundError:
+        current = None
         lines = _MEMORY_HEAD.splitlines()
     kept = _drop_managed_region(lines)
     while kept and kept[-1] == "":
         kept.pop()
     text = "\n".join(kept + ["", *block]).rstrip() + "\n"
+    if current == text and len(text) <= MEMORY_BUDGET:
+        return f"OK (constitution synced — {len(bullets)} facts)"
     err = _save(MEMORY_FILE, text, MEMORY_BUDGET)
     if err:
         return f"FAIL ({err})"

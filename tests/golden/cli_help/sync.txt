@@ -1,17 +1,17 @@
-usage: wispd sync [-h] [--json] [--quiet] [--no-color] [repo]
+usage: wispd sync [-h] [--json] [--quiet] [--no-color] [constitution]
 
 Refresh the MEMORY constitution block and import skills
 
 positional arguments:
-  repo         constitution file; overrides [memory] constitution
+  constitution  constitution file; overrides [memory] constitution
 
 options:
-  -h, --help   show this help message and exit
+  -h, --help    show this help message and exit
 
 global options:
-  --json       machine-readable output (one JSON object)
-  --quiet, -q  print nothing on success
-  --no-color   plain output (also NO_COLOR, or not a tty)
+  --json        machine-readable output (one JSON object)
+  --quiet, -q   print nothing on success
+  --no-color    plain output (also NO_COLOR, or not a tty)
 
 Examples:
   wispd sync
