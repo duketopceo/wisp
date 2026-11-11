@@ -567,6 +567,17 @@ class WebConfigTemplateTest(unittest.TestCase):
                 cfg = config.load_config()
         self.assertIn("prompt", cfg["stt"])
         self.assertEqual(set(cfg["web"]), {"mail", "calendar"})
+        from wisp import vocab
+        terms = [t.strip() for t in cfg["stt"]["prompt"].split(",")
+                 if t.strip()]
+        self.assertGreaterEqual(len(terms), 1)
+        self.assertLessEqual(len(terms), vocab._MAX_TERMS)
+
+    def test_user_prompt_is_what_vocab_uses(self):
+        from wisp import vocab
+        cfg = {"stt": {"prompt": "Zorblax, Nimbus",
+                       "vocab_dynamic": "false"}}
+        self.assertEqual(vocab.build(cfg), "Zorblax, Nimbus")
 
 
 class MultiProfileBrowserTests(unittest.TestCase):

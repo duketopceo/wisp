@@ -359,7 +359,7 @@ language = "auto"
 
 # vocabulary priming — project names, jargon; whisper.cpp --prompt /
 # `prompt` param on the openai provider (huge accuracy win on names)
-prompt = "Wisp, wispd, Omarchy, Hyprland, Jev, OpenRouter, dayflow, omaseal, omarchy plugins, RetroArch, Steam, Discord, VS Code, Kubernetes, k8s, Tailscale, Waybar, Quickshell, Robinhood, TradingView, Polymarket, YouTube, Gmail, Linear, Stripe, Supabase, GitHub, Particle AI"
+prompt = "Wisp, wispd, Omarchy, Hyprland, OpenRouter"
 
 [web]
 # Web app a role opens when its default handler is a browser (a native
