@@ -22,7 +22,7 @@ import time
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from wisp import desktop as _desktop  # noqa: E402
-from wisp import cancel, config, ipc, pipeline, speech, state as state_mod, trace as _trace  # noqa: E402
+from wisp import cancel, config, endpoint as _endpoint, ipc, pipeline, speech, state as state_mod, trace as _trace  # noqa: E402
 
 # daemon-scoped handles the rec watchdog needs (set in run_daemon)
 _DAEMON_ST = None
@@ -99,7 +99,15 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
                                  daemon=True).start()
             with ctl["rec_lock"]:
                 if phase == "start" and ctl["rec"] is not None:
-                    return {"ok": True, "recording": True}
+                    # a press while recording is the toggle's second press
+                    # (a lost key-up leaves the recorder open): stop and
+                    # submit. A press right after the start, or during a
+                    # mini capture, is a bounce and is ignored.
+                    age = time.monotonic() - ctl["rec"].get("t0", 0)
+                    if ctl.get("mini") is not None \
+                            or age < _TOGGLE_MIN_S:
+                        return {"ok": True, "recording": True}
+                    phase = ""
                 if phase == "stop" and ctl["rec"] is None:
                     return {"ok": True, "stopped": True}
                 if ctl["rec"] is not None:
@@ -216,7 +224,9 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
                     dlog(f"speculative context off: {e}")
                     spec = None
                 try:
-                    ctl["rec"] = pipeline.record_start(th)
+                    ctl["rec"] = pipeline.record_start(
+                        th, on_silence=lambda ev: _silence_stop(ctl, ev),
+                        silence_s=_endpoint.silence_seconds(cfg))
                 except RuntimeError as e:
                     if spec is not None:
                         spec.cancel()
@@ -642,6 +652,22 @@ def _wait_for_choice(ctl: dict, token=None):
     if aq is not None:
         aq.withdraw()   # a turn's prompt outranks a published agent ask
     return broker.waiter(token)
+
+
+_TOGGLE_MIN_S = 1.0   # a second press sooner than this is a bounce
+
+
+def _silence_stop(ctl: dict, sampler_stop) -> None:
+    """The speaker finished (speech, then silence): end and submit the
+    open capture exactly like the second press. Ignored when that
+    capture is already over or belongs to a mini capture."""
+    with ctl["rec_lock"]:
+        rec = ctl["rec"]
+        if rec is None or ctl.get("mini") is not None \
+                or rec.get("sampler_stop") is not sampler_stop:
+            return
+    dlog("listen: silence after speech, stopping capture")
+    _rec_watchdog(ctl, 0)
 
 
 def _rec_watchdog(ctl: dict, secs: int) -> None:

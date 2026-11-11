@@ -62,9 +62,12 @@ def record(seconds: int, state=None) -> pathlib.Path:
     return _record_finish(rec, state)
 
 
-def record_start(state=None) -> dict:
+def record_start(state=None, on_silence=None, silence_s: float = 0.0
+                 ) -> dict:
     """Toggle capture: spawn the recorder unbounded + the level sampler.
-    Returns a handle for record_stop()."""
+    Returns a handle for record_stop(). With `on_silence` and
+    `silence_s > 0`, the sampler calls `on_silence(sampler_stop_event)`
+    once when speech was heard and then `silence_s` of quiet follows."""
     out = config.CFG_DIR / "utterance.wav"
     config.RUN_DIR.mkdir(parents=True, exist_ok=True)
     out.unlink(missing_ok=True)
@@ -85,7 +88,9 @@ def record_start(state=None) -> dict:
         rec["sampler_stop"] = threading.Event()
         rec["sampler"] = threading.Thread(
             target=_amplitude_sampler,
-            args=(None, state, rec["sampler_stop"]), daemon=True)
+            args=(None, state, rec["sampler_stop"]),
+            kwargs={"on_silence": on_silence, "silence_s": silence_s},
+            daemon=True)
         rec["sampler"].start()
         env = _pl().hypr_env()
 
@@ -215,7 +220,8 @@ _LEVEL_WINDOW = 20
 
 
 def _amplitude_sampler(seconds: int | None, state=None,
-                       stop_ev=None) -> None:
+                       stop_ev=None, on_silence=None,
+                       silence_s: float = 0.0) -> None:
     """Breathing darkness: sample mic RMS, publish level for the overlay."""
     from . import platform
     arec = platform.sampler_cmd(seconds)
@@ -228,6 +234,10 @@ def _amplitude_sampler(seconds: int | None, state=None,
         else:
             config.LEVEL_FILE.write_text(f"{v:.3f}")
 
+    endpoint = None
+    if on_silence is not None and silence_s > 0:
+        from . import endpoint as _endpoint
+        endpoint = _endpoint.SilenceEndpoint(silence_s)
     proc = None
     try:
         proc = subprocess.Popen(
@@ -247,7 +257,13 @@ def _amplitude_sampler(seconds: int | None, state=None,
             if len(w) < _LEVEL_WINDOW:
                 continue  # short tail at EOF — next read ends the loop
             rms = sum(abs(b - 128) for b in w) / (len(w) * 128)
-            publish(min(1.0, rms * 6))
+            level = min(1.0, rms * 6)
+            publish(level)
+            if endpoint is not None and endpoint.feed(
+                    level, time.monotonic()):
+                # off this thread: stopping the capture joins the sampler
+                threading.Thread(target=on_silence, args=(stop_ev,),
+                                 daemon=True).start()
     except Exception:
         try:
             publish(0.0)
@@ -607,6 +623,13 @@ def capture_stage(ctx) -> bool:
         state.transition("done", result="heard nothing")
         pl.notify("Heard nothing", **pl._toast_ctx(state, ctx.turn, cfg))
         return False
+    from . import garbage, vocab
+    why = garbage.looks_like_garbage(
+        text, vocab.build(cfg), garbage.wav_seconds(wav))
+    if why:
+        # prompt echo or a looping model: never route it as a request
+        _trace.emit(ctx.turn, "stt_garbage", "stt", {"reason": why})
+        return _refuse_language(ctx, garbage.REPLY)
     return True
 
 

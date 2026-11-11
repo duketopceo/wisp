@@ -1,23 +1,22 @@
-"""Dynamic whisper vocabulary priming — built from what Wisp knows,
-not a hand-maintained string.
+"""Short whisper vocabulary priming.
 
-Sources: learned apps (harness.json), installed skill names, omarchy
-plugin names, recent window titles (activity.jsonl), MEMORY/USER proper
-nouns, plus the user's static [stt] prompt appended verbatim. Result is
-cached in vocab.txt and rebuilt at most once per VOCAB_TTL_S.
+A speech model treats the prompt as text that came just before the clip,
+so a long list of names gets echoed back as the transcript. The prompt is
+therefore small on purpose: the user's static [stt] prompt, a few core
+terms, the focused app, and the few apps used most lately. Never the
+installed-app inventory. The result is also written to vocab.txt.
 """
 import json
-import re
-import time
 
-from . import config, skills
+from . import config
 
 CACHE = config.DATA_DIR / "vocab.txt"
 ACTIVITY = config.DATA_DIR / "activity.jsonl"
-HARNESS = config.DATA_DIR / "harness.json"
-VOCAB_TTL_S = 3600
-_MAX_TERMS = 80           # ~200 tokens — well under n_text_ctx/2
-_WORD = re.compile(r"[A-Za-z][\w.+-]{2,}")
+_MAX_TERMS = 14           # hard cap on the whole prompt
+_MAX_CHARS = 160
+_TOP_APPS = 3
+# product names a speaker may say that a model would otherwise misspell
+CORE_TERMS = ("Wisp", "Omarchy", "Hyprland", "OpenRouter")
 
 # window-title noise — generic tokens that add nothing
 _STOP = {"the", "and", "for", "with", "this", "that", "com", "www",
@@ -39,85 +38,58 @@ def _jsonl_tail(path, n: int) -> list:
     return out
 
 
-def _title_terms() -> list:
-    seen, out = set(), []
-    for rec in _jsonl_tail(ACTIVITY, 40):
-        win = rec.get("window") or {}
-        for w in _WORD.findall(win.get("title", "") +
-                               " " + win.get("app", "")):
-            wl = w.lower()
-            if wl in _STOP or wl in seen:
-                continue
-            seen.add(wl)
-            out.append(w)
+def _app_terms() -> list:
+    """The focused window's app class, then the most-used recent apps."""
+    out = []
+    try:
+        from . import platform
+        app = (platform.active_window() or {}).get("app", "")
+        if app:
+            out.append(app)
+    except Exception:
+        pass
+    counts = {}
+    for rec in _jsonl_tail(ACTIVITY, 200):
+        app = ((rec.get("window") or {}).get("app") or "").strip()
+        if app:
+            counts[app] = counts.get(app, 0) + 1
+    out += sorted(counts, key=lambda a: (-counts[a], a))[:_TOP_APPS]
     return out
 
 
-def _file_terms(path) -> list:
-    """Capitalized words + `code spans` from a markdown file."""
-    try:
-        text = path.read_text()
-    except OSError:
-        return []
-    terms = set(re.findall(r"`([^`\n]{3,30})`", text))
-    terms.update(w for w in _WORD.findall(text)
-                 if w[0].isupper() and w.lower() not in _STOP)
-    return sorted(terms)
-
-
 def collect(cfg: dict) -> list:
-    """Ordered unique term list — harness apps first (most-spoken)."""
+    """Ordered unique short term list: the user's static prompt first
+    (explicit choices), then core terms, the focused app and a few
+    most-used apps. At most _MAX_TERMS terms and _MAX_CHARS characters."""
     terms, seen = [], set()
+    size = 0
 
     def add(term: str):
+        nonlocal size
         t = term.strip()
         k = t.lower()
-        if len(t) > 2 and k not in seen and k not in _STOP:
+        if len(t) > 2 and k not in seen and k not in _STOP \
+                and len(terms) < _MAX_TERMS \
+                and size + len(t) + 2 <= _MAX_CHARS:
             seen.add(k)
             terms.append(t)
+            size += len(t) + 2
 
-    # user's static prompt terms first — explicit choices beat the cap
     for t in (cfg.get("stt", {}).get("prompt") or "").split(","):
         add(t)
-    try:
-        for app in json.loads(HARNESS.read_text()).get("apps", {}):
-            add(app)
-    except (OSError, ValueError):
-        pass
-    try:
-        from . import inventory
-        for tool in (inventory.load().get("cli_tools") or {}):
-            add(tool)
-    except Exception:
-        pass
-    import pathlib
-    plug = pathlib.Path.home() / ".config/omarchy/plugins"
-    if plug.is_dir():
-        for d in sorted(plug.iterdir()):
-            add(d.name.split(".")[-1])  # io.github.duketopceo.wisp → wisp
-    for d in sorted(skills.SKILLS_DIR.iterdir()) \
-            if skills.SKILLS_DIR.is_dir() else []:
-        add(d.name.replace("-", " "))
-    for t in _title_terms():
+    for t in CORE_TERMS:
         add(t)
-    from . import memory
-    for t in _file_terms(memory.MEMORY_FILE) + _file_terms(
-            memory.USER_FILE):
+    for t in _app_terms():
         add(t)
-    return terms[:_MAX_TERMS]
+    return terms
 
 
 def build(cfg: dict) -> str:
-    """Priming string for whisper. Cached VOCAB_TTL_S unless
-    [stt] vocab_dynamic = "false" (then static prompt only)."""
+    """Priming string for the speech model, used by every provider that
+    takes a prompt. [stt] vocab_dynamic = "false" -> static prompt only."""
     static = cfg.get("stt", {}).get("prompt", "")
     if cfg.get("stt", {}).get("vocab_dynamic", "true") == "false":
         return static
-    try:
-        if time.time() - CACHE.stat().st_mtime < VOCAB_TTL_S:
-            return CACHE.read_text().strip()
-    except OSError:
-        pass
     terms = collect(cfg)
     text = ", ".join(terms) if terms else static
     try:

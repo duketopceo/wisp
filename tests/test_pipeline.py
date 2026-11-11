@@ -39,19 +39,19 @@ class SttPromptTest(unittest.TestCase):
 
 
 class VocabTest(unittest.TestCase):
-    def test_collect_merges_sources(self):
+    def test_collect_is_short_and_skips_the_app_inventory(self):
         import tempfile
         from unittest import mock
         from wisp import vocab
         d = pathlib.Path(tempfile.mkdtemp())
         (d / "harness.json").write_text(
             '{"apps": {"retroarch": {}, "discord": {}}}')
-        with mock.patch.object(vocab, "HARNESS",
-                               d / "harness.json"), \
-             mock.patch.object(vocab, "ACTIVITY", d / "none"):
+        with mock.patch.object(vocab, "ACTIVITY", d / "none"), \
+             mock.patch("wisp.platform.active_window",
+                        return_value={"app": ""}):
             terms = vocab.collect({"stt": {"prompt": "Omarchy, Jev"}})
         low = [t.lower() for t in terms]
-        self.assertIn("retroarch", low)
+        self.assertNotIn("retroarch", low)
         self.assertIn("omarchy", low)
         self.assertIn("jev", low)
 
