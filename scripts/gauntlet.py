@@ -80,7 +80,8 @@ EXIT_OK, EXIT_FAIL, EXIT_USAGE = 0, 1, 2
 CATEGORIES = ("browser", "files", "terminal", "windows", "menu")
 APPS = sandbox.APPS + ("menu",)
 CHECK_TYPES = ("judge", "title_regex", "file_exists", "url_host", "rsh_log",
-               "window_workspace", "geometry_changed", "window_focused")
+               "window_workspace", "geometry_changed", "window_focused",
+               "window_monitor")
 SESSIONS = ("live", "isolated")
 _ID = re.compile(r"[a-z0-9][a-z0-9-]*")
 TASK_CHARS = 300                # a task line is cut at this many chars
@@ -394,9 +395,36 @@ def _now_id() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
 
 
+def aggregate_repeats(attempts, cases) -> list:
+    """Per (case, arm) pass rate and spread over run 1 attempts that
+    reached a result (a cap-stopped attempt is left out). Rows keep the
+    case order of `cases`, then the arm order of first appearance."""
+    import statistics
+    order = {c["id"]: i for i, c in enumerate(cases)}
+    groups: dict = {}
+    for a in attempts:
+        if a["n"] != 1 or a.get("capped") or a["case"] not in order:
+            continue
+        groups.setdefault((a["case"], a["arm"]), []).append(a)
+    rows = []
+    for (case, arm), xs in groups.items():
+        wins = [1.0 if a["success"] else 0.0 for a in xs]
+        steps = [float(a.get("steps") or 0) for a in xs]
+        rows.append({
+            "case": case, "arm": arm, "runs": len(xs),
+            "passed": int(sum(wins)), "rate": sum(wins) / len(xs),
+            "spread": statistics.pstdev(wins) if len(xs) > 1 else 0.0,
+            "steps_mean": statistics.fmean(steps),
+            "steps_sd": statistics.pstdev(steps) if len(xs) > 1 else 0.0,
+            "held_out": bool(next(c for c in cases
+                                  if c["id"] == case)["held_out"]),
+        })
+    return sorted(rows, key=lambda r: order[r["case"]])
+
+
 class Gauntlet:
     def __init__(self, cases, profiles, gdir, cap, deps, out=print,
-                 only=None, iso=None):
+                 only=None, iso=None, repeats=1):
         self.cases = [c for c in cases if not only or c["id"] in only]
         self.profiles = profiles                      # [(label, ref, dict)]
         self.gdir = pathlib.Path(os.path.abspath(gdir))
@@ -410,6 +438,7 @@ class Gauntlet:
         self.seeded: set = set()
         self.box = None
         self.iso = iso              # isolated session env, or None (live)
+        self.repeats = max(1, int(repeats))
         self._profile_refs: dict = {}
 
     # -- service slot ---------------------------------------------------------
@@ -553,9 +582,18 @@ class Gauntlet:
                     f"${self._case_need(case):.2f}")
                 self.out(self.stopped)
                 return
-            for label, ref, prof in self.profiles:
-                self._case_arm(ci, case, label, ref)
-                if self.stopped:
+            for rep in range(1, self.repeats + 1):
+                for label, ref, prof in self.profiles:
+                    self._case_arm(ci, case, label, ref, rep)
+                    if self.stopped:
+                        return
+                if rep < self.repeats and not self.spend.can_afford(
+                        [self._case_need(case)]):
+                    self.stopped = (
+                        f"spend cap: ${self.spend.remaining():.2f} left "
+                        f"of ${self.cap:.2f}; case {case['id']} repeat "
+                        f"{rep + 1} needs ${self._case_need(case):.2f}")
+                    self.out(self.stopped)
                     return
 
     def _reset_learning(self) -> None:
@@ -570,14 +608,15 @@ class Gauntlet:
         for f in ("trajectories.jsonl", "trajectories.jsonl.1"):
             (self.data / f).unlink(missing_ok=True)
 
-    def _case_arm(self, ci, case, arm, ref) -> None:
+    def _case_arm(self, ci, case, arm, ref, rep=1) -> None:
         self._reset_learning()
-        r1 = self._attempt(ci, case, arm, ref, 1, case["goal"])
+        r1 = self._attempt(ci, case, arm, ref, 1, case["goal"], rep)
         if not case["learnable"] or r1["row"] is None:
             return
         learn = self._attempt(ci, case, arm, ref, "learn",
-                              learn_goal(case, r1.get("win_class", "")))
-        r2 = self._attempt(ci, case, arm, ref, 2, case["goal"])
+                              learn_goal(case, r1.get("win_class", "")),
+                              rep)
+        r2 = self._attempt(ci, case, arm, ref, 2, case["goal"], rep)
         r2["reused"] = bool(r2.get("skill_events"))
         r1["skill"] = skill_outcome(case, r1, r2, r2["reused"])
         r1["skills_saved"] = sorted(
@@ -586,9 +625,10 @@ class Gauntlet:
             if (self.data / "skills").is_dir() else []
         learn["skills_saved"] = r1["skills_saved"]
 
-    def _attempt(self, ci, case, arm, ref, n, goal) -> dict:
-        tag = f"{case['id']}-{arm}-{n}"
-        a = {"case": case["id"], "arm": arm, "n": n, "goal": goal,
+    def _attempt(self, ci, case, arm, ref, n, goal, rep=1) -> dict:
+        tag = f"{case['id']}-{arm}-{n}" + (f"-r{rep}" if rep > 1 else "")
+        a = {"case": case["id"], "arm": arm, "n": n, "rep": rep,
+             "goal": goal,
              "row": None, "passed": None, "success": False, "steps": 0,
              "evidence": None, "skill_events": [], "usd": 0.0}
         self.attempts.append(a)
@@ -609,7 +649,7 @@ class Gauntlet:
         finally:
             self.box.close()
         if n != "learn" and a["row"] is not None:
-            self._store_row(ci, case, arm, n, a["row"])
+            self._store_row(ci, case, arm, n, a["row"], rep)
         return a
 
     def _drive(self, tag, ref, goal, windows):
@@ -695,12 +735,13 @@ class Gauntlet:
             pass
         return out
 
-    def _store_row(self, ci, case, arm, n, row) -> None:
+    def _store_row(self, ci, case, arm, n, row, rep=1) -> None:
         """One merged run store for the whole gauntlet, so a single
         `wispd dev review` covers every judged attempt. Both arms of an
         attempt share an index, so the report pairs them."""
         merged = dict(row, run_id=self.run_id,
-                      index=ci * 3 + _ATTEMPT_INDEX[n], arm=arm,
+                      index=(ci * self.repeats + rep - 1) * 3
+                      + _ATTEMPT_INDEX[n], arm=arm,
                       profile=arm, case=case["id"], attempt=n,
                       goal=row.get("goal") or case["goal"])
         path = self.data / "dev_runs" / f"{self.run_id}.jsonl"
@@ -750,6 +791,13 @@ class Gauntlet:
             out[label] = tally
         return out
 
+    def case_stats(self) -> list:
+        """Per (case, arm) repeat statistics over run 1 attempts: how
+        many ran, how many passed, the pass rate and its spread (the
+        population standard deviation of the 0/1 outcomes), and the
+        spread of step counts. One repeat gives a rate and no spread."""
+        return aggregate_repeats(self.attempts, self.cases)
+
     def ranked_failures(self) -> list:
         """Tuning-case failures (run 1 only), most common class first.
         Held-out cases never feed this list (KTD9)."""
@@ -771,6 +819,9 @@ class Gauntlet:
                 f.write(json.dumps({k: v for k, v in a.items()
                                     if k != "row"} | {"row": a["row"]},
                                    default=str) + "\n")
+        with open(self.rundir / "stats.jsonl", "w", encoding="utf-8") as f:
+            for r in self.case_stats():
+                f.write(json.dumps(r) + "\n")
         text = self.render()
         (self.rundir / "report.md").write_text(text, encoding="utf-8")
         self.out(text)
@@ -780,7 +831,8 @@ class Gauntlet:
         ran = len({a["case"] for a in self.attempts if a["n"] == 1})
         L = [f"# Gauntlet {self.run_id}", "",
              f"- arms: {', '.join(p[0] for p in self.profiles)}",
-             f"- cases run: {ran} of {len(self.cases)}",
+             f"- cases run: {ran} of {len(self.cases)}"
+             f" (repeats per arm: {self.repeats})",
              f"- spend: ${sum(t['usd'] for t in sm.values()):.4f} this run,"
              f" ${self.spend.total():.4f} of ${self.cap:.2f} cumulative"]
         if self.stopped:
@@ -803,6 +855,20 @@ class Gauntlet:
                      f"{frac(t['held_out'])} | {t['skill_wins']} of "
                      f"{t['skill_eligible']} (no headroom "
                      f"{t['skill_excluded']}) | ${t['usd']:.4f} | {prov} |")
+        if self.repeats > 1:
+            L += ["", f"## Per-case pass rate ({self.repeats} repeats)",
+                  "", "| case | arm | pass | rate | spread | steps "
+                  "mean (sd) |", "|---|---|---|---|---|---|"]
+            for r in self.case_stats():
+                L.append(f"| {r['case']} | {r['arm']} | {r['passed']}/"
+                         f"{r['runs']} | {r['rate']:.0%} | "
+                         f"{r['spread']:.2f} | {r['steps_mean']:.1f} "
+                         f"({r['steps_sd']:.1f}) |")
+            flaky = [r for r in self.case_stats() if 0 < r["passed"]
+                     < r["runs"]]
+            L.append("")
+            L.append("flaky (mixed outcomes): " + (", ".join(
+                f"{r['case']} [{r['arm']}]" for r in flaky) or "none"))
         L += ["", "## Ranked failures (tuning cases)", ""]
         ranked = self.ranked_failures()
         if not ranked:
@@ -862,6 +928,9 @@ def build_parser():
     p.add_argument("--dir", default=str(DEFAULT_DIR),
                    help="gauntlet directory (data, config, runs, spend)")
     p.add_argument("--only", default="", help="comma list of case ids")
+    p.add_argument("--repeats", type=int, default=1,
+                   help="run each case this many times per arm and report "
+                   "per-case pass rate and spread (default 1)")
     p.add_argument("--dry-run", action="store_true",
                    help="validate and list the plan; start nothing")
     p.add_argument("--session", choices=("live", "isolated"),
@@ -918,6 +987,9 @@ def main(argv=None, deps=None, out=print) -> int:
     if only and only - {c["id"] for c in cases}:
         out(f"unknown case ids: {sorted(only - {c['id'] for c in cases})}")
         return EXIT_USAGE
+    if args.repeats < 1:
+        out("repeats must be at least 1")
+        return EXIT_USAGE
     if args.cap <= 0:
         out("cap must be above 0")
         return EXIT_USAGE
@@ -927,7 +999,7 @@ def main(argv=None, deps=None, out=print) -> int:
                 out(f"{c['id']:<28} {c['category']:<9} "
                     f"{'held-out' if c['held_out'] else 'tuning':<8} "
                     f"{'learnable' if c['learnable'] else '':<9} "
-                    f"x{len(profiles)} arms")
+                    f"x{len(profiles)} arms x{args.repeats} repeats")
         return EXIT_OK
     iso = None
     if args.session == "isolated":
@@ -954,7 +1026,7 @@ def main(argv=None, deps=None, out=print) -> int:
     old = signal.signal(signal.SIGTERM, _term)
     try:
         g = Gauntlet(cases, profiles, args.dir, args.cap, deps, out, only,
-                     iso=iso)
+                     iso=iso, repeats=args.repeats)
         # an isolated run's own compositor queries and spawned tools
         # resolve the instance, never the live session
         with (isolated.applied_env(iso) if iso

@@ -159,6 +159,7 @@ class Window:
         self.proc, self.port = proc, port
         self.cls = ""                   # the window class, for skill matching
         self.start_geometry: dict = {}
+        self.start_monitor = None       # monitor id at start
 
     def __repr__(self):
         return f"Window({self.app}, {self.address})"
@@ -292,6 +293,7 @@ class Sandbox:
         except Exception:
             pass            # best effort; the check reads the real state
         win.start_geometry = self.geometry(win)
+        win.start_monitor = self.client(win).get("monitor")
         self.windows[app] = win
         return win
 
@@ -418,6 +420,11 @@ def evaluate(check: dict, box: Sandbox):
             now = box.geometry(win)[key]
             return (bool(now) and now != win.start_geometry.get(key),
                     {"before": win.start_geometry.get(key), "now": now})
+        if kind == "window_monitor":
+            win = box.windows[check["app"]]
+            now = box.client(win).get("monitor")
+            return (now is not None and now != win.start_monitor,
+                    {"before": win.start_monitor, "now": now})
         if kind == "window_focused":
             win = box.windows[check["app"]]
             return box.focused() == win.address, {"want": win.address}
