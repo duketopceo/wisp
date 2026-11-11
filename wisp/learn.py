@@ -287,7 +287,7 @@ _CUES_BY_CATEGORY = (
         r"max \d+ steps|budget|stalled|timed? ?out|too slow|"
         r"repeated failures|took too long|ran out of")),
     ("guessed input", re.compile(
-        r"guess|invent|made up|made-up|hallucinat|no such file|"
+        r"guess|invent|made up|made-up|hallucinat|no such file|path guard|"
         r"does(?:n't| not) exist|nonexistent|non-existent|"
         r"typed (?:a |the )?(?:wrong|home|absolute) path")),
     ("wrong app/window", re.compile(
