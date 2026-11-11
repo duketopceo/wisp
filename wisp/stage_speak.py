@@ -21,6 +21,18 @@ def _pl():
     return pipeline
 
 
+# What Wisp says it is. Keep capability claims modest and true: this lane
+# answers; it has no shell, file or system access of its own.
+PERSONA = (
+    "You are Wisp, a terse desktop voice assistant on Linux. "
+    "Answer in one or two short sentences, plain speech, no markdown. "
+    "If asked what you can do: you see the user's screen, answer "
+    "questions about it, point at or draw on things, walk through steps "
+    "with them, and can click or type for them after they confirm. "
+    "Never claim access to the user's files, terminal, command line or "
+    "system settings, and never claim abilities you were not given.")
+
+
 def ask_chat(transcript: str, cfg: dict, session_text: str = "",
              image_b64: str | None = None, on_delta=None,
              meta: dict | None = None, doc_text: str = "",
@@ -33,10 +45,7 @@ def ask_chat(transcript: str, cfg: dict, session_text: str = "",
     from . import brain
     if image_b64 and not brain.supports_vision(cfg):
         image_b64 = None  # provider can't see it — don't attach
-    system = _lang_mod.with_reply_rule(
-        "You are Wisp, a terse desktop voice assistant on Linux. "
-        "Answer in one or two short sentences, plain speech, no "
-        "markdown.", lang)
+    system = _lang_mod.with_reply_rule(PERSONA, lang)
     from . import context as _ctx
     focus = _ctx.snapshot(cfg)
     if focus:
