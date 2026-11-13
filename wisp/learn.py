@@ -16,6 +16,10 @@ LABELS_FILE = config.DATA_DIR / "labels.jsonl"
 
 
 _UNRATABLE = ("CANCELLED", "ERROR")
+# Every terminal failure a named turn can end on. `cut-short` covers stopped
+# runs the bar pill treats the same way (shell-plugin/lib/rate.js), so the two
+# surfaces agree on what an interrupted turn is.
+_CUT_SHORT = ("CANCELLED", "ERROR", "INTERRUPTED", "ABORTED")
 
 
 def label_status(result: str) -> str:
@@ -34,10 +38,12 @@ def label_status(result: str) -> str:
 def label_last(label: str, note: str = "", lang: str = "",
                turn: str = "", out: dict | None = None) -> str:
     """Tag a decisions.jsonl turn correct/incorrect — `wispd eval` reads
-    labels.jsonl keyed by `ref`. With `turn`, that turn's line; without
-    it, the most recent finished line (cancelled and error lines are
-    skipped). A cancelled or errored turn is not_ratable. `out`, when
-    given, receives {"turn": id} of the turn that was labelled."""
+    labels.jsonl keyed by `ref`. With `turn`, that turn's line, whatever
+    its outcome; without it, the most recent finished line (cancelled and
+    error lines are skipped). A cancelled, errored or interrupted turn
+    takes the label as `cut-short`: kept and shown, never counted by the
+    accuracy gate. `out`, when given, receives {"turn": id} of the turn
+    that was labelled."""
     label = {"ok": "correct", "good": "correct",
              "bad": "incorrect"}.get(label, label)
     if label not in ("correct", "incorrect"):
@@ -49,8 +55,13 @@ def label_last(label: str, note: str = "", lang: str = "",
                     if d.get("turn") == turn), None)
         if hit is None:
             return f"not_found: no turn {turn}"
-        if str(hit.get("result", "")).startswith(_UNRATABLE):
-            return f"not_ratable: turn {turn} did not finish"
+        if str(hit.get("result", "")).startswith(_CUT_SHORT):
+            # A turn the owner stopped still deserves their verdict: the
+            # panel offers the same thumbs, and a "it went the wrong way"
+            # note is evidence even when the run never finished. The label
+            # is kept and shown, and recorded as `cut-short` so the
+            # accuracy gate never counts it (see _tally).
+            label = "cut-short"
     else:
         hit = next((d for d in reversed(rows)
                     if not str(d.get("result", "")).startswith(
@@ -103,6 +114,13 @@ def turn_kind(result: str) -> str:
 def _tally(rows: dict, kind: str, label: str) -> None:
     r = rows.setdefault(kind, {"labelled": 0, "correct": 0,
                                "incorrect": 0, "corrected": 0})
+    if label == "cut-short":
+        # A label on a turn that did not finish (cancelled, errored,
+        # interrupted). The owner's judgement is kept and shown, but it
+        # is not an accuracy sample: scoring a run that never reached its
+        # answer as "incorrect" would move the gate on turns the system
+        # was never allowed to complete.
+        return
     r["labelled"] += 1
     if label == "correct":
         r["correct"] += 1

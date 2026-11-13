@@ -166,7 +166,12 @@ def _constitution_bullets(text: str) -> list[str]:
     return bullets
 
 
-def _drop_managed_region(lines: list[str]) -> list[str]:
+def _drop_managed_region(lines: list[str]) -> list[str] | None:
+    """Lines outside the managed region, or None when a begin marker has no
+    matching end.
+
+    An unterminated region would otherwise swallow everything after it and the
+    sync would write that loss back, so the caller must fail instead."""
     out = []
     skip = False
     for line in lines:
@@ -179,6 +184,8 @@ def _drop_managed_region(lines: list[str]) -> list[str]:
                 skip = False
             continue
         out.append(line)
+    if skip:
+        return None
     return out
 
 
@@ -208,7 +215,12 @@ def sync_constitution(constitution: str | None = None) -> str:
     except FileNotFoundError:
         current = None
         lines = _MEMORY_HEAD.splitlines()
+    except OSError:
+        return f"FAIL (cannot read memory file at {MEMORY_FILE})"
     kept = _drop_managed_region(lines)
+    if kept is None:
+        return (f"FAIL (unterminated managed region in {MEMORY_FILE}; "
+                f"nothing written)")
     while kept and kept[-1] == "":
         kept.pop()
     text = "\n".join(kept + ["", *block]).rstrip() + "\n"

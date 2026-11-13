@@ -23,24 +23,41 @@ def _parse(text: str) -> list[str]:
     return tokens
 
 
+def _fold_map(text: str) -> tuple[str, list[int]]:
+    """Return (casefolded text, index of each folded char in the original).
+
+    Neither a regex with IGNORECASE nor slicing by folded indexes is correct
+    here: casefold expands (Straße -> strasse, U+0130 -> two code points), so
+    IGNORECASE misses the expansion and folded offsets drift. Mapping every
+    folded character back to its source index keeps both cases covered.
+    """
+    folded: list[str] = []
+    origin: list[int] = []
+    for index, char in enumerate(text):
+        piece = char.casefold()
+        folded.append(piece)
+        origin.extend([index] * len(piece))
+    return "".join(folded), origin
+
+
 def _redact(text: str, tokens: list[str]) -> str:
+    """Replace tokens, matching case-insensitively including casefold
+    expansions, and never printing the token."""
     out = text
     for token in tokens:
         if not token:
             continue
-        folded = out.casefold()
         needle = token.casefold()
-        pieces = []
-        start = 0
+        if not needle:
+            continue
         while True:
-            at = folded.find(needle, start)
+            folded, origin = _fold_map(out)
+            at = folded.find(needle)
             if at < 0:
-                pieces.append(out[start:])
                 break
-            pieces.append(out[start:at])
-            pieces.append("[redacted]")
-            start = at + len(needle)
-        out = "".join(pieces)
+            start = origin[at]
+            end = origin[at + len(needle) - 1] + 1
+            out = out[:start] + "[redacted]" + out[end:]
     return out
 
 
@@ -65,15 +82,24 @@ def _load(redact_tokens: list[str]) -> tuple[str, list[str]]:
     return "scan", _parse(inline)
 
 
+class _Incomplete(Exception):
+    """A file or directory could not be read, so the scan is inconclusive."""
+
+
 def _text(path: pathlib.Path) -> str | None:
+    """Decoded text, or None when the file is deliberately skipped as binary.
+
+    A read failure raises _Incomplete instead of returning None: reporting a
+    clean scan for a file that was never read is a false negative on the one
+    check meant to catch secrets."""
     try:
         with path.open("rb") as handle:
             chunk = handle.read(8192)
             if b"\x00" in chunk:
                 return None
             rest = handle.read()
-    except OSError:
-        return None
+    except OSError as exc:
+        raise _Incomplete(f"cannot read {path}: {exc.strerror}") from exc
     try:
         return (chunk + rest).decode("utf-8")
     except UnicodeError:
@@ -85,7 +111,11 @@ def _hits(root: pathlib.Path, tokens: list[str]) -> list[str]:
     found = []
     if not needles:
         return found
-    for dirpath, _dirnames, filenames in os.walk(root):
+
+    def on_error(exc: OSError) -> None:
+        raise _Incomplete(f"cannot walk {exc.filename}: {exc.strerror}")
+
+    for dirpath, _dirnames, filenames in os.walk(root, onerror=on_error):
         for name in filenames:
             if name == "LICENSE":
                 continue
@@ -114,7 +144,15 @@ def main(argv: list[str]) -> int:
     root = pathlib.Path(argv[1])
     redact_with = sorted(
         dict.fromkeys(inline + tokens), key=len, reverse=True)
-    hits = _hits(root, tokens)
+    if not root.is_dir():
+        print(_redact(f"scan root is not a directory: {root}", redact_with),
+              file=sys.stderr)
+        return 2
+    try:
+        hits = _hits(root, tokens)
+    except _Incomplete as exc:
+        print(_redact(f"scan incomplete: {exc}", redact_with), file=sys.stderr)
+        return 2
     for hit in hits:
         print(_redact(hit, redact_with))
     return 1 if hits else 0

@@ -36,7 +36,8 @@ from . import copy as _copy
 from . import config, speech  # noqa: F401
 from . import errors_codes as _errors
 from .stage_capture import (  # noqa: F401
-    _LEVEL_WINDOW, _SAMPLER_JOIN_S, _SPEC_WAIT_S, _amplitude_sampler,
+    _LEVEL_WINDOW, _SAMPLER_HZ, _SAMPLER_JOIN_S, _SPEC_WAIT_S,
+    _amplitude_sampler,
     _cap_prompt, _png_b64, _record_finish, _transcribe_openai,
     active_window, capture_screen, context_stage, capture_stage,
     hypr_env, record, record_start, record_stop, screen_b64,
