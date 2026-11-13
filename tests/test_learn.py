@@ -176,6 +176,20 @@ class LabelTurnTest(unittest.TestCase):
         self.assertEqual([r["label"] for r in rows],
                          ["cut-short", "cut-short"])
 
+    def test_interrupted_turn_takes_a_cut_short_label(self):
+        # INTERRUPTED is a stopped turn too; the bar pill already treats it
+        # that way, so the daemon must agree instead of refusing.
+        self._decs({"ts": "T4", "turn": "d4",
+                    "result": "INTERRUPTED (user)"},
+                   {"ts": "T5", "turn": "e5",
+                    "result": "ABORTED (timeout)"})
+        for t in ("d4", "e5"):
+            out = learn.label_last("incorrect", turn=t)
+            self.assertEqual(learn.label_status(out), "ok", out)
+        rows = [json.loads(x) for x in self.labs.read_text().splitlines()]
+        self.assertEqual([r["label"] for r in rows],
+                         ["cut-short", "cut-short"])
+
     def test_cut_short_labels_never_move_the_gate(self):
         self._decs({"ts": "T1", "turn": "a1", "result": "ANSWERED"},
                    {"ts": "T2", "turn": "b2",

@@ -16,6 +16,10 @@ LABELS_FILE = config.DATA_DIR / "labels.jsonl"
 
 
 _UNRATABLE = ("CANCELLED", "ERROR")
+# Every terminal failure a named turn can end on. `cut-short` covers stopped
+# runs the bar pill treats the same way (shell-plugin/lib/rate.js), so the two
+# surfaces agree on what an interrupted turn is.
+_CUT_SHORT = ("CANCELLED", "ERROR", "INTERRUPTED", "ABORTED")
 
 
 def label_status(result: str) -> str:
@@ -51,7 +55,7 @@ def label_last(label: str, note: str = "", lang: str = "",
                     if d.get("turn") == turn), None)
         if hit is None:
             return f"not_found: no turn {turn}"
-        if str(hit.get("result", "")).startswith(_UNRATABLE):
+        if str(hit.get("result", "")).startswith(_CUT_SHORT):
             # A turn the owner stopped still deserves their verdict: the
             # panel offers the same thumbs, and a "it went the wrong way"
             # note is evidence even when the run never finished. The label

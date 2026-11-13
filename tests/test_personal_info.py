@@ -129,3 +129,32 @@ class PersonalInfoScanTest(unittest.TestCase):
         blob = (out + err).lower()
         self.assertNotIn("clean", blob)
         self.assertNotIn(TOKEN.lower(), blob)
+
+    def test_casefold_expansion_token_is_redacted(self):
+        # Straße casefolds to strasse. A plain IGNORECASE regex misses that,
+        # so the path would print the token in clear.
+        token = "Stra\u00dfe"
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            (root / "STRASSE.txt").write_text(token + "\n", encoding="utf-8")
+            code, out, err = _run(root, {"WISP_PERSONAL_DENYLIST": token})
+        self.assertNotEqual(code, 0)
+        blob = (out + err).casefold()
+        self.assertNotIn("strasse", blob)
+        self.assertIn("[redacted]", out)
+
+    def test_unreadable_file_makes_the_scan_incomplete(self):
+        if os.geteuid() == 0:
+            self.skipTest("root ignores file permissions")
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            secret = root / "locked.txt"
+            secret.write_text("nothing here\n", encoding="utf-8")
+            secret.chmod(0o000)
+            try:
+                code, out, err = _run(root, {"WISP_PERSONAL_DENYLIST": TOKEN})
+            finally:
+                secret.chmod(0o600)
+        self.assertEqual(code, 2)
+        self.assertIn("incomplete", (out + err).lower())
+        self.assertNotIn("clean", (out + err).lower())
