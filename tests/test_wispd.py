@@ -528,12 +528,23 @@ class TestHandlerActionStream(unittest.TestCase):
         self.handle()({"cmd": "label", "label": "correct"})
         self.assertIsNone(self.prompt())
 
-    def test_refused_wrong_does_not_prompt(self):
+    def test_stopped_turn_takes_the_note_as_cut_short(self):
+        # the owner can still say what went wrong on a turn they stopped
+        lab = self._decisions({"ts": "t9", "turn": "C3",
+                               "result": "CANCELLED (user)"})
+        r = self.handle()({"cmd": "label", "label": "incorrect",
+                           "turn": "C3", "note": "wrong tab"})
+        self.assertEqual(r["status"], "ok", r)
+        row = json.loads(lab.read_text().splitlines()[-1])
+        self.assertEqual((row["label"], row["note"]),
+                         ("cut-short", "wrong tab"))
+
+    def test_unknown_turn_still_refuses(self):
         self._decisions({"ts": "t9", "turn": "C3",
                          "result": "CANCELLED (user)"})
         r = self.handle()({"cmd": "label", "label": "incorrect",
-                           "turn": "C3"})
-        self.assertEqual(r["status"], "not_ratable")
+                           "turn": "zz"})
+        self.assertEqual(r["status"], "not_found")
         self.assertIsNone(self.prompt())
 
     def test_second_press_skips_the_open_note_and_writes_nothing(self):

@@ -187,12 +187,15 @@ class TestLabelTurn(unittest.TestCase):
         with CliEnv() as env:
             self._seed(env, {"ts": "t1", "turn": "C3",
                              "result": "CANCELLED (user)"})
-            for turn in ("nope", "C3"):  # not_found, not_ratable
-                with self.subTest(turn):
-                    code, out, err = env.run(["label", "set", "correct",
-                                              "--turn", turn])
-                    self.assertEqual(code, 1, err)
-                    self.assertTrue(err.startswith("E_FAILED:"), err)
+            # a stopped turn now takes the label as cut-short
+            code, out, err = env.run(["label", "set", "correct",
+                                      "--turn", "C3"])
+            self.assertEqual(code, 0, err)
+            # an unknown turn is still a failure
+            code, out, err = env.run(["label", "set", "correct",
+                                      "--turn", "nope"])
+            self.assertEqual(code, 1, err)
+            self.assertTrue(err.startswith("E_FAILED:"), err)
 
 
 class TestExitCodes(unittest.TestCase):

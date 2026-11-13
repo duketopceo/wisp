@@ -4,12 +4,27 @@
 // and the receipt line a rated card shows. Pure; the components feed it the
 // reducer view and WispService.lastAction.
 
-// A finished answer can be rated; a cancelled or errored turn cannot (the
-// daemon refuses those too, with not_ratable).
+// The bar pill's 8 s rating window: a finished answer only. A cancelled or
+// errored turn never opens it (the pill has already shown why it stopped).
 function rateable(status, answer, result, errorCode) {
   if (status !== "done" || answer === "") return false
   if (errorCode !== "" && errorCode !== undefined) return false
   return !/^(CANCELLED|ERROR|INTERRUPTED|ABORTED)/i.test(String(result))
+}
+
+// The answer card's thumbs (RateRow): every terminal turn, including one
+// the owner stopped or that errored. `wispd label set` stores such a verdict
+// as `cut-short`, so it is kept and shown while the accuracy gate ignores
+// it. This is why the card has its own rule instead of reusing `rateable`.
+function cardRateable(status) {
+  return status === "done"
+}
+
+// True when the turn ended by being stopped rather than finishing: the
+// card still offers its thumbs and this only labels the receipt.
+function cutShort(result, errorCode) {
+  if (errorCode === "cancelled") return true
+  return /^(CANCELLED|ERROR|INTERRUPTED|ABORTED)/i.test(String(result))
 }
 
 // `wispd label set --json [--turn T] [--stdin] -- verdict`: the optional
@@ -35,7 +50,9 @@ function receipt(last, turn, verdict, ui) {
   if (last.pending || last.ok === true)
     return { kind: "receipt",
              text: ui(verdict === "incorrect" ? "ui.rate.wrong" : "ui.rate.good") }
-  if (last.status === "not_found" || last.status === "not_ratable")
+  if (last.status === "not_found")
     return { kind: "muted", text: ui("ui.rate." + last.status) }
+  if (last.status === "not_ratable")
+    return { kind: "muted", text: ui("ui.rate.not_ratable") }
   return { kind: "muted", text: String(last.message || "") }
 }

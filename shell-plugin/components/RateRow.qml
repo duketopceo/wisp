@@ -27,7 +27,7 @@ Item {
 
   readonly property var tk: service ? service.tokens : ({})
   readonly property bool canRate: service !== null
-    && Rate.rateable(service.status, service.answer, service.result, service.errorCode)
+    && Rate.cardRateable(service.status)
   readonly property var ack: service
     ? Rate.receipt(service.lastAction, turn, tapped, function (k) { return service.ui(k) })
     : ({ kind: "none", text: "" })

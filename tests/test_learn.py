@@ -164,15 +164,41 @@ class LabelTurnTest(unittest.TestCase):
         learn.label_last("incorrect", turn="zz", out=got)
         self.assertEqual(got, {})
 
-    def test_cancelled_turn_is_not_ratable_and_writes_nothing(self):
+    def test_cancelled_turn_takes_a_cut_short_label(self):
+        # the owner watched it go wrong; refusing their verdict lost it
+        self._decs({"ts": "T2", "turn": "b2",
+                    "result": "CANCELLED (user)"},
+                   {"ts": "T3", "turn": "c3", "result": "ERROR (x)"})
+        for t in ("b2", "c3"):
+            out = learn.label_last("incorrect", turn=t)
+            self.assertEqual(learn.label_status(out), "ok", out)
+        rows = [json.loads(x) for x in self.labs.read_text().splitlines()]
+        self.assertEqual([r["label"] for r in rows],
+                         ["cut-short", "cut-short"])
+
+    def test_cut_short_labels_never_move_the_gate(self):
         self._decs({"ts": "T1", "turn": "a1", "result": "ANSWERED"},
                    {"ts": "T2", "turn": "b2",
                     "result": "CANCELLED (user)"},
                    {"ts": "T3", "turn": "c3", "result": "ERROR (x)"})
-        for t in ("b2", "c3"):
-            out = learn.label_last("correct", turn=t)
-            self.assertEqual(learn.label_status(out), "not_ratable", out)
-        self.assertFalse(self.labs.exists())
+        learn.label_last("correct", turn="a1")
+        learn.label_last("incorrect", turn="b2")
+        learn.label_last("incorrect", turn="c3")
+        rep = learn.eval_report(None, self.decs, self.labs)
+        self.assertEqual(rep["total"]["labelled"], 1)
+        self.assertEqual(rep["total"]["incorrect"], 0)
+        self.assertEqual(rep["total"]["rate"], 1.0)
+        # the cut-short note is still visible in the labelled set
+        self.assertEqual(learn._latest_labels(self.labs)["T2"][0],
+                         "cut-short")
+
+    def test_no_turn_still_skips_cancelled_lines(self):
+        self._decs({"ts": "T1", "turn": "a1", "result": "ANSWERED"},
+                   {"ts": "T2", "turn": "b2",
+                    "result": "CANCELLED (user)"})
+        learn.label_last("correct")          # no turn named
+        rows = [json.loads(x) for x in self.labs.read_text().splitlines()]
+        self.assertEqual(rows[-1]["ref"], "T1")
 
     def test_unknown_turn_is_not_found(self):
         self._decs({"ts": "T1", "turn": "a1", "result": "ANSWERED"},

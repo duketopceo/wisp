@@ -36,6 +36,7 @@ def receipt(last, turn="t1", verdict="correct"):
 @unittest.skipUnless(jsnode.NODE, "node not installed")
 class TestRateLib(unittest.TestCase):
     def test_rateable_only_for_a_finished_answer(self):
+        # the bar pill's 8 s window: unchanged, a stopped turn never opens it
         f = "R.rateable(%r, %r, %r, %r)"
         self.assertTrue(js(f % ("done", "hi", "ANSWERED x", "")))
         self.assertFalse(js(f % ("done", "", "ANSWERED x", "")))
@@ -44,6 +45,22 @@ class TestRateLib(unittest.TestCase):
         self.assertFalse(js(f % ("done", "hi", "CANCELLED (user)", "")))
         self.assertFalse(js(f % ("done", "hi", "ERROR (boom)", "")))
         self.assertFalse(js(f % ("done", "hi", "ANSWERED x", "cancelled")))
+
+    def test_card_thumbs_offer_every_terminal_turn(self):
+        # the answer card keeps the owner's verdict on a stopped turn
+        c = "R.cardRateable(%r)"
+        self.assertTrue(js(c % "done"))
+        for live in ("listening", "transcribing", "deciding", "acting",
+                     "speaking", "awaiting_choice"):
+            self.assertFalse(js(c % live), live)
+
+    def test_cut_short_marks_the_stopped_turns(self):
+        c = "R.cutShort(%r, %r)"
+        self.assertTrue(js(c % ("CANCELLED (user)", "")))
+        self.assertTrue(js(c % ("INTERRUPTED (user)", "cancelled")))
+        self.assertTrue(js(c % ("", "cancelled")))
+        self.assertFalse(js(c % ("ANSWERED x", "")))
+        self.assertFalse(js(c % ("ACTED (2 steps): done", "")))
 
     def test_label_command_names_the_turn_and_guards_the_note(self):
         cmd = js('R.labelCommand("wispd", "incorrect", "b2", "wrong app")')
