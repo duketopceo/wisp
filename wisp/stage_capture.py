@@ -216,7 +216,11 @@ def _record_cleanup(rec: dict, state=None) -> None:
             config.LEVEL_FILE.write_text("0.0")
 
 
-_LEVEL_WINDOW = 20
+# One 100 ms level window. The sampler streams 8 kHz U8 mono
+# (platform.sampler_cmd), so 100 ms is 800 bytes; publishing at 10 Hz is
+# what the overlay's level indicator and the silence endpoint both assume.
+_SAMPLER_HZ = 8000
+_LEVEL_WINDOW = _SAMPLER_HZ // 10
 
 
 def _amplitude_sampler(seconds: int | None, state=None,

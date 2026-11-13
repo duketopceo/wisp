@@ -4,10 +4,11 @@ import pathlib
 import shutil
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from wisp import pipeline  # noqa: E402
+from wisp import pipeline, platform  # noqa: E402
 
 class SttPromptTest(unittest.TestCase):
     def test_local_whisper_gets_prompt(self):
@@ -149,7 +150,7 @@ class LevelSamplerTest(unittest.TestCase):
     """U2: the sampler reads small chunks continuously (even cadence)
     instead of 200-byte blocking reads that publish in bursts."""
 
-    def _run(self, nbytes=200):
+    def _run(self, nbytes=None):
         import io
         from unittest import mock
 
@@ -159,6 +160,7 @@ class LevelSamplerTest(unittest.TestCase):
             def read(self, n=-1):
                 reads.append(n)
                 return super().read(n)
+        nbytes = pipeline._LEVEL_WINDOW * 10 if nbytes is None else nbytes
         fake = mock.Mock()
         fake.stdout = Rec(bytes([200, 60] * (nbytes // 2)))
         fake.poll.return_value = 0
@@ -171,15 +173,33 @@ class LevelSamplerTest(unittest.TestCase):
             pipeline._amplitude_sampler(None, st, None)
         return reads, levels
 
-    def test_reads_are_small_chunks(self):
+    def test_reads_are_one_level_window(self):
+        # 100 ms of 8 kHz U8 audio per read, never a whole-second block
         reads, _ = self._run()
         self.assertTrue(reads)
-        self.assertLessEqual(max(reads), 20)
+        self.assertEqual(max(reads), pipeline._LEVEL_WINDOW)
 
     def test_every_window_is_published(self):
-        _, levels = self._run(200)
+        _, levels = self._run(pipeline._LEVEL_WINDOW * 10)
         self.assertEqual(len(levels), 10)
         self.assertTrue(all(0.0 <= v <= 1.0 for v in levels))
+
+    def test_level_window_is_one_tenth_second_of_the_stream(self):
+        # the sampler publishes at 10 Hz over an 8 kHz stream (2 bytes of
+        # headroom per ms would pin the level and starve silence detection)
+        self.assertEqual(pipeline._SAMPLER_HZ // 10, pipeline._LEVEL_WINDOW)
+        self.assertEqual(pipeline._LEVEL_WINDOW, 800)
+
+    def test_sampler_asks_for_a_rate_alsa_honours(self):
+        # ALSA refuses rates under 2000 and silently scales 200/400 up to
+        # 200 kHz/384 kHz; a 200 Hz request streamed 1000x too much data
+        with mock.patch("wisp.platform._which", return_value="/usr/bin/arecord"):
+            cmd = platform.sampler_cmd(None)
+        self.assertIsNotNone(cmd)
+        rate = int(cmd[cmd.index("-r") + 1])
+        self.assertGreaterEqual(rate, 2000)
+        self.assertIn("-t", cmd)
+        self.assertEqual(cmd[cmd.index("-t") + 1], "raw")
 
 
 class BusPipelineTest(unittest.TestCase):

@@ -161,12 +161,21 @@ def stream_cmd() -> list | None:
 
 
 def sampler_cmd(seconds: float | None) -> list | None:
-    """Live mic level: unsigned-8 PCM (200 Hz mono) on stdout.
+    """Live mic level: unsigned-8 PCM, 8 kHz mono, raw, on stdout.
     seconds=None → unbounded (toggle mode; caller kills the proc).
-    None → level stays 0."""
+    None → level stays 0.
+
+    The rate is 8 kHz, not 200 Hz: ALSA rejects a rate under 2000 (and
+    silently multiplies 200/400 into 200 kHz/384 kHz), so a "200 Hz"
+    request produced a 200000-byte stream the sampler read as 1000
+    windows per 100 ms — every window straddling real audio, so the
+    published level stayed pinned near 1.0 and silence endpointing
+    (wisp/endpoint.py) could never fire. 8 kHz is a native rate the
+    driver reproduces exactly. `-t raw` drops the 44-byte WAV header,
+    which would otherwise land inside the first level window."""
     if _which("arecord"):
-        cmd = ["arecord", "-D", "default", "-f", "U8", "-r", "200",
-               "-c", "1"]
+        cmd = ["arecord", "-D", "default", "-t", "raw", "-f", "U8",
+               "-r", "8000", "-c", "1"]
         if seconds:
             cmd += ["-d", str(seconds)]
         return cmd
