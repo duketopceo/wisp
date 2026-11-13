@@ -19,6 +19,6 @@
     "tailwind-merge": "3.7.0",
     "tailwindcss": "4.3.4",
     "vite": "8.3.6",
-    "wrangler": "4.156.0"
+    "wrangler": "4.158.0"
   }
 }
