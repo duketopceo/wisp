@@ -13,7 +13,8 @@ PanelWindow {
   id: win
 
   property var service: null
-  signal closed()
+  // PanelWindow already declares `closed`; redeclaring it shadows the
+  // inherited signal and Qt logs a duplicate-signal override warning.
 
   color: "transparent"
   anchors { top: true }
