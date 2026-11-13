@@ -84,7 +84,8 @@ fn probe(p: &Provider) -> Result<(), String> {
     }
     let url = if p.kind == "ollama" { "/api/tags" } else { "/models" };
     ureq::get(&format!("{}{}", p.base_url.trim_end_matches('/'), url))
-        .timeout(std::time::Duration::from_secs(2)).call()
+        .config().timeout_global(Some(std::time::Duration::from_secs(2)))
+        .build().call()
         .map(|_| ())
         .map_err(|e| format!("brain provider '{}' unreachable at {} ({e})",
                              p.name, p.base_url))
@@ -93,13 +94,14 @@ fn probe(p: &Provider) -> Result<(), String> {
 fn post(url: &str, headers: &[(&str, String)], body: &Value)
         -> Result<Value, String> {
     let mut r = ureq::post(url)
-        .set("User-Agent", "wisp/1.0")
-        .timeout(std::time::Duration::from_secs(60));
+        .header("User-Agent", "wisp/1.0")
+        .config().timeout_global(Some(std::time::Duration::from_secs(60)))
+        .build();
     for (k, v) in headers {
-        r = r.set(k, v);
+        r = r.header(*k, v.as_str());
     }
     r.send_json(body).map_err(|e| e.to_string())?
-        .into_json::<Value>().map_err(|e| e.to_string())
+        .body_mut().read_json::<Value>().map_err(|e| e.to_string())
 }
 
 /// Provider-agnostic chat → the message object (OpenAI shape or
