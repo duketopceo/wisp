@@ -61,13 +61,14 @@ fn embed(texts: &[String]) -> Result<Vec<Vec<f64>>, String> {
     let url = format!("{}/embeddings",
                       cfg.recall_base_url.trim_end_matches('/'));
     let body = json!({"model": cfg.recall_model, "input": texts});
-    let resp = ureq::post(&url)
-        .set("User-Agent", "wisp/1.0")
-        .set("Authorization", &format!("Bearer {key}"))
-        .timeout(std::time::Duration::from_secs(30))
+    let mut resp = ureq::post(&url)
+        .header("User-Agent", "wisp/1.0")
+        .header("Authorization", &format!("Bearer {key}"))
+        .config().timeout_global(Some(std::time::Duration::from_secs(30)))
+        .build()
         .send_json(&body)
         .map_err(|e| e.to_string())?;
-    let v: Value = resp.into_json().map_err(|e| e.to_string())?;
+    let v: Value = resp.body_mut().read_json().map_err(|e| e.to_string())?;
     v.get("data").and_then(|d| d.as_array())
         .map(|rows| rows.iter().filter_map(|r| {
             r.get("embedding")?.as_array().map(|e| {

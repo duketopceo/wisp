@@ -30,7 +30,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
@@ -43,11 +43,11 @@ jobs:
     # Playwright 1.59 supports this image; avoid an OS rollout breaking WebKit.
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
       - name: Install pinned homepage build and Worker development server
@@ -74,7 +74,7 @@ jobs:
           trap 'kill "$server"' EXIT
           curl --fail --silent --retry 30 --retry-connrefused --retry-delay 1 http://127.0.0.1:3000/ > /dev/null
           npm test
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: enhanced-landing-qa
@@ -84,11 +84,11 @@ jobs:
     needs: [build, enhanced]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
       - name: Install pinned homepage build
@@ -97,7 +97,7 @@ jobs:
         run: python3 -m unittest tests.test_site_workers -v
       - name: Assemble reviewed assets
         run: python3 scripts/site/build_workers.py
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wisp-workers-assets
           path: build/published
@@ -121,16 +121,16 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       WRANGLER_SEND_METRICS: "false"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
       - name: Install pinned Wrangler from package-lock
         run: npm ci --ignore-scripts --no-audit --no-fund
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: wisp-workers-assets
           path: build/published

@@ -15,8 +15,8 @@ jobs:
         os: [ubuntu-latest]
         python-version: ["3.11", "3.13"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
       - name: Compile-check scripts
@@ -38,13 +38,13 @@ jobs:
       run:
         working-directory: browser-extension
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: browser-extension/package-lock.json
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
       - run: npm ci
@@ -58,7 +58,7 @@ jobs:
       - name: Headless e2e
         run: npm run e2e
       - name: Upload the built extension (load unpacked from chrome-mv3)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wisp-chrome-extension
           path: browser-extension/.output/chrome-mv3
@@ -76,7 +76,7 @@ jobs:
         run: |
           pacman -Syu --noconfirm --needed python python-pillow nodejs \
             qt6-declarative qt6-shadertools quickshell git
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: QML suites
         env:
           WISP_CI_REQUIRE_TOOLS: node,qmltestrunner,qmllint,qsb
@@ -90,7 +90,7 @@ jobs:
     # the Omarchy marketplace mirror: build it and validate it (B15)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: qmllint
         run: |
           sudo apt-get update -y
@@ -108,7 +108,7 @@ jobs:
       matrix:
         os: [ubuntu-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
