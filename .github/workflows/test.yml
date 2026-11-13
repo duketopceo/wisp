@@ -15,7 +15,7 @@ jobs:
         os: [ubuntu-latest]
         python-version: ["3.11", "3.13"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
@@ -38,7 +38,7 @@ jobs:
       run:
         working-directory: browser-extension
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -76,7 +76,7 @@ jobs:
         run: |
           pacman -Syu --noconfirm --needed python python-pillow nodejs \
             qt6-declarative qt6-shadertools quickshell git
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: QML suites
         env:
           WISP_CI_REQUIRE_TOOLS: node,qmltestrunner,qmllint,qsb
@@ -90,7 +90,7 @@ jobs:
     # the Omarchy marketplace mirror: build it and validate it (B15)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: qmllint
         run: |
           sudo apt-get update -y
@@ -108,7 +108,7 @@ jobs:
       matrix:
         os: [ubuntu-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
