@@ -302,16 +302,17 @@ fn transcribe_openai(wav: &std::path::Path, cfg: &Cfg)
     push(&mut body, "");
     let url = format!("{}/audio/transcriptions",
                       cfg.stt_base_url.trim_end_matches('/'));
-    let resp = ureq::post(&url)
-        .set("User-Agent", "wisp/1.0") // edge blocks default UAs
-        .set("Authorization", &format!("Bearer {key}"))
-        .set("Content-Type",
-             &format!("multipart/form-data; boundary={boundary}"))
-        .timeout(std::time::Duration::from_secs(60))
-        .send_bytes(&body)
+    let mut resp = ureq::post(&url)
+        .header("User-Agent", "wisp/1.0") // edge blocks default UAs
+        .header("Authorization", &format!("Bearer {key}"))
+        .header("Content-Type",
+                &format!("multipart/form-data; boundary={boundary}"))
+        .config().timeout_global(Some(std::time::Duration::from_secs(60)))
+        .build()
+        .send(&body[..])
         .map_err(|e| e.to_string())?;
     let v: Value = serde_json::from_str(
-        &resp.into_string().map_err(|e| e.to_string())?)
+        &resp.body_mut().read_to_string().map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
     Ok(v.get("text").and_then(|t| t.as_str()).unwrap_or("")
         .split_whitespace().collect::<Vec<_>>().join(" "))
