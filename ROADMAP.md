@@ -1,7 +1,7 @@
 # Wisp Roadmap
 
 State: **v1.0.0-rc.3 is published as a Linux prerelease (2026-11-09; rc.2 was 2026-10-30); stable v1.0 remains a verification milestone.** GitHub's "Latest" release is still v0.9.0 because the rcs are prereleases. `pyproject.toml` and `wisp/__init__.py` say 1.0.0. Unified alignment, release completion, dev tuning, app skills and platform probe seams merged in #259 (tagged `v1.0.0-rc.1`); release and install fixes followed in #262 (tagged `v1.0.0-rc.2`), #263 and #264. The gauntlet, the isolated session and the default-brain change landed after rc.2 (#273-#305).
-Last updated: 2026-11-08 (read from `master` at `02da464`). Merged since the last sync: #347 (OpenRouter US-region refusals are explained: `region_denied` and `wispd doctor --live`), #348 (the rescope to the Linux companion, already the direction of record) and #350 (Chrome extension with a side panel and a native messaging host). The companion core merged in #349 and shipped in `v1.0.0-rc.3`. Direction of record: `docs/plans/2026-11-08-1607-feat-wisp-linux-companion-rescope-plan.md`; the first area's plan is `docs/plans/2026-11-08-1749-feat-wisp-companion-core-plan.md`. Earlier plans of record (`docs/plans/2026-10-30-001-feat-wisp-unified-alignment-and-polish-plan.md`, `docs/plans/2026-11-07-1500-feat-wisp-v2-computer-use-plan.md`) stay valid for the units they still own. This is the only roadmap; `docs/ROADMAP.md` points here.
+Last updated: 2026-11-14 (read from `master` at `d9d8022`). Merged since the last sync: #347 (OpenRouter US-region refusals are explained: `region_denied` and `wispd doctor --live`), #348 (the rescope to the Linux companion, already the direction of record) and #350 (Chrome extension with a side panel and a native messaging host). The companion core merged in #349 and shipped in `v1.0.0-rc.3`. Direction of record: `docs/plans/2026-11-08-1607-feat-wisp-linux-companion-rescope-plan.md`; the first area's plan is `docs/plans/2026-11-08-1749-feat-wisp-companion-core-plan.md`. Area plans for 3+4, 5+7+8 and 6+11 are `docs/plans/2026-11-14-0100-feat-dictation-voice-uplift-plan.md`, `docs/plans/2026-11-14-0100-feat-agents-memory-home-plan.md` and `docs/plans/2026-11-14-0100-feat-connectors-proxy-bundle-plan.md`, sequenced by the consolidated roadmap plan `docs/plans/2026-11-14-0200-feat-wisp-full-roadmap-plan.md`. The framing/security plan `docs/plans/2026-11-13-2336-feat-wisp-framing-and-job-memory-plan.md` sits between the v1 gate and the area plans. Earlier plans of record (`docs/plans/2026-10-30-001-feat-wisp-unified-alignment-and-polish-plan.md`, `docs/plans/2026-11-07-1500-feat-wisp-v2-computer-use-plan.md`) stay valid for the units they still own. This is the only roadmap; `docs/ROADMAP.md` points here.
 
 ## Product target
 
@@ -25,15 +25,15 @@ Each area gets its own brainstorm and plan, then lands as separate PRs with test
 |---|---|---|---|---|
 | 1 | Companion core | Double-Control typed composer; lean cursor buddy; hand-drawn ink; answers from window text (accessibility text, then OCR, then screenshot); follows the focused monitor; tested circle-to-ask; walkthroughs that complete on evidence (15 steps); app skills from 17 to about 89 (Linux and web first) | Lean HC, combined with Wisp's walkthroughs | `docs/plans/2026-11-08-1749-feat-wisp-companion-core-plan.md` |
 | 2 | Hygiene and defaults | Personal-info scrub with a CI guard; stock install with an OpenRouter key and a microphone; local speech by default | Wisp's own | `docs/plans/2026-11-08-1607-feat-wisp-linux-companion-rescope-plan.md` (U2-U4) |
-| 3 | Dictation | Keep Wisp's dictation, add what HeyClicky does better; screen-aware compose reads the focused window | Full HC for screen-aware compose | to brainstorm |
-| 4 | Voice | A new talk-back voice; the current one is not good enough | Better than HC's bar | to brainstorm (provider open) |
-| 5 | Agents | Named persistent agents with faces, named after classical literature; progress cards with files and Retry on a typed thread/turn/item event model; routines and a suggested feed with Do it / Adjust / No; fail-closed permissions that never buy, send or delete without asking | Lean HC, Wisp's style | to brainstorm |
-| 6 | Connectors | A built-in app catalog plus custom MCP servers | 100% | to brainstorm (provider open) |
-| 7 | Memory | A full memory system | Own design informed by HC's profile notes | to brainstorm (backend open) |
-| 8 | Home screen | Chats and agents in one home; notch placement; full notch integration on Omarchy | HC's placement, Wisp's look | to brainstorm |
+| 3 | Dictation | Keep Wisp's dictation, add what HeyClicky does better; screen-aware compose reads the focused window | Full HC for screen-aware compose | `docs/plans/2026-11-14-0100-feat-dictation-voice-uplift-plan.md` |
+| 4 | Voice | A new talk-back voice; the current one is not good enough | Better than HC's bar | `docs/plans/2026-11-14-0100-feat-dictation-voice-uplift-plan.md` |
+| 5 | Agents | Named persistent agents with faces, named after classical literature; progress cards with files and Retry on a typed thread/turn/item event model; routines and a suggested feed with Do it / Adjust / No; fail-closed permissions that never buy, send or delete without asking | Lean HC, Wisp's style | `docs/plans/2026-11-14-0100-feat-agents-memory-home-plan.md` |
+| 6 | Connectors | A built-in app catalog plus custom MCP servers | 100% | `docs/plans/2026-11-14-0100-feat-connectors-proxy-bundle-plan.md` |
+| 7 | Memory | A full memory system | Own design informed by HC's profile notes | `docs/plans/2026-11-14-0100-feat-agents-memory-home-plan.md` |
+| 8 | Home screen | Chats and agents in one home; notch placement; full notch integration on Omarchy | HC's placement, Wisp's look | `docs/plans/2026-11-14-0100-feat-agents-memory-home-plan.md` |
 | 9 | Engine | First-party OpenRouter SDK; optional Ollama; coding runtimes on top; then macOS | Wisp's own | to brainstorm |
 | 10 | Clicking | Grounding, click rule, verify-after-act, recovery | Lean HC plus Wisp's work | `docs/plans/2026-11-07-1500-feat-wisp-v2-computer-use-plan.md` (U1, U2, U4-U6) |
-| 11 | Paid bundle | Optional Wisp-issued key through a proxy, alongside bring-your-own-key | Like HC's proxy, optional | later |
+| 11 | Paid bundle | Optional Wisp-issued key through a proxy, alongside bring-your-own-key | Like HC's proxy, optional | `docs/plans/2026-11-14-0100-feat-connectors-proxy-bundle-plan.md` (spec first; no billing until eval gate passes) |
 
 Stretch goals: live step-by-step diagrams beside answers, an interview-based agent setup, other Linux desktops (wlroots, then GNOME and KDE, then X11), and a warm "getting ready" state.
 
@@ -117,6 +117,11 @@ New work follows "Areas and order" above, starting with areas 1 and 2. The relea
 
 After v1:
 
+- Framing and job memory (`docs/plans/2026-11-13-2336-feat-wisp-framing-and-job-memory-plan.md`): one rule in each system prompt treating outside text as data, plus the per-run record index. It lands before the area plans below so screen-aware compose and MCP results are born framed.
+- Dictation uplift + voice (`docs/plans/2026-11-14-0100-feat-dictation-voice-uplift-plan.md`): 450 ms plain-dictation parity, 20 s correction window, screen-aware compose from window text, new hosted talk-back voice.
+- Agents + memory + home (`docs/plans/2026-11-14-0100-feat-agents-memory-home-plan.md`): named persistent agents with Stop/Retry cards, run-record index, suggestions feed (Do it / Adjust / No), one home surface. No faces v1; no ambient routing; no notch.
+- Connectors + proxy decision (`docs/plans/2026-11-14-0100-feat-connectors-proxy-bundle-plan.md`): Gmail/Calendar/Drive/Notion/Linear v1 slice with multi-account, custom MCP registry, proxy spec only (BYOK stays default).
+- Consolidated sequencing: `docs/plans/2026-11-14-0200-feat-wisp-full-roadmap-plan.md` (one ordered phase list; child plans own unit detail).
 - Debug suite (TLY-484): one opt-in switch that keeps a local, per-user record of every model call (brain, answers, grounding, speech, judge: model, prompt, reply, tokens, cost, latency) and every tool call, including OpenCode helpers. OpenCode needs no fork: its 2.x plugin hooks (`session` context and model-request hooks, `tool` execute before/after, the event stream) cover it, installed in Wisp's private OpenCode home. Brainstorm, then plan.
 - Local models on the Apple GPU (TLY-485), then teach wisp LFM-VL as the local click finder (grounding post-training below, TLY-451).
 - Grounding post-training (`docs/plans/2026-11-01-1139-feat-wisp-grounding-posttrain-plan.md`): U1-U3 are done in #295, U4-U12 are open. It ends in a measurement; switching the default grounding model is a separate decision.
