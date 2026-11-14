@@ -586,6 +586,32 @@ def _infer_cwd(cfg: dict | None = None) -> str | None:
     return None
 
 
+SCRATCH_MODE = 0o700
+
+
+def scratch_dir(out_dir) -> pathlib.Path:
+    """The unnamed run's scratch directory, a sibling of its `out` folder.
+
+    A named helper already gets `tmp/` from `agent_home.create()`; this is
+    only for tasks that have no helper folder, where the runtime otherwise
+    has nowhere it is allowed to write scratch files and every attempt
+    classifies as `ask`.
+
+    A planted symlink here would redirect writes outside DATA_DIR, so a
+    symlink is refused and replaced with a real directory rather than
+    followed.
+    """
+    p = pathlib.Path(out_dir).parent / "scratch"
+    if p.is_symlink():
+        p.unlink()
+    p.mkdir(parents=True, exist_ok=True)
+    try:
+        p.chmod(SCRATCH_MODE)
+    except OSError:
+        pass
+    return p
+
+
 def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
           log_dir=config.TASK_LOGS, cwd: str | None = None, *,
           delivers: list[str] | None = None,
@@ -627,10 +653,19 @@ def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
     else:
         cwd = cwd or _infer_cwd(cfg)
     out_dir.mkdir(parents=True, exist_ok=True)
+    # A named helper's whole folder is its own, so its scratch is home's
+    # tmp/. An unnamed run gets a sibling of out/ and is told about it.
+    scratch = None if agent else scratch_dir(out_dir)
+    if scratch is not None:
+        prompt = (task + "\n\nWhere files go: write what the user asked for "
+                  f"to {out_dir} and scratch or intermediate files to "
+                  f"{scratch}. Scratch is not a deliverable, and nothing "
+                  "in it needs to be listed when you finish.")
     if resolve_runtime(cfg) == "opencode":
         return _spawn_acp(name, task, prompt, cwd or str(out_dir), out_dir,
                           cfg, tasks_file, log_dir, delivers, spawned_by,
-                          depth, routine_id, agent)
+                          depth, routine_id, agent,
+                          scratch=None if scratch is None else str(scratch))
     exit_f = _exit_file(log_dir, name)
     exit_f.unlink(missing_ok=True)
     # [agents] model — distinct from [agent] model (that's the Jev
@@ -688,7 +723,8 @@ def spawn(task: str, cfg: dict, tasks_file=config.TASKS_FILE,
 
 
 def _spawn_acp(name, task, prompt, cwd, out_dir, cfg, tasks_file, log_dir,
-               delivers, spawned_by, depth, routine_id, agent) -> str:
+               delivers, spawned_by, depth, routine_id, agent,
+               scratch=None) -> str:
     """The opencode runtime: a session on the ACP manager (U9)."""
     from . import acp_runtime
     mgr = acp_runtime.manager()
@@ -697,7 +733,7 @@ def _spawn_acp(name, task, prompt, cwd, out_dir, cfg, tasks_file, log_dir,
                 "start wispd)")
     return mgr.start_task(name, task, prompt, cwd, out_dir, delivers,
                           spawned_by, depth, routine_id, agent, cfg,
-                          tasks_file, log_dir)
+                          tasks_file, log_dir, scratch=scratch)
 
 
 def interrupted(tasks_file=config.TASKS_FILE) -> list:

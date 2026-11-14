@@ -94,6 +94,16 @@ flowchart TD
   those surfaces; it does **not** make a model comply. A model that ignores
   the rule, a non-text channel, or a surface not yet retrofitted remains
   exposed, and no fixture in this tree establishes otherwise.
+- **An unnamed run has exactly one writable root inside `DATA_DIR`.**
+  `agents.scratch_dir()` creates `scratch/` as a sibling of the run's
+  `out/`, mode 0700, refusing and replacing a planted symlink.
+  `SessionPolicy` is handed that path as a fourth root, so a write under
+  it classifies as `allowed` instead of `refused` — `config.TASK_LOGS`
+  lives under `DATA_DIR`, so without the exception every intermediate
+  file an unnamed task writes would be refused rather than merely asked.
+  Nothing else in `DATA_DIR` opens: the scratch root covers its own
+  subtree only. A named helper needs no second root; its whole folder is
+  already its own.
 
 See `docs/PIPELINE_STAGES.md` for the per-stage contract and
 `docs/CUA.md` for the computer-use driver detail.

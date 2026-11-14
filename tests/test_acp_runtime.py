@@ -311,6 +311,37 @@ class Permissions(Case):
                          {"outcome": "selected", "optionId": "allow"})
         self.assertEqual(self.spoken, [])
 
+    def test_write_under_the_runs_scratch_is_allowed_without_asking(self):
+        """U4: the unnamed run's scratch is inside DATA_DIR, so it is only
+        writable because the policy was handed the root. Without that the
+        same write is refused, not merely asked."""
+        scratch = self.ld / agents._slug("do the thing") / "scratch"
+        f = scratch / "middle.py"
+        self.script(prompts=[[
+            {"permission": {"toolCall": {
+                "toolCallId": "p1", "title": "write middle.py",
+                "kind": "edit", "locations": [{"path": str(f)}],
+                "rawInput": {"filePath": str(f)}}}}]])
+        name = self.spawn().split()[1]
+        self.assertTrue(scratch.is_dir(), scratch)
+        self.settled(name)
+        self.assertEqual(self.rows("permission_outcome")[0]["outcome"],
+                         {"outcome": "selected", "optionId": "allow"})
+        self.assertEqual(self.spoken, [])
+
+    def test_write_elsewhere_in_data_dir_is_still_refused(self):
+        f = config.DATA_DIR / "corrections.jsonl"
+        f.parent.mkdir(parents=True, exist_ok=True)
+        self.script(prompts=[[
+            {"permission": {"toolCall": {
+                "toolCallId": "p1", "title": "edit corrections",
+                "kind": "edit", "locations": [{"path": str(f)}],
+                "rawInput": {"filePath": str(f)}}}}]])
+        name = self.spawn().split()[1]
+        self.settled(name)
+        self.assertEqual(self.rows("permission_outcome")[0]["outcome"],
+                         {"outcome": "selected", "optionId": "reject"})
+
     def test_written_test_file_makes_the_runner_ask(self):
         """Write test_payload.py, then run it: the run must not be
         auto-allowed (the agent's own code would execute unconfirmed)."""

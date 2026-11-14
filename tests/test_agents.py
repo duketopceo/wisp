@@ -2,6 +2,8 @@
 import json
 import os
 import pathlib
+import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -178,6 +180,110 @@ class ScrubEnvTest(unittest.TestCase):
         self.assertNotIn("GROQ_API_KEY", seen)
         self.assertEqual(seen["ANTHROPIC_API_KEY"], "runtime-own")
         self.assertIn("WISP_TASK_ID", seen)
+
+
+class ScratchDirTest(unittest.TestCase):
+    """U4: an unnamed run gets a scratch sibling of out/, 0700, that is not
+    a deliverable and does not become a second folder per name."""
+
+    def setUp(self):
+        self.d = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.d, ignore_errors=True)
+        self.addCleanup(mock.patch.stopall)
+
+    def _spawn(self, task="do it", agent=None):
+        if agent:
+            from wisp import agent_home
+            mock.patch.object(agent_home, "create").start()
+            mock.patch.object(agent_home, "home",
+                              return_value=self.d / "home").start()
+            mock.patch.object(agent_home, "prompt",
+                              side_effect=lambda n, t: t).start()
+
+        class P:
+            pid = 4242
+
+        seen = {}
+
+        def fake_popen(cmd, **kw):
+            seen["env"] = kw["env"]
+            return P()
+
+        with mock.patch.object(agents, "_runtime_cmd",
+                               return_value=["agent", "run"]), \
+                mock.patch.object(agents, "_pinned_state",
+                                  return_value={"state": "absent"}), \
+                mock.patch.object(agents, "_systemd_scope_enabled",
+                                  return_value=False), \
+                mock.patch.object(agents, "_pstart", return_value="1"), \
+                mock.patch.object(agents, "_PROCS", []), \
+                mock.patch.object(agents.subprocess, "Popen", fake_popen):
+            msg = agents.spawn(task, {}, self.d / "t.jsonl", self.d / "logs",
+                               agent=agent)
+        self.assertTrue(msg.startswith("SPAWNED"), msg)
+        return seen
+
+    def test_unnamed_run_gets_scratch_sibling_of_out(self):
+        self._spawn()
+        logs = self.d / "logs"
+        name = agents._slug("do it")
+        out = logs / name / "out"
+        scratch = logs / name / "scratch"
+        self.assertTrue(out.is_dir(), out)
+        self.assertTrue(scratch.is_dir(), scratch)
+        self.assertEqual(scratch.parent, out.parent)
+
+    def test_scratch_is_0700(self):
+        self._spawn()
+        scratch = self.d / "logs" / agents._slug("do it") / "scratch"
+        self.assertEqual(stat.S_IMODE(scratch.stat().st_mode), 0o700)
+
+    def test_named_run_creates_no_second_scratch(self):
+        self._spawn(agent="helper")
+        self.assertFalse((self.d / "logs" / agents._slug("do it") /
+                          "scratch").exists())
+        self.assertEqual(
+            [p.name for p in self.d.glob("*/scratch")], [])
+
+    def test_planted_symlink_is_refused_and_replaced(self):
+        run = self.d / "logs" / agents._slug("do it")
+        out = run / "out"
+        out.mkdir(parents=True)
+        planted = self.d / "elsewhere"
+        planted.mkdir()
+        (run / "scratch").symlink_to(planted)
+        self._spawn()
+        scratch = run / "scratch"
+        self.assertFalse(scratch.is_symlink())
+        self.assertTrue(scratch.is_dir())
+        self.assertEqual(list(planted.iterdir()), [])
+
+    def test_rerunning_the_same_name_does_not_fail(self):
+        self._spawn()
+        self._spawn()
+        self.assertTrue(
+            (self.d / "logs" / agents._slug("do it") / "scratch").is_dir())
+
+    def test_unnamed_prompt_names_both_folders(self):
+        prompts = []
+        real = agents.private.text_stdin
+
+        class Ctx:
+            def __enter__(self):
+                return None
+
+            def __exit__(self, *a):
+                return False
+
+        def fake(prompt):
+            prompts.append(prompt)
+            return Ctx()
+
+        self.addCleanup(setattr, agents.private, "text_stdin", real)
+        agents.private.text_stdin = fake
+        self._spawn()
+        self.assertIn("Where files go:", prompts[0])
+        self.assertIn("scratch", prompts[0])
 
 
 if __name__ == "__main__":
