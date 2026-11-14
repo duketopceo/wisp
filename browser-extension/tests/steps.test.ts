@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_STEPS, checkSteps, hostOf, isStepOp, originPattern, safeUrl } from '../src/steps';
+import { KEEP_REASONS, parseFromHost } from '../src/protocol';
 
 describe('safeUrl', () => {
   it.each(['http://a.test/', 'https://a.test/x?y=1', 'HTTP://A.TEST'])('allows %s', (u) => {
@@ -61,5 +62,26 @@ describe('checkSteps', () => {
     expect(isStepOp('click')).toBe(true);
     expect(isStepOp('eval')).toBe(false);
     expect(isStepOp('cookies')).toBe(false);
+  });
+});
+
+describe('keep reasons', () => {
+  it('is a closed set', () => {
+    expect(KEEP_REASONS).toEqual(['comparison', 'reference', 'later', 'distraction']);
+  });
+
+  it('admits a step carrying a reason through the parser', () => {
+    const msg = parseFromHost({
+      t: 'cmd',
+      cmd: { id: 'c1', op: 'batch', task: 't1', steps: [{ do: 'keep', why: 'comparison' }] },
+    });
+    const cmd = msg?.t === 'cmd' ? msg.cmd : null;
+    expect(cmd?.steps?.[0]?.why).toBe('comparison');
+  });
+
+  it('still parses a keep with no reason', () => {
+    const msg = parseFromHost({ t: 'cmd', cmd: { id: 'c2', op: 'batch', steps: [{ do: 'keep' }] } });
+    const cmd = msg?.t === 'cmd' ? msg.cmd : null;
+    expect(cmd?.steps?.[0]?.why).toBeUndefined();
   });
 });

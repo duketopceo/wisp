@@ -237,6 +237,41 @@ describe('Lane: ending, keeping and stopping', () => {
     expect(h.chrome.tabs.has(100)).toBe(true);
   });
 
+  it('keep stores the reason it was given', async () => {
+    const { h, lane } = await opened();
+    const r = await lane.execute(batch([{ do: 'keep', why: 'comparison' }]));
+    expect(r.results?.[0]).toMatchObject({ tab: 100, why: 'comparison' });
+    expect(lane.keptTabs('t1')).toEqual([{ tab: 100, why: 'comparison' }]);
+    expect(h.chrome.tabs.has(100)).toBe(true);
+  });
+
+  it('keep with no reason is kept but reports none', async () => {
+    const { lane } = await opened();
+    const r = await lane.execute(batch([{ do: 'keep' }]));
+    expect(r.results?.[0]).toMatchObject({ tab: 100, why: '' });
+    expect(lane.keptTabs('t1')).toEqual([{ tab: 100, why: '' }]);
+  });
+
+  it('a tab kept by an older extension reports no reason, not a guess', async () => {
+    const { lane } = await opened();
+    await lane.execute(batch([{ do: 'keep', why: 'later' }]));
+    // what a pre-reason state file looks like
+    (lane as unknown as { state: { kept: Record<string, unknown> } }).state.kept['100'] = true;
+    expect(lane.keptTabs('t1')).toEqual([{ tab: 100, why: '' }]);
+  });
+
+  it('the summary counts kept tabs by reason', async () => {
+    const h = harness();
+    h.chrome.grant(SITE);
+    const lane = new Lane(h.env);
+    await lane.execute(batch([open]));
+    await lane.execute(batch([{ do: 'keep', why: 'comparison' }]));
+    expect(lane.keptSummary('t1')).toBe('1 comparison');
+    await lane.execute(batch([open]));
+    await lane.execute(batch([{ do: 'keep', why: 'later' }]));
+    expect(lane.keptSummary('t1')).toBe('1 comparison, 1 later');
+  });
+
   it('end_task closes quietly even when the user closed a tab first', async () => {
     const { h, lane } = await opened();
     h.chrome.removeFails.add(100);

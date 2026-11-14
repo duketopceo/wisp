@@ -43,6 +43,11 @@ MAX_BODY = 8 * 1024 * 1024  # a proof screenshot rides in one result
 STEP_OPS = ("open", "snapshot", "click", "fill", "scroll", "wait_for",
             "screenshot", "keep", "done")
 
+# Why a `keep` step leaves a tab open (extension protocol.ts KEEP_REASONS).
+# A kept tab is a cost in the user's window, so the reason is a closed set
+# and the end-of-task summary accounts for every kept tab by it.
+KEEP_REASONS = ("comparison", "reference", "later", "distraction")
+
 MSG_OFF = ("SKIP (the browser lane is off: set [browser] lane = \"extension\" "
            "with `wispd config set browser.lane extension`, then load "
            "browser-extension/ in your browser. Nothing was done.)")
@@ -449,6 +454,15 @@ def check_steps(steps: list, lane: Lane | None = None) -> str:
                         "opened")
         if op == "snapshot":
             snap_epoch, refs, sens = -1, set(), set()   # ok until it runs
+        if op == "keep":
+            why_val = s.get("why")
+            if why_val is None:
+                if "why" in s:
+                    return (f"step {i}: keep 'why' must be one of "
+                            + ", ".join(KEEP_REASONS))
+            elif str(why_val).strip().lower() not in KEEP_REASONS:
+                return (f"step {i}: keep 'why' {why_val!r} is not one of "
+                        + ", ".join(KEEP_REASONS))
         if op in ("click", "fill"):
             ref = str(s.get("ref", "")).strip()
             m = _REF.match(ref)
@@ -563,6 +577,10 @@ def run(arg: str, cfg: dict | None = None, *, lane: Lane | None = None,
                 out.append(f"screenshot: FAILED could not save it ({e})")
         elif op == "open":
             out.append(f"opened tab {r.get('tab')} in the Wisp tab group")
+        elif op == "keep":
+            why_val = str(r.get("why") or s.get("why") or "").strip().lower()
+            out.append(f"kept tab {r.get('tab')} open"
+                       + (f" ({why_val})" if why_val else ""))
         else:
             out.append(f"{op}: ok")
     if not res.get("ok"):
