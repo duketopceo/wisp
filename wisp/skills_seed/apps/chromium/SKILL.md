@@ -5,6 +5,7 @@ tier: safe
 app_classes: chromium, chromium-browser, google-chrome, brave-browser
 asks: How do I open DevTools; How do I reopen a closed tab; Where are my downloads
 provenance: authored: wisp seed, audited 2026-11-05
+pulls_tools: browser
 ---
 # chromium
 

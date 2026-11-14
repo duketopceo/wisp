@@ -136,6 +136,13 @@ def snapshot(cfg: dict) -> str:
                     "stored on disk.",
                     app_body,
                     source="a saved skill file on disk")
+                needs = info.get("pulls_tools") or []
+                if needs:
+                    # the playbook's own steps name tools; say which ones it
+                    # declares so a missing one is visible before a call
+                    # fails rather than after
+                    out += ("\n[app_skill needs] " + ", ".join(needs)
+                            + " (declared by the playbook; not a grant)")
                 # reuse is observable: run 2 of a gauntlet case shows
                 # whether the saved skill was injected
                 from . import trace
