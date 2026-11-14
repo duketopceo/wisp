@@ -84,6 +84,16 @@ flowchart TD
 - **Safety is boundary-based.** Denylist preempts tiers; T2 batches into
   one confirm card; the loop drops user input instantly
   (`realinput` watch) — never fights the human for the cursor.
+- **Anything from outside Wisp is data.** `wisp/framing.py` is the only
+  fence constructor: `clean()` strips control and invisible characters and
+  defangs the `<<<`/`>>>` delimiters, `data_block()` wraps a body in a
+  labelled, explicitly non-instructional fence. The rule the models read
+  lives in `act.SYSTEM` (actor) and `stage_speak.PERSONA` (answer lane) and
+  names the surfaces it covers — tool results, page text, documents,
+  captured window text, recalled turns, prior attempts. The fence covers
+  those surfaces; it does **not** make a model comply. A model that ignores
+  the rule, a non-text channel, or a surface not yet retrofitted remains
+  exposed, and no fixture in this tree establishes otherwise.
 
 See `docs/PIPELINE_STAGES.md` for the per-stage contract and
 `docs/CUA.md` for the computer-use driver detail.
