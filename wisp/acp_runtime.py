@@ -486,6 +486,7 @@ class SessionRun:
                 close.update(routine_id=rec["routine_id"],
                              routine_recorded=True, routine_outcome=rout,
                              unread=rout["unread"])
+        close["learned"] = agents.learned_for(rec, self.ld, status)
         agents._log_line(close, self.tf)
         agent_mcp.revoke(self.token)
         self.proc.sessions.pop(self.sid, None)

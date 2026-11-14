@@ -31,7 +31,11 @@ CONTRACT = (
     "summary: make it complete on its own. If your result is a draft the "
     "user has not approved, say \"drafted\", never \"done\".\n"
     "- Before you finish, append a dated line about what you learned or "
-    "did to notes/{today}.md so your next run can pick it up.")
+    "did to notes/{today}.md so your next run can pick it up.\n"
+    "- Also print one line starting with LEARNED: and, in one sentence, what "
+    "this run worked out that a later run would not have to rediscover. It "
+    "goes in the job index the user searches, so write it for that reader. "
+    "The notes line is your own journal; this is the one line on the index.")
 
 
 def _root(root=None):

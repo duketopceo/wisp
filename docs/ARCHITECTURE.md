@@ -104,6 +104,15 @@ flowchart TD
   Nothing else in `DATA_DIR` opens: the scratch root covers its own
   subtree only. A named helper needs no second root; its whole folder is
   already its own.
+- **The job index is derived, never written on its own.** `_log_line()`
+  appends to `tasks.jsonl` and then re-renders `WORK.md` beside it from the
+  folded registry, so the index cannot lag the records, and a hand-edited
+  index heals on the next write. A run's `learned` is the model's own
+  `LEARNED:` line (see `agent_home.CONTRACT`), else its failure reason,
+  else empty — never a re-derivation of the closing summary, which already
+  has a different reader. It is sanitized through `framing.clean()` and
+  collapsed to one line, so a multi-line value cannot forge index entries.
+  `wispd task list --grep` is the reader.
 
 See `docs/PIPELINE_STAGES.md` for the per-stage contract and
 `docs/CUA.md` for the computer-use driver detail.

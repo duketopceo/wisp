@@ -5,6 +5,12 @@ ACP session (acp_runtime). One-shot runs log output to
 tasks/<id>.log, and records a line in tasks.jsonl. Status = liveness +
 log tail; cancel kills the process group. Registry reload on daemon
 start reconciles dead pids.
+
+The closing record carries `learned` — the run's own `LEARNED:` line,
+else its failure reason, else empty — and WORK.md beside tasks.jsonl is
+re-rendered from the folded registry on every append, so the human-
+readable index can never disagree with the records it summarises.
+`wispd task list --grep` searches task text, name and `learned`.
 """
 import json
 import os
@@ -18,7 +24,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from . import config, private, util
+from . import config, framing, private, util
 
 SCOPE_PREFIX = "wisp-task-"
 _SCOPE_RE = re.compile(r"\bwisp-task-([A-Za-z0-9_.-]+?)\.scope\b")
@@ -36,6 +42,100 @@ def _log_line(rec: dict, tasks_file=config.TASKS_FILE) -> None:
     tasks_file.parent.mkdir(parents=True, exist_ok=True)
     with tasks_file.open("a") as f:
         f.write(json.dumps(rec) + "\n")
+    render_work_index(tasks_file)
+
+
+# -- the job index (U5) ---------------------------------------------------
+#
+# WORK.md is derived, never written on its own: every append to
+# tasks.jsonl refreshes it from the folded registry, so the index and the
+# records cannot disagree and a hand-edited index heals on the next run.
+
+WORK_FILE = "WORK.md"
+LEARNED_CAP = 240
+MAX_INPUT = 800
+
+
+def _one_line(text: str, cap: int = LEARNED_CAP) -> str:
+    """`text` as a single sanitized line: the fence constructor's cleaning,
+    then every run of whitespace collapsed. Newlines must not survive —
+    one run's text would otherwise forge extra lines in WORK.md."""
+    s, _ = framing.clean(str(text or ""), cap)
+    return " ".join(s.split())
+
+
+def learned_from(text: str) -> str:
+    """The model's `LEARNED:` line, or "" when the run printed none.
+    Never derived from the closing line: that is the spoken summary, and
+    it already has another reader."""
+    for line in reversed((text or "").splitlines()):
+        head, sep, rest = line.strip().partition(":")
+        if sep and head.strip().upper() == "LEARNED":
+            return _one_line(rest)
+    return ""
+
+
+def learned_for(rec: dict, log_dir, status: str = "") -> str:
+    """`learned` for a closing record: the run's own LEARNED line, else its
+    failure reason, else "". A run that said nothing learns nothing — an
+    invented line would be worse than an empty one."""
+    try:
+        log = pathlib.Path(log_dir) / f"{rec.get('id') or rec.get('name')}"
+        log = log.with_suffix(".log")
+        with log.open("rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - 64 * 1024))
+            txt = f.read().decode(errors="replace")
+    except OSError:
+        txt = ""
+    got = learned_from(txt)
+    if got:
+        return got
+    if (status or rec.get("status") or "") not in ("done", ""):
+        return _one_line(rec.get("error") or "")
+    return ""
+
+
+def _index_rows(tasks_file=config.TASKS_FILE) -> list:
+    """One row per run the user would call a job, newest first. Session
+    and process bookkeeping records are not jobs and get no line."""
+    rows = [r for r in _latest(tasks_file)
+            if r.get("task") and r.get("kind") in (None, "session")]
+    # `_latest` is spawn order; reverse it first so two runs spawned in the
+    # same second still list newest first after a stable sort on the stamp.
+    rows.reverse()
+    rows.sort(key=lambda r: str(r.get("started") or r.get("ts") or ""),
+              reverse=True)
+    return rows
+
+
+def render_work_index(tasks_file=config.TASKS_FILE) -> None:
+    """Rewrite WORK.md beside tasks.jsonl from the folded registry (temp +
+    replace, so a reader never sees a half-written index)."""
+    path = pathlib.Path(tasks_file).parent / WORK_FILE
+    rows = _index_rows(tasks_file)
+    lines = ["# Work", "",
+             "One line per run, newest first. Rendered from the task "
+             "records; edit the records, not this file.", ""]
+    for r in rows:
+        date = str(r.get("started") or r.get("ts") or "")[:10]
+        task = _one_line(r.get("task"), 120)
+        name = r.get("name") or r.get("id") or "?"
+        status = _state_of(r)
+        out = _one_line(r.get("out_dir"), 120)
+        parts = [f"- {date} · {task} — `{name}` {status}"]
+        if out:
+            parts.append(f"out: {out}")
+        learned = _one_line(r.get("learned"))
+        if learned:
+            parts.append(f"learned: {learned}")
+        lines.append(" · ".join(parts))
+    if not rows:
+        lines.append("- (no runs yet)")
+    tmp = path.with_suffix(".md.tmp")
+    tmp.write_text("\n".join(lines) + "\n")
+    os.replace(tmp, path)
 
 
 def _records(tasks_file=config.TASKS_FILE) -> list:
@@ -1263,6 +1363,8 @@ def tasks(tasks_file=config.TASKS_FILE,
             entry["refused_count"] = rec.get("refused_count")
         if rec.get("routine_id"):
             entry["routine_id"] = rec.get("routine_id")
+        if rec.get("learned"):
+            entry["learned"] = rec.get("learned")
         if "unread" in rec:
             entry["unread"] = bool(rec.get("unread"))
         if rec.get("kind") == "session" and status == "running":
@@ -1377,6 +1479,7 @@ def _tick(cfg: dict, tasks_file, log_dir, kill_grace_s: float,
                     close_rec["routine_recorded"] = True
                     close_rec["routine_outcome"] = rout
                     close_rec["unread"] = rout["unread"]
+            close_rec["learned"] = learned_for(rec, log_dir, final_status)
             _log_line(close_rec, tasks_file)
         elif (status in ("cancelled", "timed_out") and not alive
               and rec.get("routine_id") and not rec.get("routine_recorded")):
