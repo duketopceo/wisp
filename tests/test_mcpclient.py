@@ -44,7 +44,7 @@ class HttpTransport(unittest.TestCase):
         with mock.patch("urllib.request.urlopen",
                         return_value=self._resp(reply)):
             out = mcpclient._call_http("http://x/mcp", "tabs", {})
-        self.assertEqual(out, "3 tabs")
+        self.assertIn("<<<mcp\n3 tabs\nmcp>>>", out)
 
     def test_sse_framing(self):
         body = b'event: message\ndata: {"jsonrpc":"2.0","id":2,' \
@@ -55,7 +55,7 @@ class HttpTransport(unittest.TestCase):
         r.__exit__ = mock.Mock(return_value=False)
         with mock.patch("urllib.request.urlopen", return_value=r):
             out = mcpclient._call_http("http://x/mcp", "tabs", {})
-        self.assertEqual(out, "ok")
+        self.assertIn("<<<mcp\nok\nmcp>>>", out)
 
     def test_rpc_error_reported(self):
         reply = {"jsonrpc": "2.0", "id": 1,
@@ -63,7 +63,9 @@ class HttpTransport(unittest.TestCase):
         with mock.patch("urllib.request.urlopen",
                         return_value=self._resp(reply)):
             out = mcpclient._call_http("http://x/mcp", "nope", {})
-        self.assertTrue(out.startswith("MCP_ERROR"))
+        # The server's own error text is third-party text too, so it is fenced rather than formatted by hand.
+        self.assertIn("<<<mcp_error\n", out)
+        self.assertIn("-32601: no such tool", out)
 
 
 class StdioTransport(unittest.TestCase):
@@ -83,7 +85,7 @@ class StdioTransport(unittest.TestCase):
              mock.patch("wisp.tools.mcpclient.select.select",
                         return_value=([0], [], [])):
             out = mcpclient._call_stdio("fakeserver", {}, "t", {})
-        self.assertEqual(out, "done")
+        self.assertIn("<<<mcp\ndone\nmcp>>>", out)
         sent = [c.args[0] for c in proc.stdin.write.call_args_list]
         methods = [json.loads(s)["method"] for s in sent]
         self.assertEqual(methods, ["initialize",

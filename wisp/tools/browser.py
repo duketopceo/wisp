@@ -30,7 +30,7 @@ import threading
 import time
 import urllib.parse
 
-from .. import config, cua_safety
+from .. import config, cua_safety, framing
 
 DEFAULT_PORT = 47315
 MAX_STEPS = 20
@@ -467,17 +467,26 @@ def check_steps(steps: list, lane: Lane | None = None) -> str:
 
 
 def _fmt_snapshot(r: dict) -> str:
-    lines = [f"page {r.get('title', '')!r} {r.get('url', '')} "
+    # Everything here is written by the page, including the title and every element name and value, so each goes
+    # through `clean` and the page text goes through the fence as its own labelled block.
+    title, _ = framing.clean(str(r.get("title", "")), 300)
+    lines = [f"page {title!r} {r.get('url', '')} "
              f"(tab {r.get('tab')}, epoch {r.get('epoch')})"]
     for e in r.get("elements") or []:
         mark = " [never filled]" if e.get("sensitive") else ""
-        val = f" = {e['value']!r}" if e.get("value") else ""
+        name, _ = framing.clean(str(e.get("name", "")), 200)
+        val = ""
+        if e.get("value"):
+            shown, _ = framing.clean(str(e["value"]), 200)
+            val = f" = {shown!r}"
         lines.append(f"  {e.get('ref')} {e.get('tag')}"
                      f"{'/' + e['type'] if e.get('type') else ''} "
-                     f"{e.get('name', '')!r}{val}{mark}")
+                     f"{name!r}{val}{mark}")
     text = (r.get("text") or "")[:1500]
     if text:
-        lines.append("text: " + text)
+        body, _ = framing.clean(text, 1500)
+        lines.append(framing.data_block(
+            "page", "The page's visible text.", body, source="the web page it shows"))
     return "\n".join(lines)
 
 

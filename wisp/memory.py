@@ -545,5 +545,10 @@ def context_block(transcript: str = "") -> str:
     if transcript:
         rec = recall.context_for(transcript)
         if rec:
-            parts.append(f"[recall]\n{rec}")
+            # A stored transcript carries whatever a page or an earlier answer held, so it is third-party text on
+            # the way back in, not Wisp's own memory.
+            body, _ = framing.clean(rec, framing.CAP_CHARS)
+            parts.append(framing.data_block(
+                "recall", "Earlier turns from this conversation, recalled.",
+                body, source="an earlier conversation"))
     return "\n\n".join(parts)

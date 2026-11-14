@@ -21,8 +21,8 @@ import pathlib
 import re
 import time
 
-from . import act_guards, bgwriter, cancel, cua_safety, grounding, ledger, \
-    policy, realinput, tools
+from . import act_guards, bgwriter, cancel, cua_safety, framing, grounding, \
+    ledger, policy, realinput, tools
 from . import delivery as _delivery
 from . import state as _state
 
@@ -936,7 +936,14 @@ def _prev_turn(state=None, cfg=None) -> str:
     except (ImportError, AttributeError, OSError, TypeError,
             ValueError):
         return ""
-    return f"[previous turn]\n{txt[:400]}" if txt else ""
+    if not txt:
+        return ""
+    # The prior turn can quote a page or a document, so re-entering it as trusted text would launder that quote
+    # into the second turn's trusted channel.
+    body, _ = framing.clean(txt, 400)
+    return framing.data_block(
+        "previous turn", "What happened on this app's last turn.",
+        body, source="the previous turn")
 
 
 def _parse_ask(arg: str) -> tuple:
