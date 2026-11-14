@@ -1,5 +1,6 @@
 """B22: selection, clipboard image and file as context."""
 import json
+import os
 import pathlib
 import sys
 import tempfile
@@ -209,7 +210,12 @@ class TestPrompt(unittest.TestCase):
         return got["m"]
 
     def test_without_a_selection_the_prompt_is_byte_identical(self):
-        self.assertEqual(self.ask(), json.loads(GOLDEN.read_text()))
+        got = self.ask()
+        if os.environ.get("WISP_UPDATE_GOLDEN"):
+            # Same shape as the committed file: sorted keys, indent 1, trailing newline.
+            GOLDEN.write_text(
+                json.dumps(got, indent=1, sort_keys=True, ensure_ascii=True) + "\n")
+        self.assertEqual(got, json.loads(GOLDEN.read_text()))
 
     def test_selection_is_the_last_system_message(self):
         m = self.ask(selection_text="[selection] SEL")
