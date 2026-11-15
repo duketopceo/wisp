@@ -182,6 +182,31 @@ exit 0
         self.assertIn("IFS= read -r k", text)
         self.assertNotIn(SECRET, text)
 
+    def _scripts(self):
+        import base64
+        import re
+        out = []
+        for argv, _ in self.calls():
+            for m in re.finditer(r"printf %s (\S+) \| base64", argv):
+                out.append(base64.b64decode(m.group(1)).decode())
+        return out
+
+    def test_a_missing_host_checkout_is_cloned_first(self):
+        # a freshly set up host has no checkout yet; the sync step clones
+        # it (blobless, so the history download stays small)
+        self.run_remote("--", "--repeats", "1")
+        sync = self._scripts()[0]
+        self.assertIn('[ -d "$HOME/wisp-gauntlet/.git" ] || git clone -q '
+                      "--filter=blob:none", sync)
+        self.assertIn("https://github.com/duketopceo/wisp.git", sync)
+        self.assertLess(sync.index("git clone"), sync.index("cd "))
+
+    def test_repo_override_is_validated(self):
+        env = dict(self.env, WISP_GAUNTLET_REPO="https://x;rm -rf ~")
+        r = self.run_remote("--", "--repeats", "1", env=env)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(self.calls(), [])
+
     def test_refuses_without_a_key(self):
         self.write("omaseal", "#!/bin/bash\nexit 1\n")
         r = self.run_remote("--", "--repeats", "1")

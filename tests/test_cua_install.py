@@ -188,6 +188,31 @@ class Installer(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual(self.r.binary.read_bytes(), PAYLOAD)
 
+    def test_replacing_a_running_driver_stops_it_first(self):
+        # copying over a running executable fails with "Text file busy";
+        # the service is stopped before the copy and restarted after it
+        self.r.binary.parent.mkdir(parents=True)
+        self.r.binary.write_bytes(b"old")
+        p = self.r.run()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        calls = self.r.log.read_text().splitlines()
+        stop = calls.index("systemctl --user stop cua-driver.service")
+        restart = calls.index("systemctl --user restart cua-driver.service")
+        self.assertLess(stop, restart)
+
+    def test_a_link_to_another_install_is_named_not_replaced(self):
+        link = self.r.home / ".local" / "bin" / "cua-driver"
+        link.parent.mkdir(parents=True)
+        other = self.r.home / "other-cua"
+        other.write_bytes(b"x")
+        link.symlink_to(other)
+        p = self.r.run()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(link.resolve(), other.resolve())
+        out = p.stdout + p.stderr
+        self.assertIn("points to", out)
+        self.assertIn("ln -sfn", out)
+
     def test_dry_run_prints_plan_and_writes_nothing(self):
         p = self.r.run("--dry-run")
         self.assertEqual(p.returncode, 0, p.stderr)

@@ -17,7 +17,9 @@
 # env file or shell history, on either machine. The host holds no secrets.
 #
 # The host comes from --host or $WISP_GAUNTLET_HOST (an ssh destination).
-# $WISP_GAUNTLET_CHECKOUT overrides the remote checkout path.
+# $WISP_GAUNTLET_CHECKOUT overrides the remote checkout path; a missing
+# checkout is cloned (blobless) from $WISP_GAUNTLET_REPO (default: the
+# public https URL).
 # Exit: 0 finished, 2 usage/precondition (no key, no host), else the
 # gauntlet's own code.
 set -euo pipefail
@@ -25,6 +27,7 @@ set -euo pipefail
 host="${WISP_GAUNTLET_HOST:-}"
 ref="origin/master"
 checkout="${WISP_GAUNTLET_CHECKOUT:-wisp-gauntlet}"
+repo="${WISP_GAUNTLET_REPO:-https://github.com/duketopceo/wisp.git}"
 key_cmd="${WISP_GAUNTLET_KEY_CMD:-omaseal get openrouter orchestral}"
 local_runs="${WISP_GAUNTLET_LOCAL_RUNS:-$HOME/.local/share/wisp-gauntlet/runs}"
 
@@ -45,6 +48,7 @@ done
 [[ "$host" != -* ]] || die "bad host name"
 [[ "$ref" =~ ^[A-Za-z0-9._/-]+$ ]] || die "bad ref"
 [[ "$checkout" =~ ^[A-Za-z0-9._/-]+$ ]] || die "bad checkout path"
+[[ "$repo" =~ ^https://[A-Za-z0-9._/-]+$ ]] || die "bad repo url"
 
 # gauntlet args are quoted once for the remote bash -c; none may be a key
 gargs=""
@@ -68,6 +72,7 @@ rbash() {
 
 # 1. sync (no key involved)
 rbash "set -e
+[ -d \"\$HOME/$checkout/.git\" ] || git clone -q --filter=blob:none '$repo' \"\$HOME/$checkout\"
 cd \"\$HOME/$checkout\"
 git fetch -q origin
 r='$ref'
