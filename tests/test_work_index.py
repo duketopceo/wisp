@@ -149,6 +149,30 @@ class WorkIndex(unittest.TestCase):
         self.assertIn("an early run", text)
         self.assertIn("a later run", text)
 
+    def test_concurrent_writers_never_fail_a_record_append(self):
+        # CI 3.11 (2026-11-15): two threads closing runs at once raced on
+        # one shared WORK.md.tmp — the second os.replace found it gone and
+        # _log_line raised after the record was already appended
+        import threading
+        errors = []
+
+        def writer(tag):
+            try:
+                for i in range(40):
+                    self.spawn(f"{tag}{i}", f"job {tag} {i}")
+            except Exception as e:  # noqa: BLE001 — collected for assert
+                errors.append(repr(e))
+        ts = [threading.Thread(target=writer, args=(t,)) for t in "abcd"]
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join()
+        self.assertEqual(errors, [])
+        self.assertEqual(len(self.tf.read_text().splitlines()), 160)
+        agents.render_work_index(self.tf)
+        self.assertEqual(len(self.work_lines()), 160)
+        self.assertEqual(list(self.d.glob("*.tmp")), [])
+
     def test_an_empty_registry_says_so(self):
         (self.tf).write_text("")
         agents.render_work_index(self.tf)
