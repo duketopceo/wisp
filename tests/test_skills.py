@@ -55,6 +55,15 @@ class SkillsTest(unittest.TestCase):
         self.assertIn("OK", skills.run_manage("restore|s"))
         self.assertIn("FAIL", skills.run_manage("restore|s"))  # restored once
 
+    def test_delete_is_refused_when_the_backup_fails(self):
+        skills.run_manage("create|guarded|d|body")
+        with mock.patch.object(skills, "_backup", return_value=None):
+            out = skills.run_manage("delete|guarded")
+        self.assertIn("FAIL", out)
+        self.assertIn("back up", out)
+        # nothing was lost: the skill is still there and viewable
+        self.assertIn("body", skills.run_view("guarded"))
+
     def test_list_backups_without_a_name_lists_everything(self):
         self.assertEqual("OK (no skill backups)",
                          skills.run_manage("list_backups"))

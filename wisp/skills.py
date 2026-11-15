@@ -69,8 +69,9 @@ def _backup_dir(slug: str) -> Path:
 
 
 def _newest_backup(b: Path) -> Path | None:
-    """The newest timestamped backup snapshot under one skill's backup
-    dir, or None."""
+    """The newest backup snapshot under one skill's backup dir, or None.
+    Snapshot names are %Y%m%d-%H%M%S stamps so name order IS time order;
+    mtime ordering would be disturbed by a later copy into an old dir."""
     if not b.is_dir():
         return None
     snaps = sorted((d for d in b.iterdir() if d.is_dir()),
@@ -270,6 +271,11 @@ def manage(op: str, name: str, body: str = "",
         if not d.exists():
             return f"FAIL (no skill {_slug(name)!r})"
         backup = _backup(d)
+        if backup is None:
+            # no snapshot, no delete: an irreversible rmtree is the bug
+            # this backup exists to prevent
+            return (f"FAIL (could not back up {_slug(name)} — "
+                    "delete refused until the backup succeeds)")
         shutil.rmtree(d)
         return (f"OK (deleted {_slug(name)} — restorable for "
                 f"{BACKUP_DAYS} days: skill_manage restore|{_slug(name)})")
