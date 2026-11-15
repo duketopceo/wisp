@@ -57,7 +57,10 @@ def run_loop(task, replies, win, tool_run=None):
         return replies.pop(0)
 
     def run(name, arg, cfg, harness=None):
-        calls.append((name, arg))
+        # screenshots (the verify pass before a done claim) are not
+        # routes; these tests assert the input steps only
+        if name != "screenshot":
+            calls.append((name, arg))
         return tool_run(name, arg) if tool_run else "ok"
 
     real = act_guards.RunGuards

@@ -461,7 +461,9 @@ class LoopPaths(unittest.TestCase):
                                  confirm=ask, initial_image="aGk=")
         self.assertTrue(r.startswith("ACTED"), r)
         self.assertEqual(ask.prompts, [])
-        self.assertEqual(run.call_count, 2)
+        # both steps, then the verify shot before the done claim
+        self.assertEqual([c[0][0] for c in run.call_args_list],
+                         ["click", "type_text", "screenshot"])
 
     def test_t2_batch_card_covers_the_reply(self):
         ask = Confirm()
@@ -476,7 +478,8 @@ class LoopPaths(unittest.TestCase):
         self.assertEqual(len(ask.prompts), 1)
         self.assertIn("close w1", ask.prompts[0])
         self.assertIn("task_cancel fix", ask.prompts[0])
-        self.assertEqual(run.call_count, 2)
+        self.assertEqual([c[0][0] for c in run.call_args_list],
+                         ["close", "task_cancel", "screenshot"])
 
     def test_t3_pauses_and_resumes_on_done(self):
         ask = Confirm()
