@@ -6,7 +6,9 @@ support files. `skill_manage` lets the act loop create/edit/delete
 skills and write support files; `skill_view` gives progressive
 disclosure — the system context carries only the index (name + one-line
 description), bodies load on demand. Re-learning a topic folds into the
-existing file (edit, not duplicate).
+existing file (edit, not duplicate). `delete` backs the skill up for
+BACKUP_DAYS days (`restore` / `list_backups` undo it) — deleting a
+skill is reversible, not a bare rmtree.
 
 A skill may declare `tool: <file>` — the file is executed as
 `bash <file> <arg>` and registered in the toolbelt as `skill_<name>`.
@@ -19,11 +21,30 @@ import re
 import shlex
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 from . import config, util
 
 SKILLS_DIR = config.DATA_DIR / "skills"
+BACKUPS_DIR = SKILLS_DIR.parent / "skills-backups"
+BACKUP_DAYS = 60  # Perplexity's retention: a delete is undoable for
+                  # two months, then the backup ages out
+
+# Seed retirement (Perplexity's template_version + retired_entries
+# pattern). seed() is deliberately idempotent — it never overwrites a
+# user's edits — which makes it append-only: a retired or rewritten
+# seed stays on the user's disk forever. Two counters fix that without
+# breaking the never-clobber promise:
+#   SEED_VERSION is bumped in-tree whenever staged seed *content*
+#   changes; skills still matching their seed's recorded version are
+#   refreshed (user edits never match, so they never clobber).
+#   RETIRED_SEEDS are names whose staged copies were removed or
+#   renamed; seed() prunes an installed copy only when its recorded
+#   provenance shows it is an unmodified seed (a user's own edits are
+#   never pruned — the tombstone prunes stale copies, not user work).
+SEED_VERSION = 1
+RETIRED_SEEDS: frozenset[str] = frozenset()
 
 _TEMPLATE = """\
 ---
@@ -38,6 +59,70 @@ description: {desc}
 
 def _slug(name: str) -> str:
     return util.slug(name, max_len=48, default="skill")
+
+
+def _backup_dir(slug: str) -> Path:
+    """Backups are never in SKILLS_DIR (a backup must not be indexed as
+    a skill) and are timestamped so repeated delete/restore cycles keep
+    every prior state."""
+    return BACKUPS_DIR / slug
+
+
+def _newest_backup(b: Path) -> Path | None:
+    """The newest timestamped backup snapshot under one skill's backup
+    dir, or None."""
+    if not b.is_dir():
+        return None
+    snaps = sorted((d for d in b.iterdir() if d.is_dir()),
+                   key=lambda d: d.name, reverse=True)
+    for s in snaps:
+        if (s / "SKILL.md").is_file():
+            return s
+    return None
+
+
+def _backup(d: Path) -> Path | None:
+    """Copy a skill dir into BACKUPS_DIR before deletion. Returns the
+    snapshot dir. Failure to back up is itself a refusal — deleting
+    without a backup would be irreversible, which is the bug this
+    fixes."""
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    snap = _backup_dir(d.name) / stamp
+    try:
+        snap.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(d, snap, dirs_exist_ok=True)
+    except OSError:
+        return None
+    _prune_backups(_backup_dir(d.name))
+    return snap
+
+
+def _prune_backups(b: Path) -> None:
+    """Drop snapshots older than BACKUP_DAYS. Best-effort: an OSError
+    here only means a snapshot outlives its window."""
+    cutoff = time.time() - BACKUP_DAYS * 86400
+    try:
+        for d in b.iterdir():
+            if d.is_dir():
+                try:
+                    if d.stat().st_mtime < cutoff:
+                        shutil.rmtree(d, ignore_errors=True)
+                except OSError:
+                    pass
+    except OSError:
+        pass
+
+
+def _mark_edited(d: Path) -> None:
+    """A manage op touched this skill — it is no longer a pure seed
+    copy, so seed refresh/retire must never touch it."""
+    st = _seed_state(d)
+    if st:
+        st["edited"] = True
+        try:
+            (d / ".seed-state.json").write_text(json.dumps(st))
+        except OSError:
+            pass
 
 
 def _dir(name: str):
@@ -78,6 +163,15 @@ def write_index_json() -> Path:
     return out
 
 
+def _binary_present(meta: dict) -> bool:
+    """`requires_bin` satisfied right now — checked at advertisement
+    time, not only at seed-copy time (a skill whose binary is installed
+    later must appear, and one whose binary is removed must stop being
+    advertised instead of failing at call time)."""
+    need = meta.get("requires_bin")
+    return not need or bool(shutil.which(need))
+
+
 def index() -> list:
     """[{'name','description','tool'}] for every skill — the injected index."""
     out = []
@@ -91,6 +185,8 @@ def index() -> list:
         if head is None:
             continue
         meta = _frontmatter(head)
+        if not _binary_present(meta):
+            continue
         out.append({"name": meta.get("name", d.name),
                     "description": meta.get("description", ""),
                     "tool": bool(meta.get("tool")),
@@ -142,11 +238,12 @@ def view(name: str) -> str:
 
 def manage(op: str, name: str, body: str = "",
            description: str = "", filename: str = "") -> str:
-    """skill_manage: create|edit|delete|write_file|remove_file|list."""
+    """skill_manage: create|edit|delete|restore|list_backups|
+    write_file|remove_file|list."""
     if op == "list":
         names = [s["name"] for s in index()]
         return "OK " + (", ".join(names) if names else "(no skills)")
-    if not name.strip():
+    if not name.strip() and op not in ("list_backups",):
         return "FAIL (skill name required)"
     d = _dir(name)
     if op == "create":
@@ -158,6 +255,7 @@ def manage(op: str, name: str, body: str = "",
         (d / "SKILL.md").write_text(_TEMPLATE.format(
             name=_slug(name), desc=description or "(undescribed)",
             body=body))
+        _mark_edited(d)
         return f"OK (created {_slug(name)})"
     if op == "edit":
         f = d / "SKILL.md"
@@ -166,17 +264,21 @@ def manage(op: str, name: str, body: str = "",
         if not body:
             return "FAIL (edit needs the full new SKILL.md in body)"
         f.write_text(body if body.endswith("\n") else body + "\n")
+        _mark_edited(d)
         return f"OK (edited {_slug(name)})"
     if op == "delete":
         if not d.exists():
             return f"FAIL (no skill {_slug(name)!r})"
+        backup = _backup(d)
         shutil.rmtree(d)
-        return f"OK (deleted {_slug(name)})"
+        return (f"OK (deleted {_slug(name)} — restorable for "
+                f"{BACKUP_DAYS} days: skill_manage restore|{_slug(name)})")
     if op == "write_file":
         if not filename or "/" in filename or ".." in filename:
             return "FAIL (write_file needs a bare filename)"
         d.mkdir(parents=True, exist_ok=True)
         (d / filename).write_text(body)
+        _mark_edited(d)
         return f"OK (wrote {_slug(name)}/{filename})"
     if op == "remove_file":
         if not filename or "/" in filename or ".." in filename:
@@ -186,7 +288,46 @@ def manage(op: str, name: str, body: str = "",
             return f"FAIL (no file {_slug(name)}/{filename})"
         f.unlink()
         return f"OK (removed {_slug(name)}/{filename})"
-    return f"FAIL (op must be create|edit|delete|write_file|remove_file|list)"
+    if op == "restore":
+        b = _backup_dir(_slug(name))
+        newest = _newest_backup(b)
+        if newest is None:
+            return f"FAIL (no backup of {_slug(name)})"
+        if (d / "SKILL.md").exists():
+            return f"FAIL (skill {_slug(name)!r} exists — delete it first)"
+        shutil.copytree(newest, d)
+        # a restore is the user's content back — never re-prunable by a
+        # seed retire, so strip the seed marker
+        try:
+            (d / ".seed-state.json").unlink()
+        except OSError:
+            pass
+        return f"OK (restored {_slug(name)} from {newest.parent.name})"
+    if op == "list_backups":
+        if not name.strip():
+            # no name: list every skill that has a backup
+            if not BACKUPS_DIR.is_dir():
+                return "OK (no skill backups)"
+            rows = []
+            for b in sorted(BACKUPS_DIR.iterdir()):
+                newest = _newest_backup(b)
+                if newest is None:
+                    continue
+                age_days = int((time.time() - newest.stat().st_mtime) // 86400)
+                rows.append(f"- {b.name}: backed up {age_days}d ago "
+                            f"({len(list(newest.iterdir()))} files)")
+            return "OK\n" + "\n".join(rows) if rows \
+                else "OK (no skill backups)"
+        b = _backup_dir(_slug(name))
+        newest = _newest_backup(b)
+        if newest is None:
+            return f"FAIL (no backup of {_slug(name)})"
+        age_days = int((time.time() - newest.stat().st_mtime) // 86400)
+        return (f"OK - {_slug(name)}: backed up {age_days}d ago "
+                f"({len(list(newest.iterdir()))} files); "
+                f"restore with skill_manage restore|{_slug(name)}")
+    return f"FAIL (op must be create|edit|delete|restore|list_backups|" \
+           f"write_file|remove_file|list)"
 
 
 def run_manage(arg: str) -> str:
@@ -236,6 +377,8 @@ def run_tool(name: str, arg: str) -> str | None:
     script = (meta or {}).get("tool", "")
     if not script or "/" in script or ".." in script:
         return None
+    if not _binary_present(meta or {}):
+        return None
     sp = SKILLS_DIR / _slug(name[6:]) / script
     if not sp.is_file():
         return None
@@ -259,41 +402,93 @@ def _seed_dir():
     return pathlib.Path(__file__).resolve().parent / "skills_seed"
 
 
+def _seed_state(d: Path) -> dict:
+    """A skill dir's recorded seed bookkeeping (a JSON sidecar next to
+    SKILL.md): which seed it came from and at which SEED_VERSION."""
+    try:
+        return json.loads((d / ".seed-state.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _write_seed_state(d: Path, seed_name: str) -> None:
+    try:
+        (d / ".seed-state.json").write_text(json.dumps(
+            {"seed": seed_name, "version": SEED_VERSION}))
+    except OSError:
+        pass
+
+
+def _is_prunable(d: Path, seed_name: str) -> bool:
+    """True when d is an unmodified copy of a retired seed: its state
+    names that seed and its SKILL.md body still matches the recorded
+    version's body is NOT checkable after the seed is gone, so the
+    state marker alone decides — a user-edited skill keeps the same
+    marker, so retirement prunes only skills the user never touched
+    per the marker plus an `edited` flag the manage ops set."""
+    st = _seed_state(d)
+    return st.get("seed") == seed_name and not st.get("edited")
+
+
 def seed() -> None:
-    """Install bundled skills (skills_seed/*/) into SKILLS_DIR when the
-    skill doesn't already exist — idempotent, never overwrites user
-    edits. Provenance is a comment line in the SKILL.md itself."""
+    """Install bundled skills (skills_seed/*/) into SKILLS_DIR. Existing
+    installs are never overwritten — except a still-unmodified seed copy
+    whose staged content moved to a new SEED_VERSION, which is refreshed
+    (that is how a fixed guide reaches machines that already ran the
+    old seed). Retired seeds prune their unmodified copies. User edits
+    mark the state `edited` and are never touched by either."""
     src = _seed_dir()
     if not src.is_dir():
         return
-    for d in sorted(src.iterdir()):
-        f = d / "SKILL.md"
-        if not f.is_file():
+    staged = {d.name: d for d in src.iterdir()
+              if d.is_dir() and (d / "SKILL.md").is_file()}
+    _seed_pass(SKILLS_DIR, staged)
+    apps_src = src / "apps"
+    if apps_src.is_dir():
+        staged_apps = {d.name: d for d in apps_src.iterdir()
+                       if d.is_dir() and (d / "SKILL.md").is_file()}
+        _seed_pass(SKILLS_DIR / "apps", staged_apps)
+    # prune unmodified copies of retired seeds (both roots)
+    for root in (SKILLS_DIR, SKILLS_DIR / "apps"):
+        if not root.is_dir():
             continue
+        for name in RETIRED_SEEDS:
+            d = root / name
+            if d.is_dir() and _is_prunable(d, name):
+                shutil.rmtree(d, ignore_errors=True)
+
+
+def _seed_pass(dst_root: Path, staged: dict) -> None:
+    """One seed root: install missing skills, refresh unmodified ones
+    whose recorded version is behind SEED_VERSION."""
+    if not dst_root.is_dir() and not staged:
+        return
+    dst_root.mkdir(parents=True, exist_ok=True)
+    for name, sd in sorted(staged.items()):
+        f = sd / "SKILL.md"
         need = _frontmatter(_header(f) or "").get("requires_bin")
         if need and not shutil.which(need):
             continue        # the program it teaches is not installed
-        dst = SKILLS_DIR / d.name
+        dst = dst_root / name
         if (dst / "SKILL.md").exists():
+            st = _seed_state(dst)
+            # refresh only an unmodified copy of this same seed at an
+            # older version; anything else (user edit, foreign skill,
+            # current version) is left alone
+            if (st.get("seed") == name and not st.get("edited")
+                    and st.get("version", 0) < SEED_VERSION):
+                shutil.rmtree(dst, ignore_errors=True)
+                try:
+                    shutil.copytree(sd, dst)
+                    _write_seed_state(dst, name)
+                except OSError:
+                    pass
             continue
         try:
-            shutil.copytree(d, dst)
+            shutil.copytree(sd, dst)
+            _write_seed_state(dst, name)
         except OSError:
             pass
-    apps_src = src / "apps"
-    if apps_src.is_dir():
-        for d in sorted(apps_src.iterdir()):
-            f = d / "SKILL.md"
-            if not f.is_file():
-                continue
-            dst = SKILLS_DIR / "apps" / d.name
-            if (dst / "SKILL.md").exists():
-                continue
-            try:
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copytree(d, dst)
-            except OSError:
-                pass
 
 
 APP_SKILL_BUDGET = 1600  # chars (~400 tokens) cap for one matched app skill
@@ -691,6 +886,8 @@ def register_tools() -> None:
         meta = _frontmatter(head)
         if not meta.get("tool"):
             continue
+        if not _binary_present(meta):
+            continue    # its binary is gone — advertise nothing
         name = f"skill_{_slug(d.name)}"
         tier = tier_of(name)
         tools.REGISTRY[name] = (
