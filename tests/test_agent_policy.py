@@ -3,8 +3,11 @@
 per tool call, following [agent] autonomy, with per-session state for
 the edited-build-files rule."""
 import pathlib
+import shutil
 import sys
+import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
@@ -173,6 +176,82 @@ class PolicyTable(unittest.TestCase):
         sp = agent_policy.SessionPolicy(CWD, OUT, "autonomous")
         sp.note_edit(call("edit", path="src/../test_payload.py"))
         self.assertEqual(sp.classify(call("execute", "pytest -q")), "ask")
+
+
+class ScratchWritableRoot(unittest.TestCase):
+    """U4: an unnamed run's scratch dir is a writable root, and it is the
+    only deliberate hole in the DATA_DIR write refusal."""
+
+    def setUp(self):
+        self.tmp = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.data = self.tmp / "data"
+        self.scratch = self.data / "tasks" / "run" / "scratch"
+        self.out = self.data / "tasks" / "run" / "out"
+        self.scratch.mkdir(parents=True)
+        self.out.mkdir(parents=True)
+        self.addCleanup(mock.patch.stopall)
+        for name in ("DATA_DIR", "CFG_DIR", "RUN_DIR"):
+            mock.patch.object(agent_policy.config, name, self.data).start()
+
+    def sp(self, scratch=None, cwd=None):
+        return agent_policy.SessionPolicy(
+            cwd or str(self.tmp), str(self.out), "autonomous", scratch)
+
+    def test_edit_under_scratch_is_allowed_not_ask(self):
+        sp = self.sp(str(self.scratch))
+        self.assertEqual(
+            sp.classify(call("edit", path=str(self.scratch / "a.py"))),
+            "allow")
+
+    def test_scratch_is_refused_without_being_registered(self):
+        # the same path with no scratch root: DATA_DIR is refused for
+        # writes, which is exactly why the root has to be registered
+        sp = self.sp(None)
+        self.assertEqual(
+            sp.classify(call("edit", path=str(self.scratch / "a.py"))),
+            "refuse")
+
+    def test_scratch_does_not_open_the_rest_of_data_dir(self):
+        sp = self.sp(str(self.scratch))
+        self.assertEqual(
+            sp.classify(call("edit", path=str(self.data / "session.jsonl"))),
+            "refuse")
+        self.assertEqual(
+            sp.classify(call("edit", path=str(self.data / "corrections.jsonl"))),
+            "refuse")
+
+    def test_shell_path_argument_under_scratch_is_allowed(self):
+        # `python3 x.py` is ask either way (not a build cmd); what changes is
+        # that the path no longer escalates it to a refusal-class ask, and a
+        # read of the scratch file goes out as allow rather than being
+        # unparseable-relative-to-DATA_DIR
+        sp = self.sp(str(self.scratch))
+        self.assertEqual(
+            sp.classify(call("execute", "cat " + str(self.scratch / "gen.py"))),
+            "allow")
+        self.assertEqual(
+            sp.classify(call("execute", "ls " + str(self.scratch))), "allow")
+
+    def test_shell_path_outside_every_root_still_asks(self):
+        outside = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        sp = self.sp(str(self.scratch))
+        self.assertEqual(
+            sp.classify(call("execute", "cat " + str(outside / "x.py"))),
+            "ask")
+
+    def test_scratch_does_not_permit_executing_credential_paths(self):
+        sp = self.sp(str(self.scratch))
+        self.assertEqual(
+            sp.classify(call("edit", path=str(self.scratch / ".env"))),
+            "refuse")
+
+    def test_dotfile_inside_scratch_still_asks(self):
+        sp = self.sp(str(self.scratch))
+        self.assertEqual(
+            sp.classify(call("edit", path=str(self.scratch / ".cache" / "x"))),
+            "ask")
 
 
 if __name__ == "__main__":

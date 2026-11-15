@@ -5,8 +5,19 @@
 export const PROTOCOL = 1;
 export const HOST_NAME = 'com.wisp.browser';
 
+/**
+ * Why a `keep` step leaves a tab open. A kept tab is a real cost to the
+ * user's window, so the reason has a closed set and the end-of-task
+ * summary counts them by it: a retained tab is accounted for, not silently
+ * kept. Optional on the wire so an older caller does not fail.
+ */
+export const KEEP_REASONS = ['comparison', 'reference', 'later', 'distraction'] as const;
+export type KeepReason = (typeof KEEP_REASONS)[number];
+
 export interface Step {
   do: string;
+  /** Only meaningful on `do: 'keep'`; one of KEEP_REASONS. */
+  why?: KeepReason;
   [key: string]: unknown;
 }
 

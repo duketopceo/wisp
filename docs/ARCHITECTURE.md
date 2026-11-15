@@ -84,6 +84,35 @@ flowchart TD
 - **Safety is boundary-based.** Denylist preempts tiers; T2 batches into
   one confirm card; the loop drops user input instantly
   (`realinput` watch) — never fights the human for the cursor.
+- **Anything from outside Wisp is data.** `wisp/framing.py` is the only
+  fence constructor: `clean()` strips control and invisible characters and
+  defangs the `<<<`/`>>>` delimiters, `data_block()` wraps a body in a
+  labelled, explicitly non-instructional fence. The rule the models read
+  lives in `act.SYSTEM` (actor) and `stage_speak.PERSONA` (answer lane) and
+  names the surfaces it covers — tool results, page text, documents,
+  captured window text, recalled turns, prior attempts. The fence covers
+  those surfaces; it does **not** make a model comply. A model that ignores
+  the rule, a non-text channel, or a surface not yet retrofitted remains
+  exposed, and no fixture in this tree establishes otherwise.
+- **An unnamed run has exactly one writable root inside `DATA_DIR`.**
+  `agents.scratch_dir()` creates `scratch/` as a sibling of the run's
+  `out/`, mode 0700, refusing and replacing a planted symlink.
+  `SessionPolicy` is handed that path as a fourth root, so a write under
+  it classifies as `allowed` instead of `refused` — `config.TASK_LOGS`
+  lives under `DATA_DIR`, so without the exception every intermediate
+  file an unnamed task writes would be refused rather than merely asked.
+  Nothing else in `DATA_DIR` opens: the scratch root covers its own
+  subtree only. A named helper needs no second root; its whole folder is
+  already its own.
+- **The job index is derived, never written on its own.** `_log_line()`
+  appends to `tasks.jsonl` and then re-renders `WORK.md` beside it from the
+  folded registry, so the index cannot lag the records, and a hand-edited
+  index heals on the next write. A run's `learned` is the model's own
+  `LEARNED:` line (see `agent_home.CONTRACT`), else its failure reason,
+  else empty — never a re-derivation of the closing summary, which already
+  has a different reader. It is sanitized through `framing.clean()` and
+  collapsed to one line, so a multi-line value cannot forge index entries.
+  `wispd task list --grep` is the reader.
 
 See `docs/PIPELINE_STAGES.md` for the per-stage contract and
 `docs/CUA.md` for the computer-use driver detail.

@@ -24,6 +24,8 @@ import subprocess
 import zlib
 from collections import Counter
 
+from . import framing
+
 BAND = 2             # luma levels counted as "the same colour"
 SINGLE = 0.9995      # share of one colour that is a blank frame
 BLACK_MAX = 6        # darkest levels: a true black, not a dark theme
@@ -308,8 +310,14 @@ def window_text(win: dict | None, client=None) -> str:
 
 
 def context_note(reason: str, text: str) -> str:
-    """What the model is told when the screen could not be captured."""
+    """What the model is told when the screen could not be captured.
+
+    The window's text is the largest single exposure in the tree — a whole focused window, unfenced and uncapped
+    before this — so it goes through the fence with an explicit cap rather than `clean`'s 4000 default.
+    """
+    body, _ = framing.clean(text, framing.CAP_CHARS * 4)
     return ("[screen] The screenshot of the focused window came out "
             f"{reason} (the window blocks capture). You cannot see it: "
             "answer only from the window text below, and say so if the "
-            "question needs the picture.\n[window text]\n" + text)
+            "question needs the picture.\n"
+            + framing.data_block("window", "The focused window's contents.", body))

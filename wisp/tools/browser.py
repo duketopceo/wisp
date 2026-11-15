@@ -30,7 +30,7 @@ import threading
 import time
 import urllib.parse
 
-from .. import config, cua_safety
+from .. import config, cua_safety, framing
 
 DEFAULT_PORT = 47315
 MAX_STEPS = 20
@@ -42,6 +42,11 @@ CALL_TIMEOUT_S = 60.0
 MAX_BODY = 8 * 1024 * 1024  # a proof screenshot rides in one result
 STEP_OPS = ("open", "snapshot", "click", "fill", "scroll", "wait_for",
             "screenshot", "keep", "done")
+
+# Why a `keep` step leaves a tab open (extension protocol.ts KEEP_REASONS).
+# A kept tab is a cost in the user's window, so the reason is a closed set
+# and the end-of-task summary accounts for every kept tab by it.
+KEEP_REASONS = ("comparison", "reference", "later", "distraction")
 
 MSG_OFF = ("SKIP (the browser lane is off: set [browser] lane = \"extension\" "
            "with `wispd config set browser.lane extension`, then load "
@@ -449,6 +454,15 @@ def check_steps(steps: list, lane: Lane | None = None) -> str:
                         "opened")
         if op == "snapshot":
             snap_epoch, refs, sens = -1, set(), set()   # ok until it runs
+        if op == "keep":
+            why_val = s.get("why")
+            if why_val is None:
+                if "why" in s:
+                    return (f"step {i}: keep 'why' must be one of "
+                            + ", ".join(KEEP_REASONS))
+            elif str(why_val).strip().lower() not in KEEP_REASONS:
+                return (f"step {i}: keep 'why' {why_val!r} is not one of "
+                        + ", ".join(KEEP_REASONS))
         if op in ("click", "fill"):
             ref = str(s.get("ref", "")).strip()
             m = _REF.match(ref)
@@ -467,17 +481,26 @@ def check_steps(steps: list, lane: Lane | None = None) -> str:
 
 
 def _fmt_snapshot(r: dict) -> str:
-    lines = [f"page {r.get('title', '')!r} {r.get('url', '')} "
+    # Everything here is written by the page, including the title and every element name and value, so each goes
+    # through `clean` and the page text goes through the fence as its own labelled block.
+    title, _ = framing.clean(str(r.get("title", "")), 300)
+    lines = [f"page {title!r} {r.get('url', '')} "
              f"(tab {r.get('tab')}, epoch {r.get('epoch')})"]
     for e in r.get("elements") or []:
         mark = " [never filled]" if e.get("sensitive") else ""
-        val = f" = {e['value']!r}" if e.get("value") else ""
+        name, _ = framing.clean(str(e.get("name", "")), 200)
+        val = ""
+        if e.get("value"):
+            shown, _ = framing.clean(str(e["value"]), 200)
+            val = f" = {shown!r}"
         lines.append(f"  {e.get('ref')} {e.get('tag')}"
                      f"{'/' + e['type'] if e.get('type') else ''} "
-                     f"{e.get('name', '')!r}{val}{mark}")
+                     f"{name!r}{val}{mark}")
     text = (r.get("text") or "")[:1500]
     if text:
-        lines.append("text: " + text)
+        body, _ = framing.clean(text, 1500)
+        lines.append(framing.data_block(
+            "page", "The page's visible text.", body, source="the web page it shows"))
     return "\n".join(lines)
 
 
@@ -554,6 +577,10 @@ def run(arg: str, cfg: dict | None = None, *, lane: Lane | None = None,
                 out.append(f"screenshot: FAILED could not save it ({e})")
         elif op == "open":
             out.append(f"opened tab {r.get('tab')} in the Wisp tab group")
+        elif op == "keep":
+            why_val = str(r.get("why") or s.get("why") or "").strip().lower()
+            out.append(f"kept tab {r.get('tab')} open"
+                       + (f" ({why_val})" if why_val else ""))
         else:
             out.append(f"{op}: ok")
     if not res.get("ok"):

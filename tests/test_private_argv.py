@@ -55,7 +55,10 @@ class AgentTask(unittest.TestCase):
             time.sleep(0.05)
         self.assertIsNotNone(got)
         stdin, _, cmdline = got.read_text().partition("\n--\n")
-        self.assertEqual(stdin, SECRET)
+        # the task itself comes through verbatim, then the run's folder
+        # contract (U4) is appended; nothing of either reaches the argv
+        self.assertEqual(stdin.split("\n\nWhere files go:")[0], SECRET)
+        self.assertIn("\n\nWhere files go:", stdin)
         self.assertNotIn("zebra-quartz", cmdline)
         # the recorded command line is no different
         rec = next(iter(agents._latest(self.tf)))
