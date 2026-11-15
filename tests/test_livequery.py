@@ -31,6 +31,9 @@ POSITIVE = [
     "Tell me today's top story",
 ]
 NEGATIVE = [
+    "what is the current folder",
+    "what is the latest file in my downloads",
+    "what is the current branch in this repo",
     "What does this mean?",
     "What does this button do?",
     "Where do I change the display scale?",

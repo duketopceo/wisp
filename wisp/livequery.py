@@ -15,7 +15,10 @@ _SCREEN = re.compile(
     r"dialog|setting|icon|field|app)|what does this|what is this|"
     r"what's this|where do i (change|click|find|set)|display scale|"
     r"in this (app|window|file|document)|i'm (looking|looking at)|"
-    r"highlighted|selected text)\b", re.I)
+    r"highlighted|selected text|"
+    r"(current|this|my) (folder|directory|file|workspace|window|tab|page|"
+    r"app|branch|project|repo|terminal)|"
+    r"my (computer|machine|laptop|desktop|files|downloads))\b", re.I)
 
 _TOPIC = re.compile(
     r"\b(weather|forecast|temperature|how (hot|cold|warm) is it|"
