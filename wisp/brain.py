@@ -256,6 +256,38 @@ def _provider_prefs(p: dict) -> dict | None:
     return prefs or None
 
 
+def is_openrouter(p: dict) -> bool:
+    """True for an openai_compat provider pointed at openrouter.ai or
+    us.openrouter.ai: the only hosts that understand `plugins`."""
+    return p.get("kind") == "openai_compat" \
+        and "openrouter.ai" in (p.get("base_url") or "")
+
+
+def _web_plugin(p: dict, web) -> list | None:
+    """OpenRouter web-search plugin entry for the request body, or None
+    when web is off or the provider is not OpenRouter."""
+    if not web or not is_openrouter(p):
+        return None
+    n = web.get("max_results") if isinstance(web, dict) else None
+    plugin: dict = {"id": "web"}
+    if isinstance(n, int) and n > 0:
+        plugin["max_results"] = n
+    return [plugin]
+
+
+def citations_of(msg: dict | None, extra: list | None = None) -> list:
+    """[{title, url}] from `url_citation` annotations, de-duplicated by
+    url, in order."""
+    out, seen = [], set()
+    for a in list((msg or {}).get("annotations") or []) + list(extra or []):
+        c = a.get("url_citation") if isinstance(a, dict) else None
+        url = (c or {}).get("url")
+        if url and url not in seen:
+            seen.add(url)
+            out.append({"title": str(c.get("title") or ""), "url": url})
+    return out
+
+
 def _ollama_msgs(messages: list) -> list:
     msgs = []
     for m in messages:
@@ -272,7 +304,7 @@ def _ollama_msgs(messages: list) -> list:
     return msgs
 
 
-def _chat_one(p: dict, messages: list, tools, timeout) -> dict:
+def _chat_one(p: dict, messages: list, tools, timeout, web=None) -> dict:
     if p["kind"] == "cli":
         from . import clibrain
         return clibrain.chat(p, messages)
@@ -300,6 +332,9 @@ def _chat_one(p: dict, messages: list, tools, timeout) -> dict:
     prefs = _provider_prefs(p)
     if prefs:
         body["provider"] = prefs
+    plugins = _web_plugin(p, web)
+    if plugins:
+        body["plugins"] = plugins
     t0 = time.monotonic()
     resp = _post(f"{base}/chat/completions", _headers(p), body, timeout)
     msg = (resp.get("choices") or [{}])[0].get("message", {})
@@ -311,9 +346,12 @@ def _chat_one(p: dict, messages: list, tools, timeout) -> dict:
         resp = _post(f"{base}/chat/completions", _headers(p), body, timeout)
         msg = (resp.get("choices") or [{}])[0].get("message", {})
     lat_ms = round((time.monotonic() - t0) * 1000)
-    return {"content": msg.get("content", ""), "raw": msg,
-            "usage": ledger.usage_of(resp),
-            "ttft_ms": None, "latency_ms": lat_ms}
+    out = {"content": msg.get("content", ""), "raw": msg,
+           "usage": ledger.usage_of(resp),
+           "ttft_ms": None, "latency_ms": lat_ms}
+    if plugins:
+        out["citations"] = citations_of(msg)
+    return out
 
 
 def _relax(r, timeout) -> None:
@@ -326,7 +364,7 @@ def _relax(r, timeout) -> None:
 
 
 def _stream_one(p: dict, messages: list, on_delta, timeout,
-                first_token_s: float) -> dict:
+                first_token_s: float, web=None) -> dict:
     if p["kind"] == "cli" or p["name"] == "trial":
         # one reply, no token stream: a CLI answers whole and the trial
         # proxy does not stream
@@ -348,6 +386,9 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
         prefs = _provider_prefs(p)
         if prefs:
             body["provider"] = prefs
+        plugins = _web_plugin(p, web)
+        if plugins:
+            body["plugins"] = plugins
         url, headers = f"{base}/chat/completions", _headers(p)
     req = urllib.request.Request(
         url, data=json.dumps(body).encode(),
@@ -355,7 +396,7 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
                  **headers}, method="POST")
     t0 = time.monotonic()
     ttft_ms = None
-    acc, msg, usage = "", {}, {}
+    acc, msg, usage, notes = "", {}, {}, []
     try:
         with cancel.urlopen(req, timeout=first_token_s) as r:
             for raw in r:
@@ -388,6 +429,8 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
                     choice = (chunk.get("choices") or [{}])[0]
                     piece = (choice.get("delta") or {}).get("content") \
                         or ""
+                    notes.extend((choice.get("delta") or {})
+                                 .get("annotations") or [])
                     if choice.get("message"):
                         msg = choice["message"]
                     done = False
@@ -417,8 +460,11 @@ def _stream_one(p: dict, messages: list, on_delta, timeout,
         usage = {"in": sum(len(str(m.get("content", "")))
                            for m in messages) // 4,
                  "out": len(acc) // 4, "cost": None}
-    return {"content": acc, "raw": msg or {"content": acc},
-            "usage": usage, "ttft_ms": ttft_ms, "latency_ms": lat_ms}
+    out = {"content": acc, "raw": msg or {"content": acc},
+           "usage": usage, "ttft_ms": ttft_ms, "latency_ms": lat_ms}
+    if not ollama and _web_plugin(p, web):
+        out["citations"] = citations_of(msg, notes)
+    return out
 
 
 def _describe(p: dict, e: Exception) -> str:
@@ -550,22 +596,26 @@ def _run_chain(cfg: dict, fn, tools=None) -> dict:
 
 
 def chat(messages: list, cfg: dict, tools: list | None = None,
-         timeout: float = 60) -> dict:
+         timeout: float = 60, web: bool | dict = False) -> dict:
     """Provider-agnostic chat call through the fallback chain →
     {"content", "raw", "provider", "fallback_from"}. Caller owns message
     assembly (memory/session/screens). `tools` = OpenAI-style schemas;
-    included only for providers that declare tools support."""
+    included only for providers that declare tools support. `web` (True or
+    {"max_results": n}) adds OpenRouter's web-search plugin on OpenRouter
+    providers only; the result then carries `citations`."""
+    kw = {"web": web} if web else {}
     return _run_chain(
-        cfg, lambda p: _chat_one(p, messages, tools, timeout), tools)
+        cfg, lambda p: _chat_one(p, messages, tools, timeout, **kw), tools)
 
 
 def chat_stream(messages: list, cfg: dict, on_delta=None,
-                timeout: float = 60) -> dict:
+                timeout: float = 60, web: bool | dict = False) -> dict:
     """Streaming chat through the fallback chain. `on_delta(accumulated
     _text)` fires per chunk. OpenAI-compatible providers stream SSE;
     ollama streams NDJSON from /api/chat. The first token must arrive
     within `[brain] first_token_s` (default 3) or the next entry is
-    tried."""
+    tried. `web` as in `chat`."""
     ft = min(_first_token_s(cfg), timeout)
+    kw = {"web": web} if web else {}
     return _run_chain(
-        cfg, lambda p: _stream_one(p, messages, on_delta, timeout, ft))
+        cfg, lambda p: _stream_one(p, messages, on_delta, timeout, ft, **kw))

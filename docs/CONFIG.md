@@ -103,6 +103,8 @@ Setup, the rules it keeps and Stop: `docs/BROWSER_LANE.md`.
 |-----|---------|---------|
 | `mail` | `"https://mail.google.com"` | URL `launch mail` opens when the default mail handler is a browser; a native client (Thunderbird, Geary) is launched as usual |
 | `calendar` | `"https://calendar.google.com"` | same, for the `calendar` role |
+| `search` | `"auto"` | live web lookups for the answer route. A question about weather, news, scores, prices, exchange rates or the time somewhere else is answered with OpenRouter's web search. `auto`: on when the answer model is on OpenRouter; `true`: always on for those questions; `false`: never. Screen questions never search. Citations (title and URL) go to the turn trace; Wisp never speaks a URL |
+| `search_max_results` | `"3"` | most web results one lookup uses, 1 to 10. OpenRouter bills the search per result |
 
 An absent or empty key uses the default, so a config file without a `[web]` section works unchanged. Values cannot contain `#`: the config parser treats it as a comment.
 

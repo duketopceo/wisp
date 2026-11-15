@@ -368,6 +368,11 @@ prompt = "Wisp, wispd, Omarchy, Hyprland, OpenRouter"
 # config parser reads it as a comment.
 mail = "https://mail.google.com"
 calendar = "https://calendar.google.com"
+# Live lookups for the answer route: "auto" searches the web for questions
+# about weather, news, scores, prices and the like when the answer model is
+# on OpenRouter; "true" forces it on; "false" never searches.
+search = "auto"
+search_max_results = "3"
 
 [memory]
 # Opt-in constitution file. Empty means sync does not read or write

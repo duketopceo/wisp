@@ -89,6 +89,10 @@ models:
                                default openrouter:qwen/qwen3-vl-235b-a22b-instruct; name:model, or blank
   brain.first_token_s          Seconds a model has to start answering before the next one is tried
                                default 3; 1 to 60
+  web.search                   Search the web for live questions such as weather, news, scores and prices; auto does it when the answer model is on OpenRouter
+                               default auto; auto, true, false
+  web.search_max_results       Most web results one live question may use; each result is billed by OpenRouter
+                               default 3; 1 to 10
   brain.allow_paid             Let the fallback chain use paid models
                                default false; true or false
   local.enabled                Allow local model servers (llama.cpp, UI-TARS, jev-shim, ollama)

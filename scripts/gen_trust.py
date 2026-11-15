@@ -49,7 +49,9 @@ HOSTS = {
         what="Answer model, router and decision calls, the vision fallback "
              "for finding a control on screen, and (only if you turn "
              "`[recall] provider` on) memory embeddings. In dev mode "
-             "only, the run judge (`wispd dev run`).",
+             "only, the run judge (`wispd dev run`). Live lookups: when a "
+             "question needs current information (weather, news, scores, "
+             "prices), the web search OpenRouter runs for the answer.",
         sends=[TEXT, SHOT],
         detail="What you said (as text), the focused app and window "
                "names, recent turns, memory notes, a selection or copied "
@@ -58,8 +60,11 @@ HOSTS = {
                "that look like a password manager, a keyring or "
                "authentication prompt or a sudo terminal (plus any you "
                "add under `[cua]`) are blanked first, and a capture is "
-               "refused while one has focus.",
-        default="Yes. It is the default answer brain.",
+               "refused while one has focus. For a live question the "
+               "same text goes with OpenRouter's web plugin, which runs "
+               "a web search and OpenRouter bills it per result.",
+        default="Yes. It is the default answer brain, and live lookups "
+                "are on while the answer model is on OpenRouter.",
         key="You. `OPENROUTER_API_KEY` in your environment, "
             "`~/.config/wisp/.env` or your keyring. The dev-mode judge "
             "uses `omaseal://openrouter/orchestral` (your eval key) "
@@ -67,7 +72,8 @@ HOSTS = {
         control="`[brain] default` and `[brain] fallback` take a local "
                 "model (`ollama:`, `lmstudio:`, `mlx:`) and nothing then "
                 "leaves; `[agent] screenshots = false` keeps the screen "
-                "out of answers. How long OpenRouter and the model "
+                "out of answers; `[web] search = \"false\"` turns off "
+                "live web lookups. How long OpenRouter and the model "
                 "provider keep a request is set by your OpenRouter "
                 "account's privacy settings, not by Wisp."),
     "us.openrouter.ai": dict(
