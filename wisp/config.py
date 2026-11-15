@@ -169,11 +169,12 @@ delivery = "auto"
 # a11y = cua get_window_state tree (when the driver is up), vlm =
 # aspect-matched single-image pointing through the configured brain,
 # uitars =
-# local llama-server (loopback only, screenshots never leave the box),
-# jev = the Decision-Agent patch fallback.
-# WISP_JEV_ENDPOINT overrides this optional structured-grounding endpoint,
-# not the retired turn router.
-providers = "control,a11y,vlm,uitars,jev"
+# local llama-server (loopback only, screenshots never leave the box;
+# only with [local] enabled = true). `jev`, the Decision-Agent patch
+# fallback, is no longer in the default chain (it is not a click
+# finder) but can still be named here; WISP_JEV_ENDPOINT points it at a
+# structured-grounding endpoint.
+providers = "control,a11y,vlm,uitars"
 # candidates below this are re-observed once, then refused (never clicked)
 min_confidence = "0.5"
 # shared budget for the fast providers (P7: act first step 1.2 s)

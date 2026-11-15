@@ -360,7 +360,7 @@ def settings(cfg: dict | None) -> dict:
     local = config.local_enabled(cfg)
     return {
         "providers": [p.strip() for p in str(
-            gc.get("providers", "control,a11y,vlm,uitars,jev")).split(",")
+            gc.get("providers", "control,a11y,vlm,uitars")).split(",")
             if p.strip() and (local or p.strip() != "uitars")],
         "min_conf": _f(gc.get("min_confidence"), 0.5),
         "budget": _f(gc.get("budget_ms"), 1200.0) / 1000.0,

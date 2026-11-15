@@ -396,7 +396,9 @@ class Chain(unittest.TestCase):
                  "uitars": prov("uitars", [g.ProviderDown("x")]),
                  "jev": prov("jev", [cand(1000, 600, 0.9, "jev")],
                              fast=False)}
-        _, run = chain(provs=provs)
+        # jev left the default chain (2026-11-15); a config can still name it
+        _, run = chain(cfg={"ground": {"providers": "a11y,uitars,jev"}},
+                       provs=provs)
         t = run()
         self.assertEqual((t.x, t.y, t.source), (500, 300, "jev"))
         self.assertEqual(t.frame, "global")
@@ -415,12 +417,12 @@ class Chain(unittest.TestCase):
 
     def test_local_off_drops_uitars(self):
         self.assertEqual(g.settings({})["providers"],
-                         ["control", "a11y", "vlm", "jev"])
+                         ["control", "a11y", "vlm"])
         self.assertEqual(g.settings(
             {"ground": {"providers": "uitars,jev"}})["providers"], ["jev"])
         self.assertEqual(g.settings(
             {"local": {"enabled": "true"}})["providers"],
-            ["control", "a11y", "vlm", "uitars", "jev"])
+            ["control", "a11y", "vlm", "uitars"])
 
     def test_size_rescales_into_shot_frame(self):
         provs = {"uitars": prov("u", [cand(864, 540, 0.9, "uitars",
@@ -544,7 +546,8 @@ class Budget(unittest.TestCase):
                  "uitars": prov("u", [cand(1, 1, 0.9)], log),
                  "jev": prov("j", [cand(100, 100, 0.9, "jev")], log,
                              fast=False)}
-        _, run = chain(provs=provs, clock=clock)
+        _, run = chain(cfg={"ground": {"providers": "a11y,uitars,jev"}},
+                       provs=provs, clock=clock)
         t = run()
         names = [n for n, _ in log]
         self.assertEqual(names, ["first", "j"])    # uitars skipped
