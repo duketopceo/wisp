@@ -1,4 +1,5 @@
 """Tests for wisp/act.py — the bounded tool-call loop."""
+import os
 import json
 import pathlib
 import sys
@@ -101,6 +102,14 @@ class Gate(unittest.TestCase):
 class Loop(unittest.TestCase):
     def setUp(self):
         self.cfg = {"agent": {}}
+
+    def _tmp_png(self):
+        """A fake screenshot file, removed after the test."""
+        import tempfile, pathlib
+        fd, name = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        self.addCleanup(os.unlink, name)
+        return pathlib.Path(name)
 
     def test_stops_on_text_reply(self):
         with mock.patch.object(act, "_post",
@@ -313,7 +322,7 @@ class Loop(unittest.TestCase):
         # not click stale pixels
         calls = []
         import tempfile, pathlib
-        shot = pathlib.Path(tempfile.mktemp(suffix=".png"))
+        shot = self._tmp_png()
         shot.write_bytes(b"\x89PNG\r\n\x1a\nfake")
         def fake_run(name, arg, cfg, harness=None):
             calls.append(name)
@@ -369,7 +378,7 @@ class Loop(unittest.TestCase):
         # done claim after screen-changing steps nobody has looked at
         # gets one fresh screenshot and a request to confirm against it.
         import tempfile, pathlib
-        shot = pathlib.Path(tempfile.mktemp(suffix=".png"))
+        shot = self._tmp_png()
         shot.write_bytes(b"\x89PNG\r\n\x1a\nfake")
         calls, seen = [], []
 
@@ -402,7 +411,7 @@ class Loop(unittest.TestCase):
 
     def _verify_run(self, replies, cfg):
         import tempfile, pathlib
-        shot = pathlib.Path(tempfile.mktemp(suffix=".png"))
+        shot = self._tmp_png()
         shot.write_bytes(b"\x89PNG\r\n\x1a\nfake")
         calls = []
 
@@ -500,7 +509,7 @@ class Loop(unittest.TestCase):
         # no trigger image + vision → the loop observes before the
         # first model call, not just before the first click
         import tempfile, pathlib
-        shot = pathlib.Path(tempfile.mktemp(suffix=".png"))
+        shot = self._tmp_png()
         shot.write_bytes(b"\x89PNG\r\n\x1a\nfake")
         calls = []
         def fake_run(name, arg, cfg, harness=None):
