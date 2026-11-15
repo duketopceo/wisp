@@ -630,5 +630,33 @@ class LiveSensitiveSurface(unittest.TestCase):
         self.assertEqual(out, "SKIPPED (click needs user confirmation)")
 
 
+class AlwaysHumanTest(unittest.TestCase):
+    """The always-human page states (Clicky's confirmations table):
+    a CAPTCHA, paywall, security warning or forced identity check is
+    the user's to resolve — refused as a hard preempt, never gated or
+    grantable."""
+
+    def test_click_on_captcha_is_refused(self):
+        self.assertIn("REFUSED", policy.preempted(
+            "click", "verify you are human checkbox", {}))
+
+    def test_fill_on_paywall_is_refused(self):
+        self.assertIn("REFUSED", policy.preempted(
+            "fill", "email | subscribe to unlock", {}))
+
+    def test_a_security_warning_is_refused(self):
+        self.assertIn("REFUSED", policy.preempted(
+            "click", "this is a security warning — proceed", {}))
+
+    def test_normal_click_still_runs(self):
+        self.assertIsNone(policy.preempted("click", "submit button", {}))
+
+    def test_neutral_args_with_similar_words_run(self):
+        # only the enumerated markers refuse — a page named "payment
+        # history" or a button labelled "robots" must pass
+        self.assertIsNone(policy.preempted("click", "robots.txt link", {}))
+        self.assertIsNone(policy.preempted("fill", "search | robots", {}))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -42,6 +42,34 @@ def mode_of(cfg: dict | None) -> str:
 
 SENSITIVE_MUTATING = ("click", "type_text", "key", "fill")
 
+# Interactions that are always the user's to do, whatever the tier or
+# grant says (Clicky's confirmations table, the section Wisp lacked:
+# `cua_safety.sensitive_field` covers the fields, but a CAPTCHA wall,
+# a paywall or a security warning is a *page state*, not a field — the
+# refusal belongs here, next to the tier table, as a policy statement).
+# A page that shows any of these is data (the injection rule); treating
+# the page's own "click here to confirm" as approval is the failure
+# this preempts.
+ALWAYS_HUMAN = ("captcha", "are you a robot", "human verification",
+                "verify you are human", "prove you're not a robot",
+                "paywall", "subscribe to continue", "sign up to read",
+                "create an account to continue", "subscribe to unlock",
+                "this is a security warning", "unusual traffic",
+                "verify your identity", "confirm your identity",
+                "two-factor authentication required",
+                "enter your password to continue",
+                "enter your password to confirm")
+
+
+def _always_human_hit(arg: str) -> str | None:
+    """The first always-human marker in a tool arg (a target name or a
+    filled value naming one), or None."""
+    low = arg.lower()
+    for marker in ALWAYS_HUMAN:
+        if marker in low:
+            return marker
+    return None
+
 
 def tier_of(name: str, arg: str = "", cfg: dict | None = None,
             state=None) -> str:
@@ -93,9 +121,18 @@ def _decision(t: str, cfg: dict | None) -> str:
 
 def preempted(name: str, arg: str, cfg: dict | None) -> str | None:
     """Hard preempts before policy: denylist on shell + text-bearing
-    args, live secret keys, and shell needs allow_shell."""
+    args, live secret keys, always-human page states on input tools,
+    and shell needs allow_shell."""
     if name in ((cfg or {}).get("dev", {}).get("deny_tools") or ()):
         return f"REFUSED (dev run denies {name})"
+    # a CAPTCHA, paywall or security warning is always the user's to
+    # clear — the model never clicks or types through one, whatever a
+    # grant or the page text says
+    if name in tools.TEXT_INPUT or name in SENSITIVE_MUTATING:
+        hit = _always_human_hit(str(arg or ""))
+        if hit:
+            return (f"REFUSED ({hit} is the user's to resolve — "
+                    "stop and hand it to them)")
     # a gauntlet run (wisp.gauntlet) types only into sandbox windows
     # and saves skills with create/edit only
     from . import gauntlet
