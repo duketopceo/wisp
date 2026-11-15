@@ -1,4 +1,5 @@
 """Agents and memory: task, memory, suggest, label, context."""
+import argparse
 import os
 import base64
 import binascii
@@ -15,9 +16,13 @@ GROUPS["label"] = "Label the last turn to measure routing accuracy"
 
 
 def _grep_arg(p):
-    p.add_argument("--grep", "-g", metavar="TEXT", default="",
+    p.add_argument("--grep", metavar="TEXT", default="",
                    help="only runs whose task text, name or learned line "
-                        "contains TEXT")
+                        "contains TEXT (short: -g)")
+    # -g is registered separately and hidden: argparse renders an aliased
+    # option with a metavar differently on 3.11 and 3.13, which broke the
+    # help golden across Python versions.
+    p.add_argument("-g", dest="grep", metavar="TEXT", help=argparse.SUPPRESS)
 
 
 @command("task list", "List background agents; --grep finds a past run by "

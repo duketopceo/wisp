@@ -3,14 +3,14 @@ usage: wispd task list [-h] [--grep TEXT] [--json] [--quiet] [--no-color]
 List background agents; --grep finds a past run by its subject or what it learned
 
 options:
-  -h, --help       show this help message and exit
-  --grep, -g TEXT  only runs whose task text, name or learned line contains
-                   TEXT
+  -h, --help   show this help message and exit
+  --grep TEXT  only runs whose task text, name or learned line contains TEXT
+               (short: -g)
 
 global options:
-  --json           machine-readable output (one JSON object)
-  --quiet, -q      print nothing on success
-  --no-color       plain output (also NO_COLOR, or not a tty)
+  --json       machine-readable output (one JSON object)
+  --quiet, -q  print nothing on success
+  --no-color   plain output (also NO_COLOR, or not a tty)
 
 Examples:
   wispd task list
