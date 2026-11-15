@@ -3,6 +3,7 @@ fake Atspi module, no bus), the fixture format and the snap-share report."""
 import pathlib
 import sys
 import unittest
+from unittest import mock
 from types import SimpleNamespace
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -123,6 +124,25 @@ class Atspi(unittest.TestCase):
         self.assertEqual(t.state()[0], et.UNAVAILABLE)
         with self.assertRaises(et.TreeUnavailable):
             t.find_by_label("x")
+
+    def test_no_accessibility_bus_is_unavailable_before_atspi_loads(self):
+        # libatspi aborts the whole process (g_error) when it cannot reach
+        # the accessibility bus; the bus is probed first, so a session
+        # without one (the gauntlet's isolated session) degrades instead
+        et._BUS_CACHE.clear()
+        with mock.patch.object(et, "_bus_probe", return_value=False):
+            t = et.AtspiTree(focused=lambda: focus())
+            self.assertEqual(t.state()[0], et.UNAVAILABLE)
+            self.assertIn("accessibility bus", t.state()[1])
+        et._BUS_CACHE.clear()
+
+    def test_bus_probe_result_is_cached_briefly(self):
+        et._BUS_CACHE.clear()
+        with mock.patch.object(et, "_bus_probe", return_value=True) as pr:
+            self.assertTrue(et.a11y_bus_ok())
+            self.assertTrue(et.a11y_bus_ok())
+        self.assertEqual(pr.call_count, 1)
+        et._BUS_CACHE.clear()
 
     def test_a_bus_error_mid_walk_is_unavailable_not_a_crash(self):
         class Dead(FakeAtspi):

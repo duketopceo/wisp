@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import time
 
 OK = "ok"
@@ -185,6 +186,44 @@ class UnavailableTree(ElementTree):
         return UNAVAILABLE, self.reason
 
 
+_BUS_CACHE: dict = {}
+_BUS_OK_TTL_S = 300.0     # a reachable bus stays reachable for a session
+_BUS_DOWN_TTL_S = 30.0    # a missing one is re-checked soon (it may start)
+
+
+def _bus_probe() -> bool:
+    """True when the accessibility bus answers. libatspi calls g_error
+    (which aborts the whole process) when it cannot reach the bus, so the
+    bus is asked through Gio first, where a failure is an ordinary
+    exception."""
+    if os.environ.get("AT_SPI_BUS_ADDRESS"):
+        return True
+    try:
+        import gi
+        gi.require_version("Gio", "2.0")
+        from gi.repository import Gio, GLib
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        reply = bus.call_sync(
+            "org.a11y.Bus", "/org/a11y/bus", "org.a11y.Bus", "GetAddress",
+            None, GLib.VariantType("(s)"), Gio.DBusCallFlags.NONE, 1000,
+            None)
+        return bool(reply and reply.unpack()[0])
+    except Exception:
+        return False
+
+
+def a11y_bus_ok(clock=time.monotonic) -> bool:
+    now = clock()
+    hit = _BUS_CACHE.get("ok")
+    if hit is not None:
+        ok, at = hit
+        if now - at < (_BUS_OK_TTL_S if ok else _BUS_DOWN_TTL_S):
+            return ok
+    ok = _bus_probe()
+    _BUS_CACHE["ok"] = (ok, now)
+    return ok
+
+
 class AtspiTree(ElementTree):
     """AT-SPI through `gi` / Atspi-2.0, bound to the Hyprland-focused
     window. One instance is one consistent snapshot: it walks the bound
@@ -221,6 +260,9 @@ class AtspiTree(ElementTree):
     def _load_atspi(self):
         if self._atspi is not None:
             return self._atspi
+        if not a11y_bus_ok():
+            raise TreeUnavailable(
+                "accessibility bus not running (at-spi-bus-launcher)")
         try:
             import gi
             gi.require_version("Atspi", "2.0")
