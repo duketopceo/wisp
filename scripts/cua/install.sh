@@ -130,6 +130,11 @@ else
     die "extracted cua-driver does not match CUA_BIN_SHA256_$ARCH; refusing to install"
   fi
   [ -e "$BIN" ] && REPLACED=1
+  # a running driver holds its binary open: copying over it fails with
+  # "Text file busy", so stop it first (it is restarted below)
+  if [ "$REPLACED" -eq 1 ] && command -v systemctl >/dev/null; then
+    systemctl --user stop cua-driver.service 2>/dev/null || true
+  fi
   mkdir -p "$DEST_DIR"
   chmod 0755 "$found"
   cp -a "$root/." "$DEST_DIR/"
@@ -140,6 +145,11 @@ mkdir -p "$(dirname "$LINK")"
 if [ ! -e "$LINK" ] && [ ! -L "$LINK" ]; then
   ln -s "$BIN" "$LINK"
   echo "linked $LINK"
+elif [ "$(readlink -f "$LINK")" != "$(readlink -f "$BIN")" ]; then
+  # another install owns the name on PATH; leave it, but say so: wispd
+  # doctor reads the version of the cua-driver on PATH
+  echo "note: $LINK points to $(readlink -f "$LINK"), not the pinned driver." >&2
+  echo "      the service runs $BIN; to use it on PATH too: ln -sfn \"$BIN\" \"$LINK\"" >&2
 fi
 
 CHANGED=0
