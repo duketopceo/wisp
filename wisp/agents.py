@@ -40,14 +40,17 @@ def _slug(text: str) -> str:
 
 def _log_line(rec: dict, tasks_file=config.TASKS_FILE) -> None:
     tasks_file.parent.mkdir(parents=True, exist_ok=True)
-    with tasks_file.open("a") as f:
-        f.write(json.dumps(rec) + "\n")
-    try:
-        render_work_index(tasks_file)
-    except OSError:
-        # the record is the source of truth and is already written;
-        # WORK.md is derived and heals on the next append
-        pass
+    # the append and the index rebuild share one lock, so a rebuild never
+    # reads a line another thread is halfway through writing
+    with _WORK_LOCK:
+        with tasks_file.open("a") as f:
+            f.write(json.dumps(rec) + "\n")
+        try:
+            _render_work_index(tasks_file)
+        except OSError:
+            # the record is the source of truth and is already written;
+            # WORK.md is derived and heals on the next append
+            pass
 
 
 # -- the job index (U5) ---------------------------------------------------
@@ -160,10 +163,20 @@ def _render_work_index(tasks_file) -> None:
 
 def _records(tasks_file=config.TASKS_FILE) -> list:
     try:
-        return [json.loads(l) for l in tasks_file.read_text().splitlines()
-                if l.strip()]
+        lines = tasks_file.read_text().splitlines()
     except OSError:
         return []
+    out = []
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            out.append(json.loads(line))
+        except ValueError:
+            # a line another process is still writing (or a torn tail
+            # after a crash) is skipped, never fatal to every reader
+            continue
+    return out
 
 
 def record_process(proc_id: str, pid: int, scope: str = "",
