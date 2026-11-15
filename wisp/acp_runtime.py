@@ -196,15 +196,18 @@ class HelperProcess:
 
 class SessionRun:
     def __init__(self, mgr, proc, name, task, prompt, cwd, out_dir, agent,
-                 tf, ld, cfg, resume_sid=""):
+                 tf, ld, cfg, resume_sid="", scratch=None):
         self.mgr, self.proc, self.id, self.task = mgr, proc, name, task
         self.agent, self.cwd, self.out_dir = agent, str(cwd), str(out_dir)
         self.tf, self.ld, self.cfg = tf, ld, cfg
         self.resume_sid = resume_sid
+        self.scratch = scratch
         # a helper's whole folder (notes/, tmp/, output/) is its own;
-        # an unnamed task works inside its out dir
+        # an unnamed task works inside its out dir, plus the scratch dir
+        # it was given (DATA_DIR is otherwise refused for writes)
         self.policy = agent_policy.SessionPolicy.from_cfg(
-            cfg, self.cwd, self.cwd if agent else self.out_dir)
+            cfg, self.cwd, self.cwd if agent else self.out_dir,
+            *([scratch] if scratch else []))
         self.lock = threading.Lock()
         self.queue = collections.deque([prompt])
         self.closed = self.finished = False
@@ -483,6 +486,7 @@ class SessionRun:
                 close.update(routine_id=rec["routine_id"],
                              routine_recorded=True, routine_outcome=rout,
                              unread=rout["unread"])
+        close["learned"] = agents.learned_for(rec, self.ld, status)
         agents._log_line(close, self.tf)
         agent_mcp.revoke(self.token)
         self.proc.sessions.pop(self.sid, None)
@@ -646,7 +650,8 @@ class Manager:
                          name=f"acp-{run.id}").start()
 
     def start_task(self, name, task, prompt, cwd, out_dir, delivers,
-                   spawned_by, depth, routine_id, agent, cfg, tf, ld) -> str:
+                   spawned_by, depth, routine_id, agent, cfg, tf, ld,
+                   scratch=None) -> str:
         slug = agents._slug(agent) if agent else ""
         try:
             proc = self._acquire(f"acp-{slug or name}", cfg, tf, ld, cwd,
@@ -662,7 +667,8 @@ class Manager:
         agents.record_session(name, task, proc.id, cwd=str(cwd),
                               tasks_file=tf, **extra)
         self._launch(SessionRun(self, proc, name, task, prompt, cwd,
-                                out_dir, slug, tf, ld, cfg))
+                                out_dir, slug, tf, ld, cfg,
+                                scratch=scratch))
         return f"SPAWNED {name} (acp {proc.id})"
 
     def tell(self, slug, text) -> bool:

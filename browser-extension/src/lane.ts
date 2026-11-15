@@ -1,6 +1,12 @@
 import { Epoch } from './epoch';
 import { RULE } from './fieldrule';
-import type { BatchResult, Command, Step, StepResult } from './protocol';
+import type {
+  BatchResult,
+  Command,
+  KeepReason,
+  Step,
+  StepResult,
+} from './protocol';
 import { pageAct } from './page/act';
 import { pageScroll, pageWait } from './page/misc';
 import { pageSnapshot } from './page/snapshot';
@@ -12,7 +18,8 @@ export type LaneApi = Pick<typeof chrome, 'tabs' | 'tabGroups' | 'scripting' | '
 export interface LaneState {
   groups: Record<string, number>;
   tabs: Record<string, number[]>;
-  kept: Record<string, true>;
+  /** tabId -> why it stayed open. `true` is an older extension's state. */
+  kept: Record<string, KeepReason | true>;
   current: Record<string, number>;
   epoch: number;
 }
@@ -199,10 +206,11 @@ export class Lane {
       }
       case 'keep': {
         const id = await this.tabOf(task, step);
-        this.state.kept[String(id)] = true;
+        const why = typeof step.why === 'string' ? (step.why as KeepReason) : true;
+        this.state.kept[String(id)] = why;
         await api.tabs.ungroup([id]);
         await this.persist();
-        return {};
+        return { tab: id, why: typeof why === 'string' ? why : '' };
       }
       case 'done':
         await this.endTask(task);
@@ -267,6 +275,28 @@ export class Lane {
     delete this.state.tabs[task];
     delete this.state.current[task];
     await this.persist();
+  }
+
+  /** The tabs a task left open, with the reason each was kept. A tab kept
+   *  before reasons existed reports `''` rather than inventing one. */
+  keptTabs(task: string): { tab: number; why: KeepReason | '' }[] {
+    return (this.state.tabs[task] ?? [])
+      .filter((t) => this.state.kept[String(t)])
+      .map((t) => {
+        const why = this.state.kept[String(t)];
+        return { tab: t, why: typeof why === 'string' ? why : '' };
+      });
+  }
+
+  /** "2 comparison, 1 later" — the Stop summary's account of what stayed. */
+  keptSummary(task: string): string {
+    const counts = new Map<string, number>();
+    for (const t of this.keptTabs(task)) {
+      counts.set(t.why, (counts.get(t.why) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([why, n]) => `${n} ${why || 'no reason given'}`)
+      .join(', ');
   }
 
   /** Wait for the tab to finish loading, up to `ms`. The update event can

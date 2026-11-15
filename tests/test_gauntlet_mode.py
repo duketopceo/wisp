@@ -358,7 +358,9 @@ class TestAppSkillEvent(unittest.TestCase):
                            return_value=info), \
                 mock.patch.object(trace, "emit") as emit:
             out = context.snapshot(cfg)
-        self.assertIn("[app_skill]\nUse the toolbox.", out)
+        # The body sits inside the app_skill fence rather than after a bare header: it is data, not instruction.
+        self.assertIn("<<<app_skill\nUse the toolbox.\napp_skill>>>", out)
+        self.assertIn("[app_skill] ", out)
         evs = [c for c in emit.call_args_list if c[0][1] == "app_skill"]
         self.assertEqual(len(evs), 1)
         self.assertEqual(evs[0][0][3], {"name": "gimp-basics",

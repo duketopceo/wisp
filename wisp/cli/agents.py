@@ -1,4 +1,5 @@
 """Agents and memory: task, memory, suggest, label, context."""
+import argparse
 import os
 import base64
 import binascii
@@ -14,22 +15,45 @@ GROUPS["suggest"] = "Suggestions mined from your activity"
 GROUPS["label"] = "Label the last turn to measure routing accuracy"
 
 
-@command("task list", "List background agents with their last log line",
-         ["wispd task list"], {"tasks": "list"})
+def _grep_arg(p):
+    p.add_argument("--grep", metavar="TEXT", default="",
+                   help="only runs whose task text, name or learned line "
+                        "contains TEXT (short: -g)")
+    # -g is registered separately and hidden: argparse renders an aliased
+    # option with a metavar differently on 3.11 and 3.13, which broke the
+    # help golden across Python versions.
+    p.add_argument("-g", dest="grep", metavar="TEXT", help=argparse.SUPPRESS)
+
+
+@command("task list", "List background agents; --grep finds a past run by "
+         "its subject or what it learned",
+         ["wispd task list", "wispd task list --grep flaky"],
+         {"tasks": "list"}, args=_grep_arg)
 def task_list(ctx, a):
     from .. import agents
     ts = agents.tasks()
+    want = (getattr(a, "grep", "") or "").strip().lower()
     rows = [{"name": n, "status": t["status"], "task": t.get("task", ""),
-             "ts": t.get("ts", ""), "tail": t.get("tail") or ""}
+             "ts": t.get("ts", ""), "tail": t.get("tail") or "",
+             "learned": t.get("learned") or ""}
             for n, t in sorted(ts.items(),
                                key=lambda kv: kv[1].get("ts", ""))]
+    if want:
+        # the point of the index: find a past run by its subject or by what
+        # it worked out, not by remembering the slug
+        rows = [r for r in rows
+                if want in (r["task"] + " " + r["name"]).lower()
+                or want in r["learned"].lower()]
     if not rows:
-        return ctx.emit({"tasks": []}, strings.NO_TASKS)
+        return ctx.emit({"tasks": []},
+                        strings.NO_TASKS if not want else "nothing matched")
     lines = []
     for r in rows:
         lines.append(f"{r['status']:<10} {r['name']:<24} {r['task'][:50]}"
-                     + (f"\n{'':<36}↳ {r['tail'][:90]}"
-                        if r["tail"] else ""))
+                     + (f"\n{'':<36}↳ {r['learned'][:90]}"
+                        if r["learned"]
+                        else (f"\n{'':<36}↳ {r['tail'][:90]}"
+                              if r["tail"] else "")))
     return ctx.emit({"tasks": rows}, "\n".join(lines))
 
 

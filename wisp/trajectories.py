@@ -13,7 +13,7 @@ import pathlib
 import re
 from datetime import datetime, timezone
 
-from . import config
+from . import config, framing
 
 FILE = config.DATA_DIR / "trajectories.jsonl"
 MAX_BYTES = 2 * 1024 * 1024
@@ -197,4 +197,9 @@ def context_for(task: str, app: str = "", cfg: dict | None = None,
                 " final action missed (single-source, unverified)")
         else:
             lines.append(f"- prior success: {steps or 'no steps'}")
-    return "\n".join(lines)
+    # Prior attempts are model-authored and include tool arguments, which can quote a page or a document. Wrapped so
+    # a quoted instruction cannot read as this run's task.
+    body, _ = framing.clean("\n".join(lines), framing.CAP_CHARS)
+    return framing.data_block(
+        "prior attempts", "What earlier runs did on similar tasks.",
+        body, source="earlier runs Wisp recorded")

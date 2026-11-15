@@ -93,7 +93,8 @@ def index() -> list:
         meta = _frontmatter(head)
         out.append({"name": meta.get("name", d.name),
                     "description": meta.get("description", ""),
-                    "tool": bool(meta.get("tool"))})
+                    "tool": bool(meta.get("tool")),
+                    "pulls_tools": _list_field(meta.get("pulls_tools"))})
     return out
 
 
@@ -117,6 +118,10 @@ def index_text(transcript: str = "") -> str:
         if not s["description"]:
             continue
         line = f"- {s['name']}: {s['description']}"
+        if s.get("pulls_tools"):
+            # what this skill depends on, so the model knows before loading
+            # it whether the tools it needs are here at all
+            line += f" (needs: {', '.join(s['pulls_tools'])})"
         if used + len(line) > INDEX_BUDGET:
             break
         lines.append(line)
@@ -442,6 +447,7 @@ def match_app_skill_info(
                     "description": meta.get("description", ""),
                     "matched_by": "url_host",
                     "asks": asks_field(meta.get("asks")),
+                    "pulls_tools": _list_field(meta.get("pulls_tools")),
                     "body": body,
                     "path": str(f),
                 }
@@ -456,6 +462,7 @@ def match_app_skill_info(
                     "description": meta.get("description", ""),
                     "matched_by": "window_class",
                     "asks": asks_field(meta.get("asks")),
+                    "pulls_tools": _list_field(meta.get("pulls_tools")),
                     "body": body,
                     "path": str(f),
                 }
@@ -476,7 +483,7 @@ def match_app_skill_info(
 # skills are documentation and never register executable tools.
 APP_FRONTMATTER_KEYS = frozenset({
     "name", "description", "url_hosts", "app_classes", "asks", "tier",
-    "provenance", "draft",
+    "provenance", "draft", "pulls_tools",
 })
 
 # Ceiling for the guide text added to one planner prompt. 400 tokens
@@ -492,9 +499,27 @@ TEACH_GUIDE_TOKEN_CAP = 400
 TEACH_GUIDE_CHAR_CAP = TEACH_GUIDE_TOKEN_CAP * CHARS_PER_TOKEN
 
 
+def _unavailable_tools(text: str) -> list[str]:
+    """`pulls_tools` tokens naming a tool this install does not have. A
+    skill that says it needs `sandbox` on a build without one is refused
+    here, by name, rather than at the first call that fails."""
+    from . import tools as toolmod
+    known = set(toolmod.REGISTRY)
+    m = re.match(r"^---\n(.*?)\n---\n", text or "", re.S)
+    if not m:
+        return []
+    raw = ""
+    for line in m.group(1).splitlines():
+        k, _, v = line.partition(":")
+        if k.strip() == "pulls_tools":
+            raw = v
+    return [t for t in _list_field(raw) if t not in known]
+
+
 def frontmatter_problems(text: str) -> list[str]:
     """Why an app guide's frontmatter is not acceptable, [] when it is:
-    keys outside the whitelist, or a missing name/description/provenance."""
+    keys outside the whitelist, a missing name/description/provenance, or a
+    `pulls_tools` token naming a tool that does not exist."""
     m = re.match(r"^---\n(.*?)\n---\n", text or "", re.S)
     if not m:
         return ["no frontmatter"]
@@ -504,6 +529,8 @@ def frontmatter_problems(text: str) -> list[str]:
            if k not in APP_FRONTMATTER_KEYS]
     out += [f"missing key: {k}" for k in ("name", "description", "provenance")
             if k not in keys]
+    for tok in _unavailable_tools(text):
+        out.append(f"pulls_tools names no such tool: {tok}")
     return out
 
 

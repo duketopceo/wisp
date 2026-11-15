@@ -47,11 +47,32 @@ One `browser` tool call is a batch of up to 20 steps:
 | `click`, `fill` | act on a ref from the latest snapshot |
 | `scroll`, `wait_for` | scroll; wait for text or a selector (at most 15 s) |
 | `screenshot` | proof screenshot saved under `~/.local/share/wisp/browser/output/` |
-| `keep` | take a tab out of the group so it stays when the task ends |
+| `keep` | take a tab out of the group so it stays when the task ends; carries `why` |
 | `done` | close the task's tabs (kept tabs stay) |
 
 A new turn closes the previous turn's tab group. The tool is confirm-tier
 (T2): it asks once per session like `mcp_call` does.
+
+### Why a tab was kept
+
+A kept tab is a real cost in the user's window, so `keep` names a reason
+from one closed set:
+
+| `why` | for |
+|-------|-----|
+| `comparison` | a page held beside another to compare against |
+| `reference` | a page the result points the user back to |
+| `later` | something the task could not finish, left for the user |
+| `distraction` | a page that answered nothing but belongs to the user's own session |
+
+`why` is optional on the wire so an older caller does not fail, but a kept
+tab with no reason reports as "no reason given" rather than passing
+silently. Both enforcement sites validate the set: `check_steps()` in
+`wisp/tools/browser.py` refuses an out-of-set value before the batch
+leaves Wisp, and `KEEP_REASONS` in `browser-extension/src/protocol.ts` is
+the type the lane stores. The reason is reported twice — on the `keep`
+result line and in the end-of-task count ("kept 3 tabs: 2 comparison,
+1 later"), so the field always has a reader.
 
 ## Rules it keeps
 

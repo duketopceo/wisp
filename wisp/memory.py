@@ -19,7 +19,7 @@ import pathlib
 import re
 from datetime import date, datetime, timedelta
 
-from . import config
+from . import config, framing
 
 MEMORY_FILE = config.DATA_DIR / "MEMORY.md"
 USER_FILE = config.DATA_DIR / "USER.md"
@@ -534,11 +534,21 @@ def context_block(transcript: str = "") -> str:
             app_body = skills.match_app_skill(
                 app, url_host=_ctx.focus_url_host(app, title))
             if app_body:
-                parts.append(f"[app_skill]\n{app_body}")
+                parts.append(framing.data_block(
+                    "app_skill",
+                    "A saved playbook for this app, written earlier and "
+                    "stored on disk.",
+                    app_body,
+                    source="a saved skill file on disk"))
     except Exception:
         pass
     if transcript:
         rec = recall.context_for(transcript)
         if rec:
-            parts.append(f"[recall]\n{rec}")
+            # A stored transcript carries whatever a page or an earlier answer held, so it is third-party text on
+            # the way back in, not Wisp's own memory.
+            body, _ = framing.clean(rec, framing.CAP_CHARS)
+            parts.append(framing.data_block(
+                "recall", "Earlier turns from this conversation, recalled.",
+                body, source="an earlier conversation"))
     return "\n\n".join(parts)

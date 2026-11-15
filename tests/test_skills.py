@@ -46,6 +46,81 @@ class SkillsTest(unittest.TestCase):
         text = skills.index_text()
         self.assertIn("alpha: first skill", text)
 
+
+GUIDE = """---
+name: {name}
+description: {desc}
+provenance: shipped
+{pulls}
+---
+
+Body.
+"""
+
+
+class PullsToolsTest(unittest.TestCase):
+    """U7: a skill states the tools it needs, a bad statement is refused by
+    name, and the model can see the dependency in the index."""
+
+    def setUp(self):
+        self.dir = pathlib.Path(tempfile.mkdtemp()) / "skills"
+        for p_ in (mock.patch.object(skills, "SKILLS_DIR", self.dir),):
+            p_.start()
+            self.addCleanup(p_.stop)
+
+    def guide(self, name="g", desc="a guide", pulls="",
+              extra_key=""):
+        d = self.dir / name
+        d.mkdir(parents=True)
+        (d / "SKILL.md").write_text(GUIDE.format(
+            name=name, desc=desc, pulls=pulls) + extra_key)
+        return (d / "SKILL.md").read_text()
+
+    def test_parses_both_tokens_from_a_comma_list(self):
+        self.guide(pulls="pulls_tools: memory, browser")
+        got = [s for s in skills.index() if s["name"] == "g"][0]
+        self.assertEqual(got["pulls_tools"], ["memory", "browser"])
+
+    def test_the_index_names_the_tools_a_skill_pulls(self):
+        self.guide(pulls="pulls_tools: memory, browser")
+        self.assertIn("(needs: memory, browser)", skills.index_text())
+
+    def test_a_skill_without_pulls_tools_lists_exactly_as_before(self):
+        self.guide()
+        got = [s for s in skills.index() if s["name"] == "g"][0]
+        self.assertEqual(got["pulls_tools"], [])
+        self.assertNotIn("needs:", skills.index_text())
+
+    def test_a_bracketed_value_tokenises_to_valid_tokens(self):
+        # _list_field strips the brackets; the plan asks for this to be
+        # asserted as the parser dictates rather than assumed a rejection
+        self.guide(pulls="pulls_tools: [memory, browser]")
+        got = [s for s in skills.index() if s["name"] == "g"][0]
+        self.assertEqual(got["pulls_tools"], ["memory", "browser"])
+
+    def test_an_unregistered_tool_is_a_named_problem(self):
+        text = self.guide(pulls="pulls_tools: memory, sandbox")
+        problems = skills.frontmatter_problems(text)
+        self.assertIn("pulls_tools names no such tool: sandbox", problems)
+        self.assertNotIn("pulls_tools names no such tool: memory", problems)
+
+    def test_every_registry_tool_is_accepted(self):
+        for name in sorted(tools.REGISTRY)[:5]:
+            text = self.guide(name=f"g-{name}", pulls=f"pulls_tools: {name}")
+            self.assertEqual(skills.frontmatter_problems(text), [], name)
+
+    def test_pulls_tools_is_a_permitted_app_guide_key(self):
+        text = self.guide(pulls="pulls_tools: memory")
+        self.assertEqual(skills.frontmatter_problems(text), [])
+
+    def test_another_unknown_key_is_still_rejected(self):
+        text = self.guide(pulls="pulls_tools: memory",
+                          extra_key="")
+        text = text.replace("provenance: shipped",
+                            "provenance: shipped\nsandbox: true")
+        self.assertIn("disallowed key: sandbox",
+                      skills.frontmatter_problems(text))
+
     def test_write_file_rejects_traversal(self):
         skills.run_manage("create|s|d|b")
         self.assertIn("FAIL",

@@ -8,7 +8,7 @@ import json
 import threading
 import time
 
-from . import config, platform, skills
+from . import config, framing, platform, skills
 
 ACTIVITY = config.DATA_DIR / "activity.jsonl"
 
@@ -130,7 +130,19 @@ def snapshot(cfg: dict) -> str:
                 app, url_host=focus_url_host(app, title))
             app_body = info["body"] if info else ""
             if app_body:
-                out += "\n\n[app_skill]\n" + app_body
+                out += "\n\n" + framing.data_block(
+                    "app_skill",
+                    "A saved playbook for this app, written earlier and "
+                    "stored on disk.",
+                    app_body,
+                    source="a saved skill file on disk")
+                needs = info.get("pulls_tools") or []
+                if needs:
+                    # the playbook's own steps name tools; say which ones it
+                    # declares so a missing one is visible before a call
+                    # fails rather than after
+                    out += ("\n[app_skill needs] " + ", ".join(needs)
+                            + " (declared by the playbook; not a grant)")
                 # reuse is observable: run 2 of a gauntlet case shows
                 # whether the saved skill was injected
                 from . import trace

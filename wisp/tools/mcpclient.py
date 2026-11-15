@@ -22,6 +22,8 @@ import subprocess
 import time
 import urllib.request
 
+from .. import framing
+
 TIMEOUT = 20
 _MAX_OUT = 4000
 _PROTO = "2024-11-05"
@@ -148,20 +150,31 @@ def _call_stdio(command: str, spec: dict, tool: str,
 def _extract(resp: dict) -> str:
     if "error" in resp:
         e = resp["error"]
-        return f"MCP_ERROR {e.get('code')}: {e.get('message', '')[:200]}"
+        # Server-authored, so it is third-party text too: a server names its own errors.
+        return framing.data_block(
+            "mcp_error", "The MCP server refused the call.",
+            f"{e.get('code')}: {e.get('message', '')[:200]}",
+            source="an MCP server")
     result = resp.get("result") or {}
     if result.get("isError"):
         parts = result.get("content") or []
         text = " ".join(c.get("text", "") for c in parts
                         if isinstance(c, dict))
-        return f"TOOL_ERROR {text[:400]}"
+        return framing.data_block(
+            "mcp_error", "The MCP server returned an error.",
+            text[:400], source="an MCP server")
     parts = result.get("content") or []
     if parts and all(isinstance(c, dict) and c.get("type") == "text"
                      for c in parts):
         text = "\n".join(c.get("text", "") for c in parts)
     else:
         text = json.dumps(result)[:_MAX_OUT]
-    return text[:_MAX_OUT] if text else "OK (empty result)"
+    if not text:
+        return "OK (empty result)"
+    body, _ = framing.clean(text, _MAX_OUT)  # truncate before fencing, so the fence is not cut mid-body
+    return framing.data_block(
+        "mcp", "The result came back from an MCP server.",
+        body, source="an MCP server")
 
 
 def call(arg: str, cfg: dict) -> str:

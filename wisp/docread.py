@@ -20,6 +20,8 @@ import shutil
 import subprocess
 import zipfile
 
+from . import framing
+
 DOC_EXT = (".pdf", ".docx", ".xlsx", ".txt", ".md")
 MAX_BYTES = 40 * 1024 * 1024
 MAX_PAGES = 400
@@ -320,6 +322,13 @@ def context_for(question: str, window: dict, cfg: dict | None = None,
     body = relevant(extract(path, want), question)
     if not body:
         return ""
-    return (f"The user's focused window shows the file {path.name}. "
-            "Relevant excerpts from the file (not necessarily what is "
-            f"visible right now):\n{body}")
+    # A whole document body, so the cap has to match what the reader budgeted: `clean()`'s 4000 default would cut
+    # every excerpt 2000 characters short of `BLOCK_CHARS` and do it silently.
+    body, _ = framing.clean(body, BLOCK_CHARS + 400)
+    return framing.data_block(
+        "document",
+        f"The user's focused window shows the file {path.name}. These "
+        "are relevant excerpts from it, not necessarily what is visible "
+        "right now.",
+        body,
+        source="a file on the user's disk")

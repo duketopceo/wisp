@@ -139,7 +139,7 @@ def _is_build_cmd(argv: list[str]) -> bool:
 
 
 def _refused(text: str, argv: list[str], paths: list[str], cwd: str,
-             out_dir: str | None) -> bool:
+             out_dir: str | None, scratch: str | None = None) -> bool:
     if tools.denied(text) or _CRED.search(text):
         return True
     if any(os.path.basename(a) in _BINARIES for a in argv):
@@ -150,6 +150,11 @@ def _refused(text: str, argv: list[str], paths: list[str], cwd: str,
         if _CRED.search(p):
             return True
         n = _norm(p, cwd)
+        if _under(n, scratch):
+            # The run's own scratch space is the one place inside DATA_DIR
+            # an unnamed task may write; it exists so `ask` is not the
+            # answer to every intermediate file.
+            continue
         for d in (config.DATA_DIR, config.CFG_DIR, config.RUN_DIR):
             if _under(n, str(d)) and not _under(n, out_dir):
                 return True
@@ -164,7 +169,7 @@ def _command(raw: dict) -> str | None:
 
 
 def _shell_class(cmd: str, cwd: str, out_dir: str | None,
-                 build_dirty: bool) -> str:
+                 build_dirty: bool, scratch: str | None = None) -> str:
     if any(t in cmd for t in _UNPARSEABLE):
         return "ask"
     try:
@@ -185,7 +190,8 @@ def _shell_class(cmd: str, cwd: str, out_dir: str | None,
         p = val if a.startswith("-") else a
         if "/" in p or p.startswith("~") or ".." in p:
             n = _norm(p, cwd)
-            if not (_under(n, cwd) or _under(n, out_dir)):
+            if not (_under(n, cwd) or _under(n, out_dir)
+                    or _under(n, scratch)):
                 return "ask"
     if a0 in _READ_CMDS:
         return "allow"
@@ -201,20 +207,22 @@ def _shell_class(cmd: str, cwd: str, out_dir: str | None,
 
 
 def classify(tool_call, cwd: str, out_dir: str | None,
-             autonomy: str = "autonomous", edited=()) -> str:
+             autonomy: str = "autonomous", edited=(),
+             scratch: str | None = None) -> str:
     """allow | ask | refuse for one ACP tool_call. Fails closed to ask."""
     try:
-        return _classify(tool_call, cwd, out_dir, autonomy, edited)
+        return _classify(tool_call, cwd, out_dir, autonomy, edited, scratch)
     except Exception:
         return "ask"
 
 
-def _classify(tc, cwd, out_dir, autonomy, edited) -> str:
+def _classify(tc, cwd, out_dir, autonomy, edited, scratch=None) -> str:
     if not isinstance(tc, dict):
         return "ask"
     mode = policy.mode_of({"agent": {"autonomy": autonomy}})
     cwd = os.path.realpath(cwd)
     out_dir = os.path.realpath(out_dir) if out_dir else None
+    scratch = os.path.realpath(scratch) if scratch else None
     raw = tc.get("rawInput")
     malformed = raw is not None and not isinstance(raw, dict)
     raw = raw if isinstance(raw, dict) else {}
@@ -227,36 +235,39 @@ def _classify(tc, cwd, out_dir, autonomy, edited) -> str:
         argv = shlex.split(cmd) if cmd else []
     except ValueError:
         argv = (cmd or "").split()
-    if _refused(text, argv, paths, cwd, out_dir):
+    if _refused(text, argv, paths, cwd, out_dir, scratch):
         return "refuse"
     if mode == "always_ask" or malformed:
         return "ask"
     dirty = any(_is_build_file(p) for p in edited)
 
     if kind in ("read", "search"):
-        return _path_class(paths, cwd, out_dir)
+        return _path_class(paths, cwd, out_dir, scratch)
     if kind in ("edit", "delete", "move"):
-        r = _path_class(paths, cwd, out_dir)
+        r = _path_class(paths, cwd, out_dir, scratch)
         if r == "allow" and mode == "guided":
             return "ask"
         if r == "allow" and any(_is_config(p) for p in paths):
             return "ask"
         return r
     if kind == "execute":
-        return _shell_class(cmd, cwd, out_dir, dirty) if cmd else "ask"
+        return (_shell_class(cmd, cwd, out_dir, dirty, scratch) if cmd
+                else "ask")
     if kind == "think":
         return "allow"
     return "ask"
 
 
-def _path_class(paths, cwd, out_dir) -> str:
+def _path_class(paths, cwd, out_dir, scratch=None) -> str:
     if not paths:
         return "ask"
     for p in paths:
         n = _norm(p, cwd)
-        if not (_under(n, cwd) or _under(n, out_dir)):
+        if not (_under(n, cwd) or _under(n, out_dir) or _under(n, scratch)):
             return "ask"
-        rel = os.path.relpath(n, cwd if _under(n, cwd) else out_dir)
+        root = cwd if _under(n, cwd) else (
+            out_dir if _under(n, out_dir) else scratch)
+        rel = os.path.relpath(n, root)
         if any(part.startswith(".") and part not in (".", "..")
                for part in rel.split(os.sep)):
             return "ask"
@@ -264,24 +275,27 @@ def _path_class(paths, cwd, out_dir) -> str:
 
 
 class SessionPolicy:
-    """Per-session policy state: cwd, out_dir, autonomy and the paths the
-    session has edited (the KTD6 edited-build-files rule)."""
+    """Per-session policy state: cwd, out_dir, scratch, autonomy and the
+    paths the session has edited (the KTD6 edited-build-files rule)."""
 
     def __init__(self, cwd: str, out_dir: str | None = None,
-                 autonomy: str = "autonomous"):
+                 autonomy: str = "autonomous",
+                 scratch: str | None = None):
         self.cwd = cwd
         self.out_dir = out_dir
+        self.scratch = scratch
         self.autonomy = autonomy
         self.edited: set[str] = set()
 
     @classmethod
     def from_cfg(cls, cfg: dict | None, cwd: str,
-                 out_dir: str | None = None) -> "SessionPolicy":
-        return cls(cwd, out_dir, policy.mode_of(cfg))
+                 out_dir: str | None = None,
+                 scratch: str | None = None) -> "SessionPolicy":
+        return cls(cwd, out_dir, policy.mode_of(cfg), scratch)
 
     def classify(self, tool_call) -> str:
         return classify(tool_call, self.cwd, self.out_dir, self.autonomy,
-                        self.edited)
+                        self.edited, self.scratch)
 
     def note_edit(self, tool_call) -> None:
         """Record the paths of an allowed/approved edit-class call. A

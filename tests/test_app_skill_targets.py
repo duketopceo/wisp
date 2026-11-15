@@ -6,6 +6,7 @@ import pathlib
 import re
 import sys
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -151,6 +152,37 @@ class Reachable(unittest.TestCase):
                 got = self._match(window_class="chromium", url_host=host)
                 self.assertEqual(got and got["name"], name, f"{name}:{host}")
                 self.assertEqual(got["matched_by"], "url_host", name)
+
+
+class PullsToolsVisible(unittest.TestCase):
+    """U7: a matched guide reports the tools it declares, so a missing one
+    is visible before a call fails rather than after."""
+
+    def test_a_declaring_guide_reports_its_tools(self):
+        got = skills.match_app_skill_info(skills_dir=SEED.parent,
+                                          window_class="firefox")
+        self.assertIsNotNone(got)
+        self.assertEqual(got["pulls_tools"], ["browser"])
+
+    def test_a_guide_without_the_key_reports_an_empty_list(self):
+        got = skills.match_app_skill_info(skills_dir=SEED.parent,
+                                          window_class="blender")
+        self.assertTrue(got is None or got["pulls_tools"] == [], got)
+
+    def test_the_declaration_reaches_the_act_prompt(self):
+        from wisp import context, inventory, platform
+        cfg = {"act": {"context": "full"}, "agent": {}}
+        with mock.patch.object(skills, "SKILLS_DIR", SEED / "none"), \
+                mock.patch.object(platform, "active_window",
+                                  return_value={"class": "firefox",
+                                                "title": "x"}), \
+                mock.patch.object(context, "windows_map", return_value=""), \
+                mock.patch.object(context, "_last_dayflow", return_value=""), \
+                mock.patch.object(context, "app_skills", return_value=[]), \
+                mock.patch.object(inventory, "summary", return_value=""):
+            out = context.snapshot(cfg)
+        self.assertIn("[app_skill needs] browser", out)
+        self.assertIn("not a grant", out)
 
 
 class TeachCases(unittest.TestCase):

@@ -1,9 +1,11 @@
-usage: wispd task list [-h] [--json] [--quiet] [--no-color]
+usage: wispd task list [-h] [--grep TEXT] [--json] [--quiet] [--no-color]
 
-List background agents with their last log line
+List background agents; --grep finds a past run by its subject or what it learned
 
 options:
   -h, --help   show this help message and exit
+  --grep TEXT  only runs whose task text, name or learned line contains TEXT
+               (short: -g)
 
 global options:
   --json       machine-readable output (one JSON object)
@@ -12,3 +14,4 @@ global options:
 
 Examples:
   wispd task list
+  wispd task list --grep flaky

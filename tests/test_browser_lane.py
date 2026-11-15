@@ -104,6 +104,9 @@ class FakeExtension(threading.Thread):
                                      "sensitive": False, "value": ""}]})
             elif op == "screenshot":
                 results.append({"ok": True, "png": PNG})
+            elif op == "keep":
+                results.append({"ok": True, "tab": 7,
+                                "why": s.get("why") or ""})
             else:
                 results.append({"ok": True})
         return {"ok": True, "results": results}
@@ -288,6 +291,68 @@ class Steps(LaneCase):
         self.assertEqual(self.run_tool("snapshot", cfg),
                          "REFUSED (cua kill switch is on)")
         self.assertEqual(self.batch_cmds(ext), [])
+
+
+class KeepReason(LaneCase):
+    """U6: a kept tab names why it stayed, from a closed set, and the
+    reason is reported back rather than only stored."""
+
+    def test_a_valid_reason_round_trips(self):
+        ext = self.paired()
+        out = self.run_tool(json.dumps({"steps": [
+            {"do": "keep", "why": "comparison"}]}))
+        self.assertTrue(out.startswith("OK"), out)
+        self.assertIn("kept tab 7 open (comparison)", out)
+        self.assertEqual(self.batch_cmds(ext)[0]["steps"][0]["why"],
+                         "comparison")
+
+    def test_a_keep_with_no_reason_still_succeeds(self):
+        ext = self.paired()
+        out = self.run_tool(json.dumps({"steps": [{"do": "keep"}]}))
+        self.assertTrue(out.startswith("OK"), out)
+        self.assertIn("kept tab 7 open", out)
+        self.assertNotIn("(", out.split("kept tab 7 open")[1].split("\n")[0])
+        self.assertEqual(len(self.batch_cmds(ext)), 1)
+
+    def test_an_out_of_set_reason_is_refused_and_names_the_set(self):
+        ext = self.paired()
+        sent = len(self.batch_cmds(ext))
+        out = self.run_tool(json.dumps({"steps": [
+            {"do": "keep", "why": "because"}]}))
+        self.assertTrue(out.startswith("REFUSED"), out)
+        self.assertIn("'because' is not one of", out)
+        for want in browser.KEEP_REASONS:
+            self.assertIn(want, out)
+        self.assertEqual(len(self.batch_cmds(ext)), sent)   # nothing sent
+
+    def test_every_reason_in_the_set_is_accepted(self):
+        for want in browser.KEEP_REASONS:
+            ext = self.paired()
+            out = self.run_tool(json.dumps({"steps": [
+                {"do": "keep", "why": want}]}))
+            self.assertTrue(out.startswith("OK"), (want, out))
+            self.assertIn(f"({want})", out)
+            ext.stop()
+
+    def test_two_keeps_with_different_reasons_are_both_sent(self):
+        ext = self.paired()
+        out = self.run_tool(json.dumps({"steps": [
+            {"do": "keep", "why": "comparison"},
+            {"do": "keep", "why": "later"}]}))
+        self.assertTrue(out.startswith("OK"), out)
+        self.assertIn("(comparison)", out)
+        self.assertIn("(later)", out)
+        sent = self.batch_cmds(ext)[0]["steps"]
+        self.assertEqual([s["why"] for s in sent], ["comparison", "later"])
+
+    def test_a_non_string_reason_is_refused(self):
+        ext = self.paired()
+        sent = len(self.batch_cmds(ext))
+        for bad in (True, 3, ["comparison"]):
+            out = self.run_tool(json.dumps({"steps": [
+                {"do": "keep", "why": bad}]}))
+            self.assertTrue(out.startswith("REFUSED"), (bad, out))
+        self.assertEqual(len(self.batch_cmds(ext)), sent)
 
     def test_audit_records_steps_but_never_typed_text(self):
         self.paired()
