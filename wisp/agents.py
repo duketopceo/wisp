@@ -42,7 +42,12 @@ def _log_line(rec: dict, tasks_file=config.TASKS_FILE) -> None:
     tasks_file.parent.mkdir(parents=True, exist_ok=True)
     with tasks_file.open("a") as f:
         f.write(json.dumps(rec) + "\n")
-    render_work_index(tasks_file)
+    try:
+        render_work_index(tasks_file)
+    except OSError:
+        # the record is the source of truth and is already written;
+        # WORK.md is derived and heals on the next append
+        pass
 
 
 # -- the job index (U5) ---------------------------------------------------
@@ -110,9 +115,18 @@ def _index_rows(tasks_file=config.TASKS_FILE) -> list:
     return rows
 
 
+_WORK_LOCK = threading.Lock()
+
+
 def render_work_index(tasks_file=config.TASKS_FILE) -> None:
     """Rewrite WORK.md beside tasks.jsonl from the folded registry (temp +
-    replace, so a reader never sees a half-written index)."""
+    replace, so a reader never sees a half-written index). Serialized in
+    process so the last replace comes from the newest read."""
+    with _WORK_LOCK:
+        _render_work_index(tasks_file)
+
+
+def _render_work_index(tasks_file) -> None:
     path = pathlib.Path(tasks_file).parent / WORK_FILE
     rows = _index_rows(tasks_file)
     lines = ["# Work", "",
@@ -133,9 +147,15 @@ def render_work_index(tasks_file=config.TASKS_FILE) -> None:
         lines.append(" · ".join(parts))
     if not rows:
         lines.append("- (no runs yet)")
-    tmp = path.with_suffix(".md.tmp")
-    tmp.write_text("\n".join(lines) + "\n")
-    os.replace(tmp, path)
+    # one temp file per writer: a shared name let two threads closing
+    # runs at once replace each other's temp and fail the second rename
+    tmp = path.with_name(f".{WORK_FILE}.{os.getpid()}."
+                         f"{threading.get_ident()}.tmp")
+    try:
+        tmp.write_text("\n".join(lines) + "\n")
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def _records(tasks_file=config.TASKS_FILE) -> list:
