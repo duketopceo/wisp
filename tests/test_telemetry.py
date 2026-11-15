@@ -31,6 +31,15 @@ class TelemetryTest(unittest.TestCase):
             self.assertEqual(out["avg_ms"]["jev_ms"], 100)
             self.assertEqual(out["outcomes"]["fail"], 1)
 
+    def test_stalled_counts_as_a_failure(self):
+        # the act loop stalls on empty replies instead of claiming done
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "dec.jsonl"
+            _write(f, [self._dec("act", "STALLED (the model gave no "
+                                        "answer)")])
+            out = telemetry.digest(decisions_file=f, trace_file=f)
+            self.assertEqual(out["outcomes"]["fail"], 1)
+
     def test_digest_empty(self):
         with tempfile.TemporaryDirectory() as d:
             f = Path(d) / "none.jsonl"

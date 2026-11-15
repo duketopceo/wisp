@@ -1,4 +1,5 @@
 """Tests for wisp/act.py — the bounded tool-call loop."""
+import os
 import json
 import pathlib
 import sys
@@ -102,6 +103,14 @@ class Loop(unittest.TestCase):
     def setUp(self):
         self.cfg = {"agent": {}}
 
+    def _tmp_png(self):
+        """A fake screenshot file, removed after the test."""
+        import tempfile, pathlib
+        fd, name = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        self.addCleanup(os.unlink, name)
+        return pathlib.Path(name)
+
     def test_stops_on_text_reply(self):
         with mock.patch.object(act, "_post",
                                return_value=_msg(content="done deal")):
@@ -116,7 +125,10 @@ class Loop(unittest.TestCase):
                                return_value="LAUNCHED discord") as run:
             r = act.run_act_loop("open discord", self.cfg,
                              initial_image="aGk=")
-        run.assert_called_once()
+        # the launch, then one verify shot before the done claim stands
+        self.assertEqual([c[0][0] for c in run.call_args_list],
+                         ["launch", "screenshot"])
+        # the verify shot is a check, not a step
         assert r.startswith("ACTED (1 steps)")
 
     def test_unconfirmed_done_leaves_the_goal_open(self):
@@ -310,7 +322,7 @@ class Loop(unittest.TestCase):
         # not click stale pixels
         calls = []
         import tempfile, pathlib
-        shot = pathlib.Path(tempfile.mktemp(suffix=".png"))
+        shot = self._tmp_png()
         shot.write_bytes(b"\x89PNG\r\n\x1a\nfake")
         def fake_run(name, arg, cfg, harness=None):
             calls.append(name)
@@ -318,6 +330,7 @@ class Loop(unittest.TestCase):
                 else "ok"
         replies = [_msg(calls=[_call("launch", "x")]),
                    _msg(calls=[_call("click", "100,200")]),
+                   _msg(content="done"),
                    _msg(content="done")]
         cfg = {"agent": {}, "brain.openrouter": {"vision": "true"}}
         with mock.patch.object(act, "_post", side_effect=replies), \
@@ -332,7 +345,9 @@ class Loop(unittest.TestCase):
         assert r.startswith("ACTED")
         # screenshot must sit between the mutation and the click
         # startup observe + post-mutation re-observe
-        assert calls == ["screenshot", "launch", "screenshot", "click"]
+        # ... and a verify shot after the click, before done stands
+        assert calls == ["screenshot", "launch", "screenshot", "click",
+                         "screenshot"]
 
     def test_no_reobserve_when_screen_fresh(self):
         # trigger-time image is still valid → first click goes straight
@@ -352,19 +367,156 @@ class Loop(unittest.TestCase):
             r = act.run_act_loop("click", cfg, initial_image="aGk=",
                              confirm=lambda pr: True)
         assert r.startswith("ACTED")
-        assert calls == ["click"]
+        # no re-observe BEFORE the click; the only shot is the verify
+        # pass after it
+        assert calls == ["click", "screenshot"]
+
+    def test_done_after_unobserved_keys_is_checked_on_a_fresh_shot(self):
+        # gauntlet files-new-folder (2026-11-11): ctrl+shift+n, type,
+        # enter, then "done" judged from the pre-keypress screenshot —
+        # the typing had gone into the file manager's search box. A
+        # done claim after screen-changing steps nobody has looked at
+        # gets one fresh screenshot and a request to confirm against it.
+        import tempfile, pathlib
+        shot = self._tmp_png()
+        shot.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+        calls, seen = [], []
+
+        def fake_run(name, arg, cfg, harness=None):
+            calls.append(name)
+            return f"SHOT {shot}" if name == "screenshot" else "KEY"
+        replies = [_msg(calls=[_call("key", "ctrl+shift+n")]),
+                   _msg(calls=[_call("type_text", "archive")]),
+                   _msg(calls=[_call("key", "enter")]),
+                   _msg(content="Created the folder."),
+                   _msg(content="The text went into search; no folder.")]
+
+        def post(messages, cfg):
+            seen.append(json.dumps(messages, default=str))
+            return replies.pop(0)
+        cfg = {"agent": {}}
+        with mock.patch.object(act, "_post", side_effect=post), \
+             mock.patch("wisp.brain.provider",
+                        return_value={"name": "openrouter",
+                                      "vision": "true",
+                                      "tools": "true"}), \
+             mock.patch.object(act, "_attach_image"), \
+             mock.patch.object(tools, "run", side_effect=fake_run):
+            r = act.run_act_loop("create a new folder called archive",
+                                 cfg, initial_image="aGk=",
+                                 confirm=lambda pr: True)
+        self.assertEqual(calls[-1], "screenshot", calls)
+        self.assertIn(json.dumps(act._VERIFY_DONE_NUDGE)[1:-1], seen[-1])
+        self.assertIn("no folder", r)
+
+    def _verify_run(self, replies, cfg):
+        import tempfile, pathlib
+        shot = self._tmp_png()
+        shot.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+        calls = []
+
+        def fake_run(name, arg, cfg, harness=None):
+            calls.append(name)
+            return f"SHOT {shot}" if name == "screenshot" else "KEY"
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch("wisp.brain.provider",
+                        return_value={"name": "openrouter",
+                                      "vision": "true",
+                                      "tools": "true"}), \
+             mock.patch.object(act, "_attach_image"), \
+             mock.patch.object(tools, "run", side_effect=fake_run):
+            r = act.run_act_loop("press the keys", cfg,
+                                 initial_image="aGk=",
+                                 confirm=lambda pr: True)
+        return r, calls
+
+    def test_verify_shot_does_not_spend_the_step_budget(self):
+        # a run that finishes on its last allowed step still gets its
+        # done claim checked and answered, not ABORTED (max N steps)
+        cfg = {"agent": {}, "agents": {"act_max_steps": "2"}}
+        r, calls = self._verify_run(
+            [_msg(calls=[_call("key", "a")]),
+             _msg(content="done"), _msg(content="pressed a")], cfg)
+        self.assertTrue(r.startswith("ACTED (1 steps)"), r)
+        self.assertEqual(calls, ["key", "screenshot"])
+
+    def test_each_new_change_gets_its_own_verify_shot(self):
+        # done -> verify -> the model keeps working -> done again: the
+        # second claim is checked against the screen after the new step
+        r, calls = self._verify_run(
+            [_msg(calls=[_call("key", "a")]),
+             _msg(content="done"),
+             _msg(calls=[_call("key", "b")]),
+             _msg(content="done"),
+             _msg(content="pressed a and b")], {"agent": {}})
+        self.assertEqual(calls, ["key", "screenshot", "key", "screenshot"])
+        self.assertIn("pressed a and b", r)
+
+    def test_done_on_a_clean_screen_takes_no_extra_shot(self):
+        # a run whose last step was already observed (or that changed
+        # nothing) answers at once — no verify screenshot, no extra call
+        calls = []
+
+        def fake_run(name, arg, cfg, harness=None):
+            calls.append(name)
+            return "SHOT d" if name == "screenshot" else "ok"
+        replies = [_msg(calls=[_call("screenshot")]),
+                   _msg(content="It shows the home folder.")]
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch("wisp.brain.provider",
+                        return_value={"name": "openrouter",
+                                      "vision": "true",
+                                      "tools": "true"}), \
+             mock.patch.object(act, "_attach_image"), \
+             mock.patch.object(tools, "run", side_effect=fake_run):
+            r = act.run_act_loop("what is on screen", {"agent": {}},
+                                 initial_image="aGk=")
+        self.assertEqual(calls, ["screenshot"])
+        self.assertIn("home folder", r)
+
+    def test_empty_reply_is_not_a_done_claim(self):
+        # gauntlet files-rename (2026-11-11): the model's first reply had
+        # no text and no tool call, and the run reported "ACTED (0
+        # steps): done". An empty reply is nudged back into the loop.
+        calls = []
+
+        def fake_run(name, arg, cfg, harness=None):
+            calls.append((name, arg))
+            return "KEY"
+        replies = [_msg(content=""),
+                   _msg(calls=[_call("key", "f2")]),
+                   _msg(content="Renamed it.")]
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch.object(tools, "run", side_effect=fake_run):
+            r = act.run_act_loop("rename draft.txt to final.txt",
+                                 {"agent": {}}, initial_image="aGk=",
+                                 confirm=lambda pr: True)
+        self.assertEqual([c for c in calls if c[0] != "screenshot"],
+                         [("key", "f2")])
+        self.assertIn("Renamed it.", r)
+
+    def test_repeated_empty_replies_stall_instead_of_acting(self):
+        with mock.patch.object(act, "_post",
+                               return_value=_msg(content="")), \
+             mock.patch.object(tools, "run") as run:
+            r = act.run_act_loop("rename draft.txt to final.txt",
+                                 {"agent": {}}, initial_image="aGk=")
+        run.assert_not_called()
+        self.assertFalse(r.startswith("ACTED"), r)
+        self.assertTrue(r.startswith("STALLED"), r)
 
     def test_no_blind_click_without_any_image(self):
         # no trigger image + vision → the loop observes before the
         # first model call, not just before the first click
         import tempfile, pathlib
-        shot = pathlib.Path(tempfile.mktemp(suffix=".png"))
+        shot = self._tmp_png()
         shot.write_bytes(b"\x89PNG\r\n\x1a\nfake")
         calls = []
         def fake_run(name, arg, cfg, harness=None):
             calls.append(name)
             return f"SHOT {shot}" if name == "screenshot" else "ok"
         replies = [_msg(calls=[_call("click", "10,20")]),
+                   _msg(content="done"),
                    _msg(content="done")]
         cfg = {"agent": {}}
         with mock.patch.object(act, "_post", side_effect=replies), \
@@ -377,7 +529,8 @@ class Loop(unittest.TestCase):
             r = act.run_act_loop("click", cfg,
                                  confirm=lambda pr: True)
         assert r.startswith("ACTED")
-        assert calls == ["screenshot", "click"]
+        # observe first, click, then the verify shot before done stands
+        assert calls == ["screenshot", "click", "screenshot"]
 
     def test_dom_clean_observe_serves_cache(self):
         # DOM mode + clean screen: a model-requested re-observe adds
@@ -428,6 +581,7 @@ class Loop(unittest.TestCase):
         replies = [_msg(calls=[_call("screenshot")]),
                    _msg(calls=[_call("type_text", "hi")]),
                    _msg(calls=[_call("click", "btn-x")]),
+                   _msg(content="done"),
                    _msg(content="done")]
         cfg = {"agent": {}, "screen": {"dom_page": "p"},
                "brain.openrouter": {"vision": "true"}}
@@ -441,8 +595,10 @@ class Loop(unittest.TestCase):
                                  initial_image="aGk=",
                                  confirm=lambda pr: True)
         assert r.startswith("ACTED")
-        # no screenshot between the type mutation and the id click
-        assert calls == ["screenshot", "type_text", "click"], calls
+        # no screenshot between the type mutation and the id click (the
+        # last one is the verify pass before done)
+        assert calls == ["screenshot", "type_text", "click",
+                         "screenshot"], calls
 
     def test_dom_coord_click_still_reobserves(self):
         # coordinate clicks DO depend on fresh pixels — keep the soak
@@ -453,6 +609,7 @@ class Loop(unittest.TestCase):
         replies = [_msg(calls=[_call("screenshot")]),
                    _msg(calls=[_call("type_text", "hi")]),
                    _msg(calls=[_call("click", "10,20")]),
+                   _msg(content="done"),
                    _msg(content="done")]
         cfg = {"agent": {}, "screen": {"dom_page": "p"},
                "brain.openrouter": {"vision": "true"}}
@@ -468,7 +625,7 @@ class Loop(unittest.TestCase):
                                  confirm=lambda pr: True)
         assert r.startswith("ACTED")
         assert calls == ["screenshot", "type_text", "screenshot",
-                         "click"], calls
+                         "click", "screenshot"], calls
 
     def test_dom_first_observe_never_cached(self):
         # no prior shot → nothing to serve
@@ -531,7 +688,9 @@ class Loop(unittest.TestCase):
             # the object form dispatches with its arg; the rest fall to
             # an empty arg (launch "" — a tool-level error result, not
             # an exception)
-            self.assertEqual(run.call_args[0][0], "launch")
+            # (screenshots around it are the startup observe and the
+            # verify pass before done)
+            self.assertIn("launch", [c[0][0] for c in run.call_args_list])
 
     def test_blocked_results_burn_the_error_budget(self):
         # a tool that can never dispatch (BLOCKED is the CUA guard's

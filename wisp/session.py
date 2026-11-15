@@ -78,7 +78,8 @@ def _spoken_result(result: str) -> str:
     if m:
         # act loop logs 'ASK_USER x'; the answer route logs 'ASK_USER: x'
         return "asked: " + m.group(1).strip()
-    if result.startswith(("SKIP", "ERROR", "ABORTED", "INTERRUPTED")):
+    if result.startswith(("SKIP", "ERROR", "ABORTED", "INTERRUPTED",
+                          "STALLED")):
         # strip the status word + parenthesized cause → human reason
         cause = re.sub(r"^\w+\s*\((.*)\)\s*$", r"\1", result).strip()
         cause = cause.split(":", 1)[-1].strip()[:80] or "it failed"

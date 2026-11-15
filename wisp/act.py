@@ -36,6 +36,8 @@ MAX_PARSE_MISSES = 1
 MAX_INTENT_NUDGES = 2
 # done claims contradicted by the run's last effect step, nudged back
 MAX_DONE_NUDGES = 1
+# replies with neither text nor a tool call, nudged back before stalling
+MAX_EMPTY_NUDGES = 1
 MAX_SECONDS = 600          # wall-clock cap for one run; 0 = off
 MAX_USD = 0.0              # per-run paid-model spend cap; 0 = off
 MAX_IMAGES = 3  # cap retained screenshots in the message window
@@ -294,6 +296,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
     parse_misses = 0
     intent_nudges = 0
     done_nudges = 0
+    empty_nudges = 0
     # the window focused at trigger time (stage_capture records it):
     # refocusing it changes nothing on screen
     start_focus = str((getattr(state, "focus", None) or {}).get("app")
@@ -429,6 +432,18 @@ def run_act_loop(task: str, cfg: dict, state=None,
                          for i, (n, a) in enumerate(parsed["actions"])]
             if not calls:
                 text = (msg.get("content") or "").strip()
+                if not text:
+                    # no text and no tool call is not an outcome; it is
+                    # never reported as "done"
+                    if empty_nudges < MAX_EMPTY_NUDGES:
+                        empty_nudges += 1
+                        messages.append({"role": "user",
+                                         "content": _EMPTY_NUDGE})
+                        continue
+                    _publish(state, task, steps)
+                    _goals.record_steps(steps)
+                    want_traj = True
+                    return "STALLED (the model gave no answer)"
                 if (intent_nudges < MAX_INTENT_NUDGES
                         and _announces_next_step(text)):
                     # 'Now I'm taking a screenshot…' with no tool call is
@@ -447,6 +462,25 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     _state.action_add(state, "question", text[9:].strip(),
                                       status="awaiting")
                     return "ASK_USER " + text[9:].strip()
+                if vision and screen_dirty and dirty_step:
+                    # the model last saw the screen before its latest
+                    # key/type/click, and key/type_text return KEY/TYPED
+                    # whatever the screen did: look once more and let it
+                    # confirm or correct the claim
+                    # part of the done check, not an agent step: it never
+                    # spends the step budget. A new screen-changing step
+                    # dirties the screen again, so each claim is checked.
+                    shot = tools.run("screenshot", "", cfg, harness)
+                    screen_dirty = False
+                    if shot.startswith("SHOT "):
+                        messages.append({"role": "assistant",
+                                         "content": text})
+                        _attach_image(messages, shot[5:].strip(), cfg,
+                                      why=f"verify: after '{dirty_step}'")
+                        last_shot = shot
+                        messages.append({"role": "user",
+                                         "content": _VERIFY_DONE_NUDGE})
+                        continue
                 why = (_unsupported_done(task, steps, start_focus)
                        or route_guards.unverified_done(steps))
                 if why and done_nudges < MAX_DONE_NUDGES:
@@ -1211,6 +1245,14 @@ _NEXT_STEP_RE = re.compile(
     r"\b(?:now i'?m|now i am|i'?ll|i will|let me|next,? i|i'?m going to|"
     r"i need to|taking a (?:new |fresh )?screenshot|to see if|to check if|"
     r"to verify)\b", re.I)
+_VERIFY_DONE_NUDGE = ("Before reporting done, check this fresh screenshot "
+                      "against the request. If it shows the task "
+                      "finished, reply with the outcome; if not, continue "
+                      "with a tool call, or reply with what actually "
+                      "happened.")
+_EMPTY_NUDGE = ("Your reply was empty. Call a tool to do the next step "
+                "of the task, or reply with one short sentence saying what "
+                "happened.")
 _CONTINUE_NUDGE = ("You described a next step but did not call a tool. "
                    "Call the tool now. If the task is already complete, "
                    "reply with one short sentence describing the outcome.")

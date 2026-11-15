@@ -68,7 +68,7 @@ def digest(hours: int = 24, decisions_file=None,
         routes[route] += 1
         res = d.get("result", "")
         ok = not res.startswith(("ABORTED", "BLOCKED", "ERROR",
-                                 "CANCELLED", "FAIL", "SKIP"))
+                                 "CANCELLED", "FAIL", "SKIP", "STALLED"))
         outcomes["ok" if ok else "fail"] += 1
         per_hour[max(0, min(hours - 1, int(
             (now - ts).total_seconds()

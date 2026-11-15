@@ -141,7 +141,8 @@ def similar(task: str, app: str = "", k: int = 3,
             continue
         r = dict(r)
         out = r.get("outcome", "")
-        r["outcome_failed"] = out.startswith(("ABORTED", "SKIP", "ERROR"))
+        r["outcome_failed"] = out.startswith(("ABORTED", "SKIP", "ERROR",
+                                              "STALLED"))
         # U6: the step verdicts outrank the outcome string — a run that
         # reported ACTED but whose last action corroborated-missed is a
         # failed branch (the FilmCraft ~70px miss); a single-source
