@@ -137,13 +137,15 @@ class ProviderOrder(unittest.TestCase):
         from wisp import config
         self.assertEqual(
             g.settings(tomllib.loads(config.DEFAULT_CONFIG))["providers"],
-            ["control", "a11y", "vlm", "jev"])
+            ["control", "a11y", "vlm"])
 
     def test_default_keeps_real_elements_first_then_vlm_before_local_pixels(self):
+        # 2026-11-15: jev is the turn router, not a click finder; it is out
+        # of the default chain (a saved [ground] providers can still name it)
         self.assertEqual(g.settings({})["providers"],
-                         ["control", "a11y", "vlm", "jev"])
+                         ["control", "a11y", "vlm"])
         self.assertEqual(g.settings({"local": {"enabled": "true"}})["providers"],
-                         ["control", "a11y", "vlm", "uitars", "jev"])
+                         ["control", "a11y", "vlm", "uitars"])
 
     def test_explicit_vlm_provider_is_not_repeated_inside_jev(self):
         cfg = {"ground": {"providers": "control,a11y,vlm,uitars,jev"}}

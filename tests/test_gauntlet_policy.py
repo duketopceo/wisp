@@ -53,6 +53,22 @@ class TestShellThroughRsh(PolicyBase):
         out = tools.run("shell", "ls; id", self.scfg)
         self.assertIn("refused", out)
 
+    def test_mkdir_and_touch_work_inside_the_sandbox_only(self):
+        # terminal-make-dir needs a folder made from the terminal; making
+        # files and folders stays inside the sandbox root
+        out = tools.run("shell", "mkdir logs", self.scfg)
+        self.assertTrue(out.startswith("SHELL rc=0"), out)
+        self.assertTrue((self.sb / "logs").is_dir())
+        out = tools.run("shell", "mkdir -p logs/day/one", self.scfg)
+        self.assertTrue((self.sb / "logs" / "day" / "one").is_dir(), out)
+        out = tools.run("shell", "touch logs/note.txt", self.scfg)
+        self.assertTrue((self.sb / "logs" / "note.txt").is_file(), out)
+        out = tools.run("shell", "mkdir ../escaped", self.scfg)
+        self.assertIn("outside the sandbox", out)
+        self.assertFalse((self.sb.parent / "escaped").exists())
+        out = tools.run("shell", "mkdir -m 777 open", self.scfg)
+        self.assertIn("not allowed", out)
+
     def test_the_owners_shell_is_never_reached_in_a_gauntlet_run(self):
         with mock.patch.object(system, "shell") as sh:
             tools.run("shell", "ls", self.scfg)
