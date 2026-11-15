@@ -177,9 +177,11 @@ REGISTRY = {
                      "external": False}),
     "skill_manage": (None, "mutating", "author a self-taught skill — "
                      "'create|name|description|body', 'edit|name||body', "
-                     "'write_file|name|filename|body', 'delete|name', "
-                     "'remove_file|name|filename', 'list'",
-                     {"tier": "T2", "reversible": False,
+                     "'write_file|name|filename|body', 'delete|name' "
+                     "(backs up for 60 days), 'restore|name', "
+                     "'list_backups', 'remove_file|name|filename', "
+                     "'list'",
+                     {"tier": "T2", "reversible": True,
                       "external": False}),
     "skill_view": (None, "safe", "read a skill's full SKILL.md by name",
                    {"tier": "T0", "reversible": True,
