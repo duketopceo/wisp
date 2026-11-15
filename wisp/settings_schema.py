@@ -69,6 +69,7 @@ _CATEGORY = {
     "brain.fallback": "models", "brain.first_token_s": "models",
     "brain.allow_paid": "models", "local.enabled": "models",
     "ground.vlm_brain": "models",
+    "web.search": "models", "web.search_max_results": "models",
     "budget.daily_usd": "budget", "budget.monthly_usd": "budget",
     "budget.gate_primary": "budget",
     "browser.lane": "connectors", "browser.port": "connectors",
@@ -97,6 +98,7 @@ _UNIT = {
     "packs.shots_keep_days": "days", "verify.judge_timeout_s": "seconds",
     "verify.pixel_eps": "per channel", "verify.region_px": "pixels",
     "teach.turn_budget": "planner calls",
+    "web.search_max_results": "results",
 }
 
 
@@ -269,6 +271,13 @@ FIELDS = (
     _f("brain.first_token_s", "int", "3",
        "Seconds a model has to start answering before the next one is tried",
        min=1, max=60),
+    _f("web.search", "choice", "auto",
+       "Search the web for live questions such as weather, news, scores "
+       "and prices; auto does it when the answer model is on OpenRouter",
+       choices=("auto", "true", "false")),
+    _f("web.search_max_results", "int", "3",
+       "Most web results one live question may use; each result is billed "
+       "by OpenRouter", min=1, max=10),
     _f("brain.agent_runtime", "choice", "auto",
        "Runtime for spawned background agents; auto picks the first one "
        "found",

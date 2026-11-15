@@ -42,7 +42,7 @@ def ask_chat(transcript: str, cfg: dict, session_text: str = "",
              meta: dict | None = None, doc_text: str = "",
              scribble_hint: str = "", tutor_text: str = "",
              selection_text: str = "", clip_image: str = "",
-             lang: str = "") -> str:
+             lang: str = "", web: dict | None = None) -> str:
     """Real answer via the configured brain provider ([brain] default).
     image_b64 attaches a screenshot — dropped when the provider lacks
     vision support (U6 capability gating)."""
@@ -106,12 +106,19 @@ def ask_chat(transcript: str, cfg: dict, session_text: str = "",
         user_content.append({"type": "image_url",
                              "image_url": {"url": clip_image}})
     messages.append({"role": "user", "content": user_content})
+    if web and brain.is_openrouter(brain.provider(cfg)):
+        from . import livequery
+        messages.insert(len(messages) - 1,
+                        {"role": "system", "content": livequery.PROMPT})
+    kw = {"web": web} if web else {}
     if on_delta is not None:
         out = brain.chat_stream(messages, cfg, on_delta=on_delta,
-                                timeout=30)
+                                timeout=30, **kw)
     else:
-        out = brain.chat(messages, cfg, timeout=30)
+        out = brain.chat(messages, cfg, timeout=30, **kw)
     if meta is not None:
+        if web:
+            meta["citations"] = out.get("citations") or []
         meta.update(provider=out.get("provider"),
                     model=out.get("model"),
                     fallback_from=out.get("fallback_from"),
@@ -480,7 +487,12 @@ def _answer(ctx) -> None:
                 _extra["clip_image"] = ctx.clip_image
         if getattr(ctx, "scribble_hint", ""):
             _extra["scribble_hint"] = ctx.scribble_hint
-        reply = pl.ask_chat(text, brain.with_role(cfg, "fast"),
+        _fast = brain.with_role(cfg, "fast")
+        from . import livequery as _live
+        _web = _live.web_request(_fast, text)
+        if _web:
+            _extra["web"] = _web
+        reply = pl.ask_chat(text, _fast,
                             ctx.session_text, image_b64=ctx.shot_b64,
                             on_delta=_delta, meta=_meta, **_extra)
         sp.fire("first_token")  # non-streaming brains
@@ -492,7 +504,10 @@ def _answer(ctx) -> None:
                      "fallback_from": _meta.get("fallback_from"),
                      "ttft_ms": _meta.get("ttft_ms"),
                      "latency_ms": _meta.get("latency_ms"),
-                     "reply": reply},
+                     "reply": reply,
+                     **({"web": True,
+                         "citations": _meta.get("citations") or []}
+                        if _web else {})},
                     round((time.monotonic() - _t) * 1000))
     except Exception as e:
         # every brain entry failed (brain_down), or a timeout /

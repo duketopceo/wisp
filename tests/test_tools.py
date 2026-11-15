@@ -566,7 +566,8 @@ class WebConfigTemplateTest(unittest.TestCase):
             with mock.patch.object(config, "CFG_FILE", p):
                 cfg = config.load_config()
         self.assertIn("prompt", cfg["stt"])
-        self.assertEqual(set(cfg["web"]), {"mail", "calendar"})
+        self.assertEqual(set(cfg["web"]), {"mail", "calendar", "search",
+                                           "search_max_results"})
         from wisp import vocab
         terms = [t.strip() for t in cfg["stt"]["prompt"].split(",")
                  if t.strip()]
