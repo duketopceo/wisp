@@ -289,8 +289,6 @@ def run_act_loop(task: str, cfg: dict, state=None,
     intent_nudges = 0
     done_nudges = 0
     empty_nudges = 0
-    # one fresh look before a done claim on an unobserved screen
-    done_shot_taken = False
     # the window focused at trigger time (stage_capture records it):
     # refocusing it changes nothing on screen
     start_focus = str((getattr(state, "focus", None) or {}).get("app")
@@ -427,9 +425,8 @@ def run_act_loop(task: str, cfg: dict, state=None,
             if not calls:
                 text = (msg.get("content") or "").strip()
                 if not text:
-                    # no text and no tool call is not an outcome: the
-                    # gauntlet's files-rename reported "ACTED (0 steps):
-                    # done" off one empty reply
+                    # no text and no tool call is not an outcome; it is
+                    # never reported as "done"
                     if empty_nudges < MAX_EMPTY_NUDGES:
                         empty_nudges += 1
                         messages.append({"role": "user",
@@ -438,8 +435,7 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     _publish(state, task, steps)
                     _goals.record_steps(steps)
                     want_traj = True
-                    return (f"STALLED (empty model replies): "
-                            f"{len(steps)} steps taken, none confirmed")
+                    return "STALLED (the model gave no answer)"
                 if (intent_nudges < MAX_INTENT_NUDGES
                         and _announces_next_step(text)):
                     # 'Now I'm taking a screenshot…' with no tool call is
@@ -458,30 +454,24 @@ def run_act_loop(task: str, cfg: dict, state=None,
                     _state.action_add(state, "question", text[9:].strip(),
                                       status="awaiting")
                     return "ASK_USER " + text[9:].strip()
-                if (vision and screen_dirty and dirty_step
-                        and not done_shot_taken):
-                    # a done claim judged from a screenshot taken before
-                    # the last key/type/click: key and type_text return
-                    # KEY/TYPED whatever happened, so look once more and
-                    # let the model confirm or correct (gauntlet
-                    # files-new-folder typed into search and said done)
-                    done_shot_taken = True
+                if vision and screen_dirty and dirty_step:
+                    # the model last saw the screen before its latest
+                    # key/type/click, and key/type_text return KEY/TYPED
+                    # whatever the screen did: look once more and let it
+                    # confirm or correct the claim
+                    # part of the done check, not an agent step: it never
+                    # spends the step budget. A new screen-changing step
+                    # dirties the screen again, so each claim is checked.
                     shot = tools.run("screenshot", "", cfg, harness)
-                    steps.append({"tool": "screenshot",
-                                  "arg": "(verify done)", "result": shot})
+                    screen_dirty = False
                     if shot.startswith("SHOT "):
                         messages.append({"role": "assistant",
                                          "content": text})
                         _attach_image(messages, shot[5:].strip(), cfg,
                                       why=f"verify: after '{dirty_step}'")
-                        screen_dirty = False
                         last_shot = shot
-                        messages.append({"role": "user", "content": (
-                            "Before reporting done, check this fresh "
-                            "screenshot against the request. If it shows "
-                            "the task finished, reply with the outcome; "
-                            "if not, continue with a tool call, or reply "
-                            "with what actually happened.")})
+                        messages.append({"role": "user",
+                                         "content": _VERIFY_DONE_NUDGE})
                         continue
                 why = (_unsupported_done(task, steps, start_focus)
                        or route_guards.unverified_done(steps))
@@ -1240,6 +1230,11 @@ _NEXT_STEP_RE = re.compile(
     r"\b(?:now i'?m|now i am|i'?ll|i will|let me|next,? i|i'?m going to|"
     r"i need to|taking a (?:new |fresh )?screenshot|to see if|to check if|"
     r"to verify)\b", re.I)
+_VERIFY_DONE_NUDGE = ("Before reporting done, check this fresh screenshot "
+                      "against the request. If it shows the task "
+                      "finished, reply with the outcome; if not, continue "
+                      "with a tool call, or reply with what actually "
+                      "happened.")
 _EMPTY_NUDGE = ("Your reply was empty. Call a tool to do the next step "
                 "of the task, or reply with one short sentence saying what "
                 "happened.")

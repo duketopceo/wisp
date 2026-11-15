@@ -119,7 +119,8 @@ class Loop(unittest.TestCase):
         # the launch, then one verify shot before the done claim stands
         self.assertEqual([c[0][0] for c in run.call_args_list],
                          ["launch", "screenshot"])
-        assert r.startswith("ACTED (2 steps)")
+        # the verify shot is a check, not a step
+        assert r.startswith("ACTED (1 steps)")
 
     def test_unconfirmed_done_leaves_the_goal_open(self):
         from wisp import goals
@@ -396,8 +397,51 @@ class Loop(unittest.TestCase):
                                  cfg, initial_image="aGk=",
                                  confirm=lambda pr: True)
         self.assertEqual(calls[-1], "screenshot", calls)
-        self.assertIn("before reporting done", seen[-1].lower())
+        self.assertIn(json.dumps(act._VERIFY_DONE_NUDGE)[1:-1], seen[-1])
         self.assertIn("no folder", r)
+
+    def _verify_run(self, replies, cfg):
+        import tempfile, pathlib
+        shot = pathlib.Path(tempfile.mktemp(suffix=".png"))
+        shot.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+        calls = []
+
+        def fake_run(name, arg, cfg, harness=None):
+            calls.append(name)
+            return f"SHOT {shot}" if name == "screenshot" else "KEY"
+        with mock.patch.object(act, "_post", side_effect=replies), \
+             mock.patch("wisp.brain.provider",
+                        return_value={"name": "openrouter",
+                                      "vision": "true",
+                                      "tools": "true"}), \
+             mock.patch.object(act, "_attach_image"), \
+             mock.patch.object(tools, "run", side_effect=fake_run):
+            r = act.run_act_loop("press the keys", cfg,
+                                 initial_image="aGk=",
+                                 confirm=lambda pr: True)
+        return r, calls
+
+    def test_verify_shot_does_not_spend_the_step_budget(self):
+        # a run that finishes on its last allowed step still gets its
+        # done claim checked and answered, not ABORTED (max N steps)
+        cfg = {"agent": {}, "agents": {"act_max_steps": "2"}}
+        r, calls = self._verify_run(
+            [_msg(calls=[_call("key", "a")]),
+             _msg(content="done"), _msg(content="pressed a")], cfg)
+        self.assertTrue(r.startswith("ACTED (1 steps)"), r)
+        self.assertEqual(calls, ["key", "screenshot"])
+
+    def test_each_new_change_gets_its_own_verify_shot(self):
+        # done -> verify -> the model keeps working -> done again: the
+        # second claim is checked against the screen after the new step
+        r, calls = self._verify_run(
+            [_msg(calls=[_call("key", "a")]),
+             _msg(content="done"),
+             _msg(calls=[_call("key", "b")]),
+             _msg(content="done"),
+             _msg(content="pressed a and b")], {"agent": {}})
+        self.assertEqual(calls, ["key", "screenshot", "key", "screenshot"])
+        self.assertIn("pressed a and b", r)
 
     def test_done_on_a_clean_screen_takes_no_extra_shot(self):
         # a run whose last step was already observed (or that changed

@@ -55,6 +55,15 @@ class TrajTest(unittest.TestCase):
         self.assertIn("FAILED run", ctx)
         self.assertIn("do not repeat", ctx)
 
+    def test_context_marks_a_stalled_run_failed(self):
+        self._write([self._rec(task="rename draft.txt",
+                               outcome="STALLED (the model gave no "
+                                       "answer)")])
+        ctx = T.context_for("rename draft.txt", "code",
+                            cfg={"traj": {"enabled": "true",
+                                          "max_inject": "3"}})
+        self.assertIn("FAILED run", ctx)
+
     def test_context_empty_when_disabled(self):
         self._write([self._rec()])
         self.assertEqual(

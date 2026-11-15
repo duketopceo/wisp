@@ -231,3 +231,10 @@ class TestFinishRecordsTheApp(unittest.TestCase):
                 mock.patch("wisp.bgwriter.submit"):
             self.assertEqual(stage_speak._finish(ctx), 0)
         self.assertEqual(add.call_args.kwargs["app"], "kitty")
+
+
+class SpokenStall(unittest.TestCase):
+    def test_a_stall_is_spoken_as_a_failure(self):
+        self.assertEqual(
+            session._spoken_result("STALLED (the model gave no answer)"),
+            "couldn't do that — the model gave no answer")
