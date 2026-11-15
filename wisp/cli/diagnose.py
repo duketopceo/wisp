@@ -120,8 +120,13 @@ def doctor_sections(cfg: dict, cua_probe=None, agents_probe=None,
     _agent_rows(row, agents_probe)
 
     row = section("integrations")
+    # dayflow feeds only the opt-in activity sense ([sense] enabled and
+    # [sense] dayflow); a stock install does not need it
+    sense = cfg.get("sense", {})
+    needs_dayflow = str(sense.get("enabled", "false")).lower() == "true" \
+        and str(sense.get("dayflow", "true")).lower() == "true"
     row("dayflow", shutil.which("dayflow") or "not installed",
-        bool(shutil.which("dayflow")))
+        bool(shutil.which("dayflow")) or not needs_dayflow)
     row("codegraph (CBM)", shutil.which("codebase-memory-mcp")
         or "not installed")
     row("hyprctl", shutil.which("hyprctl") or "not on PATH",

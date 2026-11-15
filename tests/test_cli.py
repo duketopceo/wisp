@@ -412,6 +412,29 @@ with mock.patch.object(preflight, "run", return_value=checks), \\
             self.assertTrue(typer["ok"], typer)
             self.assertIn("ydotool", typer["value"])
 
+    def _dayflow_row(self, env):
+        code, out, err = env.run(["doctor", "--json"])
+        sections = json.loads(out)["data"]["sections"]
+        rows = next(s["rows"] for s in sections if s["name"] == "integrations")
+        return next(r for r in rows if r["name"] == "dayflow")
+
+    def test_doctor_does_not_fail_a_clean_box_for_missing_dayflow(self):
+        # dayflow feeds only the opt-in activity sense; a stock install
+        # (sense off) must not fail doctor for it (clean-box run 2026-11-15)
+        with CliEnv() as env:
+            row = self._dayflow_row(env)
+            self.assertTrue(row["ok"], row)
+            self.assertIn("not installed", row["value"])
+
+    def test_doctor_fails_missing_dayflow_when_sense_uses_it(self):
+        with CliEnv() as env:
+            cfg = env.home / ".config" / "wisp"
+            cfg.mkdir(parents=True, exist_ok=True)
+            (cfg / "config.toml").write_text(
+                '[sense]\nenabled = true\ndayflow = true\n')
+            row = self._dayflow_row(env)
+            self.assertFalse(row["ok"], row)
+
     def test_doctor_json_sections(self):
         with CliEnv() as env:
             code, out, err = env.run(["doctor", "--json"])

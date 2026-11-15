@@ -17,6 +17,7 @@ How this file is kept:
 
 ## Unreleased
 
+- `wispd doctor` no longer fails a fresh install for a missing `dayflow`; it is needed only when the opt-in activity sense uses it.
 - Wisp checks the screen before it says a task is done. If its last key press, typing or click did not land, it says so or tries again, instead of reporting success it never saw. When the model gives no answer at all, Wisp says it couldn't do it.
 - A new install does not copy personal skills or a private constitution into memory. `wispd sync` writes a memory block only when `[memory] constitution` names a file, and it imports skills only from `[skills] import_dir`. The default speech prompt is a short product list.
 - Double-tap Control to type a question instead of speaking it: a small box opens, Enter asks through the same conversation as voice, and Esc closes it. If your desktop cannot bind a lone Control key, `[composer] fallback_chord` (default `SUPER + SHIFT + SPACE`) opens it.
