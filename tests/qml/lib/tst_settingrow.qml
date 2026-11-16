@@ -29,6 +29,9 @@ Item {
     SettingRow { id: numberRow; service: svc; width: parent.width; def: S.field("cua.max_per_turn"); value: "12" }
   }
 
+  SearchControl { id: search; service: svc; x: 0; y: 400 }
+  SignalSpy { id: searchSpy; target: search; signalName: "search" }
+
   SignalSpy { id: toggleSpy; target: toggleRow; signalName: "commit" }
   SignalSpy { id: selectSpy; target: selectRow; signalName: "commit" }
   SignalSpy { id: numberSpy; target: numberRow; signalName: "commit" }
@@ -52,7 +55,8 @@ Item {
   when: windowShown
 
   function init() {
-    toggleSpy.clear(); selectSpy.clear(); numberSpy.clear()
+    toggleSpy.clear(); selectSpy.clear(); numberSpy.clear(); searchSpy.clear()
+    search.text = ""
     toggleRow.value = "false"; toggleRow.saveState = ""; toggleRow.errorText = ""
     selectRow.value = "autonomous"
     numberRow.value = "12"; numberRow.saveState = ""; numberRow.errorText = ""
@@ -241,6 +245,65 @@ Item {
     mouseDrag(page, 200, 180, 0, -120)
     tryVerify(function () { return page.contentY > 0 })
     verify(page.contentY <= page.maxY)
+  }
+
+
+  function test_failed_save_lets_the_same_draft_be_sent_again() {
+    var input = find(numberRow.control, "input:cua.max_per_turn")
+    input.forceActiveFocus()
+    input.selectAll()
+    keyClick(Qt.Key_3)
+    keyClick(Qt.Key_0)
+    keyClick(Qt.Key_Return)
+    compare(numberSpy.count, 1)
+    numberRow.saveState = "saving"
+    keyClick(Qt.Key_Return)
+    compare(numberSpy.count, 1)
+    numberRow.saveState = "error"
+    numberRow.errorText = "daemon offline"
+    keyClick(Qt.Key_Return)
+    compare(numberSpy.count, 2)
+    compare(numberSpy.signalArguments[1][0], "30")
+  }
+
+  function test_reset_while_focused_drops_the_draft() {
+    numberRow.value = "20"
+    var input = find(numberRow.control, "input:cua.max_per_turn")
+    input.forceActiveFocus()
+    input.selectAll()
+    keyClick(Qt.Key_5)
+    keyClick(Qt.Key_0)
+    numberRow.reset()
+    compare(numberSpy.count, 1)
+    compare(numberSpy.signalArguments[0][0], "12")
+    compare(input.text, "12")
+    // the host saves the default; leaving the field sends nothing more
+    numberRow.value = "12"
+    input.focus = false
+    compare(numberSpy.count, 1)
+    compare(input.text, "12")
+  }
+
+  function test_saved_value_updates_untouched_focused_field() {
+    var input = find(numberRow.control, "input:cua.max_per_turn")
+    input.forceActiveFocus()
+    numberRow.value = "40"
+    compare(input.text, "40")
+  }
+
+  function test_search_emits_and_escape_clears() {
+    search.focusField()
+    verify(search.focused)
+    keyClick(Qt.Key_B)
+    compare(searchSpy.count, 1)
+    compare(searchSpy.signalArguments[0][0], "b")
+    keyClick(Qt.Key_Escape)
+    compare(search.text, "")
+    compare(searchSpy.count, 2)
+    compare(searchSpy.signalArguments[1][0], "")
+    // a second Escape on an empty field is left for the window to handle
+    keyClick(Qt.Key_Escape)
+    compare(searchSpy.count, 2)
   }
 }
 }

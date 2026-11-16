@@ -60,6 +60,8 @@ Flow {
   Accessible.description: current >= 0 ? display(options[current]) : ""
 
   Keys.onPressed: (event) => {
+    // a held arrow would send a write per repeat from a stale value
+    if (event.isAutoRepeat) { event.accepted = true; return }
     var i = root.current
     if (event.key === Qt.Key_Right || event.key === Qt.Key_Down) i = Math.min(root.options.length - 1, i + 1)
     else if (event.key === Qt.Key_Left || event.key === Qt.Key_Up) i = Math.max(0, i - 1)

@@ -42,7 +42,10 @@ Item {
     : differs ? service.ui("ui.set.changed") : ""
 
   function reset() {
-    if (hasDefault && differs && saveState !== "saving") commit(String(def.default))
+    if (!hasDefault || !differs || saveState === "saving") return
+    var d = String(def.default)
+    if (control && typeof control.discard === "function") control.discard(d)
+    commit(d)
   }
 
   width: 640
@@ -171,6 +174,7 @@ Item {
       unit: root.def.unit || ""
       maxWidth: root.controlWidth
       value: root.value
+      saveState: root.saveState
       onCommit: (v) => root.commit(v)
     }
   }

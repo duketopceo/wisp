@@ -24,6 +24,9 @@ Column {
   // the host's room for the control; the field shrinks to fit, never
   // below the number-field width
   property real maxWidth: M.scale.field.text
+  // the host's write state for this field ("", "saving", "saved",
+  // "error"); a failed write lets the same draft be sent again
+  property string saveState: ""
   signal commit(string value)
 
   readonly property var tk: service ? service.tokens : ({})
@@ -37,8 +40,11 @@ Column {
     + (unitText.visible ? M.scale.space.sm + unitText.implicitWidth : 0)
 
   // the draft last sent, so Enter followed by leaving the field (or a
-  // second Enter before the host saves) sends it once
+  // second Enter before the host saves) sends it once; cleared when the
+  // value changes, the text is edited, or the write fails
   property string sentDraft: ""
+  // the value the text last matched, to tell an untouched field from a draft
+  property string syncedValue: ""
 
   function tryCommit() {
     var v = S.trim(input.text)
@@ -48,13 +54,23 @@ Column {
     return true
   }
   function revert() { input.text = value }
+  // drop the draft and show `v` (the row's reset): the field may keep
+  // focus, so leaving it later must not send the old draft
+  function discard(v) {
+    input.text = v
+    sentDraft = S.trim(v)
+  }
 
+  onSaveStateChanged: if (saveState === "error") sentDraft = ""
   onValueChanged: {
     sentDraft = ""
-    if (!input.activeFocus) input.text = value
+    // follow the saved value unless the user holds an edited draft
+    if (!input.activeFocus || S.trim(input.text) === S.trim(syncedValue)) input.text = value
+    syncedValue = value
   }
   Component.onCompleted: {
     input.text = draft !== "" ? draft : value
+    syncedValue = value
     line.forceLayout()
     forceLayout()
   }
