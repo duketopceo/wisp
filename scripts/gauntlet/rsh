@@ -28,18 +28,18 @@ import sys
 # path argument must stay inside the root); each runs from the first
 # directory that has it
 ALLOW = ("ls", "pwd", "cat", "head", "tail", "wc", "echo", "date", "stat",
-         "uname", "whoami", "mkdir", "touch")
+         "uname", "whoami", "mkdir", "touch", "grep")
 # the only option letters each program accepts, as short flags only. GNU
 # getopt takes abbreviated long options and attached values (`wc
 # --files0=X`, `file -f/etc/x`), so everything not listed is refused
 OPT_LETTERS = {"ls": "alhR1dFtrS", "cat": "n", "head": "nc", "tail": "nc",
                "wc": "lwcm", "echo": "n", "uname": "asrmo", "stat": "",
                "pwd": "", "date": "", "whoami": "", "mkdir": "p",
-               "touch": ""}
+               "touch": "", "grep": "inwcvlh"}
 BIN_DIRS = ("/usr/bin", "/bin")
 # programs whose non-option arguments are paths
 PATH_ARGS = ("ls", "cat", "head", "tail", "wc", "stat", "cd", "mkdir",
-             "touch")
+             "touch", "grep")
 _SYNTAX = re.compile(r"[;&|<>`$*?\[\]{}()\\\n\r!~]")
 SAFE_ENV = ("PATH", "LANG", "LC_ALL", "TERM")
 STOP = ("exit", "quit", "logout")
