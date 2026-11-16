@@ -17,6 +17,7 @@ How this file is kept:
 
 ## Unreleased
 
+- Wisp's own windows and bar use its ink and paper surfaces in your Omarchy theme's light or dark mode, with the accent and the ember still taken from your theme.
 - Renaming a file to a name with an extension no longer doubles it (final.txt.txt): Wisp selects the whole old name before typing the new one.
 - "Focus the browser" with several browser windows open goes to the one you used last, and Wisp only says it worked once that window is in front.
 - Screenshots are about a quarter faster (about 720 ms down to 520 ms on a laptop screen), with the same image.

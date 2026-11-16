@@ -24,6 +24,15 @@ var FALLBACK = {
     green: "#33701f", lighter_background: "#e2e6f2" }
 }
 
+// Brand surfaces (owner decision 2026-11-16, wisp/theme.py BRAND): ink/paper
+// canvas and ink per mode; accent and ember still come from the theme.
+var BRAND_INK = "#15110e"
+var BRAND_PAPER = "#f2ece0"
+var BRAND = {
+  dark: { canvas: BRAND_INK, ink: BRAND_PAPER },
+  light: { canvas: BRAND_PAPER, ink: BRAND_INK }
+}
+
 var COLOR_DEFAULTS = { foreground: "#cacccc", background: "#101315",
   accent: "#cacccc", urgent: "#a55555" }
 var NORMAL_BORDER_ALPHA = 0.4
@@ -224,9 +233,9 @@ function liftUntil(color, bg, floor) {
 function derive(colors, shell, source) {
   colors = colors || {}
   var b = base(colors)
-  var canvas = shellHex(shell, "popups.background") || b.background
-  var mode = colors.mode || (luminance(canvas) > 0.18 ? "light" : "dark")
-  var ink = b.foreground, accent = b.accent
+  var themeBg = shellHex(shell, "popups.background") || b.background
+  var mode = colors.mode || (luminance(themeBg) > 0.18 ? "light" : "dark")
+  var canvas = BRAND[mode].canvas, ink = BRAND[mode].ink, accent = b.accent
   var borderAlpha = NORMAL_BORDER_ALPHA
   if (shell && shell["controls.normal-border-alpha"] !== undefined) {
     var n = Number(shell["controls.normal-border-alpha"])
@@ -234,13 +243,13 @@ function derive(colors, shell, source) {
   }
   var ember = emberFor(colors, mode)
   var eL = oklch(ember)[0]
-  var halo = contrast(ink, ember) > contrast(b.background, ember) ? ink : b.background
+  var halo = contrast(ink, ember) > contrast(canvas, ember) ? ink : canvas
   return {
     source: source || "omarchy",
     mode: mode,
     tokens: {
       canvas: canvas,
-      raised: colors.lighter_background || over(ink, RAISED_ALPHA, canvas),
+      raised: over(ink, RAISED_ALPHA, canvas),
       keyline: over(ink, borderAlpha, canvas),
       keylineStrong: shellHex(shell, "popups.border") || accent,
       ink: ink,
