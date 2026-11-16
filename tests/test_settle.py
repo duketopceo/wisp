@@ -35,6 +35,23 @@ def source(seq):
     return frame
 
 
+def wait_settled(frame, timeout, *, sleep, clock, check=None,
+                 window_s=settle.SETTLE_WINDOW_S,
+                 threshold=settle.SETTLE_DIFF):
+    """True when the screen changed and settled within `timeout`; False
+    when it never changed or never stopped changing."""
+    watch = settle.SettleWatch(frame, window_s=window_s, threshold=threshold)
+    end = clock() + timeout
+    while True:
+        if watch.poll(clock()):
+            return True
+        if clock() >= end:
+            return False
+        if check is not None:
+            check()
+        sleep(watch.poll_s)
+
+
 class Threshold(unittest.TestCase):
     def test_constant_sits_between_a_blink_and_a_dropdown(self):
         blink = settle.frame_diff(fr.BLANK, fr.BLINK)
@@ -52,7 +69,7 @@ class Threshold(unittest.TestCase):
 class Wait(unittest.TestCase):
     def run_wait(self, seq, timeout=10.0, **kw):
         c = Clock()
-        got = settle.wait_settled(source(seq), timeout, sleep=c.sleep,
+        got = wait_settled(source(seq), timeout, sleep=c.sleep,
                                   clock=c.now, **kw)
         return got, c.t
 
@@ -83,7 +100,7 @@ class Wait(unittest.TestCase):
     def test_check_hook_runs_between_polls(self):
         c = Clock()
         calls = []
-        settle.wait_settled(source([fr.BLANK] * 9), 1.0, sleep=c.sleep,
+        wait_settled(source([fr.BLANK] * 9), 1.0, sleep=c.sleep,
                             clock=c.now, check=lambda: calls.append(1))
         self.assertTrue(calls)
 

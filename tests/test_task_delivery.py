@@ -15,6 +15,8 @@ from unittest import mock
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from agent_util import reap_tick  # noqa: E402
 from wisp import agents  # noqa: E402
 
 
@@ -71,7 +73,7 @@ class TaskDeliveryTest(unittest.TestCase):
         target = out_dir / "summary.md"
         target.write_text("# Summary\nAll good.\n")
 
-        ev = agents.reap_tick(self.cfg, tasks_file=self.tf, log_dir=self.logs)
+        ev = reap_tick(self.cfg, tasks_file=self.tf, log_dir=self.logs)
         self.assertEqual(len(ev), 1)
         t = ev[0]
         self.assertEqual(t["status"], "done")
@@ -89,7 +91,7 @@ class TaskDeliveryTest(unittest.TestCase):
         self._write_rec("sum-miss", exit_code=0,
                         delivers=["out/summary.md"])
 
-        ev = agents.reap_tick(self.cfg, tasks_file=self.tf, log_dir=self.logs)
+        ev = reap_tick(self.cfg, tasks_file=self.tf, log_dir=self.logs)
         self.assertEqual(len(ev), 1)
         t = ev[0]
         self.assertEqual(t["status"], "done")
@@ -109,7 +111,7 @@ class TaskDeliveryTest(unittest.TestCase):
         # SIGKILL: shimmed process dies without writing .exit
         self._write_rec("sigkill", exit_code=None, delivers=[], shimmed=True)
 
-        ev = {e["name"]: e for e in agents.reap_tick(
+        ev = {e["name"]: e for e in reap_tick(
             self.cfg, tasks_file=self.tf, log_dir=self.logs)}
         self.assertEqual(ev["exit1"]["status"], "failed")
         self.assertEqual(ev["exit1"]["exit_code"], 1)
@@ -138,7 +140,7 @@ class TaskDeliveryTest(unittest.TestCase):
         sh.write_text("#!/bin/sh\necho hi\n")
         sh.chmod(0o755)
 
-        ev = agents.reap_tick(self.cfg, tasks_file=self.tf, log_dir=self.logs)
+        ev = reap_tick(self.cfg, tasks_file=self.tf, log_dir=self.logs)
         t = ev[0]
         by_name = {d["name"]: d for d in t["deliverables"]}
 
@@ -170,7 +172,7 @@ class TaskDeliveryTest(unittest.TestCase):
         past = time.time() - 3600
         os.utime(f, (past, past))
 
-        ev = agents.reap_tick(self.cfg, tasks_file=self.tf, log_dir=self.logs)
+        ev = reap_tick(self.cfg, tasks_file=self.tf, log_dir=self.logs)
         t = ev[0]
         self.assertFalse(t["delivered"])
         self.assertEqual(t["deliverables"][0]["status"], "missing")
@@ -181,7 +183,7 @@ class TaskDeliveryTest(unittest.TestCase):
                                   delivers=["notes.txt"],
                                   refused_count=3)
         (out_dir / "notes.txt").write_text("notes\n")
-        ev = agents.reap_tick(self.cfg, tasks_file=self.tf, log_dir=self.logs)
+        ev = reap_tick(self.cfg, tasks_file=self.tf, log_dir=self.logs)
         notif = agents.build_done_notification(ev[0])
         self.assertIn("3 commands refused (mutation blocked)", notif["message"])
 
@@ -190,7 +192,7 @@ class TaskDeliveryTest(unittest.TestCase):
                                   delivers=["result.json"])
         (self.logs / "read-me.log").write_text("step 1\nall done\n")
         (out_dir / "result.json").write_text('{"ok": true}\n')
-        agents.reap_tick(self.cfg, tasks_file=self.tf, log_dir=self.logs)
+        reap_tick(self.cfg, tasks_file=self.tf, log_dir=self.logs)
 
         out = agents.output("read-me", tasks_file=self.tf, log_dir=self.logs)
         self.assertTrue(out["ok"])
@@ -229,7 +231,7 @@ class TaskDeliveryTest(unittest.TestCase):
                 and time.monotonic() < deadline:
             time.sleep(0.05)
 
-        ev = agents.reap_tick(self.cfg, tasks_file=self.tf, log_dir=self.logs)
+        ev = reap_tick(self.cfg, tasks_file=self.tf, log_dir=self.logs)
         self.assertEqual(len(ev), 1)
         self.assertEqual(ev[0]["status"], "done")
         self.assertEqual(ev[0]["exit_code"], 0)
@@ -272,7 +274,7 @@ class TaskDeliveryTest(unittest.TestCase):
                 and time.monotonic() < deadline:
             time.sleep(0.05)
 
-        ev = agents.reap_tick(self.cfg, tasks_file=sym_tf, log_dir=sym_logs)
+        ev = reap_tick(self.cfg, tasks_file=sym_tf, log_dir=sym_logs)
         self.assertEqual(len(ev), 1)
         self.assertEqual(ev[0]["status"], "done")
         self.assertTrue(ev[0]["delivered"])
@@ -316,10 +318,10 @@ class TaskDeliveryTest(unittest.TestCase):
             agents._log_line({"id": tname, "name": tname,
                               "status": "timed_out", "ts": _iso(-1.0)},
                              self.tf)
-            agents.reap_tick(self.cfg, tasks_file=self.tf,
+            reap_tick(self.cfg, tasks_file=self.tf,
                              log_dir=self.logs, routines_store=store)
             # idempotent: a second pass must not double-count
-            agents.reap_tick(self.cfg, tasks_file=self.tf,
+            reap_tick(self.cfg, tasks_file=self.tf,
                              log_dir=self.logs, routines_store=store)
         r = store.get("hung")
         self.assertTrue(r.paused)
@@ -353,7 +355,7 @@ class AcpFinishedTest(unittest.TestCase):
     def test_reaper_fails_a_session_whose_process_died(self):
         agents.record_process("acp-b", 2 ** 22 + 1, tasks_file=self.tf)
         agents.record_session("b", "t", "acp-b", tasks_file=self.tf)
-        done = agents.reap_tick(self.cfg, self.tf, self.logs)
+        done = reap_tick(self.cfg, self.tf, self.logs)
         self.assertEqual([t["name"] for t in done], ["b"])
         self.assertEqual(done[0]["status"], "failed")
 

@@ -347,15 +347,6 @@ def table(rows: dict) -> list:
     return out
 
 
-def pick_default(res: dict, mode: str = "direct"):
-    """The winning row for `mode` (production sends no label list):
-    rows are already ranked accuracy, p50 latency, cost."""
-    for r in res["rows"]:
-        if r["mode"] == mode and r["n"]:
-            return r
-    return None
-
-
 def run(cases, providers, modes=MODES, cap_usd: float = 0.80,
         on_call=None) -> dict:
     """Case-major loop so a partial run stays balanced across rows.

@@ -31,7 +31,6 @@ from pathlib import Path
 import fcntl
 
 from . import cancel as _cancel
-from . import delivery as _delivery
 
 INPUT_DIR = "/dev/input"
 DRIFT_PX = 32
@@ -306,19 +305,6 @@ def _watch() -> Watch | None:
 def _isolated(cfg: dict | None) -> bool:
     from . import vpointer
     return vpointer.is_isolated(cfg)
-
-
-def _drive_possible(cfg: dict | None) -> bool:
-    """Could this run touch the real cursor? DOM runs and
-    background-policy runs never do; guide mode injects nothing."""
-    c = cfg or {}
-    if (c.get("screen") or {}).get("dom_page"):
-        return False
-    if _isolated(c):
-        return False
-    if (c.get("pointer") or {}).get("mode") not in ("drive", "auto"):
-        return False
-    return _delivery.mode(c) != "background"
 
 
 def _watch_wanted(cfg: dict | None) -> bool:

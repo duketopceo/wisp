@@ -9,7 +9,7 @@ verified captures — never from non-MIT third-party files.
 ## Frontmatter (whitelist)
 
 Only these keys may appear. Anything else — especially `tool:`, `version:`,
-`author:`, `metadata:` — is stripped by `skill_distill.sanitize_frontmatter`
+`author:`, `metadata:` — is never emitted by `skill_distill.frontmatter`
 and must be rejected on hand-written review. App skills are doc skills:
 they never register executable tools.
 
@@ -23,7 +23,7 @@ they never register executable tools.
 | `tier` | optional | `safe` only for read-only UI-map skills |
 | `provenance` | yes | where the content came from (`authored: crawl <date>`, `adapted: MIT <repo>`) |
 | `draft` | optional | `first-run (unverified)` until a verify pass confirms controls/workflows |
-| `pulls_tools` | optional | comma list of Wisp tool names this guide's steps need (`browser`, `memory`). A name that is not in `wisp/tools/__init__.py`'s `REGISTRY` is refused by `frontmatter_problems()` as `pulls_tools names no such tool: <name>`, so a guide cannot quietly depend on something this install does not have. `index_text()` shows it as `(needs: …)`. It is a declaration, not a grant: listing `memory` grants nothing a skill did not already have |
+| `pulls_tools` | optional | comma list of Wisp tool names this guide's steps need (`browser`, `memory`). A name that is not in `wisp/tools/__init__.py`'s `REGISTRY` is refused by the guide lint (`tests/skill_lint.py`) as `pulls_tools names no such tool: <name>`, so a guide cannot quietly depend on something this install does not have. `index_text()` shows it as `(needs: …)`. It is a declaration, not a grant: listing `memory` grants nothing a skill did not already have |
 
 ## Body sections (in order)
 
@@ -80,7 +80,7 @@ Rules for the section:
 - No machine-specific detail (usernames, hostnames, private paths) and no
   secrets.
 
-`skills.frontmatter_problems()` and `tests/test_skill_provenance.py` fail a
+`tests/skill_lint.py` (run by `tests/test_skill_provenance.py`) fails a
 guide that has a key outside the whitelist, no `provenance`, or a
 `pulls_tools` name that no tool provides.
 

@@ -702,14 +702,6 @@ def match_app_skill_info(
 
 # -- teaching guides (teaching plan U9) ----------------------------------
 
-# The only frontmatter keys an app guide may carry (docs/research/
-# app-skill-format.md). `tool:` and friends are absent on purpose: app
-# skills are documentation and never register executable tools.
-APP_FRONTMATTER_KEYS = frozenset({
-    "name", "description", "url_hosts", "app_classes", "asks", "tier",
-    "provenance", "draft", "pulls_tools",
-})
-
 # Ceiling for the guide text added to one planner prompt. 400 tokens
 # (1600 chars at 4 chars per token) is the budget `APP_SKILL_BUDGET`
 # already gave an app note, so a guide never grows the step prompt more
@@ -721,41 +713,6 @@ APP_FRONTMATTER_KEYS = frozenset({
 CHARS_PER_TOKEN = 4
 TEACH_GUIDE_TOKEN_CAP = 400
 TEACH_GUIDE_CHAR_CAP = TEACH_GUIDE_TOKEN_CAP * CHARS_PER_TOKEN
-
-
-def _unavailable_tools(text: str) -> list[str]:
-    """`pulls_tools` tokens naming a tool this install does not have. A
-    skill that says it needs `sandbox` on a build without one is refused
-    here, by name, rather than at the first call that fails."""
-    from . import tools as toolmod
-    known = set(toolmod.REGISTRY)
-    m = re.match(r"^---\n(.*?)\n---\n", text or "", re.S)
-    if not m:
-        return []
-    raw = ""
-    for line in m.group(1).splitlines():
-        k, _, v = line.partition(":")
-        if k.strip() == "pulls_tools":
-            raw = v
-    return [t for t in _list_field(raw) if t not in known]
-
-
-def frontmatter_problems(text: str) -> list[str]:
-    """Why an app guide's frontmatter is not acceptable, [] when it is:
-    keys outside the whitelist, a missing name/description/provenance, or a
-    `pulls_tools` token naming a tool that does not exist."""
-    m = re.match(r"^---\n(.*?)\n---\n", text or "", re.S)
-    if not m:
-        return ["no frontmatter"]
-    keys = [ln.partition(":")[0].strip() for ln in m.group(1).splitlines()
-            if ln.strip() and not ln.startswith((" ", "\t", "#"))]
-    out = [f"disallowed key: {k}" for k in keys
-           if k not in APP_FRONTMATTER_KEYS]
-    out += [f"missing key: {k}" for k in ("name", "description", "provenance")
-            if k not in keys]
-    for tok in _unavailable_tools(text):
-        out.append(f"pulls_tools names no such tool: {tok}")
-    return out
 
 
 def teaching_section(body: str) -> str:
@@ -931,103 +888,3 @@ def register_tools() -> None:
              "reversible": False, "external": True})
 
 
-def migrate_routines(routines_file: Path | None = None,
-                     skills_dir: Path | None = None) -> int:
-    """Lift JSON routines (routines.json) into SKILL.md skills — same
-    shape as clacky's migrate_legacy. Each routine becomes a doc skill
-    draft named routine-<id>; existing skill dirs are skipped; the JSON
-    store is left untouched as backup. Returns count migrated."""
-    src = skills_dir or SKILLS_DIR
-    path = routines_file or (config.DATA_DIR / "routines.json")
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return 0
-    entries = data.get("routines", data)
-    if not isinstance(entries, dict):
-        return 0
-    n = 0
-    for rid, entry in entries.items():
-        if not isinstance(entry, dict):
-            continue
-        slug = f"routine-{_slug(entry.get('name') or rid)}"
-        d = src / slug
-        if (d / "SKILL.md").exists():
-            continue
-        task = (entry.get("task") or "").strip()
-        if not task:
-            continue
-        sched = entry.get("schedule") or "daily"
-        d.mkdir(parents=True, exist_ok=True)
-        (d / "SKILL.md").write_text(
-            "---\n"
-            f"name: {slug}\n"
-            f"description: Routine '{entry.get('name') or rid}' "
-            f"({sched}) — {task[:80]}\n"
-            "provenance: migrated-from-routines\n"
-            "draft: unverified\n"
-            "---\n\n"
-            f"# {entry.get('name') or rid}\n\n"
-            f"Scheduled routine: **{sched}**\n\n"
-            f"Task: {task}\n",
-            encoding="utf-8")
-        n += 1
-    return n
-
-
-# slug -> url_host guesses for backfilling app skills that predate the
-# url_hosts/app_classes router. Conservative: only well-known domains.
-_HOST_GUESSES = {
-    "gmail": "mail.google.com", "outlook": "outlook.office.com",
-    "github": "github.com", "gitlab": "gitlab.com",
-    "notion": "notion.so", "slack": "app.slack.com",
-    "discord": "discord.com", "figma": "figma.com",
-    "linear": "linear.app", "perplexity": "perplexity.ai",
-    "chatgpt": "chatgpt.com", "claude": "claude.ai",
-    "calendar": "calendar.google.com", "docs": "docs.google.com",
-    "sheets": "docs.google.com", "drive": "drive.google.com",
-    "cloudflare": "dash.cloudflare.com", "vercel": "vercel.com",
-    "jira": "atlassian.net", "confluence": "atlassian.net",
-    "spotify": "open.spotify.com", "youtube": "youtube.com",
-    "twitter": "x.com", "x": "x.com", "reddit": "reddit.com",
-    "stackoverflow": "stackoverflow.com", "trello": "trello.com",
-    "asana": "app.asana.com", "clickup": "app.clickup.com",
-    "airtable": "airtable.com", "dropbox": "dropbox.com",
-    "tallyline": "tallyline.app",
-}
-
-
-def backfill_routing(skills_dir: Path | str | None = None,
-                     dry_run: bool = True) -> list[str]:
-    """Add `url_hosts` to <name>-app skills that lack any routing key
-    (url_hosts/app_classes). Guesses the host from _HOST_GUESSES keyed
-    on the slug minus the -app suffix; skips unknown slugs. Never
-    touches skills that already route. Returns slugs changed (or that
-    would change under dry_run)."""
-    src = Path(skills_dir) if skills_dir else SKILLS_DIR
-    changed = []
-    for d in sorted(src.iterdir()):
-        if not d.is_dir() or not d.name.endswith("-app"):
-            continue
-        f = d / "SKILL.md"
-        if not f.exists():
-            continue
-        text = f.read_text(encoding="utf-8", errors="replace")
-        meta = _frontmatter(text)
-        if meta.get("url_hosts") or meta.get("app_classes") \
-                or meta.get("hosts") or meta.get("classes"):
-            continue
-        base = d.name[:-4]  # strip "-app"
-        host = _HOST_GUESSES.get(base)
-        if not host:
-            continue
-        changed.append(d.name)
-        if dry_run:
-            continue
-        m = re.match(r"^---\n(.*?)\n---\n", text, re.S)
-        if not m:
-            continue
-        fm = m.group(1) + f"\nurl_hosts: {host}\n"
-        f.write_text(text[:m.start(1)] + fm + text[m.end(1):],
-                     encoding="utf-8")
-    return changed

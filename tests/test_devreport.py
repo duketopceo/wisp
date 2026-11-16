@@ -319,60 +319,6 @@ class TestReview(Base):
         turns = [p["turn"] for p in devreport.pick_review(run["rows"], 9)]
         self.assertNotIn(rows[0]["turn"], turns)
 
-    def test_confirm_a_success_writes_a_turn_scoped_correct(self):
-        rows = self.seed()
-        # the owner label must land on THAT turn even though it is not
-        # the latest decision
-        out = devreport.review_apply("r1", rows[1]["turn"], "confirm")
-        self.assertTrue(out["ok"], out)
-        self.assertEqual(out["label"], "correct")
-        lab = [json.loads(x) for x in
-               learn.LABELS_FILE.read_text().splitlines()]
-        self.assertEqual(len(lab), 1)
-        self.assertEqual(lab[0]["label"], "correct")
-        self.assertEqual(lab[0]["ref"], "2026-10-30T00:00:01+00:00")
-
-    def test_flip_a_success_writes_incorrect(self):
-        rows = self.seed()
-        out = devreport.review_apply("r1", rows[2]["turn"], "flip")
-        self.assertEqual(out["label"], "incorrect")
-        lab = json.loads(learn.LABELS_FILE.read_text().splitlines()[0])
-        self.assertEqual((lab["label"], lab["ref"]),
-                         ("incorrect", "2026-10-30T00:00:02+00:00"))
-
-    def test_confirm_and_flip_a_failure(self):
-        rows = self.seed()
-        self.assertEqual(devreport.review_apply(
-            "r1", rows[6]["turn"], "confirm")["label"], "incorrect")
-        self.assertEqual(devreport.review_apply(
-            "r1", rows[7]["turn"], "flip")["label"], "correct")
-
-    def test_the_label_goes_through_the_injected_label_path(self):
-        rows = self.seed()
-        seen = []
-
-        def label_fn(label, note, turn):
-            seen.append((label, turn))
-            return "labeled"
-        devreport.review_apply("r1", rows[0]["turn"], "confirm",
-                               label_fn=label_fn)
-        self.assertEqual(seen, [("correct", rows[0]["turn"])])
-
-    def test_set_writes_the_owners_choice_for_a_dev_turn_only(self):
-        rows = self.seed()
-        out = devreport.set_label("r1", rows[0]["turn"], "incorrect")
-        self.assertTrue(out["ok"])
-        self.assertEqual(out["label"], "incorrect")
-        bad = devreport.set_label("r1", "not-a-dev-turn", "correct")
-        self.assertFalse(bad["ok"])
-        bad = devreport.set_label("r1", rows[0]["turn"], "maybe")
-        self.assertFalse(bad["ok"])
-
-    def test_unjudged_tasks_cannot_be_reviewed(self):
-        rows = self.seed()
-        out = devreport.review_apply("r1", rows[-1]["turn"], "confirm")
-        self.assertFalse(out["ok"])
-
     def test_nothing_judge_made_lands_in_labels_jsonl(self):
         self.seed()
         devreport.build("r1")

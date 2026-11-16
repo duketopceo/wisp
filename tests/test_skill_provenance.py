@@ -8,9 +8,12 @@ exists.
 """
 import pathlib
 import re
+import sys
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "tests"))
+from skill_lint import frontmatter_problems  # noqa: E402
 CORPUS = (pathlib.Path.home()
           / ".local/share/wisp/reference/skill-corpus")
 
@@ -81,20 +84,18 @@ class GuideFrontmatterTest(unittest.TestCase):
     frontmatter whitelist and carry `provenance`."""
 
     def test_shipped_guides_are_on_the_whitelist(self):
-        from wisp import skills
         bad = {}
         for f in sorted((ROOT / "wisp" / "skills_seed" / "apps").glob(
                 "*/SKILL.md")):
-            probs = skills.frontmatter_problems(f.read_text())
+            probs = frontmatter_problems(f.read_text())
             if probs:
                 bad[f.parent.name] = probs
         self.assertEqual(bad, {})
 
     def test_a_guide_with_a_disallowed_key_fails(self):
-        from wisp import skills
         text = ("---\nname: x\ndescription: d\nprovenance: authored\n"
                 "author: someone\n---\n# x\n")
-        self.assertEqual(skills.frontmatter_problems(text),
+        self.assertEqual(frontmatter_problems(text),
                          ["disallowed key: author"])
 
 

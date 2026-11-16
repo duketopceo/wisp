@@ -20,6 +20,17 @@ except ImportError:  # optional dep; grounding degrades without it
 needs_pil = unittest.skipIf(Image is None, "Pillow not installed")
 
 
+def ground_element(b64, target_description, region_hint="menu bar",
+                   power=6.0, model=None, cfg=None):
+    """(x, y) from the raw Jev engine, or None when it is down or skips."""
+    try:
+        r = grounding._jev_locate(b64, target_description, region_hint,
+                                  power, model, cfg, 20)
+    except (grounding.ProviderDown, grounding.Skip):
+        return None
+    return (r[0], r[1]) if r else None
+
+
 class TestGrounding(unittest.TestCase):
     def setUp(self):
         self.img_b64 = None
@@ -46,7 +57,7 @@ class TestGrounding(unittest.TestCase):
         mock_resp.read.return_value = json.dumps({"answers": answers}).encode()
         mock_urlopen.return_value.__enter__.return_value = mock_resp
 
-        coords = grounding.ground_element(
+        coords = ground_element(
             self.img_b64,
             target_description="monitor icon",
             region_hint="menu bar",
@@ -72,7 +83,7 @@ class TestGrounding(unittest.TestCase):
         mock_resp.read.return_value = json.dumps({"answers": answers}).encode()
         mock_urlopen.return_value.__enter__.return_value = mock_resp
 
-        coords = grounding.ground_element(
+        coords = ground_element(
             self.img_b64,
             target_description="nonexistent button",
             region_hint="menu bar"
@@ -81,7 +92,7 @@ class TestGrounding(unittest.TestCase):
 
     def test_ground_element_degrades_without_pillow(self):
         with mock.patch.object(grounding, "_PIL_AVAILABLE", False):
-            self.assertIsNone(grounding.ground_element("", "any button"))
+            self.assertIsNone(ground_element("", "any button"))
 
     def test_tools_ground_registry(self):
         self.assertIn("ground", tools.REGISTRY)

@@ -1,10 +1,38 @@
 """U5c: recall.db — write-through indexing, top-k FTS5 search, empty-db
 safety (lexical fallback needs no keys)."""
+import sqlite3
 import tempfile
 import unittest
 import pathlib
 
 from wisp import recall
+
+
+def vec_available() -> bool:
+    """True only when sqlite-vec can actually be *loaded*.
+
+    Importing the module is not enough: some Python builds ship a sqlite3 compiled without
+    loadable-extension support, so `enable_load_extension` is absent and
+    every vector call silently degrades to FTS-only. Callers that assert
+    vector behaviour must probe this rather than trust the import.
+    """
+    try:
+        import sqlite_vec  # noqa: F401
+    except ImportError:
+        return False
+    db = None
+    try:
+        db = sqlite3.connect(":memory:")
+        if not hasattr(db, "enable_load_extension"):
+            return False
+        db.enable_load_extension(True)
+        sqlite_vec.load(db)
+        return True
+    except (sqlite3.Error, AttributeError, OSError):
+        return False
+    finally:
+        if db is not None:
+            db.close()
 
 
 class RecallTest(unittest.TestCase):
@@ -70,7 +98,7 @@ class RecallVecTest(unittest.TestCase):
         # sqlite3 lacks loadable extensions the import succeeds while
         # every vector op degrades to FTS-only, so these assertions would
         # fail rather than skip.
-        if not recall.vec_available():
+        if not vec_available():
             self.skipTest("sqlite-vec not loadable in this interpreter")
         self.cfg = {"provider": "openai",
                     "base_url": "http://unused",

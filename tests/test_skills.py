@@ -1,10 +1,13 @@
 """U5d: self-authored skills — create/view/edit/delete lifecycle, index
 injection, toolbelt registration, filename safety."""
+import sys
 import tempfile
 import unittest
 import pathlib
 from unittest import mock
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from skill_lint import frontmatter_problems  # noqa: E402
 from wisp import skills, tools
 
 
@@ -152,18 +155,18 @@ class PullsToolsTest(unittest.TestCase):
 
     def test_an_unregistered_tool_is_a_named_problem(self):
         text = self.guide(pulls="pulls_tools: memory, sandbox")
-        problems = skills.frontmatter_problems(text)
+        problems = frontmatter_problems(text)
         self.assertIn("pulls_tools names no such tool: sandbox", problems)
         self.assertNotIn("pulls_tools names no such tool: memory", problems)
 
     def test_every_registry_tool_is_accepted(self):
         for name in sorted(tools.REGISTRY)[:5]:
             text = self.guide(name=f"g-{name}", pulls=f"pulls_tools: {name}")
-            self.assertEqual(skills.frontmatter_problems(text), [], name)
+            self.assertEqual(frontmatter_problems(text), [], name)
 
     def test_pulls_tools_is_a_permitted_app_guide_key(self):
         text = self.guide(pulls="pulls_tools: memory")
-        self.assertEqual(skills.frontmatter_problems(text), [])
+        self.assertEqual(frontmatter_problems(text), [])
 
     def test_another_unknown_key_is_still_rejected(self):
         text = self.guide(pulls="pulls_tools: memory",
@@ -171,7 +174,7 @@ class PullsToolsTest(unittest.TestCase):
         text = text.replace("provenance: shipped",
                             "provenance: shipped\nsandbox: true")
         self.assertIn("disallowed key: sandbox",
-                      skills.frontmatter_problems(text))
+                      frontmatter_problems(text))
 
     def test_write_file_rejects_traversal(self):
         skills.run_manage("create|s|d|b")

@@ -21,7 +21,6 @@ LIVE_CFG = {"pointer": {"mode": "drive"}}
 class WatchOffWhenIsolated(unittest.TestCase):
     def test_not_wanted_isolated(self):
         self.assertFalse(realinput._watch_wanted(ISO_CFG))
-        self.assertFalse(realinput._drive_possible(ISO_CFG))
 
     def test_still_wanted_live(self):
         self.assertTrue(realinput._watch_wanted(LIVE_CFG))

@@ -239,7 +239,6 @@ class Conventions(unittest.TestCase):
                                   "lat": [.1, .1]}}
         t = bo.table(rows)
         self.assertEqual([r["model"] for r in t], ["b", "a", "c"])
-        self.assertEqual(bo.pick_default({"rows": t})["model"], "b")
 
 
 if __name__ == "__main__":

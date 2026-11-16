@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(HERE))
 
 from fakes.hypr import FakeHypr  # noqa: E402
+from hypr_util import reset_binds  # noqa: E402
 from wisp import cancel, config, hypr, ipc, keys, state as state_mod  # noqa: E402
 
 GOLDEN = HERE / "golden" / "keys"
@@ -92,8 +93,8 @@ class TestGeneration(unittest.TestCase):
                      "hypr eval needs the unix Hyprland socket")
 class TestRegistry(unittest.TestCase):
     def setUp(self):
-        hypr.reset_binds()
-        self.addCleanup(hypr.reset_binds)
+        reset_binds()
+        self.addCleanup(reset_binds)
 
     def test_conflict_with_foreign_wisp_submap_is_reported_not_clobbered(self):
         foreign = {"modmask": 0, "submap": "wisp", "key": "escape",
@@ -127,15 +128,15 @@ class TestRegistry(unittest.TestCase):
             hypr.enter_submap(h)
             hypr.shutdown()
         self.assertEqual(f.evals()[-1], "eval " + golden("leave.lua"))
-        self.assertEqual(hypr.active_submaps(), {})
+        self.assertEqual(hypr._submaps, {})
 
 
 @unittest.skipUnless(hasattr(socket, "AF_UNIX"),
                      "hypr eval needs the unix Hyprland socket")
 class TestKeysController(unittest.TestCase):
     def setUp(self):
-        hypr.reset_binds()
-        self.addCleanup(hypr.reset_binds)
+        reset_binds()
+        self.addCleanup(reset_binds)
         self.logs = []
         self.f = FakeHypr(binds_handler())
         self.f.__enter__()
@@ -296,8 +297,8 @@ class TestEscStopsWithinBudget(unittest.TestCase):
     BUDGET_S = 0.150
 
     def setUp(self):
-        hypr.reset_binds()
-        self.addCleanup(hypr.reset_binds)
+        reset_binds()
+        self.addCleanup(reset_binds)
         self.td = pathlib.Path(tempfile.mkdtemp(prefix="wk-"))
         self.sock = self.td / "w.sock"
 

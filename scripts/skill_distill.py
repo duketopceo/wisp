@@ -148,12 +148,6 @@ def merge(app: str, parts: list, spec: str, timeout: float,
     return body
 
 
-_FRONTMATTER_WHITELIST = {
-    "name", "description", "url_hosts", "app_classes", "asks",
-    "tier", "provenance", "draft", "version",
-}
-
-
 def frontmatter(slug: str, app: str, hosts: list | None = None,
                 classes: list | None = None, asks: list | None = None,
                 provenance: str = "distilled", draft: bool = True) -> str:
@@ -174,17 +168,6 @@ def frontmatter(slug: str, app: str, hosts: list | None = None,
     if draft:
         lines.append("draft: first-run (unverified)")
     return "\n".join(lines) + "\n---\n\n"
-
-
-def sanitize_frontmatter(text: str) -> str:
-    """Strip non-whitelist keys from existing frontmatter — adapted or
-    generated skills can never smuggle tool:/tier: or foreign schema."""
-    m = re.match(r"^---\n(.*?)\n---\n", text, re.S)
-    if not m:
-        return text
-    keep = [ln for ln in m.group(1).splitlines()
-            if ln.split(":", 1)[0].strip() in _FRONTMATTER_WHITELIST]
-    return "---\n" + "\n".join(keep) + "\n---\n" + text[m.end():]
 
 
 def main(argv: list) -> int:

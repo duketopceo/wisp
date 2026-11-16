@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
 import shorttmp  # noqa: E402
+from agent_util import reap_tick  # noqa: E402
 from wisp import agents  # noqa: E402
 
 
@@ -58,7 +59,7 @@ class AcpRegistryCase(unittest.TestCase):
         return agents._find(name, self.tf)["status"]
 
     def tick(self):
-        return agents.reap_tick({"agent": {"task_timeout_s": "1800"}},
+        return reap_tick({"agent": {"task_timeout_s": "1800"}},
                                 tasks_file=self.tf, log_dir=self.logs)
 
 

@@ -118,9 +118,8 @@ never targets. Anything else falls to the next rung.
 `unavailable` (no `gi`/Atspi, bus unreachable, compositor query failed) or
 `unbound` (AT-SPI is up but no toplevel binds). Unavailable and unbound
 snap to the model box with `snap: none`; a tree that answered but had no
-match logs `model`. `elementtree.snap_share(records)` reports the
-per-app share and counts the two failures apart. The user never sees an
-error for either.
+match logs `model`; the two failures are counted apart in the snap log.
+The user never sees an error for either.
 
 **Known limits.** Many Wayland apps publish near-empty trees (GPU-drawn
 canvases, terminals, some Electron builds), and a hidden window can keep a
@@ -147,11 +146,8 @@ the snap with no desktop. Shape:
 marks the toplevel the tree binds to; `above` marks an unfocused window that
 covers what lies under it; `state` may be `unavailable` or `unbound` to
 replay those cases. `tests/fakes/elementtree.py` serves one as an
-`ElementTree`, and `elementtree.load_fixture` validates it. The checked-in
-`elementtree.fixture_from_case(case)` turns a teaching-harness case
-(`app`, `size`, `elements`) into one of these, so the harness can run its
-label-first pointing step through `snap_point` with a `FakeElementTree`.
-The checked-in set is drawn by `tests/fixtures/trees/make_trees.py` from invented apps and
+`ElementTree`, and its `load_fixture` validates it. The checked-in set is
+drawn by `tests/fixtures/trees/make_trees.py` from invented apps and
 labels. Never paste a tree captured from a real session: window titles and
 control labels are the user's content.
 

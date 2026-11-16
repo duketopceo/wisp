@@ -742,10 +742,6 @@ class AnswerPointTable:
             c[r["verdict"]] += 1
         return c
 
-    def pass_rate(self) -> float:
-        return self.counts()[AP_CORRECT] / len(self.rows) if self.rows \
-            else 0.0
-
     def render(self) -> str:
         c, n = self.counts(), len(self.rows)
         lines = [f"{'case':<28} verdict"]
@@ -787,8 +783,3 @@ def load_answer_point_cases(path=None) -> list:
     if not out:
         raise TeachCaseError(f"no answer-point cases in {p.name}")
     return out
-
-
-def score_answer_point_cases(path=None) -> AnswerPointTable:
-    return AnswerPointTable([score_answer_point(c)
-                             for c in load_answer_point_cases(path)])

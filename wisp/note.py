@@ -265,21 +265,6 @@ def render_text(parsed: dict | None, *, include_plan: bool | None = None,
     return "\n".join(lines).strip()
 
 
-def spoken_text(parsed: dict | None) -> str:
-    """Short spoken form: letter bodies, else rendered text without plan."""
-    if not parsed:
-        return ""
-    letters = []
-    for obj in parsed.get("objects") or []:
-        if obj.get("kind") in ("letter", "text"):
-            body = (obj.get("body") or "").strip()
-            if body:
-                letters.append(body)
-    if letters:
-        return "\n".join(letters).strip()
-    return render_text(parsed, include_plan=False)
-
-
 def _image_state(obj: dict, cfg=None) -> dict:
     """What a card needs about an image object, from the allow-list and the
     local store only (no network): ready with a local file and its source

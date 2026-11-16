@@ -121,14 +121,6 @@ def _index_rows(tasks_file=config.TASKS_FILE) -> list:
 _WORK_LOCK = threading.Lock()
 
 
-def render_work_index(tasks_file=config.TASKS_FILE) -> None:
-    """Rewrite WORK.md beside tasks.jsonl from the folded registry (temp +
-    replace, so a reader never sees a half-written index). Serialized in
-    process so the last replace comes from the newest read."""
-    with _WORK_LOCK:
-        _render_work_index(tasks_file)
-
-
 def _render_work_index(tasks_file) -> None:
     path = pathlib.Path(tasks_file).parent / WORK_FILE
     rows = _index_rows(tasks_file)
@@ -1539,16 +1531,6 @@ def _tick(cfg: dict, tasks_file, log_dir, kill_grace_s: float,
     _reap_expired(cfg, tasks_file, recs=recs)
     # this pass appended status records — the snapshot must re-merge
     return tasks(tasks_file, log_dir)
-
-
-def reap_tick(cfg: dict, tasks_file=config.TASKS_FILE,
-              log_dir=config.TASK_LOGS,
-              kill_grace_s: float = KILL_GRACE_S,
-              routines_store=None) -> list:
-    """One reaper pass. Returns the tasks that went running -> not
-    running during it (`finished()` shape)."""
-    return _tick_events(cfg, tasks_file, log_dir, kill_grace_s,
-                        routines_store=routines_store)[1]
 
 
 def _tick_events(cfg, tasks_file, log_dir, kill_grace_s,

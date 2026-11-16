@@ -113,13 +113,8 @@ def _pixel_rung(ctx) -> dict:
 
 # Readers return the visible text of the field a step just wrote to
 # (an a11y value, a DOM value), or None when they cannot see it. The
-# a11y and browser lanes register one; none registered = abstain.
+# a11y and browser lanes add one by name; none present = abstain.
 READERS: dict = {}
-
-
-def register_reader(name: str, fn) -> None:
-    """Add/replace a readback source: fn(ctx) -> str | None."""
-    READERS[str(name)] = fn
 
 
 def _norm_text(t: str) -> str:

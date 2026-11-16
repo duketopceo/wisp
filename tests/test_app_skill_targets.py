@@ -10,6 +10,8 @@ from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
+from skill_lint import frontmatter_problems  # noqa: E402
 from wisp import gauntlet, skills  # noqa: E402
 
 SEED = ROOT / "wisp" / "skills_seed" / "apps"
@@ -87,7 +89,7 @@ class Frontmatter(unittest.TestCase):
     def test_every_skill_is_on_the_whitelist_with_asks_and_provenance(self):
         for name in all_skill_names():
             text, meta = load(name)
-            self.assertEqual(skills.frontmatter_problems(text), [], name)
+            self.assertEqual(frontmatter_problems(text), [], name)
             self.assertTrue(meta.get("asks"), f"{name}: asks")
             self.assertTrue(meta.get("provenance"), f"{name}: provenance")
 

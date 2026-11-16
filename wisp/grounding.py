@@ -252,40 +252,6 @@ def pick_pointing_resolution(width: int, height: int) -> tuple[int, int]:
     return (best_w, best_h)
 
 
-def scale_point_from_resolution(
-    px: float,
-    py: float,
-    res_w: int,
-    res_h: int,
-    disp_w: int,
-    disp_h: int,
-    flip_y: bool = False,
-) -> tuple[int, int]:
-    """Clamp `(px, py)` to `[0..res_w, 0..res_h]`, scale into
-    `[0..disp_w, 0..disp_h]`, optionally flip Y origin (bottom-left
-    vs top-left), and clamp to display bounds.
-
-    Mirrors `ElementLocationDetector.detectElementLocation` (lines 103-118)
-    from farzaa/clicky (MIT).
-    """
-    rw = max(1.0, float(res_w))
-    rh = max(1.0, float(res_h))
-    dw = max(0.0, float(disp_w))
-    dh = max(0.0, float(disp_h))
-
-    clamped_x = max(0.0, min(float(px), rw))
-    clamped_y = max(0.0, min(float(py), rh))
-
-    scaled_x = (clamped_x / rw) * dw
-    scaled_y = (clamped_y / rh) * dh
-    if flip_y:
-        scaled_y = dh - scaled_y
-
-    scaled_x = max(0.0, min(scaled_x, dw))
-    scaled_y = max(0.0, min(scaled_y, dh))
-    return int(round(scaled_x)), int(round(scaled_y))
-
-
 def _scale(m: dict) -> float:
     try:
         s = float(m.get("scale", 1) or 1)
@@ -1069,25 +1035,6 @@ def _jev(ctx) -> Candidate | None:
     return Candidate(r[0], r[1], r[2], "jev",
                      size=(ctx.shot.width, ctx.shot.height),
                      label=ctx.target)
-
-
-def ground_element(
-    screenshot_b64: str,
-    target_description: str,
-    region_hint: str = "menu bar",
-    power: float = 6.0,
-    model: str | None = None,
-    cfg: dict | None = None
-) -> Tuple[int, int] | None:
-    """Legacy #77 entry point: (x, y) in screenshot px or None. Kept for
-    callers that want the raw Jev engine; the act loop uses
-    `ground_target`."""
-    try:
-        r = _jev_locate(screenshot_b64, target_description, region_hint,
-                        power, model, cfg, 20)
-    except (ProviderDown, Skip):
-        return None
-    return (r[0], r[1]) if r else None
 
 
 # ---------------------------------------------------------------- chain

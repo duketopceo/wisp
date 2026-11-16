@@ -32,7 +32,7 @@
 {"id":"menu-open-close","category":"menu","app":"menu","goal":"open the Omarchy menu, then close it again by clicking away from it","setup":{},"check":{"type":"judge"},"learnable":false,"held_out":false,"minimal_steps":3,"sessions":["live"]}
 {"id":"menu-launcher-close","category":"menu","app":"menu","goal":"open the Omarchy application launcher and close it again without choosing anything","setup":{},"check":{"type":"judge"},"learnable":false,"held_out":true,"minimal_steps":3,"sessions":["live"]}
 # Answer-and-point cases (U10, kind "answer_point"). Scored offline by
-# wisp/gauntlet.py (score_answer_point_cases), not by the sandbox driver, whose
+# wisp/gauntlet.py (score_answer_point), not by the sandbox driver, whose
 # loader skips these rows. `reply` is a HAND-AUTHORED recorded model reply (not a
 # model recording; same convention as scripts/gen_teach_fixtures.py). Points are
 # raw-canvas screenshot px; expect_point.rect is in logical coords; the two

@@ -276,12 +276,6 @@ def round_px(v: float) -> int:
     return int(math.floor(v + 0.5))
 
 
-def _map_px_point(x: int, y: int, mons: list[dict]) -> tuple[int, int, float]:
-    """Map one raw-canvas (x, y) to (logical_x, logical_y, scale)."""
-    lx, ly = raw_canvas_to_logical(x, y, mons)
-    return round_px(lx), round_px(ly), canvas_scale(mons)
-
-
 def monitors() -> list[dict]:
     """[{x, y, width, height, scale}] via the platform adapter —
     the Hyprland socket. Empty on failure."""

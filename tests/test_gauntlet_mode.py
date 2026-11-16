@@ -463,7 +463,6 @@ class TestAnswerPointScoring(unittest.TestCase):
         self.assertEqual(t.counts()["correct"], 1)
         self.assertEqual(t.counts()["wrong-answer"], 1)
         self.assertEqual(t.counts()["no-point"], 1)
-        self.assertAlmostEqual(t.pass_rate(), 1 / 3)
         self.assertIn("first owner-run live baseline", t.render())
         self.assertIsNone(gauntlet.ANSWER_POINT_GATE)
 
@@ -506,8 +505,8 @@ class TestAnswerPointParsing(unittest.TestCase):
         multi = [c for c in cases if len(c.monitors) > 1]
         self.assertEqual(len(multi), 1)
         self.assertEqual(multi[0].expect_monitor, 2)
-        t = gauntlet.score_answer_point_cases()
-        self.assertEqual([r["verdict"] for r in t.rows], ["correct"] * 4)
+        self.assertEqual([gauntlet.score_answer_point(c)["verdict"]
+                          for c in cases], ["correct"] * 4)
 
     def test_loader_skips_other_rows_and_names_the_bad_line(self):
         d = shorttmp.TemporaryDirectory()

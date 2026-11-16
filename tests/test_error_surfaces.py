@@ -10,7 +10,7 @@ message (and the hint where the surface has room for one):
   console  word_view            (StatusLine word)
   bubble   errorMessage + hint  (Bubble.qml reads service.errorMessage/Hint)
   bar      tooltipLines         (BarWidget tooltip: word and hint lines)
-  toast    notify.for_code      (W18 notification body)
+  toast    notify.CODE_LEVEL    (W18 notification body)
 
 The QML surfaces get the same strings through lib/copy.js, which
 test_copy.py proves is generated from wisp/copy.py; here the JS functions
@@ -34,6 +34,13 @@ SURFACES = ("pill", "console", "bubble", "bar", "toast")
 SILENT_TOAST = {"cancelled"}   # the user stopped it: no toast by design
 
 
+def for_code(code):
+    """(level, text) for the toast of an error code, as the daemon sends it:
+    the level from notify.CODE_LEVEL (None = no toast), the body from the
+    shared copy table."""
+    return notify.CODE_LEVEL.get(code, "error"), wcopy.toast_text(code)
+
+
 def js(expr):
     return jsnode.call(expr, Copy="copy", B="bar", S="state")
 
@@ -53,7 +60,7 @@ def render(code, surface):
             offline: false, ui: Copy.string}});
         }})()""")
     if surface == "toast":
-        level, text = notify.for_code(code)
+        level, text = for_code(code)
         return [text] if level else []
     raise AssertionError(surface)
 
@@ -81,7 +88,7 @@ class TestErrorTable(unittest.TestCase):
 
     def test_toast_text_is_the_copy_text_not_the_fallback_string(self):
         for code in errors_codes.CODES:
-            level, text = notify.for_code(code)
+            level, text = for_code(code)
             self.assertEqual(text, wcopy.toast_text(code), code)
 
     def test_error_fallback_string_comes_from_the_same_table(self):
@@ -93,7 +100,7 @@ class TestErrorTable(unittest.TestCase):
         want = wcopy.error_message("internal")
         for surface in ("pill", "console", "bubble", "bar"):
             self.assertIn(want, "\n".join(render("nope_code", surface)))
-        level, text = notify.for_code("nope_code")
+        level, text = for_code("nope_code")
         self.assertIn(want, text)
 
     def test_python_and_js_agree_on_the_word_view(self):

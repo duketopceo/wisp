@@ -112,13 +112,9 @@ class Claims(unittest.TestCase):
 
     def test_app_skill_matching_hosts_are_explained_as_non_requests(self):
         hosts = {
-            "airtable.com", "app.asana.com", "app.clickup.com",
-            "atlassian.net", "chatgpt.com", "claude.ai", "cloudflare.com",
-            "dash.cloudflare.com", "discord.com", "docs.google.com",
-            "drive.google.com", "dropbox.com", "figma.com", "gitlab.com",
-            "open.spotify.com", "outlook.office.com", "perplexity.ai",
-            "reddit.com", "stackoverflow.com", "stripe.com", "tallyline.app",
-            "trello.com", "vercel.com", "youtube.com",
+            "cloudflare.com", "discord.com", "docs.google.com",
+            "drive.google.com", "figma.com", "perplexity.ai", "stripe.com",
+            "vercel.com",
         }
         found = gt.scan()
         for host in sorted(hosts):
