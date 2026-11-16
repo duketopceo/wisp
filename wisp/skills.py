@@ -43,7 +43,7 @@ BACKUP_DAYS = 60  # Perplexity's retention: a delete is undoable for
 #   renamed; seed() prunes an installed copy only when its recorded
 #   provenance shows it is an unmodified seed (a user's own edits are
 #   never pruned — the tombstone prunes stale copies, not user work).
-SEED_VERSION = 1
+SEED_VERSION = 2
 RETIRED_SEEDS: frozenset[str] = frozenset()
 
 _TEMPLATE = """\

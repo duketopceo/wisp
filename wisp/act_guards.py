@@ -174,11 +174,15 @@ class RunGuards:
     def pre_dispatch(self, name: str, arg: str, steps=()) -> str | None:
         if name == "type_text":
             return (self.invented_path(arg, steps)
-                    or self._dialog_ready(steps))
+                    or self._dialog_ready(steps)
+                    or self._rename_whole_name(arg))
         if name in ("click", "move"):
             return self._click_redirect()
         if name == "key":
             self._mark_route(arg)
+            mark = self.marks.get("rename")
+            if mark is not None and norm_key(arg) == "ctrl+a":
+                mark["selected"] = True
         return None
 
     def _route(self):
@@ -207,6 +211,22 @@ class RunGuards:
         if route and norm_key(arg) == route["key"]:
             self.marks[self.intent] = {
                 "title": str(win.get("title") or ""), "typed": False}
+
+    def _rename_whole_name(self, arg: str) -> str | None:
+        """File managers pre-select only the stem in the rename box, so a
+        new name with an extension typed over it doubles the extension
+        (final.txt.txt). Hold that typing once until ctrl+a selects the
+        whole name; a bare stem is fine as it is."""
+        mark = self.marks.get("rename")
+        if not mark or mark.get("typed") or mark.get("selected"):
+            return None
+        mark["typed"] = True            # one hold, then let it through
+        if not re.search(r"\.[A-Za-z0-9]{1,8}$", (arg or "").strip()):
+            return None
+        return ("SKIP (the rename box selects only the name before the "
+                "extension, so this would make a doubled extension. Press "
+                "ctrl+a first to select the whole name, then type the full "
+                "new name.)")
 
     def _dialog_ready(self, steps) -> str | None:
         mark = self.marks.get("new_folder")

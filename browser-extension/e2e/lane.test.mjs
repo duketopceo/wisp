@@ -18,6 +18,7 @@ import {
 } from './harness.mjs';
 
 const TIMEOUT = 20_000;
+const HOST_START_TIMEOUT = 60_000;
 let fixtures;
 before(async () => {
   fixtures = await serveFixtures();
@@ -264,7 +265,9 @@ describe('the extension and wispd', () => {
       assert.equal(await w.lane.paired(), true);
       await w.restart();
       const panel = await w.panel();
-      await panel.getByRole('heading', { name: 'Connected' }).waitFor({ timeout: TIMEOUT });
+      // a restart cold-starts the native host (wispd) before the link comes
+      // back; give it the same bound as the native-host test below
+      await panel.getByRole('heading', { name: 'Connected' }).waitFor({ timeout: HOST_START_TIMEOUT });
       assert.equal(await w.lane.paired(), true);
       const out = await w.lane.tool({ steps: [{ do: 'open', url: fixtures.url('done.html') }] });
       assert.match(out, /opened tab/);
@@ -295,7 +298,7 @@ describe('the extension and wispd', () => {
       await panel.getByRole('button', { name: 'Connect Wisp' }).click();
       await panel
         .getByRole('heading', { name: "Wisp's native host is not installed" })
-        .waitFor({ timeout: 60_000 });
+        .waitFor({ timeout: HOST_START_TIMEOUT });
       assert.match(await panel.locator('code').innerText(), /wispd browser install-host/);
     } finally {
       await w.close();

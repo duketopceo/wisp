@@ -360,17 +360,6 @@ class ControlClient:
                         read_s=SCREENSHOT_READ_S)
         return res if isinstance(res, dict) else {}
 
-    def click_id(self, element_id: str, **kw) -> dict:
-        """`ui.click {id}` — channel-dispatched click. NOT the default
-        dispatch lane (pixel dispatch via cua is — the grounding chain
-        is what's being trained/measured); kept for drills and the
-        `route: control` evidence tag."""
-        params = {"id": _clean(element_id, ID_CAP)}
-        params.update({k: v for k, v in kw.items()
-                       if isinstance(v, (str, int, float, bool))})
-        res = self.call("ui.click", params)
-        return res if isinstance(res, dict) else {}
-
 
 # ------------------------------------------------------------- registry
 

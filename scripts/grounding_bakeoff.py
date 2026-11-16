@@ -236,10 +236,6 @@ class Reply:
     error: str = ""
 
 
-class SpendCapReached(Exception):
-    pass
-
-
 class FakeProvider:
     """Right on `right` of every 10 cases (by case id), exactly on the
     target in the SENT image's coordinates; otherwise points at the

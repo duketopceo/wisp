@@ -47,7 +47,7 @@ from . import config, devsession, gauntlet, ipc
 # any added later, is denied and the task ends as stopped.
 ALLOW_TOOLS = frozenset((
     "click", "move", "scroll", "screenshot", "observe", "ground",
-    "launch", "focus", "tab", "media", "workspace",
+    "launch", "focus", "tab", "media", "workspace", "move_window",
     "recall", "memory_read", "skill_list", "skill_view",
     "search_files", "task_status", "codegraph"))
 

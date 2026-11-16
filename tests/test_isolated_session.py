@@ -6,11 +6,13 @@ import importlib.util
 import io
 import json
 import os
+import shutil
 import pathlib
 import signal
 import subprocess
 import sys
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -284,9 +286,41 @@ class TestStart(Base):
         self.assertEqual(conf[0], "--config-file=" + os.path.join(
             env["XDG_RUNTIME_DIR"], "dbus.conf"))
         # the dir is removed by stop; read the template instead
-        for bad in ("servicedir", "includedir", "<include"):
+        for bad in ("standard_session_servicedirs", "includedir",
+                    "<include"):
             self.assertNotIn(bad, IS.DBUS_CONF)
         self.assertIn("unix:path=", IS.DBUS_CONF)
+
+    def test_private_bus_activates_only_the_accessibility_bus(self):
+        # window text and click-by-name read the AT-SPI tree, which a real
+        # desktop has; with no a11y bus the gauntlet graded pixel-only
+        # grounding. One private service dir, holding org.a11y.Bus alone,
+        # so nothing else (keyring, portals, gvfs) can ever be activated.
+        import tempfile
+        rd = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, rd, True)
+        with mock.patch.object(IS, "A11Y_LAUNCHERS",
+                               ("/usr/lib/at-spi-bus-launcher",)), \
+                mock.patch.object(IS.os.path, "isfile", return_value=True):
+            conf = pathlib.Path(IS.write_dbus_conf(rd)).read_text()
+        self.assertEqual(conf.count("<servicedir>"), 1)
+        self.assertIn(f"<servicedir>{rd / 'services'}</servicedir>", conf)
+        self.assertNotIn("standard_session_servicedirs", conf)
+        services = sorted(p.name for p in (rd / "services").iterdir())
+        self.assertEqual(services, ["org.a11y.Bus.service"])
+        unit = (rd / "services" / "org.a11y.Bus.service").read_text()
+        self.assertIn("Name=org.a11y.Bus", unit)
+        self.assertIn("Exec=/usr/lib/at-spi-bus-launcher", unit)
+        self.assertNotIn("SystemdService", unit)   # never via systemd --user
+
+    def test_no_launcher_means_no_service_dir_at_all(self):
+        import tempfile
+        rd = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, rd, True)
+        with mock.patch.object(IS.os.path, "isfile", return_value=False):
+            conf = pathlib.Path(IS.write_dbus_conf(rd)).read_text()
+        self.assertNotIn("servicedir", conf)
+        self.assertFalse((rd / "services").exists())
 
     def test_nested_window_is_hidden_by_pid_on_the_live_session(self):
         before = self.sysm.live_ws

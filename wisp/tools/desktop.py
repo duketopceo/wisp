@@ -291,11 +291,58 @@ def _find_window(name: str) -> dict | None:
     return best
 
 
+def _class_matches(classname: str) -> list:
+    """Hyprland windows whose class (or initial class) starts with
+    `classname`, case-insensitive — the same windows `class:^name`
+    selects. [] when the compositor cannot be asked."""
+    want = (classname or "").strip().lower()
+    if not want:
+        return []
+    try:
+        clients = hypr.query("clients")
+    except Exception:
+        return []
+    if not isinstance(clients, list):
+        return []
+    return [c for c in clients if c.get("address") and any(
+        str(c.get(k) or "").lower().startswith(want)
+        for k in ("class", "initialClass"))]
+
+
+def _focus_recent(classname: str):
+    """Focus the most recently used window of `classname` (lowest
+    focusHistoryID: 0 is the one in front). Hyprland's class selector
+    takes the first match, which with two browser windows is often the
+    wrong one. Result string, or None when no window matches."""
+    from .. import platform
+    hits = _class_matches(classname)
+    if not hits:
+        return None
+    best = min(hits, key=lambda c: c.get("focusHistoryID", 1 << 30))
+    cls = best.get("class") or classname
+    if best.get("focusHistoryID") == 0:
+        return f"FOCUSED {classname} -> {cls}"
+    platform._try([hypr.LuaCmd(hypr.focus_window(
+        f"address:{best['address']}"))])
+    try:
+        now = hypr.query("activewindow")
+    except Exception:
+        now = {}
+    if isinstance(now, dict) and now.get("address") == best["address"]:
+        return f"FOCUSED {classname} -> {cls}"
+    return (f"FAILED (focus did not land on {cls} "
+            f"{best.get('title', '')!r})")
+
+
 def focus(classname: str) -> str:
     from .. import platform
     down = _wm_down()
     if down:
         return down
+    if platform.uses_hypr():
+        out = _focus_recent(classname)
+        if out is not None:
+            return out
     cmds = platform.focus_cmds(classname)
     if not cmds:
         return (f"SKIP (focus unsupported — "
@@ -622,6 +669,82 @@ def workspace(n: str) -> str:
                 f"{platform.missing_deps_hint()})")
     platform._try(cmds)
     return f"WORKSPACE {num}"
+
+
+_SIDES = {"left": "left", "right": "right", "up": "up", "above": "up",
+          "top": "up", "down": "down", "below": "down", "bottom": "down"}
+
+
+def _logical(m: dict) -> tuple:
+    s = float(m.get("scale") or 1.0) or 1.0
+    return (m.get("x", 0), m.get("y", 0),
+            m.get("width", 0) / s, m.get("height", 0) / s)
+
+
+def _target_monitor(arg: str, mons: list, cur: dict):
+    """The monitor `arg` names relative to `cur`: a side (nearest monitor
+    whose layout lies past that edge), other/next (the next by id), or a
+    monitor name. None when there is none."""
+    words = re.findall(r"[a-z0-9-]+", (arg or "").lower())
+    by_name = {str(m.get("name", "")).lower(): m for m in mons}
+    for w in words:
+        if w in by_name and by_name[w] is not cur:
+            return by_name[w]
+    side = next((_SIDES[w] for w in words if w in _SIDES), None)
+    others = [m for m in mons if m.get("id") != cur.get("id")]
+    if not others:
+        return None
+    if side is None:
+        ids = sorted(m.get("id", 0) for m in mons)
+        nxt = ids[(ids.index(cur.get("id", 0)) + 1) % len(ids)]
+        return next(m for m in mons if m.get("id") == nxt)
+    cx, cy, cw, ch = _logical(cur)
+    fits = []
+    for m in others:
+        x, y, w, h = _logical(m)
+        if side == "right" and x >= cx + cw - 1:
+            fits.append((x - (cx + cw), m))
+        elif side == "left" and x + w <= cx + 1:
+            fits.append((cx - (x + w), m))
+        elif side == "down" and y >= cy + ch - 1:
+            fits.append((y - (cy + ch), m))
+        elif side == "up" and y + h <= cy + 1:
+            fits.append((cy - (y + h), m))
+    return min(fits, key=lambda t: t[0])[1] if fits else None
+
+
+def move_window(arg: str) -> str:
+    """Move the focused window to another monitor: arg is left, right, up,
+    down, other/next, or a monitor name. Reports MOVED only after
+    Hyprland shows the window on the target monitor."""
+    from .. import platform
+    down = _wm_down()
+    if down:
+        return down
+    if not platform.uses_hypr():
+        return "SKIP (moving a window between monitors needs Hyprland)"
+    try:
+        win = hypr.query("activewindow")
+        mons = hypr.query("monitors")
+    except hypr.HyprError:
+        return "ERROR tool_failed (hypr_unavailable)"
+    if not isinstance(win, dict) or not win.get("address"):
+        return "SKIP (no focused window to move)"
+    mons = mons if isinstance(mons, list) else []
+    cur = next((m for m in mons if m.get("id") == win.get("monitor")), None)
+    if cur is None:
+        return "SKIP (could not tell which monitor the window is on)"
+    target = _target_monitor(arg, mons, cur)
+    if target is None:
+        return (f"SKIP (no monitor {arg!r} of {cur.get('name')})"
+                if len(mons) > 1 else "SKIP (only one monitor)")
+    platform._try([hypr.LuaCmd(hypr.move_window_monitor(target["name"]))])
+    now = next((c for c in clients()
+                if c.get("address") == win["address"]), None)
+    cls = win.get("class") or "window"
+    if now is not None and now.get("monitor") == target.get("id"):
+        return f"MOVED {cls} -> {target['name']}"
+    return f"FAILED (the {cls} window is still on {cur.get('name')})"
 
 
 def clients() -> list:

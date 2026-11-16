@@ -64,6 +64,7 @@ import argparse
 import contextlib
 import json
 import os
+import re
 import pathlib
 import shlex
 import shutil
@@ -262,15 +263,16 @@ def launch_env(environ: dict, runtime_dir, mode=MODE_NESTED) -> dict:
 
 
 # no <standard_session_servicedirs/>, no <includedir>: the bus can
-# activate nothing. Policy mirrors the stock session bus (same user only,
-# EXTERNAL auth).
+# activate nothing but the accessibility bus, from one private service dir
+# that holds org.a11y.Bus alone ({servicedirs}). Policy mirrors the stock
+# session bus (same user only, EXTERNAL auth).
 DBUS_CONF = """<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
  "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
 <busconfig>
   <type>session</type>
   <keep_umask/>
   <listen>unix:path={sock}</listen>
-  <auth>EXTERNAL</auth>
+  <auth>EXTERNAL</auth>{servicedirs}
   <policy context="default">
     <allow send_destination="*" eavesdrop="true"/>
     <allow eavesdrop="true"/>
@@ -280,12 +282,31 @@ DBUS_CONF = """<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configu
 """
 
 
+# where at-spi2-core installs its bus launcher
+A11Y_LAUNCHERS = ("/usr/lib/at-spi-bus-launcher",
+                  "/usr/libexec/at-spi-bus-launcher",
+                  "/usr/lib/at-spi2-core/at-spi-bus-launcher")
+A11Y_SERVICE = "[D-BUS Service]\nName=org.a11y.Bus\nExec={exe}\n"
+
+
 def write_dbus_conf(runtime_dir) -> str:
-    """Write the activation-free bus config into the runtime dir."""
+    """Write the bus config into the runtime dir. It can activate one
+    thing: the accessibility bus (window text and click-by-name read the
+    AT-SPI tree, as on a real desktop), from a private service dir that
+    holds only that unit, with no SystemdService key so systemd --user
+    is never asked. No launcher installed: no service dir at all."""
     rd = pathlib.Path(runtime_dir)
+    exe = next((p for p in A11Y_LAUNCHERS if os.path.isfile(p)), None)
+    dirs = ""
+    if exe:
+        svc = rd / "services"
+        svc.mkdir(mode=0o700, exist_ok=True)
+        (svc / "org.a11y.Bus.service").write_text(
+            A11Y_SERVICE.replace("{exe}", exe), encoding="utf-8")
+        dirs = f"\n  <servicedir>{svc}</servicedir>"
     path = rd / "dbus.conf"
-    path.write_text(DBUS_CONF.replace("{sock}", str(rd / "bus")),
-                    encoding="utf-8")
+    path.write_text(DBUS_CONF.replace("{sock}", str(rd / "bus"))
+                    .replace("{servicedirs}", dirs), encoding="utf-8")
     return str(path)
 
 
@@ -1070,13 +1091,20 @@ class Session:
                 "(close them yourself): " + "; ".join(leaks))
 
     def _bus_check(self, state) -> tuple:
-        """The private bus must be able to activate nothing."""
-        conf = self.d.read_text(os.path.join(state["XDG_RUNTIME_DIR"],
-                                             "dbus.conf"))
-        bad = ("servicedir" in conf or "includedir" in conf
-               or "<include" in conf)
+        """The private bus may activate the accessibility bus and nothing
+        else: no standard or included dirs, and at most one servicedir,
+        the session's own, which write_dbus_conf fills with org.a11y.Bus
+        alone."""
+        rd = state["XDG_RUNTIME_DIR"]
+        conf = self.d.read_text(os.path.join(rd, "dbus.conf"))
+        dirs = re.findall(r"<servicedir>(.*?)</servicedir>", conf or "")
+        ok_dir = os.path.join(rd, "services")
+        bad = ("standard_session_servicedirs" in conf
+               or "includedir" in conf or "<include" in conf
+               or any(d != ok_dir for d in dirs))
         return (bool(conf) and not bad,
-                "the private bus config is missing or lists service dirs")
+                "the private bus config is missing or lists service dirs "
+                "beyond its own accessibility-bus dir")
 
     def _smoke_checks(self, state, check, soak_s) -> None:
         d = self.d

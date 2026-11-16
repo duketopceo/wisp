@@ -44,8 +44,8 @@ MAX_IMAGES = 3  # cap retained screenshots in the message window
 # tools whose success may change what's on screen → re-observe before
 # the next pointer step
 _SCREEN_CHANGING = {"click", "move", "type_text", "key", "launch",
-                    "focus", "tab", "close", "workspace", "shell", "fill",
-                    "post_send"}
+                    "focus", "tab", "close", "workspace", "move_window",
+                    "shell", "fill", "post_send"}
 
 SYSTEM = ("You are Wisp's hands on a Linux desktop (Hyprland). Complete "
           "the user's task using the provided tools — keep steps minimal "

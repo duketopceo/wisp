@@ -53,6 +53,18 @@ class TestShellThroughRsh(PolicyBase):
         out = tools.run("shell", "ls; id", self.scfg)
         self.assertIn("refused", out)
 
+    def test_grep_reads_inside_the_sandbox_only(self):
+        # terminal-grep-word: a read-only search of a sandbox file
+        out = tools.run("shell", "grep needle a.txt", self.scfg)
+        self.assertTrue(out.startswith("SHELL rc="), out)
+        self.assertIn("\tgrep needle a.txt", self.log.read_text())
+        out = tools.run("shell", "grep -n one a.txt", self.scfg)
+        self.assertIn("1:one", out)
+        out = tools.run("shell", "grep root /etc/passwd", self.scfg)
+        self.assertIn("outside the sandbox", out)
+        out = tools.run("shell", "grep -r one ..", self.scfg)
+        self.assertIn("not allowed", out)
+
     def test_mkdir_and_touch_work_inside_the_sandbox_only(self):
         # terminal-make-dir needs a folder made from the terminal; making
         # files and folders stays inside the sandbox root

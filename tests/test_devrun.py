@@ -582,6 +582,10 @@ class RunSafetyTest(unittest.TestCase):
             self.assertIn(risky, deny)
         self.assertNotIn("media", deny)
         self.assertNotIn("tab", deny)
+        # moving a window to another monitor is navigation, reversible
+        # like workspace (windows-move-other-monitor was refused, 0/3)
+        self.assertNotIn("move_window", deny)
+        self.assertNotIn("move_window", devrun.deny_tools(gauntlet_run=True))
 
     def test_a_new_tool_is_denied_by_default(self):
         from wisp import devrun, tools

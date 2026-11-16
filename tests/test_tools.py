@@ -156,6 +156,116 @@ class TestToolExec(unittest.TestCase):
             self.assertEqual(tools.run("workspace", "3", {}), "WORKSPACE 3")
         ev.assert_called_once_with(hypr.focus_workspace(3))
 
+    def _move(self, arg, monitors, win, after=None):
+        """Run move_window on a Hyprland host whose activewindow is `win`
+        and whose window, re-read after the move, sits on `after`."""
+        state = {"moved": False}
+
+        def query(what):
+            if what == "monitors":
+                return monitors
+            if what == "activewindow":
+                return win
+            if what == "clients":
+                mon = after if state["moved"] else win["monitor"]
+                return [dict(win, monitor=mon)]
+            return {}
+
+        def run_lua(cmd):
+            state["moved"] = True
+            return True
+        with mock.patch.dict(os.environ, {"WISP_OS": "linux",
+                                          "WISP_DESKTOP": "hyprland"}), \
+             mock.patch.object(hypr, "available", return_value=True), \
+             mock.patch.object(hypr, "query", side_effect=query), \
+             mock.patch.object(hypr, "run_lua", side_effect=run_lua) as ev:
+            out = tools.run("move_window", arg, {})
+        return out, ev
+
+    MONS = [{"id": 0, "name": "DP-1", "x": 0, "y": 0, "width": 2560,
+             "height": 1440, "scale": 1.0},
+            {"id": 1, "name": "HDMI-A-1", "x": 2560, "y": 0, "width": 1920,
+             "height": 1080, "scale": 1.0}]
+    WIN = {"address": "0xabc", "class": "foot", "monitor": 0}
+
+    def test_move_window_right_picks_the_monitor_on_that_side(self):
+        out, ev = self._move("right", self.MONS, self.WIN, after=1)
+        self.assertEqual(out, "MOVED foot -> HDMI-A-1")
+        ev.assert_called_once_with(hypr.move_window_monitor("HDMI-A-1"))
+
+    def test_move_window_other_cycles_to_the_next_monitor(self):
+        out, _ = self._move("the other monitor", self.MONS, self.WIN, after=1)
+        self.assertEqual(out, "MOVED foot -> HDMI-A-1")
+
+    def test_move_window_by_monitor_name(self):
+        out, _ = self._move("HDMI-A-1", self.MONS, self.WIN, after=1)
+        self.assertEqual(out, "MOVED foot -> HDMI-A-1")
+
+    def test_no_monitor_in_that_direction_is_a_skip(self):
+        out, ev = self._move("left", self.MONS, self.WIN)
+        self.assertTrue(out.startswith("SKIP"), out)
+        ev.assert_not_called()
+
+    def test_a_move_that_did_not_land_is_reported_not_claimed(self):
+        out, _ = self._move("right", self.MONS, self.WIN, after=0)
+        self.assertTrue(out.startswith("FAILED"), out)
+
+    def test_one_monitor_is_a_skip(self):
+        out, ev = self._move("other", self.MONS[:1], self.WIN)
+        self.assertTrue(out.startswith("SKIP"), out)
+        ev.assert_not_called()
+
+    def _focus(self, arg, clients, active_after=None):
+        """Run focus on a Hyprland host with `clients`; the active window
+        after the dispatch is `active_after` (an address)."""
+        state = {"active": next((c["address"] for c in clients
+                                 if c.get("focusHistoryID") == 0), None)}
+
+        def query(what):
+            if what == "clients":
+                return clients
+            if what == "activewindow":
+                return next((c for c in clients
+                             if c["address"] == state["active"]), {})
+            return {}
+
+        def run_lua(cmd):
+            state["active"] = active_after
+            return True
+        with mock.patch.dict(os.environ, {"WISP_OS": "linux",
+                                          "WISP_DESKTOP": "hyprland"}), \
+             mock.patch.object(hypr, "available", return_value=True), \
+             mock.patch.object(hypr, "query", side_effect=query), \
+             mock.patch.object(hypr, "run_lua", side_effect=run_lua) as ev:
+            out = tools.run("focus", arg, {})
+        return out, ev
+
+    TWO_BROWSERS = [
+        {"address": "0xold", "class": "chromium", "title": "Settings",
+         "focusHistoryID": 3},
+        {"address": "0xnew", "class": "chromium", "title": "about:blank",
+         "focusHistoryID": 1},
+        {"address": "0xterm", "class": "foot", "title": "foot",
+         "focusHistoryID": 0}]
+
+    def test_focus_picks_the_most_recently_used_matching_window(self):
+        # two browser windows: "focus the browser" means the one used last,
+        # not whichever Hyprland lists first (windows-focus-browser 0/3)
+        out, ev = self._focus("chromium", self.TWO_BROWSERS,
+                              active_after="0xnew")
+        self.assertEqual(out, "FOCUSED chromium -> chromium")
+        ev.assert_called_once_with(hypr.focus_window("address:0xnew"))
+
+    def test_focus_that_did_not_land_is_not_claimed(self):
+        out, _ = self._focus("chromium", self.TWO_BROWSERS,
+                             active_after="0xterm")
+        self.assertTrue(out.startswith("FAILED"), out)
+
+    def test_focus_of_the_window_already_in_front_is_a_no_op(self):
+        out, ev = self._focus("foot", self.TWO_BROWSERS)
+        self.assertEqual(out, "FOCUSED foot -> foot")
+        ev.assert_not_called()
+
     def test_workspace_rejects_non_number(self):
         self.assertIn("SKIP", tools.run("workspace", "abc", {}))
 

@@ -213,11 +213,15 @@ def screenshot_cmd(out: Path, output: str | None = None) -> list | None:
             if b == "spectacle":
                 return [b, "-b", "-n", "-o", str(out)]
             cmd = [b, str(out)]
-            # grim captures every output; `-o` limits to one —
-            # needed for headless/virtual outputs and panels whose
-            # screencopy stalls when powered off (lid closed).
-            if output and b == "grim":
-                cmd = [b, "-o", output, str(out)]
+            if b == "grim":
+                # the normalize pass decodes and re-encodes this file, so
+                # grim's own compression is wasted work: level 1
+                cmd = [b, "-l", "1", str(out)]
+                # grim captures every output; `-o` limits to one —
+                # needed for headless/virtual outputs and panels whose
+                # screencopy stalls when powered off (lid closed).
+                if output:
+                    cmd = [b, "-l", "1", "-o", output, str(out)]
             return cmd
     return None
 

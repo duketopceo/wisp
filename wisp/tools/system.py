@@ -3,6 +3,7 @@ import pathlib
 import re
 import shutil
 import subprocess
+import time
 from contextlib import contextmanager
 from contextvars import ContextVar
 
@@ -326,7 +327,7 @@ def _normalize_shot(path, output: str | None = None) -> tuple | None:
     try:
         with open(path, "rb") as f:
             head = f.read(26)
-        if head[:8] == b"\x89PNG\r\n\x1a\n":
+        if head[:8] == b"\x89PNG\r\n\x1a\n" and len(head) >= 24:
             import struct
             in_w, in_h = struct.unpack(">II", head[16:24])
         in_bytes = _os.path.getsize(path)
@@ -338,11 +339,16 @@ def _normalize_shot(path, output: str | None = None) -> tuple | None:
             + [f"line 0,{gy} {w},{gy}" for gy in range(100, h, 100)]
             + [f"text {gx + 2},12 '{gx}'" for gx in range(0, w, 100)]
             + [f"text 2,{gy + 12} '{gy}'" for gy in range(0, h, 100)])
+        # one process: resize + grid, then the on-disk PNG (fast zlib)
+        # and the model's JPEG from the same pixels, so model_image does
+        # not decode the PNG a second time
         r = _cancel.run(
             [magick, str(path), "-resize", f"{w}x{h}!",
              "-stroke", "rgba(255,80,80,0.45)", "-strokewidth", "1",
              "-fill", "rgba(255,80,80,0.9)", "-pointsize", "12",
-             "-draw", draw, str(path)],
+             "-draw", draw,
+             "-define", "png:compression-level=1", "-write", str(path),
+             "-quality", "85", _model_jpeg(path)],
             capture_output=True, timeout=15)
         from .. import trace as _trace
         _trace.emit(_trace.current(), "shot_normalize", "act",
@@ -356,6 +362,29 @@ def _normalize_shot(path, output: str | None = None) -> tuple | None:
         return None
 
 
+def _model_jpeg(path) -> str:
+    """Where the normalize pass leaves the model's JPEG for `path`."""
+    return f"{path}.model.jpg"
+
+
+def _fresh_model_jpeg(path) -> bytes | None:
+    """The normalize pass's JPEG for `path`, consumed once; None when it
+    is missing or older than the PNG (the PNG changed after normalize)."""
+    import os as _os
+    side = _model_jpeg(path)
+    try:
+        if _os.path.getmtime(side) < _os.path.getmtime(path):
+            return None
+        data = pathlib.Path(side).read_bytes()
+    except OSError:
+        return None
+    try:
+        _os.unlink(side)
+    except OSError:
+        pass
+    return data if data[:2] == b"\xff\xd8" else None
+
+
 def model_image(path) -> str | None:
     """Screenshot file → data URL for model transport. JPEG q85 when
     magick exists (~7-10x smaller than PNG — click coordinates are
@@ -365,6 +394,9 @@ def model_image(path) -> str | None:
     import os as _os
     import time as _time
     from .. import trace as _trace
+    ready = _fresh_model_jpeg(path)
+    if ready is not None:
+        return "data:image/jpeg;base64," + _b64.b64encode(ready).decode()
     magick = shutil.which("magick")
     if magick:
         tmp = f"{path}.jpg"
@@ -560,9 +592,51 @@ def _wtype_argv(name: str) -> list | None:
     return argv
 
 
+_HYPR_MODS = {"ctrl": "CTRL", "control": "CTRL", "shift": "SHIFT",
+              "alt": "ALT", "super": "SUPER", "meta": "SUPER",
+              "cmd": "SUPER"}
+
+
+def _hypr_chord(name: str):
+    """('CTRL SHIFT', 'N') for a modifier chord, None for a bare key or an
+    unmappable part. Letters go upper-case, named keys use their keysym
+    names (Up, F5, Return)."""
+    parts = name.split("+")
+    if len(parts) < 2:
+        return None
+    mods = [_HYPR_MODS.get(p) for p in parts[:-1]]
+    if any(m is None for m in mods):
+        return None
+    last = parts[-1]
+    k = _WTYPE_KEYS.get(last) or (last.upper() if len(last) == 1
+                                  and last.isalnum() else None)
+    return (" ".join(mods), k) if k else None
+
+
+def _iso_chord(name: str) -> bool:
+    """A chord through the isolated instance's own keymap. wtype's
+    one-level keymap cannot deliver Shift+letter chords that GTK
+    recognises (Nautilus ctrl+shift+n opened search, not New Folder)."""
+    ch = _hypr_chord(name)
+    if ch is None:
+        return False
+    mods, k = ch
+    if not hypr.run_lua(hypr.LuaCmd(hypr.send_key_state(mods, k, "down"))):
+        return False
+    time.sleep(0.05)
+    hypr.run_lua(hypr.LuaCmd(hypr.send_key_state(mods, k, "up")))
+    return True
+
+
 def _iso_key(name: str) -> str:
-    """Key press for an isolated run: wtype on the instance socket only."""
+    """Key press for an isolated run: a chord through the instance's
+    compositor, else wtype on the instance socket only."""
     from .. import platform
+    if "+" in name:
+        from .. import keys as _keys
+        with _keys.suspended():
+            if _iso_chord(name):
+                return "KEY"
     try:
         if not platform._which("wtype"):
             _vp.refuse("a key press without wtype (no ydotool fallback)")
