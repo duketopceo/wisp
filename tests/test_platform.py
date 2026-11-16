@@ -56,6 +56,19 @@ class TestPlatform(unittest.TestCase):
                     platform.type_text_cmd()[0], "wtype")
                 self.assertEqual(platform.tts_binary(), "espeak-ng")
 
+    def test_grim_writes_a_fast_png(self):
+        # the capture is decoded once and re-encoded by the normalize
+        # pass, so grim's own zlib work is wasted: level 1 (150 vs 219 ms
+        # for a 3456x2234 frame), same pixels
+        with _with_os("linux"), \
+                mock.patch.dict(os.environ, {"WISP_DESKTOP": "hyprland"}), \
+                mock.patch.object(platform, "_which", return_value=True):
+            self.assertEqual(platform.screenshot_cmd(Path("/t/s.png")),
+                             ["grim", "-l", "1", "/t/s.png"])
+            self.assertEqual(
+                platform.screenshot_cmd(Path("/t/s.png"), output="DP-3"),
+                ["grim", "-l", "1", "-o", "DP-3", "/t/s.png"])
+
     def test_toggle_cmds_omit_duration(self):
         # seconds=None → open-ended capture for mic toggle; the
         # recorder must carry NO duration flag (stopped by SIGINT).
