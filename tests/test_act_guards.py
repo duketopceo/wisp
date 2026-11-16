@@ -136,6 +136,46 @@ class KeyboardRoutes(unittest.TestCase):
         _, calls, _ = run_loop("rename draft.txt to final.txt", replies, win)
         self.assertEqual(calls, [("click", "draft.txt")])
 
+    def test_rename_with_an_extension_selects_the_whole_name_first(self):
+        # Nautilus pre-selects only the stem in the rename box: typing
+        # "final.txt" over it made final.txt.txt (gauntlet 2026-11-16)
+        win = Win(text="final.txt")
+        replies = [_msg(calls=[_call("click", "draft.txt")]),
+                   _msg(calls=[_call("key", "f2")]),
+                   _msg(calls=[_call("type_text", "final.txt")]),
+                   _msg(calls=[_call("key", "ctrl+a")]),
+                   _msg(calls=[_call("type_text", "final.txt")]),
+                   _msg(calls=[_call("key", "enter")]),
+                   _msg(content="renamed")]
+        _, calls, seen = run_loop("rename draft.txt to final.txt",
+                                  replies, win)
+        self.assertEqual(calls, [("click", "draft.txt"), ("key", "f2"),
+                                 ("key", "ctrl+a"),
+                                 ("type_text", "final.txt"),
+                                 ("key", "enter")])
+        self.assertIn("ctrl+a", json.dumps(seen[3]))
+
+    def test_rename_after_select_all_types_straight_away(self):
+        win = Win(text="final.txt")
+        replies = [_msg(calls=[_call("click", "draft.txt")]),
+                   _msg(calls=[_call("key", "f2")]),
+                   _msg(calls=[_call("key", "ctrl+a")]),
+                   _msg(calls=[_call("type_text", "final.txt")]),
+                   _msg(content="renamed")]
+        _, calls, _ = run_loop("rename draft.txt to final.txt", replies, win)
+        self.assertIn(("type_text", "final.txt"), calls)
+
+    def test_rename_to_a_bare_stem_is_not_held(self):
+        # typing over the pre-selected stem is right when the new name
+        # keeps the old extension
+        win = Win(text="final.txt")
+        replies = [_msg(calls=[_call("click", "draft.txt")]),
+                   _msg(calls=[_call("key", "f2")]),
+                   _msg(calls=[_call("type_text", "final")]),
+                   _msg(content="renamed")]
+        _, calls, _ = run_loop("rename draft.txt to final", replies, win)
+        self.assertIn(("type_text", "final"), calls)
+
     def test_non_file_manager_window_is_untouched(self):
         win = Win(cls="firefox")
         with mock.patch.object(act_guards, "routes_for_window",
