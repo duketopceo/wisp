@@ -229,6 +229,14 @@ def close_window(cls: str = "") -> str:
             f"{lua_str('class:^' + cls)}}}))")
 
 
+def send_key_state(mods: str, key: str, state: str) -> str:
+    """Press ("down") or release ("up") a chord through the compositor's own
+    keymap, as Omarchy's clipboard binds do."""
+    return ("hl.dispatch(hl.dsp.send_key_state({ mods = "
+            f"{lua_str(mods)}, key = {lua_str(key)}, state = "
+            f"{lua_str(state)} }}))")
+
+
 def focus_workspace(n) -> str:
     return f"hl.dispatch(hl.dsp.focus({{workspace = {_int(n, 1)}}}))"
 
