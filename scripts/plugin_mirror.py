@@ -93,10 +93,6 @@ def _ignore(_dir, names):
     return [n for n in names if n in SKIP or n.endswith(".pyc")]
 
 
-def load_manifest(folder: pathlib.Path):
-    return json.loads((pathlib.Path(folder) / "manifest.json").read_text())
-
-
 def validate(folder) -> list:
     """Problems with a plugin folder (empty when valid): the checks of
     `omarchy plugin validate`, in Python."""

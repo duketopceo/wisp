@@ -127,15 +127,6 @@ def mine_projects(db: sqlite3.Connection) -> list:
     return [w for w, c in words.most_common(60) if c >= 2][:25]
 
 
-def binding_launch(name_pat: str):
-    """Pull a launch command from bindings.lua for a matching description."""
-    if not BINDINGS.exists():
-        return None
-    m = re.search(r'o\.bind\([^,]+,\s*"([^"]*%s[^"]*)"\s*,\s*\{\s*launch\s*=\s*"([^"]+)"' % name_pat,
-                  BINDINGS.read_text(), re.I)
-    return m.group(2) if m else None
-
-
 def first_binary(cmd: str) -> str:
     return cmd.split()[0]
 
