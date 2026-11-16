@@ -139,6 +139,15 @@ class Case(unittest.TestCase):
               f"{name} settles")
         return self.rec(name)
 
+    def announced(self, name):
+        """settled, and its finish announced: the manager writes the close
+        record before it announces, so a test that reads self.finished or
+        task_finished waits for both."""
+        rec = self.settled(name)
+        until(lambda: any(e.get("name") == name for e in self.finished),
+              f"{name} announced")
+        return rec
+
     def rows(self, kind=None):
         rows = acp_agent.log_rows(self.log)
         return [r for r in rows if kind is None or r["kind"] == kind]
@@ -176,7 +185,7 @@ class Happy(Case):
             self.assertIn(k, entry)
         self.assertIn("read notes.md", entry["line"])
         self.assertIn("read notes.md", (self.ld / f"{name}.log").read_text())
-        rec = self.settled(name)
+        rec = self.announced(name)
         self.assertEqual(rec["status"], "done")
         self.assertEqual(rec["stop_reason"], "end_turn")
         self.assertEqual(rec["answer"], "Found it. All good.")
@@ -543,7 +552,7 @@ class Failure(Case):
     def test_claimed_file_absent_is_not_delivered(self):
         self.script(prompts=[[msg("I wrote report.md for you.")]])
         name = self.spawn("write it", delivers=["report.md"]).split()[1]
-        rec = self.settled(name)
+        rec = self.announced(name)
         self.assertEqual(rec["status"], "done")
         self.assertFalse(rec["delivered"])
         self.assertEqual(rec["deliverables"][0]["status"], "missing")

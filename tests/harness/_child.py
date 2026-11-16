@@ -326,6 +326,12 @@ def main(spec_path: str) -> int:
             while view["status"] == "speaking" and time.monotonic() < end:
                 time.sleep(0.02)
         time.sleep(0.2)            # let a coalesced tail flush
+        if spec.get("real_notify"):
+            # toasts go out on the notifier's worker thread; wait for its
+            # queue to drain so a slow notify-send under load still lands
+            # in this turn's results (bounded)
+            from wisp import notify as _notify
+            _notify._default.join(timeout=10)
         stop_drain.set()
         drainer.join(timeout=2)
         out["final"] = st.snapshot()
