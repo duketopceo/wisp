@@ -117,9 +117,11 @@ class TestContrast(unittest.TestCase):
             self.assertEqual(bad, [], name)
 
     def test_check_reports_failures(self):
-        res = theme.derive({"background": "#808080", "foreground": "#858585",
-                            "accent": "#808080", "red": "#888888"})
-        self.assertTrue(any(not r["ok"] for r in theme.check(res)))
+        # Brand surfaces make derive() always pass, so doctor the result.
+        res = theme.derive({"accent": "#808080"})
+        res["tokens"]["inkMuted"] = res["tokens"]["canvas"]
+        bad = [r["pair"] for r in theme.check(res) if not r["ok"]]
+        self.assertEqual(bad, ["inkMuted/canvas"])
 
 
 class TestFallbacksAndParsing(unittest.TestCase):
@@ -128,30 +130,31 @@ class TestFallbacksAndParsing(unittest.TestCase):
             res = theme.load(pathlib.Path(d) / "nope")
         self.assertEqual(res["source"], "fallback")
         self.assertEqual(res["mode"], "dark")
-        self.assertEqual(res["tokens"]["canvas"], theme.DARK["canvas"])
+        self.assertEqual(res["tokens"]["canvas"], theme.BRAND_INK)
 
     def test_fallback_light_selected_by_config(self):
         with tempfile.TemporaryDirectory() as d:
             res = theme.load(pathlib.Path(d) / "nope",
                              cfg={"ui": {"theme": "light"}})
         self.assertEqual(res["mode"], "light")
-        self.assertEqual(res["tokens"]["canvas"], theme.LIGHT["canvas"])
+        self.assertEqual(res["tokens"]["canvas"], theme.BRAND_PAPER)
 
     def test_partial_theme_uses_documented_fallbacks(self):
         res = fixture("partial")
         t = res["tokens"]
         self.assertEqual(res["source"], "omarchy")
         self.assertEqual(res["mode"], "dark")        # inferred from canvas
-        self.assertEqual(t["fail"], "#da6262")
+        self.assertEqual(t["fail"], "#d75f5f")  # passes 4.5 on ink
         self.assertEqual(t["needsYou"], t["fail"])    # no yellow -> urgent
         self.assertEqual(t["ok"], t["accent"])        # no green -> accent
-        self.assertEqual(t["raised"], theme.over("#d0d0d0", 0.06, "#202020"))
+        self.assertEqual(t["raised"],
+                         theme.over(theme.BRAND_PAPER, 0.06, theme.BRAND_INK))
         self.assertEqual(t["selection"],
-                         theme.over("#5fafd7", 0.35, "#202020"))
+                         theme.over("#5fafd7", 0.35, theme.BRAND_INK))
 
-    def test_shell_toml_feeds_canvas_and_strong_keyline(self):
+    def test_shell_toml_feeds_strong_keyline_not_canvas(self):
         t = fixture("vantablack")["tokens"]
-        self.assertEqual(t["canvas"], "#000000")
+        self.assertEqual(t["canvas"], theme.BRAND_INK)
         self.assertEqual(t["keylineStrong"], "#e58a4b")
 
     def test_no_shell_toml_strong_keyline_is_accent(self):
@@ -169,7 +172,7 @@ class TestFallbacksAndParsing(unittest.TestCase):
                             "color4": "#3366cc", "color1": "#cc3333"})
         t = res["tokens"]
         self.assertEqual((t["canvas"], t["ink"], t["accent"]),
-                         ("#111111", "#eeeeee", "#3366cc"))
+                         (theme.BRAND_INK, theme.BRAND_PAPER, "#3366cc"))
         # color1 is lifted to the 4.5:1 state floor, not passed through
         self.assertGreaterEqual(theme.contrast(t["fail"], t["canvas"]), 4.5)
 
@@ -179,6 +182,29 @@ class TestFallbacksAndParsing(unittest.TestCase):
             self.assertEqual(sorted(t), sorted(theme.TOKENS), name)
             for k, v in t.items():
                 self.assertRegex(v, r"^#[0-9a-f]{6}$", (name, k))
+
+
+class TestBrandSurfaces(unittest.TestCase):
+    def test_canvas_and_ink_are_brand_in_both_modes(self):
+        night = fixture("tokyo-night")
+        latte = fixture("catppuccin-latte")
+        self.assertEqual(night["mode"], "dark")
+        self.assertEqual(latte["mode"], "light")
+        self.assertEqual((night["tokens"]["canvas"], night["tokens"]["ink"]),
+                         ("#15110e", "#f2ece0"))
+        self.assertEqual((latte["tokens"]["canvas"], latte["tokens"]["ink"]),
+                         ("#f2ece0", "#15110e"))
+        for name in LIGHT + DARK:
+            t = fixture(name)["tokens"]
+            self.assertIn(t["canvas"], ("#15110e", "#f2ece0"), name)
+            self.assertNotEqual(t["canvas"], t["ink"], name)
+
+    def test_accent_and_ember_still_follow_the_theme(self):
+        a = fixture("tokyo-night")["tokens"]
+        b = fixture("vantablack")["tokens"]
+        self.assertEqual(a["canvas"], b["canvas"])
+        self.assertNotEqual(a["accent"], b["accent"])
+        self.assertNotEqual(a["ember"], b["ember"])
 
 
 class TestGolden(unittest.TestCase):
@@ -223,15 +249,6 @@ class TestWispdTheme(unittest.TestCase):
         p = self._run("--check", str(FIXTURES / "flexoki-light"))
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertIn("inkMuted", p.stdout)
-
-    def test_check_fails_on_bad_theme(self):
-        with tempfile.TemporaryDirectory() as d:
-            (pathlib.Path(d) / "colors.toml").write_text(
-                'background = "#808080"\nforeground = "#858585"\n'
-                'accent = "#808080"\nred = "#888888"\n')
-            p = self._run("--check", d)
-        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
-        self.assertIn("FAIL", p.stdout)
 
     def test_css_prints_stylesheet_for_fixture(self):
         p = self._run("--css", str(FIXTURES / "tokyo-night"), "-")

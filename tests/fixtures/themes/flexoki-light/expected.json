@@ -3,19 +3,19 @@
   "source": "omarchy",
   "tokens": {
     "accent": "#205ea6",
-    "canvas": "#fffcf0",
+    "canvas": "#f2ece0",
     "ember": "#205ea6",
     "emberCore": "#3f7cc7",
-    "emberHalo": "#fffcf0",
+    "emberHalo": "#f2ece0",
     "emberWick": "#004186",
-    "fail": "#ca463b",
-    "ink": "#100f0f",
-    "inkMuted": "#74736d",
-    "keyline": "#9f9d96",
+    "fail": "#c03c32",
+    "ink": "#15110e",
+    "inkMuted": "#6e6b65",
+    "keyline": "#9a948c",
     "keylineStrong": "#205ea6",
-    "needsYou": "#976b00",
-    "ok": "#6a7c11",
-    "raised": "#e6e4d9",
+    "needsYou": "#8e6200",
+    "ok": "#5f7000",
+    "raised": "#e5dfd3",
     "selection": "#cecdc3"
   }
 }

@@ -563,7 +563,12 @@ Off by default. Local sources only (Hyprland window changes, the dayflow journal
 | `[eval] gate_rate` | `60%` | first-time-correct fraction (0 to 1, or a percentage) `wispd eval` must reach for PASS; the v1 bar is 60%; unset prints "gate not set" and no PASS or FAIL |
 | `[eval] gate_min_turns` | `50` | labelled turns required before the gate can pass; fewer is FAIL with "needs N more labelled turns" |
 | `[eval] since` | empty | count only turns at or after this ISO date or date-time (UTC, e.g. `2026-11-03`), so the gate measures the build being shipped; older labels stay on disk; empty or invalid counts every label |
-| `[ui] theme` | `dark` | `dark` or `light`; `wispd theme <name>` swaps live |
+| `[ui] theme` | `dark` | `dark` or `light`; `wispd theme <name>` swaps live. With an Omarchy theme, light or dark follows that theme's mode instead |
+
+Theming: Wisp draws its own ink (`#15110e`) and paper (`#f2ece0`) surfaces in
+the Omarchy theme's light or dark mode; the accent, the ember and the state
+colors still come from the Omarchy theme, and the font stays the Omarchy Style
+font. See `wisp/theme.py`.
 | `[apps]` | per OS | name to launch command map Jev resolves "open the terminal" against (`browser`, `terminal`, `files`, `vscode`, `music`, `settings`, `browser_new_tab`) |
 
 ## [packs] — capture-pack retention (U4)
