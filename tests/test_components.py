@@ -26,6 +26,9 @@ EXPECTED = ["AskChips", "Answer", "AgentRow", "AgentsTab", "BarActions", "BarMar
             "HealthSection", "Icon", "Mark", "MemoryTab", "ModelCard", "NowTab", "OverlayLayer",
             "PanelTab", "Pill", "RateNote", "RateRow", "RunCard", "ScribbleLayer", "SettingsTab", "StatusLine", "StepRow",
             "StopControl", "TeachChip", "Transcript", "WeeklyRecapCard", "WhatsNewCard",
+            # settings window controls (overhaul U3)
+            "ScrollPage", "SectionHeader", "SettingRow", "ToggleControl",
+            "SelectControl", "InputControl", "SearchControl",
             # management app views
             "AuditView", "BindsView", "HealthView", "SpendView"]
 

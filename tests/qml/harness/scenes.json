@@ -4556,5 +4556,394 @@
     }
    }
   }
+ },
+ "ToggleControl": {
+  "mode": "variant",
+  "pad": 10,
+  "scale2": true,
+  "variants": {
+   "disabled": {
+    "enabled": false,
+    "label": "dry run"
+   },
+   "focus": {
+    "checked": true,
+    "focused": true,
+    "label": "dry run"
+   },
+   "hover": {
+    "hovered": true,
+    "label": "dry run"
+   },
+   "off": {
+    "label": "dry run"
+   },
+   "on": {
+    "checked": true,
+    "label": "dry run"
+   }
+  }
+ },
+ "SelectControl": {
+  "mode": "variant",
+  "pad": 10,
+  "variants": {
+   "chosen": {
+    "options": [
+     "guide",
+     "drive",
+     "auto"
+    ],
+    "value": "auto"
+   },
+   "focus": {
+    "focused": true,
+    "options": [
+     "tier",
+     "always"
+    ],
+    "value": "tier"
+   },
+   "hover": {
+    "hoveredIndex": 0,
+    "options": [
+     "guide",
+     "drive",
+     "auto"
+    ],
+    "value": "auto"
+   },
+   "none": {
+    "options": [
+     "tier",
+     "always"
+    ],
+    "value": ""
+   },
+   "underscores": {
+    "options": [
+     "autonomous",
+     "guided",
+     "always_ask"
+    ],
+    "value": "always_ask"
+   }
+  },
+  "width": 420
+ },
+ "SelectControlNarrow": {
+  "mode": "variant",
+  "pad": 10,
+  "source": "../../../shell-plugin/components/SelectControl.qml",
+  "variants": {
+   "wrapped": {
+    "options": [
+     "auto",
+     "cua",
+     "hyprcursor",
+     "ydotool",
+     "wlrctl",
+     "none"
+    ],
+    "value": "cua"
+   }
+  },
+  "width": 200
+ },
+ "InputControl": {
+  "mode": "variant",
+  "pad": 10,
+  "variants": {
+   "empty": {
+    "key": "brain.fallback",
+    "kind": "text",
+    "placeholder": "none",
+    "value": ""
+   },
+   "focus": {
+    "focused": true,
+    "key": "budget.daily_usd",
+    "kind": "usd",
+    "unit": "USD",
+    "value": "8.00"
+   },
+   "invalid": {
+    "key": "cua.max_per_turn",
+    "kind": "int",
+    "unit": "actions",
+    "value": "12",
+    "draft": "0"
+   },
+   "number": {
+    "key": "cua.max_per_turn",
+    "kind": "int",
+    "unit": "actions",
+    "value": "12"
+   },
+   "text": {
+    "key": "brain.default",
+    "kind": "text",
+    "value": "openrouter:google/gemini-2.5-flash"
+   }
+  }
+ },
+ "SearchControl": {
+  "mode": "variant",
+  "pad": 10,
+  "variants": {
+   "empty": {},
+   "focus": {
+    "focused": true
+   },
+   "typed": {
+    "text": "budget"
+   }
+  }
+ },
+ "SectionHeader": {
+  "mode": "variant",
+  "pad": 10,
+  "variants": {
+   "first": {
+    "first": true,
+    "title": "pointer"
+   },
+   "note": {
+    "note": "caps on how much Wisp can do in one turn",
+    "title": "limits"
+   }
+  },
+  "width": 480
+ },
+ "SettingRow": {
+  "mode": "variant",
+  "pad": 10,
+  "scale2": true,
+  "variants": {
+   "changed": {
+    "def": {
+     "category": "agents",
+     "default": "autonomous",
+     "group": "agent",
+     "help": "set.agent.autonomy.help",
+     "key": "agent.autonomy",
+     "kind": "choice",
+     "label": "ui.set.autonomy",
+     "options": [
+      "autonomous",
+      "guided",
+      "always_ask"
+     ],
+     "quick": true,
+     "unit": "",
+     "widget": "choice"
+    },
+    "value": "always_ask"
+   },
+   "choice": {
+    "def": {
+     "category": "pointer",
+     "default": "auto",
+     "group": "pointer",
+     "help": "set.pointer.mode.help",
+     "key": "pointer.mode",
+     "kind": "choice",
+     "label": "ui.set.pointer",
+     "options": [
+      "guide",
+      "drive",
+      "auto"
+     ],
+     "quick": true,
+     "unit": "",
+     "widget": "choice"
+    },
+    "value": "auto"
+   },
+   "error": {
+    "def": {
+     "category": "pointer",
+     "default": "12",
+     "group": "cua",
+     "help": "set.cua.max_per_turn.help",
+     "key": "cua.max_per_turn",
+     "kind": "int",
+     "label": "ui.set.per_turn",
+     "max": 200,
+     "min": 1,
+     "quick": true,
+     "unit": "actions",
+     "widget": "number"
+    },
+    "errorText": "max_per_turn must be at most 200",
+    "saveState": "error",
+    "value": "20"
+   },
+   "number": {
+    "def": {
+     "category": "pointer",
+     "default": "12",
+     "group": "cua",
+     "help": "set.cua.max_per_turn.help",
+     "key": "cua.max_per_turn",
+     "kind": "int",
+     "label": "ui.set.per_turn",
+     "max": 200,
+     "min": 1,
+     "quick": true,
+     "unit": "actions",
+     "widget": "number"
+    },
+    "value": "12"
+   },
+   "saved": {
+    "def": {
+     "category": "pointer",
+     "default": "tier",
+     "group": "cua",
+     "help": "set.cua.confirm.help",
+     "key": "cua.confirm",
+     "kind": "choice",
+     "label": "ui.set.confirm",
+     "options": [
+      "tier",
+      "always"
+     ],
+     "quick": true,
+     "unit": "",
+     "widget": "choice"
+    },
+    "saveState": "saved",
+    "value": "always"
+   },
+   "saving": {
+    "def": {
+     "category": "pointer",
+     "default": "12",
+     "group": "cua",
+     "help": "set.cua.max_per_turn.help",
+     "key": "cua.max_per_turn",
+     "kind": "int",
+     "label": "ui.set.per_turn",
+     "max": 200,
+     "min": 1,
+     "quick": true,
+     "unit": "actions",
+     "widget": "number"
+    },
+    "saveState": "saving",
+    "value": "20"
+   },
+   "secret": {
+    "def": {
+     "help": "",
+     "key": "keys.openrouter",
+     "kind": "secret",
+     "label": "set.cat.connectors"
+    },
+    "value": "set"
+   },
+   "text": {
+    "def": {
+     "category": "models",
+     "default": "openrouter:google/gemini-2.5-flash",
+     "group": "brain",
+     "help": "set.brain.default.help",
+     "key": "brain.default",
+     "kind": "text",
+     "label": "set.brain.default.label",
+     "pattern": "[A-Za-z0-9_.-]+:[^\\s,]+",
+     "quick": false,
+     "unit": "",
+     "widget": "text"
+    },
+    "value": "openrouter:google/gemini-2.5-flash"
+   },
+   "toggle": {
+    "def": {
+     "category": "pointer",
+     "default": "false",
+     "group": "cua",
+     "help": "set.cua.dry_run.help",
+     "key": "cua.dry_run",
+     "kind": "bool",
+     "label": "ui.set.dry_run",
+     "quick": true,
+     "unit": "",
+     "widget": "toggle"
+    },
+    "value": "false"
+   }
+  },
+  "width": 640
+ },
+ "SettingRowNarrow": {
+  "mode": "variant",
+  "pad": 10,
+  "source": "../../../shell-plugin/components/SettingRow.qml",
+  "variants": {
+   "choice": {
+    "def": {
+     "category": "pointer",
+     "default": "auto",
+     "group": "pointer",
+     "help": "set.pointer.backend.help",
+     "key": "pointer.backend",
+     "kind": "choice",
+     "label": "set.pointer.backend.label",
+     "options": [
+      "auto",
+      "cua",
+      "hyprcursor",
+      "ydotool",
+      "wlrctl",
+      "none"
+     ],
+     "quick": false,
+     "unit": "",
+     "widget": "choice"
+    },
+    "value": "cua"
+   },
+   "number": {
+    "def": {
+     "category": "pointer",
+     "default": "12",
+     "group": "cua",
+     "help": "set.cua.max_per_turn.help",
+     "key": "cua.max_per_turn",
+     "kind": "int",
+     "label": "ui.set.per_turn",
+     "max": 200,
+     "min": 1,
+     "quick": true,
+     "unit": "actions",
+     "widget": "number"
+    },
+    "value": "20"
+   }
+  },
+  "width": 360
+ },
+ "ScrollPage": {
+  "mode": "variant",
+  "pad": 0,
+  "scale2": true,
+  "source": "SettingsPageScene.qml",
+  "variants": {
+   "scrolled": {
+    "category": "pointer",
+    "scrollY": 260,
+    "states": {
+     "cua.max_per_turn": "saved"
+    },
+    "values": {
+     "cua.max_per_turn": "20"
+    }
+   },
+   "top": {
+    "category": "pointer"
+   }
+  }
  }
 }
