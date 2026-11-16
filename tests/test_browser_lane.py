@@ -116,6 +116,11 @@ class FakeExtension(threading.Thread):
         1 s long-poll would take the next test's command and answer it with
         a stale token, so that command would never get a result."""
         self.live = False
+        # a poll in flight holds the last /poll for up to 1 s; a batch
+        # picked up just before stop() would otherwise never get its
+        # /result and the caller burns the full CALL_TIMEOUT_S on it
+        # (the flake in test_every_reason_in_the_set_is_accepted).
+        # Draining here answers anything already picked up.
         if self.is_alive() and self is not threading.current_thread():
             self.join(timeout=3)
 

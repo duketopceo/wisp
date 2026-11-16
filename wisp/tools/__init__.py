@@ -201,6 +201,13 @@ REGISTRY = {
                  "tool result",
                  {"tier": "T0", "reversible": True,
                      "external": False}),  # wired in the act loop (U4)
+    "memory_save": (None, "safe",
+                    "save this run's job memory — the goal, the user's "
+                    "rules in their words, what done means, where "
+                    "progress lives; arg is the FULL file, it replaces "
+                    "what you had; kept short, shown back every step",
+                    {"tier": "T0", "reversible": True,
+                     "external": False}),
 }
 
 
@@ -209,7 +216,8 @@ REGISTRY = {
 # loop, not here); tool_schemas must not drop them.
 EXTERN = frozenset({"agent_spawn", "task_status", "task_cancel",
                     "memory", "recall", "skill_manage", "skill_view",
-                    "memory_read", "skill_list", "ask_user", "observe"})
+                    "memory_read", "skill_list", "ask_user", "observe",
+                    "memory_save"})
 
 # loop-internal backchannels the model can call inside a run but that
 # have no route-level executor — Jev must never route to them (run()
@@ -318,6 +326,17 @@ def _run_inner(name: str, arg: str, cfg: dict,
     if name == "memory":
         from .. import memory
         return memory.run(arg)
+    if name == "memory_save":
+        # per-job memory (§2 of the Clicky transfer): the run's own
+        # file, whole-replace; WISP_OUT_DIR names the job folder
+        from .. import job_memory
+        import os as _os
+        out_dir = _os.environ.get("WISP_OUT_DIR") or ""
+        if not out_dir:
+            return "FAIL (memory_save needs a job folder — no WISP_OUT_DIR)"
+        return ("OK (job memory saved)" if job_memory.write(out_dir, arg)
+                else "FAIL (memory_save needs the full file text — "
+                     "an empty save is refused)")
     if name == "recall":
         from .. import recall
         return recall.run(arg)

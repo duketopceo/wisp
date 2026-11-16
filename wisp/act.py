@@ -214,7 +214,8 @@ def run_act_loop(task: str, cfg: dict, state=None,
                  initial_image: str | None = None,
                  interrupted=None,
                  steps_out: list | None = None,
-                 ask=None, *, user_request: str = "", lang: str = "") -> str:
+                 ask=None, *, user_request: str = "", lang: str = "",
+                 out_dir: str | None = None) -> str:
     """Drive the chat model through the toolbelt until it finishes or a
     bound trips. `confirm(prompt)->bool` asks the user (choice widget /
     IPC) when wired; without it mutating calls skip. `ask(question,
@@ -224,8 +225,14 @@ def run_act_loop(task: str, cfg: dict, state=None,
     records for judging/replay. `user_request` is the caller's verbatim
     human instruction, not a generated task/goal or model tool payload.
     Only that trusted channel may authorize an element-free coordinate
-    click; omitted context fails closed."""
+    click; omitted context fails closed. `out_dir` names the run's job
+    folder (the spawn paths set WISP_OUT_DIR; the in-process thread path
+    passes it); set, the run gets a per-job memory file the model writes
+    and re-reads every step (§2 of the Clicky transfer)."""
     from . import brain
+    import os as _os
+    if out_dir is None:
+        out_dir = _os.environ.get("WISP_OUT_DIR") or None
     at_mode = brain.action_text(cfg)
     if not brain.supports_tools(cfg) and not at_mode:
         p = brain.provider(cfg)
@@ -292,6 +299,12 @@ def run_act_loop(task: str, cfg: dict, state=None,
             cap += "]\n\n"
         user_msg = [{"type": "text", "text": cap + user_msg},
                     {"type": "image_url", "image_url": {"url": url}}]
+    if out_dir:
+        # per-job memory (§2): the trigger rides the system prompt so
+        # the model knows the tool exists; the file itself rides back
+        # as a fresh per-step user message below, never in the history
+        from . import job_memory
+        system += "\n\n" + job_memory.MEMORY_TRIGGER
     messages = [{"role": "system", "content": system},
                 {"role": "user", "content": user_msg}]
     steps = steps_out if steps_out is not None else []
@@ -401,6 +414,14 @@ def run_act_loop(task: str, cfg: dict, state=None,
                 _goals.record_steps(steps)
                 return "INTERRUPTED (user)"
             try:
+                if out_dir:
+                    # the job's memory rides immediately before every
+                    # model call — a disk read at injection time, never
+                    # a stored message, so nothing can summarise it away
+                    from . import job_memory
+                    rem = job_memory.reminder(out_dir)
+                    if rem:
+                        messages.append({"role": "user", "content": rem})
                 msg = _post(messages, cfg)
             except cancel.Cancelled:
                 _goals.record_steps(steps)
