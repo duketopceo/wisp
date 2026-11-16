@@ -229,6 +229,12 @@ def close_window(cls: str = "") -> str:
             f"{lua_str('class:^' + cls)}}}))")
 
 
+def move_window_monitor(name: str) -> str:
+    """Move the active window onto monitor `name` (Omarchy's own
+    move-window-to-monitor bind dispatches the same way)."""
+    return f"hl.dispatch(hl.dsp.window.move({{monitor = {lua_str(name)}}}))"
+
+
 def focus_workspace(n) -> str:
     return f"hl.dispatch(hl.dsp.focus({{workspace = {_int(n, 1)}}}))"
 
