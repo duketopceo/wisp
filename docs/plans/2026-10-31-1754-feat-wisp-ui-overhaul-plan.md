@@ -56,7 +56,7 @@ The owner's complaint is that the settings window has no scrolling, reads like a
 
 **Look and readability**
 
-- R11. Every surface takes colours and font family from the active Omarchy theme through `service.tokens` and `Style`. No hex colours are introduced.
+- R11. Every surface takes colours and font family through `service.tokens` and `Style`: Wisp's brand ink/paper for canvas and ink (light or dark per the Omarchy theme's mode), accent and ember from the active Omarchy theme, font family from Omarchy. No hex colours are introduced outside `tokens.js`. (Amended 2026-11-16; see Key Decisions.)
 - R12. One type scale and spacing rhythm applies to every QML surface. Body text is at least 14 px, secondary text at least 12 px, and no text is under 12 px except the overlay's non-text glyph labels. Spacing steps come from one 4 px-based scale.
 - R13. Interactive controls are at least 32 px tall in the settings window and Panel, and at least 28 px on the overlay and bar.
 - R14. Type and spacing follow the Omarchy text-size setting where the host exposes it, so a larger system text size enlarges Wisp.
@@ -81,7 +81,8 @@ The owner's complaint is that the settings window has no scrolling, reads like a
 ### Key Decisions
 
 - **Settings get their own window.** The bar Panel keeps quick status and a few toggles. (session-settled: user-directed — chosen over fixing it inside the bar Panel and over doing both with equal weight: the owner wants a normal app window with a sidebar and scrolling.) Governs R1, R2, R9, R10.
-- **Look follows the active Omarchy theme, with more polish.** Colours and fonts come from Omarchy through `service.tokens` and `Style`, on a proper type scale. (session-settled: user-approved — chosen over a separate Wisp-designed palette: keeps Wisp looking installed on every theme.) Governs R11, R12, R14.
+- **Brand surfaces, Omarchy accent (amended 2026-11-16, owner).** Wisp's own ink `#15110E` and paper `#F2ECE0` are the canvas and ink on every GUI surface, light or dark following the Omarchy theme's mode; accent, ember and state colours stay derived from the Omarchy theme, and the font stays the Omarchy Style font. This supersedes the earlier decision below that the GUI follows the Omarchy theme rather than a Wisp palette.
+- **(Superseded) Look follows the active Omarchy theme, with more polish.** Colours and fonts come from Omarchy through `service.tokens` and `Style`, on a proper type scale. (session-settled: user-approved — chosen over a separate Wisp-designed palette: keeps Wisp looking installed on every theme.) Governs R11, R12, R14.
 - **The terminal side is polished, not retired.** `wispd tui` stays for SSH and no-GUI use. (session-settled: user-approved — chosen over GUI-only and over retiring the TUI.) Governs R16, R17, R18.
 - **Everything is in scope, settings first.** One plan, sequenced as PRs. (session-settled: user-approved — chosen over settings-only.) Governs phase order.
 

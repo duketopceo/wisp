@@ -2,7 +2,9 @@
 
 DESIGN-v2 sections 5.1 and 5.2 are the spec. `load()` reads the active
 Omarchy theme (`colors.toml`, plus `shell.toml` when present) and derives
-the Wisp token set: chrome colors straight from the theme, `ember` (the
+the Wisp token set: brand ink/paper surfaces (canvas, ink, raised,
+keyline) in the theme's light/dark mode, accent colors straight from the
+theme, `ember` (the
 creature color) derived from the theme's accent, and contrast-corrected
 `inkMuted`, state colors and `emberHalo`.
 
@@ -62,6 +64,14 @@ CHECKS = (
 )
 
 # Omarchy Color.qml defaults, used when colors.toml omits a base key.
+# Brand surfaces (owner decision 2026-11-16): Wisp's own ink/paper replace
+# the Omarchy canvas/ink on every GUI surface; accent and ember still come
+# from the theme. Mirrored in shell-plugin/lib/tokens.js (BRAND).
+BRAND_INK = "#15110e"
+BRAND_PAPER = "#f2ece0"
+BRAND = {"dark": {"canvas": BRAND_INK, "ink": BRAND_PAPER},
+         "light": {"canvas": BRAND_PAPER, "ink": BRAND_INK}}
+
 _COLOR_DEFAULTS = {"foreground": "#cacccc", "background": "#101315",
                    "accent": "#cacccc", "urgent": "#a55555"}
 _NORMAL_BORDER_ALPHA = 0.4     # Style.normalBorderAlpha default
@@ -289,10 +299,13 @@ def _lift_until(color: str, bg: str, floor: float) -> str:
 def derive(colors: dict, shell=None, source: str = "omarchy") -> dict:
     """colors.toml (+ shell.toml) values -> {source, mode, tokens}."""
     b = _base(colors)
-    canvas = _shell_hex(shell, "popups.background") or b["background"]
+    # Mode still follows the theme (explicit `mode`, else the luminance of
+    # its own background); the surfaces themselves are the brand pair.
+    theme_bg = _shell_hex(shell, "popups.background") or b["background"]
     mode = colors.get("mode") or (
-        "light" if luminance(canvas) > 0.18 else "dark")
-    ink, accent = b["foreground"], b["accent"]
+        "light" if luminance(theme_bg) > 0.18 else "dark")
+    canvas, ink = BRAND[mode]["canvas"], BRAND[mode]["ink"]
+    accent = b["accent"]
     border_alpha = _NORMAL_BORDER_ALPHA
     try:
         border_alpha = max(0.0, min(1.0, float(
@@ -301,11 +314,10 @@ def derive(colors: dict, shell=None, source: str = "omarchy") -> dict:
         pass
     ember = ember_for(colors, mode)
     eL = oklch(ember)[0]
-    halo = max((b["background"], ink), key=lambda c: contrast(c, ember))
+    halo = max((canvas, ink), key=lambda c: contrast(c, ember))
     tokens = {
         "canvas": canvas,
-        "raised": (colors.get("lighter_background")
-                   or over(ink, _RAISED_ALPHA, canvas)),
+        "raised": over(ink, _RAISED_ALPHA, canvas),
         "keyline": over(ink, border_alpha, canvas),
         "keylineStrong": _shell_hex(shell, "popups.border") or accent,
         "ink": ink,
