@@ -74,6 +74,11 @@ REGISTRY = {
     "close": (desktop.close, "mutating",
               "close the active/matching window",
               {"tier": "T2", "reversible": False, "external": False}),
+    "move_window": (desktop.move_window, "interactive",
+                    "move the focused window to another monitor — arg: "
+                    "left, right, up, down, other, or a monitor name "
+                    "(focus the window first)",
+                    {"tier": "T1", "reversible": True, "external": False}),
     "workspace": (desktop.workspace, "interactive",
                   "switch Hyprland workspace",
                   {"tier": "T1", "reversible": True, "external": False}),
