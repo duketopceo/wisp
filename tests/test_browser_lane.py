@@ -112,7 +112,12 @@ class FakeExtension(threading.Thread):
         return {"ok": True, "results": results}
 
     def stop(self):
+        """Stop polling and wait for the thread: a fake still inside its
+        1 s long-poll would take the next test's command and answer it with
+        a stale token, so that command would never get a result."""
         self.live = False
+        if self.is_alive() and self is not threading.current_thread():
+            self.join(timeout=3)
 
 
 class LaneCase(unittest.TestCase):
@@ -326,13 +331,12 @@ class KeepReason(LaneCase):
         self.assertEqual(len(self.batch_cmds(ext)), sent)   # nothing sent
 
     def test_every_reason_in_the_set_is_accepted(self):
+        self.paired()        # one pairing: re-pairing per reason raced
         for want in browser.KEEP_REASONS:
-            ext = self.paired()
             out = self.run_tool(json.dumps({"steps": [
                 {"do": "keep", "why": want}]}))
             self.assertTrue(out.startswith("OK"), (want, out))
             self.assertIn(f"({want})", out)
-            ext.stop()
 
     def test_two_keeps_with_different_reasons_are_both_sent(self):
         ext = self.paired()
