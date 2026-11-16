@@ -18,7 +18,7 @@ Every cua-recorded mutating step flows through a cheap-first ladder:
     disagreement / mutual abstention
                           -> VLM judge on the before/after pair
         (image-pair brain.chat when supports_vision, or a named
-        `[verify] vlm` provider — ask_jev is text-only, never used).
+        `[verify] vlm` provider).
         Judge timeout/error/garbage -> unverifiable.
 
 Unknown evidence NEVER resolves to `landed`: abstentions, missing
@@ -485,8 +485,8 @@ def _parse_judge(text: str) -> dict:
 
 
 def _vlm_judge(before, after, claim, step, cfg) -> dict:
-    """The ambiguity rung — an image-pair brain call (`ask_jev` is
-    text-only and is never used). `[verify] vlm = "provider:model"`
+    """The ambiguity rung — an image-pair brain call. `[verify] vlm =
+    "provider:model"`
     pins a declared-vision endpoint; otherwise the primary brain must
     support vision. Every failure path raises JudgeUnavailable (or the
     provider's own error) — the caller maps it to unverifiable."""

@@ -282,11 +282,6 @@ class Lane:
             return bool(self._token) and self._last_poll is not None \
                 and self._clock() - self._last_poll < ALIVE_S
 
-    def unpair(self) -> None:
-        with self._lock:
-            self._token = ""
-            self._last_poll = None
-
     # -- commands -----------------------------------------------------------
     def next_command(self, wait: float):
         with self._lock:

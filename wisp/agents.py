@@ -394,10 +394,6 @@ def classify_peer(peer: dict | None, tasks_file=config.TASKS_FILE) -> dict:
     return unmarked
 
 
-def is_marked_peer(peer: dict | None, tasks_file=config.TASKS_FILE) -> bool:
-    return bool(classify_peer(peer, tasks_file=tasks_file).get("marked"))
-
-
 def record_refusal(task_id: str, cmd: str,
                    tasks_file=config.TASKS_FILE) -> int:
     """Increment `refused_count` for `task_id` in `tasks.jsonl` and return

@@ -170,19 +170,6 @@ class Spend:
         return self.remaining() + 1e-9 >= sum(float(s) for s in stops)
 
 
-def spend_for(cfg: dict):
-    """The Spend a gauntlet run config names, or None."""
-    d = (cfg or {}).get("dev") or {}
-    p = str(d.get("spend_file") or "").strip()
-    if not (is_gauntlet(cfg) and p):
-        return None
-    try:
-        cap = float(str(d.get("spend_cap_usd", "")).strip())
-    except ValueError:
-        cap = DEFAULT_CAP_USD
-    return Spend(p, cap)
-
-
 # -- the sandbox typing check ---------------------------------------------
 
 def _norm_addr(a) -> str:
@@ -611,9 +598,6 @@ class TeachTable:
         """Cases whose first step lands on the right target, whatever the
         kind: how much of the miss is the optional kind field."""
         return sum(1 for r in self.rows if r["target_ok"])
-
-    def first_time_correct(self) -> float:
-        return self.counts()[CORRECT] / len(self.rows) if self.rows else 0.0
 
     def render(self) -> str:
         c, n = self.counts(), len(self.rows)
