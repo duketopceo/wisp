@@ -191,7 +191,8 @@ def index() -> list:
         out.append({"name": meta.get("name", d.name),
                     "description": meta.get("description", ""),
                     "tool": bool(meta.get("tool")),
-                    "pulls_tools": _list_field(meta.get("pulls_tools"))})
+                    "pulls_tools": _list_field(meta.get("pulls_tools")),
+                    "read": _list_field(meta.get("read"))})
     return out
 
 
@@ -219,6 +220,12 @@ def index_text(transcript: str = "") -> str:
             # what this skill depends on, so the model knows before loading
             # it whether the tools it needs are here at all
             line += f" (needs: {', '.join(s['pulls_tools'])})"
+        if s.get("read"):
+            # reference-on-demand (§4e of the Clicky transfer): the
+            # situation that should make the model reach for the detail,
+            # named in the index so the trigger itself is visible without
+            # loading anything
+            line += f" (read it when: {'; '.join(s['read'])})"
         if used + len(line) > INDEX_BUDGET:
             break
         lines.append(line)
@@ -230,6 +237,18 @@ def index_text(transcript: str = "") -> str:
 
 
 def view(name: str) -> str:
+    """SKILL.md body, or one reference file: `skill_view name:refs/x.md`
+    reads that file inside the skill dir (no `..`, no leading `/`) —
+    the reference-on-demand path the index's `read it when` points at."""
+    target, _, ref = name.partition(":")
+    if ref:
+        if ref.startswith("/") or ".." in ref:
+            return "FAIL (bad reference path)"
+        f = _dir(target) / ref
+        try:
+            return f.read_text()
+        except OSError:
+            return f"FAIL (no reference {ref!r} in {target!r})"
     f = _dir(name) / "SKILL.md"
     try:
         return f.read_text()
@@ -502,7 +521,8 @@ APP_SKILL_BUDGET = 1600  # chars (~400 tokens) cap for one matched app skill
 
 def _list_field(raw) -> list[str]:
     """Parse a frontmatter list field (`a, b` or `[a, b]`) into normalized
-    lowercase items."""
+    lowercase items. `read:` items are phrases, not words — `|` separates
+    them and spaces stay inside one item."""
     if not raw:
         return []
     if isinstance(raw, (list, tuple, set)):
@@ -511,12 +531,15 @@ def _list_field(raw) -> list[str]:
         s = str(raw).strip()
         if s.startswith("[") and s.endswith("]"):
             s = s[1:-1]
-        items = re.split(r"[,\s]+", s) if "," in s else s.split()
+        if "|" in s:
+            items = [p for p in s.split("|")]
+        else:
+            items = re.split(r"[,\s]+", s) if "," in s else s.split()
     out: list[str] = []
     for item in items:
-        tok = item.strip().strip("'\"").lower()
+        tok = item.strip().strip("'\"")
         if tok and tok not in out:
-            out.append(tok)
+            out.append(tok if "|" in str(raw) else tok.lower())
     return out
 
 

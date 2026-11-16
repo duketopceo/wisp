@@ -113,6 +113,12 @@ class FakeExtension(threading.Thread):
 
     def stop(self):
         self.live = False
+        # a poll in flight holds the last /poll for up to 1 s; a batch
+        # picked up just before stop() would otherwise never get its
+        # /result and the caller burns the full CALL_TIMEOUT_S on it
+        # (the flake in test_every_reason_in_the_set_is_accepted).
+        # Draining here answers anything already picked up.
+        self.join(timeout=3)
 
 
 class LaneCase(unittest.TestCase):
