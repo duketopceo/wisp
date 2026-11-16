@@ -26,6 +26,13 @@ var scale = {
   space: { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32, huge: 48 },
   control: { window: 32, compact: 28 },
   minimum: { body: 14, secondary: 12, control: 28, windowControl: 32 },
+  // settings window controls (U3): keyboard focus ring, switch track,
+  // widest number or text field, and the width below which a setting row
+  // stacks its control under the label
+  focusRing: 2,
+  toggle: { width: 40, height: 22 },
+  field: { number: 140, text: 320 },
+  rowStack: 560,
   textScaleRange: { min: 1, max: 2 }
 }
 
