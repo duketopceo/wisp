@@ -327,7 +327,7 @@ def _normalize_shot(path, output: str | None = None) -> tuple | None:
     try:
         with open(path, "rb") as f:
             head = f.read(26)
-        if head[:8] == b"\x89PNG\r\n\x1a\n":
+        if head[:8] == b"\x89PNG\r\n\x1a\n" and len(head) >= 24:
             import struct
             in_w, in_h = struct.unpack(">II", head[16:24])
         in_bytes = _os.path.getsize(path)
@@ -339,11 +339,16 @@ def _normalize_shot(path, output: str | None = None) -> tuple | None:
             + [f"line 0,{gy} {w},{gy}" for gy in range(100, h, 100)]
             + [f"text {gx + 2},12 '{gx}'" for gx in range(0, w, 100)]
             + [f"text 2,{gy + 12} '{gy}'" for gy in range(0, h, 100)])
+        # one process: resize + grid, then the on-disk PNG (fast zlib)
+        # and the model's JPEG from the same pixels, so model_image does
+        # not decode the PNG a second time
         r = _cancel.run(
             [magick, str(path), "-resize", f"{w}x{h}!",
              "-stroke", "rgba(255,80,80,0.45)", "-strokewidth", "1",
              "-fill", "rgba(255,80,80,0.9)", "-pointsize", "12",
-             "-draw", draw, str(path)],
+             "-draw", draw,
+             "-define", "png:compression-level=1", "-write", str(path),
+             "-quality", "85", _model_jpeg(path)],
             capture_output=True, timeout=15)
         from .. import trace as _trace
         _trace.emit(_trace.current(), "shot_normalize", "act",
@@ -357,6 +362,29 @@ def _normalize_shot(path, output: str | None = None) -> tuple | None:
         return None
 
 
+def _model_jpeg(path) -> str:
+    """Where the normalize pass leaves the model's JPEG for `path`."""
+    return f"{path}.model.jpg"
+
+
+def _fresh_model_jpeg(path) -> bytes | None:
+    """The normalize pass's JPEG for `path`, consumed once; None when it
+    is missing or older than the PNG (the PNG changed after normalize)."""
+    import os as _os
+    side = _model_jpeg(path)
+    try:
+        if _os.path.getmtime(side) < _os.path.getmtime(path):
+            return None
+        data = pathlib.Path(side).read_bytes()
+    except OSError:
+        return None
+    try:
+        _os.unlink(side)
+    except OSError:
+        pass
+    return data if data[:2] == b"\xff\xd8" else None
+
+
 def model_image(path) -> str | None:
     """Screenshot file → data URL for model transport. JPEG q85 when
     magick exists (~7-10x smaller than PNG — click coordinates are
@@ -366,6 +394,9 @@ def model_image(path) -> str | None:
     import os as _os
     import time as _time
     from .. import trace as _trace
+    ready = _fresh_model_jpeg(path)
+    if ready is not None:
+        return "data:image/jpeg;base64," + _b64.b64encode(ready).decode()
     magick = shutil.which("magick")
     if magick:
         tmp = f"{path}.jpg"
