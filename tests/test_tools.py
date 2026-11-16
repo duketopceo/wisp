@@ -215,6 +215,57 @@ class TestToolExec(unittest.TestCase):
         self.assertTrue(out.startswith("SKIP"), out)
         ev.assert_not_called()
 
+    def _focus(self, arg, clients, active_after=None):
+        """Run focus on a Hyprland host with `clients`; the active window
+        after the dispatch is `active_after` (an address)."""
+        state = {"active": next((c["address"] for c in clients
+                                 if c.get("focusHistoryID") == 0), None)}
+
+        def query(what):
+            if what == "clients":
+                return clients
+            if what == "activewindow":
+                return next((c for c in clients
+                             if c["address"] == state["active"]), {})
+            return {}
+
+        def run_lua(cmd):
+            state["active"] = active_after
+            return True
+        with mock.patch.dict(os.environ, {"WISP_OS": "linux",
+                                          "WISP_DESKTOP": "hyprland"}), \
+             mock.patch.object(hypr, "available", return_value=True), \
+             mock.patch.object(hypr, "query", side_effect=query), \
+             mock.patch.object(hypr, "run_lua", side_effect=run_lua) as ev:
+            out = tools.run("focus", arg, {})
+        return out, ev
+
+    TWO_BROWSERS = [
+        {"address": "0xold", "class": "chromium", "title": "Settings",
+         "focusHistoryID": 3},
+        {"address": "0xnew", "class": "chromium", "title": "about:blank",
+         "focusHistoryID": 1},
+        {"address": "0xterm", "class": "foot", "title": "foot",
+         "focusHistoryID": 0}]
+
+    def test_focus_picks_the_most_recently_used_matching_window(self):
+        # two browser windows: "focus the browser" means the one used last,
+        # not whichever Hyprland lists first (windows-focus-browser 0/3)
+        out, ev = self._focus("chromium", self.TWO_BROWSERS,
+                              active_after="0xnew")
+        self.assertEqual(out, "FOCUSED chromium -> chromium")
+        ev.assert_called_once_with(hypr.focus_window("address:0xnew"))
+
+    def test_focus_that_did_not_land_is_not_claimed(self):
+        out, _ = self._focus("chromium", self.TWO_BROWSERS,
+                             active_after="0xterm")
+        self.assertTrue(out.startswith("FAILED"), out)
+
+    def test_focus_of_the_window_already_in_front_is_a_no_op(self):
+        out, ev = self._focus("foot", self.TWO_BROWSERS)
+        self.assertEqual(out, "FOCUSED foot -> foot")
+        ev.assert_not_called()
+
     def test_workspace_rejects_non_number(self):
         self.assertIn("SKIP", tools.run("workspace", "abc", {}))
 

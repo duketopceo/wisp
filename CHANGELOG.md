@@ -17,6 +17,7 @@ How this file is kept:
 
 ## Unreleased
 
+- "Focus the browser" with several browser windows open goes to the one you used last, and Wisp only says it worked once that window is in front.
 - Screenshots are about a quarter faster (about 720 ms down to 520 ms on a laptop screen), with the same image.
 - Ask Wisp to move a window to your other monitor (or left, right, up or down) and it does it, and only says so once the window is there.
 - Wisp no longer quits on a desktop where the accessibility service isn't running; it reads window text another way (OCR, then the screenshot) instead.

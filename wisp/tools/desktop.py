@@ -291,11 +291,58 @@ def _find_window(name: str) -> dict | None:
     return best
 
 
+def _class_matches(classname: str) -> list:
+    """Hyprland windows whose class (or initial class) starts with
+    `classname`, case-insensitive — the same windows `class:^name`
+    selects. [] when the compositor cannot be asked."""
+    want = (classname or "").strip().lower()
+    if not want:
+        return []
+    try:
+        clients = hypr.query("clients")
+    except Exception:
+        return []
+    if not isinstance(clients, list):
+        return []
+    return [c for c in clients if c.get("address") and any(
+        str(c.get(k) or "").lower().startswith(want)
+        for k in ("class", "initialClass"))]
+
+
+def _focus_recent(classname: str):
+    """Focus the most recently used window of `classname` (lowest
+    focusHistoryID: 0 is the one in front). Hyprland's class selector
+    takes the first match, which with two browser windows is often the
+    wrong one. Result string, or None when no window matches."""
+    from .. import platform
+    hits = _class_matches(classname)
+    if not hits:
+        return None
+    best = min(hits, key=lambda c: c.get("focusHistoryID", 1 << 30))
+    cls = best.get("class") or classname
+    if best.get("focusHistoryID") == 0:
+        return f"FOCUSED {classname} -> {cls}"
+    platform._try([hypr.LuaCmd(hypr.focus_window(
+        f"address:{best['address']}"))])
+    try:
+        now = hypr.query("activewindow")
+    except Exception:
+        now = {}
+    if isinstance(now, dict) and now.get("address") == best["address"]:
+        return f"FOCUSED {classname} -> {cls}"
+    return (f"FAILED (focus did not land on {cls} "
+            f"{best.get('title', '')!r})")
+
+
 def focus(classname: str) -> str:
     from .. import platform
     down = _wm_down()
     if down:
         return down
+    if platform.uses_hypr():
+        out = _focus_recent(classname)
+        if out is not None:
+            return out
     cmds = platform.focus_cmds(classname)
     if not cmds:
         return (f"SKIP (focus unsupported — "
