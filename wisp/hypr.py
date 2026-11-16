@@ -328,18 +328,6 @@ _binds: dict[str, str] = {}
 _exit_hooked = False
 
 
-def active_binds() -> dict:
-    return dict(_binds)
-
-
-def reset_binds() -> None:
-    global _exit_hooked
-    _binds.clear()
-    _submaps.clear()
-    _entered.clear()
-    _exit_hooked = False
-
-
 def _clashes(mask: int, key: str, release: bool = False) -> bool:
     for b in query("binds"):
         if (b.get("submap") or "") != "":
@@ -508,10 +496,6 @@ def leave_submap(force: bool = False) -> None:
         eval_lua(leave_submap_lua())
     finally:
         _entered.clear()
-
-
-def active_submaps() -> dict:
-    return dict(_submaps)
 
 
 # ── events ──────────────────────────────────────────────────────────

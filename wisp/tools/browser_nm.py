@@ -16,8 +16,6 @@ Messages carry a `t` (type):
                    stop, ping, bye
   wisp -> browser: hello_ok {v}, cmd {cmd}, pong, error {code, message}
 """
-import base64
-import hashlib
 import json
 import os
 import pathlib
@@ -56,12 +54,6 @@ BROWSERS = {
 
 class FrameError(ValueError):
     """A frame that is too long, truncated or not a JSON object."""
-
-
-def extension_id_from_key(key_b64: str) -> str:
-    """The id Chrome assigns an extension whose manifest has this `key`."""
-    digest = hashlib.sha256(base64.b64decode(key_b64)).hexdigest()[:32]
-    return "".join(chr(ord("a") + int(c, 16)) for c in digest)
 
 
 # -- framing ----------------------------------------------------------------

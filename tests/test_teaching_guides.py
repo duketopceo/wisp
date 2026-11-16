@@ -9,6 +9,8 @@ from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
+from skill_lint import frontmatter_problems  # noqa: E402
 from wisp import skills, walkthrough_run as wr  # noqa: E402
 
 SEED = ROOT / "wisp" / "skills_seed" / "apps"
@@ -168,22 +170,22 @@ class Frontmatter(unittest.TestCase):
         files = sorted(SEED.glob("*/SKILL.md"))
         self.assertGreaterEqual(len(files), 15)
         for f in files:
-            self.assertEqual(skills.frontmatter_problems(f.read_text()), [],
+            self.assertEqual(frontmatter_problems(f.read_text()), [],
                              f.parent.name)
 
     def test_a_disallowed_key_is_reported(self):
         text = ("---\nname: x\ndescription: d\nprovenance: authored\n"
                 "tool: run.sh\nversion: 2\n---\n# x\n")
-        self.assertEqual(skills.frontmatter_problems(text),
+        self.assertEqual(frontmatter_problems(text),
                          ["disallowed key: tool", "disallowed key: version"])
 
     def test_missing_provenance_is_reported(self):
         text = "---\nname: x\ndescription: d\n---\n# x\n"
-        self.assertEqual(skills.frontmatter_problems(text),
+        self.assertEqual(frontmatter_problems(text),
                          ["missing key: provenance"])
 
     def test_no_frontmatter_is_reported(self):
-        self.assertEqual(skills.frontmatter_problems("# x"),
+        self.assertEqual(frontmatter_problems("# x"),
                          ["no frontmatter"])
 
 

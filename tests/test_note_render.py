@@ -44,11 +44,10 @@ class TestRenderText(unittest.TestCase):
         self.assertNotIn("[now]", closed_text)
         self.assertIn("Done.", closed_text)
 
-    def test_letter_only_matches_spoken(self):
+    def test_letter_only_renders_its_body(self):
         body = "Thursday works for me."
         parsed = note.parse(f":::letter\n{body}\n:::")
         self.assertEqual(note.render_text(parsed), body)
-        self.assertEqual(note.spoken_text(parsed), body)
 
 
 class TestTurnLifecycle(unittest.TestCase):

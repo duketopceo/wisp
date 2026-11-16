@@ -336,13 +336,6 @@ class RoutineStore:
         r.last_status = "ok"
         return self.save(r)
 
-    def mark_read(self, routine_id: str) -> Routine | None:
-        r = self.get(routine_id)
-        if r is None:
-            return None
-        r.unread = False
-        return self.save(r)
-
     def delete(self, routine_id: str) -> bool:
         key = _slug(routine_id)
         raw = self._read_raw()

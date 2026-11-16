@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import re
 import subprocess
-import time
 
 # grim at 5% scale of the whole layout took 299 ms p50 and 454 ms max over
 # 8 runs on the dev machine (spike, docs/research/2026-11-05-click-
@@ -74,24 +73,6 @@ class SettleWatch:
         if self.quiet_since is None:
             self.quiet_since = now
         return now - self.quiet_since >= self.window_s
-
-
-def wait_settled(frame, timeout: float, *, sleep=time.sleep,
-                 clock=time.monotonic, check=None,
-                 window_s: float = SETTLE_WINDOW_S,
-                 threshold: float = SETTLE_DIFF) -> bool:
-    """True when the screen changed and settled within `timeout`; False
-    when it never changed or never stopped changing."""
-    watch = SettleWatch(frame, window_s=window_s, threshold=threshold)
-    end = clock() + timeout
-    while True:
-        if watch.poll(clock()):
-            return True
-        if clock() >= end:
-            return False
-        if check is not None:
-            check()
-        sleep(watch.poll_s)
 
 
 _PPM = re.compile(rb"P6\s+(\d+)\s+(\d+)\s+255\s")

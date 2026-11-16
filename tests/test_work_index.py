@@ -169,13 +169,13 @@ class WorkIndex(unittest.TestCase):
             t.join()
         self.assertEqual(errors, [])
         self.assertEqual(len(self.tf.read_text().splitlines()), 160)
-        agents.render_work_index(self.tf)
+        agents._render_work_index(self.tf)
         self.assertEqual(len(self.work_lines()), 160)
         self.assertEqual(list(self.d.glob("*.tmp")), [])
 
     def test_an_empty_registry_says_so(self):
         (self.tf).write_text("")
-        agents.render_work_index(self.tf)
+        agents._render_work_index(self.tf)
         self.assertIn("(no runs yet)", self.work())
 
     def test_bookkeeping_records_get_no_line(self):

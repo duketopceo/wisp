@@ -2,6 +2,8 @@
 0600 Unix socket and its peer check, the relay Chrome starts, the host
 installer and the extension manifest snapshot. Nothing here needs a
 browser or the network; clients are plain sockets and pipes."""
+import base64
+import hashlib
 import io
 import json
 import os
@@ -26,6 +28,12 @@ EXT = ROOT / "browser-extension"
 CFG = {"browser": {"lane": "extension"}, "cua": {"audit": "false"}}
 PNG = "iVBORw0KGgo="
 EXPECTED_ABC = "lkhibglpipabmpokebebeanofnkocccd"
+
+
+def extension_id_from_key(key_b64):
+    """The id Chrome assigns an extension whose manifest has this `key`."""
+    digest = hashlib.sha256(base64.b64decode(key_b64)).hexdigest()[:32]
+    return "".join(chr(ord("a") + int(c, 16)) for c in digest)
 
 
 def eventually(fn, tries=500):
@@ -572,7 +580,7 @@ class ExtensionIdentity(unittest.TestCase):
         cfg = (EXT / "wxt.config.ts").read_text()
         key = re.search(r"DEV_KEY\s*=\s*['\"]([A-Za-z0-9+/=]+)['\"]", cfg)
         self.assertIsNotNone(key, "wxt.config.ts pins no key")
-        self.assertEqual(browser_nm.extension_id_from_key(key.group(1)),
+        self.assertEqual(extension_id_from_key(key.group(1)),
                          browser_nm.DEV_EXTENSION_ID)
         # and the committed manifest snapshot carries that same key
         self.assertEqual(ManifestSnapshot.SNAP["key"], key.group(1))
@@ -580,7 +588,7 @@ class ExtensionIdentity(unittest.TestCase):
     def test_the_id_algorithm_matches_an_independent_computation(self):
         # base64 of b"abc"; the expected id came from
         # `printf abc | sha256sum | cut -c1-32 | tr '0-9a-f' 'a-p'`
-        self.assertEqual(browser_nm.extension_id_from_key("YWJj"),
+        self.assertEqual(extension_id_from_key("YWJj"),
                          EXPECTED_ABC)
 
 
@@ -623,7 +631,7 @@ class ManifestSnapshot(unittest.TestCase):
         self.assertEqual(self.SNAP["manifest_version"], 3)
 
     def test_the_snapshot_pins_the_dev_key(self):
-        self.assertEqual(browser_nm.extension_id_from_key(self.SNAP["key"]),
+        self.assertEqual(extension_id_from_key(self.SNAP["key"]),
                          browser_nm.DEV_EXTENSION_ID)
 
 

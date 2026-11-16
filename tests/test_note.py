@@ -140,11 +140,6 @@ class TestHelpers(unittest.TestCase):
         self.assertFalse(note.looks_like_paper("use std::vector here"))
         self.assertFalse(note.looks_like_paper("see Foo::bar"))
 
-    def test_spoken_text_prefers_letter(self):
-        parsed = note.parse(
-            "{now} X\n::tiles\n- a\n::\n:::letter\nHello there.\n:::")
-        self.assertEqual(note.spoken_text(parsed), "Hello there.")
-
     def test_live_conv_id_is_stable_not_turn(self):
         self.assertEqual(note.live_conv_id(), "current")
         self.assertEqual(note.live_conv_id(conv_id="agent-1"), "agent-1")

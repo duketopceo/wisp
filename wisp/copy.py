@@ -496,12 +496,6 @@ def word_view(status: str, result: str = "", code: str = "",
     return (status_word(status), status_tone(status))
 
 
-def pill_view(status: str, result: str = "") -> tuple:
-    """`word_view` without a code or stale flag (kept for callers that
-    only know status and result)."""
-    return word_view(status, result)
-
-
 def toast_text(code: str) -> str:
     """Notification body for an error code: the same message and hint
     every other surface shows, on two lines."""

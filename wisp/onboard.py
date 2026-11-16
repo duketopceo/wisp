@@ -378,10 +378,6 @@ class Progress:
         d["tour"] = t
         self._write(d)
 
-    @property
-    def starter_done(self) -> bool:
-        return bool(self._read().get("starter"))
-
     def starter_mark(self):
         d = self._read()
         d["starter"] = _now()

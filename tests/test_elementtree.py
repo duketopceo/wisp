@@ -1,5 +1,5 @@
 """U7: the ElementTree interface, the AT-SPI implementation (against a
-fake Atspi module, no bus), the fixture format and the snap-share report."""
+fake Atspi module, no bus), the fixture format."""
 import pathlib
 import sys
 import unittest
@@ -9,7 +9,8 @@ from types import SimpleNamespace
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
-from fakes.elementtree import FakeElementTree  # noqa: E402
+from fakes.elementtree import (  # noqa: E402
+    FakeElementTree, FixtureError, load_fixture)
 from wisp import elementtree as et  # noqa: E402
 
 TREES = ROOT / "tests" / "fixtures" / "trees"
@@ -219,7 +220,7 @@ class Fixtures(unittest.TestCase):
         files = sorted(TREES.glob("*.json"))
         self.assertGreaterEqual(len(files), 5)
         for f in files:
-            self.assertEqual(et.load_fixture(f)["format"], et.FIXTURE_FORMAT)
+            self.assertEqual(load_fixture(f)["format"], et.FIXTURE_FORMAT)
 
     def test_generator_output_matches_the_checked_in_files(self):
         import importlib.util
@@ -247,36 +248,10 @@ class Fixtures(unittest.TestCase):
                     {"format": et.FIXTURE_FORMAT, "windows": [
                         {"frame": [0, 0, 1, 1],
                          "elements": [{"rect": [1]}]}]}):
-            with self.assertRaises(et.FixtureError):
-                et.load_fixture(bad)
-        with self.assertRaises(et.FixtureError):
-            et.load_fixture(TREES / "missing.json")
-
-    def test_a_harness_case_becomes_a_replayable_tree(self):
-        case = {"id": "writer-bold", "app": "libreoffice", "size": [640, 400],
-                "elements": [{"label": "Bold", "rect": [8, 52, 32, 26]},
-                             {"label": "File", "rect": [8, 26, 48, 20],
-                              "role": "menu item"}]}
-        fx = et.fixture_from_case(case)
-        t = FakeElementTree(fx)
-        self.assertEqual(t.app_name(), "libreoffice")
-        self.assertEqual(t.focused_frame(), (0, 0, 640, 400))
-        self.assertEqual(t.find_by_label("Bold")[0].center, (24, 65))
-        self.assertEqual(t.find_by_label("File")[0].role, "menu item")
-
-    def test_snap_share_separates_unavailable_from_no_match(self):
-        rows = [{"app": "a", "snap": "ax", "ax_status": "ok"},
-                {"app": "a", "snap": "model", "ax_status": "ok"},
-                {"app": "a", "snap": "none", "ax_status": "unavailable"},
-                {"app": "a", "snap": "none", "ax_status": "unbound"},
-                {"app": "b", "snap": "ax", "ax_status": "ok"}]
-        out = et.snap_share(rows)
-        self.assertEqual(out["a"]["n"], 4)
-        self.assertEqual((out["a"]["ax"], out["a"]["model"],
-                          out["a"]["none"]), (0.25, 0.25, 0.5))
-        self.assertEqual((out["a"]["ax_unavailable"], out["a"]["no_match"]),
-                         (2, 1))
-        self.assertEqual(out["b"]["ax"], 1.0)
+            with self.assertRaises(FixtureError):
+                load_fixture(bad)
+        with self.assertRaises(FixtureError):
+            load_fixture(TREES / "missing.json")
 
 
 if __name__ == "__main__":

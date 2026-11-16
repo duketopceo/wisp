@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 from fakes import acp_agent  # noqa: E402
 from fakes.bins import BinDir  # noqa: E402
+from agent_util import reap_tick  # noqa: E402
 from wisp import (acp_runtime, agent_ask, agent_home, agent_mcp, config,  # noqa: E402
                   agents, cancel, state)
 
@@ -192,7 +193,7 @@ class Happy(Case):
         self.assertEqual(rec["model"], MODEL)
         self.assertEqual(rec["session_id"], "sess-1")
         # the reaper never double-reports what the manager reported
-        self.assertEqual(agents.reap_tick(self.cfg, self.tf, self.ld), [])
+        self.assertEqual(reap_tick(self.cfg, self.tf, self.ld), [])
         self.assertEqual(len(self.bus.named("task_finished")), 1)
         self.assertEqual(len(self.finished), 1)
         note = agents.build_done_notification(self.finished[0])
@@ -519,7 +520,7 @@ class Cancel(Case):
         until(lambda: self.prompts(), "prompt sent")
         old = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
         agents._log_line({"id": name, "name": name, "started": old}, self.tf)
-        agents.reap_tick(self.cfg, self.tf, self.ld)
+        reap_tick(self.cfg, self.tf, self.ld)
         rec = self.settled(name)
         self.assertEqual(rec["status"], "timed_out")
         self.assertIn("session/cancel", self.methods())

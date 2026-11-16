@@ -405,7 +405,7 @@ class Readback(LadderCase):
         step = _step(d, name="type", arg="hello world")
         with mock.patch.dict(verify.READERS, clear=True):
             if reader is not None:
-                verify.register_reader("a11y", reader)
+                verify.READERS["a11y"] = reader
             return call(step, judge=judge, claim={
                 "kind": "region", "tool": "type", "rect": [50, 50, 100, 100]})
 
@@ -446,7 +446,7 @@ class Readback(LadderCase):
         d = _turn_dir(self.root)
         self.frames(d, changed=True)
         with mock.patch.dict(verify.READERS, clear=True):
-            verify.register_reader("a11y", lambda c: "")
+            verify.READERS["a11y"] = lambda c: ""
             vd = call(_step(d))
         self.assertEqual(vd["source"], "pixel")
 

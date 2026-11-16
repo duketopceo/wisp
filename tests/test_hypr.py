@@ -20,6 +20,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from fakes.hypr import FakeHypr, ok_handler  # noqa: E402,F401
+from hypr_util import reset_binds  # noqa: E402
 from wisp import hypr, platform, realinput  # noqa: E402
 from wisp.tools import desktop
 
@@ -446,7 +447,7 @@ class TestBindRegistry(unittest.TestCase):
     def test_bind_registers_lone_control_pair(self):
         with FakeHypr(self.binds_handler()) as f, \
              mock.patch("atexit.register"):
-            hypr.reset_binds()
+            reset_binds()
             hypr.bind("CONTROL", "t down", lone=True, non_consuming=True)
             hypr.bind("CONTROL", "t up", lone=True, non_consuming=True,
                       release=True)
@@ -465,7 +466,7 @@ class TestBindRegistry(unittest.TestCase):
     def test_bind_then_unbind_one_create_one_remove(self):
         with FakeHypr(self.binds_handler()) as f, \
              mock.patch("atexit.register"):
-            hypr.reset_binds()
+            reset_binds()
             h = hypr.bind("SUPER + CTRL + F9", "wisp-trigger start")
             self.assertTrue(h.startswith("wisp:"))
             hypr.unbind(h)
@@ -488,7 +489,7 @@ class TestBindRegistry(unittest.TestCase):
     def test_clash_detected_against_existing_binds(self):
         with FakeHypr(self.binds_handler()) as f, \
              mock.patch("atexit.register"):
-            hypr.reset_binds()
+            reset_binds()
             with self.assertRaises(hypr.HyprError) as cm:
                 hypr.bind("SUPER + D", "x")  # SUPER+D exists (modmask 64)
             self.assertEqual(cm.exception.code, "bind_clash")
@@ -499,7 +500,7 @@ class TestBindRegistry(unittest.TestCase):
     def test_non_clash_other_mods_and_other_submap(self):
         with FakeHypr(self.binds_handler()) as f, \
              mock.patch("atexit.register"):
-            hypr.reset_binds()
+            reset_binds()
             hypr.bind("SUPER + SHIFT + D", "x")   # different mods
             hypr.bind("SUPER + CTRL + H", "x")    # 'h' bind is in a submap
         self.assertEqual(len([e for e in self.evals(f) if "hl.bind(" in e]), 2)
@@ -515,7 +516,7 @@ class TestBindRegistry(unittest.TestCase):
                                        "key": "F9", "description": "wisp:1"})
             return "ok"
         with FakeHypr(h) as f, mock.patch("atexit.register"):
-            hypr.reset_binds()
+            reset_binds()
             hypr.bind("SUPER + CTRL + F9", "x")
             with self.assertRaises(hypr.HyprError) as cm:
                 hypr.bind("SUPER + CTRL + F9", "y")
@@ -524,7 +525,7 @@ class TestBindRegistry(unittest.TestCase):
     def test_bind_injection_in_action(self):
         with FakeHypr(self.binds_handler()) as f, \
              mock.patch("atexit.register"):
-            hypr.reset_binds()
+            reset_binds()
             hypr.bind("SUPER + CTRL + F8", INJECT)
         create = [e for e in self.evals(f) if "hl.bind(" in e][0]
         skel, lits = lua_literals(create)
@@ -567,7 +568,7 @@ class TestBindRegistry(unittest.TestCase):
     def test_removed_on_exit(self):
         with FakeHypr(self.binds_handler()) as f, \
              mock.patch("atexit.register") as reg:
-            hypr.reset_binds()
+            reset_binds()
             h1 = hypr.bind("SUPER + CTRL + F6", "a")
             h2 = hypr.bind("SUPER + CTRL + F7", "b")
             reg.assert_called_once_with(hypr.shutdown)  # registered once
@@ -575,12 +576,12 @@ class TestBindRegistry(unittest.TestCase):
             hypr.shutdown()
         removes = [e for e in self.evals(f) if "hl.unbind(" in e]
         self.assertEqual(len(removes), 2)
-        self.assertEqual(hypr.active_binds(), {})
+        self.assertEqual(hypr._binds, {})
 
     def test_shutdown_survives_dead_hyprland(self):
         with FakeHypr(self.binds_handler()) as f, \
              mock.patch("atexit.register"):
-            hypr.reset_binds()
+            reset_binds()
             hypr.bind("SUPER + CTRL + F6", "a")
             f.handler = lambda r: None  # compositor hangs
             t = time.monotonic()

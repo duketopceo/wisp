@@ -128,10 +128,6 @@ class CancelToken:
         _safe(fn)
         return 0
 
-    def unregister_close(self, handle: int) -> None:
-        with self._lock:
-            self._closers.pop(handle, None)
-
     def cancel(self) -> None:
         with self._lock:
             if self._ev.is_set():

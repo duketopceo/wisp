@@ -135,15 +135,3 @@ def install(src: pathlib.Path, home: pathlib.Path, opt: pathlib.Path,
                 skipped.append(tool)
     return {"written": written, "backups": backups, "dry_run": dry_run,
             "skipped": skipped}
-
-
-def sni_host_present(run=subprocess.run, which=shutil.which) -> bool:
-    """Read-only: is a StatusNotifier host/watcher on the session bus?"""
-    if not which("busctl"):
-        return False
-    try:
-        r = run(["busctl", "--user", "list", "--no-pager"],
-                capture_output=True, text=True, timeout=5)
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return "org.kde.StatusNotifierWatcher" in (r.stdout or "")

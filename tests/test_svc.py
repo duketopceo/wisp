@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
 import shorttmp  # noqa: E402
+from unit_lint import lint_unit  # noqa: E402
 from wisp import svc  # noqa: E402
 
 UNITS = ROOT / "scripts" / "units"
@@ -51,7 +52,7 @@ class TestUnitLint(unittest.TestCase):
             self.assertTrue(cp["Service"]["ExecStart"], n)
             self.assertEqual(cp["Service"]["Restart"], "on-failure", n)
             self.assertEqual(cp["Install"]["WantedBy"], "default.target")
-            self.assertEqual(svc.lint_unit((UNITS / f"{n}.service")
+            self.assertEqual(lint_unit((UNITS / f"{n}.service")
                                            .read_text(), n), [], n)
 
     def test_llama_units_leave_oomd_reach(self):
@@ -82,11 +83,11 @@ class TestUnitLint(unittest.TestCase):
         bad = ("[Unit]\nDescription=x\n[Service]\nExecStart=/bin/true\n"
                "Slice=app.slice\nWatchdogSec=60\n[Install]\n"
                "WantedBy=default.target\n")
-        probs = " ".join(svc.lint_unit(bad, "x"))
+        probs = " ".join(lint_unit(bad, "x"))
         self.assertIn("Slice", probs)
         self.assertIn("Type=notify", probs)
         self.assertIn("StartLimit", probs)
-        self.assertTrue(svc.lint_unit("[Service]\nbogus line\n", "y"))
+        self.assertTrue(lint_unit("[Service]\nbogus line\n", "y"))
 
     @unittest.skipUnless(__import__("shutil").which("systemd-analyze"),
                          "systemd-analyze missing")

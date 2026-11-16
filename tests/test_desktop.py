@@ -219,23 +219,5 @@ class TestInstall(unittest.TestCase):
             self.assertEqual(before, self.app.read_text())
 
 
-class TestTrayDetect(unittest.TestCase):
-    def test_host_present(self):
-        out = "NAME PID\norg.kde.StatusNotifierWatcher 7533 quickshell\n"
-        r = mock.Mock(return_value=subprocess.CompletedProcess([], 0, out, ""))
-        self.assertTrue(desktop.sni_host_present(run=r, which=lambda n: "/b"))
-
-    def test_host_absent_or_no_busctl(self):
-        r = mock.Mock(return_value=subprocess.CompletedProcess([], 0, "x\n", ""))
-        self.assertFalse(desktop.sni_host_present(run=r, which=lambda n: "/b"))
-        self.assertFalse(desktop.sni_host_present(run=r, which=lambda n: None))
-
-    def test_detection_is_read_only(self):
-        r = mock.Mock(return_value=subprocess.CompletedProcess([], 0, "", ""))
-        desktop.sni_host_present(run=r, which=lambda n: "/b")
-        cmd = r.call_args[0][0]
-        self.assertEqual(cmd[:3], ["busctl", "--user", "list"])
-
-
 if __name__ == "__main__":
     unittest.main()

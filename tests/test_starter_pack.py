@@ -124,9 +124,9 @@ class Plumbing(unittest.TestCase):
 
     def test_progress_records_the_pack_so_it_is_offered_once(self):
         pr = onboard.Progress(pathlib.Path(tempfile.mkdtemp()) / "o.json")
-        self.assertFalse(pr.starter_done)
+        self.assertFalse(pr._read().get("starter"))
         pr.starter_mark()
-        self.assertTrue(pr.starter_done)
+        self.assertTrue(pr._read().get("starter"))
 
 
 if __name__ == "__main__":

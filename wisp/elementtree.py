@@ -34,7 +34,6 @@ UNBOUND, never guessed (docs/research/cua-tool-catalog.md:
 from __future__ import annotations
 
 import dataclasses
-import json
 import os
 import time
 
@@ -467,10 +466,6 @@ def default_tree() -> ElementTree:
 
 # -- recorded-tree fixtures -------------------------------------------------
 
-class FixtureError(ValueError):
-    pass
-
-
 def tree_to_fixture(app: str, frame, elements, *, windows=None,
                     state: str = OK, reason: str = "") -> dict:
     """The JSON shape the U1 harness and the fake consume. `windows` is a
@@ -488,68 +483,3 @@ def _el_json(e) -> dict:
     if isinstance(e, dict):
         return e
     return {"label": e.label, "role": e.role, "rect": list(e.rect)}
-
-
-def load_fixture(path_or_data) -> dict:
-    """A validated fixture dict from a path or an already-parsed dict."""
-    data = path_or_data
-    if not isinstance(data, dict):
-        try:
-            with open(path_or_data, encoding="utf-8") as f:
-                data = json.load(f)
-        except (OSError, ValueError) as e:
-            raise FixtureError(f"unreadable tree fixture: {e}") from None
-    if data.get("format") != FIXTURE_FORMAT:
-        raise FixtureError(f"not a {FIXTURE_FORMAT} fixture")
-    if data.get("state", OK) not in (OK, UNAVAILABLE, UNBOUND):
-        raise FixtureError("bad state")
-    wins = data.get("windows")
-    if not isinstance(wins, list):
-        raise FixtureError("windows must be a list")
-    for w in wins:
-        fr = w.get("frame")
-        if not (isinstance(fr, list) and len(fr) == 4):
-            raise FixtureError("window frame must be [x, y, w, h]")
-        for e in w.get("elements", []):
-            r = e.get("rect")
-            if not (isinstance(r, list) and len(r) == 4):
-                raise FixtureError("element rect must be [x, y, w, h]")
-    return data
-
-
-def fixture_from_case(case: dict) -> dict:
-    """A tree fixture from a teaching-harness case dict (`app`, `size`,
-    `elements` as [{label, rect}] in capture pixels, optional `role`), so a
-    harness case can replay the snap with `FakeElementTree`. The capture is
-    one focused window at the origin. Reads a plain dict: it does not
-    import the harness."""
-    w, h = (list(case.get("size") or [0, 0]) + [0, 0])[:2]
-    els = [{"label": str(e.get("label", "")),
-            "role": str(e.get("role") or "push button"),
-            "rect": list(e["rect"])} for e in case.get("elements") or []]
-    return tree_to_fixture(str(case.get("app", "")), (0, 0, w, h), els)
-
-
-def snap_share(records) -> dict:
-    """Per-app share of `ax | model | none` over snap records (each a dict
-    with `app` and `snap`), for the harness report. Unavailable and
-    no-matching-control are different failures, so they are counted apart:
-    {app: {"n": int, "ax": f, "model": f, "none": f,
-           "ax_unavailable": int, "no_match": int}}."""
-    out: dict = {}
-    for r in records:
-        a = out.setdefault(r.get("app") or "(unknown)", {
-            "n": 0, "ax": 0, "model": 0, "none": 0,
-            "ax_unavailable": 0, "no_match": 0})
-        a["n"] += 1
-        a[r.get("snap") if r.get("snap") in ("ax", "model", "none")
-          else "none"] += 1
-        status = r.get("ax_status")
-        if status in (UNAVAILABLE, UNBOUND):
-            a["ax_unavailable"] += 1
-        elif r.get("snap") == "model":
-            a["no_match"] += 1
-    for a in out.values():
-        for k in ("ax", "model", "none"):
-            a[k] = round(a[k] / a["n"], 3)
-    return out

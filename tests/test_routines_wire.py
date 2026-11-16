@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
 from cli_env import CliEnv  # noqa: E402
+from agent_util import reap_tick  # noqa: E402
 from wisp import agents, route, routines, stage_execute  # noqa: E402
 
 
@@ -120,7 +121,7 @@ class RoutinesWireU3Test(unittest.TestCase):
                 "ts": "2026-10-25T10:00:00+00:00",
             }, self.tf)
 
-            done = agents.reap_tick(
+            done = reap_tick(
                 self.cfg, tasks_file=self.tf, log_dir=self.logs,
                 routines_store=self.store)
             self.assertEqual(len(done), 1)
@@ -161,7 +162,7 @@ class RoutinesWireU3Test(unittest.TestCase):
         }, self.tf)
 
         notifications = []
-        done = agents.reap_tick(
+        done = reap_tick(
             self.cfg, tasks_file=self.tf, log_dir=self.logs,
             routines_store=self.store)
         self.assertEqual(len(done), 1)

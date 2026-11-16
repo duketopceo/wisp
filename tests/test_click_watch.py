@@ -41,8 +41,25 @@ def reacts_at(n):
     return lambda tick: fr.BLANK if tick < n else fr.MENU
 
 
+def wait_click(target, radius, timeout, *, cursor, frame, sleep, clock,
+               check=None):
+    """Block up to `timeout` s for a click: "clicked-in", "clicked-out" or
+    "none", driving a ClickWatch the way the walkthrough runner does."""
+    watch = cw.ClickWatch(target, radius, cursor, frame)
+    end = clock() + timeout
+    while True:
+        got = watch.poll(clock())
+        if got:
+            return got
+        if clock() >= end:
+            return cw.NONE
+        if check is not None:
+            check()
+        sleep(watch.poll_s)
+
+
 def wait(desk, timeout=5.0):
-    return cw.wait_click(TARGET, RADIUS, timeout, cursor=desk.cursor,
+    return wait_click(TARGET, RADIUS, timeout, cursor=desk.cursor,
                          frame=desk.frame, sleep=desk.sleep, clock=desk.now)
 
 

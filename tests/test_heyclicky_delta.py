@@ -5,8 +5,8 @@ H8 volatile memory.
 Reference functions prefixed `clicky_` are literal Python translations of
 farzaa/clicky (MIT) Swift source, used as the oracle for changed-input
 comparisons:
-  - ElementLocationDetector.swift: supportedComputerUseResolutions,
-    bestComputerUseResolution, and the clamp/scale/flip block.
+  - ElementLocationDetector.swift: supportedComputerUseResolutions and
+    bestComputerUseResolution.
   - CompanionManager.swift: the [POINT:...] tag regex.
 """
 import pathlib
@@ -47,15 +47,6 @@ def clicky_best_resolution(display_w, display_h):
             smallest = d
             best_w, best_h = w, h
     return best_w, best_h
-
-
-def clicky_scale(px, py, res_w, res_h, disp_w, disp_h, flip_y):
-    cx = max(0.0, min(float(px), float(res_w)))
-    cy = max(0.0, min(float(py), float(res_h)))
-    sx = (cx / res_w) * disp_w
-    sy_top = (cy / res_h) * disp_h
-    sy = disp_h - sy_top if flip_y else sy_top
-    return sx, sy
 
 
 CLICKY_POINT_RE = re.compile(
@@ -113,41 +104,6 @@ class TestPointingResolution(unittest.TestCase):
                          (1280, 800))
         self.assertEqual(grounding.pick_pointing_resolution("x", 1),
                          (1280, 800))
-
-    def test_scale_matches_clicky_changed_inputs(self):
-        cases = [
-            (640, 400, 1280, 800, 2560, 1600),
-            (0, 0, 1280, 800, 1440, 900),
-            (1280, 800, 1280, 800, 1440, 900),
-            (-50, 900, 1280, 800, 1440, 900),      # clamped both axes
-            (2000, -1, 1366, 768, 1920, 1080),
-            (683, 384, 1366, 768, 3840, 2160),
-            (511, 383, 1024, 768, 1600, 1200),
-            (17.6, 3.2, 1024, 768, 800, 600),
-        ]
-        for flip in (False, True):
-            for c in cases:
-                with self.subTest(case=c, flip=flip):
-                    ex, ey = clicky_scale(*c, flip)
-                    got = grounding.scale_point_from_resolution(
-                        *c, flip_y=flip)
-                    self.assertEqual(got, (round(ex), round(ey)))
-
-    def test_scale_stays_in_display_bounds(self):
-        for px, py in ((-1e6, -1e6), (1e6, 1e6), (5, 1e6)):
-            x, y = grounding.scale_point_from_resolution(
-                px, py, 1280, 800, 1440, 900)
-            self.assertTrue(0 <= x <= 1440 and 0 <= y <= 900)
-
-    def test_flip_y_center_is_symmetric(self):
-        self.assertEqual(grounding.scale_point_from_resolution(
-            640, 400, 1280, 800, 1440, 900, flip_y=True), (720, 450))
-        self.assertEqual(grounding.scale_point_from_resolution(
-            0, 0, 1280, 800, 1440, 900, flip_y=True), (0, 900))
-
-    def test_zero_resolution_does_not_divide_by_zero(self):
-        x, y = grounding.scale_point_from_resolution(5, 5, 0, 0, 100, 100)
-        self.assertTrue(0 <= x <= 100 and 0 <= y <= 100)
 
     def test_vlm_provider_uses_pointing_resolution_and_scales_back(self):
         shot = grounding.Shot("iVBORw0KGgo=", 1920, 1080)
@@ -251,14 +207,6 @@ class TestDrawingTags(unittest.TestCase):
     def test_extract_strips_every_tag_kind(self):
         self.assertEqual(points.extract(
             "hi [RING:1,2,3] there [POINT:none]"), ("hi  there", []))
-
-    def test_point_mapping_agrees_with_to_logical(self):
-        mons = [{"x": 0, "y": 0, "width": 3840, "height": 2160,
-                 "scale": 1.5}]
-        lx, ly, s = points._map_px_point(1501, 999, mons)
-        ref = points.to_logical([{"x": 1501, "y": 999, "label": "a"}], mons)
-        self.assertEqual((lx, ly), (ref[0]["x"], ref[0]["y"]))
-        self.assertEqual(s, 1.5)
 
     def test_cap(self):
         text = " ".join(f"[RING:{i},{i},5]" for i in range(200))
@@ -651,8 +599,6 @@ class TestRoutines(unittest.TestCase):
         self.assertFalse(out["paused"])
         loaded = self.store.get("digest")
         self.assertTrue(loaded.unread)
-        self.store.mark_read("digest")
-        self.assertFalse(self.store.get("digest").unread)
 
     def test_auto_pauses_after_three_consecutive_failures(self):
         self.store.create("Flaky check", task="check feed", opt_in=True)

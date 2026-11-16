@@ -14,6 +14,8 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from agent_util import reap_tick  # noqa: E402
 from wisp import agents  # noqa: E402
 
 
@@ -58,7 +60,7 @@ class ReaperCase(unittest.TestCase):
                 "pstart": pstart, "status": status, "ts": ts or iso()}
 
     def tick(self, cfg=None, **kw):
-        return agents.reap_tick(cfg or {"agent": {"task_timeout_s": "1800"}},
+        return reap_tick(cfg or {"agent": {"task_timeout_s": "1800"}},
                                 tasks_file=self.tf, log_dir=self.logs, **kw)
 
     def statuses(self):

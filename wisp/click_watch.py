@@ -17,7 +17,6 @@ Sources are injected callables so tests need no desktop:
 from __future__ import annotations
 
 import math
-import time
 
 from . import settle
 
@@ -122,23 +121,3 @@ class HoverWatch:
             self.pos, self.since = pos, now
             return None
         return RESTED if now - self.since >= self.rest_s else None
-
-
-def wait_click(target, radius, timeout: float, *, cursor=hypr_cursor,
-               frame=None, sleep=time.sleep, clock=time.monotonic,
-               check=None) -> str:
-    """Block up to `timeout` s for a click: "clicked-in" (inside `radius`
-    px of `target`), "clicked-out", or "none"."""
-    if frame is None:
-        frame = settle.grim_frame
-    watch = ClickWatch(target, radius, cursor, frame)
-    end = clock() + timeout
-    while True:
-        got = watch.poll(clock())
-        if got:
-            return got
-        if clock() >= end:
-            return NONE
-        if check is not None:
-            check()
-        sleep(watch.poll_s)

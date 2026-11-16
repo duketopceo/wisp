@@ -4,10 +4,8 @@ spot-check (U4).
 Everything here is a read over the run stores in dev_runs/ (one JSON line
 per task, written by wisp.devrun and filled by wisp.devjudge), joined
 with the owner's labels in labels.jsonl. Nothing here changes the
-owner's config. The one write is the owner's own label for a reviewed
-task, and it goes through the existing turn-scoped `learn.label_last`
-path: a judge label is never written to labels.jsonl, so the v1 gate
-counts owner-confirmed labels only.
+owner's config. A judge label is never written to labels.jsonl, so the
+v1 gate counts owner-confirmed labels only.
 """
 import json
 import re
@@ -327,18 +325,6 @@ def pick_review(rows: list, n: int = REVIEW_N) -> list:
     return out
 
 
-def _label(label: str, note: str, turn: str) -> str:
-    return learn.label_last(label, note, turn=turn)
-
-
-def _find(run_id, turn):
-    for rid in ([run_id] if run_id else run_ids()):
-        for r in read_rows(rid):
-            if r.get("turn") == turn:
-                return r
-    return None
-
-
 def label_for(judged: str, action: str) -> str:
     """The owner's label for a judged outcome: confirm agrees with the
     judge, flip is the opposite."""
@@ -346,43 +332,6 @@ def label_for(judged: str, action: str) -> str:
     if action == "flip":
         label = "incorrect" if label == "correct" else "correct"
     return label
-
-
-def review_apply(run_id, turn: str, action: str, label_fn=None) -> dict:
-    """The owner confirms or flips the judge on one task. The label is
-    the owner's, written through the turn-scoped label path: confirm
-    writes `correct` for a judged success and `incorrect` otherwise;
-    flip writes the opposite."""
-    if action not in ("confirm", "flip"):
-        return {"ok": False, "error": "action must be confirm or flip"}
-    r = _find(run_id, turn)
-    if r is None:
-        return {"ok": False, "error": f"no dev task for turn {turn}"}
-    judged = _judged(r)
-    if judged == "unjudged":
-        return {"ok": False, "error": "that task was not judged"}
-    label = label_for(judged, action)
-    return _write(label, f"dev review: {action} {judged}", turn, label_fn)
-
-
-def set_label(run_id, turn: str, label: str, label_fn=None) -> dict:
-    """The owner's own label for a task of a dev run."""
-    if label not in ("correct", "incorrect"):
-        return {"ok": False, "error": "label must be correct or incorrect"}
-    if _find(run_id, turn) is None:
-        return {"ok": False, "error": f"no dev task for turn {turn}"}
-    return _write(label, "dev review", turn, label_fn)
-
-
-def _write(label, note, turn, label_fn) -> dict:
-    out = (label_fn or _label)(label, note, turn)
-    if isinstance(out, dict):
-        ok, text = bool(out.get("ok")), str(out.get("result", ""))
-    else:
-        text = str(out)
-        ok = not text.startswith(("SKIP", "ERROR", "nothing", "not_found",
-                                  "not_ratable"))
-    return {"ok": ok, "label": label, "turn": turn, "result": text}
 
 
 # -- importing the owner's gauntlet labels -----------------------------------

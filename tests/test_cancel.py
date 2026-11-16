@@ -108,10 +108,9 @@ class CancelTokenTest(unittest.TestCase):
         tok = cancel.CancelToken()
         seen = []
         tok.register_close(lambda: seen.append("a"))
-        h = tok.register_close(lambda: seen.append("b"))
-        tok.unregister_close(h)
+        tok.register_close(lambda: seen.append("b"))
         tok.cancel()
-        self.assertEqual(seen, ["a"])
+        self.assertEqual(seen, ["a", "b"])
 
     def test_wait_returns_early_on_cancel(self):
         tok = cancel.CancelToken()
