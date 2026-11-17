@@ -242,6 +242,8 @@ STRINGS = {
     "ui.set.save": "save",
     "ui.set.saved": "saved",
     "ui.set.saving": "saving",
+    "ui.set.window.title": "Wisp settings",
+    "ui.set.window.pending": "This page is being moved here. Until then, change these settings with wispd config set, or in the Panel's Settings tab.",
     "ui.set.reset": "reset to default",
     "ui.set.changed": "changed from default",
     "ui.set.secret.set": "stored in your keyring",

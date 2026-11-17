@@ -62,7 +62,7 @@ class TestTemplate(unittest.TestCase):
         cp = parse(desktop.render(pathlib.Path("/o")))
         self.assertEqual(cp["Desktop Entry"]["Name"], "Wisp")
         acts = cp["Desktop Entry"]["Actions"].rstrip(";").split(";")
-        self.assertEqual(acts, ["Listen", "Stop", "Panel"])
+        self.assertEqual(acts, ["Listen", "Stop", "Panel", "Settings"])
         for a in acts:
             self.assertIn(f"Desktop Action {a}", cp)
             self.assertTrue(cp[f"Desktop Action {a}"]["Name"])
@@ -77,6 +77,11 @@ class TestTemplate(unittest.TestCase):
                          "quickshell -n -p /o/shells/debug")
         self.assertEqual(cp["Desktop Entry"]["Exec"],
                          cp["Desktop Action Panel"]["Exec"])
+        # U4: the settings window has its own action through `wispd
+        # settings` (raise-or-start); the main entry and Panel stay on the
+        # console until U7 moves its views
+        self.assertEqual(cp["Desktop Action Settings"]["Exec"],
+                         "/o/wispd settings")
 
     def test_exec_quoting_for_spaces(self):
         cp = parse(desktop.render(pathlib.Path("/home/a b/opt")))

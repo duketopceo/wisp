@@ -45,6 +45,7 @@ Agents, learning and sharing:
   import       Show a shared lesson, skill or helper and import it only on a yes
 
 Settings:
+  settings     Open the settings window
   config       Show or change config.toml (live, no restart)
   theme        Pick the theme or audit its contrast
   connect      Connect outside services (OAuth via the gateway)

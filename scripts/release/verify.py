@@ -23,6 +23,7 @@ REQUIRED = {
     "assets/desktop/wisp.desktop", "assets/icons/hicolor/scalable/apps/wisp.svg",
     "shell-plugin/manifest.json", "shell-plugin/shaders/wisp.frag.qsb",
     "shells/debug/WispService.qml", "shells/debug/components/Icon.qml",
+    "shells/settings/shell.qml", "shells/settings/components/SettingsHost.qml",
     "scripts/units/wispd.service", "scripts/build_harness.py",
     "scripts/fetch_whisper.sh", "scripts/cua/PIN", "scripts/cua/install.sh",
     "scripts/cua/cua-driver.service", "CHANGELOG.md", "LICENSE",

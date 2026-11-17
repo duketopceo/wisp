@@ -19,7 +19,7 @@ def load_groups():
     _LOADED = True
     from . import (agents, browser, core, cua, diagnose,  # noqa: F401
                    diagnostics, dictate, learning, note, scribble, settings,
-                   share)
+                   settings_window, share)
     # `recap` remains registered/completable with its own help; the opt-in
     # companion view is documented in docs/GROWTH.md, not the compact menu.
     registry.SECTIONS[:] = [
@@ -32,7 +32,7 @@ def load_groups():
         ("Agents, learning and sharing",
          ["task", "memory", "dictate", "suggest", "label", "context",
           "routine", "learn", "eval", "skills", "export", "import"]),
-        ("Settings", ["config", "theme", "connect", "sync", "inventory",
+        ("Settings", ["settings", "config", "theme", "connect", "sync", "inventory",
                       "completion"]),
     ]
 

@@ -30,6 +30,9 @@ for _code in errors_codes.CODES:
         errors_codes.human(_code)[:1].upper()
         + errors_codes.human(_code)[1:] + ".",
         _DOWN_TRY if _code.endswith("_down") else "wispd doctor")
+ERRORS["E_NO_DISPLAY"] = (
+    "No graphical session is running, so the settings window cannot open.",
+    "wispd config show (or wispd tui)")
 ERRORS["E_STALE_PROMPT"] = ("That prompt expired.", "wispd watch")
 ERRORS["E_BUSY"] = ("Busy with another request.",
                     "wispd interrupt, then try again")
