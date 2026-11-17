@@ -282,18 +282,18 @@ Launch path: the Panel header action and `wispd settings` start or re-address th
 
 ### U4. Settings window host and launch
 
-**Goal:** A resizable window that launches from the CLI and the bar.
+**Goal:** A resizable window that launches from the CLI and the desktop entry. (The Panel header's Open settings action, the other half of R1, lands in U6.)
 
 **Requirements:** R1, R8.
 
 **Dependencies:** U3.
 
-**Files:** `shells/settings/shell.qml`, `shells/settings/` (stand-ins and symlinks as in `shells/debug`), `wisp/cli/settings_window.py` (new), `wisp/cli/registry.py`, `assets/desktop/wisp.desktop`, `wisp/desktop.py`, `docs/LINUX.md`, `tests/golden/cli_help`, `tests/test_desktop.py`, `tests/test_cli.py`.
+**Files:** `shells/settings/shell.qml`, `shells/settings/` (stand-ins and symlinks as in `shells/debug`), `wisp/cli/settings_window.py` (new), `wisp/cli/registry.py`, `assets/desktop/wisp.desktop`, `wisp/desktop.py`, `docs/LINUX.md`, `scripts/release/verify.py` and `tests/test_release_packaging.py` (ship `shells/settings`), `tests/golden/cli_help`, `tests/test_desktop.py`, `tests/test_cli.py`.
 
 **Approach:**
 - Root `FloatingWindow` titled "Wisp settings", default 960x700, `minimumSize` 720x520, `color` from `tk.canvas`.
 - `wispd settings [--category NAME]` starts the window as a detached process (own session) so it never dies with the bar shell and never occupies a service action queue. If an instance already runs, it asks that instance to raise itself and select the category through an `IpcHandler` target in the settings config (`quickshell -p <dir> ipc call settings open <category>`), instead of exiting silently. With no `WAYLAND_DISPLAY` or `DISPLAY` it prints the `wispd config` and `wispd tui` pointers and exits non-zero. It must not collide with `wispd config`.
-- Update the desktop entry template to launch the same way.
+- Add a `Settings` desktop action whose `Exec` is `@WISPD@ settings`, so the launcher gets the same raise-or-start path as the CLI. The main `Exec` and the `Panel` action keep launching `shells/debug` until U7 moves its views; repointing them now would strand Home, Activity, Memory, Agents, Health, Spend, Audit and Binds behind an empty window.
 - Record in `docs/LINUX.md` whether the window floats or tiles on Hyprland, its class, and an optional user window rule.
 
 **Execution note:** Verify live once on the eDP-1 and the ultrawide, because float or tile behaviour, raising from another workspace and per-monitor scale cannot be proven offscreen.
@@ -302,9 +302,9 @@ Launch path: the Panel header action and `wispd settings` start or re-address th
 - `wispd settings` with no display exits non-zero and prints both pointers.
 - `wispd settings --category budget` with no running instance builds the detached launch argv with the category passed to the config. With a running instance it builds the `ipc call settings open budget` argv instead.
 - Help and completion goldens include `settings`.
-- The desktop template renders an `Exec` line that points at the settings config.
+- The desktop template renders a `Settings` action whose `Exec` runs `wispd settings`, and the main `Exec` and `Panel` action still point at `shells/debug`.
 
-**Verification:** CLI golden and desktop tests pass. A live launch opens the window at both scales.
+**Verification:** CLI golden and desktop tests pass. The live launch on eDP-1 and the ultrawide is a recorded owner gate: the PR lists it as pending, and it does not block the merge.
 
 ### U5. Settings pages and search
 

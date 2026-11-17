@@ -173,3 +173,26 @@ not installed.
 - `wispd doctor` adds a `services` section: llama unit state, slice, oomd
   preference, and the voxtype `alsa::poll() POLLERR` spin (journal rate or a
   hot `cpal_alsa` thread), with the fix `systemctl --user restart voxtype`.
+
+## Settings window (`wispd settings`)
+
+`wispd settings [--category NAME]` opens the settings window, a separate
+Quickshell process started from `shells/settings` (`quickshell -n -p`). It
+runs in its own session, so restarting the bar shell or the daemon does not
+close it. The launcher's **Settings** action runs the same command.
+
+- **Already open:** the command asks the running window to switch page over
+  Quickshell IPC (`quickshell ipc -p <dir> call settings open <category>`),
+  then asks Hyprland to focus the window titled `Wisp settings`. A Wayland
+  client cannot raise its own window, so on another compositor the command
+  reports that the window is open and you switch to it yourself.
+- **Not open:** the command starts it detached, with the page in
+  `WISP_SETTINGS_CATEGORY`.
+- **No display** (no `WAYLAND_DISPLAY` or `DISPLAY`, for example over SSH): it
+  exits non-zero and points at `wispd config show` and `wispd tui`.
+
+The window is a normal toplevel titled `Wisp settings` (960x700, minimum
+720x520). Match it by that title, since its app id comes from Quickshell
+rather than from Wisp. Whether Hyprland floats or tiles it
+by default has not been checked live yet. If it tiles and you want it
+floating, add a window rule for that title.

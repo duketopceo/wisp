@@ -384,6 +384,7 @@ verbs and examples. Add `--json` for machine-readable output.
 | `wispd ask TEXT` | ask one typed question as a normal turn (a click on a 3D part sends this) |
 | `wispd learn fails` | logged failures |
 | `wispd skills list` | installed skills |
+| `wispd settings [--category NAME]` | open the settings window (or bring it forward) |
 | `wispd config show` / `wispd config set` | read or change config live |
 | `wispd theme` | pick the theme or audit contrast |
 | `wispd connect <service>` | connect an outside service |

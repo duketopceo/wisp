@@ -4945,5 +4945,32 @@
     "category": "pointer"
    }
   }
+ },
+ "SettingsHost": {
+  "mode": "variant",
+  "pad": 0,
+  "width": 960,
+  "height": 700,
+  "scale2": true,
+  "variants": {
+   "voice": {
+    "category": "voice"
+   },
+   "budget": {
+    "category": "budget"
+   }
+  }
+ },
+ "SettingsHostMinimum": {
+  "mode": "variant",
+  "pad": 0,
+  "width": 720,
+  "height": 520,
+  "source": "../../../shell-plugin/components/SettingsHost.qml",
+  "variants": {
+   "advanced": {
+    "category": "advanced"
+   }
+  }
  }
 }

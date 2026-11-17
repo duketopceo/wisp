@@ -10,7 +10,7 @@ Terminal=false
 Categories=Utility;Accessibility;
 Keywords=voice;assistant;ai;wisp;
 StartupNotify=false
-Actions=Listen;Stop;Panel;
+Actions=Listen;Stop;Panel;Settings;
 
 [Desktop Action Listen]
 Name=Listen
@@ -25,4 +25,9 @@ Icon=wisp
 [Desktop Action Panel]
 Name=Panel
 Exec=@SHELL_EXEC@
+Icon=wisp
+
+[Desktop Action Settings]
+Name=Settings
+Exec=@WISPD@ settings
 Icon=wisp

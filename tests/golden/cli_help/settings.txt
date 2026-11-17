@@ -1,0 +1,17 @@
+usage: wispd settings [-h] [--category NAME] [--json] [--quiet] [--no-color]
+
+Open the settings window
+
+options:
+  -h, --help       show this help message and exit
+  --category NAME  page to open: voice, pointer, agents, models, budget,
+                   connectors, advanced
+
+global options:
+  --json           machine-readable output (one JSON object)
+  --quiet, -q      print nothing on success
+  --no-color       plain output (also NO_COLOR, or not a tty)
+
+Examples:
+  wispd settings
+  wispd settings --category budget

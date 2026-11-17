@@ -29,6 +29,8 @@ EXPECTED = ["AskChips", "Answer", "AgentRow", "AgentsTab", "BarActions", "BarMar
             # settings window controls (overhaul U3)
             "ScrollPage", "SectionHeader", "SettingRow", "ToggleControl",
             "SelectControl", "InputControl", "SearchControl",
+            # settings window body (overhaul U4)
+            "SettingsHost",
             # management app views
             "AuditView", "BindsView", "HealthView", "SpendView"]
 
