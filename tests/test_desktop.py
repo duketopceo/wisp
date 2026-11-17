@@ -77,9 +77,8 @@ class TestTemplate(unittest.TestCase):
                          "quickshell -n -p /o/shells/debug")
         self.assertEqual(cp["Desktop Entry"]["Exec"],
                          cp["Desktop Action Panel"]["Exec"])
-        # U4: the settings window has its own action through `wispd
-        # settings` (raise-or-start); the main entry and Panel stay on the
-        # console until U7 moves its views
+        # the settings window has its own action through `wispd settings`
+        # (raise-or-start); the main entry and Panel open the console
         self.assertEqual(cp["Desktop Action Settings"]["Exec"],
                          "/o/wispd settings")
 

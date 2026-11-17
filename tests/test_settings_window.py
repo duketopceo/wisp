@@ -38,10 +38,13 @@ class Fakes:
     def which(self, name):
         return self.qs if name == "quickshell" else None
 
+    focus_reply = "ok"
+
     def focus(self, lua):
         if self.focus_raises:
             raise self.focus_raises
         self.focused.append(lua)
+        return self.focus_reply
 
     def open(self, category="", env=WAYLAND):
         return sw.open_window(category, env=env, run=self.run,
@@ -103,6 +106,13 @@ class TestOpenWindow(unittest.TestCase):
         self.assertEqual(res["action"], "raised")
         self.assertFalse(res["focused"])
 
+    def test_unmatched_window_warning_is_not_focus(self):
+        f = Fakes(ipc_rc=0)
+        f.focus_reply = "warning: no window matched"
+        res = f.open("agents")
+        self.assertEqual(res["action"], "raised")
+        self.assertFalse(res["focused"])
+
     def test_no_quickshell(self):
         f = Fakes(qs=None)
         with self.assertRaises(CliError) as cm:
@@ -131,6 +141,20 @@ class TestCommand(unittest.TestCase):
         self.assertIn("wispd config", err)
         self.assertIn("wispd tui", err)
 
+    def test_message_for_each_outcome(self):
+        cases = [({"action": "started", "category": "", "focused": False},
+                  "Opening the settings window."),
+                 ({"action": "raised", "category": "", "focused": True},
+                  "The settings window is open."),
+                 ({"action": "raised", "category": "", "focused": False},
+                  "already open on another workspace")]
+        for res, text in cases:
+            with self.subTest(res=res), \
+                    mock.patch.object(sw, "open_window", return_value=res):
+                code, out, _err = run_cli(["settings"], WAYLAND)
+                self.assertEqual(code, 0)
+                self.assertIn(text, out)
+
     def test_unknown_category_is_a_usage_error(self):
         code, _out, _err = run_cli(["settings", "--category", "nope"],
                                    WAYLAND)
@@ -158,7 +182,9 @@ class TestShellConfig(unittest.TestCase):
         self.assertIn('Quickshell.env("WISP_SETTINGS_CATEGORY")', src)
         self.assertIn('target: "settings"', src)
         self.assertIn("function open(category: string)", src)
-        self.assertIn('title: "Wisp settings"', src)
+        # the CLI focuses the window by this title
+        self.assertIn(f'title: "{sw.WINDOW_TITLE}"', src)
+        self.assertIn("streamEnabled: false", src)
         self.assertIn("minimumSize: Qt.size(720, 520)", src)
         self.assertNotRegex(src, r"\bTimer\s*\{")
 

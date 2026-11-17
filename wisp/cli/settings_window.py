@@ -83,19 +83,21 @@ def open_window(category: str = "", env=None, run=subprocess.run,
         spawn(launch_argv(qs, path), env=launch_env(env, category),
               stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
               stderr=subprocess.DEVNULL, start_new_session=True)
-    focused = False
-    if running:
-        try:
-            if focus is None:
-                from .. import hypr
-                hypr.eval_lua(focus_lua())
-            else:
-                focus(focus_lua())
-            focused = True
-        except Exception:  # noqa: BLE001 - focus is best effort
-            focused = False
+    focused = _focus(focus) if running else False
     return {"action": "raised" if running else "started",
             "category": category, "focused": focused}
+
+
+def _focus(focus=None) -> bool:
+    """Best effort: ask Hyprland to focus the window. True only on a clean
+    'ok' reply; Hyprland answers 'warning: ...' when no window matches."""
+    if focus is None:
+        from .. import hypr
+        focus = hypr.eval_lua
+    try:
+        return focus(focus_lua()) == "ok"
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def _args(p):

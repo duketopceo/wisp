@@ -10,7 +10,9 @@ import "lib/settings.js" as S
 // WISP_SETTINGS_CATEGORY; a running window takes later requests through
 // the `settings` IPC target (`quickshell ipc -p <dir> call settings open
 // <category>`). The body is the window-free SettingsHost component; this
-// file only hosts it and wires IPC. No timers, no polling.
+// file only hosts it and wires IPC. The service reads theme tokens and
+// copy only: the daemon stream is off, so the window holds no socket,
+// reconnect timers or state.json watch.
 
 FloatingWindow {
   id: win
@@ -20,7 +22,7 @@ FloatingWindow {
   minimumSize: Qt.size(720, 520)
   color: svc.tokens.canvas
 
-  WispService { id: svc }
+  WispService { id: svc; streamEnabled: false }
 
   readonly property string startCategory: {
     var c = Quickshell.env("WISP_SETTINGS_CATEGORY") || "";

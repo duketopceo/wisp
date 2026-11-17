@@ -1,7 +1,7 @@
 // Settings window body (overhaul U4): a category sidebar and the page for
 // the chosen category. Window-free so the snapshot harness can render it;
-// shells/settings/shell.qml hosts it in a FloatingWindow. Pages arrive in
-// U5; until then each page says where its settings live today.
+// shells/settings/shell.qml hosts it in a FloatingWindow. Until a
+// category has its own page, the page says where its settings live today.
 // Up/Down in the sidebar move the category.
 import QtQuick
 import "../lib/metrics.js" as M
