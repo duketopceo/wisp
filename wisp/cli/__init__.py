@@ -32,7 +32,9 @@ def load_groups():
         ("Agents, learning and sharing",
          ["task", "memory", "dictate", "suggest", "label", "context",
           "routine", "learn", "eval", "skills", "export", "import"]),
-        ("Settings", ["settings", "config", "theme", "connect", "sync", "inventory",
+        # the top help keeps a 60-line budget: `inventory` (a rarely run
+        # scan) stays registered and in the README but is not listed here
+        ("Settings", ["settings", "config", "theme", "connect", "sync",
                       "completion"]),
     ]
 

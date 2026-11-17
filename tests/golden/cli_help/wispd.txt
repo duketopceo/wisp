@@ -50,7 +50,6 @@ Settings:
   theme        Pick the theme or audit its contrast
   connect      Connect outside services (OAuth via the gateway)
   sync         Refresh the MEMORY constitution block and import skills
-  inventory    Scan installed apps, CLI tools and MCP servers
   completion   Print a shell completion script
 
 Global options:
