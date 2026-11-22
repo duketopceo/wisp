@@ -4954,10 +4954,67 @@
   "scale2": true,
   "variants": {
    "voice": {
-    "category": "voice"
+    "category": "voice",
+    "loaded": true,
+    "values": {
+     "voice.tts_voice": "diana"
+    }
    },
    "budget": {
-    "category": "budget"
+    "category": "budget",
+    "loaded": true,
+    "values": {
+     "budget.daily_usd": "8",
+     "budget.monthly_usd": "200.00"
+    }
+   },
+   "loading": {
+    "category": "voice"
+   },
+   "search": {
+    "category": "budget",
+    "loaded": true,
+    "query": "tts"
+   },
+   "offline": {
+    "category": "pointer",
+    "loaded": true,
+    "offline": true,
+    "saveStates": {
+     "cua.dry_run": "saving",
+     "cua.kill_switch": "queued"
+    }
+   },
+   "unreadable": {
+    "category": "voice",
+    "loaded": true,
+    "readError": "wispd: command not found"
+   },
+   "connectors": {
+    "category": "connectors",
+    "loaded": true,
+    "connectorState": "ready",
+    "connectors": [
+     {
+      "alias": "github",
+      "name": "GitHub",
+      "connected": true
+     },
+     {
+      "alias": "notion",
+      "name": "Notion",
+      "connected": false
+     },
+     {
+      "alias": "linear",
+      "name": "Linear",
+      "connected": false
+     }
+    ],
+    "connectorRunning": "notion",
+    "connectorErrors": {
+     "linear": "The gateway did not answer. Try again."
+    }
    }
   }
  },
@@ -4970,6 +5027,83 @@
   "variants": {
    "advanced": {
     "category": "advanced"
+   },
+   "connectors": {
+    "category": "connectors",
+    "loaded": true,
+    "offline": true,
+    "connectorState": "ready",
+    "connectors": [
+     {
+      "alias": "github",
+      "name": "GitHub",
+      "connected": true
+     },
+     {
+      "alias": "notion",
+      "name": "Notion",
+      "connected": false
+     },
+     {
+      "alias": "linear",
+      "name": "Linear",
+      "connected": false
+     }
+    ]
+   },
+   "search": {
+    "category": "voice",
+    "loaded": true,
+    "query": "voice"
+   }
+  }
+ },
+ "SettingsPage": {
+  "mode": "variant",
+  "pad": 0,
+  "width": 720,
+  "height": 520,
+  "scale2": true,
+  "variants": {
+   "models": {
+    "category": "models",
+    "loaded": true
+   },
+   "states": {
+    "category": "agents",
+    "loaded": true,
+    "values": {
+     "agents.act_max_usd": "0",
+     "agent.autonomy": "guided"
+    },
+    "saveStates": {
+     "agent.autonomy": "saved",
+     "agents.act_max_steps": "error",
+     "agents.act_max_errors": "queued"
+    },
+    "errors": {
+     "agents.act_max_steps": "agents.act_max_steps must be at most 100"
+    }
+   },
+   "search": {
+    "category": "voice",
+    "loaded": true,
+    "query": "cap"
+   },
+   "nomatch": {
+    "category": "voice",
+    "loaded": true,
+    "query": "zzzqqq"
+   },
+   "empty": {
+    "category": "nope",
+    "loaded": true
+   },
+   "connectors": {
+    "category": "connectors",
+    "loaded": true,
+    "connectorState": "failed",
+    "connectorError": "gateway unreachable"
    }
   }
  }

@@ -10,9 +10,11 @@ import "lib/settings.js" as S
 // WISP_SETTINGS_CATEGORY; a running window takes later requests through
 // the `settings` IPC target (`quickshell ipc -p <dir> call settings open
 // <category>`). The body is the window-free SettingsHost component; this
-// file only hosts it and wires IPC. The service reads theme tokens and
-// copy only: the daemon stream is off, so the window holds no socket,
-// reconnect timers or state.json watch.
+// file only hosts it, feeds it from the service (config values, write
+// states, read and daemon state, connectors) and wires IPC. The daemon
+// stream is off, so the window holds no socket, reconnect timers or
+// state.json watch: it reads config, status and the connector list once on
+// open and again on Retry. Ctrl+F is a Shortcut inside the host.
 
 FloatingWindow {
   id: win
@@ -29,11 +31,31 @@ FloatingWindow {
     return S.CATEGORIES.indexOf(c) >= 0 ? c : S.CATEGORIES[0];
   }
 
+  Component.onCompleted: {
+    svc.retrySettings();
+    svc.loadConnectors();
+  }
+
   SettingsHost {
     id: host
     anchors.fill: parent
     service: svc
     category: win.startCategory
+    values: svc.configValues
+    saveStates: svc.configState
+    errors: svc.configErrors
+    loaded: svc.configLoaded
+    readError: svc.configReadError
+    offline: svc.settingsOffline
+    connectors: svc.connectorList
+    connectorState: svc.connectorState
+    connectorError: svc.connectorError
+    connectorRunning: svc.connectorRunning
+    connectorErrors: svc.connectorErrors
+    onCommit: (key, value) => svc.configSet(key, value)
+    onRetry: svc.retrySettings()
+    onRetryConnectors: svc.loadConnectors()
+    onConnectAlias: (alias) => svc.connectAdd(alias)
   }
 
   IpcHandler {

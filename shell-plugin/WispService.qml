@@ -157,6 +157,27 @@ Item {
   property var configValues: ({})    // "section.key" -> value
   property var configErrors: ({})    // key -> message from the daemon or validator
   property string configSaved: ""    // key last written without error
+  // settings window (U5): per-key write state, "queued" | "saving" |
+  // "saved" | "error" (lib/settings.js write queue rules)
+  property var configState: ({})
+  property var configQueue: []       // [{key, value}] waiting, one per key
+  // the config read exited (any code); configReadError is its first
+  // stderr line when it failed, "" otherwise
+  property bool configLoaded: false
+  property string configReadError: ""
+  property bool configAgain: false   // a read was asked for while one ran
+  // exit of the one-shot `wispd status --json`: -1 not read yet, 3 = the
+  // daemon is down (settings still read and write config.toml)
+  property int statusCode: -1
+  readonly property bool settingsOffline: statusCode === 3
+  // connector list (`wispd connect list --json`, data.connectors):
+  // [{alias, name, connected}], its read state ("loading" | "ready" |
+  // "failed"), and the alias being connected with its per-alias errors
+  property var connectorList: []
+  property string connectorState: "loading"
+  property string connectorError: ""
+  property string connectorRunning: ""
+  property var connectorErrors: ({})
 
   // B31: one local-only recap read per panel open, never a poll.
   // --claim reserves that completed week before the card is delivered.
@@ -272,6 +293,51 @@ Item {
     if (!spendProc.running) spendProc.running = true;
   }
 
+  // Settings window: open and Retry. Reruns the config and status reads;
+  // the pages show their loading line until the config read exits.
+  function retrySettings() {
+    root.configLoaded = false;
+    root.configReadError = "";
+    root.statusCode = -1;
+    readConfig();
+    if (!statusProc.running) statusProc.running = true;
+  }
+
+  function readConfig() {
+    if (cfgProc.running) root.configAgain = true;
+    else cfgProc.running = true;
+  }
+
+  function loadConnectors() {
+    root.connectorState = "loading";
+    root.connectorError = "";
+    if (!connListProc.running) connListProc.running = true;
+  }
+
+  // `wispd connect add ALIAS` for one connector at a time; success re-reads
+  // the list, a failure leaves the stderr sentence on that alias's row.
+  function connectAdd(alias) {
+    if (connAddProc.running || alias === "") return false;
+    var errs = {};
+    for (var k in root.connectorErrors) if (k !== alias) errs[k] = root.connectorErrors[k];
+    root.connectorErrors = errs;
+    root.connectorRunning = alias;
+    connAddProc.command = [wispd, "connect", "add", alias];
+    connAddProc.running = true;
+    return true;
+  }
+
+  function finishConnect(code, stderr) {
+    var alias = root.connectorRunning;
+    if (alias === "") return;
+    root.connectorRunning = "";
+    if (code === 0) { loadConnectors(); return; }
+    var errs = {};
+    for (var k in root.connectorErrors) errs[k] = root.connectorErrors[k];
+    errs[alias] = Settings.errorText(stderr) || Copy.string("ui.err.unknown");
+    root.connectorErrors = errs;
+  }
+
   // Read the config alone (the Panel needs `[dev] panel` before it knows
   // whether the Dev tab exists).
   function loadConfig() {
@@ -322,8 +388,14 @@ Item {
   }
 
   // Validate, then `wispd config set KEY VALUE`. A rejected value or a
-  // daemon error lands in configErrors[key] and nothing is written.
+  // daemon error lands in configErrors[key] and nothing is written. The
+  // value is put in schema format first (8 -> 8.00). Writes run one at a
+  // time through a FIFO with one entry per key; a write for a key that is
+  // queued or saving is ignored.
   function configSet(key, value) {
+    var states = configState;
+    if (states[key] === "queued" || states[key] === "saving") return;
+    value = Settings.formatValue(key, value);
     var bad = Settings.validate(key, value);
     var errs = {};
     for (var k in configErrors) errs[k] = configErrors[k];
@@ -332,12 +404,49 @@ Item {
     if (bad !== "") {
       errs[key] = Copy.string(bad);
       configErrors = errs;
+      configState = Settings.finishWrite(states, key, false);
       return;
     }
     configErrors = errs;
-    setKey = key;
-    setValue = String(value).replace(/^\s+|\s+$/g, "");
-    setProc.command = Settings.setCommand(wispd, key, value);
+    var q = Settings.enqueueWrite(configQueue, states, key, value);
+    configQueue = q.queue;
+    configState = q.states;
+    pumpConfig();
+  }
+
+  // The running write ended: record its state, then start the next one.
+  function finishSet(code, stderr) {
+    if (configState[setKey] !== "saving") return;
+    var errs = {};
+    for (var k in configErrors) errs[k] = configErrors[k];
+    var ok = code === 0;
+    if (ok) {
+      delete errs[setKey];
+      var vals = {};
+      for (var j in configValues) vals[j] = configValues[j];
+      vals[setKey] = setValue;
+      configValues = vals;
+      configSaved = setKey;
+    } else {
+      errs[setKey] = Settings.errorText(stderr) || Copy.string("ui.err.unknown");
+    }
+    configErrors = errs;
+    configState = Settings.finishWrite(configState, setKey, ok);
+    // show the daemon's value, then start the next queued write
+    if (ok) readConfig();
+    pumpConfig();
+  }
+
+  // Start the oldest queued write when none is running.
+  function pumpConfig() {
+    if (setProc.running) return;
+    var n = Settings.nextWrite(configQueue, configState);
+    if (n.write === null) return;
+    configQueue = n.queue;
+    configState = n.states;
+    setKey = n.write.key;
+    setValue = n.write.value;
+    setProc.command = Settings.setCommand(wispd, n.write.key, n.write.value);
     setProc.running = true;
   }
 
@@ -648,21 +757,10 @@ Item {
   Process {
     id: setProc
     stderr: StdioCollector { id: setErr }
-    onExited: function (code, status) {
-      var errs = {};
-      for (var k in root.configErrors) errs[k] = root.configErrors[k];
-      if (code === 0) {
-        delete errs[root.setKey];
-        var vals = {};
-        for (var j in root.configValues) vals[j] = root.configValues[j];
-        vals[root.setKey] = root.setValue;
-        root.configValues = vals;
-        root.configSaved = root.setKey;
-      } else {
-        errs[root.setKey] = Settings.errorText(setErr.text) || Copy.string("ui.err.unknown");
-      }
-      root.configErrors = errs;
-    }
+    onExited: function (code, status) { root.finishSet(code, setErr.text); }
+    // a spawn failure emits runningChanged without exited: end the write
+    // (a no-op after a normal exit) so the queue cannot stall
+    onRunningChanged: { if (!setProc.running) root.finishSet(127, ""); }
   }
 
   Process {
@@ -679,14 +777,64 @@ Item {
     id: cfgProc
     command: [root.wispd, "config", "show", "--json"]
     stdout: StdioCollector { id: cfgOut }
+    stderr: StdioCollector { id: cfgErr }
     onExited: function (code) {
-      if (code !== 0) { root.recapReadRequested = false; return; }
-      try { root.configValues = Settings.flatten(JSON.parse(cfgOut.text)); } catch (e) {}
-      if (root.recapReadRequested) {
+      root.configLoaded = true;
+      if (code !== 0) {
+        root.configReadError = Settings.errorText(cfgErr.text) || Copy.string("ui.err.unknown");
         root.recapReadRequested = false;
-        root.loadRecap();
+      } else {
+        root.configReadError = "";
+        try { root.configValues = Settings.flatten(JSON.parse(cfgOut.text)); } catch (e) {}
+        if (root.recapReadRequested) {
+          root.recapReadRequested = false;
+          root.loadRecap();
+        }
+      }
+      if (root.configAgain) {
+        root.configAgain = false;
+        cfgProc.running = true;
       }
     }
+  }
+
+  // one-shot daemon probe for the settings window: exit 3 = daemon down
+  Process {
+    id: statusProc
+    command: [root.wispd, "status", "--json"]
+    onExited: function (code) { root.statusCode = code; }
+  }
+
+  Process {
+    id: connListProc
+    command: [root.wispd, "connect", "list", "--json"]
+    stdout: StdioCollector { id: connListOut }
+    stderr: StdioCollector { id: connListErr }
+    onExited: function (code) {
+      var list = null;
+      if (code === 0) {
+        try {
+          var doc = JSON.parse(connListOut.text);
+          if (doc && doc.data && Array.isArray(doc.data.connectors)) list = doc.data.connectors;
+        } catch (e) {}
+      }
+      if (list === null) {
+        root.connectorError = code === 0 ? Copy.string("ui.err.unknown")
+          : (Settings.errorText(connListErr.text) || Copy.string("ui.err.unknown"));
+        root.connectorState = "failed";
+        return;
+      }
+      root.connectorList = list;
+      root.connectorError = "";
+      root.connectorState = "ready";
+    }
+  }
+
+  Process {
+    id: connAddProc
+    stderr: StdioCollector { id: connAddErr }
+    onExited: function (code) { root.finishConnect(code, connAddErr.text); }
+    onRunningChanged: { if (!connAddProc.running) root.finishConnect(127, ""); }
   }
 
   Process {
