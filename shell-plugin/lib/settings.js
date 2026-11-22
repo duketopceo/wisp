@@ -70,6 +70,8 @@ function errorText(stderr) {
 // (8 -> 8.00; blank, non-numbers and more than two decimals pass through
 // for validate() to judge), int is a plain integer, bool is true or false,
 // anything else is the trimmed string.
+// The usd pattern here is looser than validate()'s on purpose: it only
+// formats what it recognises and leaves the rest for validate() to reject.
 function formatValue(key, raw) {
   var v = trim(raw)
   var f = field(key)
@@ -90,6 +92,7 @@ function formatValue(key, raw) {
 // Fields by category (each key sits on exactly one page, its schema
 // category), in schema order.
 function byCategory() {
+  if (_byCategory !== null) return _byCategory
   var out = {}
   for (var i = 0; i < CATEGORIES.length; i++) out[CATEGORIES[i]] = []
   for (var j = 0; j < FIELDS.length; j++) {
@@ -97,8 +100,11 @@ function byCategory() {
     if (!out[c]) out[c] = []
     out[c].push(FIELDS[j])
   }
+  _byCategory = out
   return out
 }
+// the schema table never changes, so the grouping is built once
+var _byCategory = null
 
 function categoryFields(name) { return byCategory()[name] || [] }
 
@@ -108,16 +114,30 @@ function categoryFields(name) { return byCategory()[name] || [] }
 function search(query) {
   var words = trim(query).toLowerCase().split(/\s+/).filter(function (w) { return w !== "" })
   if (words.length === 0) return []
+  if (_haystacks === null) {
+    _haystacks = FIELDS.map(function (f) {
+      return [Copy.string(f.label), f.help ? Copy.string(f.help) : "", f.key].join("\n").toLowerCase()
+    })
+  }
   var out = []
   for (var i = 0; i < FIELDS.length; i++) {
     var f = FIELDS[i]
-    var hay = [Copy.string(f.label), f.help ? Copy.string(f.help) : "", f.key].join("\n").toLowerCase()
+    var hay = _haystacks[i]
     var all = true
     for (var w = 0; w < words.length; w++) {
       if (hay.indexOf(words[w]) < 0) { all = false; break }
     }
     if (all) out.push({ key: f.key, category: f.category, def: f })
   }
+  return out
+}
+
+// lower-cased search text per field, built on the first search
+var _haystacks = null
+
+function clone(o) {
+  var out = {}
+  for (var k in o) out[k] = o[k]
   return out
 }
 
@@ -154,15 +174,13 @@ function enqueueWrite(queue, states, key, value) {
 // The oldest queued write, marked saving; write is null when none waits.
 function nextWrite(queue, states) {
   if (queue.length === 0) return { write: null, queue: queue, states: states }
-  var next = {}
-  for (var k in states) next[k] = states[k]
+  var next = clone(states)
   next[queue[0].key] = "saving"
   return { write: queue[0], queue: queue.slice(1), states: next }
 }
 
 function finishWrite(states, key, ok) {
-  var next = {}
-  for (var k in states) next[k] = states[k]
+  var next = clone(states)
   next[key] = ok ? "saved" : "error"
   return next
 }

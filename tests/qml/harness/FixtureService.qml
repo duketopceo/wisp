@@ -123,7 +123,7 @@ Item {
   }
   function skipRatePrompt() { return false; }
   function loadConfig() {}
-  // settings window (U5): the harness never writes or reads config; the
+  // settings window: the harness never writes or reads config; the
   // scenes pass the data straight to the component
   property var configValues: ({})
   property var configErrors: ({})

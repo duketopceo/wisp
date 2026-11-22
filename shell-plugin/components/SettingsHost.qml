@@ -1,4 +1,4 @@
-// Settings window body (overhaul U4, U5): a search field and category
+// Settings window body: a search field and category
 // sidebar, and the page for the chosen category (SettingsPage) or for the
 // search. Window-free so the snapshot harness can render it;
 // shells/settings/shell.qml hosts it in a FloatingWindow and binds the
@@ -59,10 +59,12 @@ Item {
     sequences: [StandardKey.Find]
     onActivated: root.focusSearch()
   }
-  // Esc outside the field; inside it the field clears itself
+  // Esc outside any text field; inside one the field handles it (the
+  // search field clears itself, a row's field reverts its draft)
+  readonly property Item focusItem: Window.activeFocusItem
   Shortcut {
     sequence: "Esc"
-    enabled: root.searching && !searchBox.focused
+    enabled: root.searching && !(root.focusItem && ("cursorPosition" in root.focusItem))
     onActivated: root.clearSearch()
   }
 

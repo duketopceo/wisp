@@ -7,6 +7,7 @@ import contextlib
 import io
 import os
 import pathlib
+import re
 import subprocess
 import unittest
 from unittest import mock
@@ -185,6 +186,17 @@ class TestShellConfig(unittest.TestCase):
         # the CLI focuses the window by this title
         self.assertIn(f'title: "{sw.WINDOW_TITLE}"', src)
         self.assertIn("streamEnabled: false", src)
+        # the connector list asks the gateway: read once, on the first visit
+        # to the Connectors page, never at window open
+        start = re.search(r"Component\.onCompleted:\s*\{.*?\n  \}", src, re.S)
+        self.assertIsNotNone(start)
+        self.assertNotIn("loadConnectors", start.group(0))
+        once = re.search(r"function readConnectorsOnce\(\).*?\n  \}", src, re.S)
+        self.assertIsNotNone(once)
+        self.assertIn("connectorsRead", once.group(0))
+        self.assertIn('host.category !== "connectors"', once.group(0))
+        self.assertIn("svc.loadConnectors()", once.group(0))
+        self.assertIn("onCategoryChanged: win.readConnectorsOnce()", src)
         self.assertIn("minimumSize: Qt.size(720, 520)", src)
         self.assertNotRegex(src, r"\bTimer\s*\{")
 

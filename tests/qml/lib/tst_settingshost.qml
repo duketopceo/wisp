@@ -107,7 +107,7 @@ Item {
       compare(picks.count, 0)
     }
 
-    // --- U5: pages ---------------------------------------------------------
+    // --- pages ---------------------------------------------------------
 
     function test_page_shows_the_selected_categorys_rows() {
       var want = S.categoryFields("voice")
@@ -219,6 +219,19 @@ Item {
       compare(host.category, "budget")
     }
 
+    function test_escape_in_a_result_field_reverts_the_draft_and_keeps_the_search() {
+      type("daily")
+      var input = find(host, "input:budget.daily_usd")
+      verify(input)
+      var before = input.text
+      input.forceActiveFocus()
+      input.selectAll()
+      keyClick(Qt.Key_5)
+      keyClick(Qt.Key_Escape)
+      compare(input.text, before)
+      compare(host.query, "daily")
+    }
+
     function test_sidebar_click_leaves_the_search() {
       type("tts")
       mouseClick(find(host, "cat:agents"))
@@ -226,7 +239,7 @@ Item {
       compare(host.query, "")
     }
 
-    // --- U5: read states ---------------------------------------------------
+    // --- read states ---------------------------------------------------
 
     function test_could_not_read_banner_has_retry_and_hides_rows() {
       host.readError = "wispd: command not found"
@@ -252,7 +265,7 @@ Item {
       verify(!b.visible)
     }
 
-    // --- U5: values and writes ---------------------------------------------
+    // --- values and writes ---------------------------------------------
 
     function test_row_reading_8_shows_8_00_and_no_changed_note() {
       host.select("budget")
@@ -326,7 +339,7 @@ Item {
       compare(find(row("cua.kill_switch"), "strip").text, "")
     }
 
-    // --- U5: connectors ----------------------------------------------------
+    // --- connectors ----------------------------------------------------
 
     function test_connectors_page_lists_browser_rows_then_connectors() {
       host.select("connectors")
@@ -408,7 +421,7 @@ Item {
       verify(!find(host, "connectorsFailed").visible)
     }
 
-    // --- U5: minimum size ----------------------------------------------------
+    // --- minimum size ----------------------------------------------------
 
     function texts(item, out) {
       if (item.visible === false) return out

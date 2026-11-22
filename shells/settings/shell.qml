@@ -31,9 +31,18 @@ FloatingWindow {
     return S.CATEGORIES.indexOf(c) >= 0 ? c : S.CATEGORIES[0];
   }
 
+  // the connector list asks the gateway, so it is read only once the
+  // Connectors page is first shown
+  property bool connectorsRead: false
+  function readConnectorsOnce() {
+    if (connectorsRead || host.category !== "connectors") return;
+    connectorsRead = true;
+    svc.loadConnectors();
+  }
+
   Component.onCompleted: {
     svc.retrySettings();
-    svc.loadConnectors();
+    readConnectorsOnce();
   }
 
   SettingsHost {
@@ -41,6 +50,7 @@ FloatingWindow {
     anchors.fill: parent
     service: svc
     category: win.startCategory
+    onCategoryChanged: win.readConnectorsOnce()
     values: svc.configValues
     saveStates: svc.configState
     errors: svc.configErrors

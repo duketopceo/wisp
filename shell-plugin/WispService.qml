@@ -157,7 +157,7 @@ Item {
   property var configValues: ({})    // "section.key" -> value
   property var configErrors: ({})    // key -> message from the daemon or validator
   property string configSaved: ""    // key last written without error
-  // settings window (U5): per-key write state, "queued" | "saving" |
+  // settings window: per-key write state, "queued" | "saving" |
   // "saved" | "error" (lib/settings.js write queue rules)
   property var configState: ({})
   property var configQueue: []       // [{key, value}] waiting, one per key
@@ -192,7 +192,7 @@ Item {
     else recapSuppressed = false;
   }
 
-  // --- dev tab (U5): local only, behind `[dev] panel` or a dev session ------
+  // --- dev tab: local only, behind `[dev] panel` or a dev session ------
   // One `wispd dev turns --json` and one `wispd dev runs --json` call per tab
   // open and per refresh press, never on a timer and never with both off.
   readonly property bool devPanel: configValues["dev.panel"] === "true"
@@ -332,8 +332,7 @@ Item {
     if (alias === "") return;
     root.connectorRunning = "";
     if (code === 0) { loadConnectors(); return; }
-    var errs = {};
-    for (var k in root.connectorErrors) errs[k] = root.connectorErrors[k];
+    var errs = Settings.clone(root.connectorErrors);
     errs[alias] = Settings.errorText(stderr) || Copy.string("ui.err.unknown");
     root.connectorErrors = errs;
   }
@@ -397,8 +396,7 @@ Item {
     if (states[key] === "queued" || states[key] === "saving") return;
     value = Settings.formatValue(key, value);
     var bad = Settings.validate(key, value);
-    var errs = {};
-    for (var k in configErrors) errs[k] = configErrors[k];
+    var errs = Settings.clone(configErrors);
     delete errs[key];
     configSaved = "";
     if (bad !== "") {
@@ -415,15 +413,17 @@ Item {
   }
 
   // The running write ended: record its state, then start the next one.
+  // Ends the write in flight. The next queued write starts from setProc's
+  // runningChanged (once the process has really stopped), never from here,
+  // so a late running=false cannot be taken for the next write's failure.
   function finishSet(code, stderr) {
-    if (configState[setKey] !== "saving") return;
-    var errs = {};
-    for (var k in configErrors) errs[k] = configErrors[k];
+    if (!setActive) return;
+    setActive = false;
+    var errs = Settings.clone(configErrors);
     var ok = code === 0;
     if (ok) {
       delete errs[setKey];
-      var vals = {};
-      for (var j in configValues) vals[j] = configValues[j];
+      var vals = Settings.clone(configValues);
       vals[setKey] = setValue;
       configValues = vals;
       configSaved = setKey;
@@ -432,21 +432,31 @@ Item {
     }
     configErrors = errs;
     configState = Settings.finishWrite(configState, setKey, ok);
-    // show the daemon's value, then start the next queued write
-    if (ok) readConfig();
-    pumpConfig();
+    if (ok) configDirty = true;
   }
 
   // Start the oldest queued write when none is running.
-  function pumpConfig() {
+  function settleSet() {
     if (setProc.running) return;
+    if (setActive) finishSet(127, "");
+    pumpConfig();
+  }
+
+  // Start the oldest queued write. When none is left, read the config once
+  // so the rows show the daemon's values after a burst of writes.
+  function pumpConfig() {
+    if (setProc.running || setActive) return;
     var n = Settings.nextWrite(configQueue, configState);
-    if (n.write === null) return;
+    if (n.write === null) {
+      if (configDirty) { configDirty = false; readConfig(); }
+      return;
+    }
     configQueue = n.queue;
     configState = n.states;
     setKey = n.write.key;
     setValue = n.write.value;
     setProc.command = Settings.setCommand(wispd, n.write.key, n.write.value);
+    setActive = true;
     setProc.running = true;
   }
 
@@ -753,14 +763,19 @@ Item {
 
   property string setKey: ""
   property string setValue: ""
+  // a config write is in flight (set when it starts, cleared when it ends)
+  property bool setActive: false
+  // a write succeeded since the last config read
+  property bool configDirty: false
 
   Process {
     id: setProc
     stderr: StdioCollector { id: setErr }
     onExited: function (code, status) { root.finishSet(code, setErr.text); }
-    // a spawn failure emits runningChanged without exited: end the write
-    // (a no-op after a normal exit) so the queue cannot stall
-    onRunningChanged: { if (!setProc.running) root.finishSet(127, ""); }
+    // settle a tick after the process stops, whichever of exited and
+    // runningChanged comes first: a write still in flight then means a
+    // spawn failure (no exited); then start the next queued write
+    onRunningChanged: { if (!setProc.running) Qt.callLater(root.settleSet); }
   }
 
   Process {
@@ -834,7 +849,12 @@ Item {
     id: connAddProc
     stderr: StdioCollector { id: connAddErr }
     onExited: function (code) { root.finishConnect(code, connAddErr.text); }
-    onRunningChanged: { if (!connAddProc.running) root.finishConnect(127, ""); }
+    // a tick later, so a normal exit is recorded first in either order
+    onRunningChanged: {
+      if (!connAddProc.running) Qt.callLater(function () {
+        if (!connAddProc.running) root.finishConnect(127, "");
+      });
+    }
   }
 
   Process {

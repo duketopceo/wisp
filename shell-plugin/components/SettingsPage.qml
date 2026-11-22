@@ -1,4 +1,4 @@
-// One page of the settings window (U5): the rows of one category, or the
+// One page of the settings window: the rows of one category, or the
 // rows matching a search with a category chip on each. Rows come from the
 // schema (lib/settings.js); values, write states and daemon errors arrive
 // by key from the host, and an edit leaves as commit(key, value) in schema

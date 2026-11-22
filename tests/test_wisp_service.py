@@ -235,12 +235,27 @@ class TestSettingsWindowReads(unittest.TestCase):
         self.assertIn("Settings.enqueueWrite", m.group(0))
         self.assertIn("pumpConfig()", m.group(0))
         pump = re.search(r"function pumpConfig.*?\n  \}", SRC, re.S).group(0)
-        self.assertIn("if (setProc.running) return", pump)
+        self.assertIn("if (setProc.running || setActive) return", pump)
         self.assertIn("Settings.nextWrite", pump)
+        # one config read after a burst of writes, when the queue drains
+        self.assertIn("if (configDirty) { configDirty = false; readConfig(); }",
+                      pump)
+        # the in-flight flag is set before the process starts
+        self.assertLess(pump.index("setActive = true"),
+                        pump.index("setProc.running = true"))
         done = re.search(r"function finishSet.*?\n  \}", SRC, re.S).group(0)
         self.assertIn("Settings.finishWrite", done)
-        self.assertIn("readConfig()", done)
-        self.assertIn("pumpConfig()", done)
+        self.assertIn("if (!setActive) return;", done)
+        # the next write never starts inside the exit handler: a late
+        # running=false would otherwise be taken for its spawn failure
+        self.assertNotIn("pumpConfig()", done)
+        proc = re.search(r"id: setProc.*?\n  \}", SRC, re.S).group(0)
+        self.assertIn("Qt.callLater(root.settleSet)", proc)
+        settle = re.search(r"function settleSet.*?\n  \}", SRC, re.S).group(0)
+        # a write still in flight a tick after the process stopped had no
+        # exited: a spawn failure; either way the next write starts
+        self.assertIn("if (setActive) finishSet(127", settle)
+        self.assertIn("pumpConfig()", settle)
         # exactly one config-set process: writes never overlap
         self.assertEqual(len(re.findall(r'"config",\s*"set"', SRC)), 0)
         self.assertEqual(SRC.count("setProc.running = true"), 1)
