@@ -15,7 +15,7 @@ execution: code
 - **Means:** A standalone, resizable settings window with a category sidebar, scrolling and search (KTD1). The bar Panel keeps quick status and a few quick toggles. One type scale and spacing rhythm, derived from the active Omarchy theme, is applied to every surface (KTD2). `wispd tui` and the CLI get the same treatment (KTD3).
 - **Authority:** Product Contract Requirements win on behavior. KTDs win on mechanism. Units override neither. Session-settled decisions are not reopened.
 - **Stop conditions:** Stop and report if a unit needs a daemon or config-schema change beyond UI metadata (Scope Boundaries), if the Rust core `rs/` would change, or if a paid or live model call would be needed to verify.
-- **Execution profile:** Code plan, seven PRs in the order under Phased Delivery. Settings window first. Verify with the offscreen QML snapshot harness and the Python goldens, plus the single live window check in U4. No other live-shell verification.
+- **Execution profile:** Code plan, one PR per unit in the order under Phased Delivery. Settings window first. Verify with the offscreen QML snapshot harness and the Python goldens, plus owner live window checks recorded in the U4 and U5 PRs (owner gates, not merge blockers). No other live-shell verification.
 
 ---
 
@@ -308,35 +308,40 @@ Launch path: the Panel header action and `wispd settings` start or re-address th
 
 ### U5. Settings pages and search
 
-**Goal:** Render every category page from the schema, with sidebar and search.
+**Goal:** Render every settings category page from the schema, with sidebar, search, live values and safe writes.
 
-**Requirements:** R2-R7.
+**Requirements:** R2 (settings categories; the Status group lands in U7), R3-R7.
 
 **Dependencies:** U2, U3, U4.
 
-**Files:** `shells/settings/shell.qml`, `shell-plugin/components/SettingsSidebar.qml` (new), `shell-plugin/components/SettingsPage.qml` (new), `shell-plugin/lib/settings.js` (search and grouping helpers), `tests/test_copy_lint.py` (`STRICT_QML`), `tests/qml/lib/tst_settings.qml`, `tests/qml/lib/tst_settings_search.qml` (new), `tests/test_settings_schema.py`.
+**Files:** `shells/settings/shell.qml`, `shell-plugin/components/SettingsHost.qml` (from U4: sidebar and page host), `shell-plugin/components/SettingsPage.qml` (new: one category's rows, or search results), `shell-plugin/WispService.qml` (per-key write state), `shell-plugin/lib/settings.js` (search, grouping and value formatting helpers), `wisp/copy.py` and the generated `shell-plugin/lib/copy.js` (new strings), `tests/qml/lib/tst_settings.qml`, `tests/qml/lib/tst_settings_search.qml` (new), `tests/qml/lib/tst_settingshost.qml`, `tests/qml/harness/scenes.json`, `tests/qml/harness/FixtureService.qml`, `tests/test_components.py`.
 
 **Approach:**
-- Sidebar from category order. Category membership is the schema `category` of each key (U2). Advanced holds keys with no user-facing category. The window opens on Voice. Status is a sidebar group with sub-pages for health, spend, audit and binds, and U7 adds home, activity, memory and agents under it. `SettingsPage` renders one category's rows inside `ScrollPage`.
-- The window shows an offline banner with a retry action when the daemon is unreachable, a loading state while reads are in flight, and an empty state for pages with no data. During a search the sidebar dims and clearing the search (Esc) restores the previous category.
-- Sidebar arrow keys move the selection and Ctrl+F focuses search.
-- Search is a pure function in `lib/settings.js` over label, help and key, returning rows with their category. Results replace the page and show the category chip.
-- Models page: backend choice, fallback, paid guard, per-backend model id, with help text that names hosted OpenRouter as default and small local models as optional. Secrets are status rows.
-- Connectors page reuses the existing `wispd connect --list --json` data.
-- Writes go through `configSet`. Errors show on the row.
+- `SettingsHost` (U4) keeps the sidebar from `S.CATEGORIES` and gains the search field above it. A `SettingsPage` renders one category's `SettingRow`s inside `ScrollPage`. Category membership is each field's schema `category`. The window opens on the first category (Voice) or the one `wispd settings --category` named. A separate `SettingsSidebar` file is not needed: the U4 sidebar stays in `SettingsHost`.
+- **Status group deferred to U7.** U7's approach already adds the health, spend, audit and binds pages, and the settings window runs `WispService` with the daemon stream off (U4), which is what feeds health and spend. Rendering Status here would mean turning the stream on for it and moving the views twice. U5 delivers R2's settings categories; R2 is complete when U7 lands.
+- **Values in schema format.** Add `Settings.formatValue(key, raw)`: `usd` shows two decimals (`8` becomes `8.00`), `int` is a plain integer, `bool` is `true` or `false`, and anything else is the trimmed string. Apply it to values read from `wispd config show --json` (`flatten`) and to every value sent, so a row compares equal to its schema default and the daemon receives `8.00`, not `8`. Formatting happens before a value reaches `configSet`. The row's default comparison and Reset pass the schema default through the same function, so `agents.act_max_usd` (default `0`) compares as `0.00`. The Panel quick settings use the same values and keep working.
+- **One write at a time, per key state.** `WispService` keeps `configState[key]` (`queued`, `saving`, `saved` or `error`), with the daemon message in `configErrors[key]` as today. A write for another key while one is running waits in a small FIFO, one entry per key (a newer value for a queued key replaces the older one), and starts when the running write exits. A row whose key is `queued` or `saving` disables its control and shows the saving strip, so a second edit to that key cannot be made until the write ends; a write for a key in that state is still ignored by the service as a guard. Each `SettingRow` binds `saveState` and `errorText` from these maps, and on success the saved value is re-read so the row shows the daemon's value.
+- **Loading, offline and empty states.** On open the window runs `wispd config show --json` and a one-shot `wispd status --json`. Exit 3 means the daemon is down: a banner says so with a Retry action that reruns both. Config reads still fall back to `config.toml`, so pages stay editable, and writes go to the file as `wispd config set` already does. `WispService` sets `configLoaded` when the config read exits, whatever its code. Until then the page shows a loading line, not empty rows. A nonzero exit shows a "could not read settings" banner with the first stderr line and the same Retry action. A page with no rows shows a one-line empty state.
+- **Search** is a pure `Settings.search(query)` over label text, help text and key (case-insensitive, all words must match). It returns rows with their category. Results replace the page, each row shows its category chip, and rows edit in place. Clicking a chip selects that category and clears the search. During a search the sidebar dims. Ctrl+F focuses the search field, and Esc clears it and restores the previous category.
+- **Models page:** the schema keys in category `models` (router, default and fallback model, grounding model, paid guard, local enabled, web search). The page note names hosted OpenRouter as the default and small local models as optional. Secret-kind fields render as status rows and never show a value (none exist today; a test guards it).
+- **Connectors page:** the `browser.lane` and `browser.port` rows, then the connector list from `wispd connect list --json`, read from `data.connectors` (the Panel reads the same catalog as a bare array through the legacy `connect --list --json`). Each entry shows its name and connected status. The list has loading, failed-read (with Retry) and empty states. Connect runs `wispd connect add <alias>`: the button shows a running label and is disabled while it runs, exit 0 re-reads the list, and a nonzero exit shows the stderr sentence on that row.
 
 **Test scenarios:**
-- Searching "tts" returns the voice field with its category. Searching a key returns the same row.
-- An empty query shows the selected category. A query with no match shows an empty-state sentence.
+- `Settings.search("tts")` returns `voice.tts_voice` with category `voice`. Searching that key returns the same row, and a query with no match returns nothing.
+- An empty query shows the selected category, and a query with no match shows the empty-state sentence.
 - Every schema category has a sidebar entry and a page, and no key is on two pages.
-- Models page never renders a value for a `secret` field.
-- Changing a toggle calls `configSet` once with the raw value, and a daemon error appears on that row.
-- The page at minimum window size has no horizontally clipped label.
-- With the daemon unreachable the window shows the offline banner, and retry reloads the config.
+- `formatValue("budget.daily_usd", "8")` is `8.00`. A row reading `8` from the daemon shows `8.00` and no "changed from default".
+- Changing a toggle calls `configSet` once with the schema-formatted value (`true` or `false`). While that key is saving its control is disabled; a change to another key is queued (its row shows the saving strip) and runs after. A daemon error appears on that row.
+- `agents.act_max_usd` reading `0` shows `0.00` with no "changed from default", and Reset sends `0.00`.
+- `wispd config show` exiting 1 shows the could-not-read banner with Retry, not an endless loading line.
+- The Connectors list parses `data.connectors`; Connect disables its button while running, re-reads the list on success and shows the error on the row on failure.
+- The page at minimum window size (720x520) has no horizontally clipped label.
+- With `wispd status` exiting 3 the window shows the offline banner, and Retry reruns the reads.
 - A search result row can be edited in place, and its category chip selects that category.
-- Ctrl+F focuses the search field and Esc clears it and restores the previous category.
+- Ctrl+F focuses the search field, and Esc clears it and restores the previous category.
+- A field of kind `secret` renders no value.
 
-**Verification:** QtTest and snapshots at both viewports. Parity test unchanged.
+**Verification:** QtTest and snapshots at both viewports, plus the existing Panel settings tests (`tst_settings.qml`). Parity test unchanged. A live check of the window is an owner gate recorded in the PR.
 
 ### U6. Panel scroll and Quick tab
 
@@ -468,14 +473,16 @@ Launch path: the Panel header action and `wispd settings` start or re-address th
 | PR | Units | Delivers |
 |---|---|---|
 | 1 | U1, U2 | Scale, checks, schema metadata. No visible UI change. `config keys --json` and the help table gain category metadata. |
-| 2 | U3, U4, U5 | The settings window, `wispd settings`, search. |
-| 3 | U6 | Scrolling Panel with Quick tab. |
-| 4 | U7 | Management views in the window, `shells/debug` retired. |
-| 5 | U8 | Type scale and rhythm on bar, overlay and cards. |
-| 6 | U9 | TUI. |
-| 7 | U10 | CLI output. |
+| 2 | U3 | Settings controls (#410). |
+| 3 | U4 | The settings window and `wispd settings` (#411). |
+| 4 | U5 | Settings pages, live values and search. |
+| 5 | U6 | Scrolling Panel with Quick tab. |
+| 6 | U7 | Status and management views in the window, `shells/debug` retired. |
+| 7 | U8 | Type scale and rhythm on bar, overlay and cards. |
+| 8 | U9 | TUI. |
+| 9 | U10 | CLI output. |
 
-PR 2 is the owner's first visible result. PRs 6 and 7 do not depend on the QML work and may land in parallel with PRs 3 to 5.
+The owner decided on 2026-11-16 to ship one unit per PR (PR A, the brand tokens, landed first as #407). PRs 8 and 9 do not depend on the QML work and may land in parallel with PRs 5 to 7.
 
 ---
 
@@ -489,7 +496,7 @@ PR 2 is the owner's first visible result. PRs 6 and 7 do not depend on the QML w
 | Snapshots | `scripts/ui/snap.py` at 1728x1080 scale 2 and 3440x1440 scale 1, dark and light | U3, U5, U6, U8 |
 | TUI and manage parity | `python -m pytest tests/test_manage.py tests/test_cli_output.py tests/test_tui_layout.py` | U9 |
 | CLI goldens | `tests/cli_golden.py` with `UPDATE_GOLDEN=1` reviewed, then plain run | U4, U10 |
-| Live window check | Open `wispd settings` once on eDP-1 and on the 34 inch panel | U4 |
+| Live window check | Open `wispd settings` once on eDP-1 and on the 34 inch panel | U4, U5 |
 
 Scroll and overflow, minimum font size and minimum hit-target checks (U1) run in the QML and component gates above. No gate calls a paid or live model.
 
@@ -497,7 +504,7 @@ Scroll and overflow, minimum font size and minimum hit-target checks (U1) run in
 
 ## Definition of Done
 
-- Global: R1 to R19 hold. Every gate above passes. Screenshots at both viewports are attached to PRs 2, 3 and 5.
+- Global: R1 to R19 hold. Every gate above passes. Snapshot goldens at both viewports land with the settings-window and Panel units (U3-U6).
 - Per unit: each unit's Verification is met and its Test scenarios exist as tests.
 - Cleanup: no abandoned experiment code, no leftover `shells/debug` references, no unused old metric names after U8.
 

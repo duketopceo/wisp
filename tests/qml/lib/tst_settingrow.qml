@@ -29,6 +29,9 @@ Item {
     SettingRow { id: numberRow; service: svc; width: parent.width; def: S.field("cua.max_per_turn"); value: "12" }
   }
 
+  SettingRow { id: usdRow; service: svc; x: 0; y: 450; width: 720; def: S.field("agents.act_max_usd"); value: "0" }
+  SignalSpy { id: usdSpy; target: usdRow; signalName: "commit" }
+
   SearchControl { id: search; service: svc; x: 0; y: 400 }
   SignalSpy { id: searchSpy; target: search; signalName: "search" }
 
@@ -55,7 +58,8 @@ Item {
   when: windowShown
 
   function init() {
-    toggleSpy.clear(); selectSpy.clear(); numberSpy.clear(); searchSpy.clear()
+    toggleSpy.clear(); selectSpy.clear(); numberSpy.clear(); searchSpy.clear(); usdSpy.clear()
+    usdRow.value = "0"; usdRow.saveState = ""
     search.text = ""
     toggleRow.value = "false"; toggleRow.saveState = ""; toggleRow.errorText = ""
     selectRow.value = "autonomous"
@@ -163,6 +167,47 @@ Item {
     numberRow.saveState = ""
     verify(!reset.visible)
     compare(find(numberRow, "strip").text, "")
+  }
+
+  function test_queued_and_saving_lock_the_control_and_show_the_strip() {
+    var strip = find(numberRow, "strip")
+    numberRow.saveState = "queued"
+    verify(!numberRow.control.enabled)
+    compare(strip.text, svc.ui("ui.set.saving"))
+    numberRow.saveState = "saving"
+    verify(!numberRow.control.enabled)
+    verify(toggleRow.control.enabled)
+    toggleRow.saveState = "queued"
+    verify(!toggleRow.control.enabled)
+    mouseClick(toggleRow.control)
+    compare(toggleSpy.count, 0)
+    toggleRow.saveState = "saved"
+    verify(toggleRow.control.enabled)
+    numberRow.saveState = "error"
+    verify(numberRow.control.enabled)
+  }
+
+  function test_no_reset_while_queued() {
+    numberRow.value = "20"
+    numberRow.saveState = "queued"
+    verify(!find(numberRow, "reset").visible)
+    numberRow.reset()
+    compare(numberSpy.count, 0)
+  }
+
+  function test_value_compares_in_schema_format() {
+    compare(usdRow.shown, "0.00")
+    verify(!usdRow.differs)
+    verify(!find(usdRow, "reset").visible)
+    usdRow.value = "8"
+    compare(usdRow.shown, "8.00")
+    usdRow.value = "5"
+    verify(usdRow.differs)
+    usdRow.reset()
+    compare(usdSpy.count, 1)
+    compare(usdSpy.signalArguments[0][0], "0.00")
+    usdRow.value = "0"
+    usdSpy.clear()
   }
 
   function test_no_reset_while_saving() {

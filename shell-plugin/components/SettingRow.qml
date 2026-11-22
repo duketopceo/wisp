@@ -6,6 +6,7 @@
 // re-emits its commit(value). reset() commits the schema default.
 import QtQuick
 import "../lib/metrics.js" as M
+import "../lib/settings.js" as S
 
 Item {
   id: root
@@ -13,7 +14,8 @@ Item {
   property var service: null
   property var def: ({})
   property string value: ""
-  // "", "saving", "saved" or "error" (the host sets it around a write)
+  // "", "queued", "saving", "saved" or "error" (the host sets it around a
+  // write); queued and saving lock the control and show the saving strip
   property string saveState: ""
   property string errorText: ""
   signal commit(string value)
@@ -26,7 +28,11 @@ Item {
   readonly property string helpText: def && def.help ? service.ui(def.help) : ""
   readonly property bool hasDefault: kind !== "secret" && def !== null
     && def.default !== undefined
-  readonly property bool differs: hasDefault && value !== String(def.default)
+  readonly property bool busy: saveState === "saving" || saveState === "queued"
+  // the value and the default in schema format, so 8 reads as 8.00
+  readonly property string shown: S.formatValue(key, value)
+  readonly property string defaultShown: hasDefault ? S.formatValue(key, String(def.default)) : ""
+  readonly property bool differs: hasDefault && shown !== defaultShown
   readonly property bool stacked: width < M.scale.rowStack
   readonly property int gap: M.scale.space.lg
   readonly property Item control: loader.item
@@ -36,14 +42,14 @@ Item {
     var want = c.naturalWidth !== undefined ? c.naturalWidth : c.implicitWidth
     return Math.ceil(Math.min(want, stacked ? width : Math.floor(width * 0.55)))
   }
-  readonly property string stripText: saveState === "saving" ? service.ui("ui.set.saving")
+  readonly property string stripText: busy ? service.ui("ui.set.saving")
     : saveState === "error" ? errorText
     : saveState === "saved" ? service.ui("ui.set.saved")
     : differs ? service.ui("ui.set.changed") : ""
 
   function reset() {
-    if (!hasDefault || !differs || saveState === "saving") return
-    var d = String(def.default)
+    if (!hasDefault || !differs || busy) return
+    var d = defaultShown
     if (control && typeof control.discard === "function") control.discard(d)
     commit(d)
   }
@@ -85,6 +91,7 @@ Item {
     y: root.stacked ? textCol.height + M.scale.space.sm : 0
     width: root.controlWidth
     height: loader.item ? loader.item.height : 0
+    enabled: !root.busy
 
     Loader {
       id: loader
@@ -120,7 +127,7 @@ Item {
       id: resetLink
       objectName: "reset"
       textFormat: Text.PlainText
-      visible: root.differs && root.saveState !== "saving"
+      visible: root.differs && !root.busy
       text: root.service.ui("ui.set.reset")
       color: root.tk.accent
       font.family: root.service.fontFamily
@@ -149,7 +156,7 @@ Item {
     ToggleControl {
       service: root.service
       label: root.labelText
-      checked: root.value === "true"
+      checked: root.shown === "true"
       onCommit: (v) => root.commit(v)
     }
   }
@@ -160,7 +167,7 @@ Item {
       label: root.labelText
       width: root.controlWidth
       options: root.def.options || []
-      value: root.value
+      value: root.shown
       onCommit: (v) => root.commit(v)
     }
   }
@@ -173,7 +180,7 @@ Item {
       label: root.labelText
       unit: root.def.unit || ""
       maxWidth: root.controlWidth
-      value: root.value
+      value: root.shown
       saveState: root.saveState
       onCommit: (v) => root.commit(v)
     }

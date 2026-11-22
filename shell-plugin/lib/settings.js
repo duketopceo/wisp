@@ -11,6 +11,7 @@
 // and `wispd config set` cannot disagree. This file adds the Panel-side
 // helpers on top.
 .import "settings_schema.js" as Schema
+.import "copy.js" as Copy
 
 var FIELDS = Schema.FIELDS
 var KEYS = Schema.KEYS
@@ -47,7 +48,7 @@ function flatten(cfg) {
     for (var k in sec) {
       var val = sec[k]
       if (typeof val === "object") continue
-      out[s + "." + k] = String(val)
+      out[s + "." + k] = formatValue(s + "." + k, String(val))
     }
   }
   return out
@@ -62,4 +63,124 @@ function errorText(stderr) {
     if (m) return trim(m[1])
   }
   return trim(lines[0])
+}
+
+// A value in the schema's format, so a row compares equal to its default
+// and the daemon receives what the schema shows: usd has two decimals
+// (8 -> 8.00; blank, non-numbers and more than two decimals pass through
+// for validate() to judge), int is a plain integer, bool is true or false,
+// anything else is the trimmed string.
+// The usd pattern here is looser than validate()'s on purpose: it only
+// formats what it recognises and leaves the rest for validate() to reject.
+function formatValue(key, raw) {
+  var v = trim(raw)
+  var f = field(key)
+  if (f === null) return v
+  if (f.kind === "usd") {
+    var m = v.match(/^(\d+)(?:\.(\d{1,2}))?$/)
+    if (!m) return v
+    return m[1] + "." + ((m[2] || "") + "00").slice(0, 2)
+  }
+  if (f.kind === "int") return /^[+-]?\d+$/.test(v) ? String(parseInt(v, 10)) : v
+  if (f.kind === "bool") {
+    var b = v.toLowerCase()
+    return b === "true" || b === "false" ? b : v
+  }
+  return v
+}
+
+// Fields by category (each key sits on exactly one page, its schema
+// category), in schema order.
+function byCategory() {
+  if (_byCategory !== null) return _byCategory
+  var out = {}
+  for (var i = 0; i < CATEGORIES.length; i++) out[CATEGORIES[i]] = []
+  for (var j = 0; j < FIELDS.length; j++) {
+    var c = FIELDS[j].category
+    if (!out[c]) out[c] = []
+    out[c].push(FIELDS[j])
+  }
+  _byCategory = out
+  return out
+}
+// the schema table never changes, so the grouping is built once
+var _byCategory = null
+
+function categoryFields(name) { return byCategory()[name] || [] }
+
+// Settings matching a query: every word must appear in the label text
+// (through the copy table), the help text or the key, case-insensitive.
+// Returns [{key, category, def}] in schema order; no words, no rows.
+function search(query) {
+  var words = trim(query).toLowerCase().split(/\s+/).filter(function (w) { return w !== "" })
+  if (words.length === 0) return []
+  if (_haystacks === null) {
+    _haystacks = FIELDS.map(function (f) {
+      return [Copy.string(f.label), f.help ? Copy.string(f.help) : "", f.key].join("\n").toLowerCase()
+    })
+  }
+  var out = []
+  for (var i = 0; i < FIELDS.length; i++) {
+    var f = FIELDS[i]
+    var hay = _haystacks[i]
+    var all = true
+    for (var w = 0; w < words.length; w++) {
+      if (hay.indexOf(words[w]) < 0) { all = false; break }
+    }
+    if (all) out.push({ key: f.key, category: f.category, def: f })
+  }
+  return out
+}
+
+// lower-cased search text per field, built on the first search
+var _haystacks = null
+
+function clone(o) {
+  var out = {}
+  for (var k in o) out[k] = o[k]
+  return out
+}
+
+// --- write queue: one `wispd config set` at a time ------------------------
+// The service keeps `queue` ([{key, value}], FIFO) and `states` (key ->
+// "queued" | "saving" | "saved" | "error"); these functions are its rules,
+// pure so they can be tested without a daemon. All return new objects.
+
+// One queue entry per key: a newer value for a queued key replaces the
+// older one in place.
+function enqueue(queue, key, value) {
+  var out = []
+  var found = false
+  for (var i = 0; i < queue.length; i++) {
+    if (queue[i].key === key) { out.push({ key: key, value: value }); found = true }
+    else out.push(queue[i])
+  }
+  if (!found) out.push({ key: key, value: value })
+  return out
+}
+
+// A write for a key that is queued or saving is refused (accepted false,
+// nothing changes). Otherwise the key is queued and the older "saved" marks
+// are cleared, so only the latest write shows saved.
+function enqueueWrite(queue, states, key, value) {
+  if (states[key] === "queued" || states[key] === "saving")
+    return { accepted: false, queue: queue, states: states }
+  var next = {}
+  for (var k in states) if (states[k] !== "saved") next[k] = states[k]
+  next[key] = "queued"
+  return { accepted: true, queue: enqueue(queue, key, value), states: next }
+}
+
+// The oldest queued write, marked saving; write is null when none waits.
+function nextWrite(queue, states) {
+  if (queue.length === 0) return { write: null, queue: queue, states: states }
+  var next = clone(states)
+  next[queue[0].key] = "saving"
+  return { write: queue[0], queue: queue.slice(1), states: next }
+}
+
+function finishWrite(states, key, ok) {
+  var next = clone(states)
+  next[key] = ok ? "saved" : "error"
+  return next
 }

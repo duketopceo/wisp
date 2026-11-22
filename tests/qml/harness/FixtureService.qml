@@ -123,6 +123,26 @@ Item {
   }
   function skipRatePrompt() { return false; }
   function loadConfig() {}
+  // settings window: the harness never writes or reads config; the
+  // scenes pass the data straight to the component
+  property var configValues: ({})
+  property var configErrors: ({})
+  property string configSaved: ""
+  property var configState: ({})
+  property var configQueue: []
+  property bool configLoaded: true
+  property string configReadError: ""
+  property int statusCode: -1
+  readonly property bool settingsOffline: statusCode === 3
+  property var connectorList: []
+  property string connectorState: "loading"
+  property string connectorError: ""
+  property string connectorRunning: ""
+  property var connectorErrors: ({})
+  function configSet(key, value) {}
+  function retrySettings() {}
+  function loadConnectors() {}
+  function connectAdd(alias) { return false; }
   function disableRecap() { root.weeklyRecap = null; return true; }
   function loadDev() {}
 

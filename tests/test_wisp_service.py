@@ -222,6 +222,77 @@ class TestActionLifecycle(unittest.TestCase):
         self.assertIn("lastAction", app)
 
 
+class TestSettingsWindowReads(unittest.TestCase):
+    """U5: the settings window's service surface. The write queue rules are
+    pure functions in lib/settings.js (tested in tst_settings_search.qml);
+    these pin that the service routes every write through them and wires
+    the status and connector reads."""
+
+    def test_writes_go_through_the_queue_rules(self):
+        m = re.search(r"function configSet.*?\n  \}", SRC, re.S)
+        self.assertIsNotNone(m)
+        self.assertIn("Settings.formatValue", m.group(0))
+        self.assertIn("Settings.enqueueWrite", m.group(0))
+        self.assertIn("pumpConfig()", m.group(0))
+        pump = re.search(r"function pumpConfig.*?\n  \}", SRC, re.S).group(0)
+        self.assertIn("if (setProc.running || setActive) return", pump)
+        self.assertIn("Settings.nextWrite", pump)
+        # one config read after a burst of writes, when the queue drains
+        self.assertIn("if (configDirty) { configDirty = false; readConfig(); }",
+                      pump)
+        # the in-flight flag is set before the process starts
+        self.assertLess(pump.index("setActive = true"),
+                        pump.index("setProc.running = true"))
+        done = re.search(r"function finishSet.*?\n  \}", SRC, re.S).group(0)
+        self.assertIn("Settings.finishWrite", done)
+        self.assertIn("if (!setActive) return;", done)
+        # the next write never starts inside the exit handler: a late
+        # running=false would otherwise be taken for its spawn failure
+        self.assertNotIn("pumpConfig()", done)
+        proc = re.search(r"id: setProc.*?\n  \}", SRC, re.S).group(0)
+        self.assertIn("Qt.callLater(root.settleSet)", proc)
+        settle = re.search(r"function settleSet.*?\n  \}", SRC, re.S).group(0)
+        # a write still in flight a tick after the process stopped had no
+        # exited: a spawn failure; either way the next write starts
+        self.assertIn("if (setActive) finishSet(127", settle)
+        self.assertIn("pumpConfig()", settle)
+        # exactly one config-set process: writes never overlap
+        self.assertEqual(len(re.findall(r'"config",\s*"set"', SRC)), 0)
+        self.assertEqual(SRC.count("setProc.running = true"), 1)
+
+    def test_config_read_marks_loaded_whatever_the_exit(self):
+        m = re.search(r"Process\s*\{\s*id:\s*cfgProc(.*?)\n  \}\n", SRC, re.S)
+        body = m.group(1)
+        self.assertIn("stderr: StdioCollector", body)
+        loaded = body.index("configLoaded = true")
+        failed = body.index("code !== 0")
+        self.assertLess(loaded, failed)
+        self.assertIn("configReadError", body)
+
+    def test_status_probe_is_one_shot_and_exit_three_is_offline(self):
+        self.assertRegex(SRC, r'\[root\.wispd,\s*"status",\s*"--json"\]')
+        self.assertRegex(SRC, r"settingsOffline:\s*statusCode === 3")
+        retry = re.search(r"function retrySettings.*?\n  \}", SRC, re.S).group(0)
+        self.assertIn("readConfig()", retry)
+        self.assertIn("statusProc.running = true", retry)
+
+    def test_connectors_read_the_envelope_and_add_runs_per_alias(self):
+        self.assertRegex(
+            SRC, r'\[root\.wispd,\s*"connect",\s*"list",\s*"--json"\]')
+        self.assertIn("doc.data.connectors", SRC)
+        self.assertRegex(
+            SRC, r'\[wispd,\s*"connect",\s*"add",\s*alias\]')
+        add = re.search(r"function connectAdd.*?\n  \}", SRC, re.S).group(0)
+        self.assertIn("connAddProc.running", add)
+        fin = re.search(r"function finishConnect.*?\n  \}", SRC, re.S).group(0)
+        self.assertIn("loadConnectors()", fin)
+        self.assertIn("connectorErrors", fin)
+
+    def test_panel_connector_path_is_unchanged(self):
+        panel = (PLUGIN / "Panel.qml").read_text()
+        self.assertIn('"connect", "--list", "--json"', panel)
+
+
 QMLLINT = shutil.which("qmllint") or (
     "/usr/lib/qt6/bin/qmllint"
     if os.path.exists("/usr/lib/qt6/bin/qmllint") else None)
