@@ -61,9 +61,9 @@ TestCase {
   }
 
   function test_words_for_each_busy_state() {
-    var rows = [["listening", "listening"], ["deciding", "thinking"],
-      ["speaking", "speaking"], ["acting", "acting"],
-      ["awaiting_choice", "needs you"], ["error", "error"]];
+    var rows = [["listening", "listening"], ["transcribing", "hearing"], ["deciding", "thinking"],
+      ["speaking", "speaking"], ["acting", "working"],
+      ["awaiting_choice", "your call"], ["error", "that failed"]];
     for (var i = 0; i < rows.length; i++) {
       loadFx(rows[i][0]);
       var p = mk();

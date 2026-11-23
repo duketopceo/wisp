@@ -1,4 +1,5 @@
 .pragma library
+.import "status.js" as Status
 
 // Pure reducer behind WispService.qml: wispd state contract
 // (docs/IPC_CONTRACT.md) in, one normalized view out. No Quickshell
@@ -14,8 +15,6 @@ var CONTRACT_VERSION = 2
 var STALE_AFTER_MS = 20000  // above the W3 bus heartbeat (15 s) so long turns never flag stale between beats
 var STATUSES = ["idle", "listening", "transcribing", "deciding",
   "awaiting_choice", "acting", "speaking", "suggestion", "done", "error"]
-// statuses in which the daemon is working and must keep writing
-var BUSY = ["transcribing", "deciding", "acting"]
 var ERROR_CODES = ["jev_down", "brain_down", "stt_down", "ground_down",
   "ground_failed", "timeout", "cancelled", "busy", "stale_prompt",
   "restarted", "tool_failed", "budget_exceeded", "key_missing",
@@ -430,7 +429,7 @@ function markDisconnected(view) {
 // (heartbeat_at) and any state diff count as change; pings do not.
 function isStale(view, nowMs, afterMs) {
   if (view.offline) return false
-  if (BUSY.indexOf(view.status) < 0) return false
+  if (Status.BUSY.indexOf(view.status) < 0) return false
   var limit = afterMs === undefined ? STALE_AFTER_MS : afterMs
   return nowMs - view.changedAtMs > limit
 }

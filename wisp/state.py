@@ -14,6 +14,7 @@ import time
 from datetime import datetime, timezone
 
 from . import config
+from . import status as _status
 
 
 def _now() -> str:
@@ -46,7 +47,8 @@ ACTION_FIELDS = frozenset({"id", "kind", "label", "status", "target",
                            "prompt_id", "delivery"})
 # statuses where the model is working and the UI would otherwise sit
 # silent; the bus heartbeat runs only here
-BUSY = frozenset({"transcribing", "deciding", "acting"})
+# the busy statuses come from the one status table (wisp/status.py)
+BUSY = frozenset(_status.BUSY)
 # fields that arrive at audio/token rate and are rate-limited by the bus
 COALESCED = frozenset({"level"})
 

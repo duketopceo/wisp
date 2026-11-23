@@ -1,4 +1,5 @@
 .pragma library
+.import "status.js" as Status
 
 // Layout and state-to-visual maps shared by the window-free components
 // (DESIGN-v2 5.3 to 5.5, 5.8). Pure data and functions, no colors: every
@@ -64,28 +65,15 @@ function pillRadius(height, chromeRadius) {
   return chromeRadius === 0 ? 0 : height / 2
 }
 
-// Copy tone (lib/copy.js STATUS tones) -> token name.
+// Status-table tone (lib/status.js) -> token name.
 var TONE_TOKEN = { ember: "ember", needsYou: "needsYou", fail: "fail",
   ok: "ok", muted: "inkMuted" }
 function toneToken(tone) { return TONE_TOKEN.hasOwnProperty(tone) ? TONE_TOKEN[tone] : "inkMuted" }
 
-// Status -> bar glyph name (assets/icons/src bar-*). Statuses without a
-// glyph of their own borrow the closest one.
-var MARK_ICON = {
-  idle: "bar-idle", listening: "bar-listening", transcribing: "bar-thinking",
-  deciding: "bar-thinking", speaking: "bar-thinking", acting: "bar-acting",
-  awaiting_choice: "bar-needs-you", suggestion: "bar-idle", done: "bar-idle",
-  error: "bar-error", offline: "bar-offline"
-}
-function markIcon(status) { return MARK_ICON.hasOwnProperty(status) ? MARK_ICON[status] : "bar-offline" }
-
-// Mark color token: idle and done read as plain ink, busy as ember.
-var MARK_TOKEN = {
-  idle: "ink", listening: "ember", transcribing: "ember", deciding: "ember",
-  speaking: "ember", acting: "ember", awaiting_choice: "needsYou",
-  suggestion: "accent", done: "ink", error: "fail", offline: "inkMuted"
-}
-function markToken(status) { return MARK_TOKEN.hasOwnProperty(status) ? MARK_TOKEN[status] : "inkMuted" }
+// Status -> bar glyph name (assets/icons/src bar-*) and mark color token,
+// both rows of the status table (lib/status.js).
+function markIcon(status) { return Status.markIcon(status) }
+function markToken(status) { return Status.markToken(status) }
 
 // Creature energy (DESIGN-v2 5.5 table), 0 to 1; listening adds mic level.
 var ENERGY = { offline: 0.05, idle: 0.25, listening: 0.6, transcribing: 0.5,
@@ -96,10 +84,6 @@ function energy(status, level) {
   if (status === "listening") e += 0.3 * Math.max(0, Math.min(1, Number(level) || 0))
   return Math.min(1, e)
 }
-
-// Creature token by status (halo color).
-var CREATURE_TOKEN = { offline: "inkMuted", error: "fail", awaiting_choice: "needsYou" }
-function creatureToken(status) { return CREATURE_TOKEN.hasOwnProperty(status) ? CREATURE_TOKEN[status] : "ember" }
 
 function creatureSize(status) {
   return status === "listening" ? size.creatureListening : size.creatureRest

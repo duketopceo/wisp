@@ -154,15 +154,15 @@ TestCase {
     var rows = [
       [{ status: "idle" }, "idle", "", false],
       [{ status: "suggestion" }, "idle", "", false],
-      [{ status: "listening" }, "listening", "ui.bar.state.listening", true],
-      [{ status: "transcribing" }, "thinking", "ui.bar.state.thinking", true],
-      [{ status: "deciding" }, "thinking", "ui.bar.state.thinking", true],
-      [{ status: "speaking" }, "speaking", "ui.bar.state.speaking", true],
-      [{ status: "acting" }, "acting", "ui.bar.state.acting", true],
-      [{ status: "awaiting_choice" }, "needsYou", "ui.bar.state.needs", true],
-      [{ status: "acting", confirm: true }, "needsYou", "ui.bar.state.needs", true],
-      [{ status: "done", result: "BLOCKED: policy" }, "needsYou", "ui.bar.state.needs", true],
-      [{ status: "error", errorCode: "jev_down" }, "error", "ui.bar.state.error", true],
+      [{ status: "listening" }, "listening", "status.listening", true],
+      [{ status: "transcribing" }, "thinking", "status.transcribing.short", true],
+      [{ status: "deciding" }, "thinking", "status.deciding", true],
+      [{ status: "speaking" }, "speaking", "status.speaking", true],
+      [{ status: "acting" }, "acting", "status.acting", true],
+      [{ status: "awaiting_choice" }, "needsYou", "status.awaiting_choice", true],
+      [{ status: "acting", confirm: true }, "needsYou", "status.awaiting_choice", true],
+      [{ status: "done", result: "BLOCKED: policy" }, "needsYou", "ui.pill.blocked", true],
+      [{ status: "error", errorCode: "jev_down" }, "error", "status.error", true],
       [{ status: "offline", offline: true }, "offline", "", false],
       [{ status: "done" }, "idle", "", false]
     ]
@@ -208,7 +208,7 @@ TestCase {
   function test_done_window_shows_check_and_thumbs_only_when_open_and_rateable() {
     var d = ps({ status: "done", windowOpen: true, rateable: true })
     compare(d.kind, "done"); verify(d.visible); verify(d.thumbs)
-    compare(d.glyph, "check"); compare(d.token, "ok"); compare(d.wordKey, "ui.bar.state.done")
+    compare(d.glyph, "check"); compare(d.token, "ok"); compare(d.wordKey, "status.done")
     verify(!ps({ status: "done", windowOpen: false, rateable: true }).visible)
     var cancelled = ps({ status: "done", windowOpen: true, rateable: false })
     verify(!cancelled.thumbs)

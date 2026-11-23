@@ -175,20 +175,20 @@ class TestJsParity(unittest.TestCase):
              "", "x:y"]
 
     def js(self, expr):
-        return jsnode.call(expr, Copy="copy")
+        return jsnode.call(expr, Copy="copy", Status="status")
 
     def test_status(self):
         for s in list(wcopy.STATUS) + ["bogus", ""]:
-            self.assertEqual(self.js(f"Copy.statusWord({s!r})"),
+            self.assertEqual(self.js(f"Status.statusWord({s!r})"),
                              wcopy.status_word(s), s)
-            self.assertEqual(self.js(f"Copy.statusTone({s!r})"),
+            self.assertEqual(self.js(f"Status.statusTone({s!r})"),
                              wcopy.status_tone(s), s)
 
     def test_pill_view(self):
         for s in list(wcopy.STATUS) + ["bogus", ""]:
             for r in self.RESULTS:
                 w, t = wcopy.word_view(s, r)
-                got = self.js(f"Copy.pillView({s!r}, {r!r})")
+                got = self.js(f"Status.pillView({s!r}, {r!r})")
                 self.assertEqual(got, {"word": w, "tone": t}, (s, r))
 
     def test_results(self):
@@ -216,8 +216,12 @@ class TestJsParity(unittest.TestCase):
         self.assertEqual(self.js("Copy.ERRORS"),
                          {k: list(v) for k, v in wcopy.ERRORS.items()})
         self.assertEqual(self.js("Copy.STRINGS"), wcopy.STRINGS)
-        self.assertEqual(self.js("Copy.STATUS"),
-                         {k: list(v) for k, v in wcopy.STATUS.items()})
+        # the status words live in the one status table, not in copy.js
+        self.assertEqual(
+            {s: [self.js(f"Status.statusWord({s!r})"),
+                 self.js(f"Status.statusTone({s!r})")]
+             for s in wcopy.STATUS},
+            {k: list(v) for k, v in wcopy.STATUS.items()})
 
 
 class TestGenerated(unittest.TestCase):

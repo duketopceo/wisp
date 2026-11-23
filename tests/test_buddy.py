@@ -17,7 +17,7 @@ MAX_CHARS = 18
 
 
 def js(expr):
-    return jsnode.call(expr, B="buddy", C="copy")
+    return jsnode.call(expr, B="buddy", C="copy", S="status")
 
 
 @unittest.skipUnless(jsnode.NODE, "node not installed")
@@ -33,10 +33,10 @@ class TestStateLabels(unittest.TestCase):
             self.assertLessEqual(len(label.split()), MAX_WORDS, (s, label))
             self.assertLessEqual(len(label), MAX_CHARS, (s, label))
 
-    def test_label_comes_from_copy(self):
+    def test_label_comes_from_the_status_table(self):
         for s in self.statuses():
             self.assertEqual(js("B.stateLabel(%s)" % json.dumps(s)),
-                             js("C.statusWord(%s)" % json.dumps(s)), s)
+                             js("S.statusWord(%s)" % json.dumps(s)), s)
 
     def test_unknown_status_reads_offline(self):
         self.assertEqual(js("B.stateLabel('bogus')"), "offline")

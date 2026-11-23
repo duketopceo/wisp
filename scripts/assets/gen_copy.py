@@ -25,26 +25,6 @@ function string(key) { return STRINGS.hasOwnProperty(key) ? STRINGS[key] : key }
 
 function undash(s) { return String(s).replace(/\s*[—–]\s*/g, ": ").replace(/^\s+|\s+$/g, "") }
 
-function statusWord(status) { return (STATUS[status] || STATUS[UNKNOWN_STATUS])[0] }
-
-function statusTone(status) { return (STATUS[status] || STATUS[UNKNOWN_STATUS])[1] }
-
-// Live-state word for every surface (pill, console status line, bar
-// tooltip). Mirrors copy.word_view: stale busy reads reconnecting, an error
-// with a code reads its message, a done turn with a BLOCKED result reads
-// blocked, anything else is the status word.
-function wordView(status, result, code, stale) {
-  if (stale && BUSY.indexOf(status) >= 0)
-    return { word: string("state.reconnecting"), tone: "muted" }
-  if (status === "error" && code)
-    return { word: errorMessage(code), tone: "fail" }
-  if (status === "done" && /^BLOCKED/.test(result || ""))
-    return { word: string("ui.pill.blocked"), tone: "needsYou" }
-  return { word: statusWord(status), tone: statusTone(status) }
-}
-
-function pillView(status, result) { return wordView(status, result, "", false) }
-
 // Result text -> { text, state, detail }; detail is the raw string when it
 // was translated (for a details disclosure), else "".
 function translateResult(raw) {
@@ -83,14 +63,11 @@ def render() -> str:
         "// Do not edit; change wisp/copy.py and regenerate.",
         "",
         f"var TONES = {js(list(wcopy.TONES))}",
-        f"var STATUS = {js({k: list(v) for k, v in wcopy.STATUS.items()})}",
-        f"var UNKNOWN_STATUS = {js(wcopy.UNKNOWN_STATUS)}",
         f"var RESULT_RULES = {js([list(r) for r in wcopy.RESULT_RULES])}",
         f"var ACTION_VERBS = {js(wcopy.ACTION_VERBS)}",
         f"var ERRORS = {js({k: list(v) for k, v in wcopy.ERRORS.items()})}",
         f"var UNKNOWN_ERROR = {js(wcopy.UNKNOWN_ERROR)}",
         f"var STRINGS = {js(wcopy.STRINGS)}",
-        f"var BUSY = {js(list(wcopy.BUSY))}",
     ]) + "\n" + _FUNCTIONS
 
 

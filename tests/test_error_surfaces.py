@@ -42,19 +42,19 @@ def for_code(code):
 
 
 def js(expr):
-    return jsnode.call(expr, Copy="copy", B="bar", S="state")
+    return jsnode.call(expr, Copy="copy", B="bar", S="state", Status="status")
 
 
 def render(code, surface):
     """(text lines) the surface shows for an error turn with `code`."""
     if surface in ("pill", "console"):
-        return [js(f"Copy.wordView('error','','{code}',false).word")]
+        return [js(f"Status.wordView('error','','{code}',false).word")]
     if surface == "bubble":
         return [js(f"Copy.errorMessage('{code}')"),
                 js(f"Copy.errorHint('{code}')")]
     if surface == "bar":
         return js(f"""(function(){{
-          var wv = Copy.wordView('error','','{code}',false);
+          var wv = Status.wordView('error','','{code}',false);
           return B.tooltipLines({{health: {{}}}}, {{word: wv.word,
             hint: Copy.errorHint('{code}'), notice: '', stale: false,
             offline: false, ui: Copy.string}});
@@ -106,7 +106,7 @@ class TestErrorTable(unittest.TestCase):
     def test_python_and_js_agree_on_the_word_view(self):
         for code in errors_codes.CODES:
             self.assertEqual(
-                js(f"Copy.wordView('error','','{code}',false)"),
+                js(f"Status.wordView('error','','{code}',false)"),
                 dict(zip(("word", "tone"),
                          wcopy.word_view("error", "", code, False))), code)
 
@@ -132,7 +132,7 @@ class TestConnectionStates(unittest.TestCase):
             self.assertEqual(wcopy.word_view(status, "", "", True),
                              ("reconnecting", "muted"), status)
             self.assertEqual(
-                js(f"Copy.wordView('{status}','','',true)"),
+                js(f"Status.wordView('{status}','','',true)"),
                 {"word": "reconnecting", "tone": "muted"})
 
     def test_stale_flag_never_hides_an_idle_or_error_state(self):
@@ -141,7 +141,7 @@ class TestConnectionStates(unittest.TestCase):
                          wcopy.error_message("timeout"))
 
     def test_stale_bar_tooltip_carries_the_same_word(self):
-        wv = js("Copy.wordView('acting','','',true)")
+        wv = js("Status.wordView('acting','','',true)")
         lines = js("""B.tooltipLines({health: {}}, {word: 'reconnecting',
           notice: '', stale: true, offline: false, ui: Copy.string})""")
         self.assertEqual(lines[0], "wisp: " + wv["word"])
@@ -150,7 +150,7 @@ class TestConnectionStates(unittest.TestCase):
         """Pill, StatusLine and the bar word all come from the service's
         wordView (copy.wordView), never from a local if-chain."""
         svc = (ROOT / "shell-plugin" / "WispService.qml").read_text()
-        self.assertTrue(re.search(r"wordView:\s*Copy\.wordView\(", svc))
+        self.assertTrue(re.search(r"wordView:\s*Status\.wordView\(", svc))
         for rel in ("components/Pill.qml", "components/StatusLine.qml",
                     "BarWidget.qml"):
             src = (ROOT / "shell-plugin" / rel).read_text()

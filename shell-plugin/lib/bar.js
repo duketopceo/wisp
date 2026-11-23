@@ -1,9 +1,10 @@
 .pragma library
+.import "status.js" as Status
 
 // Bar mark rules (Ember U10): which action a mouse button maps to, the
-// tooltip lines, and the glyph state. Pure: no copy table import (the
-// caller passes service.ui), no colors, no timers. Runs under
-// qmltestrunner and node.
+// tooltip lines, and the glyph state. Pure: words and glyphs come from the
+// status table (lib/status.js), the caller passes service.ui, no colors, no
+// timers. Runs under qmltestrunner and node.
 
 // Qt.LeftButton, Qt.RightButton, Qt.MiddleButton
 var LEFT = 1, RIGHT = 2, MIDDLE = 4
@@ -125,13 +126,6 @@ function windowAction(prevStatus, status, prevTurn, turn, offline, rateable, err
   return "keep"
 }
 
-// One muted word of cause for an error pill.
-var CAUSE = { jev_down: "model", brain_down: "model", stt_down: "speech",
-  ground_down: "screen", ground_failed: "screen", timeout: "timeout",
-  busy: "busy", tool_failed: "tool", budget_exceeded: "budget",
-  key_missing: "key", region_denied: "region", restarted: "restart", stale_prompt: "stale" }
-function causeWord(code) { return CAUSE.hasOwnProperty(code) ? CAUSE[code] : "" }
-
 var HIDDEN = { kind: "idle", visible: false, glyph: "", token: "ink",
   wordToken: "ink", border: "keyline", wordKey: "", step: "", cause: "",
   thumbs: false, dev: false }
@@ -145,12 +139,12 @@ function view(kind, glyph, token, wordKey, extra) {
 }
 
 // Daemon status to the pill's state. o: {status, result, errorCode,
-// offline, confirm, windowOpen, rateable, dev, run:{steps, stepAt}}. Idle
-// and offline are no pill (the mark alone); every other state is glyph plus
-// a word (the word repeats the state, color is never the only signal).
-// While the dev session is on (o.dev) every state also carries `dev`, a
-// small badge so the mode is never on by accident, and idle shows that
-// badge alone. Offline never does: the daemon's session state is unknown.
+// offline, confirm, windowOpen, rateable, dev, run:{steps, stepAt}}. The
+// status table (lib/status.js) decides the pill; the done row shows only
+// while the rating window is open. While the dev session is on (o.dev)
+// every state also carries `dev`, a badge so the mode is never on by
+// accident, and idle shows that badge alone. Offline never does: the
+// daemon's session state is unknown.
 function pillState(o) {
   var v = _pillState(o)
   if (o.dev !== true || v.kind === "offline") return v
@@ -162,34 +156,26 @@ function pillState(o) {
 }
 
 function _pillState(o) {
-  var status = String(o.status)
-  if (o.offline || status === "offline") {
+  var key = Status.rowKey(o)
+  if (key === "offline") {
     var off = view("offline", "", "inkMuted", "", {})
     off.visible = false
     return off
   }
-  if (status === "error")
-    return view("error", "cross", "fail", "ui.bar.state.error",
-      { border: "fail", wordToken: "fail", cause: causeWord(String(o.errorCode || "")) })
-  if (status === "awaiting_choice" || o.confirm === true
-      || (status === "done" && /^BLOCKED/.test(String(o.result || ""))))
-    return view("needsYou", "warning", "needsYou", "ui.bar.state.needs",
-      { border: "needsYou", wordToken: "needsYou" })
-  if (status === "listening")
-    return view("listening", "waveform", "ember", "ui.bar.state.listening", {})
-  if (status === "transcribing" || status === "deciding")
-    return view("thinking", "arc", "ember", "ui.bar.state.thinking", {})
-  if (status === "speaking")
-    return view("speaking", "triangle", "ember", "ui.bar.state.speaking", {})
-  if (status === "acting") {
-    var r = o.run, step = ""
-    if (r && Number(r.steps) > 0 && Number(r.stepAt) > 0)
-      step = Math.min(Number(r.stepAt), Number(r.steps)) + "/" + Number(r.steps)
-    return view("acting", "act", "ember", "ui.bar.state.acting", { step: step })
+  if (key === "") return HIDDEN
+  var r = Status.ROWS[key], p = r.pill
+  if (p === null) return HIDDEN
+  if (p.when === "rated" && !(o.windowOpen === true && o.rateable === true)) return HIDDEN
+  var extra = { border: p.border, wordToken: p.word_token }
+  if (key === "error") extra.cause = Status.causeWord(String(o.errorCode || ""))
+  if (key === "acting") {
+    var run = o.run, step = ""
+    if (run && Number(run.steps) > 0 && Number(run.stepAt) > 0)
+      step = Math.min(Number(run.stepAt), Number(run.steps)) + "/" + Number(run.steps)
+    extra.step = step
   }
-  if (status === "done" && o.windowOpen === true && o.rateable === true)
-    return view("done", "check", "ok", "ui.bar.state.done", { thumbs: true })
-  return HIDDEN
+  if (p.when === "rated") extra.thumbs = true
+  return view(p.kind, p.glyph, p.token, r.short, extra)
 }
 
 // Five mic bars, heights in px, from the mic level (0 to 1). The middle
