@@ -17,6 +17,7 @@ How this file is kept:
 
 ## Unreleased
 
+- The bar now uses the same words as the Panel and overlay: working, hearing, your call and that failed, instead of acting, thinking, needs you and error.
 - The settings window now has every setting on its page, with search across names, help and keys. Values are saved one at a time with saving, saved and error shown on the row, and the window says when Wisp is not running or a page cannot be read.
 - `wispd settings` opens a separate settings window, or brings it forward if it is already open; the launcher has a Settings action too. Its pages arrive in a later update; until then each page says where those settings live.
 - Wisp's own windows and bar use its ink and paper surfaces in your Omarchy theme's light or dark mode, with the accent and the ember still taken from your theme.
