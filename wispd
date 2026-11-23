@@ -173,6 +173,7 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
                         st.turn(tid).transition("error", error=str(e))
                         return {"ok": False, "error": str(e)}
                     ctl["busy"].set()
+                    ctl["busy_since"] = time.monotonic()
                     sp = ctl.pop("spans", None) or _trace.Spans()
                     sp.adopt_release(req_sp)
                     threading.Thread(
@@ -180,6 +181,10 @@ def _handler(st: state_mod.StateBus, cfg: dict, ctl: dict,
                         args=(st, cfg, ctl, wav, sp, tid),
                         daemon=True).start()
                     return {"ok": True, "stopped": True}
+                if ctl["busy"].is_set():
+                    since = time.monotonic() - ctl.get("busy_since", 0)
+                    if since < _BUSY_BARGE_DEBOUNCE_S:
+                        return {"ok": True, "ignored": True, "debounced": True}
                 if ctl["busy"].is_set() and _barge_in(st, ctl):
                     pass  # the thinking turn is cancelled: fall through
                     # to a new turn like a first press
@@ -655,6 +660,7 @@ def _wait_for_choice(ctl: dict, token=None):
 
 
 _TOGGLE_MIN_S = 1.0   # a second press sooner than this is a bounce
+_BUSY_BARGE_DEBOUNCE_S = 0.1   # ignore stray taps right after a release
 
 
 def _silence_stop(ctl: dict, sampler_stop) -> None:

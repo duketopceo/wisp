@@ -14,11 +14,12 @@ the turn then takes the cold path, with the same result. `[voice] warm =
 """
 from __future__ import annotations
 
+import os
 import socket
+import ssl
 import subprocess
 import tempfile
 import threading
-import os
 from contextlib import suppress
 from urllib.parse import urlparse
 
@@ -35,12 +36,18 @@ def enabled(cfg: dict) -> bool:
 
 def hosts(cfg: dict) -> list:
     """Hostnames this turn is likely to call, de-duplicated, in order."""
-    from . import brain, config, tts_groq
+    from . import brain, config, tts_groq, turn_router
     urls = []
     with suppress(Exception):
         urls.append(config.stt_settings(cfg)["base_url"])
     with suppress(Exception):
         urls.append(brain.provider(cfg).get("base_url"))
+    with suppress(Exception):
+        spec = turn_router.settings(cfg).get("model", "")
+        if spec:
+            routed = dict(cfg, brain={**(cfg.get("brain") or {}),
+                                      "default": spec})
+            urls.append(brain.provider(routed).get("base_url"))
     with suppress(Exception):
         if tts_groq.provider(cfg) == "groq":
             urls.append(tts_groq.base_url(cfg))
@@ -74,6 +81,16 @@ class Warm:
         self._thread.start()
         return self
 
+    def _preconnect(self, host: str) -> None:
+        port = 443
+        try:
+            with socket.create_connection((host, port), timeout=0.35) as raw:
+                ctx = ssl.create_default_context()
+                with ctx.wrap_socket(raw, server_hostname=host):
+                    pass
+        except Exception:
+            pass
+
     def _run(self) -> None:
         try:
             for h in hosts(self.cfg):
@@ -82,6 +99,8 @@ class Warm:
                 with suppress(Exception):
                     self._resolve(h)
                     self.resolved.append(h)
+                with suppress(Exception):
+                    self._preconnect(h)
             if not self._stop.is_set():
                 self._wake_audio()
         except Exception:    # noqa: BLE001 - warming must never raise

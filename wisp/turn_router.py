@@ -27,6 +27,7 @@ from dataclasses import dataclass
 
 ROUTES = ("act", "teach", "answer", "agent")
 DEFAULT_TIMEOUT_S = 1.5
+DEFAULT_ROUTE_DEADLINE_S = 0.4
 
 # rules that mean "no rule recognised this turn"
 _AMBIGUOUS_RULES = ("default_answer", "launch_unknown", "launch_compound")
@@ -61,8 +62,16 @@ def settings(cfg: dict) -> dict:
             raise ValueError
     except ValueError:
         timeout = DEFAULT_TIMEOUT_S
+    try:
+        deadline = float(str(r.get("route_deadline_s",
+                                   DEFAULT_ROUTE_DEADLINE_S)).strip())
+        if not 0.05 <= deadline <= 10:
+            raise ValueError
+    except ValueError:
+        deadline = DEFAULT_ROUTE_DEADLINE_S
+    timeout = min(timeout, deadline)
     return {"model": str(r.get("ambiguity_model") or "").strip(),
-            "timeout_s": timeout}
+            "timeout_s": timeout, "route_deadline_s": deadline}
 
 
 def ambiguity(text: str, apps: dict | None) -> str:
@@ -145,8 +154,11 @@ def resolve(text: str, cfg: dict, apps: dict | None = None, *,
     now = time.perf_counter()
     model_ms = (now - m0) * 1000
     if not got:
+        reason = "no usable model answer"
+        if model_ms >= st["route_deadline_s"] * 1000 * 0.95:
+            reason = "route deadline"
         return Decision("act", "fallback", why, (now - t0) * 1000, model_ms,
-                        "no usable model answer")
+                        reason)
     return Decision(got, "model", why, (now - t0) * 1000, model_ms)
 
 

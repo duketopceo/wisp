@@ -292,6 +292,11 @@ fn transcribe_openai(wav: &std::path::Path, cfg: &Cfg)
     push(&mut body, "");
     push(&mut body, &prompt);
     push(&mut body, &format!("--{boundary}"));
+    push(&mut body,
+         "Content-Disposition: form-data; name=\"temperature\"");
+    push(&mut body, "");
+    push(&mut body, "0");
+    push(&mut body, &format!("--{boundary}"));
     push(&mut body, "Content-Disposition: form-data; name=\"file\"; \
                      filename=\"utterance.wav\"");
     push(&mut body, "Content-Type: audio/wav");
@@ -331,7 +336,7 @@ fn transcribe(wav: &std::path::Path, cfg: &Cfg) -> Result<String, String> {
         Command::new(&cfg.whisper_bin)
             .args(["-m"])
             .arg(&cfg.whisper_model)
-            .args(["-nt", "-f"])
+            .args(["-nt", "-nc", "-et", "2.40", "-lpt", "-1.00", "-f"])
             .arg(wav),
         120)  // Python: subprocess.run(timeout=120)
         .map_err(|e| e.to_string())?

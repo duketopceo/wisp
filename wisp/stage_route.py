@@ -178,6 +178,7 @@ def route_stage(ctx) -> bool:
     sp.arm("first_token", sp.mark_ns("route"))
     sp.arm("first_step", sp.mark_ns("route"))
     answers = resp.get("answers", {})
+    route_ms = sp.ms.get("route", 0)
     _trace.emit(turn, "decision", "thought",
                 {"answers": answers,
                  **({"route_lane": "fast_path", "route_rule": fast_rule}
@@ -186,7 +187,16 @@ def route_stage(ctx) -> bool:
                                 "rule": decision.rule,
                                 "ms": round(decision.ms, 1),
                                 "model_ms": round(decision.model_ms, 1)}}
-                    if decision else {})},
-                sp.ms["context"] + sp.ms["route"])
+                    if decision else {}),
+                 "route_timing_ms": {
+                     "context": sp.ms.get("context", 0),
+                     "route": route_ms,
+                     "hyprctl": sp.ms.get("hyprctl"),
+                     "screenshot": sp.ms.get("screenshot"),
+                     "goal": sp.ms.get("goal"),
+                     "memory": sp.ms.get("memory"),
+                     "context_parallel": sp.ms.get("context_parallel"),
+                 }},
+                sp.ms.get("context", 0) + route_ms)
     ctx.answers = answers
     return True
