@@ -109,7 +109,7 @@ Item {
   property bool offline: true
   property bool stale: false
   property bool contractNewer: false
-  readonly property bool busy: Reader.BUSY.indexOf(status) >= 0
+  readonly property bool busy: Status.BUSY.indexOf(status) >= 0
   // The newest run in the action stream (U8): intent, step cursor,
   // in-flight step, outcome + mutation count, live ask_user question.
   // {present, active, intent, key, steps, current, outcome, durationS,

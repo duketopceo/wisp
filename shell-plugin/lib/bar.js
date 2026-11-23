@@ -126,8 +126,6 @@ function windowAction(prevStatus, status, prevTurn, turn, offline, rateable, err
   return "keep"
 }
 
-function causeWord(code) { return Status.causeWord(code) }
-
 var HIDDEN = { kind: "idle", visible: false, glyph: "", token: "ink",
   wordToken: "ink", border: "keyline", wordKey: "", step: "", cause: "",
   thumbs: false, dev: false }
@@ -142,13 +140,11 @@ function view(kind, glyph, token, wordKey, extra) {
 
 // Daemon status to the pill's state. o: {status, result, errorCode,
 // offline, confirm, windowOpen, rateable, dev, run:{steps, stepAt}}. The
-// status table (lib/status.js) decides: a row with no pill (idle, offline,
-// suggestion) is no pill, the mark alone; every other state is glyph plus
-// the row's short word (the word repeats the state, color is never the only
-// signal). The done row shows only while the rating window is open.
-// While the dev session is on (o.dev) every state also carries `dev`, a
-// small badge so the mode is never on by accident, and idle shows that
-// badge alone. Offline never does: the daemon's session state is unknown.
+// status table (lib/status.js) decides the pill; the done row shows only
+// while the rating window is open. While the dev session is on (o.dev)
+// every state also carries `dev`, a badge so the mode is never on by
+// accident, and idle shows that badge alone. Offline never does: the
+// daemon's session state is unknown.
 function pillState(o) {
   var v = _pillState(o)
   if (o.dev !== true || v.kind === "offline") return v
@@ -171,7 +167,7 @@ function _pillState(o) {
   if (p === null) return HIDDEN
   if (p.when === "rated" && !(o.windowOpen === true && o.rateable === true)) return HIDDEN
   var extra = { border: p.border, wordToken: p.word_token }
-  if (key === "error") extra.cause = causeWord(String(o.errorCode || ""))
+  if (key === "error") extra.cause = Status.causeWord(String(o.errorCode || ""))
   if (key === "acting") {
     var run = o.run, step = ""
     if (run && Number(run.steps) > 0 && Number(run.stepAt) > 0)

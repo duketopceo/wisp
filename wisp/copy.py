@@ -479,8 +479,11 @@ STRINGS = {
     "set.teach.turn_budget.help": "How many times Wisp may look at your screen and plan the next steps in one walkthrough. At zero it wraps up out loud.",
 }
 
-STATUS = {k: (STRINGS[_status.ROWS[k]["word"]], _status.ROWS[k]["tone"])
-          for k in _status.STATUSES}
+def _word_tone(r: dict) -> tuple:
+    return (STRINGS[r["word"]], r["tone"])
+
+
+STATUS = {k: _word_tone(_status.ROWS[k]) for k in _status.STATUSES}
 
 _DASH = re.compile(r"\s*[—–]\s*")
 
@@ -490,11 +493,11 @@ def _undash(s: str) -> str:
 
 
 def status_word(status: str) -> str:
-    return STATUS.get(status, STATUS[UNKNOWN_STATUS])[0]
+    return _word_tone(_status.row(status))[0]
 
 
 def status_tone(status: str) -> str:
-    return STATUS.get(status, STATUS[UNKNOWN_STATUS])[1]
+    return _word_tone(_status.row(status))[1]
 
 
 # result prefix that makes a finished turn read as blocked in the pill and
@@ -502,14 +505,9 @@ def status_tone(status: str) -> str:
 _BLOCKED = re.compile(r"^BLOCKED")
 
 
-# statuses in which the daemon must keep publishing (the reader's BUSY
-# set, shell-plugin/lib/state.js); a stale flag only means something here
+# statuses in which the daemon must keep publishing; a stale flag only
+# means something here
 BUSY = _status.BUSY
-
-
-def _derived(key: str) -> tuple:
-    r = _status.ROWS[key]
-    return (STRINGS[r["word"]], r["tone"])
 
 
 def word_view(status: str, result: str = "", code: str = "",
@@ -524,12 +522,12 @@ def word_view(status: str, result: str = "", code: str = "",
       - anything else is the status word and tone.
     Offline is the `offline` status, which has its own word."""
     if stale and status in BUSY:
-        return _derived("stale")
+        return _word_tone(_status.ROWS["stale"])
     if status == "error" and code:
         return (error_message(code), "fail")
     if status == "done" and _BLOCKED.match(result or ""):
-        return _derived("blocked")
-    return (status_word(status), status_tone(status))
+        return _word_tone(_status.ROWS["blocked"])
+    return _word_tone(_status.row(status))
 
 
 def toast_text(code: str) -> str:

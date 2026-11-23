@@ -1,4 +1,4 @@
-"""The one status table (wisp-one-surface plan KTD1).
+"""The one status table.
 
 Every daemon status, plus the states the surfaces derive from it (a
 pending confirmation, a blocked turn, a stale turn), has one row here:
@@ -27,8 +27,8 @@ DERIVED = ("confirm", "blocked", "stale")
 
 UNKNOWN_STATUS = "offline"
 
-# statuses in which the daemon must keep publishing (the reader's BUSY set,
-# shell-plugin/lib/state.js); a stale flag only means something here
+# statuses in which the daemon is working and must keep publishing; a stale
+# flag only means something here (state.js reads this set from status.js)
 BUSY = ("transcribing", "deciding", "acting")
 
 

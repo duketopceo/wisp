@@ -1,28 +1,11 @@
 import QtQuick
 import QtTest
 import "../../../shell-plugin/lib/copy.js" as Copy
-import "../../../shell-plugin/lib/status.js" as Status
 
 // copy.js is generated from wisp/copy.py; these mirror tests/test_copy.py
 // so the JS interpreter of the shared rules cannot drift from Python.
 TestCase {
   name: "copy"
-
-  function test_status_words() {
-    compare(Status.statusWord("awaiting_choice"), "your call")
-    compare(Status.statusWord("deciding"), "thinking")
-    compare(Status.statusWord("nope"), "offline")
-    compare(Status.statusTone("error"), "fail")
-    compare(Status.statusTone("awaiting_choice"), "needsYou")
-  }
-
-  function test_pill_view() {
-    compare(Status.pillView("done", "BLOCKED (risk=0.90 > 0.5)").word, "blocked")
-    compare(Status.pillView("done", "BLOCKED (risk=0.90 > 0.5)").tone, "needsYou")
-    compare(Status.pillView("done", "ACTED ok").word, "done")
-    compare(Status.pillView("done", "").tone, "ok")
-    compare(Status.pillView("acting", "BLOCKED (x)").word, "working")
-  }
 
   function test_results() {
     var r = Copy.translateResult("SKIP (launch route but no app identified)")

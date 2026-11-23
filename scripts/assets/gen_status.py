@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate shell-plugin/lib/status.js from wisp/status.py (plan KTD1).
+"""Generate shell-plugin/lib/status.js from wisp/status.py.
 
     python scripts/assets/gen_status.py          # write status.js
     python scripts/assets/gen_status.py --check  # exit 1 if status.js is stale
@@ -16,11 +16,6 @@ from wisp import status as wstatus  # noqa: E402
 OUT = ROOT / "shell-plugin" / "lib" / "status.js"
 
 _FUNCTIONS = r"""
-// The row for a daemon status or a derived state; unknown reads offline.
-function row(status) {
-  return ROWS.hasOwnProperty(status) ? ROWS[status] : ROWS[UNKNOWN_STATUS]
-}
-
 function isStatus(status) { return STATUSES.indexOf(status) >= 0 }
 
 // The row for a daemon status only; unknown (or a derived key) reads offline.
@@ -29,12 +24,6 @@ function statusRow(status) { return ROWS[isStatus(status) ? status : UNKNOWN_STA
 function statusWord(status) { return Copy.string(statusRow(status).word) }
 
 function statusTone(status) { return statusRow(status).tone }
-
-// The short word's copy key (the bar pill); equals the main word or is a
-// prefix of it.
-function shortKey(status) { return statusRow(status).short }
-
-function shortWord(status) { return Copy.string(statusRow(status).short) }
 
 // Mark glyph and token by daemon status.
 function markIcon(status) { return statusRow(status).glyph }
@@ -63,6 +52,10 @@ function buddyLive() {
   return out
 }
 
+function isBlocked(status, result) {
+  return status === "done" && /^BLOCKED/.test(String(result || ""))
+}
+
 // Which row the bar reads for a status plus context. o: {status, result,
 // confirm, offline}. Error wins, then a pending choice, a confirmation or
 // a blocked turn, else the status itself. "" for a status the table does
@@ -73,7 +66,7 @@ function rowKey(o) {
   if (s === "error") return "error"
   if (s === "awaiting_choice") return "awaiting_choice"
   if (o.confirm === true) return "confirm"
-  if (s === "done" && /^BLOCKED/.test(String(o.result || ""))) return "blocked"
+  if (isBlocked(s, o.result)) return "blocked"
   return isStatus(s) ? s : ""
 }
 
@@ -92,9 +85,9 @@ function wordView(status, result, code, stale) {
   if (stale && BUSY.indexOf(status) >= 0) key = "stale"
   else if (status === "error" && code)
     return { word: Copy.errorMessage(code), tone: "fail" }
-  else if (status === "done" && /^BLOCKED/.test(result || "")) key = "blocked"
-  else key = isStatus(status) ? status : UNKNOWN_STATUS
-  return { word: Copy.string(row(key).word), tone: row(key).tone }
+  else if (isBlocked(status, result)) key = "blocked"
+  var r = key ? ROWS[key] : statusRow(status)
+  return { word: Copy.string(r.word), tone: r.tone }
 }
 
 function pillView(status, result) { return wordView(status, result, "", false) }

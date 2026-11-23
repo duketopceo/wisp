@@ -7,8 +7,8 @@ import "../../../shell-plugin/lib/metrics.js" as M
 import "../../../shell-plugin/lib/creature.js" as C
 import "../../../shell-plugin/lib/buddy.js" as Buddy
 
-// The one status table (wisp-one-surface plan U1): every surface function
-// returns the table's values for each status. status.js is generated from
+// The one status table: every surface function returns the table's values
+// for each status. status.js is generated from
 // wisp/status.py; tests/test_status_table.py checks it against Python.
 TestCase {
   name: "status"
@@ -35,7 +35,7 @@ TestCase {
       var w = Copy.string(r.word), s = Copy.string(r.short)
       compare(w.indexOf(s), 0, keys[i] + ": " + s + " of " + w)
     }
-    compare(Status.shortWord("transcribing"), "hearing")
+    compare(Copy.string(Status.ROWS.transcribing.short), "hearing")
     compare(Status.statusWord("transcribing"), "hearing you")
   }
 
@@ -105,5 +105,9 @@ TestCase {
     compare(Status.wordView("done", "BLOCKED (x)", "", false).tone, "needsYou")
     compare(Status.wordView("idle", "", "", true).word, "ready")
     compare(Status.wordView("bogus", "", "", false).word, "offline")
+    compare(Status.pillView("done", "BLOCKED (risk=0.90 > 0.5)").word, "blocked")
+    compare(Status.pillView("done", "ACTED ok").word, "done")
+    compare(Status.pillView("done", "").tone, "ok")
+    compare(Status.pillView("acting", "BLOCKED (x)").word, "working")
   }
 }

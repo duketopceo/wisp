@@ -89,7 +89,7 @@ Item {
   property bool offline: true
   property bool stale: false
   property bool contractNewer: false
-  readonly property bool busy: Reader.BUSY.indexOf(status) >= 0
+  readonly property bool busy: Status.BUSY.indexOf(status) >= 0
   // mirrors WispService.run (lib/run.js) — 0 as nowMs: the card's
   // duration then comes from entry timestamps alone, snapshot-stable
   readonly property var run: Run.card(actions, status, promptId, stale,

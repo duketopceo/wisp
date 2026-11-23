@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The one status table (wisp-one-surface plan U1, KTD1).
+"""The one status table.
 
 wisp/status.py is the source; scripts/assets/gen_status.py writes
 shell-plugin/lib/status.js. These tests check the rows are complete and
@@ -7,6 +7,7 @@ consistent with wisp/copy.py, that the generated file is fresh and agrees
 with Python, and that no other QML or JS file keeps its own copy of the
 mapping from a status to a word, a tone or a glyph.
 """
+import json
 import pathlib
 import re
 import subprocess
@@ -95,6 +96,21 @@ class TestRows(unittest.TestCase):
         self.assertEqual({k: wcopy.status_word(k) for k in want}, want)
 
 
+class TestOneSourceForStatusLists(unittest.TestCase):
+    """The daemon, the reader and the table name the same statuses."""
+
+    def test_daemon_busy_is_the_table_busy(self):
+        from wisp import state as wstate
+        self.assertEqual(set(wstate.BUSY), set(wstatus.BUSY))
+
+    def test_reader_statuses_are_the_table_statuses_without_offline(self):
+        src = (ROOT / "shell-plugin" / "lib" / "state.js").read_text()
+        m = re.search(r"var STATUSES = \[(.*?)\]", src, re.S)
+        self.assertIsNotNone(m)
+        reader = set(re.findall(r'"([a-z_]+)"', m.group(1)))
+        self.assertEqual(reader, set(wstatus.STATUSES) - {"offline"})
+
+
 class TestGenerated(unittest.TestCase):
     def test_status_js_is_fresh(self):
         js = PLUGIN / "lib" / "status.js"
@@ -121,21 +137,27 @@ class TestGenerated(unittest.TestCase):
 
     @unittest.skipUnless(jsnode.NODE, "node not installed")
     def test_js_agrees_with_python(self):
-        def js(expr):
-            return jsnode.call(expr, Status="status")
-        self.assertEqual(js("Status.ROWS"), wstatus.ROWS)
-        for s in list(wstatus.STATUSES) + ["bogus", ""]:
-            self.assertEqual(js(f"Status.statusWord({s!r})"),
-                             wcopy.status_word(s), s)
-            self.assertEqual(js(f"Status.statusTone({s!r})"),
-                             wcopy.status_tone(s), s)
-            for r in ("", "BLOCKED (x)", "ACTED ok"):
+        statuses = list(wstatus.STATUSES) + ["bogus", ""]
+        results = ("", "BLOCKED (x)", "ACTED ok")
+        got = jsnode.call(
+            "(function () {"
+            f"var S = {json.dumps(statuses)}, R = {json.dumps(results)};"
+            "var out = {rows: Status.ROWS, words: [], views: []};"
+            "S.forEach(function (s) {"
+            "  out.words.push([Status.statusWord(s), Status.statusTone(s)]);"
+            "  R.forEach(function (r) { [false, true].forEach(function (st) {"
+            "    out.views.push(Status.wordView(s, r, '', st)) }) }) });"
+            "return out })()", Status="status")
+        self.assertEqual(got["rows"], wstatus.ROWS)
+        views = iter(got["views"])
+        for s, (word, tone) in zip(statuses, got["words"]):
+            self.assertEqual(word, wcopy.status_word(s), s)
+            self.assertEqual(tone, wcopy.status_tone(s), s)
+            for r in results:
                 for stale in (False, True):
                     w, t = wcopy.word_view(s, r, "", stale)
-                    self.assertEqual(
-                        js(f"Status.wordView({s!r}, {r!r}, '', "
-                           f"{str(stale).lower()})"),
-                        {"word": w, "tone": t}, (s, r, stale))
+                    self.assertEqual(next(views), {"word": w, "tone": t},
+                                     (s, r, stale))
 
 
 # ---- the static guard: one mapping, in status.js only -----------------
