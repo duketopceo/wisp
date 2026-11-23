@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import os
 import socket
-import ssl
 import subprocess
 import tempfile
 import threading
@@ -81,16 +80,6 @@ class Warm:
         self._thread.start()
         return self
 
-    def _preconnect(self, host: str) -> None:
-        port = 443
-        try:
-            with socket.create_connection((host, port), timeout=0.35) as raw:
-                ctx = ssl.create_default_context()
-                with ctx.wrap_socket(raw, server_hostname=host):
-                    pass
-        except Exception:
-            pass
-
     def _run(self) -> None:
         try:
             for h in hosts(self.cfg):
@@ -99,8 +88,6 @@ class Warm:
                 with suppress(Exception):
                     self._resolve(h)
                     self.resolved.append(h)
-                with suppress(Exception):
-                    self._preconnect(h)
             if not self._stop.is_set():
                 self._wake_audio()
         except Exception:    # noqa: BLE001 - warming must never raise

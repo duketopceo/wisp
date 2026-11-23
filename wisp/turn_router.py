@@ -23,6 +23,7 @@ unchanged). Example: `openrouter:nvidia/nemotron-3.5-lightning`.
 import json
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutTimeout
 from dataclasses import dataclass
 
 ROUTES = ("act", "teach", "answer", "agent")
@@ -123,12 +124,25 @@ def ask_model(text: str, cfg: dict, spec: str, timeout_s: float,
     """One small-model call; the route word or "". `chat` is injectable."""
     if chat is None:
         from . import brain
-        chat = brain.chat
+        base_chat = brain.chat
+    else:
+        base_chat = chat
+    deadline = time.perf_counter() + timeout_s
     msgs = [{"role": "system", "content": _SYSTEM},
             {"role": "user", "content": json.dumps({"request": text})}]
+
+    def call():
+        left = deadline - time.perf_counter()
+        if left <= 0:
+            raise TimeoutError("route deadline")
+        return base_chat(msgs, _model_cfg(cfg, spec),
+                          timeout=max(0.001, left))
+
     try:
-        resp = chat(msgs, _model_cfg(cfg, spec), timeout=timeout_s)
-    except Exception:
+        with ThreadPoolExecutor(max_workers=1) as ex:
+            left = max(0.001, deadline - time.perf_counter())
+            resp = ex.submit(call).result(timeout=left)
+    except (FutTimeout, Exception):
         return ""
     return parse_reply((resp or {}).get("content", ""))
 

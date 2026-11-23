@@ -364,7 +364,10 @@ def transcribe(wav: pathlib.Path, cfg: dict) -> str:
         tail_meta = stt_audio.tail_stats_file(wav)
         use = wav
     from . import stt_stream
-    streamer = stt_stream.claim(use)
+    streamer = stt_stream.claim(wav)
+    if use != wav and streamer is not None:
+        streamer.abort()
+        streamer = None
     from . import warm
     warm.claim()            # key-up: the warm-up finishes on its own
     try:

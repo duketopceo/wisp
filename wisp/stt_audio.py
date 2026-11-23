@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import array
 import math
-import struct
+import os
 import sys
+from contextlib import suppress
 import tempfile
 import wave
 from pathlib import Path
@@ -24,6 +25,8 @@ MIN_TAIL_KEEP_S = 0.15
 MAX_TAIL_TRIM_S = 12.0
 SPEECH_RMS = 120.0
 QUIET_RMS = 45.0
+# WAV PCM is little-endian regardless of host byte order.
+_WAV_LE = True
 
 
 def _read_pcm(path: Path) -> tuple[bytes, int]:
@@ -32,9 +35,8 @@ def _read_pcm(path: Path) -> tuple[bytes, int]:
             raise wave.Error("expected 16-bit mono WAV")
         rate = w.getframerate()
         pcm = w.readframes(w.getnframes())
-    if rate != RATE and pcm:
-        # resample is out of scope; callers use the recorder's native rate
-        pass
+    if rate != RATE:
+        raise wave.Error(f"expected {RATE} Hz audio, got {rate}")
     return pcm, rate
 
 
@@ -45,26 +47,36 @@ def _rms_frame(pcm: bytes, at: int, frame_bytes: int) -> float:
         return 0.0
     a = array.array("h")
     a.frombytes(chunk[: n * SAMPLE_BYTES])
-    if sys.byteorder != "little":
+    if _WAV_LE and sys.byteorder == "big":
         a.byteswap()
     return math.sqrt(sum(x * x for x in a) / n)
 
 
 def tail_stats(pcm: bytes, rate: int = RATE) -> dict:
     """Energy after the last speech frame and overall clip length."""
+    if rate != RATE:
+        raise ValueError(f"expected {RATE} Hz audio, got {rate}")
     frame = max(SAMPLE_BYTES, int(rate * FRAME_S) * SAMPLE_BYTES)
     last_speech = 0
+    heard_speech = False
     for at in range(0, len(pcm) - frame + 1, frame):
         if _rms_frame(pcm, at, frame) >= SPEECH_RMS:
             last_speech = at + frame
-    tail = pcm[last_speech:] if last_speech else pcm
-    tail_s = len(tail) / float(rate * SAMPLE_BYTES) if rate else 0.0
+            heard_speech = True
+    if not heard_speech:
+        return {"last_speech_end": 0, "tail_bytes": len(pcm),
+                "tail_s": round(len(pcm) / float(rate * SAMPLE_BYTES), 3),
+                "tail_rms": 0.0, "tail_quiet": False,
+                "no_speech_detected": True}
+    tail = pcm[last_speech:]
+    tail_s = len(tail) / float(rate * SAMPLE_BYTES)
     tail_rms = _rms_frame(tail, 0, len(tail) // SAMPLE_BYTES * SAMPLE_BYTES) \
         if tail else 0.0
     return {"last_speech_end": last_speech, "tail_bytes": len(tail),
             "tail_s": round(tail_s, 3),
             "tail_rms": round(tail_rms, 1),
-            "tail_quiet": tail_rms <= QUIET_RMS and tail_s >= 0.25}
+            "tail_quiet": tail_rms <= QUIET_RMS and tail_s >= 0.25,
+            "no_speech_detected": False}
 
 
 def trim_trailing_silence(path: Path, *, min_keep_s: float = MIN_TAIL_KEEP_S
@@ -73,11 +85,14 @@ def trim_trailing_silence(path: Path, *, min_keep_s: float = MIN_TAIL_KEEP_S
     original path. `meta` always includes tail_stats fields."""
     try:
         pcm, rate = _read_pcm(path)
-    except (OSError, wave.Error, EOFError):
+    except (OSError, wave.Error, EOFError, ValueError):
         return path, {"trimmed": False, "reason": "unreadable"}
     if not pcm:
         return path, {"trimmed": False, "reason": "empty"}
     stats = tail_stats(pcm, rate)
+    if stats.get("no_speech_detected"):
+        return path, {**stats, "trimmed": False,
+                        "reason": "no_speech_detected"}
     keep = stats["last_speech_end"] + int(min_keep_s * rate * SAMPLE_BYTES)
     keep = min(len(pcm), keep)
     trimmed_s = (len(pcm) - keep) / float(rate * SAMPLE_BYTES)
@@ -87,12 +102,14 @@ def trim_trailing_silence(path: Path, *, min_keep_s: float = MIN_TAIL_KEEP_S
     out_pcm = pcm[:keep]
     fd, tmp = tempfile.mkstemp(prefix="wisp-stt-", suffix=".wav")
     try:
-        with open(fd, "wb") as f:
+        with os.fdopen(fd, "wb") as f:
             f.write(stt_stream.wav_bytes(out_pcm))
         return Path(tmp), {**stats, "trimmed": True,
                            "trimmed_s": round(trimmed_s, 3),
                            "out": tmp}
     except OSError:
+        with suppress(OSError):
+            os.unlink(tmp)
         return path, {**stats, "trimmed": False, "reason": "write_failed"}
 
 
@@ -100,7 +117,7 @@ def tail_stats_file(path: Path) -> dict:
     try:
         pcm, rate = _read_pcm(path)
         return tail_stats(pcm, rate)
-    except (OSError, wave.Error, EOFError):
+    except (OSError, wave.Error, EOFError, ValueError):
         return {}
 
 
