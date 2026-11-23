@@ -345,6 +345,8 @@ Launch path: the Panel header action and `wispd settings` start or re-address th
 
 ### U6. Panel scroll and Quick tab
 
+> **Superseded 2026-11-23** by `docs/plans/2026-11-23-0145-feat-wisp-one-surface-plan.md` (U2, U3, U4 there). Kept for history; do not execute from here.
+
 **Goal:** Stop the popup clipping and make it a quick view.
 
 **Requirements:** R9, R10.
@@ -369,6 +371,8 @@ Launch path: the Panel header action and `wispd settings` start or re-address th
 
 ### U7. Management views and retire debug
 
+> **Superseded 2026-11-23** by `docs/plans/2026-11-23-0145-feat-wisp-one-surface-plan.md` (U2, U3, U4 there). Kept for history; do not execute from here.
+
 **Goal:** Move the remaining management views into the settings window and remove `shells/debug`.
 
 **Requirements:** R15.
@@ -390,6 +394,8 @@ Launch path: the Panel header action and `wispd settings` start or re-address th
 **Verification:** QtTest, `tests/test_dev_docs.py`, snapshots.
 
 ### U8. Type scale rollout to bar, overlay and cards
+
+> **Superseded 2026-11-23** by `docs/plans/2026-11-23-0145-feat-wisp-one-surface-plan.md` (U2, U3, U4 there). Kept for history; do not execute from here.
 
 **Goal:** Apply the new scale and rhythm everywhere else and remove the old names.
 
