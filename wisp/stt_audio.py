@@ -73,7 +73,7 @@ def trim_trailing_silence(path: Path, *, min_keep_s: float = MIN_TAIL_KEEP_S
     original path. `meta` always includes tail_stats fields."""
     try:
         pcm, rate = _read_pcm(path)
-    except (OSError, wave.Error):
+    except (OSError, wave.Error, EOFError):
         return path, {"trimmed": False, "reason": "unreadable"}
     if not pcm:
         return path, {"trimmed": False, "reason": "empty"}
@@ -100,7 +100,7 @@ def tail_stats_file(path: Path) -> dict:
     try:
         pcm, rate = _read_pcm(path)
         return tail_stats(pcm, rate)
-    except (OSError, wave.Error):
+    except (OSError, wave.Error, EOFError):
         return {}
 
 
