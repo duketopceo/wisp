@@ -114,8 +114,9 @@ notes are in `docs/INSTALL.md`; every config key is in `docs/CONFIG.md`.
   glance, plus an in-bar pill that grows while Wisp works — status word,
   mic-level meter while listening, and the same vocabulary as the overlay.
   Click toggles talk, middle-click stops the turn, right-click opens the
-  Panel. The pill names the state (listening, thinking, speaking, acting,
-  needs you, error) and, after a finished turn, shows thumbs for eight
+  Panel. The pill names the state with the short form of the shared status
+  word (listening, hearing, thinking, speaking, working, your call, blocked,
+  that failed) and, after a finished turn, shows thumbs for eight
   seconds so you can rate it in one tap.
 - **Companion overlay**: transient surfaces only (no corner orb): a
   bottom-center pill while you speak, answers in a bubble next to your
@@ -433,6 +434,7 @@ python3 -m unittest discover -s tests          # host-independent
 python3 -m py_compile wispd wisp/*.py wisp/tools/*.py
 python3 scripts/ui/snap.py check               # QML snapshot goldens
 python3 scripts/assets/gen_copy.py --check     # copy table up to date
+python3 scripts/assets/gen_status.py --check   # status table up to date
 python3 scripts/assets/gen_settings.py --check # settings table up to date
 ```
 

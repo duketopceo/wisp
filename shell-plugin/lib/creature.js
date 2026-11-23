@@ -1,4 +1,5 @@
 .pragma library
+.import "status.js" as Status
 
 // Creature state model (DESIGN-v2 5.5, Ember U7). Pure data and functions:
 // the 13 states and their target vectors, the client-derived transients,
@@ -57,19 +58,8 @@ function isState(s) { return STATES.indexOf(s) >= 0 }
 // errorReturnMs reads as idle (`errorSettled`). Unknown maps to offline.
 function stateFor(status, transient, errorSettled) {
   if (isState(transient) && TRANSIENT.hasOwnProperty(transient)) return transient
-  switch (status) {
-  case "idle": return "idle"
-  case "listening": return "listening"
-  case "transcribing": return "transcribing"
-  case "deciding": return "thinking"
-  case "speaking": return "speaking"
-  case "acting": return "acting"
-  case "awaiting_choice": return "awaiting_choice"
-  case "suggestion": return "suggestion"
-  case "done": return "done"
-  case "error": return errorSettled ? "idle" : "error"
-  default: return "offline"
-  }
+  if (status === "error") return errorSettled ? "idle" : "error"
+  return Status.creatureState(status)
 }
 
 // Transient a status change should start, or "". confirmed: a pending
@@ -135,9 +125,8 @@ function needsClock(state, mode) {
   return mode === "full" && (CONTINUOUS.indexOf(state) >= 0 || flickers(state))
 }
 
-// Tone token by creature state (halo and body color).
-var TONE = { offline: "inkMuted", error: "fail", awaiting_choice: "needsYou" }
-function toneToken(state) { return TONE.hasOwnProperty(state) ? TONE[state] : "ember" }
+// Tone token by creature state (halo and body color), from the status table.
+function toneToken(state) { return Status.creatureToken(state) }
 
 // Clock step in seconds for a state at a display refresh rate: idle and
 // done flicker at FLICKER_HZ whatever the display does; continuous states

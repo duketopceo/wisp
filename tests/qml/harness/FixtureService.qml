@@ -1,6 +1,7 @@
 import QtQuick
 import "../../../shell-plugin/lib/state.js" as Reader
 import "../../../shell-plugin/lib/copy.js" as Copy
+import "../../../shell-plugin/lib/status.js" as Status
 import "../../../shell-plugin/lib/motion.js" as Motion
 import "../../../shell-plugin/lib/run.js" as Run
 import "../../../shell-plugin/lib/rate.js" as Rate
@@ -101,9 +102,9 @@ Item {
   property var weeklyRecap: null
   property bool recapVisible: false
 
-  readonly property string statusWord: Copy.statusWord(status)
-  readonly property string statusTone: Copy.statusTone(status)
-  readonly property var wordView: Copy.wordView(status, result, errorCode, stale)
+  readonly property string statusWord: Status.statusWord(status)
+  readonly property string statusTone: Status.statusTone(status)
+  readonly property var wordView: Status.wordView(status, result, errorCode, stale)
   readonly property var resultView: Copy.translateResult(result)
   readonly property string errorMessage: errorCode !== "" ? Copy.errorMessage(errorCode) : ""
   readonly property string errorHint: errorCode !== "" ? Copy.errorHint(errorCode) : ""

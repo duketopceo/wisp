@@ -1,5 +1,5 @@
 .pragma library
-.import "copy.js" as Copy
+.import "status.js" as Status
 
 // Cursor buddy model. The geometry, spring and timing constants follow
 // Clacky 0.2.0 (clacky/shell/ui/overlay.py, MIT, Raynan Wuyep; see
@@ -18,7 +18,7 @@
 // Reduced and off motion never animate movement: follow, flight and return
 // snap, and scale, heading, spinner and label pop stay at rest.
 
-var LIVE = ["listening", "transcribing", "deciding", "acting", "awaiting_choice", "speaking"]
+var LIVE = Status.buddyLive()
 
 var OFFSET = { x: 35, y: 25 }
 var REST_DEG = -35
@@ -199,13 +199,7 @@ function step(m, input, dt) {
   return n
 }
 
-function modeFor(status) {
-  if (status === "listening") return "waveform"
-  if (status === "transcribing" || status === "deciding" || status === "acting") return "spinner"
-  if (status === "speaking") return "triangle"
-  if (status === "awaiting_choice") return "triangleNeedsYou"
-  return "hidden"
-}
+function modeFor(status) { return Status.buddyMode(status) }
 
 // Label pill beside a target: left edge at +10 px, centered 18 px below
 // (padding 8x4 in the component). Flips left of the target near the right
@@ -222,8 +216,8 @@ function labelBox(tx, ty, pill, screen) {
 }
 
 // The one short label for a daemon status (idle, offline and every LIVE
-// status included), from the shared copy table. Unknown reads offline.
-function stateLabel(status) { return Copy.statusWord(status) }
+// status included), from the status table. Unknown reads offline.
+function stateLabel(status) { return Status.statusWord(status) }
 
 function view(m, ctx) {
   var full = ctx.motion === "full"

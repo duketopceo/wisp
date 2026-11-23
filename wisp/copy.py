@@ -11,26 +11,16 @@ em-dashes. Raw result text is kept as `detail` for a details disclosure.
 """
 import re
 
+from wisp import status as _status
+
 # Tone names are Wisp token names (wisp/theme.py TOKENS) except "muted",
 # which maps to inkMuted. `fail` is error only; `needsYou` is waiting on
 # the user only.
 TONES = ("ember", "needsYou", "fail", "ok", "muted")
 
-# status -> (word, tone)
-STATUS = {
-    "idle": ("ready", "muted"),
-    "listening": ("listening", "ember"),
-    "transcribing": ("hearing you", "ember"),
-    "deciding": ("thinking", "ember"),
-    "acting": ("working", "ember"),
-    "speaking": ("speaking", "ember"),
-    "awaiting_choice": ("your call", "needsYou"),
-    "suggestion": ("idea", "ember"),
-    "done": ("done", "ok"),
-    "error": ("that failed", "fail"),
-    "offline": ("offline", "muted"),
-}
-UNKNOWN_STATUS = "offline"
+# status -> (word, tone): derived from the one status table
+# (wisp/status.py) once STRINGS is defined, below.
+UNKNOWN_STATUS = _status.UNKNOWN_STATUS
 
 # (pattern, text, state). Pattern is matched at the start of the result;
 # "{1}" in text is the first group, cleaned of dashes. state is a creature
@@ -348,13 +338,29 @@ STRINGS = {
     "ui.bar.turns": "turns",
     "ui.bar.turn": "turn",
     "ui.bar.voice": "voice",
-    "ui.bar.state.listening": "listening",
-    "ui.bar.state.thinking": "thinking",
-    "ui.bar.state.speaking": "speaking",
-    "ui.bar.state.acting": "acting",
-    "ui.bar.state.needs": "needs you",
-    "ui.bar.state.error": "error",
-    "ui.bar.state.done": "done",
+    "status.idle": "ready",
+    "status.listening": "listening",
+    "status.transcribing": "hearing you",
+    "status.transcribing.short": "hearing",
+    "status.deciding": "thinking",
+    "status.acting": "working",
+    "status.speaking": "speaking",
+    "status.awaiting_choice": "your call",
+    "status.suggestion": "idea",
+    "status.done": "done",
+    "status.error": "that failed",
+    "status.offline": "offline",
+    "status.cause.model": "model",
+    "status.cause.speech": "speech",
+    "status.cause.screen": "screen",
+    "status.cause.timeout": "timeout",
+    "status.cause.busy": "busy",
+    "status.cause.tool": "tool",
+    "status.cause.budget": "budget",
+    "status.cause.key": "key",
+    "status.cause.region": "region",
+    "status.cause.restart": "restart",
+    "status.cause.stale": "stale",
     "ui.bar.hint": "click talk \u00b7 middle stop \u00b7 right panel",
     "ui.bar.hint.offline": "click: start wisp, right: open",
     "ui.confirm.title": "needs your ok",
@@ -473,6 +479,9 @@ STRINGS = {
     "set.teach.turn_budget.help": "How many times Wisp may look at your screen and plan the next steps in one walkthrough. At zero it wraps up out loud.",
 }
 
+STATUS = {k: (STRINGS[_status.ROWS[k]["word"]], _status.ROWS[k]["tone"])
+          for k in _status.STATUSES}
+
 _DASH = re.compile(r"\s*[—–]\s*")
 
 
@@ -495,7 +504,12 @@ _BLOCKED = re.compile(r"^BLOCKED")
 
 # statuses in which the daemon must keep publishing (the reader's BUSY
 # set, shell-plugin/lib/state.js); a stale flag only means something here
-BUSY = ("transcribing", "deciding", "acting")
+BUSY = _status.BUSY
+
+
+def _derived(key: str) -> tuple:
+    r = _status.ROWS[key]
+    return (STRINGS[r["word"]], r["tone"])
 
 
 def word_view(status: str, result: str = "", code: str = "",
@@ -510,11 +524,11 @@ def word_view(status: str, result: str = "", code: str = "",
       - anything else is the status word and tone.
     Offline is the `offline` status, which has its own word."""
     if stale and status in BUSY:
-        return (STRINGS["state.reconnecting"], "muted")
+        return _derived("stale")
     if status == "error" and code:
         return (error_message(code), "fail")
     if status == "done" and _BLOCKED.match(result or ""):
-        return (STRINGS["ui.pill.blocked"], "needsYou")
+        return _derived("blocked")
     return (status_word(status), status_tone(status))
 
 
