@@ -368,17 +368,65 @@ def daemon_harness(ctx, a):
     return ctx.emit({"exit": rc})
 
 
+# docs/EMBED.md: bump when a field a host reads changes meaning or goes
+# away; additive fields keep the number.
+EMBED_VERSION = 1
+
+
+def _view(state: dict) -> tuple:
+    """(word, tone) for a daemon state, by the one precedence every Wisp
+    surface uses (copy.word_view). Staleness is the host's call."""
+    from .. import copy
+    return copy.word_view(state.get("status") or "",
+                          state.get("result") or "",
+                          state.get("error_code") or "")
+
+
+def _status_table(ctx):
+    from .. import copy, status as st
+    rows = [{"key": k, "derived": k in st.DERIVED,
+             "word": copy.STRINGS[st.ROWS[k]["word"]],
+             "short": copy.STRINGS[st.ROWS[k]["short"]],
+             "tone": st.ROWS[k]["tone"]}
+            for k in st.STATUSES + st.DERIVED]
+    causes = {code: copy.STRINGS[key] for code, key in st.CAUSES.items()}
+    text = ctx.table(["key", "word", "short", "tone"],
+                     [[r["key"], r["word"], r["short"], r["tone"]]
+                      for r in rows])
+    return ctx.emit({"embed_version": EMBED_VERSION, "rows": rows,
+                     "causes": causes}, text)
+
+
+def _status_args(p):
+    p.add_argument("--table", action="store_true",
+                   help="print every status word and tone (no daemon "
+                        "needed); see docs/EMBED.md")
+
+
 @command("status", "Show the daemon state (JSON)",
-         ["wispd status", "wispd status --json"],
-         {"state": "dict", "deploy": "dict"})
+         ["wispd status", "wispd status --json",
+          "wispd status --table --json"],
+         {"state": "dict", "deploy": "dict", "word": "str", "tone": "str"},
+         args=_status_args)
 def status(ctx, a):
     from .. import deploy
-    reply = ctx.expect_ok(ctx.send({"cmd": "status"}))
+    if a.table:
+        return _status_table(ctx)
+    try:
+        reply = ctx.expect_ok(ctx.send({"cmd": "status"}))
+    except CliError as e:
+        if e.code == "E_DAEMON_DOWN":
+            word, tone = _view({"status": "offline"})
+            e.data = {"status": "offline", "word": word, "tone": tone}
+        raise
+    state = reply.get("state", {})
+    word, tone = _view(state)
     dep = deploy.summary()
     text = json.dumps(reply, indent=2)
     if dep["commit"] != "unknown":
         text += f"\ndeployed: {dep['commit'][:12]} ({dep.get('time')})"
-    return ctx.emit({"state": reply.get("state", {}), "deploy": dep}, text)
+    return ctx.emit({"state": state, "deploy": dep, "word": word,
+                     "tone": tone}, text)
 
 
 @command("stop", "Ask the daemon to shut down",
@@ -418,9 +466,21 @@ def _watch_args(p):
          ["wispd watch", "wispd watch state tasks"], stream=True,
          args=_watch_args)
 def watch(ctx, a):
+    """Passes the daemon stream through, adding `view: {word, tone}` to
+    snapshot and state lines from the state merged so far, so a host
+    never copies the status table (docs/EMBED.md)."""
     from .. import ipc
+    merged = {}
     try:
         for ev in ipc.watch(a.topic or None):
+            kind = ev.get("type") if isinstance(ev, dict) else None
+            if kind == "snapshot" and isinstance(ev.get("state"), dict):
+                merged = dict(ev["state"])
+            elif kind == "state" and isinstance(ev.get("diff"), dict):
+                merged.update(ev["diff"])
+            if kind in ("snapshot", "state"):
+                word, tone = _view(merged)
+                ev = {**ev, "view": {"word": word, "tone": tone}}
             print(json.dumps(ev), flush=True)
     except KeyboardInterrupt:
         pass
