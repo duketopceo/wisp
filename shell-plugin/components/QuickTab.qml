@@ -33,6 +33,7 @@ Column {
   readonly property string summaryTone: !service ? "muted"
     : (offline || service.stale) ? service.wordView.tone
     : down === 0 ? "ok" : "fail"
+  readonly property var summaryColor: tk[M.toneToken(summaryTone)]
   // the schema groups that hold quick fields, in schema order
   readonly property var groups: {
     var seen = [], out = []
@@ -78,7 +79,7 @@ Column {
         width: M.scale.space.sm
         height: width
         radius: width / 2
-        color: root.tk[M.toneToken(root.summaryTone)] || root.tk.inkMuted
+        color: root.summaryColor
       }
       Text {
         textFormat: Text.PlainText
@@ -94,7 +95,7 @@ Column {
         objectName: "healthWord"
         anchors.verticalCenter: parent.verticalCenter
         text: root.summaryText
-        color: root.tk[M.toneToken(root.summaryTone)] || root.tk.inkMuted
+        color: root.summaryColor
         font.family: root.service ? root.service.fontFamily : ""
         font.pixelSize: M.fontSize("body", root.ts)
       }
@@ -159,7 +160,8 @@ Column {
   }
 
   Repeater {
-    model: root.readable ? root.groups : []
+    // rows are built only while the tab shows (hidden tabs add no height)
+    model: root.readable && root.visible ? root.groups : []
     delegate: Column {
       id: grp
       required property var modelData
