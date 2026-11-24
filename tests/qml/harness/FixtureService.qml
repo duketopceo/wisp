@@ -123,7 +123,10 @@ Item {
     return true;
   }
   function skipRatePrompt() { return false; }
-  function loadConfig() {}
+  // config reads and writes the Panel Quick tab asked for, for its tests
+  property int loadConfigCalls: 0
+  property var configSetCalls: []
+  function loadConfig() { root.loadConfigCalls += 1; }
   // settings window: the harness never writes or reads config; the
   // scenes pass the data straight to the component
   property var configValues: ({})
@@ -140,7 +143,9 @@ Item {
   property string connectorError: ""
   property string connectorRunning: ""
   property var connectorErrors: ({})
-  function configSet(key, value) {}
+  function configSet(key, value) {
+    root.configSetCalls = root.configSetCalls.concat([{ key: key, value: value }]);
+  }
   function retrySettings() {}
   function loadConnectors() {}
   function connectAdd(alias) { return false; }
@@ -153,6 +158,13 @@ Item {
   // snapshot: raw state.json object; mods: {offline, stale}
   function load(snapshot, mods) {
     root.weeklyRecap = mods && mods.weeklyRecap ? mods.weeklyRecap : null;
+    // the config a Quick tab scene reads (values, the read, write states);
+    // every load resets it so one scene never leaks into the next
+    root.configValues = mods && mods.config ? mods.config : ({});
+    root.configLoaded = !(mods && mods.configLoaded === false);
+    root.configReadError = mods && mods.configReadError ? mods.configReadError : "";
+    root.configState = mods && mods.configState ? mods.configState : ({});
+    root.configErrors = mods && mods.configErrors ? mods.configErrors : ({});
     var v = Reader.initial();
     if (mods && mods.patch) {
       // a variant overrides raw snapshot fields (health, spend, tasks)

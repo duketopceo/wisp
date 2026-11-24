@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
 import qs.Commons
@@ -7,17 +6,18 @@ import qs.Ui
 import "components"
 import "lib/onboard.js" as Onboard
 import "lib/whatsnew.js" as WhatsNew
-import "lib/dev.js" as Dev
 
 // Popup panel for io.github.duketopceo.wisp, opened from the bar mark.
 // Four tabs: Now (the turn in flight), Agents (tasks), Memory (skills and
-// recent decisions) and Settings (Health, then the config editor); a fifth,
-// Dev (local only), is appended when `[dev] panel = true`. Until
-// setup is finished a first-run card sits above the tabs (wispd onboard). State
-// comes only from the plugin's WispService (hostWidget.service); the tab
-// bodies are window-free components under components/. The only files read
-// here are skills.json and decisions.jsonl, watched, never polled; there
-// are no timers. Every string comes from the copy table.
+// recent decisions) and Quick (a health summary and the quick settings); a
+// fifth, Dev (local only), is appended when `[dev] panel = true`. Until
+// setup is finished a first-run card sits on the Now tab (wispd onboard).
+// The card body is the window-free components/PanelBody.qml; this file is
+// the host and its file and process plumbing. State comes only from the
+// plugin's WispService (hostWidget.service). The only files read here are
+// skills.json and decisions.jsonl, watched, never polled; there are no
+// timers. "Open settings" starts `wispd settings` detached. Every string
+// comes from the copy table.
 Panel {
   id: wisp
   moduleName: "io.github.duketopceo.wisp"
@@ -32,8 +32,8 @@ Panel {
 
   readonly property var service: hostWidget && hostWidget.service ? hostWidget.service : null
   readonly property string dataDir: Quickshell.env("HOME") + "/.local/share/wisp"
-  readonly property var baseTabs: ["now", "agents", "memory", "settings"]
-  // Dev is index 4, after Settings (index 3), and only with the flag or a
+  readonly property var baseTabs: ["now", "agents", "memory", "quick"]
+  // Dev is index 4, after Quick (index 3), and only with the flag or a
   // dev session on
   readonly property bool devPanelOn: service !== null && service.devTab
   readonly property var tabKeys: service && service.devTab ? baseTabs.concat(["devtab"]) : baseTabs
@@ -41,7 +41,6 @@ Panel {
 
   property var skills: []
   property var decisions: []
-  property var connectors: []
   // `wispd onboard --status` data, and the steps skipped this session
   // (a skip is never written anywhere)
   property var onboard: null
@@ -50,13 +49,15 @@ Panel {
   property var whatsnew: null
 
   onOpenedChanged: {
-    if (opened) { loadOnboard(); loadWhatsnew(); if (service) service.loadConfig() }
+    if (opened) {
+      loadOnboard(); loadWhatsnew()
+      if (service) service.loadConfig()
+      if (content.item) content.item.focusPage()
+    }
     else dismissWhatsnew()
-    if (opened && tab === 3) loadSettings()
     if (opened && tab === 4 && service) service.loadDev()
   }
   onTabChanged: {
-    if (tab === 3) loadSettings()
     if (tab === 4 && service) service.loadDev()
   }
 
@@ -98,16 +99,18 @@ Panel {
     whatsnewSeenProc.running = true
   }
 
+  // the settings window, started detached (never through runAction) so it
+  // outlives the Panel; the Panel closes behind it
+  function openSettings() {
+    if (!service) return
+    Quickshell.execDetached([service.wispd, "settings"])
+    close()
+  }
+
   function onboardRun(argv) {
     if (onboardRunProc.running) return
     onboardRunProc.command = argv
     onboardRunProc.running = true
-  }
-
-  function loadSettings() {
-    if (!service) return
-    service.loadSettings()
-    if (!connListProc.running) connListProc.running = true
   }
 
   FileView {
@@ -144,15 +147,6 @@ Panel {
   }
 
   Process {
-    id: connListProc
-    command: [wisp.service ? wisp.service.wispd : "wispd", "connect", "--list", "--json"]
-    stdout: StdioCollector { id: connOut }
-    onExited: {
-      try { wisp.connectors = JSON.parse(connOut.text) } catch (e) { wisp.connectors = [] }
-    }
-  }
-
-  Process {
     id: onboardStatusProc
     command: []
     stdout: StdioCollector { id: onboardOut }
@@ -183,12 +177,6 @@ Panel {
     onExited: wisp.loadOnboard()
   }
 
-  Process {
-    id: connRunProc
-    command: []
-    onExited: connListProc.running = true
-  }
-
   KeyboardPanel {
     id: panel
     anchorItem: wisp.anchorItem
@@ -196,162 +184,52 @@ Panel {
     bar: wisp.bar
     open: wisp.opened
     contentWidth: panel.fittedContentWidth(Style.space(480))
-    contentHeight: panel.fittedContentHeight(content.implicitHeight)
+    contentHeight: panel.fittedContentHeight(content.item ? content.item.implicitHeight : 0)
 
     PanelKeyCatcher {
       anchors.fill: parent
       onCloseRequested: wisp.close()
+      // Tab and Shift+Tab step through the tabs
+      onTabRequested: function (direction) {
+        var n = wisp.tabKeys.length
+        wisp.tab = (wisp.tab + direction + n) % n
+      }
     }
 
+    // the card body (components/PanelBody.qml): header, tabs and the
+    // scrolling page; it fills the card the host sized from its height
     Loader {
       id: content
-      width: parent.width
+      anchors.fill: parent
       active: wisp.service !== null
-      height: item ? item.implicitHeight : 0
 
-      sourceComponent: Column {
-        id: col
-        readonly property var svc: wisp.service
-        readonly property var tk: svc.tokens
-        padding: Style.space(14)
-        spacing: Style.space(10)
-        width: content.width
-
-        StatusLine {
-          service: col.svc
+      sourceComponent: PanelBody {
+        service: wisp.service
+        tabKeys: wisp.tabKeys
+        tab: wisp.tab
+        devPanelOn: wisp.devPanelOn
+        skills: wisp.skills
+        decisions: wisp.decisions
+        onboard: wisp.onboard
+        skippedSteps: wisp.skippedSteps
+        whatsnew: wisp.whatsnew
+        onPickTab: function (index) { wisp.tab = index }
+        onOpenSettings: wisp.openSettings()
+        onCloseRequested: wisp.close()
+        onWhatsnewDismiss: wisp.dismissWhatsnew()
+        onWhatsnewLink: function (url) {
+          var argv = WhatsNew.linkCommand(url)
+          if (argv.length === 0 || whatsnewLinkProc.running) return
+          whatsnewLinkProc.command = argv
+          whatsnewLinkProc.running = true
         }
-
-        Row {
-          Repeater {
-            model: wisp.tabKeys
-            delegate: PanelTab {
-              service: col.svc
-              text: col.svc.ui("ui.tab." + modelData)
-              selected: wisp.tab === index
-              onClicked: wisp.tab = index
-            }
-          }
-          // local-only marker beside the Dev tab
-          Rectangle {
-            visible: wisp.devPanelOn
-            anchors.verticalCenter: parent.verticalCenter
-            width: localBadge.implicitWidth + 2 * Style.space(6)
-            height: localBadge.implicitHeight + Style.space(2)
-            radius: Style.space(3)
-            color: "transparent"
-            border.width: 1
-            border.color: col.tk.needsYou
-            Text {
-              textFormat: Text.PlainText
-              id: localBadge
-              anchors.centerIn: parent
-              text: Dev.badgeText(col.svc.devOn, col.svc.devRunsLeft, {
-                dev: col.svc.ui("ui.tab.devtab"), local: col.svc.ui("ui.dev.local"),
-                one: col.svc.ui("ui.dev.badge.one"), many: col.svc.ui("ui.dev.badge.many") })
-              font.capitalization: Font.AllUppercase
-              color: col.tk.needsYou
-              font.family: col.svc.fontFamily
-              font.pixelSize: Style.font.bodySmall
-            }
-          }
+        onOnboardStep: function (id) {
+          wisp.skippedSteps = wisp.skippedSteps.filter(function (s) { return s !== id })
+          wisp.onboardRun(Onboard.stepCommand(wisp.service.wispd, id))
         }
-
-        WhatsNewCard {
-          visible: WhatsNew.visible(wisp.whatsnew)
-          width: col.width - 2 * col.padding
-          service: col.svc
-          card: wisp.whatsnew
-          onDismiss: wisp.dismissWhatsnew()
-          onOpenLink: function (url) {
-            var argv = WhatsNew.linkCommand(url)
-            if (argv.length === 0 || whatsnewLinkProc.running) return
-            whatsnewLinkProc.command = argv
-            whatsnewLinkProc.running = true
-          }
-        }
-
-        FirstRunCard {
-          visible: Onboard.visible(wisp.onboard)
-          width: col.width - 2 * col.padding
-          service: col.svc
-          steps: wisp.onboard ? wisp.onboard.steps : []
-          skipped: wisp.skippedSteps
-          onRun: function (id) {
-            wisp.skippedSteps = wisp.skippedSteps.filter(function (s) { return s !== id })
-            wisp.onboardRun(Onboard.stepCommand(col.svc.wispd, id))
-          }
-          onSkip: function (id) { wisp.skippedSteps = wisp.skippedSteps.concat([id]) }
-          onUndo: function (id) { wisp.onboardRun(Onboard.undoCommand(col.svc.wispd, id)) }
-          onFinish: wisp.onboardRun(Onboard.finishCommand(col.svc.wispd))
-        }
-
-        NowTab {
-          visible: wisp.tab === 0
-          width: col.width - 2 * col.padding
-          service: col.svc
-          onChoose: function (pick) {
-            if (col.svc.sendChoice(pick, col.svc.promptId)) wisp.close()
-          }
-          onStopClicked: col.svc.interrupt()
-          onLabelClicked: function (verdict) { col.svc.label(verdict, col.svc.turnId, "") }
-          onNoteSaved: function (text) {
-            if (col.svc.ratePrompt !== null) col.svc.label("incorrect", col.svc.ratePrompt.turn, text)
-          }
-          onNoteSkipped: col.svc.skipRatePrompt()
-        }
-
-        AgentsTab {
-          visible: wisp.tab === 1
-          width: col.width - 2 * col.padding
-          service: col.svc
-        }
-
-        MemoryTab {
-          visible: wisp.tab === 2
-          width: col.width - 2 * col.padding
-          service: col.svc
-          skills: wisp.skills
-          decisions: wisp.decisions
-        }
-
-        SettingsTab {
-          visible: wisp.tab === 3
-          width: col.width - 2 * col.padding
-          service: col.svc
-          cua: col.svc.cuaStatus
-          spendModels: col.svc.spendModels
-          values: col.svc.configValues
-          errors: col.svc.configErrors
-          savedKey: col.svc.configSaved
-          connectors: wisp.connectors
-          onSave: function (key, value) { col.svc.configSet(key, value) }
-          onConnectClicked: function (alias) {
-            connRunProc.command = [col.svc.wispd, "connect", alias]
-            connRunProc.running = true
-          }
-        }
-
-        DevTab {
-          visible: wisp.devPanelOn && wisp.tab === 4
-          width: col.width - 2 * col.padding
-          service: col.svc
-          reply: col.svc.devData
-          runsReply: col.svc.devRuns
-          runsLoading: col.svc.devRunsLoading
-          runsError: col.svc.devRunsError
-          loading: col.svc.devLoading
-          error: col.svc.devError
-          onRefresh: col.svc.loadDev()
-        }
-
-        Text {
-          textFormat: Text.PlainText
-          width: col.width - 2 * col.padding
-          text: col.svc.ui("ui.bar.hint")
-          color: col.tk.inkMuted
-          font.family: col.svc.fontFamily
-          font.pixelSize: Style.font.bodySmall
-        }
+        onOnboardSkip: function (id) { wisp.skippedSteps = wisp.skippedSteps.concat([id]) }
+        onOnboardUndo: function (id) { wisp.onboardRun(Onboard.undoCommand(wisp.service.wispd, id)) }
+        onOnboardFinish: wisp.onboardRun(Onboard.finishCommand(wisp.service.wispd))
       }
     }
   }

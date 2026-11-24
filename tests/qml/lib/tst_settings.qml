@@ -2,41 +2,15 @@ import QtQuick
 import QtTest
 import "../../../shell-plugin/lib/settings.js" as S
 import "../../../shell-plugin/lib/health.js" as H
-import "../../../shell-plugin/components"
-import "../harness"
 
 // Settings editor (W22): validation, the `wispd config set` argv, stderr
-// parsing, and SettingsTab against a mock service (the harness
-// FixtureService): choice chips and the save chip emit save(key, value),
-// invalid drafts show an inline error and cannot be saved.
+// parsing, the Panel's quick groups and the health rows. The Panel's
+// Quick tab itself is tested in tst_panel.qml.
 TestCase {
   name: "settings"
   width: 400
   height: 400
   when: windowShown
-
-  FixtureService { id: svc }
-
-  SignalSpy { id: saves; target: tab; signalName: "save" }
-  SettingsTab {
-    id: tab
-    service: svc
-    width: 360
-    values: ({ "budget.daily_usd": "2.00", "cua.dry_run": "false",
-               "cua.max_per_turn": "12", "pointer.mode": "guide" })
-  }
-
-  function init() { saves.clear(); tab.draft = ({}); tab.errors = ({}) }
-
-  function find(item, name) {
-    if (item.objectName === name) return item
-    var kids = item.children
-    for (var i = 0; i < kids.length; i++) {
-      var r = find(kids[i], name)
-      if (r) return r
-    }
-    return null
-  }
 
   function test_validate_budget() {
     compare(S.validate("budget.daily_usd", "2.50"), "")
@@ -89,37 +63,8 @@ TestCase {
     compare(S.group("hotkey").length, 0)
   }
 
-  function test_choice_chip_saves_immediately() {
-    var chip = find(tab, "opt:pointer.mode:drive")
-    verify(chip !== null)
-    chip.clicked()
-    compare(saves.count, 1)
-    compare(saves.signalArguments[0][0], "pointer.mode")
-    compare(saves.signalArguments[0][1], "drive")
-  }
 
-  function test_text_edit_saves_only_when_valid_and_changed() {
-    var chip = find(tab, "save:budget.daily_usd")
-    verify(chip !== null)
-    verify(!chip.enabled)               // not edited yet
-    tab.setDraft("budget.daily_usd", "two")
-    verify(!chip.enabled)               // invalid
-    compare(tab.problem("budget.daily_usd"), "enter a plain number")
-    tab.setDraft("budget.daily_usd", "3.50")
-    verify(chip.enabled)
-    compare(tab.problem("budget.daily_usd"), "")
-    chip.clicked()
-    compare(saves.signalArguments[0][0], "budget.daily_usd")
-    compare(saves.signalArguments[0][1], "3.50")
-  }
 
-  function test_daemon_error_shows_inline() {
-    tab.errors = { "budget.daily_usd": "The daemon rejected it: bad." }
-    compare(tab.problem("budget.daily_usd"), "The daemon rejected it: bad.")
-    // a draft error wins over a stale daemon error
-    tab.setDraft("budget.daily_usd", "x")
-    compare(tab.problem("budget.daily_usd"), "enter a plain number")
-  }
 
   function test_health_sections() {
     var s = H.sections({ jev: { ok: false, code: "jev_down" }, stt: { ok: true },

@@ -148,7 +148,8 @@ class TestWiring(unittest.TestCase):
         self.assertIn("onRatePromptTurnChanged", bar)
         panel = self.read("shell-plugin/Panel.qml")
         self.assertIn("onRatePromptTurnChanged", panel)
-        self.assertIn("skipRatePrompt", panel)
+        body = self.read("shell-plugin/components/PanelBody.qml")
+        self.assertIn("skipRatePrompt", body)
 
     def test_prompt_reactions_key_on_the_turn_not_the_object(self):
         # normalize() builds a fresh {turn} every message: only a turn

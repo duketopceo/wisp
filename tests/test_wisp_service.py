@@ -288,9 +288,12 @@ class TestSettingsWindowReads(unittest.TestCase):
         self.assertIn("loadConnectors()", fin)
         self.assertIn("connectorErrors", fin)
 
-    def test_panel_connector_path_is_unchanged(self):
+    def test_panel_no_longer_reads_connectors(self):
+        # the Panel's Quick tab has no connector list (one-surface U2);
+        # the settings window's Connectors page is the one path
         panel = (PLUGIN / "Panel.qml").read_text()
-        self.assertIn('"connect", "--list", "--json"', panel)
+        self.assertNotIn('"connect", "--list"', panel)
+        self.assertIn('"connect", "list", "--json"', SRC)
 
 
 QMLLINT = shutil.which("qmllint") or (
