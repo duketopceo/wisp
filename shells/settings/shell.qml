@@ -21,7 +21,7 @@ import "lib/manage.js" as Manage
 // holds no socket or reconnect timers. A page shows its loading state
 // until the first state after the stream turns on. Config, status and the
 // connector list are read once on open and again on Retry; nothing polls.
-// Files are read when their page opens and watched only while it is open
+// Files are read when their page opens (preload off) and watched only while it is open
 // (decisions, corrections and suggestions on Activity, the cua audit log
 // on Audit); the cua, spend and binds reads run when their page opens.
 
@@ -102,6 +102,7 @@ FloatingWindow {
 
   FileView {
     id: decisionsView
+    preload: false
     onLoaded: win.decisionsText = decisionsView.text()
     onLoadFailed: win.decisionsText = ""
     path: win.dataDir + "/decisions.jsonl"
@@ -111,6 +112,7 @@ FloatingWindow {
   }
   FileView {
     id: corrView
+    preload: false
     onLoaded: win.corrText = corrView.text()
     onLoadFailed: win.corrText = ""
     path: win.dataDir + "/corrections.jsonl"
@@ -120,6 +122,7 @@ FloatingWindow {
   }
   FileView {
     id: suggView
+    preload: false
     onLoaded: win.suggText = suggView.text()
     onLoadFailed: win.suggText = ""
     path: win.dataDir + "/suggestions.jsonl"
@@ -129,6 +132,7 @@ FloatingWindow {
   }
   FileView {
     id: memoryView
+    preload: false
     path: win.dataDir + "/MEMORY.md"
     printErrors: false
     onLoaded: win.memoryText = memoryView.text()
@@ -136,6 +140,7 @@ FloatingWindow {
   }
   FileView {
     id: userView
+    preload: false
     path: win.dataDir + "/USER.md"
     printErrors: false
     onLoaded: win.userText = userView.text()
@@ -144,6 +149,7 @@ FloatingWindow {
   // the cua audit log: read only; a missing log is an empty page
   FileView {
     id: auditView
+    preload: false
     path: win.auditPath
     watchChanges: host.category === "audit"
     printErrors: false
@@ -200,8 +206,11 @@ FloatingWindow {
     onRestart: win.daemon("restart")
     onStop: win.daemon("stop")
     onAnswer: (pick) => svc.sendChoice(pick)
-    onSaveMemory: (which, text) => win.wispd(["memory", "write", which, Qt.btoa(text)], "memory")
-    onStartTask: (text) => win.wispd(["task", "run", text], "task")
+    // the notes go on stdin (other local accounts can read argv), as
+    // base64 of UTF-8; the task text follows `--` so a leading dash stays text
+    onSaveMemory: (which, text) => svc.runAction([svc.wispd, "memory", "write", which, "--stdin", "--json"],
+                                                 "memory", null, Manage.utf8Base64(text, Qt.btoa))
+    onStartTask: (text) => svc.runAction([svc.wispd, "task", "run", "--json", "--", text], "task")
     onCancelTask: (name) => win.wispd(["task", "cancel", name], "task")
   }
 

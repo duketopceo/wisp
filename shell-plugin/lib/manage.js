@@ -192,3 +192,27 @@ function bindsRead(code, text) {
     return { data: null, error: "parse" }
   }
 }
+
+// Text -> one line of base64 over its UTF-8 bytes (Qt.btoa alone encodes
+// Latin-1, so a dash or an emoji in a notes document would not survive).
+// `btoa` is the host's Latin-1 encoder (Qt.btoa in QML).
+function utf8Base64(text, btoa) {
+  var s = String(text || "")
+  var bytes = ""
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charCodeAt(i)
+    if (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length) {
+      var d = s.charCodeAt(i + 1)
+      if (d >= 0xdc00 && d <= 0xdfff) {
+        c = 0x10000 + ((c - 0xd800) << 10) + (d - 0xdc00)
+        i++
+      }
+    }
+    if (c < 0x80) bytes += String.fromCharCode(c)
+    else if (c < 0x800) bytes += String.fromCharCode(0xc0 | (c >> 6), 0x80 | (c & 63))
+    else if (c < 0x10000) bytes += String.fromCharCode(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63))
+    else bytes += String.fromCharCode(0xf0 | (c >> 18), 0x80 | ((c >> 12) & 63),
+                                      0x80 | ((c >> 6) & 63), 0x80 | (c & 63))
+  }
+  return btoa(bytes)
+}

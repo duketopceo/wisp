@@ -353,6 +353,17 @@ class TestPageHelpers(unittest.TestCase):
         self.assertEqual(self.js('Manage.bindsRead(0, "{bad")'),
                          {"data": None, "error": "parse"})
 
+    def test_utf8_base64_matches_python(self):
+        import base64
+        for text in ("", "plain", "dash \u2014 and \u00e9", "emoji \U0001F600 end",
+                     "# Memory\n\n- line\n"):
+            # with an identity encoder the helper returns the UTF-8 bytes as a
+            # Latin-1 string, which is exactly what Qt.btoa encodes
+            raw = self.js(f"Manage.utf8Base64({json.dumps(text)}, "
+                          "function (s) { return s })")
+            self.assertEqual(base64.b64encode(raw.encode("latin1")).decode(),
+                             base64.b64encode(text.encode()).decode(), repr(text))
+
     def test_task_hint_key(self):
         self.assertEqual(self.js('Manage.taskHintKey({status: "interrupted"})'),
                          "ui.tasks.interrupted")
@@ -441,6 +452,7 @@ class TestAppNeverPolls(unittest.TestCase):
                           ("suggView", "activity"), ("auditView", "audit")):
             m = re.search(rf"id:\s*{fid}\b(.*?)\n  \}}", SHELL, re.S)
             self.assertIn(f'watchChanges: host.category === "{page}"', m.group(1), fid)
+            self.assertIn("preload: false", m.group(1), fid)
             self.assertIn("onFileChanged: reload()", m.group(1), fid)
             self.assertIn(f"{fid}.reload()", SHELL, fid)
 
@@ -492,8 +504,10 @@ class TestAppNeverPolls(unittest.TestCase):
         self.assertIn('onRestart: win.daemon("restart")', code)
         self.assertIn('onStop: win.daemon("stop")', code)
         self.assertIn('svc.runAction([svc.wispd].concat(args).concat(["--json"]), verb)', code)
-        self.assertIn('win.wispd(["memory", "write", which, Qt.btoa(text)], "memory")', code)
-        self.assertIn('win.wispd(["task", "run", text], "task")', code)
+        # notes go on stdin as base64 of UTF-8; task text follows `--`
+        self.assertIn('svc.runAction([svc.wispd, "memory", "write", which, "--stdin", "--json"],', code)
+        self.assertIn('"memory", null, Manage.utf8Base64(text, Qt.btoa))', code)
+        self.assertIn('svc.runAction([svc.wispd, "task", "run", "--json", "--", text], "task")', code)
         self.assertIn('win.wispd(["task", "cancel", name], "task")', code)
         self.assertIn("onAnswer: (pick) => svc.sendChoice(pick)", code)
         self.assertIn("onTalk: svc.trigger()", code)

@@ -112,6 +112,10 @@ def edit(target: str, op: str, old: str = "", new: str = "") -> str:
     lines = text.splitlines()
     if op == "write":
         body = new or old
+        # a whole-file editor sends the header too; keep exactly one
+        first, _, rest = body.lstrip("\n").partition("\n")
+        if first.strip() == head.strip():
+            body = rest
         lines = head.splitlines() + ([""] + body.splitlines()
                                     if body.strip() else [])
         err = _save(path, "\n".join(lines).rstrip() + "\n", budget)
