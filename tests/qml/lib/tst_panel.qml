@@ -139,6 +139,9 @@ Item {
       show(3)
       tap(findChild(body, "healthSummary"))
       compare(opens.count, 5)
+      // a screen reader's press runs the same action
+      findChild(body, "healthSummary").Accessible.pressAction()
+      compare(opens.count, 6)
     }
 
     function test_health_summary_words() {

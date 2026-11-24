@@ -68,6 +68,7 @@ Column {
       : summaryArea.containsMouse ? root.tk.keylineStrong : root.tk.keyline
     Accessible.role: Accessible.Button
     Accessible.name: root.service ? root.service.ui("ui.settings.health") + " " + root.summaryText : ""
+    Accessible.onPressAction: root.openSettings()
 
     Row {
       id: summaryRow
