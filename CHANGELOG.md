@@ -17,6 +17,7 @@ How this file is kept:
 
 ## Unreleased
 
+- The Panel now scrolls when it is taller than your screen, and its Settings tab is a short Quick tab: a health line, your quick settings, and "open settings" (on every tab) for the full settings window. Quick settings still save while Wisp is not running.
 - The bar now uses the same words as the Panel and overlay: working, hearing, your call and that failed, instead of acting, thinking, needs you and error.
 - The settings window now has every setting on its page, with search across names, help and keys. Values are saved one at a time with saving, saved and error shown on the row, and the window says when Wisp is not running or a page cannot be read.
 - `wispd settings` opens a separate settings window, or brings it forward if it is already open; the launcher has a Settings action too. Its pages arrive in a later update; until then each page says where those settings live.
