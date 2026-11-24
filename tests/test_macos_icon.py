@@ -24,11 +24,11 @@ class MacosIconTest(unittest.TestCase):
 
     def test_expected_icns_size(self):
         self.assertIn("--resampleWidth 1024", SCRIPT)
-        self.assertIn("--resampleWidth 512", SCRIPT)
+        self.assertIn("for size in 16 32 48 64 128 256 512; do", SCRIPT)
 
     def test_sips_used_for_slices(self):
-        for size in ("16", "32", "48", "64", "128", "256", "512"):
-            self.assertIn(f"icon_{size}x{size}.png", SCRIPT)
+        self.assertIn('icon_${size}x${size}.png', SCRIPT)
+        self.assertIn('--resampleWidth "$size"', SCRIPT)
 
 
 if __name__ == "__main__":
