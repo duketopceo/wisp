@@ -28,7 +28,7 @@ build() {
 
   create-dmg --volicon "$APP_DIR/Contents/Resources/wisp.icns" \
       --icon "Wisp.app" 100 150 --icon Applications 600 150 \
-      "$DMG_NAME" "$APP_DIR" >/dev/null || true
+      "$DMG_NAME" "$APP_DIR" >/dev/null
   codesign -s "$IDENTITY" --options runtime --timestamp "$DMG_NAME"
 
   xcrun notarytool submit "$DMG_NAME" --wait
