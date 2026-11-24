@@ -6,6 +6,7 @@ offline data on exit 3, `wispd status --table --json`, the `view` object
 on watched state lines, and that every verb, flag and field EMBED.md
 names exists in the CLI and the IPC contract.
 """
+import ast
 import contextlib
 import io
 import json
@@ -42,7 +43,7 @@ def run_inproc(argv):
 def status_json(state):
     reply = {"ok": True, "state": state}
     with mock.patch("wisp.ipc.send", return_value=reply):
-        code, out, err = run_inproc(["status", "--json"])
+        code, out, _ = run_inproc(["status", "--json"])
     return code, json.loads(out)
 
 
@@ -154,7 +155,7 @@ class TestWatchView(unittest.TestCase):
                       "error_code": ""}},
             {"type": "ping"},
         ]
-        got = self.watch([dict(e) for e in evs])
+        got = self.watch(evs)
         want_views = [
             None, copy.word_view("idle"), copy.word_view("acting"),
             copy.word_view("acting"), None,
@@ -203,7 +204,13 @@ class TestEmbedDoc(unittest.TestCase):
                      ["status", "--table"], ["watch", "state", "tasks"]):
             with self.subTest(argv):
                 registry.parse(argv)
-                self.assertIn(" ".join(argv[:1]), EMBED.replace("`", " "))
+                # the verb and every flag/subcommand must be documented
+                doc = EMBED.replace("`", " ")
+                self.assertIn("wispd " + argv[0], doc)
+                for tok in argv[1:]:
+                    if tok.startswith("--") or tok in ("start", "stop",
+                                                       "state", "tasks"):
+                        self.assertIn(tok, doc)
 
     def test_documented_fields_and_lines(self):
         for field in ("data.word", "data.tone", "data.state",
@@ -228,7 +235,6 @@ class TestEmbedDoc(unittest.TestCase):
         self.assertIn("exit 2", EMBED)
 
     def test_worked_example_is_valid_python_on_the_contract(self):
-        import ast
         blocks = re.findall(r"```python\n(.*?)```", EMBED, re.S)
         self.assertEqual(len(blocks), 1)
         ast.parse(blocks[0])
@@ -237,7 +243,9 @@ class TestEmbedDoc(unittest.TestCase):
             self.assertIn(name, blocks[0])
 
     def test_tone_set_is_the_table_tone_set(self):
+        # pinned here on purpose: a new tone is a contract change
         self.assertEqual({r["tone"] for r in status.ROWS.values()}, TONES)
+        self.assertEqual(set(copy.TONES), TONES)
 
 
 if __name__ == "__main__":
