@@ -101,11 +101,13 @@ Wisp grew surfaces one at a time, and each picked its own words and marks. The b
 - **KTD5. The embed contract is documented in `docs/EMBED.md` and pinned by a test.**
   - **Read path:** `wispd watch state tasks` NDJSON (versioned by `contract_version`, additive changes only); `wispd status --json`, where exit 3 means the daemon is down.
   - **Actions:** `wispd trigger [start|stop]`, `wispd interrupt`, `wispd choice <pick> [--prompt-id ID]`, `wispd settings [--category]`.
-  - **Words:**
-    - `wispd status --json` carries `word` and `tone` from the KTD1 table.
-    - When the daemon is down it still prints JSON (`{"status": "offline", "word": ..., "tone": ...}`) with exit 3, so a host never hardcodes the offline word.
-    - `wispd status --table --json` prints the whole KTD1 table resolved to text, including the derived needs-you, stale and offline states. It works with no daemon, so a host can show the same words for states it computes itself.
-  - `tests/test_embed_contract.py` asserts every documented field and verb exists in the CLI registry and the IPC contract.
+  - **Words.** Every word comes from `copy.word_view(status, result, error_code)` over the KTD1 table, so the error-code message and the blocked `done` read the same as on the bar. The CLI cannot see staleness; a host applies the `stale` row itself when its heartbeat rule fires (`docs/IPC_CONTRACT.md`).
+    - `wispd status --json` keeps the CLI envelope and adds `data.word` and `data.tone` beside `data.state` and `data.deploy`.
+    - With the daemon down it still exits 3 with the `E_DAEMON_DOWN` error envelope, and the envelope's `data` is `{"status": "offline", "word": ..., "tone": ...}`, so a host never hardcodes the offline word.
+    - `wispd watch` adds a `view: {word, tone}` object to each `snapshot` and `state` line, computed by the CLI from the state it has merged so far. Event payloads and the daemon's `state`/`diff` objects are unchanged, so the IPC contract does not grow.
+    - `wispd status --table --json` is handled before any IPC call and works with no daemon. `data` is `{embed_version, rows, causes}`: `rows` lists every key in `wisp/status.py` STATUSES then DERIVED (`confirm`, `blocked`, `stale`) as `{key, derived, word, short, tone}`; `causes` maps each error code to its cause word. Glyph, creature and pill fields stay internal.
+  - **Presence and version.** Presence: `wispd` on PATH, then `wispd status --json` exit 0 (running) or 3 (installed, daemon down). Embed version: `data.embed_version` from `status --table --json` (1 in this unit); an older `wispd` fails that call with exit 2, which a host reads as "no embed contract". Stream version: `contract_version` from the watch `hello` line.
+  - `tests/test_embed_contract.py` asserts every documented field and verb exists in the CLI registry, the argparse flags and the IPC contract, and pins the JSON field paths, exit codes and tone set.
 - **KTD6. The construction rules come from how strong desktop apps are built** (named scenes for every state, drift tests both ways, accessible names in every scene, unused checks). They are applied as tests in this repository, not as advice.
 
 ---
@@ -272,18 +274,20 @@ Wisp grew surfaces one at a time, and each picked its own words and marks. The b
 **Goal:** any shell can show Wisp live and act on it through a documented, tested contract.
 **Requirements:** R7.
 **Dependencies:** U1 (status words from the table).
-**Files:** `docs/EMBED.md` (new), `wisp/cli/core.py` (`word`/`tone` in `status --json` and in the watched state, offline JSON on exit 3, `--table` from `wisp/status.py`), `docs/IPC_CONTRACT.md`, `tests/test_embed_contract.py` (new), `tests/test_cli.py` goldens.
+**Files:** `docs/EMBED.md` (new), `wisp/cli/core.py` (`word`/`tone` in `status --json`, offline data on exit 3, `--table`, `view` on watched state lines), `docs/IPC_CONTRACT.md` (a pointer to `EMBED.md`), `tests/test_embed_contract.py` (new), `tests/test_cli.py`. No daemon, state-bus or QML file changes.
 
 **Approach:**
-- Document the read path, the actions, presence, and versioning (KTD5).
-- Add the status word and tone from the KTD1 table to `wispd status --json`, and to the watched state, if they are not already there, so hosts never copy the table.
-- Include a minimal worked example of a host following `wispd watch state tasks`.
+- Document the read path, the actions, words, presence and versioning (KTD5) in `docs/EMBED.md`.
+- Add `word`/`tone` to `wispd status --json`, offline data to its exit-3 error envelope, and the `--table` mode, all through `copy.word_view` and `wisp/status.py`, so hosts never copy the table (KTD5, R7).
+- `wispd watch` tracks the merged state from the snapshot and diffs and adds `view` to `snapshot` and `state` lines.
+- Include a minimal worked example of a host following `wispd watch state tasks`, including the offline path: `ipc.watch` reconnects silently, so after 45 s of silence (no ping) the host polls `wispd status --json` and shows the offline word on exit 3.
 
 **Test scenarios:**
-- Every verb and field in `EMBED.md` exists in the CLI registry and the IPC contract.
-- `wispd status --json` carries `word` and `tone` matching `wisp/status.py` for each status fixture.
-- With the daemon down it prints the offline JSON and exits 3.
-- `--table` lists every status and derived state with its text.
+- Every verb, flag and field in `EMBED.md` exists in the CLI registry, the argparse parser and the IPC contract.
+- `wispd status --json` carries `data.word`/`data.tone` equal to `copy.word_view` for idle, acting, error with a code, and done with a BLOCKED result.
+- With the daemon down, `status --json` exits 3 with `error.code` `E_DAEMON_DOWN` and `data` `{status: "offline", word, tone}`; plain `status` still prints the `E_DAEMON_DOWN` line on stderr.
+- `status --table --json` works with no daemon, lists every STATUSES and DERIVED key in order with its text, every tone is a known tone, and every error cause is present.
+- `wispd watch` adds `view` to snapshot and state lines, updates it when a diff changes `status`, and passes other lines through unchanged.
 
 **Verification:** full unit suite, CLI goldens.
 
