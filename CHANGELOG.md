@@ -17,6 +17,7 @@ How this file is kept:
 
 ## Unreleased
 
+- Another bar or panel can now show Wisp with the same words Wisp uses: `wispd status --json` includes the word and tone, `wispd status --table` lists every word without Wisp running, and `wispd watch` adds them to each state line. docs/EMBED.md explains how.
 - The bar now uses the same words as the Panel and overlay: working, hearing, your call and that failed, instead of acting, thinking, needs you and error.
 - The settings window now has every setting on its page, with search across names, help and keys. Values are saved one at a time with saving, saved and error shown on the row, and the window says when Wisp is not running or a page cannot be read.
 - `wispd settings` opens a separate settings window, or brings it forward if it is already open; the launcher has a Settings action too. Its pages arrive in a later update; until then each page says where those settings live.
