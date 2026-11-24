@@ -137,6 +137,43 @@ jobs:
             dist/verification-*.json
           if-no-files-found: error
 
+  mac-dmg:
+    # First macOS release artifact (docs/plans 2026-11-23-0014 U4):
+    # arm64 DMG, signed and notarized. Stacked behind `build` (PyInstaller).
+    needs: build
+    runs-on: macos-15  # arm64; macos-14 images are retired
+    timeout-minutes: 30
+    env:
+      DMG_NAME: Wisp-${{ env.RELEASE_TAG }}.dmg
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11.17"
+      - name: Assert arm64 runner and tag
+        run: |
+          set -euo pipefail
+          [[ "$(uname -m)" == "arm64" ]]
+          test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"
+          test "$GITHUB_SHA" = "$(git rev-parse "${RELEASE_TAG}^{commit}")"
+      - name: Full unit suite on the release commit
+        run: |
+          pip install sqlite-vec pillow
+          python -m unittest discover -s tests
+      - name: Package wispd as an arm64 bundle
+        run: python3 scripts/release/macos.py --build
+      - name: Build and notarize the DMG
+        run: scripts/release/dmg.sh build
+      - name: Verify the DMG contract
+        run: scripts/release/dmg.sh verify
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wisp-macos-arm64
+          path: ${{ env.DMG_NAME }}
+
   plugin:
     # the Omarchy marketplace mirror: the plugin alone, version = the tag
     runs-on: ubuntu-24.04
