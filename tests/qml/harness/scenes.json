@@ -3951,303 +3951,6 @@
    }
   }
  },
- "SettingsTab": {
-  "mode": "variant",
-  "pad": 10,
-  "scale2": true,
-  "variants": {
-   "daemon_error": {
-    "_fixture": {
-     "patch": {
-      "health": {
-       "brain_ollama": {
-        "code": null,
-        "latency_ms": 41,
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z"
-       },
-       "cua": {
-        "code": null,
-        "latency_ms": 3,
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z"
-       },
-       "jev": {
-        "code": null,
-        "latency_ms": 12,
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z"
-       },
-       "spend": {
-        "code": null,
-        "latency_ms": 0,
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z"
-       },
-       "stt": {
-        "code": null,
-        "latency_ms": 9,
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z"
-       }
-      },
-      "spend": {
-       "blocked": false,
-       "cap_usd": 2.0,
-       "month_usd": 6.1,
-       "monthly_cap_usd": 20.0,
-       "today_usd": 0.42
-      }
-     }
-    },
-    "_state": "idle",
-    "connectors": [
-     {
-      "alias": "gmail",
-      "connected": true,
-      "name": "Gmail"
-     },
-     {
-      "alias": "slack",
-      "connected": false,
-      "name": "Slack"
-     }
-    ],
-    "cua": {
-     "dry_run": false,
-     "fix": null,
-     "kill": false,
-     "live": true,
-     "mode": "guide",
-     "state": "running",
-     "version": "0.4.2"
-    },
-    "errors": {
-     "budget.monthly_usd": "The daemon rejected it: bad value."
-    },
-    "savedKey": "budget.daily_usd",
-    "spendModels": [
-     {
-      "calls": 14,
-      "model": "openrouter/llama-4-maverick",
-      "usd": 0.31
-     },
-     {
-      "calls": 9,
-      "model": "openrouter/gemini-2.5-flash",
-      "usd": 0.11
-     }
-    ],
-    "values": {
-     "budget.daily_usd": "2.00",
-     "budget.monthly_usd": "20.00",
-     "cua.confirm": "tier",
-     "cua.dry_run": "false",
-     "cua.kill_switch": "false",
-     "cua.max_clicks_per_min": "30",
-     "cua.max_per_turn": "12",
-     "pointer.mode": "guide"
-    }
-   },
-   "invalid_edit": {
-    "_fixture": {
-     "patch": {
-      "health": {
-       "brain_ollama": {
-        "code": null,
-        "latency_ms": 41,
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z"
-       },
-       "cua": {
-        "code": null,
-        "latency_ms": 3,
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z"
-       },
-       "jev": {
-        "code": null,
-        "latency_ms": 12,
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z"
-       },
-       "spend": {
-        "code": null,
-        "latency_ms": 0,
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z"
-       },
-       "stt": {
-        "code": null,
-        "latency_ms": 9,
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z"
-       }
-      },
-      "spend": {
-       "blocked": false,
-       "cap_usd": 2.0,
-       "month_usd": 6.1,
-       "monthly_cap_usd": 20.0,
-       "today_usd": 0.42
-      }
-     }
-    },
-    "_state": "idle",
-    "connectors": [
-     {
-      "alias": "gmail",
-      "connected": true,
-      "name": "Gmail"
-     },
-     {
-      "alias": "slack",
-      "connected": false,
-      "name": "Slack"
-     }
-    ],
-    "cua": {
-     "dry_run": false,
-     "fix": null,
-     "kill": false,
-     "live": true,
-     "mode": "guide",
-     "state": "running",
-     "version": "0.4.2"
-    },
-    "draft": {
-     "budget.daily_usd": "two",
-     "cua.max_per_turn": "900"
-    },
-    "spendModels": [
-     {
-      "calls": 14,
-      "model": "openrouter/llama-4-maverick",
-      "usd": 0.31
-     },
-     {
-      "calls": 9,
-      "model": "openrouter/gemini-2.5-flash",
-      "usd": 0.11
-     }
-    ],
-    "values": {
-     "budget.daily_usd": "2.00",
-     "budget.monthly_usd": "20.00",
-     "cua.confirm": "tier",
-     "cua.dry_run": "false",
-     "cua.kill_switch": "false",
-     "cua.max_clicks_per_min": "30",
-     "cua.max_per_turn": "12",
-     "pointer.mode": "guide"
-    }
-   },
-   "offline": {
-    "_fixture": {
-     "offline": true,
-     "patch": {
-      "health": {},
-      "spend": {}
-     }
-    },
-    "_state": "idle",
-    "connectors": [],
-    "cua": null,
-    "spendModels": [],
-    "values": {}
-   },
-   "ok": {
-    "_fixture": {
-     "patch": {
-      "health": {
-       "brain_ollama": {
-        "code": null,
-        "latency_ms": 41,
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z"
-       },
-       "cua": {
-        "code": null,
-        "latency_ms": 3,
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z"
-       },
-       "jev": {
-        "code": null,
-        "latency_ms": 12,
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z"
-       },
-       "spend": {
-        "code": null,
-        "latency_ms": 0,
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z"
-       },
-       "stt": {
-        "code": null,
-        "latency_ms": 9,
-        "ok": true,
-        "since": "2026-10-04T08:00:00Z"
-       }
-      },
-      "spend": {
-       "blocked": false,
-       "cap_usd": 2.0,
-       "month_usd": 6.1,
-       "monthly_cap_usd": 20.0,
-       "today_usd": 0.42
-      }
-     }
-    },
-    "_state": "idle",
-    "connectors": [
-     {
-      "alias": "gmail",
-      "connected": true,
-      "name": "Gmail"
-     },
-     {
-      "alias": "slack",
-      "connected": false,
-      "name": "Slack"
-     }
-    ],
-    "cua": {
-     "dry_run": false,
-     "fix": null,
-     "kill": false,
-     "live": true,
-     "mode": "guide",
-     "state": "running",
-     "version": "0.4.2"
-    },
-    "spendModels": [
-     {
-      "calls": 14,
-      "model": "openrouter/llama-4-maverick",
-      "usd": 0.31
-     },
-     {
-      "calls": 9,
-      "model": "openrouter/gemini-2.5-flash",
-      "usd": 0.11
-     }
-    ],
-    "values": {
-     "budget.daily_usd": "2.00",
-     "budget.monthly_usd": "20.00",
-     "cua.confirm": "tier",
-     "cua.dry_run": "false",
-     "cua.kill_switch": "false",
-     "cua.max_clicks_per_min": "30",
-     "cua.max_per_turn": "12",
-     "pointer.mode": "guide"
-    }
-   }
-  },
-  "width": 360
- },
  "SpendView": {
   "mode": "variant",
   "pad": 10,
@@ -5104,6 +4807,671 @@
     "loaded": true,
     "connectorState": "failed",
     "connectorError": "gateway unreachable"
+   }
+  }
+ },
+ "PanelBody": {
+  "mode": "variant",
+  "pad": 0,
+  "scale2": true,
+  "variants": {
+   "now": {
+    "width": 480,
+    "height": 560,
+    "_state": "acting",
+    "tab": 0
+   },
+   "now_banners": {
+    "width": 480,
+    "height": 560,
+    "_state": "idle",
+    "tab": 0,
+    "whatsnew": {
+     "date": "2026-11-02",
+     "lines": [
+      "Draw on your screen and ask about it: Wisp draws rings, arrows and highlights, and you can scribble on the screen to point at what you mean.",
+      "Walkthroughs: Wisp can teach you a task step by step, spoken and pointed.",
+      "Answers start sooner: the first clause is spoken as soon as it is ready."
+     ],
+     "more": 4,
+     "title": "v0.10.0",
+     "url": "https://github.com/duketopceo/wisp/blob/master/CHANGELOG.md"
+    },
+    "onboard": {
+     "steps": [
+      {
+       "detail": "pw-record and the speech model are ready",
+       "done": true,
+       "id": "mic",
+       "name": "microphone",
+       "ok": true,
+       "optional": false,
+       "state": "done",
+       "try": ""
+      },
+      {
+       "detail": "ornith up, jev up, jev-shim up, uitars down, ollama down",
+       "done": true,
+       "id": "models",
+       "name": "local models",
+       "ok": true,
+       "optional": false,
+       "state": "done",
+       "try": ""
+      },
+      {
+       "detail": "cua-driver running",
+       "done": false,
+       "id": "cua",
+       "name": "cua pointer driver",
+       "ok": false,
+       "optional": true,
+       "state": "todo",
+       "try": ""
+      },
+      {
+       "detail": "ready; a test send needs your ok",
+       "done": false,
+       "id": "notifications",
+       "name": "notifications",
+       "ok": false,
+       "optional": false,
+       "state": "todo",
+       "try": ""
+      },
+      {
+       "detail": "needs the keyboard submap (not installed yet)",
+       "done": false,
+       "id": "keybinding",
+       "name": "keybinding",
+       "ok": false,
+       "optional": true,
+       "state": "na",
+       "try": ""
+      }
+     ]
+    },
+    "skippedSteps": []
+   },
+   "agents": {
+    "width": 480,
+    "height": 560,
+    "_state": "idle",
+    "tab": 1,
+    "_fixture": {
+     "patch": {
+      "tasks": {
+       "summarize inbox": {
+        "line": "reading message 12 of 40",
+        "seconds": 83,
+        "status": "running",
+        "task": "summarize inbox"
+       },
+       "sync notes": {
+        "line": "endpoint refused the request",
+        "seconds": 12,
+        "status": "failed",
+        "task": "sync notes"
+       },
+       "tidy downloads": {
+        "status": "queued",
+        "task": "move old files into folders"
+       },
+       "weekly report": {
+        "line": "saved to Documents",
+        "seconds": 301,
+        "status": "done",
+        "task": "weekly report"
+       }
+      }
+     }
+    }
+   },
+   "memory": {
+    "width": 480,
+    "height": 560,
+    "_state": "idle",
+    "tab": 2,
+    "skills": [
+     {
+      "description": "rename files by pattern",
+      "name": "rename-files"
+     },
+     {
+      "description": "toggle the night light",
+      "name": "night-light"
+     },
+     {
+      "description": "summarize the focused page",
+      "name": "summarize-page"
+     }
+    ],
+    "decisions": [
+     {
+      "failed": false,
+      "route": "act",
+      "text": "turn on night light",
+      "ts": "08:12:01"
+     },
+     {
+      "failed": false,
+      "route": "answer",
+      "text": "what is on my calendar",
+      "ts": "08:10:44"
+     },
+     {
+      "failed": true,
+      "route": "act",
+      "text": "rename the project folder",
+      "ts": "08:05:10"
+     }
+    ]
+   },
+   "quick": {
+    "width": 480,
+    "height": 560,
+    "_state": "idle",
+    "tab": 3,
+    "_fixture": {
+     "patch": {
+      "health": {
+       "brain_ollama": {
+        "code": null,
+        "latency_ms": 41,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "cua": {
+        "code": null,
+        "latency_ms": 3,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "jev": {
+        "code": null,
+        "latency_ms": 12,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "spend": {
+        "code": null,
+        "latency_ms": 0,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "stt": {
+        "code": null,
+        "latency_ms": 9,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       }
+      }
+     },
+     "config": {
+      "budget.daily_usd": "2.00",
+      "budget.monthly_usd": "20.00",
+      "cua.confirm": "tier",
+      "cua.dry_run": "false",
+      "cua.kill_switch": "false",
+      "cua.max_clicks_per_min": "30",
+      "cua.max_per_turn": "12",
+      "pointer.mode": "guide",
+      "agent.autonomy": "guided",
+      "dictation.mode": "cleanup",
+      "voice.enabled": "auto",
+      "voice.captions": "true"
+     }
+    }
+   },
+   "quick_offline_narrow": {
+    "width": 360,
+    "height": 560,
+    "_state": "offline",
+    "tab": 3,
+    "_fixture": {
+     "patch": {
+      "health": {
+       "brain_ollama": {
+        "code": null,
+        "latency_ms": 41,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "cua": {
+        "code": null,
+        "latency_ms": 3,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "jev": {
+        "code": null,
+        "latency_ms": 12,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "spend": {
+        "code": null,
+        "latency_ms": 0,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "stt": {
+        "code": null,
+        "latency_ms": 9,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       }
+      }
+     },
+     "config": {
+      "budget.daily_usd": "2.00",
+      "budget.monthly_usd": "20.00",
+      "cua.confirm": "tier",
+      "cua.dry_run": "false",
+      "cua.kill_switch": "false",
+      "cua.max_clicks_per_min": "30",
+      "cua.max_per_turn": "12",
+      "pointer.mode": "guide",
+      "agent.autonomy": "guided",
+      "dictation.mode": "cleanup",
+      "voice.enabled": "auto",
+      "voice.captions": "true"
+     },
+     "offline": true
+    }
+   },
+   "quick_read_failed": {
+    "width": 480,
+    "height": 560,
+    "_state": "idle",
+    "tab": 3,
+    "_fixture": {
+     "patch": {
+      "health": {
+       "brain_ollama": {
+        "code": null,
+        "latency_ms": 41,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "cua": {
+        "code": null,
+        "latency_ms": 3,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "jev": {
+        "code": null,
+        "latency_ms": 12,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "spend": {
+        "code": null,
+        "latency_ms": 0,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "stt": {
+        "code": null,
+        "latency_ms": 9,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       }
+      }
+     },
+     "config": {
+      "budget.daily_usd": "2.00",
+      "budget.monthly_usd": "20.00",
+      "cua.confirm": "tier",
+      "cua.dry_run": "false",
+      "cua.kill_switch": "false",
+      "cua.max_clicks_per_min": "30",
+      "cua.max_per_turn": "12",
+      "pointer.mode": "guide",
+      "agent.autonomy": "guided",
+      "dictation.mode": "cleanup",
+      "voice.enabled": "auto",
+      "voice.captions": "true"
+     },
+     "configReadError": "config.toml line 3: expected a value"
+    }
+   }
+  }
+ },
+ "QuickTab": {
+  "mode": "variant",
+  "pad": 10,
+  "scale2": true,
+  "width": 456,
+  "variants": {
+   "ok": {
+    "_state": "idle",
+    "_fixture": {
+     "patch": {
+      "health": {
+       "brain_ollama": {
+        "code": null,
+        "latency_ms": 41,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "cua": {
+        "code": null,
+        "latency_ms": 3,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "jev": {
+        "code": null,
+        "latency_ms": 12,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "spend": {
+        "code": null,
+        "latency_ms": 0,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "stt": {
+        "code": null,
+        "latency_ms": 9,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       }
+      }
+     },
+     "config": {
+      "budget.daily_usd": "2.00",
+      "budget.monthly_usd": "20.00",
+      "cua.confirm": "tier",
+      "cua.dry_run": "false",
+      "cua.kill_switch": "false",
+      "cua.max_clicks_per_min": "30",
+      "cua.max_per_turn": "12",
+      "pointer.mode": "guide",
+      "agent.autonomy": "guided",
+      "dictation.mode": "cleanup",
+      "voice.enabled": "auto",
+      "voice.captions": "true"
+     }
+    }
+   },
+   "down": {
+    "_state": "idle",
+    "_fixture": {
+     "patch": {
+      "health": {
+       "brain_ollama": {
+        "code": "endpoint_down",
+        "latency_ms": 41,
+        "ok": false,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "cua": {
+        "code": null,
+        "latency_ms": 3,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "jev": {
+        "code": null,
+        "latency_ms": 12,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "spend": {
+        "code": null,
+        "latency_ms": 0,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "stt": {
+        "code": "stt_down",
+        "latency_ms": 9,
+        "ok": false,
+        "since": "2026-10-04T08:00:00Z"
+       }
+      }
+     },
+     "config": {
+      "budget.daily_usd": "2.00",
+      "budget.monthly_usd": "20.00",
+      "cua.confirm": "tier",
+      "cua.dry_run": "false",
+      "cua.kill_switch": "false",
+      "cua.max_clicks_per_min": "30",
+      "cua.max_per_turn": "12",
+      "pointer.mode": "guide",
+      "agent.autonomy": "guided",
+      "dictation.mode": "cleanup",
+      "voice.enabled": "auto",
+      "voice.captions": "true"
+     }
+    }
+   },
+   "offline": {
+    "_state": "offline",
+    "_fixture": {
+     "patch": {
+      "health": {
+       "brain_ollama": {
+        "code": null,
+        "latency_ms": 41,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "cua": {
+        "code": null,
+        "latency_ms": 3,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "jev": {
+        "code": null,
+        "latency_ms": 12,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "spend": {
+        "code": null,
+        "latency_ms": 0,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "stt": {
+        "code": null,
+        "latency_ms": 9,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       }
+      }
+     },
+     "config": {
+      "budget.daily_usd": "2.00",
+      "budget.monthly_usd": "20.00",
+      "cua.confirm": "tier",
+      "cua.dry_run": "false",
+      "cua.kill_switch": "false",
+      "cua.max_clicks_per_min": "30",
+      "cua.max_per_turn": "12",
+      "pointer.mode": "guide",
+      "agent.autonomy": "guided",
+      "dictation.mode": "cleanup",
+      "voice.enabled": "auto",
+      "voice.captions": "true"
+     },
+     "offline": true
+    }
+   },
+   "loading": {
+    "_state": "idle",
+    "_fixture": {
+     "patch": {
+      "health": {
+       "brain_ollama": {
+        "code": null,
+        "latency_ms": 41,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "cua": {
+        "code": null,
+        "latency_ms": 3,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "jev": {
+        "code": null,
+        "latency_ms": 12,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "spend": {
+        "code": null,
+        "latency_ms": 0,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "stt": {
+        "code": null,
+        "latency_ms": 9,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       }
+      }
+     },
+     "config": {
+      "budget.daily_usd": "2.00",
+      "budget.monthly_usd": "20.00",
+      "cua.confirm": "tier",
+      "cua.dry_run": "false",
+      "cua.kill_switch": "false",
+      "cua.max_clicks_per_min": "30",
+      "cua.max_per_turn": "12",
+      "pointer.mode": "guide",
+      "agent.autonomy": "guided",
+      "dictation.mode": "cleanup",
+      "voice.enabled": "auto",
+      "voice.captions": "true"
+     },
+     "configLoaded": false
+    }
+   },
+   "read_failed": {
+    "_state": "idle",
+    "_fixture": {
+     "patch": {
+      "health": {
+       "brain_ollama": {
+        "code": null,
+        "latency_ms": 41,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "cua": {
+        "code": null,
+        "latency_ms": 3,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "jev": {
+        "code": null,
+        "latency_ms": 12,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "spend": {
+        "code": null,
+        "latency_ms": 0,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "stt": {
+        "code": null,
+        "latency_ms": 9,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       }
+      }
+     },
+     "config": {
+      "budget.daily_usd": "2.00",
+      "budget.monthly_usd": "20.00",
+      "cua.confirm": "tier",
+      "cua.dry_run": "false",
+      "cua.kill_switch": "false",
+      "cua.max_clicks_per_min": "30",
+      "cua.max_per_turn": "12",
+      "pointer.mode": "guide",
+      "agent.autonomy": "guided",
+      "dictation.mode": "cleanup",
+      "voice.enabled": "auto",
+      "voice.captions": "true"
+     },
+     "configReadError": "config.toml line 3: expected a value"
+    }
+   },
+   "write_error": {
+    "_state": "idle",
+    "_fixture": {
+     "patch": {
+      "health": {
+       "brain_ollama": {
+        "code": null,
+        "latency_ms": 41,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "cua": {
+        "code": null,
+        "latency_ms": 3,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "jev": {
+        "code": null,
+        "latency_ms": 12,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "spend": {
+        "code": null,
+        "latency_ms": 0,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "stt": {
+        "code": null,
+        "latency_ms": 9,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       }
+      }
+     },
+     "config": {
+      "budget.daily_usd": "2.00",
+      "budget.monthly_usd": "20.00",
+      "cua.confirm": "tier",
+      "cua.dry_run": "false",
+      "cua.kill_switch": "false",
+      "cua.max_clicks_per_min": "30",
+      "cua.max_per_turn": "12",
+      "pointer.mode": "guide",
+      "agent.autonomy": "guided",
+      "dictation.mode": "cleanup",
+      "voice.enabled": "auto",
+      "voice.captions": "true"
+     },
+     "configState": {
+      "budget.monthly_usd": "error",
+      "cua.dry_run": "saving"
+     },
+     "configErrors": {
+      "budget.monthly_usd": "The daemon rejected it: bad value."
+     }
+    }
    }
   }
  }

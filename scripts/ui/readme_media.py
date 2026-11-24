@@ -41,11 +41,11 @@ SHEETS = {
         [("1x", "Console__acting", "act console, Esc stops (W24)"),
          ("1x", "Answer__done", "answer with good / wrong")],
     ]),
-    "panel": ("Panel: Now, Agents, Memory and Settings tabs", [
+    "panel": ("Panel: Now, Agents, Memory and Quick tabs", [
         [("1x", "NowTab__acting", "Now"),
          ("1x", "AgentsTab__tasks", "Agents"),
          ("1x", "MemoryTab__filled", "Memory")],
-        [("1x", "SettingsTab__ok", "Settings")],
+        [("1x", "QuickTab__ok", "Quick")],
     ]),
     "bar-mark": ("Bar mark: one glyph per state", [
         [("2x", f"BarMark__{s}", s) for s in

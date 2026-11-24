@@ -24,7 +24,7 @@ FIXTURE_SERVICE = ROOT / "tests" / "qml" / "harness" / "FixtureService.qml"
 EXPECTED = ["AskChips", "Answer", "AgentRow", "AgentsTab", "BarActions", "BarMark", "BarPill", "Beacon", "Bubble", "Buddy", "Card", "Chip",
             "Composer", "Creature", "DevTab", "DrawLayer", "EmptyState", "FirstRunCard",
             "HealthSection", "Icon", "Mark", "MemoryTab", "ModelCard", "NowTab", "OverlayLayer",
-            "PanelTab", "Pill", "RateNote", "RateRow", "RunCard", "ScribbleLayer", "SettingsTab", "StatusLine", "StepRow",
+            "PanelTab", "Pill", "RateNote", "RateRow", "RunCard", "ScribbleLayer", "StatusLine", "StepRow",
             "StopControl", "TeachChip", "Transcript", "WeeklyRecapCard", "WhatsNewCard",
             # settings window controls (overhaul U3)
             "ScrollPage", "SectionHeader", "SettingRow", "ToggleControl",
@@ -34,7 +34,9 @@ EXPECTED = ["AskChips", "Answer", "AgentRow", "AgentsTab", "BarActions", "BarMar
             # settings pages and search (overhaul U5)
             "SettingsPage",
             # management app views
-            "AuditView", "BindsView", "HealthView", "SpendView"]
+            "AuditView", "BindsView", "HealthView", "SpendView",
+            # Panel body and Quick tab (one-surface U2)
+            "PanelBody", "QuickTab"]
 
 FORBIDDEN = [
     (r"\bimport\s+Quickshell", "Quickshell import"),
@@ -206,15 +208,17 @@ class TestServiceSurface(unittest.TestCase):
 
 
 class TestPanelW22(unittest.TestCase):
-    """W22: Panel is four tabs, no timers, no literal copy; Settings writes
-    only through the service (wispd config set)."""
+    """W22, one-surface U2: Panel is four tabs (Quick last), no timers, no
+    literal copy; the Quick tab writes only through the service (wispd
+    config set); "Open settings" starts the settings window detached."""
 
     PANEL = PLUGIN / "Panel.qml"
+    BODY = COMP / "PanelBody.qml"
 
     def test_four_tabs(self):
         # four tabs with `[dev] panel` off, five (Dev last) with it on
         src = code(self.PANEL)
-        self.assertIn('["now", "agents", "memory", "settings"]', src)
+        self.assertIn('["now", "agents", "memory", "quick"]', src)
         self.assertIn('baseTabs.concat(["devtab"])', src)
         self.assertIn("service.devTab", src)
 
@@ -230,11 +234,40 @@ class TestPanelW22(unittest.TestCase):
         self.assertIn("hostWidget.service", src)
 
     def test_settings_write_through_service_config_set(self):
-        self.assertIn("configSet", code(self.PANEL))
+        quick = code(COMP / "QuickTab.qml")
+        self.assertIn("service.configSet", quick)
         svc = code(PLUGIN / "WispService.qml")
         self.assertIn("Settings.setCommand", svc)
-        self.assertNotRegex(code(COMP / "SettingsTab.qml"),
-                            r"config\.toml|\"config\", \"set\"")
+        self.assertNotRegex(quick, r"config\.toml|\"config\", \"set\"")
+
+    def test_open_settings_is_detached_not_run_action(self):
+        src = code(self.PANEL)
+        self.assertRegex(src, r'execDetached\(\[service\.wispd, "settings"\]\)')
+        self.assertNotIn("runAction", src)
+        self.assertIn("onOpenSettings: wisp.openSettings()", src)
+
+    def test_settings_tab_plumbing_is_gone(self):
+        # connectors and the cua/spend reads live in the settings window
+        src = code(self.PANEL)
+        for gone in ("connListProc", "connRunProc", "loadSettings",
+                     "connectors"):
+            self.assertNotIn(gone, src)
+        self.assertFalse((COMP / "SettingsTab.qml").exists())
+
+    def test_catcher_keeps_focus_and_forwards_keys_to_the_page(self):
+        # the page must not take focus from PanelKeyCatcher (a sibling of
+        # the body), or Escape and Tab stop reaching it
+        src = code(self.PANEL)
+        self.assertIn("Keys.forwardTo: content.item ? [content.item.page] : []", src)
+        self.assertNotIn("forceActiveFocus", src)
+        self.assertNotIn("focusPage", src)
+        self.assertNotIn("forceActiveFocus", code(self.BODY))
+
+    def test_body_holds_tabs_in_a_scrolling_page(self):
+        src = code(self.BODY)
+        self.assertIn("ScrollPage", src)
+        self.assertNotIn("StackLayout", src)
+        self.assertIn("onTabChanged: page.scrollTo(0)", src)
 
     def test_settings_keys_exist_in_default_config(self):
         import sys

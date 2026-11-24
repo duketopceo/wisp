@@ -179,6 +179,7 @@ class TestWiring(unittest.TestCase):
     def setUp(self):
         self.svc = read(PLUGIN / "WispService.qml")
         self.panel = read(PLUGIN / "Panel.qml")
+        self.body = read(PLUGIN / "components" / "PanelBody.qml")
         self.fix = read(HARNESS / "FixtureService.qml")
 
     def test_flag_off_no_dev_call(self):
@@ -212,14 +213,14 @@ class TestWiring(unittest.TestCase):
             self.assertRegex(self.fix, name)
 
     def test_panel_five_tabs_only_with_flag(self):
-        self.assertIn('["now", "agents", "memory", "settings"]', self.panel)
+        self.assertIn('["now", "agents", "memory", "quick"]', self.panel)
         self.assertRegex(self.panel,
                          r"tabKeys:\s*service && service\.devTab\s*\?"
                          r"\s*baseTabs\.concat\(\[\"devtab\"\]\)\s*:\s*baseTabs")
-        # Settings stays index 3, Dev is index 4
-        self.assertIn("tab === 3", self.panel)
-        self.assertRegex(self.panel, r"DevTab\s*\{[^}]*?visible:\s*"
-                                     r"wisp\.devPanelOn && wisp\.tab === 4",
+        # Quick stays index 3, Dev is index 4 (the body mounts both)
+        self.assertRegex(self.body, r"QuickTab\s*\{[^}]*?visible:\s*root\.tab === 3")
+        self.assertRegex(self.body, r"DevTab\s*\{[^}]*?visible:\s*"
+                                    r"root\.devPanelOn && root\.tab === 4",
                          )
 
     def test_loads_only_on_open_and_refresh(self):
@@ -228,7 +229,7 @@ class TestWiring(unittest.TestCase):
         # the panel wiring: tab change to 4, panel open on 4, refresh signal
         self.assertRegex(self.panel, r"onTabChanged:[^\n]*loadDev|"
                                      r"onTabChanged:\s*\{[^}]*loadDev")
-        self.assertRegex(self.panel, r"onRefresh:\s*[^\n]*loadDev\(\)")
+        self.assertRegex(self.body, r"onRefresh:\s*[^\n]*loadDev\(\)")
         self.assertRegex(self.panel, r"opened[^\n]*tab === 4[^\n]*loadDev|"
                                      r"tab === 4[^\n]*loadDev")
 
@@ -434,6 +435,7 @@ class TestRunsWiring(unittest.TestCase):
     def setUp(self):
         self.svc = read(PLUGIN / "WispService.qml")
         self.panel = read(PLUGIN / "Panel.qml")
+        self.body = read(PLUGIN / "components" / "PanelBody.qml")
         self.tab = read(PLUGIN / "components" / "DevTab.qml")
 
     def test_runs_proc_is_one_shot_and_loaded_with_the_turns(self):
@@ -452,10 +454,10 @@ class TestRunsWiring(unittest.TestCase):
         self.assertRegex(self.svc, r"devTab:\s*devPanel \|\| devOn")
 
     def test_panel_badge_and_runs_wiring(self):
-        self.assertIn("Dev.badgeText", self.panel)
+        self.assertIn("Dev.badgeText", self.body)
         self.assertIn("service.devTab", self.panel)
-        self.assertRegex(self.panel, r"runsReply:\s*col\.svc\.devRuns")
-        self.assertIn("devOn", self.panel)
+        self.assertRegex(self.body, r"runsReply:\s*root\.service\.devRuns")
+        self.assertIn("devOn", self.body)
 
     def test_dev_tab_runs_section_rules(self):
         self.assertIn("D.runView", self.tab)

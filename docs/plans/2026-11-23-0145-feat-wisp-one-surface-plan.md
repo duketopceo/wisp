@@ -150,32 +150,38 @@ Wisp grew surfaces one at a time, and each picked its own words and marks. The b
 **Dependencies:** U1.
 **Files:**
 - `shell-plugin/Panel.qml`
-- `shell-plugin/components/QuickTab.qml` (new); `SettingsTab.qml` (removed)
-- `shell-plugin/components/NowTab.qml`, `DevTab.qml`
-- `tests/qml/lib/tst_panel.qml` (new), `tests/qml/lib/tst_settings.qml`, `tests/test_components.py`, `tests/test_copy_lint.py`, the snapshot goldens
+- `shell-plugin/components/PanelBody.qml` (new, window-free), `QuickTab.qml` (new); `SettingsTab.qml` (removed)
+- `shell-plugin/components/StatusLine.qml`, `NowTab.qml`, `DevTab.qml`
+- `wisp/copy.py` and the generated `shell-plugin/lib/copy.js` (new words: the Quick tab label, "Open settings", the offline note)
+- `scripts/ui/snap.py` (tolerance entry), `scripts/ui/readme_media.py` (the Panel still swaps `SettingsTab__ok` for a Quick tab scene)
+- Tests: `tests/qml/lib/tst_panel.qml` (new), `tests/qml/lib/tst_settings.qml`, `tests/test_components.py`, `tests/test_copy_lint.py`, `tests/test_dev_tab.py`, `tests/test_rate.py`, `tests/test_wisp_service.py` (their `Panel.qml` source assertions follow the markup into `PanelBody.qml`), `tests/qml/harness/scenes.json`, the snapshot goldens
 
 **Approach:**
-- Wrap the tab area in `ScrollPage`, capped by `fittedContentHeight`. Tab bodies go in a `StackLayout`, so hidden tabs do not count toward height.
+- `Panel.qml` imports `qs.Commons` and `qs.Ui` (its `KeyboardPanel` host), which `qmltestrunner` and the snapshot harness cannot load. So the header, tab row, banners and tab bodies move into a window-free `PanelBody.qml` that takes the service and the Panel's data as properties and emits its actions as signals. `Panel.qml` keeps the host and the skills, decisions, onboarding and what's-new plumbing, and sizes the card from `PanelBody`. `tst_panel.qml` and the new scenes drive `PanelBody` against `FixtureService`.
+- With `SettingsTab` gone, `Panel.qml` drops what only it used: the `connectors` property, `connListProc`, `connRunProc`, `loadSettings()` and the tab-3 load hooks. On open the Panel reads config only (`service.loadConfig()`). Connectors stay in the settings window. `WispService.loadSettings()` (the cua and spend reads) stays for the console until U3 removes it.
+- Wrap the tab area in `ScrollPage`, capped by `fittedContentHeight`. Tab bodies stay in a `Column` with per-tab `visible`, as today, so only the shown tab counts toward height. A `StackLayout` sizes to its tallest child, hidden ones included, so it is not used.
 - What's-new, first-run and recap banners move into the Now tab's scroll area and stay dismissible.
 - `QuickTab` shows:
-  - the health summary (a click opens `wispd settings --category health`);
-  - the schema's `quick` fields, through the overhaul plan's U3 controls with its U5 write path, so values are in schema format and one write runs at a time.
+  - a health summary: one clickable row built from `health.js` `sections(service.health)` (all ok, or how many checks are down), led by the status table word when the daemon is offline or stale. It does not embed `HealthSection`, so the Panel makes no cua or spend reads. A click opens the settings window. `health` is not a `--category` choice until U3 adds the Status pages, so in U2 the click runs `wispd settings` with no category; U3 retargets it to `--category health`.
+  - every schema field marked `quick`, in schema order and grouped by schema group as the old tab was, through the overhaul plan's U3 controls (toggle, number, choice) with its U5 write path, so values are in schema format and one write runs at a time.
 - Quick tab states:
-  - **Offline:** the summary shows the table's offline word, and the toggles are disabled with a one-line reason.
-  - **Loading:** a loading line until config arrives.
-  - **Failed write:** the daemon's error shows inline on the row, and the toggle returns to the saved value.
+  - **Offline:** the summary shows the table's offline word, with a one-line note that changes are saved to the config file and apply when Wisp starts. The fields stay enabled: `wispd config set` writes `config.toml` with no daemon, and the settings window behaves the same way.
+  - **Loading:** a loading line while `configLoaded` is false.
+  - **Read failed:** when `configReadError` is set, the error shows on one line with a Retry that calls `service.loadConfig()`, and the fields are disabled until a read succeeds.
+  - **Failed write:** the daemon's error shows inline on the row, and the control returns to the saved value.
 - Scrolling resets to the top on tab switch. PageUp, PageDown, Home and End scroll the Panel.
-- The header carries "Open settings" on every tab. It runs `wispd settings` detached, never through `runAction`.
+- The header is the `StatusLine` row with an "Open settings" chip at its right edge on every tab; the status notice elides first when the row is tight. The chip runs `wispd settings` detached, never through `runAction`, then closes the Panel.
 - `DevTab` drops its 340 px width and scrolls.
 
 **Test scenarios:**
 - With content taller than the card, the Panel scrolls and the header stays fixed.
-- A hidden tab does not add height.
-- The Quick tab shows the quick fields, and changing a toggle calls `configSet` once with the formatted value.
-- "Open settings" runs `wispd settings` detached from every tab, and the health summary opens `--category health`.
-- Offline: the toggles are disabled with a reason line. A failed write shows the error inline, and the toggle returns to its saved value.
+- A hidden tab does not add height: with a tall Quick tab, the Now tab's body height follows Now alone.
+- The Quick tab shows every quick field, and changing one calls `configSet` once with the formatted value.
+- "Open settings" runs `wispd settings` detached from every tab and closes the Panel, and the health summary opens the settings window (U3 adds `--category health`).
+- Offline: the summary shows the offline word and the note, and the fields stay enabled. Read failed: the error and Retry show, and the fields are disabled. A failed write shows the error inline, and the control returns to its saved value.
 - Switching tabs resets scroll to the top.
 - Banners appear only on Now and can be dismissed.
+- Scenes for the Panel body (each tab, offline, read failed) and the header at the narrow viewport with the offline notice showing, in light and dark.
 
 **Verification:** QML suites, full unit suite, goldens at both viewports.
 
@@ -195,7 +201,7 @@ Wisp grew surfaces one at a time, and each picked its own words and marks. The b
 - Docs: `INDEX.md`, `docs/DEV_MODE.md`, `DESIGN-v2.md`, `CHANGELOG.md`
 
 **Approach:**
-- **Sidebar order:** Home, Activity, Memory, Agents; then the settings categories; then a Status group (Health, Spend, Audit, Binds). The launcher opens Home. `wispd settings --category <page>` deep-links to any page, and the Panel health summary uses `health`. Views reflow to the page width; the console's fixed sizes do not carry over.
+- **Sidebar order:** Home, Activity, Memory, Agents; then the settings categories; then a Status group (Health, Spend, Audit, Binds). The launcher opens Home. `wispd settings --category <page>` deep-links to any page, and the Panel health summary (which opens the window with no category in U2) switches to `--category health`. Views reflow to the page width; the console's fixed sizes do not carry over.
 - **Page states.** Every Status and management page uses the shared `EmptyState` with words from copy:
   - first-event loading;
   - daemon offline (with Retry);

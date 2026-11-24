@@ -12,7 +12,7 @@ Flickable {
   property var service: null
   default property alias content: column.data
   property alias spacing: column.spacing
-  readonly property int margin: M.scale.space.xl
+  property int margin: M.scale.space.xl
   readonly property real maxY: Math.max(0, contentHeight - height)
   readonly property var tk: service ? service.tokens : ({})
   // the item with keyboard focus in this window, to follow it on Tab
