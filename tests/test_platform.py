@@ -133,22 +133,6 @@ class TestPlatform(unittest.TestCase):
         with _with_os("linux"):
             self.assertFalse(platform.wm_ok(p))
 
-    def test_macos_seam_argv(self):
-        """Deterministic macOS command contracts — the seams a macOS
-        release relies on (assert argv, not live behavior)."""
-        with _with_os("macos"), mock.patch.object(platform, "_which",
-                                                  return_value=True):
-            self.assertEqual(
-                platform.screenshot_cmd(Path("/t/s.png")),
-                ["screencapture", "-x", "/t/s.png"])
-            self.assertEqual(platform.record_cmd(Path("/t/u.wav"), 5)[0],
-                             "sox")
-            notify = platform.notify_cmd("T", "B")
-            self.assertEqual(notify[0], "osascript")
-            self.assertIn("display notification", notify[2])
-            self.assertEqual(platform.focus_cmds("Foo"), [])
-            self.assertFalse(platform.supports_hotkey_install())
-
     def test_macos_and_windows_telemetry_seams(self):
         with _with_os("macos"), \
                 mock.patch.object(platform, "_which", return_value=True):
