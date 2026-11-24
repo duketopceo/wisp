@@ -10,7 +10,7 @@ Column {
   id: root
 
   property var service: null
-  // [{time, route, ms, you, wisp}] oldest first (Manage.turnRows)
+  // [{time, route, ms, you, wisp}] newest first (Manage.turnRows)
   property var turns: []
   // [{key, title, evidence}] (Manage.openSuggestions)
   property var suggestions: []
@@ -91,7 +91,7 @@ Column {
     width: root.width
   }
   Repeater {
-    model: root.turns.slice().reverse()
+    model: root.turns
     delegate: Column {
       id: turn
       required property var modelData

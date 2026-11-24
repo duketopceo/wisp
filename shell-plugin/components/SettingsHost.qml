@@ -81,15 +81,11 @@ Item {
   }
 
   onQueryChanged: if (searchBox.text !== query) searchBox.text = query
-  onCategoryChanged: Qt.callLater(function () { sideScroll.reveal(root.entry(category)) })
-  function entry(name) {
-    for (var i = 0; i < list.children.length; i++) {
-      var c = list.children[i]
-      for (var j = 0; j < c.children.length; j++)
-        if (c.children[j].objectName === "cat:" + name) return c.children[j]
-    }
-    return null
-  }
+  // keep the chosen entry in the sidebar's view (the row of its delegate)
+  onCategoryChanged: Qt.callLater(function () {
+    var e = entries.itemAt(S.SIDEBAR.indexOf(category))
+    if (e) sideScroll.reveal(e.row)
+  })
 
   Shortcut {
     sequences: [StandardKey.Find]
@@ -153,85 +149,86 @@ Item {
         else if (bottom > contentY + height) contentY = Math.min(contentHeight - height, bottom - height)
       }
 
-    Column {
-      id: list
-      objectName: "sidebar"
-      opacity: root.searching ? 0.4 : 1
-      width: sideScroll.width
-      spacing: M.scale.space.xs
-      activeFocusOnTab: true
+      Column {
+        id: list
+        objectName: "sidebar"
+        opacity: root.searching ? 0.4 : 1
+        width: sideScroll.width
+        spacing: M.scale.space.xs
+        activeFocusOnTab: true
 
-      Accessible.role: Accessible.List
-      Keys.onUpPressed: root.select(S.SIDEBAR[Math.max(0, root.index - 1)])
-      Keys.onDownPressed: root.select(S.SIDEBAR[Math.min(S.SIDEBAR.length - 1, root.index + 1)])
-      Keys.onTabPressed: (event) => {
-        if (root.onPage) { managePage.focusHeading(); event.accepted = true }
-        else event.accepted = false
-      }
+        Accessible.role: Accessible.List
+        Keys.onUpPressed: root.select(S.SIDEBAR[Math.max(0, root.index - 1)])
+        Keys.onDownPressed: root.select(S.SIDEBAR[Math.min(S.SIDEBAR.length - 1, root.index + 1)])
+        Keys.onTabPressed: (event) => {
+          if (root.onPage) { managePage.focusHeading(); event.accepted = true }
+          else event.accepted = false
+        }
 
-      Repeater {
-        model: S.SIDEBAR
-        delegate: Column {
-          id: entry
-          required property string modelData
-          // a group caption above the first config category and the
-          // first Status page
-          readonly property string group: modelData === S.CATEGORIES[0] ? "settings"
-            : modelData === S.STATUS_PAGES[0] ? "status" : ""
-          width: list.width
+        Repeater {
+          id: entries
+          model: S.SIDEBAR
+          delegate: Column {
+            id: entry
+            property alias row: item
+            required property string modelData
+            // a group caption above the first config category and the
+            // first Status page
+            readonly property string group: modelData === S.CATEGORIES[0] ? "settings"
+              : modelData === S.STATUS_PAGES[0] ? "status" : ""
+            width: list.width
 
-          Text {
-            objectName: "group:" + entry.group
-            visible: entry.group !== ""
-            textFormat: Text.PlainText
-            x: M.scale.space.md
-            topPadding: M.scale.space.md
-            bottomPadding: M.scale.space.xs
-            text: entry.group !== "" ? root.service.ui("set.group." + entry.group) : ""
-            color: root.tk.inkMuted
-            font.family: root.service.fontFamily
-            font.pixelSize: M.fontSize("caption", root.ts)
-          }
+            Text {
+              objectName: "group:" + entry.group
+              visible: entry.group !== ""
+              textFormat: Text.PlainText
+              x: M.scale.space.md
+              topPadding: M.scale.space.md
+              bottomPadding: M.scale.space.xs
+              text: entry.group !== "" ? root.service.ui("set.group." + entry.group) : ""
+              color: root.tk.inkMuted
+              font.family: root.service.fontFamily
+              font.pixelSize: M.fontSize("caption", root.ts)
+            }
 
-        Rectangle {
-          id: item
-          readonly property string modelData: entry.modelData
-          readonly property bool current: modelData === root.category
-          objectName: "cat:" + modelData
-          width: list.width
-          height: M.controlHeight(false)
-          radius: Math.min(M.radius.chrome, M.radius.chip)
-          color: current ? root.tk.selection : (area.containsMouse ? root.tk.canvas : root.tk.raised)
-          border.width: current && list.activeFocus ? M.scale.focusRing : 0
-          border.color: root.tk.accent
+            Rectangle {
+              id: item
+              readonly property bool current: entry.modelData === root.category
+              objectName: "cat:" + entry.modelData
+              width: list.width
+              height: M.controlHeight(false)
+              radius: Math.min(M.radius.chrome, M.radius.chip)
+              color: current ? root.tk.selection : (area.containsMouse ? root.tk.canvas : root.tk.raised)
+              border.width: current && list.activeFocus ? M.scale.focusRing : 0
+              border.color: root.tk.accent
 
-          Accessible.role: Accessible.ListItem
-          Accessible.name: label.text
-          Accessible.selected: current
+              Accessible.role: Accessible.ListItem
+              Accessible.name: label.text
+              Accessible.selected: current
 
-          Text {
-            id: label
-            textFormat: Text.PlainText
-            anchors.verticalCenter: parent.verticalCenter
-            x: M.scale.space.md
-            width: parent.width - 2 * M.scale.space.md
-            elide: Text.ElideRight
-            text: root.service.ui("set.cat." + item.modelData)
-            color: item.current ? root.tk.accent : root.tk.ink
-            font.family: root.service.fontFamily
-            font.pixelSize: M.fontSize("body", root.ts)
-          }
+              Text {
+                id: label
+                textFormat: Text.PlainText
+                anchors.verticalCenter: parent.verticalCenter
+                x: M.scale.space.md
+                width: parent.width - 2 * M.scale.space.md
+                elide: Text.ElideRight
+                text: root.service.ui("set.cat." + entry.modelData)
+                color: item.current ? root.tk.accent : root.tk.ink
+                font.family: root.service.fontFamily
+                font.pixelSize: M.fontSize("body", root.ts)
+              }
 
-          MouseArea {
-            id: area
-            anchors.fill: parent
-            hoverEnabled: true
-            onClicked: { list.forceActiveFocus(); root.select(item.modelData) }
+              MouseArea {
+                id: area
+                anchors.fill: parent
+                hoverEnabled: true
+                onClicked: { list.forceActiveFocus(); root.select(entry.modelData) }
+              }
+            }
           }
         }
-        }
       }
-    }
     }
   }
 

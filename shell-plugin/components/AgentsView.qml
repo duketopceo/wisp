@@ -98,8 +98,10 @@ Column {
         service: root.service
         name: task.modelData
         state: task.t.status || "queued"
-        line: task.t.line || task.t.task || ""
+        line: Manage.taskHintKey(task.t) !== "" ? root.service.ui(Manage.taskHintKey(task.t))
+          : (task.t.line || task.t.task || "")
         seconds: Number(task.t.seconds) || 0
+        unread: Boolean(task.t.unread)
       }
       Chip {
         id: stop

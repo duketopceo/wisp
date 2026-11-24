@@ -277,7 +277,8 @@ Item {
       // every row fits the page: nothing runs past the right edge
       var view = find(mp, "body").item
       verify(view.appWidth >= 48)
-      verify(64 + 84 + view.appWidth + 90 + 60 + 4 * view.gap <= view.width + 0.5)
+      verify(view.timeWidth + view.decisionWidth + view.appWidth + view.toolWidth + view.msWidth
+             + 4 * view.gap <= view.width + 0.5)
     }
 
     function test_select_ignores_unknown_and_same() {

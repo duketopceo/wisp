@@ -1,4 +1,4 @@
-// Audit view of the management app: the cua audit log, read only. `log` is
+// Audit page of the settings window: the cua audit log, read only. `log` is
 // the raw cua.jsonl text (wisp/cua_safety.audit_default_path()); the view
 // shows time, decision, app, tool and duration per guarded call and nothing
 // else. Typed text is never in the log, and coordinates and keys stay out of
@@ -22,7 +22,11 @@ Column {
   // the columns reflow to the width: time, decision, tool and duration are
   // fixed, the app column takes what is left
   readonly property int gap: M.scale.space.lg
-  readonly property real appWidth: Math.max(48, width - (64 + 84 + 90 + 60) - 4 * gap)
+  readonly property int timeWidth: 64
+  readonly property int decisionWidth: 84
+  readonly property int toolWidth: 90
+  readonly property int msWidth: 60
+  readonly property real appWidth: Math.max(48, width - (timeWidth + decisionWidth + toolWidth + msWidth) - 4 * gap)
 
   width: 560
   spacing: M.spacing.md
@@ -68,15 +72,15 @@ Column {
         spacing: root.gap
         topPadding: M.spacing.lg
         bottomPadding: M.spacing.lg
-        Cell { width: 64; text: modelData.time; color: root.tk.inkMuted }
+        Cell { width: root.timeWidth; text: modelData.time; color: root.tk.inkMuted }
         Cell {
-          width: 84
+          width: root.decisionWidth
           text: root.service.ui("ui.manage.audit." + modelData.decision)
           color: root.tk[Manage.TONE_KEY[Manage.decisionTone(modelData.decision)]]
         }
         Cell { width: root.appWidth; text: modelData.app !== "" ? modelData.app : "-" }
-        Cell { width: 90; text: modelData.tool }
-        Cell { width: 60; text: modelData.ms + " ms"; color: root.tk.inkMuted; horizontalAlignment: Text.AlignRight }
+        Cell { width: root.toolWidth; text: modelData.tool }
+        Cell { width: root.msWidth; text: modelData.ms + " ms"; color: root.tk.inkMuted; horizontalAlignment: Text.AlignRight }
       }
     }
   }

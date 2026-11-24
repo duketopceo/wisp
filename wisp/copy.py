@@ -422,6 +422,8 @@ STRINGS = {
     "ui.tasks.placeholder": "describe a task",
     "ui.tasks.start": "start",
     "ui.tasks.cancel": "cancel",
+    "ui.tasks.interrupted": "say continue to resume",
+    "ui.tasks.waiting": "waiting for your answer",
     "set.hotkey.mod.label": "talk key modifier",
     "set.hotkey.mod.help": "The modifier for the talk key, such as SUPER or ALT. Run wispd install after changing it to rebind.",
     "set.hotkey.key.label": "talk key",

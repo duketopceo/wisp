@@ -1,4 +1,4 @@
-// Spend view of the management app: today and month against the caps, the
+// Spend page of the settings window: today and month against the caps, the
 // paid-calls-paused state, and the per model table. `service.spend` is the
 // state field (W14); `models` is `wispd spend --json` data.models, passed in
 // by the app after a one-shot read.

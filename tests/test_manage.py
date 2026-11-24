@@ -324,8 +324,9 @@ class TestPageHelpers(unittest.TestCase):
         text = "\n".join(lines[:10] + ["{bad"] + lines[10:])
         rows = self.js(f"Manage.turnRows({json.dumps(text)}, 30)")
         self.assertEqual(len(rows), 30)
-        self.assertEqual(rows[-1], {"time": "10:00:34", "route": "act",
-                                    "ms": 34, "you": "t34", "wisp": "r34"})
+        self.assertEqual(rows[0], {"time": "10:00:34", "route": "act",
+                                   "ms": 34, "you": "t34", "wisp": "r34"})
+        self.assertEqual(rows[-1]["you"], "t5")
         self.assertEqual(self.js('Manage.turnRows("", 30)'), [])
 
     def test_open_suggestions_take_the_latest_record_per_key(self):
@@ -351,6 +352,16 @@ class TestPageHelpers(unittest.TestCase):
                          {"data": None, "error": "exit"})
         self.assertEqual(self.js('Manage.bindsRead(0, "{bad")'),
                          {"data": None, "error": "parse"})
+
+    def test_task_hint_key(self):
+        self.assertEqual(self.js('Manage.taskHintKey({status: "interrupted"})'),
+                         "ui.tasks.interrupted")
+        self.assertEqual(self.js('Manage.taskHintKey({status: "running", waiting: true})'),
+                         "ui.tasks.waiting")
+        self.assertEqual(self.js('Manage.taskHintKey({status: "running"})'), "")
+        from wisp import copy as wcopy
+        for k in ("ui.tasks.interrupted", "ui.tasks.waiting"):
+            self.assertIn(k, wcopy.STRINGS)
 
     def test_task_of_reads_old_and_new_shapes(self):
         self.assertEqual(self.js('Manage.taskOf("running")'),
@@ -417,10 +428,14 @@ class TestAppNeverPolls(unittest.TestCase):
         self.assertIsNone(re.search(r"\bpollMs|setInterval", SHELL))
 
     def test_every_filewatch_is_event_driven(self):
-        # each FileView that is not a one-shot note read reloads on change
-        for fid in ("decisionsView", "corrView", "suggView", "auditView"):
+        # each FileView that is not a one-shot note read reloads on change,
+        # watched only while its page is open and read when it opens
+        for fid, page in (("decisionsView", "activity"), ("corrView", "activity"),
+                          ("suggView", "activity"), ("auditView", "audit")):
             m = re.search(rf"id:\s*{fid}\b(.*?)\n  \}}", SHELL, re.S)
-            self.assertIn("watchChanges: true", m.group(1), fid)
+            self.assertIn(f'watchChanges: host.category === "{page}"', m.group(1), fid)
+            self.assertIn("onFileChanged: reload()", m.group(1), fid)
+            self.assertIn(f"{fid}.reload()", SHELL, fid)
 
     def test_wispd_results_are_read_when_a_view_opens(self):
         self.assertIn("win.enter(host.category)", SHELL)

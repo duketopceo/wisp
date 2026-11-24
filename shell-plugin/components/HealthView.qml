@@ -1,4 +1,4 @@
-// Health view of the management app: the W22 HealthSection at app width.
+// Health page of the settings window: the W22 HealthSection at app width.
 // Same inputs as the Panel (state health rows and spend field through the
 // service; `cua` from wispd cua status --json and `spendModels` from wispd
 // spend --json as one-shot reads), so the two surfaces show one set of rows.

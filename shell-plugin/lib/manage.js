@@ -1,8 +1,9 @@
 .pragma library
 
-// Management app views (W26): the audit log and the Hyprland binds as plain
-// rows, next to lib/health.js (health, spend, cua). wisp/tui.py builds the
-// same shapes from the same JSON (tests/test_manage_parity.py compares them),
+// Settings window Status and management pages (W26, one-surface U3): the
+// audit log, the Hyprland binds, the turn log and tasks as plain rows,
+// next to lib/health.js (health, spend, cua). wisp/tui.py builds the
+// same shapes from the same JSON (TestParity in tests/test_manage.py compares them),
 // so the app and the terminal dashboard cannot drift. No colors, no strings
 // for users: labels come from the copy table in the components.
 
@@ -121,11 +122,21 @@ function _jsonLines(text) {
   return out
 }
 
-// decisions.jsonl -> the newest `limit` turns as display rows, newest last:
-// {time, route, ms, you, wisp}
+// decisions.jsonl -> the newest `limit` turns as display rows, newest
+// first: {time, route, ms, you, wisp}. Lines are parsed from the end
+// until `limit` good records are found; bad lines are skipped.
 function turnRows(text, limit) {
-  var all = _jsonLines(text).filter(isObj)
-  var rows = all.slice(-(limit || 30))
+  var n = limit || 30
+  var lines = String(text || "").split("\n")
+  var rows = []
+  for (var i = lines.length - 1; i >= 0 && rows.length < n; i--) {
+    var l = lines[i].trim()
+    if (!l) continue
+    try {
+      var d = JSON.parse(l)
+      if (isObj(d)) rows.push(d)
+    } catch (e) {}
+  }
   return rows.map(function (d) {
     var route = isObj(d.answers) && isObj(d.answers.route) ? d.answers.route.choice : ""
     var ms = isObj(d.timing_ms) ? Number(d.timing_ms.act_ms) || 0 : 0
@@ -160,6 +171,15 @@ function openSuggestions(text) {
 function taskOf(t) {
   if (t === null || t === undefined) return { status: "", task: "" }
   return typeof t === "string" ? { status: t, task: "" } : t
+}
+
+// the row line for a task, as a copy key ("" for the task's own line):
+// an interrupted agent gets the say-continue hint, a pending ask the
+// waiting one (the Panel Agents tab and the settings window Tasks page)
+function taskHintKey(t) {
+  if (t.status === "interrupted") return "ui.tasks.interrupted"
+  if (t.waiting) return "ui.tasks.waiting"
+  return ""
 }
 
 // `wispd binds --json` stdout -> {data, error}: error is "" when it parsed

@@ -5,6 +5,7 @@
 // agent gets a say-"continue" hint.
 import QtQuick
 import "../lib/metrics.js" as M
+import "../lib/manage.js" as Manage
 
 Column {
   id: root
@@ -19,9 +20,8 @@ Column {
   }
 
   function lineOf(t) {
-    if (t.status === "interrupted") return "say continue to resume"
-    if (t.waiting) return "waiting for your answer"
-    return t.line || t.task || ""
+    var hint = Manage.taskHintKey(t)
+    return hint !== "" ? root.service.ui(hint) : (t.line || t.task || "")
   }
 
   EmptyState {

@@ -21,9 +21,9 @@ import "lib/manage.js" as Manage
 // holds no socket or reconnect timers. A page shows its loading state
 // until the first state after the stream turns on. Config, status and the
 // connector list are read once on open and again on Retry; nothing polls.
-// Files that change while their page is open (decisions, corrections,
-// suggestions, the cua audit log) are watched; the cua, spend and binds
-// reads run when their page opens.
+// Files are read when their page opens and watched only while it is open
+// (decisions, corrections and suggestions on Activity, the cua audit log
+// on Audit); the cua, spend and binds reads run when their page opens.
 
 FloatingWindow {
   id: win
@@ -79,6 +79,8 @@ FloatingWindow {
       bindsError = "";
       bindsProc.running = true;
     }
+    if (page === "activity") { decisionsView.reload(); corrView.reload(); suggView.reload(); }
+    if (page === "audit") auditView.reload();
     if (page === "memory") { memoryView.reload(); userView.reload(); }
   }
   function retryPage() {
@@ -103,7 +105,7 @@ FloatingWindow {
     onLoaded: win.decisionsText = decisionsView.text()
     onLoadFailed: win.decisionsText = ""
     path: win.dataDir + "/decisions.jsonl"
-    watchChanges: true
+    watchChanges: host.category === "activity"
     printErrors: false
     onFileChanged: reload()
   }
@@ -112,7 +114,7 @@ FloatingWindow {
     onLoaded: win.corrText = corrView.text()
     onLoadFailed: win.corrText = ""
     path: win.dataDir + "/corrections.jsonl"
-    watchChanges: true
+    watchChanges: host.category === "activity"
     printErrors: false
     onFileChanged: reload()
   }
@@ -121,7 +123,7 @@ FloatingWindow {
     onLoaded: win.suggText = suggView.text()
     onLoadFailed: win.suggText = ""
     path: win.dataDir + "/suggestions.jsonl"
-    watchChanges: true
+    watchChanges: host.category === "activity"
     printErrors: false
     onFileChanged: reload()
   }
@@ -143,7 +145,7 @@ FloatingWindow {
   FileView {
     id: auditView
     path: win.auditPath
-    watchChanges: true
+    watchChanges: host.category === "audit"
     printErrors: false
     onFileChanged: reload()
     onLoaded: win.auditText = auditView.text()
