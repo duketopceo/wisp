@@ -290,45 +290,38 @@ def _wordink_fallback_note(err) -> None:
           file=sys.stderr)
 
 
-def transcribe(wav: pathlib.Path, cfg: dict) -> str:
-    stt = config.stt_settings(cfg)
-    provider = stt["provider"]
-    from . import stt_stream
-    streamer = stt_stream.claim(wav)
-    from . import warm
-    warm.claim()            # key-up: the warm-up finishes on its own
-    if streamer is not None and provider == "openai":
-        text = streamer.finish()    # chunks sent while the key was held
-        if text is not None:
-            return text
-    if provider == "wordink":
-        # optional local engine: the running WordInk app's local API
-        # (wisp/wordink_local.py), else the `wordink` Python module. Any
-        # failure falls back to the hosted STT below, never to silence.
-        from . import wordink_local
-        try:
-            return wordink_local.transcribe(wav, cfg)
-        except wordink_local.WordinkError as e:
-            _wordink_fallback_note(e)
-        try:
-            import wordink
-            return wordink.transcribe(str(wav))
-        except Exception:
-            pass
-        return _transcribe_openai(wav, {**config.STT_DEFAULTS,
-                                        **{k: v for k, v in stt.items()
-                                           if k != "provider"}}, cfg)
-    if provider == "openai":
-        return _transcribe_openai(wav, stt, cfg)
+def _stt_tail_trim(cfg: dict) -> bool:
+    v = ((cfg or {}).get("stt") or {}).get("trim_tail", "true")
+    return str(v).strip().lower() not in ("false", "0", "off", "no")
+
+
+def _postprocess_transcript(text, tail_meta: dict, cfg: dict):
+    from . import lang as _lang
+    from . import stt_hallucination
+    v = ((cfg or {}).get("stt") or {}).get("filter_trailing", "true")
+    if str(v).strip().lower() in ("false", "0", "off", "no"):
+        return text, {}
+    raw = str(text)
+    clean, meta = stt_hallucination.strip_trailing_hallucination(
+        raw, tail_meta)
+    if not meta:
+        return text, {}
+    lang = getattr(text, "language", "")
+    if lang:
+        return _lang.Transcript(clean, lang), meta
+    return clean, meta
+
+
+def _transcribe_whisper(wav: pathlib.Path, cfg: dict):
     model = config.whisper_model(cfg)
     if not (config.WHISPER_BIN.exists() and model.exists()):
-        raise RuntimeError(f"whisper.cpp missing: {config.WHISPER_BIN} / {model}")
-    argv = [str(config.WHISPER_BIN), "-m", str(model), "-nt",
-            "-f", str(wav)]
+        raise RuntimeError(
+            f"whisper.cpp missing: {config.WHISPER_BIN} / {model}")
+    argv = [str(config.WHISPER_BIN), "-m", str(model), "-nt", "-nc",
+            "-et", "2.40", "-lpt", "-1.00", "-f", str(wav)]
     from . import lang as _lang
     multilingual = not _lang.local_model_english_only(cfg)
     if multilingual:
-        # a multilingual model: pin the language or let it detect
         argv += ["-l", _lang.base(_lang.configured(cfg)) or "auto"]
     from . import vocab
     prompt = vocab.build(cfg)
@@ -341,6 +334,63 @@ def transcribe(wav: pathlib.Path, cfg: dict) -> str:
                       r.stderr or "")
         heard = m.group(1) if m else ""
     return _lang.Transcript(" ".join(r.stdout.split()), heard)
+
+
+def _transcribe_wordink(wav: pathlib.Path, stt: dict, cfg: dict):
+    from . import wordink_local
+    try:
+        return wordink_local.transcribe(wav, cfg)
+    except wordink_local.WordinkError as e:
+        _wordink_fallback_note(e)
+    try:
+        import wordink
+        return wordink.transcribe(str(wav))
+    except Exception:
+        pass
+    hosted = {**config.STT_DEFAULTS,
+              **{k: v for k, v in stt.items() if k != "provider"}}
+    return _transcribe_openai(wav, hosted, cfg)
+
+
+def transcribe(wav: pathlib.Path, cfg: dict) -> str:
+    stt = config.stt_settings(cfg)
+    provider = stt["provider"]
+    from . import stt_audio
+    tail_meta = {}
+    trim_tmp = None
+    if _stt_tail_trim(cfg):
+        use, tail_meta, trim_tmp = stt_audio.prepare_for_stt(wav)
+    else:
+        tail_meta = stt_audio.tail_stats_file(wav)
+        use = wav
+    from . import stt_stream
+    streamer = stt_stream.claim(wav)
+    if use != wav and streamer is not None:
+        streamer.abort()
+        streamer = None
+    from . import warm
+    warm.claim()            # key-up: the warm-up finishes on its own
+    try:
+        text = None
+        if streamer is not None and provider == "openai":
+            text = streamer.finish()
+        if text is None:
+            if provider == "wordink":
+                text = _transcribe_wordink(use, stt, cfg)
+            elif provider == "openai":
+                text = _transcribe_openai(use, stt, cfg)
+            else:
+                text = _transcribe_whisper(use, cfg)
+        text, filt = _postprocess_transcript(text, tail_meta, cfg)
+        meta = {**tail_meta, **filt}
+        if meta:
+            from . import trace as _trace
+            _trace.emit(_trace.current(), "stt_cleanup", "stt", meta)
+        return text
+    finally:
+        if trim_tmp is not None:
+            with suppress(Exception):
+                trim_tmp.unlink(missing_ok=True)
 
 
 def _cap_prompt(prompt: str, limit: int = 896) -> str:
@@ -366,7 +416,8 @@ def _transcribe_openai(wav: pathlib.Path, stt: dict,
     pinned = _lang.base(_lang.configured(cfg or {"stt": stt}))
     # a pinned language is sent as is; on auto the model reports what it
     # heard (verbose_json), so the answer and the voice can follow it
-    extra = [("language", pinned)] if pinned \
+    extra = [("temperature", "0")]
+    extra += [("language", pinned)] if pinned \
         else [("response_format", "verbose_json")]
 
     def post(fields):
@@ -507,7 +558,7 @@ def turn_screenshot(cfg: dict, speculative=None) -> str | None:
     if cfg.get("agent", {}).get("screenshots", "true") != "true":
         return None
     if speculative is not None:
-        got = speculative.take("screenshot", wait=_SPEC_WAIT_S)
+        got = _spec_take(speculative, "screenshot")
         if got or isinstance(got, _blank.Blind):
             return got
     return _vetted_b64()
@@ -532,6 +583,37 @@ def _trace_blank(event: str, fields: dict) -> None:
 
 
 _SPEC_WAIT_S = 1.0
+
+
+def _spec_take(speculative, name: str, wait: float = _SPEC_WAIT_S,
+               ttl: float = 600):
+    """Non-blocking take when the press-time gatherer is already done."""
+    if speculative is None:
+        return None
+    if speculative.take(name, wait=0, consume=False, ttl=ttl) is not None:
+        return speculative.take(name, wait=0, consume=True, ttl=ttl)
+    return speculative.take(name, wait=wait, consume=True, ttl=ttl)
+
+
+def _parallel_map(jobs: dict, timeout: float = 2.0) -> dict:
+    out = {}
+    lock = threading.Lock()
+
+    def run(key, fn):
+        try:
+            val = fn()
+        except Exception:
+            val = None
+        with lock:
+            out[key] = val
+
+    threads = [threading.Thread(target=run, args=(k, fn), daemon=True)
+               for k, fn in jobs.items()]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=timeout)
+    return out
 
 
 def speculative_context(cfg: dict):
@@ -721,31 +803,35 @@ def context_stage(ctx) -> bool:
     wins = speculative.take("windows") if speculative else None
     if wins:
         context += "\n" + wins
+    from . import docread, goals as _goals, learn as _learn, memory
+    from . import omarchy_tutor, session
+    n_turns = int(cfg.get("agent", {}).get("session_turns", "8"))
+    dev_run = (cfg.get("dev") or {}).get("run_id")
+    with sp.timed("context_parallel"):
+        side = _parallel_map({
+            "memory": lambda: memory.context_block(text),
+            "session": lambda: ("" if dev_run else
+                                session.as_text(session.tail(n_turns,
+                                                             app=ctx.app))),
+            "corr": lambda: _learn.correction_context(text, cfg),
+            "doc": lambda: docread.context_for(text, win, cfg),
+            "tutor": lambda: omarchy_tutor.context_for(text),
+        })
     # goal memory — continuations ("it's open, just hit cmd-t") join
     # the open goal instead of starting a fresh act
-    from . import goals as _goals
     with sp.timed("goal"):
         goal, joined = _goals.join_or_new(text, win.get("class", ""), cfg)
     context += "\n" + _goals.context_text()
     _trace.emit(turn, "goal", "thought",
                 {"joined": joined, "goal": goal["text"][:160]})
-    from . import session
-    n_turns = int(cfg.get("agent", {}).get("session_turns", "8"))
-    ctx.session_text = "" if (cfg.get("dev") or {}).get("run_id") else \
-        session.as_text(session.tail(n_turns, app=ctx.app))
+    ctx.session_text = side.get("session") or ""
     if ctx.session_text:
         context += f"\nRecent conversation:\n{ctx.session_text}"
-    from . import memory
     with sp.timed("memory"):
-        block = memory.context_block(text)
+        block = side.get("memory") or ""
     if block:
         context += f"\n{block}"
-    # refinement loop: a labeled-bad last turn or a correction cue
-    # ("no", "didn't work", "instead") turns this utterance into a
-    # retry — the failed attempt rides along as context for Jev and
-    # the act loop
-    from . import learn as _learn
-    corr = _learn.correction_context(text, cfg)
+    corr = side.get("corr")
     detail = text
     if corr:
         context += ("\nCorrection: the previous attempt "
@@ -758,17 +844,12 @@ def context_stage(ctx) -> bool:
         _trace.emit(turn, "correction", "thought",
                     {"via": corr["via"], "prior": corr["prior_task"]})
     ctx.corr, ctx.detail, ctx.context = corr, detail, context
-    try:
-        from . import docread
-        ctx.doc_text = docread.context_for(text, win, cfg)
-    except Exception:
-        ctx.doc_text = ""            # a document read never fails a turn
+    ctx.doc_text = side.get("doc") or ""
     try:
         # the window's own text (U3): a quoted block after the document
         # block, answer route only; the screenshot stays attached
         from . import context as _context
-        found = speculative.take("window_text", wait=_SPEC_WAIT_S,
-                                 ttl=600) if speculative else None
+        found = _spec_take(speculative, "window_text", ttl=600)
         block = "" if qa_skip else _context.window_text_block(found)
         if block:
             ctx.doc_text = (ctx.doc_text + "\n\n" + block
@@ -779,8 +860,7 @@ def context_stage(ctx) -> bool:
         pass                         # a text read never fails a turn
     try:
         from . import selection as _selection
-        prim = speculative.take("selection", wait=_SPEC_WAIT_S, ttl=600) \
-            if speculative else None
+        prim = _spec_take(speculative, "selection", ttl=600)
         found = _selection.build(text, prim, cfg)
         ctx.selection_text, ctx.clip_image = found.text, found.image
         if found.sources:
@@ -789,11 +869,11 @@ def context_stage(ctx) -> bool:
                          "chars": found.chars})
     except Exception:
         ctx.selection_text = ctx.clip_image = ""   # never fails a turn
-    try:
-        from . import omarchy_tutor
-        ctx.tutor_text = omarchy_tutor.context_for(text)
-    except Exception:
-        ctx.tutor_text = ""          # a tutor read never fails a turn
+    ctx.tutor_text = side.get("tutor") or ""
     if ctx.tutor_text:
         ctx.context += "\n" + ctx.tutor_text
+    _trace.emit(turn, "context_timing", "span",
+                {k: sp.ms[k] for k in ("hyprctl", "screenshot", "goal",
+                                        "memory", "context_parallel")
+                 if k in sp.ms})
     return True

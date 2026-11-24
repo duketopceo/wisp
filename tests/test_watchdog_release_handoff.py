@@ -7,6 +7,7 @@ import ast
 from contextlib import suppress
 import pathlib
 import sys
+import time
 import types
 import unittest
 from unittest import mock
@@ -48,6 +49,7 @@ class WatchdogReleaseHandoff(unittest.TestCase):
         self.namespace = {
             "_DAEMON_CTL": self.ctl, "_DAEMON_ST": self.state,
             "_DAEMON_CFG": {"fake": "cfg"},
+            "time": time,
             "threading": types.SimpleNamespace(Thread=self.thread_factory),
             "pipeline": types.SimpleNamespace(record_stop=self.record_stop),
             "_run_listen": self.run_listen, "dlog": mock.Mock(),

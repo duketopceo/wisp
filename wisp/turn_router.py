@@ -23,10 +23,12 @@ unchanged). Example: `openrouter:nvidia/nemotron-3.5-lightning`.
 import json
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutTimeout
 from dataclasses import dataclass
 
 ROUTES = ("act", "teach", "answer", "agent")
 DEFAULT_TIMEOUT_S = 1.5
+DEFAULT_ROUTE_DEADLINE_S = 0.4
 
 # rules that mean "no rule recognised this turn"
 _AMBIGUOUS_RULES = ("default_answer", "launch_unknown", "launch_compound")
@@ -61,8 +63,16 @@ def settings(cfg: dict) -> dict:
             raise ValueError
     except ValueError:
         timeout = DEFAULT_TIMEOUT_S
+    try:
+        deadline = float(str(r.get("route_deadline_s",
+                                   DEFAULT_ROUTE_DEADLINE_S)).strip())
+        if not 0.05 <= deadline <= 10:
+            raise ValueError
+    except ValueError:
+        deadline = DEFAULT_ROUTE_DEADLINE_S
+    timeout = min(timeout, deadline)
     return {"model": str(r.get("ambiguity_model") or "").strip(),
-            "timeout_s": timeout}
+            "timeout_s": timeout, "route_deadline_s": deadline}
 
 
 def ambiguity(text: str, apps: dict | None) -> str:
@@ -114,12 +124,25 @@ def ask_model(text: str, cfg: dict, spec: str, timeout_s: float,
     """One small-model call; the route word or "". `chat` is injectable."""
     if chat is None:
         from . import brain
-        chat = brain.chat
+        base_chat = brain.chat
+    else:
+        base_chat = chat
+    deadline = time.perf_counter() + timeout_s
     msgs = [{"role": "system", "content": _SYSTEM},
             {"role": "user", "content": json.dumps({"request": text})}]
+
+    def call():
+        left = deadline - time.perf_counter()
+        if left <= 0:
+            raise TimeoutError("route deadline")
+        return base_chat(msgs, _model_cfg(cfg, spec),
+                          timeout=max(0.001, left))
+
     try:
-        resp = chat(msgs, _model_cfg(cfg, spec), timeout=timeout_s)
-    except Exception:
+        with ThreadPoolExecutor(max_workers=1) as ex:
+            left = max(0.001, deadline - time.perf_counter())
+            resp = ex.submit(call).result(timeout=left)
+    except (FutTimeout, Exception):
         return ""
     return parse_reply((resp or {}).get("content", ""))
 
@@ -145,8 +168,11 @@ def resolve(text: str, cfg: dict, apps: dict | None = None, *,
     now = time.perf_counter()
     model_ms = (now - m0) * 1000
     if not got:
+        reason = "no usable model answer"
+        if model_ms >= st["route_deadline_s"] * 1000 * 0.95:
+            reason = "route deadline"
         return Decision("act", "fallback", why, (now - t0) * 1000, model_ms,
-                        "no usable model answer")
+                        reason)
     return Decision(got, "model", why, (now - t0) * 1000, model_ms)
 
 

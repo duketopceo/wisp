@@ -14,11 +14,11 @@ the turn then takes the cold path, with the same result. `[voice] warm =
 """
 from __future__ import annotations
 
+import os
 import socket
 import subprocess
 import tempfile
 import threading
-import os
 from contextlib import suppress
 from urllib.parse import urlparse
 
@@ -35,12 +35,18 @@ def enabled(cfg: dict) -> bool:
 
 def hosts(cfg: dict) -> list:
     """Hostnames this turn is likely to call, de-duplicated, in order."""
-    from . import brain, config, tts_groq
+    from . import brain, config, tts_groq, turn_router
     urls = []
     with suppress(Exception):
         urls.append(config.stt_settings(cfg)["base_url"])
     with suppress(Exception):
         urls.append(brain.provider(cfg).get("base_url"))
+    with suppress(Exception):
+        spec = turn_router.settings(cfg).get("model", "")
+        if spec:
+            routed = dict(cfg, brain={**(cfg.get("brain") or {}),
+                                      "default": spec})
+            urls.append(brain.provider(routed).get("base_url"))
     with suppress(Exception):
         if tts_groq.provider(cfg) == "groq":
             urls.append(tts_groq.base_url(cfg))
