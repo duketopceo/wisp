@@ -6,7 +6,8 @@
 // banners live on the Now tab. Scroll resets to the top on a tab switch,
 // and PageUp, PageDown, Home and End scroll the page. Data arrives as
 // properties from Panel.qml; actions that need a process leave as
-// signals, the rest call the service.
+// signals, the rest call the service. The host keeps keyboard focus and
+// forwards keys to `page`.
 import QtQuick
 import "../lib/metrics.js" as M
 import "../lib/onboard.js" as Onboard
@@ -45,8 +46,6 @@ Item {
   implicitHeight: page.y + page.contentHeight
   width: 480
   height: implicitHeight
-
-  function focusPage() { page.forceActiveFocus() }
 
   onTabChanged: page.scrollTo(0)
 

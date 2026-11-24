@@ -254,6 +254,15 @@ class TestPanelW22(unittest.TestCase):
             self.assertNotIn(gone, src)
         self.assertFalse((COMP / "SettingsTab.qml").exists())
 
+    def test_catcher_keeps_focus_and_forwards_keys_to_the_page(self):
+        # the page must not take focus from PanelKeyCatcher (a sibling of
+        # the body), or Escape and Tab stop reaching it
+        src = code(self.PANEL)
+        self.assertIn("Keys.forwardTo: content.item ? [content.item.page] : []", src)
+        self.assertNotIn("forceActiveFocus", src)
+        self.assertNotIn("focusPage", src)
+        self.assertNotIn("forceActiveFocus", code(self.BODY))
+
     def test_body_holds_tabs_in_a_scrolling_page(self):
         src = code(self.BODY)
         self.assertIn("ScrollPage", src)

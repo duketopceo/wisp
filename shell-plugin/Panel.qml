@@ -52,7 +52,6 @@ Panel {
     if (opened) {
       loadOnboard(); loadWhatsnew()
       if (service) service.loadConfig()
-      if (content.item) content.item.focusPage()
     }
     else dismissWhatsnew()
     if (opened && tab === 4 && service) service.loadDev()
@@ -186,8 +185,12 @@ Panel {
     contentWidth: panel.fittedContentWidth(Style.space(480))
     contentHeight: panel.fittedContentHeight(content.item ? content.item.implicitHeight : 0)
 
+    // The catcher keeps keyboard focus (Escape closes, Tab steps tabs) and
+    // hands each key to the page first, so PageUp, PageDown, Home and End
+    // scroll it; keys the page ignores come back here
     PanelKeyCatcher {
       anchors.fill: parent
+      Keys.forwardTo: content.item ? [content.item.page] : []
       onCloseRequested: wisp.close()
       // Tab and Shift+Tab step through the tabs
       onTabRequested: function (direction) {

@@ -101,7 +101,7 @@ Item {
 
     function test_keys_scroll_the_page() {
       show(3)
-      body.focusPage()
+      body.page.forceActiveFocus()
       keyClick(Qt.Key_PageDown)
       verify(body.page.contentY > 0)
       keyClick(Qt.Key_End)
@@ -148,6 +148,9 @@ Item {
       svc.health = ({ jev: { ok: false }, stt: { ok: false }, cua: { ok: true } })
       compare(word.text, "2 " + svc.ui("ui.bar.down"))
       svc.offline = true
+      compare(word.text, svc.wordView.word)
+      svc.offline = false
+      svc.stale = true
       compare(word.text, svc.wordView.word)
     }
 
