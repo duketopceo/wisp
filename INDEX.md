@@ -13,7 +13,7 @@ are opt-in, off unless `[local] enabled`).
 | `wispd` | Python CLI + daemon installer/IPC host; commands live in `wisp/cli/` |
 | `rs/wispd/` | Rust parity core (`wispd` binary) — same socket + state contract |
 | `shell-plugin/` | Omarchy quickshell plugin: `BarWidget.qml` (mark + live pill), `Panel.qml`, `Companion.qml` overlay |
-| `shells/debug/shell.qml` | Management/debug app (`qs -c dim-debug`, launcher entry "Wisp") |
+| `shells/settings/` | Settings window (`wispd settings`, the launcher entry "Wisp"): pages Home, Activity, Memory, Tasks, Health, Spend, Audit, Binds and the settings pages |
 
 Common CLI groups (full tree: `wispd --help`): `daemon`, `status`, `stop`,
 `interrupt`, `trigger`, `watch`, `choice`, `doctor`, `health`, `latency`,

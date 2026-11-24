@@ -1,5 +1,8 @@
 // Empty state: one sentence and one command, no illustration. `tab` is
-// one of now, agents, memory, settings; the text comes from the copy table.
+// one of now, agents, memory, settings, activity; the text comes from the
+// copy table. A settings-window page sets `textKey` to its page state
+// (ui.page.loading, offline, stale, error) and, for offline and error,
+// `action` to a button label that emits act() (Retry).
 import QtQuick
 import "../lib/metrics.js" as M
 
@@ -8,6 +11,9 @@ Column {
 
   property var service: null
   property string tab: "now"
+  property string textKey: "ui.empty." + tab
+  property string action: ""
+  signal act()
 
   readonly property var tk: service ? service.tokens : ({})
 
@@ -17,7 +23,7 @@ Column {
   Text {
     textFormat: Text.PlainText
     width: parent.width
-    text: root.service.ui("ui.empty." + root.tab)
+    text: root.service.ui(root.textKey)
     wrapMode: Text.Wrap
     color: root.tk.ink
     font.family: root.service.fontFamily
@@ -26,10 +32,18 @@ Column {
   Text {
     textFormat: Text.PlainText
     width: parent.width
-    text: root.service.ui("ui.empty." + root.tab + ".hint")
+    text: root.service.ui(root.textKey + ".hint")
     wrapMode: Text.Wrap
     color: root.tk.inkMuted
     font.family: root.service.fontFamily
     font.pixelSize: M.font.label
+  }
+  Chip {
+    objectName: "action"
+    visible: root.action !== ""
+    service: root.service
+    label: root.action
+    focusable: true
+    onClicked: root.act()
   }
 }

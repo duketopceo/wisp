@@ -156,6 +156,25 @@ class TestCommand(unittest.TestCase):
                 self.assertEqual(code, 0)
                 self.assertIn(text, out)
 
+    def test_category_takes_every_page_and_category(self):
+        from wisp import settings_schema as S
+        for name in ("health", "tasks", "agents", "home", "binds"):
+            with self.subTest(name):
+                self.assertIn(name, S.SIDEBAR)
+                self.assertEqual(Fakes(ipc_rc=0).open(name)["category"], name)
+        # the tasks page and the agents category are different entries
+        self.assertNotIn("agents", S.PAGES)
+        self.assertNotIn("tasks", S.CATEGORIES)
+        self.assertEqual(len(set(S.SIDEBAR)), len(S.SIDEBAR))
+        # the CLI accepts a page name and hands it to the window (no
+        # display or quickshell is needed for that)
+        res = {"action": "started", "category": "health", "focused": False}
+        with mock.patch.object(sw, "open_window", return_value=res) as ow:
+            code, _out, _err = run_cli(["settings", "--category", "health"],
+                                       WAYLAND)
+        self.assertEqual(code, 0)
+        ow.assert_called_once_with("health")
+
     def test_unknown_category_is_a_usage_error(self):
         code, _out, _err = run_cli(["settings", "--category", "nope"],
                                    WAYLAND)
@@ -170,13 +189,19 @@ class TestCommand(unittest.TestCase):
 
 
 class TestShellConfig(unittest.TestCase):
-    def test_settings_config_mirrors_debug_links(self):
-        s, d = ROOT / "shells" / "settings", ROOT / "shells" / "debug"
-        for name in ("components", "lib", "copy.js", "tokens.js",
-                     "WispService.qml", "Commons"):
+    def test_settings_config_links_the_plugin_and_owns_its_shim(self):
+        s, plugin = ROOT / "shells" / "settings", ROOT / "shell-plugin"
+        for name, target in (("components", plugin / "components"),
+                             ("lib", plugin / "lib"),
+                             ("copy.js", plugin / "lib" / "copy.js"),
+                             ("tokens.js", plugin / "lib" / "tokens.js"),
+                             ("WispService.qml", plugin / "WispService.qml")):
             with self.subTest(name):
                 self.assertTrue((s / name).exists(), name)
-                self.assertEqual((s / name).resolve(), (d / name).resolve())
+                self.assertEqual((s / name).resolve(), target.resolve())
+        # one-surface U3: the qs.Commons shim is the window's own directory
+        self.assertTrue((s / "Commons" / "qmldir").is_file())
+        self.assertFalse((s / "Commons").is_symlink())
 
     def test_shell_reads_category_env_and_serves_ipc(self):
         src = (ROOT / "shells" / "settings" / "shell.qml").read_text()
@@ -185,7 +210,13 @@ class TestShellConfig(unittest.TestCase):
         self.assertIn("function open(category: string)", src)
         # the CLI focuses the window by this title
         self.assertIn(f'title: "{sw.WINDOW_TITLE}"', src)
-        self.assertIn("streamEnabled: false", src)
+        # KTD2: the stream follows the page, on for a Status or management
+        # page and off on a config category
+        self.assertIn("readonly property bool streamOn: S.isPage(host.category)", src)
+        self.assertIn("streamEnabled: win.streamOn", src)
+        self.assertIn("onStreamOnChanged: heard = false", src)
+        # no category, or an unknown one, opens Home
+        self.assertIn('S.startPage(Quickshell.env("WISP_SETTINGS_CATEGORY") || "")', src)
         # the connector list asks the gateway: read once, on the first visit
         # to the Connectors page, never at window open
         start = re.search(r"Component\.onCompleted:\s*\{.*?\n  \}", src, re.S)
@@ -196,7 +227,7 @@ class TestShellConfig(unittest.TestCase):
         self.assertIn("connectorsRead", once.group(0))
         self.assertIn('host.category !== "connectors"', once.group(0))
         self.assertIn("svc.loadConnectors()", once.group(0))
-        self.assertIn("onCategoryChanged: win.readConnectorsOnce()", src)
+        self.assertIn("onCategoryChanged: { win.readConnectorsOnce(); win.enter(host.category); }", src)
         self.assertIn("minimumSize: Qt.size(720, 520)", src)
         self.assertNotRegex(src, r"\bTimer\s*\{")
 

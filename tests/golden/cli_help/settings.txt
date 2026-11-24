@@ -4,8 +4,9 @@ Open the settings window
 
 options:
   -h, --help       show this help message and exit
-  --category NAME  page to open: voice, pointer, agents, models, budget,
-                   connectors, advanced
+  --category NAME  page to open (default home): home, activity, memory, tasks,
+                   voice, pointer, agents, models, budget, connectors,
+                   advanced, health, spend, audit, binds
 
 global options:
   --json           machine-readable output (one JSON object)
@@ -15,3 +16,4 @@ global options:
 Examples:
   wispd settings
   wispd settings --category budget
+  wispd settings --category health

@@ -1,12 +1,13 @@
 """`wispd tui` - terminal dashboard. Stdlib curses only, no deps.
 
 Views (keys 1 to 5, or tab): status, health, spend, audit, binds. They show
-the same data as the management app (shells/debug/shell.qml), from the same
+the same data as the settings window's Status and management pages
+(shells/settings), from the same
 JSON: state `health` and `spend` over the push stream, `wispd cua status
 --json`, `wispd spend --json`, `wispd binds --json` and `wispd health --json`
 (when the daemon is not running), and the cua audit log. The model builders
 below (sections, spend_view, cua_view, ...) mirror shell-plugin/lib/health.js
-and lib/manage.js field for field; tests/test_manage_parity.py runs both over
+and lib/manage.js field for field; TestParity in tests/test_manage.py runs both over
 one fixture and compares them.
 
 No polling: state arrives on the subscription (reconnect backoff only), the

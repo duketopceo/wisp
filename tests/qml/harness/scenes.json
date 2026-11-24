@@ -4718,6 +4718,80 @@
     "connectorErrors": {
      "linear": "The gateway did not answer. Try again."
     }
+   },
+   "home": {
+    "category": "home",
+    "loaded": true,
+    "heard": true
+   },
+   "health": {
+    "category": "health",
+    "loaded": true,
+    "heard": true,
+    "_fixture": {
+     "patch": {
+      "health": {
+       "brain_ollama": {
+        "code": null,
+        "latency_ms": 41,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "cua": {
+        "code": null,
+        "latency_ms": 3,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "jev": {
+        "code": null,
+        "latency_ms": 12,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "spend": {
+        "code": null,
+        "latency_ms": 0,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "stt": {
+        "code": null,
+        "latency_ms": 9,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       }
+      },
+      "spend": {
+       "blocked": false,
+       "cap_usd": 2.0,
+       "month_usd": 6.1,
+       "monthly_cap_usd": 20.0,
+       "today_usd": 0.42
+      }
+     }
+    },
+    "cua": {
+     "dry_run": false,
+     "fix": null,
+     "kill": false,
+     "live": true,
+     "mode": "guide",
+     "state": "running",
+     "version": "0.4.2"
+    },
+    "spendModels": [
+     {
+      "calls": 14,
+      "model": "openrouter/llama-4-maverick",
+      "usd": 0.31
+     },
+     {
+      "calls": 9,
+      "model": "openrouter/gemini-2.5-flash",
+      "usd": 0.11
+     }
+    ]
    }
   }
  },
@@ -4758,6 +4832,39 @@
     "category": "voice",
     "loaded": true,
     "query": "voice"
+   },
+   "tasks": {
+    "category": "tasks",
+    "loaded": true,
+    "heard": true,
+    "_fixture": {
+     "patch": {
+      "tasks": {
+       "summarize inbox": {
+        "line": "reading message 12 of 40",
+        "seconds": 83,
+        "status": "running",
+        "task": "summarize inbox"
+       },
+       "sync notes": {
+        "line": "endpoint refused the request",
+        "seconds": 12,
+        "status": "failed",
+        "task": "sync notes"
+       },
+       "tidy downloads": {
+        "status": "queued",
+        "task": "move old files into folders"
+       },
+       "weekly report": {
+        "line": "saved to Documents",
+        "seconds": 301,
+        "status": "done",
+        "task": "weekly report"
+       }
+      }
+     }
+    }
    }
   }
  },
@@ -5472,6 +5579,537 @@
       "budget.monthly_usd": "The daemon rejected it: bad value."
      }
     }
+   }
+  }
+ },
+ "ManagePage": {
+  "mode": "variant",
+  "pad": 0,
+  "width": 760,
+  "height": 700,
+  "scale2": true,
+  "variants": {
+   "home": {
+    "heard": true,
+    "page": "home",
+    "_state": "idle"
+   },
+   "home_last_turn": {
+    "heard": true,
+    "page": "home",
+    "_state": "idle",
+    "_fixture": {
+     "patch": {
+      "status": "done",
+      "transcript": "what is on my calendar",
+      "answer": "Two meetings: design review at ten and a call at three."
+     },
+     "lastAction": {
+      "verb": "daemon",
+      "pending": false,
+      "ok": false,
+      "message": "wispd.service is not loaded",
+      "at": 0
+     }
+    }
+   },
+   "home_offline": {
+    "heard": true,
+    "page": "home",
+    "_state": "idle",
+    "_fixture": {
+     "offline": true
+    }
+   },
+   "loading": {
+    "page": "home",
+    "heard": false,
+    "_state": "idle"
+   },
+   "stale": {
+    "heard": true,
+    "page": "tasks",
+    "_state": "idle",
+    "_fixture": {
+     "patch": {
+      "status": "acting",
+      "transcript": "rename the screenshots by date",
+      "tasks": {
+       "summarize inbox": {
+        "line": "reading message 12 of 40",
+        "seconds": 83,
+        "status": "running",
+        "task": "summarize inbox"
+       },
+       "sync notes": {
+        "line": "endpoint refused the request",
+        "seconds": 12,
+        "status": "failed",
+        "task": "sync notes"
+       },
+       "tidy downloads": {
+        "status": "queued",
+        "task": "move old files into folders"
+       },
+       "weekly report": {
+        "line": "saved to Documents",
+        "seconds": 301,
+        "status": "done",
+        "task": "weekly report"
+       }
+      }
+     },
+     "stale": true
+    }
+   },
+   "error": {
+    "heard": true,
+    "page": "binds",
+    "error": "exit",
+    "_state": "idle"
+   },
+   "activity": {
+    "heard": true,
+    "page": "activity",
+    "_state": "idle",
+    "turns": [
+     {
+      "time": "08:12:01",
+      "route": "act",
+      "ms": 812,
+      "you": "turn on night light",
+      "wisp": "Night light is on."
+     },
+     {
+      "time": "08:10:44",
+      "route": "answer",
+      "ms": 0,
+      "you": "what is on my calendar",
+      "wisp": "Two meetings: design review at ten and a call at three."
+     },
+     {
+      "time": "08:05:10",
+      "route": "act",
+      "ms": 2140,
+      "you": "rename the project folder",
+      "wisp": "I could not find a folder named project."
+     }
+    ],
+    "suggestions": [
+     {
+      "key": "night-light",
+      "title": "Turn on night light every evening",
+      "evidence": "you asked for it 5 evenings in a row",
+      "status": "new"
+     }
+    ],
+    "corrections": [
+     "\"nite lite\" -> \"night light\"",
+     "\"wisp\" -> \"Wisp\""
+    ]
+   },
+   "activity_empty": {
+    "heard": true,
+    "page": "activity",
+    "_state": "idle"
+   },
+   "memory": {
+    "heard": true,
+    "page": "memory",
+    "_state": "idle",
+    "memoryText": "- prefers dark themes\n- works on the wisp repo\n- calendar is in Thunderbird\n",
+    "userText": "Answer briefly. Ask before deleting files.\n"
+   },
+   "memory_empty": {
+    "heard": true,
+    "page": "memory",
+    "_state": "idle"
+   },
+   "tasks": {
+    "heard": true,
+    "page": "tasks",
+    "_state": "idle",
+    "_fixture": {
+     "patch": {
+      "tasks": {
+       "summarize inbox": {
+        "line": "reading message 12 of 40",
+        "seconds": 83,
+        "status": "running",
+        "task": "summarize inbox"
+       },
+       "sync notes": {
+        "line": "endpoint refused the request",
+        "seconds": 12,
+        "status": "failed",
+        "task": "sync notes"
+       },
+       "tidy downloads": {
+        "status": "queued",
+        "task": "move old files into folders"
+       },
+       "weekly report": {
+        "line": "saved to Documents",
+        "seconds": 301,
+        "status": "done",
+        "task": "weekly report"
+       }
+      }
+     }
+    }
+   },
+   "tasks_empty": {
+    "heard": true,
+    "page": "tasks",
+    "_state": "idle"
+   },
+   "health": {
+    "heard": true,
+    "page": "health",
+    "_state": "idle",
+    "_fixture": {
+     "patch": {
+      "health": {
+       "brain_ollama": {
+        "code": null,
+        "latency_ms": 41,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "cua": {
+        "code": null,
+        "latency_ms": 3,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "jev": {
+        "code": null,
+        "latency_ms": 12,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "spend": {
+        "code": null,
+        "latency_ms": 0,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       },
+       "stt": {
+        "code": null,
+        "latency_ms": 9,
+        "ok": true,
+        "since": "2026-10-04T08:00:00Z"
+       }
+      },
+      "spend": {
+       "blocked": false,
+       "cap_usd": 2.0,
+       "month_usd": 6.1,
+       "monthly_cap_usd": 20.0,
+       "today_usd": 0.42
+      }
+     }
+    },
+    "cua": {
+     "dry_run": false,
+     "fix": null,
+     "kill": false,
+     "live": true,
+     "mode": "guide",
+     "state": "running",
+     "version": "0.4.2"
+    },
+    "spendModels": [
+     {
+      "calls": 14,
+      "model": "openrouter/llama-4-maverick",
+      "usd": 0.31
+     },
+     {
+      "calls": 9,
+      "model": "openrouter/gemini-2.5-flash",
+      "usd": 0.11
+     }
+    ]
+   },
+   "health_offline": {
+    "heard": true,
+    "page": "health",
+    "_state": "idle",
+    "_fixture": {
+     "offline": true
+    },
+    "cua": {
+     "dry_run": false,
+     "fix": null,
+     "kill": false,
+     "live": true,
+     "mode": "guide",
+     "state": "running",
+     "version": "0.4.2"
+    },
+    "spendModels": [
+     {
+      "calls": 14,
+      "model": "openrouter/llama-4-maverick",
+      "usd": 0.31
+     },
+     {
+      "calls": 9,
+      "model": "openrouter/gemini-2.5-flash",
+      "usd": 0.11
+     }
+    ]
+   },
+   "spend": {
+    "heard": true,
+    "page": "spend",
+    "_state": "idle",
+    "_fixture": {
+     "patch": {
+      "spend": {
+       "blocked": false,
+       "cap_usd": 2.0,
+       "month_usd": 6.1,
+       "monthly_cap_usd": 20.0,
+       "today_usd": 0.42
+      }
+     }
+    },
+    "spendModels": [
+     {
+      "calls": 14,
+      "in": 9120,
+      "model": "openrouter/llama-4-maverick",
+      "out": 2210,
+      "usd": 0.31
+     },
+     {
+      "calls": 9,
+      "in": 4300,
+      "model": "openrouter/gemini-2.5-flash",
+      "out": 1100,
+      "usd": 0.11
+     }
+    ]
+   },
+   "audit_50": {
+    "heard": true,
+    "page": "audit",
+    "_state": "idle",
+    "auditText": "{\"ts\":1759579200,\"turn\":\"t-0\",\"tool\":\"click\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":40}\n{\"ts\":1759579207,\"turn\":\"t-0\",\"tool\":\"type_text\",\"app\":\"foot\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":43}\n{\"ts\":1759579214,\"turn\":\"t-0\",\"tool\":\"key\",\"app\":\"nautilus\",\"decision\":\"deny\",\"dry_run\":false,\"result\":\"OK\",\"ms\":46}\n{\"ts\":1759579221,\"turn\":\"t-0\",\"tool\":\"scroll\",\"app\":\"firefox\",\"decision\":\"dry_run\",\"dry_run\":true,\"result\":\"OK\",\"ms\":49}\n{\"ts\":1759579228,\"turn\":\"t-0\",\"tool\":\"click\",\"app\":\"foot\",\"decision\":\"cancelled\",\"dry_run\":false,\"result\":\"OK\",\"ms\":52}\n{\"ts\":1759579235,\"turn\":\"t-1\",\"tool\":\"type_text\",\"app\":\"nautilus\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":55}\n{\"ts\":1759579242,\"turn\":\"t-1\",\"tool\":\"key\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":58}\n{\"ts\":1759579249,\"turn\":\"t-1\",\"tool\":\"scroll\",\"app\":\"foot\",\"decision\":\"deny\",\"dry_run\":false,\"result\":\"OK\",\"ms\":61}\n{\"ts\":1759579256,\"turn\":\"t-1\",\"tool\":\"click\",\"app\":\"nautilus\",\"decision\":\"dry_run\",\"dry_run\":true,\"result\":\"OK\",\"ms\":64}\n{\"ts\":1759579263,\"turn\":\"t-1\",\"tool\":\"type_text\",\"app\":\"firefox\",\"decision\":\"cancelled\",\"dry_run\":false,\"result\":\"OK\",\"ms\":67}\n{\"ts\":1759579270,\"turn\":\"t-2\",\"tool\":\"key\",\"app\":\"foot\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":70}\n{\"ts\":1759579277,\"turn\":\"t-2\",\"tool\":\"scroll\",\"app\":\"nautilus\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":73}\n{\"ts\":1759579284,\"turn\":\"t-2\",\"tool\":\"click\",\"app\":\"firefox\",\"decision\":\"deny\",\"dry_run\":false,\"result\":\"OK\",\"ms\":76}\n{\"ts\":1759579291,\"turn\":\"t-2\",\"tool\":\"type_text\",\"app\":\"foot\",\"decision\":\"dry_run\",\"dry_run\":true,\"result\":\"OK\",\"ms\":79}\n{\"ts\":1759579298,\"turn\":\"t-2\",\"tool\":\"key\",\"app\":\"nautilus\",\"decision\":\"cancelled\",\"dry_run\":false,\"result\":\"OK\",\"ms\":82}\n{\"ts\":1759579305,\"turn\":\"t-3\",\"tool\":\"scroll\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":85}\n{\"ts\":1759579312,\"turn\":\"t-3\",\"tool\":\"click\",\"app\":\"foot\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":88}\n{\"ts\":1759579319,\"turn\":\"t-3\",\"tool\":\"type_text\",\"app\":\"nautilus\",\"decision\":\"deny\",\"dry_run\":false,\"result\":\"OK\",\"ms\":91}\n{\"ts\":1759579326,\"turn\":\"t-3\",\"tool\":\"key\",\"app\":\"firefox\",\"decision\":\"dry_run\",\"dry_run\":true,\"result\":\"OK\",\"ms\":94}\n{\"ts\":1759579333,\"turn\":\"t-3\",\"tool\":\"scroll\",\"app\":\"foot\",\"decision\":\"cancelled\",\"dry_run\":false,\"result\":\"OK\",\"ms\":97}\n{\"ts\":1759579340,\"turn\":\"t-4\",\"tool\":\"click\",\"app\":\"nautilus\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":100}\n{\"ts\":1759579347,\"turn\":\"t-4\",\"tool\":\"type_text\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":103}\n{\"ts\":1759579354,\"turn\":\"t-4\",\"tool\":\"key\",\"app\":\"foot\",\"decision\":\"deny\",\"dry_run\":false,\"result\":\"OK\",\"ms\":106}\n{\"ts\":1759579361,\"turn\":\"t-4\",\"tool\":\"scroll\",\"app\":\"nautilus\",\"decision\":\"dry_run\",\"dry_run\":true,\"result\":\"OK\",\"ms\":109}\n{\"ts\":1759579368,\"turn\":\"t-4\",\"tool\":\"click\",\"app\":\"firefox\",\"decision\":\"cancelled\",\"dry_run\":false,\"result\":\"OK\",\"ms\":112}\n{\"ts\":1759579375,\"turn\":\"t-5\",\"tool\":\"type_text\",\"app\":\"foot\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":115}\n{\"ts\":1759579382,\"turn\":\"t-5\",\"tool\":\"key\",\"app\":\"nautilus\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":118}\n{\"ts\":1759579389,\"turn\":\"t-5\",\"tool\":\"scroll\",\"app\":\"firefox\",\"decision\":\"deny\",\"dry_run\":false,\"result\":\"OK\",\"ms\":121}\n{\"ts\":1759579396,\"turn\":\"t-5\",\"tool\":\"click\",\"app\":\"foot\",\"decision\":\"dry_run\",\"dry_run\":true,\"result\":\"OK\",\"ms\":124}\n{\"ts\":1759579403,\"turn\":\"t-5\",\"tool\":\"type_text\",\"app\":\"nautilus\",\"decision\":\"cancelled\",\"dry_run\":false,\"result\":\"OK\",\"ms\":127}\n{\"ts\":1759579410,\"turn\":\"t-6\",\"tool\":\"key\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":130}\n{\"ts\":1759579417,\"turn\":\"t-6\",\"tool\":\"scroll\",\"app\":\"foot\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":133}\n{\"ts\":1759579424,\"turn\":\"t-6\",\"tool\":\"click\",\"app\":\"nautilus\",\"decision\":\"deny\",\"dry_run\":false,\"result\":\"OK\",\"ms\":136}\n{\"ts\":1759579431,\"turn\":\"t-6\",\"tool\":\"type_text\",\"app\":\"firefox\",\"decision\":\"dry_run\",\"dry_run\":true,\"result\":\"OK\",\"ms\":139}\n{\"ts\":1759579438,\"turn\":\"t-6\",\"tool\":\"key\",\"app\":\"foot\",\"decision\":\"cancelled\",\"dry_run\":false,\"result\":\"OK\",\"ms\":142}\n{\"ts\":1759579445,\"turn\":\"t-7\",\"tool\":\"scroll\",\"app\":\"nautilus\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":145}\n{\"ts\":1759579452,\"turn\":\"t-7\",\"tool\":\"click\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":148}\n{\"ts\":1759579459,\"turn\":\"t-7\",\"tool\":\"type_text\",\"app\":\"foot\",\"decision\":\"deny\",\"dry_run\":false,\"result\":\"OK\",\"ms\":151}\n{\"ts\":1759579466,\"turn\":\"t-7\",\"tool\":\"key\",\"app\":\"nautilus\",\"decision\":\"dry_run\",\"dry_run\":true,\"result\":\"OK\",\"ms\":154}\n{\"ts\":1759579473,\"turn\":\"t-7\",\"tool\":\"scroll\",\"app\":\"firefox\",\"decision\":\"cancelled\",\"dry_run\":false,\"result\":\"OK\",\"ms\":157}\n{\"ts\":1759579480,\"turn\":\"t-8\",\"tool\":\"click\",\"app\":\"foot\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":160}\n{\"ts\":1759579487,\"turn\":\"t-8\",\"tool\":\"type_text\",\"app\":\"nautilus\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":163}\n{\"ts\":1759579494,\"turn\":\"t-8\",\"tool\":\"key\",\"app\":\"firefox\",\"decision\":\"deny\",\"dry_run\":false,\"result\":\"OK\",\"ms\":166}\n{\"ts\":1759579501,\"turn\":\"t-8\",\"tool\":\"scroll\",\"app\":\"foot\",\"decision\":\"dry_run\",\"dry_run\":true,\"result\":\"OK\",\"ms\":169}\n{\"ts\":1759579508,\"turn\":\"t-8\",\"tool\":\"click\",\"app\":\"nautilus\",\"decision\":\"cancelled\",\"dry_run\":false,\"result\":\"OK\",\"ms\":172}\n{\"ts\":1759579515,\"turn\":\"t-9\",\"tool\":\"type_text\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":175}\n{\"ts\":1759579522,\"turn\":\"t-9\",\"tool\":\"key\",\"app\":\"foot\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":178}\n{\"ts\":1759579529,\"turn\":\"t-9\",\"tool\":\"scroll\",\"app\":\"nautilus\",\"decision\":\"deny\",\"dry_run\":false,\"result\":\"OK\",\"ms\":181}\n{\"ts\":1759579536,\"turn\":\"t-9\",\"tool\":\"click\",\"app\":\"firefox\",\"decision\":\"dry_run\",\"dry_run\":true,\"result\":\"OK\",\"ms\":184}\n{\"ts\":1759579543,\"turn\":\"t-9\",\"tool\":\"type_text\",\"app\":\"foot\",\"decision\":\"cancelled\",\"dry_run\":false,\"result\":\"OK\",\"ms\":187}"
+   },
+   "binds": {
+    "heard": true,
+    "page": "binds",
+    "_state": "idle",
+    "binds": {
+     "binds": [
+      {
+       "arg": "wispd trigger",
+       "key": "D",
+       "modmask": 64,
+       "submap": ""
+      },
+      {
+       "arg": "wispd interrupt",
+       "key": "D",
+       "modmask": 65,
+       "submap": ""
+      }
+     ],
+     "hotkey": {
+      "chord": "SUPER+D",
+      "key": "D",
+      "mod": "SUPER"
+     },
+     "hyprland": true
+    }
+   }
+  }
+ },
+ "ManagePageNarrow": {
+  "mode": "variant",
+  "pad": 0,
+  "width": 520,
+  "height": 520,
+  "source": "../../../shell-plugin/components/ManagePage.qml",
+  "variants": {
+   "audit_50": {
+    "heard": true,
+    "page": "audit",
+    "_state": "idle",
+    "auditText": "{\"ts\":1759579200,\"turn\":\"t-0\",\"tool\":\"click\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":40}\n{\"ts\":1759579207,\"turn\":\"t-0\",\"tool\":\"type_text\",\"app\":\"foot\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":43}\n{\"ts\":1759579214,\"turn\":\"t-0\",\"tool\":\"key\",\"app\":\"nautilus\",\"decision\":\"deny\",\"dry_run\":false,\"result\":\"OK\",\"ms\":46}\n{\"ts\":1759579221,\"turn\":\"t-0\",\"tool\":\"scroll\",\"app\":\"firefox\",\"decision\":\"dry_run\",\"dry_run\":true,\"result\":\"OK\",\"ms\":49}\n{\"ts\":1759579228,\"turn\":\"t-0\",\"tool\":\"click\",\"app\":\"foot\",\"decision\":\"cancelled\",\"dry_run\":false,\"result\":\"OK\",\"ms\":52}\n{\"ts\":1759579235,\"turn\":\"t-1\",\"tool\":\"type_text\",\"app\":\"nautilus\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":55}\n{\"ts\":1759579242,\"turn\":\"t-1\",\"tool\":\"key\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":58}\n{\"ts\":1759579249,\"turn\":\"t-1\",\"tool\":\"scroll\",\"app\":\"foot\",\"decision\":\"deny\",\"dry_run\":false,\"result\":\"OK\",\"ms\":61}\n{\"ts\":1759579256,\"turn\":\"t-1\",\"tool\":\"click\",\"app\":\"nautilus\",\"decision\":\"dry_run\",\"dry_run\":true,\"result\":\"OK\",\"ms\":64}\n{\"ts\":1759579263,\"turn\":\"t-1\",\"tool\":\"type_text\",\"app\":\"firefox\",\"decision\":\"cancelled\",\"dry_run\":false,\"result\":\"OK\",\"ms\":67}\n{\"ts\":1759579270,\"turn\":\"t-2\",\"tool\":\"key\",\"app\":\"foot\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":70}\n{\"ts\":1759579277,\"turn\":\"t-2\",\"tool\":\"scroll\",\"app\":\"nautilus\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":73}\n{\"ts\":1759579284,\"turn\":\"t-2\",\"tool\":\"click\",\"app\":\"firefox\",\"decision\":\"deny\",\"dry_run\":false,\"result\":\"OK\",\"ms\":76}\n{\"ts\":1759579291,\"turn\":\"t-2\",\"tool\":\"type_text\",\"app\":\"foot\",\"decision\":\"dry_run\",\"dry_run\":true,\"result\":\"OK\",\"ms\":79}\n{\"ts\":1759579298,\"turn\":\"t-2\",\"tool\":\"key\",\"app\":\"nautilus\",\"decision\":\"cancelled\",\"dry_run\":false,\"result\":\"OK\",\"ms\":82}\n{\"ts\":1759579305,\"turn\":\"t-3\",\"tool\":\"scroll\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":85}\n{\"ts\":1759579312,\"turn\":\"t-3\",\"tool\":\"click\",\"app\":\"foot\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":88}\n{\"ts\":1759579319,\"turn\":\"t-3\",\"tool\":\"type_text\",\"app\":\"nautilus\",\"decision\":\"deny\",\"dry_run\":false,\"result\":\"OK\",\"ms\":91}\n{\"ts\":1759579326,\"turn\":\"t-3\",\"tool\":\"key\",\"app\":\"firefox\",\"decision\":\"dry_run\",\"dry_run\":true,\"result\":\"OK\",\"ms\":94}\n{\"ts\":1759579333,\"turn\":\"t-3\",\"tool\":\"scroll\",\"app\":\"foot\",\"decision\":\"cancelled\",\"dry_run\":false,\"result\":\"OK\",\"ms\":97}\n{\"ts\":1759579340,\"turn\":\"t-4\",\"tool\":\"click\",\"app\":\"nautilus\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":100}\n{\"ts\":1759579347,\"turn\":\"t-4\",\"tool\":\"type_text\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":103}\n{\"ts\":1759579354,\"turn\":\"t-4\",\"tool\":\"key\",\"app\":\"foot\",\"decision\":\"deny\",\"dry_run\":false,\"result\":\"OK\",\"ms\":106}\n{\"ts\":1759579361,\"turn\":\"t-4\",\"tool\":\"scroll\",\"app\":\"nautilus\",\"decision\":\"dry_run\",\"dry_run\":true,\"result\":\"OK\",\"ms\":109}\n{\"ts\":1759579368,\"turn\":\"t-4\",\"tool\":\"click\",\"app\":\"firefox\",\"decision\":\"cancelled\",\"dry_run\":false,\"result\":\"OK\",\"ms\":112}\n{\"ts\":1759579375,\"turn\":\"t-5\",\"tool\":\"type_text\",\"app\":\"foot\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":115}\n{\"ts\":1759579382,\"turn\":\"t-5\",\"tool\":\"key\",\"app\":\"nautilus\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":118}\n{\"ts\":1759579389,\"turn\":\"t-5\",\"tool\":\"scroll\",\"app\":\"firefox\",\"decision\":\"deny\",\"dry_run\":false,\"result\":\"OK\",\"ms\":121}\n{\"ts\":1759579396,\"turn\":\"t-5\",\"tool\":\"click\",\"app\":\"foot\",\"decision\":\"dry_run\",\"dry_run\":true,\"result\":\"OK\",\"ms\":124}\n{\"ts\":1759579403,\"turn\":\"t-5\",\"tool\":\"type_text\",\"app\":\"nautilus\",\"decision\":\"cancelled\",\"dry_run\":false,\"result\":\"OK\",\"ms\":127}\n{\"ts\":1759579410,\"turn\":\"t-6\",\"tool\":\"key\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":130}\n{\"ts\":1759579417,\"turn\":\"t-6\",\"tool\":\"scroll\",\"app\":\"foot\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":133}\n{\"ts\":1759579424,\"turn\":\"t-6\",\"tool\":\"click\",\"app\":\"nautilus\",\"decision\":\"deny\",\"dry_run\":false,\"result\":\"OK\",\"ms\":136}\n{\"ts\":1759579431,\"turn\":\"t-6\",\"tool\":\"type_text\",\"app\":\"firefox\",\"decision\":\"dry_run\",\"dry_run\":true,\"result\":\"OK\",\"ms\":139}\n{\"ts\":1759579438,\"turn\":\"t-6\",\"tool\":\"key\",\"app\":\"foot\",\"decision\":\"cancelled\",\"dry_run\":false,\"result\":\"OK\",\"ms\":142}\n{\"ts\":1759579445,\"turn\":\"t-7\",\"tool\":\"scroll\",\"app\":\"nautilus\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":145}\n{\"ts\":1759579452,\"turn\":\"t-7\",\"tool\":\"click\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":148}\n{\"ts\":1759579459,\"turn\":\"t-7\",\"tool\":\"type_text\",\"app\":\"foot\",\"decision\":\"deny\",\"dry_run\":false,\"result\":\"OK\",\"ms\":151}\n{\"ts\":1759579466,\"turn\":\"t-7\",\"tool\":\"key\",\"app\":\"nautilus\",\"decision\":\"dry_run\",\"dry_run\":true,\"result\":\"OK\",\"ms\":154}\n{\"ts\":1759579473,\"turn\":\"t-7\",\"tool\":\"scroll\",\"app\":\"firefox\",\"decision\":\"cancelled\",\"dry_run\":false,\"result\":\"OK\",\"ms\":157}\n{\"ts\":1759579480,\"turn\":\"t-8\",\"tool\":\"click\",\"app\":\"foot\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":160}\n{\"ts\":1759579487,\"turn\":\"t-8\",\"tool\":\"type_text\",\"app\":\"nautilus\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":163}\n{\"ts\":1759579494,\"turn\":\"t-8\",\"tool\":\"key\",\"app\":\"firefox\",\"decision\":\"deny\",\"dry_run\":false,\"result\":\"OK\",\"ms\":166}\n{\"ts\":1759579501,\"turn\":\"t-8\",\"tool\":\"scroll\",\"app\":\"foot\",\"decision\":\"dry_run\",\"dry_run\":true,\"result\":\"OK\",\"ms\":169}\n{\"ts\":1759579508,\"turn\":\"t-8\",\"tool\":\"click\",\"app\":\"nautilus\",\"decision\":\"cancelled\",\"dry_run\":false,\"result\":\"OK\",\"ms\":172}\n{\"ts\":1759579515,\"turn\":\"t-9\",\"tool\":\"type_text\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":175}\n{\"ts\":1759579522,\"turn\":\"t-9\",\"tool\":\"key\",\"app\":\"foot\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":178}\n{\"ts\":1759579529,\"turn\":\"t-9\",\"tool\":\"scroll\",\"app\":\"nautilus\",\"decision\":\"deny\",\"dry_run\":false,\"result\":\"OK\",\"ms\":181}\n{\"ts\":1759579536,\"turn\":\"t-9\",\"tool\":\"click\",\"app\":\"firefox\",\"decision\":\"dry_run\",\"dry_run\":true,\"result\":\"OK\",\"ms\":184}\n{\"ts\":1759579543,\"turn\":\"t-9\",\"tool\":\"type_text\",\"app\":\"foot\",\"decision\":\"cancelled\",\"dry_run\":false,\"result\":\"OK\",\"ms\":187}"
+   },
+   "activity": {
+    "heard": true,
+    "page": "activity",
+    "_state": "idle",
+    "turns": [
+     {
+      "time": "08:12:01",
+      "route": "act",
+      "ms": 812,
+      "you": "turn on night light",
+      "wisp": "Night light is on."
+     },
+     {
+      "time": "08:10:44",
+      "route": "answer",
+      "ms": 0,
+      "you": "what is on my calendar",
+      "wisp": "Two meetings: design review at ten and a call at three."
+     },
+     {
+      "time": "08:05:10",
+      "route": "act",
+      "ms": 2140,
+      "you": "rename the project folder",
+      "wisp": "I could not find a folder named project."
+     }
+    ],
+    "suggestions": [
+     {
+      "key": "night-light",
+      "title": "Turn on night light every evening",
+      "evidence": "you asked for it 5 evenings in a row",
+      "status": "new"
+     }
+    ],
+    "corrections": [
+     "\"nite lite\" -> \"night light\"",
+     "\"wisp\" -> \"Wisp\""
+    ]
+   }
+  }
+ },
+ "HomeView": {
+  "mode": "variant",
+  "pad": 10,
+  "width": 560,
+  "variants": {
+   "idle": {
+    "_state": "idle"
+   },
+   "last_turn": {
+    "_state": "idle",
+    "_fixture": {
+     "patch": {
+      "status": "done",
+      "transcript": "what is on my calendar",
+      "answer": "Two meetings: design review at ten and a call at three."
+     }
+    }
+   },
+   "offline": {
+    "_state": "idle",
+    "_fixture": {
+     "offline": true
+    }
+   }
+  }
+ },
+ "ActivityView": {
+  "mode": "variant",
+  "pad": 10,
+  "width": 560,
+  "variants": {
+   "turns": {
+    "_state": "idle",
+    "turns": [
+     {
+      "time": "08:12:01",
+      "route": "act",
+      "ms": 812,
+      "you": "turn on night light",
+      "wisp": "Night light is on."
+     },
+     {
+      "time": "08:10:44",
+      "route": "answer",
+      "ms": 0,
+      "you": "what is on my calendar",
+      "wisp": "Two meetings: design review at ten and a call at three."
+     },
+     {
+      "time": "08:05:10",
+      "route": "act",
+      "ms": 2140,
+      "you": "rename the project folder",
+      "wisp": "I could not find a folder named project."
+     }
+    ],
+    "suggestions": [
+     {
+      "key": "night-light",
+      "title": "Turn on night light every evening",
+      "evidence": "you asked for it 5 evenings in a row",
+      "status": "new"
+     }
+    ],
+    "corrections": [
+     "\"nite lite\" -> \"night light\"",
+     "\"wisp\" -> \"Wisp\""
+    ]
+   },
+   "empty": {
+    "_state": "idle"
+   }
+  }
+ },
+ "MemoryView": {
+  "mode": "variant",
+  "pad": 10,
+  "width": 560,
+  "variants": {
+   "filled": {
+    "_state": "idle",
+    "memoryText": "- prefers dark themes\n- works on the wisp repo\n- calendar is in Thunderbird\n",
+    "userText": "Answer briefly. Ask before deleting files.\n"
+   },
+   "empty": {
+    "_state": "idle"
+   }
+  }
+ },
+ "AgentsView": {
+  "mode": "variant",
+  "pad": 10,
+  "width": 560,
+  "variants": {
+   "tasks": {
+    "_state": "idle",
+    "_fixture": {
+     "patch": {
+      "tasks": {
+       "summarize inbox": {
+        "line": "reading message 12 of 40",
+        "seconds": 83,
+        "status": "running",
+        "task": "summarize inbox"
+       },
+       "sync notes": {
+        "line": "endpoint refused the request",
+        "seconds": 12,
+        "status": "failed",
+        "task": "sync notes"
+       },
+       "tidy downloads": {
+        "status": "queued",
+        "task": "move old files into folders"
+       },
+       "weekly report": {
+        "line": "saved to Documents",
+        "seconds": 301,
+        "status": "done",
+        "task": "weekly report"
+       }
+      }
+     }
+    }
+   },
+   "empty": {
+    "_state": "idle"
    }
   }
  }

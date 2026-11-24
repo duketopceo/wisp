@@ -3,18 +3,27 @@ import Quickshell
 import Quickshell.Io
 import "components"
 import "lib/settings.js" as S
+import "lib/manage.js" as Manage
 
-// Wisp settings window (overhaul U4). Started by `wispd settings` as its
-// own Quickshell process (quickshell -n -p shells/settings), so it never
-// dies with the bar shell. The first category comes from
-// WISP_SETTINGS_CATEGORY; a running window takes later requests through
-// the `settings` IPC target (`quickshell ipc -p <dir> call settings open
-// <category>`). The body is the window-free SettingsHost component; this
-// file only hosts it, feeds it from the service (config values, write
-// states, read and daemon state, connectors) and wires IPC. The daemon
-// stream is off, so the window holds no socket, reconnect timers or
-// state.json watch: it reads config, status and the connector list once on
-// open and again on Retry. Ctrl+F is a Shortcut inside the host.
+// Wisp settings window (overhaul U4; Status and management pages from
+// one-surface U3, which retired the console app). Started by `wispd
+// settings` as its own Quickshell process (quickshell -n -p
+// shells/settings), so it never dies with the bar shell. The first page
+// comes from WISP_SETTINGS_CATEGORY (Home when unset or unknown); a running
+// window takes later requests through the `settings` IPC target
+// (`quickshell ipc -p <dir> call settings open <page>`). The body is the
+// window-free SettingsHost component; this file only hosts it, feeds it
+// from the service and the files below, runs its actions through
+// WispService.runAction and wires IPC.
+//
+// The daemon stream follows the page (plan KTD2): on while a Status or
+// management page is open, off on a config category, so idle settings use
+// holds no socket or reconnect timers. A page shows its loading state
+// until the first state after the stream turns on. Config, status and the
+// connector list are read once on open and again on Retry; nothing polls.
+// Files are read when their page opens (preload off) and watched only while it is open
+// (decisions, corrections and suggestions on Activity, the cua audit log
+// on Audit); the cua, spend and binds reads run when their page opens.
 
 FloatingWindow {
   id: win
@@ -24,12 +33,35 @@ FloatingWindow {
   minimumSize: Qt.size(720, 520)
   color: svc.tokens.canvas
 
-  WispService { id: svc; streamEnabled: false }
-
-  readonly property string startCategory: {
-    var c = Quickshell.env("WISP_SETTINGS_CATEGORY") || "";
-    return S.CATEGORIES.indexOf(c) >= 0 ? c : S.CATEGORIES[0];
+  readonly property string dataDir: Quickshell.env("HOME") + "/.local/share/wisp"
+  // wisp/cua_safety.audit_default_path()
+  readonly property string auditPath: {
+    var base = Quickshell.env("XDG_STATE_HOME");
+    if (!base || base.length === 0) base = Quickshell.env("HOME") + "/.local/state";
+    return base + "/wisp/cua.jsonl";
   }
+
+  readonly property bool streamOn: S.isPage(host.category)
+  WispService { id: svc; streamEnabled: win.streamOn }
+
+  readonly property string startCategory: S.startPage(Quickshell.env("WISP_SETTINGS_CATEGORY") || "")
+
+  // the first state since the stream last turned on has arrived
+  property bool heard: false
+  onStreamOnChanged: heard = false
+  Connections {
+    target: svc
+    function onStateApplied(view) { if (win.streamOn) win.heard = true; }
+  }
+
+  property string decisionsText: ""
+  property string corrText: ""
+  property string suggText: ""
+  property string memoryText: ""
+  property string userText: ""
+  property string auditText: ""
+  property var bindsData: null
+  property string bindsError: ""
 
   // the connector list asks the gateway, so it is read only once the
   // Connectors page is first shown
@@ -40,9 +72,101 @@ FloatingWindow {
     svc.loadConnectors();
   }
 
+  // one-shot reads when a page opens (and on its Retry), never on a timer
+  function enter(page) {
+    if (page === "health" || page === "spend") svc.loadSettings();
+    if (page === "binds" && !bindsProc.running) {
+      bindsError = "";
+      bindsProc.running = true;
+    }
+    if (page === "activity") { decisionsView.reload(); corrView.reload(); suggView.reload(); }
+    if (page === "audit") auditView.reload();
+    if (page === "memory") { memoryView.reload(); userView.reload(); }
+  }
+  function retryPage() {
+    svc.reconnect();
+    enter(host.category);
+  }
+  function wispd(args, verb) {
+    svc.runAction([svc.wispd].concat(args).concat(["--json"]), verb);
+  }
+  function daemon(verb) {
+    svc.runAction(["systemctl", "--user", verb, "wispd"], "daemon");
+  }
+
   Component.onCompleted: {
     svc.retrySettings();
     readConnectorsOnce();
+    enter(host.category);
+  }
+
+  FileView {
+    id: decisionsView
+    preload: false
+    onLoaded: win.decisionsText = decisionsView.text()
+    onLoadFailed: win.decisionsText = ""
+    path: win.dataDir + "/decisions.jsonl"
+    watchChanges: host.category === "activity"
+    printErrors: false
+    onFileChanged: reload()
+  }
+  FileView {
+    id: corrView
+    preload: false
+    onLoaded: win.corrText = corrView.text()
+    onLoadFailed: win.corrText = ""
+    path: win.dataDir + "/corrections.jsonl"
+    watchChanges: host.category === "activity"
+    printErrors: false
+    onFileChanged: reload()
+  }
+  FileView {
+    id: suggView
+    preload: false
+    onLoaded: win.suggText = suggView.text()
+    onLoadFailed: win.suggText = ""
+    path: win.dataDir + "/suggestions.jsonl"
+    watchChanges: host.category === "activity"
+    printErrors: false
+    onFileChanged: reload()
+  }
+  FileView {
+    id: memoryView
+    preload: false
+    path: win.dataDir + "/MEMORY.md"
+    printErrors: false
+    onLoaded: win.memoryText = memoryView.text()
+    onLoadFailed: win.memoryText = ""
+  }
+  FileView {
+    id: userView
+    preload: false
+    path: win.dataDir + "/USER.md"
+    printErrors: false
+    onLoaded: win.userText = userView.text()
+    onLoadFailed: win.userText = ""
+  }
+  // the cua audit log: read only; a missing log is an empty page
+  FileView {
+    id: auditView
+    preload: false
+    path: win.auditPath
+    watchChanges: host.category === "audit"
+    printErrors: false
+    onFileChanged: reload()
+    onLoaded: win.auditText = auditView.text()
+    onLoadFailed: win.auditText = ""
+  }
+
+  Process {
+    id: bindsProc
+    command: [svc.wispd, "binds", "--json"]
+    stdout: StdioCollector { id: bindsOut }
+    onExited: function (code) {
+      var r = Manage.bindsRead(code, bindsOut.text);
+      win.bindsData = r.data;
+      win.bindsError = r.error;
+    }
   }
 
   SettingsHost {
@@ -50,7 +174,7 @@ FloatingWindow {
     anchors.fill: parent
     service: svc
     category: win.startCategory
-    onCategoryChanged: win.readConnectorsOnce()
+    onCategoryChanged: { win.readConnectorsOnce(); win.enter(host.category); }
     values: svc.configValues
     saveStates: svc.configState
     errors: svc.configErrors
@@ -62,17 +186,40 @@ FloatingWindow {
     connectorError: svc.connectorError
     connectorRunning: svc.connectorRunning
     connectorErrors: svc.connectorErrors
+    heard: win.heard
+    pageError: host.category === "binds" ? win.bindsError : ""
+    turns: Manage.turnRows(win.decisionsText, 30)
+    suggestions: Manage.openSuggestions(win.suggText)
+    corrections: Manage.correctionLines(win.corrText, 6)
+    memoryText: win.memoryText
+    userText: win.userText
+    auditText: win.auditText
+    binds: win.bindsData
+    cua: svc.cuaStatus
+    spendModels: svc.spendModels
     onCommit: (key, value) => svc.configSet(key, value)
     onRetry: svc.retrySettings()
     onRetryConnectors: svc.loadConnectors()
     onConnectAlias: (alias) => svc.connectAdd(alias)
+    onRetryPage: win.retryPage()
+    onTalk: svc.trigger()
+    onRestart: win.daemon("restart")
+    onStop: win.daemon("stop")
+    onAnswer: (pick) => svc.sendChoice(pick)
+    // the notes go on stdin (other local accounts can read argv), as
+    // base64 of UTF-8; the task text follows `--` so a leading dash stays text
+    onSaveMemory: (which, text) => svc.runAction([svc.wispd, "memory", "write", which, "--stdin", "--json"],
+                                                 "memory", null, Manage.utf8Base64(text, Qt.btoa))
+    onStartTask: (text) => svc.runAction([svc.wispd, "task", "run", "--json", "--", text], "task")
+    onCancelTask: (name) => win.wispd(["task", "cancel", name], "task")
   }
 
   IpcHandler {
     target: "settings"
 
-    // open a category (or keep the current one for ""); the CLI then
-    // focuses the window through Hyprland, which a client cannot do itself
+    // open a page or category (or keep the current one for ""); the CLI
+    // then focuses the window through Hyprland, which a client cannot do
+    // itself
     function open(category: string): void {
       if (category !== "") host.select(category);
     }

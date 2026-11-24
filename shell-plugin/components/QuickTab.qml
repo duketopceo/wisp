@@ -14,7 +14,8 @@ Column {
   id: root
 
   property var service: null
-  signal openSettings()
+  // the health summary opens the settings window on its Health page
+  signal openHealth()
 
   readonly property var tk: service ? service.tokens : ({})
   readonly property real ts: service ? service.textScale : 1
@@ -68,7 +69,7 @@ Column {
       : summaryArea.containsMouse ? root.tk.keylineStrong : root.tk.keyline
     Accessible.role: Accessible.Button
     Accessible.name: root.service ? root.service.ui("ui.settings.health") + " " + root.summaryText : ""
-    Accessible.onPressAction: root.openSettings()
+    Accessible.onPressAction: root.openHealth()
 
     Row {
       id: summaryRow
@@ -108,9 +109,9 @@ Column {
       hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
       activeFocusOnTab: true
-      onClicked: root.openSettings()
-      Keys.onReturnPressed: root.openSettings()
-      Keys.onSpacePressed: root.openSettings()
+      onClicked: root.openHealth()
+      Keys.onReturnPressed: root.openHealth()
+      Keys.onSpacePressed: root.openHealth()
     }
   }
 

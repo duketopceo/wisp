@@ -69,6 +69,22 @@ class MemoryTest(unittest.TestCase):
         self.assertNotIn("old fact", text)
         self.assertTrue(text.lstrip().startswith("#"))
 
+    def test_write_keeps_one_header_when_the_body_carries_it(self):
+        # the settings window edits the whole file, header included;
+        # saving it unchanged must not stack a second header
+        memory.edit("memory", "write", "", "- a\n")
+        whole = self.mf.read_text()
+        for _ in range(2):
+            self.assertTrue(memory.edit("memory", "write", "", whole).startswith("OK"))
+        text = self.mf.read_text()
+        self.assertEqual(text.count("# Memory"), 1, text)
+        self.assertIn("- a", text)
+        # blank or whitespace-only lines before the header do not hide it
+        memory.edit("memory", "write", "", "  \n\n# Memory\n\n- b\n")
+        text = self.mf.read_text()
+        self.assertEqual(text.count("# Memory"), 1, text)
+        self.assertIn("- b", text)
+
     def test_write_bounded(self):
         big = "x" * (memory.MEMORY_BUDGET + 100)
         self.assertIn("FAIL", memory.edit("memory", "write", "", big))

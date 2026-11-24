@@ -3,14 +3,14 @@ Type=Application
 Version=1.5
 Name=Wisp
 GenericName=Voice Assistant
-Comment=Wisp voice assistant: talk, stop, open the console
-Exec=@SHELL_EXEC@
+Comment=Wisp voice assistant: talk, stop, open settings
+Exec=@WISPD@ settings
 Icon=wisp
 Terminal=false
 Categories=Utility;Accessibility;
 Keywords=voice;assistant;ai;wisp;
 StartupNotify=false
-Actions=Listen;Stop;Panel;Settings;
+Actions=Listen;Stop;Settings;
 
 [Desktop Action Listen]
 Name=Listen
@@ -20,11 +20,6 @@ Icon=wisp
 [Desktop Action Stop]
 Name=Stop
 Exec=@WISPD@ interrupt
-Icon=wisp
-
-[Desktop Action Panel]
-Name=Panel
-Exec=@SHELL_EXEC@
 Icon=wisp
 
 [Desktop Action Settings]

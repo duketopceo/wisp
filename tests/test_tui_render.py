@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT))
 
 from wisp import config, copy as wcopy, tui  # noqa: E402
 
-SHELL = ROOT / "shells" / "debug" / "shell.qml"
+SHELL = ROOT / "shells" / "settings" / "shell.qml"
 STYLES = {k: i + 100 for i, k in enumerate(
     ("head", "label", "ember", "needsYou", "fail", "ok", "muted", "alert"))}
 
@@ -129,9 +129,9 @@ class TestManagementApp(unittest.TestCase):
         self.assertNotIn("16161e", self.qml.lower())
 
     def test_tokens_come_from_the_service_and_follow_theme_name(self):
-        # W26: the app reads tokens through WispService (lib/tokens.js over
-        # colors.toml); the Commons shim watches theme.name for the swap.
-        self.assertIn("readonly property var tk: svc.tokens", self.qml)
+        # W26: the window reads tokens through WispService (lib/tokens.js
+        # over colors.toml); the Commons shim watches theme.name for the swap.
+        self.assertIn("color: svc.tokens.canvas", self.qml)
         shim = (SHELL.parent / "Commons" / "Color.qml").read_text()
         self.assertIn("theme.name", shim)
         self.assertIn("currentThemePath", shim)
@@ -155,7 +155,7 @@ class TestManagementApp(unittest.TestCase):
                  mock.patch.object(wispd.subprocess, "run"), \
                  mock.patch("wisp.platform.current", return_value="linux"):
                 wispd.install_files()
-            app = home / ".local/opt/wisp/shells/debug"
+            app = home / ".local/opt/wisp/shells/settings"
             for name in ("tokens.js", "copy.js"):
                 f = app / name
                 self.assertTrue(f.is_file() and not f.is_symlink(), f)
@@ -165,7 +165,8 @@ class TestManagementApp(unittest.TestCase):
             # as real files (the repo links them to shell-plugin/)
             for rel in ("WispService.qml", "lib/state.js", "lib/manage.js",
                         "components/HealthSection.qml",
-                        "components/SpendView.qml", "Commons/qmldir"):
+                        "components/SpendView.qml",
+                        "components/ManagePage.qml", "Commons/qmldir"):
                 f = app / rel
                 self.assertTrue(f.is_file() and not f.is_symlink(), f)
             self.assertEqual((app / "lib/state.js").read_bytes(),

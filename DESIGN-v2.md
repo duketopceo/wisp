@@ -57,7 +57,7 @@ always-on polling, `state.json` as the single bus). These are from
 |---|---|---|
 | Shell plugin | Quickshell (quickshell-git 0.3.0) QML inside `omarchy-shell`, Qt 6.11, imports `qs.Commons` / `qs.Ui` | `shell-plugin/{manifest.json,BarWidget.qml,Panel.qml,Companion.qml,WispService.qml}` |
 | Install target | Plugin copied (not symlinked) to `~/.config/omarchy/plugins/io.github.duketopceo.wisp/` | - |
-| Management app | Standalone Quickshell `FloatingWindow`, hardcoded `#16161e` | `shells/debug/shell.qml` (781 lines) |
+| Management app | Standalone Quickshell `FloatingWindow`, hardcoded `#16161e` | the former console app (781 lines), retired: its views now live in the settings window, `shells/settings` (`wispd settings`; pages Home, Activity, Memory, Tasks, Health, Spend, Audit, Binds) |
 | TUI | stdlib curses | `wisp/tui.py` |
 | Web | Static HTML served by `arena.py`; training fixture page | `scripts/clicklab/arena.html`, `scripts/clicklab/index.html` |
 | Theme | Python emits `~/.local/share/wisp/theme.json` (two Tokyo Night palettes); only `Companion.qml` reads it | `wisp/theme.py`, `DESIGN.md` |
@@ -77,7 +77,7 @@ always-on polling, `state.json` as the single bus). These are from
 | S7 | Ghost cursor | `Companion.qml` `ghost` | Canvas-drawn arrow in `guide` color, pulses 1.0-1.12 forever, label chip "click: X", 250ms OutCubic glide | **Redo** (signature moment) |
 | S8 | Point markers | `Companion.qml` `ptsHost` | 28px rings with index numbers, infinite pulse, label chips, 8s auto-hide | **Redo** |
 | S9 | Panel | `Panel.qml` | `KeyboardPanel` 560px, 7 text tabs (Now, Agents, Activity, Tele, Skills, Context, Connect), almost all `Text` rows | **Restructure + restyle** |
-| S10 | Management app | `shells/debug/shell.qml` | separate window, own hardcoded palette | **Restyle on shared tokens** (P2) |
+| S10 | Management app | the settings window, `shells/settings` (the console app before it) | separate window, own hardcoded palette | **Restyle on shared tokens** (P2) |
 | S11 | TUI | `wisp/tui.py` | curses dashboard, headers like `WISP TUI` | **Light pass** (P2) |
 | S12 | Training arena | `scripts/clicklab/arena.html` | 3-column card dashboard, Tokyo Night CSS vars, violet `h1 b` | **Restyle on generated tokens** (P1) |
 | S13 | Clicklab fixture | `scripts/clicklab/index.html` | click-target test page | **Keep geometry frozen** (it is a training fixture; restyle would invalidate suites). Token swap only, if at all |
@@ -180,7 +180,7 @@ and whose Hyprland rounding is 0. The orb looks like a foreign app.
 | Ghost cursor arrow | `Companion.qml:418-441` Canvas path | Code-drawn raster | Redo: custom vector cursor |
 | Busy rings | `Companion.qml:686-727` Canvas arcs | Code-drawn raster | Remove: creature shader carries "thinking" |
 | Card spinner | `Companion.qml:831-850` Canvas arc | Code-drawn raster | Remove |
-| Palettes | `wisp/theme.py`, `DESIGN.md`, `arena.html` `:root`, `index.html`, `shells/debug/shell.qml` | 5 copies of Tokyo Night hex | Redo: one adapter from Omarchy `colors.toml` |
+| Palettes | `wisp/theme.py`, `DESIGN.md`, `arena.html` `:root`, `index.html`, `shells/settings` | 5 copies of Tokyo Night hex | Redo: one adapter from Omarchy `colors.toml` |
 | App icon | `wispd` installer `Icon=audio-input-microphone` | stock | Missing |
 | Sounds | none | - | Missing |
 | Fonts | none shipped (inherits) | - | Keep inheriting (correct for Omarchy) |

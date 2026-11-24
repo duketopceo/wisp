@@ -62,7 +62,8 @@ class TestTemplate(unittest.TestCase):
         cp = parse(desktop.render(pathlib.Path("/o")))
         self.assertEqual(cp["Desktop Entry"]["Name"], "Wisp")
         acts = cp["Desktop Entry"]["Actions"].rstrip(";").split(";")
-        self.assertEqual(acts, ["Listen", "Stop", "Panel", "Settings"])
+        self.assertEqual(acts, ["Listen", "Stop", "Settings"])
+        self.assertNotIn("Desktop Action Panel", cp)
         for a in acts:
             self.assertIn(f"Desktop Action {a}", cp)
             self.assertTrue(cp[f"Desktop Action {a}"]["Name"])
@@ -73,21 +74,25 @@ class TestTemplate(unittest.TestCase):
                          "/o/wispd trigger")
         self.assertEqual(cp["Desktop Action Stop"]["Exec"],
                          "/o/wispd interrupt")
-        self.assertEqual(cp["Desktop Action Panel"]["Exec"],
-                         "quickshell -n -p /o/shells/debug")
-        self.assertEqual(cp["Desktop Entry"]["Exec"],
-                         cp["Desktop Action Panel"]["Exec"])
-        # the settings window has its own action through `wispd settings`
-        # (raise-or-start); the main entry and Panel open the console
+        # the main entry opens the settings window (Home page) through
+        # `wispd settings`, the same command as the Settings action
         self.assertEqual(cp["Desktop Action Settings"]["Exec"],
                          "/o/wispd settings")
+        self.assertEqual(cp["Desktop Entry"]["Exec"], "/o/wispd settings")
+
+    def test_no_console_or_panel_entry(self):
+        text = desktop.render(pathlib.Path("/o"))
+        self.assertNotIn(str(pathlib.PurePosixPath("shells", "debug")), text)
+        self.assertNotIn("quickshell", text)
+        self.assertNotIn("Panel", text)
+        self.assertNotIn("console", text.lower())
 
     def test_exec_quoting_for_spaces(self):
         cp = parse(desktop.render(pathlib.Path("/home/a b/opt")))
         self.assertEqual(cp["Desktop Action Listen"]["Exec"],
                          '"/home/a b/opt/wispd" trigger')
-        self.assertEqual(cp["Desktop Action Panel"]["Exec"],
-                         'quickshell -n -p "/home/a b/opt/shells/debug"')
+        self.assertEqual(cp["Desktop Entry"]["Exec"],
+                         '"/home/a b/opt/wispd" settings')
 
     def test_exec_quote_escapes(self):
         self.assertEqual(desktop.exec_arg('/a"b'), '"/a\\\\"b"')
@@ -215,7 +220,7 @@ class TestInstall(unittest.TestCase):
              mock.patch.object(w.subprocess, "run"), \
              mock.patch("wisp.platform.current", return_value="linux"):
             w.install_files()
-        self.assertIn("Actions=Listen;Stop;Panel;", self.app.read_text())
+        self.assertIn("Actions=Listen;Stop;Settings;", self.app.read_text())
         with mock.patch.object(config, "HOME", self.home), \
              mock.patch("wisp.platform.current", return_value="linux"):
             before = self.app.read_text()

@@ -281,7 +281,7 @@ class TestInstall(unittest.TestCase):
             opt = e.home / ".local" / "opt" / "wisp"
             addition = plugin / "components" / "GhostCursor.qml"
             stale = [opt / "wisp" / "gone.py",
-                     opt / "shells" / "debug" / "Gone.qml"]
+                     opt / "shells" / "settings" / "Gone.qml"]
             cache = opt / "wisp" / "__pycache__" / "config.cpython-311.pyc"
             for f in stale + [cache, addition]:
                 f.parent.mkdir(parents=True, exist_ok=True)

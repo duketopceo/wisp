@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Management app and TUI (W26): one data path, two renderers.
+"""Status and management pages and the TUI (W26): one data path, two
+renderers.
 
   - TUI text for each view is golden (tests/golden/tui/*.txt) over fixture
     JSON in tests/fixtures/manage/. Regenerate with UPDATE_GOLDEN=1.
   - Parity: the Python model builders in wisp/tui.py return exactly what
     shell-plugin/lib/health.js and lib/manage.js return for the same JSON,
     and the QML views read every field of those models.
-  - The app (shells/debug/shell.qml) uses the W17 service, opens no
-    state.json, and has no timer: nothing polls.
+  - The pages live in the settings window (shells/settings/shell.qml,
+    one-surface U3 retired the console app). It uses the W17 service, opens
+    no state.json, and has no timer: nothing polls.
 """
 import json
 import os
@@ -30,10 +32,11 @@ from wisp import cua_safety, tui  # noqa: E402
 
 FIX = ROOT / "tests" / "fixtures" / "manage"
 GOLD = ROOT / "tests" / "golden" / "tui"
-APP = ROOT / "shells" / "debug"
+APP = ROOT / "shells" / "settings"
 SHELL = (APP / "shell.qml").read_text()
 CODE = re.sub(r"(?m)^\s*//.*$", "", SHELL)  # comments may name state.json
 COMP = ROOT / "shell-plugin" / "components"
+PAGE = (COMP / "ManagePage.qml").read_text()
 _TZ = None
 
 
@@ -269,10 +272,15 @@ class TestViewsReadEveryField(unittest.TestCase):
         self.assertIn("HealthSection", self.src("HealthView"))
 
     def test_app_hands_each_view_its_wispd_json(self):
+        # the window feeds the host, the page hands each view its part
         for frag in ("cua: svc.cuaStatus", "spendModels: svc.spendModels",
-                     "models: svc.spendModels", "log: win.auditText",
-                     "binds: win.bindsData", '"binds", "--json"'):
+                     "auditText: win.auditText", "binds: win.bindsData",
+                     '"binds", "--json"'):
             self.assertIn(frag, SHELL, frag)
+        for frag in ("cua: root.cua", "spendModels: root.spendModels",
+                     "models: root.spendModels", "log: root.auditText",
+                     "binds: root.binds"):
+            self.assertIn(frag, PAGE, frag)
 
     def test_tui_runs_the_same_wispd_commands(self):
         src = (ROOT / "wisp" / "tui.py").read_text()
@@ -280,6 +288,131 @@ class TestViewsReadEveryField(unittest.TestCase):
                      '["health"]'):
             self.assertIn(f"fetch_json({argv})", src)
         self.assertIn("audit_default_path", src)
+
+
+@unittest.skipUnless(jsnode.NODE, "node not installed")
+class TestPageHelpers(unittest.TestCase):
+    """lib/manage.js helpers behind the settings window's pages."""
+
+    def js(self, expr):
+        return jsnode.call(expr, Manage="manage")
+
+    def test_page_state_priority(self):
+        cases = [((False, True, True, "exit"), "loading"),
+                 ((True, True, True, "exit"), "error"),
+                 ((True, True, True, ""), "offline"),
+                 ((True, False, True, ""), "stale"),
+                 ((True, False, False, ""), "ready")]
+        for args, want in cases:
+            heard, offline, stale, err = args
+            got = self.js(f"Manage.pageState({json.dumps(heard)}, "
+                          f"{json.dumps(offline)}, {json.dumps(stale)}, "
+                          f"{json.dumps(err)})")
+            self.assertEqual(got, want, args)
+        # loading and error replace the page; offline and stale keep it
+        self.assertEqual(self.js(
+            '["loading","error","offline","stale","ready"]'
+            ".map(Manage.showsContent)"),
+            [False, False, True, True, True])
+
+    def test_turn_rows_keep_the_newest_and_skip_bad_lines(self):
+        lines = [json.dumps({"ts": f"2026-11-24T10:00:{i:02d}",
+                             "answers": {"route": {"choice": "act"}},
+                             "timing_ms": {"act_ms": i},
+                             "transcript": f"t{i}", "result": f"r{i}"})
+                 for i in range(35)]
+        text = "\n".join(lines[:10] + ["{bad"] + lines[10:])
+        rows = self.js(f"Manage.turnRows({json.dumps(text)}, 30)")
+        self.assertEqual(len(rows), 30)
+        self.assertEqual(rows[0], {"time": "10:00:34", "route": "act",
+                                   "ms": 34, "you": "t34", "wisp": "r34"})
+        self.assertEqual(rows[-1]["you"], "t5")
+        self.assertEqual(self.js('Manage.turnRows("", 30)'), [])
+
+    def test_open_suggestions_take_the_latest_record_per_key(self):
+        text = "\n".join(json.dumps(r) for r in (
+            {"key": "a", "status": "new", "title": "A"},
+            {"key": "b", "status": "new", "title": "B"},
+            {"key": "a", "status": "accepted"},
+            {"key": "c", "status": "new", "title": "C"}))
+        got = self.js(f"Manage.openSuggestions({json.dumps(text)})")
+        self.assertEqual([r["key"] for r in got], ["c", "b"])
+
+    def test_corrections_newest_first(self):
+        text = "\n".join(f"c{i}" for i in range(10)) + "\n\n"
+        self.assertEqual(
+            self.js(f"Manage.correctionLines({json.dumps(text)}, 6)"),
+            ["c9", "c8", "c7", "c6", "c5", "c4"])
+
+    def test_binds_read(self):
+        ok = json.dumps({"ok": True, "data": BINDS})
+        self.assertEqual(self.js(f"Manage.bindsRead(0, {json.dumps(ok)})"),
+                         {"data": BINDS, "error": ""})
+        self.assertEqual(self.js('Manage.bindsRead(1, "")'),
+                         {"data": None, "error": "exit"})
+        self.assertEqual(self.js('Manage.bindsRead(0, "{bad")'),
+                         {"data": None, "error": "parse"})
+
+    def test_utf8_base64_matches_python(self):
+        import base64
+        for text in ("", "plain", "dash \u2014 and \u00e9", "emoji \U0001F600 end",
+                     "# Memory\n\n- line\n"):
+            # with an identity encoder the helper returns the UTF-8 bytes as a
+            # Latin-1 string, which is exactly what Qt.btoa encodes
+            raw = self.js(f"Manage.utf8Base64({json.dumps(text)}, "
+                          "function (s) { return s })")
+            self.assertEqual(base64.b64encode(raw.encode("latin1")).decode(),
+                             base64.b64encode(text.encode()).decode(), repr(text))
+        # a lone surrogate (half an emoji) becomes U+FFFD, so the bytes
+        # are always valid UTF-8 and the save is not refused
+        for js_text, want in (('"a\\ud83d"', "a\ufffd"), ('"\\ude00b"', "\ufffdb")):
+            raw = self.js(f"Manage.utf8Base64({js_text}, function (s) {{ return s }})")
+            self.assertEqual(raw.encode("latin1").decode("utf-8"), want, js_text)
+
+    def test_task_hint_key(self):
+        self.assertEqual(self.js('Manage.taskHintKey({status: "interrupted"})'),
+                         "ui.tasks.interrupted")
+        self.assertEqual(self.js('Manage.taskHintKey({status: "running", waiting: true})'),
+                         "ui.tasks.waiting")
+        self.assertEqual(self.js('Manage.taskHintKey({status: "running"})'), "")
+        from wisp import copy as wcopy
+        for k in ("ui.tasks.interrupted", "ui.tasks.waiting"):
+            self.assertIn(k, wcopy.STRINGS)
+
+    def test_task_of_reads_old_and_new_shapes(self):
+        self.assertEqual(self.js('Manage.taskOf("running")'),
+                         {"status": "running", "task": ""})
+        self.assertEqual(self.js('Manage.taskOf(undefined)'),
+                         {"status": "", "task": ""})
+
+
+class TestConsoleRetired(unittest.TestCase):
+    def test_no_reference_to_the_console_outside_history(self):
+        # the changelog and the historical plans keep the record
+        # walk the tree rather than ask git: CI's container checkout is
+        # owned by another user, so `git ls-files` refuses to run there
+        skip_dirs = {".git", "node_modules", "target", "__pycache__",
+                     ".venv", "dist", "build", ".codebase-memory"}
+        files = []
+        for dirpath, dirnames, filenames in os.walk(ROOT):
+            dirnames[:] = [d for d in dirnames if d not in skip_dirs]
+            for name in filenames:
+                files.append(os.path.relpath(os.path.join(dirpath, name), ROOT))
+        allowed = ("CHANGELOG.md", "docs/plans/")
+        me = "tests/test_manage.py"
+        hits = []
+        for rel in files:
+            if rel.startswith(allowed) or rel == me:
+                continue
+            f = ROOT / rel
+            if not f.is_file() or f.is_symlink():
+                continue
+            try:
+                if "shells/debug" in f.read_text(errors="strict"):
+                    hits.append(rel)
+            except (UnicodeDecodeError, OSError):
+                continue
+        self.assertEqual(hits, [])
 
 
 class TestFeed(unittest.TestCase):
@@ -318,14 +451,22 @@ class TestAppNeverPolls(unittest.TestCase):
         self.assertIsNone(re.search(r"\bpollMs|setInterval", SHELL))
 
     def test_every_filewatch_is_event_driven(self):
-        # each FileView that is not a one-shot note read reloads on change
-        for fid in ("decisionsView", "corrView", "suggView", "auditView"):
+        # each FileView that is not a one-shot note read reloads on change,
+        # watched only while its page is open and read when it opens
+        for fid, page in (("decisionsView", "activity"), ("corrView", "activity"),
+                          ("suggView", "activity"), ("auditView", "audit")):
             m = re.search(rf"id:\s*{fid}\b(.*?)\n  \}}", SHELL, re.S)
-            self.assertIn("watchChanges: true", m.group(1), fid)
+            self.assertIn(f'watchChanges: host.category === "{page}"', m.group(1), fid)
+            self.assertIn("preload: false", m.group(1), fid)
+            self.assertIn("onFileChanged: reload()", m.group(1), fid)
+            self.assertIn(f"{fid}.reload()", SHELL, fid)
 
     def test_wispd_results_are_read_when_a_view_opens(self):
-        self.assertIn("onTabChanged: enter(tabs[tab])", SHELL)
-        self.assertIn("svc.loadSettings()", SHELL)
+        self.assertIn("win.enter(host.category)", SHELL)
+        m = re.search(r"function enter\(page\) \{(.*?)\n  \}", SHELL, re.S)
+        self.assertIn('page === "health" || page === "spend"', m.group(1))
+        self.assertIn("svc.loadSettings()", m.group(1))
+        self.assertIn("bindsProc.running = true", m.group(1))
 
     def test_no_hex_literal_and_no_legacy_theme_reader(self):
         self.assertEqual(re.findall(r"#[0-9a-fA-F]{3,8}\b", CODE), [])
@@ -333,25 +474,48 @@ class TestAppNeverPolls(unittest.TestCase):
         self.assertNotIn("Tokens.load", SHELL)
 
     def test_views_are_present_in_order(self):
-        m = re.search(r"readonly property var tabs:\s*\[(.*?)\]", SHELL, re.S)
-        self.assertEqual(re.findall(r'"(\w+)"', m.group(1)),
-                         ["home", "activity", "memory", "agents", "health",
-                          "spend", "audit", "binds", "settings"])
-        stack = SHELL[SHELL.index("StackLayout"):]
-        order = [stack.index(f"// ════ {n} ════") for n in (
-            "HOME", "ACTIVITY", "MEMORY", "AGENTS", "HEALTH", "SPEND",
-            "AUDIT", "BINDS", "SETTINGS")]
-        self.assertEqual(order, sorted(order))
+        from wisp import settings_schema as S
+        self.assertEqual(S.SIDEBAR,
+                         ("home", "activity", "memory", "tasks")
+                         + S.CATEGORIES
+                         + ("health", "spend", "audit", "binds"))
+        # every page has a view in the page's component map
+        m = re.search(r"sourceComponent: \(\{(.*?)\}\)", PAGE, re.S)
+        self.assertEqual(re.findall(r"(\w+): \w+Page", m.group(1)),
+                         list(S.PAGES))
 
     def test_copy_lint_is_clean(self):
         self.assertEqual(
             copylint.violations(copylint.qml_strings(SHELL)), [])
 
-    def test_tab_labels_come_from_the_copy_table(self):
+    def test_page_titles_come_from_the_copy_table(self):
         from wisp import copy as wcopy
-        for k in ("home", "activity", "memory", "agents", "health", "spend",
-                  "audit", "binds", "settings"):
-            self.assertIn(f"ui.manage.{k}", wcopy.STRINGS)
+        from wisp import settings_schema as S
+        for k in S.SIDEBAR:
+            self.assertIn(f"set.cat.{k}", wcopy.STRINGS)
+        for k in ("settings", "status"):
+            self.assertIn(f"set.group.{k}", wcopy.STRINGS)
+        for st in ("loading", "offline", "stale", "error"):
+            self.assertIn(f"ui.page.{st}", wcopy.STRINGS)
+            self.assertIn(f"ui.page.{st}.hint", wcopy.STRINGS)
+
+    def test_actions_run_through_run_action(self):
+        # the console called svc.run(...), which is a view model, not a
+        # function; every page action goes through runAction or the
+        # service's own entry points
+        code = re.sub(r"(?m)^\s*//.*$", "", SHELL)
+        self.assertNotRegex(code, r"\bsvc\.run\s*\(")
+        self.assertIn('svc.runAction(["systemctl", "--user", verb, "wispd"], "daemon")', code)
+        self.assertIn('onRestart: win.daemon("restart")', code)
+        self.assertIn('onStop: win.daemon("stop")', code)
+        self.assertIn('svc.runAction([svc.wispd].concat(args).concat(["--json"]), verb)', code)
+        # notes go on stdin as base64 of UTF-8; task text follows `--`
+        self.assertIn('svc.runAction([svc.wispd, "memory", "write", which, "--stdin", "--json"],', code)
+        self.assertIn('"memory", null, Manage.utf8Base64(text, Qt.btoa))', code)
+        self.assertIn('svc.runAction([svc.wispd, "task", "run", "--json", "--", text], "task")', code)
+        self.assertIn('win.wispd(["task", "cancel", name], "task")', code)
+        self.assertIn("onAnswer: (pick) => svc.sendChoice(pick)", code)
+        self.assertIn("onTalk: svc.trigger()", code)
 
 
 class TestAppFiles(unittest.TestCase):
@@ -361,6 +525,11 @@ class TestAppFiles(unittest.TestCase):
                              ("components", "../../shell-plugin/components")):
             self.assertEqual(os.readlink(APP / name), target, name)
             self.assertTrue((APP / name).exists(), name)
+        # the shim is the window's own directory, not a link into the
+        # retired console
+        self.assertTrue((APP / "Commons").is_dir())
+        self.assertFalse((APP / "Commons").is_symlink())
+        self.assertFalse((ROOT / "shells" / "debug").exists())
         qmldir = (APP / "Commons" / "qmldir").read_text()
         self.assertIn("module qs.Commons", qmldir)
         for name in ("Color", "Style"):
@@ -389,11 +558,12 @@ QMLLINT = shutil.which("qmllint") or (
 @unittest.skipUnless(QMLLINT, "qmllint not installed")
 class TestQmllint(unittest.TestCase):
     def test_app_and_shim_lint_without_errors(self):
-        # the app resolves qs.Commons to its own Commons/ shim
+        # the window resolves qs.Commons to its own Commons/ shim
         files = [APP / "shell.qml", APP / "Commons" / "Color.qml",
                  APP / "Commons" / "Style.qml"]
-        files += [COMP / f"{n}.qml" for n in ("HealthView", "SpendView",
-                                             "AuditView", "BindsView")]
+        files += [COMP / f"{n}.qml" for n in (
+            "HealthView", "SpendView", "AuditView", "BindsView", "ManagePage",
+            "HomeView", "ActivityView", "MemoryView", "AgentsView")]
         for f in files:
             p = subprocess.run([QMLLINT, "-I", str(APP.parent), str(f)],
                                capture_output=True, text=True)

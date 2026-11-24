@@ -136,12 +136,16 @@ Item {
         mouseClick(findChild(body, "openSettings"))
       }
       compare(opens.count, 4)
+      compare(opens.signalArguments[0][0], "")
       show(3)
       tap(findChild(body, "healthSummary"))
       compare(opens.count, 5)
+      // the summary opens the Health page (one-surface U3)
+      compare(opens.signalArguments[4][0], "health")
       // a screen reader's press runs the same action
       findChild(body, "healthSummary").Accessible.pressAction()
       compare(opens.count, 6)
+      compare(opens.signalArguments[5][0], "health")
     }
 
     function test_health_summary_words() {

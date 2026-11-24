@@ -181,8 +181,16 @@ class TestUiMetadata(unittest.TestCase):
             self.assertIn(f.label_key, wcopy.STRINGS, f.key)
             self.assertIn(f.help_key, wcopy.STRINGS, f.key)
             self.assertTrue(wcopy.STRINGS[f.help_key].endswith("."), f.key)
-        for c in S.CATEGORIES:
+        for c in S.SIDEBAR:
             self.assertIn(f"set.cat.{c}", wcopy.STRINGS)
+
+    def test_pages_are_apart_from_categories(self):
+        # one-surface U3: a page key never doubles as a config category, so
+        # `wispd settings --category <name>` opens exactly one entry
+        self.assertEqual(set(S.PAGES) & set(S.CATEGORIES), set())
+        self.assertEqual(S.PAGES, S.MANAGE_PAGES + S.STATUS_PAGES)
+        self.assertEqual(S.SIDEBAR, S.MANAGE_PAGES + S.CATEGORIES + S.STATUS_PAGES)
+        self.assertEqual(S.SIDEBAR[0], "home")
 
     def test_number_fields_carry_a_unit_where_one_applies(self):
         self.assertEqual(S.field("budget.daily_usd").unit, "USD")
@@ -351,6 +359,9 @@ class TestGeneratedJs(unittest.TestCase):
         self.assertEqual(
             jsnode.call("Sch.CATEGORIES", Sch="settings_schema"),
             list(S.CATEGORIES))
+        for name in ("PAGES", "MANAGE_PAGES", "STATUS_PAGES", "SIDEBAR"):
+            self.assertEqual(jsnode.call(f"Sch.{name}", Sch="settings_schema"),
+                             list(getattr(S, name)), name)
         allkeys = jsnode.call("Sch.KEYS", Sch="settings_schema")
         self.assertEqual(allkeys, [f.key for f in S.FIELDS])
 

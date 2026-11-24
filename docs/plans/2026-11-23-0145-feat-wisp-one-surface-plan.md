@@ -193,6 +193,9 @@ Wisp grew surfaces one at a time, and each picked its own words and marks. The b
 **Files:**
 - `shells/settings/shell.qml`
 - `shell-plugin/components/SettingsHost.qml`, `SettingsPage.qml`, `HealthView.qml`, `SpendView.qml`, `AuditView.qml`, `BindsView.qml`
+- `shell-plugin/components/HomeView.qml`, `ActivityView.qml`, `MemoryView.qml`, `AgentsView.qml` (new: the console draws these four inline in `shells/debug/shell.qml`, so they are extracted as window-free components)
+- the page list: `CATEGORIES` stays the config field categories (its tests pin it to the fields). A separate ordered `PAGES` list (`home`, `activity`, `memory`, `tasks`, `health`, `spend`, `audit`, `binds`) and the combined sidebar order live in `wisp/settings_schema.py` and its generated JS. The tasks page is keyed `tasks` because `agents` is already a config category. `wispd settings --category` accepts categories and pages.
+- `tests/qml/harness/FixtureService.qml`, `tests/qml/harness/scenes.json` and the snapshot goldens (new page scenes)
 - `shell-plugin/WispService.qml`
 - `shells/debug/` (removed); `shells/settings/Commons` (becomes a real directory)
 - `assets/desktop/wisp.desktop`, `wisp/desktop.py`, `wisp/tui.py` (docstring), `wisp/cli/settings_window.py` (`--category` accepts the new pages)
@@ -201,7 +204,8 @@ Wisp grew surfaces one at a time, and each picked its own words and marks. The b
 - Docs: `INDEX.md`, `docs/DEV_MODE.md`, `DESIGN-v2.md`, `CHANGELOG.md`
 
 **Approach:**
-- **Sidebar order:** Home, Activity, Memory, Agents; then the settings categories; then a Status group (Health, Spend, Audit, Binds). The launcher opens Home. `wispd settings --category <page>` deep-links to any page, and the Panel health summary (which opens the window with no category in U2) switches to `--category health`. Views reflow to the page width; the console's fixed sizes do not carry over.
+- **Sidebar order:** Home, Activity, Memory, Tasks; then the settings categories; then a Status group (Health, Spend, Audit, Binds). With no category, or an unknown one, the window opens Home, so the launcher's plain `wispd settings` lands there. Up/Down and `select()` walk the combined order.
+- **Data.** Page components take their data as properties and emit actions as signals (the U2 `PanelBody` pattern). The console's file readers (decisions, corrections, suggestions, MEMORY.md, USER.md, the cua audit log) and the `wispd binds` read move into `shells/settings/shell.qml`. `WispService.loadSettings()` (cua and spend reads) stays: the window calls it when Health or Spend opens and on Retry. `wispd settings --category <page>` deep-links to any page, and the Panel health summary (which opens the window with no category in U2) switches to `--category health`. Views reflow to the page width; the console's fixed sizes do not carry over.
 - **Page states.** Every Status and management page uses the shared `EmptyState` with words from copy:
   - first-event loading;
   - daemon offline (with Retry);
@@ -210,19 +214,21 @@ Wisp grew surfaces one at a time, and each picked its own words and marks. The b
   - partial or error.
 - **Keyboard:** Tab and the arrow keys reach the sidebar and the page. Focus moves to the page heading on page change.
 - Fix the `svc.run(...)` calls by using `runAction`.
-- KTD2: the stream turns on while a Status or management page is open.
+- KTD2: `shells/settings/shell.qml` binds `streamEnabled` to the current page being a Status or management page. While the stream is on, pages read offline and stale from the stream; until the first snapshot after an enable they show the loading state.
 - Move `Commons` into `shells/settings`. Retarget `test_manage.py`, then delete `shells/debug`.
 - The launcher's main entry opens `wispd settings`. The now-redundant Panel action is removed, and Listen, Stop and Settings stay.
+- The console's own Settings tab (raw key editor) is not carried over; the settings window's categories replace it.
+- Drift check (2026-11-24, master 17bc3b9): `shells/settings/Commons` is a symlink to `../debug/Commons`, so it must become a real directory before `shells/debug` goes. Historical plans under `docs/plans/` name `shells/debug` as a record; the no-reference check exempts `docs/plans/` and `CHANGELOG.md`.
 
 **Test scenarios:**
 - Each Status and management page renders from fixture data in light and dark, and in each of its states: loading, offline, stale, empty and error.
-- `wispd settings --category health` opens Health. Focus lands on the page heading after a page change.
+- `wispd settings --category health` opens Health; with no category the window opens Home; `--category tasks` and `--category agents` open different pages. Focus lands on the page heading after a page change.
+- The stream is on for a Status or management page and off for a config category.
 - A release tarball verifies with no `shells/debug` members, and an upgrade removes the old installed `shells/debug` directory.
 - Restart and stop actions call `runAction` with the expected verbs.
 - An audit page with 50 rows scrolls and keeps column alignment at 720 px.
-- No file references `shells/debug` after removal except the changelog.
 - The rendered desktop entry's main Exec runs `wispd settings`, and there is no Panel action.
-- A repository-wide search finds no `shells/debug` reference except the changelog.
+- A repository-wide search finds no `shells/debug` reference except the changelog and historical plans under `docs/plans/`.
 - `test_manage` parity checks pass against `shells/settings`.
 
 **Verification:** QML suites, `test_manage`, `test_desktop`, full unit suite, goldens.

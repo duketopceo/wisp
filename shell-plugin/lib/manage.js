@@ -1,8 +1,9 @@
 .pragma library
 
-// Management app views (W26): the audit log and the Hyprland binds as plain
-// rows, next to lib/health.js (health, spend, cua). wisp/tui.py builds the
-// same shapes from the same JSON (tests/test_manage_parity.py compares them),
+// Settings window Status and management pages (W26, one-surface U3): the
+// audit log, the Hyprland binds, the turn log and tasks as plain rows,
+// next to lib/health.js (health, spend, cua). wisp/tui.py builds the
+// same shapes from the same JSON (TestParity in tests/test_manage.py compares them),
 // so the app and the terminal dashboard cannot drift. No colors, no strings
 // for users: labels come from the copy table in the components.
 
@@ -94,3 +95,128 @@ function spendModels(models) {
 
 // Tone name -> token name, for a component colouring a row.
 var TONE_KEY = { ok: "ok", fail: "fail", needsYou: "needsYou", muted: "inkMuted" }
+
+// --- settings window pages (one-surface U3) ---------------------------
+
+// The frame state of a Status or management page. `heard` is false until
+// the first state arrives after the stream turns on; `error` is the page's
+// own read failure ("" when fine). Loading and error replace the page;
+// offline and stale sit above what was last seen.
+function pageState(heard, offline, stale, error) {
+  if (!heard) return "loading"
+  if (error) return "error"
+  if (offline) return "offline"
+  if (stale) return "stale"
+  return "ready"
+}
+function showsContent(state) { return state !== "loading" && state !== "error" }
+
+function _jsonLines(text) {
+  var out = []
+  var lines = String(text || "").split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var l = lines[i].trim()
+    if (!l) continue
+    try { out.push(JSON.parse(l)) } catch (e) {}
+  }
+  return out
+}
+
+// decisions.jsonl -> the newest `limit` turns as display rows, newest
+// first: {time, route, ms, you, wisp}. Lines are parsed from the end
+// until `limit` good records are found; bad lines are skipped.
+function turnRows(text, limit) {
+  var n = limit || 30
+  var lines = String(text || "").split("\n")
+  var rows = []
+  for (var i = lines.length - 1; i >= 0 && rows.length < n; i--) {
+    var l = lines[i].trim()
+    if (!l) continue
+    try {
+      var d = JSON.parse(l)
+      if (isObj(d)) rows.push(d)
+    } catch (e) {}
+  }
+  return rows.map(function (d) {
+    var route = isObj(d.answers) && isObj(d.answers.route) ? d.answers.route.choice : ""
+    var ms = isObj(d.timing_ms) ? Number(d.timing_ms.act_ms) || 0 : 0
+    return { time: String(d.ts || "").slice(11, 19), route: String(route || ""), ms: ms,
+             you: String(d.transcript || ""), wisp: String(d.reply || d.result || "") }
+  })
+}
+
+// corrections.jsonl -> the newest `limit` raw lines, newest first
+function correctionLines(text, limit) {
+  var lines = String(text || "").split("\n").filter(function (l) { return l.trim() !== "" })
+  return lines.slice(-(limit || 6)).reverse()
+}
+
+// suggestions.jsonl appends status updates per key: the latest record per
+// key wins, and only those still "new" are shown, newest first
+function openSuggestions(text) {
+  var latest = {}
+  var order = []
+  var recs = _jsonLines(text)
+  for (var i = 0; i < recs.length; i++) {
+    var r = recs[i]
+    if (!isObj(r) || !r.key) continue
+    if (!latest.hasOwnProperty(r.key)) { latest[r.key] = {}; order.push(r.key) }
+    for (var k in r) latest[r.key][k] = r[k]
+  }
+  return order.filter(function (k) { return latest[k].status === "new" })
+    .map(function (k) { return latest[k] }).reverse()
+}
+
+// a task entry is {status, task, ...}; older daemons publish the status
+function taskOf(t) {
+  if (t === null || t === undefined) return { status: "", task: "" }
+  return typeof t === "string" ? { status: t, task: "" } : t
+}
+
+// the row line for a task, as a copy key ("" for the task's own line):
+// an interrupted agent gets the say-continue hint, a pending ask the
+// waiting one (the Panel Agents tab and the settings window Tasks page)
+function taskHintKey(t) {
+  if (t.status === "interrupted") return "ui.tasks.interrupted"
+  if (t.waiting) return "ui.tasks.waiting"
+  return ""
+}
+
+// `wispd binds --json` stdout -> {data, error}: error is "" when it parsed
+function bindsRead(code, text) {
+  if (code !== 0) return { data: null, error: "exit" }
+  try {
+    var doc = JSON.parse(text)
+    return { data: isObj(doc) ? doc.data : null, error: "" }
+  } catch (e) {
+    return { data: null, error: "parse" }
+  }
+}
+
+// Text -> one line of base64 over its UTF-8 bytes (Qt.btoa alone encodes
+// Latin-1, so a dash or an emoji in a notes document would not survive).
+// `btoa` is the host's Latin-1 encoder (Qt.btoa in QML).
+function utf8Base64(text, btoa) {
+  var s = String(text || "")
+  var bytes = ""
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charCodeAt(i)
+    if (c >= 0xd800 && c <= 0xdfff) {
+      // a surrogate pair is one code point; a lone half becomes U+FFFD so
+      // the bytes stay valid UTF-8
+      var d = i + 1 < s.length ? s.charCodeAt(i + 1) : 0
+      if (c <= 0xdbff && d >= 0xdc00 && d <= 0xdfff) {
+        c = 0x10000 + ((c - 0xd800) << 10) + (d - 0xdc00)
+        i++
+      } else {
+        c = 0xfffd
+      }
+    }
+    if (c < 0x80) bytes += String.fromCharCode(c)
+    else if (c < 0x800) bytes += String.fromCharCode(0xc0 | (c >> 6), 0x80 | (c & 63))
+    else if (c < 0x10000) bytes += String.fromCharCode(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63))
+    else bytes += String.fromCharCode(0xf0 | (c >> 18), 0x80 | ((c >> 12) & 63),
+                                      0x80 | ((c >> 6) & 63), 0x80 | (c & 63))
+  }
+  return btoa(bytes)
+}

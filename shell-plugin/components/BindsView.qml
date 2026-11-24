@@ -1,4 +1,4 @@
-// Binds view of the management app: the hold-to-talk chord and the Hyprland
+// Binds page of the settings window: the hold-to-talk chord and the Hyprland
 // binds wisp registered (`wispd binds --json` data, passed in by the app).
 // Binds that belong to a submap (W24: Esc stops, Enter confirms, number keys
 // choose) get their own list; without W24 the view says the submap is not
@@ -11,6 +11,9 @@ Column {
   id: root
 
   property var service: null
+  // the title and its line; a settings-window page hides them and
+  // shows its own heading
+  property bool titled: true
   property var binds: null
 
   readonly property var tk: service ? service.tokens : ({})
@@ -37,6 +40,7 @@ Column {
 
   Text {
     textFormat: Text.PlainText
+    visible: root.titled
     text: root.service.ui("ui.manage.binds")
     color: root.tk.ink
     font.family: root.service.fontFamily
@@ -45,6 +49,7 @@ Column {
   }
   Text {
     textFormat: Text.PlainText
+    visible: root.titled
     text: root.service.ui("ui.manage.binds.sub")
     color: root.tk.inkMuted
     font.family: root.service.fontFamily

@@ -1,4 +1,4 @@
-// Spend view of the management app: today and month against the caps, the
+// Spend page of the settings window: today and month against the caps, the
 // paid-calls-paused state, and the per model table. `service.spend` is the
 // state field (W14); `models` is `wispd spend --json` data.models, passed in
 // by the app after a one-shot read.
@@ -12,6 +12,9 @@ Column {
   id: root
 
   property var service: null
+  // the title and its line; a settings-window page hides them and
+  // shows its own heading
+  property bool titled: true
   property var models: []
 
   readonly property var tk: service ? service.tokens : ({})
@@ -32,6 +35,7 @@ Column {
 
   Text {
     textFormat: Text.PlainText
+    visible: root.titled
     text: root.service.ui("ui.manage.spend")
     color: root.tk.ink
     font.family: root.service.fontFamily
@@ -40,6 +44,7 @@ Column {
   }
   Text {
     textFormat: Text.PlainText
+    visible: root.titled
     text: root.service.ui("ui.manage.spend.sub")
     color: root.tk.inkMuted
     font.family: root.service.fontFamily

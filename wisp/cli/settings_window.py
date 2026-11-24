@@ -101,14 +101,15 @@ def _focus(focus=None) -> bool:
 
 
 def _args(p):
-    p.add_argument("--category", choices=list(settings_schema.CATEGORIES),
+    p.add_argument("--category", choices=list(settings_schema.SIDEBAR),
                    default="", metavar="NAME",
-                   help="page to open: " + ", ".join(
-                       settings_schema.CATEGORIES))
+                   help="page to open (default home): " + ", ".join(
+                       settings_schema.SIDEBAR))
 
 
 @command("settings", "Open the settings window",
-         ["wispd settings", "wispd settings --category budget"],
+         ["wispd settings", "wispd settings --category budget",
+          "wispd settings --category health"],
          {"action": "str", "category": "str", "focused": "bool"},
          args=_args)
 def settings(ctx, a):

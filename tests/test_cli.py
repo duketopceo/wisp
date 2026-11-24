@@ -646,6 +646,27 @@ with mock.patch.object(preflight, "run", return_value=checks), \\
             self.assertEqual(env.ipc[2]["note"], "it read zebra-7731")
             self.assertEqual(env.ipc[2]["label"], "incorrect")
 
+    def test_memory_write_takes_its_body_from_stdin(self):
+        # the settings window's Memory page sends the whole notes document
+        # on stdin, base64 of UTF-8, so it never appears in argv
+        import base64
+        doc = "# Memory\n\n- prefers \u2014 dashes \U0001F600\n"
+        b64 = base64.b64encode(doc.encode()).decode()
+        with CliEnv(daemon=True) as env:
+            code, _out, err = env.run(["memory", "write", "memory", "--stdin"],
+                                      stdin=b64 + "\n")
+            self.assertEqual(code, 0, err)
+            self.assertEqual(env.ipc[0], {"cmd": "memory", "target": "memory",
+                                          "body": doc})
+            # neither a body nor --stdin is a usage error
+            code, _out, _err = env.run(["memory", "write", "memory"])
+            self.assertEqual(code, 2)
+
+    def test_task_text_after_double_dash_is_literal(self):
+        with CliEnv(daemon=True) as env:
+            env.run(["task", "run", "--json", "--", "--help me"])
+            self.assertEqual(env.ipc[0], {"cmd": "agent", "task": "--help me"})
+
     def test_a_blank_stdin_pick_is_a_dismiss_and_ask_needs_text(self):
         with CliEnv(daemon=True) as env:
             env.run(["choice", "--stdin"], stdin="\n")

@@ -184,16 +184,24 @@ def memory_edit(ctx, a):
 
 def _mem_write_args(p):
     p.add_argument("target", help="memory or user")
-    p.add_argument("body_b64", metavar="BASE64",
+    p.add_argument("body_b64", metavar="BASE64", nargs="?", default=None,
                    help="whole document, base64 encoded")
+    p.add_argument("--stdin", action="store_true",
+                   help="read the base64 body as one line from stdin, so "
+                        "the notes never appear on the command line")
 
 
 @command("memory write", "Replace a whole notes document (base64 body)",
-         ["wispd memory write user \"$(base64 -w0 USER.md)\""],
+         ["wispd memory write user \"$(base64 -w0 USER.md)\"",
+          "base64 -w0 USER.md | wispd memory write user --stdin"],
          {"result": "str"}, args=_mem_write_args)
 def memory_write(ctx, a):
+    raw = registry.read_stdin_line() if a.stdin else a.body_b64
+    if raw is None:
+        raise CliError("E_USAGE", "Give the body as BASE64 or with --stdin.",
+                       "wispd memory write --help")
     try:
-        body = base64.b64decode(a.body_b64).decode()
+        body = base64.b64decode(raw).decode()
     except (ValueError, binascii.Error) as e:
         raise CliError("E_USAGE", f"The body is not valid base64 ({e}).",
                        "wispd memory write --help")
