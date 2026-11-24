@@ -373,8 +373,15 @@ class TestPageHelpers(unittest.TestCase):
 class TestConsoleRetired(unittest.TestCase):
     def test_no_reference_to_the_console_outside_history(self):
         # the changelog and the historical plans keep the record
-        files = subprocess.run(["git", "ls-files"], cwd=ROOT, text=True,
-                               capture_output=True, check=True).stdout.split()
+        # walk the tree rather than ask git: CI's container checkout is
+        # owned by another user, so `git ls-files` refuses to run there
+        skip_dirs = {".git", "node_modules", "target", "__pycache__",
+                     ".venv", "dist", "build", ".codebase-memory"}
+        files = []
+        for dirpath, dirnames, filenames in os.walk(ROOT):
+            dirnames[:] = [d for d in dirnames if d not in skip_dirs]
+            for name in filenames:
+                files.append(os.path.relpath(os.path.join(dirpath, name), ROOT))
         allowed = ("CHANGELOG.md", "docs/plans/")
         me = "tests/test_manage.py"
         hits = []

@@ -166,9 +166,14 @@ class TestCommand(unittest.TestCase):
         self.assertNotIn("agents", S.PAGES)
         self.assertNotIn("tasks", S.CATEGORIES)
         self.assertEqual(len(set(S.SIDEBAR)), len(S.SIDEBAR))
-        code, _out, _err = run_cli(["settings", "--category", "health"],
-                                   WAYLAND)
+        # the CLI accepts a page name and hands it to the window (no
+        # display or quickshell is needed for that)
+        res = {"action": "started", "category": "health", "focused": False}
+        with mock.patch.object(sw, "open_window", return_value=res) as ow:
+            code, _out, _err = run_cli(["settings", "--category", "health"],
+                                       WAYLAND)
         self.assertEqual(code, 0)
+        ow.assert_called_once_with("health")
 
     def test_unknown_category_is_a_usage_error(self):
         code, _out, _err = run_cli(["settings", "--category", "nope"],
