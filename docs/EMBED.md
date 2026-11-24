@@ -148,7 +148,9 @@ JavaScript host does the same with its process API.
 
 ```python
 import json
+import queue
 import subprocess
+import threading
 import time
 
 STALE_S, SILENT_S = 20, 45
@@ -163,11 +165,12 @@ def table():
     return {r["key"]: r for r in json.loads(out.stdout)["data"]["rows"]}
 
 
-def offline_word():
+def offline_view():
     out = subprocess.run(["wispd", "status", "--json"],
                          capture_output=True, text=True)
     if out.returncode == 3:
-        return json.loads(out.stdout)["data"]["word"]
+        data = json.loads(out.stdout)["data"]
+        return data["word"], data["tone"]
     return None
 
 
@@ -175,25 +178,51 @@ def show(word, tone):
     print(f"[{tone}] {word}", flush=True)
 
 
+def read_lines(stream, lines):
+    for line in stream:
+        lines.put(line)
+
+
 rows = table()
 proc = subprocess.Popen(["wispd", "watch", "state", "tasks"],
                         stdout=subprocess.PIPE, text=True)
-status, changed = "offline", time.monotonic()
-for line in proc.stdout:
-    ev = json.loads(line)
+lines = queue.Queue()
+threading.Thread(target=read_lines, args=(proc.stdout, lines),
+                 daemon=True).start()
+
+status = "offline"
+last_line = last_state = time.monotonic()
+while True:
+    try:
+        ev = json.loads(lines.get(timeout=1))
+    except queue.Empty:
+        ev = None  # no line this second: fall through to the timers
     now = time.monotonic()
-    if ev.get("type") == "snapshot":
-        status = ev["state"].get("status", "offline")
-    elif ev.get("type") == "state":
-        status = ev["diff"].get("status", status)
-    if "view" in ev:
-        changed = now
-        show(ev["view"]["word"], ev["view"]["tone"])
-    elif rows and status in BUSY and now - changed > STALE_S:
+    if ev is not None:
+        last_line = now
+        if ev.get("type") == "snapshot":
+            status = ev["state"].get("status", "offline")
+        elif ev.get("type") == "state":
+            status = ev["diff"].get("status", status)
+        if "view" in ev:
+            last_state = now
+            show(ev["view"]["word"], ev["view"]["tone"])
+    # stale: a busy turn with no state line for STALE_S
+    if rows and status in BUSY and now - last_state > STALE_S:
         stale = rows["stale"]
         show(stale["word"], stale["tone"])
+        last_state = now
+    # offline: no line at all (not even a ping) for SILENT_S
+    if now - last_line > SILENT_S:
+        view = offline_view()
+        if view:
+            show(*view)
+            status = "offline"
+        last_line = now
 ```
 
-The loop above only wakes when a line arrives. A real host also runs a timer
-that applies the stale rule between lines and, after `SILENT_S` seconds with
-no line at all, calls `offline_word()` and shows that word when it returns one.
+A reader thread feeds a queue, so the loop wakes every second even while
+the stream is silent. Both timers then run between lines: the stale rule after
+20 s without a `state` line during a busy turn, and the offline check after
+45 s with no line at all. The stream keeps reconnecting by itself, and the
+next `snapshot` replaces the offline word.

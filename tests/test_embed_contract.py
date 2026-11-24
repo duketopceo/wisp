@@ -238,7 +238,10 @@ class TestEmbedDoc(unittest.TestCase):
         blocks = re.findall(r"```python\n(.*?)```", EMBED, re.S)
         self.assertEqual(len(blocks), 1)
         ast.parse(blocks[0])
+        # the example must carry the stale and the offline path, both timed
+        # without waiting on a line (queue.Empty)
         for name in ('"view"', '"rows"', '"stale"', "returncode == 3",
+                     "STALE_S", "SILENT_S", "queue.Empty",
                      '["wispd", "watch", "state", "tasks"]'):
             self.assertIn(name, blocks[0])
 
