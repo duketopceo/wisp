@@ -13,6 +13,9 @@ Rectangle {
   property bool selected: false
   property bool hovered: area.containsMouse
   property bool pressed: area.pressed
+  // opt in to keyboard use (settings window pages): Tab reaches it, Enter
+  // or Space press it, and focus draws the accent ring
+  property bool focusable: false
   signal clicked()
 
   readonly property var tk: service ? service.tokens : ({})
@@ -22,8 +25,15 @@ Rectangle {
   radius: Math.min(M.radius.chrome, M.radius.chip)
   opacity: enabled ? 1 : 0.5
   color: pressed || selected ? tk.selection : tk.raised
-  border.width: M.size.keyline
-  border.color: selected || hovered ? tk.keylineStrong : tk.keyline
+  border.width: activeFocus ? M.scale.focusRing : M.size.keyline
+  border.color: activeFocus ? tk.accent : selected || hovered ? tk.keylineStrong : tk.keyline
+  activeFocusOnTab: focusable
+  Accessible.role: Accessible.Button
+  Accessible.name: label
+  Accessible.onPressAction: if (enabled) clicked()
+  Keys.onReturnPressed: if (enabled) clicked()
+  Keys.onEnterPressed: if (enabled) clicked()
+  Keys.onSpacePressed: if (enabled) clicked()
 
   Row {
     id: row

@@ -19,6 +19,17 @@ var KEYS = Schema.KEYS
 function field(key) { return Schema.field(key) }
 
 var CATEGORIES = Schema.CATEGORIES
+// the settings window's other pages and its whole sidebar order
+// (one-surface U3); a page shows daemon state, so the window keeps the
+// stream on while one is open
+var PAGES = Schema.PAGES
+var MANAGE_PAGES = Schema.MANAGE_PAGES
+var STATUS_PAGES = Schema.STATUS_PAGES
+var SIDEBAR = Schema.SIDEBAR
+function isPage(name) { return PAGES.indexOf(name) >= 0 }
+// the sidebar entry for a requested name: itself when known, else the
+// first page (home)
+function startPage(name) { return SIDEBAR.indexOf(name) >= 0 ? name : SIDEBAR[0] }
 
 // The Panel's quick settings in one config section. The Panel tab only
 // ever shows quick fields; every field validates (see validate), the

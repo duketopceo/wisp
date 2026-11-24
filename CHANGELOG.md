@@ -17,6 +17,7 @@ How this file is kept:
 
 ## Unreleased
 
+- The separate console app is gone: its views (Home, Activity, Memory, Tasks, Health, Spend, Audit and Binds) now live in the settings window. The launcher's main entry opens `wispd settings`, the Panel action is removed from the launcher menu (Listen, Stop and Settings stay), and `wispd install` rewrites the launcher entry for you.
 - The Panel now scrolls when it is taller than your screen, and its Settings tab is a short Quick tab: a health line, your quick settings, and "open settings" (on every tab) for the full settings window. Quick settings still save while Wisp is not running.
 - Another bar or panel can now show Wisp with the same words Wisp uses: `wispd status --json` includes the word and tone, `wispd status --table` lists every word without Wisp running, and `wispd watch` adds them to each state line. docs/EMBED.md explains how.
 - The bar now uses the same words as the Panel and overlay: working, hearing, your call and that failed, instead of acting, thinking, needs you and error.

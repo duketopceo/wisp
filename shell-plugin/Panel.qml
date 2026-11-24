@@ -99,10 +99,13 @@ Panel {
   }
 
   // the settings window, started detached (never through runAction) so it
-  // outlives the Panel; the Panel closes behind it
-  function openSettings() {
+  // outlives the Panel; the Panel closes behind it. `category` names a page
+  // (the health summary opens Health), "" opens the default page.
+  function openSettings(category) {
     if (!service) return
-    Quickshell.execDetached([service.wispd, "settings"])
+    var argv = [service.wispd, "settings"]
+    if (category) argv = argv.concat(["--category", category])
+    Quickshell.execDetached(argv)
     close()
   }
 
@@ -217,7 +220,7 @@ Panel {
         skippedSteps: wisp.skippedSteps
         whatsnew: wisp.whatsnew
         onPickTab: function (index) { wisp.tab = index }
-        onOpenSettings: wisp.openSettings()
+        onOpenSettings: (category) => wisp.openSettings(category)
         onCloseRequested: wisp.close()
         onWhatsnewDismiss: wisp.dismissWhatsnew()
         onWhatsnewLink: function (url) {

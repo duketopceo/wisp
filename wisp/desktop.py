@@ -1,7 +1,7 @@
 """Launcher entry, desktop actions and icon-theme install (plan W27).
 
-`assets/desktop/wisp.desktop` is a template: `@WISPD@` and `@SHELL_EXEC@`
-are filled in with the installed paths, quoted per the Desktop Entry
+`assets/desktop/wisp.desktop` is a template: `@WISPD@` is filled in
+with the installed path, quoted per the Desktop Entry
 spec. `install` is idempotent, backs up a file the user edited, never
 writes in dry-run, and refreshes the desktop/icon caches only when the
 tools exist. Stdlib only.
@@ -58,10 +58,7 @@ def _managed_pristine(text: str) -> bool:
 
 def render(opt: pathlib.Path, src: pathlib.Path = None) -> str:
     src = src or pathlib.Path(__file__).resolve().parent.parent
-    body = (template(src)
-            .replace("@WISPD@", exec_arg(str(opt / "wispd")))
-            .replace("@SHELL_EXEC@",
-                     "quickshell -n -p " + exec_arg(str(opt / "shells" / "debug"))))
+    body = template(src).replace("@WISPD@", exec_arg(str(opt / "wispd")))
     return stamp(body)
 
 

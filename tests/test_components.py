@@ -36,7 +36,9 @@ EXPECTED = ["AskChips", "Answer", "AgentRow", "AgentsTab", "BarActions", "BarMar
             # management app views
             "AuditView", "BindsView", "HealthView", "SpendView",
             # Panel body and Quick tab (one-surface U2)
-            "PanelBody", "QuickTab"]
+            "PanelBody", "QuickTab",
+            # settings window Status and management pages (one-surface U3)
+            "ManagePage", "HomeView", "ActivityView", "MemoryView", "AgentsView"]
 
 FORBIDDEN = [
     (r"\bimport\s+Quickshell", "Quickshell import"),
@@ -242,9 +244,14 @@ class TestPanelW22(unittest.TestCase):
 
     def test_open_settings_is_detached_not_run_action(self):
         src = code(self.PANEL)
-        self.assertRegex(src, r'execDetached\(\[service\.wispd, "settings"\]\)')
+        self.assertIn('var argv = [service.wispd, "settings"]', src)
+        self.assertIn('argv = argv.concat(["--category", category])', src)
+        self.assertIn("Quickshell.execDetached(argv)", src)
         self.assertNotIn("runAction", src)
-        self.assertIn("onOpenSettings: wisp.openSettings()", src)
+        self.assertIn("onOpenSettings: (category) => wisp.openSettings(category)", src)
+        # the Quick tab's health summary opens the Health page (U3)
+        body = code(COMP / "PanelBody.qml")
+        self.assertIn('onOpenHealth: root.openSettings("health")', body)
 
     def test_settings_tab_plumbing_is_gone(self):
         # connectors and the cua/spend reads live in the settings window

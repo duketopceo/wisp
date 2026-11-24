@@ -137,8 +137,9 @@ class TestSingleReader(unittest.TestCase):
 
 
     def test_management_app_ratchet_is_zero(self):
-        # the management app reads state only through the service
-        app = (ROOT / "shells" / "debug" / "shell.qml").read_text()
+        # the settings window (management pages) reads state only through
+        # the service
+        app = (ROOT / "shells" / "settings" / "shell.qml").read_text()
         code = re.sub(r"(?m)^\s*//.*$", "", app)
         self.assertEqual(len(re.findall(r"state\.json|stateFile", code)), 0)
         self.assertIn("WispService", code)
@@ -211,16 +212,17 @@ class TestActionLifecycle(unittest.TestCase):
         self.assertIn("ui.noted", now)
         self.assertIn("lastAction", row)
 
-    def test_debug_shell_calls_existing_service_entrypoints(self):
-        app = (ROOT / "shells" / "debug" / "shell.qml").read_text()
-        # the window exposes svcCtl(); a call to win.svc(...) never existed
-        self.assertNotRegex(app, r"\bwin\.svc\s*\(")
-        self.assertIn('win.svcCtl(["restart"])', app)
-        self.assertIn('win.svcCtl(["stop"])', app)
+    def test_settings_window_calls_existing_service_entrypoints(self):
+        app = (ROOT / "shells" / "settings" / "shell.qml").read_text()
+        code = re.sub(r"(?m)^\s*//.*$", "", app)
+        # every action goes through runAction or a service entry point;
+        # the console's svc.run(...) called a view model, not a function
+        self.assertNotRegex(code, r"\bsvc\.run\s*\(")
+        self.assertNotRegex(code, r"\bwin\.svc\s*\(")
+        for fn in re.findall(r"\bsvc\.(\w+)\s*\(", code):
+            self.assertRegex(SRC, rf"function {fn}\s*\(", fn)
         # suggestion buttons take the same ack path as every other action
-        self.assertIn("suggestion:automate:", app)
-        self.assertIn("lastAction", app)
-
+        self.assertIn("svc.sendChoice(pick)", code)
 
 class TestSettingsWindowReads(unittest.TestCase):
     """U5: the settings window's service surface. The write queue rules are

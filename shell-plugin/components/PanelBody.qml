@@ -29,7 +29,9 @@ Item {
   property var whatsnew: null
 
   signal pickTab(int index)
-  signal openSettings()
+  // "" opens the settings window's default page; the Quick tab's health
+  // summary asks for "health"
+  signal openSettings(string category)
   signal closeRequested()
   signal whatsnewDismiss()
   signal whatsnewLink(string url)
@@ -74,7 +76,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         service: root.service
         label: root.service ? root.service.ui("ui.panel.settings") : ""
-        onClicked: root.openSettings()
+        onClicked: root.openSettings("")
       }
     }
 
@@ -185,7 +187,7 @@ Item {
       visible: root.tab === 3
       width: parent.width
       service: root.service
-      onOpenSettings: root.openSettings()
+      onOpenHealth: root.openSettings("health")
     }
 
     DevTab {

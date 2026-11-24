@@ -91,6 +91,13 @@ TOLERANCE = {
     "SpendView": Tolerance(10, 0.012),
     "AuditView": Tolerance(10, 0.012),
     "BindsView": Tolerance(10, 0.012),
+    # settings window Status and management pages (one-surface U3)
+    "ManagePage": Tolerance(10, 0.012),
+    "ManagePageNarrow": Tolerance(10, 0.012),
+    "HomeView": Tolerance(10, 0.012),
+    "ActivityView": Tolerance(10, 0.012),
+    "MemoryView": Tolerance(10, 0.012),
+    "AgentsView": Tolerance(10, 0.012),
     "Creature": Tolerance(12, 0.008),
     "Companion": Tolerance(12, 0.006),
     "DrawLayer": Tolerance(12, 0.006),

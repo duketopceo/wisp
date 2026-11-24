@@ -11,11 +11,18 @@ Column {
   id: root
 
   property var service: null
+  // the title and its line; a settings-window page hides them and
+  // shows its own heading
+  property bool titled: true
   property string log: ""
   property int limit: 50
 
   readonly property var tk: service ? service.tokens : ({})
   readonly property var rows: Manage.auditRows(log, limit)
+  // the columns reflow to the width: time, decision, tool and duration are
+  // fixed, the app column takes what is left
+  readonly property int gap: M.scale.space.lg
+  readonly property real appWidth: Math.max(48, width - (64 + 84 + 90 + 60) - 4 * gap)
 
   width: 560
   spacing: M.spacing.md
@@ -30,6 +37,7 @@ Column {
 
   Text {
     textFormat: Text.PlainText
+    visible: root.titled
     text: root.service.ui("ui.manage.audit")
     color: root.tk.ink
     font.family: root.service.fontFamily
@@ -38,6 +46,7 @@ Column {
   }
   Text {
     textFormat: Text.PlainText
+    visible: root.titled
     text: root.service.ui("ui.manage.audit.sub")
     color: root.tk.inkMuted
     font.family: root.service.fontFamily
@@ -56,7 +65,7 @@ Column {
       width: root.width
       Rectangle { width: parent.width; height: M.size.keyline; color: root.tk.keyline }
       Row {
-        spacing: M.spacing.xxl
+        spacing: root.gap
         topPadding: M.spacing.lg
         bottomPadding: M.spacing.lg
         Cell { width: 64; text: modelData.time; color: root.tk.inkMuted }
@@ -65,7 +74,7 @@ Column {
           text: root.service.ui("ui.manage.audit." + modelData.decision)
           color: root.tk[Manage.TONE_KEY[Manage.decisionTone(modelData.decision)]]
         }
-        Cell { width: 150; text: modelData.app !== "" ? modelData.app : "-" }
+        Cell { width: root.appWidth; text: modelData.app !== "" ? modelData.app : "-" }
         Cell { width: 90; text: modelData.tool }
         Cell { width: 60; text: modelData.ms + " ms"; color: root.tk.inkMuted; horizontalAlignment: Text.AlignRight }
       }

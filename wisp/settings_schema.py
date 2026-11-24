@@ -40,12 +40,22 @@ _WIDGET = {"usd": "number", "int": "number", "bool": "toggle",
            "choice": "choice", "text": "text", "secret": "status"}
 KINDS = tuple(_WIDGET)
 
-# Settings window pages, in sidebar order. Status is not a schema category
-# (it shows health, spend, audit and binds, not editable keys). A key with
-# no user-facing home lives under advanced. Titles are copy strings
+# Settings window config categories, in sidebar order. A key with no
+# user-facing home lives under advanced. Titles are copy strings
 # "set.cat.<id>".
 CATEGORIES = ("voice", "pointer", "agents", "models", "budget",
               "connectors", "advanced")
+
+# Settings window pages that are not config categories (one-surface U3):
+# the management pages before the categories and the Status group after
+# them. They show daemon state, files and one-shot reads, not editable
+# keys. `tasks` is the background-agents page (`agents` is a category).
+MANAGE_PAGES = ("home", "activity", "memory", "tasks")
+STATUS_PAGES = ("health", "spend", "audit", "binds")
+PAGES = MANAGE_PAGES + STATUS_PAGES
+# every sidebar entry in order; `wispd settings --category` takes any of
+# them and the window opens the first when given none
+SIDEBAR = MANAGE_PAGES + CATEGORIES + STATUS_PAGES
 
 # key -> category. Every schema key must appear here (tests enforce it).
 _CATEGORY = {

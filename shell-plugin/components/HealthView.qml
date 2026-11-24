@@ -10,6 +10,7 @@ Column {
   property var service: null
   property var cua: null
   property var spendModels: []
+  property bool titled: true
 
   width: 560
 
@@ -18,5 +19,6 @@ Column {
     service: root.service
     cua: root.cua
     spendModels: root.spendModels
+    titled: root.titled
   }
 }

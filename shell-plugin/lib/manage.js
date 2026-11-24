@@ -94,3 +94,81 @@ function spendModels(models) {
 
 // Tone name -> token name, for a component colouring a row.
 var TONE_KEY = { ok: "ok", fail: "fail", needsYou: "needsYou", muted: "inkMuted" }
+
+// --- settings window pages (one-surface U3) ---------------------------
+
+// The frame state of a Status or management page. `heard` is false until
+// the first state arrives after the stream turns on; `error` is the page's
+// own read failure ("" when fine). Loading and error replace the page;
+// offline and stale sit above what was last seen.
+function pageState(heard, offline, stale, error) {
+  if (!heard) return "loading"
+  if (error) return "error"
+  if (offline) return "offline"
+  if (stale) return "stale"
+  return "ready"
+}
+function showsContent(state) { return state !== "loading" && state !== "error" }
+
+function _jsonLines(text) {
+  var out = []
+  var lines = String(text || "").split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var l = lines[i].trim()
+    if (!l) continue
+    try { out.push(JSON.parse(l)) } catch (e) {}
+  }
+  return out
+}
+
+// decisions.jsonl -> the newest `limit` turns as display rows, newest last:
+// {time, route, ms, you, wisp}
+function turnRows(text, limit) {
+  var all = _jsonLines(text).filter(isObj)
+  var rows = all.slice(-(limit || 30))
+  return rows.map(function (d) {
+    var route = isObj(d.answers) && isObj(d.answers.route) ? d.answers.route.choice : ""
+    var ms = isObj(d.timing_ms) ? Number(d.timing_ms.act_ms) || 0 : 0
+    return { time: String(d.ts || "").slice(11, 19), route: String(route || ""), ms: ms,
+             you: String(d.transcript || ""), wisp: String(d.reply || d.result || "") }
+  })
+}
+
+// corrections.jsonl -> the newest `limit` raw lines, newest first
+function correctionLines(text, limit) {
+  var lines = String(text || "").split("\n").filter(function (l) { return l.trim() !== "" })
+  return lines.slice(-(limit || 6)).reverse()
+}
+
+// suggestions.jsonl appends status updates per key: the latest record per
+// key wins, and only those still "new" are shown, newest first
+function openSuggestions(text) {
+  var latest = {}
+  var order = []
+  var recs = _jsonLines(text)
+  for (var i = 0; i < recs.length; i++) {
+    var r = recs[i]
+    if (!isObj(r) || !r.key) continue
+    if (!latest.hasOwnProperty(r.key)) { latest[r.key] = {}; order.push(r.key) }
+    for (var k in r) latest[r.key][k] = r[k]
+  }
+  return order.filter(function (k) { return latest[k].status === "new" })
+    .map(function (k) { return latest[k] }).reverse()
+}
+
+// a task entry is {status, task, ...}; older daemons publish the status
+function taskOf(t) {
+  if (t === null || t === undefined) return { status: "", task: "" }
+  return typeof t === "string" ? { status: t, task: "" } : t
+}
+
+// `wispd binds --json` stdout -> {data, error}: error is "" when it parsed
+function bindsRead(code, text) {
+  if (code !== 0) return { data: null, error: "exit" }
+  try {
+    var doc = JSON.parse(text)
+    return { data: isObj(doc) ? doc.data : null, error: "" }
+  } catch (e) {
+    return { data: null, error: "parse" }
+  }
+}

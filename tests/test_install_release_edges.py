@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from wisp import config
+from wisp import config, desktop
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 LOADER = importlib.machinery.SourceFileLoader("wispd_release_edges", str(ROOT / "wispd"))
@@ -27,7 +27,7 @@ class InstallReleaseEdges(unittest.TestCase):
             "wispd": "#!/usr/bin/env python3\n",
             "wisp/marker.py": "VERSION = 2\n",
             "wisp/nested/marker.py": "nested = True\n",
-            "shells/debug/Main.qml": "// shell\n",
+            "shells/settings/Main.qml": "// shell\n",
             "assets/desktop/wisp.desktop":
                 (ROOT / "assets/desktop/wisp.desktop").read_text(),
             "assets/icons/hicolor/scalable/apps/wisp.svg": "<svg/>\n",
@@ -65,7 +65,7 @@ class InstallReleaseEdges(unittest.TestCase):
         conflicts = (
             ".local/opt/wisp/assets",
             ".local/opt/wisp/wisp/nested",
-            ".local/opt/wisp/shells/debug",
+            ".local/opt/wisp/shells/settings",
             ".local/opt/wisp/bin",
             ".local/opt/wisp/scripts",
             ".local/opt/wisp/scripts/units",
@@ -131,6 +131,27 @@ class InstallReleaseEdges(unittest.TestCase):
         self.assertTrue((opt / "deploy.json").is_file())
         self.assertTrue((home / ".local/bin/wispd").is_file())
         self.assertTrue((home / ".config/systemd/user/wispd.service").is_file())
+
+    def test_upgrade_removes_the_retired_console_and_rewrites_the_launcher(self):
+        home = self.work / "upgrade-home"
+        opt = home / ".local/opt/wisp"
+        old = [opt / "shells" / "debug" / "shell.qml",
+               opt / "shells" / "debug" / "components" / "Icon.qml"]
+        for f in old:
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text("// old console\n")
+        entry = home / ".local/share/applications/wisp.desktop"
+        entry.parent.mkdir(parents=True)
+        entry.write_text(desktop.stamp(
+            "[Desktop Entry]\nExec=quickshell -n -p %s\n" % (opt / "shells" / "debug")))
+        self.install(home)
+        self.assertFalse((opt / "shells" / "debug").exists())
+        self.assertTrue((opt / "shells/settings/Main.qml").is_file())
+        text = entry.read_text()
+        self.assertIn(f"Exec={opt}/wispd settings\n", text)
+        self.assertNotIn(str(opt / "shells" / "debug"), text)
+        self.assertNotIn("Panel", text)
+        self.assertEqual(list(entry.parent.glob("*.bak*")), [])
 
 
 if __name__ == "__main__":

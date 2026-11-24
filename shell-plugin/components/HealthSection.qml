@@ -14,6 +14,8 @@ Column {
   property var service: null
   property var cua: null
   property var spendModels: []
+  // the section title; a settings-window page hides it under its heading
+  property bool titled: true
 
   readonly property var tk: service ? service.tokens : ({})
   readonly property var sec: H.sections(service.health)
@@ -84,7 +86,7 @@ Column {
     return r.code ? words(r.code) : root.service.ui("ui.bar.down")
   }
 
-  Heading { text: root.service.ui("ui.settings.health") }
+  Heading { visible: root.titled; text: root.service.ui("ui.settings.health") }
 
   Text {
     textFormat: Text.PlainText

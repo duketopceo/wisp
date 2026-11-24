@@ -107,8 +107,9 @@ class TestQmlCopy(unittest.TestCase):
                 self.fail(f"{name} improved to {n}: lower its RATCHET to {n}")
 
     def test_management_app_ratchet_is_zero(self):
-        # W26: shells/debug/shell.qml is clean and stays clean
-        src = (ROOT / "shells" / "debug" / "shell.qml").read_text()
+        # W26: the settings window (which holds the management pages since
+        # one-surface U3) is clean and stays clean
+        src = (ROOT / "shells" / "settings" / "shell.qml").read_text()
         self.assertEqual(copylint.violations(copylint.qml_strings(src)), [])
 
     def test_every_qml_file_is_accounted_for(self):

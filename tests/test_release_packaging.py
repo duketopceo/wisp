@@ -57,8 +57,9 @@ class ReleasePackagingTest(unittest.TestCase):
                 "assets/desktop/wisp.desktop",
                 "assets/icons/hicolor/scalable/apps/wisp.svg",
                 "shell-plugin/shaders/wisp.frag.qsb",
-                "shells/debug/components/Icon.qml",
-                "shells/debug/WispService.qml",
+                "shells/settings/WispService.qml",
+                "shells/settings/components/Icon.qml",
+                "shells/settings/Commons/qmldir",
                 "shells/settings/shell.qml",
                 "shells/settings/components/SettingsHost.qml",
                 "shells/settings/Commons/Style.qml",
@@ -275,8 +276,8 @@ class ReleasePackagingTest(unittest.TestCase):
             notice = tf.getmember("wisp-linux-x86_64/assets/public-notice.txt")
             self.assertTrue(notice.isfile())
             self.assertEqual(tf.extractfile(notice).read(), (source / "LICENSE").read_bytes())
-            debug = tf.getmember("wisp-linux-x86_64/shells/debug/WispService.qml")
-            self.assertTrue(debug.isfile())
+            service = tf.getmember("wisp-linux-x86_64/shells/settings/WispService.qml")
+            self.assertTrue(service.isfile())
 
     def test_output_cannot_be_inside_a_packaged_source_tree(self):
         source = self.source_copy()
@@ -323,6 +324,20 @@ class ReleasePackagingTest(unittest.TestCase):
         self.assertEqual(report["rust_binary_executed"], False)
         self.assertEqual(report["desktop_and_voice_smoke"], "not run")
         self.assertGreater(report["files_verified"], 100)
+
+    def test_release_without_the_retired_console_verifies(self):
+        # The console app is gone: a tarball built from a tree
+        # with no such directory carries no member under it and still verifies.
+        source = self.source_copy()
+        shutil.rmtree(source / "shells" / "debug", ignore_errors=True)
+        result, archive = self.bundle(source=source)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        with tarfile.open(archive) as tf:
+            retired = str(pathlib.PurePosixPath("shells", "debug"))
+            stray = [m.name for m in tf.getmembers() if retired in m.name]
+        self.assertEqual(stray, [])
+        result = self.verify(archive)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_archive_installs_complete_resources_in_an_isolated_home(self):
         result, archive = self.bundle()

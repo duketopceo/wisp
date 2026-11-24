@@ -10,6 +10,10 @@ import "../harness"
 // page with chip-tagged rows and dims the sidebar; Ctrl+F and Esc; the
 // loading, offline, could-not-read and empty states; writes leave as
 // commit(key, value) in schema format; connector rows; minimum window size.
+// One-surface U3: the sidebar also holds the management pages before the
+// categories and the Status group after them; Home is the default, a page
+// key never names a category, Up/Down walk the whole order, a page change
+// focuses the page heading, and page actions leave as signals.
 Item {
   id: root
   width: 960
@@ -29,6 +33,12 @@ Item {
   SignalSpy { id: retries; target: host; signalName: "retry" }
   SignalSpy { id: connRetries; target: host; signalName: "retryConnectors" }
   SignalSpy { id: connects; target: host; signalName: "connectAlias" }
+  SignalSpy { id: restarts; target: host; signalName: "restart" }
+  SignalSpy { id: stops; target: host; signalName: "stop" }
+  SignalSpy { id: pageRetries; target: host; signalName: "retryPage" }
+  SignalSpy { id: tasksStarted; target: host; signalName: "startTask" }
+  SignalSpy { id: tasksCancelled; target: host; signalName: "cancelTask" }
+  SignalSpy { id: saves; target: host; signalName: "saveMemory" }
 
   TestCase {
     name: "settingshost"
@@ -43,7 +53,11 @@ Item {
       host.connectors = []; host.connectorState = "loading"; host.connectorError = ""
       host.connectorRunning = ""; host.connectorErrors = ({})
       page().contentY = 0
+      host.heard = true; host.pageError = ""
+      svc.load({ status: "idle", tasks: {} }, {})
       picks.clear(); commits.clear(); retries.clear(); connRetries.clear(); connects.clear()
+      restarts.clear(); stops.clear(); pageRetries.clear(); tasksStarted.clear()
+      tasksCancelled.clear(); saves.clear()
     }
 
     function page() { return find(host, "page") }
@@ -91,18 +105,184 @@ Item {
     }
 
     function test_arrow_keys_move_and_stop_at_the_ends() {
+      host.category = S.SIDEBAR[0]
       find(host, "sidebar").forceActiveFocus()
+      keyClick(Qt.Key_Up)
+      compare(host.category, S.SIDEBAR[0])
       keyClick(Qt.Key_Down)
-      compare(host.category, S.CATEGORIES[1])
-      keyClick(Qt.Key_Up)
-      keyClick(Qt.Key_Up)
-      compare(host.category, S.CATEGORIES[0])
-      compare(picks.count, 2)
+      compare(host.category, S.SIDEBAR[1])
+      // the whole order: pages, categories, then the Status group
+      for (var i = 0; i < S.SIDEBAR.length + 2; i++) keyClick(Qt.Key_Down)
+      compare(host.category, S.SIDEBAR[S.SIDEBAR.length - 1])
+      compare(picks.count, S.SIDEBAR.length - 1)
+    }
+
+    // --- management and Status pages (one-surface U3) ------------------
+
+    function managePage() { return find(host, "managePage") }
+
+    function test_default_entry_is_home() {
+      var fresh = Qt.createComponent("../../../shell-plugin/components/SettingsHost.qml")
+        .createObject(root, { service: svc, visible: false })
+      compare(fresh.category, "home")
+      compare(S.startPage(""), "home")
+      compare(S.startPage("nope"), "home")
+      compare(S.startPage("health"), "health")
+      fresh.destroy()
+    }
+
+    function test_sidebar_holds_pages_groups_and_categories_in_order() {
+      for (var i = 0; i < S.SIDEBAR.length; i++)
+        verify(find(host, "cat:" + S.SIDEBAR[i]), S.SIDEBAR[i])
+      verify(find(host, "group:settings").visible)
+      verify(find(host, "group:status").visible)
+      var y = -1
+      for (var j = 0; j < S.SIDEBAR.length; j++) {
+        var it = find(host, "cat:" + S.SIDEBAR[j])
+        var at = it.mapToItem(host, 0, 0).y
+        verify(at > y, S.SIDEBAR[j])
+        y = at
+      }
+    }
+
+    function test_tasks_and_agents_open_different_entries() {
+      host.select("tasks")
+      verify(managePage().visible)
+      verify(!page().visible)
+      compare(managePage().page, "tasks")
+      host.select("agents")
+      verify(!managePage().visible)
+      verify(page().visible)
+      compare(page().category, "agents")
+    }
+
+    function test_selecting_health_shows_the_health_page() {
+      host.select("health")
+      verify(managePage().visible)
+      compare(managePage().page, "health")
+      compare(find(managePage(), "heading").title, svc.ui("set.cat.health"))
+    }
+
+    function test_focus_lands_on_the_page_heading_after_a_page_change() {
+      // a click elsewhere: the sidebar keeps focus while arrows walk it
+      page().forceActiveFocus()
+      host.select("home")
+      host.select("activity")
+      verify(find(managePage(), "heading").activeFocus)
+      // Tab from the sidebar reaches the page heading too
+      find(host, "sidebar").forceActiveFocus()
+      keyClick(Qt.Key_Tab)
+      verify(find(managePage(), "heading").activeFocus)
+    }
+
+    function test_page_states_loading_offline_stale_error() {
+      host.select("tasks")
+      var st = find(managePage(), "pageState")
+      host.heard = false
+      verify(st.visible)
+      compare(st.textKey, "ui.page.loading")
+      verify(!find(managePage(), "body").active)
+      host.heard = true
+      verify(!st.visible)
+      verify(find(managePage(), "body").active)
+      svc.load({}, { offline: true })
+      compare(st.textKey, "ui.page.offline")
+      verify(find(managePage(), "body").active)
+      waitForRendering(host)
+      mouseClick(find(st, "action"))
+      compare(pageRetries.count, 1)
+      svc.load({ status: "acting", transcript: "x", tasks: {} }, { stale: true })
+      compare(st.textKey, "ui.page.stale")
+      verify(!find(st, "action").visible)
+      host.select("binds")
+      host.pageError = "exit"
+      compare(st.textKey, "ui.page.error")
+      verify(!find(managePage(), "body").active)
+    }
+
+    function test_health_and_spend_show_offline_in_their_own_rows() {
+      svc.load({}, { offline: true })
+      host.select("health")
+      verify(!find(managePage(), "pageState").visible)
+      host.select("tasks")
+      verify(find(managePage(), "pageState").visible)
+    }
+
+    function test_restart_and_stop_leave_as_signals() {
+      host.select("home")
+      waitForRendering(host)
+      mouseClick(find(managePage(), "restart"))
+      mouseClick(find(managePage(), "stop"))
+      compare(restarts.count, 1)
+      compare(stops.count, 1)
+    }
+
+    function test_tasks_page_starts_and_cancels() {
+      svc.load({ status: "idle", tasks: { "sum inbox": { status: "running", task: "sum inbox" },
+                                          "old": { status: "done", task: "old" } } }, {})
+      host.select("tasks")
+      waitForRendering(host)
+      var input = find(managePage(), "taskInput")
+      input.text = "tidy downloads"
+      mouseClick(find(managePage(), "start"))
+      compare(tasksStarted.count, 1)
+      compare(tasksStarted.signalArguments[0][0], "tidy downloads")
+      compare(input.text, "")
+      mouseClick(find(find(managePage(), "task:sum inbox"), "cancel"))
+      compare(tasksCancelled.count, 1)
+      compare(tasksCancelled.signalArguments[0][0], "sum inbox")
+      verify(!find(find(managePage(), "task:old"), "cancel").visible)
+    }
+
+    function test_memory_save_carries_the_edit() {
+      host.memoryText = "a fact"
+      host.select("memory")
+      waitForRendering(host)
+      var note = find(managePage(), "note:memory")
+      find(note, "edit").text = "a fact\nanother"
+      mouseClick(find(note, "save"))
+      compare(saves.count, 1)
+      compare(saves.signalArguments[0][0], "memory")
+      compare(saves.signalArguments[0][1], "a fact\nanother")
+    }
+
+    function test_sidebar_scrolls_to_the_status_group_at_minimum_size() {
+      root.width = 720; root.height = 520
+      waitForRendering(host)
+      var sc = find(host, "sidebarScroll")
+      verify(sc.contentHeight > sc.height)
+      host.select("binds")
+      wait(0)
+      var it = find(host, "cat:binds")
+      var y = it.mapToItem(sc, 0, 0).y
+      verify(y >= 0 && y + it.height <= sc.height + 0.5, "binds in view at " + y)
+      host.select("home")
+      wait(0)
+      compare(sc.contentY, 0)
+    }
+
+    function test_audit_with_50_rows_scrolls_at_minimum_size() {
+      root.width = 720; root.height = 520
+      var lines = []
+      for (var i = 0; i < 50; i++)
+        lines.push(JSON.stringify({ ts: 1759579200 + i, tool: "click", app: "firefox",
+                                    decision: "allow", dry_run: false, result: "OK", ms: 40 + i }))
+      host.auditText = lines.join("\n")
+      host.select("audit")
+      waitForRendering(host)
+      var mp = managePage()
+      verify(mp.contentHeight > mp.height)
+      mp.scrollTo(mp.maxY)
+      compare(mp.contentY, mp.maxY)
+      // every row fits the page: nothing runs past the right edge
+      var view = find(mp, "body").item
+      verify(view.appWidth >= 48)
+      verify(64 + 84 + view.appWidth + 90 + 60 + 4 * view.gap <= view.width + 0.5)
     }
 
     function test_select_ignores_unknown_and_same() {
       host.select("nope")
-      host.select(S.CATEGORIES[0])
+      host.select(host.category)
       compare(host.category, S.CATEGORIES[0])
       compare(picks.count, 0)
     }
