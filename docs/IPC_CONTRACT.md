@@ -435,7 +435,10 @@ final `{"type":"event","name":"overflow"}` when it still can, then
 closes. A dropped client reconnects and gets a new snapshot. A slow
 subscriber never delays state.json writes or other subscribers.
 
-`wispd watch [topic ...]` prints this stream (reconnecting forever).
+`wispd watch [topic ...]` prints this stream (reconnecting forever),
+adding a `view: {word, tone}` object to `snapshot` and `state` lines. Other
+shells read Wisp through that CLI contract, not this socket: see
+`docs/EMBED.md`.
 
 Task entry fields (`tasks`): `status`, `task`, `ts` and `tail` always;
 `exit_code`, `delivered`, `deliverables`, `out_dir`, `refused_count`,

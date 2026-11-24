@@ -1,9 +1,11 @@
-usage: wispd status [-h] [--json] [--quiet] [--no-color]
+usage: wispd status [-h] [--table] [--json] [--quiet] [--no-color]
 
 Show the daemon state (JSON)
 
 options:
   -h, --help   show this help message and exit
+  --table      print every status word and tone (no daemon needed); see
+               docs/EMBED.md
 
 global options:
   --json       machine-readable output (one JSON object)
@@ -13,3 +15,4 @@ global options:
 Examples:
   wispd status
   wispd status --json
+  wispd status --table --json
