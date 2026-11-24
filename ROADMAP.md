@@ -168,5 +168,7 @@ Current tally (`wispd eval`, 2026-11-03): 35 labelled turns, 9 right first time 
 
 - Local-first defaults or automatic local model promotion; explicit opt-in local model servers remain available.
 - Model training or distillation in the installable candidate; future learning requires real data and an explicit separate decision.
-- Supported full macOS/Windows desktop ports for v1; experimental probe seams are not such ports.
+- Supported full Windows desktop ports for v1. macOS is the first supported
+  cross-OS release artifact: arm64 `.dmg` (`docs/plans/2026-11-23-0014-feat-wisp-macos-arm64-dmg-plan.md`,
+  U6) — a release target, not a promised macOS feature parity port.
 - A decision model (Jev or pplx) in front of routing.
