@@ -363,6 +363,11 @@ class TestPageHelpers(unittest.TestCase):
                           "function (s) { return s })")
             self.assertEqual(base64.b64encode(raw.encode("latin1")).decode(),
                              base64.b64encode(text.encode()).decode(), repr(text))
+        # a lone surrogate (half an emoji) becomes U+FFFD, so the bytes
+        # are always valid UTF-8 and the save is not refused
+        for js_text, want in (('"a\\ud83d"', "a\ufffd"), ('"\\ude00b"', "\ufffdb")):
+            raw = self.js(f"Manage.utf8Base64({js_text}, function (s) {{ return s }})")
+            self.assertEqual(raw.encode("latin1").decode("utf-8"), want, js_text)
 
     def test_task_hint_key(self):
         self.assertEqual(self.js('Manage.taskHintKey({status: "interrupted"})'),

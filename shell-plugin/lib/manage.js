@@ -201,11 +201,15 @@ function utf8Base64(text, btoa) {
   var bytes = ""
   for (var i = 0; i < s.length; i++) {
     var c = s.charCodeAt(i)
-    if (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length) {
-      var d = s.charCodeAt(i + 1)
-      if (d >= 0xdc00 && d <= 0xdfff) {
+    if (c >= 0xd800 && c <= 0xdfff) {
+      // a surrogate pair is one code point; a lone half becomes U+FFFD so
+      // the bytes stay valid UTF-8
+      var d = i + 1 < s.length ? s.charCodeAt(i + 1) : 0
+      if (c <= 0xdbff && d >= 0xdc00 && d <= 0xdfff) {
         c = 0x10000 + ((c - 0xd800) << 10) + (d - 0xdc00)
         i++
+      } else {
+        c = 0xfffd
       }
     }
     if (c < 0x80) bytes += String.fromCharCode(c)

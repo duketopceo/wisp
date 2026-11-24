@@ -113,9 +113,12 @@ def edit(target: str, op: str, old: str = "", new: str = "") -> str:
     if op == "write":
         body = new or old
         # a whole-file editor sends the header too; keep exactly one
-        first, _, rest = body.lstrip("\n").partition("\n")
-        if first.strip() == head.strip():
-            body = rest
+        # (blank or whitespace-only lines before it do not hide it)
+        lead = body.splitlines()
+        while lead and not lead[0].strip():
+            lead.pop(0)
+        if lead and lead[0].strip() == head.strip():
+            body = "\n".join(lead[1:])
         lines = head.splitlines() + ([""] + body.splitlines()
                                     if body.strip() else [])
         err = _save(path, "\n".join(lines).rstrip() + "\n", budget)
