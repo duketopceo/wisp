@@ -1,4 +1,4 @@
-# macOS: supported release (arm64 DMG)
+# macOS: experimental adapters — supported arm64 DMG release
 
 Linux with Omarchy/Hyprland remains the full-app target; macOS is the first
 supported cross-OS release artifact: an Apple Silicon (arm64) `.dmg`
