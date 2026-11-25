@@ -81,6 +81,52 @@ Item {
       host.visible = false
       fixture.visible = false
       bareCtl.Accessible.name = ""
+      svc.load({ status: "idle", tasks: {} }, {})
+    }
+
+    function readJson(path) {
+      var x = new XMLHttpRequest()
+      x.open("GET", Qt.resolvedUrl(path), false)
+      x.send()
+      return JSON.parse(x.responseText)
+    }
+
+    // the snapshot scenes are the list of states a surface has; the scan
+    // walks each one, so a control that only shows in one state is seen
+    function scene(name) { return readJson("../harness/scenes.json")[name] }
+
+    // load a variant's state fixture (and its fixture mods) into the service
+    function loadState(variant) {
+      var raw = readJson("../../fixtures/states/" + (variant._state || "idle") + ".json")
+      var mods = raw._fixture || {}
+      delete raw._fixture
+      var extra = variant._fixture || {}
+      for (var k in extra) mods[k] = extra[k]
+      svc.load(raw, mods)
+    }
+
+    // set a variant's own props on the item; harness keys start with "_"
+    function applyProps(item, variant, defaults) {
+      for (var d in defaults) item[d] = defaults[d]
+      for (var k in variant)
+        if (k[0] !== "_" && k !== "width" && k !== "height") item[k] = variant[k]
+    }
+
+    function auditVariants(item, names, defaults, label, extra) {
+      var bad = []
+      for (var n = 0; n < names.length; n++) {
+        var variants = scene(names[n]).variants
+        for (var v in variants) {
+          var variant = variants[v]
+          if (extra) variant = extra(variant)
+          loadState(variant)
+          applyProps(item, variant, defaults)
+          if (item.page && item.page.scrollTo) item.page.scrollTo(0)
+          waitForRendering(item)
+          bad = bad.concat(audit(item, label + "/" + names[n] + "__" + v).bad)
+        }
+      }
+      return bad
     }
 
     // scroll the nearest scrolling page so the control is on screen
@@ -111,12 +157,15 @@ Item {
       return false
     }
 
-    // every control in the scene: named, and focus changes its pixels
+    // every control in the scene: named, and focus changes its pixels.
+    // Returns the failures and the object names the scan saw.
     function audit(scene, label) {
-      var bad = scan.unnamed(scene).map(function (d) { return label + ": unnamed " + d })
       var list = scan.controls(scene)
+      var bad = scan.nameless(list).map(function (d) { return label + ": unnamed " + d })
+      var seen = []
       for (var i = 0; i < list.length; i++) {
         var c = list[i]
+        if (c.objectName) seen.push(c.objectName)
         if (!scan.focusable(c)) continue
         // grabImage renders the window synchronously, so no frame wait
         // is needed (waitForRendering blocks when nothing changes)
@@ -136,7 +185,18 @@ Item {
         if (!changed(before, after, scene, c))
           bad.push(label + ": no visible focus " + scan.describe(c))
       }
-      return { bad: bad, controls: list }
+      return { bad: bad, seen: seen, focusable: list.filter(scan.focusable).length }
+    }
+
+    // floor: the scan saw every name in `want`, so it is not blind
+    function missed(seen, want, prefix, label) {
+      return want.filter(function (k) { return seen.indexOf(prefix + k) < 0 })
+                 .map(function (k) { return label + ": scan missed " + prefix + k })
+    }
+
+    function finish(bad) {
+      if (bad.length) console.log("A11Y\n" + bad.join("\n"))
+      compare(bad, [])
     }
 
     function test_scan_flags_an_unnamed_control() {
@@ -171,16 +231,40 @@ Item {
         body.tab = t
         body.page.scrollTo(0)
         waitForRendering(body)
-        var r = audit(body, "panel/" + body.tabKeys[t])
-        bad = bad.concat(r.bad)
-        // floor: the scan sees every tab button, so it is not blind
-        var names = scan.named(body)
-        for (var k = 0; k < body.tabKeys.length; k++)
-          if (names.indexOf("tab:" + body.tabKeys[k]) < 0)
-            bad.push("panel/" + body.tabKeys[t] + ": scan missed tab:" + body.tabKeys[k])
+        var label = "panel/" + body.tabKeys[t]
+        var r = audit(body, label)
+        bad = bad.concat(r.bad, missed(r.seen, body.tabKeys, "tab:", label))
       }
-      if (bad.length) console.log("A11Y\n" + bad.join("\n"))
-      compare(bad, [])
+      finish(bad)
+    }
+
+    // every PanelBody scene, and every Now tab state scene, under its own
+    // state: questions, choices, confirms, rate prompts and banners
+    function test_panel_scenes() {
+      body.visible = true
+      var defaults = { tab: 0, whatsnew: null, onboard: null, skills: [],
+                       decisions: [], skippedSteps: [],
+                       tabKeys: ["now", "agents", "memory", "quick", "devtab"],
+                       devPanelOn: true }
+      var bad = auditVariants(body, ["PanelBody"], defaults, "panel")
+      bad = bad.concat(auditVariants(body, ["NowTab", "RunCard"], defaults, "panel",
+        function (v) { var o = {}; for (var k in v) o[k] = v[k]; o.tab = 0; return o }))
+      finish(bad)
+    }
+
+    // every SettingsHost scene (search, offline, unreadable, connectors...)
+    function test_settings_window_scenes() {
+      host.visible = true
+      var defaults = { query: "", values: ({}), saveStates: ({}), errors: ({}),
+                       loaded: false, readError: "", offline: false,
+                       connectors: [], connectorState: "loading",
+                       connectorError: "", connectorRunning: "",
+                       connectorErrors: ({}), heard: false, pageError: "",
+                       turns: [], suggestions: [], corrections: [],
+                       memoryText: "", userText: "", auditText: "",
+                       binds: null, cua: null, spendModels: [] }
+      finish(auditVariants(host, ["SettingsHost", "SettingsHostMinimum"],
+                           defaults, "settings"))
     }
 
     function test_settings_window_pages_and_categories() {
@@ -197,24 +281,23 @@ Item {
       host.memoryText = "- prefers dark themes\n"
       host.userText = "Answer briefly.\n"
       host.visible = true
+      // the search box, the sidebar and the page heading take focus on
+      // every page; a page with controls of its own has more
+      var chrome = 3
       var bad = []
       for (var i = 0; i < S.SIDEBAR.length; i++) {
-        host.category = S.SIDEBAR[i]
+        var page = S.SIDEBAR[i]
+        var label = "settings/" + page
+        host.category = page
         waitForRendering(host)
-        var r = audit(host, "settings/" + S.SIDEBAR[i])
-        bad = bad.concat(r.bad)
-        // floor: past the search box, sidebar and heading, every page but
-        // the read-only Status pages has a control of its own to focus
-        var own = r.controls.filter(scan.focusable).length
-        if (S.STATUS_PAGES.indexOf(S.SIDEBAR[i]) < 0 && own < 4) bad.push("settings/" + S.SIDEBAR[i] + ": only " + own + " focusable controls")
-        // floor: the scan sees every sidebar row
-        var names = scan.named(host)
-        for (var k = 0; k < S.SIDEBAR.length; k++)
-          if (names.indexOf("cat:" + S.SIDEBAR[k]) < 0)
-            bad.push("settings/" + S.SIDEBAR[i] + ": scan missed cat:" + S.SIDEBAR[k])
+        var r = audit(host, label)
+        bad = bad.concat(r.bad, missed(r.seen, S.SIDEBAR, "cat:", label))
+        // floor: every page but the read-only Status pages has a control
+        // of its own to focus
+        if (S.STATUS_PAGES.indexOf(page) < 0 && r.focusable <= chrome)
+          bad.push(label + ": only " + r.focusable + " focusable controls")
       }
-      if (bad.length) console.log("A11Y\n" + bad.join("\n"))
-      compare(bad, [])
+      finish(bad)
     }
   }
 }

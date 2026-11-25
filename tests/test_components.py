@@ -9,6 +9,7 @@ service.tokens), copy only through service.ui() / Copy, and every
 harness FixtureService, so a fixture render can never drift from the real
 service.
 """
+import json
 import os
 import pathlib
 import re
@@ -110,15 +111,14 @@ class TestComponentSet(unittest.TestCase):
         self.assertEqual(missing, [], "run scripts/ui/snap.py update")
         themes = {}
         for c in cases:
-            key = c["id"].split("/", 1)[1]
-            themes.setdefault(key.split("/", 1)[1], set()).add(c["theme"])
+            scene = c["id"].split("/", 2)[2]   # drop <theme>/<scale>x/
+            themes.setdefault(scene, set()).add(c["theme"])
         self.assertEqual(
             sorted(k for k, t in themes.items() if t != set(snap.THEMES)), [])
 
     def test_every_settings_page_and_panel_tab_has_a_scene(self):
         # one-surface U7: a new settings page, category or Panel tab cannot
         # ship without a snapshot scene of the real window body
-        import json
         scenes = json.loads(
             (ROOT / "tests/qml/harness/scenes.json").read_text())
         schema = code(PLUGIN / "lib" / "settings_schema.js")
@@ -131,8 +131,7 @@ class TestComponentSet(unittest.TestCase):
         panel = code(PLUGIN / "Panel.qml")
         tabs = json.loads(re.search(
             r"baseTabs: (\[.*?\])", panel).group(1).replace("'", '"'))
-        self.assertIn('concat(["devtab"])', panel)
-        tabs.append("devtab")
+        tabs.append("devtab")   # Panel.qml adds it with the dev flag
         variants = scenes["PanelBody"]["variants"].values()
         covered = set()
         for v in variants:

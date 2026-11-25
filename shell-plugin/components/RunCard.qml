@@ -156,6 +156,8 @@ Rectangle {
             font.family: root.service.fontFamily
             font.pixelSize: M.font.body
             clip: true
+            Accessible.role: Accessible.EditableText
+            Accessible.name: root.service.ui("ui.question.answer")
             onAccepted: if (sendChip.enabled) sendChip.clicked()
             Text {
               textFormat: Text.PlainText

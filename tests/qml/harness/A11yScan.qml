@@ -29,8 +29,7 @@ QtObject {
 
   function interactive(item) {
     if (!item.visible || !item.enabled) return false
-    return item.activeFocusOnTab === true || editable(item)
-        || roles.indexOf(item.Accessible.role) >= 0
+    return focusable(item) || roles.indexOf(item.Accessible.role) >= 0
   }
 
   function controls(root) {
@@ -58,19 +57,13 @@ QtObject {
         + (where ? where.objectName : "(root)")
   }
 
-  function unnamed(root) {
+  // descriptions of the controls in `list` with no accessible name
+  function nameless(list) {
     var bad = []
-    var list = controls(root)
     for (var i = 0; i < list.length; i++)
       if (nameOf(list[i]) === "") bad.push(describe(list[i]))
     return bad
   }
 
-  function named(root) {
-    var out = []
-    var list = controls(root)
-    for (var i = 0; i < list.length; i++)
-      if (list[i].objectName) out.push(list[i].objectName)
-    return out
-  }
+  function unnamed(root) { return nameless(controls(root)) }
 }
