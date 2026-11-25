@@ -112,13 +112,19 @@ Item {
         if (k[0] !== "_" && k !== "width" && k !== "height") item[k] = variant[k]
     }
 
-    function auditVariants(item, names, defaults, label, extra) {
+    // `size` is the item's standard size. A host scene (sized) renders at
+    // the size its scene or variant declares, as snap.py does; a scene
+    // embedded in the Panel (NowTab, RunCard) keeps the Panel's size.
+    function auditVariants(item, names, defaults, label, size, sized, extra) {
       var bad = []
       for (var n = 0; n < names.length; n++) {
-        var variants = scene(names[n]).variants
+        var sc = scene(names[n])
+        var variants = sc.variants
         for (var v in variants) {
           var variant = variants[v]
           if (extra) variant = extra(variant)
+          item.width = sized ? (variant.width || sc.width || size.width) : size.width
+          item.height = sized ? (variant.height || sc.height || size.height) : size.height
           loadState(variant)
           applyProps(item, variant, defaults)
           if (item.page && item.page.scrollTo) item.page.scrollTo(0)
@@ -126,6 +132,8 @@ Item {
           bad = bad.concat(audit(item, label + "/" + names[n] + "__" + v).bad)
         }
       }
+      item.width = size.width
+      item.height = size.height
       return bad
     }
 
@@ -136,10 +144,13 @@ Item {
       }
     }
 
+    // at least part of the control is inside the scene: a list taller
+    // than a minimum-size window can never fit whole, and the pixel check
+    // below clips to the window anyway
     function onScreen(scene, item) {
       var r = item.mapToItem(scene, 0, 0, item.width, item.height)
-      return r.width > 0 && r.height > 0 && r.x >= 0 && r.y >= 0
-          && r.x + r.width <= scene.width && r.y + r.height <= scene.height
+      return r.width > 0 && r.height > 0 && r.x < scene.width && r.y < scene.height
+          && r.x + r.width > 0 && r.y + r.height > 0
     }
 
     // true when any pixel in the control's rect, inflated by the focus
@@ -246,8 +257,9 @@ Item {
                        decisions: [], skippedSteps: [],
                        tabKeys: ["now", "agents", "memory", "quick", "devtab"],
                        devPanelOn: true }
-      var bad = auditVariants(body, ["PanelBody"], defaults, "panel")
-      bad = bad.concat(auditVariants(body, ["NowTab", "RunCard"], defaults, "panel",
+      var size = { width: 480, height: 560 }
+      var bad = auditVariants(body, ["PanelBody"], defaults, "panel", size, true)
+      bad = bad.concat(auditVariants(body, ["NowTab", "RunCard"], defaults, "panel", size, false,
         function (v) { var o = {}; for (var k in v) o[k] = v[k]; o.tab = 0; return o }))
       finish(bad)
     }
@@ -264,7 +276,7 @@ Item {
                        memoryText: "", userText: "", auditText: "",
                        binds: null, cua: null, spendModels: [] }
       finish(auditVariants(host, ["SettingsHost", "SettingsHostMinimum"],
-                           defaults, "settings"))
+                           defaults, "settings", { width: 960, height: 700 }, true))
     }
 
     function test_settings_window_pages_and_categories() {

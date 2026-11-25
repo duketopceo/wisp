@@ -59,8 +59,11 @@ No code change was made. The workflow that tells the two cases apart:
 1. Rerun the failing module alone with hands off the keyboard and mouse, for
    example `python3 -m unittest discover -s tests -p test_replay.py`.
 2. If it still fails, run the same module in an untouched `origin/master`
-   worktree before debugging the branch. A failure there means the cause is
-   environmental.
+   worktree before debugging the branch. A failure there only shows the
+   cause is not unique to the branch; it could still be a defect already on
+   `master`. Call it environmental only when the interruption evidence is
+   there too: the turn ends `INTERRUPTED (user)` and the failure goes away
+   in a hands-off run.
 3. Run one test process per checkout at a time.
 
 ## Why This Works
@@ -88,9 +91,10 @@ above, not traced fixture by fixture. The idle-run pass and the reproduction on
 
 - Before debugging a local replay or scenario failure, ask whether anyone was
   using the desktop, and compare against an untouched `origin/master` worktree.
-- Suggested, not done: have the replay and scenario harness stub
-  `realinput.yielded()` to return False, or stop the global watch with the
-  existing `realinput._stop_for_test()` hook that other suites already call
-  (`tests/test_hypr.py`, `tests/test_verify.py`), so these tests stop depending
-  on the physical input state.
+- Suggested, not done: have the replay and scenario harness keep the watch
+  out of every replayed turn, for example by stubbing `realinput.yielded()`
+  to return False for the whole run. A one-time `realinput._stop_for_test()`
+  in setup is not enough on its own: `realinput.begin(cfg)` creates a fresh
+  watch at the start of each act run whenever drive or auto pointer mode
+  wants one, so the stop is undone by the next turn.
 - Do not run overlapping `unittest discover` processes in one checkout.
