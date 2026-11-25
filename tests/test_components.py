@@ -79,6 +79,21 @@ def used_service_members(src):
     return set(re.findall(r"\bservice\.(\w+)", src))
 
 
+def _load_snap():
+    """scripts/ui/snap.py as a module, without adding scripts/ui to
+    sys.path (reuses the copy test_snap already imported, if any)."""
+    import importlib.util
+    import sys
+    if "snap" in sys.modules:
+        return sys.modules["snap"]
+    spec = importlib.util.spec_from_file_location(
+        "snap", ROOT / "scripts" / "ui" / "snap.py")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["snap"] = mod  # dataclasses resolve their module here
+    spec.loader.exec_module(mod)
+    return mod
+
+
 class TestComponentSet(unittest.TestCase):
     def test_expected_components_exist(self):
         have = {p.stem for p in COMP.glob("*.qml")}
@@ -101,9 +116,7 @@ class TestComponentSet(unittest.TestCase):
         # CI does not run it, so a missing golden must fail here. The case
         # list is snap.py's own, so each case keeps its own scale (laptop
         # viewports are 2x only; scale2 adds 2x in dark only).
-        import sys
-        sys.path.insert(0, str(ROOT / "scripts" / "ui"))
-        import snap
+        snap = _load_snap()
         cases = snap.cases()
         self.assertTrue(cases)
         missing = [c["id"] for c in cases
