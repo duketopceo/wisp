@@ -10,7 +10,8 @@
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-build/Wisp.app}"
-DMG_NAME="${DMG_NAME:-Wisp.dmg}"
+# The workflow sets RELEASE_TAG (top-level env); bump the default otherwise.
+DMG_NAME="${DMG_NAME:-Wisp-${RELEASE_TAG:-1.0.0}.dmg}"
 IDENTITY="${IDENTITY:-Developer ID Application}"
 
 build() {
