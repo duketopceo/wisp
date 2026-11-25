@@ -95,6 +95,51 @@ class TestComponentSet(unittest.TestCase):
         self.assertEqual(set(EXPECTED) - layers - set(scenes), set())
         self.assertIn("Companion", scenes)
 
+    def test_every_scene_has_goldens_in_both_themes(self):
+        # one-surface U7: snap.py renders every case in light and dark, but
+        # CI does not run it, so a missing golden must fail here. The case
+        # list is snap.py's own, so each case keeps its own scale (laptop
+        # viewports are 2x only; scale2 adds 2x in dark only).
+        import sys
+        sys.path.insert(0, str(ROOT / "scripts" / "ui"))
+        import snap
+        cases = snap.cases()
+        self.assertTrue(cases)
+        missing = [c["id"] for c in cases
+                   if not (snap.GOLDEN / f"{c['id']}.png").exists()]
+        self.assertEqual(missing, [], "run scripts/ui/snap.py update")
+        themes = {}
+        for c in cases:
+            key = c["id"].split("/", 1)[1]
+            themes.setdefault(key.split("/", 1)[1], set()).add(c["theme"])
+        self.assertEqual(
+            sorted(k for k, t in themes.items() if t != set(snap.THEMES)), [])
+
+    def test_every_settings_page_and_panel_tab_has_a_scene(self):
+        # one-surface U7: a new settings page, category or Panel tab cannot
+        # ship without a snapshot scene of the real window body
+        import json
+        scenes = json.loads(
+            (ROOT / "tests/qml/harness/scenes.json").read_text())
+        schema = code(PLUGIN / "lib" / "settings_schema.js")
+        sidebar = json.loads(
+            re.search(r"var SIDEBAR = (\[.*?\])", schema).group(1))
+        shown = {v.get("category") for name in ("SettingsHost",
+                                                "SettingsHostMinimum")
+                 for v in scenes[name]["variants"].values()}
+        self.assertEqual([p for p in sidebar if p not in shown], [])
+        panel = code(PLUGIN / "Panel.qml")
+        tabs = json.loads(re.search(
+            r"baseTabs: (\[.*?\])", panel).group(1).replace("'", '"'))
+        self.assertIn('concat(["devtab"])', panel)
+        tabs.append("devtab")
+        variants = scenes["PanelBody"]["variants"].values()
+        covered = set()
+        for v in variants:
+            keys = v.get("tabKeys", tabs[:-1])
+            covered.add(keys[v.get("tab", 0)])
+        self.assertEqual([t for t in tabs if t not in covered], [])
+
     def test_metrics_lib_has_no_colors(self):
         src = code(PLUGIN / "lib" / "metrics.js")
         self.assertIsNone(HEX.search(src))

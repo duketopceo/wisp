@@ -39,6 +39,18 @@ Column {
     font.family: root.service.fontFamily
     font.pixelSize: M.fontSize("title", root.ts)
     font.weight: Font.DemiBold
+
+    // a page heading takes focus on a page change: show where it is
+    Rectangle {
+      visible: root.activeFocus
+      anchors.fill: parent
+      anchors.leftMargin: -M.scale.space.xs
+      anchors.rightMargin: -M.scale.space.xs
+      radius: M.radius.chip
+      color: "transparent"
+      border.width: M.scale.focusRing
+      border.color: root.tk.accent
+    }
   }
   Text {
     textFormat: Text.PlainText

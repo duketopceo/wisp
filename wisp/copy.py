@@ -379,6 +379,7 @@ STRINGS = {
     "set.cat.binds": "binds",
     "set.group.settings": "settings",
     "set.group.status": "status",
+    "set.sidebar": "settings pages",
     "ui.page.loading": "waiting for wisp",
     "ui.page.loading.hint": "the first update arrives in a moment",
     "ui.page.offline": "wisp is not running",

@@ -4792,6 +4792,126 @@
       "usd": 0.11
      }
     ]
+   },
+   "agents": {
+    "category": "agents",
+    "loaded": true
+   },
+   "models": {
+    "category": "models",
+    "loaded": true
+   },
+   "activity": {
+    "category": "activity",
+    "loaded": true,
+    "heard": true,
+    "turns": [
+     {
+      "time": "08:12:01",
+      "route": "act",
+      "ms": 812,
+      "you": "turn on night light",
+      "wisp": "Night light is on."
+     },
+     {
+      "time": "08:10:44",
+      "route": "answer",
+      "ms": 0,
+      "you": "what is on my calendar",
+      "wisp": "Two meetings: design review at ten and a call at three."
+     },
+     {
+      "time": "08:05:10",
+      "route": "act",
+      "ms": 2140,
+      "you": "rename the project folder",
+      "wisp": "I could not find a folder named project."
+     }
+    ],
+    "suggestions": [
+     {
+      "key": "night-light",
+      "title": "Turn on night light every evening",
+      "evidence": "you asked for it 5 evenings in a row",
+      "status": "new"
+     }
+    ],
+    "corrections": [
+     "\"nite lite\" -> \"night light\"",
+     "\"wisp\" -> \"Wisp\""
+    ]
+   },
+   "memory": {
+    "category": "memory",
+    "loaded": true,
+    "heard": true,
+    "memoryText": "- prefers dark themes\n- works on the wisp repo\n- calendar is in Thunderbird\n",
+    "userText": "Answer briefly. Ask before deleting files.\n"
+   },
+   "spend": {
+    "category": "spend",
+    "loaded": true,
+    "heard": true,
+    "spendModels": [
+     {
+      "calls": 14,
+      "in": 9120,
+      "model": "openrouter/llama-4-maverick",
+      "out": 2210,
+      "usd": 0.31
+     },
+     {
+      "calls": 9,
+      "in": 4300,
+      "model": "openrouter/gemini-2.5-flash",
+      "out": 1100,
+      "usd": 0.11
+     }
+    ],
+    "_fixture": {
+     "patch": {
+      "spend": {
+       "blocked": false,
+       "cap_usd": 2.0,
+       "month_usd": 6.1,
+       "monthly_cap_usd": 20.0,
+       "today_usd": 0.42
+      }
+     }
+    }
+   },
+   "audit": {
+    "category": "audit",
+    "loaded": true,
+    "heard": true,
+    "auditText": "{\"ts\":1759579200,\"turn\":\"t-1\",\"tool\":\"click\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":212,\"x\":640,\"y\":380}\n{\"ts\":1759579204,\"turn\":\"t-1\",\"tool\":\"type_text\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":95,\"len\":12,\"sha\":\"3fa9c01be2d4\"}\n{\"ts\":1759579209,\"turn\":\"t-1\",\"tool\":\"key\",\"app\":\"firefox\",\"decision\":\"allow\",\"dry_run\":false,\"result\":\"OK\",\"ms\":41,\"key\":\"ctrl+l\"}\n{\"ts\":1759579215,\"turn\":\"t-1\",\"tool\":\"click\",\"app\":\"1password\",\"decision\":\"deny\",\"dry_run\":false,\"result\":\"REFUSED\",\"ms\":3,\"x\":10,\"y\":10}\n{\"ts\":1759579221,\"turn\":\"t-1\",\"tool\":\"scroll\",\"app\":\"thunar\",\"decision\":\"dry_run\",\"dry_run\":true,\"result\":\"DRYRUN\",\"ms\":1,\"x\":300,\"y\":400}\n{\"ts\":1759579230,\"turn\":\"t-1\",\"tool\":\"click\",\"app\":\"ghostty\",\"decision\":\"cancelled\",\"dry_run\":false,\"result\":\"CANCELLED\",\"ms\":18,\"x\":50,\"y\":60}"
+   },
+   "binds": {
+    "category": "binds",
+    "loaded": true,
+    "heard": true,
+    "binds": {
+     "binds": [
+      {
+       "arg": "wispd trigger",
+       "key": "D",
+       "modmask": 64,
+       "submap": ""
+      },
+      {
+       "arg": "wispd interrupt",
+       "key": "D",
+       "modmask": 65,
+       "submap": ""
+      }
+     ],
+     "hotkey": {
+      "chord": "SUPER+D",
+      "key": "D",
+      "mod": "SUPER"
+     },
+     "hyprland": true
+    }
    }
   }
  },
@@ -5243,6 +5363,20 @@
      },
      "configReadError": "config.toml line 3: expected a value"
     }
+   },
+   "devtab": {
+    "width": 480,
+    "height": 560,
+    "_state": "idle",
+    "tab": 4,
+    "tabKeys": [
+     "now",
+     "agents",
+     "memory",
+     "quick",
+     "devtab"
+    ],
+    "devPanelOn": true
    }
   }
  },

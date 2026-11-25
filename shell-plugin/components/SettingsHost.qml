@@ -158,6 +158,7 @@ Item {
         activeFocusOnTab: true
 
         Accessible.role: Accessible.List
+        Accessible.name: root.service ? root.service.ui("set.sidebar") : ""
         Keys.onUpPressed: root.select(S.SIDEBAR[Math.max(0, root.index - 1)])
         Keys.onDownPressed: root.select(S.SIDEBAR[Math.min(S.SIDEBAR.length - 1, root.index + 1)])
         Keys.onTabPressed: (event) => {

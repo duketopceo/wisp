@@ -67,9 +67,6 @@ Column {
     border.width: summaryArea.activeFocus ? M.scale.focusRing : M.size.keyline
     border.color: summaryArea.activeFocus ? root.tk.accent
       : summaryArea.containsMouse ? root.tk.keylineStrong : root.tk.keyline
-    Accessible.role: Accessible.Button
-    Accessible.name: root.service ? root.service.ui("ui.settings.health") + " " + root.summaryText : ""
-    Accessible.onPressAction: root.openHealth()
 
     Row {
       id: summaryRow
@@ -105,10 +102,15 @@ Column {
 
     MouseArea {
       id: summaryArea
+      objectName: "healthSummaryArea"
       anchors.fill: parent
       hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
       activeFocusOnTab: true
+      // the focusable area carries the name, so Tab and a reader agree
+      Accessible.role: Accessible.Button
+      Accessible.name: root.service ? root.service.ui("ui.settings.health") + " " + root.summaryText : ""
+      Accessible.onPressAction: root.openHealth()
       onClicked: root.openHealth()
       Keys.onReturnPressed: root.openHealth()
       Keys.onSpacePressed: root.openHealth()
