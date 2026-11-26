@@ -13,6 +13,7 @@ Item {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   // lib/model3d.js modelOf(): {title, parts, source, host}
   property var model: null
   property real yaw: Model.YAW0
@@ -106,6 +107,6 @@ Item {
     verticalAlignment: Text.AlignVCenter
     color: root.tk.inkMuted
     font.family: root.service ? root.service.fontFamily : ""
-    font.pixelSize: M.font.label
+    font.pixelSize: M.fontSize("label", root.ts)
   }
 }

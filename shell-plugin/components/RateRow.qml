@@ -14,6 +14,7 @@ Item {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   // the turn this card rates (service.turnId while the card is current)
   property string turn: service ? service.turnId : ""
   // "correct" | "incorrect" once this card was tapped; a tap belongs to
@@ -47,7 +48,7 @@ Item {
     property bool hovered: area.containsMouse
     signal pressed()
 
-    implicitWidth: row.implicitWidth + 2 * M.spacing.xl
+    implicitWidth: row.implicitWidth + 2 * M.scale.space.md
     implicitHeight: M.size.control
     radius: Math.min(M.radius.chrome, M.radius.chip)
     color: area.pressed ? tk.selection : tk.raised
@@ -59,11 +60,11 @@ Item {
     Row {
       id: row
       anchors.centerIn: parent
-      spacing: M.spacing.md
+      spacing: M.scale.space.sm
       Icon {
         anchors.verticalCenter: parent.verticalCenter
         name: btn.icon
-        size: M.font.icon
+        size: M.scale.icon
         color: btn.tk.ink
       }
       Text {
@@ -72,7 +73,7 @@ Item {
         text: btn.word
         color: btn.tk.ink
         font.family: btn.fontFamily
-        font.pixelSize: M.font.label
+        font.pixelSize: M.fontSize("label", root.ts)
       }
     }
 
@@ -87,7 +88,7 @@ Item {
   Row {
     id: buttons
     visible: !root.rated
-    spacing: M.spacing.md
+    spacing: M.scale.space.sm
     Btn {
       tk: root.tk
       fontFamily: root.service ? root.service.fontFamily : ""
@@ -111,6 +112,6 @@ Item {
     text: root.line
     color: root.tk.inkMuted
     font.family: root.service ? root.service.fontFamily : ""
-    font.pixelSize: M.font.label
+    font.pixelSize: M.fontSize("label", root.ts)
   }
 }

@@ -10,6 +10,7 @@ Rectangle {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   signal choose(string pick, int index)
 
   readonly property var tk: service ? service.tokens : ({})
@@ -21,8 +22,8 @@ Rectangle {
   readonly property bool wanted: Companion.pillVisible(service.status)
 
   implicitWidth: 380
-  implicitHeight: col.implicitHeight + 2 * M.spacing.xl
-  radius: M.pillRadius(Math.min(height, M.size.control + 2 * M.spacing.sm), M.radius.chrome)
+  implicitHeight: col.implicitHeight + 2 * M.scale.space.md
+  radius: M.pillRadius(Math.min(height, M.size.control + 2 * M.scale.space.xs), M.radius.chrome)
   color: tk.canvas
   border.width: M.size.keyline
   border.color: listening ? Qt.alpha(tk.ember, 0.35 + 0.4 * service.level) : tk.keyline
@@ -30,11 +31,11 @@ Rectangle {
   Column {
     id: col
     anchors.fill: parent
-    anchors.margins: M.spacing.xl
-    spacing: M.spacing.lg
+    anchors.margins: M.scale.space.md
+    spacing: M.scale.space.sm
 
     Row {
-      spacing: M.spacing.lg
+      spacing: M.scale.space.sm
       width: parent.width
 
       Creature {
@@ -50,7 +51,7 @@ Rectangle {
         text: root.service.wordView.word
         color: root.tk[M.toneToken(root.service.wordView.tone)]
         font.family: root.service.fontFamily
-        font.pixelSize: M.font.body
+        font.pixelSize: M.fontSize("body", root.ts)
         font.weight: Font.DemiBold
       }
       Icon {
@@ -58,7 +59,7 @@ Rectangle {
         anchors.verticalCenter: parent.verticalCenter
         visible: root.service.transcript !== ""
         name: "mic"
-        size: M.font.icon
+        size: M.scale.icon
         color: root.tk.inkMuted
       }
       Text {
@@ -70,14 +71,14 @@ Rectangle {
         elide: Text.ElideLeft
         color: root.tk.inkMuted
         font.family: root.service.fontFamily
-        font.pixelSize: M.font.label
+        font.pixelSize: M.fontSize("label", root.ts)
         font.italic: false
       }
     }
 
     Row {
       visible: root.picks.length > 0
-      spacing: M.spacing.md
+      spacing: M.scale.space.sm
 
       Repeater {
         model: root.picks

@@ -21,8 +21,8 @@ Item {
   // opt-in wake word: a ring in the fail tone for as long as the mic is open
   readonly property bool micOpen: service ? B.micOpen(service.mic, service.offline) : false
 
-  implicitWidth: size + M.spacing.sm
-  implicitHeight: size + M.spacing.sm
+  implicitWidth: size + M.scale.space.xs
+  implicitHeight: size + M.scale.space.xs
 
   Mark {
     id: mark

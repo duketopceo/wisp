@@ -109,6 +109,7 @@ BarWidget {
       BarPill {
         anchors.verticalCenter: parent.verticalCenter
         service: root.service
+        barHeight: button.height
       }
     }
   }

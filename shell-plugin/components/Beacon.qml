@@ -12,6 +12,7 @@ Item {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   property int index: 1
   // "" runs landing -> holding -> fading; fixtures pin a state
   property string forceState: ""
@@ -59,7 +60,7 @@ Item {
       text: String(root.index)
       color: root.tk.canvas
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.caption
+      font.pixelSize: M.fontSize("caption", root.ts)
       font.weight: Font.Bold
     }
   }

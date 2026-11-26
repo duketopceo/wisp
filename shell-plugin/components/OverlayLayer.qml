@@ -99,17 +99,21 @@ Item {
     width: bubbleCol.implicitWidth
     height: bubbleCol.implicitHeight
     x: Math.round((root.width - width) / 2)
-    y: root.gap + root.barHeight + M.spacing.lg
+    y: root.gap + root.barHeight + M.scale.space.sm
 
     HoverHandler { id: bubbleHover }
 
     Column {
       id: bubbleCol
-      spacing: M.spacing.md
+      spacing: M.scale.space.sm
 
       Bubble {
         id: bubble
+        objectName: "bubble"
         service: root.service
+        // 60 answer columns, but never wider than the screen at a large
+        // text scale (the text wraps instead)
+        width: Math.min(implicitWidth, root.width - 2 * M.scale.space.xl)
         onMoreClicked: root.moreClicked()
         onConfirmChosen: function (pick, promptId) { root.confirmChosen(pick, promptId); }
       }

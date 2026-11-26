@@ -17,6 +17,7 @@ Rectangle {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   signal moreClicked()
   // reply to the confirm card: the pick and the prompt id the card shows
   signal confirmChosen(string pick, string promptId)
@@ -24,7 +25,7 @@ Rectangle {
   // the bubble's spot lives on the host (OverlayLayer pins it
   // top-center under the bar) — the card itself just sizes and draws
   // answer width is 60 columns of the answer face
-  FontMetrics { id: fm; font.family: service.fontFamily; font.pixelSize: M.font.answer }
+  FontMetrics { id: fm; font.family: service.fontFamily; font.pixelSize: M.fontSize("answer", root.ts) }
 
   readonly property var tk: service ? service.tokens : ({})
   readonly property bool failed: service.status === "error"
@@ -34,8 +35,8 @@ Rectangle {
   readonly property bool attached: service.busy || service.status === "speaking"
 
   visible: has
-  implicitWidth: Math.round(fm.averageCharacterWidth * Cursor.BUBBLE_COLS) + 2 * M.spacing.xxl
-  implicitHeight: has ? col.implicitHeight + 2 * M.spacing.xxl : 0
+  implicitWidth: Math.round(fm.averageCharacterWidth * Cursor.BUBBLE_COLS) + 2 * M.scale.space.md
+  implicitHeight: has ? col.implicitHeight + 2 * M.scale.space.md : 0
   radius: M.radius.chrome
   color: tk.canvas
   border.width: M.size.keyline
@@ -43,10 +44,10 @@ Rectangle {
 
   Column {
     id: col
-    x: M.spacing.xxl
-    y: M.spacing.xxl
-    width: root.width - 2 * M.spacing.xxl
-    spacing: M.spacing.md
+    x: M.scale.space.md
+    y: M.scale.space.md
+    width: root.width - 2 * M.scale.space.md
+    spacing: M.scale.space.sm
 
     Text {
       textFormat: Text.PlainText
@@ -55,7 +56,7 @@ Rectangle {
       text: root.question ? root.service.ui("ui.now.asks") : root.service.ui("ui.confirm.title")
       color: root.tk.needsYou
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.label
+      font.pixelSize: M.fontSize("label", root.ts)
       font.weight: Font.DemiBold
     }
     Text {
@@ -68,7 +69,7 @@ Rectangle {
       elide: Text.ElideRight
       color: root.tk.ink
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.answer
+      font.pixelSize: M.fontSize("answer", root.ts)
     }
     Text {
       textFormat: Text.PlainText
@@ -82,11 +83,11 @@ Rectangle {
       elide: Text.ElideRight
       color: root.tk.inkMuted
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.caption
+      font.pixelSize: M.fontSize("caption", root.ts)
     }
     Row {
       visible: root.card !== null && !root.question
-      spacing: M.spacing.md
+      spacing: M.scale.space.sm
       Chip {
         objectName: "allow"
         service: root.service
@@ -119,7 +120,7 @@ Rectangle {
     Flow {
       visible: root.question && root.card.options.length > 0
       width: parent.width
-      spacing: M.spacing.md
+      spacing: M.scale.space.sm
       Repeater {
         model: root.question ? root.card.options : []
         delegate: Chip {
@@ -137,7 +138,7 @@ Rectangle {
       text: root.question ? root.service.ui("ui.question.hint") : root.service.ui("ui.confirm.hint")
       color: root.tk.inkMuted
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.caption
+      font.pixelSize: M.fontSize("caption", root.ts)
     }
 
     Text {
@@ -148,7 +149,7 @@ Rectangle {
       wrapMode: Text.Wrap
       color: root.tk.fail
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.answer
+      font.pixelSize: M.fontSize("answer", root.ts)
       font.weight: Font.DemiBold
     }
     Text {
@@ -159,7 +160,7 @@ Rectangle {
       wrapMode: Text.Wrap
       color: root.tk.inkMuted
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.label
+      font.pixelSize: M.fontSize("label", root.ts)
     }
 
     Answer {

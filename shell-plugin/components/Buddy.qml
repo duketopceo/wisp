@@ -19,6 +19,7 @@ Item {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   // lib/buddy.js view(): { visible, phase, x, y, rotation, scale, opacity,
   // mode, clicking, label {visible, text, x, y, scale}, state {text},
   // spinAngle, bars }
@@ -35,8 +36,8 @@ Item {
   readonly property string motionMode: motion !== "" ? motion : (service ? service.motionMode : "off")
   readonly property string mode: view.mode
   readonly property color glyph: mode === "triangleNeedsYou" ? tk.needsYou : tk.ember
-  readonly property real pillWidth: labelText.implicitWidth + 2 * M.spacing.lg
-  readonly property real pillHeight: labelText.implicitHeight + 2 * M.spacing.sm
+  readonly property real pillWidth: labelText.implicitWidth + 2 * M.scale.space.sm
+  readonly property real pillHeight: labelText.implicitHeight + 2 * M.scale.space.xs
 
   implicitWidth: 160
   implicitHeight: 100
@@ -115,7 +116,7 @@ Item {
     text: root.view.state.text
     color: root.mode === "triangleNeedsYou" ? root.tk.needsYou : root.tk.inkMuted
     font.family: root.service ? root.service.fontFamily : ""
-    font.pixelSize: M.font.caption
+    font.pixelSize: M.fontSize("caption", root.ts)
   }
 
   // label pill beside the target
@@ -139,7 +140,7 @@ Item {
       text: root.view.label.text
       color: root.tk.ink
       font.family: root.service ? root.service.fontFamily : ""
-      font.pixelSize: M.font.caption
+      font.pixelSize: M.fontSize("caption", root.ts)
     }
   }
 }

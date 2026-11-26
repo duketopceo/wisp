@@ -83,5 +83,19 @@ TestCase {
     }
   }
 
+  function test_overlay_text_follows_text_scale() {
+    svc.tokens = tokens;
+    var raw = readJson("acting");
+    var mods = raw._fixture || {};
+    delete raw._fixture;
+    svc.load(raw, mods);
+    svc.textScale = 1;
+    var pill = createTemporaryObject(pillComp, tc, { service: svc });
+    compare(findWord(pill).font.pixelSize, M.fontSize("body", 1));
+    svc.textScale = 1.5;
+    compare(findWord(pill).font.pixelSize, M.fontSize("body", 1.5));
+    svc.textScale = 1;
+  }
+
   Component { id: pillComp; Pill { } }
 }

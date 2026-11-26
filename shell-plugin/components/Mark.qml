@@ -13,7 +13,7 @@ Item {
   readonly property bool busy: service ? service.busy : false
 
   implicitWidth: size
-  implicitHeight: size + (busy ? M.spacing.xs : 0)
+  implicitHeight: size + (busy ? M.scale.space.xs : 0)
 
   Icon {
     id: glyph

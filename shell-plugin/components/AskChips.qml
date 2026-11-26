@@ -11,6 +11,7 @@ Item {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   // state.chips: {app, asks, seq}
   property var chips: null
   // fixtures and tests pin these
@@ -36,7 +37,7 @@ Item {
 
   Column {
     id: col
-    spacing: M.spacing.md
+    spacing: M.scale.space.sm
 
     Text {
       textFormat: Text.PlainText
@@ -44,8 +45,8 @@ Item {
       text: root.v.title
       color: root.tk.inkMuted
       font.family: root.service ? root.service.fontFamily : ""
-      font.pixelSize: M.font.caption
-      leftPadding: M.spacing.xs
+      font.pixelSize: M.fontSize("caption", root.ts)
+      leftPadding: M.scale.space.xs
     }
     Repeater {
       model: root.v.asks
@@ -53,7 +54,7 @@ Item {
         id: chip
         required property string modelData
         objectName: "askChip"
-        implicitWidth: label.implicitWidth + 2 * M.spacing.xl
+        implicitWidth: label.implicitWidth + 2 * M.scale.space.md
         implicitHeight: M.size.control
         radius: Math.min(M.radius.chrome, M.radius.chip)
         color: root.tk.raised
@@ -66,7 +67,7 @@ Item {
           text: chip.modelData
           color: root.tk.ink
           font.family: root.service ? root.service.fontFamily : ""
-          font.pixelSize: M.font.label
+          font.pixelSize: M.fontSize("label", root.ts)
         }
       }
     }

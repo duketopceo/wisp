@@ -35,6 +35,11 @@ TestCase {
     compare(M.size.control, 28)
   }
 
+  function test_glyph_step_is_fixed() {
+    // glyphs sit beside text but are not text: one fixed step, never scaled
+    compare(M.scale.icon, 14)
+  }
+
   function test_text_scale_grows_text_and_keeps_the_hit_target() {
     compare(M.fontSize("body", 1), 14)
     compare(M.fontSize("body", 1.25), 18)
