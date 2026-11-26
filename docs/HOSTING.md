@@ -17,9 +17,10 @@ desktop sessions.
   devices and missing WebGL; a designed static frame (flame and gradient) is
   always painted underneath. The build prints the bundle sizes. Credits ship
   at `/credits.txt`.
-- **Wisp flame:** the idle loop and stills are published from
-  `assets/brand/wisp-flame/export/` by `scripts/site/build_3d.py`; nothing is
-  copied into `site-3d/` or `site-app/`.
+- **Wisp mark:** the orange flame stills are published from the app icon
+  renders in `assets/icons/hicolor/` by `scripts/site/build_3d.py` (homepage)
+  and `scripts/site/build.py` (`/plain/`); nothing is copied into `site/`,
+  `site-3d/` or `site-app/`.
 - **Guiding-light preview:** `site-3d/light/`, served at `/light/` by the same
   build. A small real-time WebGL light (plain WebGL1, drawn only while it
   moves) with a CSS-orb fallback, self-hosted font, no inline script; design in

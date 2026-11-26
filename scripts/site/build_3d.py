@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the guiding-light preview (/light/) and the Wisp flame assets the
+"""Build the guiding-light preview (/light/) and the Wisp mark assets the
 homepage (site-app/) links to, independently of site/."""
 import argparse
 import hashlib
@@ -19,14 +19,11 @@ FILES = (
     "vendor/OFL-Newsreader.txt", "vendor/THREEUI-LICENSE.txt",
     "wisp/sim.mjs", "wisp/gl.mjs",
 )
-# The Wisp flame ships from its brand source: published path -> repository path.
-# Only what the pages use: the idle loop (hero) and stills (favicon,
-# apple-touch-icon, reduced motion).
-FLAME = ROOT / "assets/brand/wisp-flame/export"
+# The orange flame mark ships from the app icon renders: published path ->
+# repository path. Only what the pages use: the apple-touch-icon (the
+# favicon is site-app/public/favicon.svg and the hero mark is drawn inline).
 BRAND = {
-    "assets/wisp-flame/idle-256.webp": FLAME / "loops/idle-256.webp",
-    **{f"assets/wisp-flame/wisp-flame-{size}.png": FLAME / f"stills/wisp-flame-{size}.png"
-       for size in (32, 512)},
+    "assets/mark/wisp-512.png": ROOT / "assets/icons/hicolor/512x512/apps/wisp.png",
 }
 ALL = FILES + tuple(BRAND)
 
