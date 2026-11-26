@@ -59,8 +59,7 @@ class FlameAssets(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "out"
             builder.build(out)
-            # The orange flame app icon, byte for byte; the cyan 3D flame
-            # and its loops are retired (one-surface U5).
+            # The orange flame app icon, byte for byte, and nothing else.
             self.assertEqual(self.ICON.read_bytes(), (out / "assets/mark/wisp-512.png").read_bytes())
             self.assertEqual(["assets/mark/wisp-512.png"], list(builder.BRAND))
             self.assertFalse((out / "assets/wisp-flame").exists())

@@ -20,8 +20,8 @@ import build_icons  # noqa: E402
 ICONS_JS = ROOT / "shell-plugin" / "lib" / "icons.js"
 A3 = ["bar-idle", "bar-listening", "bar-thinking", "bar-acting",
       "bar-needs-you", "bar-error", "bar-offline"]
-# The UI icons the surfaces draw; one-surface U5 removed the rest
-# (tests/test_unused.py keeps every source referenced).
+# The UI icons the surfaces draw (tests/test_unused.py keeps every source
+# referenced).
 A4 = ["mic", "stop", "check", "cross", "undo", "talk", "act", "agent",
       "guide", "connect", "history", "settings", "warning", "thumb-up",
       "thumb-down"]

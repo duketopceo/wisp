@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Nothing unused ships (one-surface U5, R6).
+"""Nothing unused ships.
 
 An icon source, copy key or shell-plugin/lib function must be used somewhere
 other than its own definition: by production code, or by a test that drives
@@ -29,19 +29,19 @@ DEFINITIONS = {ROOT / "wisp" / "copy.py", LIB / "copy.js", LIB / "icons.js"}
 # prefix; test_every_prefix_family_is_still_built ties it to the code that
 # builds it.
 PREFIXES = (
-    "ui.agent.",          # AgentRow, RunCard: + task state / outcome
-    "ui.manage.audit.",   # AuditView, tui: + audit decision
-    "ui.empty.",          # EmptyState: + tab (and + ".hint")
-    "ui.page.",           # ManagePage: + frame (and + ".hint")
-    "ui.onboard.step.",   # FirstRunCard: + step id
-    "ui.onboard.state.",  # FirstRunCard: + step state
-    "ui.cua.",            # HealthSection, tui: + cua state
-    "ui.home.",           # HomeView: + daemon status
-    "ui.tab.",            # PanelBody: + tab key
-    "ui.settings.",       # QuickTab: + schema group
-    "ui.rate.",           # rate.js: + label status
-    "set.cat.",           # SettingsHost, SettingsPage, ManagePage: + page
-    "set.group.",         # SettingsHost: + sidebar group
+    "ui.agent.",          # + task state or outcome
+    "ui.manage.audit.",   # + audit decision
+    "ui.empty.",          # + tab (and + ".hint")
+    "ui.page.",           # + page frame (and + ".hint")
+    "ui.onboard.step.",   # + step id
+    "ui.onboard.state.",  # + step state
+    "ui.cua.",            # + cua state
+    "ui.home.",           # + daemon status
+    "ui.tab.",            # + Panel tab key
+    "ui.settings.",       # + schema group
+    "ui.rate.",           # + label status
+    "set.cat.",           # + settings page
+    "set.group.",         # + sidebar group
 )
 
 

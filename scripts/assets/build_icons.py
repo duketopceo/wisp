@@ -25,8 +25,7 @@ MARK = ROOT / "assets" / "brand" / "mark.svg"
 OUT = ROOT / "shell-plugin" / "lib" / "icons.js"
 SVG_NS = "{http://www.w3.org/2000/svg}"
 
-# Names allowed to fill: the mark, its filled bar states, the ghost cursor
-# and the beacon. Round caps/joins: the mark family only (mark, bar-*).
+# Names allowed to fill: the mark, its filled bar states and the beacon. Round caps/joins: the mark family only (mark, bar-*).
 FILLED = {"mark", "beacon", "bar-listening", "bar-thinking",
           "bar-acting", "bar-needs-you", "bar-error"}
 
@@ -72,7 +71,7 @@ def validate(path: pathlib.Path) -> dict:
         bad(f"stroke must be none or currentColor, got {stroke!r}")
     filled, stroked = fill == "currentColor", stroke == "currentColor"
     if filled and name not in FILLED:
-        bad("only the mark family, ghost cursor and beacon may fill")
+        bad("only the mark family and the beacon may fill")
     if not (filled or stroked):
         bad("draws nothing (no fill and no stroke)")
     meta = {"fill": filled, "stroke": stroked, "width": 0, "cap": "",
