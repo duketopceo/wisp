@@ -11,6 +11,7 @@ Rectangle {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   // the card from lib/whatsnew.js parse(): {title, date, lines, more, url}
   property var card: null
   signal dismiss()
@@ -19,7 +20,7 @@ Rectangle {
   readonly property var tk: service ? service.tokens : ({})
 
   width: 340
-  implicitHeight: col.implicitHeight + 2 * M.spacing.xxl
+  implicitHeight: col.implicitHeight + 2 * M.scale.space.md
   radius: M.radius.chrome
   color: tk.raised
   border.width: M.size.keyline
@@ -27,10 +28,10 @@ Rectangle {
 
   Column {
     id: col
-    x: M.spacing.xxl
-    y: M.spacing.xxl
-    width: root.width - 2 * M.spacing.xxl
-    spacing: M.spacing.xl
+    x: M.scale.space.md
+    y: M.scale.space.md
+    width: root.width - 2 * M.scale.space.md
+    spacing: M.scale.space.md
 
     Text {
       textFormat: Text.PlainText
@@ -39,7 +40,7 @@ Rectangle {
       text: root.service.ui("ui.whatsnew.title") + (root.card ? " " + root.card.title : "")
       color: root.tk.ink
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.body
+      font.pixelSize: M.fontSize("body", root.ts)
       font.weight: Font.DemiBold
       elide: Text.ElideRight
     }
@@ -55,7 +56,7 @@ Rectangle {
         wrapMode: Text.Wrap
         color: root.tk.ink
         font.family: root.service.fontFamily
-        font.pixelSize: M.font.label
+        font.pixelSize: M.fontSize("label", root.ts)
       }
     }
 
@@ -67,11 +68,11 @@ Rectangle {
       text: root.card && root.card.more > 0 ? "+" + root.card.more + " " + root.service.ui("ui.whatsnew.more") : ""
       color: root.tk.inkMuted
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.caption
+      font.pixelSize: M.fontSize("caption", root.ts)
     }
 
     Row {
-      spacing: M.spacing.lg
+      spacing: M.scale.space.sm
       Chip {
         objectName: "whatsnewLink"
         service: root.service

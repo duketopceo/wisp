@@ -14,6 +14,7 @@ Rectangle {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   signal choose(string pick)
   signal answer(string text)
   signal stopClicked()
@@ -39,7 +40,7 @@ Rectangle {
     done: "ok", failed: "fail", cancelled: "inkMuted" })
 
   implicitWidth: 340
-  implicitHeight: col.implicitHeight + 2 * M.spacing.xl
+  implicitHeight: col.implicitHeight + 2 * M.scale.space.md
   radius: Math.min(M.radius.chrome, M.radius.chip * 2)
   color: tk.canvas
   border.width: M.size.keyline
@@ -47,19 +48,19 @@ Rectangle {
 
   Column {
     id: col
-    x: M.spacing.xl
-    y: M.spacing.xl
-    width: root.width - 2 * M.spacing.xl
-    spacing: M.spacing.md
+    x: M.scale.space.md
+    y: M.scale.space.md
+    width: root.width - 2 * M.scale.space.md
+    spacing: M.scale.space.sm
 
     // intent echo — the parsed task, not raw ASR
     Row {
       width: parent.width
-      spacing: M.spacing.md
+      spacing: M.scale.space.sm
       Icon {
         anchors.verticalCenter: parent.verticalCenter
         name: "act"
-        size: M.font.icon
+        size: M.scale.icon
         color: root.active ? root.tk.ember : root.tk.inkMuted
       }
       Text {
@@ -72,7 +73,7 @@ Rectangle {
         wrapMode: Text.Wrap
         color: root.tk.ink
         font.family: root.service.fontFamily
-        font.pixelSize: M.font.body
+        font.pixelSize: M.fontSize("body", root.ts)
         font.weight: Font.DemiBold
       }
     }
@@ -93,20 +94,20 @@ Rectangle {
       wrapMode: Text.Wrap
       color: root.tk.inkMuted
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.label
+      font.pixelSize: M.fontSize("label", root.ts)
     }
 
     // live ask_user question — same shape as the clarify choices
     Column {
       visible: root.question !== null
       width: parent.width
-      spacing: M.spacing.md
+      spacing: M.scale.space.sm
       Text {
         textFormat: Text.PlainText
         text: root.service.ui("ui.now.asks")
         color: root.tk.needsYou
         font.family: root.service.fontFamily
-        font.pixelSize: M.font.caption
+        font.pixelSize: M.fontSize("caption", root.ts)
         font.weight: Font.DemiBold
       }
       Text {
@@ -116,12 +117,12 @@ Rectangle {
         wrapMode: Text.Wrap
         color: root.tk.ink
         font.family: root.service.fontFamily
-        font.pixelSize: M.font.body
+        font.pixelSize: M.fontSize("body", root.ts)
       }
       Flow {
         visible: root.question !== null && root.question.options.length > 0
         width: parent.width
-        spacing: M.spacing.md
+        spacing: M.scale.space.sm
         Repeater {
           model: root.question ? root.question.options : []
           delegate: Chip {
@@ -138,10 +139,10 @@ Rectangle {
       Row {
         visible: root.question !== null && root.question.options.length === 0
         width: parent.width
-        spacing: M.spacing.md
+        spacing: M.scale.space.sm
         Rectangle {
           width: parent.width - sendChip.implicitWidth - parent.spacing
-          height: M.size.control
+          height: Math.max(M.size.control, input.implicitHeight + 2 * M.scale.space.sm)
           radius: Math.min(M.radius.chrome, M.radius.chip)
           color: root.tk.raised
           border.width: M.size.keyline
@@ -149,12 +150,12 @@ Rectangle {
           TextInput {
             id: input
             anchors.fill: parent
-            anchors.margins: M.spacing.lg
+            anchors.margins: M.scale.space.sm
             verticalAlignment: TextInput.AlignVCenter
             color: root.tk.ink
             selectionColor: root.tk.selection
             font.family: root.service.fontFamily
-            font.pixelSize: M.font.body
+            font.pixelSize: M.fontSize("body", root.ts)
             clip: true
             Accessible.role: Accessible.EditableText
             Accessible.name: root.service.ui("ui.question.answer")
@@ -166,7 +167,7 @@ Rectangle {
               text: root.service.ui("ui.question.answer")
               color: root.tk.inkMuted
               font.family: root.service.fontFamily
-              font.pixelSize: M.font.body
+              font.pixelSize: M.fontSize("body", root.ts)
             }
           }
         }
@@ -187,28 +188,32 @@ Rectangle {
     Row {
       visible: !root.active && root.summary !== ""
       width: parent.width
-      spacing: M.spacing.md
+      spacing: M.scale.space.sm
+      // the outcome keeps its words; the undo note gives way first
       Text {
         textFormat: Text.PlainText
+        id: summaryText
+        objectName: "runSummary"
         anchors.verticalCenter: parent.verticalCenter
-        width: parent.width
-          - (undoText.visible ? undoText.implicitWidth + M.spacing.md : 0)
-          - hideText.implicitWidth - M.spacing.md
+        width: Math.min(implicitWidth, parent.width - hideText.implicitWidth - M.scale.space.sm)
         text: root.summary
         elide: Text.ElideRight
         color: root.tk[root.outcomeLook[root.run.outcome] || "inkMuted"]
         font.family: root.service.fontFamily
-        font.pixelSize: M.font.label
+        font.pixelSize: M.fontSize("label", root.ts)
       }
       Text {
         textFormat: Text.PlainText
         id: undoText
         visible: root.run.undoRefs.length > 0
         anchors.verticalCenter: parent.verticalCenter
+        width: Math.max(0, parent.width - summaryText.width - hideText.implicitWidth
+          - 2 * M.scale.space.sm)
+        elide: Text.ElideRight
         text: "(" + root.service.ui("ui.undo") + ": " + root.run.undoRefs.join(", ") + ")"
         color: root.tk.inkMuted
         font.family: root.service.fontFamily
-        font.pixelSize: M.font.caption
+        font.pixelSize: M.fontSize("caption", root.ts)
       }
       Text {
         textFormat: Text.PlainText
@@ -217,7 +222,7 @@ Rectangle {
         text: root.service.ui("ui.hide")
         color: root.tk.inkMuted
         font.family: root.service.fontFamily
-        font.pixelSize: M.font.caption
+        font.pixelSize: M.fontSize("caption", root.ts)
         MouseArea {
           anchors.fill: parent
           onClicked: root.dismissed()

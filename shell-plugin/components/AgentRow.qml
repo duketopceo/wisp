@@ -8,6 +8,7 @@ Item {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   property string name: ""
   property string state: "queued"
   property real seconds: 0
@@ -20,7 +21,7 @@ Item {
     interrupted: "needsYou" })
 
   implicitWidth: 340
-  implicitHeight: col.implicitHeight + 2 * M.spacing.md
+  implicitHeight: col.implicitHeight + 2 * M.scale.space.sm
 
   Rectangle {
     visible: root.state === "running"
@@ -31,32 +32,32 @@ Item {
 
   Column {
     id: col
-    x: M.spacing.lg
-    y: M.spacing.md
-    width: root.width - 2 * M.spacing.lg
-    spacing: M.spacing.xs
+    x: M.scale.space.sm
+    y: M.scale.space.sm
+    width: root.width - 2 * M.scale.space.sm
+    spacing: M.scale.space.xs
 
     Row {
       width: parent.width
-      spacing: M.spacing.lg
+      spacing: M.scale.space.sm
       Rectangle {
         id: unreadDot
         visible: root.unread
-        width: M.spacing.sm
-        height: M.spacing.sm
-        radius: M.spacing.xs
+        width: M.scale.space.xs
+        height: M.scale.space.xs
+        radius: M.scale.space.xs
         anchors.verticalCenter: title.verticalCenter
         color: root.tk.ember
       }
       Text {
         textFormat: Text.PlainText
         id: title
-        width: parent.width - stateWord.implicitWidth - clock.implicitWidth - (root.unread ? unreadDot.width + M.spacing.lg : 0) - 2 * M.spacing.lg
+        width: parent.width - stateWord.implicitWidth - clock.implicitWidth - (root.unread ? unreadDot.width + M.scale.space.sm : 0) - 2 * M.scale.space.sm
         text: root.name
         elide: Text.ElideRight
         color: root.tk.ink
         font.family: root.service.fontFamily
-        font.pixelSize: M.font.body
+        font.pixelSize: M.fontSize("body", root.ts)
       }
       Text {
         textFormat: Text.PlainText
@@ -64,7 +65,7 @@ Item {
         text: root.service.ui("ui.agent." + root.state)
         color: root.tk[root.tokenFor[root.state] || "inkMuted"]
         font.family: root.service.fontFamily
-        font.pixelSize: M.font.label
+        font.pixelSize: M.fontSize("label", root.ts)
       }
       Text {
         textFormat: Text.PlainText
@@ -72,7 +73,7 @@ Item {
         text: M.elapsed(root.seconds)
         color: root.tk.inkMuted
         font.family: root.service.fontFamily
-        font.pixelSize: M.font.caption
+        font.pixelSize: M.fontSize("caption", root.ts)
       }
     }
 
@@ -84,7 +85,7 @@ Item {
       elide: Text.ElideRight
       color: root.tk.inkMuted
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.caption
+      font.pixelSize: M.fontSize("caption", root.ts)
     }
   }
 }

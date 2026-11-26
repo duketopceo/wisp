@@ -18,6 +18,7 @@ Item {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   // tab keys in order (now, agents, memory, quick, then devtab when on)
   property var tabKeys: ["now", "agents", "memory", "quick"]
   property int tab: 0
@@ -95,8 +96,8 @@ Item {
       Rectangle {
         visible: root.devPanelOn
         anchors.verticalCenter: parent.verticalCenter
-        width: localBadge.implicitWidth + 2 * M.spacing.sm
-        height: localBadge.implicitHeight + M.spacing.xs
+        width: localBadge.implicitWidth + 2 * M.scale.space.xs
+        height: localBadge.implicitHeight + M.scale.space.xs
         radius: M.radius.chip
         color: "transparent"
         border.width: M.size.keyline
@@ -111,7 +112,7 @@ Item {
           font.capitalization: Font.AllUppercase
           color: root.tk.needsYou
           font.family: root.service ? root.service.fontFamily : ""
-          font.pixelSize: M.font.label
+          font.pixelSize: M.fontSize("label", root.ts)
         }
       }
     }
@@ -210,7 +211,7 @@ Item {
       text: root.service ? root.service.ui("ui.bar.hint") : ""
       color: root.tk.inkMuted
       font.family: root.service ? root.service.fontFamily : ""
-      font.pixelSize: M.font.label
+      font.pixelSize: M.fontSize("label", root.ts)
     }
   }
 }

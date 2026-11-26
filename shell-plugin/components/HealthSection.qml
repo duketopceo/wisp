@@ -12,6 +12,7 @@ Column {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   property var cua: null
   property var spendModels: []
   // the section title; a settings-window page hides it under its heading
@@ -25,12 +26,12 @@ Column {
   readonly property bool dim: service.offline || service.stale
 
   width: 340
-  spacing: M.spacing.md
+  spacing: M.scale.space.sm
 
   component Dot: Rectangle {
     property bool good: true
-    width: M.spacing.lg
-    height: M.spacing.lg
+    width: M.scale.space.sm
+    height: M.scale.space.sm
     radius: width / 2
     color: good ? root.tk.ok : root.tk.fail
     opacity: root.dim ? 0.4 : 1
@@ -40,9 +41,9 @@ Column {
     textFormat: Text.PlainText
     color: root.tk.ink
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.body
+    font.pixelSize: M.fontSize("body", root.ts)
     font.weight: Font.DemiBold
-    topPadding: M.spacing.md
+    topPadding: M.scale.space.sm
   }
 
   component Line: Text {
@@ -51,7 +52,7 @@ Column {
     elide: Text.ElideRight
     color: root.dim ? root.tk.inkMuted : root.tk.ink
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.label
+    font.pixelSize: M.fontSize("label", root.ts)
   }
 
   component Row2: Row {
@@ -59,14 +60,14 @@ Column {
     property bool good: true
     property string label: ""
     property string detail: ""
-    spacing: M.spacing.lg
+    spacing: M.scale.space.sm
     Dot { good: r.good; anchors.verticalCenter: parent.verticalCenter }
     Text {
       textFormat: Text.PlainText
       text: r.label
       color: root.dim ? root.tk.inkMuted : root.tk.ink
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.label
+      font.pixelSize: M.fontSize("label", root.ts)
       anchors.verticalCenter: parent.verticalCenter
     }
     Text {
@@ -74,7 +75,7 @@ Column {
       text: r.detail
       color: r.good ? root.tk.inkMuted : root.tk.fail
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.caption
+      font.pixelSize: M.fontSize("caption", root.ts)
       anchors.verticalCenter: parent.verticalCenter
     }
   }
@@ -98,18 +99,18 @@ Column {
     text: line
     color: root.tk.needsYou
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.label
+    font.pixelSize: M.fontSize("label", root.ts)
   }
 
   // endpoints
-  Heading { text: root.service.ui("ui.health.endpoints"); font.weight: Font.Normal; color: root.tk.inkMuted; font.pixelSize: M.font.caption }
+  Heading { text: root.service.ui("ui.health.endpoints"); font.weight: Font.Normal; color: root.tk.inkMuted; font.pixelSize: M.fontSize("caption", root.ts) }
   Text {
     textFormat: Text.PlainText
     visible: root.sec.endpoints.length === 0
     text: root.service.ui("ui.health.none")
     color: root.tk.inkMuted
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.label
+    font.pixelSize: M.fontSize("label", root.ts)
   }
   Repeater {
     model: root.sec.endpoints
@@ -130,7 +131,7 @@ Column {
   }
 
   // cua
-  Heading { text: root.service.ui("ui.health.cua"); font.weight: Font.Normal; color: root.tk.inkMuted; font.pixelSize: M.font.caption }
+  Heading { text: root.service.ui("ui.health.cua"); font.weight: Font.Normal; color: root.tk.inkMuted; font.pixelSize: M.fontSize("caption", root.ts) }
   Row2 {
     good: root.sec.cua ? root.sec.cua.ok : (root.cv !== null && root.cv.live)
     label: root.cv !== null ? root.service.ui("ui.cua." + root.cv.state)
@@ -145,14 +146,14 @@ Column {
   }
   Row {
     visible: root.cv !== null && (root.cv.kill || root.cv.dryRun)
-    spacing: M.spacing.lg
+    spacing: M.scale.space.sm
     Text {
       textFormat: Text.PlainText
       visible: root.cv !== null && root.cv.kill
       text: root.service.ui("ui.cua.kill_switch_on")
       color: root.tk.needsYou
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.caption
+      font.pixelSize: M.fontSize("caption", root.ts)
     }
     Text {
       textFormat: Text.PlainText
@@ -160,12 +161,12 @@ Column {
       text: root.service.ui("ui.cua.dry_run")
       color: root.tk.needsYou
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.caption
+      font.pixelSize: M.fontSize("caption", root.ts)
     }
   }
 
   // spend
-  Heading { text: root.service.ui("ui.health.spend"); font.weight: Font.Normal; color: root.tk.inkMuted; font.pixelSize: M.font.caption }
+  Heading { text: root.service.ui("ui.health.spend"); font.weight: Font.Normal; color: root.tk.inkMuted; font.pixelSize: M.fontSize("caption", root.ts) }
   Row2 {
     visible: root.sp.has
     good: !root.sp.blocked
@@ -196,26 +197,26 @@ Column {
     text: root.service.ui("ui.health.models")
     color: root.tk.inkMuted
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.caption
+    font.pixelSize: M.fontSize("caption", root.ts)
   }
   Repeater {
     model: root.models
     delegate: Line {
       text: modelData.model + "  " + modelData.calls + "  " + modelData.usd
       color: root.tk.inkMuted
-      font.pixelSize: M.font.caption
+      font.pixelSize: M.fontSize("caption", root.ts)
     }
   }
 
   // last errors
-  Heading { text: root.service.ui("ui.health.errors"); font.weight: Font.Normal; color: root.tk.inkMuted; font.pixelSize: M.font.caption }
+  Heading { text: root.service.ui("ui.health.errors"); font.weight: Font.Normal; color: root.tk.inkMuted; font.pixelSize: M.fontSize("caption", root.ts) }
   Text {
     textFormat: Text.PlainText
     visible: root.sec.errors.length === 0
     text: root.service.ui("ui.health.no_errors")
     color: root.tk.inkMuted
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.label
+    font.pixelSize: M.fontSize("label", root.ts)
   }
   Repeater {
     model: root.sec.errors

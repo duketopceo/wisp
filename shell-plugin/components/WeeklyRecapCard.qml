@@ -6,13 +6,14 @@ import "../lib/metrics.js" as M
 Rectangle {
   id: root
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   property var card: null
   signal dismiss()
   signal offClicked()
   readonly property var tk: service ? service.tokens : ({})
 
   width: 340
-  implicitHeight: col.implicitHeight + 2 * M.spacing.xxl
+  implicitHeight: col.implicitHeight + 2 * M.scale.space.md
   radius: M.radius.chrome
   color: root.tk.raised
   border.width: M.size.keyline
@@ -20,10 +21,10 @@ Rectangle {
 
   Column {
     id: col
-    x: M.spacing.xxl
-    y: M.spacing.xxl
-    width: root.width - 2 * M.spacing.xxl
-    spacing: M.spacing.xl
+    x: M.scale.space.md
+    y: M.scale.space.md
+    width: root.width - 2 * M.scale.space.md
+    spacing: M.scale.space.md
 
     Text {
       textFormat: Text.PlainText
@@ -33,7 +34,7 @@ Rectangle {
       wrapMode: Text.Wrap
       color: root.tk.ink
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.body
+      font.pixelSize: M.fontSize("body", root.ts)
       font.weight: Font.DemiBold
     }
     Text {
@@ -43,7 +44,7 @@ Rectangle {
       wrapMode: Text.Wrap
       color: root.tk.inkMuted
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.caption
+      font.pixelSize: M.fontSize("caption", root.ts)
     }
     Text {
       textFormat: Text.PlainText
@@ -53,7 +54,7 @@ Rectangle {
       wrapMode: Text.Wrap
       color: root.tk.ink
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.body
+      font.pixelSize: M.fontSize("body", root.ts)
     }
     Text {
       textFormat: Text.PlainText
@@ -63,7 +64,7 @@ Rectangle {
       wrapMode: Text.Wrap
       color: root.tk.needsYou
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.label
+      font.pixelSize: M.fontSize("label", root.ts)
     }
     Text {
       textFormat: Text.PlainText
@@ -73,11 +74,11 @@ Rectangle {
       wrapMode: Text.Wrap
       color: root.tk.inkMuted
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.label
+      font.pixelSize: M.fontSize("label", root.ts)
     }
     Flow {
       width: parent.width
-      spacing: M.spacing.lg
+      spacing: M.scale.space.sm
       Chip {
         objectName: "recapDismiss"
         service: root.service

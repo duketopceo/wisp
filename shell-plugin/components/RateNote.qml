@@ -8,6 +8,7 @@ Rectangle {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   property alias text: field.text
   signal saved(string text)
   signal skipped()
@@ -15,7 +16,8 @@ Rectangle {
   readonly property var tk: service ? service.tokens : ({})
 
   implicitWidth: 340
-  implicitHeight: M.size.control
+  // the hit target, grown when a large text scale needs the room
+  implicitHeight: Math.max(M.size.control, field.implicitHeight + 2 * M.scale.space.xs)
   radius: Math.min(M.radius.chrome, M.radius.chip)
   color: tk.raised
   border.width: M.size.keyline
@@ -28,14 +30,14 @@ Rectangle {
   TextInput {
     id: field
     anchors.fill: parent
-    anchors.leftMargin: M.spacing.xl
-    anchors.rightMargin: M.spacing.xl
+    anchors.leftMargin: M.scale.space.md
+    anchors.rightMargin: M.scale.space.md
     verticalAlignment: TextInput.AlignVCenter
     clip: true
     color: root.tk.ink
     selectionColor: root.tk.selection
     font.family: root.service ? root.service.fontFamily : ""
-    font.pixelSize: M.font.label
+    font.pixelSize: M.fontSize("label", root.ts)
     Accessible.name: root.service ? root.service.ui("ui.rate.note") : ""
     Keys.onReturnPressed: root.finish()
     Keys.onEnterPressed: root.finish()
@@ -51,7 +53,7 @@ Rectangle {
     text: root.service ? root.service.ui("ui.rate.note") : ""
     color: root.tk.inkMuted
     font.family: root.service ? root.service.fontFamily : ""
-    font.pixelSize: M.font.label
+    font.pixelSize: M.fontSize("label", root.ts)
   }
 
   function finish() {

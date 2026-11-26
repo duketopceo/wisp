@@ -7,6 +7,7 @@ Item {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   property string text: ""
   property bool selected: false
   property bool hovered: area.containsMouse
@@ -21,8 +22,9 @@ Item {
   Accessible.selected: selected
   Accessible.onPressAction: clicked()
 
-  implicitWidth: label.implicitWidth + 2 * M.spacing.xl
-  implicitHeight: M.size.control
+  implicitWidth: label.implicitWidth + 2 * M.scale.space.md
+  // the hit target, grown when a large text scale needs the room
+  implicitHeight: Math.max(M.size.control, label.implicitHeight + 2 * M.scale.space.xs)
 
   Text {
     textFormat: Text.PlainText
@@ -31,7 +33,7 @@ Item {
     text: root.text
     color: root.selected || root.hovered ? root.tk.ink : root.tk.inkMuted
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.body
+    font.pixelSize: M.fontSize("body", root.ts)
     font.weight: root.selected ? Font.DemiBold : Font.Normal
   }
 

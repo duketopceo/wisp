@@ -8,6 +8,7 @@ Column {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   property var skills: []
   // [{ts, route, text, res, failed}]
   property var decisions: []
@@ -17,7 +18,7 @@ Column {
   readonly property var tk: service ? service.tokens : ({})
 
   width: 340
-  spacing: M.spacing.xl
+  spacing: M.scale.space.md
 
   EmptyState {
     visible: root.skills.length === 0 && root.decisions.length === 0
@@ -29,13 +30,13 @@ Column {
   Column {
     visible: root.skills.length > 0
     width: parent.width
-    spacing: M.spacing.sm
+    spacing: M.scale.space.xs
     Text {
       textFormat: Text.PlainText
       text: root.skills.length + " " + root.service.ui("ui.memory.skills")
       color: root.tk.ink
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.body
+      font.pixelSize: M.fontSize("body", root.ts)
       font.weight: Font.DemiBold
     }
     Repeater {
@@ -47,7 +48,7 @@ Column {
         elide: Text.ElideRight
         color: root.tk.inkMuted
         font.family: root.service.fontFamily
-        font.pixelSize: M.font.label
+        font.pixelSize: M.fontSize("label", root.ts)
       }
     }
     Text {
@@ -56,20 +57,20 @@ Column {
       text: root.service.ui("ui.memory.more")
       color: root.tk.inkMuted
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.caption
+      font.pixelSize: M.fontSize("caption", root.ts)
     }
   }
 
   Column {
     visible: root.decisions.length > 0
     width: parent.width
-    spacing: M.spacing.sm
+    spacing: M.scale.space.xs
     Text {
       textFormat: Text.PlainText
       text: root.service.ui("ui.memory.activity")
       color: root.tk.ink
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.body
+      font.pixelSize: M.fontSize("body", root.ts)
       font.weight: Font.DemiBold
     }
     Repeater {
@@ -81,7 +82,7 @@ Column {
         elide: Text.ElideRight
         color: modelData.failed ? root.tk.fail : root.tk.inkMuted
         font.family: root.service.fontFamily
-        font.pixelSize: M.font.label
+        font.pixelSize: M.fontSize("label", root.ts)
       }
     }
   }

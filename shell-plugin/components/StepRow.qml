@@ -9,6 +9,7 @@ Item {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   property string text: ""
   property string state: "done"
   property string raw: ""
@@ -25,7 +26,7 @@ Item {
   readonly property var mine: look[state] || look.done
 
   implicitWidth: 300
-  implicitHeight: Math.max(M.size.control - M.spacing.lg, label.implicitHeight)
+  implicitHeight: Math.max(M.size.control - M.scale.space.sm, label.implicitHeight)
 
   Rectangle {
     visible: root.state === "running"
@@ -36,24 +37,24 @@ Item {
 
   Icon {
     id: icon
-    x: M.spacing.lg
+    x: M.scale.space.sm
     anchors.verticalCenter: parent.verticalCenter
     name: root.mine.icon
-    size: M.font.icon
+    size: M.scale.icon
     color: root.tk[root.mine.token]
   }
 
   Text {
     textFormat: Text.PlainText
     id: label
-    x: icon.x + icon.width + M.spacing.md
-    width: root.width - x - (root.state === "confirm" ? confirmTag.implicitWidth + M.spacing.lg : 0)
+    x: icon.x + icon.width + M.scale.space.sm
+    width: root.width - x - (root.state === "confirm" ? confirmTag.implicitWidth + M.scale.space.sm : 0)
     anchors.verticalCenter: parent.verticalCenter
     text: root.text
     elide: Text.ElideRight
     color: root.state === "pending" ? root.tk.inkMuted : root.tk.ink
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.body
+    font.pixelSize: M.fontSize("body", root.ts)
   }
 
   Text {
@@ -65,6 +66,6 @@ Item {
     text: root.service.ui("ui.step.confirm")
     color: root.tk.needsYou
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.caption
+    font.pixelSize: M.fontSize("caption", root.ts)
   }
 }
