@@ -20,11 +20,12 @@ import build_icons  # noqa: E402
 ICONS_JS = ROOT / "shell-plugin" / "lib" / "icons.js"
 A3 = ["bar-idle", "bar-listening", "bar-thinking", "bar-acting",
       "bar-needs-you", "bar-error", "bar-offline"]
-A4 = ["mic", "mic-off", "stop", "check", "cross", "undo", "pin", "unpin",
-      "collapse", "expand", "talk", "act", "agent", "point", "guide",
-      "connect", "link-broken", "eye", "skill", "history", "gauge",
-      "settings", "warning", "external", "thumb-up", "thumb-down"]
-OTHER = ["mark", "ghost-cursor", "beacon"]
+# The UI icons the surfaces draw; one-surface U5 removed the rest
+# (tests/test_unused.py keeps every source referenced).
+A4 = ["mic", "stop", "check", "cross", "undo", "talk", "act", "agent",
+      "guide", "connect", "history", "settings", "warning", "thumb-up",
+      "thumb-down"]
+OTHER = ["mark", "beacon"]
 
 STROKE_SVG = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="{vb}">{body}'
               '</svg>')
@@ -43,7 +44,7 @@ class TestShippedSet(unittest.TestCase):
         icons = shipped()
         for name in A3 + A4 + OTHER:
             self.assertIn(name, icons)
-        self.assertEqual(len(A4), 26)
+        self.assertEqual(len(A4), 15)
 
     def test_every_source_validates(self):
         for path in build_icons.sources():

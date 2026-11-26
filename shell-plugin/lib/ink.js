@@ -281,21 +281,6 @@ function luminance(r, g, b) {
   return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
 }
 
-// Mean luminance of a rect of an RGBA byte array (width w).
-function meanLuminance(rgba, w, h, rx, ry, rw, rh) {
-  var x0 = Math.max(0, Math.floor(rx)), y0 = Math.max(0, Math.floor(ry))
-  var x1 = Math.min(w, Math.ceil(rx + rw)), y1 = Math.min(h, Math.ceil(ry + rh))
-  var sum = 0, n = 0
-  for (var y = y0; y < y1; y++) {
-    for (var x = x0; x < x1; x++) {
-      var i = (y * w + x) * 4
-      sum += luminance(rgba[i], rgba[i + 1], rgba[i + 2])
-      n++
-    }
-  }
-  return n ? sum / n : 0.5
-}
-
 // Region tone from its luminance.
 function tone(lum) { return lum < LIGHT_BELOW ? "dark" : "light" }
 
