@@ -45,9 +45,10 @@ Item {
   // reached, so a large text size never spills out of the bar.
   property real barHeight: M.controlHeight(true)
   readonly property int restHeight: M.controlHeight(true) - M.scale.space.sm
-  readonly property real pillHeight: Math.min(Math.max(barHeight, restHeight),
-    Math.max(restHeight, Math.ceil(M.fontSize("label", ts) * M.lineHeight) + M.scale.space.xs))
-  readonly property int textPx: Math.min(M.fontSize("label", ts),
+  readonly property int labelPx: M.fontSize("label", ts)
+  readonly property real wantHeight: Math.ceil(labelPx * M.lineHeight) + M.scale.space.xs
+  readonly property real pillHeight: Math.max(restHeight, Math.min(barHeight, wantHeight))
+  readonly property int textPx: Math.min(labelPx,
     Math.floor((pillHeight - M.scale.space.xs) / M.lineHeight))
   readonly property int captionPx: Math.min(M.fontSize("caption", ts), textPx)
   // a tap rates the turn it was made on; a newer turn starts the pill fresh
