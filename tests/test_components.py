@@ -201,6 +201,7 @@ class TestComponentRules(unittest.TestCase):
         self.assertNotRegex(metrics, r"(?m)^\s*var\s+(font|spacing)\b")
         files = [p for d in (PLUGIN, ROOT / "shells")
                  for p in sorted(d.rglob("*")) if p.suffix in (".qml", ".js")]
+        # the floors only guard against a walk that silently finds nothing
         self.assertGreater(len(files), 50)
         seen = 0
         for p in files:
