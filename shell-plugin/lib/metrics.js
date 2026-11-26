@@ -3,13 +3,11 @@
 
 // Layout and state-to-visual maps shared by the window-free components
 // (DESIGN-v2 5.3 to 5.5, 5.8). Pure data and functions, no colors: every
-// color comes from service.tokens. Spacing, radius and type values follow
-// the Omarchy Style defaults so a component renders the same inside the
-// shell and in the offscreen snapshot harness (which has no Style).
+// color comes from service.tokens. Sizes are fixed here rather than read
+// from the Omarchy Style so a component renders the same inside the shell
+// and in the offscreen snapshot harness (which has no Style).
 
-var spacing = { xs: 3, sm: 4, md: 6, lg: 8, xl: 10, xxl: 12, huge: 18 }
 var radius = { chrome: 8, chip: 4 }
-var font = { answer: 13, body: 12, label: 11, caption: 10, title: 14, icon: 14 }
 var size = {
   control: 28,          // minimum hit target
   creatureRest: 28, creatureListening: 40, creaturePill: 20, creatureBar: 14,
@@ -17,14 +15,13 @@ var size = {
 }
 var lineHeight = 1.35
 
-// Type and spacing scale; the older font and spacing blocks above remain
-// for surfaces not yet moved over (one-surface U4). Sizes are pixels at
-// text scale 1.
+// The one type and spacing scale. Sizes are pixels at text scale 1.
 //
-// Moving a surface over follows one table. Type maps by role, so text
-// takes the larger scale; spacing maps to the nearest 4 px step, ties
-// rounding up; glyphs take the fixed icon step, which text scale never
-// changes (like a hit target).
+// It replaced the older font and spacing blocks (one-surface U4), which are
+// gone; tests/test_components.py keeps them gone. Each old step moved by
+// this table: type by role, so text took the larger scale; spacing to the
+// nearest 4 px step, ties rounding up; glyphs to the fixed icon step, which
+// text scale never changes (like a hit target).
 //
 //   old              new                       old              new
 //   font.caption 10  fontSize("caption") 12    spacing.xs 3     space.xs 4

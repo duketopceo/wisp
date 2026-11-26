@@ -12,6 +12,7 @@ Column {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   // the title and its line; a settings-window page hides them and
   // shows its own heading
   property bool titled: true
@@ -23,14 +24,14 @@ Column {
   readonly property bool dim: service.offline || service.stale
 
   width: 560
-  spacing: M.spacing.md
+  spacing: M.scale.space.sm
 
   component Cell: Text {
     textFormat: Text.PlainText
     elide: Text.ElideRight
     color: root.dim ? root.tk.inkMuted : root.tk.ink
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.label
+    font.pixelSize: M.fontSize("label", root.ts)
   }
 
   Text {
@@ -39,7 +40,7 @@ Column {
     text: root.service.ui("ui.manage.spend")
     color: root.tk.ink
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.title
+    font.pixelSize: M.fontSize("title", root.ts)
     font.weight: Font.DemiBold
   }
   Text {
@@ -48,8 +49,8 @@ Column {
     text: root.service.ui("ui.manage.spend.sub")
     color: root.tk.inkMuted
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.caption
-    bottomPadding: M.spacing.lg
+    font.pixelSize: M.fontSize("caption", root.ts)
+    bottomPadding: M.scale.space.sm
   }
   Text {
     textFormat: Text.PlainText
@@ -61,7 +62,7 @@ Column {
     text: line
     color: root.tk.needsYou
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.label
+    font.pixelSize: M.fontSize("label", root.ts)
   }
 
   Cell {
@@ -100,8 +101,8 @@ Column {
     text: root.service.ui("ui.health.models")
     color: root.tk.inkMuted
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.caption
-    topPadding: M.spacing.huge
+    font.pixelSize: M.fontSize("caption", root.ts)
+    topPadding: M.scale.space.lg
   }
   Cell {
     visible: root.rows.length === 0
@@ -112,8 +113,8 @@ Column {
   Repeater {
     model: root.rows
     delegate: Row {
-      spacing: M.spacing.xxl
-      Cell { width: root.width - 3 * 96 - 3 * M.spacing.xxl; text: modelData.model }
+      spacing: M.scale.space.md
+      Cell { width: root.width - 3 * 96 - 3 * M.scale.space.md; text: modelData.model }
       Cell { width: 96; text: modelData.calls + " " + root.service.ui("ui.manage.spend.calls"); color: root.tk.inkMuted }
       Cell { width: 96; text: modelData.tokens; color: root.tk.inkMuted }
       Cell { width: 96; text: modelData.usd; horizontalAlignment: Text.AlignRight }
