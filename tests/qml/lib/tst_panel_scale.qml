@@ -100,7 +100,17 @@ TestCase {
     verify(s !== null);
     compare(s.text, card.summary);
     verify(s.text !== "");
-    verify(!s.truncated, "outcome elided: " + s.text);
+    // the undo note gives way first: the outcome may elide only once the
+    // note has no room left (font widths differ between machines, so the
+    // rule is tested, not one font's fit)
+    var u = find(card, "runUndo");
+    verify(u !== null && u.text !== "");
+    verify(!s.truncated || u.width === 0,
+      "outcome elided (" + s.text + ") while the undo note keeps " + u.width + " px");
+    // narrow enough that both must give way: the outcome keeps the row
+    card.width = 220;
+    compare(u.width, 0);
+    verify(s.width > 0);
   }
 
   function all(item, name, out) {

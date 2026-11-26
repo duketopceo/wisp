@@ -206,6 +206,7 @@ Rectangle {
       Text {
         textFormat: Text.PlainText
         id: undoText
+        objectName: "runUndo"
         visible: root.run.undoRefs.length > 0
         anchors.verticalCenter: parent.verticalCenter
         width: Math.min(implicitWidth, Math.max(0, parent.width - summaryText.width
