@@ -22,6 +22,7 @@ TestCase {
   Component { id: noteC; RateNote { width: 340 } }
   Component { id: statusC; StatusLine {} }
   Component { id: runC; RunCard {} }
+  Component { id: devC; DevTab {} }
 
   function find(item, name) {
     if (item.objectName === name) return item;
@@ -100,5 +101,25 @@ TestCase {
     compare(s.text, card.summary);
     verify(s.text !== "");
     verify(!s.truncated, "outcome elided: " + s.text);
+  }
+
+  function all(item, name, out) {
+    if (item.objectName === name) out.push(item);
+    for (var i = 0; i < item.children.length; i++) all(item.children[i], name, out);
+    return out;
+  }
+
+  function test_dev_tab_rows_hold_their_lines_at_text_scale_2() {
+    var x = new XMLHttpRequest();
+    x.open("GET", Qt.resolvedUrl("../harness/scenes.json"), false);
+    x.send();
+    var reply = JSON.parse(x.responseText).DevTab.variants.data.reply;
+    load(2, "idle");
+    var dev = createTemporaryObject(devC, tc, { service: svc, reply: reply });
+    var rows = all(dev, "turnRow", []).concat(all(dev, "missRow", []));
+    verify(rows.length >= 2, "rows " + rows.length);
+    for (var i = 0; i < rows.length; i++)
+      verify(rows[i].childrenRect.height <= rows[i].height,
+        rows[i].objectName + " content " + rows[i].childrenRect.height + " in " + rows[i].height);
   }
 }

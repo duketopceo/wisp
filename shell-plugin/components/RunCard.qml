@@ -208,8 +208,8 @@ Rectangle {
         id: undoText
         visible: root.run.undoRefs.length > 0
         anchors.verticalCenter: parent.verticalCenter
-        width: Math.max(0, parent.width - summaryText.width - hideText.implicitWidth
-          - 2 * M.scale.space.sm)
+        width: Math.min(implicitWidth, Math.max(0, parent.width - summaryText.width
+          - hideText.implicitWidth - 2 * M.scale.space.sm))
         elide: Text.ElideRight
         text: "(" + root.service.ui("ui.undo") + ": " + root.run.undoRefs.join(", ") + ")"
         color: root.tk.inkMuted

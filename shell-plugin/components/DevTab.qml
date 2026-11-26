@@ -464,7 +464,9 @@ Column {
         readonly property var shares: D.stageShares(modelData.stages, modelData.total_ms)
         readonly property var widths: D.barWidths(shares, root.barW)
         width: root.width
-        height: root.rowH
+        objectName: "turnRow"
+        // rowH is the floor; a large text scale grows the row to its two lines
+        height: Math.max(root.rowH, rowCol.implicitHeight + 2 * M.scale.space.xs)
         radius: M.radius.chip
         color: on ? root.tk.selection : "transparent"
         Behavior on color {
@@ -473,6 +475,7 @@ Column {
         }
 
         Column {
+          id: rowCol
           x: M.scale.space.sm
           anchors.verticalCenter: parent.verticalCenter
           width: parent.width - root.barW - 2 * M.scale.space.sm - M.size.control
@@ -634,9 +637,10 @@ Column {
           id: stageRow
           required property var modelData
           width: pickCol.width
-          height: 16
+          height: Math.max(16, stageName.implicitHeight)
           Text {
             textFormat: Text.PlainText
+            id: stageName
             width: 64
             anchors.verticalCenter: parent.verticalCenter
             text: stageRow.modelData.name
@@ -697,11 +701,13 @@ Column {
       model: root.hasData && root.reply.misses ? root.reply.misses.slice(0, 5) : []
       delegate: Item {
         id: missRow
+        objectName: "missRow"
         required property var modelData
         width: root.width
-        height: 16
+        height: Math.max(16, missName.implicitHeight)
         Text {
           textFormat: Text.PlainText
+          id: missName
           width: parent.width - 36
           anchors.verticalCenter: parent.verticalCenter
           text: missRow.modelData.pattern
