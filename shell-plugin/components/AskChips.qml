@@ -55,7 +55,8 @@ Item {
         required property string modelData
         objectName: "askChip"
         implicitWidth: label.implicitWidth + 2 * M.scale.space.md
-        implicitHeight: M.size.control
+        // the hit target, grown when a large text scale needs the room
+        implicitHeight: Math.max(M.size.control, label.implicitHeight + 2 * M.scale.space.xs)
         radius: Math.min(M.radius.chrome, M.radius.chip)
         color: root.tk.raised
         border.width: M.size.keyline

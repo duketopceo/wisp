@@ -49,7 +49,7 @@ Item {
     signal pressed()
 
     implicitWidth: row.implicitWidth + 2 * M.scale.space.md
-    implicitHeight: M.size.control
+    implicitHeight: Math.max(M.size.control, row.implicitHeight + 2 * M.scale.space.xs)
     radius: Math.min(M.radius.chrome, M.radius.chip)
     color: area.pressed ? tk.selection : tk.raised
     border.width: M.size.keyline
