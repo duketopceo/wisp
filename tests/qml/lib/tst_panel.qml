@@ -143,7 +143,7 @@ Item {
       // the summary opens the Health page (one-surface U3)
       compare(opens.signalArguments[4][0], "health")
       // a screen reader's press runs the same action
-      findChild(body, "healthSummary").Accessible.pressAction()
+      findChild(body, "healthSummaryArea").Accessible.pressAction()
       compare(opens.count, 6)
       compare(opens.signalArguments[5][0], "health")
     }

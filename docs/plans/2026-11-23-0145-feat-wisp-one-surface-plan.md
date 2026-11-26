@@ -307,17 +307,30 @@ Wisp grew surfaces one at a time, and each picked its own words and marks. The b
 
 **Goal:** the rules that keep the surfaces consistent are failing tests.
 **Requirements:** R8.
-**Dependencies:** U1. It can run any time after U1 and is tightened as units land.
+**Dependencies:** U1, U2, U3 (`PanelBody`, `S.PAGES` and the settings-window page scenes must exist).
 **Files:**
-- `tests/qml/lib/tst_accessible.qml` (new: walks each scene and checks every interactive control has an `Accessible.name`)
-- `tests/test_components.py`: extend the existing `test_every_component_has_a_scene` only where it does not already cover both themes. The status-word guard lives in U1.
+- `tests/qml/harness/a11y.js` (new: the scan. `controls(root)` walks the visual item tree (`children`, plus `contentItem` children of flickables) and returns every visible, enabled item that is interactive: `activeFocusOnTab` is true, or it is a text input, or its `Accessible.role` is a pressable or editable role (Button, CheckBox, RadioButton, ComboBox, PageTab, EditableText, Slider, SpinBox, Link). `unnamed(root)` returns those whose `Accessible.name` is empty after trimming, each with its `objectName`, type name and nearest named ancestor for the failure message.)
+- `tests/qml/lib/tst_accessible.qml` (new: instantiates `PanelBody` on every tab (the base tabs plus `devtab`: the test passes `tabKeys` with `devtab` appended and `devPanelOn`, as `Panel.qml` does when `service.devTab` is on) and `SettingsHost` on every page in `S.PAGES` and every schema category, under `FixtureService`, the same way `tst_panel.qml` and `tst_settingshost.qml` do. For each: `controls()` is non-empty and includes a floor of expected named controls (Panel: the tab buttons; settings window: the sidebar rows), so a blind scan fails; zero unnamed controls; and each control, when given active focus, changes its rendered pixels, which is the "visible focus ring" rule without coupling to how each kit control draws it. The focus check scrolls the control into view first (`page.ensureVisible`, then `waitForRendering`, as `tst_panel.qml` does), clears focus, grabs, calls `forceActiveFocus()`, grabs again, and compares the control's mapped rect inflated by `M.scale.focusRing` on each side, because some rings (`SelectControl`) draw outside the control's bounds. A control still off screen after scrolling fails rather than being skipped. Both grabs come from the same run; nothing is compared against stored pixels.)
+- `shell-plugin/components/PanelTab.qml`: today a `MouseArea` with no role, name or focus, so the scan cannot see it. Give it `Accessible.role: Accessible.PageTab`, `Accessible.name` from its text, and a focus ring on `M.scale.focusRing`/`tk.accent` when it has active focus. The Panel still never takes focus itself (`PanelKeyCatcher` holds it); only the test forces it.
+- Other components the scan flags: give each control an `Accessible.name` from the copy table and a focus treatment on `M.scale.focusRing`/`tk.accent`, matching `Chip.qml` and `ToggleControl.qml`. No new words outside the copy table.
+- `tests/test_components.py`: `snap.py` already renders every scene in both themes, but CI does not run `snap.py`, so a scene can lose a theme's golden silently. Add `test_every_scene_has_goldens_in_both_themes`: for every case `snap.cases()` returns (what `snap.py list` prints), the golden exists for that case at its own scale, and the same case id with the theme segment swapped also exists when `snap.py` renders that scale in both themes. Do not hardcode 1x: laptop viewport cases are 2x-only, and `scale2` cases are 2x in dark only. Add `test_every_settings_page_and_panel_tab_has_a_scene`: every `S.PAGES` key and every schema category has a `SettingsHost` variant, and every Panel tab (base tabs plus `devtab`) has a `PanelBody` variant (add one for `devtab`), so a new page or tab cannot ship without a scene. The status-word guard lives in U1.
+- `tests/qml/harness/scenes.json` and goldens: add the `SettingsHost` variants the new test finds missing (as of master c10fda3: `activity`, `memory`, `tasks`, `spend`, `audit`, `binds`, and any category without one), rendered with `snap.py update --only SettingsHost`, reviewed in light and dark.
 - `AGENTS.md` (a short "how surfaces are built" section pointing at these tests)
 
-**Test scenarios:**
-- A control with no accessible name fails the scan.
-- Every interactive control in the settings window and Panel scenes shows a visible focus ring when focused.
+**Approach notes:**
+- R8's "scenes for each of its states" is already structural for state-mode components: `snap.py` renders every one of them against every state fixture, and `test_every_state_fixture_is_in_the_pill_table` ties fixtures to the status table. U7 adds the page-and-tab half (variant per page, category and tab) and the both-themes golden check; it does not add a second state list.
+- The scan lives in the harness, not in `shell-plugin/`, so production code carries no test helpers.
+- "Interactive" is decided by focusability and role, not by `MouseArea` presence: hover-only areas (tooltips, scroll catchers) are not controls. A `MouseArea` that acts on click with no keyboard path is a defect the scan cannot see; the focus test catches it only where a control is meant to take focus. Recorded as a known limit.
+- The pixel-change focus check runs with motion off (`FixtureService` already sets it), so no animation frame makes the before/after differ for the wrong reason.
 
-**Verification:** QML suites, full unit suite.
+**Test scenarios:**
+- A fixture item with one unnamed focusable control fails `unnamed()`; the same item with the name set passes (the scan tests itself).
+- No interactive control in any Panel tab or settings-window page or category scene lacks an accessible name.
+- Every interactive control in those scenes changes its rendered pixels when focused.
+- Removing a theme's golden for any scene fails `test_every_scene_has_goldens_in_both_themes`.
+- Adding a page key to `S.PAGES` with no `SettingsHost` variant fails `test_every_settings_page_and_panel_tab_has_a_scene`.
+
+**Verification:** QML suites (the CI qml job's module list), full unit suite, `snap.py check` with 0 differences after a reviewed `update`.
 
 ---
 
@@ -331,7 +344,7 @@ Wisp grew surfaces one at a time, and each picked its own words and marks. The b
 | 4-6 | U4 | One type scale, in batches. |
 | 7 | U5 | One mark; nothing unused. |
 | 8 | U6 | Embed contract. |
-| 9 | U7 | Construction rules as tests (may land earlier, after U1). |
+| 9 | U7 | Construction rules as tests. |
 
 ---
 

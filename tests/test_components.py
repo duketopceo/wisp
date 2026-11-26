@@ -9,6 +9,7 @@ service.tokens), copy only through service.ui() / Copy, and every
 harness FixtureService, so a fixture render can never drift from the real
 service.
 """
+import json
 import os
 import pathlib
 import re
@@ -78,6 +79,21 @@ def used_service_members(src):
     return set(re.findall(r"\bservice\.(\w+)", src))
 
 
+def _load_snap():
+    """scripts/ui/snap.py as a module, without adding scripts/ui to
+    sys.path (reuses the copy test_snap already imported, if any)."""
+    import importlib.util
+    import sys
+    if "snap" in sys.modules:
+        return sys.modules["snap"]
+    spec = importlib.util.spec_from_file_location(
+        "snap", ROOT / "scripts" / "ui" / "snap.py")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["snap"] = mod  # dataclasses resolve their module here
+    spec.loader.exec_module(mod)
+    return mod
+
+
 class TestComponentSet(unittest.TestCase):
     def test_expected_components_exist(self):
         have = {p.stem for p in COMP.glob("*.qml")}
@@ -94,6 +110,47 @@ class TestComponentSet(unittest.TestCase):
         layers = {"Icon", "BarActions", "OverlayLayer"}
         self.assertEqual(set(EXPECTED) - layers - set(scenes), set())
         self.assertIn("Companion", scenes)
+
+    def test_every_scene_has_goldens_in_both_themes(self):
+        # one-surface U7: snap.py renders every case in light and dark, but
+        # CI does not run it, so a missing golden must fail here. The case
+        # list is snap.py's own, so each case keeps its own scale (laptop
+        # viewports are 2x only; scale2 adds 2x in dark only).
+        snap = _load_snap()
+        cases = snap.cases()
+        self.assertTrue(cases)
+        missing = [c["id"] for c in cases
+                   if not (snap.GOLDEN / f"{c['id']}.png").exists()]
+        self.assertEqual(missing, [], "run scripts/ui/snap.py update")
+        themes = {}
+        for c in cases:
+            scene = c["id"].split("/", 2)[2]   # drop <theme>/<scale>x/
+            themes.setdefault(scene, set()).add(c["theme"])
+        self.assertEqual(
+            sorted(k for k, t in themes.items() if t != set(snap.THEMES)), [])
+
+    def test_every_settings_page_and_panel_tab_has_a_scene(self):
+        # one-surface U7: a new settings page, category or Panel tab cannot
+        # ship without a snapshot scene of the real window body
+        scenes = json.loads(
+            (ROOT / "tests/qml/harness/scenes.json").read_text())
+        schema = code(PLUGIN / "lib" / "settings_schema.js")
+        sidebar = json.loads(
+            re.search(r"var SIDEBAR = (\[.*?\])", schema).group(1))
+        shown = {v.get("category") for name in ("SettingsHost",
+                                                "SettingsHostMinimum")
+                 for v in scenes[name]["variants"].values()}
+        self.assertEqual([p for p in sidebar if p not in shown], [])
+        panel = code(PLUGIN / "Panel.qml")
+        tabs = json.loads(re.search(
+            r"baseTabs: (\[.*?\])", panel).group(1).replace("'", '"'))
+        tabs.append("devtab")   # Panel.qml adds it with the dev flag
+        variants = scenes["PanelBody"]["variants"].values()
+        covered = set()
+        for v in variants:
+            keys = v.get("tabKeys", tabs[:-1])
+            covered.add(keys[v.get("tab", 0)])
+        self.assertEqual([t for t in tabs if t not in covered], [])
 
     def test_metrics_lib_has_no_colors(self):
         src = code(PLUGIN / "lib" / "metrics.js")

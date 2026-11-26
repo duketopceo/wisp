@@ -14,6 +14,13 @@ Item {
 
   readonly property var tk: service ? service.tokens : ({})
 
+  // the Panel keeps focus on its key catcher, so a tab is pressed, never
+  // focused: it carries a name and a role, not a focus ring
+  Accessible.role: Accessible.PageTab
+  Accessible.name: text
+  Accessible.selected: selected
+  Accessible.onPressAction: clicked()
+
   implicitWidth: label.implicitWidth + 2 * M.spacing.xl
   implicitHeight: M.size.control
 
