@@ -14,6 +14,7 @@ Column {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   // the reply's data: {turns, gate, rated, finished, rated_share, misses}
   property var reply: null
   property bool loading: false
@@ -45,7 +46,7 @@ Column {
     b: root.service ? root.service.ui("ui.dev.pair.b") : "",
     tie: root.service ? root.service.ui("ui.dev.pair.tie") : "" })
   readonly property var rv: D.runView(root.run, root.runWords)
-  readonly property int mixW: root.width - 4 * M.spacing.xxl
+  readonly property int mixW: root.width - 4 * M.scale.space.md
   readonly property var mixWidths: D.barWidths(root.rv.segments, root.mixW)
   readonly property int barW: 150
   readonly property int rowH: 34
@@ -54,21 +55,22 @@ Column {
   function ui(k) { return root.service.ui(k) }
 
   width: 340
-  spacing: M.spacing.xl
+  spacing: M.scale.space.md
 
   // header: the card title and the refresh button, always present
   Item {
     width: parent.width
-    height: M.size.control
+    height: Math.max(M.size.control, gateTitle.implicitHeight, refreshLabel.implicitHeight)
 
     Text {
       textFormat: Text.PlainText
+      id: gateTitle
       anchors.verticalCenter: parent.verticalCenter
       visible: root.hasData
       text: root.ui("ui.dev.gate")
       color: root.tk.ink
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.body
+      font.pixelSize: M.fontSize("body", root.ts)
       font.weight: Font.DemiBold
     }
 
@@ -80,14 +82,14 @@ Column {
       text: root.ui("ui.dev.refresh")
       color: refreshArea.containsMouse ? root.tk.ink : root.tk.accent
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.label
+      font.pixelSize: M.fontSize("label", root.ts)
       font.underline: refreshArea.containsMouse
       Accessible.role: Accessible.Button
       Accessible.name: text
       MouseArea {
         id: refreshArea
         anchors.fill: parent
-        anchors.margins: -M.spacing.lg
+        anchors.margins: -M.scale.space.sm
         hoverEnabled: true
         onClicked: root.refresh()
       }
@@ -99,7 +101,7 @@ Column {
   Rectangle {
     visible: root.runsLoading || root.runsError !== "" || root.runsReply !== null
     width: parent.width
-    height: runCol.implicitHeight + 2 * M.spacing.xxl
+    height: runCol.implicitHeight + 2 * M.scale.space.md
     radius: M.radius.chrome
     color: root.tk.raised
     border.width: M.size.keyline
@@ -107,10 +109,10 @@ Column {
 
     Column {
       id: runCol
-      x: M.spacing.xxl
-      y: M.spacing.xxl
-      width: parent.width - 2 * M.spacing.xxl
-      spacing: M.spacing.md
+      x: M.scale.space.md
+      y: M.scale.space.md
+      width: parent.width - 2 * M.scale.space.md
+      spacing: M.scale.space.sm
 
       Item {
         width: parent.width
@@ -121,7 +123,7 @@ Column {
           text: root.ui("ui.dev.runs")
           color: root.tk.ink
           font.family: root.service.fontFamily
-          font.pixelSize: M.font.body
+          font.pixelSize: M.fontSize("body", root.ts)
           font.weight: Font.DemiBold
         }
         Text {
@@ -132,7 +134,7 @@ Column {
           text: root.rv.when
           color: root.tk.inkMuted
           font.family: root.service.fontFamily
-          font.pixelSize: M.font.label
+          font.pixelSize: M.fontSize("label", root.ts)
         }
       }
 
@@ -143,7 +145,7 @@ Column {
         text: root.ui("ui.dev.loading")
         color: root.tk.inkMuted
         font.family: root.service.fontFamily
-        font.pixelSize: M.font.label
+        font.pixelSize: M.fontSize("label", root.ts)
       }
       Text {
         textFormat: Text.PlainText
@@ -153,12 +155,12 @@ Column {
         wrapMode: Text.Wrap
         color: root.tk.fail
         font.family: root.service.fontFamily
-        font.pixelSize: M.font.label
+        font.pixelSize: M.fontSize("label", root.ts)
       }
       Column {
         visible: !root.runsLoading && root.runsError === "" && root.run === null
         width: parent.width
-        spacing: M.spacing.sm
+        spacing: M.scale.space.xs
         Text {
           textFormat: Text.PlainText
           width: parent.width
@@ -166,7 +168,7 @@ Column {
           wrapMode: Text.Wrap
           color: root.tk.ink
           font.family: root.service.fontFamily
-          font.pixelSize: M.font.body
+          font.pixelSize: M.fontSize("body", root.ts)
         }
         Text {
           textFormat: Text.PlainText
@@ -175,7 +177,7 @@ Column {
           wrapMode: Text.Wrap
           color: root.tk.inkMuted
           font.family: root.service.fontFamily
-          font.pixelSize: M.font.label
+          font.pixelSize: M.fontSize("label", root.ts)
         }
       }
 
@@ -190,18 +192,18 @@ Column {
           text: root.rv.judged
           color: root.tk.ink
           font.family: root.service.fontFamily
-          font.pixelSize: M.font.title
+          font.pixelSize: M.fontSize("title", root.ts)
           font.weight: Font.DemiBold
         }
         Text {
           textFormat: Text.PlainText
-          x: judgedText.width + M.spacing.md
+          x: judgedText.width + M.scale.space.sm
           anchors.baseline: judgedText.baseline
           text: root.ui("ui.dev.runs.judged") + D.DOT + root.rv.confirmed
             + " " + root.ui("ui.dev.runs.confirmed")
           color: root.tk.inkMuted
           font.family: root.service.fontFamily
-          font.pixelSize: M.font.body
+          font.pixelSize: M.fontSize("body", root.ts)
         }
       }
 
@@ -228,7 +230,7 @@ Column {
         wrapMode: Text.Wrap
         color: root.tk.inkMuted
         font.family: root.service.fontFamily
-        font.pixelSize: M.font.label
+        font.pixelSize: M.fontSize("label", root.ts)
       }
 
       Text {
@@ -241,7 +243,7 @@ Column {
         elide: Text.ElideRight
         color: root.tk.inkMuted
         font.family: root.service.fontFamily
-        font.pixelSize: M.font.label
+        font.pixelSize: M.fontSize("label", root.ts)
       }
 
       // A/B: the pair counts, and the one setting that differed
@@ -253,7 +255,7 @@ Column {
         elide: Text.ElideRight
         color: root.tk.ink
         font.family: root.service.fontFamily
-        font.pixelSize: M.font.label
+        font.pixelSize: M.fontSize("label", root.ts)
       }
       Text {
         textFormat: Text.PlainText
@@ -263,7 +265,7 @@ Column {
         elide: Text.ElideMiddle
         color: root.tk.inkMuted
         font.family: root.service.fontFamily
-        font.pixelSize: M.font.caption
+        font.pixelSize: M.fontSize("caption", root.ts)
       }
     }
   }
@@ -276,13 +278,13 @@ Column {
     text: root.ui("ui.dev.loading")
     color: root.tk.inkMuted
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.body
+    font.pixelSize: M.fontSize("body", root.ts)
   }
 
   Column {
     visible: !root.loading && root.error !== "" && !root.hasData
     width: parent.width
-    spacing: M.spacing.md
+    spacing: M.scale.space.sm
     Text {
       textFormat: Text.PlainText
       width: parent.width
@@ -290,7 +292,7 @@ Column {
       wrapMode: Text.Wrap
       color: root.tk.fail
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.body
+      font.pixelSize: M.fontSize("body", root.ts)
     }
     Text {
       textFormat: Text.PlainText
@@ -299,14 +301,14 @@ Column {
       wrapMode: Text.Wrap
       color: root.tk.inkMuted
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.label
+      font.pixelSize: M.fontSize("label", root.ts)
     }
   }
 
   Column {
     visible: !root.loading && root.error === "" && !root.hasData
     width: parent.width
-    spacing: M.spacing.md
+    spacing: M.scale.space.sm
     Text {
       textFormat: Text.PlainText
       width: parent.width
@@ -314,7 +316,7 @@ Column {
       wrapMode: Text.Wrap
       color: root.tk.ink
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.body
+      font.pixelSize: M.fontSize("body", root.ts)
     }
     Text {
       textFormat: Text.PlainText
@@ -323,7 +325,7 @@ Column {
       wrapMode: Text.Wrap
       color: root.tk.inkMuted
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.label
+      font.pixelSize: M.fontSize("label", root.ts)
     }
   }
 
@@ -335,14 +337,14 @@ Column {
     text: root.ui("ui.dev.error")
     color: root.tk.fail
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.label
+    font.pixelSize: M.fontSize("label", root.ts)
   }
 
   // 1. gate card
   Rectangle {
     visible: root.hasData
     width: parent.width
-    height: gateCol.implicitHeight + 2 * M.spacing.xxl
+    height: gateCol.implicitHeight + 2 * M.scale.space.md
     radius: M.radius.chrome
     color: root.tk.raised
     border.width: M.size.keyline
@@ -350,10 +352,10 @@ Column {
 
     Column {
       id: gateCol
-      x: M.spacing.xxl
-      y: M.spacing.xxl
-      width: parent.width - 2 * M.spacing.xxl
-      spacing: M.spacing.md
+      x: M.scale.space.md
+      y: M.scale.space.md
+      width: parent.width - 2 * M.scale.space.md
+      spacing: M.scale.space.sm
 
       Item {
         width: parent.width
@@ -364,18 +366,18 @@ Column {
           text: root.gate.rateText
           color: root.tone(D.toneToken(root.gate.tone))
           font.family: root.service.fontFamily
-          font.pixelSize: M.font.title
+          font.pixelSize: M.fontSize("title", root.ts)
           font.weight: Font.DemiBold
         }
         Text {
           textFormat: Text.PlainText
-          x: rateText.width + M.spacing.md
+          x: rateText.width + M.scale.space.sm
           anchors.baseline: rateText.baseline
           visible: root.gate.tick >= 0
           text: root.ui("ui.dev.of") + " " + root.gate.gateText
           color: root.tk.inkMuted
           font.family: root.service.fontFamily
-          font.pixelSize: M.font.body
+          font.pixelSize: M.fontSize("body", root.ts)
         }
       }
 
@@ -413,7 +415,7 @@ Column {
         text: root.gate.labelled + " / " + root.gate.minTurns + " " + root.ui("ui.dev.labelled")
         color: root.tk.inkMuted
         font.family: root.service.fontFamily
-        font.pixelSize: M.font.label
+        font.pixelSize: M.fontSize("label", root.ts)
       }
       Text {
         textFormat: Text.PlainText
@@ -422,7 +424,7 @@ Column {
           + " " + root.ui("ui.dev.of_turns")
         color: root.tk.inkMuted
         font.family: root.service.fontFamily
-        font.pixelSize: M.font.label
+        font.pixelSize: M.fontSize("label", root.ts)
       }
       Text {
         textFormat: Text.PlainText
@@ -433,7 +435,7 @@ Column {
         elide: Text.ElideRight
         color: root.tk.inkMuted
         font.family: root.service.fontFamily
-        font.pixelSize: M.font.label
+        font.pixelSize: M.fontSize("label", root.ts)
       }
     }
   }
@@ -442,14 +444,14 @@ Column {
   Column {
     visible: root.hasData
     width: parent.width
-    spacing: M.spacing.sm
+    spacing: M.scale.space.xs
 
     Text {
       textFormat: Text.PlainText
       text: root.ui("ui.dev.recent")
       color: root.tk.ink
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.body
+      font.pixelSize: M.fontSize("body", root.ts)
       font.weight: Font.DemiBold
     }
 
@@ -462,7 +464,9 @@ Column {
         readonly property var shares: D.stageShares(modelData.stages, modelData.total_ms)
         readonly property var widths: D.barWidths(shares, root.barW)
         width: root.width
-        height: root.rowH
+        objectName: "turnRow"
+        // rowH is the floor; a large text scale grows the row to its two lines
+        height: Math.max(root.rowH, rowCol.implicitHeight + 2 * M.scale.space.xs)
         radius: M.radius.chip
         color: on ? root.tk.selection : "transparent"
         Behavior on color {
@@ -471,9 +475,10 @@ Column {
         }
 
         Column {
-          x: M.spacing.lg
+          id: rowCol
+          x: M.scale.space.sm
           anchors.verticalCenter: parent.verticalCenter
-          width: parent.width - root.barW - 2 * M.spacing.lg - M.size.control
+          width: parent.width - root.barW - 2 * M.scale.space.sm - M.size.control
           spacing: 1
           Text {
             textFormat: Text.PlainText
@@ -482,7 +487,7 @@ Column {
             elide: Text.ElideRight
             color: root.tk.ink
             font.family: root.service.fontFamily
-            font.pixelSize: M.font.label
+            font.pixelSize: M.fontSize("label", root.ts)
           }
           Text {
             textFormat: Text.PlainText
@@ -491,13 +496,13 @@ Column {
             elide: Text.ElideRight
             color: root.tk.inkMuted
             font.family: root.service.fontFamily
-            font.pixelSize: M.font.caption
+            font.pixelSize: M.fontSize("caption", root.ts)
           }
         }
 
         // stacked stage bar
         Row {
-          x: parent.width - root.barW - M.size.control - M.spacing.lg
+          x: parent.width - root.barW - M.size.control - M.scale.space.sm
           anchors.verticalCenter: parent.verticalCenter
           height: 8
           Repeater {
@@ -546,13 +551,13 @@ Column {
     // legend: the stage colors
     Flow {
       width: parent.width
-      spacing: M.spacing.xl
-      topPadding: M.spacing.sm
+      spacing: M.scale.space.md
+      topPadding: M.scale.space.xs
       Repeater {
         model: root.names
         delegate: Row {
           required property string modelData
-          spacing: M.spacing.sm
+          spacing: M.scale.space.xs
           Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             width: 8
@@ -564,7 +569,7 @@ Column {
             text: parent.modelData
             color: root.tk.inkMuted
             font.family: root.service.fontFamily
-            font.pixelSize: M.font.caption
+            font.pixelSize: M.fontSize("caption", root.ts)
           }
         }
       }
@@ -575,7 +580,7 @@ Column {
   Rectangle {
     visible: root.hasData && root.pick !== null
     width: parent.width
-    height: pickCol.implicitHeight + 2 * M.spacing.xxl
+    height: pickCol.implicitHeight + 2 * M.scale.space.md
     radius: M.radius.chrome
     color: root.tk.raised
     border.width: M.size.keyline
@@ -583,10 +588,10 @@ Column {
 
     Column {
       id: pickCol
-      x: M.spacing.xxl
-      y: M.spacing.xxl
-      width: parent.width - 2 * M.spacing.xxl
-      spacing: M.spacing.md
+      x: M.scale.space.md
+      y: M.scale.space.md
+      width: parent.width - 2 * M.scale.space.md
+      spacing: M.scale.space.sm
 
       Text {
         textFormat: Text.PlainText
@@ -597,7 +602,7 @@ Column {
         elide: Text.ElideRight
         color: root.tk.ink
         font.family: root.service.fontFamily
-        font.pixelSize: M.font.body
+        font.pixelSize: M.fontSize("body", root.ts)
       }
 
       // key release to first voice, with its stage breakdown
@@ -605,14 +610,14 @@ Column {
         readonly property var fv: root.pick ? D.firstVoiceView(root.pick.first_voice) : null
         visible: fv !== null
         width: parent.width
-        spacing: M.spacing.xs
+        spacing: M.scale.space.xs
         Text {
           textFormat: Text.PlainText
           width: parent.width
           text: parent.fv ? root.ui("ui.dev.first_voice") + " " + parent.fv.totalText : ""
           color: root.tk.ink
           font.family: root.service.fontFamily
-          font.pixelSize: M.font.label
+          font.pixelSize: M.fontSize("label", root.ts)
           font.weight: Font.DemiBold
         }
         Text {
@@ -622,7 +627,7 @@ Column {
           wrapMode: Text.Wrap
           color: root.tk.inkMuted
           font.family: root.service.fontFamily
-          font.pixelSize: M.font.caption
+          font.pixelSize: M.fontSize("caption", root.ts)
         }
       }
 
@@ -632,16 +637,17 @@ Column {
           id: stageRow
           required property var modelData
           width: pickCol.width
-          height: 16
+          height: Math.max(16, stageName.implicitHeight)
           Text {
             textFormat: Text.PlainText
+            id: stageName
             width: 64
             anchors.verticalCenter: parent.verticalCenter
             text: stageRow.modelData.name
             elide: Text.ElideRight
             color: root.tk.inkMuted
             font.family: root.service.fontFamily
-            font.pixelSize: M.font.label
+            font.pixelSize: M.fontSize("label", root.ts)
           }
           Rectangle {
             x: 72
@@ -658,7 +664,7 @@ Column {
             text: Math.round(stageRow.modelData.ms) + " ms"
             color: root.tk.ink
             font.family: root.service.fontFamily
-            font.pixelSize: M.font.label
+            font.pixelSize: M.fontSize("label", root.ts)
           }
         }
       }
@@ -673,7 +679,7 @@ Column {
         elide: Text.ElideRight
         color: root.tk.inkMuted
         font.family: root.service.fontFamily
-        font.pixelSize: M.font.caption
+        font.pixelSize: M.fontSize("caption", root.ts)
       }
     }
   }
@@ -682,31 +688,33 @@ Column {
   Column {
     visible: root.hasData && root.reply.misses && root.reply.misses.length > 0
     width: parent.width
-    spacing: M.spacing.sm
+    spacing: M.scale.space.xs
     Text {
       textFormat: Text.PlainText
       text: root.ui("ui.dev.misses")
       color: root.tk.ink
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.body
+      font.pixelSize: M.fontSize("body", root.ts)
       font.weight: Font.DemiBold
     }
     Repeater {
       model: root.hasData && root.reply.misses ? root.reply.misses.slice(0, 5) : []
       delegate: Item {
         id: missRow
+        objectName: "missRow"
         required property var modelData
         width: root.width
-        height: 16
+        height: Math.max(16, missName.implicitHeight)
         Text {
           textFormat: Text.PlainText
+          id: missName
           width: parent.width - 36
           anchors.verticalCenter: parent.verticalCenter
           text: missRow.modelData.pattern
           elide: Text.ElideRight
           color: root.tk.inkMuted
           font.family: root.service.fontFamily
-          font.pixelSize: M.font.label
+          font.pixelSize: M.fontSize("label", root.ts)
         }
         Text {
           textFormat: Text.PlainText
@@ -715,7 +723,7 @@ Column {
           text: missRow.modelData.count
           color: root.tk.ink
           font.family: root.service.fontFamily
-          font.pixelSize: M.font.label
+          font.pixelSize: M.fontSize("label", root.ts)
         }
       }
     }

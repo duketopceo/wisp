@@ -48,6 +48,11 @@ TestCase {
     compare(M.controlHeight(true), 28)
   }
 
+  function test_fit_control_floors_at_the_hit_target_and_grows_with_text() {
+    compare(M.fitControl(10), M.controlHeight(true))
+    compare(M.fitControl(30), 30 + 2 * M.scale.space.xs)
+  }
+
   function test_text_scale_never_goes_under_the_minimums() {
     compare(M.textScale(0.5), 1)
     compare(M.fontSize("caption", 0.5), 12)

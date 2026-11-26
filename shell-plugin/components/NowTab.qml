@@ -12,6 +12,7 @@ Column {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   // The service must not reserve a week's delivery while another tab is
   // selected (or while the panel is closed).
   onVisibleChanged: { if (service) service.recapVisible = visible; }
@@ -61,7 +62,7 @@ Column {
     && service.lastAction.at >= service.view.changedAtMs
     ? service.lastAction : null
 
-  spacing: M.spacing.xl
+  spacing: M.scale.space.md
   width: 340
 
   EmptyState {
@@ -98,7 +99,7 @@ Column {
     wrapMode: Text.Wrap
     color: root.tk.ember
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.body
+    font.pixelSize: M.fontSize("body", root.ts)
   }
 
   Transcript {
@@ -123,7 +124,7 @@ Column {
     wrapMode: Text.Wrap
     color: root.tk.ink
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.body
+    font.pixelSize: M.fontSize("body", root.ts)
   }
 
   Text {
@@ -134,7 +135,7 @@ Column {
     wrapMode: Text.Wrap
     color: root.tk.needsYou
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.body
+    font.pixelSize: M.fontSize("body", root.ts)
     font.weight: Font.DemiBold
   }
 
@@ -157,7 +158,7 @@ Column {
     // a live question carries its picks inside the run card
     visible: root.service.choices.length > 0 && root.run.question === null
     width: parent.width
-    spacing: M.spacing.lg
+    spacing: M.scale.space.sm
     Repeater {
       model: root.service.choices
       delegate: Chip {
@@ -178,7 +179,7 @@ Column {
     wrapMode: Text.Wrap
     color: root.tk.fail
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.label
+    font.pixelSize: M.fontSize("label", root.ts)
   }
 
   Text {
@@ -189,7 +190,7 @@ Column {
     wrapMode: Text.Wrap
     color: root.tk.fail
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.label
+    font.pixelSize: M.fontSize("label", root.ts)
   }
 
   // the run card owns its interrupt while a run is non-terminal; this
@@ -208,14 +209,14 @@ Column {
 
   Row {
     visible: root.judgeable && root.labelAck === null
-    spacing: M.spacing.lg
+    spacing: M.scale.space.sm
     Text {
       textFormat: Text.PlainText
       anchors.verticalCenter: parent.verticalCenter
       text: root.service.ui("ui.now.right")
       color: root.tk.inkMuted
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.label
+      font.pixelSize: M.fontSize("label", root.ts)
     }
     Chip {
       service: root.service
@@ -248,6 +249,6 @@ Column {
     wrapMode: Text.Wrap
     color: root.labelAck !== null && root.labelAck.ok === false ? root.tk.fail : root.tk.inkMuted
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.label
+    font.pixelSize: M.fontSize("label", root.ts)
   }
 }

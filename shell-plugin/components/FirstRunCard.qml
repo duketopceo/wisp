@@ -12,6 +12,7 @@ Rectangle {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   // steps from `wispd onboard --status --json`
   property var steps: []
   // step ids skipped this session (a skip is never written)
@@ -26,7 +27,7 @@ Rectangle {
   readonly property var count: O.counts(rows)
 
   width: 340
-  implicitHeight: col.implicitHeight + 2 * M.spacing.xxl
+  implicitHeight: col.implicitHeight + 2 * M.scale.space.md
   radius: M.radius.chrome
   color: tk.raised
   border.width: M.size.keyline
@@ -38,21 +39,21 @@ Rectangle {
 
   Column {
     id: col
-    x: M.spacing.xxl
-    y: M.spacing.xxl
-    width: root.width - 2 * M.spacing.xxl
-    spacing: M.spacing.xl
+    x: M.scale.space.md
+    y: M.scale.space.md
+    width: root.width - 2 * M.scale.space.md
+    spacing: M.scale.space.md
 
     Row {
       width: parent.width
-      spacing: M.spacing.lg
+      spacing: M.scale.space.sm
       Text {
         textFormat: Text.PlainText
-        width: parent.width - progress.implicitWidth - M.spacing.lg
+        width: parent.width - progress.implicitWidth - M.scale.space.sm
         text: root.service.ui("ui.onboard.title")
         color: root.tk.ink
         font.family: root.service.fontFamily
-        font.pixelSize: M.font.body
+        font.pixelSize: M.fontSize("body", root.ts)
         font.weight: Font.DemiBold
       }
       Text {
@@ -61,7 +62,7 @@ Rectangle {
         text: root.count.done + "/" + root.count.total + " " + root.service.ui("ui.onboard.progress")
         color: root.tk.inkMuted
         font.family: root.service.fontFamily
-        font.pixelSize: M.font.caption
+        font.pixelSize: M.fontSize("caption", root.ts)
       }
     }
 
@@ -70,14 +71,14 @@ Rectangle {
       delegate: Column {
         id: step
         width: col.width
-        spacing: M.spacing.sm
+        spacing: M.scale.space.xs
         opacity: modelData.state === "na" ? 0.6 : 1
 
         Row {
-          spacing: M.spacing.lg
+          spacing: M.scale.space.sm
           Rectangle {
-            width: M.spacing.lg
-            height: M.spacing.lg
+            width: M.scale.space.sm
+            height: M.scale.space.sm
             radius: width / 2
             anchors.verticalCenter: parent.verticalCenter
             color: root.dotColor(modelData.state)
@@ -87,7 +88,7 @@ Rectangle {
             text: root.service.ui("ui.onboard.step." + modelData.id)
             color: root.tk.ink
             font.family: root.service.fontFamily
-            font.pixelSize: M.font.label
+            font.pixelSize: M.fontSize("label", root.ts)
             anchors.verticalCenter: parent.verticalCenter
           }
           Text {
@@ -96,7 +97,7 @@ Rectangle {
               + root.service.ui("ui.onboard.state." + modelData.state)
             color: root.tk.inkMuted
             font.family: root.service.fontFamily
-            font.pixelSize: M.font.caption
+            font.pixelSize: M.fontSize("caption", root.ts)
             anchors.verticalCenter: parent.verticalCenter
           }
         }
@@ -110,12 +111,12 @@ Rectangle {
           wrapMode: Text.Wrap
           color: root.tk.inkMuted
           font.family: root.service.fontFamily
-          font.pixelSize: M.font.caption
+          font.pixelSize: M.fontSize("caption", root.ts)
         }
 
         Row {
           visible: modelData.state !== "na"
-          spacing: M.spacing.lg
+          spacing: M.scale.space.sm
           Chip {
             visible: O.actions(modelData.state).run
             objectName: "run:" + modelData.id

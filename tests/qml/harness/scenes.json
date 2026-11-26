@@ -3570,6 +3570,7 @@
     "text": "agents"
    },
    "normal": {
+    "hovered": false,
     "text": "agents"
    },
    "selected": {

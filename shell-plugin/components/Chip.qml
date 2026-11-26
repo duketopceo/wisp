@@ -8,6 +8,7 @@ Rectangle {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   property string label: ""
   property string hint: ""
   property bool selected: false
@@ -20,8 +21,8 @@ Rectangle {
 
   readonly property var tk: service ? service.tokens : ({})
 
-  implicitWidth: row.implicitWidth + 2 * M.spacing.xl
-  implicitHeight: M.size.control
+  implicitWidth: row.implicitWidth + 2 * M.scale.space.md
+  implicitHeight: M.fitControl(row.implicitHeight)
   radius: Math.min(M.radius.chrome, M.radius.chip)
   opacity: enabled ? 1 : 0.5
   color: pressed || selected ? tk.selection : tk.raised
@@ -38,7 +39,7 @@ Rectangle {
   Row {
     id: row
     anchors.centerIn: parent
-    spacing: M.spacing.md
+    spacing: M.scale.space.sm
 
     Text {
       textFormat: Text.PlainText
@@ -47,7 +48,7 @@ Rectangle {
       text: root.hint
       color: root.tk.inkMuted
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.caption
+      font.pixelSize: M.fontSize("caption", root.ts)
     }
     Text {
       textFormat: Text.PlainText
@@ -55,7 +56,7 @@ Rectangle {
       text: root.label
       color: root.selected ? root.tk.accent : root.tk.ink
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.label
+      font.pixelSize: M.fontSize("label", root.ts)
     }
   }
 

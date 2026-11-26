@@ -1,0 +1,135 @@
+import QtQuick
+import QtTest
+import "../../../shell-plugin/lib/tokens.js" as Tokens
+import "../../../shell-plugin/lib/metrics.js" as M
+import "../../../shell-plugin/components"
+import "../harness"
+
+// One type scale on the Panel (one-surface U4): Panel text follows the host
+// text scale, and the Panel's controls keep their hit target at text scale
+// 1 and grow to hold their words at text scale 2.
+TestCase {
+  id: tc
+  name: "panel_scale"
+  when: windowShown
+  width: 480
+  height: 400
+
+  FixtureService { id: svc }
+  Component { id: chipC; Chip { label: "open settings"; hint: "2" } }
+  Component { id: tabC; PanelTab { text: "now" } }
+  Component { id: stopC; StopControl { alwaysShow: true } }
+  Component { id: noteC; RateNote { width: 340 } }
+  Component { id: statusC; StatusLine {} }
+  Component { id: runC; RunCard {} }
+  Component { id: devC; DevTab {} }
+
+  function find(item, name) {
+    if (item.objectName === name) return item;
+    for (var i = 0; i < item.children.length; i++) {
+      var r = find(item.children[i], name);
+      if (r) return r;
+    }
+    return null;
+  }
+
+  function readJson(name) {
+    var x = new XMLHttpRequest();
+    x.open("GET", Qt.resolvedUrl("../../fixtures/states/" + name + ".json"), false);
+    x.send();
+    return JSON.parse(x.responseText);
+  }
+
+  function texts(item, out) {
+    if (item.font !== undefined && item.text !== undefined && item.text !== "") out.push(item);
+    for (var i = 0; i < item.children.length; i++) texts(item.children[i], out);
+    return out;
+  }
+
+  function cleanup() { svc.textScale = 1; }
+
+  function load(ts, name) {
+    svc.tokens = Tokens.load("", "", "dark").tokens;
+    var raw = readJson(name || "acting");
+    var mods = raw._fixture || {};
+    delete raw._fixture;
+    svc.load(raw, mods);
+    svc.textScale = ts;
+  }
+
+  function controls() {
+    return [createTemporaryObject(chipC, tc, { service: svc }),
+            createTemporaryObject(tabC, tc, { service: svc }),
+            createTemporaryObject(stopC, tc, { service: svc }),
+            createTemporaryObject(noteC, tc, { service: svc })];
+  }
+
+  function test_controls_keep_the_hit_target_at_text_scale_1() {
+    load(1);
+    var c = controls();
+    for (var i = 0; i < c.length; i++) compare(c[i].implicitHeight, M.size.control, "control " + i);
+  }
+
+  function test_controls_hold_their_words_at_text_scale_2() {
+    load(2);
+    var c = controls();
+    for (var i = 0; i < c.length; i++) {
+      verify(c[i].implicitHeight >= M.size.control, "control " + i);
+      var t = texts(c[i], []);
+      verify(t.length > 0, "control " + i + " has text");
+      for (var j = 0; j < t.length; j++)
+        verify(t[j].implicitHeight <= c[i].implicitHeight,
+          "control " + i + " text " + t[j].implicitHeight + " in " + c[i].implicitHeight);
+    }
+  }
+
+  function test_panel_text_follows_text_scale() {
+    load(1);
+    var s = createTemporaryObject(statusC, tc, { service: svc });
+    var t1 = texts(s, []);
+    verify(t1.length > 0);
+    var px1 = t1[0].font.pixelSize;
+    svc.textScale = 1.5;
+    verify(texts(s, [])[0].font.pixelSize > px1, "status line grew");
+  }
+
+  function test_a_finished_run_keeps_its_outcome_words() {
+    load(1, "run_done");
+    var card = createTemporaryObject(runC, tc, { service: svc });
+    var s = find(card, "runSummary");
+    verify(s !== null);
+    compare(s.text, card.summary);
+    verify(s.text !== "");
+    // the undo note gives way first: the outcome may elide only once the
+    // note has no room left (font widths differ between machines, so the
+    // rule is tested, not one font's fit)
+    var u = find(card, "runUndo");
+    verify(u !== null && u.text !== "");
+    verify(!s.truncated || u.width === 0,
+      "outcome elided (" + s.text + ") while the undo note keeps " + u.width + " px");
+    // narrow enough that both must give way: the outcome keeps the row
+    card.width = 220;
+    compare(u.width, 0);
+    verify(s.width > 0);
+  }
+
+  function all(item, name, out) {
+    if (item.objectName === name) out.push(item);
+    for (var i = 0; i < item.children.length; i++) all(item.children[i], name, out);
+    return out;
+  }
+
+  function test_dev_tab_rows_hold_their_lines_at_text_scale_2() {
+    var x = new XMLHttpRequest();
+    x.open("GET", Qt.resolvedUrl("../harness/scenes.json"), false);
+    x.send();
+    var reply = JSON.parse(x.responseText).DevTab.variants.data.reply;
+    load(2, "idle");
+    var dev = createTemporaryObject(devC, tc, { service: svc, reply: reply });
+    var rows = all(dev, "turnRow", []).concat(all(dev, "missRow", []));
+    verify(rows.length >= 2, "rows " + rows.length);
+    for (var i = 0; i < rows.length; i++)
+      verify(rows[i].childrenRect.height <= rows[i].height,
+        rows[i].objectName + " content " + rows[i].childrenRect.height + " in " + rows[i].height);
+  }
+}

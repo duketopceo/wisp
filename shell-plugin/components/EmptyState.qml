@@ -10,6 +10,7 @@ Column {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   property string tab: "now"
   property string textKey: "ui.empty." + tab
   property string action: ""
@@ -17,7 +18,7 @@ Column {
 
   readonly property var tk: service ? service.tokens : ({})
 
-  spacing: M.spacing.md
+  spacing: M.scale.space.sm
   width: 340
 
   Text {
@@ -27,7 +28,7 @@ Column {
     wrapMode: Text.Wrap
     color: root.tk.ink
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.body
+    font.pixelSize: M.fontSize("body", root.ts)
   }
   Text {
     textFormat: Text.PlainText
@@ -36,7 +37,7 @@ Column {
     wrapMode: Text.Wrap
     color: root.tk.inkMuted
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.label
+    font.pixelSize: M.fontSize("label", root.ts)
   }
   Chip {
     objectName: "action"

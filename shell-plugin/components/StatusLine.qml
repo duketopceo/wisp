@@ -10,13 +10,14 @@ Row {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   readonly property var tk: service ? service.tokens : ({})
   readonly property var wv: service.wordView
   readonly property bool active: service && (service.busy || service.status === "speaking")
   // 0 means no cap
   property real maxWidth: 0
 
-  spacing: M.spacing.md
+  spacing: M.scale.space.sm
 
   Mark {
     id: mark
@@ -31,7 +32,7 @@ Row {
     text: root.wv.word
     color: root.tk[M.toneToken(root.wv.tone)]
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.body
+    font.pixelSize: M.fontSize("body", root.ts)
     font.weight: Font.DemiBold
   }
 
@@ -47,7 +48,7 @@ Row {
     elide: Text.ElideRight
     color: root.tk.inkMuted
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.caption
+    font.pixelSize: M.fontSize("caption", root.ts)
   }
 
   Chip {

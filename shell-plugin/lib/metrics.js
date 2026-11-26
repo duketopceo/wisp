@@ -78,6 +78,12 @@ function controlHeight(compact) {
   return compact ? scale.control.compact : scale.control.window
 }
 
+// A text control's height: the compact hit target as its floor, grown to
+// hold its words plus padding when a large text scale needs the room.
+function fitControl(contentHeight) {
+  return Math.max(scale.control.compact, contentHeight + 2 * scale.space.xs)
+}
+
 // Pill radius: square themes stay square.
 function pillRadius(height, chromeRadius) {
   return chromeRadius === 0 ? 0 : height / 2

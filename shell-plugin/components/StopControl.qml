@@ -7,6 +7,7 @@ Rectangle {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   property bool alwaysShow: false
   property bool hovered: area.containsMouse
   signal clicked()
@@ -15,8 +16,8 @@ Rectangle {
   readonly property color fg: hovered ? tk.fail : tk.inkMuted
 
   visible: alwaysShow || service.busy || service.status === "speaking"
-  implicitWidth: row.implicitWidth + 2 * M.spacing.xl
-  implicitHeight: M.size.control
+  implicitWidth: row.implicitWidth + 2 * M.scale.space.md
+  implicitHeight: M.fitControl(row.implicitHeight)
   radius: Math.min(M.radius.chrome, M.radius.chip)
   color: "transparent"
   border.width: M.size.keyline
@@ -25,12 +26,12 @@ Rectangle {
   Row {
     id: row
     anchors.centerIn: parent
-    spacing: M.spacing.md
+    spacing: M.scale.space.sm
 
     Icon {
       anchors.verticalCenter: parent.verticalCenter
       name: "stop"
-      size: M.font.icon
+      size: M.scale.icon
       color: root.fg
     }
     Text {
@@ -39,7 +40,7 @@ Rectangle {
       text: root.service.ui("ui.stop")
       color: root.fg
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.label
+      font.pixelSize: M.fontSize("label", root.ts)
     }
     Text {
       textFormat: Text.PlainText
@@ -47,7 +48,7 @@ Rectangle {
       text: root.service.ui("ui.esc")
       color: root.tk.inkMuted
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.caption
+      font.pixelSize: M.fontSize("caption", root.ts)
     }
   }
 

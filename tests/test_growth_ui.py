@@ -30,7 +30,7 @@ class GrowthUiTest(unittest.TestCase):
         src = card.read_text()
         self.assertIn("textFormat: Text.PlainText", src)
         self.assertIn("wrapMode: Text.Wrap", src)
-        self.assertIn("M.spacing", src)
+        self.assertIn("M.scale.space", src)
         self.assertIn("root.tk.raised", src)
         self.assertIn("root.card.summary", src)
         self.assertIn("root.card.spend_note", src)

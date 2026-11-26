@@ -36,7 +36,7 @@ Item {
       objectName: "teachChip"
       visible: root.chipText !== ""
       implicitWidth: chipLabel.implicitWidth + 2 * M.scale.space.md
-      implicitHeight: Math.max(M.size.control, chipLabel.implicitHeight + 2 * M.scale.space.xs)
+      implicitHeight: M.fitControl(chipLabel.implicitHeight)
       width: implicitWidth
       height: implicitHeight
       radius: Math.min(M.radius.chrome, M.radius.chip)
@@ -60,7 +60,7 @@ Item {
       objectName: "teachCounter"
       visible: root.counterText !== ""
       implicitWidth: counterLabel.implicitWidth + 2 * M.scale.space.md
-      implicitHeight: Math.max(M.size.control, counterLabel.implicitHeight + 2 * M.scale.space.xs)
+      implicitHeight: M.fitControl(counterLabel.implicitHeight)
       width: implicitWidth
       height: implicitHeight
       radius: Math.min(M.radius.chrome, M.radius.chip)
