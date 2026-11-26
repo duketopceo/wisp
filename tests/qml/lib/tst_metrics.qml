@@ -29,9 +29,9 @@ TestCase {
     verify(s.sm < s.md && s.md < s.lg && s.lg < s.xl && s.xl < s.xxl && s.xxl < s.huge)
   }
 
-  function test_old_blocks_are_untouched() {
-    compare(M.font.body, 12)
-    compare(M.spacing.lg, 8)
+  function test_old_blocks_are_gone() {
+    compare(M.font, undefined)
+    compare(M.spacing, undefined)
     compare(M.size.control, 28)
   }
 

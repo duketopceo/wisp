@@ -192,6 +192,33 @@ class TestComponentRules(unittest.TestCase):
                 if p.stem == "BarPill":
                     self.assertRegex(src, r'kind === "thinking"')
 
+    def test_old_type_and_spacing_blocks_stay_gone(self):
+        """R2 / one-surface U4: every surface reads the one scale
+        (M.scale, M.fontSize). The old font and spacing blocks are deleted
+        from metrics.js, and no QML or JS file reads them through whatever
+        name it imports metrics.js as."""
+        metrics = code(PLUGIN / "lib" / "metrics.js")
+        self.assertNotRegex(metrics, r"(?m)^\s*var\s+(font|spacing)\b")
+        files = [p for d in (PLUGIN, ROOT / "shells")
+                 for p in sorted(d.rglob("*")) if p.suffix in (".qml", ".js")]
+        # the floors only guard against a walk that silently finds nothing
+        self.assertGreater(len(files), 50)
+        seen = 0
+        for p in files:
+            # code() strips comments without knowing about strings, so a
+            # read after "//" inside a string would vanish; also search the
+            # raw text with only whole-line comments removed
+            raw = re.sub(r"(?m)^\s*(//|\*|/\*).*$", "", p.read_text())
+            aliases = re.findall(
+                r"""import\s+["'][^"']*metrics\.js["']\s+as\s+(\w+)""", raw)
+            seen += bool(aliases)
+            for a in aliases:
+                for src in (code(p), raw):
+                    self.assertIsNone(
+                        re.search(rf"\b{a}\.(font|spacing)\b", src),
+                        f"{p.relative_to(ROOT)} reads {a}.font or {a}.spacing")
+        self.assertGreater(seen, 40)
+
     def test_motion_respects_service_mode(self):
         for p in sorted(COMP.glob("*.qml")):
             src = code(p)

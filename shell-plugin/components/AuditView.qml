@@ -11,6 +11,7 @@ Column {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   // the title and its line; a settings-window page hides them and
   // shows its own heading
   property bool titled: true
@@ -29,14 +30,14 @@ Column {
   readonly property real appWidth: Math.max(48, width - (timeWidth + decisionWidth + toolWidth + msWidth) - 4 * gap)
 
   width: 560
-  spacing: M.spacing.md
+  spacing: M.scale.space.sm
 
   component Cell: Text {
     textFormat: Text.PlainText
     elide: Text.ElideRight
     color: root.tk.ink
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.label
+    font.pixelSize: M.fontSize("label", root.ts)
   }
 
   Text {
@@ -45,7 +46,7 @@ Column {
     text: root.service.ui("ui.manage.audit")
     color: root.tk.ink
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.title
+    font.pixelSize: M.fontSize("title", root.ts)
     font.weight: Font.DemiBold
   }
   Text {
@@ -54,8 +55,8 @@ Column {
     text: root.service.ui("ui.manage.audit.sub")
     color: root.tk.inkMuted
     font.family: root.service.fontFamily
-    font.pixelSize: M.font.caption
-    bottomPadding: M.spacing.lg
+    font.pixelSize: M.fontSize("caption", root.ts)
+    bottomPadding: M.scale.space.sm
   }
   Cell {
     visible: root.rows.length === 0
@@ -70,8 +71,8 @@ Column {
       Rectangle { width: parent.width; height: M.size.keyline; color: root.tk.keyline }
       Row {
         spacing: root.gap
-        topPadding: M.spacing.lg
-        bottomPadding: M.spacing.lg
+        topPadding: M.scale.space.sm
+        bottomPadding: M.scale.space.sm
         Cell { width: root.timeWidth; text: modelData.time; color: root.tk.inkMuted }
         Cell {
           width: root.decisionWidth

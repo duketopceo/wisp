@@ -17,7 +17,7 @@ How this file is kept:
 
 ## Unreleased
 
-- Text on the bar, the on-screen overlay and the Panel is a step larger and follows your desktop text size (WISP_TEXT_SCALE, up to 2x). The bar pill never grows past the bar, and buttons never get smaller to click; they grow only when a large text size needs the room.
+- Text on the bar, the on-screen overlay, the Panel and the settings window is one type scale, a step larger, and follows your desktop text size (WISP_TEXT_SCALE, up to 2x). The bar pill never grows past the bar, and buttons never get smaller to click; they grow only when a large text size needs the room.
 - The separate console app is gone: its views (Home, Activity, Memory, Tasks, Health, Spend, Audit and Binds) now live in the settings window. The launcher's main entry opens `wispd settings`, the Panel action is removed from the launcher menu (Listen, Stop and Settings stay), and `wispd install` rewrites the launcher entry for you.
 - The Panel now scrolls when it is taller than your screen, and its Settings tab is a short Quick tab: a health line, your quick settings, and "open settings" (on every tab) for the full settings window. Quick settings still save while Wisp is not running.
 - Another bar or panel can now show Wisp with the same words Wisp uses: `wispd status --json` includes the word and tone, `wispd status --table` lists every word without Wisp running, and `wispd watch` adds them to each state line. docs/EMBED.md explains how.
