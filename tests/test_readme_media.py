@@ -3,9 +3,12 @@
 import pathlib
 import re
 import struct
+import sys
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "scripts" / "ui"))
+import readme_media  # noqa: E402
 README = ROOT / "README.md"
 MEDIA = ROOT / "assets" / "readme"
 BUDGET = 250 * 1024
@@ -51,6 +54,30 @@ class ReadmeMedia(unittest.TestCase):
             self.assertLessEqual(p.stat().st_size, VIDEO_BUDGET, rel)
             self.assertIn(rel.replace(".mp4", ".poster.png"), linked(),
                           "a hero video needs its poster image")
+
+    def test_sheets_come_from_current_snapshot_scenes(self):
+        # Each README sheet is composed from goldens that snap.py still
+        # renders, and is shown in the README.
+        for name, (_title, rows) in readme_media.SHEETS.items():
+            for row in rows:
+                for scale, gid, _cap in row:
+                    self.assertTrue((readme_media.GOLDEN / scale / f"{gid}.png").is_file(),
+                                    f"{name}: no golden {scale}/{gid}")
+            self.assertIn(f"assets/readme/{name}.png", linked())
+
+    def test_sheets_have_the_layout_of_their_goldens(self):
+        # Layout only: the committed sheets are palette-quantised and their
+        # captions depend on the FreeType build, so pixels are not compared
+        # here. `scripts/ui/readme_media.py --check` is the exact comparison.
+        try:
+            readme_media._pil()
+        except ImportError:
+            self.skipTest("Pillow is not installed")
+        for name in readme_media.SHEETS:
+            rel = f"assets/readme/{name}.png"
+            w, h = struct.unpack(">II", (ROOT / rel).read_bytes()[16:24])
+            self.assertEqual((w, h), readme_media.compose(name).size,
+                             f"{rel} layout differs from its goldens; run scripts/ui/readme_media.py")
 
     def test_no_orphans(self):
         names = {pathlib.Path(r).name for r in linked() + videos()}

@@ -52,19 +52,17 @@ class GuidingLightPreview(unittest.TestCase):
 
 
 class FlameAssets(unittest.TestCase):
-    FLAME = ROOT / "assets/brand/wisp-flame/export"
+    ICON = ROOT / "assets/icons/hicolor/512x512/apps/wisp.png"
 
-    def test_flame_assets_ship_in_the_build(self):
+    def test_flame_mark_ships_in_the_build(self):
         builder = EnhancedBuild.builder(self)
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "out"
             builder.build(out)
-            for name in ("idle-256.webp", "wisp-flame-32.png", "wisp-flame-512.png"):
-                self.assertEqual((self.FLAME / ("loops" if name.endswith(".webp") else "stills") / name).read_bytes(),
-                                 (out / "assets/wisp-flame" / name).read_bytes(), name)
-            # Lean: one loop and two stills; no unused states, no 3D model.
-            self.assertFalse((out / "assets/wisp-flame/listening-256.webp").exists())
-            self.assertFalse((out / "assets/wisp-flame/wisp-flame.glb").exists())
+            # The orange flame app icon, byte for byte, and nothing else.
+            self.assertEqual(self.ICON.read_bytes(), (out / "assets/mark/wisp-512.png").read_bytes())
+            self.assertEqual(["assets/mark/wisp-512.png"], list(builder.BRAND))
+            self.assertFalse((out / "assets/wisp-flame").exists())
             self.assertEqual([], builder.check(out))
 
 

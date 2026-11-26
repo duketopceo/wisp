@@ -51,15 +51,15 @@ repeatable harness (`scripts/demo/record.py`) and none is published yet; see
 <!-- hero:start -->
 <!-- hero:end -->
 
-![Companion overlay: listening pill, answer bubble, confirm card, cursor buddy (goldens predate the in-bar live pill — see Surfaces)](assets/readme/companion.png)
+![Companion overlay: orb states, listening pill, confirm card, acting in the bar](assets/readme/companion.png)
 
-![The panel: Now, Agents, Memory and Settings tabs](assets/readme/panel.png)
+![The panel: Now, Agents, Memory and Quick tabs](assets/readme/panel.png)
 
 ![The bar mark, one glyph per state](assets/readme/bar-mark.png)
 
 ![The first-run card](assets/readme/first-run.png)
 
-![The management app: Health, Spend, Audit and Binds](assets/readme/manage.png)
+![The settings window: Health, Spend, Audit and Binds](assets/readme/settings.png)
 
 ## Install
 

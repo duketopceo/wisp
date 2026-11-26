@@ -1,7 +1,7 @@
 # Vendored website assets
 
-- `../assets/wisp-flame/*`: published from `assets/brand/wisp-flame/export/`
-  by `scripts/site/build_3d.py` (idle loop and stills); not stored here.
+- `../assets/mark/*`: the orange flame mark, published from
+  `assets/icons/hicolor/` by `scripts/site/build_3d.py`; not stored here.
   The homepage itself is built from `site-app/` (see its `public/credits.txt`).
 - `../wisp/gl.mjs`: the light's look follows ThreeUI Community `energy-orb`
   (https://github.com/MengTo/threeui, MIT, Copyright (c) 2026 Meng To) as a

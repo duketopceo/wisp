@@ -57,10 +57,12 @@ class Page(unittest.TestCase):
                             r"googletagmanager|google-analytics|plausible|fonts\.g")
 
     def test_flame_still_is_the_no_javascript_mark_and_icon(self):
-        self.assertIn('<img class="flame" src="wisp-flame-130.png"', self.page)
-        self.assertIn('rel="icon" href="wisp-flame-32.png"', self.page)
-        for name in build.FLAME_STILLS:
-            self.assertTrue((self.out / name).is_file(), name)
+        self.assertIn('<img class="flame" src="wisp-128.png"', self.page)
+        self.assertIn('rel="icon" href="wisp-32.png"', self.page)
+        # The orange flame app icon renders, copied byte for byte.
+        for name, source in build.FLAME_STILLS.items():
+            self.assertTrue(source.is_relative_to(ROOT / "assets/icons/hicolor"), name)
+            self.assertEqual((self.out / name).read_bytes(), source.read_bytes(), name)
         self.assertEqual(build.third_party(self.page, ""), [])
 
     def test_the_checker_catches_third_party_loads(self):

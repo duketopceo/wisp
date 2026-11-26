@@ -29,7 +29,7 @@ GAP, PAD, LABEL_H = 16, 20, 18
 # name -> (title, rows); a row is a list of (scale, golden id, caption)
 SHEETS = {
     "companion": ("Companion: orb states, listening pill, confirm card, "
-                  "act console", [
+                  "acting in the bar", [
         [("2x", "Creature__idle", "idle"),
          ("2x", "Creature__listening", "listening"),
          ("2x", "Creature__thinking", "thinking"),
@@ -38,14 +38,14 @@ SHEETS = {
          ("2x", "Creature__error", "error")],
         [("1x", "Pill__listening", "listening pill"),
          ("1x", "Bubble__confirm", "confirm card (W25)")],
-        [("1x", "Console__acting", "act console, Esc stops (W24)"),
+        [("1x", "BarPillWindow__acting_steps", "acting, Esc stops"),
          ("1x", "Answer__done", "answer with good / wrong")],
     ]),
     "panel": ("Panel: Now, Agents, Memory and Quick tabs", [
-        [("1x", "NowTab__acting", "Now"),
-         ("1x", "AgentsTab__tasks", "Agents"),
-         ("1x", "MemoryTab__filled", "Memory")],
-        [("1x", "QuickTab__ok", "Quick")],
+        [("1x", "PanelBody__now", "Now"),
+         ("1x", "PanelBody__agents", "Agents"),
+         ("1x", "PanelBody__memory", "Memory"),
+         ("1x", "PanelBody__quick", "Quick")],
     ]),
     "bar-mark": ("Bar mark: one glyph per state", [
         [("2x", f"BarMark__{s}", s) for s in
@@ -61,11 +61,12 @@ SHEETS = {
          ("1x", "FirstRunCard__problem", "a step failed"),
          ("1x", "FirstRunCard__all_done", "done")],
     ]),
-    "manage": ("Management app: Health, Spend, Audit, Binds", [
-        [("1x", "HealthView__all_ok", "Health"),
-         ("1x", "SpendView__ok", "Spend")],
-        [("1x", "AuditView__rows", "Audit"),
-         ("1x", "BindsView__global", "Binds")],
+    "settings": ("Settings window (wispd settings): Health, Spend, Audit, "
+                 "Binds", [
+        [("1x", "SettingsHost__health", "Health"),
+         ("1x", "SettingsHost__spend", "Spend")],
+        [("1x", "SettingsHost__audit", "Audit"),
+         ("1x", "SettingsHost__binds", "Binds")],
     ]),
 }
 

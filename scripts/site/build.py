@@ -24,9 +24,13 @@ JOB = "Wisp is a voice teacher and doer for Omarchy that points at your screen."
 INSTALL = ("git clone https://github.com/duketopceo/wisp && cd wisp && "
            "python3 wispd install")
 BUDGET = 300 * 1024
-# No-JavaScript pages get the flame as a still (favicon and a small mark).
-FLAME_STILLS = ("wisp-flame-32.png", "wisp-flame-130.png")
-FLAME_DIR = ROOT / "assets" / "brand" / "wisp-flame" / "export" / "stills"
+# No-JavaScript pages get the orange flame mark as a still (favicon and a
+# small mark): published name -> the app icon render it is copied from.
+ICONS = ROOT / "assets" / "icons" / "hicolor"
+FLAME_STILLS = {
+    "wisp-32.png": ICONS / "32x32" / "apps" / "wisp.png",
+    "wisp-128.png": ICONS / "128x128" / "apps" / "wisp.png",
+}
 URL = re.compile(r"""(?:src|href|action|data|poster)\s*=\s*["']?\s*"""
                  r"""((?:https?:)?//[^"'\s>]+)""", re.I)
 CSS_URL = re.compile(r"url\(\s*[\"']?((?:https?:)?//[^)\"']+)", re.I)
@@ -159,8 +163,8 @@ def build(out) -> pathlib.Path:
         shutil.rmtree(out)
     out.mkdir(parents=True)
     shutil.copy2(SITE / "style.css", out / "style.css")
-    for still in FLAME_STILLS:
-        shutil.copy2(FLAME_DIR / still, out / still)
+    for still, source in FLAME_STILLS.items():
+        shutil.copy2(source, out / still)
     (out / "index.html").write_text(render(out), "utf-8")
     (out / ".nojekyll").write_text("")
     problems = check(out)

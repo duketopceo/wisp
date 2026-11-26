@@ -23,6 +23,11 @@ retire_when: "Blender gives emission and emissive volumes alpha coverage in film
 
 # Blender glow renders grey in a transparent-film render
 
+> The cyan 3D flame this describes, its render scripts and its test were
+> retired in one-surface U5 (the orange flame is the only mark); the paths
+> below are in git history. The Blender lesson still holds for any future
+> transparent-film render.
+
 ## Problem
 
 The Wisp flame (`assets/brand/wisp-flame`) is rendered headless in Blender with
