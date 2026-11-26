@@ -10,6 +10,7 @@ Rectangle {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   property bool open: false
   property alias text: field.text
   // emitted with the trimmed text just before it is sent
@@ -19,7 +20,8 @@ Rectangle {
   readonly property var tk: service ? service.tokens : ({})
 
   implicitWidth: 360
-  implicitHeight: M.size.control
+  // the hit target, grown when a large text scale needs the room
+  implicitHeight: Math.max(M.size.control, field.implicitHeight + 2 * M.scale.space.xs)
   visible: open
   radius: Math.min(M.radius.chrome, M.radius.chip)
   color: tk.raised
@@ -34,15 +36,15 @@ Rectangle {
   TextInput {
     id: field
     anchors.fill: parent
-    anchors.leftMargin: M.spacing.xl
-    anchors.rightMargin: M.spacing.xl
+    anchors.leftMargin: M.scale.space.md
+    anchors.rightMargin: M.scale.space.md
     verticalAlignment: TextInput.AlignVCenter
     clip: true
     maximumLength: 300
     color: root.tk.ink
     selectionColor: root.tk.selection
     font.family: root.service ? root.service.fontFamily : ""
-    font.pixelSize: M.font.label
+    font.pixelSize: M.fontSize("label", root.ts)
     Accessible.name: root.service ? root.service.ui("ui.question.send") : ""
     Keys.onReturnPressed: root.finish()
     Keys.onEnterPressed: root.finish()

@@ -23,6 +23,7 @@ Item {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
 
   readonly property var tk: service ? service.tokens : ({})
   readonly property string motionMode: service ? service.motionMode : "off"
@@ -38,14 +39,25 @@ Item {
     dev: service ? service.devOn === true : false,
     run: service ? service.run : null
   })
-  readonly property real glyphSize: M.font.icon - 2
+  readonly property real glyphSize: M.scale.icon - 2
+  // the bar's own height (BarWidget passes it). The pill grows with text
+  // scale up to that height, and its words shrink to fit once it is
+  // reached, so a large text size never spills out of the bar.
+  property real barHeight: M.controlHeight(true)
+  readonly property int restHeight: M.controlHeight(true) - M.scale.space.sm
+  readonly property int labelPx: M.fontSize("label", ts)
+  readonly property real wantHeight: Math.ceil(labelPx * M.lineHeight) + M.scale.space.xs
+  readonly property real pillHeight: Math.max(restHeight, Math.min(barHeight, wantHeight))
+  readonly property int textPx: Math.min(labelPx,
+    Math.floor((pillHeight - M.scale.space.xs) / M.lineHeight))
+  readonly property int captionPx: Math.min(M.fontSize("caption", ts), textPx)
   // a tap rates the turn it was made on; a newer turn starts the pill fresh
   property string tapped: ""
   property string tappedFor: ""
   readonly property bool rated: tapped !== "" && service !== null && tappedFor === service.turnId
 
   clip: true
-  implicitWidth: info.visible ? pill.width + M.spacing.md : 0
+  implicitWidth: info.visible ? pill.width + M.scale.space.sm : 0
   implicitHeight: pill.height
   opacity: info.visible ? 1 : 0
   Behavior on opacity {
@@ -71,10 +83,11 @@ Item {
 
   Rectangle {
     id: pill
-    x: M.spacing.md
+    objectName: "pill"
+    x: M.scale.space.sm
     anchors.verticalCenter: parent.verticalCenter
-    height: M.size.control - M.spacing.lg
-    width: row.implicitWidth + 2 * M.spacing.lg
+    height: root.pillHeight
+    width: row.implicitWidth + 2 * M.scale.space.sm
     radius: M.pillRadius(height, M.radius.chrome)
     color: "transparent"
     border.width: M.size.keyline
@@ -83,7 +96,7 @@ Item {
     Row {
       id: row
       anchors.centerIn: parent
-      spacing: M.spacing.md
+      spacing: M.scale.space.sm
 
       // glyph slot: one of waveform / arc / triangle / icon
       Item {
@@ -181,7 +194,7 @@ Item {
           : root.service.ui(root.info.wordKey)
         color: root.tk[root.info.wordToken]
         font.family: root.service ? root.service.fontFamily : ""
-        font.pixelSize: M.font.label
+        font.pixelSize: root.textPx
         font.weight: Font.DemiBold
       }
 
@@ -194,7 +207,7 @@ Item {
         text: root.info.step
         color: root.tk.inkMuted
         font.family: root.service ? root.service.fontFamily : ""
-        font.pixelSize: M.font.label
+        font.pixelSize: root.textPx
       }
 
       // error: one muted word of cause
@@ -206,19 +219,20 @@ Item {
         text: root.info.cause
         color: root.tk.inkMuted
         font.family: root.service ? root.service.fontFamily : ""
-        font.pixelSize: M.font.label
+        font.pixelSize: root.textPx
       }
 
       // done window: rate this turn through the service's label path
       Row {
         visible: root.info.thumbs && !root.rated
         anchors.verticalCenter: parent.verticalCenter
-        spacing: M.spacing.sm
+        spacing: M.scale.space.xs
 
         Rectangle {
           id: thumbUp
           objectName: "thumbUp"
-          width: M.font.icon + M.spacing.md
+          // a fixed hit target: text scale never moves it
+          width: root.restHeight
           height: width
           radius: M.radius.chip
           color: upArea.pressed ? root.tk.selection : "transparent"
@@ -230,7 +244,7 @@ Item {
           Icon {
             anchors.centerIn: parent
             name: "thumb-up"
-            size: M.font.icon - 2
+            size: M.scale.icon - 2
             color: root.tk.ink
           }
           MouseArea {
@@ -256,7 +270,7 @@ Item {
           Icon {
             anchors.centerIn: parent
             name: "thumb-down"
-            size: M.font.icon - 2
+            size: M.scale.icon - 2
             color: root.tk.ink
           }
           MouseArea {
@@ -273,8 +287,8 @@ Item {
         objectName: "devBadge"
         visible: root.info.dev
         anchors.verticalCenter: parent.verticalCenter
-        width: devWord.implicitWidth + 2 * M.spacing.md
-        height: devWord.implicitHeight + M.spacing.sm
+        width: devWord.implicitWidth + 2 * M.scale.space.sm
+        height: devWord.implicitHeight + M.scale.space.xs
         radius: M.radius.chip
         color: "transparent"
         border.width: M.size.keyline
@@ -286,7 +300,7 @@ Item {
           text: root.service ? root.service.ui("ui.bar.badge") : ""
           color: root.tk.needsYou
           font.family: root.service ? root.service.fontFamily : ""
-          font.pixelSize: M.font.caption
+          font.pixelSize: root.captionPx
           font.weight: Font.DemiBold
         }
       }

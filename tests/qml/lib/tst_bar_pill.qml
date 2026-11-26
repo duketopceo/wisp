@@ -1,6 +1,7 @@
 import QtQuick
 import QtTest
 import "../../../shell-plugin/lib/tokens.js" as Tokens
+import "../../../shell-plugin/lib/metrics.js" as M
 import "../../../shell-plugin/components"
 import "../harness"
 
@@ -42,13 +43,16 @@ TestCase {
     return null;
   }
 
-  function mk() {
-    var p = createTemporaryObject(comp, tc, { service: svc });
+  function mk(props) {
+    var o = { service: svc };
+    for (var k in (props || {})) o[k] = props[k];
+    var p = createTemporaryObject(comp, tc, o);
     verify(p !== null);
     return p;
   }
 
-  function init() { svc.pillHover = false; svc.labelCalls = []; }
+  function init() { svc.pillHover = false; svc.labelCalls = []; svc.textScale = 1; }
+  function cleanup() { svc.textScale = 1; }
 
   function test_idle_and_offline_collapse_to_nothing() {
     loadFx("idle");
@@ -150,6 +154,31 @@ TestCase {
     var hi = find(p, "bar2").height;
     loadFx("listening", { patch: { level: 0 } });
     verify(hi > find(p, "bar2").height);
+  }
+
+  function test_word_follows_text_scale_and_the_thumbs_do_not() {
+    loadFx("done");
+    var p = mk({ barHeight: 40 });
+    compare(find(p, "word").font.pixelSize, M.fontSize("label", 1));
+    var thumb = find(p, "thumbUp").width;
+    svc.textScale = 1.25;
+    compare(find(p, "word").font.pixelSize, M.fontSize("label", 1.25));
+    compare(find(p, "thumbUp").width, thumb);
+  }
+
+  function test_pill_stays_inside_the_bar_at_text_scale_2() {
+    var rows = ["acting", "error", "done", "awaiting_choice"];
+    for (var i = 0; i < rows.length; i++) {
+      svc.textScale = 2;
+      loadFx(rows[i]);
+      var p = mk({ barHeight: 28 });
+      var pill = find(p, "pill");
+      verify(pill.height <= 28, rows[i] + " pill " + pill.height);
+      var word = find(p, "word");
+      verify(word.implicitHeight <= pill.height, rows[i] + " word " + word.implicitHeight);
+      verify(word.font.pixelSize > M.fontSize("label", 1), rows[i] + " grew");
+      p.destroy();
+    }
   }
 
   Component { id: comp; BarPill { } }

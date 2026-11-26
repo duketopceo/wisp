@@ -18,7 +18,24 @@ var size = {
 var lineHeight = 1.35
 
 // Type and spacing scale; the older font and spacing blocks above remain
-// for surfaces not yet moved over. Sizes are pixels at text scale 1.
+// for surfaces not yet moved over (one-surface U4). Sizes are pixels at
+// text scale 1.
+//
+// Moving a surface over follows one table. Type maps by role, so text
+// takes the larger scale; spacing maps to the nearest 4 px step, ties
+// rounding up; glyphs take the fixed icon step, which text scale never
+// changes (like a hit target).
+//
+//   old              new                       old              new
+//   font.caption 10  fontSize("caption") 12    spacing.xs 3     space.xs 4
+//   font.label 11    fontSize("label") 13      spacing.sm 4     space.xs 4
+//   font.body 12     fontSize("body") 14       spacing.md 6     space.sm 8
+//   font.answer 13   fontSize("answer") 15     spacing.lg 8     space.sm 8
+//   font.title 14    fontSize("title") 17      spacing.xl 10    space.md 12
+//   font.icon 14     scale.icon 14             spacing.xxl 12   space.md 12
+//                                              spacing.huge 18  space.lg 16
+//
+// Text reads the host's scale as M.fontSize(step, service.textScale).
 // minimum holds independent floors (checked by tests, not derived from the
 // scale): body text 14, secondary text 12; a control is 32 tall in the
 // settings window and Panel, 28 on the overlay and bar.
@@ -27,6 +44,7 @@ var scale = {
   space: { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32, huge: 48 },
   control: { window: 32, compact: 28 },
   minimum: { body: 14, secondary: 12, control: 28, windowControl: 32 },
+  icon: 14,
   // settings window controls (U3): keyboard focus ring, switch track,
   // widest number or text field, and the width below which a setting row
   // stacks its control under the label

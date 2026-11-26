@@ -8,6 +8,7 @@ Item {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   property int maxLines: 6
   property bool streaming: service ? service.status === "speaking" : false
   signal moreClicked()
@@ -23,12 +24,12 @@ Item {
 
   property real lastX: 0
   property real lastY: 0
-  property real lastH: M.font.answer
+  property real lastH: M.fontSize("answer", root.ts)
 
   Column {
     id: col
     width: root.width
-    spacing: M.spacing.sm
+    spacing: M.scale.space.xs
 
     Text {
       textFormat: Text.PlainText
@@ -37,7 +38,7 @@ Item {
       text: root.body
       color: root.tk.ink
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.answer
+      font.pixelSize: M.fontSize("answer", root.ts)
       lineHeight: M.lineHeight
       wrapMode: Text.Wrap
       maximumLineCount: root.maxLines
@@ -50,10 +51,10 @@ Item {
 
       Rectangle {
         visible: root.streaming
-        x: root.lastX + M.spacing.xs
+        x: root.lastX + M.scale.space.xs
         y: root.lastY + (root.lastH - height) / 2
-        width: Math.round(M.font.answer * 0.55)
-        height: Math.round(M.font.answer * 1.0)
+        width: Math.round(M.fontSize("answer", root.ts) * 0.55)
+        height: Math.round(M.fontSize("answer", root.ts) * 1.0)
         color: root.tk.ember
       }
     }
@@ -64,7 +65,7 @@ Item {
       text: root.service.ui("ui.more")
       color: root.tk.accent
       font.family: root.service.fontFamily
-      font.pixelSize: M.font.label
+      font.pixelSize: M.fontSize("label", root.ts)
 
       MouseArea {
         anchors.fill: parent

@@ -12,6 +12,7 @@ Item {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   // Teach.view(): { chip, counter, visible }
   property var step: null
 
@@ -29,13 +30,13 @@ Item {
 
   Row {
     id: row
-    spacing: M.spacing.md
+    spacing: M.scale.space.sm
 
     Rectangle {
       objectName: "teachChip"
       visible: root.chipText !== ""
-      implicitWidth: chipLabel.implicitWidth + 2 * M.spacing.xl
-      implicitHeight: M.size.control
+      implicitWidth: chipLabel.implicitWidth + 2 * M.scale.space.md
+      implicitHeight: Math.max(M.size.control, chipLabel.implicitHeight + 2 * M.scale.space.xs)
       width: implicitWidth
       height: implicitHeight
       radius: Math.min(M.radius.chrome, M.radius.chip)
@@ -51,15 +52,15 @@ Item {
         text: root.chipText
         color: root.tk.ink
         font.family: root.service ? root.service.fontFamily : ""
-        font.pixelSize: M.font.label
+        font.pixelSize: M.fontSize("label", root.ts)
       }
     }
 
     Rectangle {
       objectName: "teachCounter"
       visible: root.counterText !== ""
-      implicitWidth: counterLabel.implicitWidth + 2 * M.spacing.xl
-      implicitHeight: M.size.control
+      implicitWidth: counterLabel.implicitWidth + 2 * M.scale.space.md
+      implicitHeight: Math.max(M.size.control, counterLabel.implicitHeight + 2 * M.scale.space.xs)
       width: implicitWidth
       height: implicitHeight
       radius: Math.min(M.radius.chrome, M.radius.chip)
@@ -75,7 +76,7 @@ Item {
         text: root.counterText
         color: root.tk.ink
         font.family: root.service ? root.service.fontFamily : ""
-        font.pixelSize: M.font.label
+        font.pixelSize: M.fontSize("label", root.ts)
       }
     }
   }

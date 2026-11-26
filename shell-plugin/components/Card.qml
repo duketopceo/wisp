@@ -12,6 +12,7 @@ Item {
   id: root
 
   property var service: null
+  readonly property real ts: service ? service.textScale : 1
   // lib/card.js imageOf(): {local, source, host, w, h, alt, caption}
   property var img: null
   // fixtures pin a picture instead of the stored local copy
@@ -59,6 +60,6 @@ Item {
     verticalAlignment: Text.AlignVCenter
     color: root.tk.inkMuted
     font.family: root.service ? root.service.fontFamily : ""
-    font.pixelSize: M.font.label
+    font.pixelSize: M.fontSize("label", root.ts)
   }
 }
