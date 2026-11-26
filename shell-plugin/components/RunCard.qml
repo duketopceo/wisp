@@ -142,7 +142,7 @@ Rectangle {
         spacing: M.scale.space.sm
         Rectangle {
           width: parent.width - sendChip.implicitWidth - parent.spacing
-          height: Math.max(M.size.control, input.implicitHeight + 2 * M.scale.space.sm)
+          height: Math.max(M.size.control, input.implicitHeight + 2 * input.anchors.margins)
           radius: Math.min(M.radius.chrome, M.radius.chip)
           color: root.tk.raised
           border.width: M.size.keyline
@@ -195,7 +195,8 @@ Rectangle {
         id: summaryText
         objectName: "runSummary"
         anchors.verticalCenter: parent.verticalCenter
-        width: Math.min(implicitWidth, parent.width - hideText.implicitWidth - M.scale.space.sm)
+        width: Math.max(0, Math.min(implicitWidth, parent.width - hideText.implicitWidth
+          - (undoText.visible ? 2 : 1) * M.scale.space.sm))
         text: root.summary
         elide: Text.ElideRight
         color: root.tk[root.outcomeLook[root.run.outcome] || "inkMuted"]

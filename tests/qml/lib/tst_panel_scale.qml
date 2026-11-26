@@ -47,9 +47,9 @@ TestCase {
 
   function cleanup() { svc.textScale = 1; }
 
-  function load(ts) {
+  function load(ts, name) {
     svc.tokens = Tokens.load("", "", "dark").tokens;
-    var raw = readJson("acting");
+    var raw = readJson(name || "acting");
     var mods = raw._fixture || {};
     delete raw._fixture;
     svc.load(raw, mods);
@@ -93,11 +93,7 @@ TestCase {
   }
 
   function test_a_finished_run_keeps_its_outcome_words() {
-    svc.tokens = Tokens.load("", "", "dark").tokens;
-    var raw = readJson("run_done");
-    var mods = raw._fixture || {};
-    delete raw._fixture;
-    svc.load(raw, mods);
+    load(1, "run_done");
     var card = createTemporaryObject(runC, tc, { service: svc });
     var s = find(card, "runSummary");
     verify(s !== null);

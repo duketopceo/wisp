@@ -17,8 +17,7 @@ Rectangle {
 
   visible: alwaysShow || service.busy || service.status === "speaking"
   implicitWidth: row.implicitWidth + 2 * M.scale.space.md
-  // the hit target, grown when a large text scale needs the room
-  implicitHeight: Math.max(M.size.control, row.implicitHeight + 2 * M.scale.space.xs)
+  implicitHeight: M.fitControl(row.implicitHeight)
   radius: Math.min(M.radius.chrome, M.radius.chip)
   color: "transparent"
   border.width: M.size.keyline

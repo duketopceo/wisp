@@ -23,8 +23,7 @@ Item {
   Accessible.onPressAction: clicked()
 
   implicitWidth: label.implicitWidth + 2 * M.scale.space.md
-  // the hit target, grown when a large text scale needs the room
-  implicitHeight: Math.max(M.size.control, label.implicitHeight + 2 * M.scale.space.xs)
+  implicitHeight: M.fitControl(label.implicitHeight)
 
   Text {
     textFormat: Text.PlainText

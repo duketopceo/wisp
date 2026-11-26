@@ -16,8 +16,7 @@ Rectangle {
   readonly property var tk: service ? service.tokens : ({})
 
   implicitWidth: 340
-  // the hit target, grown when a large text scale needs the room
-  implicitHeight: Math.max(M.size.control, field.implicitHeight + 2 * M.scale.space.xs)
+  implicitHeight: M.fitControl(field.implicitHeight)
   radius: Math.min(M.radius.chrome, M.radius.chip)
   color: tk.raised
   border.width: M.size.keyline

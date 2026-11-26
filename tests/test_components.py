@@ -503,11 +503,11 @@ class TestPureLibs(unittest.TestCase):
             mins["windowControl"])
         for name in ("Chip", "StopControl"):
             src = code(COMP / f"{name}.qml")
-            # the hit target, or the hit target as the floor when a large
-            # text scale grows the control to hold its words
+            # the hit target, or M.fitControl: the hit target as the floor
+            # when a large text scale grows the control to hold its words
             self.assertRegex(
                 src, r"(?m)implicitHeight:\s*(M\.size\.control\s*$"
-                     r"|Math\.max\(M\.size\.control,)", name)
+                     r"|M\.fitControl\()", name)
             for m in re.finditer(r"(?<!implicit)[hH]eight:\s*(\d+)\s*$",
                                  src, re.M):
                 self.assertGreaterEqual(int(m.group(1)), mins["control"],

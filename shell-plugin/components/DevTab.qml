@@ -60,10 +60,11 @@ Column {
   // header: the card title and the refresh button, always present
   Item {
     width: parent.width
-    height: Math.max(M.size.control, Math.ceil(M.fontSize("body", root.ts) * M.lineHeight))
+    height: Math.max(M.size.control, gateTitle.implicitHeight, refreshLabel.implicitHeight)
 
     Text {
       textFormat: Text.PlainText
+      id: gateTitle
       anchors.verticalCenter: parent.verticalCenter
       visible: root.hasData
       text: root.ui("ui.dev.gate")
