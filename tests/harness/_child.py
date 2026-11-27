@@ -17,16 +17,46 @@ sys.path.insert(0, str(HERE.parent.parent))    # repo root -> wisp pkg
 from harness.runner import NetworkGuard  # noqa: E402
 
 
+def hermetic_realinput(violations: list) -> None:
+    """Keep the host's keyboard, mouse and cursor out of the turn.
+
+    The act loop's takeover check (act.stopped -> realinput.yielded)
+    reads one process-wide watch, which realinput.begin creates on the
+    first drive/auto run from the real /dev/input devices or the
+    Hyprland cursor. In replay that would let a person using the desktop
+    abort the turn with INTERRUPTED (user). The watch here senses
+    nothing, so it stays "off" exactly as on a headless CI runner, and
+    any read of the host's input is recorded as a violation. Production
+    code is untouched: only this child process is rewired."""
+    from wisp import realinput
+
+    realinput._stop_for_test()
+    realinput._create = lambda: realinput.Watch(devices=[],
+                                                cursor_pos=lambda: None)
+
+    def host_devices(*_a, **_k):
+        violations.append("host input: realinput.real_devices")
+        return []
+
+    def host_cursor():
+        violations.append("host input: realinput._hypr_cursor_pos")
+        return None
+    realinput.real_devices = host_devices
+    realinput._hypr_cursor_pos = host_cursor
+
+
 def main(spec_path: str) -> int:
     spec = json.loads(pathlib.Path(spec_path).read_text())
     guard = NetworkGuard()
     guard.install()
+    host_reads = []
     out = {"events": [], "launch_calls": [], "media_calls": [], "notifications": [],
            "interrupt_fired": False, "violations": [], "final": {}}
     result_path = pathlib.Path(spec["result"])
     try:
         from wisp import cancel, config, pipeline, state as state_mod, \
             tools, trace as trace_mod
+        hermetic_realinput(host_reads)
         urls = spec["urls"]
         config.JEV_ENDPOINT = urls["jev"] + "/api/alpha/decisions"
 
@@ -338,7 +368,7 @@ def main(spec_path: str) -> int:
         st.close()
         out["trace"] = trace_mod.read(tail=2000)
     finally:
-        out["violations"] = list(guard.violations)
+        out["violations"] = list(guard.violations) + host_reads
         guard.uninstall()
         result_path.write_text(json.dumps(out))
     return 0

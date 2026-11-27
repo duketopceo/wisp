@@ -11,6 +11,7 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -71,6 +72,63 @@ class CuaTurnTest(unittest.TestCase):
         # the tool result the brain saw on its next call
         self.assertIn("SKIP (click failed via cua)",
                       json.dumps(res.chat_calls()[1]["body"]))
+
+
+
+class HostInputTest(unittest.TestCase):
+    """A replayed turn runs the real act loop, whose takeover check reads
+    realinput's process-wide watch. That watch must never sense the
+    host's keyboard, mouse or cursor: a person using the desktop during a
+    local run would abort the turn with INTERRUPTED (user)."""
+
+    def test_replay_ignores_host_input(self):
+        from unittest import mock
+        from wisp import realinput
+        from harness import _child
+        host_r, host_w = os.pipe()          # stands in for /dev/input
+        self.addCleanup(os.close, host_w)
+        cursor = iter(range(0, 10**6, 50))  # a mouse that keeps moving
+        realinput._stop_for_test()
+        self.addCleanup(realinput._stop_for_test)
+        violations = []
+        with mock.patch.object(realinput, "real_devices",
+                               lambda *a, **k: [host_r]), \
+                mock.patch.object(realinput, "_hypr_cursor_pos",
+                                  lambda: (next(cursor), 0)), \
+                mock.patch.object(realinput, "_create",
+                                  realinput._create):
+            _child.hermetic_realinput(violations)
+            realinput.begin({"pointer": {"mode": "drive"}})
+            realinput.arm()                  # a dispatch is in flight
+            for _ in range(5):
+                os.write(host_w, b"key")
+                time.sleep(0.05)
+            self.assertFalse(realinput.yielded(),
+                             "host input reached the replay's watch")
+            realinput.check()                # must not raise Cancelled
+        self.assertEqual(violations, [])
+
+    def test_seam_flags_any_host_input_read(self):
+        from unittest import mock
+        from wisp import realinput
+        from harness import _child
+        violations = []
+        with mock.patch.object(realinput, "real_devices", lambda *a: []), \
+                mock.patch.object(realinput, "_hypr_cursor_pos",
+                                  lambda: None), \
+                mock.patch.object(realinput, "_create", realinput._create):
+            _child.hermetic_realinput(violations)
+            self.assertEqual(realinput.real_devices(), [])
+            self.assertIsNone(realinput._hypr_cursor_pos())
+        self.assertEqual(len(violations), 2, violations)
+
+    def test_drive_fixture_turn_reads_no_host_input(self):
+        fx = hh.load("act_click_cua")
+        self.assertIn(fx["config"]["pointer"]["mode"], ("drive", "auto"))
+        res = runner.run_turn(fx)
+        self.assertEqual(res.violations, [])
+        self.assertTrue(res.final["result"].startswith("ACTED"),
+                        res.final["result"])
 
 
 class NotifyTurnTest(unittest.TestCase):
