@@ -24,10 +24,10 @@ def hermetic_realinput(violations: list) -> None:
     reads one process-wide watch, which realinput.begin creates on the
     first drive/auto run from the real /dev/input devices or the
     Hyprland cursor. In replay that would let a person using the desktop
-    abort the turn with INTERRUPTED (user). The watch here senses
-    nothing, so it stays "off" exactly as on a headless CI runner, and
-    any read of the host's input is recorded as a violation. Production
-    code is untouched: only this child process is rewired."""
+    abort the turn with INTERRUPTED (user). The watch here is never
+    started, so its mode stays "off" exactly as on a headless CI runner,
+    and any read of the host's input is recorded as a violation.
+    Production code is untouched: only this child process is rewired."""
     from wisp import realinput
 
     realinput._stop_for_test()
