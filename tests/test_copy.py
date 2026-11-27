@@ -5,6 +5,7 @@ wisp/copy.py is the one source; scripts/assets/gen_copy.py writes
 shell-plugin/lib/copy.js from it. These tests pin the vocabulary and fail
 when the generated file is stale.
 """
+import functools
 import pathlib
 import re
 import subprocess
@@ -248,6 +249,7 @@ STATUS_PAGES = ("shell-plugin/components/HealthSection.qml",
                 "shell-plugin/components/SpendView.qml")
 
 
+@functools.lru_cache(maxsize=None)
 def _literal_key_reads():
     paths = [p for d in ("shell-plugin", "shells", "wisp")
              for p in (ROOT / d).rglob("*")
