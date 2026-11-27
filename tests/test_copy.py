@@ -5,6 +5,7 @@ wisp/copy.py is the one source; scripts/assets/gen_copy.py writes
 shell-plugin/lib/copy.js from it. These tests pin the vocabulary and fail
 when the generated file is stale.
 """
+import functools
 import pathlib
 import re
 import subprocess
@@ -236,6 +237,45 @@ class TestGenerated(unittest.TestCase):
                             str(ROOT / "scripts" / "assets" / "gen_copy.py"),
                             "--check"], capture_output=True, text=True)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+
+
+# A literal key read through Copy.string("...") or ui("...") in the shell
+# surfaces or the Python readers. string() returns an unknown key verbatim,
+# so a missing key ships as raw text ("state.stale") instead of failing.
+KEY_READ = re.compile(r"""(?:\bstring|\bui)\(\s*["']([a-z][\w.]*)["']\s*\)""")
+# The settings window's Status pages; each must read at least one key, so
+# the scan below cannot silently stop covering them.
+STATUS_PAGES = ("shell-plugin/components/HealthSection.qml",
+                "shell-plugin/components/SpendView.qml")
+
+
+@functools.lru_cache(maxsize=None)
+def _literal_key_reads():
+    paths = [p for d in ("shell-plugin", "shells", "wisp")
+             for p in (ROOT / d).rglob("*")
+             if p.suffix in (".qml", ".js", ".py") and p.is_file()
+             and "node_modules" not in p.parts]
+    gen = {ROOT / "wisp" / "copy.py", ROOT / "shell-plugin" / "lib" / "copy.js"}
+    return {str(p.relative_to(ROOT)): KEY_READ.findall(p.read_text())
+            for p in paths if p not in gen}
+
+
+class TestKeysExist(unittest.TestCase):
+    def test_status_pages_read_only_existing_keys(self):
+        reads = _literal_key_reads()
+        for page in STATUS_PAGES:
+            self.assertTrue(reads.get(page), f"{page} reads no copy key")
+            missing = [k for k in reads[page] if k not in wcopy.STRINGS]
+            self.assertEqual(missing, [], f"{page} reads keys not in "
+                             "wisp/copy.py STRINGS")
+
+    def test_every_literal_key_read_exists(self):
+        missing = {f: sorted({k for k in keys if k not in wcopy.STRINGS})
+                   for f, keys in _literal_key_reads().items()}
+        missing = {f: ks for f, ks in missing.items() if ks}
+        self.assertEqual(missing, {}, "copy keys read but not defined in "
+                         "wisp/copy.py STRINGS; add them and rerun "
+                         "scripts/assets/gen_copy.py")
 
 
 if __name__ == "__main__":

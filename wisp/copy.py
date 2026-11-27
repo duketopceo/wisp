@@ -102,6 +102,9 @@ UNKNOWN_ERROR = "internal"
 # for status-like words (lowercase), same as STATUS.
 STRINGS = {
     "state.reconnecting": "reconnecting",
+    # settings views only: a busy turn that stopped updating (status.py
+    # "stale" row); the status line says reconnecting instead.
+    "state.stale": "out of date",
     "state.offline": "wisp is not running",
     "state.newer": "wisp is newer than this panel",
     "ui.more": "more",
