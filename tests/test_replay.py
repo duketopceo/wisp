@@ -11,7 +11,9 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -19,7 +21,8 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 import fakes  # noqa: E402
 import harness_helpers as hh  # noqa: E402
-from harness import runner  # noqa: E402
+from harness import _child, runner  # noqa: E402
+from wisp import realinput  # noqa: E402
 
 FIXTURES = ROOT / "tests" / "fixtures" / "turns"
 
@@ -71,6 +74,55 @@ class CuaTurnTest(unittest.TestCase):
         # the tool result the brain saw on its next call
         self.assertIn("SKIP (click failed via cua)",
                       json.dumps(res.chat_calls()[1]["body"]))
+
+
+class HostInputTest(unittest.TestCase):
+    """Replay never senses the host's input (see _child.hermetic_realinput)."""
+
+    def setUp(self):
+        realinput._stop_for_test()
+        self.addCleanup(realinput._stop_for_test)
+        # hermetic_realinput rebinds _create by plain assignment
+        self.addCleanup(setattr, realinput, "_create", realinput._create)
+
+    def test_replay_ignores_host_input(self):
+        host_r, host_w = os.pipe()          # stands in for /dev/input
+        self.addCleanup(os.close, host_r)
+        self.addCleanup(os.close, host_w)
+        cursor = iter(range(0, 10**6, 50))  # a mouse that keeps moving
+        violations = []
+        with mock.patch.object(realinput, "real_devices",
+                               lambda *a, **k: [host_r]), \
+                mock.patch.object(realinput, "_hypr_cursor_pos",
+                                  lambda: (next(cursor), 0)):
+            _child.hermetic_realinput(violations)
+            realinput.begin({"pointer": {"mode": "drive"}})
+            realinput.arm()                  # a dispatch is in flight
+            for _ in range(5):
+                os.write(host_w, b"key")
+                time.sleep(0.02)
+            self.assertFalse(realinput.yielded(),
+                             "host input reached the replay's watch")
+            realinput.check()                # must not raise Cancelled
+        self.assertEqual(violations, [])
+
+    def test_seam_flags_any_host_input_read(self):
+        violations = []
+        with mock.patch.object(realinput, "real_devices", lambda *a: []), \
+                mock.patch.object(realinput, "_hypr_cursor_pos",
+                                  lambda: None):
+            _child.hermetic_realinput(violations)
+            self.assertEqual(realinput.real_devices(), [])
+            self.assertIsNone(realinput._hypr_cursor_pos())
+        self.assertEqual(len(violations), 2, violations)
+
+    def test_drive_fixture_turn_reads_no_host_input(self):
+        fx = hh.load("act_click_cua")
+        self.assertIn(fx["config"]["pointer"]["mode"], ("drive", "auto"))
+        res = runner.run_turn(fx)
+        self.assertEqual(res.violations, [])
+        self.assertTrue(res.final["result"].startswith("ACTED"),
+                        res.final["result"])
 
 
 class NotifyTurnTest(unittest.TestCase):
