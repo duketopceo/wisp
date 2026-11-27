@@ -1,8 +1,9 @@
 ---
 title: Replay and scenario tests fail locally when a person uses the desktop during the run
 date: 2026-11-25
+last_updated: 2026-11-27
 category: test-failures
-module: tests/test_replay.py, tests/test_scenarios.py
+module: tests/harness/_child.py, tests/test_replay.py, tests/test_scenarios.py
 problem_type: test_failure
 component: tooling
 symptoms:
@@ -11,10 +12,9 @@ symptoms:
   - "IndexError on res.chat_calls()[1] in test_refusal_is_scriptable"
   - "The same failures reproduce on an untouched origin/master worktree"
 root_cause: test_isolation
-resolution_type: workflow_improvement
+resolution_type: test_fix
 severity: medium
-retire_when: "The replay and scenario harness stubs realinput (yielded() returns False or the global watch is stopped) for every replayed turn; check tests/test_replay.py and tests/test_scenarios.py setup for realinput"
-tags: [replay-harness, realinput, act-loop, flaky-local, environmental, unittest]
+tags: [replay-harness, realinput, act-loop, flaky-local, hermetic-tests, hyprland, unittest]
 ---
 
 # Replay and scenario tests fail locally when a person uses the desktop during the run
@@ -51,50 +51,99 @@ it is expected to be unaffected: no person is at its input devices.
 - Running two `unittest discover` processes at once in the same checkout. The
   overlap added noise and made the failures harder to read; it did not explain
   them.
+- Stubbing `realinput.yielded()` or calling `realinput._stop_for_test()` once
+  in setup (the earlier suggestion). `realinput._watch()` builds the
+  process-wide watch through `_create()` whenever `_WATCH` is `None`
+  (`wisp/realinput.py:291-302`), and `begin(cfg)` calls `_watch()` for
+  every drive or auto run. `_stop_for_test()` only clears `_WATCH`, so the
+  next such `begin()` builds a live watch from the real devices again. A
+  `yielded()` stub would also hide a regression instead of reporting it. The
+  seam has to replace `_create`.
+- Patching from the test process. The replay turn runs in a separate child
+  process, so a patch applied in the parent never reaches it. The seam has to
+  live in the child entry point.
 
 ## Solution
 
-No code change was made. The workflow that tells the two cases apart:
+The fix is test-side only; production `wisp/` is unchanged. It ships in the
+same pull request as this revision of the doc, from branch
+`fix/replay-desktop-input`.
 
-1. Rerun the failing module alone with hands off the keyboard and mouse, for
-   example `python3 -m unittest discover -s tests -p test_replay.py`.
-2. If it still fails, run the same module in an untouched `origin/master`
-   worktree before debugging the branch. A failure there only shows the
-   cause is not unique to the branch; it could still be a defect already on
-   `master`. Call it environmental only when the interruption evidence is
-   there too: the turn ends `INTERRUPTED (user)` and the failure goes away
-   in a hands-off run.
-3. Run one test process per checkout at a time.
+`hermetic_realinput(violations)` in `tests/harness/_child.py` rewires
+`wisp.realinput` inside the replay child:
+
+- It calls `realinput._stop_for_test()` and replaces `realinput._create` with a
+  factory that returns `realinput.Watch(devices=[], cursor_pos=lambda: None)`.
+  That watch is never started, so its mode stays `"off"`, as on a headless CI
+  runner.
+- It replaces `realinput.real_devices` and `realinput._hypr_cursor_pos` with
+  functions that append `"host input: ..."` to the `violations` list and
+  return empty values.
+
+`main()` calls it inside its `try`, right after the `wisp` import, with a
+`host_reads` list, and the `finally` block writes
+`list(guard.violations) + host_reads` to `out["violations"]`. Any replay turn
+that reaches the host's input therefore fails the tests that assert
+`res.violations == []`.
+
+Tests, in `HostInputTest` in `tests/test_replay.py`:
+
+- `test_replay_ignores_host_input` is the discriminating one. It patches
+  `real_devices` to return a pipe and `_hypr_cursor_pos` to return an
+  ever-moving cursor, applies the seam, calls
+  `begin({"pointer": {"mode": "drive"}})` and `arm()`, writes bytes to the
+  pipe, and asserts `yielded()` is False, `check()` does not raise, and no
+  violations were recorded. Without the seam, the same setup selects evdev
+  mode and `yielded()` becomes True after the writes (demonstrated this
+  session).
+- `test_seam_flags_any_host_input_read` asserts that calling either replaced
+  function records a violation.
+- `test_drive_fixture_turn_reads_no_host_input` runs `act_click_cua` (a
+  drive-mode fixture) through `runner.run_turn` and asserts no violations and
+  a result starting with `ACTED`.
 
 ## Why This Works
 
-The act loop checks for a user takeover through `stopped()`, which returns
-`cancel.is_cancelled() or _user_interrupted()` (`wisp/act.py`, `stopped`), and
+The act loop checks for a takeover through `stopped()`, which returns
+`cancel.is_cancelled() or _user_interrupted()` (`wisp/act.py:360-361`).
 `_user_interrupted()` is `bool(interrupted and interrupted()) or
-realinput.yielded()`. Act paths that see a stop return the string
-`"INTERRUPTED (user)"`.
+realinput.yielded()` (`wisp/act.py:356-358`), and `yielded()` reads the
+process-wide watch (`wisp/realinput.py:360-362`). Act paths that see a stop
+return `"INTERRUPTED (user)"`.
 
-`realinput.yielded()` reports the global input watch's yield flag, and the
-watch is armed for any run that injects input (`_watch_wanted` in
-`wisp/realinput.py`: drive or auto pointer mode, not an isolated session, not a
-DOM-page run). The watch senses the real input devices, so a person's
-keystroke or mouse motion during a replayed turn sets the flag and the turn
-aborts. That one cause explains the wrong result prefix, the missing second
-chat call, and the scenario statuses ending in `idle`. A headless CI runner has
-no person at the devices, so the flag never sets there.
+`realinput.begin(cfg)` gets that watch from `_watch()`, which builds it
+with `_create()` the first time, for any run where `_watch_wanted` is true (drive or auto pointer mode, not
+isolated, not a DOM-page run; `wisp/realinput.py:310-319`), then arms it after
+`BACKGROUND_GRACE_S` (1.0 s) via `arm_background` (`wisp/realinput.py:322-336`).
+`Watch.start` uses the evdev devices from `real_devices()` when it finds any.
+When none are readable it falls back to drift mode if `_hypr_cursor_pos()`
+returns a position, and to `"off"` otherwise (`wisp/realinput.py:114-134`).
 
-Which fixtures arm the watch was inferred from the symptoms and the code
-above, not traced fixture by fixture. The idle-run pass and the reproduction on
-`origin/master` are the empirical support.
+On the owner's machine, measured in this session, `real_devices()` returned
+no fds and `_hypr_cursor_pos()` was readable. The live watch therefore runs in
+drift mode, so mouse motion alone trips the takeover. Keystrokes were not
+needed to reproduce.
+
+The seam removes the cause rather than hiding the symptom. The watch built for
+every replayed turn has no devices and no cursor reader, so it stays `"off"`
+and `yielded()` is False no matter what the host does. Because the real
+sources are replaced by violation recorders, a future code path that reaches
+the host's input anew fails loudly instead of flaking only on a desk where
+someone is working.
 
 ## Prevention
 
-- Before debugging a local replay or scenario failure, ask whether anyone was
-  using the desktop, and compare against an untouched `origin/master` worktree.
-- Suggested, not done: have the replay and scenario harness keep the watch
-  out of every replayed turn, for example by stubbing `realinput.yielded()`
-  to return False for the whole run. A one-time `realinput._stop_for_test()`
-  in setup is not enough on its own: `realinput.begin(cfg)` creates a fresh
-  watch at the start of each act run whenever drive or auto pointer mode
-  wants one, so the stop is undone by the next turn.
+- Keep the replay child hermetic. When `wisp/realinput.py` gains a new way to
+  sense the host (another device source, another cursor reader), route it
+  through the seam in `hermetic_realinput` so it records a violation.
+- Tests that assert `res.violations == []` now also cover host-input reads;
+  do not drop `host_reads` from the `finally` in `tests/harness/_child.py`.
+- Known residual, not fixed here: in-process drive-mode act tests such as
+  `run_loop` in `tests/test_ground_chain.py` (around line 599) still build a
+  live watch from the host cursor. They are shielded only by the 1 s arm
+  grace, so a slow test or a long-running one could still be hit. If one
+  flakes with `INTERRUPTED (user)`, apply the same `_create` replacement there.
+- Before debugging a local replay or scenario failure that ends in
+  `INTERRUPTED (user)`, ask whether anyone was using the desktop, and compare
+  against an untouched `origin/master` worktree.
 - Do not run overlapping `unittest discover` processes in one checkout.
